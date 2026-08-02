@@ -28,166 +28,43 @@
     clippy::print_stdout
 )]
 
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+mod common;
 
-use rs_cam_core::compute::StockConfig;
+use common::meshes::sawtooth_plate;
+use common::session::{
+    generate, mesh_model, polygon_model, single_op_session, square_polygon, stock_over,
+};
+use common::tools::{ball_tool_config, endmill_tool_config, tapered_ball_tool_config};
+
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, STANDING_MATERIAL_DOMAIN,
-    STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE, StockSource,
+    STANDING_MATERIAL_DOMAIN, STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE,
 };
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern, ScallopConfig};
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::debug_trace::ToolpathDebugOptions;
+use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::diagnostics::{Diagnostic, ids};
-use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::mesh::{TriangleMesh, make_test_flat};
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{LoadedModel, ProjectSession, ToolpathConfig};
+use rs_cam_core::mesh::make_test_flat;
+use rs_cam_core::session::ProjectSession;
 
 // ── Fixtures ────────────────────────────────────────────────────────────
+//
+// C6: the tools, the corrugation, the model/stock wrappers and the one-op
+// session builder this file invented now live in `tests/common/` — this file
+// was the accidental template every later wave copied, so it is the one that
+// had to prove the shared version is the same fixture. The corrugation is
+// pinned bit-for-bit against this file's original generator by
+// `common_fixtures_smoke_c6::sawtooth_plate_reproduces_its_donor`.
 
 fn ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 3.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
-    }
+    ball_tool_config(3.0)
 }
 
 /// Tapered ball: the class where `radius()` (shank) and `cusp_radius()`
 /// (tip sphere) diverge. Used on the CONTROL fixture — the cheap half of
 /// the ball/tapered pair — to prove the channel is wired for it too.
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 10.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
-    }
-}
-
-/// Corrugated plate — a triangular-wave surface with sharp convex apexes.
-///
-/// This is the deliberate truncation. `max_rings` is budgeted from the
-/// FLAT-ground stepover, but `ring_stepover` takes the MIN across each
-/// ring's samples, and a sharp convex apex on the tool-CENTRE surface
-/// shrinks the cusp-limited advance by ~25%. Every ring therefore advances
-/// slower than the budget assumed, and the cascade runs out of rings with
-/// the region interior still standing — the mechanism `scallop.rs`
-/// documents and wanaka hit for real.
-///
-/// The texture has to be coarse enough that the ball FOLLOWS it: a ball
-/// bridges any feature below its own radius and the offset surface reads
-/// flat (`finish_setup.rs`'s documented blind spot), which is why the
-/// period is ~1.3x the tool diameter rather than as fine as possible.
-fn sawtooth_plate(half: f64, period: f64, amplitude: f64) -> TriangleMesh {
-    let step_x = period / 16.0;
-    let step_y = 2.0;
-    let nx = ((2.0 * half) / step_x).round() as usize + 1;
-    let ny = ((2.0 * half) / step_y).round() as usize + 1;
-    let mut vertices = Vec::with_capacity(nx * ny);
-    for j in 0..ny {
-        let y = -half + j as f64 * step_y;
-        for i in 0..nx {
-            let x = -half + i as f64 * step_x;
-            let phase = x / period - (x / period).floor();
-            let ridge = 1.0 - (2.0 * phase - 1.0).abs();
-            vertices.push(P3::new(x, y, amplitude * ridge));
-        }
-    }
-    let mut triangles = Vec::with_capacity((nx - 1) * (ny - 1) * 2);
-    for j in 0..(ny - 1) {
-        for i in 0..(nx - 1) {
-            let a = (j * nx + i) as u32;
-            let b = a + 1;
-            let c = ((j + 1) * nx + i) as u32;
-            let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
-        }
-    }
-    TriangleMesh::from_raw(vertices, triangles)
-}
-
-fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
-    LoadedModel {
-        id: 0,
-        name: name.to_owned(),
-        mesh: Some(Arc::new(mesh)),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from(format!("synthetic://{name}.stl")),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    }
-}
-
-fn polygon_model(name: &str) -> LoadedModel {
-    let square = Polygon2::new(vec![
-        P2::new(-10.0, -10.0),
-        P2::new(10.0, -10.0),
-        P2::new(10.0, 10.0),
-        P2::new(-10.0, 10.0),
-    ]);
-    LoadedModel {
-        id: 0,
-        name: name.to_owned(),
-        mesh: None,
-        polygons: Some(Arc::new(vec![square])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        path: PathBuf::from(format!("synthetic://{name}.svg")),
-        kind: None,
-        units: None,
-        enriched_mesh: None,
-        winding_report: None,
-        load_error: None,
-    }
-}
-
-fn toolpath(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
-    let op_type = op.op_type();
-    ToolpathConfig {
-        id: ToolpathId(0),
-        name: name.to_owned(),
-        enabled: true,
-        operation: op,
-        dressups: DressupConfig::for_op(op_type),
-        heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
-        pre_gcode: None,
-        post_gcode: None,
-        boundary: BoundaryConfig::default(),
-        boundary_inherit: true,
-        stock_source: StockSource::default(),
-        coolant: CoolantMode::Off,
-        face_selection: None,
-        debug_options: ToolpathDebugOptions::default(),
-        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
-    }
-}
-
-fn stock_over(half: f64, height: f64) -> StockConfig {
-    StockConfig {
-        x: 2.0 * half + 4.0,
-        y: 2.0 * half + 4.0,
-        z: height,
-        origin_x: -half - 2.0,
-        origin_y: -half - 2.0,
-        origin_z: 0.0,
-        auto_from_model: false,
-        ..StockConfig::default()
-    }
+    tapered_ball_tool_config(1.0, 10.0, 6.0)
 }
 
 fn scallop_op(scallop_height: f64) -> OperationConfig {
@@ -200,46 +77,44 @@ fn scallop_op(scallop_height: f64) -> OperationConfig {
 
 /// The deliberately-truncated cascade of the A/M9 acceptance gate.
 ///
+/// The corrugation is what does the truncating. `max_rings` is budgeted from
+/// the FLAT-ground stepover, but `ring_stepover` takes the MIN across each
+/// ring's samples, and a sharp convex apex on the tool-CENTRE surface shrinks
+/// the cusp-limited advance by ~25%. Every ring therefore advances slower than
+/// the budget assumed, and the cascade runs out of rings with the region
+/// interior still standing — the mechanism `scallop.rs` documents and wanaka
+/// hit for real. The 2 mm period is ~1.3× the tool diameter on purpose: a ball
+/// bridges any feature below its own radius and the offset surface would read
+/// flat (`finish_setup.rs`'s documented blind spot).
+///
 /// Measured at the time of writing: `max_rings = 119`, 120 rings emitted,
 /// 13.3 mm² left standing.
 fn truncated_cascade_session() -> ProjectSession {
     let half = 25.0;
-    let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_over(half, 1.5));
-    let tool_idx = session.add_tool(ball_tool());
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(sawtooth_plate(half, 2.0, 1.0), "corrugation"));
-    session
-        .add_toolpath(0, toolpath("Scallop", scallop_op(0.005), tool_id, model_id))
-        .expect("add scallop toolpath");
-    session
+    single_op_session(
+        stock_over(half, 1.5),
+        ball_tool(),
+        mesh_model(sawtooth_plate(half, 2.0, 1.0), "corrugation"),
+        "Scallop",
+        scallop_op(0.005),
+    )
 }
 
 /// Control: the same operation on flat ground, where the cascade collapses
 /// well inside its cap. Cheap, and the other half of the X-19 distinction.
 fn collapsing_cascade_session(tool: ToolConfig) -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_over(25.0, 1.0));
-    let tool_idx = session.add_tool(tool);
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(mesh_model(make_test_flat(50.0), "plate"));
-    session
-        .add_toolpath(0, toolpath("Scallop", scallop_op(0.1), tool_id, model_id))
-        .expect("add scallop toolpath");
-    session
+    single_op_session(
+        stock_over(25.0, 1.0),
+        tool,
+        mesh_model(make_test_flat(50.0), "plate"),
+        "Scallop",
+        scallop_op(0.1),
+    )
 }
 
 /// Control: an operation family that runs no ring cascade at all, so the
 /// measure does not exist for it.
 fn no_cascade_session() -> ProjectSession {
-    let mut session = ProjectSession::new_empty();
-    session.set_stock_config(stock_over(15.0, 10.0));
-    let tool_idx = session.add_tool(ToolConfig {
-        diameter: 3.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
-    });
-    let tool_id = session.tools()[tool_idx].id.0;
-    let model_id = session.add_model(polygon_model("square"));
     let op = OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
         depth: 2.0,
@@ -252,17 +127,13 @@ fn no_cascade_session() -> ProjectSession {
         finishing_passes: 0,
         spindle_rpm: Some(18_000),
     });
-    session
-        .add_toolpath(0, toolpath("Pocket", op, tool_id, model_id))
-        .expect("add pocket toolpath");
-    session
-}
-
-fn generate(session: &mut ProjectSession) {
-    let cancel = AtomicBool::new(false);
-    session
-        .generate_toolpath(0, &cancel)
-        .expect("generation must succeed");
+    single_op_session(
+        stock_over(15.0, 10.0),
+        endmill_tool_config(3.0),
+        polygon_model(vec![square_polygon(10.0)], "square"),
+        "Pocket",
+        op,
+    )
 }
 
 fn measured(session: &ProjectSession) -> Option<f64> {
@@ -308,7 +179,7 @@ fn declares_domain_stage_and_resolution(text: &str) {
 #[test]
 fn truncated_cascade_is_visible_on_every_surface() {
     let mut session = truncated_cascade_session();
-    generate(&mut session);
+    generate(&mut session, 0);
 
     // 1. Stats — `Some`, because a cascade ran and MEASURED this.
     let area = measured(&session)
@@ -376,7 +247,7 @@ fn truncated_cascade_is_visible_on_every_surface() {
 #[test]
 fn collapsing_cascade_reports_a_measured_zero() {
     let mut session = collapsing_cascade_session(ball_tool());
-    generate(&mut session);
+    generate(&mut session, 0);
 
     assert_eq!(
         measured(&session),
@@ -405,7 +276,7 @@ fn collapsing_cascade_reports_a_measured_zero() {
 #[test]
 fn tapered_ball_reaches_the_same_channel() {
     let mut session = collapsing_cascade_session(tapered_ball_tool());
-    generate(&mut session);
+    generate(&mut session, 0);
 
     assert_eq!(
         measured(&session),
@@ -426,7 +297,7 @@ fn tapered_ball_reaches_the_same_channel() {
 #[test]
 fn operation_without_a_cascade_reports_not_measured() {
     let mut session = no_cascade_session();
-    generate(&mut session);
+    generate(&mut session, 0);
 
     assert_eq!(
         measured(&session),

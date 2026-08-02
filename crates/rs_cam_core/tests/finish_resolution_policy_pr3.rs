@@ -53,18 +53,15 @@ use rs_cam_core::scallop::{ScallopParams, scallop_generation_resolution, scallop
 use rs_cam_core::steep_shallow::{
     SteepShallowParams, steep_shallow_generation_resolution, steep_shallow_toolpath,
 };
-use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
-use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::tool::MillingCutter;
+
+mod common;
+
+use common::fingerprint::move_fingerprint as fingerprint;
+use common::tools::{ball_cutter, wanaka_taper as taper};
 use rs_cam_core::unified_finish::{
     unified_finish_classification_resolution, unified_finish_mid_steep_generation_resolution,
 };
-
-/// The project's finishing tool: Ø1 tip, 7° half-angle, Ø6 shaft.
-/// Envelope 3.0 mm, cusp 0.5 mm — a 6× split, so any drift between the two
-/// scales is visible in the fingerprint.
-fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
-}
 
 /// A 20×20 ridge with a gentle along-Y ripple: shallow flanks, a crest, and
 /// enough curvature that stepover, ring decimation and slope classification
@@ -94,18 +91,11 @@ fn ridge_mesh() -> TriangleMesh {
     TriangleMesh::from_raw(verts, tris)
 }
 
-/// Byte-level fingerprint of an emitted toolpath: move count plus a hash of
-/// the `Debug` rendering (which round-trips every f64 exactly).
-fn fingerprint(tp: &Toolpath) -> (usize, u64) {
-    // FNV-1a, not `DefaultHasher`: the pinned constants below must survive a
-    // toolchain bump, and `DefaultHasher`'s algorithm is explicitly unstable.
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in format!("{:?}", tp.moves).bytes() {
-        h ^= u64::from(byte);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    (tp.moves.len(), h)
-}
+// C6: the fingerprint (byte-level — move count plus an FNV-1a hash of the
+// `Debug` rendering, which round-trips every f64 exactly) and the finishing
+// taper now come from `tests/common/`. Both are imported UNDER THEIR OLD
+// NAMES, so every call site and every pinned constant below is untouched:
+// this file is the migration's proof, not a place to also change values.
 
 #[test]
 fn scallop_fingerprint() {
@@ -177,7 +167,7 @@ const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 18_231_352_062_362_
 fn ball_ramp_finish_is_unmoved_by_the_geo_mean_policy() {
     let mesh = ridge_mesh();
     let index = SpatialIndex::build(&mesh, 10.0);
-    let ball = BallEndmill::new(6.0, 25.0);
+    let ball = ball_cutter(6.0);
     let tol = 0.01;
     let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&ball, tol);
     let geo_mean = FinishResolutionPolicy::geo_mean_envelope_cusp(&ball, tol);
@@ -382,7 +372,7 @@ fn each_consumer_selects_its_own_policy() {
 /// where the policy resolves to the legacy cell size".
 #[test]
 fn ball_resolves_both_modes_to_the_same_cell() {
-    let ball = BallEndmill::new(6.0, 25.0);
+    let ball = ball_cutter(6.0);
     let tol = 0.01;
     let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&ball, tol);
     let cusp = FinishResolutionPolicy::cusp_quarter(&ball, tol);
