@@ -139,13 +139,17 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
 };
 use rs_cam_core::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
+
+mod common;
+
+use common::meshes::GroovedBlock;
+use common::tools::{ball_control, steep_taper, wanaka_taper};
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -170,23 +174,12 @@ const WIDTHS: [f64; 6] = [0.25, 0.5, 1.0, 2.0, 3.0, 5.0];
 const DEPTHS: [f64; 7] = [0.05, 0.1, 0.2, 0.4391, 0.6, 1.0, 2.0];
 
 // ── Tools ────────────────────────────────────────────────────────────────
-
-/// The tool this project actually finishes with: Ø1 tip, 7° half-angle, Ø6
-/// shaft. Envelope 3.0, cusp 0.5 — the 6× split that makes every row below
-/// discriminating.
-fn wanaka_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
-}
-
-/// A second taper angle, to show the two-wall fouling boundary moves with α.
-fn steep_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 15.0, 6.0, 25.0)
-}
-
-/// Ball control: envelope == cusp, so ENV and CUSP must agree everywhere.
-fn ball_control() -> BallEndmill {
-    BallEndmill::new(3.0, 25.0)
-}
+//
+// C6: `wanaka_taper` (Ø1 tip / 7° / Ø6 shaft — envelope 3.0, cusp 0.5, the 6×
+// split that makes every row below discriminating), `steep_taper` (a second
+// angle, to show the two-wall fouling boundary moves with α) and
+// `ball_control` (envelope == cusp, so ENV and CUSP must agree everywhere) now
+// come from `tests/common/tools.rs`. Same constructors, same dimensions.
 
 // ── Analytic valley ──────────────────────────────────────────────────────
 
@@ -1458,66 +1451,15 @@ fn coverage_cap_floor_never_binds_on_the_matrix() {
 /// A block 40 × 24 mm with its top at z = 0 and one straight trapezoidal
 /// groove along Y at x = 0: rim half-width 1.5 mm, walls at 70°, floor at
 /// depth 1.2 mm. Height-field mesh (drop-cutter only needs the top surface).
+/// C6: the generator moved to `tests/common/meshes.rs`, which parameterises
+/// the X sampling four private copies of it disagreed about. This file's
+/// window (dense ±3 mm at 0.1 mm, breakpoints forced in) is pinned
+/// vertex-for-vertex against the copy that used to live here by
+/// `common_fixtures_smoke_c6::grooved_block_builder_reproduces_all_five_donor_copies`.
 fn grooved_block(rim_half_width: f64, wall_deg: f64, depth: f64) -> TriangleMesh {
-    let tan = wall_deg.to_radians().tan();
-    let floor_half = rim_half_width - depth / tan;
-    assert!(floor_half > 0.0, "groove is a V, not a trapezoid");
-    let z_at = |x: f64| -> f64 {
-        let ax = x.abs();
-        if ax >= rim_half_width {
-            0.0
-        } else if ax <= floor_half {
-            -depth
-        } else {
-            -depth + (ax - floor_half) * tan
-        }
-    };
-
-    // X samples: dense across the groove, coarse outside, with every
-    // breakpoint present exactly.
-    let mut xs: Vec<f64> = Vec::new();
-    let mut x = -20.0;
-    while x < -3.0 {
-        xs.push(x);
-        x += 1.0;
-    }
-    let mut x = -3.0;
-    while x <= 3.0 + 1e-9 {
-        xs.push(x);
-        x += 0.1;
-    }
-    for b in [-rim_half_width, -floor_half, floor_half, rim_half_width] {
-        xs.push(b);
-    }
-    let mut x = 4.0;
-    while x <= 20.0 + 1e-9 {
-        xs.push(x);
-        x += 1.0;
-    }
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    xs.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-
-    let ys: Vec<f64> = (0..=24).map(|i| -12.0 + i as f64).collect();
-
-    let mut verts = Vec::with_capacity(xs.len() * ys.len());
-    for &yv in &ys {
-        for &xv in &xs {
-            verts.push(P3::new(xv, yv, z_at(xv)));
-        }
-    }
-    let nx = xs.len();
-    let mut tris: Vec<[u32; 3]> = Vec::new();
-    for j in 0..ys.len() - 1 {
-        for i in 0..nx - 1 {
-            let a = (j * nx + i) as u32;
-            let b = (j * nx + i + 1) as u32;
-            let c = ((j + 1) * nx + i + 1) as u32;
-            let d = ((j + 1) * nx + i) as u32;
-            tris.push([a, b, c]);
-            tris.push([a, c, d]);
-        }
-    }
-    TriangleMesh::from_raw(verts, tris)
+    GroovedBlock::new(rim_half_width, wall_deg, depth)
+        .dense_step(0.1)
+        .build()
 }
 
 fn probe_params(reference_diameter: f64) -> PencilParams {

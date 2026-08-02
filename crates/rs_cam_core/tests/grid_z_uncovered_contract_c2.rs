@@ -21,49 +21,21 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::geo::P3;
+mod common;
+
+// C6: `plateau` (a `size × size` top face at z = 0 with vertical walls down to
+// `z = -depth` and a bottom face) moved to `tests/common/meshes.rs` unchanged.
+// Its whole point is still that a drop-cutter grid can only ever see the TOP
+// face — every wall Z is below `min_covered_z()` — while the mesh has real
+// material all the way down.
+use common::meshes::plateau;
+use common::tools::ball_cutter;
+
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::slope::{GridZ, SurfaceHeightmap};
 use rs_cam_core::steep_shallow::{SteepShallowParams, steep_shallow_toolpath_split_with_cancel};
-use rs_cam_core::tool::{BallEndmill, MillingCutter};
+use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::MoveType;
-
-/// A plateau: a `size × size` top face at `z = 0` with vertical walls down to
-/// `z = -depth` and a bottom face. The whole point of the fixture is that a
-/// drop-cutter grid can only ever see the TOP face — every wall Z is below
-/// `min_covered_z()` — while the mesh has real material all the way down.
-fn plateau(size: f64, depth: f64) -> TriangleMesh {
-    let h = size / 2.0;
-    let b = -depth;
-    let v = vec![
-        P3::new(-h, -h, 0.0),
-        P3::new(h, -h, 0.0),
-        P3::new(h, h, 0.0),
-        P3::new(-h, h, 0.0),
-        P3::new(-h, -h, b),
-        P3::new(h, -h, b),
-        P3::new(h, h, b),
-        P3::new(-h, h, b),
-    ];
-    let t = vec![
-        // top
-        [0, 1, 2],
-        [0, 2, 3],
-        // bottom
-        [4, 6, 5],
-        [4, 7, 6],
-        // walls
-        [0, 4, 5],
-        [0, 5, 1],
-        [1, 5, 6],
-        [1, 6, 2],
-        [2, 6, 7],
-        [2, 7, 3],
-        [3, 7, 4],
-        [3, 4, 0],
-    ];
-    TriangleMesh::from_raw(v, t)
-}
 
 /// The finish-surface grid geometry every op builds: padded by one envelope
 /// radius per side, clamped at the mesh bbox floor.
@@ -85,7 +57,7 @@ fn padded_surface(mesh: &TriangleMesh, cutter: &dyn MillingCutter, cell: f64) ->
 #[test]
 fn padded_grids_always_have_uncovered_cells_so_the_two_minima_diverge() {
     let mesh = plateau(20.0, 5.0);
-    let tool = BallEndmill::new(6.0, 25.0);
+    let tool = ball_cutter(6.0);
     let hm = padded_surface(&mesh, &tool, 1.0);
 
     let uncovered = hm.covered_flags().iter().filter(|c| !**c).count();
@@ -117,7 +89,7 @@ fn padded_grids_always_have_uncovered_cells_so_the_two_minima_diverge() {
 #[test]
 fn grid_z_names_the_three_cases_the_old_f64_hid() {
     let mesh = plateau(20.0, 5.0);
-    let tool = BallEndmill::new(6.0, 25.0);
+    let tool = ball_cutter(6.0);
     let hm = padded_surface(&mesh, &tool, 1.0);
 
     // Centre cell: over the top face.
@@ -151,7 +123,7 @@ fn grid_z_names_the_three_cases_the_old_f64_hid() {
 #[test]
 fn escape_hatch_is_byte_identical_to_the_untyped_read_everywhere() {
     let mesh = plateau(20.0, 5.0);
-    let tool = BallEndmill::new(6.0, 25.0);
+    let tool = ball_cutter(6.0);
     let hm = padded_surface(&mesh, &tool, 1.0);
 
     for row in 0..hm.rows {
@@ -220,7 +192,7 @@ fn from_parts_rejects_a_z_without_its_coverage_flag() {
 fn steep_ladder_bottom_is_the_bbox_floor_not_the_covered_minimum() {
     let mesh = plateau(20.0, 5.0);
     let index = SpatialIndex::build_auto(&mesh);
-    let tool = BallEndmill::new(3.0, 25.0);
+    let tool = ball_cutter(3.0);
     let hm = padded_surface(&mesh, &tool, 0.5);
     let covered_min = hm.min_covered_z().expect("top face is covered");
 
