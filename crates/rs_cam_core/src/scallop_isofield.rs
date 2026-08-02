@@ -85,10 +85,20 @@ pub struct IsoScallopField {
     pub cell: f64,
     /// Locally allowed stepover, mm. `NaN` outside the region.
     pub stepover_mm: Vec<f64>,
-    /// Passes-from-the-boundary. `0.0` outside the region, `INFINITY` where
-    /// the solve never reached (disconnected interior — which cannot happen
-    /// for a region whose boundary encloses it, and is asserted by the
+    /// Passes-from-the-boundary — **signed**: positive inside the region,
+    /// negative outside, and zero exactly on the region edge. `INFINITY`
+    /// where the solve never reached (disconnected interior — which cannot
+    /// happen for a region whose boundary encloses it, and is asserted by the
     /// harness rather than assumed).
+    ///
+    /// The sign is not decoration. Level sets are extracted by interpolating
+    /// this field along cell edges, and the boundary almost never lands on a
+    /// grid node — so a field that is flat-zero everywhere outside makes the
+    /// level-1 crossing in a boundary cell depend on where the *node* is
+    /// rather than where the *region edge* is. Carrying the outside distance
+    /// as a negative makes the interpolated zero land on the true edge, and
+    /// every level above it fall the right distance inside. See
+    /// [`seed_boundary`].
     pub passes: Vec<f64>,
     /// `⌊max passes⌋` — the exact ring count, known before extraction.
     pub ring_count: usize,
@@ -137,7 +147,20 @@ pub fn build_field(
         }
     }
 
-    fast_sweep(&mut passes, &inside, &stepover_mm, rows, cols, cell);
+    // Sub-cell Dirichlet condition on the true region edge (see `passes`).
+    let fixed = seed_boundary(
+        boundary,
+        &mut passes,
+        &inside,
+        &stepover_mm,
+        rows,
+        cols,
+        cell,
+        slope_map.origin_x,
+        slope_map.origin_y,
+    );
+
+    fast_sweep(&mut passes, &inside, &fixed, &stepover_mm, rows, cols, cell);
 
     let max_pass = passes
         .iter()
@@ -158,16 +181,133 @@ pub fn build_field(
     }
 }
 
+/// Distance from `(x, y)` to the nearest point of `poly`'s boundary —
+/// exterior **and** holes, since a hole edge bounds the region just as the
+/// outer ring does.
+#[must_use]
+fn distance_to_boundary(poly: &Polygon2, x: f64, y: f64) -> f64 {
+    let mut best = f64::INFINITY;
+    let mut ring_dist = |ring: &[P2]| {
+        if ring.len() < 2 {
+            return;
+        }
+        for i in 0..ring.len() {
+            // SAFETY: i and (i + 1) % len are both in 0..len.
+            #[allow(clippy::indexing_slicing)]
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let len_sq = dx * dx + dy * dy;
+            let t = if len_sq <= f64::EPSILON {
+                0.0
+            } else {
+                (((x - a.x) * dx + (y - a.y) * dy) / len_sq).clamp(0.0, 1.0)
+            };
+            let d = (x - (a.x + dx * t)).hypot(y - (a.y + dy * t));
+            if d < best {
+                best = d;
+            }
+        }
+    };
+    ring_dist(&poly.exterior);
+    for hole in &poly.holes {
+        ring_dist(hole);
+    }
+    best
+}
+
+/// Pin every grid node within one cell of the region edge to its **exact**
+/// signed distance from that edge, expressed in local stepovers, and report
+/// which nodes were pinned so the sweep leaves them alone.
+///
+/// # Why this is not a refinement
+///
+/// Without it the Dirichlet condition is "`D = 0` at every node outside the
+/// polygon", which is a statement about the GRID, not about the region. The
+/// true edge lies somewhere inside the boundary cell, so:
+///
+/// * every level set is pushed **outward** by up to a full cell, and
+/// * the level-1 contour can be interpolated to a position outside the
+///   region entirely.
+///
+/// That second failure is not cosmetic. A ring point outside the model
+/// footprint gets a drop-cutter answer from the cutter's rim riding the mesh
+/// edge — around a millimetre low on the M4 grooved block — and the finish
+/// grid's coverage mask cannot veto it, because at a 0.75 mm cell the nearest
+/// cell to a point 19 µm past the edge is a covered one. That is the
+/// localised −995/−1115 µm gouge of `CHECKPOINT_C_EVIDENCE.md` §3.8: not
+/// stepover, not chord sag, but rings placed off the part.
+///
+/// Cost is bounded by the region PERIMETER, not its area: only nodes with a
+/// neighbour on the other side of the edge are ever measured.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+// SAFETY: every index is bounded by the loop ranges below.
+fn seed_boundary(
+    boundary: &Polygon2,
+    passes: &mut [f64],
+    inside: &[bool],
+    stepover_mm: &[f64],
+    rows: usize,
+    cols: usize,
+    cell: f64,
+    origin_x: f64,
+    origin_y: f64,
+) -> Vec<bool> {
+    let mut fixed = vec![false; rows * cols];
+    // The stepover field is only defined inside; a node just outside the edge
+    // still needs one to express its distance in passes, so it borrows the
+    // nearest inside neighbour's.
+    for row in 0..rows {
+        for col in 0..cols {
+            let i = row * cols + col;
+            let here = inside[i];
+            let mut straddles = false;
+            let mut neighbour_step = f64::NAN;
+            for (dr, dc) in [(-1_i64, 0_i64), (1, 0), (0, -1), (0, 1)] {
+                let (r, c) = (row as i64 + dr, col as i64 + dc);
+                if r < 0 || c < 0 || r >= rows as i64 || c >= cols as i64 {
+                    // Off-grid counts as outside: the grid is padded past the
+                    // footprint, so this only fires on a region that runs to
+                    // the very edge of it.
+                    straddles |= here;
+                    continue;
+                }
+                let j = (r as usize) * cols + (c as usize);
+                if inside[j] != here {
+                    straddles = true;
+                }
+                if inside[j] && stepover_mm[j].is_finite() {
+                    neighbour_step = stepover_mm[j];
+                }
+            }
+            if !straddles {
+                continue;
+            }
+            let s = if here { stepover_mm[i] } else { neighbour_step };
+            if !s.is_finite() || s <= 0.0 {
+                continue;
+            }
+            let x = origin_x + col as f64 * cell;
+            let y = origin_y + row as f64 * cell;
+            let d = distance_to_boundary(boundary, x, y) / s;
+            passes[i] = if here { d } else { -d };
+            fixed[i] = true;
+        }
+    }
+    fixed
+}
+
 /// Godunov upwind fast sweeping for `|∇D| = 1/s`.
 ///
 /// The local slowness is `f = cell / s`, i.e. the cost in *passes* of crossing
 /// one cell. Four sweep directions, repeated until no cell moves by more than
 /// a tolerance — capped, because a pathological field must not hang a
 /// generator.
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is bounded by the loop ranges
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+// SAFETY: every index is bounded by the loop ranges
 fn fast_sweep(
     passes: &mut [f64],
     inside: &[bool],
+    fixed: &[bool],
     stepover_mm: &[f64],
     rows: usize,
     cols: usize,
@@ -187,7 +327,10 @@ fn fast_sweep(
                 for ci in 0..cols {
                     let col = if col_up { ci } else { cols - 1 - ci };
                     let i = row * cols + col;
-                    if !inside[i] {
+                    // A seeded node already holds its exact distance to the
+                    // region edge; propagating over it would replace a
+                    // measurement with an approximation.
+                    if !inside[i] || fixed[i] {
                         continue;
                     }
                     let s = stepover_mm[i];
