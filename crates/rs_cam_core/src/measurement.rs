@@ -29,9 +29,12 @@
 //! [`MeasurementProvenance`] answers "what does this number mean" and is not.
 //! Do not merge them.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div};
+
+use crate::toolpath::Move;
 
 // ── Provenance ──────────────────────────────────────────────────────────
 
@@ -64,6 +67,12 @@ pub enum MeasurementDomain {
     /// was asked to reach. Not an area, not a path length, and not
     /// comparable to either: it is a depth residual at a point.
     VerticalResidualMm,
+    /// A count of retract round trips — maximal contiguous runs of
+    /// `MoveType::Rapid` moves. Distinct from [`Self::PathLength`]: air
+    /// cost in finishing is COUNT-bound (a hop pays two ~`safe_z` Z legs
+    /// whatever its XY length), not distance-bound, so this is the number
+    /// a gate or reader must reach for, not the millimetres.
+    RetractTripCount,
 }
 
 impl MeasurementDomain {
@@ -81,6 +90,7 @@ impl MeasurementDomain {
             Self::PathLength => "path length (mm)",
             Self::Runtime => "runtime (s)",
             Self::VerticalResidualMm => "vertical residual depth (mm)",
+            Self::RetractTripCount => "retract round-trip count",
         }
     }
 }
@@ -528,6 +538,269 @@ macro_rules! area_arithmetic {
 area_arithmetic!(ProjectedXyAreaMm2);
 area_arithmetic!(SurfaceAreaMm2);
 
+// ── Swept footprint area (§7 PR-0 repair (a)) ────────────────────────────
+//
+// `planning/review_2026-07-29/MEASUREMENT_DOMAINS.md` §7 audited the mm²/s
+// efficiency metric the tech-debt plan (§A/M7) standardises on and found the
+// shipped numerator void: `v3_cascade_ab.rs`'s `stamp_cells`/
+// `op_footprint_cells` (~`:4407`/`:4425`) stamp 1 mm XY bins from the TOOL
+// CENTRELINE, so a Ø6 ball and a Ø1 tip walking identical paths score the
+// same footprint — the opposite of "invariant to tool" the plan claims.
+//
+// §7 offers exactly two sanctioned repairs and says not to do both
+// silently: (a) stamp the tool's XY disc (radius-aware), or (b) rename to
+// `centerline_footprint_mm2/s` and drop the tool-invariance claim. This is
+// repair (a).
+
+/// Default XY grid cell size (mm) for [`swept_footprint_area`] — matches
+/// the 1 mm bins `v3_cascade_ab.rs`'s centreline stamp used, so a caller
+/// that doesn't have an opinion gets a directly-comparable resolution to
+/// the historical (void) numbers. Callers needing a different resolution
+/// pass `cell_mm` explicitly; the returned [`MeasurementProvenance`] always
+/// tags [`CellSource::Explicit`] for this function, so two calls at
+/// different `cell_mm` are never silently treated as comparable —
+/// [`MeasurementProvenance::comparable_to`] checks `cell_mm` itself.
+pub const DEFAULT_FOOTPRINT_CELL_MM: f64 = 1.0;
+
+/// Compute the **XY-projected swept footprint area** of a toolpath's
+/// cutting moves: the union, over every cutting move, of the cutter's XY
+/// disc swept along that move — rasterised onto a `cell_mm` grid and
+/// counted in whole cells.
+///
+/// Returns the area **together with** the [`MeasurementProvenance`] that
+/// describes it (domain [`MeasurementDomain::ProjectedXyArea`], stage
+/// [`MeasurementStage::Emission`], cell `cell_mm` at
+/// [`CellSource::Explicit`]) — value and provenance travel together, the
+/// house rule this module exists to enforce (see
+/// `ToolpathStats::standing_material()` for the precedent this follows).
+///
+/// # What this measures — and what it does NOT
+///
+/// This is an **emission-stage** measure: it walks the toolpath only and
+/// never consults the stock. Concretely:
+///
+/// - ground the cutter's disc crosses **twice** (an overlap stroke, a
+///   re-visited pass) is counted **once** — footprint is a *set* of
+///   touched cells, not a *sum* of passes;
+/// - ground a **rest pass re-crosses** that an earlier operation already
+///   finished scores identically to ground it crosses for the first time.
+///   `MEASUREMENT_DOMAINS.md` §7 names exactly this as the load-bearing
+///   defect behind the "rest pass is half as efficient" claim (the
+///   original 0.476-vs-0.938 mm²/s figure), and this function does not
+///   repair that defect by itself: footprint has no notion of "already
+///   finished". A true rest-pass efficiency claim needs this footprint
+///   **intersected with the pass's own claimed territory**, computed
+///   upstream and passed in separately — this function only answers "how
+///   much ground did the cutter's disc pass over", never "how much of
+///   that ground was fresh".
+///
+/// This is why the name is `swept_footprint_area`, not `finished_area`:
+/// calling it the latter reintroduces the exact defect this function was
+/// written to fix. Never rename it to imply "finished".
+///
+/// # Tool invariance — deliberately NOT claimed
+///
+/// The centreline version this replaces was pitched as "invariant to
+/// tool" and wasn't — see the module-level comment above. This version is
+/// radius-aware **by design**, so a wider tool covers more footprint per
+/// pass over the same path; that is correct and intentional, not a defect
+/// to chase. Two calls are directly comparable when they share a tool
+/// (same `radius_mm`) and the same `cell_mm`. Across tools the numbers are
+/// still meaningful, just not "invariant": a wider tool's larger footprint
+/// means "covers more ground per pass", a real fact about the tool, not
+/// measurement noise.
+///
+/// # Which moves count
+///
+/// Only moves where `move_type.is_cutting()` is true (everything except
+/// [`crate::toolpath::MoveType::Rapid`]).
+///
+/// **Ruling on [`crate::toolpath::MoveIntent::Linking`]:** Linking feed
+/// moves ARE counted. `MoveType::is_cutting` does not distinguish by
+/// intent, and unlike [`crate::toolpath::MoveIntent::Retract`] (always
+/// emitted as a lifted rapid in every in-tree generator), a Linking move
+/// is a **feed** move that stays down at the surface while repositioning —
+/// under a *swept footprint* domain the cutter's disc genuinely passes
+/// over that ground whether or not the move was issued to remove
+/// material. This is a deliberate ruling, not an oversight left over from
+/// reusing `is_cutting()`: the A/B this metric feeds compares branches
+/// that differ precisely in how many Linking moves they emit (more
+/// stitched surface links vs more discrete retract/rapid hops), so
+/// counting or excluding Linking footprint is load-bearing for the
+/// comparison and is being stated here on purpose.
+///
+/// # Parameters
+///
+/// - `moves`: the toolpath's move sequence; each move's target is swept
+///   from the *previous* move's target, so a footprint needs at least two
+///   moves to contribute (a lone move has no segment to sweep).
+/// - `radius_mm`: the cutter's XY **envelope** radius (mm) — the maximum
+///   lateral reach of any part of the cutter body, i.e.
+///   `crate::tool::MillingCutter::envelope_radius_mm`, NOT
+///   `cusp_radius`/the tip radius. A footprint is a swept-*extent* measure
+///   (what the cutter body can physically touch), which is exactly what
+///   `envelope_radius_mm` documents itself as being for. Taken as a plain
+///   `f64` rather than `&dyn MillingCutter` to keep this module
+///   dependency-light: none of the in-tree cutters vary their XY envelope
+///   with depth (tapering only shrinks the CUSP radius, never the shaft
+///   envelope — see `crate::tool::MillingCutter::cusp_radius`'s doc), so a
+///   single scalar loses nothing for this measure.
+/// - `cell_mm`: the XY grid cell size (mm); see
+///   [`DEFAULT_FOOTPRINT_CELL_MM`] for the historical default. Must be
+///   `> 0.0`; `radius_mm` must be `>= 0.0`. Neither is asserted — this
+///   module never panics on caller input (crate lint policy) — a
+///   non-positive value of either simply yields a zero-area result.
+///
+/// # Walk step
+///
+/// Internally walks each move at `step = min(radius_mm, cell_mm)`.
+/// Bounding the step by `radius_mm` keeps consecutive stamped discs
+/// overlapping, so no real gap opens in the swept stadium between samples.
+/// Bounding it by `cell_mm` too means refining the grid also refines the
+/// walk, so the rasterised area actually converges to the analytic stadium
+/// area (`2·r·L + π·r²` for a straight run of length `L`) as `cell_mm`
+/// shrinks — a step tied only to `radius_mm` would leave a fixed,
+/// non-shrinking sliver of error near the ends of a short move even as the
+/// grid refined. See the unit tests below for the convergence this buys.
+///
+/// # Complexity
+///
+/// Each stamped position rasterises its disc with a bounded row-span scan
+/// (`stamp_disc`): for each grid row the disc's half-chord width at that
+/// row is solved once from the row's vertical offset from the centre, then
+/// the whole column span for that row is inserted in one pass — O(cells
+/// touched by the disc), not O(bounding-box cells) with a per-cell
+/// distance test.
+#[must_use]
+pub fn swept_footprint_area(
+    moves: &[Move],
+    radius_mm: f64,
+    cell_mm: f64,
+) -> (ProjectedXyAreaMm2, MeasurementProvenance) {
+    let provenance = MeasurementProvenance::new(
+        MeasurementDomain::ProjectedXyArea,
+        MeasurementStage::Emission,
+    )
+    .with_cell(cell_mm, CellSource::Explicit);
+
+    if radius_mm <= 0.0 || cell_mm <= 0.0 {
+        return (ProjectedXyAreaMm2::new(0.0), provenance);
+    }
+
+    let walk_step_mm = radius_mm.min(cell_mm);
+    let mut cells: HashSet<(i64, i64)> = HashSet::new();
+
+    for pair in moves.windows(2) {
+        let [prev, cur] = pair else { continue };
+        if !cur.move_type.is_cutting() {
+            continue;
+        }
+        stamp_move_footprint(
+            &mut cells,
+            prev.target,
+            cur.target,
+            radius_mm,
+            cell_mm,
+            walk_step_mm,
+        );
+    }
+
+    let area_mm2 = cells.len() as f64 * cell_mm * cell_mm;
+    (ProjectedXyAreaMm2::new(area_mm2), provenance)
+}
+
+/// Walk a single move's `a → b` targets at `walk_step_mm` and stamp a disc
+/// of `radius_mm` at each sample onto `cells` (grid `cell_mm`).
+///
+/// See [`swept_footprint_area`]'s "Walk step" doc for why `walk_step_mm` is
+/// bounded by both the radius and the cell size rather than being a fixed
+/// constant.
+fn stamp_move_footprint(
+    cells: &mut HashSet<(i64, i64)>,
+    a: crate::geo::P3,
+    b: crate::geo::P3,
+    radius_mm: f64,
+    cell_mm: f64,
+    walk_step_mm: f64,
+) {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    // At least one sample even for a zero-length move, so a stationary
+    // plunge/retract endpoint still stamps its own disc once.
+    let steps = ((len / walk_step_mm).ceil() as usize).max(1);
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let x = a.x + dx * t;
+        let y = a.y + dy * t;
+        stamp_disc(cells, x, y, radius_mm, cell_mm);
+    }
+}
+
+/// Rasterise a disc of `radius_mm` centred at `(cx, cy)` onto a `cell_mm`
+/// grid, inserting every touched `(row, col)` cell into `cells`.
+///
+/// Bounded row-span scan, not a bounding-box scan with a per-cell distance
+/// test: for each candidate row, the half-chord width is solved once from
+/// that row's vertical offset from the centre, then the row's whole column
+/// span is inserted in one pass — see [`swept_footprint_area`]'s
+/// "Complexity" doc.
+fn stamp_disc(cells: &mut HashSet<(i64, i64)>, cx: f64, cy: f64, radius_mm: f64, cell_mm: f64) {
+    let row_min = ((cy - radius_mm) / cell_mm).floor() as i64;
+    let row_max = ((cy + radius_mm) / cell_mm).floor() as i64;
+    for row in row_min..=row_max {
+        let row_lo = row as f64 * cell_mm;
+        let row_hi = row_lo + cell_mm;
+        let dy = if cy < row_lo {
+            row_lo - cy
+        } else if cy > row_hi {
+            cy - row_hi
+        } else {
+            0.0
+        };
+        if dy >= radius_mm {
+            continue;
+        }
+        let half_w = (radius_mm * radius_mm - dy * dy).sqrt();
+        let col_min = ((cx - half_w) / cell_mm).floor() as i64;
+        let col_max = ((cx + half_w) / cell_mm).floor() as i64;
+        for col in col_min..=col_max {
+            cells.insert((row, col));
+        }
+    }
+}
+
+/// mm²/s throughput for a [`swept_footprint_area`] result.
+///
+/// - **Numerator**: `area`, a [`ProjectedXyAreaMm2`] — always the value
+///   half of a [`swept_footprint_area`] return (domain
+///   [`MeasurementDomain::ProjectedXyArea`], stage
+///   [`MeasurementStage::Emission`], quantised at whatever `cell_mm` that
+///   call used — print the [`MeasurementProvenance`] returned alongside it
+///   next to any printed ratio, per §4.3). The parameter type is
+///   `ProjectedXyAreaMm2`, not `f64`, specifically so a caller cannot
+///   assemble this ratio from a raw float by hand; reaching for `.mm2()`
+///   first to dodge the type is the same escape hatch the module docs warn
+///   about for the 3D/XY divide, and is just as wrong here.
+/// - **Denominator**: `seconds` — the integrator's PER-OP total time,
+///   INCLUDING rapids and entries, not cutting-only time.
+/// - **What this is NOT**: not a finished-area rate. See
+///   [`swept_footprint_area`]'s doc for why a footprint can under-count
+///   re-crossed ground as "the same area" instead of "finished twice";
+///   this ratio inherits that limitation unchanged — it is throughput of
+///   *footprint*, not of *material removed*.
+///
+/// `seconds <= 0.0` (a zero- or negative-length op, which should not occur
+/// but must not be allowed to divide by zero or propagate `NaN`/`inf` into
+/// a diagnostic table) returns `0.0`.
+#[must_use]
+pub fn swept_footprint_mm2_per_s(area: ProjectedXyAreaMm2, seconds: f64) -> f64 {
+    if seconds <= 0.0 {
+        return 0.0;
+    }
+    area.mm2() / seconds
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -537,6 +810,8 @@ area_arithmetic!(SurfaceAreaMm2);
 )]
 mod tests {
     use super::*;
+    use crate::geo::P3;
+    use crate::toolpath::{MoveIntent, MoveType};
 
     /// M1 gate, Layer B: the retracted §14r ratio must not be
     /// *reconstructible* — and this test names why, for the reader who
@@ -636,5 +911,176 @@ mod tests {
         )
         .with_cell(0.125, CellSource::CuspRadius);
         assert!(!base.comparable_to(&other_stage));
+    }
+
+    // ── swept_footprint_area ──────────────────────────────────────────
+    //
+    // Assertions here compare against ANALYTIC truth (the stadium-area
+    // formula for a disc swept along a straight line), not against the
+    // implementation — a test that just re-derives the same rasterisation
+    // would pass even if the algorithm were wrong in the same way twice.
+
+    /// `Rapid` to `(0,0,0)` then one straight cutting move to `(length,0,0)`
+    /// — the minimal fixture `swept_footprint_area` needs, since a
+    /// footprint is swept between a move's target and the PREVIOUS move's
+    /// target and the first move in a real toolpath is always a rapid.
+    fn straight_move_fixture(length: f64) -> Vec<Move> {
+        vec![
+            Move {
+                target: P3::new(0.0, 0.0, 0.0),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Linking,
+            },
+            Move {
+                target: P3::new(length, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 1000.0 },
+                intent: MoveIntent::FinishingCut,
+            },
+        ]
+    }
+
+    /// A straight run of length `L` swept by a disc of radius `r` covers a
+    /// stadium: a `2r × L` rectangle plus two end caps that together make
+    /// one full circle — `2·r·L + π·r²`. The cell-counted measure must
+    /// converge to this as `cell_mm` shrinks; it must NOT match it exactly
+    /// (rasterisation always over/under-counts along the curved boundary),
+    /// which is why this asserts convergence at two resolutions rather than
+    /// equality at one.
+    #[test]
+    fn swept_footprint_converges_to_stadium_area_as_cell_shrinks() {
+        let length = 40.0;
+        let radius = 2.0;
+        let moves = straight_move_fixture(length);
+        let analytic = 2.0 * radius * length + std::f64::consts::PI * radius * radius;
+
+        let (coarse, coarse_prov) = swept_footprint_area(&moves, radius, 1.0);
+        let (fine, fine_prov) = swept_footprint_area(&moves, radius, 0.1);
+
+        let coarse_err = (coarse.mm2() - analytic).abs() / analytic;
+        let fine_err = (fine.mm2() - analytic).abs() / analytic;
+
+        // Numerically verified (independent Python rasterisation of the
+        // same row-span algorithm): 1.0 mm cell ≈ 3.1% error, 0.1 mm cell
+        // ≈ 0.4% error on this fixture. Tolerances below are generous
+        // relative to that so the test isn't pinned to the last decimal of
+        // the current implementation, while still failing loudly if the
+        // disc radius stopped being consulted at all (the centreline bug
+        // this replaces would read `area ≈ 0`, off by >99%).
+        assert!(
+            coarse_err < 0.08,
+            "1.0 mm cell: {coarse_err:.4} relative error vs analytic {analytic:.3} \
+             (got {coarse})"
+        );
+        assert!(
+            fine_err < 0.02,
+            "0.1 mm cell: {fine_err:.4} relative error vs analytic {analytic:.3} \
+             (got {fine})"
+        );
+        assert!(
+            fine_err < coarse_err,
+            "finer cell ({fine_err:.4}) must be closer to analytic than coarse \
+             ({coarse_err:.4}) — this is the convergence the disc rasterisation \
+             promises"
+        );
+
+        // Provenance travels with the value (module house rule) and is
+        // tagged for what it is: emission-stage, XY-projected, explicit
+        // cell.
+        for (area, prov, cell) in [(coarse, coarse_prov, 1.0), (fine, fine_prov, 0.1)] {
+            assert_eq!(prov.domain, MeasurementDomain::ProjectedXyArea);
+            assert_eq!(prov.stage, MeasurementStage::Emission);
+            assert_eq!(prov.cell_mm, Some(cell));
+            assert_eq!(prov.cell_source, CellSource::Explicit);
+            assert!(area.mm2() > 0.0);
+        }
+    }
+
+    /// The property the centreline version this replaces VIOLATES: walking
+    /// the identical path with a wider tool must strictly increase the
+    /// measured footprint. A centreline stamp (no radius term at all) would
+    /// read the same area for every radius on this fixture — that was the
+    /// §7 defect ("a Ø6 ball and a Ø1 tip walking identical paths score
+    /// identically").
+    #[test]
+    fn doubling_radius_on_the_same_path_strictly_increases_footprint() {
+        let moves = straight_move_fixture(40.0);
+        let (small, _) = swept_footprint_area(&moves, 1.0, 0.2);
+        let (medium, _) = swept_footprint_area(&moves, 2.0, 0.2);
+        let (large, _) = swept_footprint_area(&moves, 4.0, 0.2);
+
+        assert!(
+            small.mm2() < medium.mm2(),
+            "r=1.0 ({small}) must be smaller than r=2.0 ({medium})"
+        );
+        assert!(
+            medium.mm2() < large.mm2(),
+            "r=2.0 ({medium}) must be smaller than r=4.0 ({large})"
+        );
+    }
+
+    /// An all-rapid toolpath has no cutting moves, so it sweeps nothing —
+    /// regardless of tool radius or cell size.
+    #[test]
+    fn all_rapid_toolpath_measures_zero_footprint() {
+        let moves = vec![
+            Move {
+                target: P3::new(0.0, 0.0, 5.0),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Linking,
+            },
+            Move {
+                target: P3::new(50.0, 0.0, 5.0),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Linking,
+            },
+            Move {
+                target: P3::new(50.0, 50.0, 5.0),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Retract,
+            },
+        ];
+        let (area, provenance) = swept_footprint_area(&moves, 3.0, 0.5);
+        assert_eq!(area.mm2(), 0.0);
+        assert_eq!(provenance.domain, MeasurementDomain::ProjectedXyArea);
+        assert_eq!(provenance.stage, MeasurementStage::Emission);
+    }
+
+    /// Ruling test: a `MoveIntent::Linking` FEED move (not a rapid) is a
+    /// cutting-classified move by `MoveType::is_cutting()` and this
+    /// function's doc rules it IN — the disc still sweeps that ground even
+    /// though the move wasn't issued to remove material. This pins the
+    /// ruling stated in `swept_footprint_area`'s doc comment so a future
+    /// change to that ruling fails a test, not just a comment.
+    #[test]
+    fn linking_feed_moves_count_toward_footprint() {
+        let moves = vec![
+            Move {
+                target: P3::new(0.0, 0.0, 0.0),
+                move_type: MoveType::Rapid,
+                intent: MoveIntent::Linking,
+            },
+            Move {
+                target: P3::new(20.0, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 800.0 },
+                intent: MoveIntent::Linking,
+            },
+        ];
+        let (area, _) = swept_footprint_area(&moves, 1.5, 0.25);
+        assert!(
+            area.mm2() > 0.0,
+            "a Linking feed move must contribute footprint, got {area}"
+        );
+    }
+
+    #[test]
+    fn swept_footprint_mm2_per_s_divides_area_by_seconds() {
+        let area = ProjectedXyAreaMm2::new(120.0);
+        let rate = swept_footprint_mm2_per_s(area, 40.0);
+        assert!((rate - 3.0).abs() < 1e-12, "got {rate}");
+
+        // Non-positive seconds must not divide-by-zero or propagate NaN
+        // into a diagnostic table.
+        assert_eq!(swept_footprint_mm2_per_s(area, 0.0), 0.0);
+        assert_eq!(swept_footprint_mm2_per_s(area, -5.0), 0.0);
     }
 }

@@ -1564,6 +1564,12 @@ impl ProjectSession {
                     ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
                     // A/M6: which rest reference the claims pipeline resolved to.
                     claims_reference: findings.claims_reference,
+                    // A/M7 gate 1: retract round-trip count, split by
+                    // in-node vs between-nodes when spans are trustworthy.
+                    retract_trips: Some(crate::compute::stats::compute_retract_trips(
+                        &annotated.toolpath,
+                        annotated.spans_valid.then_some(annotated.spans.as_slice()),
+                    )),
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -2860,6 +2866,10 @@ impl ProjectSession {
             clipped_band: result.stats.clipped_band.as_deref().copied(),
             ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
             tip_float: result.stats.tip_float,
+            // A/M7 gate 1: same rule — the finding rides on this
+            // toolpath's own stats, and `None` means "never computed",
+            // never "zero trips".
+            retract_trips: result.stats.retract_trips,
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -5204,6 +5214,7 @@ mod tests {
                 clipped_band: None,
                 ramp_reach_clamp: None,
                 claims_reference: None,
+                retract_trips: None,
             },
             debug_trace: None,
             semantic_trace: None,
