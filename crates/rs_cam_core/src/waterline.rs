@@ -48,20 +48,57 @@ pub fn waterline_contours(
         .expect("non-cancellable waterline contours should never be cancelled")
 }
 
-/// Z levels a waterline pass will cut at, from `start_z` down to `final_z`
-/// (matching the generator's own `while z >= final_z - 1e-10 { .. z -= z_step }`
-/// ladder exactly). Exposed so callers building depth-run spans can pass
-/// waterline's REAL level ladder (R2.8) instead of an empty slice — the
-/// generator itself is refactored to consume this same helper below, so
-/// there is exactly one place the ladder math lives.
+/// Inclusive-bounds epsilon for waterline's Z ladder.
+///
+/// Eight orders of magnitude tighter than
+/// [`crate::finish_setup::Z_LADDER_DEFAULT_EPSILON`], which is what
+/// `steep_shallow` uses. That is not an oversight on either side: this value
+/// reproduces the generator's original `while z >= final_z - 1e-10` loop
+/// exactly, and waterline's callers pass ladder bounds taken straight from a
+/// mesh bbox, where a 0.01 mm tolerance would silently add a level.
+pub const WATERLINE_LADDER_EPSILON: f64 = 1e-10;
+
+/// Z levels a waterline pass will cut at, from `start_z` down to `final_z`.
+///
+/// Exposed so callers building depth-run spans can pass waterline's REAL
+/// level ladder (R2.8) instead of an empty slice; the generator below
+/// consumes the same helper, so there is one ladder per operation and — since
+/// C3 — one ladder IMPLEMENTATION for the crate.
+///
+/// C3: this was a private copy of [`crate::finish_setup::z_ladder`]'s
+/// `snap_to_bottom = false` arm, differing only in hard-coding its epsilon
+/// where the shared version takes one. It is now an adapter that names the
+/// epsilon and delegates. `tests/waterline_shared_finish_setup_c3.rs` pins
+/// the two against each other across the boundary cases (exact multiples, a
+/// remainder, an inverted range, a zero range).
 pub fn waterline_z_levels(start_z: f64, final_z: f64, z_step: f64) -> Vec<f64> {
-    let mut levels = Vec::new();
-    let mut z = start_z;
-    while z >= final_z - 1e-10 {
-        levels.push(z);
-        z -= z_step;
-    }
-    levels
+    crate::finish_setup::z_ladder(start_z, final_z, z_step, WATERLINE_LADDER_EPSILON, false)
+}
+
+/// PR-8d's minimum-segment floor, inherited by waterline at C3.
+///
+/// `contour_extract::weave_contours` places each cell-edge vertex at an
+/// EXACT fiber interval boundary, so two adjacent cells whose boundaries
+/// resolve to the same crossing chain two vertices that are coincident to
+/// floating-point noise. `steep_shallow.rs` fixed this at its emission site
+/// in PR-8d and left waterline alone to keep that commit one operation wide
+/// — but waterline is where the offenders Checkpoint B §8.1 attributed to
+/// the steep half actually came from: `steep_shallow` generates its steep
+/// passes by calling `waterline_contours`.
+///
+/// Measured on the §8.1 mixed-slope ribbon: 2 cutting segments of
+/// **0.000891 mm** — the same value §8.1 reports, bit for bit — removed at
+/// zero cost in cutting length.
+///
+/// `closed` matches the emitter chosen at the call site: a whole-contour
+/// survivor chords back to its start, so a trailing vertex within the floor
+/// of the FIRST would make THAT move the degenerate one.
+fn floor_contour(points: &[P3], closed: bool) -> Vec<P3> {
+    crate::toolpath::drop_sub_minimum_segments(
+        points,
+        crate::toolpath::MIN_EMITTED_SEGMENT_MM,
+        closed,
+    )
 }
 
 /// Generate waterline toolpaths at multiple Z heights.
@@ -132,8 +169,12 @@ pub fn waterline_toolpath_with_cancel(
             }
             match boundary_regions {
                 None => {
+                    let path = floor_contour(contour, true);
+                    if path.len() < 3 {
+                        continue;
+                    }
                     toolpath.emit_closed_contour_with_intent(
-                        contour,
+                        &path,
                         params.safe_z,
                         params.feed_rate,
                         params.plunge_rate,
@@ -151,10 +192,18 @@ pub fn waterline_toolpath_with_cancel(
                         if run.len() < 2 {
                             continue;
                         }
-                        if run.len() == contour.len() {
+                        // Decided on the RAW run: whether this is a whole
+                        // surviving loop is a question about the boundary
+                        // filter, not about the degeneracy floor.
+                        let whole_loop = run.len() == contour.len();
+                        let path = floor_contour(&run, whole_loop);
+                        if path.len() < 2 {
+                            continue;
+                        }
+                        if whole_loop {
                             // The whole loop survived — safe to close it.
                             toolpath.emit_closed_contour_with_intent(
-                                &run,
+                                &path,
                                 params.safe_z,
                                 params.feed_rate,
                                 params.plunge_rate,
@@ -165,7 +214,7 @@ pub fn waterline_toolpath_with_cancel(
                             // loop — closing it would chord straight across
                             // the excluded stretch.
                             toolpath.emit_path_segment_with_intent(
-                                &run,
+                                &path,
                                 params.safe_z,
                                 params.feed_rate,
                                 params.plunge_rate,

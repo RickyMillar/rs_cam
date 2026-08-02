@@ -33,13 +33,26 @@ becomes Option or gets an audited doc contract.
 
 - CLI still carries a parallel `ToolpathDiagnostic` (D3 copies 5 shared fields
   across; the struct itself remains a second implementation).
-- `waterline.rs` / `compute/execute.rs` hold private copies of finish_setup
+- ~~`waterline.rs` / `compute/execute.rs` hold private copies of finish_setup
   pieces (Z-ladder, slope-window sentinel). waterline.rs also contains PR-8d's
-  sub-quantum-segment defect from the same source — left for blast radius.
-- Three divergent tapered-ball width models still coexist;
+  sub-quantum-segment defect from the same source — left for blast radius.~~
+  **CLOSED C3 2026-08-02.** Half of it was never true: `execute.rs` has called
+  the shared `slope_filter_active` since `4b105da`, the commit that created
+  `finish_setup.rs`, and both that module's header and this line said
+  otherwise for a year. The real items — waterline's Z-ladder copy and the
+  missing PR-8d floor — are fixed. The floor's red-first evidence also
+  reverses §8.1's attribution: the 0.000891 mm segments are MADE in
+  `waterline_contours` and merely observed in the steep half.
+- ~~Three divergent tapered-ball width models still coexist;
   `feeds/geometry.rs::tapered_ball_effective_diameter` is a straight cone
   (no tangency), ~5% off at 0.5 mm DOC, with no parity sentry against
-  `MillingCutter::width_at_height`.
+  `MillingCutter::width_at_height`.~~ **CLOSED C3 2026-08-02**, and "~5%" was
+  generous: measured +290.6% / −44.1% across the shipped taper geometries,
+  with the growth term clamped DEAD at every production call site (`tip_r ==
+  nominal_d / 2` makes it the constant `nominal_d`). Model retired; the one
+  caller delegates to `ToolGeometryHint::engaged_diameter_at_doc`. Suggest's
+  shallow tapered-ball feed rises +8–26% as a result — stated in
+  `tests/tapered_width_model_parity_c3.rs` and the wave log.
 
 ## P4. Stringly-typed vocabularies with silent fallbacks
 
