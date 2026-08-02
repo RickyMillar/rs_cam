@@ -3319,6 +3319,20 @@ The wave is not a null result. The chord-refinement defect is a **shipped**
 fidelity bug that was silently violating the operator's path tolerance on
 every scalloped part, on both ring sources, and it is fixed.
 
+> **ERRATUM (wave 11, 2026-08-03) — `dde7a54` moved a SECOND fingerprint and
+> left it red.** `a376b1e` re-pinned the scallop-side fingerprint, which the
+> wave knew it had moved. It did not re-pin
+> `crease_own_region_pr6b::production_unified_finish_output_is_byte_identical`,
+> whose taper arm also embeds scallop (`UnifiedFinish` routes its MidSteep
+> band through it). That target has been red from `dde7a54` onward. Proven by
+> surgical revert: restoring `scallop.rs` + `scallop_isofield.rs` to
+> `dde7a54^` reproduces the pinned `(1855, 0xe031…)` exactly. Re-pinned in
+> wave 11 with the fragment-level A/B — 88 → 88 fragments, deep groove
+> byte-identical, all 19 added moves inside the shallow V and none entering
+> new depth territory. **Lesson: a fingerprint lives wherever the geometry is
+> embedded, not only where the subject module is named.** When a wave re-pins
+> one, grep the crate for others before declaring the sweep clean.
+
 ## C-SEQUENCE WAVE 10 (C9), 2026-08-03
 
 C9 is the model-debt bundle: four items from `ANTIPATTERNS_BACKLOG.md` P9,
@@ -3527,3 +3541,21 @@ end-to-end harness anywhere in the crate shifted under it.
 * **The C9 fixtures are analytic cross-sections, not meshes.** They say what
   the reach MODEL does, not what the detector feeding it does — which is
   precisely the gap sub-item 4 fell into.
+
+> **ERRATUM (wave 11, 2026-08-03) — the exhaustive-sweep claim above is
+> wrong.** This section reports "exactly two failing binaries, both KNOWN
+> reds". Wave 11's baseline at the same tree (`31c1c99`, reproduced on a
+> pristine checkout with wave 11's work stashed) found **three**: the two
+> named here plus
+> `crease_own_region_pr6b::production_unified_finish_output_is_byte_identical`.
+> That third red is **not C9's** — it belongs to `dde7a54` (M4), see the
+> erratum in the wave 9b section — so the substantive C9 conclusions stand,
+> including "no fingerprint, A/B or end-to-end harness shifted under
+> sub-item 2": the claims fan (`0dff17e`) was the first suspect and was
+> **exonerated** by surgical revert. What is retracted is the *sweep result*,
+> not the attribution. The likely mechanism is that the C9 sweep was the run
+> recorded as orphaned/unreadable, and the count was reconstructed rather
+> than read. **Lesson: an inherited red is still a red — a sweep result must
+> be read from the log it produced, never reconstructed from what the wave
+> believes it changed.** Wave 11's log is preserved at
+> `scratchpad/w11/baseline_head_114b92f.txt`.

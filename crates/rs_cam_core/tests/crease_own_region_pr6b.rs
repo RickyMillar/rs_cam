@@ -395,11 +395,39 @@ fn production_unified_finish_output_is_byte_identical() {
     }
 
     // Captured at `b8e3a0d` (PR-6a, pre-H2.4) with a throwaway probe.
+    //
+    // TAPER RE-PINNED 2026-08-03 (C-sequence wave 11), 1855 → 1874 moves.
+    // The mover is `dde7a54` — M4's iso-field gouge fix — NOT anything in
+    // this file's subject. That wave knew it moved scallop geometry and
+    // re-pinned the scallop-side fingerprint in `a376b1e`; what it missed is
+    // that `UnifiedFinish` embeds scallop for its MidSteep band, so a SECOND
+    // pin lives here. Proven by surgical revert: restoring `scallop.rs` +
+    // `scallop_isofield.rs` to `dde7a54^` reproduces (1855, 0xe031…)
+    // exactly, and every other commit in the window — including the claims
+    // fan (`0dff17e`), which was the first suspect — leaves the value
+    // untouched.
+    //
+    // The A/B that justifies the move (per this test's own instruction),
+    // measured by decomposing both toolpaths into cutting fragments:
+    //
+    //   fragments        88 → 88      (no pass added, none dropped)
+    //   DEEP groove      336 moves / 644.2994 mm → IDENTICAL
+    //   SHALLOW groove   708 → 727 moves, 357.3665 → 358.7768 mm (+0.39%)
+    //
+    // All 19 added moves land in 4 of the 5 fragments inside the shallow
+    // 4 mm 45° V; the 80 deep-groove fragments are byte-identical. The four
+    // changed passes reach marginally deeper and wider — and, decisively,
+    // none of them enters new depth territory: the groove's longest
+    // fragment already reached z = −1.7891 before the change and still
+    // does, while the three short fragments converge toward it
+    // (−1.6513/−1.7358/−1.6931 → −1.7802/−1.7641/−1.7789) without passing
+    // it. Denser, more consistent sampling of the SAME surface — not a new
+    // pass, not a wander outside the groove rims, not a duplicate.
     for (label, tool, expect) in [
         (
             "taper",
             tapered_ball_tool(),
-            (1855usize, 0xe031_2509_7b20_8fb1u64),
+            (1874usize, 0x7858_b930_e4a8_bff7u64),
         ),
         ("ball", ball_tool(), (1301usize, 0xcfab_a674_0efc_aeceu64)),
     ] {
