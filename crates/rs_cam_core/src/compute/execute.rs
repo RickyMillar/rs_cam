@@ -90,6 +90,11 @@ pub struct GenerationFindings {
     /// ran, so nothing was measured; `Some` with an inert clamp is a
     /// measured-clean descent. See [`crate::ramp_finish::RampReachClamp`].
     pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
+    /// A/M6: which rest reference the crease/pencil claims pipeline resolved
+    /// to, and whether it was pinned or derived. `None` = the claims
+    /// pipeline did not run, so nothing was resolved.
+    /// See [`crate::compute::config::ClaimsReferenceFinding`].
+    pub claims_reference: Option<crate::compute::config::ClaimsReferenceFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -183,6 +188,22 @@ fn record_ramp_reach_clamp(
 ) {
     cell.set(GenerationFindings {
         ramp_reach_clamp: Some(finding),
+        ..cell.get()
+    });
+}
+
+/// Record which rest reference the claims pipeline resolved to (A/M6).
+///
+/// Records a DECISION, not a defect, and is deliberately never suppressed:
+/// even the uneventful outcomes say which of two fields the detector read,
+/// and that is not derivable from any config field or from the emitted
+/// moves. The diagnostic adapter is what decides how loud to be.
+fn record_claims_reference(
+    cell: &std::cell::Cell<GenerationFindings>,
+    finding: crate::compute::config::ClaimsReferenceFinding,
+) {
+    cell.set(GenerationFindings {
+        claims_reference: Some(finding),
         ..cell.get()
     });
 }
@@ -1503,10 +1524,11 @@ pub(crate) fn generate_unified_finish(
 
     let claims_cfg = cfg.pencil_claims.then(|| {
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease
-        // detection when `cfg.claims_reference == CreaseReference::
-        // MachinedStock` (build-list item 3 — `CreaseReference` doc). The
-        // same XY frame guard `resolve_rest_reference` applies, minus its
-        // reference fallback chain.
+        // detection when the resolved reference is
+        // `CreaseReference::MachinedStock` (build-list item 3 —
+        // `CreaseReference` doc). The same XY frame guard
+        // `resolve_rest_reference` applies, minus its reference fallback
+        // chain.
         let territory_stock = ctx.initial_stock.filter(|stock| {
             let (sb, mb) = (&stock.stock_bbox, &m.bbox);
             sb.min.x <= mb.max.x
@@ -1514,6 +1536,33 @@ pub(crate) fn generate_unified_finish(
                 && sb.min.y <= mb.max.y
                 && sb.max.y >= mb.min.y
         });
+        // A/M6: resolve the three-valued DIAL into the two-valued field the
+        // detector switches on, HERE — this is the only site that can see
+        // both the operator's setting and what is actually in scope. The
+        // resolution is recorded whatever it is: `Auto`'s derivation is
+        // invisible in every config surface, and pinning `self_probe` over a
+        // real machined prior is the A/M6 footgun measured at −88.7% cutting
+        // when corrected.
+        //
+        // The "prior wanted but absent" case does NOT get a second signal
+        // invented for it here. An op that cuts `FromRemainingStock` with no
+        // snapshot never reaches this function at all — it is refused
+        // upstream as `ComputeStatus::AwaitingPriorStock` (A/M11), which is
+        // the taxonomy for blocked-on-sequencing. What reaches here with no
+        // stock in scope is an op that asked for FRESH stock, and that is a
+        // configuration statement, not a block; the finding's `why()` names
+        // both remedies.
+        let resolution = crate::unified_finish::ClaimsReferenceResolution::resolve(
+            cfg.claims_reference,
+            territory_stock.is_some(),
+        );
+        record_claims_reference(
+            ctx.findings,
+            crate::compute::config::ClaimsReferenceFinding {
+                resolution,
+                territory_clip_requested: cfg.territory_clip,
+            },
+        );
         // Detector tuning mirrors `attach_generic_rest_analysis`: use the
         // configured `rest_analysis` cell/depth/margin when present, else
         // the detector's own defaults. `route_width_factor`/
@@ -1552,12 +1601,12 @@ pub(crate) fn generate_unified_finish(
         }
         crate::unified_finish::ClaimsConfig {
             territory_stock,
-            // Build-list item 3: `UnifiedFinishConfig::claims_reference`
-            // IS `unified_finish::CreaseReference` (re-exported verbatim in
-            // `operation_configs`, mirroring `ScallopDirection`), so no
-            // conversion is needed — the config value passes straight
-            // through.
-            crease_reference: cfg.claims_reference,
+            // A/M6: the RESOLVED reference, never the raw dial. `ClaimsConfig`
+            // takes `CreaseReference` (two-valued, what the detector reads);
+            // `UnifiedFinishConfig::claims_reference` is `ClaimsReference`
+            // (three-valued, what the operator asked for). The resolution
+            // above is the only bridge, and it is recorded.
+            crease_reference: resolution.reference(),
             rest_field_params,
             min_rest_depth_mm: cfg.min_rest_depth_mm,
             territory_clip: cfg.territory_clip,

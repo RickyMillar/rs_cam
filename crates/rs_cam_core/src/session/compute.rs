@@ -1559,6 +1559,8 @@ impl ProjectSession {
                     derived_stepover: findings.derived_stepover.map(Box::new),
                     // PR-8b: what the ramp-finish reach clamp did.
                     ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
+                    // A/M6: which rest reference the claims pipeline resolved to.
+                    claims_reference: findings.claims_reference,
                 };
 
                 let mut debug_trace = debug_recorder.finish();
@@ -5195,6 +5197,7 @@ mod tests {
                 deprecated_dial: None,
                 derived_stepover: None,
                 ramp_reach_clamp: None,
+                claims_reference: None,
             },
             debug_trace: None,
             semantic_trace: None,

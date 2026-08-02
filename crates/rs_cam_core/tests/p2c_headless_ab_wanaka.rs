@@ -34,7 +34,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{
-    CreaseReference, DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
+    ClaimsReference, DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
 };
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
@@ -683,7 +683,9 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         min_rest_depth_mm: 0.02,
         // Build-list item 3: default arm (pinned branch-A baseline; also
         // moot with pencil_claims off above).
-        claims_reference: CreaseReference::SelfProbe,
+        // A/M6: PINNED `SelfProbe`, not the (now `Auto`) default — this is
+        // the pinned branch-A baseline and must not move with the default.
+        claims_reference: ClaimsReference::SelfProbe,
         // S4 (`unified_finish::ClaimsConfig::territory_clip` doc): off —
         // moot with pencil_claims off above, and this is the pinned
         // branch-A baseline.
