@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
-use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
 use crate::transform_provenance::{ReconcileSet, Transformed};
 
 /// A continuous sequence of cutting moves between rapids.
@@ -476,7 +476,8 @@ fn fill_group_rapids(
 /// The per-span bounding remap (drop-if-fully-collapsed, boundary vs. range
 /// handling, label/payload carry-through) is the same contract every other
 /// span-preserving transform uses, so it's delegated to
-/// [`MoveRemap::remap_span`] (the canonical helper in `toolpath_spans`).
+/// [`MoveRemap::remap_span_with_index`] (the indexed sibling of the
+/// canonical `remap_span` helper in `toolpath_spans`).
 /// What's unique to TSP is the foreign-move-intrusion check layered on top
 /// as a post-filter below — a permutation can interleave moves from other
 /// spans into a span's new bounding range, which a plain bounding remap
@@ -492,13 +493,20 @@ fn fill_group_rapids(
 /// dropped spans' moves keep their transit classification through the
 /// per-move `MoveIntent` union in the metrics stamper
 /// (`compute/simulate.rs`).
+///
+/// C9: builds one [`RemapIndex`] up front (rather than rescanning
+/// `remap.old_to_new` per span via `MoveRemap::remap_span` /
+/// `MoveRemap::foreign_intrusion`) — this is the exact loop the index was
+/// built to retire, since a wanaka-class reorder can carry ~200k moves and
+/// dozens-to-hundreds of spans through it.
 #[allow(clippy::indexing_slicing)]
 fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) -> Vec<Span> {
+    let index = RemapIndex::build(remap);
     spans
         .iter()
         .filter_map(|s| {
             // Every move in the span got dropped — drop the span too.
-            let new_span = remap.remap_span(s, new_n)?;
+            let new_span = remap.remap_span_with_index(s, new_n, &index)?;
 
             // Foreign-intrusion check only applies to non-boundary,
             // non-Operation spans — boundary spans are always zero-width
@@ -520,7 +528,7 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) 
                 // "scattered by the reorder" — it is being discarded by this
                 // guard because some unrelated move landed in its range. See
                 // `planning/unified_v3_design.md` §14d.
-                let foreign_intrusion = remap.foreign_intrusion(s.start_move, s.end_move, &bounds);
+                let foreign_intrusion = index.foreign_intrusion(s.start_move, s.end_move, &bounds);
 
                 if let Some((intruder_old_idx, intruder_new)) = foreign_intrusion {
                     let intruder_intent = moves.get(intruder_old_idx).map(|m| m.intent);
@@ -970,5 +978,158 @@ mod tests {
         result
             .check_invariants()
             .expect("remapped spans still satisfy structural invariants");
+    }
+
+    // ── C9: remap_spans identical-output regression ────────────────────
+    //
+    // `remap_spans` (this module, ~line 502) now builds one `RemapIndex`
+    // up front and answers `remap_span` / `foreign_intrusion` through it
+    // instead of rescanning `old_to_new` per span. This is `remap_spans`
+    // AS IT SHIPS TODAY compared, on hand-built fixtures, against
+    // `remap_spans_reference` below — the exact pre-C9 algorithm, kept
+    // here as a byte-for-byte oracle because `MoveRemap::remap_span` and
+    // `MoveRemap::foreign_intrusion` themselves are UNCHANGED by C9 (only
+    // `remap_spans`'s internals were switched to the indexed variants), so
+    // this reference is genuinely the old code path, not a copy that could
+    // have drifted.
+
+    /// Pre-C9 `remap_spans`: identical control flow, but built on the
+    /// un-indexed `MoveRemap::remap_span` / `MoveRemap::foreign_intrusion`
+    /// scans instead of a `RemapIndex`. Drops the `moves` parameter — it
+    /// only feeds the production function's `tracing::debug!` diagnostic,
+    /// not the returned span vector, so it plays no role in this
+    /// equivalence check.
+    fn remap_spans_reference(spans: &[Span], remap: &MoveRemap, new_n: usize) -> Vec<Span> {
+        spans
+            .iter()
+            .filter_map(|s| {
+                let new_span = remap.remap_span(s, new_n)?;
+                if !s.is_boundary() && s.kind != SpanKind::Operation {
+                    let bounds = new_span.start_move..new_span.end_move;
+                    if remap
+                        .foreign_intrusion(s.start_move, s.end_move, &bounds)
+                        .is_some()
+                    {
+                        return None;
+                    }
+                }
+                Some(new_span)
+            })
+            .collect()
+    }
+
+    fn dummy_moves(n: usize) -> Vec<Move> {
+        (0..n)
+            .map(|i| Move {
+                target: P3::new(i as f64, 0.0, 0.0),
+                move_type: MoveType::Linear { feed_rate: 1000.0 },
+                intent: crate::toolpath::MoveIntent::Unknown,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn remap_spans_matches_unindexed_reference_on_fragmented_and_dropped_case() {
+        // Mirrors `remap_spans_drops_fully_collapsed_and_preserves_order`
+        // (toolpath_spans.rs): a fully-collapsed middle span must be
+        // dropped while the survivors keep their order.
+        let remap = MoveRemap {
+            old_to_new: vec![
+                Some(0..1),
+                Some(1..2),
+                None, // moves 2..4 dropped entirely
+                None,
+                Some(2..3),
+                Some(3..4),
+            ],
+        };
+        let spans = vec![
+            Span::new(0, 2, SpanKind::DepthPass).with_label("first"),
+            Span::new(2, 4, SpanKind::Region).with_label("collapsed"),
+            Span::new(4, 6, SpanKind::DepthPass).with_label("third"),
+        ];
+        let moves = dummy_moves(6);
+
+        let indexed = remap_spans(&spans, &remap, 4, &moves);
+        let reference = remap_spans_reference(&spans, &remap, 4);
+        assert_eq!(indexed, reference);
+        assert_eq!(indexed.len(), 2, "collapsed span must be dropped");
+        assert_eq!(indexed[0].label, "first");
+        assert_eq!(indexed[1].label, "third");
+    }
+
+    #[test]
+    fn remap_spans_matches_unindexed_reference_on_foreign_intrusion_case() {
+        // A permutation that scatters a foreign move into a Region span's
+        // bounding range: old moves 0,1 form the "scattered" span, but move
+        // 1 lands at new position 2..3 while move 0 stays at 0..1, leaving a
+        // gap at new 1..2 — which move 2 (old index 2, NOT part of the
+        // span) then occupies. Old moves 3,4 form the "clean" span and stay
+        // untouched by the permutation, so its remapped bounds (3..5) don't
+        // reach back far enough to see move 2's new slot (1..2) at all.
+        //
+        // Verified by hand against `MoveRemap::foreign_intrusion`'s
+        // documented predicate (`r.start < r.end && r.start < bounds.end &&
+        // r.end > bounds.start`) before writing this, precisely because an
+        // earlier draft of this fixture had the "clean" span's own remapped
+        // bounds accidentally widened far enough (by a different old
+        // index's contribution) to also register a false intrusion —
+        // exactly the class of mistake this equivalence check exists to
+        // catch, so getting the fixture right by hand mattered here.
+        let remap = MoveRemap {
+            old_to_new: vec![
+                Some(0..1), // old 0 (scattered) -> new 0..1
+                Some(2..3), // old 1 (scattered) -> new 2..3 (gap at 1..2)
+                Some(1..2), // old 2 (outside)   -> new 1..2, the intruder
+                Some(3..4), // old 3 (clean)     -> new 3..4
+                Some(4..5), // old 4 (clean)     -> new 4..5
+            ],
+        };
+        let spans = vec![
+            Span::new(0, 5, SpanKind::Operation).with_label("op"),
+            Span::new(0, 2, SpanKind::Region).with_label("scattered"),
+            Span::new(3, 5, SpanKind::DepthPass).with_label("clean"),
+        ];
+        let moves = dummy_moves(5);
+
+        let indexed = remap_spans(&spans, &remap, 5, &moves);
+        let reference = remap_spans_reference(&spans, &remap, 5);
+        assert_eq!(indexed, reference);
+        // The scattered Region span is dropped; Operation is exempt from
+        // the intrusion check and the clean DepthPass survives untouched.
+        assert!(
+            indexed.iter().all(|s| s.label != "scattered"),
+            "scattered span should be dropped, got {indexed:?}"
+        );
+        assert!(indexed.iter().any(|s| s.label == "op"));
+        assert!(
+            indexed.iter().any(|s| s.label == "clean"),
+            "clean span should survive, got {indexed:?}"
+        );
+    }
+
+    #[test]
+    fn remap_spans_matches_unindexed_reference_on_boundary_and_empty_cases() {
+        // Boundary spans (zero-width) and an empty span list must both
+        // round-trip identically through the indexed and reference paths.
+        let remap = MoveRemap::identity(5);
+        let moves = dummy_moves(5);
+
+        let boundary_spans = vec![
+            Span::boundary(0, SpanKind::RapidOrderBarrier),
+            Span::boundary(3, SpanKind::RapidOrderBarrier),
+            Span::boundary(5, SpanKind::RapidOrderBarrier),
+        ];
+        assert_eq!(
+            remap_spans(&boundary_spans, &remap, 5, &moves),
+            remap_spans_reference(&boundary_spans, &remap, 5),
+        );
+
+        let empty_spans: Vec<Span> = Vec::new();
+        assert_eq!(
+            remap_spans(&empty_spans, &remap, 5, &moves),
+            remap_spans_reference(&empty_spans, &remap, 5),
+        );
+        assert!(remap_spans(&empty_spans, &remap, 5, &moves).is_empty());
     }
 }

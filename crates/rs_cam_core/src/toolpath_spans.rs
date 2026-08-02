@@ -846,6 +846,36 @@ impl MoveRemap {
         Some(new_span)
     }
 
+    /// Same contract as [`Self::remap_span`], but answers the non-boundary
+    /// range query through a pre-built [`RemapIndex`] instead of rescanning
+    /// `old_to_new`. Byte-for-byte identical output to `remap_span` — see
+    /// [`RemapIndex::remap_range`] for why the answers agree exactly.
+    ///
+    /// Boundary spans still go through [`Self::remap_boundary`] unindexed:
+    /// C9 only targeted the two hot scans (`remap_range`,
+    /// `foreign_intrusion`); `remap_boundary`'s fallback walk is triggered
+    /// only for a dropped/out-of-range boundary move and was not the
+    /// O(spans × moves) hot path this index retires.
+    pub fn remap_span_with_index(
+        &self,
+        span: &Span,
+        new_n_moves: usize,
+        index: &RemapIndex,
+    ) -> Option<Span> {
+        let mut new_span = if span.is_boundary() {
+            let new_pos = self.remap_boundary(span.start_move, new_n_moves);
+            Span::new(new_pos, new_pos, span.kind)
+        } else {
+            let r = index.remap_range(span.start_move, span.end_move)?;
+            Span::new(r.start, r.end, span.kind)
+        }
+        .with_label(span.label.clone());
+        if let Some(p) = span.payload.clone() {
+            new_span = new_span.with_payload(p);
+        }
+        Some(new_span)
+    }
+
     /// Remap a whole span list through this mapping, in order, dropping any
     /// span that fully collapsed (see [`Self::remap_span`]).
     ///
@@ -861,13 +891,447 @@ impl MoveRemap {
     /// *foreign-move intrusion* — a permutation can interleave moves from
     /// other spans into a span's new bounding range, which a plain bounding
     /// remap can't see. `tsp::remap_spans` delegates its per-span core to
-    /// [`Self::remap_span`] and layers that check on top as a distinct
-    /// post-filter rather than reimplementing this method.
+    /// [`Self::remap_span_with_index`] and layers that check on top as a
+    /// distinct post-filter (via [`RemapIndex::foreign_intrusion`]) rather
+    /// than reimplementing this method.
+    ///
+    /// C9: builds one [`RemapIndex`] up front and answers every span's
+    /// range query against it in O(log n) rather than rescanning the whole
+    /// `old_to_new` vector per span — the O(spans × moves) scan this whole
+    /// index exists to retire. On a wanaka-class job (~200k moves, dozens to
+    /// hundreds of spans) that was the dominant cost of every span-preserving
+    /// transform that calls this method.
     pub fn remap_spans(&self, spans: &[Span], new_n_moves: usize) -> Vec<Span> {
+        let index = RemapIndex::build(self);
         spans
             .iter()
-            .filter_map(|s| self.remap_span(s, new_n_moves))
+            .filter_map(|s| self.remap_span_with_index(s, new_n_moves, &index))
             .collect()
+    }
+}
+
+// ── RemapIndex ──────────────────────────────────────────────────────────
+
+/// Outcome of one [`AggregateTree::leftmost_overlap`] descent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TreeOutcome {
+    /// Leftmost matching leaf index (always `< n`; padding leaves carry
+    /// identity values that can never pass the overlap test).
+    Found(usize),
+    /// No leaf in the queried range overlaps `bounds`.
+    NotFound,
+    /// The node-visit budget ran out before the descent could prove either
+    /// answer. Caller falls back to [`AggregateTree::linear_leftmost_overlap`].
+    BudgetExceeded,
+}
+
+/// ONE tree implementation, shared by both [`RemapIndex::remap_range`] and
+/// [`RemapIndex::foreign_intrusion`] — they were computing the SAME kind of
+/// aggregate (`min_start`/`max_end` over a set of slots) through two
+/// unrelated structures before this rewrite (a sparse table for one, this
+/// tree's ancestor for the other); that duplication is gone. Only the slot
+/// set fed into [`Self::build`] differs between the two call sites — ALL
+/// slots (degenerate included) for `remap_range`, non-degenerate slots only
+/// for `foreign_intrusion` — plus whether the caller needs top-down descent
+/// (see `pad_for_descent` below).
+///
+/// Complete-or-not binary tree, 1-indexed (`node` 1 is the root; children of
+/// `node` are `2*node`/`2*node + 1`; leaf `i` lives at array index `size +
+/// i`). Each node stores `(min_start, max_end)` — the min/max over its
+/// subtree's slots (identity `(usize::MAX, 0)` for padding/absent slots, so
+/// they can never win a `min`/`max` reduction).
+///
+/// `size` — and therefore whether the tree is safe for
+/// [`Self::leftmost_overlap`] — is chosen at build time:
+///
+/// - [`Self::range_query`] (an iterative bottom-up min/max reduction) is
+///   correct for ANY `size`, padded to a power of two or not — verified by
+///   hand-tracing a 3-leaf (non-power-of-two) tree before writing this: the
+///   `l/r` parity walk only ever accumulates a node once its FULL subtree is
+///   proven to sit inside `[l, r)`, which the walk's index arithmetic
+///   guarantees regardless of how lopsided that subtree's shape is. So
+///   `remap_range`'s tree (`pad_for_descent: false`) uses `size = n` exactly
+///   — no padding waste.
+/// - [`Self::leftmost_overlap`] (top-down descent, used by
+///   `foreign_intrusion`) is NOT safe on an unpadded tree: it computes each
+///   node's `[node_lo, node_hi)` span purely from arithmetic
+///   (`mid = node_lo + (node_hi - node_lo) / 2`) assuming `node`'s two
+///   children cleanly bisect that span — true only for a COMPLETE binary
+///   tree. Hand-checked for `n = 3` (unpadded) before writing this: node 1's
+///   children are indices 2 and 3, but index 3 is already a LEAF while index
+///   2 is still internal — the tree is lopsided, so descent's arithmetic
+///   would silently read the wrong leaf. `foreign_intrusion`'s tree
+///   (`pad_for_descent: true`) therefore pads to `next_power_of_two(n)`.
+struct AggregateTree {
+    size: usize,
+    depth: u32,
+    min_start: Vec<usize>,
+    max_end: Vec<usize>,
+}
+
+impl AggregateTree {
+    fn build(starts: &[usize], ends: &[usize], pad_for_descent: bool) -> Self {
+        let n = starts.len();
+        let size = if pad_for_descent {
+            n.max(1).next_power_of_two()
+        } else {
+            n.max(1)
+        };
+        let mut min_start = vec![usize::MAX; 2 * size];
+        let mut max_end = vec![0usize; 2 * size];
+
+        for (i, (&s, &e)) in starts.iter().zip(ends.iter()).enumerate() {
+            if let Some(slot) = min_start.get_mut(size + i) {
+                *slot = s;
+            }
+            if let Some(slot) = max_end.get_mut(size + i) {
+                *slot = e;
+            }
+        }
+
+        // Children always have a larger array index than their parent (for
+        // ANY size, padded or not — this is pure index arithmetic, not a
+        // property of a complete tree), so combining nodes in decreasing
+        // index order guarantees both children are final before their
+        // parent reads them.
+        for node in (1..size).rev() {
+            let left = 2 * node;
+            let right = 2 * node + 1;
+            let lms = min_start.get(left).copied().unwrap_or(usize::MAX);
+            let rms = min_start.get(right).copied().unwrap_or(usize::MAX);
+            let lme = max_end.get(left).copied().unwrap_or(0);
+            let rme = max_end.get(right).copied().unwrap_or(0);
+            if let Some(slot) = min_start.get_mut(node) {
+                *slot = lms.min(rms);
+            }
+            if let Some(slot) = max_end.get_mut(node) {
+                *slot = lme.max(rme);
+            }
+        }
+
+        let depth = size.next_power_of_two().trailing_zeros();
+        Self {
+            size,
+            depth,
+            min_start,
+            max_end,
+        }
+    }
+
+    /// This slot's raw `(start, end)` as stored at the leaf — identity
+    /// `(usize::MAX, 0)` for a padding/absent slot. Used both to answer
+    /// [`RemapIndex::foreign_intrusion`]'s final `(index, range)` and by
+    /// [`Self::linear_leftmost_overlap`]'s fallback scan, so there is no
+    /// separate raw-slot array duplicating what the tree already holds.
+    fn leaf(&self, i: usize) -> (usize, usize) {
+        let s = self
+            .min_start
+            .get(self.size + i)
+            .copied()
+            .unwrap_or(usize::MAX);
+        let e = self.max_end.get(self.size + i).copied().unwrap_or(0);
+        (s, e)
+    }
+
+    /// Combined min(`min_start`)/max(`max_end`) over `[l, r)`, `l < r`
+    /// assumed. Standard iterative bottom-up segment-tree range query,
+    /// O(log n) — correct for any `size` (see this struct's doc comment).
+    fn range_query(&self, l: usize, r: usize) -> (usize, usize) {
+        let mut lo = l + self.size;
+        let mut hi = r + self.size;
+        let mut min_start = usize::MAX;
+        let mut max_end = 0usize;
+        while lo < hi {
+            if lo % 2 == 1 {
+                min_start = min_start.min(self.min_start.get(lo).copied().unwrap_or(usize::MAX));
+                max_end = max_end.max(self.max_end.get(lo).copied().unwrap_or(0));
+                lo += 1;
+            }
+            if hi % 2 == 1 {
+                hi -= 1;
+                min_start = min_start.min(self.min_start.get(hi).copied().unwrap_or(usize::MAX));
+                max_end = max_end.max(self.max_end.get(hi).copied().unwrap_or(0));
+            }
+            lo /= 2;
+            hi /= 2;
+        }
+        (min_start, max_end)
+    }
+
+    /// Heuristic node-visit cap for one [`Self::leftmost_overlap`] call.
+    ///
+    /// NOT a proven worst-case bound — see [`RemapIndex`]'s doc comment.
+    /// It exists purely so a pathological `old_to_new` (one that defeats the
+    /// necessary-condition pruning at every level) can't make a single query
+    /// visit more than this many nodes before the caller falls back to the
+    /// linear scan; `4096` is a floor so small trees don't fall back
+    /// needlessly early, `64 * depth^2` scales the cap with tree height.
+    fn query_budget(&self) -> usize {
+        let d = self.depth as usize;
+        4096usize.max(64 * d * d)
+    }
+
+    /// Leftmost leaf index in `range` whose stored interval overlaps
+    /// `bounds`, or the reason the descent didn't reach an answer. Only
+    /// valid on a tree built with `pad_for_descent: true` — see this
+    /// struct's doc comment for why an unpadded tree can't support this.
+    fn leftmost_overlap(
+        &self,
+        range: Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> TreeOutcome {
+        if range.start >= range.end {
+            return TreeOutcome::NotFound;
+        }
+        self.descend(1, 0, self.size, &range, bounds, budget)
+    }
+
+    fn descend(
+        &self,
+        node: usize,
+        node_lo: usize,
+        node_hi: usize,
+        range: &Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> TreeOutcome {
+        if *budget == 0 {
+            return TreeOutcome::BudgetExceeded;
+        }
+        *budget -= 1;
+
+        if node_hi <= range.start || range.end <= node_lo {
+            return TreeOutcome::NotFound;
+        }
+        let node_min = self.min_start.get(node).copied().unwrap_or(usize::MAX);
+        let node_max = self.max_end.get(node).copied().unwrap_or(0);
+        if !(node_min < bounds.end && node_max > bounds.start) {
+            return TreeOutcome::NotFound;
+        }
+        if node_hi - node_lo == 1 {
+            // Necessary condition held AND this is a genuine leaf (not a
+            // collapsed subtree summary), so it's sufficient too.
+            return TreeOutcome::Found(node_lo);
+        }
+
+        let mid = node_lo + (node_hi - node_lo) / 2;
+        match self.descend(2 * node, node_lo, mid, range, bounds, budget) {
+            TreeOutcome::Found(i) => TreeOutcome::Found(i),
+            TreeOutcome::BudgetExceeded => TreeOutcome::BudgetExceeded,
+            TreeOutcome::NotFound => {
+                self.descend(2 * node + 1, mid, node_hi, range, bounds, budget)
+            }
+        }
+    }
+
+    /// Exact leftmost-index linear scan of `[range.start, range.end)`, used
+    /// as the un-indexed fallback when [`Self::leftmost_overlap`]'s budget
+    /// is exhausted. Reads through [`Self::leaf`], so it sees the same
+    /// identity-folded values `leftmost_overlap` does — no separate raw
+    /// array to keep in sync.
+    fn linear_leftmost_overlap(&self, range: Range<usize>, bounds: &Range<usize>) -> Option<usize> {
+        (range.start..range.end).find(|&i| {
+            let (s, e) = self.leaf(i);
+            s < bounds.end && e > bounds.start
+        })
+    }
+}
+
+/// Interval index built once from a [`MoveRemap`], answering the two hot
+/// per-span queries — [`MoveRemap::remap_range`] and
+/// [`MoveRemap::foreign_intrusion`] — without rescanning `old_to_new` for
+/// every span (C9: the O(spans × moves) scan on a wanaka-class job, ~200k
+/// moves × dozens-to-hundreds of spans, was the dominant cost of every
+/// span-preserving toolpath transform).
+///
+/// Built from exactly two [`AggregateTree`]s (see that struct's doc comment
+/// for why there are two, and why only one of them pays for descent
+/// support) plus a prefix count of surviving slots. An earlier revision of
+/// this index answered `remap_range` with a *second*, independent
+/// structure — an O(n log n) sparse table — even though the intrusion tree
+/// already stored the exact same `(min_start, max_end)` aggregate; that
+/// duplication measured ~67 MB of transient allocation on a 200k-move
+/// fixture and was cut in favor of the second `AggregateTree` below.
+///
+/// # Complexity and memory
+///
+/// - [`Self::remap_range`]: `range_tree` (built over ALL slots, degenerate
+///   included — `remap_range`'s oracle never distinguishes `r.start ==
+///   r.end` from a normal slot) answers the min/max reduction via
+///   [`AggregateTree::range_query`] in O(log n) after an O(n) build. A
+///   prefix-count of surviving (`Some`) slots answers "did anything survive
+///   this range" in O(1) so an all-dropped sub-range still returns `None`
+///   exactly like the two-pass scan; a plain prefix-sum could not answer
+///   the *range* query itself (it only ever gives prefix-from-zero), which
+///   is why the aggregate still needs the tree.
+/// - [`Self::foreign_intrusion`]: `intrusion_tree` (built over the
+///   NON-degenerate slots only) gives an exact leftmost-hit answer (never a
+///   weaker "any intruder") via necessary-condition pruning
+///   ([`AggregateTree::leftmost_overlap`]). This is NOT a proven O(log n) or
+///   O(log² n) bound — an adversarial `old_to_new` can make every node's
+///   summary pass the necessary condition without any leaf in it actually
+///   overlapping `bounds`, forcing a wide descent. A merge-sort tree
+///   (sorted-by-start intervals + running prefix-max end per node) would
+///   fix that at a proven O(log² n) worst case, at the cost of another O(n
+///   log n) memory structure — not worth it here. This index instead caps
+///   descent at a node-visit budget ([`AggregateTree::query_budget`]) and
+///   falls back to an exact linear scan
+///   ([`AggregateTree::linear_leftmost_overlap`]) the moment the budget is
+///   spent, so the worst case is bounded by `O(budget + n)` — never worse
+///   than the original `O(n)` scan — while the common case (TSP's
+///   block-structured permutations, which is what this index exists to
+///   serve) finishes in a handful of node visits.
+/// - Memory is O(n) total: `range_tree` is `2 * n` words per array (no
+///   padding — [`AggregateTree::range_query`] doesn't need it),
+///   `intrusion_tree` is `2 * next_power_of_two(n)` words per array (padded
+///   — [`AggregateTree::leftmost_overlap`] does need it), and the prefix
+///   count is `n + 1` `u32`s. [`Self::heap_bytes`] reports the real,
+///   measured figure rather than a claim this doc comment could drift from;
+///   `remap_interval_index_c9.rs`'s wanaka-scale test asserts it stays
+///   under 16 MB at n = 200_000 so this regression can't come back silently.
+pub struct RemapIndex {
+    n: usize,
+    survivor_prefix: Vec<u32>,
+    range_tree: AggregateTree,
+    intrusion_tree: AggregateTree,
+}
+
+impl RemapIndex {
+    /// Build the index once from a `MoveRemap`. Reuse it for every span in
+    /// the same remap rather than rebuilding per span.
+    pub fn build(remap: &MoveRemap) -> Self {
+        let n = remap.old_to_new.len();
+
+        // ---- remap_range: tree over ALL slots, degenerate included
+        // (remap_range's oracle never distinguishes r.start == r.end from a
+        // normal slot — see MoveRemap::remap_range). Unpadded: range_query
+        // doesn't need descent, so there's no reason to pay for padding.
+        let all_starts: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| slot.as_ref().map_or(usize::MAX, |r| r.start))
+            .collect();
+        let all_ends: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| slot.as_ref().map_or(0, |r| r.end))
+            .collect();
+        let range_tree = AggregateTree::build(&all_starts, &all_ends, false);
+
+        let mut survivor_prefix = Vec::with_capacity(n + 1);
+        survivor_prefix.push(0u32);
+        let mut running = 0u32;
+        for slot in &remap.old_to_new {
+            running += u32::from(slot.is_some());
+            survivor_prefix.push(running);
+        }
+
+        // ---- foreign_intrusion: NON-degenerate slots only (r.start < r.end)
+        // — a degenerate or dropped slot can never be an intruder, see
+        // MoveRemap::foreign_intrusion's predicate. Padded: leftmost_overlap
+        // needs the descent to be well-defined.
+        let nd_starts: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| match slot {
+                Some(r) if r.start < r.end => r.start,
+                _ => usize::MAX,
+            })
+            .collect();
+        let nd_ends: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| match slot {
+                Some(r) if r.start < r.end => r.end,
+                _ => 0,
+            })
+            .collect();
+        let intrusion_tree = AggregateTree::build(&nd_starts, &nd_ends, true);
+
+        Self {
+            n,
+            survivor_prefix,
+            range_tree,
+            intrusion_tree,
+        }
+    }
+
+    fn survivor_count(&self, l: usize, r: usize) -> u32 {
+        let hi = self.survivor_prefix.get(r).copied().unwrap_or(0);
+        let lo = self.survivor_prefix.get(l).copied().unwrap_or(0);
+        hi.saturating_sub(lo)
+    }
+
+    /// Indexed equivalent of [`MoveRemap::remap_range`] — same signature,
+    /// same answer for every input, O(log n) instead of two O(n) scans.
+    pub fn remap_range(&self, start: usize, end: usize) -> Option<Range<usize>> {
+        if start > end {
+            return None;
+        }
+        let l = start.min(self.n);
+        let r = end.min(self.n);
+        if l >= r || self.survivor_count(l, r) == 0 {
+            return None;
+        }
+        let (min_start, max_end) = self.range_tree.range_query(l, r);
+        Some(min_start..max_end)
+    }
+
+    fn query_range(
+        &self,
+        range: Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> Option<usize> {
+        if range.start >= range.end {
+            return None;
+        }
+        match self
+            .intrusion_tree
+            .leftmost_overlap(range.clone(), bounds, budget)
+        {
+            TreeOutcome::Found(i) => Some(i),
+            TreeOutcome::NotFound => None,
+            TreeOutcome::BudgetExceeded => {
+                self.intrusion_tree.linear_leftmost_overlap(range, bounds)
+            }
+        }
+    }
+
+    /// Indexed equivalent of [`MoveRemap::foreign_intrusion`] — same
+    /// signature, same chosen `(index, range)` for every input (never just
+    /// "any intruder"), sub-linear in the common case instead of one O(n)
+    /// scan per call.
+    pub fn foreign_intrusion(
+        &self,
+        old_start: usize,
+        old_end: usize,
+        bounds: &Range<usize>,
+    ) -> Option<(usize, Range<usize>)> {
+        let n = self.n;
+        let mut budget = self.intrusion_tree.query_budget();
+        let r1 = 0..old_start.min(n);
+        let hit = self.query_range(r1, bounds, &mut budget).or_else(|| {
+            let r2 = old_end.min(n)..n;
+            self.query_range(r2, bounds, &mut budget)
+        });
+        hit.map(|i| {
+            let (start, end) = self.intrusion_tree.leaf(i);
+            (i, start..end)
+        })
+    }
+
+    /// Actual heap footprint of this index in bytes — sums the real
+    /// (allocated, not just occupied) capacity of every backing `Vec`
+    /// rather than re-deriving an estimate from `n`, so a formula/reality
+    /// drift in this struct's doc comment would show up as a test assertion
+    /// failing, not as a stale comment nobody re-checks.
+    pub fn heap_bytes(&self) -> usize {
+        let word = std::mem::size_of::<usize>();
+        let tree_bytes = |t: &AggregateTree| (t.min_start.capacity() + t.max_end.capacity()) * word;
+        let prefix_bytes = self.survivor_prefix.capacity() * std::mem::size_of::<u32>();
+        tree_bytes(&self.range_tree) + tree_bytes(&self.intrusion_tree) + prefix_bytes
     }
 }
 
