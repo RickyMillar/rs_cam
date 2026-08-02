@@ -146,6 +146,26 @@ RampFinish has no standing-material area channel (lift magnitude only).~~
 - Reach cross-sections are measured on the 0.5 mm rest cell against a Ø1 tip —
   H3's resolution question applies to the rest grid too.
 
+**CLOSED 2026-08-03 by C-sequence wave 10** (`9963128` / `0dff17e` /
+`ef4011c` / `d8d09da`; see the wave entry in `ORCHESTRATION_LOG.md`):
+
+* Bullet 1 — `reach::solve_reach_sampled` exists, is matrix-gated, and BEATS
+  the V model on the two shapes the V actually misreads. Production does NOT
+  switch: its coverage/routing bars need a 0.002–0.010 mm cross-section pitch,
+  50–250× finer than the shipped rest cell. `PRODUCTION_REACH_MODEL` carries
+  the ruling. **Correction to this bullet's own premise:** a PLAIN trapezoid
+  is not a shape the V misreads — the tip can never go below the floor, so
+  only the straight wall constrains it, and the V encodes a straight wall
+  exactly. The discriminating shape is a CHAMFERED groove.
+* Bullet 2 — retired. The defect was an OVERLAP violation (63.66 % where the
+  policy specifies 50 %), not the under-coverage it looked like.
+* Bullet 3 — `RemapIndex`, 13.7× at 14.87 MB, outputs identical.
+* Bullet 4 — one third answered, and it opened a NEW question rather than
+  closing this one: refining the rest cell makes the shipped detector find
+  LESS feature and makes measured reach collapse toward zero. Pinned as an
+  open anomaly in `tests/rest_grid_resolution_c9.rs`; owner is whoever next
+  touches `rest_field::measure_cross_section`.
+
 ## P10. Repo hygiene one-offs
 
 - Repo is not `cargo fmt` clean (~50 pre-existing sites); every agent had to
