@@ -319,19 +319,34 @@ fn the_derived_stepover_is_reported_as_a_diagnostic() {
 
 // ── Gate 2: the EMISSION consequence, measured as pass spacing ──────────
 
-/// Pass spacing on emitted geometry.
+/// Pass spacing on emitted geometry — **claim rewritten by C9, and the
+/// direction it moved is the point.**
 ///
-/// Both arms are fed BY THE SHIPPED OP: the stepover the production
-/// `UnifiedFinish` run derived, and the envelope-rule value the same run
-/// records as its retired predecessor. They then go through the shipped
-/// pencil emitter over the same valley with the same tool, so the ONLY
-/// variable is the scalar. A revert that restored the envelope spacing makes
-/// both arms identical and this test red.
+/// PR-6a's claim was that feeding the emitter the DERIVED stepover instead of
+/// the envelope rule resolves more distinct pass positions: the caller's
+/// scalar decided the spacing, and PR-6a made callers pass a better scalar.
+/// C9's per-point fan retired the scalar itself
+/// (`crease_paths::centerline_cut_paths`): on a MEASURED centreline every
+/// point now gets `reach::suggested_offset_stepover_mm` at its OWN depth, and
+/// the `offset_stepover` argument is only the fallback for centrelines with no
+/// cross-section. So the two arms below are now identical BY CONSTRUCTION, and
+/// the old assertion asserted a lever that no longer exists.
 ///
-/// The measurement: the distinct lateral offsets the fan places, and the
-/// gap between neighbouring ones.
+/// What replaces it is strictly stronger, so this stays a sentry rather than a
+/// deletion. PR-6a's property — the fan is spaced off the TIP, not the Ø6
+/// shank — used to hold only when the caller chose to pass the right scalar.
+/// It now holds whatever the caller passes:
+///
+/// 1. both arms emit (non-vacuity first, as before);
+/// 2. the two arms agree exactly — the caller's scalar no longer decides
+///    measured spacing (the C9 change, named, so a revert to scalar spacing
+///    makes this red);
+/// 3. the emitted spacing is still finer than the envelope rule — measured
+///    0.280 mm against the retired 1.500 mm — so "identical" cannot be
+///    satisfied by both arms collapsing to the coarse behaviour, which is the
+///    failure mode assertion 2 alone would not catch.
 #[test]
-fn the_derived_stepover_changes_the_emitted_pass_spacing() {
+fn the_per_point_fan_spaces_passes_off_the_tip_whatever_scalar_the_caller_passes() {
     use rs_cam_core::mesh::SpatialIndex;
     use rs_cam_core::pencil::{PencilDetector, PencilParams, pencil_toolpath};
     use rs_cam_core::toolpath::MoveIntent;
@@ -397,19 +412,27 @@ fn the_derived_stepover_changes_the_emitted_pass_spacing() {
         min_gap(&policy_arm)
     );
 
-    // Non-vacuity FIRST: both arms must actually cut.
+    // 1. Non-vacuity FIRST: both arms must actually cut.
     assert!(
         !envelope_arm.is_empty() && !policy_arm.is_empty(),
         "both arms must emit cutting moves or the comparison is empty"
     );
-    // The claim: a finer stepover places passes the coarse one cannot,
-    // so the fan resolves more distinct lateral positions.
+    // 2. The C9 change: the caller's scalar no longer decides the spacing of a
+    //    measured centreline's fan, so the two arms agree exactly.
+    assert_eq!(
+        envelope_arm, policy_arm,
+        "the emitted fan still depends on the caller's `offset_stepover` \
+         scalar — the per-point fan did not take effect"
+    );
+    // 3. …and they agree on the FINE spacing, not the coarse one. Without
+    //    this, assertion 2 would be satisfied by a regression that put both
+    //    arms back on the Ø6 shank.
     assert!(
-        policy_arm.len() > envelope_arm.len(),
-        "the reach-policy stepover must resolve MORE distinct pass positions \
-         than the envelope rule: {} vs {}",
-        policy_arm.len(),
-        envelope_arm.len()
+        min_gap(&policy_arm) < finding.envelope_rule_mm,
+        "the fan is spaced at {:.3} mm, no finer than the retired envelope \
+         rule's {:.3} mm — the tip-scaled spacing is gone",
+        min_gap(&policy_arm),
+        finding.envelope_rule_mm
     );
 }
 

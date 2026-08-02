@@ -1350,10 +1350,21 @@ pub fn unified_finish_toolpath_with_cancel(
         // detector will report. `working_half_width_mm` is monotone
         // non-decreasing in depth, so this is the narrowest band any emitted
         // pass works — the conservative end, and the only depth in scope
-        // before the detector has run. (A per-point stepover would be
-        // strictly better and is the same generalisation `reach`'s module doc
-        // records for the cross-section; it needs the fan to stop being one
-        // scalar, which `centerline_cut_paths` still is.)
+        // before the detector has run: the ROUTING decision below
+        // (`rf_params.offset_stepover_mm`) partitions cells before any
+        // centreline exists, so it has no per-point depth to read yet and
+        // stays keyed off this one scalar.
+        //
+        // EMISSION no longer shares that limitation (C9). A per-point
+        // stepover — the same generalisation `reach`'s module doc records
+        // for the cross-section — used to need the fan to stop being one
+        // scalar; `centerline_cut_paths` now sizes
+        // `suggested_offset_stepover_mm(cutter, depth_i)` at EVERY sampled
+        // point of a measured centreline (every centreline `detect_rest_valleys`
+        // returns carries real per-point samples), so `claims_offset_stepover_mm`
+        // below now does only the two jobs described above — routing and the
+        // unmeasured-centreline fallback — and no longer also determines how
+        // far apart the emitted passes actually sit.
         let claims_offset_stepover_mm = crate::reach::suggested_offset_stepover_mm(
             cutter,
             cfg.rest_field_params.min_valley_depth,
@@ -1440,8 +1451,14 @@ pub fn unified_finish_toolpath_with_cancel(
                 cutter,
                 params.sampling,
                 // PR-6a: the reach-policy stepover computed above — the SAME
-                // binding the detector routed against, so the fan the routing
-                // criterion assumed is the fan that gets emitted.
+                // binding the detector routed against. Every `centerline`
+                // here came from `detect_rest_valleys`, so it carries real
+                // per-point `samples` (C9): `centerline_cut_paths` sizes the
+                // ACTUAL emitted fan per point from those, and only falls
+                // back to this scalar argument for an unmeasured centreline,
+                // which none of these are. It stays live as the ROUTING
+                // binding above and as that fallback — see the comment
+                // above this block.
                 //
                 // Historical note kept deliberately: the retired value here
                 // was `cutter.envelope_radius_mm() * 0.5` (1.5 mm on the

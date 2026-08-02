@@ -259,13 +259,18 @@ impl PencilRuntimeEvent {
     }
 }
 
-/// `pub(crate)` (rather than private) solely so
-/// [`crate::crease_paths::centerline_cut_paths`] can name `Vec<PencilPath>`
-/// as its return type; fields stay private — that function only forwards the
-/// `Vec` [`paths_from_sampled`] fills in, it never constructs or reads a
-/// `PencilPath` itself.
+/// `pub` (not `pub(crate)`) so [`crate::crease_paths::centerline_cut_paths`]
+/// can be `pub` too and name `Vec<PencilPath>` as its return type — C9
+/// (`tests/per_point_claims_fan_c9.rs`) needs a caller OUTSIDE the crate
+/// able to hand `centerline_cut_paths` a hand-built `RestCenterline` (exact
+/// per-point depth, not detector output) and inspect exactly what came out.
+/// Fields stay private; read them through the accessors below. Every
+/// in-crate caller of `centerline_cut_paths` (`rest_depth_arm`,
+/// `unified_finish.rs`'s claims pass) only forwards the `Vec`
+/// [`paths_from_sampled`] fills in — it never constructs or reads a
+/// `PencilPath` itself, so this widening does not change how they behave.
 #[derive(Clone)]
-pub(crate) struct PencilPath {
+pub struct PencilPath {
     points: Vec<P3>,
     chain_index: usize,
     chain_total: usize,
@@ -275,10 +280,54 @@ pub(crate) struct PencilPath {
     is_centerline: bool,
 }
 
+impl PencilPath {
+    /// The lifted, ordered points of this pass. `Z == f64::NAN` marks a
+    /// point the tool cannot contact here — off the mesh
+    /// ([`lift_to_surface`]) or, for an offset pass, truncated because the
+    /// local reach does not support it at this offset (see
+    /// [`paths_from_sampled`]'s `OffsetFan::reach` doc). Non-`NaN` points
+    /// are real cutting contact.
+    #[must_use]
+    pub fn points(&self) -> &[P3] {
+        &self.points
+    }
+
+    /// This pass's lateral offset from the centreline (mm), signed:
+    /// positive is the `fan.left` side, negative `fan.right`. For a
+    /// per-point fan (C9 — [`OffsetFan::stepover`] non-empty) the true
+    /// offset varies point to point, so this is the MEAN across the pass's
+    /// points, a summary for labelling/diagnostics, not the exact position
+    /// of any one point — read [`Self::points`] for that. `0.0` for the
+    /// centreline pass.
+    #[must_use]
+    pub fn offset_mm(&self) -> f64 {
+        self.offset_mm
+    }
+
+    /// `true` for the centreline pass, `false` for every offset pass.
+    #[must_use]
+    pub fn is_centerline(&self) -> bool {
+        self.is_centerline
+    }
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Generate an offset polyline by shifting each point perpendicular to the path
-/// direction in XY by the given offset distance.
-fn offset_polyline(points: &[P3], offset: f64) -> Vec<P3> {
+/// Generate an offset polyline by shifting each point perpendicular to the
+/// path direction in XY, by a PER-POINT offset distance (`offsets[i]` for
+/// `points[i]`; a short `offsets` reads the missing tail as `0.0`).
+///
+/// # Why variable, not just scalar (C9)
+///
+/// A pencil fan's stepover used to be one constant applied to every point on
+/// a pass ([`offset_polyline`], now a thin `offset == offsets[i]` caller of
+/// this). That is still correct for the Dihedral/Curvature arms and for a
+/// centreline the reach policy never measured ([`OffsetFan::stepover`]
+/// empty), but a MEASURED centreline's own working width is depth-dependent
+/// ([`crate::reach::suggested_offset_stepover_mm`]), so a branch that runs
+/// shallow at one end and deep at the other has no single honest stepover —
+/// see [`paths_from_sampled`]'s doc. One geometry implementation serves both
+/// cases; only the offset each point reads differs.
+fn offset_polyline_variable(points: &[P3], offsets: &[f64]) -> Vec<P3> {
     if points.len() < 2 {
         return points.to_vec();
     }
@@ -306,6 +355,7 @@ fn offset_polyline(points: &[P3], offset: f64) -> Vec<P3> {
 
         // Perpendicular direction in XY (rotate tangent 90° CCW)
         let normal = nalgebra::Vector2::new(-tangent.y, tangent.x) / len;
+        let offset = offsets.get(i).copied().unwrap_or(0.0);
 
         result.push(P3::new(
             points[i].x + normal.x * offset,
@@ -315,6 +365,14 @@ fn offset_polyline(points: &[P3], offset: f64) -> Vec<P3> {
     }
 
     result
+}
+
+/// Generate an offset polyline by shifting each point perpendicular to the
+/// path direction in XY by the SAME offset distance. Thin caller of
+/// [`offset_polyline_variable`] — see its doc for why the variable form
+/// exists.
+fn offset_polyline(points: &[P3], offset: f64) -> Vec<P3> {
+    offset_polyline_variable(points, &vec![offset; points.len()])
 }
 
 /// Default fairing strength: how far each interior point moves toward the
@@ -683,6 +741,39 @@ pub(crate) fn resample_polyline(points: &[P3], spacing: f64) -> Vec<P3> {
 /// `reach` means "not measured": every pass runs full length, exactly as
 /// before.
 ///
+/// # The fan is also PER-POINT WIDE (C9)
+///
+/// `fan.stepover`, when non-empty, replaces the single `offset_stepover`
+/// argument with one value per point: pass `k`'s offset at point `i` is
+/// `sign * k * fan.stepover[i]`, not `sign * k * offset_stepover`. Before
+/// C9 a MEASURED centreline (one with genuine [`RestCenterline::samples`])
+/// still spaced its whole fan at one constant — usually sized from the
+/// branch's shallowest reported depth
+/// (`unified_finish.rs`'s `claims_offset_stepover_mm`,
+/// `rest_depth_arm`'s `params.offset_stepover`) — even though
+/// [`crate::reach::suggested_offset_stepover_mm`] is monotone
+/// non-decreasing in depth, so every deeper point on the same branch got a
+/// stepover too small for its own working width: under a fixed pass-count
+/// cap, passes packed closer together than necessary instead of reaching
+/// out, leaving the outer part of that point's reach uncovered
+/// (`tests/per_point_claims_fan_c9.rs` measures the shortfall on the
+/// shipped taper). `fan.reach` still does the per-point TRUNCATION — now
+/// compared against `pass_num * fan.stepover[i]` instead of
+/// `pass_num * offset_stepover` — so the coverage criterion
+/// `k · stepover_i ≤ reach_i` holds pointwise, not just at the reference
+/// depth the scalar was sized from.
+///
+/// An empty `fan.stepover` means "not measured", exactly like an empty
+/// `fan.reach`: every pass falls back to the flat `offset_stepover`
+/// argument for every point, unchanged from before C9. This is what the
+/// Dihedral/Curvature arms and an unmeasured `RestCenterline`
+/// (`without_samples`) still get via [`OffsetFan::symmetric`].
+///
+/// [`PencilPath::offset_mm`] cannot describe a per-point-wide pass with one
+/// number; it becomes the MEAN of that pass's per-point offsets when
+/// `fan.stepover` drove the emission, and stays the exact scalar offset
+/// otherwise. See its doc.
+///
 /// Takes `stock_to_leave`/`offset_stepover` as plain scalars (rather than a
 /// `&PencilParams`) so non-pencil callers — currently
 /// [`crate::crease_paths::centerline_cut_paths`] — don't need a full
@@ -732,6 +823,16 @@ pub(crate) fn paths_from_sampled(
     } else {
         &[]
     };
+    // Same length-match discipline as `reach`, and the same fallback: a
+    // caller mismatch (or a genuinely unmeasured centreline, which passes
+    // an empty slice on purpose) degrades to the flat scalar rather than
+    // reading past the end or mis-attributing one point's stepover to
+    // another.
+    let stepover: &[f64] = if fan.stepover.len() == sampled.len() {
+        fan.stepover
+    } else {
+        &[]
+    };
     let offset_total = 1 + fan.left + fan.right;
 
     let centerline = lift_to_surface(&sampled, mesh, index, cutter, stock_to_leave);
@@ -760,12 +861,35 @@ pub(crate) fn paths_from_sampled(
     let mut offset_index = 1usize;
     for (sign, passes) in [(1.0_f64, fan.left), (-1.0_f64, fan.right)] {
         for pass_num in 1..=passes {
-            let offset = sign * pass_num as f64 * offset_stepover;
-            let pts = offset_polyline(&sampled, offset);
+            // Per-point offsets when the fan carries per-point stepovers
+            // (C9); otherwise every point reads the same flat
+            // `offset_stepover`, exactly as before. One geometry call
+            // either way — `offset_polyline_variable` — so there is only
+            // one implementation of "shift this polyline sideways".
+            let (pts, offset_mm) = if stepover.is_empty() {
+                let offset = sign * pass_num as f64 * offset_stepover;
+                (offset_polyline(&sampled, offset), offset)
+            } else {
+                let offsets: Vec<f64> = stepover
+                    .iter()
+                    .map(|&s| sign * pass_num as f64 * s)
+                    .collect();
+                // `offset_mm` on the emitted path is a SUMMARY (the mean)
+                // when the true offset varies per point — see
+                // `PencilPath::offset_mm`'s doc.
+                let mean = offsets.iter().sum::<f64>() / offsets.len().max(1) as f64;
+                (offset_polyline_variable(&sampled, &offsets), mean)
+            };
             let mut lifted = lift_to_surface(&pts, mesh, index, cutter, stock_to_leave);
             if !reach.is_empty() {
-                let want = pass_num as f64 * offset_stepover;
                 for (i, p) in lifted.iter_mut().enumerate() {
+                    // `want` is the offset THIS point's pass sits at: the
+                    // per-point stepover when measured, the flat scalar
+                    // otherwise — the same value that placed `p` in `pts`
+                    // above, so the truncation test and the placement agree
+                    // pointwise.
+                    let want =
+                        pass_num as f64 * stepover.get(i).copied().unwrap_or(offset_stepover);
                     let supported = reach.get(i).is_some_and(|r| {
                         !r.refused && (if sign > 0.0 { r.left_mm } else { r.right_mm }) >= want
                     });
@@ -783,7 +907,7 @@ pub(crate) fn paths_from_sampled(
                 chain_total,
                 offset_index,
                 offset_total,
-                offset_mm: offset,
+                offset_mm,
                 is_centerline: false,
             });
         }
@@ -792,8 +916,9 @@ pub(crate) fn paths_from_sampled(
 
 /// The offset fan one call to [`paths_from_sampled`] should emit.
 ///
-/// Per-side counts plus the optional per-point reach that truncates them —
-/// see [`paths_from_sampled`]'s doc for why both halves exist.
+/// Per-side counts plus the optional per-point reach that truncates them and
+/// the optional per-point stepover that spaces them — see
+/// [`paths_from_sampled`]'s doc for why all three exist.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OffsetFan<'a> {
     /// Passes to emit on the `+offset` side.
@@ -803,16 +928,22 @@ pub(crate) struct OffsetFan<'a> {
     /// Per-point reach, aligned 1:1 with the polyline handed to
     /// [`paths_from_sampled`]. Empty = not measured; no truncation.
     pub reach: &'a [crate::reach::Reach],
+    /// Per-point offset stepover (mm), aligned 1:1 with the polyline handed
+    /// to [`paths_from_sampled`] (C9). Empty = not measured; every pass
+    /// falls back to the flat `offset_stepover` argument for every point —
+    /// see [`Self::symmetric`] and [`paths_from_sampled`]'s doc.
+    pub stepover: &'a [f64],
 }
 
 impl OffsetFan<'_> {
-    /// The legacy symmetric fan with no per-point truncation — what the
-    /// Dihedral and Curvature detector arms emit, unchanged.
+    /// The legacy symmetric fan with no per-point truncation or spacing —
+    /// what the Dihedral and Curvature detector arms emit, unchanged.
     pub(crate) fn symmetric(passes: usize) -> Self {
         Self {
             left: passes,
             right: passes,
             reach: &[],
+            stepover: &[],
         }
     }
 }
