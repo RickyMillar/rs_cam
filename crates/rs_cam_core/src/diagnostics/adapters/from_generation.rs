@@ -153,18 +153,30 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         message: format!(
             "Ramp descent TRUNCATED by cutter reach: {clamped} of {total} \
              ramp points ({pct:.0}%) were raised, by up to {lift:.3} mm, \
-             because this cutter cannot hold the commanded depth there; and \
-             the descent's bottom was lifted {ladder_lift:.3} mm (from \
-             {requested:.3} to {holdable:.3} mm) because nothing below that \
-             is reachable at all. The pass is safe as emitted — that material \
-             is simply LEFT, and no simulation can tell you so. Use a smaller \
-             or longer-reach tool for these features, or follow with an \
-             operation that can. [Report-only — no gate.]",
+             across {area}, because this cutter cannot hold the commanded \
+             depth there; and the descent's bottom was lifted \
+             {ladder_lift:.3} mm (from {requested:.3} to {holdable:.3} mm) \
+             because nothing below that is reachable at all. The pass is safe \
+             as emitted — that material is simply LEFT, and no simulation can \
+             tell you so. Use a smaller or longer-reach tool for these \
+             features, or follow with an operation that can. [Report-only — \
+             no gate.]",
             clamped = f.clamped_points,
             total = f.ramp_points,
             lift = f.max_lift_mm,
             requested = f.requested_bottom_z_mm,
             holdable = f.holdable_bottom_z_mm,
+            // C8: the EXTENT. A worst-case depth with no area could mean one
+            // stray point or half the part. `None` here is not a zero, so it
+            // says so rather than printing one.
+            area = match f.lifted_area() {
+                Some((area, provenance)) => format!(
+                    "{:.1} mm² of ramp swath ({})",
+                    area.mm2(),
+                    provenance.describe()
+                ),
+                None => "an unmeasured extent".to_owned(),
+            },
         ),
         evidence: None,
         fix: None,

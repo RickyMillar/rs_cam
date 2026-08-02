@@ -2858,6 +2858,7 @@ impl ProjectSession {
             // narration says so rather than staying silent.
             dropped_band: result.stats.dropped_band.as_deref().copied(),
             clipped_band: result.stats.clipped_band.as_deref().copied(),
+            ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
             tip_float: result.stats.tip_float,
         };
 

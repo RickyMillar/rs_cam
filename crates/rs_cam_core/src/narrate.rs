@@ -93,6 +93,11 @@ pub struct ToolpathNarrationContext<'a> {
     /// [`Self::operation_kind`] to tell those two apart — the same contract
     /// [`Self::dropped_band`] carries.
     pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
+    /// C8: what the ramp-finish reach clamp did, off
+    /// [`crate::compute::config::ToolpathStats::ramp_reach_clamp`]. `None` =
+    /// no ramp descent ran, so nothing was measured — NOT "the tool reached
+    /// everywhere". A/M9's contract, applied to a third measure.
+    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
     /// Wave D1: the centreline TIP-FLOAT tally, off
     /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
     /// operation emits no valley centrelines, so nothing was measured — NOT
@@ -300,6 +305,7 @@ pub fn narrate_toolpath_with_context(
     append_standing_material(&mut output, context.standing_material_mm2);
     append_dropped_band(&mut output, context);
     append_clipped_band(&mut output, context);
+    append_ramp_reach_clamp(&mut output, context);
     append_tip_float(&mut output, context.tip_float);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
@@ -766,6 +772,62 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
                 "Unmachined band: not measured — this operation plans no \
                  finish bands, so no band could be dropped by height \
                  resolution. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// C8: one line, always, about material a ramp descent knowingly left.
+///
+/// PR-8b gave the clamp a typed finding and a diagnostic but no narration
+/// line, so the agent-facing report — the surface an MCP session actually
+/// reads — never mentioned it. The line leads with the AREA, because a
+/// worst-case lift DEPTH with no extent could mean one stray point or half
+/// the part and nothing said which.
+fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let ramps = matches!(context.operation_kind, Some(OperationType::RampFinish));
+    match context.ramp_reach_clamp {
+        Some(f) if !f.is_inert() => {
+            let area = match f.lifted_area() {
+                Some((area, provenance)) => format!(
+                    "{:.1} mm² of ramp swath ({})",
+                    area.mm2(),
+                    provenance.describe()
+                ),
+                None => "an unmeasured extent".to_owned(),
+            };
+            output.push_str(&format!(
+                "Ramp reach clamp: {area} left standing — {clamped} of \
+                 {total} ramp points raised by up to {lift:.3} mm, and the \
+                 descent bottom lifted from {requested:.3} to {holdable:.3} \
+                 mm. The emitted pass is SAFE; the material is simply left, \
+                 and no simulation can see it. [Report-only — no gate \
+                 consumes this.]\n",
+                clamped = f.clamped_points,
+                total = f.ramp_points,
+                lift = f.max_lift_mm,
+                requested = f.requested_bottom_z_mm,
+                holdable = f.holdable_bottom_z_mm,
+            ));
+        }
+        Some(_) => {
+            output.push_str(
+                "Ramp reach clamp: none — a ramp descent ran and every \
+                 commanded depth was holdable.\n",
+            );
+        }
+        None if ramps => {
+            output.push_str(
+                "Ramp reach clamp: not measured — this ramp-finish run built \
+                 no ramp path. Absence of a number is not a zero.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Ramp reach clamp: not measured — this operation runs no ramp \
+                 descent, so nothing could be clamped. Absence of a number is \
+                 not a zero.\n",
             );
         }
     }
@@ -1540,6 +1602,7 @@ mod tests {
             // Nor bands, nor centrelines (Wave D1): not measured either.
             dropped_band: None,
             clipped_band: None,
+            ramp_reach_clamp: None,
             tip_float: None,
         };
 
