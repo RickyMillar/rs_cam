@@ -3172,3 +3172,149 @@ four-option menu plus two sub-decisions; the recommendation is option 1 —
 adopt the iso-field ring source together with the corrected slope law and the
 removal of `max_rings`, as one change, behind an end-to-end COLUMNS A/B in the
 shape of the M3 ruling.
+
+---
+
+## C-SEQUENCE WAVE 9b (M4 implementation), 2026-08-02
+
+Checkpoint C ruled **option 1 — "adopt the iso-field, gated"**: the iso-field
+ring source, the corrected `cos θ` law and the retirement of `max_rings` land
+as ONE change, behind an end-to-end COLUMNS A/B and behind HARD gates on the
+research wave's two self-flagged defects — the −1115 µm localised gouge, and
+the sub-10 µm segment tail. Fallback pre-registered: if the gates fail after
+genuine attempts, production stays on the shipped cascade and M4 closes
+honestly.
+
+**They failed, and the reason they failed is the wave's result.**
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `dde7a54` | `refine_chord` + `CHORD_REFINE_MIN_SPLIT_MM` / `CHORD_REFINE_ACCEPT_FRACTION` + iso-field decimation in `scallop.rs`; `seed_boundary` + signed field in `scallop_isofield.rs`; `deepest_gouge_normal_um` in the oracle; new `tests/scallop_isofield_gouge_m4.rs` | 4 files, +792 / −11 |
+| 2 | `a376b1e` | PR-3 scallop fingerprint re-pin + history table | 1 file, +29 / −2 |
+| 3 | `99e1bdb` | `scallop_math::variable_stepover` doc + renamed defect-pinning test (sub-decision 5a) | 1 file, +61 / −7 |
+| 4 | *(this commit)* | `CHECKPOINT_C_EVIDENCE.md` §10–15, checklist step 8, this entry | |
+
+### The gouge was three defects, and two of them were shipped
+
+§3.8 guessed "a contour crossing a groove rim where the cascade's rings ran
+parallel to it". Measured first: a diagnostic separating *vertex dives* from
+*chord sag* found **zero vertex dives in every arm**. All of it is chord sag.
+
+1. `refine_chord` declined to probe any chord it could not fit one
+   `probe_step` interval into. Sound for a gridded surface; false for a
+   drop-cutter query, which is exact at any XY. Invisible while every chord
+   came from a decimated offset ring — but refinement's own halves are not
+   decimated, so splitting a 0.56 mm chord makes two 0.28 mm ones that nothing
+   then checks.
+2. The iso-field's Dirichlet condition, `D = 0` at grid nodes outside the
+   polygon, is a statement about the grid rather than the region. Every level
+   set was pushed outward by up to a full cell, and level 1 could interpolate
+   to a position off the part — where drop-cutter answers with the cutter's
+   rim riding the mesh edge, ~1 mm low, and a 0.75 mm coverage mask cannot
+   veto a 19 µm excursion. `seed_boundary` pins every node within a cell of
+   the edge to its exact **signed** sub-cell distance in local stepovers.
+3. The tolerance check was sampled at the generation cell, so a 0.7 mm chord
+   on a 0.75 mm cell got one probe, at its midpoint, while the worst deviation
+   sat at t = 0.296. Shipped had the identical hole and got lucky: 97.8 µm
+   probed against a 131.7 µm true maximum, passing a 100 µm tolerance it was
+   violating.
+
+Fix order mattered and was informative: decimation alone made the iso-field
+**worse** (−995 → −1015 µm), because longer chords made refinement engage and
+leave two unrefined halves. That is what pointed at (1), and (1) alone was not
+enough, which pointed at (2).
+
+### The instrument was ranking chord density as if it were stepover
+
+Fixing (1) and (3) changed the **shipped** arm, and that settles Checkpoint C.
+Achieved cusp is p99 of *positive* residual — material left — and a sparsely
+chorded path leaves material between its points that scores exactly like a
+wide stepover.
+
+| fixture | A0 before | A0 after | A9 after | gap before | gap after |
+|---|---|---|---|---|---|
+| flat ground | 2.37 | 2.37 | 2.11 | 0.35 | **0.26** |
+| grooved block | 6.28 | **3.11** | 3.02 | 3.42 | **0.09** |
+| narrow ridge | 11.58 | **4.37** | 4.24 | 6.68 | **0.13** |
+| ribbon | 28.21 | 26.92 | 26.65 | 1.93 | **0.27** |
+| dome | 3.95 | 3.98 | 3.91 | 1.29 | **0.07** |
+
+The two fixtures carrying §7's recommendation are the two where shipped gained
+most. The iso-field won a comparison substantially about how densely each
+source chords the surface; its undecimated marching-squares vertices gave it
+the denser path for free. A9 is still better on cusp and standing material on
+all five fixtures — by **1–11%**, not 15–58%.
+
+### Gates
+
+* **Sub-10 µm segments — MET.** 0 of ~5000 on every fixture, both arms,
+  against up to 32 before. Two mechanisms: the iso-field inherits the ring
+  decimation the cascade always had, and refinement is floored at
+  `CHORD_REFINE_MIN_SPLIT_MM` (50 µm — 50× PR-8d's `MIN_EMITTED_SEGMENT_MM`,
+  5× the junction bar) so it cannot manufacture one either.
+* **Max local gouge ≤ shipped — NOT MET.** Surface-normal, A9 exceeds A0 on 3
+  of 5 by 0.3 / 3.2 / 14.4 µm and is 24.1 µm better on the ribbon; gouge AREA
+  is worse on 3 of 5, which is a distribution rather than a tail. The specific
+  −1115 vs −108.6 µm the ruling named IS cleared: −72.6 µm normal / −89.7 µm
+  vertical, 12.4×.
+* **Verdict: FALLBACK.** Production stays on the offset cascade;
+  `RingSource::IsoField` stays behind the seam. Not a technicality — the gate
+  missed, and the margin that justified "the largest blast radius in this
+  programme so far" is now a few percent.
+
+### A third instrument correction, and it changed the ranking
+
+The first draft of the chord sentry measured **vertical** drop and condemned
+the shipped cascade at 174 µm against a 100 µm tolerance on the narrow ridge.
+On a 76° flank vertical is `1/cos θ` = 4.1× the real deviation: 174 µm
+vertical is 42 µm perpendicular, inside tolerance. `deepest_gouge_um` — the
+number §3.8 raised the alarm with — had the same flaw. Vertically A9 looks
+12.4 µm worse than A0 on the ridge and 37.3 µm worse on the ribbon; normal to
+the surface the ridge gap is 3.2 µm and the ribbon **reverses** to A9 being
+24.1 µm better. `OracleReport::deepest_gouge_normal_um` now sits beside it.
+
+Three waves, three instruments caught measuring the wrong quantity. The
+pattern is worth naming: each one compared a number taken in the tool's frame
+against a dial written in the surface's.
+
+### Downstream
+
+Exactly **one** red across the whole scallop-adjacent set —
+`finish_resolution_policy_pr3::scallop_fingerprint`, `(1318, …)` →
+`(1423, …)`, +105 moves (+8.0%), re-pinned with the old value kept in a
+history table and the reason beside it. Everything the recon flagged as
+at-risk stayed green **without an edit**, because the ring cascade, its
+stepover law and its `max_rings` budget were never touched:
+`checkpoint_b_resolution_ab` 8/8 (including
+`ball_control_collapses_the_two_named_arms`),
+`standing_material_channel_am9` 4/4 (its `max_rings` truncation fixture
+intact), `narrate_regions_closed_c8` 5/5, `capability_link_moves_safety`
+17/17, `scallop_candidates_m4` 3/3 including the byte-for-byte shipped-policy
+guard on all five fixtures, `common_fixtures_smoke_c6` 8/8,
+`generic_rest_routing_pr7` 6/6. Both scallop param sweeps pass. `--lib`
+scallop 50/50, `scallop_math` 12/12. `cargo fmt --check` clean;
+`cargo clippy --workspace --all-targets -- -D warnings` zero.
+
+### Honest limits
+
+* **The end-to-end COLUMNS A/B was not run.** It grades adoption; adoption
+  failed its precondition. Running two UnifiedFinish generations and two
+  tip-matched dexel sims to grade a ruled-out candidate is not evidence, it is
+  ceremony.
+* **Sub-decision 5b is not done** — `ScallopReport` still has no
+  untouched/standing split, and `uncut_core_mm2` stays hole-blind and
+  cascade-only. It is independent of the ring source and still worth doing.
+* **`max_rings` stays** — and it has **no user-facing dial anywhere**
+  (`ScallopConfig`, `SCALLOP_PARAMS`, the GUI, every project TOML: nothing).
+  Retiring it would have been purely internal; the PR-5 `route_width_factor`
+  deprecation route was scoped for and never needed.
+* **Continuous mode remains unmeasured**, as Checkpoint C §9 said.
+* **Any future iso-field benchmark must re-baseline against `dde7a54`.** Every
+  number in Checkpoint C §2.1 was taken against a cascade that was not
+  chording honestly.
+
+The wave is not a null result. The chord-refinement defect is a **shipped**
+fidelity bug that was silently violating the operator's path tolerance on
+every scalloped part, on both ring sources, and it is fixed.
