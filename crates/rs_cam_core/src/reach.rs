@@ -90,18 +90,40 @@
 //! asks for. The scan is sized to keep that bound at
 //! [`REACH_SCAN_RESOLUTION_MM`].
 //!
-//! # Known limitation (recorded, not hidden)
+//! # The V's limitation, and the generalisation that retires it (C9)
 //!
-//! The V is a *model* of the local cross-section. A trapezoidal groove — flat
-//! floor, steep walls — is not a V, and reading a single wall angle for it
-//! either understates the wall (secant from the apex to the rim) or ignores
-//! the floor (steepest local gradient). Production takes the steepest local
-//! gradient inside the depth band, which is the conservative-on-refusal,
-//! optimistic-on-width choice. Solving the erosion directly against the
-//! sampled `RestGrid::surface_z` cross-section would need no wall angle at
-//! all and would handle trapezoids, curvature and asymmetry natively; it is
-//! a strict generalisation of this function (this is its V special case) and
-//! is the natural wave-B follow-up.
+//! The V is a *model* of the local cross-section, and production feeds it one
+//! wall angle per side — the steepest local gradient inside the depth band.
+//!
+//! **Where it is NOT wrong, contrary to what this note used to say.** A plain
+//! trapezoidal groove was named here as the counter-example. It is not one:
+//! the cutter's tip can never go below the floor, so the only part of the
+//! section that can ever constrain it is the straight wall, and a rim distance
+//! plus a steepest gradient encodes a straight wall exactly. C9 worked the
+//! algebra and then measured it — the two models tie on trapezoids (see
+//! `checkpoint_c9_sampled_reach::trapezoid`).
+//!
+//! **Where it IS wrong:** cross-sections whose constraining surface is not one
+//! straight line. A groove with a chamfered top edge has two wall angles, and
+//! the V draws the one it reads as a line the real chamfer runs INSIDE — it
+//! under-constrains the tool and over-states the reach. A circular-arc valley
+//! has a different angle at every height. On the shipped taper these cost 54
+//! and 12 gouged cells respectively, with over-claims up to 1.42 mm.
+//!
+//! [`solve_reach_sampled`] is the promised generalisation: it erodes the
+//! cutter against the *sampled* cross-section itself and reads no wall angle
+//! at all. It is a strict generalisation — feed it a V sampled finely enough
+//! and it reproduces [`solve_reach`] (and the Checkpoint A closed form) to
+//! within the sampling step; feed it a trapezoid or a curved wall and it is
+//! simply right where the V is not.
+//!
+//! What it is NOT is free. Its accuracy is bounded by the pitch of the
+//! cross-section it is handed, and in production that pitch is the REST CELL
+//! — 0.5 mm today, against a Ø1 tip. `checkpoint_c9_sampled_reach.rs`
+//! measures both halves separately (the C9 wave's rule: do not let grid
+//! coarseness masquerade as model error) and the answer decides
+//! [`PRODUCTION_REACH_MODEL`]. See that constant for the ruling and the
+//! numbers behind it.
 
 use crate::tool::MillingCutter;
 
@@ -220,6 +242,33 @@ pub struct LocalValley {
     pub right: ValleySide,
 }
 
+/// Which model answered a [`Reach`].
+///
+/// Provenance on the `SurfaceSampler` / `CellSource` precedent: two models now
+/// answer the same question, they disagree on non-V cross-sections by design,
+/// and a number whose model is unrecorded cannot be audited after the fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReachModel {
+    /// [`solve_reach`] — the local-V solve over two wall angles and rim
+    /// distances.
+    #[default]
+    WallAngleV,
+    /// [`solve_reach_sampled`] — erosion against the sampled cross-section,
+    /// no wall angle read at all.
+    SampledCrossSection,
+}
+
+impl ReachModel {
+    /// Short code for reports and log lines.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::WallAngleV => "CLR+θ",
+            Self::SampledCrossSection => "SAMP",
+        }
+    }
+}
+
 /// What the policy resolved for one point: how far the cutter can stand from
 /// the centreline on each side, and whether it can stand there at all.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -231,6 +280,8 @@ pub struct Reach {
     /// The cutter wedges between the two walls and cannot hold the local
     /// depth on the centreline itself — the tip-float case.
     pub refused: bool,
+    /// Which model produced the two numbers above. See [`ReachModel`].
+    pub model: ReachModel,
 }
 
 impl Reach {
@@ -317,8 +368,285 @@ pub fn solve_reach(cutter: &dyn MillingCutter, valley: &LocalValley) -> Reach {
         left_mm: x_left.max(0.0),
         right_mm: x_right.max(0.0),
         refused: x_left + x_right < 0.0,
+        model: ReachModel::WallAngleV,
     }
 }
+
+// ── Sampled cross-section reach (C9) ─────────────────────────────────────
+
+/// The cross-section of a rest valley as MEASURED — a height profile along the
+/// perpendicular through one centreline point, at uniform lateral pitch.
+///
+/// Heights are relative to the surface at the centreline sample itself, so
+/// `heights_mm[center_index] == 0.0` by construction and everything else is
+/// how much higher (positive) the surface sits. Non-finite entries mean "not
+/// measured here" and are skipped, never read as flat.
+///
+/// This is deliberately the rawest thing the detector has: no rim distance, no
+/// wall angle, no fitted shape. [`solve_reach_sampled`] is the only consumer,
+/// and it is the whole point of C9 that nothing is condensed on the way in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SampledCrossSection {
+    pitch_mm: f64,
+    heights_mm: Vec<f64>,
+    center_index: usize,
+}
+
+impl SampledCrossSection {
+    /// Build from the two outward walks the detector performs: `left` and
+    /// `right` are heights relative to the centreline, ordered OUTWARD from
+    /// it, one entry per cell at `pitch_mm`.
+    #[must_use]
+    pub fn from_sides(pitch_mm: f64, left: &[f64], right: &[f64]) -> Self {
+        let mut heights_mm = Vec::with_capacity(left.len() + right.len() + 1);
+        heights_mm.extend(left.iter().rev().copied());
+        heights_mm.push(0.0);
+        heights_mm.extend(right.iter().copied());
+        Self {
+            pitch_mm: pitch_mm.max(1e-9),
+            heights_mm,
+            center_index: left.len(),
+        }
+    }
+
+    /// Lateral pitch (mm) between consecutive samples.
+    #[must_use]
+    pub fn pitch_mm(&self) -> f64 {
+        self.pitch_mm
+    }
+
+    /// Measured heights, left to right, relative to the centreline sample.
+    #[must_use]
+    pub fn heights_mm(&self) -> &[f64] {
+        &self.heights_mm
+    }
+
+    /// Lateral position (mm) of sample `i`; negative to the left.
+    #[must_use]
+    pub fn x_at(&self, i: usize) -> f64 {
+        (i as f64 - self.center_index as f64) * self.pitch_mm
+    }
+
+    /// How far (mm) the walk actually got on one side. `sign > 0` is right.
+    /// Reach is capped at this: past the last measured sample there is no
+    /// evidence, and the honest reading of no evidence is "no further".
+    #[must_use]
+    pub fn half_extent_mm(&self, sign: f64) -> f64 {
+        let cells = if sign > 0.0 {
+            self.heights_mm.len().saturating_sub(self.center_index + 1)
+        } else {
+            self.center_index
+        };
+        cells as f64 * self.pitch_mm
+    }
+
+    /// True when nothing outside the centreline sample was measured.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.heights_mm.len() <= 1
+    }
+
+    /// The highest measured point on one side — the "rim" the depth is
+    /// referenced to, read off the surface instead of synthesised from a wall
+    /// angle. `0.0` when the side measured nothing above the centreline.
+    #[must_use]
+    pub fn rim_rise_mm(&self, sign: f64) -> f64 {
+        let range = if sign > 0.0 {
+            self.center_index + 1..self.heights_mm.len()
+        } else {
+            0..self.center_index
+        };
+        range
+            .filter_map(|i| self.heights_mm.get(i).copied())
+            .filter(|h| h.is_finite())
+            .fold(0.0f64, f64::max)
+    }
+}
+
+/// Solve the reach at one point by eroding the cutter against the SAMPLED
+/// cross-section — the C9 generalisation of [`solve_reach`], with no wall
+/// angle anywhere in it.
+///
+/// # The solve
+///
+/// Put the tip at height `t` (relative to the centreline sample) and stand the
+/// axis `ξ` to one side. A measured surface point `(x, h)` fouls the cutter
+/// exactly when it sits inside the profile, i.e. when `h > t` and
+/// `|x − ξ| < width_at_height(h − t)`. So each measured point forbids an open
+/// interval of axis positions, and
+///
+/// ```text
+///     X = min over measured points of [ ξ_point − width_at_height(h − t) ]
+/// ```
+///
+/// over the points whose forbidden interval lies strictly outside the
+/// centreline, capped at [`SampledCrossSection::half_extent_mm`]. If any
+/// point's interval CONTAINS the centreline (`|x| < width_at_height(h − t)`)
+/// the cutter cannot hold the depth on the centreline itself — the same
+/// tip-float refusal [`solve_reach`] reports, reached without a two-wall
+/// model because the sampled section already contains both walls.
+///
+/// `t = rim_rise − min(δ, rim_rise)`: the depth is asked BELOW THE RIM, the
+/// same datum the V model and the Checkpoint A ground truth use, and it cannot
+/// be asked for more depth than the side's measured rim provides (the V's
+/// `implied_depth_mm` clamp, expressed on measured heights).
+///
+/// # The one assumption: how the surface is read BETWEEN samples
+///
+/// As high as the higher of the two samples bracketing it.
+///
+/// A height field sampled at pitch `p` says nothing about what sits between
+/// two samples; reading the segment as the linear interpolant would let a
+/// ridge hide in the gap and the model would claim reach into material it
+/// cannot see. Reading it as the UPPER ENVELOPE of the two endpoints can only
+/// ever cost reach, never invent it.
+///
+/// Two consequences fall out, both wanted:
+///
+/// * the constraint has a CONSTANT `h` along each segment, so its minimum sits
+///   at that segment's inner endpoint exactly — no scan, no sampling bound to
+///   add, and no exposure to `width_at_height` being concave (which is what
+///   makes a sub-sampled evaluation over-state the reach near a ball tip);
+/// * a coarse pitch degrades the answer as a MISS (reach under-claimed), never
+///   as a gouge. That is what makes the resolution question a question about
+///   detail left on the table rather than about safety —
+///   `checkpoint_c9_sampled_reach.rs` measures exactly that.
+///
+/// # Why this is the same equation the V solves, generalised
+///
+/// On a straight V wall of angle θ, the measured points satisfy `ξ = h/tan θ`,
+/// so the minimand becomes `h/tan θ − width_at_height(h − t)` — which is
+/// Checkpoint A's `closed_form_max_lateral` after the substitution `p = D − h`.
+/// The V is this function's special case; a trapezoid, a curved wall or an
+/// asymmetric section are simply other point sets, and none of them needs a
+/// new branch.
+#[must_use]
+pub fn solve_reach_sampled(
+    cutter: &dyn MillingCutter,
+    section: &SampledCrossSection,
+    rest_depth_mm: f64,
+) -> Reach {
+    let delta = rest_depth_mm.max(0.0);
+    // `(reach_mm, refused)` for one side. Refusal is read off `|x| < w`, which
+    // is sign-independent, so the two sides agree on it by construction — the
+    // union below is defensive, not a tie-break.
+    let side = |sign: f64| -> (f64, bool) {
+        let mut refused = false;
+        let rim = section.rim_rise_mm(sign);
+        let t = (rim - delta.min(rim)).max(0.0);
+        let mut bound = f64::INFINITY;
+        let heights = section.heights_mm();
+        // One pass over the SEGMENTS, reading each as its upper envelope
+        // (see the doc comment). A trailing lone sample is its own
+        // degenerate segment so the outermost measurement is never dropped.
+        let last = heights.len().saturating_sub(1);
+        for i in 0..heights.len() {
+            let Some(&h0) = heights.get(i) else { continue };
+            let next = heights.get(i + 1).copied();
+            let (h_seg, x_near) = match next {
+                Some(h1) if i < last => {
+                    let (x0, x1) = (section.x_at(i), section.x_at(i + 1));
+                    let h = match (h0.is_finite(), h1.is_finite()) {
+                        (true, true) => h0.max(h1),
+                        (true, false) => h0,
+                        (false, true) => h1,
+                        (false, false) => continue,
+                    };
+                    // The binding point of `ξ − width(h_seg − t)` on a segment
+                    // of CONSTANT height is its inner endpoint, exactly.
+                    (h, if sign * x0 < sign * x1 { x0 } else { x1 })
+                }
+                _ => {
+                    if !h0.is_finite() {
+                        continue;
+                    }
+                    (h0, section.x_at(i))
+                }
+            };
+            if h_seg <= t {
+                continue;
+            }
+            let w = cutter.width_at_height(h_seg - t);
+            if x_near.abs() < w {
+                refused = true;
+            }
+            let xi = sign * x_near;
+            // Every point on THIS side bounds this side's reach, including the
+            // one the profile exactly touches (`xi == w`, reach 0) and the one
+            // it already overlaps (`xi < w`, also reach 0 — and refused above).
+            // Dropping the equality case is not a rounding detail: it is how a
+            // Ø3 ball, whose `width_at_height` SATURATES at its shank radius,
+            // skipped the binding wall sample entirely and let the next sample
+            // out set the reach (`checkpoint_a_valley_matrix` found the cell:
+            // 85 deg wall, w = 2 mm, delta = 2 mm — reach 0.5 mm against a
+            // truth of 0.450 mm, the only over-claim in the whole sweep).
+            // Points on the OTHER side (`xi < 0`) constrain only through the
+            // refusal above.
+            if xi >= 0.0 {
+                bound = bound.min((xi - w).max(0.0));
+            }
+        }
+        (bound.min(section.half_extent_mm(sign)).max(0.0), refused)
+    };
+    let (left_mm, refused_l) = side(-1.0);
+    let (right_mm, refused_r) = side(1.0);
+    Reach {
+        left_mm,
+        right_mm,
+        refused: refused_l || refused_r,
+        model: ReachModel::SampledCrossSection,
+    }
+}
+
+/// Which model production's rest-valley detector runs.
+///
+/// **Ruling (C9, 2026-08-03): the V model stays. The blocker is the GRID, not
+/// the model.**
+///
+/// [`solve_reach_sampled`] earned every model claim made for it:
+///
+/// * On the full 176-cell Checkpoint A matrix it holds the two bars that reach
+///   the workpiece — **zero gouge and zero float-blind, on all three tools, at
+///   every pitch swept including the shipped 0.5 mm cell**
+///   (`checkpoint_a_valley_matrix::sampled_cross_section_model_reproduces_the_
+///   approved_matrix_column`).
+/// * On the shapes the V is genuinely wrong about it wins outright, at 0.01 mm
+///   pitch on the shipped taper: a chamfered groove, **54 gouges → 0**,
+///   coverage 67.3 % → 83.3 %, worst over-claim 1.423 mm → 0.000 mm; a
+///   circular-arc valley, **12 gouges and 8 misses → 0 and 1**, coverage
+///   35.6 % → 41.3 % (`checkpoint_c9_sampled_reach.rs`).
+/// * On straight-walled sections it ties the V, as a generalisation must.
+///
+/// What it cannot do is run on the grid production has. The approved column's
+/// OTHER two bars — 100 % reachable-detail coverage and zero routing
+/// over-claims — are resolution-bound, because the model places a wall at the
+/// inner end of the segment bracketing it and is therefore short by up to one
+/// PITCH. The matrix says how much pitch that buys:
+///
+/// | rest cell | Ø1/7° taper | Ø1/15° taper | Ø3 ball |
+/// |---|---|---|---|
+/// | 0.5 mm (shipped) | 53.3 %, 10 route-over | 50.5 %, 14 | 52.0 %, 11 |
+/// | 0.1 mm | 90.7 %, 1 | 91.4 %, 2 | 92.2 %, 0 |
+/// | 0.01 mm | 98.1 %, 0 | **100 %, 0** | **100 %, 0** |
+/// | 0.002 mm | **100 %, 0** | 100 %, 0 | 100 %, 0 |
+///
+/// — 50× to 250× finer than the shipped cell, i.e. 2 500× to 62 500× the
+/// cells. Switching today would trade a modelling error the V makes on shapes
+/// this part family may not even contain for a measurement error that halves
+/// coverage on every shape.
+///
+/// The honest caveat, recorded because it is the lever someone will reach for:
+/// that pitch requirement is the price of the never-over-claim guarantee. A
+/// reading that interpolated between samples instead of taking their upper
+/// envelope would need far less grid — and would be free to invent reach into
+/// material it cannot see, which is the one failure mode the whole reach
+/// policy exists to prevent. It was tried first, and it over-claimed.
+///
+/// So: flip this constant when the rest cell is fine enough, and not before.
+/// The gates that decide are the two test files named above, and nothing else
+/// has to move — `rest_field::detect_rest_valleys` already measures both
+/// readings off ONE walk and dispatches here.
+pub const PRODUCTION_REACH_MODEL: ReachModel = ReachModel::WallAngleV;
 
 /// The half-band ONE pass works at `depth_mm`: the cutter's own engaged
 /// half-width there, floored at the cusp radius.

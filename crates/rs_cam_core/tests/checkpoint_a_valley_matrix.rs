@@ -1419,6 +1419,166 @@ fn production_reach_policy_reproduces_the_approved_matrix_column() {
     }
 }
 
+// ── C9 gate: the SAMPLED cross-section model against the same truth ──────
+
+/// Sample the analytic V the way `rest_field::measure_cross_section` walks it:
+/// outward from the apex at `pitch`, heights relative to the apex, continuing
+/// one envelope radius past the rim so the flat top constrains the tool (which
+/// is exactly what production's past-rim budget is for).
+fn sampled_section(
+    v: &Valley,
+    pitch: f64,
+    envelope: f64,
+) -> rs_cam_core::reach::SampledCrossSection {
+    let z0 = v.z(v.x_apex);
+    let side = |sign: f64, rim: f64| -> Vec<f64> {
+        let n = ((rim + envelope + pitch) / pitch).ceil() as usize;
+        (1..=n)
+            .map(|j| v.z(v.x_apex + sign * j as f64 * pitch) - z0)
+            .collect()
+    };
+    rs_cam_core::reach::SampledCrossSection::from_sides(
+        pitch,
+        &side(-1.0, v.x_apex + v.w),
+        &side(1.0, v.w - v.x_apex),
+    )
+}
+
+/// The C9 sampled model's answer for one matrix cell, in the same
+/// `Prediction` shape — and through the SAME downstream policy
+/// (`coverage_cap_passes` / `route` / `offset_passes_per_side`) that
+/// `predict_production` uses, so the only thing that differs between the two
+/// columns is which reach solve answered.
+fn predict_sampled(cutter: &dyn MillingCutter, v: &Valley, delta: f64, pitch: f64) -> Prediction {
+    use rs_cam_core::reach::{
+        RoutingVerdict, coverage_cap_passes, offset_passes_per_side, route, solve_reach_sampled,
+    };
+    let section = sampled_section(v, pitch, cutter.envelope_radius_mm());
+    let reach = solve_reach_sampled(cutter, &section, delta);
+    let cap = coverage_cap_passes(cutter, delta, STEPOVER, CAP);
+    let verdict = route(&reach, STEPOVER, cap);
+    let (nl, nr) = offset_passes_per_side(&reach, STEPOVER, CAP);
+    Prediction {
+        n: nl.min(nr),
+        pencil: verdict != RoutingVerdict::Clearing,
+        refuse: verdict == RoutingVerdict::Refused,
+    }
+}
+
+/// Cross-section pitches the C9 gate sweeps, coarsest first. `0.5` is the
+/// shipped `RestFieldParams::cell_mm`; the rest ask how much finer the rest
+/// grid would have to be before the sampled model clears the approved bars.
+const C9_PITCHES: [f64; 5] = [0.5, 0.1, 0.01, 0.002, 0.001];
+
+/// **C9 acceptance gate.** `reach::solve_reach_sampled` — the sampled
+/// cross-section generalisation — scored by the same truth that produced
+/// `CHECKPOINT_A_EVIDENCE.md`, on the same 176-cell matrix, on every tool.
+///
+/// The gate has two halves, because the model has two error terms and mixing
+/// them decides nothing (the C9 wave rule):
+///
+/// * **Safety bars, at EVERY pitch.** Zero gouge and zero float-blind. These
+///   are properties of the MODEL — it reads the surface as the upper envelope
+///   of its samples, so a coarse grid can only ever cost it reach — and they
+///   must not depend on resolution. These are also the only two failure modes
+///   that reach the workpiece.
+/// * **Coverage and routing, as functions of pitch.** 100 % reachable-detail
+///   coverage and zero routing over-claims are the approved column's other two
+///   bars, and BOTH are resolution-dependent, in the same direction and for
+///   the same reason: the sampled model's under-claim is bounded by one pitch
+///   (it places the wall at the inner end of the segment that brackets it),
+///   an under-claimed reach suppresses passes (miss) and it also makes the
+///   coverage criterion read "the fan can cover this band" when it cannot
+///   (route_over). So the gate reports the coarsest pitch that clears both,
+///   rather than asserting bars the model cannot meet on any grid.
+///
+/// The answer to that second half is what decides
+/// `reach::PRODUCTION_REACH_MODEL`, so it is printed, pinned, and read by the
+/// C9 wave entry.
+#[test]
+fn sampled_cross_section_model_reproduces_the_approved_matrix_column() {
+    println!();
+    println!("== C9 — sampled cross-section model vs the Checkpoint A truth ==");
+    for (name, cutter) in tools() {
+        let cutter = cutter.as_ref();
+        let prof = Profile::build(cutter);
+        let mut prod = Score::default();
+        let mut per_pitch: Vec<(f64, Score)> = Vec::new();
+        for &pitch in C9_PITCHES.iter() {
+            per_pitch.push((pitch, Score::default()));
+        }
+        for &theta in ANGLES.iter() {
+            for &w in WIDTHS.iter() {
+                let v = Valley::sym(w, theta);
+                for &delta in DEPTHS.iter() {
+                    if delta > v.depth - DEPTH_TOL {
+                        continue;
+                    }
+                    let t = truth(&prof, &v, delta);
+                    prod.add(predict_production(cutter, &v, delta), t);
+                    for (pitch, score) in per_pitch.iter_mut() {
+                        score.add(predict_sampled(cutter, &v, delta, *pitch), t);
+                    }
+                }
+            }
+        }
+        println!(
+            "  {name:16} PROD (CLR+θ) gouge={} miss={} route_over={} \
+             float_blind={} coverage={:.1}%",
+            prod.gouge,
+            prod.miss,
+            prod.route_over,
+            prod.float_blind,
+            100.0 * prod.coverage()
+        );
+        let mut coarsest_clearing: Option<f64> = None;
+        for (pitch, s) in per_pitch.iter() {
+            println!(
+                "  {name:16} SAMP @ {pitch:.3} mm  cells={} fan={} gouge={} miss={} \
+                 route_over={} route_under={} float_blind={} coverage={:.1}%",
+                s.cells,
+                s.fan_cells,
+                s.gouge,
+                s.miss,
+                s.route_over,
+                s.route_under,
+                s.float_blind,
+                100.0 * s.coverage()
+            );
+            assert!(
+                s.cells >= 176,
+                "{name}: matrix did not run ({} cells)",
+                s.cells
+            );
+            // Safety bars — resolution-independent by construction.
+            assert_eq!(
+                s.gouge, 0,
+                "{name} @ {pitch} mm: sampled model over-claimed"
+            );
+            assert_eq!(
+                s.float_blind, 0,
+                "{name} @ {pitch} mm: routed a centreline the tool cannot hold"
+            );
+            if s.coverage() > 0.999 && s.route_over == 0 && coarsest_clearing.is_none() {
+                coarsest_clearing = Some(*pitch);
+            }
+        }
+        // `C9_PITCHES` is coarsest-first, so the FIRST clearing entry is the
+        // coarsest grid that meets the approved coverage bar.
+        let clearing = coarsest_clearing.unwrap_or_else(|| {
+            panic!(
+                "{name}: sampled model never cleared the coverage + routing \
+                 bars at any pitch swept"
+            )
+        });
+        println!(
+            "  {name:16} coarsest pitch meeting the approved coverage+routing bars: \
+             {clearing:.3} mm  ({:.0}x finer than the shipped 0.5 mm rest cell)",
+            0.5 / clearing
+        );
+    }
+}
+
 /// The coverage cap's floors (`reach::coverage_cap_passes`) exist so the
 /// criterion cannot collapse to zero at the shipped `num_offset_passes = 0`
 /// default. They must not bind anywhere on the matrix, or the routing column
