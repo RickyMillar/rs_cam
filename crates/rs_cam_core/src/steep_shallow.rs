@@ -305,10 +305,18 @@ fn generate_steep_passes_with_cancel(
                 // documented as "Path tolerance for simplification" and has
                 // never used it for anything but the resolution policy. The
                 // missing filter/merge decision is at the emission site, and
-                // that is the decision being added. `waterline.rs` has the
-                // same defect from the same source and is deliberately left
-                // alone to keep this commit's blast radius one operation
-                // wide (logged as an adjacent defect).
+                // that is the decision being added. `waterline.rs` had the
+                // same defect from the same source and was deliberately left
+                // alone to keep PR-8d's blast radius one operation wide;
+                // C3 (2026-08-02) closed it — `waterline::floor_contour`
+                // applies the same floor at waterline's own emission sites.
+                //
+                // Note which way round the source actually runs: the two
+                // 0.000891 mm segments Checkpoint B §8.1 observed in the
+                // STEEP half are manufactured by `waterline_contours`, which
+                // the steep half calls. This filter removes them from the
+                // steep/shallow output; C3 stops them being emitted by
+                // direct waterline ops too.
                 //
                 // `closed` matches the emitter chosen below: a whole-contour
                 // survivor chords back to its start, so a trailing vertex

@@ -5,10 +5,25 @@
 //!
 //! Extracted 2026-07 (`planning/finishing_stack_review_2026-07.md` P1.2) from
 //! near-verbatim setup blocks in `scallop.rs`, `ramp_finish.rs`, and
-//! `steep_shallow.rs` (plus test-module copies in the first two). `waterline.rs`
-//! and `execute.rs` have their own copies of parts of this (the Z-ladder and
-//! the slope-window sentinel respectively) that are out of scope for this
-//! pass — noted for a follow-up.
+//! `steep_shallow.rs` (plus test-module copies in the first two).
+//!
+//! That extraction's own header deferred two more copies — `waterline.rs`'s
+//! Z-ladder and a slope-window sentinel in `execute.rs` — to a follow-up.
+//! C3 (2026-08-02) closed the follow-up and found only one of them was ever
+//! real:
+//!
+//! * `waterline::waterline_z_levels` WAS a private copy of [`z_ladder`]'s
+//!   `snap_to_bottom = false` arm. It is now an adapter naming its own
+//!   epsilon (`waterline::WATERLINE_LADDER_EPSILON`, 1e-10) and delegating
+//!   here; `tests/waterline_shared_finish_setup_c3.rs` pins the two together.
+//! * `execute.rs` never had a surviving slope-sentinel copy to extract. It
+//!   has called [`slope_filter_active`] since `4b105da` — the very commit
+//!   that created this module. A repo-wide search for the `0.01` / `89.99`
+//!   literals outside this file finds only consumers of the constants below.
+//!
+//! **Every finish-setup piece is single-sourced here.** A new operation that
+//! needs a Z ladder or the slope window takes it from this module; it does
+//! not grow a fourth copy.
 
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::measurement::CellSource;
@@ -484,8 +499,12 @@ pub const SLOPE_FILTER_MAX_DEG: f64 = 89.99;
 /// actually run rather than passing every surface point through.
 ///
 /// Migrated verbatim from the identical `scallop.rs` / `ramp_finish.rs`
-/// call sites (`params.slope_from > 0.01 || params.slope_to < 89.99`). A
-/// third copy in `execute.rs` is out of scope for this pass.
+/// call sites (`params.slope_from > 0.01 || params.slope_to < 89.99`).
+///
+/// The extraction commit also migrated `execute.rs`, despite this comment
+/// having claimed for a year that a third copy there was "out of scope" —
+/// corrected at C3. There is no copy of this predicate anywhere in the
+/// workspace.
 pub fn slope_filter_active(slope_from: f64, slope_to: f64) -> bool {
     slope_from > SLOPE_FILTER_MIN_DEG || slope_to < SLOPE_FILTER_MAX_DEG
 }
