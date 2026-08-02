@@ -273,13 +273,25 @@ pub fn narrate_toolpath_with_context(
             .iter()
             .filter(|item| item.kind == ToolpathSemanticKind::Ring)
             .count();
+        // C8: `chains` joins the line. Trace and Pencil express their whole
+        // structure as `Chain` items, which the previous three counters did
+        // not mention at all — so an operation with 40 engraved contours
+        // read as `depth levels 3, regions 0, rings 0`, i.e. as no structure
+        // whatsoever.
+        let chain_items = trace
+            .items
+            .iter()
+            .filter(|item| item.kind == ToolpathSemanticKind::Chain)
+            .count();
         output.push_str(&format!(
-            "Semantic trace: {} items ({} move-linked); depth levels {}, regions {}, rings {}.\n",
+            "Semantic trace: {} items ({} move-linked); depth levels {}, \
+             regions {}, rings {}, chains {}.\n",
             trace.summary.item_count,
             trace.summary.move_linked_item_count,
             depth_items,
             region_items,
-            ring_items
+            ring_items,
+            chain_items
         ));
         append_region_mix(&mut output, trace);
     } else {

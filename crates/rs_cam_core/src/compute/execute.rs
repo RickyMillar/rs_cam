@@ -1473,7 +1473,12 @@ pub(crate) fn generate_scallop(
         .map_err(|_e| OperationError::Cancelled)?;
     record_standing_material(ctx.findings, scallop_report.uncut_core_mm2);
     if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+        crate::compute::annotate::annotate_scallop(
+            &annotations,
+            &tp,
+            sem,
+            crate::compute::annotate::ScallopRegionGrouping::ByBoundaryRegion,
+        );
     }
     let spans = crate::compute::spans::spans_from_labeled_events(
         tp.moves.len(),
@@ -1682,7 +1687,16 @@ pub(crate) fn generate_unified_finish(
         );
     }
     if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+        // C8: FLAT. Scallop is a sub-generator here, filling one of the
+        // planner's mid-steep nodes; the region population this operation
+        // publishes is `annotate_unified_finish_regions`' below, and a
+        // second one would double-count and break A/M8's 1:1 gate.
+        crate::compute::annotate::annotate_scallop(
+            &annotations,
+            &tp,
+            sem,
+            crate::compute::annotate::ScallopRegionGrouping::Flat,
+        );
         // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built
         // from the same `RegionAnnotation` table `unified_finish_spans`
         // builds the STRUCTURAL region-node spans from. Annotation only —

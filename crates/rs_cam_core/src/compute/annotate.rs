@@ -38,18 +38,46 @@ pub(super) fn annotate_depth_run_spans(
     );
 }
 
-/// Semantic trace for Trace engraving: depth levels with child chains.
+/// Semantic trace for Trace engraving: ONE region, depth levels inside it,
+/// chains inside those.
+///
+/// C8: `narrate_toolpath` reported `regions 0` for Trace. The cause is not a
+/// missing projection — it is a NAMING divergence. Fifteen operation
+/// families route their structural `SpanKind::Region` spans through
+/// [`annotate_depth_run_spans`] and get `Region` items; Trace calls the same
+/// helper with `ToolpathSemanticKind::Chain` instead, because an engraving
+/// run is a contour chain rather than an area, and `sim_debug` colours the
+/// two differently. Both readings are defensible, and the result was that
+/// Trace's structure appeared in narration's `depth levels D, regions R,
+/// rings G` line as no structure at all.
+///
+/// So the chains stay chains — they are chains — and the operation gains
+/// the region it genuinely has: ONE. Trace engraves the model's contour set;
+/// it does not partition anything, and claiming a per-contour partition
+/// would report a structure the generator does not have. Narration now
+/// reads `regions 1` and, with the C8 chain counter, `chains N`.
 pub(super) fn annotate_trace_spans(
     spans: &[Span],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
+    let region_scope = op_context.start_item(
+        ToolpathSemanticKind::Region,
+        "Region 1/1 (trace)".to_owned(),
+    );
+    region_scope.set_param(SemanticKey::RegionIndex, 0usize);
+    region_scope.set_param(SemanticKey::RegionTotal, 1usize);
+    region_scope.set_param(SemanticKey::Strategy, "trace");
+    if !toolpath.moves.is_empty() {
+        region_scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
+    }
     annotate_depth_run_spans_with_region_kind(
         spans,
         toolpath,
-        op_context,
+        &region_scope.context(),
         &ToolpathSemanticKind::Chain,
     );
+    region_scope.finish();
 }
 
 fn annotate_depth_run_spans_with_region_kind(
@@ -497,27 +525,50 @@ pub(super) fn annotate_adaptive2d(
 
 // ── Scallop ─────────────────────────────────────────────────────────
 
-pub(super) fn annotate_scallop(
+/// Whether [`annotate_scallop`] wraps its rings in `Region` items (C8).
+///
+/// The two `Region` populations in this crate are not the same thing, and
+/// `narrate_toolpath` counts them with one counter:
+///
+/// * the PLANNER's territory nodes, which A/M8 projects for `UnifiedFinish`
+///   and whose semantic items must reconcile 1:1 with the structural
+///   `RegionSpanRole::Node` spans;
+/// * the GENERATOR's own pass groupings, which the 15 families routed
+///   through [`annotate_depth_run_spans`] have always emitted under the same
+///   kind.
+///
+/// Scallop is BOTH, depending on who called it. Standalone, its
+/// per-boundary ring cascades are the only region structure it has, and
+/// hiding them is what produced `regions 0`. Inside `UnifiedFinish` it is a
+/// sub-generator filling ONE of the planner's mid-steep nodes, and adding a
+/// second region there both double-counts and breaks A/M8's reconciliation
+/// gate — which is exactly what it did when this was unconditional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScallopRegionGrouping {
+    /// Standalone scallop: emit one `Region` per boundary region.
+    ByBoundaryRegion,
+    /// Scallop as a sub-generator: rings only, so the caller's own region
+    /// nodes stay the single region population.
+    Flat,
+}
+
+/// Rings with no region wrapper — the pre-C8 shape, kept for sub-generator
+/// callers. See [`ScallopRegionGrouping`].
+fn annotate_scallop_rings_flat(
     events: &[crate::scallop::ScallopRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
-    if events.is_empty() {
-        return;
-    }
-
     let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
-
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
-
         let crate::scallop::ScallopRuntimeEvent::Ring {
             ring_index,
             ring_total,
             continuous,
+            ..
         } = &ann.event;
-
         let scope = op_context.start_item(
             ToolpathSemanticKind::Ring,
             format!("Ring {}/{ring_total}", ring_index + 1),
@@ -527,6 +578,107 @@ pub(super) fn annotate_scallop(
         scope.set_param(SemanticKey::Continuous, *continuous);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
+    }
+}
+
+/// C8: `Region` items per BOUNDARY REGION, each parenting the `Ring` items
+/// its own independent ring cascade produced.
+///
+/// `narrate_toolpath` reported `regions 0` for scallop — the same structural
+/// gap A/M8 closed for `UnifiedFinish`, in a milder form. Scallop generates
+/// "one region at a time, concatenated in region order" (P2.3: multiple
+/// disjoint machining-boundary regions each get an independent ring set),
+/// but the runtime annotation stream carried only a GLOBAL ring index, so
+/// the region structure was gone before the semantic trace was built.
+///
+/// The count is honest at both ends: with no machining boundary the whole
+/// mesh footprint is ONE region, so narration reads `regions 1` — which is
+/// the truth, and distinguishable from the `0` that used to mean "nothing
+/// looked".
+///
+/// Rings keep their global index in their label, so an operator comparing
+/// narration against the GUI span list still sees the same numbering.
+pub(super) fn annotate_scallop(
+    events: &[crate::scallop::ScallopRuntimeAnnotation],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+    group_by_region: ScallopRegionGrouping,
+) {
+    if events.is_empty() {
+        return;
+    }
+    if group_by_region == ScallopRegionGrouping::Flat {
+        annotate_scallop_rings_flat(events, toolpath, op_context);
+        return;
+    }
+
+    let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
+    let tp_len = toolpath.moves.len();
+
+    // Group CONSECUTIVE events by region. The ring list is concatenated in
+    // region order (and reversed wholesale for `InsideOut`), so consecutive
+    // grouping reproduces the generator's own partition without assuming
+    // the regions arrive in index order.
+    let region_of = |ann: &crate::scallop::ScallopRuntimeAnnotation| {
+        let crate::scallop::ScallopRuntimeEvent::Ring {
+            region_index,
+            region_total,
+            ..
+        } = ann.event;
+        (region_index, region_total)
+    };
+
+    let mut i = 0usize;
+    while i < events.len() {
+        let Some((region_index, region_total)) = events.get(i).map(region_of) else {
+            break;
+        };
+
+        let j = events
+            .iter()
+            .enumerate()
+            .skip(i)
+            .find(|(_, ann)| region_of(ann).0 != region_index)
+            .map_or(events.len(), |(k, _)| k);
+
+        let region_start = events.get(i).map_or(0, |ann| ann.move_index);
+        let region_end = move_end(&move_indices, j.saturating_sub(1), tp_len);
+        let region_scope = op_context.start_item(
+            ToolpathSemanticKind::Region,
+            format!("Region {}/{region_total} (scallop)", region_index + 1),
+        );
+        region_scope.set_param(SemanticKey::RegionIndex, region_index);
+        region_scope.set_param(SemanticKey::RegionTotal, region_total);
+        region_scope.set_param(SemanticKey::Strategy, "scallop");
+        region_scope.set_param(SemanticKey::RingTotal, j - i);
+        if region_end > region_start && region_end <= tp_len {
+            region_scope.bind_to_toolpath(toolpath, region_start, region_end);
+        }
+        let ring_ctx = region_scope.context();
+
+        for (k, ann) in events.iter().enumerate().take(j).skip(i) {
+            let end = move_end(&move_indices, k, tp_len);
+
+            let crate::scallop::ScallopRuntimeEvent::Ring {
+                ring_index,
+                ring_total,
+                continuous,
+                ..
+            } = &ann.event;
+
+            let scope = ring_ctx.start_item(
+                ToolpathSemanticKind::Ring,
+                format!("Ring {}/{ring_total}", ring_index + 1),
+            );
+            scope.set_param(SemanticKey::RingIndex, *ring_index);
+            scope.set_param(SemanticKey::RingTotal, *ring_total);
+            scope.set_param(SemanticKey::Continuous, *continuous);
+            scope.bind_to_toolpath(toolpath, ann.move_index, end);
+            scope.finish();
+        }
+
+        region_scope.finish();
+        i = j;
     }
 }
 
@@ -638,6 +790,20 @@ pub(super) fn annotate_ramp_finish(
 
 // ── SpiralFinish ────────────────────────────────────────────────────
 
+/// C8: ONE `Region` item covering the whole spiral, parenting its `Ring`
+/// items.
+///
+/// `narrate_toolpath` reported `regions 0` here too, and the honest answer
+/// is `1` — NOT a per-boundary partition like scallop's. Spiral finish does
+/// not generate an independent ring set per machining-boundary region: it
+/// walks one continuous archimedean spiral over the whole footprint and
+/// SKIPS sample points that fall outside every region
+/// (`spiral_finish.rs`'s `in_region` pre-clip). One traversal, one region,
+/// however many boundaries were supplied.
+///
+/// That distinction is why this is not the same code as
+/// [`annotate_scallop`]: inventing a per-boundary partition here would
+/// report a structure the generator does not have.
 pub(super) fn annotate_spiral_finish(
     events: &[crate::spiral_finish::SpiralFinishRuntimeAnnotation],
     toolpath: &Toolpath,
@@ -650,6 +816,21 @@ pub(super) fn annotate_spiral_finish(
     let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
 
+    let region_start = events.first().map_or(0, |a| a.move_index);
+    let region_end = move_end(&move_indices, events.len().saturating_sub(1), tp_len);
+    let region_scope = op_context.start_item(
+        ToolpathSemanticKind::Region,
+        "Region 1/1 (spiral)".to_owned(),
+    );
+    region_scope.set_param(SemanticKey::RegionIndex, 0usize);
+    region_scope.set_param(SemanticKey::RegionTotal, 1usize);
+    region_scope.set_param(SemanticKey::Strategy, "spiral");
+    region_scope.set_param(SemanticKey::RingTotal, events.len());
+    if region_end > region_start && region_end <= tp_len {
+        region_scope.bind_to_toolpath(toolpath, region_start, region_end);
+    }
+    let ring_ctx = region_scope.context();
+
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
 
@@ -659,7 +840,7 @@ pub(super) fn annotate_spiral_finish(
             radius_mm,
         } = &ann.event;
 
-        let scope = op_context.start_item(
+        let scope = ring_ctx.start_item(
             ToolpathSemanticKind::Ring,
             format!("Ring {}/{ring_total}", ring_index + 1),
         );
@@ -669,6 +850,8 @@ pub(super) fn annotate_spiral_finish(
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
+
+    region_scope.finish();
 }
 
 // ── Pencil ──────────────────────────────────────────────────────────
