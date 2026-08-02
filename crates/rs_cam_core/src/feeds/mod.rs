@@ -1165,7 +1165,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 5: Feed rate ---
-    let effective_d = effective_diameter(input.tool_geometry, d, ap);
+    let effective_d = effective_diameter(
+        input.tool_geometry,
+        d,
+        input.shank_diameter.unwrap_or(d),
+        ap,
+    );
 
     // Radial chip thinning (all tools)
     let rctf = geometry::radial_chip_thinning_factor(ae, effective_d);
@@ -1711,7 +1716,23 @@ fn default_engagement(
     (ap, ae)
 }
 
-fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
+/// CONTACT-CIRCLE diameter at axial depth `ap` — how wide the cutter
+/// actually touches material, which is the quantity both chip-thinning terms
+/// need.
+///
+/// Distinct from [`ToolGeometryHint::engaged_diameter_at_doc`] for the FLAT
+/// family only: that one answers "which vendor-LUT chipload row applies",
+/// where a ball and a bull engage at nominal D regardless of depth. Here a
+/// ball at 0.05 mm engages a 0.44 mm circle, and that is the point.
+///
+/// C3 (2026-08-02): the tapered-ball arm now DELEGATES to
+/// `engaged_diameter_at_doc` rather than carrying its own straight-cone
+/// approximation. The tapered ball's tip IS a ball, so below the tangency
+/// height this arm and the `Ball` arm agree to the last bit; above it the
+/// cone shoulder takes over, capped at the shank. See
+/// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
+/// `tests/tapered_width_model_parity_c3.rs` for what it cost.
+fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,
         ToolGeometryHint::Ball => geometry::ball_effective_diameter(nominal_d, ap),
@@ -1724,10 +1745,9 @@ fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
         } => geometry::vbit_width_at_depth(included_angle, tip_diameter, ap)
             .unwrap_or(nominal_d)
             .min(nominal_d),
-        ToolGeometryHint::TaperedBall {
-            tip_radius,
-            taper_angle_deg,
-        } => geometry::tapered_ball_effective_diameter(nominal_d, tip_radius, taper_angle_deg, ap),
+        ToolGeometryHint::TaperedBall { .. } => {
+            geom.engaged_diameter_at_doc(ap, nominal_d, shank_d)
+        }
     }
 }
 

@@ -50,23 +50,28 @@ pub fn ball_effective_diameter(nominal_d: f64, axial_depth: f64) -> f64 {
     value.max(0.01)
 }
 
-/// Effective cutting diameter for a tapered ball nose end mill.
-///
-/// The local radius at depth `ap` is `tip_r + ap * tan(taper_angle)`.
-pub fn tapered_ball_effective_diameter(
-    nominal_d: f64,
-    tip_r: f64,
-    taper_angle_deg: f64,
-    axial_depth: f64,
-) -> f64 {
-    if nominal_d <= 0.0 || tip_r <= 0.0 {
-        return nominal_d.max(0.01);
-    }
-    let ap = axial_depth.max(0.0);
-    let side_angle_rad = taper_angle_deg.to_radians().max(0.0);
-    let local_radius = tip_r + ap * side_angle_rad.tan();
-    (2.0 * local_radius).clamp(0.01, nominal_d)
-}
+// There is deliberately NO `tapered_ball_effective_diameter` here.
+//
+// C3 (2026-08-02) retired it. It was a STRAIGHT CONE rooted at the tip
+// radius, `2*(tip_r + ap*tan(alpha))`, with no tangency blend — a third
+// implementation of a profile the crate already models exactly twice, in
+// [`crate::tool::MillingCutter::width_at_height`] on `TaperedBallEndmill`
+// and in [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`].
+//
+// It was also inert: every production call site reached it through
+// `feeds::effective_diameter`, which passes the tool's own named diameter as
+// `nominal_d` and derives `tip_r` from the same tool, so `tip_r ==
+// nominal_d / 2` and the whole expression collapsed under its own
+// `.clamp(0.01, nominal_d)` to the constant `nominal_d`. A tapered ball was
+// therefore fed as if it engaged its full tip diameter at any depth, while
+// a plain ball of the same tip got the exact contact circle — up to a 2.1x
+// feed difference for the same physical tip at 0.05 mm DOC.
+//
+// The one caller now asks `ToolGeometryHint::engaged_diameter_at_doc`, which
+// is the same geometry as the cutter trait and is kept honest against it by
+// `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`.
+// The measured cost of the retired model is pinned in
+// `tests/tapered_width_model_parity_c3.rs`.
 
 /// Effective cutting diameter for a bull nose end mill.
 ///
@@ -329,12 +334,13 @@ mod tests {
         assert!(d_eff > 0.0 && d_eff < 6.0, "got {d_eff}");
     }
 
-    #[test]
-    fn test_tapered_ball_effective_scales_with_depth() {
-        let shallow = tapered_ball_effective_diameter(6.0, 0.5, 2.0, 0.2);
-        let deep = tapered_ball_effective_diameter(6.0, 0.5, 2.0, 2.0);
-        assert!(shallow < deep && deep <= 6.0);
-    }
+    // `test_tapered_ball_effective_scales_with_depth` lived here until C3.
+    // It passed `nominal_d = 6.0` with `tip_r = 0.5` — a binding no call site
+    // produces — so it exercised the one branch of the retired straight-cone
+    // model that was not clamped flat, and read healthy while the reachable
+    // behaviour was a constant. Its replacement is the DOC sweep in
+    // `tests/tapered_width_model_parity_c3.rs`, which drives the tapered arm
+    // through `feeds::calculate` at the production binding.
 
     #[test]
     fn test_bull_nose_transitions_to_nominal() {
