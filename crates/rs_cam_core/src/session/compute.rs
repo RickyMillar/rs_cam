@@ -1449,7 +1449,7 @@ impl ProjectSession {
                 // against it — dressups, the boundary clip and the
                 // entry-descent split alike.
                 let mut channels =
-                    crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder));
+                    crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
                     &tc.dressups,
@@ -5377,7 +5377,7 @@ mod tests {
             2.0,
             safe_z,
             &semantic_ctx,
-            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder)),
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         );
 
         assert!(clipped.spans_valid, "spans stay valid through the set clip");
@@ -5440,7 +5440,7 @@ mod tests {
             2.0,
             20.0,
             &semantic_ctx,
-            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder)),
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         );
 
         assert_eq!(

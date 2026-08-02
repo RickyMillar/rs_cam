@@ -1970,7 +1970,13 @@ pub fn scallop_toolpath_research(
             // two rings of the SAME region leaves that region constantly.
             boundary: boundary_regions,
         };
-        let (linked, rep) = crate::surface_link::relink_fragments(&tp, mesh, index, cutter, &rp);
+        let (linked, rep) = crate::surface_link::relink_fragments(
+            crate::toolpath_spans::AnnotatedToolpath::new(tp),
+            mesh,
+            index,
+            cutter,
+            &rp,
+        );
         info!(
             fragments = rep.fragments,
             surface_links = rep.surface_links,
@@ -1981,10 +1987,14 @@ pub fn scallop_toolpath_research(
             outside_boundary = rep.outside_boundary,
             "Scallop intra-pass relink"
         );
-        for a in &mut annotations {
-            a.move_index = rep.move_remap.get(a.move_index).copied().unwrap_or(0);
-        }
-        tp = linked;
+        // C1: the ring annotations are this site's index-carrying channel,
+        // so they are declared and the type system carries them across —
+        // no hand-rolled `old -> new` lookup.
+        tp = {
+            let mut channels =
+                crate::transform_provenance::ReconcileSet::new(None, Some(&mut annotations));
+            linked.reconcile(&mut channels).into_inner().toolpath
+        };
     }
 
     info!(

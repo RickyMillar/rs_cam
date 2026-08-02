@@ -1440,7 +1440,7 @@ mod tests {
             MoveProvenance::Remap(remap),
         );
         let shipped = transformed
-            .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+            .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
             .into_inner();
 
         assert!(
@@ -1515,7 +1515,7 @@ mod tests {
             AnnotatedToolpath::new(staircase(3)),
             MoveProvenance::Remap(remap),
         )
-        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
 
         let trace = recorder.finish();

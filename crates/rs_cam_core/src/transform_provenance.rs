@@ -427,6 +427,46 @@ impl RemapConsumer for SemanticLinkChannel<'_> {
     }
 }
 
+/// Scallop's per-ring runtime annotations
+/// ([`crate::scallop::ScallopRuntimeAnnotation::move_index`]).
+///
+/// Registered in wave 12. Before it, the two call sites of
+/// [`crate::surface_link::relink_fragments`] each hand-rolled
+/// `annotations[i].move_index = report.move_remap[old]` off a bespoke
+/// `Vec<usize>` the relinker built privately — the exact convention this
+/// module exists to delete, one transform later.
+///
+/// Unlike the semantic trace, this channel cannot express "unlinked": a
+/// `move_index` is a plain `usize`. An annotation whose move did not
+/// survive the transform is therefore DROPPED rather than pointed at a
+/// neighbour it does not describe. (The relinker itself maps every input
+/// move onto something, so nothing is dropped there; the rule matters for
+/// whatever transform is routed through this channel next.)
+pub struct ScallopAnnotationChannel<'a>(&'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>);
+
+impl<'a> ScallopAnnotationChannel<'a> {
+    pub fn new(annotations: &'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>) -> Self {
+        Self(annotations)
+    }
+}
+
+impl sealed::Sealed for ScallopAnnotationChannel<'_> {}
+
+impl RemapConsumer for ScallopAnnotationChannel<'_> {
+    fn consume_provenance(&mut self, provenance: &MoveProvenance, toolpath: &Toolpath) {
+        let n = toolpath.moves.len();
+        self.0.retain_mut(
+            |a| match provenance.remap_range(a.move_index, a.move_index + 1, n) {
+                Some(r) => {
+                    a.move_index = r.start;
+                    true
+                }
+                None => false,
+            },
+        );
+    }
+}
+
 // ── ReconcileSet ────────────────────────────────────────────────────────
 
 /// Every index-carrying channel a call site owns.
@@ -446,6 +486,7 @@ impl RemapConsumer for SemanticLinkChannel<'_> {
 /// ```
 pub struct ReconcileSet<'a> {
     semantic_links: Option<SemanticLinkChannel<'a>>,
+    scallop_annotations: Option<ScallopAnnotationChannel<'a>>,
 }
 
 impl<'a> ReconcileSet<'a> {
@@ -454,31 +495,44 @@ impl<'a> ReconcileSet<'a> {
     /// * `semantic_trace` — the recorder whose items carry move links; the
     ///   generation recorder on the session path, the worker's recorder in
     ///   the GUI, `None` where no trace is being produced.
-    pub fn new(semantic_trace: Option<&'a ToolpathSemanticRecorder>) -> Self {
+    /// * `scallop_annotations` — the per-ring runtime annotations a scallop
+    ///   or unified-finish generator is carrying alongside its toolpath,
+    ///   `None` for a site that holds none.
+    pub fn new(
+        semantic_trace: Option<&'a ToolpathSemanticRecorder>,
+        scallop_annotations: Option<&'a mut Vec<crate::scallop::ScallopRuntimeAnnotation>>,
+    ) -> Self {
         Self {
             semantic_links: semantic_trace.map(SemanticLinkChannel::new),
+            scallop_annotations: scallop_annotations.map(ScallopAnnotationChannel::new),
         }
     }
 
     /// This call site owns no index-carrying channel. Distinct from
     /// forgetting one: it is written down.
     pub fn empty() -> Self {
-        Self::new(None)
+        Self::new(None, None)
     }
 
     /// True when no channel is registered — a transform can skip provenance
     /// work it would only throw away.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.semantic_links.is_none()
+        self.semantic_links.is_none() && self.scallop_annotations.is_none()
     }
 
     fn consume(&mut self, provenance: &MoveProvenance, toolpath: &Toolpath) {
         // Destructured, not field-accessed: a new channel makes this fail to
         // compile until it is routed, the same trick
         // `AnnotatedToolpath::translated` uses for coordinate-bearing fields.
-        let Self { semantic_links } = self;
+        let Self {
+            semantic_links,
+            scallop_annotations,
+        } = self;
         if let Some(channel) = semantic_links {
+            channel.consume_provenance(provenance, toolpath);
+        }
+        if let Some(channel) = scallop_annotations {
             channel.consume_provenance(provenance, toolpath);
         }
     }

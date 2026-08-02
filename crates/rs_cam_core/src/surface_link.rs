@@ -10,6 +10,8 @@ use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
+use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap};
+use crate::transform_provenance::Transformed;
 
 /// Build a gouge-safe, surface-following link between two cut points whose XY gap
 /// is within `hookup_distance`, so consecutive passes join without retracting to
@@ -110,10 +112,6 @@ pub struct RelinkReport {
     pub slower_than_retract: usize,
     /// Junctions where the link would have left `RelinkParams::boundary`.
     pub outside_boundary: usize,
-    /// `old_move_index -> new_move_index`. A dropped move (a retract or
-    /// plunge a surface link replaced) maps to the first surviving move
-    /// after it, so annotation indices remap without going backwards.
-    pub move_remap: Vec<usize>,
 }
 
 /// Rewrite a toolpath's inter-fragment junctions, replacing
@@ -138,15 +136,37 @@ pub struct RelinkReport {
 /// `safe_z` — that fragment retracted with a FEED rather than a rapid, so
 /// its exit is not a point on the surface and a link from it would descend
 /// diagonally through material.
+///
+/// # Provenance (C1)
+///
+/// This transform moves indices — it deletes the input's junction rapids,
+/// emits link feeds in their place, and (under
+/// [`RelinkParams::reorder`]) permutes whole fragments. It therefore hands
+/// back a [`Transformed`] carrying a [`MoveProvenance`] rather than the
+/// hand-rolled `old -> new` vector it used to expose, so every
+/// index-carrying channel the call site owns is brought along by the type
+/// system instead of by convention. `reorder` picks the provenance FLAVOUR:
+/// a permutation carries the foreign-intrusion drop rule a plain remap
+/// cannot express.
 #[allow(clippy::too_many_arguments)]
 pub fn relink_fragments(
-    toolpath: &crate::toolpath::Toolpath,
+    annotated: AnnotatedToolpath,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RelinkParams<'_>,
-) -> (crate::toolpath::Toolpath, RelinkReport) {
+) -> (Transformed, RelinkReport) {
     use crate::toolpath::{MoveIntent, MoveType, Toolpath};
+
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+        planner_engagement,
+        rest_grid,
+        rest_regions,
+    } = annotated;
+    let n_in = toolpath.moves.len();
 
     // ── split into fragments, remembering each move's original index ────
     struct Fragment {
@@ -171,14 +191,44 @@ pub fn relink_fragments(
 
     let mut report = RelinkReport {
         fragments: frags.len(),
-        move_remap: vec![usize::MAX; toolpath.moves.len()],
         ..RelinkReport::default()
     };
     if frags.len() < 2 {
-        return (toolpath.clone(), {
-            report.move_remap = (0..toolpath.moves.len()).collect();
-            report
-        });
+        return (
+            Transformed::index_preserving(AnnotatedToolpath {
+                toolpath,
+                spans,
+                spans_valid,
+                planner_engagement,
+                rest_grid,
+                rest_regions,
+            }),
+            report,
+        );
+    }
+
+    // Input indices that are NOT part of any fragment — the junction
+    // rapids. Each belongs to the fragment it precedes, so it maps onto the
+    // junction moves that replaced it; the ones after the last fragment map
+    // onto the closing retract.
+    let mut owner_of_rapid: Vec<Option<usize>> = vec![None; n_in];
+    {
+        let mut next_frag = 0usize;
+        for (i, mv) in toolpath.moves.iter().enumerate() {
+            if matches!(mv.move_type, MoveType::Rapid) {
+                // SAFETY: `next_frag` is only advanced past a fragment whose
+                // last index has been seen, so it stays in `0..=frags.len()`.
+                if let Some(slot) = owner_of_rapid.get_mut(i) {
+                    *slot = (next_frag < frags.len()).then_some(next_frag);
+                }
+            } else if frags
+                .get(next_frag)
+                .and_then(|f| f.moves.last())
+                .is_some_and(|(last, _)| *last == i)
+            {
+                next_frag += 1;
+            }
+        }
     }
 
     let entry_of = |f: &Fragment| -> P3 { f.moves.first().map_or(P3::origin(), |(_, m)| m.target) };
@@ -221,10 +271,12 @@ pub fn relink_fragments(
 
     // ── re-emit ─────────────────────────────────────────────────────────
     let mut out = Toolpath::new();
+    let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = vec![None; n_in];
     let mut prev_exit: Option<P3> = None;
     for &fi in &order {
         let Some(frag) = frags.get(fi) else { continue };
         let entry = entry_of(frag);
+        let junction_start = out.moves.len();
 
         let link = prev_exit.and_then(|from| {
             if params.hookup_distance <= 0.0 {
@@ -333,40 +385,73 @@ pub fn relink_fragments(
             }
         }
 
-        // The first move re-emitted above stands in for `frag.moves[0]`.
+        let junction_end = out.moves.len();
+        // Every junction rapid this fragment used to be reached through was
+        // REPLACED by the moves emitted just above — that is where it went,
+        // and saying so is the whole point of the provenance.
+        for (old, slot) in old_to_new.iter_mut().enumerate() {
+            if owner_of_rapid.get(old).copied().flatten() == Some(fi) {
+                *slot = Some(junction_start..junction_end);
+            }
+        }
+
+        // The last move re-emitted above lands on `entry`, so it stands in
+        // for `frag.moves[0]` — the plunge (or first cut) that used to do so.
         if let Some((old, _)) = frag.moves.first()
-            && let Some(slot) = report.move_remap.get_mut(*old)
+            && let Some(slot) = old_to_new.get_mut(*old)
         {
-            *slot = out.moves.len().saturating_sub(1);
+            let last = junction_end.saturating_sub(1);
+            *slot = Some(last..junction_end);
         }
         for (old, mv) in frag.moves.iter().skip(1) {
             let new = out.moves.len();
             out.moves.push(mv.clone());
-            if let Some(slot) = report.move_remap.get_mut(*old) {
-                *slot = new;
+            if let Some(slot) = old_to_new.get_mut(*old) {
+                *slot = Some(new..new + 1);
             }
         }
         prev_exit = Some(exit_of(frag));
     }
 
     if let Some(end) = prev_exit {
+        let closing = out.moves.len();
         out.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
-    }
-
-    // Rapids in the input have no counterpart in the output (they were
-    // regenerated or replaced). Point each at the next surviving move so a
-    // remapped annotation never moves backwards past its own fragment.
-    let last = out.moves.len().saturating_sub(1);
-    let mut next_known = last;
-    for slot in report.move_remap.iter_mut().rev() {
-        if *slot == usize::MAX {
-            *slot = next_known;
-        } else {
-            next_known = *slot;
+        // Trailing rapids (the input's own closing retract) land on it.
+        for (old, slot) in old_to_new.iter_mut().enumerate() {
+            if slot.is_none()
+                && matches!(
+                    toolpath.moves.get(old).map(|m| &m.move_type),
+                    Some(MoveType::Rapid)
+                )
+            {
+                *slot = Some(closing..closing + 1);
+            }
         }
     }
 
-    (out, report)
+    let new_n_moves = out.moves.len();
+    let remap = MoveRemap { old_to_new };
+    let spans = if spans_valid {
+        remap.remap_spans(&spans, new_n_moves)
+    } else {
+        spans
+    };
+    let annotated = AnnotatedToolpath {
+        toolpath: out,
+        spans,
+        spans_valid,
+        planner_engagement,
+        rest_grid,
+        rest_regions,
+    };
+    // A reorder needs the drop rule a plain remap cannot state — see
+    // `MoveProvenance::Permutation`.
+    let transformed = if params.reorder {
+        Transformed::from_permutation(annotated, remap)
+    } else {
+        Transformed::from_remap(annotated, remap)
+    };
+    (transformed, report)
 }
 
 #[cfg(test)]
@@ -443,6 +528,129 @@ mod tests {
         tp.total_rapid_distance()
     }
 
+    /// [`relink_fragments`] for a caller holding a bare toolpath and no
+    /// index-carrying channel — the contract still makes it say so.
+    fn relink(
+        tp: &crate::toolpath::Toolpath,
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+        cutter: &dyn MillingCutter,
+        params: &RelinkParams<'_>,
+    ) -> (crate::toolpath::Toolpath, RelinkReport) {
+        use crate::transform_provenance::ReconcileSet;
+        let (transformed, report) = relink_fragments(
+            AnnotatedToolpath::new(tp.clone()),
+            mesh,
+            index,
+            cutter,
+            params,
+        );
+        (
+            transformed
+                .reconcile(&mut ReconcileSet::empty())
+                .into_inner()
+                .toolpath,
+            report,
+        )
+    }
+
+    /// The structural claim the whole A/M7 conversion rests on: relinking
+    /// rewrites JUNCTIONS, so every position the tool used to feed to is
+    /// still a position the tool feeds to. Set-membership, exact, and
+    /// order-independent — a reordering passes, a hole does not.
+    ///
+    /// Wave 11 believed this was false, on a gate that selected its
+    /// baseline population by the `FinishingCut` LABEL after arc fitting
+    /// had relabelled `LeadOut` geometry with it. The relinker was never the
+    /// defect; see `tests/scallop_intra_pass_relink_am7.rs`.
+    #[test]
+    fn relink_loses_no_fed_position() {
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+
+        let params = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: None,
+        };
+        let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
+        assert_eq!(report.surface_links, 5, "{report:?}");
+
+        let fed = |t: &crate::toolpath::Toolpath| -> Vec<P3> {
+            t.moves
+                .iter()
+                .filter(|m| !matches!(m.move_type, crate::toolpath::MoveType::Rapid))
+                .map(|m| m.target)
+                .collect()
+        };
+        let after = fed(&out);
+        let missing: Vec<P3> = fed(&tp)
+            .into_iter()
+            .filter(|want| {
+                !after.iter().any(|got| {
+                    (got.x - want.x).abs() < 1e-9
+                        && (got.y - want.y).abs() < 1e-9
+                        && (got.z - want.z).abs() < 1e-9
+                })
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "a relink may ADD link feeds; it may never drop a fed position: \
+             {} lost, first {:?}",
+            missing.len(),
+            missing.first()
+        );
+    }
+
+    /// The C1 half: every input move must be accounted for by the
+    /// provenance, so a channel that follows it cannot be silently orphaned.
+    #[test]
+    fn relink_provenance_accounts_for_every_input_move() {
+        use crate::transform_provenance::ReconcileSet;
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+        let n_in = tp.moves.len();
+
+        let params = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: None,
+        };
+        let (transformed, _) =
+            relink_fragments(AnnotatedToolpath::new(tp), &mesh, &index, &tool, &params);
+        let n_out = transformed.move_count();
+        let (_, prov) = transformed
+            .reconcile(&mut ReconcileSet::empty())
+            .into_parts();
+        for i in 0..n_in {
+            let r = prov.remap_range(i, i + 1, n_out);
+            assert!(
+                r.as_ref()
+                    .is_some_and(|r| r.end <= n_out && r.start < r.end),
+                "input move {i} has no place in the output: {r:?}"
+            );
+        }
+    }
+
     #[test]
     fn relink_replaces_close_junctions_with_surface_links() {
         use crate::toolpath::MoveType;
@@ -463,7 +671,7 @@ mod tests {
             reorder: false,
             boundary: None,
         };
-        let (out, report) = relink_fragments(&tp, &mesh, &index, &tool, &params);
+        let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
 
         assert_eq!(report.fragments, 6, "fixture must present 6 fragments");
         assert_eq!(
@@ -522,7 +730,7 @@ mod tests {
             reorder: false,
             boundary: None,
         };
-        let (out, report) = relink_fragments(&tp, &mesh, &index, &tool, &params);
+        let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 0, "5mm > 3mm hookup: {report:?}");
         assert_eq!(report.retract_links, 3, "{report:?}");
         assert_eq!(report.too_far, 3, "{report:?}");
@@ -573,7 +781,7 @@ mod tests {
             reorder: false,
             boundary: None,
         };
-        let (_, unbounded) = relink_fragments(&tp, &mesh, &index, &tool, &base);
+        let (_, unbounded) = relink(&tp, &mesh, &index, &tool, &base);
         assert_eq!(
             unbounded.surface_links, 5,
             "control: without a boundary every junction links"
@@ -597,7 +805,7 @@ mod tests {
             boundary: Some(&region),
             ..base
         };
-        let (_, bounded) = relink_fragments(&tp, &mesh, &index, &tool, &bounded_params);
+        let (_, bounded) = relink(&tp, &mesh, &index, &tool, &bounded_params);
         assert_eq!(
             bounded.surface_links, 0,
             "a link crossing excluded territory is a CUTTING feed over ground \
@@ -636,12 +844,12 @@ mod tests {
             reorder: false,
             boundary: None,
         };
-        let (kept, _) = relink_fragments(&tp, &mesh, &index, &tool, &base);
+        let (kept, _) = relink(&tp, &mesh, &index, &tool, &base);
         let reordered_params = RelinkParams {
             reorder: true,
             ..base
         };
-        let (reordered, _) = relink_fragments(&tp, &mesh, &index, &tool, &reordered_params);
+        let (reordered, _) = relink(&tp, &mesh, &index, &tool, &reordered_params);
         assert!(
             rapid_len(&reordered) < rapid_len(&kept),
             "near→far→middle must reorder to near→middle→far: {} -> {}",
