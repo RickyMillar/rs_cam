@@ -88,7 +88,7 @@ use std::time::{Duration, Instant};
 use rs_cam_core::classify_probe::{
     ClassificationGridSpec, ClassificationSampler, TILE_EDGE_CELLS, sample_classification_grid,
 };
-use rs_cam_core::finish_setup::FinishResolutionPolicy;
+use rs_cam_core::finish_setup::{CLASSIFICATION_PROBE_DIAMETER_MM, FinishResolutionPolicy};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::slope::{SlopeMap, SurfaceHeightmap};
 use rs_cam_core::tool::MillingCutter;
@@ -463,6 +463,14 @@ fn print_equivalence_rows(rows: &[Equivalence]) {
             r.vanished.iter().sum::<usize>(),
         );
     }
+    println!(
+        "\n(The `verdict` column scores against whichever grid was passed as the ORACLE. \
+         Where that is the shipped Ø{CLASSIFICATION_PROBE_DIAMETER_MM} probe, a `FAILED` row means \
+         the arm dropped a region the PROBE reports — which since wave 7b is characterisation, \
+         not a gate: `production_loses_no_region_against_the_true_surface` re-scores the same \
+         question against the surface, and `LABEL_MOVE_TRIPWIRES` bounds the movement. A green \
+         suite alongside a `FAILED` row here is the expected reading, not a contradiction.)"
+    );
 }
 
 // ── Grid construction ───────────────────────────────────────────────────

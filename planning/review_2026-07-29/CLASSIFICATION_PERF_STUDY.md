@@ -3,13 +3,17 @@
 Research deliverable for `TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` item **M3**.
 C-sequence wave 7a, 2026-08-02. HEAD at start: `812c86a`.
 
-**Status: research only.** Production classification is unchanged and still
-calls the tiny-ball drop-cutter path unconditionally. Nothing in
-`crates/rs_cam_core/src/classify_probe.rs` is reachable from an operation, the
-GUI, the CLI or MCP; its only callers are the bench and the equivalence
-harness. Step 6 of the M3 fix sequence is deliberately **not** ticked — it
-completes when an implementation lands, and §9 says what that implementation
-must pass first.
+**Status: SHIPPED.** Wave 7a (below) was research only. **Wave 7b
+(2026-08-02) switched production**, under the human checkpoint ruling
+recorded in §10: *"Adopt, COLUMNS-gated"*. Production classification now runs
+[`ClassificationSampler::PRODUCTION`] = `TileRaster`; the shipped drop-cutter
+probe remains selectable as the fallback and as the sentries' oracle. §10 is
+the implementation record — the eight §9.3 gates and how each was met, the
+decisive COLUMNS A/B, the re-earned timings, and what moved downstream.
+
+Read §1–§9 as written: they are the wave-7a research, deliberately left in
+their original tense so the decision can be re-audited from the evidence that
+was in front of it.
 
 Instruments, all committed:
 
@@ -542,3 +546,227 @@ Before any production switch:
   the query is ~a fifth of the classifier.
 - Any timing from this study's first release run. It was taken with two test
   threads sharing 24 cores and has been discarded; §4 explains how.
+
+---
+
+## 10. Implementation record — wave 7b, 2026-08-02
+
+Parent commit `c34edfb`. Commits: `0711568` (production switch + provenance +
+sentries), `5d8c115` (the COLUMNS A/B and its verdict), plus the docs commit
+carrying this section.
+
+### 10.1 The ruling
+
+Human checkpoint, 2026-08-02, on §8's question: **"Adopt, COLUMNS-gated."**
+Production switches to candidate 3 behind the eight parity gates of §9.3; the
+decisive gate is an end-to-end wanaka-class `UnifiedFinish` A/B scored on
+COLUMNS quality, **not on cell counts**; if COLUMNS regresses, production
+falls back to the shipped classifier and M3 closes with this study as its
+record.
+
+COLUMNS did not regress. Production is on the tile raster.
+
+### 10.2 What shipped
+
+`finish_setup::build_classification_surface_with_policy_and_cancel` builds a
+`ClassificationGridSpec` and dispatches through `sample_classification_grid`
+at `ClassificationSampler::PRODUCTION`. Three seams were added:
+
+| seam | what it is for |
+|---|---|
+| `ClassificationSampler::PRODUCTION` | the one constant. The §9.1 fallback is "set it back to `DropCutterProbe`"; nothing else in the pipeline names a sampler. `Default` tracks it. |
+| `build_classification_surface_with_sampler_and_cancel` | names the sampler explicitly — how sentries score against the oracle and how the A/B runs both classifiers through one production path. |
+| `UnifiedFinishParams`/`UnifiedFinishConfig::classification_sampler` | the op-level thread. Serialised only when non-production (`skip_serializing_if`), so no project file changes and none grows a key. |
+
+Provenance follows the `CellSource` precedent one level up:
+`FinishSurface.sampler: SurfaceSampler` is `CutterOffset` for generation
+grids and `Classification(sampler)` for classification grids. `CellSource`
+says what **sized** the cells; this says what was **measured into** them.
+
+The grid arithmetic that existed twice — in `finish_setup` and in
+`ClassificationGridSpec::for_mesh`, with a sentry policing the duplicate —
+now exists once. The sentry was rewritten to assert the *contract* (padding
+is one envelope radius, the cell is the policy's, the grid reaches the far
+padded edge so the mask→polygon extractor keeps its margin ring).
+
+§9.4's correction landed: the `CLASSIFICATION_PROBE_DIAMETER_MM` doc no
+longer claims the probe's offset is negligible at finish cell sizes. It
+carries the measured numbers instead.
+
+### 10.3 The eight §9.3 gates
+
+| # | gate | result |
+|---|---|---|
+| 1 | `scratch_arm_is_bit_identical_everywhere` + the terrain EXACT row | **PASS.** Bit-identical on all six analytic fixtures and at terrain 143²/425²/849² (`z max Δ` 0.000000, label Δ 0). The control still detects zero change. |
+| 2 | `direct_arms_agree_to_the_last_ulp_and_on_every_label` | **PASS.** Raster, tiled raster and vertical ray agree to 1 pm and on every label, every fixture. |
+| 3 | coverage mask exact, no tolerance | **PASS.** `cov Δ = 0` on every arm, every fixture, all three terrain grids, and through the production builder. |
+| 4 | thread-count determinism at 1 and 8 | **PASS**, and now at two levels: the arms (`arms_are_deterministic_across_thread_counts`) and the **production builder itself** (`the_production_builder_is_deterministic_across_thread_counts`, diffing Z, coverage and labels, with a band-population non-vacuity check). |
+| 5 | cancellation bounded by one chunk, with an observed latency bound | **PASS**, tightened. The test now counts polls and requires the arm to stop on the first poll that reports `true` (+1 for a wrapper re-check), and asserts the fixture is ≥3 tile bands. **That guard caught this wave's own first attempt**, which cancelled on the last band of a 3-band grid and proved nothing. A production-path twin (`the_production_builder_cancels_and_discards_the_partial_grid`) covers the compute worker's cancel flag; `Result` makes the discard structural — there is no half-built `FinishSurface` to leak. |
+| 6 | `direct_arm_divergence_is_the_probe_offset` still converges | **PASS.** Monotone to zero label disagreement at the first 10× shrink on every fixture. §5.3's attribution stands. |
+| 7 | **end-to-end `UnifiedFinish` A/B on COLUMNS** | **PASS — see §10.4.** |
+| 8 | timings re-earned in the final tree | **PASS — see §10.5.** |
+
+Two further gates were added that §9.3 did not ask for, both from the
+residual-risk list:
+
+* **§9.2 risk 4, "pin the REDUCTION not just the result".** The per-cell
+  reduce is now a named `keep_higher` with its own test, which fails if it is
+  ever rewritten as `f64::max`: a signed-zero tie must keep the first-seen
+  candidate (first-seen-wins is what makes each arm internally
+  deterministic, §6.6), and a NaN must neither win a cell nor be laundered
+  out of one.
+* **Tripwires.** §5.2's per-fixture label-movement numbers were
+  characterisation while the arms were prototypes. Now that one of them is
+  production they are ceilings (`LABEL_MOVE_TRIPWIRES`): the three fixtures
+  that measured exactly zero are pinned at zero, the rest carry 25% headroom,
+  and a fixture with no entry fails rather than passing unbounded. The
+  terrain rows re-measured **exactly** — 709 / 3174 / 17687 — so the wave-7a
+  table reproduces.
+
+### 10.4 Gate 7: the COLUMNS A/B
+
+`crates/rs_cam_core/tests/classification_columns_ab_m3.rs`. Branch A pins
+`DropCutterProbe`, branch B pins `TileRaster`; same mesh, tool, stock, dials,
+simulation grid and process. The fixture is the committed
+`tests/fixtures/terrain.stl` and the config is built in-test — it does **not**
+read `planning/airrun_2026-06-01/wanaka.toml`, because a gate that depends on
+a live user-modified project has a verdict that changes when somebody drags a
+slider (`wanaka_suggest_baseline` is permanently red for exactly that reason).
+
+Tool and cell are the production ones: Ø1 tip on a Ø6 shank at 7°, so the
+classification cell is `cusp/4` = 0.125 mm — the scale the whole decision
+lives at. Measurement grid 0.1 mm, comfortably under the 0.5 mm tip radius.
+Only the FOOTPRINT is a knob (`M3_AB_WINDOW_MM`).
+
+|  | 30 mm window | **full 100 mm terrain** | tolerance |
+|---|---|---|---|
+| common columns | 86 637 | **1 001 987** | — |
+| p50 \|dev\| | 62.39 → 61.74 µm (−0.65) | **28.59 → 28.69 µm (+0.11)** | +5 µm |
+| p90 \|dev\| | 302.01 → 300.53 µm (−1.48) | **219.03 → 223.47 µm (+4.44)** | +10 µm |
+| on-size ±10 µm | 13.030 → 12.892% (−0.139 pp) | **26.665 → 26.570% (−0.095 pp)** | — |
+| on-size ±25 µm | 27.155 → 27.154% (−0.001 pp) | **47.596 → 47.514% (−0.082 pp)** | −0.5 pp |
+| max \|dev\| | 2150.7 → 2491.9 µm | 3870.2 → 3990.4 µm | reported, not gated |
+| rapid collisions | 0 → 0 | **0 → 0** | no increase |
+
+Region mix, full terrain (the table §9.3 gate 7 asks for beside the verdict):
+
+| band / strategy | A regions | B regions | A area mm² | B area mm² |
+|---|---|---|---|---|
+| Shallow / raster | 5 | 4 | 6267.8 | 6358.6 |
+| MidSteep / scallop | 1 | 1 | 8127.6 | 8100.2 |
+| VerySteep / waterline | 9 | 6 | 3343.1 | **3427.6** |
+
+**Verdict: ADOPT.** Every gated statistic clears by an order of magnitude, in
+both directions — this is a wash on quality, not a win. Thresholds were
+pre-registered above the assertions and justified against a physical scale
+(the dials ask for a 22.5 µm cusp, `0.3²/(8·0.5)`, so p50 may rise a quarter
+of that and p90 half of it). `max` is reported and not gated: one column in a
+million is not a distribution.
+
+Three things stated rather than buried:
+
+1. **The classifier's speed reaches the user.** Whole-op generation wall on
+   the full terrain: 249.0 s → 192.9 s, **−22.5%**. §4's 187× is a
+   microbenchmark; this is the same change measured through an operation.
+2. **B costs +5.6% cutting time on the full terrain** (7188.8 → 7588.5 s). It
+   finds 84.5 mm² more very-steep territory — §9.2 risk 2, predicted — and
+   waterline is the most expensive strategy per area. Quality did not pay for
+   the extra territory; the clock did. On the 30 mm window the same change
+   went the other way (−2.5%), so this is fixture-dependent, not a law.
+3. **`max` got worse on both windows** (+341 µm, +120 µm). Leftover, not
+   gouge, and one column — but recorded.
+
+Per the v3 campaign's closing rule — *never gate on an aggregate without
+rendering the surface* — the harness writes three PNGs to
+`target/m3_columns_ab/` before any verdict is read. The B−A map is the phase
+texture P2.g characterised: mottled, local mean zero, **no coherent block of
+standing material**. 66.9% of columns move between branches, so the two
+surfaces really are different surfaces being compared.
+
+### 10.5 Gate 8: timings re-earned in the final tree
+
+Same machine, `--release`, `--test-threads=1`, `pgrep` clear before the run.
+Swap was full and ~27 GiB RAM was available, as in wave 7a.
+
+| 849² row | wave 7a wall | **wave 7b wall** | wave 7a CPU | **wave 7b CPU** |
+|---|---|---|---|---|
+| terrain, shipped | 2.990 s | **3.161 s** | 40.70 s | **40.38 s** |
+| terrain, tile raster | 0.016 s | **0.016 s** | 0.13 s | **0.13 s** |
+| terrain speed-up | 187× | **198× wall, 311× CPU** | | |
+| analytic, shipped | 0.689 s | **0.721 s** | 13.03 s | **12.58 s** |
+| analytic, tile raster | 0.003 s | **0.004 s** | 0.03 s | **0.03 s** |
+| analytic speed-up | 230× | **180×** | | |
+
+Peak RSS across the terrain sweep: 135 MB (wave 7a: 134). Nothing retained
+between calls. The ratios reproduce; the absolute walls wobble by ~6%, which
+is what §9.2 risk 6 said to expect from one machine and one run.
+
+### 10.6 Downstream: what moved
+
+Nineteen sentries that consume region ownership were run against the switch —
+`unified_finish_semantic_regions`, `checkpoint_a_valley_matrix`,
+`coverage_routing_pr5`, `crease_own_region_pr6b`, `generic_rest_routing_pr7`,
+`unified_finish_tapered_end_to_end_m21`, `steep_shallow_min_segment_pr8d`,
+`finish_resolution_policy_pr3`, `tool_scale_semantics_pr2`,
+`tapered_cusp_radius_sentry`, `waterline_shared_finish_setup_c3`,
+`finish_planner_wanaka_decompose`, `derived_stepover_pr6a`,
+`unified_finish_dropped_band_finding_d1`,
+`unified_finish_partial_clip_finding_c8`, `narrate_regions_closed_c8`,
+`checkpoint_b_resolution_ab`, `ramp_reach_clamp_pr8b`, `reach_policy_pr4`.
+
+**All green. Not one pinned expectation moved.** That is a real result rather
+than a lucky one, and §5.2 says why: the synthetic fixtures these sentries use
+are the fixtures where the probe artefact is smallest — flat ground and clean
+analytic walls, where the direct arms measured EXACT or within a few hundred
+cells. The redistribution §9.2 warned about is a property of *terrain*, and
+terrain is where the A/B measured it.
+
+### 10.7 Reading the `verdict` column after this wave
+
+`print_equivalence_rows` scores against whichever grid the caller passed as
+the ORACLE. Where that is the shipped Ø0.05 probe, a `FAILED` row means the
+arm dropped a region **the probe reports** — which since wave 7b is
+characterisation, not a gate. `terrain@849` still prints `FAILED` for all
+three direct arms while the suite is green, and that is the expected reading:
+`production_loses_no_region_against_the_true_surface` re-scores the same
+question against the surface, and `LABEL_MOVE_TRIPWIRES` bounds the movement.
+The harness prints this footnote under every table so the next reader does
+not have to rediscover it.
+
+### 10.8 The gate that had to be restated, and why
+
+The plan's acceptance gate reads *"no loss of narrow steep regions relative
+to the current fine classifier"*. Taken literally the direct arms fail it —
+5 mid-steep components lost at terrain 849² (§5.2). §5.3 measured why: those
+components are the probe's own slope-dependent CL offset, not surface.
+Holding a true-surface classifier to a probe-artefact reference rejects it
+for being right.
+
+So the gate is restated with the **surface** as the reference — reached by
+shrinking the oracle's own probe 100×, an independent construction rather
+than one of the direct arms scoring itself. Against that reference:
+
+* the production sampler moves **0 labels and loses 0 regions** on every
+  analytic fixture — it *is* the surface, not an approximation of it;
+* the shipped probe moves labels on three fixtures and **fabricates**
+  regions rather than losing them (mixed-slope: 6 real mid-steep components
+  read as 8).
+
+The direction is the opposite of the plan's phrasing, which is exactly why
+the restatement had to be a measurement and not a re-pointing. Both facts are
+asserted, so the gate cannot go vacuous in either direction.
+
+### 10.9 Still open
+
+* **Candidate 0** (`query_into` / `QueryScratch`) remains recommended on its
+  own merits and unlanded — §7. It is worth nothing *here* and the study says
+  so; it should be taken where a profile shows it helps.
+* **Candidates 4 and 5** stay closed, for §8's reasons, now reinforced: a
+  classification that takes 16 ms is not worth a cache's invalidation risk.
+* **`spec_at_side` is still not the production cell rule** (§9.2 risk 5). The
+  timing table varies grid side over a fixed footprint; the A/B in §10.4 is
+  the row measured at the real `cusp/4`.
+* **Down-wound faces still shift by 2R** (§9.2 risk 3) between the two
+  families. Uniform on `stacked_shelf`; on a real overhang it is a 50 µm step
+  at the up/down-wound boundary. The switch moves production onto the correct
+  side of it, and nothing here exercises a real overhang.
