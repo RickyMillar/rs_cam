@@ -20,8 +20,8 @@ Instruments, all committed:
 | candidate implementations | `crates/rs_cam_core/src/classify_probe.rs` | — |
 | pathological fixtures | `crates/rs_cam_core/tests/common/meshes.rs` | — |
 
-Commits: `efabeec` (baseline bench), `05cac97` (candidates + harness), this
-document.
+Commits: `efabeec` (baseline bench), `05cac97` (candidates + harness),
+`6c73810` (this document + the orchestration-log entry).
 
 ---
 
