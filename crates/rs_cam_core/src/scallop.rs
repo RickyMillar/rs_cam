@@ -70,6 +70,17 @@ pub enum ScallopRuntimeEvent {
         ring_index: usize,
         ring_total: usize,
         continuous: bool,
+        /// C8: which BOUNDARY REGION's independent ring set this ring
+        /// belongs to. Scallop generates "one region at a time,
+        /// concatenated in region order" (P2.3), but the annotation stream
+        /// carried only a global ring index, so the region structure was
+        /// lost before the semantic trace was built and `narrate_toolpath`
+        /// reported `regions 0` for an operation that had run several.
+        region_index: usize,
+        /// How many boundary regions this run generated ring sets for.
+        /// `1` when no machining boundary is set — the whole mesh footprint
+        /// is one region, which is the honest count, not zero.
+        region_total: usize,
     },
 }
 
@@ -1003,7 +1014,13 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
 
     // Generate 3D rings, one region at a time, concatenated in region order.
     let mut rings: Vec<Vec<(P3, bool)>> = Vec::new();
-    for region_boundary in &region_boundaries {
+    // C8: which region each ring came from, parallel to `rings`. The ring
+    // list is concatenated in region order, so this is contiguous — but it
+    // is recorded rather than re-derived, because the direction flip below
+    // reverses the list and a re-derivation would have to know that.
+    let mut ring_region: Vec<usize> = Vec::new();
+    let region_total = region_boundaries.len().max(1);
+    for (region_index, region_boundary) in region_boundaries.iter().enumerate() {
         check_cancel(cancel)?;
         let (region_rings, region_uncut) = generate_scallop_rings_with_cancel(
             region_boundary,
@@ -1020,6 +1037,7 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
             params.tolerance,
             cancel,
         )?;
+        ring_region.extend(std::iter::repeat_n(region_index, region_rings.len()));
         rings.extend(region_rings);
         uncut_core_mm2 += region_uncut;
     }
@@ -1038,9 +1056,11 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
         ));
     }
 
-    // Apply direction
+    // Apply direction. `ring_region` is reversed in lockstep — the whole
+    // point of carrying it is that it survives this.
     if matches!(params.direction, ScallopDirection::InsideOut) {
         rings.reverse();
+        ring_region.reverse();
     }
 
     // Slope confinement
@@ -1113,6 +1133,8 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
                     ring_index: i + 1,
                     ring_total: rings.len(),
                     continuous: true,
+                    region_index: ring_region.get(i).copied().unwrap_or(0),
+                    region_total,
                 },
             });
 
@@ -1181,11 +1203,15 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
         // point on it survives (a partial survivor set closing across the
         // excluded gap would chord straight through material this pass
         // must not touch).
-        let mut emitted_runs: Vec<(Vec<P3>, bool)> = Vec::new();
-        for ring in &rings {
+        // C8: `(points, close_loop, region_index)` — a ring can split into
+        // several emitted runs, and every one of them belongs to the region
+        // its parent ring came from.
+        let mut emitted_runs: Vec<(Vec<P3>, bool, usize)> = Vec::new();
+        for (ring_idx, ring) in rings.iter().enumerate() {
             if ring.len() < 3 {
                 continue;
             }
+            let region_index = ring_region.get(ring_idx).copied().unwrap_or(0);
 
             let runs = crate::point_runs::split_runs(
                 ring,
@@ -1196,11 +1222,11 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
             for run in runs {
                 let is_closed_loop = run.len() == ring.len();
                 let pts: Vec<P3> = run.iter().map(|&(p, _)| p).collect();
-                emitted_runs.push((pts, is_closed_loop));
+                emitted_runs.push((pts, is_closed_loop, region_index));
             }
         }
 
-        for (ring_index, (points, close_loop)) in emitted_runs.iter().enumerate() {
+        for (ring_index, (points, close_loop, region_index)) in emitted_runs.iter().enumerate() {
             check_cancel(cancel)?;
             let Some(&first) = points.first() else {
                 continue;
@@ -1212,6 +1238,8 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
                     ring_index: ring_index + 1,
                     ring_total: emitted_runs.len(),
                     continuous: false,
+                    region_index: *region_index,
+                    region_total,
                 },
             });
             tp.rapid_to_with_intent(
