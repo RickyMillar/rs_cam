@@ -155,6 +155,41 @@ fn segment_cell_coverage(
     (cov, t_center, center_d_sq)
 }
 
+/// Coverage at or above which a cell counts as **completely** swept, and the
+/// sliver-safe bound (`DexelGrid::conservative_top`) may be lowered.
+///
+/// A/M10. Not `1.0` exactly: coverage is measured by a 4×4 sub-sample fan
+/// (`SUBSAMPLE_N`), so a cell genuinely inside the cutter reports `1.0` only
+/// up to that quantisation. `1.0 - 1/32` sits half a sub-sample below full
+/// and cannot be reached by a cell that has any sub-sample outside the
+/// cutter.
+const FULL_COVERAGE: f32 = 1.0 - 1.0 / 32.0;
+
+/// Upper bound of the removal surface across a WHOLE cell, for the
+/// sliver-safe channel.
+///
+/// The stamping kernels evaluate the cutter profile at the cell CENTRE,
+/// which is the right answer for the cell's own sample and the wrong one for
+/// a bound: every cutter profile in `crate::tool` rises monotonically with
+/// radial distance, so the highest point of the cutter surface over a square
+/// cell is at the sub-sample farthest from the tool axis. `near_dist` is the
+/// centre's distance; the half-diagonal `cs·√2/2` reaches the corner.
+///
+/// `depth_max` is the highest tip position the stamp reaches over the cell —
+/// for a swept segment that is the higher of its two endpoints, not the
+/// interpolated value at the cell centre.
+#[inline]
+fn cell_upper_bound_surface(
+    lut: &RadialProfileLUT,
+    near_dist_sq: f64,
+    cs: f64,
+    depth_max: f64,
+) -> Option<f64> {
+    let far = near_dist_sq.sqrt() + cs * std::f64::consts::SQRT_2 * 0.5;
+    let far_sq = (far * far).min(lut.radius_sq());
+    lut_h_with_edge_fallback(lut, far_sq).map(|h| depth_max + h)
+}
+
 /// LUT query for an annular cell at squared distance `dist_sq` from disk
 /// center: clamp to the cutter edge if the cell center sits outside the
 /// disk (§6.F gap 3). Returns `None` only if the LUT returns `None` at the
@@ -257,6 +292,14 @@ pub(super) fn stamp_point_on_grid(
                 let surface = (tip_depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
             }
+            // A/M10: only a cell swept end to end may lower the sliver-safe
+            // bound, and only to the cutter's highest point across that cell.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, tip_depth)
+            {
+                grid.lower_conservative_top(idx, ub as f32);
+            }
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
             }
@@ -341,6 +384,16 @@ pub(super) fn stamp_segment_on_grid(
             } else {
                 let surface = (depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
+            }
+            // A/M10 — see `stamp_point_on_grid`. The tip height is
+            // interpolated at the cell centre, so the bound takes the higher
+            // endpoint: a ramping segment must not be credited with the
+            // deeper end of its own travel.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
+            {
+                grid.lower_conservative_top(idx, ub as f32);
             }
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
@@ -453,6 +506,13 @@ pub(super) fn stamp_segment_with_metrics(
                 if coverage > grid.coverage_max[idx] {
                     grid.coverage_max[idx] = coverage;
                 }
+                // A/M10 — see `stamp_point_on_grid`.
+                if from_high
+                    && coverage >= FULL_COVERAGE
+                    && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
+                {
+                    grid.lower_conservative_top(idx, ub as f32);
+                }
             }
         }
 
@@ -559,7 +619,6 @@ pub(super) fn stamp_segment_with_metrics(
             } else {
                 ray_blend_below(ray, cell_tool_surface as f32, coverage);
             }
-
             // 3. Post-stamp material height. The pre/post diff naturally
             //    scales with coverage — no separate volume correction needed
             //    (unlike the degenerate branch, §6.F gap 1).
@@ -568,6 +627,18 @@ pub(super) fn stamp_segment_with_metrics(
 
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
+            }
+
+            // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
+            // simulator actually runs, so it is the one that decides whether
+            // `prior_stocks` carries a sliver-safe bound at all. Placed
+            // after the last read of `ray`: the update takes `&mut grid`,
+            // and the ray borrow is still live above it.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
+            {
+                grid.lower_conservative_top(idx, ub as f32);
             }
 
             // 4. Engagement metrics. The midpoint disk defines the

@@ -593,6 +593,12 @@ mod tests {
             }
         }
         let coverage_max = vec![0.0_f32; rows * cols];
+        // A/M10: this grid is built from an explicit per-cell top array, so
+        // each cell's top IS the stated height — there is no sub-cell blend
+        // to be conservative about. Seed the sliver-safe bound to the same
+        // values rather than to the bbox top, which would make every descent
+        // over this fixture clear the full stock height.
+        let conservative_top: Vec<f32> = cell_top_z.iter().map(|&z| z as f32).collect();
         let grid = crate::dexel::DexelGrid {
             rays,
             rows,
@@ -602,6 +608,7 @@ mod tests {
             cell_size,
             axis: crate::dexel::DexelAxis::Z,
             coverage_max,
+            conservative_top,
         };
         TriDexelStock {
             z_grid: grid,
