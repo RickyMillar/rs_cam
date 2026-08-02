@@ -86,6 +86,13 @@ pub struct ToolpathNarrationContext<'a> {
     /// nothing dropped or nothing measured; narration says which, using
     /// [`Self::operation_kind`] to tell those two apart.
     pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// C8: a planned finish band whose Z ladder height resolution SHORTENED
+    /// while it still cut, straight off
+    /// [`crate::compute::config::ToolpathStats::clipped_band`]. `None` =
+    /// nothing clipped or nothing measured; narration says which, using
+    /// [`Self::operation_kind`] to tell those two apart — the same contract
+    /// [`Self::dropped_band`] carries.
+    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
     /// Wave D1: the centreline TIP-FLOAT tally, off
     /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
     /// operation emits no valley centrelines, so nothing was measured — NOT
@@ -280,6 +287,7 @@ pub fn narrate_toolpath_with_context(
     }
     append_standing_material(&mut output, context.standing_material_mm2);
     append_dropped_band(&mut output, context);
+    append_clipped_band(&mut output, context);
     append_tip_float(&mut output, context.tip_float);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
@@ -746,6 +754,56 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
                 "Unmachined band: not measured — this operation plans no \
                  finish bands, so no band could be dropped by height \
                  resolution. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// C8: one line, always, about a finish band that was only PARTLY machined.
+///
+/// The quiet sibling of [`append_dropped_band`], and it follows exactly the
+/// same three-branch contract: a finding, a measured-clean statement on an
+/// operation that plans bands, and an explicit "not measured" on one that
+/// does not. Absence of a number is never a zero.
+fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    match context.clipped_band {
+        Some(f) => {
+            output.push_str(&format!(
+                "Partly machined band: {area:.1} mm² across {count} planned \
+                 region(s) — the {band} band cut only part of its depth. The \
+                 resolved {clip} = {clip_z:.3} mm shortened its ladder from \
+                 {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
+                 ({planned} levels planned, {resolved} laddered), leaving up \
+                 to {lost:.3} mm of the feature unfinished. [{provenance}. \
+                 Report-only — no gate consumes this.]\n",
+                area = f.area_mm2,
+                count = f.region_count,
+                band = f.band_label,
+                clip = f.clip_label,
+                clip_z = f.clip_z_mm,
+                req_lo = f.requested_bottom_z_mm,
+                req_hi = f.requested_top_z_mm,
+                del_lo = f.delivered_bottom_z_mm,
+                del_hi = f.delivered_top_z_mm,
+                planned = f.planned_levels,
+                resolved = f.resolved_levels,
+                lost = f.max_lost_height_mm,
+                provenance = f.provenance.describe(),
+            ));
+        }
+        None if plans_bands => {
+            output.push_str(
+                "Partly machined band: none — every planned finish band \
+                 laddered its whole Z range.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Partly machined band: not measured — this operation plans no \
+                 finish bands, so no band Z ladder could be shortened. \
+                 Absence of a number is not a zero.\n",
             );
         }
     }
@@ -1469,6 +1527,7 @@ mod tests {
             standing_material_mm2: None,
             // Nor bands, nor centrelines (Wave D1): not measured either.
             dropped_band: None,
+            clipped_band: None,
             tip_float: None,
         };
 

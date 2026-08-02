@@ -40,6 +40,7 @@ pub fn diagnostics_from_generation(
     out.extend(tip_float(toolpath_id, stats));
     out.extend(deprecated_dial(toolpath_id, stats));
     out.extend(derived_stepover(toolpath_id, stats));
+    out.extend(clipped_band(toolpath_id, stats));
     out.extend(ramp_reach_clamp(toolpath_id, stats));
     out.extend(claims_reference(toolpath_id, stats));
     out
@@ -304,6 +305,64 @@ fn standing_material(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
             domain = STANDING_MATERIAL_DOMAIN,
             stage = STANDING_MATERIAL_STAGE,
             resolution = STANDING_MATERIAL_RESOLUTION,
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// C8: a planned finish band whose Z ladder height resolution SHORTENED
+/// while it still cut — a PARTLY machined feature.
+///
+/// `Info`, not `Caution`: unlike [`unmachined_band`] the operation did cut
+/// here, and a partial clip is often exactly what an operator asked for by
+/// pinning a height. What was missing was any way to tell. The message
+/// carries requested-vs-delivered Z and the worst lost height, because
+/// "how much of the wall is unfinished" is the question and a level count
+/// does not answer it.
+///
+/// Same area floor as its sibling: a clipped band with no area is a
+/// decomposition artefact, not a feature, and NaN never reports.
+fn clipped_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = no band was partially clipped, or nothing that plans bands
+    // ran. Neither is a defect claim (A/M9's rule, X-19).
+    let Some(f) = stats.clipped_band.as_deref() else {
+        return Vec::new();
+    };
+    if f.area_mm2.partial_cmp(&STANDING_MATERIAL_FLOOR_MM2) != Some(std::cmp::Ordering::Greater) {
+        return Vec::new();
+    }
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_CLIPPED_BAND),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Info,
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{area:.1} mm² of the {band} band across {count} planned \
+             region(s) cut only PART of its depth: the resolved {clip} = \
+             {clip_z:.3} mm shortened the ladder from {req_lo:.3}..{req_hi:.3} mm \
+             to {del_lo:.3}..{del_hi:.3} mm ({planned} levels planned, \
+             {resolved} laddered), leaving up to {lost:.3} mm of the feature \
+             unfinished. If that was not deliberate, pin {clip} to the real \
+             depth of the feature. [{provenance}. Report-only — no gate.]",
+            area = f.area_mm2,
+            band = f.band_label,
+            count = f.region_count,
+            clip = f.clip_label,
+            clip_z = f.clip_z_mm,
+            req_lo = f.requested_bottom_z_mm,
+            req_hi = f.requested_top_z_mm,
+            del_lo = f.delivered_bottom_z_mm,
+            del_hi = f.delivered_top_z_mm,
+            planned = f.planned_levels,
+            resolved = f.resolved_levels,
+            lost = f.max_lost_height_mm,
+            provenance = f.provenance.describe(),
         ),
         evidence: None,
         fix: None,

@@ -242,6 +242,17 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub derived_stepovers: Vec<DerivedStepoverFinding>,
+    /// C8: a planned finish band whose Z ladder the resolved heights
+    /// SHORTENED while it still cut. `None` = **no band was partially
+    /// clipped**, or nothing that plans bands ran — never "measured zero".
+    /// Its loud sibling is [`Self::dropped_band`]; the two are disjoint by
+    /// construction.
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath.
+    ///
+    /// Report-only: no gate consumes it.
+    pub clipped_band: Option<Box<ClippedBandFinding>>,
     /// PR-8b (H3): how far a ramp-finish descent had to be RAISED because the
     /// cutter could not hold the commanded depth there.
     ///
@@ -408,6 +419,82 @@ pub struct DroppedBandFinding {
 }
 
 impl DroppedBandFinding {
+    /// [`Self::area_mm2`] in the newtype that refuses cross-domain division
+    /// (M1 slice 2), together with its contract.
+    #[must_use]
+    pub fn area(
+        &self,
+    ) -> (
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    ) {
+        (
+            crate::measurement::ProjectedXyAreaMm2::new(self.area_mm2),
+            self.provenance,
+        )
+    }
+}
+
+/// A planned finish band whose Z ladder was SHORTENED by the resolved
+/// heights but which still emitted cutting (C8).
+///
+/// The complement of [`DroppedBandFinding`], and the gap
+/// `ANTIPATTERNS_BACKLOG.md` P8 logged. Wave D1 measured the clip on EVERY
+/// band and discarded the measurement unless the region emitted nothing at
+/// all — so a band that machined the top 2 mm of a 12 mm wall and stopped
+/// left an unfinished feature and no trace.
+///
+/// Severity is the reason the two are separate types rather than one with a
+/// flag: a dropped band is a `Caution` ("this feature will be UNMACHINED"),
+/// a clipped band is `Info` ("this feature is PARTLY machined, here is what
+/// was left"), and a loud finding must not be buried under quiet ones.
+///
+/// Report-only: no gate consumes it, and it is deliberately NOT the fix.
+/// Changing `UnifiedFinishConfig`'s depth semantics is a behavioural change;
+/// this is the instrument that has to exist first.
+///
+/// **Known limit, stated rather than implied**: only the `VerySteep` arm
+/// measures its clip today. The `MidSteep` (scallop) and `Shallow`
+/// (drop-cutter raster) arms never set one, so a partial clip there is
+/// still invisible — Wave D1 built the instrument on the arm whose ladder is
+/// explicit, and C8 widened what that instrument REPORTS without widening
+/// where it is taken.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClippedBandFinding {
+    /// Stable band token — names the band of the LARGEST clipped region.
+    pub band_label: &'static str,
+    /// How many planned regions were clipped, across every band.
+    pub region_count: usize,
+    /// Summed XY-projected area (mm²) of the clipped regions' band polygons.
+    /// Read the domain off [`Self::provenance`] before comparing it.
+    pub area_mm2: f64,
+    /// The resolved height (mm) that clipped the largest region.
+    pub clip_z_mm: f64,
+    /// Which resolved height it was: `"bottom_z"` or `"top_z"`.
+    pub clip_label: &'static str,
+    /// Ceiling (mm) the largest clipped band's own surface span asked for.
+    pub requested_top_z_mm: f64,
+    /// Floor (mm) it asked for.
+    pub requested_bottom_z_mm: f64,
+    /// Ceiling (mm) the resolved heights allowed.
+    pub delivered_top_z_mm: f64,
+    /// Floor (mm) they allowed.
+    pub delivered_bottom_z_mm: f64,
+    /// Z levels the largest clipped band would have laddered.
+    pub planned_levels: usize,
+    /// Z levels that survived.
+    pub resolved_levels: usize,
+    /// Worst vertical extent (mm) removed from any one clipped band —
+    /// requested height minus delivered height. This is the number that
+    /// answers "how much of the wall is unfinished".
+    pub max_lost_height_mm: f64,
+    /// What [`Self::area_mm2`] means. Per-instance for the same reason as
+    /// [`DroppedBandFinding::provenance`]: the band polygons are quantised
+    /// by a TOOL-derived classification cell.
+    pub provenance: crate::measurement::MeasurementProvenance,
+}
+
+impl ClippedBandFinding {
     /// [`Self::area_mm2`] in the newtype that refuses cross-domain division
     /// (M1 slice 2), together with its contract.
     #[must_use]

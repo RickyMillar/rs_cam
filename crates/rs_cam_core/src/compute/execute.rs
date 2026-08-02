@@ -80,6 +80,11 @@ pub struct GenerationFindings {
     /// decomposition ran, or every band it planned survived.
     /// See [`crate::compute::config::DroppedBandFinding`].
     pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// C8: a planned finish band whose Z ladder height resolution SHORTENED
+    /// while it still cut. `None` = no band was partially clipped, or no
+    /// banded decomposition ran. Disjoint from [`Self::dropped_band`].
+    /// See [`crate::compute::config::ClippedBandFinding`].
+    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
     /// Wave D1: tip float on the emitted valley centrelines. `None` = the
     /// operation emits no centrelines, so nothing was measured.
     /// See [`crate::compute::config::TipFloatFinding`].
@@ -136,6 +141,17 @@ fn record_dropped_band(
 ) {
     let Some(finding) = finding else { return };
     cell.borrow_mut().dropped_band = Some(finding);
+}
+
+/// Record a partial band clip (C8). `None` is a no-op, for the same reason
+/// [`record_dropped_band`]'s is: an adapter that planned bands and clipped
+/// none must not overwrite an earlier finding with an absence.
+fn record_clipped_band(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: Option<crate::compute::config::ClippedBandFinding>,
+) {
+    let Some(finding) = finding else { return };
+    cell.borrow_mut().clipped_band = Some(finding);
 }
 
 /// Record the centreline tip-float tally (Wave D1). Unlike the two above
@@ -1638,6 +1654,11 @@ pub(crate) fn generate_unified_finish(
     record_dropped_band(
         ctx.findings,
         crate::unified_finish::dropped_band_finding(&report),
+    );
+    // C8: the quiet sibling — bands the heights SHORTENED but did not erase.
+    record_clipped_band(
+        ctx.findings,
+        crate::unified_finish::clipped_band_finding(&report),
     );
     // Wave D1: the crease node's centrelines are pencil centrelines and
     // float for the same reasons. `None` when claims never ran.

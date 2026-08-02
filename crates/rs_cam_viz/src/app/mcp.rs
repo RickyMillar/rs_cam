@@ -1132,6 +1132,7 @@ impl super::RsCamApp {
             // are exactly the kind of finding an agent narrating a LIVE GUI
             // toolpath has no other way to see.
             dropped_band: result.stats.dropped_band.as_deref().copied(),
+            clipped_band: result.stats.clipped_band.as_deref().copied(),
             tip_float: result.stats.tip_float,
         };
 
