@@ -2375,7 +2375,7 @@ lands.
 |---|------|-------|----------|
 | 1 | `efabeec` | `benches/classification.rs` + the `[[bench]]` entry | 2 files, +217 / −0 |
 | 2 | `05cac97` | `src/classify_probe.rs`, `SpatialIndex::query_into`/`QueryScratch`/`cell_triangles_at`, `tests/classification_strategy_m3.rs`, 3 fixtures in `tests/common/meshes.rs` | 6 files, +2123 / −0 |
-| 3 | `HASH3` | `CLASSIFICATION_PERF_STUDY.md` + this entry | |
+| 3 | `6c73810` | `CLASSIFICATION_PERF_STUDY.md` + this entry | |
 
 Deliverable: `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`.
 
