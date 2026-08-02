@@ -1337,6 +1337,16 @@ After the wanaka live validation report lands:
    sweep) / 6edaaa1 (A/M11b — fixpoint loop, 3-deep chain in one call
    reporting rounds 4 / simulations 3). All nine acceptance gates green.
 4. **C6 fixture library** — before M4's fixture-heavy work.
+   ✅ DONE 2026-08-02: `c8e40f7` (`tests/common/{meshes,tools,session,
+   fingerprint}` + a bit-identity smoke harness that carries the DONOR
+   implementations verbatim and pins the shared generators to them
+   `to_bits()`-exactly, at every parameter set all five `grooved_block`
+   copies use — including the three not yet migrated) / `1cd6eee` (four
+   opportunistic migrations: the C2 plateau, Checkpoint A, PR-3's three
+   pinned fingerprints and A/M9 itself; assertions, test names and pinned
+   constants all unchanged, net −192 lines). ~26 `ToolpathConfig` literal
+   sites and three groove copies deliberately left alone, per the "never in
+   bulk" rule.
 5. **A/M6** `claims_reference` (base plan, unchanged position).
 6. **M3 classifier** (uses C2+C6).
 7. **C3 + C4 + C8** — consolidation/diagnostics wave (feeds H4's oracles).
