@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use crate::debug_trace::ToolpathDebugTrace;
 use crate::geo::P3;
-use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
+use crate::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{Move, MoveType, Toolpath};
@@ -812,8 +812,7 @@ fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSeman
     {
         if let Some(count) = item
             .params
-            .values
-            .get("marching_squares_regions")
+            .get(SemanticKey::MarchingSquaresRegions)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok())
         {
@@ -821,32 +820,27 @@ fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSeman
         }
         if let Some(areas) = item
             .params
-            .values
-            .get("region_areas_mm2")
+            .get(SemanticKey::RegionAreasMm2)
             .and_then(|value| value.as_array())
         {
             level.region_areas_mm2 = areas.iter().filter_map(|value| value.as_f64()).collect();
         }
         level.dropped_micro_regions = item
             .params
-            .values
-            .get("dropped_micro_region_count")
+            .get(SemanticKey::DroppedMicroRegionCount)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok());
         level.perimeter_sweep_length_mm = item
             .params
-            .values
-            .get("perimeter_sweep_length_mm")
+            .get(SemanticKey::PerimeterSweepLengthMm)
             .and_then(|value| value.as_f64());
         level.agent_walk_cut_length_mm = item
             .params
-            .values
-            .get("agent_walk_cut_length_mm")
+            .get(SemanticKey::AgentWalkCutLengthMm)
             .and_then(|value| value.as_f64());
         level.residual_cleanup_cell_count = item
             .params
-            .values
-            .get("residual_cleanup_cell_count")
+            .get(SemanticKey::ResidualCleanupCellCount)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok());
     }
@@ -885,8 +879,7 @@ fn fallback_semantic_region_count_at_z(trace: &ToolpathSemanticTrace, z: f64) ->
 fn semantic_item_matches_z(item: &crate::semantic_trace::ToolpathSemanticItem, z: f64) -> bool {
     if let Some(z_level) = item
         .params
-        .values
-        .get("z_level")
+        .get(SemanticKey::ZLevel)
         .and_then(|value| value.as_f64())
     {
         return (z - z_level).abs() <= Z_EPSILON_MM;
@@ -1655,12 +1648,12 @@ mod tests {
 
     fn one_region_semantic_trace(z_level: f64) -> ToolpathSemanticTrace {
         let mut params = ToolpathSemanticParams::default();
-        params.insert("z_level", z_level);
-        params.insert("marching_squares_regions", 1usize);
-        params.insert("region_areas_mm2", vec![42.0_f64]);
-        params.insert("perimeter_sweep_length_mm", 123.0_f64);
-        params.insert("agent_walk_cut_length_mm", 456.0_f64);
-        params.insert("residual_cleanup_cell_count", 0usize);
+        params.insert(SemanticKey::ZLevel, z_level);
+        params.insert(SemanticKey::MarchingSquaresRegions, 1usize);
+        params.insert(SemanticKey::RegionAreasMm2, vec![42.0_f64]);
+        params.insert(SemanticKey::PerimeterSweepLengthMm, 123.0_f64);
+        params.insert(SemanticKey::AgentWalkCutLengthMm, 456.0_f64);
+        params.insert(SemanticKey::ResidualCleanupCellCount, 0usize);
         ToolpathSemanticTrace {
             schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Back Rough".to_owned(),

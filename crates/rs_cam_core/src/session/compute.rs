@@ -22,7 +22,9 @@ use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
-use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
+use crate::semantic_trace::{
+    SemanticKey, ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
+};
 use crate::simulation_cut::SimulationMetricOptions;
 use crate::tool::MillingCutter;
 
@@ -1807,14 +1809,14 @@ impl ProjectSession {
             let clip_scope =
                 semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
             clip_scope.set_param(
-                "containment",
+                SemanticKey::Containment,
                 match boundary_config.containment {
                     crate::compute::config::BoundaryContainment::Center => "center",
                     crate::compute::config::BoundaryContainment::Inside => "inside",
                     crate::compute::config::BoundaryContainment::Outside => "outside",
                 },
             );
-            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
+            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
             if !clipped.toolpath.moves.is_empty() {
                 clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
             }
@@ -1902,15 +1904,15 @@ impl ProjectSession {
             let clip_scope =
                 semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
             clip_scope.set_param(
-                "containment",
+                SemanticKey::Containment,
                 match boundary_config.containment {
                     crate::compute::config::BoundaryContainment::Center => "center",
                     crate::compute::config::BoundaryContainment::Inside => "inside",
                     crate::compute::config::BoundaryContainment::Outside => "outside",
                 },
             );
-            clip_scope.set_param("keep_out_count", keep_out_footprints.len());
-            clip_scope.set_param("region_count", boundaries.len());
+            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
+            clip_scope.set_param(SemanticKey::RegionCount, boundaries.len());
             if !clipped.toolpath.moves.is_empty() {
                 clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
             }

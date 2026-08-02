@@ -41,20 +41,387 @@ pub enum ToolpathSemanticKind {
     Optimization,
 }
 
+/// The typed vocabulary of [`ToolpathSemanticParams`] keys (C4).
+///
+/// `ToolpathSemanticParams` is a `BTreeMap<String, Value>` bag, and PR-0
+/// recorded that typing and provenance die at that boundary. The bag stays —
+/// the values are genuinely heterogeneous and the JSON wire is a
+/// compatibility surface — but the KEY half of it does not have to be free
+/// text. Before this enum the vocabulary existed only as 74 string literals
+/// spread across `compute/annotate.rs`, `compute/execute.rs`,
+/// `session/compute.rs` and the GUI worker, with the readers in `narrate.rs`
+/// carrying their own copies of six of them. A typo on either side produced
+/// a silently absent parameter, never an error.
+///
+/// Every constructor and reader now takes a `SemanticKey`. [`Self::as_str`]
+/// is the ONLY place a key string exists, so the emitted JSON is unchanged
+/// and a misspelling is a compile error.
+///
+/// **H4's mix tables — and any other report that groups semantic items —
+/// must be built on this enum, on
+/// [`crate::toolpath_spans::RegionSpanRole`], or on
+/// [`crate::unified_finish::RegionKind::from_span_label`]. Never on a
+/// `label`, and never on a key literal spelled out at the consumer.**
+///
+/// Adding a parameter means adding a variant here: the match in
+/// [`Self::as_str`] is exhaustive, and [`Self::ALL`] is what
+/// [`Self::from_key`] derives from, the same contract
+/// [`crate::toolpath_spans::SpanKind::ALL`] carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SemanticKey {
+    /// `agent_walk_cut_length_mm`
+    AgentWalkCutLengthMm,
+    /// `angle_deg`
+    AngleDeg,
+    /// `area_mm2`
+    AreaMm2,
+    /// `band`
+    Band,
+    /// `barrier_count`
+    BarrierCount,
+    /// `cell_count`
+    CellCount,
+    /// `center_x`
+    CenterX,
+    /// `center_y`
+    CenterY,
+    /// `chain_index`
+    ChainIndex,
+    /// `chain_total`
+    ChainTotal,
+    /// `containment`
+    Containment,
+    /// `continuous`
+    Continuous,
+    /// `contour_index`
+    ContourIndex,
+    /// `contour_total`
+    ContourTotal,
+    /// `cycle_index`
+    CycleIndex,
+    /// `dropped_micro_region_count`
+    DroppedMicroRegionCount,
+    /// `entry_x`
+    EntryX,
+    /// `entry_y`
+    EntryY,
+    /// `entry_z`
+    EntryZ,
+    /// `exit_reason`
+    ExitReason,
+    /// `hole_index`
+    HoleIndex,
+    /// `idle_count`
+    IdleCount,
+    /// `is_centerline`
+    IsCenterline,
+    /// `keep_out_count`
+    KeepOutCount,
+    /// `kind`
+    Kind,
+    /// `lead_in_feed_rate`
+    LeadInFeedRate,
+    /// `lead_out_feed_rate`
+    LeadOutFeedRate,
+    /// `level_index`
+    LevelIndex,
+    /// `level_total`
+    LevelTotal,
+    /// `line_index`
+    LineIndex,
+    /// `line_total`
+    LineTotal,
+    /// `link_feed_rate`
+    LinkFeedRate,
+    /// `lower_level_index`
+    LowerLevelIndex,
+    /// `lower_z`
+    LowerZ,
+    /// `marching_squares_regions`
+    MarchingSquaresRegions,
+    /// `max_angle_deg`
+    MaxAngleDeg,
+    /// `max_feed_rate`
+    MaxFeedRate,
+    /// `max_link_distance`
+    MaxLinkDistance,
+    /// `move_scope`
+    MoveScope,
+    /// `nominal_feed_rate`
+    NominalFeedRate,
+    /// `offset_index`
+    OffsetIndex,
+    /// `offset_mm`
+    OffsetMm,
+    /// `offset_total`
+    OffsetTotal,
+    /// `pass_index`
+    PassIndex,
+    /// `perimeter_sweep_length_mm`
+    PerimeterSweepLengthMm,
+    /// `pitch`
+    Pitch,
+    /// `radius`
+    Radius,
+    /// `radius_mm`
+    RadiusMm,
+    /// `ramp_index`
+    RampIndex,
+    /// `ramp_rate`
+    RampRate,
+    /// `ramp_total`
+    RampTotal,
+    /// `region_areas_mm2`
+    RegionAreasMm2,
+    /// `region_count`
+    RegionCount,
+    /// `region_id`
+    RegionId,
+    /// `region_index`
+    RegionIndex,
+    /// `region_total`
+    RegionTotal,
+    /// `residual_cleanup_cell_count`
+    ResidualCleanupCellCount,
+    /// `ring_index`
+    RingIndex,
+    /// `ring_total`
+    RingTotal,
+    /// `safe_z`
+    SafeZ,
+    /// `search_evaluations`
+    SearchEvaluations,
+    /// `short`
+    Short,
+    /// `skipped`
+    Skipped,
+    /// `step_count`
+    StepCount,
+    /// `strategy`
+    Strategy,
+    /// `style`
+    Style,
+    /// `terrace_index`
+    TerraceIndex,
+    /// `terrace_total`
+    TerraceTotal,
+    /// `tolerance`
+    Tolerance,
+    /// `tool_radius`
+    ToolRadius,
+    /// `upper_level_index`
+    UpperLevelIndex,
+    /// `upper_z`
+    UpperZ,
+    /// `yield_ratio`
+    YieldRatio,
+    /// `z_level`
+    ZLevel,
+}
+
+impl SemanticKey {
+    /// Every variant, in declaration order (alphabetical by wire key).
+    pub const ALL: [Self; 74] = [
+        Self::AgentWalkCutLengthMm,
+        Self::AngleDeg,
+        Self::AreaMm2,
+        Self::Band,
+        Self::BarrierCount,
+        Self::CellCount,
+        Self::CenterX,
+        Self::CenterY,
+        Self::ChainIndex,
+        Self::ChainTotal,
+        Self::Containment,
+        Self::Continuous,
+        Self::ContourIndex,
+        Self::ContourTotal,
+        Self::CycleIndex,
+        Self::DroppedMicroRegionCount,
+        Self::EntryX,
+        Self::EntryY,
+        Self::EntryZ,
+        Self::ExitReason,
+        Self::HoleIndex,
+        Self::IdleCount,
+        Self::IsCenterline,
+        Self::KeepOutCount,
+        Self::Kind,
+        Self::LeadInFeedRate,
+        Self::LeadOutFeedRate,
+        Self::LevelIndex,
+        Self::LevelTotal,
+        Self::LineIndex,
+        Self::LineTotal,
+        Self::LinkFeedRate,
+        Self::LowerLevelIndex,
+        Self::LowerZ,
+        Self::MarchingSquaresRegions,
+        Self::MaxAngleDeg,
+        Self::MaxFeedRate,
+        Self::MaxLinkDistance,
+        Self::MoveScope,
+        Self::NominalFeedRate,
+        Self::OffsetIndex,
+        Self::OffsetMm,
+        Self::OffsetTotal,
+        Self::PassIndex,
+        Self::PerimeterSweepLengthMm,
+        Self::Pitch,
+        Self::Radius,
+        Self::RadiusMm,
+        Self::RampIndex,
+        Self::RampRate,
+        Self::RampTotal,
+        Self::RegionAreasMm2,
+        Self::RegionCount,
+        Self::RegionId,
+        Self::RegionIndex,
+        Self::RegionTotal,
+        Self::ResidualCleanupCellCount,
+        Self::RingIndex,
+        Self::RingTotal,
+        Self::SafeZ,
+        Self::SearchEvaluations,
+        Self::Short,
+        Self::Skipped,
+        Self::StepCount,
+        Self::Strategy,
+        Self::Style,
+        Self::TerraceIndex,
+        Self::TerraceTotal,
+        Self::Tolerance,
+        Self::ToolRadius,
+        Self::UpperLevelIndex,
+        Self::UpperZ,
+        Self::YieldRatio,
+        Self::ZLevel,
+    ];
+
+    /// The wire key. This is the single source of the JSON vocabulary —
+    /// changing one of these strings changes the emitted trace.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AgentWalkCutLengthMm => "agent_walk_cut_length_mm",
+            Self::AngleDeg => "angle_deg",
+            Self::AreaMm2 => "area_mm2",
+            Self::Band => "band",
+            Self::BarrierCount => "barrier_count",
+            Self::CellCount => "cell_count",
+            Self::CenterX => "center_x",
+            Self::CenterY => "center_y",
+            Self::ChainIndex => "chain_index",
+            Self::ChainTotal => "chain_total",
+            Self::Containment => "containment",
+            Self::Continuous => "continuous",
+            Self::ContourIndex => "contour_index",
+            Self::ContourTotal => "contour_total",
+            Self::CycleIndex => "cycle_index",
+            Self::DroppedMicroRegionCount => "dropped_micro_region_count",
+            Self::EntryX => "entry_x",
+            Self::EntryY => "entry_y",
+            Self::EntryZ => "entry_z",
+            Self::ExitReason => "exit_reason",
+            Self::HoleIndex => "hole_index",
+            Self::IdleCount => "idle_count",
+            Self::IsCenterline => "is_centerline",
+            Self::KeepOutCount => "keep_out_count",
+            Self::Kind => "kind",
+            Self::LeadInFeedRate => "lead_in_feed_rate",
+            Self::LeadOutFeedRate => "lead_out_feed_rate",
+            Self::LevelIndex => "level_index",
+            Self::LevelTotal => "level_total",
+            Self::LineIndex => "line_index",
+            Self::LineTotal => "line_total",
+            Self::LinkFeedRate => "link_feed_rate",
+            Self::LowerLevelIndex => "lower_level_index",
+            Self::LowerZ => "lower_z",
+            Self::MarchingSquaresRegions => "marching_squares_regions",
+            Self::MaxAngleDeg => "max_angle_deg",
+            Self::MaxFeedRate => "max_feed_rate",
+            Self::MaxLinkDistance => "max_link_distance",
+            Self::MoveScope => "move_scope",
+            Self::NominalFeedRate => "nominal_feed_rate",
+            Self::OffsetIndex => "offset_index",
+            Self::OffsetMm => "offset_mm",
+            Self::OffsetTotal => "offset_total",
+            Self::PassIndex => "pass_index",
+            Self::PerimeterSweepLengthMm => "perimeter_sweep_length_mm",
+            Self::Pitch => "pitch",
+            Self::Radius => "radius",
+            Self::RadiusMm => "radius_mm",
+            Self::RampIndex => "ramp_index",
+            Self::RampRate => "ramp_rate",
+            Self::RampTotal => "ramp_total",
+            Self::RegionAreasMm2 => "region_areas_mm2",
+            Self::RegionCount => "region_count",
+            Self::RegionId => "region_id",
+            Self::RegionIndex => "region_index",
+            Self::RegionTotal => "region_total",
+            Self::ResidualCleanupCellCount => "residual_cleanup_cell_count",
+            Self::RingIndex => "ring_index",
+            Self::RingTotal => "ring_total",
+            Self::SafeZ => "safe_z",
+            Self::SearchEvaluations => "search_evaluations",
+            Self::Short => "short",
+            Self::Skipped => "skipped",
+            Self::StepCount => "step_count",
+            Self::Strategy => "strategy",
+            Self::Style => "style",
+            Self::TerraceIndex => "terrace_index",
+            Self::TerraceTotal => "terrace_total",
+            Self::Tolerance => "tolerance",
+            Self::ToolRadius => "tool_radius",
+            Self::UpperLevelIndex => "upper_level_index",
+            Self::UpperZ => "upper_z",
+            Self::YieldRatio => "yield_ratio",
+            Self::ZLevel => "z_level",
+        }
+    }
+
+    /// Inverse of [`Self::as_str`], named to match
+    /// [`crate::toolpath_spans::SpanKind::from_key`]. `None` means the key is
+    /// not part of the
+    /// vocabulary — treat that as a loud error, not a silent no-match.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.as_str() == key)
+    }
+}
+
+impl std::fmt::Display for SemanticKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, DeriveSerialize, Deserialize)]
 pub struct ToolpathSemanticParams {
     pub values: BTreeMap<String, Value>,
 }
 
 impl ToolpathSemanticParams {
-    pub fn insert_json(&mut self, key: impl Into<String>, value: Value) {
-        self.values.insert(key.into(), value);
+    /// Insert a pre-serialised value under a typed key.
+    pub fn insert_json(&mut self, key: SemanticKey, value: Value) {
+        self.values.insert(key.as_str().to_owned(), value);
     }
 
-    pub fn insert<T: Serialize>(&mut self, key: impl Into<String>, value: T) {
+    /// Serialise and insert under a typed key.
+    ///
+    /// Silently drops values that fail to serialise — a parameter is a
+    /// diagnostic, never a reason to fail a generation.
+    pub fn insert<T: Serialize>(&mut self, key: SemanticKey, value: T) {
         if let Ok(value) = serde_json::to_value(value) {
-            self.values.insert(key.into(), value);
+            self.values.insert(key.as_str().to_owned(), value);
         }
+    }
+
+    /// Read a parameter by typed key. The reader half of C4: `narrate.rs`
+    /// used to carry its own copies of six key literals.
+    #[must_use]
+    pub fn get(&self, key: SemanticKey) -> Option<&Value> {
+        self.values.get(key.as_str())
     }
 }
 
@@ -497,11 +864,14 @@ impl ToolpathSemanticScope {
         });
     }
 
-    pub fn set_param<T: Serialize>(&self, key: impl Into<String>, value: T) {
+    /// Attach a parameter to the open item under a typed key (C4 — see
+    /// [`SemanticKey`]; the key vocabulary is closed, the value is not).
+    pub fn set_param<T: Serialize>(&self, key: SemanticKey, value: T) {
         self.update_item(|item| item.params.insert(key, value));
     }
 
-    pub fn set_param_json(&self, key: impl Into<String>, value: Value) {
+    /// [`Self::set_param`] with a pre-serialised value.
+    pub fn set_param_json(&self, key: SemanticKey, value: Value) {
         self.update_item(|item| item.params.insert_json(key, value));
     }
 
@@ -886,12 +1256,134 @@ mod tests {
     use crate::toolpath_spans::AnnotatedToolpath;
     use crate::transform_provenance::{MoveProvenance, ReconcileSet, Transformed};
 
+    /// C4 wire sentry. The typed key layer must be invisible on the wire:
+    /// `as_str` is the only place a key string exists, and this pins the
+    /// whole vocabulary as literal text so a variant rename cannot quietly
+    /// move the JSON an agent or a script reads.
+    ///
+    /// The list is transcribed by hand ON PURPOSE. Deriving it from
+    /// `SemanticKey::as_str` would make the test tautological — it would
+    /// assert the enum equals itself. A key that changes here is a change to
+    /// a published vocabulary and should cost one deliberate edit.
+    #[test]
+    fn the_semantic_key_wire_vocabulary_is_pinned() {
+        const WIRE: [&str; 74] = [
+            "agent_walk_cut_length_mm",
+            "angle_deg",
+            "area_mm2",
+            "band",
+            "barrier_count",
+            "cell_count",
+            "center_x",
+            "center_y",
+            "chain_index",
+            "chain_total",
+            "containment",
+            "continuous",
+            "contour_index",
+            "contour_total",
+            "cycle_index",
+            "dropped_micro_region_count",
+            "entry_x",
+            "entry_y",
+            "entry_z",
+            "exit_reason",
+            "hole_index",
+            "idle_count",
+            "is_centerline",
+            "keep_out_count",
+            "kind",
+            "lead_in_feed_rate",
+            "lead_out_feed_rate",
+            "level_index",
+            "level_total",
+            "line_index",
+            "line_total",
+            "link_feed_rate",
+            "lower_level_index",
+            "lower_z",
+            "marching_squares_regions",
+            "max_angle_deg",
+            "max_feed_rate",
+            "max_link_distance",
+            "move_scope",
+            "nominal_feed_rate",
+            "offset_index",
+            "offset_mm",
+            "offset_total",
+            "pass_index",
+            "perimeter_sweep_length_mm",
+            "pitch",
+            "radius",
+            "radius_mm",
+            "ramp_index",
+            "ramp_rate",
+            "ramp_total",
+            "region_areas_mm2",
+            "region_count",
+            "region_id",
+            "region_index",
+            "region_total",
+            "residual_cleanup_cell_count",
+            "ring_index",
+            "ring_total",
+            "safe_z",
+            "search_evaluations",
+            "short",
+            "skipped",
+            "step_count",
+            "strategy",
+            "style",
+            "terrace_index",
+            "terrace_total",
+            "tolerance",
+            "tool_radius",
+            "upper_level_index",
+            "upper_z",
+            "yield_ratio",
+            "z_level",
+        ];
+        let actual: Vec<&str> = SemanticKey::ALL.iter().map(|k| k.as_str()).collect();
+        assert_eq!(actual.as_slice(), WIRE.as_slice());
+
+        // Every key round-trips, and the keys are distinct — a copy-pasted
+        // arm in `as_str` would otherwise make one variant unreachable by
+        // name while silently colliding on the wire.
+        for key in SemanticKey::ALL {
+            assert_eq!(SemanticKey::from_key(key.as_str()), Some(key));
+        }
+        let mut sorted = actual.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), SemanticKey::ALL.len());
+        assert_eq!(SemanticKey::from_key("not_a_key"), None);
+    }
+
+    /// The typed setters must write exactly the string the untyped ones did.
+    #[test]
+    fn typed_keys_serialise_as_their_wire_strings() {
+        let mut params = ToolpathSemanticParams::default();
+        params.insert(SemanticKey::ZLevel, -1.5);
+        params.insert(SemanticKey::MarchingSquaresRegions, 3usize);
+        params.insert_json(SemanticKey::Band, Value::String("MidSteep".to_owned()));
+        let json = serde_json::to_string(&params).expect("serialize params");
+        assert!(json.contains("\"z_level\":-1.5"), "{json}");
+        assert!(json.contains("\"marching_squares_regions\":3"), "{json}");
+        assert!(json.contains("\"band\":\"MidSteep\""), "{json}");
+        // …and read back through the typed accessor.
+        assert_eq!(
+            params.get(SemanticKey::ZLevel).and_then(Value::as_f64),
+            Some(-1.5)
+        );
+        assert_eq!(params.get(SemanticKey::Pitch), None);
+    }
+
     #[test]
     fn semantic_recorder_serializes_items() {
         let recorder = ToolpathSemanticRecorder::new("Pocket 1", "Pocket");
         let ctx = recorder.root_context();
         let item = ctx.start_item(ToolpathSemanticKind::DepthLevel, "Level -1.0");
-        item.set_param("z", -1.0);
+        item.set_param(SemanticKey::ZLevel, -1.0);
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(0.0, 0.0, 5.0));
         tp.feed_to(P3::new(0.0, 0.0, -1.0), 100.0);

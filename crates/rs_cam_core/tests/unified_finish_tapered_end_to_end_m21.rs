@@ -314,18 +314,23 @@ fn semantic_nodes(session: &ProjectSession) -> Vec<SemanticNode> {
 }
 
 fn node_from_item(item: &ToolpathSemanticItem) -> SemanticNode {
-    let string_param = |key: &str| {
+    // C4: typed keys. A typo in one of these literals used to yield an empty
+    // string, i.e. a silently vacuous band/strategy assertion.
+    let string_param = |key: rs_cam_core::semantic_trace::SemanticKey| {
         item.params
-            .values
             .get(key)
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned()
     };
+    use rs_cam_core::semantic_trace::SemanticKey;
     SemanticNode {
-        band: string_param("band"),
-        strategy: string_param("strategy"),
-        area_mm2: item.params.values.get("area_mm2").and_then(|v| v.as_f64()),
+        band: string_param(SemanticKey::Band),
+        strategy: string_param(SemanticKey::Strategy),
+        area_mm2: item
+            .params
+            .get(SemanticKey::AreaMm2)
+            .and_then(|v| v.as_f64()),
         range: (
             item.move_start
                 .expect("semantic region must be move-linked"),
