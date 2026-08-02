@@ -3726,6 +3726,21 @@ tests). Sentries run individually: `descent_resolution_stability_am10` 3/3,
 `common_fixtures_smoke_c6` 2/2, `standing_material_channel_am9` 4/4,
 `param_sweep` 56 ignored (unchanged).
 
+The exhaustive `cargo test -p rs_cam_core --tests --no-fail-fast` sweep —
+122 test binaries, run to completion and **read from the log it produced**
+(`scratchpad/w11/final_sweep.txt`), which is the rule this wave's own
+erratum imposes — reports **exactly two failing targets, both KNOWN reds
+and neither this wave's**:
+
+* `--lib` 2221 / 3 — the three adaptive3d reds;
+* `wanaka_suggest_integration` 2 / 1 — `wanaka_suggest_baseline`, the
+  environmental red that reads the user-modified `wanaka.toml`.
+
+`crease_own_region_pr6b` is green in that same sweep, so the third red the
+wave opened with is closed and the crate is back to the two the programme
+has carried throughout. Note the sweep ran under heavy foreign load (system
+load ~19 from unrelated jobs); it changed the wall clock, not the results.
+
 One deliberate re-pin beyond the pr6b adjudication:
 `optimize_entry_descents_uses_dexel_ceiling_above_mesh` 9.0 → 7.0, which is
 exactly the removed pad on untouched stock.
@@ -3753,3 +3768,11 @@ The registry caught a real omission: adding `intra_pass_hookup_mm` to
 * **`capability_link_moves_safety` was extended only by opt-out.** The new
   scallop link path is gated by its own file rather than folded into that
   suite; merging them is the tidier end state.
+* **No surface was rendered.** The standing rule from the v3 close-out is
+  *never gate on an aggregate without rendering the surface*, and this wave
+  gated on aggregates. The mitigation was to make the instruments POINTWISE
+  rather than aggregate — the A/M7 finding is a set-membership check over
+  individual cut positions, and the A/M10 one is a collision count with the
+  rib's measured height beside it — but pointwise is not the same as seen.
+  The 21 lost positions in particular deserve a rendered before/after before
+  anyone declares the relinker fixed.
