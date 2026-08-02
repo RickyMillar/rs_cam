@@ -1371,6 +1371,46 @@ After the wanaka live validation report lands:
    QUALITY, so a rough→finish chain still needs `self_probe` pinned by hand.
 6. **M3 classifier** (uses C2+C6).
 7. **C3 + C4 + C8** — consolidation/diagnostics wave (feeds H4's oracles).
+   ✅ DONE 2026-08-02: **C3** — `f792fe9` (tapered width models: parity
+   sentry FIRST, measuring +290.6% / −44.1% against `width_at_height`, not
+   the backlog's "~5%", and the growth term CLAMPED DEAD at every production
+   call site; verdict UNIFY — the third model is retired and its one caller
+   delegates to `engaged_diameter_at_doc`. **Suggest's shallow tapered-ball
+   feed rises +8–26%; a human should look at that**) / `92eaea1` (waterline:
+   Z-ladder extracted, PR-8d's floor inherited red-then-green — 2 segments
+   at 0.000891 mm gone at zero cost in cutting length, and §8.1's
+   attribution REVERSED, they are made in `waterline_contours` and merely
+   observed in the steep half; the `execute.rs` slope-sentinel copy the
+   backlog named **does not exist and has not since `4b105da`**, three stale
+   claims corrected) / `c44a2be` (CLI diagnostic → a serde view whose
+   constructor exhaustively destructures the core struct, so a new core
+   field is a compile error; wire byte-stability proven twice, including a
+   mechanical diff against `HEAD`).
+   **C4** — `ad445f3` (`RegionSpanRole::{DrillHole, DrillPeck}` + `ALL`/
+   `from_key` + `has_region_role`; two variants not one, because the parent
+   side was equally label-bound) / `b514046` (`RegionKind::from_span_label`;
+   a payload field declined so `toolpath_spans` keeps no finishing
+   dependency, with a round-trip sentry making a label change break loudly
+   in one place) / `263ba5d` (`SemanticKey`: 74 keys, 110 call sites, JSON
+   wire pinned as hand-transcribed literals).
+   **C8** — `6d134c8` (derived-stepover slot → `Vec`; `GenerationFindings`
+   drops `Copy` for `RefCell`; the PR-6a rationale was ORPHANED onto the
+   wrong function, which is most of how first-writer-wins survived) /
+   `c1db76f` (partial clips reported: 185.98 mm² laddering 5 of 9 levels and
+   leaving 4.311 mm of wall unfinished, previously silent; `Caution` vs
+   `Info` in disjoint collections) / `f5925f8` (`regions 0` closed for
+   Scallop / SpiralFinish / Trace — **three different causes**: a real
+   partition dropped in transit, no partition at all, and a naming
+   divergence; the first cut broke A/M8's 1:1 gate, hence
+   `ScallopRegionGrouping`) / `ef9dfec` (ramp reach clamp reports 370.5 mm²
+   of swath on its own fixture, with its own `MeasurementStage` and a sentry
+   asserting it is NOT the ring-cascade provenance; RampFinish also gained
+   the narration line it never had).
+   **NOT fixed, stated**: only `UnifiedFinish`'s `VerySteep` arm measures a
+   height clip, so partial clips in MidSteep/Shallow remain invisible; and
+   below tangency a tapered ball and its ball twin still pick different
+   vendor-LUT chipload rows (pre-existing `engaged_diameter_at_doc` policy,
+   now measured rather than assumed).
 8. **M4 scallop** (Checkpoint C; uses C3 width parity + C6).
 9. **C9** reach generalisation (own evidence pack, matrix-gated).
 10. **A/M7 + A/M10** motion economy (after C1, per its gate).
