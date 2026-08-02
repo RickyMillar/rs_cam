@@ -4,8 +4,8 @@ use rs_cam_core::adaptive_shared::{
 use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{
-    Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
-    RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, StockSource,
+    Adaptive3dConfig, Adaptive3dEntryStyle, ClaimsReference, ClearingStrategy, DropCutterConfig,
+    PencilConfig, RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, StockSource,
     UnifiedFinishConfig, WaterlineConfig,
 };
 
@@ -692,10 +692,178 @@ pub(in crate::ui::properties) fn draw_scallop_params(
 /// `draw_scallop_params`). No stepover-pattern diagram either (same
 /// silent-gap acceptance as `StepoverPattern::from_operation`'s `_ => None`
 /// fallback covers Scallop).
+/// A/M6: the "Rest Claims" block of the Unified Finish panel — the claims
+/// pipeline's four dials, plus a readout of which reference the last
+/// generation actually RESOLVED to and why.
+///
+/// The readout exists because `claims_reference: Auto` resolves against
+/// something no config field records: whether a simulated prior stock was in
+/// scope. Before A/M6 the dials were not in the panel at all and the
+/// resolution appeared only in a `tracing::warn!` that no GUI run
+/// subscribes to.
+fn draw_unified_finish_claims(
+    ui: &mut egui::Ui,
+    cfg: &mut UnifiedFinishConfig,
+    resolved: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    stock_source: StockSource,
+) {
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new("Rest Claims").strong());
+    egui::Grid::new("uf_claims")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Pencil Claims:");
+            ui.checkbox(&mut cfg.pencil_claims, "").on_hover_text(
+                "Run the crease/rest detector inside this operation and cut its \
+                     claimed valleys as an extra pass. Off by default: on a \
+                     single-tool op the analytic detector marks exactly what this \
+                     cutter cannot reach. Every dial below is INERT while this is off.",
+            );
+            ui.end_row();
+
+            ui.label("Rest Reference:");
+            egui::ComboBox::from_id_salt("uf_claims_ref")
+                .selected_text(match cfg.claims_reference {
+                    ClaimsReference::Auto => "Auto (derive)",
+                    ClaimsReference::SelfProbe => "Analytic self-probe",
+                    ClaimsReference::MachinedStock => "Machined prior stock",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::Auto,
+                        "Auto (derive)",
+                    )
+                    .on_hover_text(
+                        "Use the machined prior stock when one is in scope, and the \
+                         analytic self-probe when none is. Pin the self-probe instead \
+                         if the previous pass was a ROUGHING pass — a stock-referenced \
+                         detector reads roughing terraces as phantom creases.",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::SelfProbe,
+                        "Analytic self-probe",
+                    )
+                    .on_hover_text(
+                        "Derive rest from the design surface: where can this cutter \
+                         not reach the model. Right for a FIRST finish pass and for a \
+                         rough-referenced chain; wrong for a same-tool rest pass, \
+                         where it names precisely what the pass cannot fix (measured \
+                         −88.7% cutting once corrected).",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::MachinedStock,
+                        "Machined prior stock",
+                    )
+                    .on_hover_text(
+                        "Measure rest against the material the previous pass actually \
+                         left. Needs this operation's stock source set to remaining \
+                         stock, and an upstream pass that has been generated AND \
+                         simulated.",
+                    );
+                });
+            ui.end_row();
+
+            ui.label("Territory Clip:");
+            ui.checkbox(&mut cfg.territory_clip, "").on_hover_text(
+                "Confine generation to rest ISLANDS instead of the full surface. \
+                     Runs only under the machined-stock reference — under a self-probe \
+                     reference the 'rest islands' are geometric, not material, so the \
+                     clip is skipped and this becomes an all-over pass.",
+            );
+            ui.end_row();
+
+            dv(
+                ui,
+                "Min Rest Depth:",
+                &mut cfg.min_rest_depth_mm,
+                " mm",
+                0.005,
+                0.0..=1.0,
+            );
+        });
+
+    // The resolved reference: what the LAST generation used, not what the
+    // dial says. `None` before the operation has generated, or when claims
+    // are off and nothing was resolved.
+    match resolved {
+        Some(f) => {
+            let r = f.resolution;
+            let loud = r.needs_attention() || f.territory_clip_skipped();
+            let colour = if loud {
+                egui::Color32::from_rgb(220, 180, 60)
+            } else {
+                egui::Color32::from_rgb(150, 190, 150)
+            };
+            let used = match r.reference() {
+                rs_cam_core::unified_finish::CreaseReference::MachinedStock => {
+                    "machined prior stock"
+                }
+                rs_cam_core::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+            };
+            let verb = if r.is_derived() { "derived" } else { "pinned" };
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} Last generated against the {used} ({verb}).",
+                    if loud { "\u{26A0}" } else { "\u{2713}" }
+                ))
+                .small()
+                .color(colour),
+            )
+            .on_hover_text(r.why());
+            if f.territory_clip_skipped() {
+                ui.label(
+                    egui::RichText::new(
+                        "\u{26A0} Territory Clip was requested and SKIPPED — this pass \
+                         covered its full territory, not rest islands.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                );
+            }
+        }
+        None if cfg.pencil_claims => {
+            ui.label(
+                egui::RichText::new(
+                    "Not generated yet — the resolved rest reference appears here after \
+                     this operation runs.",
+                )
+                .small()
+                .color(egui::Color32::from_rgb(150, 150, 150)),
+            );
+        }
+        None => {}
+    }
+
+    // Auto's input is the stock source, and that lives in a different
+    // section of the same panel — say so where the choice is made rather
+    // than leaving the operator to discover it from a generated finding.
+    if cfg.pencil_claims
+        && cfg.claims_reference != ClaimsReference::SelfProbe
+        && stock_source == StockSource::Fresh
+    {
+        ui.label(
+            egui::RichText::new(
+                "\u{26A0} This operation cuts FRESH stock, so no machined prior is in \
+                 scope and the machined-stock reference cannot be used. Set Stock \
+                 Source to remaining stock, then generate and simulate the upstream \
+                 operation.",
+            )
+            .small()
+            .color(egui::Color32::from_rgb(220, 180, 60)),
+        );
+    }
+}
+
 pub(in crate::ui::properties) fn draw_unified_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut UnifiedFinishConfig,
     _feeds_result: Option<&FeedsResult>,
+    resolved_claims_reference: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    stock_source: StockSource,
 ) {
     egui::Grid::new("uf_p")
         .num_columns(2)
@@ -756,6 +924,7 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
                 0.0..=10.0,
             );
         });
+    draw_unified_finish_claims(ui, cfg, resolved_claims_reference, stock_source);
 }
 
 pub(in crate::ui::properties) fn draw_steep_shallow_params(

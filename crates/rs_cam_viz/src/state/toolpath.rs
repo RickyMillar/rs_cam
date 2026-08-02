@@ -10,7 +10,7 @@ pub use catalog::{
 };
 pub use configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
-    ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
+    ClaimsReference, ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
     ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,

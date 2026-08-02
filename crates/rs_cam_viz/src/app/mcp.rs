@@ -1028,6 +1028,26 @@ impl super::RsCamApp {
                 "blocking_toolpath_index": b.blocking_toolpath_index,
                 "message": b.message,
             })),
+            // A/M6: what the three-valued `claims_reference` param actually
+            // RESOLVED to, and why. It belongs here and not under `params`
+            // because it is not a param: `auto` resolves against whether a
+            // machined prior stock was in scope at generation time, which no
+            // config field records. `null` until the operation has generated,
+            // and on any operation that runs no claims pipeline.
+            "claims_reference": rt
+                .and_then(|r| r.result.as_ref())
+                .and_then(|res| res.stats.claims_reference)
+                .map(|f| serde_json::json!({
+                    "setting": f.resolution.setting(),
+                    "resolved": f.resolution.reference(),
+                    "resolution": f.resolution.label(),
+                    "derived": f.resolution.is_derived(),
+                    "prior_stock_in_scope": f.resolution.prior_stock_in_scope(),
+                    "needs_attention": f.resolution.needs_attention(),
+                    "territory_clip_requested": f.territory_clip_requested,
+                    "territory_clip_skipped": f.territory_clip_skipped(),
+                    "why": f.resolution.why(),
+                })),
             "stale": rt.is_some_and(|r| r.stale_since.is_some()),
         })
     }
