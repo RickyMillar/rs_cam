@@ -27,6 +27,7 @@ pub mod arcfit;
 pub mod boundary;
 pub mod build_info;
 pub mod chamfer;
+pub mod classify_probe;
 pub mod collision;
 pub mod compute;
 pub mod condition;
