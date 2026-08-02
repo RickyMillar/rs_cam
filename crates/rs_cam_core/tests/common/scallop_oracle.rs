@@ -790,6 +790,15 @@ pub struct PathStructure {
     pub min_segment_mm: f64,
     pub seg_p01_mm: f64,
     pub seg_p50_mm: f64,
+    /// Segments shorter than 10 µm, and their share of all segments.
+    ///
+    /// M4's acceptance gate: *"minimum segment-length distribution remains
+    /// compatible with machine acceleration/junction limits."* A single short
+    /// segment is noise; a population of them is a feed-rate collapse, because
+    /// every junction costs the controller a decel/accel pair regardless of
+    /// how short the move is.
+    pub segs_under_10um: usize,
+    pub segs_under_10um_frac: f64,
     /// Achieved 3D spacing to the nearest point on another ring.
     pub stepover_p05_mm: f64,
     pub stepover_p50_mm: f64,
@@ -895,6 +904,12 @@ pub fn path_structure(toolpath: &Toolpath, ring_starts: &[usize], bucket_mm: f64
         min_segment_mm: segs.first().copied().unwrap_or(f64::NAN),
         seg_p01_mm: quantile(&segs, 0.01),
         seg_p50_mm: quantile(&segs, 0.50),
+        segs_under_10um: segs.partition_point(|d| *d < 0.010),
+        segs_under_10um_frac: if segs.is_empty() {
+            f64::NAN
+        } else {
+            segs.partition_point(|d| *d < 0.010) as f64 / segs.len() as f64
+        },
         stepover_p05_mm: p05,
         stepover_p50_mm: p50,
         stepover_p95_mm: quantile(&steps, 0.95),

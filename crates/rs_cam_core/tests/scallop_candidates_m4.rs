@@ -495,15 +495,15 @@ fn candidate_matrix() {
     for fixture in fixtures() {
         println!("\n## {}\n", fixture.name);
         println!(
-            "| arm | what | gen s | rings | uncut core mm² | achieved cusp µm (normal) | ×dial | on dial | untouched mm² | standing mm² | gouge mm² | deepest µm | stepover p50 mm | min seg mm |"
+            "| arm | what | gen s | rings | uncut core mm² | achieved cusp µm (normal) | ×dial | on dial | untouched mm² | standing mm² | gouge mm² | deepest µm | stepover p50 mm | min seg mm | seg p01 mm | segs <10µm |"
         );
-        println!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         let mut baseline: Option<Vec<f64>> = None;
         for arm in arms() {
             let run = run_arm(&fixture, arm.policy, resolution);
             let r = &run.report;
             println!(
-                "| {} | {} | {:.2} | {} | {:.2} | {:.1} | {:.2}× | {:.1}% | {:.2} | {:.2} | {:.3} | {:.1} | {:.4} | {:.4} |",
+                "| {} | {} | {:.2} | {} | {:.2} | {:.1} | {:.2}× | {:.1}% | {:.2} | {:.2} | {:.3} | {:.1} | {:.4} | {:.4} | {:.4} | {} ({:.1}%) |",
                 arm.id,
                 arm.what,
                 run.seconds,
@@ -518,6 +518,9 @@ fn candidate_matrix() {
                 r.deepest_gouge_um,
                 run.structure.stepover_p50_mm,
                 run.structure.min_segment_mm,
+                run.structure.seg_p01_mm,
+                run.structure.segs_under_10um,
+                run.structure.segs_under_10um_frac * 100.0,
             );
 
             // The v3 rule: render before reading a verdict.
