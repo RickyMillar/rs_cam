@@ -1464,6 +1464,42 @@ After the wanaka live validation report lands:
    vendor-LUT chipload rows (pre-existing `engaged_diameter_at_doc` policy,
    now measured rather than assumed).
 8. **M4 scallop** (Checkpoint C; uses C3 width parity + C6).
+   ✅ DONE 2026-08-02: research `ae5eed6` / `28503db` / `a61491b`;
+   implementation `dde7a54` (the gouge was three defects, two of them
+   SHIPPED: `refine_chord` skipping any chord shorter than one probe step —
+   i.e. every chord it makes by splitting; the iso-field's Dirichlet
+   condition being a statement about the grid rather than the region, so
+   level 1 could land off the part where the cutter rim answers ~1 mm low;
+   and a tolerance check sampled at the generation cell, which gave a 0.7 mm
+   chord one probe at its midpoint while the worst deviation sat at
+   t = 0.296) / `a376b1e` (PR-3 scallop re-pin, +8.0% moves, history table
+   kept beside the value) / `99e1bdb` (sub-decision 5a: the inverted slope
+   term documented where it lives, and its unit test renamed to say it pins
+   a defect).
+   **ADOPTION DECLINED — production stays on the offset cascade.** Fixing
+   the chord defect changed the SHIPPED arm and dissolved the case for the
+   iso-field: achieved cusp went 6.28× → 3.11× on the grooved block and
+   11.58× → 4.37× on the narrow ridge, collapsing the A0–A9 gap from
+   0.35–6.68 ×dial to 0.07–0.27. The oracle's "achieved cusp" is p99 of
+   material LEFT, and a sparsely-chorded path leaves material between its
+   points that scores exactly like a wide stepover — so §2.1 was
+   substantially ranking chord density, not ring placement, and the
+   iso-field's undecimated marching-squares vertices won it for free. The
+   pre-registered gouge gate is also not met (A9 exceeds shipped on 3 of 5
+   fixtures by 0.3/3.2/14.4 µm surface-normal, and gouge AREA is worse on 3
+   of 5 — a distribution, not a tail), though the specific −1115 vs
+   −108.6 µm the ruling named is cleared at −72.6 µm, a 12.4× improvement.
+   **NOT fixed, stated**: the end-to-end COLUMNS A/B was not run — it grades
+   adoption, and adoption failed its precondition; sub-decision 5b
+   (`ScallopReport`'s untouched/standing split) is still open and is
+   independent of the ring source; `max_rings`, its budget and
+   `ScallopRingBudget` all stay, and it turns out `max_rings` has **no
+   user-facing dial anywhere** (not `ScallopConfig`, not `SCALLOP_PARAMS`,
+   not the GUI, not any project TOML), so retiring it would have been purely
+   internal and the PR-5 deprecation route was never needed; continuous mode
+   remains unmeasured; and any future iso-field benchmark must re-baseline
+   against `dde7a54`, because every number in Checkpoint C §2.1 was taken
+   against a cascade that was not chording honestly.
 9. **C9** reach generalisation (own evidence pack, matrix-gated).
 10. **A/M7 + A/M10** motion economy (after C1, per its gate).
 11. **M5 offset_polygon** (Checkpoint D). 12. **H4** (Checkpoint E, last).
