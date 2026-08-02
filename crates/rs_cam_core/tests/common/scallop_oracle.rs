@@ -575,6 +575,7 @@ impl EnvelopeOracle {
         let mut standing_cells = 0usize;
         let mut gouge_cells = 0usize;
         let mut deepest_gouge = 0.0_f64;
+        let mut deepest_gouge_normal = 0.0_f64;
         let mut on_dial = 0usize;
         let mut over_dial = 0usize;
         let mut per_band: HashMap<SlopeBand, Vec<f64>> = HashMap::new();
@@ -620,7 +621,11 @@ impl EnvelopeOracle {
                 // `vertical × cos θ`. Both are reported: the vertical one is
                 // what a simulator would see, the normal one is what the
                 // `scallop_height` dial actually promises.
-                scored_normal.push(r * s.to_radians().cos());
+                let normal = r * s.to_radians().cos();
+                if normal < deepest_gouge_normal {
+                    deepest_gouge_normal = normal;
+                }
+                scored_normal.push(normal);
                 per_band
                     .entry(SlopeBand::of_angle_deg(s))
                     .or_default()
@@ -657,6 +662,7 @@ impl EnvelopeOracle {
             untouched_mm2: untouched_cells as f64 * cell_area,
             gouge_mm2: gouge_cells as f64 * cell_area,
             deepest_gouge_um: deepest_gouge * 1000.0,
+            deepest_gouge_normal_um: deepest_gouge_normal * 1000.0,
             bands,
         }
     }
@@ -743,7 +749,19 @@ pub struct OracleReport {
     /// cascade's `max_rings` truncation produces THIS one.
     pub untouched_mm2: f64,
     pub gouge_mm2: f64,
+    /// Deepest single VERTICAL over-cut. What a dexel column reads — and on
+    /// steep ground a systematic overstatement of the real defect, because a
+    /// chord that tracks a 76° wall to 42 µm shows a 174 µm vertical drop.
     pub deepest_gouge_um: f64,
+    /// Deepest single over-cut measured NORMAL to the surface
+    /// (`vertical · cos θ`) — the quantity the path tolerance and the cusp
+    /// dial are both written in, and therefore the one on which two ring
+    /// sources can be fairly compared across slope classes.
+    ///
+    /// Added in M4 phase C, after the vertical figure ranked two arms apart
+    /// on the narrow ridge (−386.9 vs −399.3 µm) where the difference was
+    /// entirely `1/cos 76°` acting on a shared, tolerance-bounded chord.
+    pub deepest_gouge_normal_um: f64,
     pub bands: Vec<(SlopeBand, BandScore)>,
 }
 

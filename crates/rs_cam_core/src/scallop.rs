@@ -675,6 +675,36 @@ struct RingLiftCtx<'a> {
 /// reference it is chasing.
 const CHORD_REFINE_MIN_SEG_MM: f64 = 0.15;
 
+/// The shortest chord chord-refinement will SPLIT, and so half the shortest
+/// segment it can create (mm).
+///
+/// Distinct from [`CHORD_REFINE_MIN_SEG_MM`], which floors how densely a
+/// chord is *probed*: this floors what refinement is allowed to *emit*. The
+/// two were the same number until M4 phase C, and conflating them is what
+/// let a chord shorter than the probe step escape refinement entirely — the
+/// mechanism behind the iso-field's −995 µm localised gouge and the shipped
+/// cascade's −108.6 µm one (`CHECKPOINT_C_EVIDENCE.md` §3.8).
+///
+/// 50 µm: fifty times [`crate::toolpath::MIN_EMITTED_SEGMENT_MM`] (the
+/// coarsest shipped post's coordinate quantum, PR-8d), and five times the
+/// 10 µm junction-cost bar M4's segment-length gate is written in — so
+/// refinement can never manufacture a segment either the post or the
+/// accel integrator would object to. Refinement only ever splits a chord
+/// that FAILS `chord_tolerance`, so on smooth ground this floor is never
+/// reached and nothing is inserted at all.
+const CHORD_REFINE_MIN_SPLIT_MM: f64 = 0.050;
+
+/// Fraction of the op's chord tolerance at which refinement stops splitting.
+///
+/// Refinement measures a chord's deviation at a finite set of probes and
+/// compares that to the tolerance — but the worst PROBE is not the worst
+/// POINT, and on a convex feature the two differ by a third (measured, M4
+/// phase C grooved block: worst probe 97.8 µm, true worst 131.7 µm at a
+/// 100 µm tolerance). Accepting at `1.0` therefore emits chords that violate
+/// the tolerance the operator set. The margin makes the sampling error
+/// explicit rather than letting it show up as an over-cut.
+const CHORD_REFINE_ACCEPT_FRACTION: f64 = 0.70;
+
 /// Depth cap on recursive chord splitting. Combined with the probe-step
 /// floor this bounds worst-case insertion on cliff edges, where the chord
 /// error never converges and every level would otherwise split.
@@ -748,10 +778,44 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     if !len.is_finite() {
         return;
     }
-    let segments = (len / ctx.probe_step).ceil();
-    if segments < 2.0 {
-        return; // nothing to probe between endpoints at this scale
+    if len <= 2.0 * CHORD_REFINE_MIN_SPLIT_MM {
+        // Too short to split without emitting sub-floor segments, so probing
+        // it could only ever discover an error refinement is not allowed to
+        // correct. This is the ONLY length at which refinement declines.
+        return;
     }
+    // At least one interior probe, ALWAYS.
+    //
+    // M4 phase C: this used to `return` when `ceil(len / probe_step) < 2`,
+    // i.e. whenever a chord was shorter than the probe step — "nothing to
+    // probe at this scale". That reasoning holds for a surface sampled on a
+    // grid; it is false for a drop-cutter query, which is exact at any XY.
+    // At a convex rim the tool-contact height is strongly convex over a
+    // fraction of a cell, so a 0.27 mm chord can pass 0.7 mm under the
+    // surface — and the old guard skipped it in silence.
+    //
+    // The exemption was invisible while every chord came from a decimated
+    // offset ring (floored at `0.75 x cell`, always above `probe_step`).
+    // Refinement's OWN halves are not: splitting a 0.56 mm chord yields two
+    // 0.28 mm ones, which is how the shipped cascade reached a −108.6 µm
+    // gouge and the undecimated iso-field reached −995 µm on the grooved
+    // block (`CHECKPOINT_C_EVIDENCE.md` §3.8).
+    //
+    // And at least FOUR intervals, so the check cannot alias past the worst
+    // point. `probe_step` is sized from the generation grid (`cell / 2`),
+    // which on a 0.75 mm cell affords a 0.7 mm chord exactly one interior
+    // probe — at its midpoint. A chord crossing a groove wall has its worst
+    // deviation nowhere near the middle: measured 131.7 µm at t = 0.296 on
+    // the iso-field and 97.8 µm at t = 0.684 on the shipped cascade, both
+    // invisible to a midpoint probe, the latter squeaking under a 100 µm
+    // tolerance it was in fact violating. The grid sizes ring PLACEMENT; it
+    // has no business sizing a tolerance check, which is an exact
+    // drop-cutter query at any XY.
+    let step = ctx
+        .probe_step
+        .min(len * 0.25)
+        .max(CHORD_REFINE_MIN_SPLIT_MM);
+    let segments = (len / step).ceil().max(2.0);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let segments = segments as usize;
 
@@ -776,10 +840,25 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     let Some((t, surface_z, err)) = worst else {
         return;
     };
-    if err <= ctx.chord_tolerance {
+    // Accept with a margin, because `err` is the worst PROBE, not the worst
+    // point: a finite probe set on a convex rim always understates, and
+    // accepting at exactly the tolerance therefore ships chords that violate
+    // it. Measured on the M4 grooved block at a 100 µm tolerance: worst probe
+    // 97.8 µm, true worst 131.7 µm. The margin buys the difference back and
+    // costs points only on chords that were already failing.
+    if err <= ctx.chord_tolerance * CHORD_REFINE_ACCEPT_FRACTION {
         return;
     }
     let w = P3::new(a.x + dx * t, a.y + dy * t, surface_z);
+    // The split point must not orphan a sub-floor segment on either side.
+    // The probe grid alone does not guarantee this: `t` is the worst probe,
+    // and on a short chord that is the midpoint, but on a long one it can sit
+    // one probe step from an end.
+    let head = (w.x - a.x).hypot(w.y - a.y);
+    let tail = (b.x - w.x).hypot(b.y - w.y);
+    if head < CHORD_REFINE_MIN_SPLIT_MM || tail < CHORD_REFINE_MIN_SPLIT_MM {
+        return;
+    }
     refine_chord(a, w, ctx, depth - 1, out);
     out.push((w, true));
     refine_chord(w, b, ctx, depth - 1, out);
@@ -904,11 +983,39 @@ fn generate_scallop_rings_with_cancel(
                 t.selected_mm.push(spread.1);
             }
         }
+        // Marching-squares vertices land wherever a level crosses a cell
+        // edge, so consecutive points can be an arbitrarily small fraction of
+        // a cell apart. The offset cascade below floors its ring vertex
+        // spacing at `0.75 × cell` (`decimate_ring_polygon`), and TWO
+        // downstream contracts silently depend on that floor:
+        //
+        // 1. `refine_chord` only probes a chord it can fit at least one
+        //    interior probe into. Under the cascade's floor every chord
+        //    clears that bar, so chord refinement is universal; an
+        //    undecimated iso-field ring emits sub-probe-step chords that
+        //    refinement skipped entirely. On the grooved block that put a
+        //    0.25 mm chord across the groove rim spanning a 1.0 mm Z step
+        //    with nothing checking it — the −995/−1115 µm localised gouge
+        //    of `CHECKPOINT_C_EVIDENCE.md` §3.8. (`refine_chord` no longer
+        //    relies on the floor for correctness — see its own guard — but
+        //    the floor is still what keeps refinement cheap.)
+        // 2. The emitted segment-length distribution. §3.8's second flag,
+        //    0.0–0.5% of segments under 10 µm against the cascade's zero,
+        //    is the same missing pass.
+        //
+        // Decimation only ever DROPS points, never moves one, so ring
+        // PLACEMENT — the whole subject of the iso-field comparison — is
+        // untouched; chord refinement puts detail back exactly where the
+        // surface demands it.
+        let ring_min_spacing = heightmap.cell_size * 0.75;
         for ring in crate::scallop_isofield::extract_rings(&field) {
             check_cancel(cancel)?;
             if ring.len() < 3 {
                 continue;
             }
+            let Some(ring) = decimate_closed_ring(&ring, ring_min_spacing) else {
+                continue;
+            };
             let ring_3d = ring_to_3d(&ring, &lift_ctx);
             if ring_3d.len() >= 3 {
                 rings_3d.push(ring_3d);
