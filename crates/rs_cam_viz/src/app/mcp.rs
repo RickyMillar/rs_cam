@@ -1135,6 +1135,9 @@ impl super::RsCamApp {
             clipped_band: result.stats.clipped_band.as_deref().copied(),
             ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
             tip_float: result.stats.tip_float,
+            // A/M7 gate 1: same parallel-copy rule as the findings above —
+            // the GUI worker filled this on `result.stats`.
+            retract_trips: result.stats.retract_trips,
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(

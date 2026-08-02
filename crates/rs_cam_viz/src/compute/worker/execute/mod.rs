@@ -16,7 +16,7 @@ use crate::state::toolpath::{
     RestConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::execute::execute_operation_annotated_with_regions;
-use rs_cam_core::compute::{build_cutter, compute_stats};
+use rs_cam_core::compute::{build_cutter, compute_stats_with_spans};
 #[cfg(test)]
 use rs_cam_core::geo::P3;
 #[cfg(test)]
@@ -772,9 +772,13 @@ pub(super) fn run_compute_with_phase_tracker(
             let _stats_scope = debug_root
                 .as_ref()
                 .map(|ctx| ctx.start_span("final_stats", "Compute stats"));
-            let mut stats = compute_stats(&current.toolpath);
-            // `compute_stats` only sees moves; generation-time findings come
-            // from the core call above.
+            let mut stats = compute_stats_with_spans(
+                &current.toolpath,
+                current.spans_valid.then_some(current.spans.as_slice()),
+            );
+            // `compute_stats_with_spans` only sees moves (and, when trusted,
+            // spans); generation-time findings come from the core call
+            // above.
             stats.standing_material_mm2 = generation_findings.standing_material_mm2;
             // Wave D1: the GUI worker is a parallel copy of the session
             // path, so a finding that only lands on one of them is invisible

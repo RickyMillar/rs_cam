@@ -285,6 +285,72 @@ pub struct ToolpathStats {
     /// — it decides which field the detector reads — but nothing downstream
     /// branches on this record.
     pub claims_reference: Option<ClaimsReferenceFinding>,
+    /// A/M7 gate 1: retract round-trip count, split by in-routing-node vs
+    /// between-nodes. See [`RetractTripCount`] for the counting rule and
+    /// the X-19 availability contract of the in/out split.
+    ///
+    /// `None` = **this stats struct never walked a move list**
+    /// (`ToolpathStats::default()` placeholders, and results built before a
+    /// real generation ran) — never "zero trips". Every stats struct that
+    /// went through [`crate::compute::stats::compute_stats_with_spans`] or
+    /// the production `generate_toolpath` literal carries `Some`, even on a
+    /// toolpath with zero rapids (`total == 0` is a measured answer, not an
+    /// absent one).
+    ///
+    /// Report-only: no gate consumes it.
+    pub retract_trips: Option<RetractTripCount>,
+}
+
+/// A/M7 gate 1: how many retract round trips a toolpath took, and whether
+/// each one happened INSIDE a planner routing node or BETWEEN two of them.
+///
+/// The reason this channel exists: finishing air cost is COUNT-bound, not
+/// distance-bound — a hop pays two ~`safe_z` Z legs whatever its XY length
+/// — and `ToolpathStats::rapid_distance` cannot show that. The v3 process-
+/// proof campaign found 15 311 of 15 363 measured trips landing INSIDE a
+/// single routing node, which is why the split has to travel with the
+/// count rather than being left as a derivation nobody performs.
+///
+/// A "trip" is one maximal contiguous run of
+/// [`crate::toolpath::MoveType::Rapid`] moves — the exact rule
+/// `tests/v3_cascade_ab.rs`'s `rapid_round_trips` helper uses, reproduced
+/// bit-for-bit in [`crate::compute::stats::compute_retract_trips`] so the
+/// production channel and that harness can never disagree about what counts
+/// as one trip.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RetractTripCount {
+    /// Total retract round trips. Always populated once a stats struct has
+    /// walked a move list — needs no spans, so this is never `None` inside
+    /// a `Some(RetractTripCount)`.
+    pub total: usize,
+    /// Of `total`, how many trips STARTED inside a planner territory
+    /// `Region` node (`RegionSpanRole::Node`). `None` when the split could
+    /// not be trusted — no spans were supplied, or
+    /// `AnnotatedToolpath::spans_valid` was `false` at compute time (X-19:
+    /// an untrustworthy split must report as unmeasured, never as a
+    /// confident zero).
+    pub in_node: Option<usize>,
+    /// Of `total`, how many trips started between two nodes (or outside
+    /// any node). Same availability rule as [`Self::in_node`]. When both
+    /// are `Some`, `in_node + between_nodes == total`.
+    pub between_nodes: Option<usize>,
+    /// Rapid distance (mm) attributable to the in-node trips. Same
+    /// availability rule as [`Self::in_node`].
+    pub in_node_rapid_mm: Option<f64>,
+    /// Rapid distance (mm) attributable to the between-node trips. Same
+    /// availability rule as [`Self::between_nodes`]. When both mm fields
+    /// are `Some`, they sum to [`ToolpathStats::rapid_distance`] (up to
+    /// floating-point accumulation order).
+    pub between_nodes_rapid_mm: Option<f64>,
+}
+
+impl RetractTripCount {
+    /// `true` when the in-node / between-node split is present and can be
+    /// trusted (spans were supplied and valid at compute time).
+    #[must_use]
+    pub const fn has_split(&self) -> bool {
+        self.in_node.is_some() && self.between_nodes.is_some()
+    }
 }
 
 /// Which rest reference a claims pipeline resolved to, and under what
@@ -634,7 +700,43 @@ impl ToolpathStats {
     ) -> Option<(TipFloatFinding, crate::measurement::MeasurementProvenance)> {
         self.tip_float.map(|f| (f, TIP_FLOAT_PROVENANCE))
     }
+
+    /// [`Self::retract_trips`] with its measurement contract attached, or
+    /// `None` when nothing measured it. Same rule as
+    /// [`Self::standing_material`]: the value and its provenance travel
+    /// together or not at all.
+    #[must_use]
+    pub fn retract_trip_measurement(
+        &self,
+    ) -> Option<(RetractTripCount, crate::measurement::MeasurementProvenance)> {
+        self.retract_trips.map(|f| (f, RETRACT_TRIP_PROVENANCE))
+    }
 }
+
+/// The measurement contract of [`RetractTripCount`] — a count of retract
+/// round trips, measured on the emitted toolpath with no reference to
+/// stock (a rapid run is visible in the move list regardless of whether a
+/// simulation ever runs).
+pub const RETRACT_TRIP_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::measurement::MeasurementProvenance::new(
+        crate::measurement::MeasurementDomain::RetractTripCount,
+        crate::measurement::MeasurementStage::Emission,
+    )
+    .with_resolution_note(
+        "one contiguous run of MoveType::Rapid moves = one retract round trip; the \
+         in-node / between-nodes split classifies each run by whether its FIRST move \
+         sits inside a planner territory Region node (RegionSpanRole::Node) — see \
+         `AnnotatedToolpath::spans_valid` for when that split is trustworthy",
+    );
+
+/// Measurement domain of [`RetractTripCount::total`] and its split.
+pub const RETRACT_TRIP_DOMAIN: &str = RETRACT_TRIP_PROVENANCE.domain.label();
+
+/// Pipeline stage [`RetractTripCount`] is measured at.
+pub const RETRACT_TRIP_STAGE: &str = RETRACT_TRIP_PROVENANCE.stage.label();
+
+/// Resolution note of [`RetractTripCount`].
+pub const RETRACT_TRIP_RESOLUTION: &str = RETRACT_TRIP_PROVENANCE.resolution_note;
 
 /// The measurement contract of [`ToolpathStats::standing_material_mm2`] — the
 /// SINGLE source of truth the three prose constants below are derived from

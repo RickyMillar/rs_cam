@@ -103,6 +103,11 @@ pub struct ToolpathNarrationContext<'a> {
     /// operation emits no valley centrelines, so nothing was measured — NOT
     /// "the tool reached everywhere".
     pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    /// A/M7 gate 1: the retract round-trip count, off
+    /// [`crate::compute::config::ToolpathStats::retract_trips`]. `None` =
+    /// this stats struct never walked a move list (a placeholder, never a
+    /// real generation) — narration says so rather than staying silent.
+    pub retract_trips: Option<crate::compute::config::RetractTripCount>,
 }
 
 #[derive(Debug, Clone)]
@@ -307,6 +312,7 @@ pub fn narrate_toolpath_with_context(
     append_clipped_band(&mut output, context);
     append_ramp_reach_clamp(&mut output, context);
     append_tip_float(&mut output, context.tip_float);
+    append_retract_trips(&mut output, context.retract_trips);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -930,6 +936,48 @@ fn append_tip_float(
                 "Tip float: not measured — this operation emits no valley \
                  centrelines, so no reach residual exists to report. Absence \
                  of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// A/M7 gate 1: one line, always, about retract round trips — the number
+/// that actually costs finishing air. §8's lesson: air is COUNT-bound (a
+/// hop pays two ~`safe_z` Z legs whatever its XY length), not
+/// distance-bound, so this is the figure a reader must reach for, not the
+/// `rapid_distance`(mm) total printed in the header line above.
+fn append_retract_trips(
+    output: &mut String,
+    measured: Option<crate::compute::config::RetractTripCount>,
+) {
+    use crate::compute::config::{
+        RETRACT_TRIP_DOMAIN, RETRACT_TRIP_RESOLUTION, RETRACT_TRIP_STAGE,
+    };
+    match measured {
+        Some(f) => match f.in_node.zip(f.between_nodes) {
+            Some((in_n, out_n)) => {
+                output.push_str(&format!(
+                    "Retract trips: {total} round trip(s) — {in_n} inside a \
+                     routing node, {out_n} between nodes. {RETRACT_TRIP_DOMAIN}; \
+                     {RETRACT_TRIP_STAGE}; {RETRACT_TRIP_RESOLUTION}. \
+                     Report-only — no gate consumes this.\n",
+                    total = f.total,
+                ));
+            }
+            None => {
+                output.push_str(&format!(
+                    "Retract trips: {total} round trip(s) — in-node/between-nodes \
+                     split not available (no trustworthy routing-node spans on \
+                     this toolpath). {RETRACT_TRIP_DOMAIN}; {RETRACT_TRIP_STAGE}.\n",
+                    total = f.total,
+                ));
+            }
+        },
+        None => {
+            output.push_str(
+                "Retract trips: not measured — this toolpath's stats were \
+                 never computed from its move list. Absence of a number is \
+                 not a zero.\n",
             );
         }
     }
@@ -1604,6 +1652,7 @@ mod tests {
             clipped_band: None,
             ramp_reach_clamp: None,
             tip_float: None,
+            retract_trips: None,
         };
 
         let report = narrate_toolpath_with_context(

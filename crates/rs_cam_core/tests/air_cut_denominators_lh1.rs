@@ -192,6 +192,7 @@ fn narration_air_cut_line_names_its_denominators() {
         clipped_band: None,
         ramp_reach_clamp: None,
         tip_float: None,
+        retract_trips: None,
     };
 
     let report = narrate_toolpath_with_context(
