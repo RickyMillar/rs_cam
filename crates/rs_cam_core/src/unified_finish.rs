@@ -693,6 +693,15 @@ impl RegionKind {
         }
     }
 
+    /// Every variant, in declaration order — the list [`Self::from_span_label`]
+    /// is derived from, so the label vocabulary cannot drift from the enum.
+    pub const ALL: [Self; 4] = [
+        Self::Band(FinishBand::Shallow),
+        Self::Band(FinishBand::MidSteep),
+        Self::Band(FinishBand::VerySteep),
+        Self::Crease,
+    ];
+
     /// Label carried on the STRUCTURAL `SpanKind::Region` span. Pinned
     /// verbatim to the pre-A/M8 text — spans feed the TSP's span remap and
     /// the GUI span list, so this string is a compatibility surface.
@@ -701,6 +710,39 @@ impl RegionKind {
             Self::Band(_) => format!("{} band", self.band_label()),
             Self::Crease => "Pencil claims".to_owned(),
         }
+    }
+
+    /// Inverse of [`Self::span_label`]. `None` for any label this enum did
+    /// not produce — including the `Ring N` and `Z level` annotation spans
+    /// that interleave with the region nodes as SIBLINGS rather than nesting
+    /// inside them.
+    ///
+    /// # Why this exists rather than a payload field
+    ///
+    /// C4 (2026-08-02). Two harnesses reconstructed a node's KIND by matching
+    /// its label against string literals they carried themselves —
+    /// `p2c_headless_ab_wanaka.rs`'s `label == "Pencil claims"` crease probe
+    /// and `v3_cascade_ab.rs`'s four-arm `strategy_of_span`. `SpanPayload::
+    /// Region` carries a [`crate::toolpath_spans::RegionSpanRole`], which
+    /// answers node-vs-pass, but not WHICH node: putting `RegionKind` on the
+    /// payload would drag `FinishBand` and this module into `toolpath_spans`,
+    /// a deliberately low-level module with no finishing dependencies.
+    ///
+    /// So the string stays, and this is the one place that knows it.
+    /// `span_label`/`from_span_label` round-trip over [`Self::ALL`] in
+    /// `tests::region_kind_span_labels_round_trip`, which means a consumer
+    /// asking `from_span_label(..) == Some(RegionKind::Crease)` breaks
+    /// LOUDLY (here, at the round-trip gate) if the label ever changes,
+    /// instead of silently matching nothing.
+    ///
+    /// **H4's mix tables must be built on this, on `RegionSpanRole`, or on
+    /// [`crate::semantic_trace::SemanticKey`] — never on a label literal
+    /// spelled out at the consumer.**
+    #[must_use]
+    pub fn from_span_label(label: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|kind| kind.span_label() == label)
     }
 }
 
@@ -2355,6 +2397,61 @@ mod tests {
 
     fn ball(diameter: f64) -> BallEndmill {
         BallEndmill::new(diameter, diameter * 5.0)
+    }
+
+    /// C4: `span_label` / `from_span_label` are inverses over the whole
+    /// vocabulary, so a consumer that asks for a kind by label breaks here —
+    /// loudly, once — rather than silently matching nothing at its own site.
+    #[test]
+    fn region_kind_span_labels_round_trip() {
+        assert_eq!(RegionKind::ALL.len(), 4);
+        for kind in RegionKind::ALL {
+            let label = kind.span_label();
+            assert_eq!(
+                RegionKind::from_span_label(&label),
+                Some(kind),
+                "{label:?} did not round-trip"
+            );
+        }
+
+        // The exact strings two harnesses used to spell out themselves.
+        assert_eq!(
+            RegionKind::from_span_label("Pencil claims"),
+            Some(RegionKind::Crease)
+        );
+        assert_eq!(
+            RegionKind::from_span_label("MidSteep band"),
+            Some(RegionKind::Band(FinishBand::MidSteep))
+        );
+
+        // Sibling annotation spans are NOT region nodes and must not be
+        // mistaken for one — `v3_cascade_ab.rs` measured 620 outer spans of
+        // which 615 were rings.
+        assert_eq!(RegionKind::from_span_label("Ring 3/9"), None);
+        assert_eq!(RegionKind::from_span_label("Z level 2"), None);
+        assert_eq!(RegionKind::from_span_label(""), None);
+
+        // Distinct labels: a copy-pasted arm would make one kind unreachable.
+        let mut labels: Vec<String> = RegionKind::ALL.iter().map(|k| k.span_label()).collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), RegionKind::ALL.len());
+    }
+
+    /// `v3_cascade_ab.rs::strategy_of_span` was a four-arm label -> strategy
+    /// table. It is now `from_span_label(..).map(|k| k.strategy().label())`.
+    /// This pins that the composition returns exactly what the hand-written
+    /// table did, so the migration is provably value-preserving and the
+    /// harness's `UNFUSED_ORDER` tokens still match.
+    #[test]
+    fn span_label_to_strategy_reproduces_the_retired_harness_table() {
+        let via_kind =
+            |label: &str| RegionKind::from_span_label(label).map(|kind| kind.strategy().label());
+        assert_eq!(via_kind("VerySteep band"), Some("waterline"));
+        assert_eq!(via_kind("MidSteep band"), Some("scallop"));
+        assert_eq!(via_kind("Shallow band"), Some("raster"));
+        assert_eq!(via_kind("Pencil claims"), Some("pencil"));
+        assert_eq!(via_kind("Ring 3/9"), None);
     }
 
     // ── fixture 1: flat plate (Shallow only) ────────────────────────────
