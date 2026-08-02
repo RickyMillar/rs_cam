@@ -397,6 +397,166 @@ fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
     }
 }
 
+/// **M5 research candidate (c): lossless cleanup.** Drop vertices that carry
+/// no geometry — a position within `pos_eps` of the previous kept vertex, or
+/// a perpendicular deviation under `deviation_tol` from the chord through its
+/// neighbours.
+///
+/// The deviation rule is LOCAL (measured against the last kept vertex), so
+/// error can in principle accumulate along a chain of removals; it is meant
+/// to be called with `deviation_tol` at or near zero, where "no geometry"
+/// is literal. For a bounded-error reduction use [`simplify_bounded`], whose
+/// error is bounded against the whole input chain by construction.
+///
+/// Returns `None` when the exterior cannot keep three vertices. Holes that
+/// collapse are dropped individually. **No production path calls this**; it
+/// exists so M5's candidate comparison and the scallop research seam measure
+/// one implementation rather than two.
+#[must_use]
+pub fn cleanup_collinear(polygon: &Polygon2, pos_eps: f64, deviation_tol: f64) -> Option<Polygon2> {
+    let exterior = cleanup_ring(&polygon.exterior, pos_eps, deviation_tol)?;
+    let holes: Vec<Vec<P2>> = polygon
+        .holes
+        .iter()
+        .filter_map(|h| cleanup_ring(h, pos_eps, deviation_tol))
+        .collect();
+    let mut out = Polygon2::new(exterior);
+    out.holes = holes;
+    out.closed = polygon.closed;
+    Some(out)
+}
+
+fn cleanup_ring(ring: &[P2], pos_eps: f64, deviation_tol: f64) -> Option<Vec<P2>> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let mut out: Vec<P2> = Vec::with_capacity(n);
+    for i in 0..n {
+        // SAFETY: `i < n` and the modulo keeps `next` in range.
+        #[allow(clippy::indexing_slicing)]
+        let (cur, next) = (ring[i], ring[(i + 1) % n]);
+        let prev = *out.last().unwrap_or_else(|| {
+            // SAFETY: `n >= 3` checked above.
+            #[allow(clippy::indexing_slicing)]
+            &ring[n - 1]
+        });
+        if (cur.x - prev.x).hypot(cur.y - prev.y) <= pos_eps {
+            continue;
+        }
+        if point_segment_distance_sq(&cur, &prev, &next) <= deviation_tol * deviation_tol {
+            continue;
+        }
+        out.push(cur);
+    }
+    (out.len() >= 3).then_some(out)
+}
+
+/// **M5 research candidate (b): tolerance-bounded, topology-preserving
+/// simplification.** Ramer–Douglas–Peucker on each closed ring, with the
+/// deviation of every dropped vertex bounded by `tol` against the retained
+/// chain — not against its immediate neighbours.
+///
+/// Topology guards, in order: a ring that cannot keep three vertices is kept
+/// UNSIMPLIFIED rather than dropped; a result that self-intersects is
+/// discarded and the input returned. Winding is preserved because RDP only
+/// removes vertices and never reorders them.
+///
+/// **No production path calls this** — see [`cleanup_collinear`].
+#[must_use]
+pub fn simplify_bounded(polygon: &Polygon2, tol: f64) -> Option<Polygon2> {
+    if tol <= 0.0 {
+        return Some(polygon.clone());
+    }
+    let exterior = simplify_closed_ring(&polygon.exterior, tol);
+    let holes: Vec<Vec<P2>> = polygon
+        .holes
+        .iter()
+        .map(|h| simplify_closed_ring(h, tol))
+        .collect();
+    let mut out = Polygon2::new(exterior);
+    out.holes = holes;
+    out.closed = polygon.closed;
+    if out.exterior.len() < 3 {
+        return Some(polygon.clone());
+    }
+    if out.has_self_intersection() && !polygon.has_self_intersection() {
+        // Simplification invented a crossing the input did not have. Bail
+        // out rather than hand a broken ring to the next offset.
+        return Some(polygon.clone());
+    }
+    Some(out)
+}
+
+/// RDP over a closed ring: split at vertex 0 and the vertex farthest from it
+/// (two anchors that are always on the simplified hull), simplify the two
+/// open chains, and stitch.
+fn simplify_closed_ring(ring: &[P2], tol: f64) -> Vec<P2> {
+    let n = ring.len();
+    if n < 5 {
+        return ring.to_vec();
+    }
+    // SAFETY: `n >= 5`.
+    #[allow(clippy::indexing_slicing)]
+    let head = ring[0];
+    let far = (1..n)
+        .max_by(|a, b| {
+            // SAFETY: indices come from `1..n`.
+            #[allow(clippy::indexing_slicing)]
+            let (pa, pb) = (ring[*a], ring[*b]);
+            (pa.x - head.x)
+                .hypot(pa.y - head.y)
+                .total_cmp(&(pb.x - head.x).hypot(pb.y - head.y))
+        })
+        .unwrap_or(n / 2);
+
+    // SAFETY: `far` is in `1..n`.
+    #[allow(clippy::indexing_slicing)]
+    let first: Vec<P2> = ring[0..=far].to_vec();
+    #[allow(clippy::indexing_slicing)]
+    let mut second: Vec<P2> = ring[far..n].to_vec();
+    second.push(head);
+
+    let mut out = rdp(&first, tol);
+    let mut tail = rdp(&second, tol);
+    // Both chains share their endpoints; drop the duplicates.
+    out.pop();
+    tail.pop();
+    out.extend(tail);
+    if out.len() < 3 { ring.to_vec() } else { out }
+}
+
+fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
+    let n = chain.len();
+    if n < 3 {
+        return chain.to_vec();
+    }
+    // SAFETY: `n >= 3`.
+    #[allow(clippy::indexing_slicing)]
+    let (a, b) = (chain[0], chain[n - 1]);
+    let mut worst = 0.0_f64;
+    let mut worst_i = 0usize;
+    for (i, p) in chain.iter().enumerate().take(n - 1).skip(1) {
+        let d = point_segment_distance_sq(p, &a, &b);
+        if d > worst {
+            worst = d;
+            worst_i = i;
+        }
+    }
+    if worst_i == 0 || worst <= tol * tol {
+        return vec![a, b];
+    }
+    // SAFETY: `0 < worst_i < n - 1`.
+    #[allow(clippy::indexing_slicing)]
+    let left = rdp(&chain[0..=worst_i], tol);
+    #[allow(clippy::indexing_slicing)]
+    let right = rdp(&chain[worst_i..n], tol);
+    let mut out = left;
+    out.pop();
+    out.extend(right);
+    out
+}
+
 /// Generate concentric inward offsets for pocket clearing.
 ///
 /// Starting from the boundary, offsets inward by `stepover` repeatedly

@@ -512,6 +512,57 @@ pub struct ScallopStepoverPolicy {
     pub curvature: CurvaturePolicy,
     pub across_polygons: PolygonReduce,
     pub ring_source: RingSource,
+    pub cleanup: RingCleanup,
+}
+
+/// **M5 research seam.** What the cascade does to an offset ring before it
+/// becomes the next ring's input.
+///
+/// The offset primitive doubles a concave ring's vertex count per pass
+/// (`tests/offset_growth_m5.rs`: added vertices == arc-join segments, 1:1),
+/// and [`Self::DecimateAtCell`] is the compensation scallop has shipped since
+/// P2.f. The other variants exist so Checkpoint D can see what each candidate
+/// costs on the SURFACE, not only in the vertex count — the M4 oracle scores
+/// them in `offset_candidates_m5.rs`.
+///
+/// [`Self::DecimateAtCell`] is what production passes, and the loop is
+/// byte-identical under it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RingCleanup {
+    /// Shipped: drop-only decimation at `0.75 × heightmap cell`.
+    #[default]
+    DecimateAtCell,
+    /// Nothing at all — the cascade every other consumer of `offset_polygon`
+    /// runs today.
+    KeepEverything,
+    /// `polygon::cleanup_collinear` at 1 nm: duplicates and genuinely
+    /// collinear vertices only.
+    CollinearDedup,
+    /// `polygon::simplify_bounded` (RDP) at a tenth of the operation's chord
+    /// tolerance — bounded error, self-intersection guarded.
+    SimplifyBounded,
+}
+
+impl RingCleanup {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::DecimateAtCell => "decimate@0.75cell",
+            Self::KeepEverything => "keep-all",
+            Self::CollinearDedup => "collinear+dedup",
+            Self::SimplifyBounded => "simplify@tol/10",
+        }
+    }
+
+    /// Reduce one offset result. `None` culls it.
+    fn apply(self, poly: &Polygon2, min_spacing: f64, chord_tolerance: f64) -> Option<Polygon2> {
+        match self {
+            Self::DecimateAtCell => decimate_ring_polygon(poly, min_spacing),
+            Self::KeepEverything => (poly.exterior.len() >= 3).then(|| poly.clone()),
+            Self::CollinearDedup => crate::polygon::cleanup_collinear(poly, 1e-5, 1e-6),
+            Self::SimplifyBounded => crate::polygon::simplify_bounded(poly, chord_tolerance * 0.1),
+        }
+    }
 }
 
 impl ScallopStepoverPolicy {
@@ -523,18 +574,20 @@ impl ScallopStepoverPolicy {
         curvature: CurvaturePolicy::Raw,
         across_polygons: PolygonReduce::MinAcross,
         ring_source: RingSource::OffsetCascade,
+        cleanup: RingCleanup::DecimateAtCell,
     };
 
     #[must_use]
     pub fn label(self) -> String {
         format!(
-            "{} / {} / {} / {} / {} / {}",
+            "{} / {} / {} / {} / {} / {} / {}",
             self.ring_source.label(),
             self.reducer.label(),
             self.sampling.label(),
             self.geometry.label(),
             self.curvature.label(),
-            self.across_polygons.label()
+            self.across_polygons.label(),
+            self.cleanup.label()
         )
     }
 
@@ -546,6 +599,7 @@ impl ScallopStepoverPolicy {
             && matches!(self.curvature, CurvaturePolicy::Raw)
             && matches!(self.across_polygons, PolygonReduce::MinAcross)
             && matches!(self.ring_source, RingSource::OffsetCascade)
+            && matches!(self.cleanup, RingCleanup::DecimateAtCell)
     }
 
     /// The per-point stepover this policy's geometry+curvature choice yields,
@@ -1144,8 +1198,14 @@ fn generate_scallop_rings_with_cancel(
                 }
             };
             for offset in offset_polygon(poly, d) {
-                if let Some(decimated) = decimate_ring_polygon(&offset, ring_min_spacing) {
-                    next_polys.push(decimated);
+                // M5 research seam: `RingCleanup::DecimateAtCell` is what
+                // production passes and is the call this line always was.
+                if let Some(reduced) =
+                    policy
+                        .cleanup
+                        .apply(&offset, ring_min_spacing, chord_tolerance)
+                {
+                    next_polys.push(reduced);
                 }
             }
         }
