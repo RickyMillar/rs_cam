@@ -47,3 +47,8 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [[bench]]
 name = "perf_suite"
 harness = false
+
+# M3 classification-grid baseline + candidate arms.
+[[bench]]
+name = "classification"
+harness = false
