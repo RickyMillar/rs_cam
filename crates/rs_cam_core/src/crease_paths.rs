@@ -89,6 +89,9 @@ pub(crate) fn centerline_cut_paths(
                 left_mm: acc.left_mm.max(r.left_mm),
                 right_mm: acc.right_mm.max(r.right_mm),
                 refused: acc.refused,
+                // Provenance rides along; every element of `reach` was solved
+                // under the same model.
+                model: r.model,
             }
         });
         let (left, right) =

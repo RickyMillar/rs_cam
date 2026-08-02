@@ -439,6 +439,12 @@ fn branch_verdict(
             left_mm: reach_mm,
             right_mm: reach_mm,
             refused: false,
+            // The aggregate carries the model its samples were solved under;
+            // an empty sample list never reaches here (guarded above).
+            model: samples
+                .first()
+                .map(|s| s.reach.model)
+                .unwrap_or(crate::reach::PRODUCTION_REACH_MODEL),
         },
         offset_stepover,
         cap,
@@ -494,6 +500,28 @@ fn ridge_perpendicular(poly: &[usize], k: usize, nx: usize) -> (f64, f64) {
 /// A side whose surface does not rise at all inside the band reports a
 /// vertical wall, which is the "the rim does not constrain the tool" reading
 /// — never "refuse".
+/// Both readings of the same perpendicular walk: the two-wall V the CLR+θ
+/// model consumes, and the raw sampled heights the C9 sampled model consumes.
+///
+/// One walk, two readings, so the models can never be compared across
+/// different measurements — the C9 rule that the variable under test has to be
+/// the model and nothing else.
+struct MeasuredCrossSection {
+    valley: crate::reach::LocalValley,
+    sampled: crate::reach::SampledCrossSection,
+}
+
+/// How many cells the walk continues PAST the rim, purely to feed the sampled
+/// model. Expressed in cutter envelope radii: beyond the rim the flat top is
+/// still a constraint on where the tool can stand (it is what
+/// `width_at_height(δ)` bumps into), and a section that stops at the rim caps
+/// the sampled reach at the rim distance by construction. The V model never
+/// sees these cells — `rim_cells` and `max_slope` both stop at the rim exactly
+/// as before.
+fn past_rim_cells(cell: f64, envelope_radius_mm: f64) -> usize {
+    ((envelope_radius_mm / cell.max(1e-9)).ceil() as usize).clamp(1, CROSS_SECTION_WALK_CELLS)
+}
+
 #[allow(clippy::too_many_arguments)] // one cohesive measurement off five grids
 fn measure_cross_section(
     ridge: usize,
@@ -504,15 +532,20 @@ fn measure_cross_section(
     nx: usize,
     cell: f64,
     threshold: f64,
-) -> crate::reach::LocalValley {
+    past_rim: usize,
+) -> MeasuredCrossSection {
     let (r0, c0) = crate::grid2::row_major_rc(ridge, nx);
     let depth = rest.at_index_or(ridge, 0.0).max(0.0);
     let z0 = surface_z.at_index_or(ridge, f64::NAN);
 
-    let side = |dir: f64| -> crate::reach::ValleySide {
+    let side = |dir: f64| -> (crate::reach::ValleySide, Vec<f64>) {
         let mut rim_cells = 0.0f64;
         let mut max_slope = 0.0f64;
         let mut z_prev = z0;
+        let mut heights: Vec<f64> = Vec::new();
+        // Cells still owed to the sampled section after the V's walk has
+        // stopped at the rim; `None` until the rim is met.
+        let mut owed: Option<usize> = None;
         for j in 1..=CROSS_SECTION_WALK_CELLS {
             let step = dir * j as f64;
             let col = (c0 as f64 + perp.0 * step).round();
@@ -523,8 +556,21 @@ fn measure_cross_section(
             if !contact.at_index_or(idx, false) {
                 break;
             }
-            rim_cells = j as f64;
             let zj = surface_z.at_index_or(idx, f64::NAN);
+            heights.push(if zj.is_finite() && z0.is_finite() {
+                zj - z0
+            } else {
+                f64::NAN
+            });
+            if let Some(left) = owed.as_mut() {
+                // Past the rim: sampled-section cells only.
+                if *left == 0 {
+                    break;
+                }
+                *left -= 1;
+                continue;
+            }
+            rim_cells = j as f64;
             if z_prev.is_finite() && zj.is_finite() {
                 let rise = zj - z_prev;
                 // Only the band the profile scan integrates over can foul the
@@ -538,17 +584,27 @@ fn measure_cross_section(
                 z_prev = zj;
             }
             if rest.at_index_or(idx, 0.0) <= threshold {
-                break; // past the rim: the reference tool touches down here
+                // Past the rim: the reference tool touches down here. The V
+                // model stops; the sampled section keeps walking.
+                owed = Some(past_rim);
             }
         }
         let dist = rim_cells * cell;
-        crate::reach::ValleySide::new(dist, dist * max_slope)
+        (
+            crate::reach::ValleySide::new(dist, dist * max_slope),
+            heights,
+        )
     };
 
-    crate::reach::LocalValley {
-        rest_depth_mm: depth,
-        left: side(-1.0),
-        right: side(1.0),
+    let (left, left_h) = side(-1.0);
+    let (right, right_h) = side(1.0);
+    MeasuredCrossSection {
+        valley: crate::reach::LocalValley {
+            rest_depth_mm: depth,
+            left,
+            right,
+        },
+        sampled: crate::reach::SampledCrossSection::from_sides(cell, &left_h, &right_h),
     }
 }
 
@@ -642,6 +698,9 @@ pub fn detect_rest_valleys(
     let mut pencil_z = Grid2::new_fill(nx, ny, f64::NAN);
     let mut contact = Grid2::new_fill(nx, ny, false);
     let threshold = params.min_valley_depth.max(0.0);
+    // C9: how far past the rim the cross-section walk carries on, for the
+    // sampled reach model's benefit only.
+    let past_rim = past_rim_cells(cell, pencil.envelope_radius_mm());
     for (i, &(rv, valid, pz)) in samples.iter().enumerate() {
         rest.set_index(i, rv);
         pencil_z.set_index(i, pz);
@@ -865,12 +924,26 @@ pub fn detect_rest_valleys(
             .map(|k| {
                 let perp = ridge_perpendicular(poly, k, nx);
                 let ridge = poly.get(k).copied().unwrap_or(0);
-                let valley = measure_cross_section(
-                    ridge, perp, &rest, &pencil_z, &contact, nx, cell, threshold,
+                let m = measure_cross_section(
+                    ridge, perp, &rest, &pencil_z, &contact, nx, cell, threshold, past_rim,
                 );
+                // C9: which model answers is ONE constant, and the reach
+                // carries its own provenance from here on.
+                let reach = match crate::reach::PRODUCTION_REACH_MODEL {
+                    crate::reach::ReachModel::WallAngleV => {
+                        crate::reach::solve_reach(pencil, &m.valley)
+                    }
+                    crate::reach::ReachModel::SampledCrossSection => {
+                        crate::reach::solve_reach_sampled(
+                            pencil,
+                            &m.sampled,
+                            m.valley.rest_depth_mm,
+                        )
+                    }
+                };
                 CenterlineSample {
-                    reach: crate::reach::solve_reach(pencil, &valley),
-                    valley,
+                    reach,
+                    valley: m.valley,
                 }
             })
             .collect();
