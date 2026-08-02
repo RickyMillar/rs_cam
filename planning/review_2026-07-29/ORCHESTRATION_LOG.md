@@ -2747,3 +2747,284 @@ The C3 feed change. Everything else in this wave is report-only or
 behaviour-preserving; that one moves a number the operator acts on, in the
 direction that deserves eyes, and the wave states it rather than shipping it
 quietly.
+
+---
+
+## C-SEQUENCE WAVE 7b (M3 implementation), 2026-08-02
+
+Wave 7a produced the study and **declined to merge**: every direct arm
+cleared M3's 2× bar by two orders of magnitude, but the winner changes the
+classifier's *answer* — 1.8–4.3% of cells across a band boundary, which is
+region ownership, which is which operation cuts which territory. §8 of the
+study called that a Checkpoint-B-shaped decision and said the wave had no
+mandate to take it.
+
+**The human took it.** Ruling, 2026-08-02: *"Adopt, COLUMNS-gated"* —
+production switches to candidate 3 behind the eight parity gates of §9.3; the
+decisive gate is an end-to-end wanaka-class `UnifiedFinish` A/B scored on
+COLUMNS quality, **not on cell counts**; if COLUMNS regresses, production
+falls back to the shipped classifier and M3 closes with the study as its
+record.
+
+COLUMNS did not regress. Production is on the tile raster.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `0711568` | production switch through `finish_setup`, `SurfaceSampler` provenance, `classification_sampler` on `UnifiedFinishParams`/`UnifiedFinishConfig`, the restated acceptance gate, tripwires, reduction pin, production-path determinism/cancel gates | 8 files, +823 / −101 |
+| 2 | `5d8c115` | `tests/classification_columns_ab_m3.rs` — the COLUMNS A/B and its verdict | 1 file, +696 |
+| 3 | *(this commit)* | study §10, plan checklist + restated gate, this entry, the table footnote the study's §10.7 describes | |
+
+No commit 3-for-downstream-expectations exists, and that is the finding
+below.
+
+### The decision, measured
+
+`M3_AB_WINDOW_MM=0` — the full 100 mm terrain, Ø1 tip on a Ø6 shank at 7° so
+the classification cell is the production `cusp/4` = 0.125 mm, 0.1 mm
+tip-matched measurement grid, **1 001 987 dexel columns common to both
+branches**:
+
+| | A (shipped probe) | B (production raster) | Δ | tolerance |
+|---|---|---|---|---|
+| p50 \|dev\| | 28.59 µm | 28.69 µm | **+0.11** | +5 |
+| p90 \|dev\| | 219.03 µm | 223.47 µm | **+4.44** | +10 |
+| on-size ±10 µm | 26.665% | 26.570% | −0.095 pp | — |
+| on-size ±25 µm | 47.596% | 47.514% | **−0.082 pp** | −0.5 |
+| max \|dev\| | 3870.2 µm | 3990.4 µm | +120 | reported, not gated |
+| rapid collisions | 0 | 0 | 0 | no increase |
+| **generation wall** | 249.0 s | **192.9 s** | **−22.5%** | — |
+| cutting time | 7188.8 s | 7588.5 s | **+5.6%** | — |
+
+Thresholds were written above the assertions before the run and justified
+against a physical scale, not against the data: the dials ask for a 22.5 µm
+cusp (`0.3²/(8·0.5)`), so p50 may rise a quarter of that and p90 half of it.
+Every gated statistic clears by an order of magnitude, in both directions.
+**This is a wash on quality, not a win** — and it is exactly the answer the
+ruling was shaped to accept or reject.
+
+Two numbers deserve to be read together. The classifier's 187× microbenchmark
+becomes **−22.5% of whole-operation generation wall**, which is where a user
+feels it. And B costs **+5.6% cutting time**, because it finds 84.5 mm² more
+very-steep territory (`§9.2` risk 2, predicted in advance) and waterline is
+the priciest strategy per area. Quality did not pay for the extra territory;
+the clock did. On the 30 mm window the same comparison went the other way
+(−2.5%), so this is fixture-dependent rather than a law.
+
+### The gate that was wrong, and what replaced it
+
+The plan's first acceptance gate reads *"no loss of narrow steep regions
+relative to the current fine classifier"*. Taken literally the winner fails
+it: 5 mid-steep components lost at terrain 849².
+
+It fails because the gate names the wrong reference. The shipped classifier
+samples the CL surface of a Ø0.05 mm ball, which sits `R·(1 − n.z)/n.z` above
+the model — 10 µm at 45°, 25 µm at 60°, 119 µm at 80°. That offset is
+**slope-dependent**, so it does not cancel in the classification stencil; it
+adds gradient of its own. Study §5.3 discriminated the two possible causes by
+shrinking the probe: label disagreement with the direct arms goes to zero at
+the first 10× shrink on every fixture, and max |Δz| falls exactly 10× per 10×
+of radius. The "lost" regions are the probe's artefact.
+
+Restated and shipped as `production_loses_no_region_against_the_true_surface`:
+*no loss relative to the TRUE SURFACE, with the shipped classifier's
+probe-shrunk limit as the reference*. Deliberately not one of the direct arms
+scoring itself — the reference is the oracle's own algorithm at Ø0.0005, an
+independent construction that agrees only if both are right.
+
+Measured on all six fixtures:
+
+- the production sampler moves **0 labels and loses 0 regions**. It does not
+  approximate the surface; it is the surface.
+- the shipped probe moves labels on three fixtures and **fabricates** regions
+  rather than losing them — mixed-slope's 6 real mid-steep components read as
+  8.
+
+The direction is the opposite of the plan's phrasing, which is why the first
+attempt at a non-vacuity assertion (`the shipped classifier must lose
+something`) failed red and had to be rewritten to assert what actually
+happens. Both facts are asserted now, so the gate cannot go vacuous in either
+direction.
+
+### Downstream: the expectation changes that did not happen
+
+Nineteen sentries that consume region ownership were run against the switch:
+`unified_finish_semantic_regions`, `checkpoint_a_valley_matrix`,
+`coverage_routing_pr5`, `crease_own_region_pr6b`, `generic_rest_routing_pr7`,
+`unified_finish_tapered_end_to_end_m21`, `steep_shallow_min_segment_pr8d`,
+`finish_resolution_policy_pr3`, `tool_scale_semantics_pr2`,
+`tapered_cusp_radius_sentry`, `waterline_shared_finish_setup_c3`,
+`finish_planner_wanaka_decompose`, `derived_stepover_pr6a`,
+`unified_finish_dropped_band_finding_d1`,
+`unified_finish_partial_clip_finding_c8`, `narrate_regions_closed_c8`,
+`checkpoint_b_resolution_ab`, `ramp_reach_clamp_pr8b`, `reach_policy_pr4`.
+
+**All green. Not one pinned value moved, so the wave has no
+expectation-update commit.**
+
+That is a result, not luck, and the study explains it: §5.2's per-fixture
+table shows the direct arms EXACT on flat ground and clean analytic walls,
+which is what these sentries are built from. The probe artefact needs
+*varying* slope at cell scale to bite. It bites on terrain — which is where
+the A/B measured it, on a million columns.
+
+One thing did change that is not a sentry and must be said: the two
+`#[ignore]`d wanaka probe harnesses (`p2c_headless_ab_wanaka`,
+`v3_cascade_ab`) now spell `classification_sampler: TileRaster` explicitly,
+by NAME rather than via `PRODUCTION`, so their arms keep measuring one named
+classifier if the default ever moves again. Their pinned constants
+(`PINNED_A_PROJECT_S` / `PINNED_A_FINISH_S`, the v3 cascade rows) were
+measured before this switch and are therefore **stale**: a re-run will move.
+Those harnesses already carry the standing instruction to re-measure when the
+chain or simulator changes materially, and a classifier change is material.
+They were not re-measured here — they read the user-live `wanaka.toml`, which
+this wave is forbidden to touch.
+
+### What the parity net actually pins now
+
+| gate | wave 7a | wave 7b |
+|---|---|---|
+| label movement per fixture | printed as characterisation | `LABEL_MOVE_TRIPWIRES` — zero-pinned on the three EXACT fixtures, 25% headroom elsewhere, unknown fixture = hard fail |
+| narrow-steep survival | scored against the probe | scored against the **surface**, with the probe's fabrication asserted as the non-vacuity control |
+| the per-cell reduce | an inline `>` | `keep_higher`, a named function with a test that fails on `f64::max` — signed-zero ties keep the first-seen candidate, a NaN neither wins a cell nor is laundered out of one |
+| thread determinism | the five arms | the arms **and** `build_classification_surface_*` itself, diffing Z, coverage and labels, with a band-population non-vacuity check |
+| cancellation | "an arm returns `Cancelled`" | poll-counted **latency** bound + a ≥3-tile-band fixture guard + a production-path twin |
+| the config seam | — | serde matrix: default is production, production is never written to a project file, an absent field loads as production, a pinned non-production sampler round-trips |
+
+The cancellation tightening earned its keep inside the wave. The new
+"fixture must be ≥3 tile bands" guard immediately failed this wave's own
+first attempt, which cancelled on the third poll of a **3**-band grid — the
+cancel was landing on the last band and the latency claim proved nothing. It
+now cancels on poll 2 of a 3-band grid and asserts the arm stops there.
+
+### Consolidation, and one duplicate retired
+
+The classification grid arithmetic existed twice — once in `finish_setup`,
+once in `ClassificationGridSpec::for_mesh` — with a sentry whose whole job was
+policing the copy. Production now calls the helper, so the sentry was
+rewritten to assert the **contract** instead: padding is one ENVELOPE radius
+(physical sweep, `TOOL_SCALE_SEMANTICS.md` §8 row 2), the cell is the
+resolution policy's, the grid reaches the far padded edge so the
+mask→polygon extractor keeps its non-contact margin ring, and the floor is
+the mesh bbox floor.
+
+Provenance follows the `CellSource` precedent one level up.
+`FinishSurface.sampler: SurfaceSampler` is `CutterOffset` for generation
+grids and `Classification(sampler)` for classification grids: `CellSource`
+says what **sized** the cells, this says what was **measured into** them. Two
+grids of identical geometry over identical meshes hold different surfaces
+depending on this field, and the switch moved production cells by changing
+nothing else.
+
+§9.4's standing correction landed too. `CLASSIFICATION_PROBE_DIAMETER_MM` no
+longer says the probe's offset is "negligible at finish cell sizes" — it
+carries the measured numbers, and the number it was hiding is 8–20% of a cell
+in Z.
+
+### Instrument design: the traps this harness was built around
+
+The A/B does **not** read `planning/airrun_2026-06-01/wanaka.toml`. A gate
+that depends on a live, user-modified project has a verdict that changes when
+somebody drags a slider — `wanaka_suggest_baseline` has been red for exactly
+that reason for weeks. The fixture is the committed `tests/fixtures/terrain.stl`
+and the config is built in-test from the C6 helpers.
+
+The FOOTPRINT is a knob; the SCALE is not. Everything that makes the switch
+discriminating is a property of the 0.125 mm cell against a 10–25 µm probe
+offset, so the tool and the cell are the production ones and only the area
+moves.
+
+Branches are scored on the **common** column population, indexed by
+`(row, col)` and never by inverting a transform (P2.g Task 1's lesson). The
+relevance filter can admit a column in one branch and not the other;
+comparing two p50s over two populations compares two questions.
+
+And three PNGs are written to `target/m3_columns_ab/` before any verdict is
+read, per the v3 campaign's closing rule — *never gate on an aggregate
+without rendering the surface*. The B−A map is the phase texture P2.g
+characterised: mottled, local mean zero, **no coherent block of standing
+material** anywhere. 66.9% of columns move between branches, so the two
+surfaces really are different surfaces being compared rather than a rounding
+difference.
+
+### One reading trap, documented rather than papered over
+
+`print_equivalence_rows` scores against whichever grid the caller passed as
+the ORACLE. Where that is the shipped probe, a `FAILED` row means the arm
+dropped a region **the probe reports** — characterisation since this wave,
+not a gate. `terrain@849` still prints `FAILED` for all three direct arms
+while the suite is green. Rather than silently changing the verdict function,
+the harness now prints a footnote under every table saying so, and study
+§10.7 records it. A table that says FAILED next to a green suite is precisely
+the kind of thing that misleads the next reader.
+
+### Gates
+
+- `cargo fmt --check`: exit 0 before every commit.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0 before
+  every commit.
+- `cargo test -p rs_cam_core --no-fail-fast` (the WHOLE crate, 114 targets):
+  **112 green, 2 red, both known and neither this wave's** — 2644 passed /
+  4 failed:
+  - `--lib` 2210 passed / 3 failed — the adaptive3d trio
+    (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+    `rapid_segment_lifts_to_safe_z_before_traverse`,
+    `planner_sim_dexel_parity_agent_search`), untouched here;
+  - `wanaka_suggest_integration` 2 passed / 1 failed —
+    `wanaka_suggest_baseline`, the documented environmental red: it reads the
+    WORKING-TREE `planning/airrun_2026-06-01/wanaka.toml`, which carries
+    uncommitted user edits and no longer offers the toolpath it looks for.
+    The fixture is untouchable by standing instruction, so this stays red.
+- `cargo test -p rs_cam_viz --no-fail-fast -- --test-threads=1`: 5 targets,
+  247 passed, 0 failed.
+- `cargo test -p rs_cam_cli --no-fail-fast`: 2 targets, 16 passed, 0 failed.
+- `cargo test -p rs_cam_mcp --no-fail-fast`: 2 targets, 4 passed, 0 failed.
+- New/extended sentries, all green: `classification_strategy_m3` 13 passed
+  (4 new: the restated true-surface gate, production-path thread determinism,
+  production-path cancellation, the config serde matrix) + 2 ignored study
+  rows, and 2 new unit tests in `classify_probe` (the reduction pin, the
+  `PRODUCTION`/`Default` pin). `classification_columns_ab_m3` 1 ignored gate,
+  run manually on both windows.
+- Timing rows re-earned in the final tree (gate 8), release,
+  `--test-threads=1`, `pgrep` clear: terrain 849² shipped **3.161 s wall /
+  40.38 s CPU** vs tile raster **0.016 s / 0.13 s** — **198× wall, 311×
+  CPU** (wave 7a: 187×). Analytic 849² 0.721 s → 0.004 s, **180×** (wave 7a:
+  230×). Peak RSS 135 MB. The ratios reproduce; the absolute walls wobble
+  ~6%, which is what §9.2 risk 6 said one machine and one run buys.
+- The terrain label-movement rows re-measured **exactly**: 709 / 3174 /
+  17 687 at 143²/425²/849². The wave-7a table reproduces, so the tripwires
+  are pinned to real numbers rather than to a lucky run.
+- One cargo job at a time; `free -g` + `pgrep` before every heavy command.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. Every commit staged file
+by file.
+
+### What a human still owns
+
+**The +5.6% cutting time on the full terrain.** Quality is a wash and
+generation got 22.5% faster, but the shipped operation will take longer on
+wanaka-class relief because the honest classifier finds more very-steep
+ground and waterline is expensive. That is the correct answer geometrically
+and a slower one on the clock, and it is the kind of trade that deserves eyes
+rather than a silent merge. The lever if it is unwanted is
+`waterline_threshold_deg`, not the classifier.
+
+### What this closes, and what it does not
+
+M3 fix-sequence steps 1–4 are done. Steps 5 (cached classification fields)
+and 6 (adaptive refinement) are recommended **closed rather than carried**,
+for §8's reason now sharpened by measurement: a classification that takes
+16 ms is buying a cache hit rate against 16 ms, and cannot repay the
+invalidation risk `TriangleMesh` has no revision field to manage.
+
+Candidate 0 (`query_into` / `QueryScratch`) remains answer-preserving,
+recommended on its own merits under 11 call sites, and **unlanded** — it is
+worth nothing here and the study says so; it should be taken where a profile
+shows it helps, not on M3's authority.
+
+Still unexercised: down-wound faces differ by 2R between the two sampler
+families (§9.2 risk 3). Uniform on `stacked_shelf`, a 50 µm step on a real
+overhang, and nothing in this repo's fixtures has one. The switch moves
+production onto the correct side of it.

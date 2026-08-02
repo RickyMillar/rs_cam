@@ -485,6 +485,29 @@ Important edge cases:
 - Material speedup at 849²; target at least 2× before accepting architecture complexity.
 - Memory budget documented; no unbounded cache retention.
 
+> **Gate 1 as written is wrong, and wave 7a measured why.** "Relative to the
+> current fine classifier" assumes the shipped grid is the reference. It is
+> not: it samples the CL surface of a Ø0.05 mm ball, which sits
+> `R·(1 − n.z)/n.z` above the model — a **slope-dependent** offset that adds
+> gradient of its own. Shrinking that probe 100× drives label disagreement
+> with the direct arms to zero on every fixture and shrinks max |Δz| exactly
+> 10× per 10× of radius (`CLASSIFICATION_PERF_STUDY.md` §5.3). The five
+> mid-steep regions the direct arms "lose" at terrain 849² are the probe's
+> artefact, not surface.
+>
+> **Restated, and this is the form wave 7b shipped against:** *no loss of
+> narrow steep regions relative to the TRUE SURFACE, with the shipped
+> classifier's probe-shrunk limit as the reference.* Measured
+> (`production_loses_no_region_against_the_true_surface`): production moves 0
+> labels and loses 0 regions against that reference on every fixture, while
+> the shipped probe moves labels on three fixtures and **fabricates** regions
+> rather than losing them (mixed-slope: 6 real mid-steep components read as
+> 8). Both facts are asserted, so the gate cannot go vacuous in either
+> direction.
+>
+> "No fabricated cliffs" is likewise now measured on the correct side: it was
+> the shipped classifier fabricating them.
+
 ### Scope and risk
 
 - Primary files: `slope.rs`, `finish_setup.rs`, `mesh`/spatial helpers, benches.
@@ -1370,6 +1393,35 @@ After the wanaka live validation report lands:
    NOT fixed, stated: `Auto` keys on the PRESENCE of a prior stock, not its
    QUALITY, so a rough→finish chain still needs `self_probe` pinned by hand.
 6. **M3 classifier** (uses C2+C6).
+   ✅ DONE 2026-08-02, in two waves.
+   **7a — research**: `efabeec` (criterion bench) / `05cac97` (five samplers
+   behind a strategy enum + the equivalence harness + six pathological
+   fixtures) / `6c73810` (`CLASSIFICATION_PERF_STUDY.md`). Headline: the
+   pre-registered "the dedup bitset allocation is the bottleneck" hypothesis
+   was **refuted by measurement** (0.99–1.14×; it is ~a fifth of the query
+   and the query is ~a fifth of the classifier), and every DIRECT arm cleared
+   the 2× bar by two orders of magnitude. The study **declined to merge**:
+   the arms move 1.8–4.3% of cells across a band boundary, which is region
+   ownership, which is a product decision — §8.
+   **7b — implementation**: `0711568` (production switch + `SurfaceSampler`
+   provenance + parity net) / `5d8c115` (the COLUMNS A/B). Human checkpoint
+   ruling *"Adopt, COLUMNS-gated"*; all eight §9.3 gates green; the decisive
+   end-to-end A/B on the full 100 mm terrain scored **1 001 987 columns** and
+   found the switch a wash on quality (p50 +0.11 µm, p90 +4.44 µm against
+   tolerances of +5/+10; ±25 µm on-size −0.082 pp against −0.5; collisions
+   0→0), while whole-op **generation wall fell 22.5%** (249.0 s → 192.9 s).
+   Full record: `CLASSIFICATION_PERF_STUDY.md` §10.
+   **The acceptance gate below had to be RESTATED, not re-pointed** — see the
+   note under it. Fix-sequence steps 1–4 are done; step 5 (cache) and step 6
+   (adaptive refinement) are recommended CLOSED rather than carried, for §8's
+   reasons: once a classification takes 16 ms, a cache is buying a hit rate
+   against 16 ms and cannot repay its invalidation risk.
+   NOT fixed, stated: candidate 0 (`query_into`/`QueryScratch`) is
+   answer-preserving and sits under 11 call sites, but is worth nothing here
+   and did not land; down-wound faces still differ by 2R between the two
+   sampler families, unexercised by any real overhang; **B costs +5.6%
+   CUTTING time on the full terrain**, because it finds 84.5 mm² more
+   very-steep territory and waterline is the priciest strategy per area.
 7. **C3 + C4 + C8** — consolidation/diagnostics wave (feeds H4's oracles).
    ✅ DONE 2026-08-02: **C3** — `f792fe9` (tapered width models: parity
    sentry FIRST, measuring +290.6% / −44.1% against `width_at_height`, not
