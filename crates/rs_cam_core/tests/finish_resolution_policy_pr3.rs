@@ -111,10 +111,37 @@ fn scallop_fingerprint() {
     let tp = scallop_toolpath(&mesh, &index, &t, &params);
     assert_eq!(
         fingerprint(&tp),
-        (1318, 4897619324930985607),
-        "scallop output moved; captured at HEAD 606b8d5 before the H3 policy refactor"
+        (1423, 11432160290294522021),
+        "scallop output moved; re-pinned at M4 phase C (`dde7a54`) when chord \
+         refinement started bounding what it emits — see below"
     );
 }
+
+// Fingerprint history for the pin above, so a future reader can tell a
+// deliberate move from a regression:
+//
+// | value | when | why |
+// |---|---|---|
+// | `(1318, 4897619324930985607)` | HEAD `606b8d5`, before the H3 policy refactor | original capture |
+// | `(1423, 11432160290294522021)` | M4 phase C, `dde7a54` | +105 moves (+8.0%) |
+//
+// The M4 move is chord refinement gaining a guarantee it never had. Three
+// things changed, all of which can only ADD points to a chord that was
+// already failing its tolerance, and none of which touch ring placement:
+// refinement no longer skips chords shorter than one probe step (which is
+// every chord it produces by splitting); the tolerance check takes at least
+// four probes instead of however many the generation cell affords, which on
+// a 0.75 mm cell was one; and acceptance carries a margin, because the worst
+// PROBE understates the worst POINT on a convex feature.
+//
+// Measured on this file's own ridge fixture the effect is +8.0% moves. On the
+// M4 grooved block it takes the shipped cascade's deepest over-cut from
+// -108.6 µm to -62.6 µm vertical (-58.2 µm surface-normal) against a
+// commanded 100 µm chord tolerance it had been quietly violating. This is a
+// fidelity fix that happens to cost moves, not a placement change: the ring
+// cascade, its stepover law and its `max_rings` budget are all untouched, and
+// `scallop_candidates_m4::shipped_policy_reproduces_the_shipped_path_byte_for_byte`
+// still passes on all five fixtures.
 
 #[test]
 fn ramp_finish_fingerprint() {
