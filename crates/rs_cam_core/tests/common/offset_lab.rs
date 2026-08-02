@@ -321,19 +321,43 @@ pub fn fixtures() -> Vec<OffsetFixture> {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Cleanup {
-    /// What every consumer except scallop does today: keep whatever cavalier
-    /// hands back, flattened to chords.
+    /// **C0.** What every consumer except scallop does today: keep whatever
+    /// cavalier hands back, flattened to chords.
     Raw,
-    /// Scallop's shipped compensation: drop any vertex within `min_spacing`
-    /// of the last KEPT one. Never moves a point, never adds one.
+    /// **C1.** Scallop's shipped compensation: drop any vertex within
+    /// `min_spacing` of the last KEPT one. Never moves a point, never adds one.
     DropOnly { min_spacing: f64 },
+    /// **C2.** cavalier's own unused cleanup, `remove_redundant(eps)` —
+    /// coincident and collinear vertex merging, by the library that produced
+    /// the vertices.
+    RemoveRedundant { eps: f64 },
+    /// **C3.** `polygon::cleanup_collinear` — duplicates plus
+    /// collinear-within-`tol`, the lossless end of candidate (c).
+    CollinearDedup { tol: f64 },
+    /// **C4.** `polygon::simplify_bounded` — RDP with the dropped-vertex
+    /// deviation bounded against the retained chain, self-intersection
+    /// guarded.
+    Simplify { tol: f64 },
 }
 
 impl Cleanup {
     pub fn label(self) -> String {
         match self {
-            Self::Raw => "raw (production today)".to_owned(),
-            Self::DropOnly { min_spacing } => format!("drop-only decimate @ {min_spacing:.3} mm"),
+            Self::Raw => "C0 raw (production today)".to_owned(),
+            Self::DropOnly { min_spacing } => format!("C1 drop-only @ {min_spacing:.3} mm"),
+            Self::RemoveRedundant { eps } => format!("C2 remove_redundant @ {eps:.0e}"),
+            Self::CollinearDedup { tol } => format!("C3 collinear+dedup @ {tol:.0e} mm"),
+            Self::Simplify { tol } => format!("C4 simplify (RDP) @ {tol:.0e} mm"),
+        }
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Raw => "C0",
+            Self::DropOnly { .. } => "C1",
+            Self::RemoveRedundant { .. } => "C2",
+            Self::CollinearDedup { .. } => "C3",
+            Self::Simplify { .. } => "C4",
         }
     }
 
@@ -343,8 +367,30 @@ impl Cleanup {
         match self {
             Self::Raw => Some(poly.clone()),
             Self::DropOnly { min_spacing } => decimate_ring_polygon(poly, min_spacing),
+            Self::RemoveRedundant { eps } => remove_redundant_polygon(poly, eps),
+            Self::CollinearDedup { tol } => {
+                rs_cam_core::polygon::cleanup_collinear(poly, PLINE_POS_EQUAL_EPS, tol)
+            }
+            Self::Simplify { tol } => rs_cam_core::polygon::simplify_bounded(poly, tol),
         }
     }
+}
+
+/// cavalier's `remove_redundant`, applied to every ring of a polygon.
+pub fn remove_redundant_polygon(poly: &Polygon2, eps: f64) -> Option<Polygon2> {
+    let clean = |ring: &[P2]| -> Option<Vec<P2>> {
+        let mut pl = Polyline::with_capacity(ring.len(), true);
+        for p in ring {
+            pl.add(p.x, p.y, 0.0);
+        }
+        let pl = pl.remove_redundant(eps).unwrap_or(pl);
+        (pl.vertex_count() >= 3).then(|| pl.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect())
+    };
+    let exterior = clean(&poly.exterior)?;
+    let holes: Vec<Vec<P2>> = poly.holes.iter().filter_map(|h| clean(h)).collect();
+    let mut out = Polygon2::new(exterior);
+    out.holes = holes;
+    Some(out)
 }
 
 /// Scallop's `decimate_ring_polygon`, reproduced here so the harness can run
@@ -424,6 +470,9 @@ pub struct RingStat {
     pub ring: usize,
     pub polys: usize,
     pub verts: usize,
+    /// Vertices after tessellating arcs to chords — what a toolpath would
+    /// actually carry. Equal to `verts` for every arm that has no arcs.
+    pub flat_verts: usize,
     /// Wall-clock for this ring's offsets + cleanup.
     pub secs: f64,
     /// Total absolute exterior area, holes subtracted.
@@ -519,6 +568,7 @@ pub fn cascade(
             ring,
             polys: next.len(),
             verts,
+            flat_verts: verts,
             secs,
             area,
         });
@@ -937,4 +987,261 @@ pub fn write_rings_svg(original: &Polygon2, rings: &[Vec<Polygon2>], limit: usiz
     svg.push_str("</svg>");
     let path = out_dir().join(format!("{name}.svg"));
     let _ = std::fs::write(path, svg);
+}
+
+// ---------------------------------------------------------------------------
+// Candidate (a): keep cavalier's ARCS through the cascade
+// ---------------------------------------------------------------------------
+
+/// What to do with the bulges cavalier returns.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ArcPolicy {
+    /// **C5-control.** Exactly what `Polygon2::from_pline` does: drop the
+    /// bulge, keep the two endpoints, i.e. replace every arc join with its
+    /// chord. Running the pline cascade at this setting reproduces
+    /// production and isolates the flattening from the cascade machinery.
+    ChordPerRing,
+    /// **C5.** Never flatten. Arcs stay arcs for the whole cascade and are
+    /// tessellated once, at the end.
+    Preserve,
+    /// **C6.** Flatten every ring, but with `arcs_to_approx_lines(tol)` — a
+    /// bounded tessellation instead of a single unbounded chord.
+    BoundedPerRing { tol: f64 },
+}
+
+impl ArcPolicy {
+    pub fn label(self) -> String {
+        match self {
+            Self::ChordPerRing => "C5-ctl pline cascade, chord per ring".to_owned(),
+            Self::Preserve => "C5 arcs preserved end-to-end".to_owned(),
+            Self::BoundedPerRing { tol } => format!("C6 bounded arc flatten @ {tol:.0e} mm"),
+        }
+    }
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::ChordPerRing => "C5-ctl",
+            Self::Preserve => "C5",
+            Self::BoundedPerRing { .. } => "C6",
+        }
+    }
+}
+
+fn pline_is_ccw(pl: &Polyline<f64>) -> bool {
+    pl.area() > 0.0
+}
+
+fn flatten_chords(pl: &Polyline<f64>) -> Polyline<f64> {
+    let mut out = Polyline::with_capacity(pl.vertex_count(), pl.is_closed());
+    for v in pl.iter_vertexes() {
+        out.add(v.x, v.y, 0.0);
+    }
+    out
+}
+
+fn pline_to_polygons(plines: &[Polyline<f64>], flatten_tol: f64) -> Vec<Polygon2> {
+    let approx = |pl: &Polyline<f64>| -> Vec<P2> {
+        let pl = pl
+            .arcs_to_approx_lines(flatten_tol)
+            .unwrap_or_else(|| pl.clone());
+        pl.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect()
+    };
+    let mut polys: Vec<Polygon2> = plines
+        .iter()
+        .filter(|pl| pline_is_ccw(pl))
+        .map(|pl| Polygon2::new(approx(pl)))
+        .collect();
+    for pl in plines.iter().filter(|pl| !pline_is_ccw(pl)) {
+        let hole = approx(pl);
+        let Some(test) = hole.first() else { continue };
+        if let Some(owner) = polys.iter_mut().find(|p| p.contains_point(test)) {
+            owner.holes.push(hole);
+        } else if let Some(first) = polys.first_mut() {
+            first.holes.push(hole);
+        }
+    }
+    polys
+}
+
+/// The same cascade, run in cavalier's own representation. Vertex counts in
+/// [`RingStat::verts`] are POLYLINE vertices (an arc is one vertex plus a
+/// bulge); [`RingStat::flat_verts`] is what a toolpath would actually carry,
+/// i.e. the count after tessellating to `flatten_tol`.
+pub fn pline_cascade(
+    fixture: &OffsetFixture,
+    policy: ArcPolicy,
+    flatten_tol: f64,
+    budget: &CascadeBudget,
+    keep_rings: bool,
+) -> Cascade {
+    let t0 = Instant::now();
+    let mut current = poly_to_plines(&fixture.poly);
+    let mut stats = Vec::new();
+    let mut rings = Vec::new();
+    let mut stopped = StopReason::Collapsed;
+
+    for ring in 1..=budget.max_rings {
+        let t = Instant::now();
+        // Production dedupes repeat positions before EVERY cavalier call
+        // (`polygon::dedupe_pline`); an arm that skips it is not comparable,
+        // and cavalier's own contract requires it.
+        current = current
+            .into_iter()
+            .map(|pl| pl.remove_repeat_pos(PLINE_POS_EQUAL_EPS).unwrap_or(pl))
+            .filter(|pl| pl.vertex_count() >= 3)
+            .collect();
+        let ccw = current.iter().filter(|p| pline_is_ccw(p)).count();
+        // ... and contains the panic, exactly as `offset_one` does.
+        let input = current.clone();
+        let raw: Vec<Polyline<f64>> = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            move || -> Vec<Polyline<f64>> {
+                if input.len() == 1 && ccw == 1 {
+                    input
+                        .first()
+                        .map(|p| p.parallel_offset(fixture.step))
+                        .unwrap_or_default()
+                } else if input.is_empty() {
+                    Vec::new()
+                } else {
+                    let shape = Shape::from_plines(input);
+                    let result = shape.parallel_offset(fixture.step, Default::default());
+                    result
+                        .ccw_plines
+                        .into_iter()
+                        .map(|ip| ip.polyline)
+                        .chain(result.cw_plines.into_iter().map(|ip| ip.polyline))
+                        .collect()
+                }
+            },
+        ))
+        .unwrap_or_default();
+        let next: Vec<Polyline<f64>> = raw
+            .into_iter()
+            .map(|pl| match policy {
+                ArcPolicy::Preserve => pl,
+                ArcPolicy::ChordPerRing => flatten_chords(&pl),
+                ArcPolicy::BoundedPerRing { tol } => pl.arcs_to_approx_lines(tol).unwrap_or(pl),
+            })
+            .filter(|pl| pl.vertex_count() >= 3)
+            .collect();
+        let secs = t.elapsed().as_secs_f64();
+        if next.is_empty() {
+            stopped = StopReason::Collapsed;
+            break;
+        }
+        let verts: usize = next.iter().map(PlineSource::vertex_count).sum();
+        let polys = pline_to_polygons(&next, flatten_tol);
+        let flat_verts = total_vertices(&polys);
+        let area: f64 = polys.iter().map(signed_area_with_holes).sum();
+        stats.push(RingStat {
+            ring,
+            polys: polys.len(),
+            verts,
+            flat_verts,
+            secs,
+            area,
+        });
+        if keep_rings {
+            rings.push(polys);
+        }
+        current = next;
+
+        if verts > budget.vertex_cap {
+            stopped = StopReason::VertexCap;
+            break;
+        }
+        if t0.elapsed().as_secs_f64() > budget.seconds {
+            stopped = StopReason::TimeBudget;
+            break;
+        }
+        if ring == budget.max_rings {
+            stopped = StopReason::RingLimit;
+        }
+    }
+
+    Cascade {
+        stats,
+        stopped,
+        total_secs: t0.elapsed().as_secs_f64(),
+        rings,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Candidate (d): a different backend, measured rather than estimated
+// ---------------------------------------------------------------------------
+
+/// `geo::Buffer` — i_overlay's offsetting engine, already compiled into this
+/// workspace as a `geo` dependency. Sign is inverted against ours: geo's
+/// negative distance is a polygon inset.
+pub fn geo_cascade(fixture: &OffsetFixture, budget: &CascadeBudget, keep_rings: bool) -> Cascade {
+    use geo::algorithm::buffer::Buffer;
+
+    let t0 = Instant::now();
+    let mut current = vec![fixture.poly.clone()];
+    let mut stats = Vec::new();
+    let mut rings = Vec::new();
+    let mut stopped = StopReason::Collapsed;
+
+    for ring in 1..=budget.max_rings {
+        let t = Instant::now();
+        // i_overlay 4.0.7 indexes out of bounds on some inputs
+        // (`bind/solver.rs:91`, reproduced by the pocket cross fixture), so
+        // this arm gets the same containment `offset_one` gives cavalier —
+        // otherwise a candidate crash takes the whole comparison down.
+        let input = current.clone();
+        let step = fixture.step;
+        let next: Vec<Polygon2> =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || -> Vec<Polygon2> {
+                let mut out = Vec::new();
+                for p in &input {
+                    let buffered = p.to_geo_polygon().buffer(-step);
+                    for poly in buffered.0 {
+                        let converted = Polygon2::from_geo_polygon(&poly);
+                        if converted.exterior.len() >= 3 {
+                            out.push(converted);
+                        }
+                    }
+                }
+                out
+            }))
+            .unwrap_or_default();
+        let secs = t.elapsed().as_secs_f64();
+        if next.is_empty() {
+            stopped = StopReason::Collapsed;
+            break;
+        }
+        let verts = total_vertices(&next);
+        let area: f64 = next.iter().map(signed_area_with_holes).sum();
+        stats.push(RingStat {
+            ring,
+            polys: next.len(),
+            verts,
+            flat_verts: verts,
+            secs,
+            area,
+        });
+        if keep_rings {
+            rings.push(next.clone());
+        }
+        current = next;
+
+        if verts > budget.vertex_cap {
+            stopped = StopReason::VertexCap;
+            break;
+        }
+        if t0.elapsed().as_secs_f64() > budget.seconds {
+            stopped = StopReason::TimeBudget;
+            break;
+        }
+        if ring == budget.max_rings {
+            stopped = StopReason::RingLimit;
+        }
+    }
+
+    Cascade {
+        stats,
+        stopped,
+        total_secs: t0.elapsed().as_secs_f64(),
+        rings,
+    }
 }
