@@ -2355,3 +2355,147 @@ built here: the plan's fix shape asked for presence, and inventing the
 quality channel would have doubled the blast radius of a default flip. The
 limitation is stated in the enum doc, in the operator-facing sentence, and
 here.
+
+---
+
+## C-SEQUENCE WAVE 7a (M3 research), 2026-08-02
+
+Addendum C's next sequencing step: M3 "optimise classification without
+changing its answer" — **research phase only**. This wave produces the
+baseline instrument, the candidate prototypes behind a test-only strategy
+enum, the equivalence harness and the study. **No production path moved**:
+`finish_setup::build_classification_surface_with_policy_and_cancel` still
+calls the tiny-ball drop-cutter unconditionally, and step 6 of the M3 fix
+sequence is deliberately NOT ticked — it completes when an implementation
+lands.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `efabeec` | `benches/classification.rs` + the `[[bench]]` entry | 2 files, +217 / −0 |
+| 2 | `05cac97` | `src/classify_probe.rs`, `SpatialIndex::query_into`/`QueryScratch`/`cell_triangles_at`, `tests/classification_strategy_m3.rs`, 3 fixtures in `tests/common/meshes.rs` | 6 files, +2123 / −0 |
+| 3 | `HASH3` | `CLASSIFICATION_PERF_STUDY.md` + this entry | |
+
+Deliverable: `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`.
+
+### The headline
+
+At the 849² production row on the 10 MB terrain fixture (214 997 triangles),
+release, machine quiet, one arm at a time:
+
+| arm | wall s | CPU s | speed-up |
+|---|---|---|---|
+| shipped tiny-ball drop-cutter | 2.990 | 40.70 | 1.0× |
+| candidate 0 — same math, hoisted allocations | 3.034 | 40.77 | **0.99×** |
+| candidate 1 — triangle raster (single-threaded) | 0.053 | 0.05 | 56× |
+| candidate 2 — vertical ray | 0.025 | 0.43 | 120× |
+| candidate 3 — tile raster | **0.016** | **0.13** | **187×** |
+
+M3's bar was 2×. Recommendation: **candidate 3**, conditional on a
+Checkpoint-B-shaped human decision, because it changes the classifier's
+answer (below).
+
+### A hypothesis pre-registered and refuted
+
+`SpatialIndex::query` allocates a mesh-sized dedup bitset per call, and the
+classifier issues two queries per cell — 38.8 GB of zeroed memory per 849²
+terrain classification. Candidate 0 exists to test whether that is the
+bottleneck. **It is not**: 0.99×. At the probe's 0.025 mm radius against
+0.61 mm index cells virtually every query lands in one index cell, so the
+bitset is barely touched; the criterion `query_only` row puts the entire
+query cost at ~a fifth of the classifier's CPU, and the drop-cutter contact
+math at the rest. Recorded in the study rather than dropped, because it is
+the reason the recommendation is not "tidy the allocations" — there is no
+version of that change that reaches 2×.
+
+### Why the fast arms are not a free swap
+
+The direct arms sample the model surface; the shipped classifier samples the
+**CL surface of a Ø0.05 mm ball**, which sits `R·(1 − n.z)/n.z` above it —
+10 µm at 45°, 119 µm at 80°. That offset is slope-DEPENDENT, so it does not
+cancel in a gradient. Against a `cusp/4` = 0.125 mm cell it moves 1.8–4.3%
+of cells across a band boundary; on terrain at 849² it costs 5 mid-steep
+components and gains 7 more plus 13 very-steep ones.
+
+`direct_arm_divergence_is_the_probe_offset` settles the attribution instead
+of arguing it: shrink the probe 10× and label disagreement goes to **zero on
+every fixture**, while max Z difference scales exactly 10× per 10× of radius
+(0.191900 → 0.019190 → 0.001919). The direct arms are not approximating the
+surface — they are the surface, and the divergence is the shipped
+classifier's own artefact. Which also means `finish_setup.rs`'s standing
+"the probe's own offset is negligible at finish cell sizes" is measured
+**false** at the resolution production actually uses.
+
+That makes the switch a product decision, not a performance one, so the
+study stops at a recommendation and hands the decision on. §8/§9 of the
+study spell out the sequencing and the parity gates, including the one this
+wave did not build: an end-to-end `UnifiedFinish` A/B on wanaka scored on
+COLUMNS, not on cell counts. *Never gate on an aggregate without rendering
+the surface.*
+
+### Instrument defects found and fixed inside the wave
+
+1. **The first release timing run was invalid.** It ran under cargo's
+   default two test threads; `cpu_time()` reads process-wide
+   `/proc/self/stat` and rayon gave both tests the same 24 cores, so the two
+   timing tests measured each other — CPU/wall of 14–25× alongside
+   sub-millisecond walls for arms that cannot be that fast. Numbers
+   discarded and re-taken; the harness now holds a `TIMING_LOCK` so the
+   mistake cannot recur silently, and the study says so in §4.
+2. **A real lattice bug in the raster arm**, caught by the cross-arm check:
+   tight `ceil`/`floor` bbox bounds skipped cells whose centres were a
+   fraction of an ulp inside a triangle. Now rounds outward one cell and
+   lets `contains_point_xy` be the only filter.
+3. **Bit-identity between the direct arms is unachievable, for a legitimate
+   reason.** At a cell centre on an edge shared by two triangles — all 386
+   profile-breakpoint cells of the grooved block — both contain the point
+   and evaluate the same height to ±0.0 or one ulp, and the scatter and
+   gather arms break the tie in different visit orders. The plan's
+   "deterministic ties" case. Each arm is internally deterministic; the
+   assertion is now "equal to 1 pm AND label-identical", which is still
+   tight enough to have caught (2).
+
+### Gate design: red evidence turned into pinned characterisation
+
+Candidates 1–3 genuinely fail M3's "no loss of narrow steep regions" gate.
+Leaving that as a red test would have left a permanent red in the suite;
+deleting it would have thrown away the finding. Both were rejected. The gate
+now applies to the arm that CLAIMS answer preservation, and the direct arms'
+divergence is pinned as numbers
+(`direct_arms_redistribute_steep_territory_on_the_mixed_slope_fixture`
+asserts the 2 lost mid-steep regions with a ceiling, and the matrix asserts
+the label divergence stays under 5%), so a future change that makes it worse
+still fails.
+
+Per §A.0 and P7, verdicts are read off the **label grid**: per-class cell
+counts, per-cell disagreement, and 4-connected components read twice — raw
+and with a minimum component size, because raw component count is
+scale-sensitive for band-shaped classes. Area appears nowhere as a gate.
+
+### Gates
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+- `cargo test -p rs_cam_core --lib classify_probe`: 6 passed, 0 failed.
+- `cargo test -p rs_cam_core --test classification_strategy_m3
+  -- --test-threads=1`: 9 passed, 0 failed, 2 ignored (22 s).
+- `cargo test -p rs_cam_core --release --test classification_strategy_m3
+  -- --ignored --test-threads=1`: 2 passed, 0 failed (10 s).
+- `cargo bench -p rs_cam_core --bench classification`: runs; heavy rows
+  correctly skipped without `RS_CAM_M3_HEAVY`.
+- One cargo job at a time. A foreign `sysml` workspace test held the machine
+  for the first ~2 h; every measurement was taken after `pgrep` came back
+  clear. Swap was full (8/8 GiB) all session — noted in the study rather
+  than hidden.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. Every commit staged file
+by file.
+
+### What this unblocks, and what it does not
+
+The implementation wave now has a winner, a measured 187×, a proven
+attribution for the only thing standing in its way, and eight parity gates
+to pass. What it does NOT have is permission: the classifier's answer
+changes, and §8 routes that to a human the same way Checkpoint B did.
