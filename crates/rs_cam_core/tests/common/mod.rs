@@ -30,6 +30,7 @@
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
 //! | [`session`] | `LoadedModel` / `StockConfig` / the 17-field `ToolpathConfig` / one-op `ProjectSession` builders |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
+//! | [`scallop_oracle`] | M4's analytic tool-envelope surface scorer + its ground-truth validation helpers |
 //!
 //! # Migration policy
 //!
@@ -49,6 +50,7 @@
 
 pub mod fingerprint;
 pub mod meshes;
+pub mod scallop_oracle;
 pub mod session;
 pub mod tools;
 
