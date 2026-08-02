@@ -3776,3 +3776,197 @@ The registry caught a real omission: adding `intra_pass_hookup_mm` to
   rib's measured height beside it — but pointwise is not the same as seen.
   The 21 lost positions in particular deserve a rendered before/after before
   anyone declares the relinker fixed.
+
+## C-SEQUENCE WAVE 12 (relink + A/M7 completion), 2026-08-03
+
+Wave 11 measured a −59.3% motion saving, found a defect, and declined to
+bank the prize. This wave went looking for the defect. It is not where wave
+11 put it, and the thing that was actually broken is the same thing that has
+now been broken three times on this one feature: the gate.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `9f3c708` | retraction + `relink_fragments` under the C1 contract (`Transformed`/`MoveProvenance`), `ScallopAnnotationChannel` registered, 13 `ReconcileSet::new` sites re-declared, 2 new `surface_link` unit tests | 9 files, +345 / −67 |
+| 2 | `adc54da` | `intra_pass_hookup_mm` default 0.0 → 3.0; `scallop_intra_pass_relink_am7` rewritten onto surface membership; report-only `intra_region_hookup_mm` A/B | 5 files, +355 / −130 |
+| 3 | *(this commit)* | this entry, checklist step 10 | |
+
+### The relinker was never the defect
+
+Wave 11's blocker: `surface_link::relink_fragments` drops **exactly one cut
+position per link**, 21 across 21 junctions, "never 20 and never 22 — an
+off-by-one in the re-emit". The ratio was read as a smoking gun. It was
+arithmetic.
+
+Bisected three ways before a line was touched:
+
+| probe | links | cut positions lost |
+|---|---|---|
+| the relinker ALONE (no session, no dressups, 6 fragments over a mesh) | 5 | **0** |
+| the whole generation pipeline, dressups off | 21 | **0** |
+| each dressup ALONE (ramp entry / leads / arc fit / link moves / rapid order / feed opt) | 21 | **0**, each |
+| `arc_fitting` + `lead_in_out` together | 21 | **21** |
+| the full production stack | 21 | **21** |
+
+Two transforms that each lose nothing lose 21 together, which is the shape
+of a measurement artifact rather than a bug. It is.
+
+`arcfit::fit_arcs` groups a run by FEED RATE, not by intent, and takes the
+collapsed arc's intent from its FIRST source move. A run of `FinishingCut`
+moves followed by the `LeadOut` arc `apply_lead_in_out` had just appended
+therefore collapses into ONE arc labelled `FinishingCut`, whose target is
+the lead-out's endpoint. Measured: the disappearing positions are `LeadOut`
+in the un-fitted baseline, 21 of 21, none unmatched; their drop-cutter dz
+runs −1.20 to +1.13 mm while the SURVIVING cut positions sit at dz =
+0.0000 (2 365 of 2 367 exactly on the surface). They are not on the
+workpiece.
+
+And one disappears per link BY CONSTRUCTION: a link deletes a fragment
+boundary, and a lead-out is what terminates one.
+
+**The rule, earned the third time on the same feature.** Wave 11 had already
+corrected this gate once — from `FinishingCut`-*labelled* moves (2 cosmetic
+hits) to cut POSITIONS (21 apparently real ones) — and wrote up that
+correction as the wave's most valuable finding. What it did not correct is
+that the POPULATION was still selected by that label. A gate that selects by
+label inherits every relabelling performed downstream of it. Assert on what
+reaches the workpiece: here, membership of the machined surface, checked
+with the drop cutter that defines it.
+
+### What was actually wrong, and is now fixed
+
+`relink_fragments` hand-rolled a `Vec<usize>` remap and both call sites
+hand-applied it to their ring annotations — the exact convention C1 exists
+to delete, in a transform written *after* C1 landed and gated on it. It now
+takes an `AnnotatedToolpath` and returns a `Transformed` carrying a
+`MoveProvenance`: `Remap` normally, `Permutation` under `reorder`, because a
+reorder needs the foreign-intrusion drop rule a plain remap cannot state.
+Spans ride home inside the payload, remapped.
+
+`ScallopRuntimeAnnotation` is registered as a `ReconcileSet` channel rather
+than remapped by hand at two sites — an arity change, so all thirteen
+existing construction sites re-declare what they own. The channel DROPS an
+annotation whose move did not survive rather than pointing it at a
+neighbour it does not describe: a `move_index` is a plain `usize` and cannot
+say "unlinked". Nothing is dropped today — every input move, junction rapids
+included, maps onto the moves that replaced it, pinned by
+`relink_provenance_accounts_for_every_input_move`.
+
+Behaviour-preserving, and gated as such: C1's fifteen-value fingerprint
+harness identical, and the old A/M7 gate still reported 21-across-21 on the
+migrated code before the flip.
+
+### The conversion, ON
+
+Re-measured on the fixed relinker, corrugated all-over scallop, Ø3 ball
+(not wanaka) — identical to wave 11's numbers, because nothing about the
+motion changed:
+
+| | off | on (3.0 mm) |
+|---|---|---|
+| retract trips | 24 | **3** (−87.5%) |
+| cycle time | 407.91 s | **166.18 s** (−59.3%) |
+| swept footprint | 1910 mm² | 1906 mm² |
+| mm²/s | 4.6825 | **11.4693** (+144.9%) |
+| collisions @ **0.1 mm** | 0 | **0** |
+| cut positions lost (dressups that relabel: OFF) | — | **0** |
+| positions removed (full stack), all `LeadOut`, all off-surface | — | 21 |
+
+`ScallopConfig::intra_pass_hookup_mm` ships at **3.0 mm**.
+
+**The gate split, stated explicitly because it is the whole argument.** A
+link CHANGES the move stream — that is what it is for. What must be
+identical is the set of CUT POSITIONS; what legitimately differs is the
+linking between them, and the lead-in/lead-out pair at every boundary a link
+removes. So: fingerprint-style identity is asserted where geometry must not
+move (C1's harness, unchanged), and where the relink deliberately rewrites
+the stream the assertion is positional completeness plus a mechanism pin —
+whatever disappears must be lead geometry, proved by pre-arc-fit intent AND
+by drop-cutter dz, not by one of them.
+
+### Report-only: the other dial
+
+`unified_finish::intra_region_hookup_mm` is the second consumer of the same
+relinker and the second dial shipped default-off ahead of the A/B that would
+have judged it. Wave 12 removed the reason given for leaving it off, so it
+is measured — on the synthetic two-groove plateau, not a real part:
+
+| | off | on (6.0 mm) |
+|---|---|---|
+| moves | 1437 | 1301 |
+| retract trips | 85 | **8** (−90.6%) |
+| cycle time | 238.94 s | **130.65 s** (−45.3%) |
+| swept footprint | 850 mm² | **850 mm²** (identical) |
+| mm²/s | 3.5574 | **6.5061** (+82.9%) |
+
+The footprint does not move by a single cell — on this fixture the relink
+removes no coverage at all, which is the same claim the scallop side proves
+the harder way (its 4 mm² are the lead-out excursions).
+
+It is deliberately NOT flipped. Unlike scallop's ring-to-ring case, this is
+a region-level decision whose value depends on how the planner's router
+links regions afterwards; that trade belongs to an operator with a part in
+front of them. `intra_region_hookup_is_measured_and_left_to_the_operator`
+carries the number with one safety invariant — keeping the tool down must
+never ADD retract round trips.
+
+### Gates
+
+`cargo fmt --check` clean before each commit. `cargo clippy --workspace
+--all-targets -D warnings` zero before each commit.
+
+Full `cargo test -p rs_cam_core --tests --no-fail-fast` on the FLIPPED tree:
+**120 targets ok, two failing, both known** — `--lib` (2 223 passed / 3
+failed: the three adaptive3d reds; 2 221 before, +2 for the new
+`surface_link` unit tests) and `--test wanaka_suggest_integration`
+(`wanaka_suggest_baseline`). **No fixture needed re-pinning.** The fourteen
+harnesses wave 11 opted out of explicitly still hold their recorded motion,
+which is what that opt-out was for.
+
+Sentries individually on the migrated relinker before the flip:
+`transform_provenance_fingerprints` 3/3 (all fifteen values identical — the
+C1 migration moved nothing), `capability_link_moves_safety` 17/17,
+`dressup_span_invariants` 4/4, `scallop_intra_pass_relink_am7` 3/3 on the
+OLD gate (still 21-across-21, i.e. the migration is behaviour-preserving),
+`surface_link` 11/11 (was 9). viz 227 + 9 + 11.
+
+`scallop_intra_pass_relink_am7` after the flip: 5/5.
+
+### Wave 11's partial-sweep record, closed
+
+Wave 11's final `cargo test -p rs_cam_core --tests --no-fail-fast` was still
+running when it wrote its entry. It completed during this wave: **2 failing
+targets, both known** — `-p rs_cam_core --lib` (2 221 passed / 3 failed: the
+three adaptive3d reds) and `--test wanaka_suggest_integration`
+(`wanaka_suggest_baseline`, the standing user-modified-wanaka trap). 120
+targets `ok`. Nothing else. The partial record is closed.
+
+### Honest limits
+
+* **No live wanaka validation, and no rendered surface.** Same limit wave 11
+  recorded, and it bites harder now that a default has moved. The mitigation
+  is that the completeness gate is POINTWISE and now geometric (drop-cutter
+  dz per removed position) rather than label-shaped — but pointwise is still
+  not seen, and the v3 close-out's standing rule is *never gate on an
+  aggregate without rendering the surface*.
+* **The arc fitter's intent inheritance is a real defect, left standing.**
+  `fit_arcs` merges across a `MoveIntent` boundary and relabels the result,
+  so any consumer keyed on intent — cutting distance, air-cut share, and
+  every gate that selects a population by label — reads lead and entry
+  geometry as cutting. Fixing it means breaking arc runs at intent changes,
+  which moves fitted geometry on every path in the repo and re-pins C1's
+  `arc_raster` fingerprint among others. That is a wave, not a footnote, and
+  it is named here so the next reader does not rediscover it from scratch.
+* **The flip reaches existing project files.** `intra_pass_hookup_mm` is
+  `#[serde(default = ...)]`, so a saved project without the key now loads at
+  3.0 and its scallop toolpaths regenerate with links. That is what flipping
+  a default means; the alternative would make the default unreachable.
+* **No GUI widget.** The dial is settable through the registry
+  (`SCALLOP_PARAMS` → MCP `set_toolpath_param`) and through project TOML,
+  but the scallop op panel has no control for it, so a GUI-only user can
+  neither see nor disable the new motion.
+* **One fixture, one topology.** The A/B is a corrugated plate chosen
+  because per-ring retracts dominate there. It says what the conversion is
+  worth on that class, not on a part whose rings are far apart — where the
+  hookup cap simply refuses and the numbers converge to the baseline.
