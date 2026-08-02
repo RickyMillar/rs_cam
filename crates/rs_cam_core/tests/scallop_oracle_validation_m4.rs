@@ -16,6 +16,7 @@
 //! | 4 | a deliberate uniform gouge reads back at its exact depth | −0.100 mm |
 //! | 5 | *never reached* and *reached but left high* are separated, and both are measured in mm² | a half-covered field, a stepped field |
 //! | 6 | the M3 tile-raster true-surface reference is accurate enough not to be confused with a candidate's error | analytic dome |
+//! | 6b | the tool-reach floor's own error is mesh faceting, and shrinks with it | a dome a Ø1 ball reaches everywhere |
 //! | 7 | **the slope law**: to hold a constant surface-normal cusp the XY stepover must scale as `cos θ` | envelope of circles centred on an inclined line |
 //! | 8 | the tapered-tool stamp radius cap is safe below the flank-contact slope | `90° − taper half-angle` |
 //!
@@ -386,6 +387,64 @@ fn tile_raster_true_surface_tracks_the_analytic_surface() {
         p99 < 20.0,
         "the M3 tile-raster reference must be good to well under a dial on a \
          0.1 mm mesh; p99 = {p99:.2} µm"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 6b — the tool-reach floor
+// ---------------------------------------------------------------------------
+
+/// The envelope of the cutter dropped at every cell is what an infinitely
+/// dense path would leave. On a **smooth** surface it must be non-negative
+/// everywhere: `point_drop_cutter` places the tool tangent, so the swept
+/// profile can never dip below the model.
+///
+/// Where it does go negative, the drop-cutter's contact profile and the
+/// oracle's stamp profile disagree — which is exactly what must be known
+/// before a floor is quoted as a limit.
+#[test]
+fn tool_reach_floor_error_is_mesh_faceting_and_shrinks_with_it() {
+    let ball = probe_ball();
+    let cell = 0.05;
+    println!("\n| mesh step mm | worst µm | p50 µm | p99 µm |");
+    println!("|---|---|---|---|");
+    let mut worsts = Vec::new();
+    for &step in &[0.20_f64, 0.10, 0.05] {
+        let mesh = meshes::height_field(6.0, step, |x, y| {
+            let r2 = x * x + y * y;
+            (144.0 - r2).max(0.0).sqrt() - 12.0
+        });
+        let index = SpatialIndex::build(&mesh, 2.0);
+        let grid = OracleGrid::for_mesh(&mesh, &ball, cell);
+        let truth = EnvelopeOracle::true_surface_from_mesh(grid, &mesh, &index);
+        let kernel = StampKernel::new(&ball, cell, None);
+        let floor = EnvelopeOracle::tool_reach_floor(grid, &truth, &mesh, &index, &ball, &kernel);
+        let mut v: Vec<f64> = floor.into_iter().filter(|x| !x.is_nan()).collect();
+        assert!(v.len() > 10_000, "{} cells", v.len());
+        v.sort_by(f64::total_cmp);
+        let worst = v[0] * 1000.0;
+        println!(
+            "| {step:.2} | {worst:.2} | {:.2} | {:.2} |",
+            common::scallop_oracle::quantile(&v, 0.50) * 1000.0,
+            common::scallop_oracle::quantile(&v, 0.99) * 1000.0
+        );
+        worsts.push(worst);
+    }
+
+    // A Ø1 ball reaches every point of an R12 dome, so the TRUE floor is
+    // zero everywhere and every micron below it is instrument error. The
+    // error is the mesh's own faceting — the drop-cutter contacts facet
+    // edges while the tile-raster reference samples facet planes at cell
+    // centres — so refining the mesh must shrink it.
+    assert!(
+        worsts[2] > worsts[0],
+        "refining the mesh must shrink the floor's negative error: {worsts:?}"
+    );
+    assert!(
+        worsts[2] > -15.0,
+        "the floor must be good to well under a dial on a 0.05 mm mesh; \
+         worst = {:.2} µm",
+        worsts[2]
     );
 }
 

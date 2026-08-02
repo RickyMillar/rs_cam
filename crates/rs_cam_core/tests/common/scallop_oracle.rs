@@ -84,6 +84,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use rs_cam_core::classify_probe::{
     ClassificationGridSpec, ClassificationSampler, sample_classification_grid,
 };
@@ -360,38 +362,19 @@ impl EnvelopeOracle {
         kernel: &StampKernel,
         path_step: f64,
     ) -> Self {
-        let mut machined_z = vec![f64::INFINITY; grid.len()];
-        let mut path_samples = 0usize;
-
-        let stamp = |p: P3, machined: &mut Vec<f64>| {
-            let col_f = (p.x - grid.origin_x) / grid.cell;
-            let row_f = (p.y - grid.origin_y) / grid.cell;
-            let col0 = col_f.round() as i64;
-            let row0 = row_f.round() as i64;
-            for &(dr, dc, h) in &kernel.offsets {
-                let r = row0 + i64::from(dr);
-                let c = col0 + i64::from(dc);
-                if r < 0 || c < 0 || r >= grid.rows as i64 || c >= grid.cols as i64 {
-                    continue;
-                }
-                let idx = (r as usize) * grid.cols + (c as usize);
-                let z = p.z + h;
-                if z < machined[idx] {
-                    machined[idx] = z;
-                }
-            }
-        };
-
+        // Pass 1: resample the cutting chords into cutter positions.
+        //
+        // The tool sweeps continuously along a chord, so this is where chord
+        // SAG becomes visible: a chord that cuts a corner off a convex ridge
+        // gouges, and stamping the intermediate positions is what makes the
+        // gouge appear at all.
         let step = path_step.max(1e-6);
+        let mut samples: Vec<P3> = Vec::new();
         let mut prev: Option<P3> = None;
         for mv in &toolpath.moves {
             let cutting = !matches!(mv.move_type, MoveType::Rapid);
             let target = mv.target;
             if let (Some(a), true) = (prev, cutting) {
-                // Resample the chord. The tool sweeps continuously along it,
-                // so this is where chord SAG becomes visible: a chord that
-                // cuts a corner off a convex ridge gouges, and stamping the
-                // intermediate positions is what makes the gouge appear.
                 let d = ((target.x - a.x).powi(2)
                     + (target.y - a.y).powi(2)
                     + (target.z - a.z).powi(2))
@@ -399,22 +382,60 @@ impl EnvelopeOracle {
                 let n = (d / step).ceil().max(1.0) as usize;
                 for i in 1..=n {
                     let t = i as f64 / n as f64;
-                    stamp(
-                        P3::new(
-                            a.x + (target.x - a.x) * t,
-                            a.y + (target.y - a.y) * t,
-                            a.z + (target.z - a.z) * t,
-                        ),
-                        &mut machined_z,
-                    );
-                    path_samples += 1;
+                    samples.push(P3::new(
+                        a.x + (target.x - a.x) * t,
+                        a.y + (target.y - a.y) * t,
+                        a.z + (target.z - a.z) * t,
+                    ));
                 }
             } else if cutting {
-                stamp(target, &mut machined_z);
-                path_samples += 1;
+                samples.push(target);
             }
             prev = Some(target);
         }
+        let path_samples = samples.len();
+
+        // Pass 2: stamp, parallel over DISJOINT row bands.
+        //
+        // The reduction is a `min` scatter, so two threads writing the same
+        // cell would need an atomic. Partitioning the OUTPUT instead removes
+        // the question — the same trick M3's winning tile-raster classifier
+        // uses. Samples are sorted by row so each band binary-searches the
+        // slice that can reach it (its own rows, dilated by the stamp span)
+        // rather than re-scanning every sample.
+        let span = (kernel.radius_mm / grid.cell).ceil() as i64;
+        let row_of = |p: &P3| ((p.y - grid.origin_y) / grid.cell).round() as i64;
+        samples.sort_by_key(|p| row_of(p));
+        let sample_rows: Vec<i64> = samples.iter().map(row_of).collect();
+
+        let mut machined_z = vec![f64::INFINITY; grid.len()];
+        let band_rows = (grid.rows / rayon::current_num_threads().max(1)).max(1);
+        machined_z
+            .par_chunks_mut(band_rows * grid.cols)
+            .enumerate()
+            .for_each(|(band, out)| {
+                let r0 = (band * band_rows) as i64;
+                let rows_here = out.len() / grid.cols;
+                let r1 = r0 + rows_here as i64;
+                let lo = sample_rows.partition_point(|&r| r < r0 - span);
+                let hi = sample_rows.partition_point(|&r| r < r1 + span);
+                for p in &samples[lo..hi] {
+                    let col0 = ((p.x - grid.origin_x) / grid.cell).round() as i64;
+                    let row0 = ((p.y - grid.origin_y) / grid.cell).round() as i64;
+                    for &(dr, dc, h) in &kernel.offsets {
+                        let r = row0 + i64::from(dr);
+                        let c = col0 + i64::from(dc);
+                        if r < r0 || r >= r1 || c < 0 || c >= grid.cols as i64 {
+                            continue;
+                        }
+                        let idx = ((r - r0) as usize) * grid.cols + (c as usize);
+                        let z = p.z + h;
+                        if z < out[idx] {
+                            out[idx] = z;
+                        }
+                    }
+                }
+            });
 
         let slope_deg = slope_from_heights(&grid, &true_z);
         Self {
@@ -437,6 +458,98 @@ impl EnvelopeOracle {
             .map(|(&t, &m)| {
                 if t.is_nan() || !m.is_finite() {
                     f64::NAN
+                } else {
+                    m - t - stock_to_leave
+                }
+            })
+            .collect()
+    }
+
+    /// The best this cutter could possibly do on this surface: the envelope
+    /// of the cutter dropped at **every cell of the oracle grid**.
+    ///
+    /// A ball of radius `R` cannot enter a valley narrower than `R`, so on
+    /// relief finer than the tool a large residual is *geometry*, not a
+    /// stepover defect — no ring placement can remove it. Without this floor
+    /// a harness reads tool reach as algorithm quality and ranks candidates
+    /// on a number none of them controls.
+    ///
+    /// Returned as a residual field on the same cells, so it subtracts
+    /// directly from any arm's residual.
+    #[must_use]
+    pub fn tool_reach_floor(
+        grid: OracleGrid,
+        true_z: &[f64],
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+        cutter: &dyn MillingCutter,
+        kernel: &StampKernel,
+    ) -> Vec<f64> {
+        let mut tips: Vec<P3> = Vec::with_capacity(grid.len());
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                // Only over ground that EXISTS. `point_drop_cutter` reports a
+                // finite contact for a cell past the model edge too — the
+                // cutter has radius and rides the rim — and stamping that
+                // position drops a spuriously low envelope onto its
+                // neighbours, which reads as the ideal path gouging. It is
+                // the same rim-contact trap `ring_to_3d` guards with the
+                // coverage mask.
+                if true_z[grid.index(row, col)].is_nan() {
+                    continue;
+                }
+                let (x, y) = grid.centre(row, col);
+                let cl = rs_cam_core::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+                if cl.z.is_finite() {
+                    tips.push(P3::new(x, y, cl.z));
+                }
+            }
+        }
+        let mut tp = Toolpath::new();
+        for (i, p) in tips.iter().enumerate() {
+            if i == 0 {
+                tp.rapid_to(*p);
+            } else {
+                // Each cell is stamped as its own point; consecutive cells are
+                // NOT joined into a swept chord, because this is the envelope
+                // of every reachable position, not a path anyone would run.
+                tp.rapid_to(*p);
+                tp.feed_to(*p, 1000.0);
+            }
+        }
+        let ideal = Self::score(grid, true_z.to_vec(), &tp, kernel, grid.cell);
+        ideal
+            .machined_z
+            .iter()
+            .zip(true_z)
+            .map(|(&m, &t)| {
+                if t.is_nan() || !m.is_finite() {
+                    f64::NAN
+                } else {
+                    m - t
+                }
+            })
+            .collect()
+    }
+
+    /// The residual field **for rendering**: identical to [`Self::residuals`]
+    /// except that a cell no cutter position ever reached is `+INFINITY`
+    /// rather than `NaN`, so [`render_field`] can colour it differently from
+    /// "there is no model surface here".
+    ///
+    /// The first M4 diff maps did not have this and drew untouched cells
+    /// black, which is the same colour as off-model — the exact confusion the
+    /// oracle exists to prevent, reintroduced at the last step.
+    #[must_use]
+    pub fn residual_map(&self, stock_to_leave: f64) -> Vec<f64> {
+        self.true_z
+            .iter()
+            .zip(&self.machined_z)
+            .map(|(&t, &m)| {
+                if t.is_nan() {
+                    f64::NAN
+                } else if !m.is_finite() {
+                    f64::INFINITY
                 } else {
                     m - t - stock_to_leave
                 }
