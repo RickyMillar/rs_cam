@@ -3559,3 +3559,197 @@ end-to-end harness anywhere in the crate shifted under it.
 > be read from the log it produced, never reconstructed from what the wave
 > believes it changed.** Wave 11's log is preserved at
 > `scratchpad/w11/baseline_head_114b92f.txt`.
+
+## C-SEQUENCE WAVE 11 (A/M10 + A/M7), 2026-08-03
+
+The motion-economy pair, taken in the order the plan specified: the safety
+half first, because a link that stays low is only safe if the descent model
+is resolution-honest. Both halves landed. Neither landed the way it was
+scoped, and the wave spent its first hour on somebody else's red.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `f19bb1f` | re-pin `crease_own_region_pr6b` taper arm + errata to waves 9b and 10 | 2 files, +52 / −2 |
+| 2 | `74571b5` | `DexelGrid::conservative_top` + `max_conservative_top_z_in_disc` + 3 stamping kernels + `optimize_entry_descents`; new `tests/descent_resolution_stability_am10.rs` | 6 files, +330 / −29 |
+| 3 | `a2741a5` | `ToolpathStats::retract_trips` + `compute_retract_trips` + narration + viz/MCP passthrough; `measurement::swept_footprint_area` / `swept_footprint_mm2_per_s`; new `tests/retract_trip_channel_am7.rs` | 10 files, +971 / −35 |
+| 4 | `6cc2d1e` | `ScallopParams::intra_pass_hookup_mm` + `relink_fragments` wiring + config/catalog; new `tests/scallop_intra_pass_relink_am7.rs`; 14 harness opt-outs | 11 files, +523 |
+| 5 | *(this commit)* | this entry, checklist step 10 | |
+
+### The baseline stopped the wave, and the first two suspects were innocent
+
+The mandatory pre-wave sweep found **three** failing targets where wave 10
+reported two: the 3 known adaptive3d `--lib` reds, the known environmental
+`wanaka_suggest_baseline`, and
+`crease_own_region_pr6b::production_unified_finish_output_is_byte_identical`.
+
+Attribution took three attempts.
+
+*C9's `0dff17e`* (the per-point claims fan) was the obvious suspect and the
+one the orchestrator and this agent both assumed: it is the only commit in
+the window whose own log says it changes emitted geometry, and the fixture
+sets `pencil_claims: true`, so it runs straight through the changed code.
+Reverting its three source files reproduces the failing 1874 **exactly**.
+Innocent.
+
+The mover is **`dde7a54` — M4's iso-field gouge fix**, five commits earlier.
+Restoring `scallop.rs` + `scallop_isofield.rs` to `dde7a54^` reproduces the
+pinned `(1855, 0xe031…)` to the bit. M4 knew it had moved scallop geometry
+and re-pinned the scallop-side fingerprint in `a376b1e`; what it missed is
+that `UnifiedFinish` routes its MidSteep band through scallop, so a **second
+pin lives in a file whose name says "crease"**. C9 inherited the red and
+reported the crate clean.
+
+Adjudicated on the geometry, not on the story. Decomposing both toolpaths
+into cutting fragments:
+
+| | pre-`dde7a54` | HEAD |
+|---|---|---|
+| fragments | 88 | 88 |
+| DEEP groove (x∈[3.5,6]) | 336 moves / 644.2994 mm | **identical** |
+| SHALLOW groove (x∈[−8.5,−3.5]) | 708 moves / 357.3665 mm | 727 / 358.7768 (+0.39%) |
+
+All 19 added moves sit in 4 of the 5 fragments inside the shallow 4 mm 45°
+V; no pass added, none dropped, nothing outside the groove rims. Decisively,
+**none enters new depth territory** — the groove's long fragment already
+reached z = −1.7891 and still does, while the three short ones converge
+toward it (−1.6513/−1.7358/−1.6931 → −1.7802/−1.7641/−1.7789) without
+passing it. Denser, more consistent sampling of the same surface.
+Legitimate; re-pinned with the A/B in the commit body, errata appended to
+both wave sections.
+
+**Two rules earned here.** A fingerprint lives wherever the geometry is
+EMBEDDED, not only where the subject module is named — grep the crate before
+declaring a re-pin complete. And an inherited red is still a red: a sweep
+result must be read from the log it produced, never reconstructed from what
+a wave believes it changed.
+
+### A/M10 — the pad was the wrong shape, so it was deleted
+
+Mechanism chosen: **the plan's option 2**, a conservative sliver-aware model
+that is resolution-independent. Option 1 (snapshot at the simulation's
+resolution) is not implementable in principle — generation precedes the
+user's choice of verification resolution; `gen_initial_stock` simply
+inherits whatever `run_simulation` last used, which is 0.5 headless and 0.1
+under GUI auto on a Ø1 tip. Option 3 (per-candidate fine sampling) needs
+prior-toolpath geometry threaded into `dressup`, which holds only a stock
+snapshot.
+
+The root cause is sharper than "aliasing". Sub-cell coverage blends a
+partly-swept cell DOWN toward the cut floor, so an uncut rib narrower than
+one cell reads as a half-cut column — at a height with no relation to the
+cell size. A `2 × cell_size` pad is the right shape for a ridge CREST and no
+shape at all for that class, which is why padding cleared only ~25% of the
+grazes and why the residue was unbounded.
+
+`DexelGrid::conservative_top` answers the question the code was actually
+asking — *how high can material be ANYWHERE in this cell* — lowered only on
+complete coverage and only to an upper bound of the cutter surface across
+the whole cell. It over-estimates pointwise, and refining the cell can only
+LOWER it, so it converges downward to the truth instead of jumping around
+it. The pad is gone.
+
+Measured on a synthetic rib fixture (0.30 mm wide, 18 mm tall, between two
+swaths — not wanaka):
+
+| | before | after |
+|---|---|---|
+| rib top read at 0.5 mm / 0.1 mm | 12.125 / 20.000 | unchanged (the grid is the grid) |
+| **collisions at 0.5 / 0.25 / 0.1 mm** | **[0, 1, 1]** | **[0, 0, 0]** |
+| descent over fully-swept ground | z = 5.000 | **z = 4.000** |
+
+The before-column is the TP15 signature at fixture scale: clean at the
+resolution it was planned against, dirty at every finer one. Entry time does
+not regress — it improves, by exactly the deleted pad. Conservatism is local
+to the sliver, pinned by a counterweight test so a trivially-safe-everywhere
+ceiling cannot pass, plus a non-vacuity guard that the fixture really does
+hide the rib from the coarse grid.
+
+### A/M7 — the prize is real, and it is not bankable yet
+
+Instruments first, so the conversion could not be judged with the tools that
+produced the void number. `ToolpathStats::retract_trips` carries the count
+with its in-node/between-node split (X-19 throughout: `None` is unmeasured,
+and an untrustworthy split reports unmeasured rather than zero), counting
+rule copied bit-for-bit from `v3_cascade_ab`. First census on a synthetic
+two-node UnifiedFinish: **82 of 85 trips in-node, 96.5%**, against wanaka's
+99.7% — the premise is STRUCTURAL, not a property of one job.
+`swept_footprint_area` replaces the centreline bins with a radius-aware XY
+disc carrying its own `MeasurementProvenance`, per `MEASUREMENT_DOMAINS.md`
+§7 option (a), named a *footprint* so nobody reads it as fresh area.
+
+The conversion target was scallop's discrete-ring branch, which retracted to
+safe Z at **every** ring junction unconditionally and which nothing above it
+relinked. A/B on a corrugated all-over fixture, Ø3 ball:
+
+| | off | on (3.0 mm) |
+|---|---|---|
+| retract trips | 24 | **3** (−87.5%) |
+| cycle time | 407.91 s | **166.18 s** (−59.3%) |
+| swept footprint | 1910 mm² | 1906 mm² |
+| mm²/s | 4.6825 | **11.4693** (+144.9%) |
+| collisions @ **0.1 mm** | 0 | **0** |
+
+**It ships default OFF**, because the third gate fired:
+`surface_link::relink_fragments` drops **exactly one cut position per link**
+— 21 losses across 21 converted junctions, set-membership and
+order-independent, so a real hole and not a reordering. A 59% saving is
+exactly the size of prize that gets a defect waved through.
+
+The defect is not scallop's. It lives in the shared relinker that also backs
+`unified_finish::intra_region_hookup_mm` — shipped, also default-off, and
+carrying the same loss for anyone who enables it. **Second time this
+programme has found a dial defaulted off ahead of an A/B that would have
+found its defect.**
+
+Worth more than the feature: **the first version of that gate asserted the
+wrong invariant.** It compared `FinishingCut`-*labelled* moves and found 2
+differences, which turned out to be honest re-labelling — a link legitimately
+replaces a plunge. Widening it to cut POSITIONS, what actually reaches the
+workpiece, turned 2 cosmetic hits into 21 real ones. Asserting the label
+instead of the cut would have shipped this at +144.9% and a gapped surface.
+The test pins the one-per-link RATIO, not the count, so a changed mechanism
+fails rather than silently re-baselining.
+
+### Gates
+
+`cargo fmt --check` clean. `cargo clippy --workspace --all-targets -D
+warnings` zero. `cargo test -p rs_cam_core --lib` 2221 passed / 3 failed —
+the three known adaptive3d reds and nothing else (2216 before; +5 new unit
+tests). Sentries run individually: `descent_resolution_stability_am10` 3/3,
+`retract_trip_channel_am7` 4/4, `scallop_intra_pass_relink_am7` 3/3,
+`crease_own_region_pr6b` 3/3, `capability_link_moves_safety` 17/17,
+`transform_provenance_fingerprints` 3/3, `dressup_span_invariants` 4/4,
+`sub_cell_stamping_fa` 6/6, `dexel_stock_z_frame_f024` 3/3,
+`scallop_isofield_gouge_m4` 3/3, `scallop_candidates_m4` 3/3,
+`common_fixtures_smoke_c6` 2/2, `standing_material_channel_am9` 4/4,
+`param_sweep` 56 ignored (unchanged).
+
+One deliberate re-pin beyond the pr6b adjudication:
+`optimize_entry_descents_uses_dexel_ceiling_above_mesh` 9.0 → 7.0, which is
+exactly the removed pad on untouched stock.
+
+The registry caught a real omission: adding `intra_pass_hookup_mm` to
+`ScallopConfig` without a matching `ParamDef` failed
+`operation_schema_params_match_params_with_nulls_for_every_op`. The
+"miss nothing or don't compile" net working as designed, one layer down.
+
+### Honest limits
+
+* **No live wanaka validation.** Both halves are gated on synthetic
+  fixtures. The A/M10 rib and the A/M7 corrugation are built to isolate one
+  mechanism each; neither says what the numbers are on a real part.
+* **The A/M7 prize is measured but unclaimed.** −59.3% is what the
+  conversion is worth once the relinker's position loss is fixed, not what
+  the shipped default delivers, because the shipped default is off.
+* **The relinker defect is diagnosed, not fixed.** It is an off-by-one in
+  the re-emit path; the fix belongs with whoever owns `surface_link`, and
+  `scallop_intra_pass_relink_am7` is its target and regression net.
+* **A/M10's conservative bound costs memory**: one extra `f32` per cell on
+  every dexel grid, cloned with the grid into `prior_stocks`. Negligible at
+  production cell sizes (~3.8 MB at 0.25 mm over 300×200 mm), but it scales
+  with the 16 M-cell cap.
+* **`capability_link_moves_safety` was extended only by opt-out.** The new
+  scallop link path is gated by its own file rather than folded into that
+  suite; merging them is the tidier end state.

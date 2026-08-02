@@ -62,6 +62,30 @@ pub struct ScallopParams {
     pub safe_z: f64,
     /// Stock to leave on the surface (mm).
     pub stock_to_leave: f64,
+    /// A/M7 — cap on the XY gap a ring-to-ring **surface link** may span,
+    /// in mm. `0.0` disables linking and restores the historical behaviour:
+    /// every discrete ring pays `retract → rapid at safe_z → replunge`,
+    /// unconditionally, however close the next ring starts.
+    ///
+    /// That unconditional round trip is the largest untapped population the
+    /// A/M7 census found. Air cost in finishing is COUNT-bound — a hop pays
+    /// two ~`safe_z` Z legs whatever its XY length — so on a pass of a few
+    /// hundred rings the retracts, not the cutting, decide the wall clock.
+    ///
+    /// Only the JUNCTIONS change: `relink_fragments` copies every fragment
+    /// interior verbatim, drop-cutters each candidate link to prove it
+    /// stays on the surface, refuses any link that would leave
+    /// `boundary_regions`, and (with `link_kinematics`) keeps a link only
+    /// when it actually beats the retract it replaces.
+    ///
+    /// Ignored when `continuous` is set — spiral mode already joins its
+    /// contours and has no ring-to-ring junctions to convert.
+    pub intra_pass_hookup_mm: f64,
+    /// Machine envelope used to COST a candidate surface link against the
+    /// retract it would replace (F-034 integrator). `None` keeps any
+    /// gouge-safe link within [`Self::intra_pass_hookup_mm`] — correct only
+    /// when the caller knows rapid and feed rates are comparable.
+    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +135,12 @@ impl Default for ScallopParams {
             plunge_rate: 500.0,
             safe_z: 30.0,
             stock_to_leave: 0.0,
+            // A/M7: default OFF until the A/B that justifies a shipped
+            // motion change. Flip after the measurement, not before it —
+            // the same rule `unified_finish`'s `intra_region_hookup_mm`
+            // follows.
+            intra_pass_hookup_mm: 0.0,
+            link_kinematics: None,
         }
     }
 }
@@ -1907,6 +1937,54 @@ pub fn scallop_toolpath_research(
             P3::new(last.target.x, last.target.y, params.safe_z),
             MoveIntent::Retract,
         );
+    }
+
+    // A/M7 — keep the tool DOWN between rings whose ends nearly touch.
+    //
+    // The discrete branch above emits `retract → rapid → replunge` at EVERY
+    // ring junction, unconditionally. `relink_fragments` re-decides each
+    // junction on evidence: the link is drop-cutter sampled so it cannot
+    // gouge, refused if it would leave `boundary_regions`, and (with
+    // kinematics) kept only when it beats the retract on time. Fragment
+    // interiors are copied verbatim — only the airborne junctions change.
+    //
+    // Skipped under `continuous`: spiral mode already chains its contours,
+    // so there are no ring-to-ring junctions left to convert.
+    if params.intra_pass_hookup_mm > 0.0 && !params.continuous {
+        let rp = crate::surface_link::RelinkParams {
+            hookup_distance: params.intra_pass_hookup_mm,
+            stock_to_leave: params.stock_to_leave,
+            sampling: params.tolerance.max(0.01),
+            feed_rate: params.feed_rate,
+            plunge_rate: params.plunge_rate,
+            safe_z: params.safe_z,
+            link_kinematics: params.link_kinematics.as_ref(),
+            // Rings are emitted outside-in (or inside-out) and are already
+            // in a sane order; reordering them would trade a solved problem
+            // for climb/conventional churn. Linking only.
+            reorder: false,
+            // A ring-to-ring link that leaves the op's territory machines
+            // ground the boundary deliberately excluded — the same
+            // selective-finishing gouge class `RelinkParams::boundary`
+            // documents. On a dendritic rest island a straight line between
+            // two rings of the SAME region leaves that region constantly.
+            boundary: boundary_regions,
+        };
+        let (linked, rep) = crate::surface_link::relink_fragments(&tp, mesh, index, cutter, &rp);
+        info!(
+            fragments = rep.fragments,
+            surface_links = rep.surface_links,
+            retract_links = rep.retract_links,
+            too_far = rep.too_far,
+            off_surface = rep.off_surface,
+            slower_than_retract = rep.slower_than_retract,
+            outside_boundary = rep.outside_boundary,
+            "Scallop intra-pass relink"
+        );
+        for a in &mut annotations {
+            a.move_index = rep.move_remap.get(a.move_index).copied().unwrap_or(0);
+        }
+        tp = linked;
     }
 
     info!(

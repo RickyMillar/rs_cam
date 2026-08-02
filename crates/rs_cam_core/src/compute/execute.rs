@@ -1459,6 +1459,10 @@ pub(crate) fn generate_scallop(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
+        // A/M7: the standalone all-over pass is where the unconditional
+        // ring retract actually costs — nothing above it relinks.
+        intra_pass_hookup_mm: cfg.intra_pass_hookup_mm,
+        link_kinematics: ctx.link_kinematics.clone(),
     };
     let (tp, annotations, scallop_report) =
         crate::scallop::scallop_toolpath_structured_annotated_with_cancel(

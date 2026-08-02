@@ -1755,6 +1755,10 @@ fn default_scallop_params() -> ScallopParams {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        // Sweep baselines were recorded before A/M7's intra-pass relink;
+        // opt out so the sweep JSON fingerprints don't quietly shift.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     }
 }
 

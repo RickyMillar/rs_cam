@@ -1790,6 +1790,16 @@ pub fn unified_finish_toolpath_with_cancel(
                     plunge_rate: params.plunge_rate,
                     safe_z: params.safe_z,
                     stock_to_leave: params.stock_to_leave,
+                    // A/M7: deliberately OFF here, and not for lack of
+                    // value. This band runs `continuous: true` (scallop's
+                    // own spiral already chains the contours), and whatever
+                    // junctions survive are relinked one level up by
+                    // `intra_region_hookup_mm` against the REGION's polygon
+                    // — the correct boundary for a band that owns only part
+                    // of the surface. Relinking here as well would decide
+                    // the same junctions twice, against a weaker boundary.
+                    intra_pass_hookup_mm: 0.0,
+                    link_kinematics: None,
                 };
                 // Generation intentionally uses the ball-center OFFSET
                 // surface here (`scallop_toolpath_structured_annotated_
