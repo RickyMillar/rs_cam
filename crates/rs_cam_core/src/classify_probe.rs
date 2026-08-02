@@ -1,31 +1,42 @@
-//! **M3 research prototypes** — candidate samplers for the fine
-//! true-surface classification grid.
+//! Samplers for the fine true-surface classification grid.
 //!
-//! # This module is not wired to anything
+//! # This module IS production (since M3 wave 7b, 2026-08-02)
 //!
-//! Production classification is
-//! [`crate::finish_setup::build_classification_surface_with_policy_and_cancel`],
-//! which calls [`SurfaceHeightmap::from_mesh_with_cancel`] with a tiny ball
-//! probe **unconditionally**. Nothing here is reachable from an operation, the
-//! GUI, the CLI or the MCP server; the only callers are the M3 bench
-//! (`benches/classification.rs`) and the equivalence harness
-//! (`tests/classification_strategy_m3.rs`). The strategy enum exists so those
-//! two can measure alternatives *side by side against the shipped one as
-//! oracle* — per the M3 fix sequence, production moves only after the study
-//! recommends a winner and a later wave proves deterministic parity.
+//! [`crate::finish_setup::build_classification_surface_with_policy_and_cancel`]
+//! builds its height grid by calling [`sample_classification_grid`] with
+//! [`ClassificationSampler::PRODUCTION`] — [`ClassificationSampler::TileRaster`],
+//! the direct true-surface arm the M3 study recommended and the
+//! 2026-08-02 checkpoint approved ("Adopt, COLUMNS-gated"). Every other
+//! variant remains callable through
+//! [`crate::finish_setup::build_classification_surface_with_sampler_and_cancel`]:
+//! [`ClassificationSampler::DropCutterProbe`] is both the **fallback**
+//! (flip `PRODUCTION` back and nothing else changes) and the **oracle** the
+//! parity sentries score against.
 //!
-//! See `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`.
+//! See `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md` — §9.1 for
+//! why the tiled arm won over the two arms that produce identical labels
+//! (parallelism correct by construction, cancellation bounded by a tile band,
+//! no dependence on the index's per-cell registration being complete), and
+//! §5.3 for the measurement that made the switch a product decision rather
+//! than an optimisation.
 //!
-//! # What the shipped classifier actually computes
+//! # What the two families compute, and why they differ
 //!
-//! Not the model surface: the **tool-center (CL) surface of a Ø0.05 mm ball**.
-//! For a facet of unit normal `n` the drop-cutter puts the CL at
-//! `z_plane(x, y) + R·(1 − n.z)/n.z` — 10 µm above the surface on a 45° face,
-//! 119 µm on 80°, 1.4 mm on 89°. The probe is small enough that this is
-//! *called* negligible, but it is not zero, and it is the reason the direct
-//! true-surface candidates below are **not** expected to be bit-identical.
-//! Which of the two is the better classifier input is a separate question
-//! from which is faster, and the study keeps them separate.
+//! The **probe** family samples the **tool-center (CL) surface of a Ø0.05 mm
+//! ball**, not the model surface. For a facet of unit normal `n` the
+//! drop-cutter puts the CL at `z_plane(x, y) + R·(1 − n.z)/n.z` — 10 µm above
+//! the surface on a 45° face, 119 µm on 80°, 1.4 mm on 89°. The offset is
+//! **slope-dependent**, so it does not cancel in a gradient: it adds gradient
+//! of its own wherever slope varies, and at the production `cusp/4` cell
+//! (0.125 mm for the shipped Ø1 tip) that is 8–20% of a cell in Z.
+//!
+//! The **direct** family evaluates the model surface itself. The two cannot
+//! be bit-identical, and §5.3 measured which one is the outlier: shrinking the
+//! probe 10× drives label disagreement to **zero on every fixture** and shrinks
+//! the maximum Z difference by exactly 10× per 10× of radius — the
+//! `R·(1 − n.z)/n.z` law and nothing else. The direct arms are not
+//! approximating the surface; they *are* the surface, and the divergence is
+//! the probe's own artefact.
 //!
 //! # Source lineage
 //!
@@ -72,10 +83,19 @@ pub const CANCEL_WINDOW_FACES: usize = 1024;
 pub const TILE_EDGE_CELLS: usize = 64;
 
 /// Which sampler fills the classification height grid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// [`Self::PRODUCTION`] is what `finish_setup` selects when a caller does not
+/// name one; every variant is reachable through
+/// [`crate::finish_setup::build_classification_surface_with_sampler_and_cancel`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum ClassificationSampler {
-    /// **The oracle.** Tiny-ball drop-cutter at every cell, exactly as
-    /// `finish_setup` ships it. Every other variant is scored against this.
+    /// **The oracle and the fallback.** Tiny-ball drop-cutter at every cell,
+    /// exactly as `finish_setup` shipped it before M3 wave 7b. Every other
+    /// variant is scored against this by the parity sentries, and production
+    /// returns to it by changing [`Self::PRODUCTION`] alone.
     DropCutterProbe,
     /// Candidate 0. The same drop-cutter contact math over the same triangle
     /// sets, with the per-query result `Vec` and dedup bitset hoisted out of
@@ -99,10 +119,30 @@ pub enum ClassificationSampler {
     /// **disjoint output tiles**: each tile gathers its own candidate
     /// triangles from the spatial index and rasterises into its own slice, so
     /// no two threads ever write the same cell and no atomics are needed.
+    ///
+    /// **This is [`Self::PRODUCTION`].**
+    #[default]
     TileRaster,
 }
 
 impl ClassificationSampler {
+    /// The sampler production classification uses.
+    ///
+    /// One constant, one place: the M3 fallback documented in
+    /// `CLASSIFICATION_PERF_STUDY.md` §9.1 is "set this back to
+    /// [`Self::DropCutterProbe`]", and nothing else in the pipeline names a
+    /// sampler. `ClassificationSampler::default()` is the same value, so a
+    /// config field that omits the sampler gets production.
+    pub const PRODUCTION: Self = Self::TileRaster;
+
+    /// True when `self` is what production runs — used by serde to keep the
+    /// sampler out of every project file that has not deliberately pinned a
+    /// non-default one.
+    #[must_use]
+    pub const fn is_production(&self) -> bool {
+        matches!(*self, Self::PRODUCTION)
+    }
+
     /// Every sampler, oracle first.
     pub const ALL: [Self; 5] = [
         Self::DropCutterProbe,
@@ -322,6 +362,34 @@ fn drop_cutter_probe_scratch(
     map_cells_parallel(spec, cancel, cell)
 }
 
+// ── The reduction ───────────────────────────────────────────────────────
+
+/// The per-cell reduce every direct arm uses: keep `candidate` **only if it is
+/// strictly greater** than what is already there.
+///
+/// A named function with its own test rather than an inline `>`, because the
+/// study's §9.2 risk 4 is precisely that a later refactor "tidies" this into
+/// `*current = current.max(candidate)` — which is a different function on two
+/// inputs that reach it:
+///
+/// * **signed zero.** `(-0.0f64).max(0.0)` is `+0.0`; `0.0 > -0.0` is false,
+///   so this keeps the `-0.0` that was seen first. Where a cell centre lands on
+///   an edge shared by two coplanar triangles — all 386 profile-breakpoint
+///   cells of the grooved-block fixture — the two candidates tie, and
+///   *first-seen-wins* is what makes each arm internally deterministic
+///   (`CLASSIFICATION_PERF_STUDY.md` §6.6).
+/// * **NaN.** `f64::max` *ignores* a NaN operand, so it would let a degenerate
+///   plane evaluation be silently replaced by, or silently replace, a real
+///   height depending on which side it landed on. `>` is false against NaN in
+///   both directions: a NaN never wins, and a NaN already in the cell is never
+///   overwritten — it stays visible instead of being laundered.
+#[inline]
+fn keep_higher(current: &mut f64, candidate: f64) {
+    if candidate > *current {
+        *current = candidate;
+    }
+}
+
 // ── Arm 1: direct top-surface triangle rasterisation ────────────────────
 
 /// Burn `faces` into the tile `[row0, row1) × [col0, col1)` of `spec`.
@@ -393,9 +461,7 @@ fn burn_faces_into_tile(
                     // makes and the same answer it gets.
                     continue;
                 };
-                if plane_z > z[out] {
-                    z[out] = plane_z;
-                }
+                keep_higher(&mut z[out], plane_z);
             }
         }
     }
@@ -478,9 +544,7 @@ fn vertical_ray(
             let Some(plane_z) = face.z_at_xy(x, y) else {
                 continue;
             };
-            if plane_z > best {
-                best = plane_z;
-            }
+            keep_higher(&mut best, plane_z);
         }
         (best.max(spec.min_z), covered)
     };
@@ -685,9 +749,102 @@ mod tests {
     }
 
     #[test]
-    fn grid_spec_matches_production_builder() {
-        // The spec helper must reproduce `finish_setup`'s grid exactly, or
-        // every arm is measured on a different set of points than production.
+    fn the_reduction_keeps_the_first_of_a_tie_and_never_launders_a_nan() {
+        // `CLASSIFICATION_PERF_STUDY.md` §9.2 risk 4: "pin the REDUCTION, not
+        // just the result". Both assertions below FAIL if `keep_higher` is
+        // rewritten as `*current = current.max(candidate)`, which is the exact
+        // tidy-up the risk names.
+
+        // Signed zero: an exact tie must leave the first-seen candidate in
+        // place. `f64::max` would fold this to `+0.0`.
+        let mut tie = -0.0f64;
+        keep_higher(&mut tie, 0.0);
+        assert!(
+            tie.is_sign_negative(),
+            "the reduction stopped keeping the FIRST of an exact tie; each arm's \
+             internal determinism (study §6.6) rests on first-seen-wins"
+        );
+        // ...and the ordinary direction still works.
+        let mut ordinary = -0.0f64;
+        keep_higher(&mut ordinary, 1.0);
+        assert_eq!(ordinary, 1.0);
+
+        // NaN must never win a cell. `f64::max(NEG_INFINITY, NaN)` is
+        // `NEG_INFINITY` too, so this direction alone would not discriminate —
+        let mut fresh = f64::NEG_INFINITY;
+        keep_higher(&mut fresh, f64::NAN);
+        assert!(fresh.is_infinite() && fresh.is_sign_negative());
+        // — but a NaN already in the cell must stay VISIBLE rather than being
+        // silently replaced by the next real height. `f64::max(NaN, 5.0)` is
+        // `5.0`, which would launder a degenerate plane evaluation into a
+        // plausible surface.
+        let mut poisoned = f64::NAN;
+        keep_higher(&mut poisoned, 5.0);
+        assert!(
+            poisoned.is_nan(),
+            "the reduction now launders a NaN cell into a real height"
+        );
+    }
+
+    #[test]
+    fn production_sampler_is_the_default_and_is_the_tile_raster() {
+        // The one-line fallback lever the M3 checkpoint ruling names: flip
+        // `PRODUCTION` and production classification returns to the shipped
+        // drop-cutter path with nothing else moved. `Default` must track it,
+        // because the serde field on `UnifiedFinishConfig` omits the sampler
+        // whenever it is production.
+        assert_eq!(
+            ClassificationSampler::PRODUCTION,
+            ClassificationSampler::TileRaster
+        );
+        assert_eq!(
+            ClassificationSampler::default(),
+            ClassificationSampler::PRODUCTION
+        );
+        assert!(ClassificationSampler::PRODUCTION.is_production());
+        assert!(!ClassificationSampler::DropCutterProbe.is_production());
+        // The production sampler reads the TRUE surface. If this ever flips,
+        // `finish_setup`'s classification doc — and the §5.3 attribution the
+        // switch rests on — are describing a different function.
+        assert!(!ClassificationSampler::PRODUCTION.samples_probe_cl_surface());
+    }
+
+    #[test]
+    fn the_grid_spec_holds_the_classification_grid_contract() {
+        // `ClassificationGridSpec::for_mesh` is now the ONE copy of this
+        // arithmetic — `finish_setup` calls it rather than repeating it — so
+        // this test no longer polices a duplicate. It asserts the CONTRACT
+        // instead, which is the thing that could still silently move:
+        //
+        //   * padding is one ENVELOPE radius on every side (physical sweep;
+        //     `TOOL_SCALE_SEMANTICS.md` §8 row 2 — must stay envelope even
+        //     though the CELL follows the cusp/tip scale), and
+        //   * the cell is exactly what the resolution policy resolved to.
+        let mesh = ring_plate(5.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let policy = crate::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
+        let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, policy.cell_mm());
+
+        let envelope = cutter.envelope_radius_mm();
+        assert!((spec.origin_x - (mesh.bbox.min.x - envelope)).abs() < 1e-15);
+        assert!((spec.origin_y - (mesh.bbox.min.y - envelope)).abs() < 1e-15);
+        assert!((spec.cell_size - policy.cell_mm()).abs() < 1e-15);
+        // The grid must REACH the far padded edge — one cell short leaves the
+        // mask→polygon extractor without its non-contact margin ring.
+        let far_x = spec.origin_x + (spec.cols - 1) as f64 * spec.cell_size;
+        let far_y = spec.origin_y + (spec.rows - 1) as f64 * spec.cell_size;
+        assert!(far_x >= mesh.bbox.max.x + envelope);
+        assert!(far_y >= mesh.bbox.max.y + envelope);
+        assert!((spec.min_z - mesh.bbox.min.z).abs() < 1e-15);
+    }
+
+    #[test]
+    fn the_production_builder_runs_the_production_sampler() {
+        // The M3 switch, asserted at the seam it happens at: what
+        // `finish_setup` builds must be bit-identical to the PRODUCTION arm
+        // run directly, and must NOT be the drop-cutter oracle (which is the
+        // fallback — if the two ever coincide, either the fallback was taken
+        // or this test has gone vacuous).
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
         let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
@@ -697,27 +854,54 @@ mod tests {
             &mesh, &index, &cutter, policy, &cancel,
         )
         .unwrap();
-        let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, policy.cell_mm());
-        assert_eq!(spec.rows, production.rows());
-        assert_eq!(spec.cols, production.cols());
-        assert!((spec.cell_size - production.cell_size()).abs() < 1e-15);
-        assert!((spec.origin_x - production.heightmap.origin_x).abs() < 1e-15);
-        assert!((spec.origin_y - production.heightmap.origin_y).abs() < 1e-15);
+        assert_eq!(
+            production.sampler,
+            crate::finish_setup::SurfaceSampler::Classification(ClassificationSampler::PRODUCTION),
+            "the production classification grid must record which sampler built it"
+        );
+        assert!(
+            production.sampler.is_true_surface(),
+            "production classification must read the MODEL surface"
+        );
 
-        let arm = sample_classification_grid(
+        let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, policy.cell_mm());
+        let direct = sample_classification_grid(
             &mesh,
             &index,
             spec,
+            ClassificationSampler::PRODUCTION,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(
+            direct.z_or_bbox_floor_values(),
+            production.heightmap.z_or_bbox_floor_values(),
+            "the production builder is not running the production sampler"
+        );
+        assert_eq!(direct.covered_flags(), production.heightmap.covered_flags());
+
+        // The fallback is still reachable, still different, and still tagged.
+        let fallback = crate::finish_setup::build_classification_surface_with_sampler_and_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            policy,
             ClassificationSampler::DropCutterProbe,
             &cancel,
         )
         .unwrap();
         assert_eq!(
-            arm.z_or_bbox_floor_values(),
-            production.heightmap.z_or_bbox_floor_values(),
-            "the oracle arm must BE the production classifier, not a lookalike"
+            fallback.sampler,
+            crate::finish_setup::SurfaceSampler::Classification(
+                ClassificationSampler::DropCutterProbe
+            )
         );
-        assert_eq!(arm.covered_flags(), production.heightmap.covered_flags());
+        assert!(!fallback.sampler.is_true_surface());
+        // Coverage is the same predicate on both families, always.
+        assert_eq!(
+            fallback.heightmap.covered_flags(),
+            production.heightmap.covered_flags()
+        );
     }
 
     #[test]

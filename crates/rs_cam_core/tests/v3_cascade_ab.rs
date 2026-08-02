@@ -1054,6 +1054,10 @@ fn op_b_config(
         territory_clip: true,
         intra_region_hookup_mm,
         crease_hookup_mm,
+        // M3 wave 7b: pinned to the production sampler by NAME, not by
+        // `PRODUCTION`, so this campaign's arms keep measuring the same
+        // classifier if the production default ever moves again.
+        classification_sampler: rs_cam_core::classify_probe::ClassificationSampler::TileRaster,
     }
 }
 

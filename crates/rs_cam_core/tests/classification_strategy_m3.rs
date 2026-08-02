@@ -1,12 +1,33 @@
-//! M3 equivalence harness: does a candidate classification sampler give the
-//! same **answer** as the shipped one?
+//! M3 classification-sampler harness — the equivalence instrument of wave 7a,
+//! and since wave 7b the **parity gate on the production classifier**.
 //!
 //! `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` M3 is an
 //! optimisation whose acceptance gate is not speed but sameness — the
 //! classifier decides region ownership, so a faster classifier that moves a
 //! boundary has not optimised anything, it has changed the product. This file
-//! is the instrument that decides which candidates are allowed to be
+//! is the instrument that decided which candidate was allowed to be
 //! considered; `CLASSIFICATION_PERF_STUDY.md` is its write-up.
+//!
+//! # What changed at wave 7b
+//!
+//! Production classification now runs
+//! [`ClassificationSampler::PRODUCTION`] (tile raster). Three consequences
+//! for this file:
+//!
+//! 1. The direct arms' divergence numbers stopped being characterisation and
+//!    became **tripwires** — [`LABEL_MOVE_TRIPWIRES`], one ceiling per fixture
+//!    from the wave-7a table.
+//! 2. The plan's acceptance gate "no loss of narrow steep regions relative to
+//!    the current fine classifier" is restated as
+//!    `production_loses_no_region_against_the_true_surface`. The reference is
+//!    the SURFACE — the shipped classifier's own algorithm at a 100×-smaller
+//!    probe — because §5.3 measured the shipped classifier's extra regions to
+//!    be its probe artefact, and holding a true-surface classifier to a
+//!    probe-artefact reference would reject it for being right.
+//! 3. A block of gates now drives
+//!    `finish_setup::build_classification_surface_*` itself, not just the
+//!    samplers, so a rewiring of the builder cannot pass by keeping the arms
+//!    honest.
 //!
 //! # What is compared, and why not area
 //!
@@ -65,7 +86,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use rs_cam_core::classify_probe::{
-    ClassificationGridSpec, ClassificationSampler, sample_classification_grid,
+    ClassificationGridSpec, ClassificationSampler, TILE_EDGE_CELLS, sample_classification_grid,
 };
 use rs_cam_core::finish_setup::FinishResolutionPolicy;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -146,6 +167,67 @@ fn analytic_fixtures() -> Vec<Fixture> {
             mesh: meshes::non_manifold_fin(16.0, 4.0),
         },
     ]
+}
+
+/// Per-fixture label-movement measured by wave 7a
+/// (`CLASSIFICATION_PERF_STUDY.md` §5.2), and the ceiling wave 7b pins it
+/// under.
+///
+/// The study characterised the direct arms; wave 7b made one of them
+/// production, so those characterisation numbers become **tripwires**. A
+/// change that moves MORE cells across a band boundary than the study
+/// measured is a change to region ownership that nobody decided, and it must
+/// fail here rather than surface as a different toolpath.
+///
+/// The three fixtures with no slope-varying geometry the probe can bias
+/// (`plateau`, `plate-with-hole`, `stacked-shelf`) measured **exactly zero**
+/// and are pinned at zero — no headroom, because a single moved label there
+/// means the direct arm has started disagreeing about flat ground. The rest
+/// carry 25% headroom over the study value: enough that an ulp-level
+/// arithmetic change on a rim cell does not fail the build, far too little to
+/// hide a real redistribution.
+const LABEL_MOVE_TRIPWIRES: &[(&str, f64, f64)] = &[
+    // (fixture, wave-7a label Δ %, ceiling %)
+    ("plateau", 0.000, 0.000),
+    ("plate-with-hole", 0.000, 0.000),
+    ("stacked-shelf", 0.000, 0.000),
+    ("grooved-block", 0.434, 0.543),
+    ("non-manifold-fin", 0.166, 0.208),
+    ("mixed-slope", 4.347, 5.434),
+    // Terrain rows are the `#[ignore]`d study rows; same rule.
+    ("terrain@143", 3.467, 4.334),
+    ("terrain@425", 1.757, 2.196),
+    ("terrain@849", 2.454, 3.068),
+];
+
+/// Assert every direct-arm row in `rows` against [`LABEL_MOVE_TRIPWIRES`].
+///
+/// Fails loudly on an unknown fixture name rather than passing it: a
+/// characterisation with no ceiling is a number nobody is holding.
+fn assert_label_move_tripwires(rows: &[Equivalence]) {
+    for row in rows.iter().filter(|r| !r.arm.samples_probe_cl_surface()) {
+        let (_, study, ceiling) = LABEL_MOVE_TRIPWIRES
+            .iter()
+            .find(|(name, _, _)| *name == row.fixture)
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "fixture '{}' has no label-movement tripwire; add its wave-7a number to \
+                     LABEL_MOVE_TRIPWIRES rather than leaving it unbounded",
+                    row.fixture
+                )
+            });
+        let share = 100.0 * row.label_disagree as f64 / row.cells as f64;
+        assert!(
+            share <= ceiling,
+            "{} moves {:.3}% of {} cells across a band boundary; wave 7a measured {study:.3}% \
+             and the ceiling is {ceiling:.3}%. This is a change in REGION OWNERSHIP — which \
+             operation cuts which territory — not a tolerance drift.",
+            row.arm.label(),
+            share,
+            row.fixture,
+        );
+    }
 }
 
 fn terrain_path() -> Option<PathBuf> {
@@ -420,6 +502,287 @@ fn run(
     sample_classification_grid(mesh, index, spec, arm, &cancel).expect("never cancelled")
 }
 
+// ── Production-path gates (wave 7b) ─────────────────────────────────────
+//
+// Everything above scores SAMPLERS against each other. The block below scores
+// the thing production actually calls —
+// `finish_setup::build_classification_surface_with_policy_and_cancel` — so a
+// future change that keeps every arm honest while quietly rewiring the
+// builder still fails.
+
+/// The probe diameter at which the shipped drop-cutter classifier IS the model
+/// surface, to well under a nanometre of Z.
+///
+/// §5.3: label disagreement against the direct arms hits zero at the first
+/// 10× shrink on every fixture, and the maximum Z difference falls exactly
+/// 10× per 10× of radius — the `R·(1 − n.z)/n.z` law. 100× smaller than the
+/// shipped Ø0.05 leaves a worst-case offset of 14 µm at 89° and under 0.3 µm
+/// anywhere below 80°.
+const TRUE_SURFACE_PROBE_MM: f64 = 0.0005;
+
+/// Sample the true-surface reference: the SHIPPED classifier's own algorithm,
+/// run at a probe small enough that its artefact is gone.
+///
+/// Deliberately not "one of the direct arms": the M3 gate is *no loss of
+/// narrow steep regions*, and using a direct arm as its own reference would
+/// make the gate a tautology. Shrinking the oracle's probe gives an
+/// independent construction of the same surface — different code path,
+/// different arithmetic, same answer if and only if both are right.
+fn true_surface_reference(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    spec: ClassificationGridSpec,
+) -> SurfaceHeightmap {
+    let cancel = never();
+    rs_cam_core::classify_probe::sample_with_probe_diameter(
+        mesh,
+        index,
+        spec,
+        TRUE_SURFACE_PROBE_MM,
+        &cancel,
+    )
+    .expect("never cancelled")
+}
+
+#[test]
+fn production_loses_no_region_against_the_true_surface() {
+    // **The M3 acceptance gate, restated.**
+    //
+    // The plan reads "no loss of narrow steep regions relative to the current
+    // fine classifier". Wave 7a measured that the direct arms DO lose regions
+    // relative to the shipped classifier — 2 mid-steep on mixed-slope, 5 on
+    // terrain at 849² — and then measured WHY: those regions are the probe's
+    // own CL offset, not the surface (§5.3). Holding a true-surface classifier
+    // to a probe-artefact reference would reject it for being right.
+    //
+    // So the reference is the surface, reached by shrinking the oracle's own
+    // probe 100× (`true_surface_reference`), and the gate is the same
+    // sentence against it: no component the true surface reports above the
+    // noise floor may vanish. Non-vacuity is asserted at the bottom — the
+    // SHIPPED classifier must fail this gate somewhere, or the reference is
+    // not discriminating and the whole restatement is empty.
+    let cutter = common::tools::wanaka_taper();
+    let mut production_rows = Vec::new();
+    let mut shipped_rows = Vec::new();
+    for fx in analytic_fixtures() {
+        let index = SpatialIndex::build_auto(&fx.mesh);
+        let spec = production_spec(&fx.mesh, &cutter);
+        let truth = true_surface_reference(&fx.mesh, &index, spec);
+        let production = run(&fx.mesh, &index, spec, ClassificationSampler::PRODUCTION);
+        let shipped = run(
+            &fx.mesh,
+            &index,
+            spec,
+            ClassificationSampler::DropCutterProbe,
+        );
+        production_rows.push(compare(
+            ClassificationSampler::PRODUCTION,
+            fx.name,
+            &truth,
+            &production,
+        ));
+        shipped_rows.push(compare(
+            ClassificationSampler::DropCutterProbe,
+            fx.name,
+            &truth,
+            &shipped,
+        ));
+    }
+
+    println!("\n### vs the true surface (oracle at Ø{TRUE_SURFACE_PROBE_MM} mm)\n");
+    print_equivalence_rows(&production_rows);
+    print_equivalence_rows(&shipped_rows);
+
+    for row in &production_rows {
+        for (bi, class) in Class::BANDS.into_iter().enumerate() {
+            assert_eq!(
+                row.vanished[bi],
+                0,
+                "the PRODUCTION classifier loses {} {} region(s) that the true surface has, on {}",
+                row.vanished[bi],
+                class.label(),
+                row.fixture
+            );
+        }
+        assert_eq!(
+            row.covered_mismatch, 0,
+            "the PRODUCTION classifier moved the coverage mask on {}",
+            row.fixture
+        );
+    }
+
+    // Non-vacuity, and it is worth reading carefully, because the direction
+    // is the opposite of the plan's phrasing. Against the true surface the
+    // shipped classifier does not LOSE regions — it **fabricates** them: its
+    // slope-dependent CL offset adds gradient of its own, so mixed-slope's 6
+    // real mid-steep components become 8. That is why the plan's gate had to
+    // be restated rather than merely re-pointed. What must be non-zero for
+    // this test to mean anything is that the reference *discriminates* — that
+    // the shipped classifier and the true surface disagree at all.
+    let shipped_disagreement: usize = shipped_rows.iter().map(|r| r.label_disagree).sum();
+    assert!(
+        shipped_disagreement > 0,
+        "the SHIPPED classifier agreed with the true-surface reference everywhere — the \
+         reference does not discriminate, so 'production loses nothing' is a vacuous pass \
+         rather than a gate"
+    );
+    let fabricated: usize = shipped_rows
+        .iter()
+        .flat_map(|r| r.topology.iter())
+        .map(|&(_, _, truth_big, shipped_big)| shipped_big.saturating_sub(truth_big))
+        .sum();
+    assert!(
+        fabricated > 0,
+        "the shipped probe no longer fabricates any region against the true surface; \
+         `CLASSIFICATION_PERF_STUDY.md` §5.3's attribution — and therefore the reason M3 \
+         switched classifiers — would need re-deriving"
+    );
+    // And the production sampler must be the surface, not merely close to it.
+    for row in &production_rows {
+        assert_eq!(
+            row.label_disagree, 0,
+            "the production sampler disagrees with the true surface on {} cells of {} — \
+             it is supposed to BE the surface",
+            row.label_disagree, row.fixture
+        );
+    }
+    println!(
+        "non-vacuity: against the true surface the shipped Ø0.05 probe moves \
+         {shipped_disagreement} label(s) and FABRICATES {fabricated} region(s) ≥{MIN_COMPONENT_CELLS} cells; \
+         the production sampler moves 0 and loses 0"
+    );
+}
+
+#[test]
+fn the_production_builder_is_deterministic_across_thread_counts() {
+    // The arm-level version of this lives in
+    // `arms_are_deterministic_across_thread_counts`. This one runs the whole
+    // production entry point — grid arithmetic, sampler dispatch, stencil —
+    // because that is what a GUI worker on N threads and a headless run on 1
+    // must agree about.
+    use rs_cam_core::finish_setup::build_classification_surface_with_policy_and_cancel;
+    let cutter = common::tools::wanaka_taper();
+    let fx = &analytic_fixtures()[2]; // mixed-slope: every band populated
+    let index = SpatialIndex::build_auto(&fx.mesh);
+    let policy = FinishResolutionPolicy::cusp_quarter(&cutter, TOLERANCE_MM);
+    let cancel = never();
+    let mut built = Vec::new();
+    for threads in [1usize, 8] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("thread pool");
+        built.push(pool.install(|| {
+            build_classification_surface_with_policy_and_cancel(
+                &fx.mesh, &index, &cutter, policy, &cancel,
+            )
+            .expect("never cancelled")
+        }));
+    }
+    assert_eq!(
+        built[0].heightmap.z_or_bbox_floor_values(),
+        built[1].heightmap.z_or_bbox_floor_values(),
+        "the production classification builder is not thread-count deterministic (Z)"
+    );
+    assert_eq!(
+        built[0].heightmap.covered_flags(),
+        built[1].heightmap.covered_flags(),
+        "the production classification builder is not thread-count deterministic (coverage)"
+    );
+    assert_eq!(
+        label_grid(&built[0].heightmap),
+        label_grid(&built[1].heightmap),
+        "the production classification builder is not thread-count deterministic (labels)"
+    );
+    // Non-vacuity: a grid with only one band would agree trivially.
+    let labels = label_grid(&built[0].heightmap);
+    for class in Class::BANDS {
+        assert!(
+            labels.contains(&class),
+            "the determinism fixture has no {} cells",
+            class.label()
+        );
+    }
+}
+
+#[test]
+fn the_production_builder_cancels_and_discards_the_partial_grid() {
+    use rs_cam_core::finish_setup::build_classification_surface_with_policy_and_cancel;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let cutter = common::tools::wanaka_taper();
+    let fx = &analytic_fixtures()[2];
+    let index = SpatialIndex::build_auto(&fx.mesh);
+    let policy = FinishResolutionPolicy::cusp_quarter(&cutter, TOLERANCE_MM);
+    let polls = AtomicUsize::new(0);
+    let cancel = || polls.fetch_add(1, Ordering::Relaxed) >= 1;
+    let out = build_classification_surface_with_policy_and_cancel(
+        &fx.mesh, &index, &cutter, policy, &cancel,
+    );
+    assert!(
+        out.is_err(),
+        "the production classification builder ignored a cancel raised mid-grid — \
+         the compute worker's cancel flag cannot interrupt it"
+    );
+    // `Result` makes the discard structural: there is no half-built
+    // `FinishSurface` to leak. Asserting the latency too keeps the window
+    // claim honest at the production seam.
+    assert!(
+        polls.load(Ordering::Relaxed) <= 3,
+        "the production builder kept polling after the cancel"
+    );
+}
+
+#[test]
+fn the_unified_finish_op_defaults_to_the_production_sampler() {
+    // The op-level end of the wiring. `UnifiedFinishConfig` carries the
+    // sampler so the COLUMNS A/B can drive both classifiers through the
+    // production pipeline; the default must be production, an absent field
+    // must LOAD as production, and a production value must not be written
+    // into any project file.
+    use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
+    use rs_cam_core::unified_finish::UnifiedFinishParams;
+
+    assert_eq!(
+        UnifiedFinishParams::default().classification_sampler,
+        ClassificationSampler::PRODUCTION
+    );
+    let cfg = UnifiedFinishConfig::default();
+    assert_eq!(
+        cfg.classification_sampler,
+        ClassificationSampler::PRODUCTION
+    );
+
+    let written = toml::to_string(&cfg).expect("serialise a default UnifiedFinishConfig");
+    assert!(
+        !written.contains("classification_sampler"),
+        "a default config wrote a classification_sampler key; every existing project file \
+         would grow one on the next save:\n{written}"
+    );
+
+    // An absent field loads as production — this is what every project file
+    // written before wave 7b looks like.
+    let loaded: UnifiedFinishConfig =
+        toml::from_str(&written).expect("round-trip a default UnifiedFinishConfig");
+    assert_eq!(
+        loaded.classification_sampler,
+        ClassificationSampler::PRODUCTION
+    );
+
+    // A deliberately pinned non-production sampler DOES round-trip, so the
+    // documented escape hatch is real rather than silently dropped.
+    let pinned = UnifiedFinishConfig {
+        classification_sampler: ClassificationSampler::DropCutterProbe,
+        ..UnifiedFinishConfig::default()
+    };
+    let text = toml::to_string(&pinned).expect("serialise a pinned config");
+    assert!(text.contains("classification_sampler"));
+    let back: UnifiedFinishConfig = toml::from_str(&text).expect("round-trip a pinned config");
+    assert_eq!(
+        back.classification_sampler,
+        ClassificationSampler::DropCutterProbe
+    );
+}
+
 // ── Analytic-fixture gates (default, fast) ──────────────────────────────
 
 #[test]
@@ -459,15 +822,14 @@ fn analytic_equivalence_matrix() {
         );
     }
 
-    // The direct arms are CHARACTERISED, not gated: they sample the model
-    // surface where the shipped classifier samples the probe's CL surface, so
-    // they are expected to differ and the study's job is to say by how much
-    // and why (see `direct_arm_divergence_is_the_probe_offset`). What IS
-    // asserted here is that the divergence stays inside the envelope this
-    // wave measured, so a future change that makes it worse is caught:
+    // The direct arms sample the model surface where the shipped classifier
+    // samples the probe's CL surface, so they are expected to differ (see
+    // `direct_arm_divergence_is_the_probe_offset` for the proof that the
+    // difference IS the probe). Since wave 7b one of them is production, so
+    // the divergence is no longer merely characterised — it is pinned:
     //
     // - the coverage mask never moves (that predicate is shared);
-    // - per-cell label disagreement stays under 5% of the grid.
+    // - per-cell label disagreement stays under its per-fixture tripwire.
     for row in rows.iter().filter(|r| !r.arm.samples_probe_cl_surface()) {
         assert_eq!(
             row.covered_mismatch,
@@ -476,16 +838,8 @@ fn analytic_equivalence_matrix() {
             row.arm.label(),
             row.fixture
         );
-        let share = row.label_disagree as f64 / row.cells as f64;
-        assert!(
-            share < 0.05,
-            "{} now disagrees with the shipped labels on {:.2}% of {} — \
-             the wave-7a envelope was under 5%",
-            row.arm.label(),
-            100.0 * share,
-            row.fixture
-        );
     }
+    assert_label_move_tripwires(&rows);
 
     // Non-vacuity: if the direct arms ever became bit-identical to the
     // shipped one, every "bounded divergence" number above would be
@@ -814,18 +1168,42 @@ fn cancellation_is_bounded_by_one_chunk() {
     let fx = &analytic_fixtures()[2];
     let index = SpatialIndex::build_auto(&fx.mesh);
     let spec = production_spec(&fx.mesh, &cutter);
+    // The tiled arm's cancellation window is ONE TILE BAND, and the fixture
+    // has to be big enough in BANDS for "cancel on the second poll" to be
+    // mid-grid — otherwise the cancel lands on the last band and the test
+    // proves nothing. Wave 7b's first attempt cancelled on the third poll of
+    // a 3-band grid and this guard is what caught it.
+    let bands = spec.rows.div_ceil(TILE_EDGE_CELLS);
+    assert!(
+        bands >= 3,
+        "the cancellation fixture is only {bands} tile band(s) — a cancel on the second poll \
+         would be at or past the end of the grid, so this test would be vacuous"
+    );
+
     for arm in ClassificationSampler::ALL {
         let polls = AtomicUsize::new(0);
-        // Let the first two polls through, then cancel: every arm must
-        // surface `Cancelled` rather than a truncated grid. The mixed-slope
-        // fixture is 8192 faces on a ~177² grid, so every arm's window
-        // (8192 cells / 1024 faces / one tile band) gives at least three
-        // polls — the cancel really does land mid-grid, not before it starts.
-        let cancel = || polls.fetch_add(1, Ordering::Relaxed) >= 2;
+        // Let the first poll through, then cancel: every arm must surface
+        // `Cancelled` rather than a truncated grid. The mixed-slope fixture is
+        // 8192 faces on a ~177² grid, so every arm's window (8192 cells /
+        // 1024 faces / one 64-cell tile band) leaves work after poll 2 — the
+        // cancel really does land mid-grid, not before it starts and not on
+        // the final chunk.
+        let cancel = || polls.fetch_add(1, Ordering::Relaxed) >= 1;
         let out = sample_classification_grid(&fx.mesh, &index, spec, arm, &cancel);
         assert!(
             out.is_err(),
             "{} ignored a cancel raised mid-grid",
+            arm.label()
+        );
+        // LATENCY, not just observance. The second poll is the first that
+        // reports `true`; an arm that keeps working past it has a window
+        // larger than it documents. One extra poll is allowed for a wrapper
+        // that re-checks on the way out; more means the arm ran on.
+        let observed = polls.load(Ordering::Relaxed);
+        assert!(
+            observed <= 3,
+            "{} polled {observed} times for a cancel raised on poll 2 of a {bands}-band grid — \
+             it kept working past the window it documents",
             arm.label()
         );
     }
@@ -975,7 +1353,20 @@ fn terrain_equivalence_and_timing() {
             row.fixture
         );
     }
-    // Everything else is characterisation — printed, and read in the study.
+    // The direct arms are production since wave 7b, so their terrain rows are
+    // gated by the same tripwires as the analytic ones.
+    for row in &equivalences {
+        if !row.arm.samples_probe_cl_surface() {
+            assert_eq!(
+                row.covered_mismatch,
+                0,
+                "{} moved the coverage mask on {}",
+                row.arm.label(),
+                row.fixture
+            );
+        }
+    }
+    assert_label_move_tripwires(&equivalences);
 }
 
 #[test]

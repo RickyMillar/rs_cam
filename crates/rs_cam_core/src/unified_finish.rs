@@ -93,13 +93,14 @@
 
 use std::ops::Range;
 
+use crate::classify_probe::ClassificationSampler;
 use crate::crease_paths::centerline_cut_paths;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dropcutter::{DropCutterGrid, batch_drop_cutter_with_cancel};
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
     FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
-    build_classification_surface_with_policy_and_cancel,
+    build_classification_surface_with_sampler_and_cancel,
 };
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -155,6 +156,13 @@ pub struct UnifiedFinishParams {
     /// cost is the two ~30 mm Z legs, not the XY hop. Reordering shortens
     /// the hop; only linking removes the legs.
     pub intra_region_hookup_mm: f64,
+    /// Which sampler builds this op's classification grid (M3 wave 7b).
+    ///
+    /// Defaults to [`ClassificationSampler::PRODUCTION`]. It is a field
+    /// rather than a global so the COLUMNS A/B can run both classifiers
+    /// through the identical production pipeline in one process, and so a
+    /// sentry can pin which one an op ran without inspecting global state.
+    pub classification_sampler: ClassificationSampler,
 }
 
 impl Default for UnifiedFinishParams {
@@ -178,6 +186,7 @@ impl Default for UnifiedFinishParams {
             plunge_rate: 500.0,
             safe_z: 30.0,
             intra_region_hookup_mm: 0.0,
+            classification_sampler: ClassificationSampler::PRODUCTION,
         }
     }
 }
@@ -1272,11 +1281,16 @@ pub fn unified_finish_toolpath_with_cancel(
     // `build_finish_surface_with_cancel`.
     // The RESOLUTION is UnifiedFinish's own choice (H3 step 2) — see
     // `unified_finish_classification_resolution`.
-    let surface = build_classification_surface_with_policy_and_cancel(
+    // The SAMPLER is `params.classification_sampler` (M3 wave 7b), defaulting
+    // to `ClassificationSampler::PRODUCTION`. It is threaded rather than
+    // pinned here so the COLUMNS A/B can drive both classifiers through this
+    // exact code path.
+    let surface = build_classification_surface_with_sampler_and_cancel(
         mesh,
         index,
         cutter,
         unified_finish_classification_resolution(cutter, params.tolerance),
+        params.classification_sampler,
         cancel,
     )?;
     check_cancel(cancel)?;

@@ -32,6 +32,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{
     ClaimsReference, DropCutterConfig, ScallopConfig, ScallopDirection, UnifiedFinishConfig,
@@ -692,6 +693,11 @@ fn ab_unified_config() -> UnifiedFinishConfig {
         territory_clip: false,
         intra_region_hookup_mm: 0.0,
         crease_hookup_mm: 5.0,
+        // M3 wave 7b: PINNED to the production sampler explicitly, for the
+        // same reason every other field here is spelled out — this is the
+        // pinned branch-A/B baseline and must measure a named classifier,
+        // not whatever `PRODUCTION` becomes later.
+        classification_sampler: ClassificationSampler::TileRaster,
     }
 }
 
@@ -840,6 +846,9 @@ fn p2c_unified_generation_probe() {
         plunge_rate: 150.0,
         safe_z: 15.0,
         intra_region_hookup_mm: 0.0,
+        // M3 wave 7b: pinned to the production sampler by name (see
+        // `ab_unified_config`).
+        classification_sampler: ClassificationSampler::TileRaster,
     };
     let mut planner = FinishPlannerParams::for_tool(3.0);
     planner.overlap_mm = 2.0;

@@ -980,6 +980,24 @@ pub struct UnifiedFinishConfig {
     /// `PencilParams::default()` value); `0.0` disables crease linking.
     #[serde(default = "default_unified_finish_crease_hookup_mm")]
     pub crease_hookup_mm: f64,
+    /// Which sampler builds this op's classification grid (M3 wave 7b —
+    /// `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`).
+    ///
+    /// **Not a quality or speed dial for users to tune.** It exists so the
+    /// M3 COLUMNS A/B can drive the pre-switch drop-cutter classifier and the
+    /// production tile-raster one through the identical pipeline, and so a
+    /// project that hits a regression has a documented escape hatch that does
+    /// not need a rebuild.
+    ///
+    /// Defaults to [`ClassificationSampler::PRODUCTION`] and is omitted from
+    /// serialisation while it holds that value, so no existing project file
+    /// changes and no newly written one grows a key unless it deliberately
+    /// pinned a non-production sampler. An absent field loads as production.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::classify_probe::ClassificationSampler::is_production"
+    )]
+    pub classification_sampler: crate::classify_probe::ClassificationSampler,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -1007,6 +1025,7 @@ impl Default for UnifiedFinishConfig {
             territory_clip: default_unified_finish_territory_clip(),
             intra_region_hookup_mm: default_unified_finish_intra_region_hookup_mm(),
             crease_hookup_mm: default_unified_finish_crease_hookup_mm(),
+            classification_sampler: crate::classify_probe::ClassificationSampler::PRODUCTION,
         }
     }
 }

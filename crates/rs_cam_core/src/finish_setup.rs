@@ -25,6 +25,9 @@
 //! needs a Z ladder or the slope window takes it from this module; it does
 //! not grow a fourth copy.
 
+use crate::classify_probe::{
+    ClassificationGridSpec, ClassificationSampler, sample_classification_grid,
+};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::measurement::CellSource;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -247,6 +250,50 @@ impl FinishResolutionPolicy {
 
 // ── Heightmap + slope map setup ─────────────────────────────────────────
 
+/// Which sampler filled a [`FinishSurface`]'s height grid.
+///
+/// The [`CellSource`] precedent, one level up: `CellSource` says what sized
+/// the cells, this says **what was measured into them**. The two families
+/// below evaluate genuinely different surfaces — one is the cutter's own
+/// tool-centre offset surface, the other is the model — and a report or a
+/// cross-branch comparison that does not know which it has is comparing two
+/// different quantities (`MEASUREMENT_DOMAINS.md`'s standing rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SurfaceSampler {
+    /// **Generation grids.** Drop-cutter with the REAL cutter, i.e. the
+    /// tool-centre (CL) offset surface the tool would ride. This is what
+    /// every `build_finish_surface_*` entry point produces, and it is the
+    /// surface that geometrically hides steepness at feature scales at or
+    /// below the ball radius — which is why classification does not use it.
+    CutterOffset,
+    /// **Classification grids**, built by the named
+    /// [`ClassificationSampler`]. Since M3 wave 7b the production value is
+    /// [`ClassificationSampler::PRODUCTION`]; the shipped drop-cutter probe
+    /// remains selectable as the fallback and as the sentries' oracle.
+    Classification(ClassificationSampler),
+}
+
+impl SurfaceSampler {
+    /// Human-readable label for reports and failure messages.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::CutterOffset => "generation (cutter CL offset surface)",
+            Self::Classification(sampler) => sampler.label(),
+        }
+    }
+
+    /// True when the grid holds the **model** surface rather than a
+    /// tool-centre offset of it — the property band decomposition depends on.
+    #[must_use]
+    pub const fn is_true_surface(self) -> bool {
+        match self {
+            Self::CutterOffset => false,
+            Self::Classification(sampler) => !sampler.samples_probe_cl_surface(),
+        }
+    }
+}
+
 /// A surface sampled onto a regular XY grid, ready for finish-op planning:
 /// the raw heightmap (Z values + coverage mask) and its derived slope map
 /// (angles, normals, curvature).
@@ -269,6 +316,14 @@ pub struct FinishSurface {
     /// FORMULA was selected, not just what it produced, so a sentry can
     /// assert a consumer's choice and a report can name it.
     pub resolution: FinishResolutionPolicy,
+    /// Which sampler measured the heights into this grid (M3 wave 7b).
+    ///
+    /// A grid must say what built it, for the same reason it must say what
+    /// sized it: two grids of identical geometry over identical meshes hold
+    /// different surfaces depending on this field, and the M3 switch moved
+    /// 1.8–4.3% of production classification cells across a band boundary
+    /// purely by changing it.
+    pub sampler: SurfaceSampler,
 }
 
 impl FinishSurface {
@@ -325,6 +380,7 @@ pub fn build_finish_surface_with_policy_and_cancel(
         slope_map,
         cell_source: resolution.cell_source(),
         resolution,
+        sampler: SurfaceSampler::CutterOffset,
     })
 }
 
@@ -384,13 +440,35 @@ pub fn build_finish_surface_with_cancel(
 }
 
 /// Diameter of the bare-surface probe used by
-/// [`build_classification_surface_with_cancel`] — small enough that the
-/// probe's own offset is negligible at finish cell sizes, mirroring
-/// `rest_field`'s "tiny bare-surface probe" reference pattern.
+/// [`crate::classify_probe::ClassificationSampler::DropCutterProbe`] — the
+/// pre-M3 production classifier, retained as the sentries' oracle and as the
+/// production fallback. Mirrors `rest_field`'s "tiny bare-surface probe"
+/// reference pattern.
+///
+/// **This probe's offset is NOT negligible at finish cell sizes**, which is
+/// what this comment claimed until M3 wave 7b and what
+/// `CLASSIFICATION_PERF_STUDY.md` §5.3 measured false. The drop-cutter puts
+/// the CL at `z_plane + R·(1 − n.z)/n.z`: 10 µm on a 45° face, 25 µm at 60°,
+/// 119 µm at 80°. Against the production `cusp/4` cell of 0.125 mm for the
+/// shipped Ø1 tip that is 8–20% of a cell in Z, and because the offset grows
+/// with slope it does not cancel in the classification stencil — it adds
+/// gradient of its own. Measured effect: 1.8–4.3% of cells land in a
+/// different slope band, and on the mixed-slope fixture the probe
+/// *manufactures* two mid-steep regions the true surface does not have.
 pub const CLASSIFICATION_PROBE_DIAMETER_MM: f64 = 0.05;
 
-/// Build the CLASSIFICATION surface: the true model surface sampled with a
-/// tiny bare-surface probe, NOT `cutter`'s tool-center offset surface.
+/// Build the CLASSIFICATION surface: the true model surface, NOT `cutter`'s
+/// tool-center offset surface.
+///
+/// Since M3 wave 7b the height grid comes from
+/// [`ClassificationSampler::PRODUCTION`] — direct true-surface tile
+/// rasterisation, which evaluates the model plane at each cell centre. Before
+/// that it came from a Ø0.05 mm ball drop-cutter, whose CL surface sits
+/// `R·(1 − n.z)/n.z` ABOVE the model and therefore reported a slope-dependent
+/// offset as if it were surface (see [`CLASSIFICATION_PROBE_DIAMETER_MM`]).
+/// That path is still selectable through
+/// [`build_classification_surface_with_sampler_and_cancel`] as the fallback
+/// and as the parity sentries' oracle.
 ///
 /// Slope-band decomposition (`crate::finish_planner`) must read real surface
 /// slopes: a ball tool's offset surface geometrically hides steepness at
@@ -430,13 +508,13 @@ pub fn build_classification_surface_with_cancel(
 }
 
 /// Resolution-explicit variant of [`build_classification_surface_with_cancel`]
-/// (H3 step 1).
+/// (H3 step 1), on the **production sampler**
+/// ([`ClassificationSampler::PRODUCTION`]).
 ///
-/// Same probe and same sharp slope stencil — only the grid resolution comes
-/// from the caller. `UnifiedFinish` selects
-/// [`FinishResolutionMode::CuspQuarter`] here (see
-/// `unified_finish::unified_finish_classification_resolution`), which is what
-/// the builder computed internally before.
+/// Same sharp slope stencil and same grid — only the resolution comes from
+/// the caller. `UnifiedFinish` selects [`FinishResolutionMode::CuspQuarter`]
+/// here (see `unified_finish::unified_finish_classification_resolution`),
+/// which is what the builder computed internally before.
 pub fn build_classification_surface_with_policy_and_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -444,7 +522,34 @@ pub fn build_classification_surface_with_policy_and_cancel(
     resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
-    // Physical extent below (padding, grid coverage) keeps the FULL radius —
+    build_classification_surface_with_sampler_and_cancel(
+        mesh,
+        index,
+        cutter,
+        resolution,
+        ClassificationSampler::PRODUCTION,
+        cancel,
+    )
+}
+
+/// Sampler-explicit variant (M3 wave 7b) — the entry point the parity
+/// sentries and the COLUMNS A/B harness drive.
+///
+/// Production goes through
+/// [`build_classification_surface_with_policy_and_cancel`], which pins
+/// [`ClassificationSampler::PRODUCTION`]. Naming a sampler here is how a
+/// sentry scores a candidate against the shipped drop-cutter oracle, and how
+/// an A/B runs both classifiers through the identical downstream pipeline in
+/// one process.
+pub fn build_classification_surface_with_sampler_and_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    resolution: FinishResolutionPolicy,
+    sampler: ClassificationSampler,
+    cancel: &dyn CancelCheck,
+) -> Result<FinishSurface, Cancelled> {
+    // Physical extent (padding, grid coverage) keeps the FULL radius —
     // the tool really does sweep that far. The CELL SIZE does not: it sets
     // the finest feature this grid can represent, so it follows the
     // cusp-forming (tip) radius. On a tapered ball `radius()` is the SHAFT
@@ -455,20 +560,14 @@ pub fn build_classification_surface_with_policy_and_cancel(
     // the mesh's ≥75° face area — region polygons are XY-PROJECTED and mesh
     // faces are 3D, a ~10× difference on near-vertical ribbons; the audit
     // that caught that is §14t.
-    let tool_radius = cutter.envelope_radius_mm();
-    let cell_size = resolution.cell_mm();
-    let bbox = &mesh.bbox;
-    let origin_x = bbox.min.x - tool_radius;
-    let origin_y = bbox.min.y - tool_radius;
-    let extent_x = bbox.max.x + tool_radius;
-    let extent_y = bbox.max.y + tool_radius;
-    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
-
-    let probe = crate::tool::BallEndmill::new(CLASSIFICATION_PROBE_DIAMETER_MM, 1.0);
-    let heightmap = SurfaceHeightmap::from_mesh_with_cancel(
-        mesh, index, &probe, origin_x, origin_y, rows, cols, cell_size, bbox.min.z, cancel,
-    )?;
+    //
+    // The grid arithmetic itself lives in `ClassificationGridSpec::for_mesh`
+    // — ONE copy, shared with the samplers and the M3 harness. It used to be
+    // written out here as well, with a sentry pinning the two together; the
+    // sentry is now free to assert the CONTRACT (padding is envelope, cell is
+    // the policy's) instead of policing a duplicate.
+    let spec = ClassificationGridSpec::for_mesh(mesh, cutter, resolution.cell_mm());
+    let heightmap = sample_classification_grid(mesh, index, spec, sampler, cancel)?;
     // Max-of-one-sided-gradients stencil: central differences smear a
     // single-cell cliff (e.g. the wanaka lake coastline, ~90° step walls)
     // to `atan(h / (2·cell))` — invisible to the steep threshold. The
@@ -481,6 +580,7 @@ pub fn build_classification_surface_with_policy_and_cancel(
         // Production callers select `CuspQuarter` here — the TIP scale.
         cell_source: resolution.cell_source(),
         resolution,
+        sampler: SurfaceSampler::Classification(sampler),
     })
 }
 
