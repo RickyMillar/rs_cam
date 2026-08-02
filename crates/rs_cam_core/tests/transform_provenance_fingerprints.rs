@@ -248,7 +248,7 @@ fn three_pass_full_dressups_fingerprint() {
         OperationType::Adaptive3d.transform_capabilities(),
         None,
         None,
-        &mut ReconcileSet::new(Some(&recorder)),
+        &mut ReconcileSet::new(Some(&recorder), None),
     );
 
     assert_eq!(
@@ -289,7 +289,7 @@ fn arc_raster_full_dressups_fingerprint() {
         OperationType::Adaptive3d.transform_capabilities(),
         None,
         None,
-        &mut ReconcileSet::new(Some(&recorder)),
+        &mut ReconcileSet::new(Some(&recorder), None),
     );
 
     assert_eq!(
@@ -331,7 +331,7 @@ fn face_full_chain_fingerprint() {
         OperationType::Face.transform_capabilities(),
         None,
         None,
-        &mut ReconcileSet::new(Some(&recorder)),
+        &mut ReconcileSet::new(Some(&recorder), None),
     );
     assert_eq!(
         fingerprint(&current.toolpath),
@@ -343,7 +343,7 @@ fn face_full_chain_fingerprint() {
     // path (inset from the faced area, so moves leave and re-enter).
     let boundary = Polygon2::rectangle(2.0, 2.0, 34.0, 26.0);
     current = clip_annotated_to_boundary_set(current, &[boundary], 30.0)
-        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
     assert_eq!(
         fingerprint(&current.toolpath),
@@ -355,7 +355,7 @@ fn face_full_chain_fingerprint() {
     // the ceiling, which is what the session passes for a first op).
     let (transformed, split_count) = optimize_entry_descents_annotated(current, None, 0.0, 3.0);
     current = transformed
-        .reconcile(&mut ReconcileSet::new(Some(&recorder)))
+        .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),

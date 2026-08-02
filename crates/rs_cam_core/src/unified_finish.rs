@@ -1927,8 +1927,13 @@ pub fn unified_finish_toolpath_with_cancel(
                 // `territory_clip`, the rest mask) deliberately excluded.
                 boundary: Some(&region_set),
             };
-            let (linked, rep) =
-                crate::surface_link::relink_fragments(&tp, mesh, index, cutter, &rp);
+            let (linked, rep) = crate::surface_link::relink_fragments(
+                crate::toolpath_spans::AnnotatedToolpath::new(tp),
+                mesh,
+                index,
+                cutter,
+                &rp,
+            );
             report.relink.fragments += rep.fragments;
             report.relink.surface_links += rep.surface_links;
             report.relink.retract_links += rep.retract_links;
@@ -1936,14 +1941,15 @@ pub fn unified_finish_toolpath_with_cancel(
             report.relink.off_surface += rep.off_surface;
             report.relink.slower_than_retract += rep.slower_than_retract;
             report.relink.outside_boundary += rep.outside_boundary;
-            let anns = anns
-                .into_iter()
-                .map(|a| ScallopRuntimeAnnotation {
-                    move_index: rep.move_remap.get(a.move_index).copied().unwrap_or(0),
-                    event: a.event,
-                })
-                .collect();
-            (linked, anns)
+            // C1: this band's ring annotations are the index-carrying
+            // channel this site owns; declared, not hand-remapped.
+            let mut anns = anns;
+            let tp = {
+                let mut channels =
+                    crate::transform_provenance::ReconcileSet::new(None, Some(&mut anns));
+                linked.reconcile(&mut channels).into_inner().toolpath
+            };
+            (tp, anns)
         } else {
             (tp, anns)
         };

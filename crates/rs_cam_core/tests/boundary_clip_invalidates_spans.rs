@@ -58,7 +58,7 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         2.0,
         20.0,
         &semantic_ctx,
-        &mut ReconcileSet::new(Some(&recorder)),
+        &mut ReconcileSet::new(Some(&recorder), None),
     );
 
     assert!(
@@ -107,7 +107,7 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         2.0,
         20.0,
         &semantic_ctx,
-        &mut ReconcileSet::new(Some(&recorder)),
+        &mut ReconcileSet::new(Some(&recorder), None),
     );
 
     assert!(clipped.spans_valid);

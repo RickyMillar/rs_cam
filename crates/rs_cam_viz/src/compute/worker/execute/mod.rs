@@ -551,7 +551,7 @@ pub(super) fn run_compute_with_phase_tracker(
         // in the debug one. Pre-C1 the remap calls were themselves inside
         // `if let Some(recorder)`, so the shipping product never ran them.
         let mut channels =
-            rs_cam_core::transform_provenance::ReconcileSet::new(semantic_recorder.as_ref());
+            rs_cam_core::transform_provenance::ReconcileSet::new(semantic_recorder.as_ref(), None);
 
         {
             let _phase_scope = phase_tracker.map(|tracker| tracker.start_phase("Apply dressups"));
