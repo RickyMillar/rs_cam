@@ -786,7 +786,7 @@ pub(super) fn run_compute_with_phase_tracker(
             // exactly the product the operator uses.
             stats.deprecated_dial = generation_findings.deprecated_dial.map(Box::new);
             // PR-6a: the reach-policy stepover, same parallel-copy rule.
-            stats.derived_stepover = generation_findings.derived_stepover.map(Box::new);
+            stats.derived_stepovers = generation_findings.derived_stepovers.clone();
             // PR-8b: the ramp reach clamp, same parallel-copy rule.
             stats.ramp_reach_clamp = generation_findings.ramp_reach_clamp.map(Box::new);
             // A/M6: the resolved claims reference, same parallel-copy rule.

@@ -223,17 +223,25 @@ pub struct ToolpathStats {
     /// canonical reach policy instead of taking from a dial, together with
     /// the envelope-scaled number that used to be used there.
     ///
-    /// `None` = **this operation derives no stepover** (anything that is not
-    /// a `UnifiedFinish` running its crease/pencil claims pipeline). It is
-    /// not a measurement of the part and not a defect claim; it is the
-    /// audit trail for a number the operator cannot see in any dial.
+    /// EMPTY = **this operation derived no stepover** (anything that is not
+    /// a `UnifiedFinish` running its crease/pencil claims pipeline, and not
+    /// a rest-analysis post-pass that sized its own). These are not
+    /// measurements of the part and not defect claims; they are the audit
+    /// trail for numbers the operator cannot see in any dial.
     ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
-    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
-    /// since C5, because of `clippy::large_enum_variant`.
+    /// C8: a `Vec`, not `Option<Box<..>>`. Two derivations can occur on one
+    /// toolpath — the operation's own routing site and PR-7's generic
+    /// rest-analysis post-pass — and the slot kept only the first. Reading
+    /// ergonomics improve rather than degrade: `iter().filter(..)` replaces
+    /// `as_deref().map(..)`, and "did anything derive a stepover" is
+    /// `!is_empty()`.
+    ///
+    /// The `Box` is gone with the `Option`: the finding is 6 words, and a
+    /// `Vec` is 3 whether or not it allocates. Empty is the common case and
+    /// allocates nothing.
     ///
     /// Report-only: no gate consumes it.
-    pub derived_stepover: Option<Box<DerivedStepoverFinding>>,
+    pub derived_stepovers: Vec<DerivedStepoverFinding>,
     /// PR-8b (H3): how far a ramp-finish descent had to be RAISED because the
     /// cutter could not hold the commanded depth there.
     ///

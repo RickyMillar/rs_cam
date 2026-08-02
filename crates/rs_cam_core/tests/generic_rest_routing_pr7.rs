@@ -263,8 +263,8 @@ fn the_generic_pass_routes_on_the_policy_stepover_and_reports_it() {
         .stats
         .clone();
     let finding = stats
-        .derived_stepover
-        .as_deref()
+        .derived_stepovers
+        .first()
         .copied()
         .expect("the generic rest pass sized a stepover, so it must be recorded");
     println!(
@@ -318,9 +318,9 @@ fn an_explicitly_pinned_stepover_is_honoured_and_silent() {
         .stats
         .clone();
     assert!(
-        stats.derived_stepover.is_none(),
+        stats.derived_stepovers.is_empty(),
         "the policy did not size this run, so nothing was derived: {:?}",
-        stats.derived_stepover
+        stats.derived_stepovers
     );
 }
 
@@ -521,8 +521,8 @@ fn the_ball_control_derives_the_same_number_and_reports_nothing() {
         .stats
         .clone();
     let finding = stats
-        .derived_stepover
-        .as_deref()
+        .derived_stepovers
+        .first()
         .copied()
         .expect("the pass ran on the ball too");
     println!(

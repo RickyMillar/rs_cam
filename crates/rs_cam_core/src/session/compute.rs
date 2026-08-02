@@ -1558,7 +1558,7 @@ impl ProjectSession {
                     // PR-5: a retired dial still set in the loaded project.
                     deprecated_dial: findings.deprecated_dial.map(Box::new),
                     // PR-6a: the reach-policy stepover this op derived.
-                    derived_stepover: findings.derived_stepover.map(Box::new),
+                    derived_stepovers: findings.derived_stepovers.clone(),
                     // PR-8b: what the ramp-finish reach clamp did.
                     ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
                     // A/M6: which rest reference the claims pipeline resolved to.
@@ -5197,7 +5197,7 @@ mod tests {
                 dropped_band: None,
                 tip_float: None,
                 deprecated_dial: None,
-                derived_stepover: None,
+                derived_stepovers: Vec::new(),
                 ramp_reach_clamp: None,
                 claims_reference: None,
             },
