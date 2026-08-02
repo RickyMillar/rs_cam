@@ -4367,14 +4367,16 @@ fn v3_recoverable_air_probe() {
 /// the `region_table`-derived ones alone; a `Ring` is sub-structure
 /// inside one of them, and counting rings as regions inflates the region
 /// count ~100× (measured: 620 outer spans, 615 of them rings).
+///
+/// C4: the four label literals this used to carry are gone. It asks
+/// `RegionKind::from_span_label` — the inverse of the function that WROTE
+/// the label — and takes the strategy off the kind, so the mapping cannot
+/// drift from the producer and a label change is caught by
+/// `unified_finish::tests::region_kind_span_labels_round_trip` rather than
+/// by this harness silently classifying every node as `"other"`.
 fn strategy_of_span(label: &str) -> Option<&'static str> {
-    match label {
-        "VerySteep band" => Some("waterline"),
-        "MidSteep band" => Some("scallop"),
-        "Shallow band" => Some("raster"),
-        "Pencil claims" => Some("pencil"),
-        _ => None,
-    }
+    rs_cam_core::unified_finish::RegionKind::from_span_label(label)
+        .map(|kind| kind.strategy().label())
 }
 
 /// Strategy visiting order for the UNFUSED stack: steep first, shallow

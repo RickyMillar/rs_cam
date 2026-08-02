@@ -3748,7 +3748,14 @@ fn s1_claims_ab() {
         .filter(|s| s.kind == rs_cam_core::toolpath_spans::SpanKind::Region)
         .count();
     let outer = outer_region_spans(&on_annotated.spans);
-    let crease_node_present = outer.iter().any(|s| s.label.as_ref() == "Pencil claims");
+    // C4: ask the vocabulary, don't spell the label out here. If
+    // `RegionKind::span_label` ever changes, `unified_finish::tests::
+    // region_kind_span_labels_round_trip` fails — this probe cannot quietly
+    // start reporting "no crease node" because a string moved.
+    let crease_node_present = outer.iter().any(|s| {
+        rs_cam_core::unified_finish::RegionKind::from_span_label(s.label.as_ref())
+            == Some(rs_cam_core::unified_finish::RegionKind::Crease)
+    });
     eprintln!(
         "s1_on region spans: total={region_span_count} outer(node)={} crease_node_present={crease_node_present}",
         outer.len()
