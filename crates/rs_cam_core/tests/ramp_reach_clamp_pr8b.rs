@@ -345,6 +345,9 @@ fn nothing_is_reported_when_nothing_was_measured_or_nothing_moved() {
         max_lift_mm: 0.0,
         requested_bottom_z_mm: -1.25,
         holdable_bottom_z_mm: -1.25,
+        // C8: a ramp path ran and lifted nothing — a MEASURED zero, which is
+        // the case `None` must stay distinct from.
+        lifted_area_mm2: Some(0.0),
     };
     assert!(inert.is_inert());
     assert!(
@@ -359,4 +362,90 @@ fn nothing_is_reported_when_nothing_was_measured_or_nothing_moved() {
     };
     assert!(!ladder_only.is_inert());
     assert_eq!(diagnostics(Some(ladder_only)).len(), 1);
+}
+
+// ── C8: the standing-material AREA channel ───────────────────────────────
+
+/// C8 (`ANTIPATTERNS_BACKLOG.md` P8: "RampFinish has no standing-material
+/// area channel (lift magnitude only)").
+///
+/// PR-8b's finding carried `max_lift_mm` — one worst-case DEPTH with no
+/// extent. "Up to 5 mm left standing" could mean one stray point or half the
+/// part, and nothing in the report said which. The clamp now measures the XY
+/// swath of ramp path it lifted, following A/M9's Option-typed contract with
+/// its own domain/stage provenance.
+#[test]
+fn the_clamp_measures_the_area_it_leaves_standing() {
+    let clamp = run(&disconnected_patches(), &taper());
+
+    let (area, provenance) = clamp.lifted_area().expect(
+        "a ramp path ran, so the swath is MEASURED — `None` here would \
+                 mean no path was built at all",
+    );
+    println!(
+        "C8 ramp swath: {:.3} mm² over {} lifted of {} points, worst lift {:.3} mm [{}]",
+        area.mm2(),
+        clamp.clamped_points,
+        clamp.ramp_points,
+        clamp.max_lift_mm,
+        provenance.describe()
+    );
+
+    assert!(
+        clamp.clamped_points > 0,
+        "non-vacuity: this fixture must actually clamp, or the area proves nothing"
+    );
+    assert!(
+        area.mm2() > 0.0,
+        "points were lifted, so the swath must have real extent: {}",
+        area.mm2()
+    );
+
+    // The provenance must NAME its domain and stage, and must not be
+    // mistakable for the ring-cascade residual it sits beside in
+    // `ToolpathStats`. M1's non-negotiable rule 3.
+    let described = provenance.describe();
+    assert!(
+        described.contains("ramp-finish reach-clamp swath"),
+        "the stage must be this measure's own, not borrowed: {described}"
+    );
+    assert!(
+        described.to_lowercase().contains("cusp"),
+        "the resolution note must say what width the swath assumed — the \
+         ENVELOPE would be the shank on a tapered tool, three times too wide \
+         (C3): {described}"
+    );
+    assert_ne!(
+        provenance,
+        rs_cam_core::scallop::ScallopReport::PROVENANCE,
+        "a path swath is not a ring-cascade residual; the two must never be \
+         summed or ratio'd"
+    );
+
+    // Sanity: the swath cannot exceed the whole fixture footprint by more
+    // than the overlap the note admits to. A wildly larger number would mean
+    // the width or the segment sum is wrong, not that more was left.
+    assert!(
+        area.mm2() < 20_000.0,
+        "swath area is implausible for a 16x16 mm fixture: {}",
+        area.mm2()
+    );
+}
+
+/// The diagnostic must CARRY the area, not just hold it. A channel nobody
+/// prints is the failure mode this whole programme keeps re-learning.
+#[test]
+fn the_reported_magnitudes_now_include_the_area() {
+    let clamp = run(&disconnected_patches(), &taper());
+    let diags = diagnostics(Some(clamp));
+    assert_eq!(diags.len(), 1);
+    let message = &diags[0].message;
+    assert!(
+        message.contains("mm² of ramp swath"),
+        "the diagnostic must state the extent: {message}"
+    );
+    assert!(
+        message.contains("ramp-finish reach-clamp swath"),
+        "…with its provenance, so nobody compares it to a ring residual: {message}"
+    );
 }

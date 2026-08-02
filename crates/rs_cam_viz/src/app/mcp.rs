@@ -1133,6 +1133,7 @@ impl super::RsCamApp {
             // toolpath has no other way to see.
             dropped_band: result.stats.dropped_band.as_deref().copied(),
             clipped_band: result.stats.clipped_band.as_deref().copied(),
+            ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
             tip_float: result.stats.tip_float,
         };
 

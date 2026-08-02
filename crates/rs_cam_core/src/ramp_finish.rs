@@ -122,9 +122,45 @@ pub struct RampReachClamp {
     /// The Z ladder's bottom after the clamp — the deepest tool-centre Z the
     /// surface says this cutter can hold anywhere on this model.
     pub holdable_bottom_z_mm: f64,
+    /// C8: XY-projected area (mm²) of ramp path the clamp LIFTED — the
+    /// footprint of the standing material this operation knowingly leaves.
+    ///
+    /// `None` = **not measured**: no ramp path was built, so there was
+    /// nothing to clamp. `Some(0.0)` = a ramp ran and nothing was lifted.
+    /// The A/M9 three-valued contract (`MEASUREMENT_DOMAINS.md` X-19),
+    /// applied to a third measure — before C8 the only magnitude here was
+    /// [`Self::max_lift_mm`], a single worst-case DEPTH with no extent, so
+    /// "5 mm deep" could mean one stray point or half the part and nothing
+    /// said which.
+    ///
+    /// **Read [`Self::AREA_PROVENANCE`] before comparing this to anything.**
+    /// It is a PATH-SWATH area, not a ring-cascade residual and not a
+    /// dexel-top area: it must never be summed with, or divided by,
+    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    pub lifted_area_mm2: Option<f64>,
 }
 
 impl RampReachClamp {
+    /// What [`Self::lifted_area_mm2`] means (M1). Fixed for this measure, so
+    /// it is a constant rather than a settable field — a field could drift
+    /// from the code that fills it, and this number's whole failure mode is
+    /// being read as something it is not.
+    ///
+    /// Follows [`crate::scallop::ScallopReport::PROVENANCE`]'s shape and
+    /// deliberately NOT its content: that one is a ring-cascade residual
+    /// measured from polygons, this one is the swath a PATH sweeps.
+    pub const AREA_PROVENANCE: crate::measurement::MeasurementProvenance =
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RampReachClampSwath,
+        )
+        .with_resolution_note(
+            "ramp-path swath: XY segment length x the cutter's CUSP diameter, \
+             summed over segments with a lifted endpoint (exact path \
+             geometry, no grid; overlapping ramp passes are NOT deduplicated, \
+             so treat it as an upper bound)",
+        );
+
     /// True when the clamp changed nothing: the ladder bottom was already
     /// holdable and no ramp point was lifted.
     #[must_use]
@@ -133,11 +169,37 @@ impl RampReachClamp {
             && (self.requested_bottom_z_mm - self.holdable_bottom_z_mm).abs() <= 1e-9
     }
 
+    /// [`Self::lifted_area_mm2`] in the newtype that refuses cross-domain
+    /// division (M1 slice 2), with its contract attached. `None` when
+    /// nothing measured it — the value and its provenance travel together
+    /// or not at all.
+    #[must_use]
+    pub fn lifted_area(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.lifted_area_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                Self::AREA_PROVENANCE,
+            )
+        })
+    }
+
     fn record_lift(&mut self, lift_mm: f64) {
         self.clamped_points += 1;
         if lift_mm > self.max_lift_mm {
             self.max_lift_mm = lift_mm;
         }
+    }
+
+    /// Turn "not measured" into "measured", then accumulate. Called once per
+    /// ramp path, including when that path was lifted nowhere — which is what
+    /// keeps a measured zero distinct from an absent measurement.
+    fn record_lifted_area(&mut self, area_mm2: f64) {
+        self.lifted_area_mm2 = Some(self.lifted_area_mm2.unwrap_or(0.0) + area_mm2);
     }
 }
 
@@ -655,15 +717,44 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
             // it now rides, and dropping it would replace a conservative pass
             // with a retract/replunge the operator never asked for. What is
             // NOT removed is the material below it — that is the finding.
-            for pt in &mut ramp_path {
+            // C8: which points were lifted, so the AREA the clamp leaves can
+            // be summed below. A worst-case lift DEPTH with no extent could
+            // mean one stray point or half the part, and nothing said which.
+            let mut lifted: Vec<bool> = vec![false; ramp_path.len()];
+            for (i, pt) in ramp_path.iter_mut().enumerate() {
                 let contact =
                     crate::dropcutter::point_drop_cutter(pt.x, pt.y, mesh, index, cutter).z;
                 let floor = contact.max(bbox.min.z) + params.stock_to_leave;
                 if pt.z < floor {
                     reach_clamp.record_lift(floor - pt.z);
                     pt.z = floor;
+                    if let Some(flag) = lifted.get_mut(i) {
+                        *flag = true;
+                    }
                 }
             }
+            // Swath area: a segment counts when EITHER endpoint was lifted —
+            // the material under a segment between a held point and a lifted
+            // one is left standing too, and attributing it to neither would
+            // under-report by construction. Width is the cutter's CUSP
+            // diameter, the tool scale this stack sizes finishing passes by;
+            // the envelope would be the SHANK on a tapered tool and three
+            // times too wide (C3). Recorded even when nothing was lifted, so
+            // a measured zero stays distinct from "not measured".
+            let swath_width = 2.0 * cutter.cusp_radius_mm();
+            let mut lifted_area = 0.0_f64;
+            for (w, flags) in ramp_path.windows(2).zip(lifted.windows(2)) {
+                let touches_lift = flags.first().copied().unwrap_or(false)
+                    || flags.get(1).copied().unwrap_or(false);
+                if !touches_lift {
+                    continue;
+                }
+                let (Some(a), Some(b)) = (w.first(), w.get(1)) else {
+                    continue;
+                };
+                lifted_area += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt() * swath_width;
+            }
+            reach_clamp.record_lifted_area(lifted_area);
             reach_clamp.ramp_points += ramp_path.len();
 
             // Apply slope confinement and/or the machining-boundary regions

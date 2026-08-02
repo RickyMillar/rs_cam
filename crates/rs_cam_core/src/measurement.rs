@@ -121,6 +121,13 @@ pub enum MeasurementStage {
     /// [`Self::RingCascadeResidual`] a simulation cannot reproduce it — the
     /// toolpath never attempts to cut the material in question.
     CentrelineDropSolve,
+    /// Measured at generation from the ramp-finish reach clamp: the XY swath
+    /// of ramp path whose commanded Z the cutter could not hold, so it was
+    /// RAISED and the material below it left standing (C8). Like
+    /// [`Self::RingCascadeResidual`] and [`Self::CentrelineDropSolve`] a
+    /// simulation cannot reproduce it — the emitted path is exactly what a
+    /// simulation would execute; the residue is what nothing ever asked for.
+    RampReachClampSwath,
     /// Measured by the stock simulation.
     Simulation,
     /// Measured on the emitted toolpath, with no reference to stock.
@@ -142,6 +149,7 @@ impl MeasurementStage {
             Self::RestFieldMask => "measured on the rest-depth mask",
             Self::RingCascadeResidual => "measured at generation (ring cascade residual)",
             Self::CentrelineDropSolve => "measured at generation (centreline drop-cutter solve)",
+            Self::RampReachClampSwath => "measured at generation (ramp-finish reach-clamp swath)",
             Self::Simulation => "measured in simulation",
             Self::Emission => "measured on the emitted toolpath",
         }
