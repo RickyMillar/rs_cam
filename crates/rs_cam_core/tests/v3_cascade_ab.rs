@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::{CreaseReference, UnifiedFinishConfig};
+use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::dressup::AirBridgePolicy;
 use rs_cam_core::session::{ProjectSession, SessionError, SimulationOptions};
 
@@ -1047,7 +1047,10 @@ fn op_b_config(
         spindle_rpm: Some(21000),
         pencil_claims,
         min_rest_depth_mm: 0.022,
-        claims_reference: CreaseReference::MachinedStock,
+        // A/M6: the DIAL type is now `ClaimsReference` (three-valued);
+        // `MachinedStock` keeps its exact pre-A/M6 meaning — pinned, not
+        // derived — so this arm is unchanged.
+        claims_reference: ClaimsReference::MachinedStock,
         territory_clip: true,
         intra_region_hookup_mm,
         crease_hookup_mm,

@@ -250,6 +250,58 @@ pub struct ToolpathStats {
     /// — it changes emitted geometry — but nothing downstream branches on
     /// this record.
     pub ramp_reach_clamp: Option<Box<crate::ramp_finish::RampReachClamp>>,
+    /// A/M6: which rest reference this operation's crease/pencil claims
+    /// pipeline ran against, and whether that was pinned or derived.
+    ///
+    /// `None` = **the claims pipeline did not run**, so no reference was
+    /// resolved. That is every operation except a `UnifiedFinish` with
+    /// `pencil_claims = true` — including a `UnifiedFinish` with the dial at
+    /// its default, where `claims_reference` is inert and reporting it would
+    /// be reporting a decision nothing acted on.
+    ///
+    /// NOT boxed, unlike its neighbours: the payload is one fieldless enum
+    /// plus a `bool`, so a `Box` would cost a pointer to save nothing.
+    ///
+    /// Report-only: no gate consumes it. The *resolution* is not report-only
+    /// — it decides which field the detector reads — but nothing downstream
+    /// branches on this record.
+    pub claims_reference: Option<ClaimsReferenceFinding>,
+}
+
+/// Which rest reference a claims pipeline resolved to, and under what
+/// conditions (A/M6).
+///
+/// The finding exists because the resolution is invisible everywhere else:
+/// `claims_reference` is a three-valued dial whose `auto` setting means
+/// "decide from context", and the context — whether a simulated prior stock
+/// is in scope — is not a field of any config. Before A/M6 the only trace of
+/// the decision was a `tracing::warn!` on one of the six outcomes, in a
+/// process that usually installs no subscriber.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimsReferenceFinding {
+    /// What the dial said, what was used, and whether a machined prior was
+    /// in scope — see [`crate::unified_finish::ClaimsReferenceResolution`].
+    pub resolution: crate::unified_finish::ClaimsReferenceResolution,
+    /// The operation also asked for S4 rest-territory confinement
+    /// (`territory_clip`), which only runs under a machined-stock reference.
+    /// When this is `true` and the resolution is a self-probe one, the
+    /// confinement was SKIPPED — the difference between a rest pass and an
+    /// all-over pass.
+    pub territory_clip_requested: bool,
+}
+
+impl ClaimsReferenceFinding {
+    /// `true` when the operator asked for rest-territory confinement and the
+    /// resolved reference cannot deliver it, so the operation quietly became
+    /// an all-over pass.
+    #[must_use]
+    pub const fn territory_clip_skipped(&self) -> bool {
+        self.territory_clip_requested
+            && matches!(
+                self.resolution.reference(),
+                crate::unified_finish::CreaseReference::SelfProbe
+            )
+    }
 }
 
 /// A user-facing dial that a project still sets but the code no longer

@@ -789,6 +789,8 @@ pub(super) fn run_compute_with_phase_tracker(
             stats.derived_stepover = generation_findings.derived_stepover.map(Box::new);
             // PR-8b: the ramp reach clamp, same parallel-copy rule.
             stats.ramp_reach_clamp = generation_findings.ramp_reach_clamp.map(Box::new);
+            // A/M6: the resolved claims reference, same parallel-copy rule.
+            stats.claims_reference = generation_findings.claims_reference;
             stats
         };
 

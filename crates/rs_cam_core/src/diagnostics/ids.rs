@@ -84,6 +84,12 @@ pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// number that used to be used there. Report-only: it says which number is
 /// steering a fan the operator cannot otherwise see.
 pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover";
+/// A/M6: which rest reference a claims/rest pipeline resolved to, and
+/// whether that was pinned or derived from what was in scope. The dial is
+/// three-valued (`auto` derives), so the resolved answer appears in no
+/// config field; and picking the analytic reference over a real machined
+/// prior makes a rest pass re-cut the whole part while looking plausible.
+pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";

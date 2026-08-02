@@ -10,7 +10,7 @@ pub use crate::ramp_finish::CutDirection;
 pub use crate::scallop::ScallopDirection;
 pub use crate::spiral_finish::SpiralDirection;
 pub use crate::trace::TraceCompensation;
-pub use crate::unified_finish::CreaseReference;
+pub use crate::unified_finish::{ClaimsReference, CreaseReference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -914,18 +914,26 @@ pub struct UnifiedFinishConfig {
     /// module doc for the full account). Default 0.02mm.
     #[serde(default = "default_unified_finish_min_rest_depth_mm")]
     pub min_rest_depth_mm: f64,
-    /// Process-proof build-list item 3
-    /// (`unified_finish::CreaseReference` doc): which reference the crease
-    /// detector runs against. `SelfProbe` (default) is the S1 behavior,
-    /// byte-identical. `MachinedStock` swaps in the machined prior stock
-    /// instead — sanctioned ONLY when that stock is FINISH-QUALITY (a
-    /// cascade's Op B following Op A's own ball all-over pass); on a
-    /// rough→finish chain it reads roughing terraces as a phantom
-    /// dendritic crease network (the S1 lesson). Falls back to
-    /// `SelfProbe` with a warning when no machined stock is in scope
-    /// (`pencil_claims = true` with no `FromRemainingStock` chain).
+    /// Which reference the crease detector runs against — a three-valued
+    /// dial since A/M6 (`unified_finish::ClaimsReference` doc), resolved to
+    /// the two-valued `CreaseReference` at generation time by
+    /// `ClaimsReferenceResolution::resolve` and recorded in
+    /// [`crate::compute::config::ClaimsReferenceFinding`].
+    ///
+    /// `Auto` (**the default since A/M6**) uses the machined prior stock when
+    /// one is in scope and the analytic self-probe when none is. `SelfProbe`
+    /// and `MachinedStock` pin the choice; both keep their exact pre-A/M6
+    /// wire names and meanings, so no existing project file changes
+    /// behaviour. Only an ABSENT field is affected, and only for an
+    /// operation running `pencil_claims` over remaining stock — which is the
+    /// case A/M6 measured at −88.7% cutting once corrected.
+    ///
+    /// Pin `SelfProbe` on a rough→finish chain: a stock-referenced detector
+    /// reads roughing terraces as a phantom dendritic crease network (the S1
+    /// lesson). `Auto` cannot see the difference — it keys on the presence of
+    /// a prior stock, not on its quality — and says so in its finding.
     #[serde(default = "default_unified_finish_claims_reference")]
-    pub claims_reference: CreaseReference,
+    pub claims_reference: ClaimsReference,
     /// S4 rest-territory CONFINEMENT (`unified_finish::ClaimsConfig::
     /// territory_clip` doc, process-proof build-list, `planning/
     /// unified_v3_design.md` §0.a / §2.1 step 4): AND a per-cell rest
@@ -1011,8 +1019,25 @@ fn default_unified_finish_min_rest_depth_mm() -> f64 {
     0.02
 }
 
-fn default_unified_finish_claims_reference() -> CreaseReference {
-    CreaseReference::SelfProbe
+/// A/M6: **`Auto`, not `SelfProbe`.**
+///
+/// The decision, and why it is not "keep the old default and warn":
+/// `self_probe` is the right reference for a first finish op and the wrong
+/// one for a rest op in a cascade, so the correct value is contextual and a
+/// fixed default is wrong half the time by construction. Deriving it makes
+/// the common case right; the two explicit variants remain for the case the
+/// derivation cannot see (a rough prior).
+///
+/// The blast radius is deliberately small. `pencil_claims` defaults `false`,
+/// and with it off this dial is inert — no claims pipeline runs at all — so
+/// the only projects whose behaviour can move are those that turned claims
+/// on AND left `claims_reference` unwritten AND cut remaining stock. Any
+/// project file that names a value keeps it (`ClaimsReference` doc: the two
+/// pre-A/M6 wire names are unchanged), and every resolution is recorded in
+/// [`crate::compute::config::ClaimsReferenceFinding`], so a behaviour change
+/// arrives with its own explanation rather than silently.
+fn default_unified_finish_claims_reference() -> ClaimsReference {
+    ClaimsReference::Auto
 }
 
 fn default_unified_finish_territory_clip() -> bool {
@@ -2040,23 +2065,78 @@ mod tests {
         assert_eq!(from_wire, ClearingStrategy::AgentSearch);
     }
 
-    /// `UnifiedFinishConfig::claims_reference` must round-trip both
-    /// variants with the snake_case wire format, and legacy project files
-    /// that predate this field (and its S1/S2 claims-pipeline siblings)
-    /// must deserialize to `CreaseReference::SelfProbe` — the byte-
-    /// identical default (process-proof build-list item 3).
+    /// The A/M6 deserialization-compatibility matrix, all three cells
+    /// pinned in one place.
+    ///
+    /// | project file says | must mean |
+    /// |---|---|
+    /// | `"self_probe"` | `ClaimsReference::SelfProbe` — pinned, unchanged |
+    /// | `"machined_stock"` | `ClaimsReference::MachinedStock` — pinned, unchanged |
+    /// | *field absent* | `ClaimsReference::Auto` — the A/M6 default flip |
+    ///
+    /// Binding, because the default is the ONLY thing A/M6 was allowed to
+    /// move: an operator who wrote a value into a project file keeps it to
+    /// the letter, and the wire names are the pre-A/M6 ones so no migration
+    /// is needed. `CreaseReference` — now the RESOLVED type rather than the
+    /// config type — keeps its own two-variant wire format because it is
+    /// still what `ClaimsConfig` carries.
     #[test]
     fn unified_finish_claims_reference_serde_round_trip_and_backcompat() {
+        // Explicit values: wire name in, same meaning out, for all three.
+        for (wire, expected) in [
+            ("\"auto\"", ClaimsReference::Auto),
+            ("\"self_probe\"", ClaimsReference::SelfProbe),
+            ("\"machined_stock\"", ClaimsReference::MachinedStock),
+        ] {
+            let parsed: ClaimsReference = serde_json::from_str(wire).unwrap();
+            assert_eq!(parsed, expected, "wire {wire} must parse to {expected:?}");
+            assert_eq!(
+                serde_json::to_string(&expected).unwrap(),
+                wire,
+                "{expected:?} must serialize back to {wire}"
+            );
+        }
+
+        // The resolved-side enum keeps its own two-valued wire format —
+        // `ClaimsConfig::crease_reference` still carries it.
         for variant in [CreaseReference::SelfProbe, CreaseReference::MachinedStock] {
             let json = serde_json::to_string(&variant).unwrap();
             let round_trip: CreaseReference = serde_json::from_str(&json).unwrap();
             assert_eq!(round_trip, variant);
         }
-        let json = serde_json::to_string(&CreaseReference::MachinedStock).unwrap();
-        assert_eq!(json, "\"machined_stock\"");
+        assert_eq!(
+            serde_json::to_string(&CreaseReference::MachinedStock).unwrap(),
+            "\"machined_stock\""
+        );
 
-        // Legacy payload predating `claims_reference` and its S1/S2
-        // siblings entirely — must still deserialize, not error.
+        // Cell 1: a project file that PINS `self_probe` keeps it. This is the
+        // A/M6 footgun value, and it stays honoured — the fix reports it, it
+        // does not overrule it.
+        let pinned_self_probe = r#"{
+            "steep_threshold_deg": 45.0,
+            "waterline_threshold_deg": 75.0,
+            "overlap_mm": 2.0,
+            "scallop_height": 0.1,
+            "tolerance": 0.05,
+            "raster_stepover": 1.0,
+            "z_step": 1.0,
+            "sampling": 0.5,
+            "stock_to_leave": 0.0,
+            "feed_rate": 1000.0,
+            "plunge_rate": 500.0,
+            "claims_reference": "self_probe"
+        }"#;
+        let cfg: UnifiedFinishConfig = serde_json::from_str(pinned_self_probe).unwrap();
+        assert_eq!(cfg.claims_reference, ClaimsReference::SelfProbe);
+
+        // Cell 2: a project file that PINS `machined_stock` keeps it.
+        let pinned_machined = pinned_self_probe.replace("self_probe", "machined_stock");
+        let cfg: UnifiedFinishConfig = serde_json::from_str(&pinned_machined).unwrap();
+        assert_eq!(cfg.claims_reference, ClaimsReference::MachinedStock);
+
+        // Cell 3: legacy payload predating `claims_reference` and its S1/S2
+        // siblings entirely — must still deserialize, and the ABSENT field is
+        // the one case A/M6 moved: `Auto`, not `SelfProbe`.
         let legacy = r#"{
             "steep_threshold_deg": 45.0,
             "waterline_threshold_deg": 75.0,
@@ -2071,11 +2151,84 @@ mod tests {
             "plunge_rate": 500.0
         }"#;
         let cfg: UnifiedFinishConfig = serde_json::from_str(legacy).unwrap();
-        assert_eq!(cfg.claims_reference, CreaseReference::SelfProbe);
+        assert_eq!(cfg.claims_reference, ClaimsReference::Auto);
+        // …and the flip is INERT on this payload, because claims are off. A
+        // legacy project only sees the new default act if it also turned
+        // `pencil_claims` on.
         assert!(!cfg.pencil_claims);
         // S4 (`territory_clip`) postdates this legacy payload too — must
         // default off, same backcompat contract as its S1/S2 siblings.
         assert!(!cfg.territory_clip);
+    }
+
+    /// A/M6: the resolution table, exhaustively. Six inputs, six outcomes,
+    /// and the three properties every consumer reads off them.
+    #[test]
+    fn claims_reference_resolution_is_total_and_names_its_provenance() {
+        use crate::unified_finish::ClaimsReferenceResolution as R;
+
+        let cases = [
+            (ClaimsReference::Auto, true, R::DerivedMachinedStock),
+            (ClaimsReference::Auto, false, R::DerivedSelfProbeNoPrior),
+            (
+                ClaimsReference::SelfProbe,
+                true,
+                R::ExplicitSelfProbeOverridingPrior,
+            ),
+            (
+                ClaimsReference::SelfProbe,
+                false,
+                R::ExplicitSelfProbeNoPrior,
+            ),
+            (
+                ClaimsReference::MachinedStock,
+                true,
+                R::ExplicitMachinedStock,
+            ),
+            (
+                ClaimsReference::MachinedStock,
+                false,
+                R::ExplicitMachinedStockWithoutPrior,
+            ),
+        ];
+        for (setting, prior, expected) in cases {
+            let got = R::resolve(setting, prior);
+            assert_eq!(got, expected, "resolve({setting:?}, {prior})");
+            // Provenance must round-trip the inputs it was built from.
+            assert_eq!(got.setting(), setting);
+            assert_eq!(got.prior_stock_in_scope(), prior);
+            assert_eq!(got.is_derived(), setting == ClaimsReference::Auto);
+        }
+
+        // Exactly the two outcomes that must be loud: the footgun, and a
+        // `machined_stock` dial that could not be honoured.
+        assert!(R::ExplicitSelfProbeOverridingPrior.needs_attention());
+        assert!(R::ExplicitMachinedStockWithoutPrior.needs_attention());
+        for quiet in [
+            R::DerivedMachinedStock,
+            R::DerivedSelfProbeNoPrior,
+            R::ExplicitSelfProbeNoPrior,
+            R::ExplicitMachinedStock,
+        ] {
+            assert!(!quiet.needs_attention(), "{quiet:?} must not be loud");
+        }
+
+        // Only a stock IN SCOPE can produce a machined-stock reference —
+        // nothing may degrade silently into claiming one it does not have.
+        for r in [
+            R::DerivedMachinedStock,
+            R::DerivedSelfProbeNoPrior,
+            R::ExplicitSelfProbeNoPrior,
+            R::ExplicitSelfProbeOverridingPrior,
+            R::ExplicitMachinedStock,
+            R::ExplicitMachinedStockWithoutPrior,
+        ] {
+            if r.reference() == CreaseReference::MachinedStock {
+                assert!(r.prior_stock_in_scope(), "{r:?} claims stock it lacks");
+            }
+            assert!(!r.label().is_empty());
+            assert!(!r.why().is_empty());
+        }
     }
 
     /// Drill selection fields must round-trip, and legacy TOML/JSON that

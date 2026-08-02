@@ -37,5 +37,7 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
         // PR-8b: same rule again — no ramp descent is visible from a move
         // list, so this helper can only honestly say "not measured".
         ramp_reach_clamp: None,
+        // A/M6: same rule — no claims pipeline is visible from a move list.
+        claims_reference: None,
     }
 }

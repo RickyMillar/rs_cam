@@ -41,7 +41,75 @@ pub fn diagnostics_from_generation(
     out.extend(deprecated_dial(toolpath_id, stats));
     out.extend(derived_stepover(toolpath_id, stats));
     out.extend(ramp_reach_clamp(toolpath_id, stats));
+    out.extend(claims_reference(toolpath_id, stats));
     out
+}
+
+/// A/M6: which rest reference the claims pipeline ran against.
+///
+/// Always emitted when a claims pipeline ran, and never otherwise. That is
+/// not the "a notice on every toolpath is a notice nobody reads" case the
+/// deprecated-dial rule guards against: claims run only on a `UnifiedFinish`
+/// whose `pencil_claims` dial is deliberately on, and when they do, WHICH
+/// field the detector read is the single largest lever on what the operation
+/// cuts — measured at −88.7% cutting on wanaka from that one choice. It is
+/// also visible nowhere else, because `auto` resolves against context that
+/// is not a config field.
+///
+/// `Caution` for the two outcomes that need action; `Info` otherwise.
+fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = no claims pipeline ran, so no reference was resolved. Not a
+    // claim of any kind (A/M9's rule).
+    let Some(f) = stats.claims_reference else {
+        return Vec::new();
+    };
+    let r = f.resolution;
+    let severity = if r.needs_attention() || f.territory_clip_skipped() {
+        Severity::Caution
+    } else {
+        Severity::Info
+    };
+    // The consequence, spelled out where it exists: `territory_clip` is the
+    // dial that turns this operation into a rest pass, and it only runs
+    // under a machined-stock reference. Skipping it silently is how a rest
+    // pass becomes an all-over pass that still calls itself a rest pass.
+    let clip_note = if f.territory_clip_skipped() {
+        " Rest-territory confinement (`territory_clip`) was requested and \
+         SKIPPED — it needs the machined-stock reference — so this operation \
+         generated over its FULL territory, not over rest islands."
+    } else {
+        ""
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::CONFIG_CLAIMS_REFERENCE),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        // Read off the resolved dial and what was in scope at generation
+        // time — nothing inferred, and no simulation can see it.
+        confidence: Confidence::Verified,
+        severity,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "Rest reference: {used} ({verb} — `{label}`). {why}{clip_note} \
+             [Report-only — no gate.]",
+            used = match r.reference() {
+                crate::unified_finish::CreaseReference::MachinedStock => "machined prior stock",
+                crate::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+            },
+            verb = if r.is_derived() {
+                "derived"
+            } else {
+                "pinned by claims_reference"
+            },
+            label = r.label(),
+            why = r.why(),
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// PR-8b: a ramp descent the reach clamp had to raise.

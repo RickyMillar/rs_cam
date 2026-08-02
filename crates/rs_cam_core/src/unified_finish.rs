@@ -255,6 +255,237 @@ pub enum CreaseReference {
     MachinedStock,
 }
 
+/// The `claims_reference` DIAL as an operator sets it — one variant wider
+/// than [`CreaseReference`], which is what the dial RESOLVES to (A/M6).
+///
+/// The two types are deliberately distinct. `CreaseReference` answers *which
+/// field did the detector actually run against*, and every consumer inside
+/// the pipeline needs an answer with no third option. `ClaimsReference`
+/// answers *what did the operator ask for*, and the whole point of
+/// [`Auto`](Self::Auto) is that it asks for a DERIVATION rather than for a
+/// field. Collapsing them would put "decide later" into the type a detector
+/// has to switch on.
+///
+/// **Serde compatibility is load-bearing.** The two pre-A/M6 names are
+/// unchanged, so a project file that says `self_probe` or `machined_stock`
+/// keeps its explicit meaning to the letter. Only the ABSENT field changes
+/// meaning: it used to default to `SelfProbe` and now defaults to `Auto`
+/// (`compute::operation_configs::default_unified_finish_claims_reference`),
+/// and every resolution — derived or explicit — is recorded in
+/// [`crate::compute::config::ClaimsReferenceFinding`] so the change is
+/// visible rather than silent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimsReference {
+    /// DERIVE it from what is in scope. A machined prior stock — this op
+    /// cuts `StockSource::FromRemainingStock` and the simulated snapshot
+    /// exists, i.e. `ClaimsConfig::territory_stock` is `Some` — resolves to
+    /// [`CreaseReference::MachinedStock`]. Nothing in scope resolves to
+    /// [`CreaseReference::SelfProbe`], which is the honest answer for a
+    /// FIRST finish op: there is no machined stock to reference.
+    ///
+    /// A/M6 measured the cost of getting this wrong on wanaka, single
+    /// variable, 0.1 mm sim, after a full same-tool finish: 46 366 mm of
+    /// cutting under `self_probe` against 5 259 mm under `machined_stock`
+    /// (−88.7%). The analytic field names exactly what the tool cannot
+    /// reach, so a same-tool rest op referenced against it re-cuts the whole
+    /// part.
+    ///
+    /// **Known limitation, stated rather than hidden:** this derivation
+    /// keys on the PRESENCE of a prior stock, not on its QUALITY. On a
+    /// rough→finish chain the S1 lesson still applies (roughing terraces
+    /// read as a phantom dendritic crease network), and the operator should
+    /// pin [`SelfProbe`](Self::SelfProbe) explicitly. The recorded finding
+    /// says so.
+    #[default]
+    Auto,
+    /// Pin the analytic self-probe, whatever is in scope. Honoured verbatim
+    /// — and reported when a machined prior exists, because that
+    /// combination is the A/M6 footgun and is almost never deliberate.
+    SelfProbe,
+    /// Pin the machined prior stock. Honoured when one is in scope; when
+    /// none is, the detector has nothing to reference and degrades to the
+    /// analytic self-probe, which is reported rather than warned into a
+    /// log nobody is subscribed to.
+    MachinedStock,
+}
+
+/// What [`ClaimsReference`] resolved to, and WHY — the provenance half of
+/// A/M6.
+///
+/// Fieldless on purpose: the three facts a reader needs (what was asked for,
+/// what was used, whether a machined prior was in scope) are exactly one of
+/// six combinations, so the variant IS the record. This mirrors
+/// [`crate::finish_setup::CellSource`], which carries the same kind of
+/// "which rule produced this number" provenance for the finish grid.
+///
+/// [`Self::resolve`] is the ONE place the mapping lives, so a new
+/// [`ClaimsReference`] variant cannot be added without deciding what it
+/// claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimsReferenceResolution {
+    /// `Auto`, machined prior stock in scope → [`CreaseReference::MachinedStock`].
+    /// The A/M6 fix, doing its job.
+    DerivedMachinedStock,
+    /// `Auto`, nothing in scope → [`CreaseReference::SelfProbe`]. A first
+    /// finish op with no prior; the analytic field is the only one there is.
+    DerivedSelfProbeNoPrior,
+    /// Operator pinned `self_probe` and no machined prior was in scope.
+    /// Nothing was available to use instead — the pin cost nothing.
+    ExplicitSelfProbeNoPrior,
+    /// Operator pinned `self_probe` **while a machined prior stock was in
+    /// scope**. Honoured because it was explicit; reported because it is the
+    /// A/M6 footgun in its exact shape.
+    ExplicitSelfProbeOverridingPrior,
+    /// Operator pinned `machined_stock` and one was in scope.
+    ExplicitMachinedStock,
+    /// Operator pinned `machined_stock` and NONE was in scope. Degraded to
+    /// the analytic self-probe: the op is not referencing what its dial
+    /// says it is.
+    ExplicitMachinedStockWithoutPrior,
+}
+
+impl ClaimsReferenceResolution {
+    /// Resolve the dial against what is in scope. The only mapping site.
+    ///
+    /// `prior_stock_in_scope` is `ClaimsConfig::territory_stock.is_some()`
+    /// AFTER the caller's XY-frame guard — a stock that does not overlap
+    /// this model in XY is not a reference, it is a different part.
+    #[must_use]
+    pub const fn resolve(setting: ClaimsReference, prior_stock_in_scope: bool) -> Self {
+        match (setting, prior_stock_in_scope) {
+            (ClaimsReference::Auto, true) => Self::DerivedMachinedStock,
+            (ClaimsReference::Auto, false) => Self::DerivedSelfProbeNoPrior,
+            (ClaimsReference::SelfProbe, true) => Self::ExplicitSelfProbeOverridingPrior,
+            (ClaimsReference::SelfProbe, false) => Self::ExplicitSelfProbeNoPrior,
+            (ClaimsReference::MachinedStock, true) => Self::ExplicitMachinedStock,
+            (ClaimsReference::MachinedStock, false) => Self::ExplicitMachinedStockWithoutPrior,
+        }
+    }
+
+    /// The field the detector actually runs against.
+    #[must_use]
+    pub const fn reference(self) -> CreaseReference {
+        match self {
+            Self::DerivedMachinedStock | Self::ExplicitMachinedStock => {
+                CreaseReference::MachinedStock
+            }
+            Self::DerivedSelfProbeNoPrior
+            | Self::ExplicitSelfProbeNoPrior
+            | Self::ExplicitSelfProbeOverridingPrior
+            | Self::ExplicitMachinedStockWithoutPrior => CreaseReference::SelfProbe,
+        }
+    }
+
+    /// What the operator's dial said.
+    #[must_use]
+    pub const fn setting(self) -> ClaimsReference {
+        match self {
+            Self::DerivedMachinedStock | Self::DerivedSelfProbeNoPrior => ClaimsReference::Auto,
+            Self::ExplicitSelfProbeNoPrior | Self::ExplicitSelfProbeOverridingPrior => {
+                ClaimsReference::SelfProbe
+            }
+            Self::ExplicitMachinedStock | Self::ExplicitMachinedStockWithoutPrior => {
+                ClaimsReference::MachinedStock
+            }
+        }
+    }
+
+    /// Whether a machined prior stock was in scope at resolution time.
+    #[must_use]
+    pub const fn prior_stock_in_scope(self) -> bool {
+        match self {
+            Self::DerivedMachinedStock
+            | Self::ExplicitSelfProbeOverridingPrior
+            | Self::ExplicitMachinedStock => true,
+            Self::DerivedSelfProbeNoPrior
+            | Self::ExplicitSelfProbeNoPrior
+            | Self::ExplicitMachinedStockWithoutPrior => false,
+        }
+    }
+
+    /// `true` when the reference was DERIVED rather than pinned.
+    #[must_use]
+    pub const fn is_derived(self) -> bool {
+        matches!(
+            self,
+            Self::DerivedMachinedStock | Self::DerivedSelfProbeNoPrior
+        )
+    }
+
+    /// `true` when the operator should be told loudly: either the A/M6
+    /// footgun (explicit `self_probe` over a real machined prior) or a
+    /// `machined_stock` dial that could not be honoured.
+    #[must_use]
+    pub const fn needs_attention(self) -> bool {
+        matches!(
+            self,
+            Self::ExplicitSelfProbeOverridingPrior | Self::ExplicitMachinedStockWithoutPrior
+        )
+    }
+
+    /// Stable machine-readable token — MCP field values, findings, tests.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DerivedMachinedStock => "derived_machined_stock",
+            Self::DerivedSelfProbeNoPrior => "derived_self_probe_no_prior",
+            Self::ExplicitSelfProbeNoPrior => "explicit_self_probe_no_prior",
+            Self::ExplicitSelfProbeOverridingPrior => "explicit_self_probe_overriding_prior",
+            Self::ExplicitMachinedStock => "explicit_machined_stock",
+            Self::ExplicitMachinedStockWithoutPrior => "explicit_machined_stock_without_prior",
+        }
+    }
+
+    /// One operator-facing sentence saying why this reference was used, and
+    /// what to do when it is the wrong one.
+    #[must_use]
+    pub const fn why(self) -> &'static str {
+        match self {
+            Self::DerivedMachinedStock => {
+                "Auto: this operation cuts remaining stock and the simulated prior \
+                 snapshot is in scope, so rest is measured against the material a \
+                 previous pass actually left. If the previous pass was a ROUGHING \
+                 pass, pin claims_reference = self_probe instead — a stock-referenced \
+                 detector reads roughing terraces as phantom creases."
+            }
+            Self::DerivedSelfProbeNoPrior => {
+                "Auto: no machined prior stock is in scope (this operation cuts fresh \
+                 stock, or its prior snapshot does not overlap the model), so rest is \
+                 derived analytically from the design surface. That is the honest \
+                 reference for a FIRST finish pass. For a rest pass after another \
+                 finish with the same tool, set the stock source to remaining stock \
+                 so Auto can use the machined reference."
+            }
+            Self::ExplicitSelfProbeNoPrior => {
+                "Pinned to the analytic self-probe; no machined prior stock was in \
+                 scope, so nothing else was available anyway."
+            }
+            Self::ExplicitSelfProbeOverridingPrior => {
+                "Pinned to the analytic self-probe WHILE a machined prior stock is in \
+                 scope. The analytic field marks where this cutter cannot reach the \
+                 model — for a same-tool cascade that is precisely what the pass \
+                 cannot fix, so the operation re-cuts ground the previous pass already \
+                 finished (measured −88.7% cutting when corrected). Set \
+                 claims_reference to auto or machined_stock unless the prior pass was \
+                 a ROUGHING pass."
+            }
+            Self::ExplicitMachinedStock => {
+                "Pinned to the machined prior stock, which is in scope. Rest is measured \
+                 against the material the previous pass actually left."
+            }
+            Self::ExplicitMachinedStockWithoutPrior => {
+                "Pinned to the machined prior stock, but NONE is in scope — the \
+                 detector degraded to the analytic self-probe. Set this operation's \
+                 stock source to remaining stock, then generate and simulate the \
+                 upstream operation so the snapshot exists (an operation waiting on \
+                 that snapshot reports AwaitingPriorStock and resolves itself once the \
+                 ladder is climbed)."
+            }
+        }
+    }
+}
+
 /// In-op pencil-claims pipeline inputs (v3 S1, `planning/unified_v3_design.md`
 /// §2.1). `claims: None` on [`unified_finish_toolpath_with_cancel`]
 /// reproduces the pre-v3 op exactly: no detector run, no crease claims, no
