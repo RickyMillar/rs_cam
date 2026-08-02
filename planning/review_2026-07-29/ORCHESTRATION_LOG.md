@@ -3028,3 +3028,147 @@ Still unexercised: down-wound faces differ by 2R between the two sampler
 families (§9.2 risk 3). Uniform on `stacked_shelf`, a 50 µm step on a real
 overhang, and nothing in this repo's fixtures has one. The switch moves
 production onto the correct side of it.
+
+---
+
+## C-SEQUENCE WAVE 9 (M4 research), 2026-08-02
+
+Addendum C's step 8: M4 "repair the scallop algorithm instead of stacking
+compensations" — **research phase only**. Oracle, candidate prototypes behind
+a strategy seam, the comparison harness, and the study. **No production path
+moved**: `ScallopStepoverPolicy::SHIPPED` is the only value any production
+entry point passes, PR-3's scallop fingerprints are unchanged, and step 8 of
+the sequencing checklist is deliberately NOT ticked — it completes when an
+implementation lands.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `ae5eed6` | `tests/common/scallop_oracle.rs` + `tests/scallop_oracle_validation_m4.rs` + the `common` module table | 3 files, +1537 / −0 |
+| 2 | `28503db` | `ScallopStepoverPolicy` + `RingSource` + `scallop_toolpath_research` in `scallop.rs`, new `scallop_isofield.rs`, `tests/scallop_candidates_m4.rs`, oracle `residual_map` / `tool_reach_floor` / parallel scoring | 6 files, +2099 / −61 |
+| 3 | *(this commit)* | `CHECKPOINT_C_EVIDENCE.md`, this entry | |
+
+Deliverable: `planning/review_2026-07-29/CHECKPOINT_C_EVIDENCE.md`.
+
+### The headline: the fingered culprit is not the culprit
+
+Checkpoint B's `max_rings` addendum closed with *"the fix is in
+`ring_stepover`, not in the budget."* Measured against an oracle validated on
+closed-form ground truth: **the fix is in neither.**
+
+`ring_stepover`'s min-across-ring costs up to 1.68× in stepover and up to 37%
+of the ring count — real time — but retiring it moves achieved cusp by ~0%
+(narrow ridge 231.7 → 231.0 µm, ribbon 564.2 → 539.4 µm). The overshoot is
+2.37× the dial on **flat ground** and 3.95× on a smooth **dome**, where the
+collapse ratio is 1.00× and 1.01× and the mechanism is doing nothing at all. A
+mechanism that is inactive cannot be the cause.
+
+The addendum's recommendation was reasonable on its evidence — it had ring
+counts and uncut area, and min-across-ring drives both. It did not have a cusp
+measurement that could be trusted on sloped ground. That is what phase A was
+for, and it is the second time in this programme that building the instrument
+first overturned the conclusion the previous wave was about to act on.
+
+### What the instrument found instead
+
+`scallop_math::variable_stepover`'s slope term is **inverted**. Rings are
+offset in XY, so on ground at slope θ two adjacent rings end up `d·sec θ`
+apart along the surface and the normal cusp is `R − √(R² − (d·sec θ/2)²)`.
+Holding the cusp requires scaling the XY stepover by **`cos θ`**.
+`variable_stepover` scales it by `1/√cos θ` — 1.24× too wide at 30°, 1.69× at
+45°, 2.84× at 60°, and cusp goes as `d²`.
+
+Measured against the oracle at 0/15/30/45/60°: the law holds to ≤4.5%, 0.36%
+at 45°. Asserted with a non-vacuity check that the shipped formula disagrees
+with it *in the opposite direction*.
+
+This also puts a retroactive caveat on Checkpoint B §3.1: `cusp/4` bringing
+achieved cusp "down to on-dial" is partly accidental. A finer grid raises the
+raw curvature estimate (`κ` ∝ `1/cell²`), which tightens the stepover and
+masks the loosening from the inverted slope term. Two errors partially
+cancelling is not a working dial.
+
+### The trap that makes the obvious fix worse than the bug
+
+Correcting the slope law **inside the cascade** is the worst arm in the study:
+194–211× the dial, 38–102 mm² of never-touched material, 67–146 mm² of
+`uncut_core`. Both arms report exactly 51 rings — `max_rings` — and the
+residual map shows a 6.4 mm square hole in the middle of the part.
+
+A correct law is *tighter*; `max_rings` is budgeted from the *flat-ground*
+stepover. **The stepover law and the ring budget are one problem, not two.**
+This is also the retroactive explanation for v3's "+92% time, 34× over-cut"
+naive cap raise, and for why no budget derived from a nominal stepover —
+including PR-8c's `ReachPolicyStepover` — could ever have worked.
+
+### The candidate that survives
+
+`scallop_isofield` (plan item 3): solve `|∇D| = 1/s(x,y)` from the region
+boundary by Godunov fast sweeping, take the integer level sets. No per-ring
+scalar, so both minima have nothing to reduce; no repeated offsetting, so the
+decimation compensation has nothing to contain; ring count is `⌊max D⌋`, known
+before a ring is emitted — M4's fix-sequence item 4, met by construction
+rather than by a better guess. Both ring sources feed the same lift, chord
+refinement and emission, so the comparison isolates placement.
+
+Iso-field + corrected law beats shipped on **every** fixture at comparable
+time: cusp 2.02–4.90× vs 2.37–11.58×, standing material 2.14–3.90 mm² vs
+5.64–19.87 mm², zero truncation at both resolutions.
+
+**And it unblocks Checkpoint B.** That ruling held scallop at
+`LegacyEnvelopeQuarter` because `cusp/4` left 19–33 mm² standing. The harness
+reproduces that figure exactly (narrow ridge, shipped, `cusp/4` → 19.32 mm²,
+bit-identical), then shows the rejection is a property of the **offset
+cascade, not the resolution**: under the iso-field, `cusp/4` gives zero uncut
+core everywhere, less standing material on four of five fixtures, and better
+cusp on four of five. On flat ground every arm reads exactly 1.00× the dial at
+`cusp/4`.
+
+### Two instrument saves worth recording
+
+**The terrain fixture cannot adjudicate this, and now says so with a number.**
+All ten arms land within 4 µm of each other on the 20 mm crop. The oracle
+gained a `tool_reach_floor` — the envelope of the cutter dropped at every
+reachable cell, i.e. what an infinitely dense path would still leave. It reads
+**p99 425.9 µm** against a best arm of 395.9 and a shipped arm of 470.6.
+Nearly the whole terrain residual is geometry no ring placement controls. The
+v3 campaign hit this same wall with this same fixture and diagnosed it in
+prose; it is now a column. Its own error is measured, not assumed: −28.6 →
+−6.4 → −0.0 µm as the fixture mesh refines 0.20 → 0.10 → 0.05 mm.
+
+**The diff maps drew never-reached cells the same black as off-model.** The
+first render collapsed "untouched" into `NaN` — reintroducing at the last step
+the exact confusion the oracle exists to prevent. Caught by looking at the
+picture before writing the verdict, which is the v3 standing rule and earned
+its keep again: reading `resid_flat_ground_A0.png` is what turned "2.37× on
+flat ground" from an anomaly into the corner-decimation finding.
+
+### Honest limits
+
+* `PolygonReduce` (min-across-polygons) is a **byte-identical no-op** on all
+  six fixtures — unfalsified, not exonerated. Needs a dendritic region-scoped
+  fixture.
+* No arm reaches the dial in absolute terms on sloped ground; §3.5 attributes
+  the remainder to placement quantisation but does not exhibit an arm closing
+  it.
+* The iso-field has a **localised 10× deeper gouge** on the grooved block
+  (−1115 vs −108.6 µm) even though its gouge *area* is 2.4–5.0 vs 12.3 mm².
+  Open risk, must be understood before it ships.
+* Continuous mode unmeasured; all timings are 16 mm fixtures at sub-second
+  scale, which does not establish a ranking on a real part.
+
+### Gates
+
+`cargo fmt --check` clean; `cargo clippy --workspace --all-targets -D
+warnings` zero. `--lib` 2213 passed with only the three known adaptive3d reds.
+62/62 on the ten scallop-adjacent integration binaries, including
+`finish_resolution_policy_pr3` (the scallop fingerprint pins) and
+`checkpoint_b_resolution_ab` (the previous wave's own harness). 56/56 param
+sweeps. 9/9 oracle validations, 3/3 candidate guards.
+
+**Checkpoint C is a human decision.** The evidence document closes with a
+four-option menu plus two sub-decisions; the recommendation is option 1 —
+adopt the iso-field ring source together with the corrected slope law and the
+removal of `max_rings`, as one change, behind an end-to-end COLUMNS A/B in the
+shape of the M3 ruling.
