@@ -1964,3 +1964,162 @@ deliberately did NOT fix, so nobody reads them as covered:
 - **`get_toolpath_params` and the other parameterised reads** are not in the
   snapshot set. Publishing every op's params every frame is not free and the
   gate did not ask for it; they still queue behind the frame loop.
+
+## C-SEQUENCE WAVE 5 (C6), 2026-08-02
+
+Addendum C's fourth sequencing step: "C6 fixture library — before M4's
+fixture-heavy work." Two commits plus this log entry: the shared module and
+its bit-identity harness first, the opportunistic migrations second.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `c8e40f7` | `tests/common/{meshes,tools,session,fingerprint}.rs` + `common_fixtures_smoke_c6.rs` | 6 files, +1224 / -0 |
+| 2 | `1cd6eee` | Opportunistic migrations: C2 plateau, Checkpoint A, PR-3 fingerprints, A/M9 | 4 files, +102 / -327 |
+
+### What was actually duplicated
+
+The survey, before writing anything:
+
+| fixture | copies | how they differed |
+|---|---|---|
+| `grooved_block` | 5 (`checkpoint_a_valley_matrix`, `reach_policy_pr4`, `pencil_tip_float_channel_d1`, `coverage_routing_pr5`, `generic_rest_routing_pr7`) | X-sampling window (±3/±4/±5 mm), density (0.05/0.1), breakpoints forced or not, symmetric vs skewed walls — four knobs, one body |
+| FNV-1a-over-`Debug` fingerprint | 4 (`transform_provenance_fingerprints`, `checkpoint_b_resolution_ab`, `crease_own_region_pr6b`, `finish_resolution_policy_pr3`) | return shape only: `(len, hash)` vs `hash` |
+| 17-field `ToolpathConfig` literal | 30 files | nothing structural — it has no `Default` |
+| Ø1/7°/Ø6 taper + Ø3 ball control | 3 + 2 | nothing; identical constructors under three names |
+| height-field mesher | 2 (`checkpoint_b`, `standing_material_channel_am9`'s sawtooth) | grid extents and step; winding and vertex order identical |
+
+### Placement decision
+
+`tests/common/mod.rs` consumed via `mod common;`. Cargo builds one test
+binary per `.rs` file *directly* under `tests/`, so a directory module is
+never a target of its own. This is the stock convention AND already what 13
+files in this suite do — C6 grew the existing module rather than introducing
+a second mechanism. The `#[path]` include style used by `literature_matrix/`
+was rejected on purpose: that splits ONE harness's private internals, which
+is a different job from sharing fixtures across binaries.
+
+### The hazard, and the guard
+
+"Generalise" quietly becoming "subtly change" is the whole risk here.
+Several consumers pin toolpath fingerprints computed over these meshes, so a
+vertex differing in the last ulp moves a constant nobody can later
+attribute.
+
+`common_fixtures_smoke_c6.rs` carries the DONOR implementations verbatim and
+asserts the shared versions reproduce them vertex-for-vertex (`to_bits()`
+comparison, not epsilon) and triangle-for-triangle, at every parameter set
+the five donor call sites use — **including the three groove copies not yet
+migrated**. So when `reach_policy_pr4`, `pencil_tip_float_channel_d1`,
+`coverage_routing_pr5` and `generic_rest_routing_pr7` eventually migrate,
+their meshes are already pinned and the migration is a no-op by
+construction.
+
+Unifying the symmetric and skewed groove bodies is the one non-obvious step:
+`skew(1.0)` makes `tan_r == tan_l` and `floor_r == floor_l`, and the two
+branch structures then agree at every boundary including `x = ±rim` and
+`x = 0`. That is asserted, not argued
+(`symmetric_default_and_unit_skew_agree`), and was additionally cross-checked
+in an independent Python reimplementation of both donor bodies before the
+Rust was compiled — all 8 parameter sets produced identical sample vectors
+and identical Z values.
+
+### API style
+
+Small functions with sensible defaults; overrides via Rust's own
+struct-update syntax and one `FnOnce(&mut ToolpathConfig)` hook. No config
+megastruct. The `ToolpathConfig` case is the point of the item: the literal
+now lives in one place and callers spell `..toolpath_config(...)`, which is
+inherently field-addition-proof — the exact pain CLAUDE.md's "if GUI state
+adds a field, audit test initializers" note describes. `GroovedBlock` is the
+only builder-struct, because it genuinely has four independent knobs. Every
+fixture's docstring names its reference consumers.
+
+### Migration policy, honoured
+
+Four tests migrated as proof of generality; **the other ~26
+`ToolpathConfig` literal sites and the three remaining `grooved_block`
+copies were left alone**, per the plan's binding "opportunistically, never
+in bulk". A sentry's value is that it has not changed.
+
+| test | what it took | why this one |
+|---|---|---|
+| `grid_z_uncovered_contract_c2` | `plateau`, `ball_cutter` | the plan named it |
+| `checkpoint_a_valley_matrix` | `grooved_block` (0.1 mm variant), `wanaka_taper`, `steep_taper`, `ball_control` | the checkpoint-harness consumer |
+| `finish_resolution_policy_pr3` | the fingerprint + the taper, imported UNDER THEIR OLD NAMES | it pins three fingerprint constants — the strongest possible proof |
+| `standing_material_channel_am9` | all of it | it IS the template the whole item is about |
+
+**Assertions and pinned constants unchanged in all four.** PR-3's three
+constants — `(1318, 4897619324930985607)`,
+`RAMP_FINISH_GEO_MEAN_FINGERPRINT = (277, 18_231_352_062_362_901_444)` and
+`(913, 14129959905444107510)` — are byte-for-byte where they were, and they
+pass: same mesh, same tool, same hash. Test names are unchanged throughout.
+The only `assert`/constant lines anywhere in the migration diff are
+*deletions* of extracted fixture internals (the groove's own "groove is a V,
+not a trapezoid" guard, and the FNV basis/prime), both of which moved into
+the shared module.
+
+Importing `move_fingerprint as fingerprint` and `wanaka_taper as taper` in
+PR-3 was deliberate: zero call-site churn keeps the diff readable as "the
+helper moved", with nothing else able to hide inside it.
+
+### Out of scope, explicitly
+
+`v3_cascade_ab.rs` and `p2c_headless_ab_wanaka.rs` were not touched — that
+is C7.
+
+### Verification
+
+- `cargo fmt --check` clean and `cargo clippy --workspace --all-targets -D
+  warnings` zero, before each commit. rustfmt was run on the two new files
+  individually and `git status` checked afterwards for the known
+  sibling-cascade behaviour — no unrelated file moved.
+- Migrated targets, each run individually: `common_fixtures_smoke_c6` 8/8,
+  `grid_z_uncovered_contract_c2` 6/6, `finish_resolution_policy_pr3` 10/10,
+  `standing_material_channel_am9` 4/4, `checkpoint_a_valley_matrix` 14/14.
+- `rs_cam_core --lib`: 2193 passed, 3 failed — exactly the three named known
+  reds (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`). Nothing new.
+- Blast radius, covered: this wave changes **test code only** — no
+  production file is touched. The one file existing tests already depend on
+  is `tests/common/mod.rs`, and its diff is four additive `pub mod` lines
+  plus documentation; not one existing helper changed. `cargo clippy
+  --workspace --all-targets` compiles every one of the 13 `mod common;`
+  consumers, so the additive change is proven not to break any of them.
+- **A full `cargo test -p rs_cam_core --no-fail-fast` was started and
+  deliberately stopped, and that is recorded rather than papered over.** It
+  cleared `--lib` plus 8 integration targets green, then sat on
+  `adaptive3d_interior_cell_parity_f029` for ~25 minutes with no output.
+  Rather than assume that was pre-existing slowness, the target was re-run
+  on its own: **2/2 green in 581 s** (~9.7 min), with the harness itself
+  printing "has been running for over 60 seconds" for BOTH of its tests. So
+  it was slow, not hung, and it passes — it is an AS013 sentry driving
+  `ProjectSession::run_simulation` over the 10 MB `terrain.stl`, i.e. minutes
+  by construction, and the earlier 25 minutes was it plus whatever else the
+  `--no-fail-fast` run was executing in parallel. It consumes only
+  `common::repo_root`, untouched by this wave.
+  This is the hazard CLAUDE.md documents ("avoid workspace-wide `cargo
+  test`, it can loop on this repo"): anyone re-validating should prefer the
+  per-target list above to a whole-crate run, and should expect ~10 min for
+  this one target alone.
+- One cargo job at a time. A foreign `sysml-lsp-server` test held the machine
+  for most of the session (its test binary alone was 11 GB resident);
+  `free -g` + a bracketed `pgrep` gated every command, and the first
+  `cargo check` was deferred until the machine crossed the 20 GB threshold.
+  The waiting time was spent on the Python cross-check above rather than on
+  running anything.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml` and
+`planning/review_2026-07-27/`. Every commit staged file-by-file.
+
+### What this does and does not buy
+
+It removes a recurring per-wave tax and, more importantly, removes the
+*silent* version of it: the next field added to `ToolpathConfig` breaks one
+builder instead of thirty initializers. What it does NOT do is make the
+remaining copies safe by fiat — three `grooved_block` copies and ~26
+`ToolpathConfig` literals are still out there. They are pinned in advance by
+the smoke harness where meshes are concerned, and the policy is deliberately
+lazy: they migrate when someone is already editing them.
