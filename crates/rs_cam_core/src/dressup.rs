@@ -306,23 +306,31 @@ pub fn optimize_entry_descents_with_provenance(
                     && plunge.target.z < rapid_z - 1e-6
             })
             .and_then(|plunge| {
-                // Resolution honesty (TP15 RCA, 2026-07-13): the snapshot's
-                // disc-max under-reads thin ridge tops by XY aliasing — a
-                // project later verified at finer resolution (GUI auto
-                // 0.1 mm vs the 0.5 mm generation ladder) sees those
-                // crests and flags the descent as a rapid graze (measured
-                // 0/15/20 collisions at 0.5/0.25/0.1 mm on wanaka). Pad
-                // the target by TWO of the measuring grid's cells — one
-                // cell cleared only ~25% of the grazes (steep-wall crest
-                // error exceeds one cell of height per cell of XY); the
-                // fresh-stock fallback is exact and needs no pad.
-                let (ceiling, pad) = match stock
-                    .and_then(|s| s.max_top_z_in_disc(rapid_xy.0, rapid_xy.1, tool_radius))
-                {
-                    Some(c) => (c, stock.map_or(0.0, |s| 2.0 * s.z_grid.cell_size)),
-                    None => (fresh_stock_top_z, 0.0),
-                };
-                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM + pad;
+                // A/M10 — resolution honesty, by model rather than by pad.
+                //
+                // This used to read `max_top_z_in_disc` (cell-centre columns)
+                // and add `2 * cell_size` of slack, because the snapshot's
+                // disc-max under-reads material the grid smoothed away: the
+                // SAME generated chain measured 0/15/20 rapid collisions at
+                // 0.5/0.25/0.1 mm (TP15 RCA, 2026-07-13). A cell-scaled pad
+                // is the right shape for a ridge CREST, whose error scales
+                // with the cell — and no shape at all for an uncut rib
+                // narrower than one cell, which stands at whatever the
+                // original stock was, an unbounded distance above the
+                // blended reading. Padding could only ever chase that class.
+                //
+                // `max_conservative_top_z_in_disc` answers the question this
+                // code is actually asking — *how high can material be
+                // ANYWHERE under the tool* — and answers it as an upper
+                // bound that refining the grid can only lower. So the pad is
+                // gone: the bound is already conservative, and stacking a
+                // heuristic on top of a bound just buys air time back.
+                let ceiling = stock
+                    .and_then(|s| {
+                        s.max_conservative_top_z_in_disc(rapid_xy.0, rapid_xy.1, tool_radius)
+                    })
+                    .unwrap_or(fresh_stock_top_z);
+                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM;
                 (z <= rapid_z - MIN_SPLIT_MM && z > plunge.target.z).then_some(z)
             });
 
@@ -2143,10 +2151,14 @@ mod tests {
         // Flat stock whose Z-grid top is 5.0 everywhere — well above the
         // fresh_stock_top_z passed in, so a correct implementation must
         // read the ceiling from the dexel, not the fresh-stock fallback.
-        // The dexel-measured ceiling is additionally padded by the grid's
-        // own cell size (1.0 here): resolution honesty — a finer
-        // verification grid can hold ridge crests this grid smoothed away
-        // (TP15 RCA 2026-07-13, 0/15/20 collisions at 0.5/0.25/0.1 mm).
+        //
+        // A/M10 re-pin: the ceiling now comes from the sliver-safe bound
+        // (`max_conservative_top_z_in_disc`), which on untouched stock is
+        // exactly the stock top — and the `2 * cell_size` resolution pad
+        // this test used to assert is gone, because the bound is
+        // conservative by construction rather than by heuristic. On this
+        // fixture the two agree on the ceiling and differ by the pad, so
+        // the expected Z drops from 9.0 to 7.0.
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
 
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
@@ -2155,11 +2167,10 @@ mod tests {
         assert_eq!(split_count, 1, "expected exactly one split");
         let inserted = &tp.moves[1];
         assert_eq!(inserted.move_type, MoveType::Rapid);
-        let cell_pad = 2.0 * stock.z_grid.cell_size;
         assert!(
-            (inserted.target.z - (5.0 + crate::toolpath::PLUNGE_CLEARANCE_MM + cell_pad)).abs()
-                < 1e-10,
-            "expected inserted rapid at dexel ceiling (5.0) + PLUNGE_CLEARANCE_MM + cell pad ({cell_pad}), got {}",
+            (inserted.target.z - (5.0 + crate::toolpath::PLUNGE_CLEARANCE_MM)).abs() < 1e-10,
+            "expected inserted rapid at the sliver-safe ceiling (5.0) + \
+             PLUNGE_CLEARANCE_MM, got {}",
             inserted.target.z
         );
     }

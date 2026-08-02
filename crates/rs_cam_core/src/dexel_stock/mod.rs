@@ -229,6 +229,71 @@ impl TriDexelStock {
         max_top
     }
 
+    /// **The reading a clearance ceiling must use.** Highest Z at which
+    /// material may stand anywhere under a disc of `radius` around
+    /// `(cx, cy)` — see [`crate::dexel::DexelGrid::conservative_top`].
+    ///
+    /// Differs from [`Self::max_top_z_in_disc`] in both of the ways that
+    /// made descent planning resolution-dependent (A/M10):
+    ///
+    /// 1. it reads the sliver-safe bound rather than the cell-centre column,
+    ///    so a rib narrower than one cell cannot be blended out of sight;
+    /// 2. it visits every cell whose SQUARE overlaps the disc, not every
+    ///    cell whose CENTRE lies inside it — a cell half under the tool
+    ///    still holds material under the tool.
+    ///
+    /// Returns `None` only when the disc lies entirely outside the grid, in
+    /// which case the caller has no stock information here and should fall
+    /// back to the analytic fresh-stock top.
+    pub fn max_conservative_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        // Half a cell of dilation turns "centre inside the disc" into
+        // "square overlaps the disc"; the `ceil` then rounds out to whole
+        // cells. Both are deliberate over-reach — this query may only ever
+        // err high.
+        let reach = radius + cs * 0.5;
+        let r_cells = (reach / cs).ceil() as isize;
+
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        if center_col + r_cells < 0
+            || center_row + r_cells < 0
+            || center_col - r_cells >= grid.cols as isize
+            || center_row - r_cells >= grid.rows as isize
+        {
+            return None;
+        }
+
+        let col_min = (center_col - r_cells).max(0) as usize;
+        let col_max = ((center_col + r_cells).max(0) as usize).min(grid.cols.saturating_sub(1));
+        let row_min = (center_row - r_cells).max(0) as usize;
+        let row_max = ((center_row + r_cells).max(0) as usize).min(grid.rows.saturating_sub(1));
+
+        let reach_sq = reach * reach;
+        let mut max_top: Option<f64> = None;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > reach_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                if dx * dx + dy_sq > reach_sq {
+                    continue;
+                }
+                let top = f64::from(grid.conservative_top_at(row, col));
+                max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+            }
+        }
+        max_top
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///
@@ -236,8 +301,12 @@ impl TriDexelStock {
     /// Used for border clearing in adaptive3d where cells outside the mesh
     /// footprint are set to the surface height.
     pub fn clear_above_at(&mut self, row: usize, col: usize, z: f32) {
-        let ray = &mut self.z_grid.rays[row * self.z_grid.cols + col];
+        let idx = row * self.z_grid.cols + col;
+        let ray = &mut self.z_grid.rays[idx];
         crate::dexel::ray_subtract_above(ray, z);
+        // A/M10: a whole-cell clear is exactly the case the sliver-safe
+        // bound trusts — no partial coverage, no sub-cell remainder.
+        self.z_grid.lower_conservative_top(idx, z);
     }
 
     /// Analytical drill removal — DEXEL roadmap §6.E Step 3.
