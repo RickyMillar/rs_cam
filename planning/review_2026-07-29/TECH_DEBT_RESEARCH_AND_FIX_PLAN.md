@@ -1525,6 +1525,37 @@ After the wanaka live validation report lands:
    recommendation dressed over it: refining the rest cell makes the shipped
    detector find LESS, and makes measured reach collapse to zero.
 10. **A/M7 + A/M10** motion economy (after C1, per its gate).
+    ✅ DONE 2026-08-03, across waves 11 and 12: A/M10 `74571b5`
+    (`DexelGrid::conservative_top` — the `2 × cell_size` pad was the wrong
+    SHAPE for the class, so it is deleted; collisions on a sub-cell rib
+    fixture `[0, 1, 1]` → `[0, 0, 0]` at 0.5 / 0.25 / 0.1 mm), A/M7
+    instruments `a2741a5` (`ToolpathStats::retract_trips` with its
+    in-node/between-node split, and `swept_footprint_area` as an honest
+    mm²/s numerator), the conversion `b352214` (measured, shipped OFF), and
+    wave 12's `9f3c708` + `adc54da`, which retract wave 11's blocker and
+    ship it **ON at 3.0 mm**: trips 24 → 3, cycle 407.91 → 166.18 s
+    (−59.3%), mm²/s +144.9%, zero new collisions at 0.1 mm, zero cut
+    positions lost.
+    **The blocker was the gate, for the third time on this feature.**
+    `relink_fragments` does not drop cut positions — bisected four ways
+    (relinker alone, pipeline with dressups off, each dressup alone: zero
+    each; only `arc_fitting` + `lead_in_out` together produce the 21). They
+    are `LeadOut` endpoints that `arcfit::fit_arcs` relabelled
+    `FinishingCut` because it groups runs by feed rate rather than by
+    intent, and one disappears per link because a link deletes a fragment
+    boundary. Wave 11 had already widened the gate from labels to positions
+    but kept selecting the POPULATION by label, so it inherited the
+    relabelling. `relink_fragments` is now under the C1 contract with
+    `ScallopRuntimeAnnotation` as a registered channel — the hand-rolled
+    remap was the only thing that ever was defective.
+    **NOT fixed, stated**: `arcfit`'s intent inheritance is a real defect
+    left standing (fixing it breaks arc runs at intent changes, moving
+    fitted geometry repo-wide and re-pinning C1's `arc_raster`);
+    `unified_finish::intra_region_hookup_mm` is measured and left OFF for an
+    operator (trips 85 → 8, 238.94 → 130.65 s, footprint identical at
+    850 mm², +82.9% mm²/s on a synthetic plateau); no live wanaka run and no
+    rendered surface on either half; and the scallop dial has no GUI widget,
+    only registry/MCP and project TOML.
 11. **M5 offset_polygon** (Checkpoint D). 12. **H4** (Checkpoint E, last).
 13. **L1** final docs sweep (absorbs the backlog doc).
 
