@@ -1164,6 +1164,10 @@ fn scallop_island_params(continuous: bool) -> ScallopParams {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        // Link-moves safety fixtures predate A/M7's intra-pass relink;
+        // stay on the unconditional per-ring retract they were written for.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     }
 }
 

@@ -983,6 +983,10 @@ fn p2c_unified_phase_probe() {
             plunge_rate: 150.0,
             safe_z: 15.0,
             stock_to_leave: 0.0,
+            // Pinned probe: keep the unconditional per-ring retract this
+            // run was timed against, not A/M7's opt-in relink.
+            intra_pass_hookup_mm: 0.0,
+            link_kinematics: None,
         };
         let (tp, _anns, _report) = scallop_toolpath_structured_annotated_with_cancel(
             &mesh,
@@ -1096,6 +1100,10 @@ fn p2c_scallop_height_cost_curve() {
             plunge_rate: 150.0,
             safe_z: 15.0,
             stock_to_leave: 0.0,
+            // Cost-curve sweep pinned to the old per-ring retract path;
+            // don't let the relink opt-in shift these timings.
+            intra_pass_hookup_mm: 0.0,
+            link_kinematics: None,
         };
         let t = Instant::now();
         let (tp, _anns, _report) = scallop_toolpath_structured_annotated_with_cancel(
@@ -1185,6 +1193,10 @@ fn p2g_ring_dump() {
         plunge_rate: 150.0,
         safe_z: 15.0,
         stock_to_leave: 0.0,
+        // Fixed-height fingerprint run: stay on the pre-A/M7 retract
+        // behaviour so the recorded moves don't quietly change shape.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     };
 
     let dump = |tag: &str, tp: &Toolpath| {
@@ -1329,6 +1341,9 @@ fn p2g_session_op8_dump() {
             plunge_rate: 150.0,
             stock_to_leave: 0.0,
             spindle_rpm: Some(21000),
+            // Held to the pre-A/M7 per-ring retract so this branch stays
+            // the pinned baseline it was measured as.
+            intra_pass_hookup_mm: 0.0,
         })),
     );
 }
@@ -1391,6 +1406,9 @@ fn p2g_measurement_aliasing_probe() {
             plunge_rate: 150.0,
             stock_to_leave: 0.0,
             spindle_rpm: Some(21000),
+            // Aliasing probe compares against the fixed pre-relink
+            // baseline, so opt out of the new hookup behaviour here too.
+            intra_pass_hookup_mm: 0.0,
         }),
     );
 }
@@ -1956,6 +1974,9 @@ fn p2g_chain_stage_probe() {
             plunge_rate: 150.0,
             stock_to_leave: 0.0,
             spindle_rpm: Some(21000),
+            // Stage-delta probe: leave the retract behaviour as it was
+            // when these deltas were first measured.
+            intra_pass_hookup_mm: 0.0,
         }),
     );
 
@@ -2146,6 +2167,9 @@ fn p2g_column_overlay_dump() {
                 plunge_rate: 150.0,
                 stock_to_leave: 0.0,
                 spindle_rpm: Some(21000),
+                // Column-overlay dump is a pinned comparison; keep the old
+                // retract-per-ring path so the dumped columns don't move.
+                intra_pass_hookup_mm: 0.0,
             })),
         ),
     ] {
@@ -2693,6 +2717,9 @@ fn p2g_three_way_probe() {
             plunge_rate: 150.0,
             stock_to_leave: 0.0,
             spindle_rpm: Some(21000),
+            // Three-way cross-branch probe: pinned to the pre-A/M7 retract
+            // path, same as its sibling runs above.
+            intra_pass_hookup_mm: 0.0,
         })),
     );
 
@@ -3137,6 +3164,9 @@ fn p2e_separate_ops_branch_c() {
             plunge_rate: a_plunge,
             stock_to_leave: 0.0,
             spindle_rpm: a_rpm,
+            // Branch C is scored against pinned A/B numbers; keep the
+            // pre-A/M7 retract path so the comparison stays apples-to-apples.
+            intra_pass_hookup_mm: 0.0,
         }),
     )
     .expect("swap Finish 6 to slope-windowed Scallop");
@@ -3225,6 +3255,9 @@ fn p2f_allover_scallop_branch_d() {
             plunge_rate: 150.0,
             stock_to_leave: 0.0,
             spindle_rpm: Some(21000),
+            // All-over branch D vs pinned A/B: hold the old retract path
+            // so the "just scallop everything" baseline doesn't drift.
+            intra_pass_hookup_mm: 0.0,
         }),
     )
     .expect("swap Finish 6 operation to all-over Scallop");

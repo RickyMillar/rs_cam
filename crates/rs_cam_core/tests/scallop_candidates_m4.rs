@@ -83,6 +83,10 @@ fn params() -> ScallopParams {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        // Candidate-selection fixture predates A/M7; keep the old
+        // per-ring retract so the candidate set doesn't move underneath it.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     }
 }
 

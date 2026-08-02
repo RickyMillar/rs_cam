@@ -43,6 +43,10 @@ fn params() -> ScallopParams {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        // Gouge-oracle fixture is a pinned geometric baseline; opt out of
+        // the relink so isofield truth doesn't shift with it.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     }
 }
 

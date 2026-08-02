@@ -1385,6 +1385,10 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    // A/M7: the ring-to-ring stay-down relink cap. Ships at 0.0 (off) while
+    // `relink_fragments` still drops one cut position per link — see
+    // `default_scallop_intra_pass_hookup_mm`.
+    ParamDef::required("intra_pass_hookup_mm", "f64"),
 ];
 
 const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[

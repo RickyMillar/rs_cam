@@ -838,6 +838,35 @@ pub struct ScallopConfig {
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// A/M7 — cap (mm) on the XY gap a ring-to-ring surface link may span
+    /// instead of a full `retract → rapid → replunge` round trip. `0.0`
+    /// disables it. See [`crate::scallop::ScallopParams::intra_pass_hookup_mm`]
+    /// for what the relink does and refuses to do.
+    #[serde(default = "default_scallop_intra_pass_hookup_mm")]
+    pub intra_pass_hookup_mm: f64,
+}
+
+/// Default **OFF**, and the reason is a defect, not caution.
+///
+/// The A/B is as strong as any in this programme — on a corrugated all-over
+/// scallop fixture at 3.0 mm hookup, retract round trips fall 24 → 3
+/// (−87.5%), integrated cycle time 407.9 s → 166.2 s (−59.3%),
+/// swept-footprint throughput 4.68 → 11.47 mm²/s (+144.9%), with **zero**
+/// new collisions at the finest 0.1 mm grid.
+///
+/// It ships off anyway, because the same measurement found that
+/// `surface_link::relink_fragments` drops **exactly one cut position per
+/// link it makes** (21 losses across 21 converted junctions). A gap in a
+/// finished surface is not purchasable with wall clock, and 59% is exactly
+/// the size of prize that gets a defect waved through.
+///
+/// `tests/scallop_intra_pass_relink_am7.rs` pins the ratio. When the
+/// re-emit is fixed, that test's expectation goes to zero and this default
+/// goes to 3.0 — a little over one Ø3-ball diameter: far enough to catch
+/// adjacent-ring junctions, short enough that a link never crosses a
+/// feature it did not machine.
+fn default_scallop_intra_pass_hookup_mm() -> f64 {
+    0.0
 }
 
 impl Default for ScallopConfig {
@@ -853,6 +882,7 @@ impl Default for ScallopConfig {
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
             spindle_rpm: None,
+            intra_pass_hookup_mm: default_scallop_intra_pass_hookup_mm(),
         }
     }
 }
