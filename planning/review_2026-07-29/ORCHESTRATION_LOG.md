@@ -3970,3 +3970,163 @@ targets `ok`. Nothing else. The partial record is closed.
   because per-ring retracts dominate there. It says what the conversion is
   worth on that class, not on a part whose rings are far apart — where the
   hookup cap simply refuses and the numbers converge to the baseline.
+
+---
+
+## C-SEQUENCE WAVE 13 (M5 research), 2026-08-03
+
+**Research only. No production behaviour changed.** Evidence pack:
+`CHECKPOINT_D_EVIDENCE.md`. Step 11 of the sequencing checklist stays
+unticked — it is ticked when the post-checkpoint implementation lands.
+
+Commits: `94c2610` (reproduction + attribution instruments), `2d051f4`
+(candidate arms + both oracles), this entry.
+
+### The comment was right about the symptom and wrong about the size
+
+`scallop.rs`'s cascade comment has claimed since P2.f that `offset_polygon`
+"compounds ~15–25% vertices per ring on concave boundaries". Measured, on
+eight fixtures including two captured real ones:
+
+| fixture | %/ring (geo. mean) | verts₀ → stop |
+|---|---|---|
+| square (convex control) | 0.00 | 4 → 4 @ 200 rings |
+| rosette-24 (stress) | **34.74** | 720 → 88 320 @ 16 |
+| comb-16 | **36.62** | 68 → 70 148 @ 22 |
+| dendrite | **90.98** | 244 → 123 004 @ 10 |
+| holed-9 | 6.44 | 580 → 80 320 @ 69 |
+| short-edges | −0.26 | 1600 → 480 @ 200 |
+| wanaka-slice (captured) | 1.89 | 331 → 17 903 @ 200 |
+| terrain-midsteep (captured) | **40.26** | 744 → 132 885 @ 16 |
+
+It is not "approximately geometric" — the increment is an exact doubling
+(comb `+64 +128 +256 +512 +1024 +2048 +4096`) until the chords fall under
+cavalier's own 1e-5 dedupe epsilon, at which point it plateaus around 10⁵
+vertices, i.e. 100–500× the input. One offset call on the saturated rosette
+takes **10.19 s**.
+
+### The attribution is exact, and the cause is ours
+
+**Added vertices == arc-join segments, 1:1, on every fixture** (rosette
++288/+576/+1152 with 288/576/1152 arc segments; ratio 1.000 on all five
+synthetic fixtures, 0.96–0.98 on the captured ones where self-intersection
+repair intervenes).
+
+`Polygon2::exterior_to_pline` writes `bulge = 0.0`, so cavalier never
+receives an arc; the arcs in its output are joins it *created* where the
+inward offset opened a gap at a reflex corner. `Polygon2::from_pline` then
+drops each join's bulge and keeps both endpoints — one reflex corner becomes
+two shallower reflex corners, each of which arc-joins next pass. That is the
+doubling, and it is entirely on our side of the boundary.
+
+Lossless-removable vertices are **0.0%** at ring 1 and **99%+** by ring 15,
+which is the number that bounds what a cleanup-only fix can achieve: the
+debris is a consequence of the fan collapsing, not its cause.
+
+### Two consumers compound; one of them is still broken
+
+The census that matters is not the 26 call sites but the ones that feed the
+primitive its own output: **pocket** and **scallop**. Scallop was patched in
+P2.f. Pocket was not, and:
+
+> `pocket_contours_with_cancel` **DID NOT FINISH in 20 s** on a 12-vertex
+> cross at 0.5 mm stepover. `pocket_offsets` — the same cascade without a
+> cancel hook — ran **13 minutes to 386 MB** in this study before being
+> killed.
+
+The other ~20 consumers are single-shot and inherit only the corner cut.
+
+### Nine arms, two oracles
+
+The 2D oracle needs no tolerance: erosion composes, so every vertex of ring
+`k` must sit at exactly `k · step` from the original boundary. Validated
+both directions before use (reads `<1e-9` on a square, and reads the exact
+difference when scored at the wrong depth).
+
+| arm | 200-ring gate | verts (rosette @50) | erosion err max | notes |
+|---|---|---|---|---|
+| C0 raw (today) | **fails @13** | 88 264 | 4.6 µm | 28.5 s for 13 rings |
+| C1 drop-only (scallop today) | passes | 264 | 7.1 µm | **+9.83% area on comb; 1.8 mm on the pocket cross** |
+| C2 `remove_redundant` | passes | 2 520 | 4.6 µm (= C0 exactly) | free, lossless, ~10× brake |
+| C3 our `cleanup_collinear` | **fails** | 17 698 | 4.6 µm | slower and weaker than C2 |
+| C4 `simplify_bounded` (RDP) | passes | 312 | 13.7 µm | bounded in world units |
+| C5-ctl pline cascade, chord/ring | marginal | 89 488 | 4.6 µm | **the isolator** — reproduces C0 exactly |
+| **C5 arcs preserved** | **passes** | **504** | **0.0 µm** | exact, fastest, shrinks −1.4%/ring |
+| C6 bounded per-ring flatten | **fails @15** | — | 3 690 µm | worse than what it replaces; not root-caused |
+| C7 `geo::Buffer` (i_overlay) | **fails @9** | — | 400 µm | 86–99%/ring **and** an out-of-bounds panic |
+
+C5-ctl is the result that makes the rest interpretable: the *identical*
+polyline cascade, flattened per ring, reproduces raw's inflation AND raw's
+error to the decimal. The variable is the flattening, not the machinery.
+
+### The alternate backend lost on measurement, not on taste
+
+`geo::Buffer` is already in the dependency graph, so candidate (d) was
+measured instead of estimated. Its pointwise geometry is excellent
+(0.1–0.3 µm p50) and it still fails: it inflates **faster than production**
+(86–99%/ring, cap in 8–11 rings on four fixtures, 6.2%/ring even on
+`short-edges` where cavalier is flat), because i_overlay emits round joins
+as densified fans with no arc representation to collapse back into. It also
+panicked — `index out of bounds ... 9223372036854775807`, i_overlay 4.0.7
+`bind/solver.rs:91` — at ring 13 of a twelve-vertex cross.
+
+### Today's compensation is not free either
+
+Drop-only decimation leaves **+9.83% eroded area** on the comb (feature size
+÷ decimation spacing is the bound) and is the **worst of all nine arms** on
+the pocket cross (1.8 mm max, −0.54 mm mean over-cut). It is safe where ring
+density is known and the spacing derives from it — scallop's case, nobody
+else's. "Just decimate everywhere" is measurably the wrong answer.
+
+And through the M4 envelope oracle, the ring cleanup moves scallop's achieved
+cusp between **1.80× and 6.45× the dial** (keep-all best on the grooved
+block at 1.80× vs shipped 3.11×; worse on the ridge at 5.02× vs 4.37×). The
+cleanup is a live quality variable, so it must be re-decided ON THE ORACLE
+after any representation change — not before, and not by fingerprint.
+
+### Recommendation and menu
+
+Recommended: **arc-carrying cascade + explicit flatten policy, scallop then
+pocket, `offset_polygon` unchanged for the unaudited consumers**, with
+`remove_redundant` as a free companion. Six options and three sub-decisions
+are laid out in `CHECKPOINT_D_EVIDENCE.md` §14, including the cheap stopgap
+(`remove_redundant` alone, one line) and the do-nothing option.
+
+### Gates
+
+`cargo fmt --check` clean and `cargo clippy --workspace --all-targets -D
+warnings` zero before each commit.
+
+`-p rs_cam_core --lib`: 2 223 passed / **3 failed, all known** (the three
+adaptive3d reds). `--test param_sweep -- --ignored`: **56 / 56 ok** — the
+Pocket/Adaptive/Rest/Profile/Trace/Scallop baseline Checkpoint D's fourth
+evidence item asks for. `offset_polygon_degenerate_inputs_r1`,
+`property_tests`, `generator_extremes_fuzz_r1`, `scallop_candidates_m4` (M4's
+own seam parity), `scallop_oracle_validation_m4`, `scallop_isofield_gouge_m4`,
+`scallop_intra_pass_relink_am7`, `_litmatrix_scallop_refuses_flat`,
+`finish_resolution_policy_pr3`, `unified_finish_semantic_regions`,
+`-p rs_cam_mcp`: all ok. New targets: 5 + 6 fast pins ok. **No fixture needed
+re-pinning**, which is what a research wave that moves no default should look
+like.
+
+### Honest limits
+
+* **No live GUI/wanaka run and no rendered machined surface.** The 2D ring
+  SVGs were rendered and read; the 3D oracle is analytic.
+* **The scallop oracle fixtures cannot exhibit the hang** — their boundary is
+  the convex mesh-bbox rectangle. Quality and runtime come from different
+  fixtures; no single fixture in this study shows both.
+* **Three unexplained results are recorded as unexplained**: C6's failure,
+  the identical `collinear+dedup` / `simplify` rows in the 3D table, and
+  C5-ctl's hole-pairing on `terrain-midsteep` (7.46% area, 0 flattened
+  vertices at ring 50 — that arm is an isolator, and its numbers on that one
+  fixture should not be quoted).
+* **`cavalier_contours` panics in RELEASE on the `Shape` path** (`expect
+  non-empty polyline`, `shape_algorithms/mod.rs:317`) five times across these
+  cascades. Production contains it and maps it to "collapsed offset" — which
+  means a cascade can terminate **early and silently**. Separate finding,
+  probably a separate ticket; not investigated.
+* **The Criterion suite was NOT extended** past its square-only case
+  (M5's fifth acceptance gate), deliberately: a benchmark written now would
+  pin the exponential and be re-pinned by the fix in the same wave.
+* **No implementation.** Build cost is estimated, not measured.
