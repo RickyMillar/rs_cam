@@ -2123,3 +2123,235 @@ remaining copies safe by fiat — three `grooved_block` copies and ~26
 `ToolpathConfig` literals are still out there. They are pinned in advance by
 the smoke harness where meshes are concerned, and the policy is deliberately
 lazy: they migrate when someone is already editing them.
+
+---
+
+## C-SEQUENCE WAVE 6 (A/M6), 2026-08-02
+
+C-sequencing step 5: `claims_reference` — the shipped-default footgun that
+made every cascade measurement re-cut the whole part. Three commits plus
+this entry.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `5c24d62` | core: `ClaimsReference` dial + `ClaimsReferenceResolution` provenance + `ClaimsReferenceFinding` through `GenerationFindings`/`ToolpathStats`/diagnostics; deser-compat matrix | 11 files, +609 / −38 |
+| 2 | `21edaea` | GUI "Rest Claims" block + resolved readout; MCP `runtime.claims_reference`; catalog enum widened | 6 files, +221 / −9 |
+| 3 | `486364f` | `tests/claims_reference_cascade_am6.rs` — cascade gate (ball + taper), no-silent-fallback both directions, diagnostic halves | 1 file, +686 |
+
+### The defect, and what actually drives it
+
+§14p measured the symptom: 46 366 mm of cutting under `self_probe` against
+5 259 mm under `machined_stock`, one variable, 0.1 mm sim, after a full
+same-tool finish. The mechanism is narrower than "the analytic reference is
+wrong", and finding it changed what needed fixing:
+
+`territory_clip` — the dial that turns a `UnifiedFinish` into a rest pass by
+masking already-finished territory out of coverage before `decompose` — is
+**gated on the resolved reference being `MachinedStock`**. Under a
+self-probe reference the orchestrator logs a `tracing::warn!` and skips the
+clip. So the reference dial does not merely mis-measure rest; it silently
+switches the operation from a rest pass to an all-over pass. That is why the
+numbers came out at ~100% of the finish pass rather than merely inflated,
+and it is what the sentry asserts.
+
+Second finding, worth recording because it bounds the blast radius:
+`claims_reference` is **inert unless `pencil_claims` is on**, and that dial
+defaults `false` (`claims_cfg = cfg.pencil_claims.then(...)`). The 2026-07-30
+live-validation section above reports flipping `claims_reference` on wanaka
+op 8 while `pencil_claims: false` — that flip changed nothing, and op 8's
+62 703 mm is not comparable to §14p's numbers for that reason as well as the
+one already noted there.
+
+### The fix: derive, do not re-default
+
+The dial is now three-valued (`ClaimsReference`: `auto` | `self_probe` |
+`machined_stock`) and resolves at generation time to the two-valued
+`CreaseReference` the detector switches on. Keeping "decide later" out of
+the type a detector matches against is the point — `ClaimsConfig` still
+takes a resolved value only, and `generate_unified_finish` is the single
+bridge because it is the only site that sees both the operator's dial and
+what is in scope.
+
+`ClaimsReferenceResolution` carries the provenance, following the
+`CellSource` / `FinishResolutionPolicy` precedent (an enum whose variants ARE
+the record, not a bare bool). Six variants for the six
+(setting × prior-in-scope) combinations, `resolve()` as the only mapping
+site, and `reference()` / `setting()` / `prior_stock_in_scope()` /
+`is_derived()` / `needs_attention()` / `label()` / `why()` on top. A
+`resolve` table test asserts the mapping is total and that the three inputs
+round-trip out of every outcome — including that nothing can report a
+machined-stock reference it does not have.
+
+### Default decision: `Auto`, and why not "keep `self_probe` and warn"
+
+The plan offered both. `Auto` was taken:
+
+- The right value is **contextual** — defensible for a first finish op,
+  indefensible for a rest op in a cascade — so any fixed default is wrong
+  half the time by construction. Warning-only leaves the wrong toolpath
+  shipped and asks the operator to fix what the system already knows.
+- The blast radius is small and bounded. With `pencil_claims` off the dial
+  is inert, so the only projects whose behaviour can move are those that
+  turned claims ON **and** left `claims_reference` unwritten **and** cut
+  remaining stock — exactly the A/M6 case.
+- Deserialization compatibility is binding and pinned:
+  `unified_finish_claims_reference_serde_round_trip_and_backcompat` holds
+  all three cells. `"self_probe"` → pinned self-probe, `"machined_stock"` →
+  pinned machined stock, **field absent** → `Auto`. Wire names are the
+  pre-A/M6 ones, so no project file needs migrating and no operator's
+  written value changes meaning. Only the absent case moved, and it moves
+  visibly (below).
+
+**Stated limitation, not hidden.** `Auto` keys on the PRESENCE of a prior
+stock, not its QUALITY. On a rough→finish chain the S1 lesson still holds
+(a stock-referenced detector reads roughing terraces as a phantom dendritic
+crease network) and the operator should pin `self_probe`. The derived
+finding's own sentence says so, and a sentry asserts the word `ROUGHING`
+survives into the operator-facing text.
+
+### No silent fallback, in either direction
+
+Every resolution — footgun, degraded, or uneventful — is recorded on
+`GenerationFindings` → `ToolpathStats::claims_reference` (session path AND
+the GUI worker's parallel copy) and rendered as `config.claims_reference`:
+
+| outcome | severity | why it is said |
+|---|---|---|
+| `ExplicitSelfProbeOverridingPrior` | Caution | the A/M6 footgun in its exact shape |
+| `ExplicitMachinedStockWithoutPrior` | Caution | a dial that could not be honoured |
+| any resolution with `territory_clip` requested and skipped | Caution | a rest pass silently became an all-over pass |
+| everything else | Info | which of two fields the detector read is derivable from nothing else |
+
+The pre-existing `tracing::warn!` stays as a backstop. It was never the
+signal: nothing in the GUI installs a subscriber, which is the same "a
+warning nobody sees is not a warning" rule the v3 closure left standing.
+
+### A/M11 integration, not duplication
+
+The brief's case 3(b) — Auto wants machined stock, none available — is
+**not** given a parallel signal, because the taxonomy already covers it. An
+op cutting `FromRemainingStock` with no snapshot never reaches generation:
+`generate_toolpath` refuses it before any geometry work and the GUI records
+`ComputeStatus::AwaitingPriorStock`, which wave 4 built and whose
+`generate_all` fixpoint loop resolves the ladder. What *does* reach
+generation with nothing in scope is an op that asked for **fresh** stock —
+a configuration statement, not a block. It resolves to
+`DerivedSelfProbeNoPrior` and its `why()` names both remedies (set the stock
+source; if that leaves it blocked, the ladder message takes over). A sentry
+pins this reading, and the sentry's own docstring records that it is
+deliberately not a second signal.
+
+### Surfaces
+
+- **GUI**: the four claims dials had **no widget at all** before this — the
+  panel exposed none of `pencil_claims`, `claims_reference`,
+  `territory_clip`, `min_rest_depth_mm`. New "Rest Claims" block with all
+  four, a three-way combo with per-option hover text, and a readout of what
+  the LAST generation resolved to (amber + glyph when it needs attention or
+  the clip was skipped, green tick otherwise, `why()` on hover). Plus a
+  panel-local notice when claims are on over FRESH stock, because `Auto`'s
+  input is the stock source and that lives in a different section of the
+  same panel.
+- **MCP**: `get_toolpath_params` gains `runtime.claims_reference` (setting /
+  resolved / resolution token / derived / prior_stock_in_scope /
+  needs_attention / territory_clip_requested / territory_clip_skipped /
+  why). Under `runtime`, not `params`, deliberately — it is not a param.
+- **Catalog**: `enum:auto|self_probe|machined_stock`.
+- **Setup sheet**: audited per CLAUDE.md. `io/setup_sheet.rs` enumerates no
+  operation params, so no change. Project IO round-trips through the
+  config's own serde and no wire name moved.
+
+### The sentry, and the three fixtures that lied first
+
+`crates/rs_cam_core/tests/claims_reference_cascade_am6.rs`, 8 tests, ~35 s.
+Built on C6's shared library rather than hand-rolled. Measured, printed on
+every run:
+
+| tool | finish | rest, `self_probe` | rest, derived | control (gate < skin) |
+|---|---|---|---|---|
+| ball Ø3 | 3209.5 mm | **3209.9 mm** | 0.0 mm | 160.0 mm |
+| taper Ø1 tip / Ø6 shank | 3290.5 mm | **3290.7 mm** | 822.7 mm | 822.7 mm |
+
+The red-first number is column 3: the "rest" pass re-cuts the finish pass it
+follows to within 0.4 mm in 3200 — 100.0%, on both tool shapes. §14p's
+46 366-vs-5 259, reproduced on a 40 mm fixture. That assertion runs BEFORE
+the gate, so a fixture that stops reproducing the defect fails loudly rather
+than passing a gate that then proves nothing.
+
+Gate held at `derived < 0.35 × finish` and `derived < 0.35 × forced`
+(≥ −65% from one dial). The bound is 0.35 and not tighter for a reason worth
+recording: part of what ANY correctly-referenced rest pass finds is not
+gate-driven. Untrusted classification cells keep their coverage by design
+(the detector's erosion rim must never amputate band area), and the model
+sits inside a 2 mm stock margin no finish pass ever machined, which is
+genuine rest. The taper keeps more of it — 25% vs the ball's 0% — because
+its cusp-derived conditioning is finer. Both are a rest pass doing rest
+work; neither is the defect.
+
+**Three fixture versions produced a GREEN sentry measuring nothing**, and
+each is recorded in the file so the next author does not re-earn them:
+
+1. Two ops cutting to the same surface leaves the rest pass no material
+   anywhere; the air-cut filter erases every move and both references read
+   0.0. Fixed with a uniform sub-gate skin — the small fixture's stand-in
+   for wanaka's 22 µm raster cusps.
+2. `common::session::stock_over` roots the block at `origin_z = 0`, so a
+   surface built around `z = 0` sits entirely BELOW the stock. Generation
+   still emitted a full pass (fresh-stock generation never consults stock),
+   the simulation removed nothing, and the rest op was filtered to four
+   moves. The F-024 dexel-frame trap arriving from the test side.
+3. `overlap_mm` at its 2.0 default dilates every extracted region enough to
+   swamp the confinement (derived read 27% of finish, and the control arm
+   was indistinguishable). At 0.5 the mechanism is visible. Held equal
+   across arms either way.
+
+The **control arm** exists because a confined pass and an emptied pass look
+identical from one number: same machined-stock reference, same machinery,
+gate moved BELOW the skin, must still emit real work.
+
+### Gates
+
+- `cargo fmt --check`: exit 0 before each commit.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0 before
+  each commit. One file-scoped `#[allow(clippy::print_stderr)]` on the new
+  sentry, justified in place: the measured numbers ARE the record, and
+  printing them makes a regression readable in CI output rather than only as
+  a threshold that tripped.
+- `cargo test -p rs_cam_core --lib`: 2194 passed, 3 failed — exactly the
+  three known adaptive3d reds
+  (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+  `rapid_segment_lifts_to_safe_z_before_traverse`,
+  `planner_sim_dexel_parity_agent_search`). No new red.
+- `cargo test -p rs_cam_core --no-fail-fast` (whole crate, ~50 min):
+  **106 targets green**, 2 failed — the `--lib` target with exactly the three
+  reds above, and `wanaka_suggest_integration::wanaka_suggest_baseline`, the
+  known intermittent/environmental one. No new red anywhere in the
+  integration suite.
+- `cargo test -p rs_cam_viz`: 227 + 9 + 11 passed, 0 failed.
+- `cargo test -p rs_cam_cli`: 5 + 9 passed. `cargo test -p rs_cam_mcp`: 4 passed.
+- New target `claims_reference_cascade_am6`: 8 passed, 0 failed, ~35 s.
+- One cargo job at a time; `free -g` + bracketed `pgrep` before each heavy
+  command. A foreign `sysml` workspace test held the machine for much of the
+  session; `cargo check` was allowed to overlap only above the 20 GB
+  threshold, per the relaxed rule.
+
+**Untouched, as instructed**: `planning/airrun_2026-06-01/wanaka.toml`
+(user-modified) and `planning/review_2026-07-27/`. Every commit staged
+file-by-file.
+
+### What this unblocks, and one thing it does not
+
+A/M6 was H4's dependency and the second required step of the re-measurement
+sequencing: cascade measurements taken through the analytic reference were
+measuring an all-over pass. They can now be re-earned.
+
+What it does NOT do is make `Auto` correct on a rough→finish chain. That
+needs the reference to know the QUALITY of the prior stock, not just its
+presence, and nothing in `ExecutionContext` carries it — the signal would
+have to come from the session's view of the upstream chain. Deliberately not
+built here: the plan's fix shape asked for presence, and inventing the
+quality channel would have doubled the blast radius of a default flip. The
+limitation is stated in the enum doc, in the operator-facing sentence, and
+here.
