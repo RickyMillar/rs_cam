@@ -184,44 +184,47 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
 /// every toolpath is a notice nobody reads — the same rule
 /// `record_deprecated_dial` follows.
 fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    // `None` = this operation derives no stepover. Not a claim of any kind.
-    let Some(f) = stats.derived_stepover.as_deref() else {
-        return Vec::new();
-    };
-    if f.matches_the_envelope_rule() {
-        return Vec::new();
-    }
-    vec![Diagnostic {
-        id: DiagnosticId::from(ids::CONFIG_DERIVED_STEPOVER),
-        scope: Scope::Toolpath { id: toolpath_id },
-        category: Category::Geometry,
-        severity: Severity::Info,
-        // Read straight off the policy call that steered the fan.
-        confidence: Confidence::Verified,
-        state: DiagnosticState::Current,
-        source: Source::StaticValidation,
-        message: format!(
-            "{site}: offset stepover {stepover:.3} mm, sized by the reach \
+    // C8: one diagnostic per derivation. Empty = this operation derived no
+    // stepover, which is not a claim of any kind. Filtering out the
+    // agree-with-the-envelope-rule cases is what keeps this quiet on plain
+    // balls, and it now happens per derivation rather than deciding the
+    // whole operation on whichever one got recorded first.
+    stats
+        .derived_stepovers
+        .iter()
+        .filter(|f| !f.matches_the_envelope_rule())
+        .map(|f| Diagnostic {
+            id: DiagnosticId::from(ids::CONFIG_DERIVED_STEPOVER),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::Geometry,
+            severity: Severity::Info,
+            // Read straight off the policy call that steered the fan.
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::StaticValidation,
+            message: format!(
+                "{site}: offset stepover {stepover:.3} mm, sized by the reach \
              policy at {depth:.3} mm rest depth ({basis}). The retired \
              envelope rule (half the cutter's widest radius) would have used \
              {envelope:.3} mm — {ratio:.1}× wider — which on a tapered tool \
              is the SHANK, not anything the tip cuts. [Report-only — no gate.]",
-            site = f.site,
-            stepover = f.stepover_mm,
-            depth = f.reference_depth_mm,
-            basis = f.reference_depth_basis,
-            envelope = f.envelope_rule_mm,
-            ratio = if f.stepover_mm > 0.0 {
-                f.envelope_rule_mm / f.stepover_mm
-            } else {
-                f64::NAN
-            },
-        ),
-        evidence: None,
-        fix: None,
-        supersedes: vec![],
-        suppressed_diagnostics: vec![],
-    }]
+                site = f.site,
+                stepover = f.stepover_mm,
+                depth = f.reference_depth_mm,
+                basis = f.reference_depth_basis,
+                envelope = f.envelope_rule_mm,
+                ratio = if f.stepover_mm > 0.0 {
+                    f.envelope_rule_mm / f.stepover_mm
+                } else {
+                    f64::NAN
+                },
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        })
+        .collect()
 }
 
 /// PR-5: a retired dial the loaded project still sets.

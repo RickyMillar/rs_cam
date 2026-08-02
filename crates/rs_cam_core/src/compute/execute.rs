@@ -58,7 +58,11 @@ pub type GeneratedToolpath = AnnotatedToolpath;
 /// `AnnotatedToolpath`: a diagnostic finding must not have to survive the
 /// dressup pipeline, where every carrier is one missed field-copy away from
 /// silently vanishing.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+/// C8: no longer `Copy`, and carried in a `RefCell` rather than a `Cell`,
+/// because [`Self::derived_stepovers`] is a collection. The `Cell` was only
+/// ever a convenience for `Copy` scalars, and it is what made a
+/// first-writer-wins slot look like a design instead of a shrug.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GenerationFindings {
     /// Region-interior area (mm², XY-projected) a scallop ring cascade left
     /// UNCUT because it hit `max_rings` before collapsing — summed over
@@ -84,10 +88,21 @@ pub struct GenerationFindings {
     /// project. `None` = nothing retired is set.
     /// See [`crate::compute::config::DeprecatedDialFinding`].
     pub deprecated_dial: Option<crate::compute::config::DeprecatedDialFinding>,
-    /// PR-6a: an offset stepover this operation derived from the canonical
-    /// reach policy. `None` = the operation derives none.
+    /// PR-6a: the offset stepovers this operation derived from the canonical
+    /// reach policy. EMPTY = the operation derives none.
+    ///
+    /// C8: a `Vec`, not a slot. One toolpath can derive a stepover TWICE —
+    /// the operation's own routing/fit site during generation, then PR-7's
+    /// generic rest-analysis post-pass — and the slot resolved that by
+    /// first-writer-wins, which the code itself called "a shrug, not a
+    /// decision" (`ANTIPATTERNS_BACKLOG.md` P8). The second derivation was
+    /// dropped on the floor: a `UnifiedFinish` with claims on AND generic
+    /// rest analysis on published one of its two numbers and no hint that
+    /// the other existed. Both are recorded now, in the order they fired,
+    /// each naming its own `site`.
+    ///
     /// See [`crate::compute::config::DerivedStepoverFinding`].
-    pub derived_stepover: Option<crate::compute::config::DerivedStepoverFinding>,
+    pub derived_stepovers: Vec<crate::compute::config::DerivedStepoverFinding>,
     /// PR-8b: what the ramp-finish reach clamp did. `None` = no ramp descent
     /// ran, so nothing was measured; `Some` with an inert clamp is a
     /// measured-clean descent. See [`crate::ramp_finish::RampReachClamp`].
@@ -106,26 +121,21 @@ pub struct GenerationFindings {
 /// The first call is what turns "not measured" into "measured" — including
 /// when the measurement is zero, which is the distinction A/M9 exists to
 /// preserve. Only call it from an adapter that actually ran a cascade.
-fn record_standing_material(cell: &std::cell::Cell<GenerationFindings>, area_mm2: f64) {
-    let prev = cell.get().standing_material_mm2.unwrap_or(0.0);
-    cell.set(GenerationFindings {
-        standing_material_mm2: Some(prev + area_mm2),
-        ..cell.get()
-    });
+fn record_standing_material(cell: &std::cell::RefCell<GenerationFindings>, area_mm2: f64) {
+    let mut findings = cell.borrow_mut();
+    let prev = findings.standing_material_mm2.unwrap_or(0.0);
+    findings.standing_material_mm2 = Some(prev + area_mm2);
 }
 
 /// Record a dropped-band finding (Wave D1). `None` is a no-op — an adapter
 /// that planned bands and dropped none must not overwrite an earlier
 /// finding with an absence.
 fn record_dropped_band(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: Option<crate::compute::config::DroppedBandFinding>,
 ) {
     let Some(finding) = finding else { return };
-    cell.set(GenerationFindings {
-        dropped_band: Some(finding),
-        ..cell.get()
-    });
+    cell.borrow_mut().dropped_band = Some(finding);
 }
 
 /// Record the centreline tip-float tally (Wave D1). Unlike the two above
@@ -133,15 +143,13 @@ fn record_dropped_band(
 /// points is the honest "a centreline pass ran and nothing floated", and it
 /// is exactly what stops a later reader from reading silence as clean.
 fn record_tip_float(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: crate::compute::config::TipFloatFinding,
 ) {
-    let mut merged = cell.get().tip_float.unwrap_or_default();
+    let mut findings = cell.borrow_mut();
+    let mut merged = findings.tip_float.unwrap_or_default();
     merged.merge(finding);
-    cell.set(GenerationFindings {
-        tip_float: Some(merged),
-        ..cell.get()
-    });
+    findings.tip_float = Some(merged);
 }
 
 /// Record that a loaded project still sets a RETIRED dial (PR-5).
@@ -150,33 +158,15 @@ fn record_tip_float(
 /// nothing to be told, and a notice on every toolpath is a notice nobody
 /// reads.
 fn record_deprecated_dial(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: crate::compute::config::DeprecatedDialFinding,
 ) {
     if (finding.value - finding.default_value).abs() <= 1e-9 {
         return;
     }
-    cell.set(GenerationFindings {
-        deprecated_dial: Some(finding),
-        ..cell.get()
-    });
+    cell.borrow_mut().deprecated_dial = Some(finding);
 }
 
-/// Record the offset stepover an operation derived from the reach policy
-/// (PR-6a, H2.3).
-///
-/// Unlike [`record_deprecated_dial`] this is NOT suppressed at the
-/// no-change case here — the finding carries both numbers and the reader
-/// decides. The diagnostic adapter is what stays quiet when the policy and
-/// the retired envelope rule agree (every plain ball), so a test can still
-/// assert the derivation ran on a tool it did not move.
-///
-/// FIRST WRITER WINS. One toolpath can derive a stepover twice — the
-/// operation's own routing/fit site during generation, then PR-7's generic
-/// rest-analysis POST-pass. The op's own is the load-bearing one (it steers
-/// emitted cutting; the post-pass steers a report), and it always runs
-/// first, so a later call must not silently replace it. The slot holds one
-/// finding; when both fire, this is which one.
 /// Record what the ramp-finish reach clamp did (PR-8b).
 ///
 /// Like [`record_tip_float`] and unlike [`record_deprecated_dial`], this
@@ -185,13 +175,10 @@ fn record_deprecated_dial(
 /// stops a later reader from reading silence as clean. The diagnostic
 /// adapter is what stays quiet when nothing moved.
 fn record_ramp_reach_clamp(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: crate::ramp_finish::RampReachClamp,
 ) {
-    cell.set(GenerationFindings {
-        ramp_reach_clamp: Some(finding),
-        ..cell.get()
-    });
+    cell.borrow_mut().ramp_reach_clamp = Some(finding);
 }
 
 /// Record which rest reference the claims pipeline resolved to (A/M6).
@@ -201,26 +188,38 @@ fn record_ramp_reach_clamp(
 /// and that is not derivable from any config field or from the emitted
 /// moves. The diagnostic adapter is what decides how loud to be.
 fn record_claims_reference(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: crate::compute::config::ClaimsReferenceFinding,
 ) {
-    cell.set(GenerationFindings {
-        claims_reference: Some(finding),
-        ..cell.get()
-    });
+    cell.borrow_mut().claims_reference = Some(finding);
 }
 
+/// Record an offset stepover an operation derived from the reach policy
+/// (PR-6a, H2.3).
+///
+/// Unlike [`record_deprecated_dial`] this is NOT suppressed at the
+/// no-change case here — the finding carries both numbers and the reader
+/// decides. The diagnostic adapter is what stays quiet when the policy and
+/// the retired envelope rule agree (every plain ball), so a test can still
+/// assert the derivation ran on a tool it did not move.
+///
+/// C8: APPENDS. This used to be first-writer-wins against a single slot,
+/// justified as "the op's own is the load-bearing one and it always runs
+/// first" — true, and beside the point: the post-pass derivation still
+/// happened, still steered a report, and was discarded without trace. Both
+/// are kept, in the order they fired; each carries its own `site`, and the
+/// diagnostic adapter decides which are worth showing.
+///
+/// This rationale was ORPHANED until C8: the block ran into the next `///`
+/// line with no blank between them, so the whole PR-6a justification was
+/// attached to `record_ramp_reach_clamp` and THIS function carried no doc
+/// at all. A first-writer-wins rule that nobody could find is most of how
+/// it survived.
 fn record_derived_stepover(
-    cell: &std::cell::Cell<GenerationFindings>,
+    cell: &std::cell::RefCell<GenerationFindings>,
     finding: crate::compute::config::DerivedStepoverFinding,
 ) {
-    if cell.get().derived_stepover.is_some() {
-        return;
-    }
-    cell.set(GenerationFindings {
-        derived_stepover: Some(finding),
-        ..cell.get()
-    });
+    cell.borrow_mut().derived_stepovers.push(finding);
 }
 
 /// F2 (defect class C3): every generation funnel appends the
@@ -394,7 +393,7 @@ pub struct ExecutionContext<'a> {
     /// [`GenerationFindings`]). A `Cell` rather than a return value so an
     /// adapter can report one without changing the `GenerateFn` signature
     /// every family shares.
-    pub findings: &'a std::cell::Cell<GenerationFindings>,
+    pub findings: &'a std::cell::RefCell<GenerationFindings>,
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
     pub polygons: Option<&'a [Polygon2]>,
@@ -2223,7 +2222,7 @@ pub fn execute_operation_annotated_with_regions(
     // sites for no benefit. The borrow into `RegionSet` happens right here,
     // where it's used.
     let region_set = boundary_regions.map(RegionSet::from_slice);
-    let findings = std::cell::Cell::new(GenerationFindings::default());
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
         findings: &findings,
         mesh,
@@ -2335,7 +2334,7 @@ pub fn execute_operation_annotated_with_regions(
         );
     }
 
-    Ok((generated, findings.get()))
+    Ok((generated, findings.into_inner()))
 }
 
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
@@ -2360,7 +2359,7 @@ fn attach_generic_rest_analysis(
     reference_tool_cfg: Option<&ToolConfig>,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
-    findings: &std::cell::Cell<GenerationFindings>,
+    findings: &std::cell::RefCell<GenerationFindings>,
 ) {
     let reference_tool = reference_tool_cfg.map(build_cutter);
     let probe_ball = crate::tool::BallEndmill::new(
@@ -3003,6 +3002,105 @@ fn effective_levels(
 )]
 mod tests {
     use super::*;
+
+    // ── C8: findings collections ────────────────────────────────────────
+
+    fn stepover_finding(
+        site: &'static str,
+        mm: f64,
+    ) -> crate::compute::config::DerivedStepoverFinding {
+        crate::compute::config::DerivedStepoverFinding {
+            site,
+            stepover_mm: mm,
+            reference_depth_mm: 0.5,
+            reference_depth_basis: "test",
+            envelope_rule_mm: mm * 3.0,
+        }
+    }
+
+    /// C8, red-first against the pre-wave code: `record_derived_stepover`
+    /// returned early when the slot was occupied, so the SECOND derivation
+    /// — PR-7's generic rest-analysis post-pass — was discarded with no
+    /// trace. This asserts both survive, in the order they fired, each
+    /// carrying its own `site`.
+    #[test]
+    fn two_derivations_on_one_toolpath_are_both_recorded() {
+        let cell = std::cell::RefCell::new(GenerationFindings::default());
+        assert!(
+            cell.borrow().derived_stepovers.is_empty(),
+            "empty means nothing derived — the 'not measured' state"
+        );
+
+        record_derived_stepover(
+            &cell,
+            stepover_finding("UnifiedFinish crease/pencil claims", 0.20),
+        );
+        record_derived_stepover(
+            &cell,
+            stepover_finding("generic rest analysis routing", 0.35),
+        );
+
+        let findings = cell.into_inner();
+        assert_eq!(
+            findings.derived_stepovers.len(),
+            2,
+            "first-writer-wins would have kept only one: {:?}",
+            findings.derived_stepovers
+        );
+        // Emission order is the firing order: the operation's own site runs
+        // during generation, the post-pass afterwards.
+        assert_eq!(
+            findings.derived_stepovers[0].site,
+            "UnifiedFinish crease/pencil claims"
+        );
+        assert_eq!(
+            findings.derived_stepovers[1].site,
+            "generic rest analysis routing"
+        );
+        assert!((findings.derived_stepovers[0].stepover_mm - 0.20).abs() < 1e-12);
+        assert!((findings.derived_stepovers[1].stepover_mm - 0.35).abs() < 1e-12);
+    }
+
+    /// The diagnostic adapter fans out per derivation, and still stays quiet
+    /// on the ones that agree with the retired envelope rule — the
+    /// per-derivation form of the "a notice on every toolpath is a notice
+    /// nobody reads" rule. Before C8 the whole operation's diagnostic was
+    /// decided by whichever derivation happened to be recorded first, so a
+    /// noteworthy second one could be silenced by an unremarkable first.
+    #[test]
+    fn the_diagnostic_adapter_reports_each_derivation_separately() {
+        let mut stats = crate::compute::config::ToolpathStats::default();
+        // First agrees with the envelope rule (a plain ball) — silent.
+        stats
+            .derived_stepovers
+            .push(crate::compute::config::DerivedStepoverFinding {
+                envelope_rule_mm: 0.20,
+                ..stepover_finding("quiet site", 0.20)
+            });
+        // Second does not — must be reported even though the first was not.
+        stats
+            .derived_stepovers
+            .push(stepover_finding("loud site", 0.35));
+
+        let out = crate::diagnostics::adapters::from_generation::diagnostics_from_generation(
+            crate::ids::ToolpathId(0),
+            &stats,
+        );
+        let stepover_diags: Vec<_> = out
+            .iter()
+            .filter(|d| d.id.as_str() == crate::diagnostics::ids::CONFIG_DERIVED_STEPOVER)
+            .collect();
+        assert_eq!(
+            stepover_diags.len(),
+            1,
+            "one diagnostic per NOTEWORTHY derivation: {stepover_diags:?}"
+        );
+        assert!(
+            stepover_diags[0].message.contains("loud site"),
+            "the reported one must be the second: {}",
+            stepover_diags[0].message
+        );
+    }
     use std::sync::atomic::AtomicBool;
 
     use crate::compute::catalog::{OperationConfig, OperationType};

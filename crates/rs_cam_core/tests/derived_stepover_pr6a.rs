@@ -238,11 +238,16 @@ fn the_claims_stepover_is_the_reach_policy_value_not_the_envelope_rule() {
         .stats
         .clone();
 
-    let finding = stats
-        .derived_stepover
-        .as_deref()
-        .copied()
-        .expect("the claims pipeline ran, so a derived stepover was recorded");
+    // C8: a collection now. Exactly one derivation is expected here — the
+    // claims pipeline's own — and asserting that is stronger than taking
+    // whichever one happened to be recorded first.
+    assert_eq!(
+        stats.derived_stepovers.len(),
+        1,
+        "expected exactly one derivation: {:?}",
+        stats.derived_stepovers
+    );
+    let finding = stats.derived_stepovers[0];
 
     println!(
         "PR-6a taper: derived {:.4} mm, envelope rule {:.4} mm, ref depth {:.4} mm ({})",
@@ -335,8 +340,8 @@ fn the_derived_stepover_changes_the_emitted_pass_spacing() {
         .get_result(0)
         .expect("a generated result")
         .stats
-        .derived_stepover
-        .as_deref()
+        .derived_stepovers
+        .first()
         .copied()
         .expect("the claims pipeline ran");
 
@@ -428,7 +433,7 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
         .stats
         .clone();
     let finding =
-        stats.derived_stepover.as_deref().copied().expect(
+        stats.derived_stepovers.first().copied().expect(
             "the claims pipeline ran on the ball too — 'not measured' would hide a regression",
         );
     println!(
