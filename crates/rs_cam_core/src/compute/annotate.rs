@@ -6,9 +6,9 @@
 //! events and opens/closes semantic scopes so that the toolpath viewer can
 //! display a structured breakdown of the algorithm's behaviour.
 
-use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind};
+use crate::semantic_trace::{SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind};
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -81,8 +81,8 @@ fn annotate_depth_run_spans_with_region_kind(
             pass_index,
         }) = &depth_span.payload
         {
-            scope.set_param("z_level", *z_level);
-            scope.set_param("pass_index", *pass_index);
+            scope.set_param(SemanticKey::ZLevel, *z_level);
+            scope.set_param(SemanticKey::PassIndex, *pass_index);
         }
         bind_span_scope(&scope, toolpath, depth_span);
         let child_ctx = scope.context();
@@ -125,7 +125,7 @@ fn annotate_one_region_span(
     };
     let scope = context.start_item(kind.clone(), label);
     if let Some(SpanPayload::Region { region_id, .. }) = &span.payload {
-        scope.set_param("region_id", *region_id);
+        scope.set_param(SemanticKey::RegionId, *region_id);
     }
     bind_span_scope(&scope, toolpath, span);
     scope.finish();
@@ -133,34 +133,39 @@ fn annotate_one_region_span(
 
 /// Semantic trace for drill-like operations: `Hole` items with child `Cycle`
 /// items for each plunge/peck feed move.
+///
+/// C4: the hole/peck split is read off [`RegionSpanRole`], not off the label.
+/// This function used to reconstruct the nesting with
+/// `label.starts_with("Hole ") && !label.contains("plunge")` for the parent
+/// and `label.contains("plunge")` for the child — a contract
+/// `spans_from_drill_holes` was never obliged to keep, one `format!` away
+/// from silently producing a flat trace with every peck promoted to a hole.
+/// The labels still travel through to the semantic items, because that is
+/// what a human reads; nothing branches on them.
 pub(super) fn annotate_drill_spans(
     spans: &[Span],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
-    for hole_span in spans.iter().filter(|span| {
-        span.kind == SpanKind::Region
-            && !span.is_boundary()
-            && span.label.starts_with("Hole ")
-            && !span.label.contains("plunge")
-    }) {
+    for hole_span in spans
+        .iter()
+        .filter(|span| span.has_region_role(RegionSpanRole::DrillHole))
+    {
         let scope = op_context.start_item(ToolpathSemanticKind::Hole, hole_span.label.clone());
         if let Some(SpanPayload::Region { region_id, .. }) = &hole_span.payload {
-            scope.set_param("hole_index", *region_id);
+            scope.set_param(SemanticKey::HoleIndex, *region_id);
         }
         bind_span_scope(&scope, toolpath, hole_span);
         let child_ctx = scope.context();
         for plunge_span in spans.iter().filter(|candidate| {
-            candidate.kind == SpanKind::Region
-                && !candidate.is_boundary()
-                && candidate.label.contains("plunge")
+            candidate.has_region_role(RegionSpanRole::DrillPeck)
                 && candidate.start_move >= hole_span.start_move
                 && candidate.end_move <= hole_span.end_move
         }) {
             let cycle =
                 child_ctx.start_item(ToolpathSemanticKind::Cycle, plunge_span.label.clone());
             if let Some(SpanPayload::Region { region_id, .. }) = &plunge_span.payload {
-                cycle.set_param("cycle_index", *region_id);
+                cycle.set_param(SemanticKey::CycleIndex, *region_id);
             }
             bind_span_scope(&cycle, toolpath, plunge_span);
             cycle.finish();
@@ -222,9 +227,9 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Region,
                     format!("Region {}", region_index + 1),
                 );
-                scope.set_param("region_index", *region_index);
-                scope.set_param("region_total", *region_total);
-                scope.set_param("cell_count", *cell_count);
+                scope.set_param(SemanticKey::RegionIndex, *region_index);
+                scope.set_param(SemanticKey::RegionTotal, *region_total);
+                scope.set_param(SemanticKey::CellCount, *cell_count);
                 let ctx = scope.context();
                 region_ctx = Some(ctx);
                 region_scope = Some(scope);
@@ -242,9 +247,9 @@ pub(super) fn annotate_adaptive3d(
                 let parent = region_ctx.as_ref().unwrap_or(op_context);
                 let scope =
                     parent.start_item(ToolpathSemanticKind::DepthLevel, format!("Z {z_level:.2}"));
-                scope.set_param("z_level", *z_level);
-                scope.set_param("level_index", *level_index);
-                scope.set_param("level_total", *level_total);
+                scope.set_param(SemanticKey::ZLevel, *z_level);
+                scope.set_param(SemanticKey::LevelIndex, *level_index);
+                scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
@@ -270,9 +275,9 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::DepthLevel,
                     format!("Global Z {z_level:.2}"),
                 );
-                scope.set_param("z_level", *z_level);
-                scope.set_param("level_index", *level_index);
-                scope.set_param("level_total", *level_total);
+                scope.set_param(SemanticKey::ZLevel, *z_level);
+                scope.set_param(SemanticKey::LevelIndex, *level_index);
+                scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
@@ -301,11 +306,11 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Entry,
                     format!("Pass {} {}", pass_index + 1, style_label),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("entry_x", *entry_x);
-                scope.set_param("entry_y", *entry_y);
-                scope.set_param("entry_z", *entry_z);
-                scope.set_param("style", *style_label);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::EntryX, *entry_x);
+                scope.set_param(SemanticKey::EntryY, *entry_y);
+                scope.set_param(SemanticKey::EntryZ, *entry_z);
+                scope.set_param(SemanticKey::Style, *style_label);
                 // D4 — entry sequence runs from the event's emit
                 // index (entry_start) to its captured end index. Use
                 // the explicit end so the semantic scope matches the
@@ -320,8 +325,8 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {} skipped (preflight)", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("skipped", true);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::Skipped, true);
                 scope.finish();
             }
             Adaptive3dRuntimeEvent::PassSummary {
@@ -336,11 +341,11 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {}", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("step_count", *step_count);
-                scope.set_param("exit_reason", exit_reason.clone());
-                scope.set_param("yield_ratio", *yield_ratio);
-                scope.set_param("short", *short);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::StepCount, *step_count);
+                scope.set_param(SemanticKey::ExitReason, exit_reason.clone());
+                scope.set_param(SemanticKey::YieldRatio, *yield_ratio);
+                scope.set_param(SemanticKey::Short, *short);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -363,19 +368,28 @@ fn set_z_level_plan_metrics(
     if !metrics.available {
         return;
     }
-    scope.set_param("marching_squares_regions", metrics.marching_squares_regions);
-    scope.set_param("region_areas_mm2", metrics.region_areas_mm2.clone());
     scope.set_param(
-        "dropped_micro_region_count",
+        SemanticKey::MarchingSquaresRegions,
+        metrics.marching_squares_regions,
+    );
+    scope.set_param(
+        SemanticKey::RegionAreasMm2,
+        metrics.region_areas_mm2.clone(),
+    );
+    scope.set_param(
+        SemanticKey::DroppedMicroRegionCount,
         metrics.dropped_micro_region_count,
     );
     scope.set_param(
-        "perimeter_sweep_length_mm",
+        SemanticKey::PerimeterSweepLengthMm,
         metrics.perimeter_sweep_length_mm,
     );
-    scope.set_param("agent_walk_cut_length_mm", metrics.agent_walk_cut_length_mm);
     scope.set_param(
-        "residual_cleanup_cell_count",
+        SemanticKey::AgentWalkCutLengthMm,
+        metrics.agent_walk_cut_length_mm,
+    );
+    scope.set_param(
+        SemanticKey::ResidualCleanupCellCount,
         metrics.residual_cleanup_cell_count,
     );
 }
@@ -408,8 +422,8 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::SlotClearing,
                     format!("Slot line {}/{line_total}", line_index + 1),
                 );
-                scope.set_param("line_index", *line_index);
-                scope.set_param("line_total", *line_total);
+                scope.set_param(SemanticKey::LineIndex, *line_index);
+                scope.set_param(SemanticKey::LineTotal, *line_total);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -422,9 +436,9 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Entry,
                     format!("Pass {} entry", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("entry_x", *entry_x);
-                scope.set_param("entry_y", *entry_y);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::EntryX, *entry_x);
+                scope.set_param(SemanticKey::EntryY, *entry_y);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -439,11 +453,11 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {}", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("step_count", *step_count);
-                scope.set_param("idle_count", *idle_count);
-                scope.set_param("search_evaluations", *search_evaluations);
-                scope.set_param("exit_reason", exit_reason.clone());
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::StepCount, *step_count);
+                scope.set_param(SemanticKey::IdleCount, *idle_count);
+                scope.set_param(SemanticKey::SearchEvaluations, *search_evaluations);
+                scope.set_param(SemanticKey::ExitReason, exit_reason.clone());
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -457,10 +471,10 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::ForcedClear,
                     format!("Forced clear (pass {})", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("center_x", *center_x);
-                scope.set_param("center_y", *center_y);
-                scope.set_param("radius", *radius);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::CenterX, *center_x);
+                scope.set_param(SemanticKey::CenterY, *center_y);
+                scope.set_param(SemanticKey::Radius, *radius);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -472,8 +486,8 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Cleanup,
                     format!("Boundary cleanup {}/{contour_total}", contour_index + 1),
                 );
-                scope.set_param("contour_index", *contour_index);
-                scope.set_param("contour_total", *contour_total);
+                scope.set_param(SemanticKey::ContourIndex, *contour_index);
+                scope.set_param(SemanticKey::ContourTotal, *contour_total);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -508,9 +522,9 @@ pub(super) fn annotate_scallop(
             ToolpathSemanticKind::Ring,
             format!("Ring {}/{ring_total}", ring_index + 1),
         );
-        scope.set_param("ring_index", *ring_index);
-        scope.set_param("ring_total", *ring_total);
-        scope.set_param("continuous", *continuous);
+        scope.set_param(SemanticKey::RingIndex, *ring_index);
+        scope.set_param(SemanticKey::RingTotal, *ring_total);
+        scope.set_param(SemanticKey::Continuous, *continuous);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
@@ -539,9 +553,9 @@ pub(super) fn annotate_unified_finish_regions(
 ) {
     for region in regions {
         let scope = op_context.start_item(ToolpathSemanticKind::Region, region.semantic_label());
-        scope.set_param("region_id", region.region_id);
-        scope.set_param("band", region.kind.band_label());
-        scope.set_param("strategy", region.kind.strategy().label());
+        scope.set_param(SemanticKey::RegionId, region.region_id);
+        scope.set_param(SemanticKey::Band, region.kind.band_label());
+        scope.set_param(SemanticKey::Strategy, region.kind.strategy().label());
         if let Some(area) = region.area_mm2 {
             // M1 serde decision (PR-0): this stays a RAW JSON NUMBER. The
             // semantic-trace wire is read by string key (narration, the MCP
@@ -558,7 +572,7 @@ pub(super) fn annotate_unified_finish_regions(
             // which grid the area was measured on (X-6). If that ever matters
             // on the wire, add a sibling `area_provenance` string param —
             // additive, no key rename.
-            scope.set_param("area_mm2", area);
+            scope.set_param(SemanticKey::AreaMm2, area);
         }
         // Same guard `bind_span_scope` applies to structural spans: an
         // empty or out-of-range node contributes an unlinked item rather
@@ -609,14 +623,14 @@ pub(super) fn annotate_ramp_finish(
                 ramp_total
             ),
         );
-        scope.set_param("terrace_index", *terrace_index);
-        scope.set_param("terrace_total", *terrace_total);
-        scope.set_param("upper_level_index", *upper_level_index);
-        scope.set_param("lower_level_index", *lower_level_index);
-        scope.set_param("upper_z", *upper_z);
-        scope.set_param("lower_z", *lower_z);
-        scope.set_param("ramp_index", *ramp_index);
-        scope.set_param("ramp_total", *ramp_total);
+        scope.set_param(SemanticKey::TerraceIndex, *terrace_index);
+        scope.set_param(SemanticKey::TerraceTotal, *terrace_total);
+        scope.set_param(SemanticKey::UpperLevelIndex, *upper_level_index);
+        scope.set_param(SemanticKey::LowerLevelIndex, *lower_level_index);
+        scope.set_param(SemanticKey::UpperZ, *upper_z);
+        scope.set_param(SemanticKey::LowerZ, *lower_z);
+        scope.set_param(SemanticKey::RampIndex, *ramp_index);
+        scope.set_param(SemanticKey::RampTotal, *ramp_total);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
@@ -649,9 +663,9 @@ pub(super) fn annotate_spiral_finish(
             ToolpathSemanticKind::Ring,
             format!("Ring {}/{ring_total}", ring_index + 1),
         );
-        scope.set_param("ring_index", *ring_index);
-        scope.set_param("ring_total", *ring_total);
-        scope.set_param("radius_mm", *radius_mm);
+        scope.set_param(SemanticKey::RingIndex, *ring_index);
+        scope.set_param(SemanticKey::RingTotal, *ring_total);
+        scope.set_param(SemanticKey::RadiusMm, *radius_mm);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
@@ -700,12 +714,12 @@ pub(super) fn annotate_pencil(
         };
 
         let scope = op_context.start_item(kind, label);
-        scope.set_param("chain_index", *chain_index);
-        scope.set_param("chain_total", *chain_total);
-        scope.set_param("offset_index", *offset_index);
-        scope.set_param("offset_total", *offset_total);
-        scope.set_param("offset_mm", *offset_mm);
-        scope.set_param("is_centerline", *is_centerline);
+        scope.set_param(SemanticKey::ChainIndex, *chain_index);
+        scope.set_param(SemanticKey::ChainTotal, *chain_total);
+        scope.set_param(SemanticKey::OffsetIndex, *offset_index);
+        scope.set_param(SemanticKey::OffsetTotal, *offset_total);
+        scope.set_param(SemanticKey::OffsetMm, *offset_mm);
+        scope.set_param(SemanticKey::IsCenterline, *is_centerline);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }

@@ -214,9 +214,18 @@ pub fn region_node_barriers(toolpath: &Toolpath, nodes: &[RegionNode]) -> Vec<Sp
 /// spans rather than `DepthPass` spans. This keeps per-hole global rapid-order
 /// optimization safe: `DepthPass` spans double as TSP barriers, while drill
 /// pecks are local to a hole and should not prevent hole order optimization.
+///
+/// The two nesting levels carry [`RegionSpanRole::DrillHole`] and
+/// [`RegionSpanRole::DrillPeck`] respectively (C4). Before that both were
+/// `GeneratorPass` and the parent/child relation was recoverable only by
+/// parsing the labels — `annotate_drill_spans` did exactly that. The labels
+/// are unchanged and remain what a human reads; nothing structural depends
+/// on their shape any more.
 pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
     let mut spans = operation_spans(toolpath.moves.len());
     let holes = drill_hole_sections(toolpath);
+    // Pecks continue the hole id space rather than restarting it, so a
+    // `region_id` identifies its span uniquely across both roles.
     let mut plunge_region_id = holes.len() as u32;
 
     for (hole_index, hole) in holes.iter().enumerate() {
@@ -225,7 +234,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                 .with_label(format!("Hole {}", hole_index + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: hole_index as u32,
-                    role: RegionSpanRole::GeneratorPass,
+                    role: RegionSpanRole::DrillHole,
                 }),
         );
 
@@ -235,7 +244,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                     .with_label(format!("Hole {} plunge {}", hole_index + 1, peck_index + 1))
                     .with_payload(SpanPayload::Region {
                         region_id: plunge_region_id,
-                        role: RegionSpanRole::GeneratorPass,
+                        role: RegionSpanRole::DrillPeck,
                     }),
             );
             plunge_region_id = plunge_region_id.saturating_add(1);

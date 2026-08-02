@@ -91,6 +91,15 @@ impl Span {
         self.region_role() == Some(RegionSpanRole::Node)
     }
 
+    /// True when this span carries `role` and is not a zero-width boundary
+    /// marker — the shape every role query in the codebase wants.
+    ///
+    /// C4: the supported replacement for `label.starts_with("Hole ") &&
+    /// !label.contains("plunge")` and friends.
+    pub fn has_region_role(&self, role: RegionSpanRole) -> bool {
+        !self.is_boundary() && self.kind == SpanKind::Region && self.region_role() == Some(role)
+    }
+
     /// Number of moves covered. 0 for boundary spans.
     pub fn move_count(&self) -> usize {
         self.end_move.saturating_sub(self.start_move)
@@ -266,6 +275,20 @@ pub enum SpanPayload {
 /// existed the only discriminator was the LABEL STRING — consumers filtered
 /// on `label.ends_with(" band")`, which is a contract no producer was
 /// obliged to keep. Read this instead.
+///
+/// C4 (2026-08-02) closed the second instance of the same class. Drill spans
+/// nest one more level — a hole contains its pecks — and BOTH levels were
+/// `GeneratorPass`, so the only discriminator was again the label:
+/// `label.starts_with("Hole ") && !label.contains("plunge")` for the parent,
+/// `label.contains("plunge")` for the child. Two variants were added rather
+/// than the one the backlog asked for, because the parent side was exactly
+/// as label-bound as the child side and naming only the child would have
+/// left "a hole is a `GeneratorPass` in a drill operation" as an unwritten
+/// rule a generic consumer cannot apply.
+///
+/// **Any future mix table, routing decision or report grouping must be built
+/// on this role (or on a [`SpanKind`]), never on `label`.** `label` is
+/// free text for humans; nothing downstream may depend on its shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RegionSpanRole {
     /// A planner territory node. `region_id` indexes the planner's own
@@ -273,21 +296,63 @@ pub enum RegionSpanRole {
     /// tiles the operation's moves; a semantic `Region` item exists per node
     /// and their ranges must agree (A/M8).
     Node,
-    /// One pass the generator emitted — a scallop ring, a drill hole or
-    /// peck, an adaptive region, a contiguous cutting run. `region_id` is
-    /// the generator's own sequence number, NOT a node id. These nest inside
-    /// nodes and are not a partition of anything.
+    /// One pass the generator emitted — a scallop ring, an adaptive region,
+    /// a contiguous cutting run. `region_id` is the generator's own sequence
+    /// number, NOT a node id. These nest inside nodes and are not a
+    /// partition of anything.
     GeneratorPass,
+    /// One drilled hole, spanning every peck in its cycle. `region_id` is
+    /// the hole index. Its [`Self::DrillPeck`] children are nested inside its
+    /// move range.
+    DrillHole,
+    /// One peck of one drilled hole. `region_id` continues the hole id space
+    /// past the last hole (`region_id >= hole_count`), so hole and peck ids
+    /// never collide even though they index different sequences.
+    DrillPeck,
 }
 
 impl RegionSpanRole {
-    /// Human-readable label for reports and MCP payloads.
+    /// Every variant, in declaration order. Same contract as
+    /// [`SpanKind::ALL`]: [`Self::label`]'s match is exhaustive so the
+    /// compiler stops a new variant here first, and [`Self::from_key`] is
+    /// derived from this list so the agent-facing vocabulary cannot drift
+    /// from the enum.
+    pub const ALL: [Self; 4] = [
+        Self::Node,
+        Self::GeneratorPass,
+        Self::DrillHole,
+        Self::DrillPeck,
+    ];
+
+    /// The stable snake_case key for this role — what MCP `region_role`
+    /// carries, and the single source that vocabulary is derived from.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Node => "node",
             Self::GeneratorPass => "generator_pass",
+            Self::DrillHole => "drill_hole",
+            Self::DrillPeck => "drill_peck",
         }
+    }
+
+    /// Inverse of [`Self::label`]. `None` for anything that is not a region
+    /// role — callers should treat that as a loud error, not a silent
+    /// no-match.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.label() == key)
+    }
+
+    /// True for the roles a GENERATOR emits, as opposed to the planner's
+    /// territory [`Self::Node`]s. Drill holes and pecks are generator output
+    /// too; this is the predicate that used to be `== GeneratorPass`.
+    #[must_use]
+    pub const fn is_generator_pass(self) -> bool {
+        matches!(
+            self,
+            Self::GeneratorPass | Self::DrillHole | Self::DrillPeck
+        )
     }
 }
 
@@ -927,6 +992,72 @@ mod tests {
             node.remap(&mapping).region_role(),
             Some(RegionSpanRole::Node)
         );
+    }
+
+    /// C4: the drill nesting is a role pair, and the whole vocabulary
+    /// round-trips through its key. `ALL` is the single list `from_key`
+    /// derives from, so a variant that is added but not listed cannot be
+    /// looked up by name — the same contract `SpanKind::ALL` carries.
+    #[test]
+    fn every_region_role_round_trips_through_its_key() {
+        assert_eq!(RegionSpanRole::ALL.len(), 4);
+        for role in RegionSpanRole::ALL {
+            assert_eq!(
+                RegionSpanRole::from_key(role.label()),
+                Some(role),
+                "{} did not round-trip",
+                role.label()
+            );
+        }
+        assert_eq!(RegionSpanRole::from_key("generator-pass"), None);
+        assert_eq!(RegionSpanRole::from_key(""), None);
+
+        // The keys are distinct — a copy-pasted arm in `label` would
+        // otherwise make one role unreachable through `from_key`.
+        let mut keys: Vec<&str> = RegionSpanRole::ALL.iter().map(|r| r.label()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), RegionSpanRole::ALL.len());
+    }
+
+    /// `has_region_role` is the supported replacement for the drill label
+    /// parsing (`label.starts_with("Hole ") && !label.contains("plunge")`).
+    /// It must reject boundary markers and non-region spans, which the label
+    /// predicate did by accident rather than by contract.
+    #[test]
+    fn has_region_role_answers_the_drill_nesting_question() {
+        let hole = Span::new(0, 20, SpanKind::Region)
+            .with_label("Hole 1")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::DrillHole,
+            });
+        let peck = Span::new(2, 6, SpanKind::Region)
+            .with_label("Hole 1 plunge 1")
+            .with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::DrillPeck,
+            });
+        assert!(hole.has_region_role(RegionSpanRole::DrillHole));
+        assert!(!hole.has_region_role(RegionSpanRole::DrillPeck));
+        assert!(peck.has_region_role(RegionSpanRole::DrillPeck));
+        assert!(!peck.has_region_role(RegionSpanRole::DrillHole));
+        // Neither is a planner node, and neither is the plain generator pass
+        // they both used to be.
+        assert!(!hole.is_region_node() && !peck.is_region_node());
+        assert!(!hole.has_region_role(RegionSpanRole::GeneratorPass));
+        // …but both ARE generator output.
+        assert!(RegionSpanRole::DrillHole.is_generator_pass());
+        assert!(RegionSpanRole::DrillPeck.is_generator_pass());
+        assert!(!RegionSpanRole::Node.is_generator_pass());
+
+        // A zero-width boundary marker carrying the role is still not a hole.
+        let boundary = Span::new(20, 20, SpanKind::Region).with_payload(SpanPayload::Region {
+            region_id: 9,
+            role: RegionSpanRole::DrillHole,
+        });
+        assert!(boundary.is_boundary());
+        assert!(!boundary.has_region_role(RegionSpanRole::DrillHole));
     }
 
     #[test]

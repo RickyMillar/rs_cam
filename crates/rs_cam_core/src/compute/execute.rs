@@ -14,7 +14,9 @@ use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::region_set::RegionSet;
-use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope};
+use crate::semantic_trace::{
+    SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
+};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::toolpath_spans::AnnotatedToolpath;
@@ -2517,11 +2519,11 @@ fn apply_dressup_traced(
         // indistinguishable from a precise one.
         match provenance.touched_new_range(n) {
             Some(range) => {
-                scope.set_param("move_scope", "touched_moves");
+                scope.set_param(SemanticKey::MoveScope, "touched_moves");
                 scope.bind_to_toolpath(&result.toolpath, range.start, range.end);
             }
             None => {
-                scope.set_param("move_scope", "whole_path");
+                scope.set_param(SemanticKey::MoveScope, "whole_path");
                 scope.bind_to_toolpath(&result.toolpath, 0, n);
             }
         }
@@ -2604,8 +2606,8 @@ pub fn apply_dressups(
                 semantic_label: "Rapid ordering",
             },
             |scope| {
-                scope.set_param("safe_z", safe_z);
-                scope.set_param("barrier_count", barrier_count);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
+                scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
             |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
@@ -2637,8 +2639,8 @@ pub fn apply_dressups(
                     semantic_label: "Ramp entry",
                 },
                 |scope| {
-                    scope.set_param("kind", "ramp");
-                    scope.set_param("max_angle_deg", ramp_angle);
+                    scope.set_param(SemanticKey::Kind, "ramp");
+                    scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
                 },
                 |at| {
                     apply_entry_with_provenance(
@@ -2667,9 +2669,9 @@ pub fn apply_dressups(
                     semantic_label: "Helix entry",
                 },
                 |scope| {
-                    scope.set_param("kind", "helix");
-                    scope.set_param("radius", helix_radius);
-                    scope.set_param("pitch", helix_pitch);
+                    scope.set_param(SemanticKey::Kind, "helix");
+                    scope.set_param(SemanticKey::Radius, helix_radius);
+                    scope.set_param(SemanticKey::Pitch, helix_pitch);
                 },
                 |at| {
                     apply_entry_with_provenance(
@@ -2702,7 +2704,7 @@ pub fn apply_dressups(
                 semantic_label: "Dogbones",
             },
             |scope| {
-                scope.set_param("angle_deg", angle);
+                scope.set_param(SemanticKey::AngleDeg, angle);
             },
             |at| apply_dogbones_with_provenance(at, tool_radius, angle),
         );
@@ -2725,12 +2727,12 @@ pub fn apply_dressups(
                 semantic_label: "Lead in/out",
             },
             |scope| {
-                scope.set_param("radius", radius);
+                scope.set_param(SemanticKey::Radius, radius);
                 if let Some(f) = li_feed {
-                    scope.set_param("lead_in_feed_rate", f);
+                    scope.set_param(SemanticKey::LeadInFeedRate, f);
                 }
                 if let Some(f) = lo_feed {
-                    scope.set_param("lead_out_feed_rate", f);
+                    scope.set_param(SemanticKey::LeadOutFeedRate, f);
                 }
             },
             |at| crate::dressup::apply_lead_in_out_with_provenance(at, radius, li_feed, lo_feed),
@@ -2753,8 +2755,8 @@ pub fn apply_dressups(
                 semantic_label: "Link moves",
             },
             |scope| {
-                scope.set_param("max_link_distance", max_dist);
-                scope.set_param("link_feed_rate", link_feed);
+                scope.set_param(SemanticKey::MaxLinkDistance, max_dist);
+                scope.set_param(SemanticKey::LinkFeedRate, link_feed);
             },
             |at| {
                 apply_link_moves_with_provenance(
@@ -2785,7 +2787,7 @@ pub fn apply_dressups(
                 semantic_label: "Arc fitting",
             },
             |scope| {
-                scope.set_param("tolerance", tolerance);
+                scope.set_param(SemanticKey::Tolerance, tolerance);
             },
             |at| crate::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
         );
@@ -2808,7 +2810,7 @@ pub fn apply_dressups(
                 semantic_label: "Segment merge",
             },
             |scope| {
-                scope.set_param("tolerance", merge_tol);
+                scope.set_param(SemanticKey::Tolerance, merge_tol);
             },
             |at| crate::condition::merge_linear_runs_with_provenance(at, merge_tol),
         );
@@ -2831,7 +2833,7 @@ pub fn apply_dressups(
                 semantic_label: "Rapid ordering",
             },
             |scope| {
-                scope.set_param("safe_z", safe_z);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
             },
             |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
@@ -2851,8 +2853,8 @@ pub fn apply_dressups(
                 semantic_label: "Air-cut filter",
             },
             |scope| {
-                scope.set_param("tool_radius", tool_radius);
-                scope.set_param("safe_z", safe_z);
+                scope.set_param(SemanticKey::ToolRadius, tool_radius);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
             },
             |at| {
                 crate::dressup::filter_air_cuts_with_provenance(
@@ -2894,9 +2896,9 @@ pub fn apply_dressups(
                 semantic_label: "Feed optimization",
             },
             |scope| {
-                scope.set_param("nominal_feed_rate", nominal);
-                scope.set_param("max_feed_rate", max_rate);
-                scope.set_param("ramp_rate", ramp_rate);
+                scope.set_param(SemanticKey::NominalFeedRate, nominal);
+                scope.set_param(SemanticKey::MaxFeedRate, max_rate);
+                scope.set_param(SemanticKey::RampRate, ramp_rate);
             },
             // Feed optimisation rewrites feed rates only — move count, order and
             // spans pass through untouched. The claim is made explicitly rather
@@ -4153,15 +4155,19 @@ mod tests {
         .expect("drill should succeed");
 
         assert!(result.spans_valid);
+        // C4: role queries, not label parsing. A test that asserted on the
+        // label shape would have kept passing if the roles were wrong, and
+        // would break on a purely cosmetic label edit — exactly backwards.
+        use crate::toolpath_spans::RegionSpanRole;
         let hole_count = result
             .spans
             .iter()
-            .filter(|span| span.label.starts_with("Hole ") && !span.label.contains("plunge"))
+            .filter(|span| span.has_region_role(RegionSpanRole::DrillHole))
             .count();
         let plunge_count = result
             .spans
             .iter()
-            .filter(|span| span.label.contains("plunge"))
+            .filter(|span| span.has_region_role(RegionSpanRole::DrillPeck))
             .count();
         assert_eq!(hole_count, 2, "expected one hole span per input hole");
         assert!(plunge_count >= 2, "expected drill plunge child spans");
@@ -4316,7 +4322,7 @@ mod tests {
             .items
             .iter()
             .find(|item| item.label == "Feed optimization")
-            .and_then(|item| item.params.values.get("nominal_feed_rate"))
+            .and_then(|item| item.params.get(SemanticKey::NominalFeedRate))
             .and_then(serde_json::Value::as_f64)
             .expect("feed optimization trace should carry nominal_feed_rate");
 
