@@ -3318,3 +3318,212 @@ scallop 50/50, `scallop_math` 12/12. `cargo fmt --check` clean;
 The wave is not a null result. The chord-refinement defect is a **shipped**
 fidelity bug that was silently violating the operator's path tolerance on
 every scalloped part, on both ring sources, and it is fixed.
+
+## C-SEQUENCE WAVE 10 (C9), 2026-08-03
+
+C9 is the model-debt bundle: four items from `ANTIPATTERNS_BACKLOG.md` P9,
+each gated on its own evidence, each free to close honestly if it could not
+prove itself. Three landed as behavioural change. The fourth is research, and
+it found something nobody was looking for.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `9963128` | `reach::solve_reach_sampled` + `ReachModel` + `SampledCrossSection` + `PRODUCTION_REACH_MODEL`; `rest_field::measure_cross_section` returns both readings off one walk; new `tests/checkpoint_c9_sampled_reach.rs`; C9 gate added to `checkpoint_a_valley_matrix.rs` | 5 files, +1357 / −24 |
+| 2 | `0dff17e` | per-point stepover through `crease_paths`/`pencil` (`offset_polyline_variable`, `OffsetFan::stepover`); new `tests/per_point_claims_fan_c9.rs`; `derived_stepover_pr6a` Gate 2 rewritten | 5 files, +761 / −70 |
+| 3 | `ef4011c` | `RemapIndex` + `AggregateTree` in `toolpath_spans.rs`, wired into `tsp::remap_spans` and `MoveRemap::remap_spans`; new `tests/remap_interval_index_c9.rs` | 3 files, +1193 / −7 |
+| 4 | `d8d09da` | new `tests/rest_grid_resolution_c9.rs` (research only) | 1 file, +276 |
+| 5 | *(this commit)* | this entry, checklist step 9 | |
+
+### Sub-item 1 — the sampled model is right, and it still does not ship
+
+`solve_reach_sampled` erodes the cutter against the sampled `surface_z`
+cross-section and reads no wall angle anywhere. `measure_cross_section` now
+takes BOTH readings off ONE perpendicular walk, so the two models can never be
+compared across different measurements — the wave's own rule about isolating
+the variable under test, applied to itself.
+
+It earned every model claim. On the full 176-cell Checkpoint A matrix, all
+three tools, five pitches: **zero gouge and zero float-blind at every pitch**,
+including the shipped 0.5 mm cell. Those are the two failure modes that reach
+the workpiece. On the shapes the V is genuinely wrong about, at 0.01 mm pitch
+on the shipped taper:
+
+| fixture | CLR+θ (shipped) | SAMP (new) |
+|---|---|---|
+| chamfered groove | 54 gouge, 67.3 % coverage, worst over-claim **1.423 mm** | **0** gouge, 83.3 %, **0.000 mm** |
+| circular-arc valley | 12 gouge, 8 miss, 35.6 % | **0** gouge, 1 miss, 41.3 % |
+| straight V + plain trapezoid (control) | 0 gouge, 89.8 % | 0 gouge, 89.8 % (tie) |
+
+**Production does not switch, and the blocker is the grid.** The approved
+column's other two bars — 100 % coverage, zero routing over-claims — are
+resolution-bound, because the model places a wall at the inner end of the
+segment bracketing it and is short by up to one pitch:
+
+| rest cell | Ø1/7° taper | Ø1/15° taper | Ø3 ball |
+|---|---|---|---|
+| 0.5 mm (shipped) | 53.3 %, 10 route-over | 50.5 %, 14 | 52.0 %, 11 |
+| 0.1 mm | 90.7 %, 1 | 91.4 %, 2 | 92.2 %, 0 |
+| 0.01 mm | 98.1 %, 0 | **100 %, 0** | **100 %, 0** |
+| 0.002 mm | **100 %, 0** | 100 %, 0 | 100 %, 0 |
+
+50× to 250× finer than the shipped cell — 2 500× to 62 500× the cells.
+`PRODUCTION_REACH_MODEL` carries the ruling, the table and the flip
+instructions; `rest_field` already dispatches on it, so nothing else moves.
+
+**Two findings worth more than the feature.**
+
+*A plain symmetric trapezoid is not a shape the V misreads* — and `reach.rs`'s
+own limitation note said it was, which is why it was picked as fixture 1. The
+tip can never go below the floor, so the only surface that can constrain it is
+the straight wall, and "rim distance + steepest gradient" encodes a straight
+wall exactly. `X_v` and `X_true` reduce to the same expression. Proved
+algebraically, then measured (the models tie), the module doc corrected, and
+the trapezoid kept as a CONTROL. The discriminating trapezoid is a CHAMFERED
+one — two wall angles, so the modelled wall is a line the real chamfer runs
+inside. Had the wave taken the doc's word for it, fixture 1 would have
+"passed" by measuring nothing.
+
+*The gate found a real bug in the thing it was gating.* The first
+implementation dropped the exactly-touching constraint (strict `>` on
+`ξ − width`). A Ø3 ball's `width_at_height` SATURATES at the shank radius, so
+equality is REACHED rather than approached — the binding wall sample was
+skipped and the next sample out set the reach. One cell in 176, 50 µm
+over-claim, invisible to every fixture except the full matrix.
+
+The between-samples reading is the upper envelope of the two bracketing
+samples, so a coarse grid can only COST reach, never invent it. An
+interpolating reading needs far less grid; it was tried first, and it
+over-claimed. The pitch requirement is the price of that guarantee, and it is
+recorded as the lever someone will reach for.
+
+### Sub-item 2 — the fan was violating the overlap the policy specifies
+
+`centerline_cut_paths` solved reach per point and then spaced the fan at one
+scalar, sized by both callers at `min_valley_depth`. The first fixture framed
+this as under-coverage and produced numbers that argued against their own
+prose: 23.08 % shortfall → 20.62 %, with FEWER passes. That is not evidence.
+
+Re-framed on the real invariant, it is unambiguous. `SUGGESTED_STEPOVER_OVERLAP`
+specifies 50 %; on a branch ramping 0.2 → 2.0 mm deep, the retired scheme
+spaces the deep end at 0.2500 mm where the working half-width is 0.6879 mm —
+**63.66 % overlap**. Those passes re-cut a band already cut instead of
+reaching outward, and the error grows with how much deeper a branch runs than
+the detector's floor. Measured on real emitted geometry from a hand-built
+`RestCenterline` (literal depths, no detector noise): **50.00 % at both ends**,
+0 of 176 points placing a pass beyond its local reach, Ø3 ball control
+unmoved.
+
+Coverage barely moves on this fixture because the 4-pass cap was already
+binding under the old scheme. The test says so.
+
+One sentry moved and had to: `derived_stepover_pr6a`'s Gate 2 asserted that
+passing a better SCALAR resolves more distinct pass positions. That lever no
+longer exists. Rewritten to assert the strictly stronger property — the two
+arms are now identical AND still spaced at 0.280 mm rather than the retired
+envelope rule's 1.500 mm, so "identical" cannot be satisfied by a regression
+that puts both arms back on the Ø6 shank.
+
+### Sub-item 3 — and the first fix was 4.5× too expensive
+
+`RemapIndex` replaces the O(spans × moves) scan. 200 000 moves / 261 spans /
+5 reps: linear scan 4.44 s → **324 ms, 13.7×**, at **14.87 MB**.
+
+The first draft measured 5.0× at **66.75 MB**, and the gap was a redundancy,
+not a tuning knob: `remap_range` had its own O(n log n) sparse table restating
+the `(min_start, max_end)` aggregate the intrusion tree already stored.
+Deleting it cut memory 4.5× AND nearly tripled the speedup, because building
+that table was most of the per-call cost. Reviewing the memory number rather
+than accepting the speedup is what surfaced it.
+
+Identity is the point: C1's 15-value fingerprint harness 3/3,
+`region_node_ranges_tile_the_stitched_toolpath` (in
+`unified_finish_semantic_regions` 4/4), `dressup_span_invariants` 4/4,
+`boundary_clip_invalidates_spans` 2/2, `tsp::` 13/13, `toolpath_spans::`
+47/47, plus 2000 random remaps across nine shapes against an independently
+written brute-force oracle — asserting the CHOSEN intruder index and range,
+not merely existence, because a diagnostic that names a different move is a
+different diagnostic.
+
+Open follow-up, deliberately not taken: u32 storage would roughly halve the
+footprint again, but it raises a `u32::MAX` sentinel question that wants
+deciding rather than slipping in under a perf commit.
+
+### Sub-item 4 — an anomaly, recorded as an anomaly
+
+The decisive half of the resolution question is sub-item 1's: the sampled
+model needs 0.002–0.010 mm, so no plausible rest cell reaches it, and
+deriving the cell from tip radius the way `FinishResolutionPolicy` does would
+not help — the required pitch is two to three orders BELOW the 0.5 mm tip
+radius, so it is not a tip-scaled quantity at all.
+
+The other two thirds — feature detection and fan width, on the shipped
+detector — did not produce the expected curve. They produced the opposite:
+
+* tip-scale groove (0.8 mm rim half-width): the SHIPPED 0.5 mm cell finds one
+  centreline of 19.0 mm; the 0.25 mm and 0.10 mm cells find **nothing**;
+* wide control: detected length flat under refinement (38.0 / 37.0 / 36.4 mm),
+  but median per-point reach **collapses** 0.583 → 0.242 → **0.000 mm** — two
+  fan passes at the shipped cell, none at 0.1 mm.
+
+The coarse reading is the suspicious one: `measure_cross_section` reports
+`rim_distance = rim_cells × cell`, so a coarse walk quantises the rim distance
+UP to the cell. But a hand-check says neither end is obviously true — a Ø1 tip
+on a 7° cone is ≈ 0.65 mm wide at 1.2 mm depth inside a groove ≈ 2.06 mm
+half-wide there, arguing for ≈ 1.4 mm of reach, more than the coarse reading
+and far more than the fine one.
+
+So the harness asserts only what it can defend and PINS the anomaly itself: if
+the 0.10 mm cell ever starts finding the tip-scale groove, or the reach
+collapse stops reproducing, the test fails and asks for the doc to be
+rewritten rather than absorbing the change. **Recommendation: leave
+`cell_mm` at 0.5 mm** — not because the cell is right, but because the model
+that would justify changing it cannot be adopted at any plausible value, and
+the reason the current value looks wrong is not yet understood. Whoever next
+touches `measure_cross_section` owns it; the first thing to check is whether
+the ridge polyline and its perpendicular walk survive refinement.
+
+### Gates
+
+`cargo fmt --check` clean. `cargo clippy --workspace --all-targets -D
+warnings` zero. `rs_cam_core --lib` 2216 passed / 3 failed — the three KNOWN
+adaptive3d reds and nothing else. Every reach-, pencil- and span-adjacent
+sentry green, run individually and listed per sub-item above:
+`reach_policy_pr4` 6/6, `coverage_routing_pr5` 6/6, `generic_rest_routing_pr7`
+6/6, `pencil_tip_float_channel_d1` 4/4, `ramp_reach_clamp_pr8b` 8/8,
+`derived_stepover_pr6a` 4/4, `checkpoint_a_valley_matrix` 15/15,
+`checkpoint_c9_sampled_reach` 6/6, `per_point_claims_fan_c9` 3/3,
+`rest_grid_resolution_c9` 2/2, `remap_interval_index_c9` 2/2,
+`transform_provenance_fingerprints` 3/3, `unified_finish_semantic_regions`
+4/4, `dressup_span_invariants` 4/4, `boundary_clip_invalidates_spans` 2/2,
+`tsp::` 13/13, `toolpath_spans::` 47/47.
+
+The exhaustive `cargo test -p rs_cam_core --tests --no-fail-fast` sweep
+(~35 minutes; it carries the ~10-minute `adaptive3d_interior_cell_parity_f029`)
+reported **exactly two failing binaries, both KNOWN reds and neither this
+wave's**:
+
+* `--lib` 2216 / 3 — the three adaptive3d reds above;
+* `wanaka_suggest_integration` 2 / 1 — `wanaka_suggest_baseline`, the
+  environmental red, which reads the user-modified
+  `planning/airrun_2026-06-01/wanaka.toml` and touches nothing C9 changed.
+
+Nothing else in the crate moved. That matters most for sub-item 2, which is
+the only one of the four that changes emitted geometry: no fingerprint, A/B or
+end-to-end harness anywhere in the crate shifted under it.
+
+### Honest limits
+
+* **No live wanaka validation.** Three of four sub-items are gated on
+  synthetic fixtures and analytic truth. Sub-item 3 is identity-preserving so
+  that is sufficient; sub-item 2 changes emitted geometry on measured
+  centrelines and has been proven only on a hand-built one.
+* **Sub-item 1's production path is dark code.** The `SampledCrossSection`
+  arm of `detect_rest_valleys` is reachable only by flipping a constant, and
+  is exercised only through the direct-call harnesses. It is wired, not run.
+* **Sub-item 4 is one third answered.** The reach-fidelity axis is decisive;
+  the detection axis produced a contradiction instead of a measurement.
+* **The C9 fixtures are analytic cross-sections, not meshes.** They say what
+  the reach MODEL does, not what the detector feeding it does — which is
+  precisely the gap sub-item 4 fell into.

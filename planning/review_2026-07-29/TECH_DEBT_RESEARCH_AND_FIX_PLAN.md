@@ -1501,6 +1501,29 @@ After the wanaka live validation report lands:
    against `dde7a54`, because every number in Checkpoint C §2.1 was taken
    against a cascade that was not chording honestly.
 9. **C9** reach generalisation (own evidence pack, matrix-gated).
+   ✅ DONE 2026-08-03: `9963128` (sampled-cross-section reach + `ReachModel`
+   provenance + the C9 matrix gate — 0 gouge / 0 float-blind on all three
+   tools at every pitch, and it BEATS CLR+θ on the two non-V fixtures: a
+   chamfered groove 54 gouges → 0 with the worst over-claim 1.423 mm → 0.000,
+   a circular-arc valley 12 gouges + 8 misses → 0 + 1) / `0dff17e` (per-point
+   claims fan: the retired scalar spaced the deep end at 63.66 % overlap where
+   the policy specifies 50 %; now 50.00 % at both ends on real emitted
+   geometry) / `ef4011c` (`RemapIndex`: 13.7× at 14.87 MB, identity held on
+   C1's fingerprints and the region-node tiling sentry) / `d8d09da` (rest-cell
+   research).
+   **Production does NOT switch to the sampled model**, and the blocker is the
+   GRID: its coverage and routing bars need a 0.002–0.010 mm cross-section
+   pitch, 50–250× finer than the shipped 0.5 mm rest cell.
+   `PRODUCTION_REACH_MODEL` carries the ruling and the flip instructions.
+   Two findings the plan did not anticipate: a PLAIN symmetric trapezoid is
+   NOT a shape the V misreads (the module doc's own example — proved
+   algebraically, then measured as a tie; the discriminating shape is a
+   CHAMFERED groove), and the matrix gate found a real over-claim bug in the
+   new model (a strict `>` dropped the exactly-touching constraint, which only
+   a tool whose `width_at_height` SATURATES can reach). Sub-item 4 is one
+   third answered and closes with an OPEN ANOMALY pinned rather than a
+   recommendation dressed over it: refining the rest cell makes the shipped
+   detector find LESS, and makes measured reach collapse to zero.
 10. **A/M7 + A/M10** motion economy (after C1, per its gate).
 11. **M5 offset_polygon** (Checkpoint D). 12. **H4** (Checkpoint E, last).
 13. **L1** final docs sweep (absorbs the backlog doc).
