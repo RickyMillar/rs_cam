@@ -1403,10 +1403,14 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // (older files omit them), always serialized.
     ParamDef::required("pencil_claims", "bool"),
     ParamDef::required("min_rest_depth_mm", "f64"),
-    // Build-list item 3: which reference the crease detector runs
-    // against (`unified_finish::CreaseReference` doc) — same
-    // serde-defaulted back-compat treatment as the S1/S2 dials above.
-    ParamDef::required("claims_reference", "enum:self_probe|machined_stock"),
+    // Which reference the crease/rest detector runs against
+    // (`unified_finish::ClaimsReference` doc). A/M6 widened it to three
+    // values: `auto` DERIVES the answer from whether a machined prior stock
+    // is in scope; the other two pin it and keep their exact pre-A/M6
+    // meanings. What `auto` resolved to is not a param — read it from the
+    // toolpath's `runtime.claims_reference` in `get_toolpath_params`, or
+    // from the `config.claims_reference` diagnostic.
+    ParamDef::required("claims_reference", "enum:auto|self_probe|machined_stock"),
     // S4 region-level territory clip (`unified_finish::ClaimsConfig::
     // territory_clip` doc) — same serde-defaulted back-compat treatment.
     ParamDef::required("territory_clip", "bool"),

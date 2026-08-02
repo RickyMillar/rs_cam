@@ -3658,6 +3658,11 @@ fn draw_toolpath_panel(
             // pill. The Phase 1 block above already computed and cached
             // the result on entry.feeds_result, so this is just a borrow.
             let feeds_for_pills = entry.feeds_result.as_ref();
+            // A/M6: read before the mutable borrow of `entry.operation`
+            // below. Both are `Copy`, so nothing is held across it.
+            let resolved_claims_reference =
+                entry.result.as_ref().and_then(|r| r.stats.claims_reference);
+            let stock_source_for_claims = entry.stock_source;
             match &mut entry.operation {
                 OperationConfig::Face(cfg) => draw_face_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg, feeds_for_pills),
@@ -3711,7 +3716,21 @@ fn draw_toolpath_panel(
                 }
                 OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
                 OperationConfig::UnifiedFinish(cfg) => {
-                    draw_unified_finish_params(ui, cfg, feeds_for_pills);
+                    // A/M6: the claims block needs two things the config
+                    // does not carry — what the LAST generation resolved
+                    // `claims_reference` to (a `ToolpathStats` finding), and
+                    // this op's stock source, which is what `Auto` derives
+                    // against. Both are read-only here; `entry.result` and
+                    // `entry.stock_source` are disjoint from
+                    // `entry.operation`, which is borrowed mutably by the
+                    // enclosing `match`.
+                    draw_unified_finish_params(
+                        ui,
+                        cfg,
+                        feeds_for_pills,
+                        resolved_claims_reference,
+                        stock_source_for_claims,
+                    );
                 }
                 OperationConfig::SteepShallow(cfg) => {
                     draw_steep_shallow_params(ui, cfg, feeds_for_pills);
