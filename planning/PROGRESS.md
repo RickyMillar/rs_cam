@@ -1,5 +1,13 @@
 # Progress
 
+> **Finishing-strategy verdicts are SUPERSEDED (H4, 2026-08-04).** Every
+> comparison of finish strategies in `planning/` — which strategy "wins",
+> which has "nothing to do", the band-mix tables, the mm²/s efficiency
+> figures — was measured through four instrument defects that are now
+> fixed. Those verdicts are **void, not falsified**: the comparison could
+> not have come out any other way. Before citing one, check
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
 ## Current snapshot
 
 `rs_cam` is now a desktop CAM application plus shared engine, not just an algorithm sandbox.

@@ -1,5 +1,14 @@
 # Finishing-stack review & cleanup tracker — 2026-07-05
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
+
 > **How to use this doc**: work top-down within a phase; tick `[x]` as items land.
 > Each item lists file:line evidence (verified 2026-07-05 unless marked *agent-reported*).
 > Line numbers will drift as fixes land — re-`rg` before editing.

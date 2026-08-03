@@ -4531,3 +4531,198 @@ either one up.** Guessing would have put an erratum on the wrong feature.
 * **Sub-decision 7b** (file §8's pocket non-termination as a tracked defect)
   is satisfied in effect — the defect is fixed and sentried — but no ticket was
   opened, so there is no record of it outside this log and the code.
+
+---
+
+## C-SEQUENCE WAVE 15 (H4), 2026-08-04
+
+The last item in the sequencing checklist, and the only one whose deliverable
+is a document. H4 asks for one thing: **every conclusion produced through the
+four broken instruments, re-measured or explicitly marked superseded.** Step
+12 is ticked. Ledger: `SUPERSEDED_CONCLUSIONS.md`.
+
+**Commits**
+
+| # | Hash | Scope | Diffstat |
+|---|------|-------|----------|
+| 1 | `7d61ad3` | intake (a)+(b): `ChipBoundsSource::row_id`, chipload `Within`-arm disclosure, narration surface-op DOC text; `tests/chipload_advisory_disclosure_h4.rs`, `tests/axial_doc_step_multiple_h4.rs` | 5 files, +517 / −16 |
+| 2 | `fe4bb09` | `tests/strategy_comparison_h4.rs` — the cross-family harness + both evidence runs | 1 file, +1 396 |
+| 3 | `0ea9b36` | `ScallopReport` untouched/standing split (M4 sub-decision 5b) across core + viz | 12 files, +784 / −29 |
+| 4 | *(this commit)* | the ledger, supersession banners on 9 documents, this entry, checklist step 12 | |
+
+### Both intake items were report defects wearing a gate's clothes
+
+Neither arrived as one. Both were handed over as hypotheses with an explicit
+instruction not to name a mechanism without a repro — this subsystem has had
+**five** confidently-named mechanisms turn out not to be the cause.
+
+**(a) Chipload.** The hypothesis — *the gate declines to fail on extrapolated
+bounds* — is **VERIFIED**, and it is by design. F3.3 demotes a low-side trip
+to a `burn_advisory` when the burn floor's provenance is too weak to refuse
+on, and `ChipBoundsSource::low_side_is_advisory` is the **entire**
+discriminator between op 8's `Within` and ops 4/10's `Exceeds(Low)`: the
+observed-vs-min relationship is identical on both sides. What was broken is
+that the diagnostic adapter's `Within` arm ignored `burn_advisory` outright
+and rendered "Chipload within band" beside a citation reading `min 0.00458`,
+and hard-coded `row_id: "vendor_lut"` so the citation named a calibrated row
+next to `extrapolated: true`. Verdict, diagnostic **id** and **severity**
+deliberately untouched — the id is what the supersession reducer keys on, and
+severity moves badge counts, which is a product call.
+
+**(b) Peak axial DOC.** The probe runs **no generator at all**: it hand-builds
+a toolpath so coverage is known in closed form, which removes arc-fit,
+lead-ins, lift bridges and depth-pass planning from the picture *by
+construction* rather than by argument.
+
+```
+pass 1, virgin ground      2.600000 mm  (1.0000x)
+pass 2 over CLEARED ground 2.600000 mm  (1.0000x)
+pass 2 over VIRGIN ground  5.200000 mm  (2.0000x)
+pass 3 over CLEARED ground 2.600000 mm  (1.0000x)
+```
+
+The third arm is the one the live report did not have, and it is what makes
+this discriminating rather than merely reproducing: it rules out the reading
+growing with depth, with pass index, or with cumulative removal.
+`peak_axial_doc_mm` is `max(pre_ray_len − post_ray_len)` over the midpoint
+disc — the height of material removed. **Nothing in the stamping kernel knows
+what the commanded step was**, so the number has never been a reading of one.
+An exact n× step is n steps of standing stock, faithfully measured: a
+**coverage** fact.
+
+So the measurement is sound and the **comparison** was the defect. Narration
+listed only `DropCutter` as surface-following, so a `UnifiedFinish` peak was
+rendered against its 0.3 mm `z_step` — the *waterline band's* Z stepping, not
+a commanded DOC for the raster and scallop bands that produced the sample.
+The "~6×" had no denominator. Every surface-following op now says "no
+commanded DOC", and the advice line names standing stock first and arc-fit
+last, it having now been exonerated twice on live spikes.
+
+### The re-measurement, and what the renders changed
+
+Two committed fixtures, three arms each, in a debug build. Zero rapid
+collisions and no resolution clamping anywhere. The full tables are in the
+ledger §3; four results are worth the log.
+
+**Waterline takes 41.4% of terrain's cutting**, in one coherent VerySteep
+region. §14 reported waterline at **0.0%** and justified "contour and pencil
+have nothing to do on this part" with *"the fixture has no very-steep band"*.
+It has one, and it is the second-largest consumer of cutting on the part.
+That is what a 6×-too-coarse classification grid does: it does not shrink a
+steep ribbon, it fails to resolve it, and a 36×-too-high area floor deletes
+whatever survives.
+
+**"Scallop wins every time" fails on both fixtures, in opposite ways.** On the
+groove it is a split decision — scallop wins the tails (worst overcut −34 vs
+−235 µm), the mix arm wins the bulk (p90 0.2 vs 1.7 µm) and the clock. On
+terrain scallop loses p50, p90 *and* worst overcut (−1 654 vs −528 µm) and
+takes **2.94× longer**.
+
+**The groove cascade's rest pass removed nothing.** Its columns were identical
+to the single-op arm in every statistic, which is normally the signature of an
+instrument that failed to update — so it was checked the way the standing rule
+requires, and `groove_c_minus_b.png` is **uniformly zero over 96 641
+columns**. Not small: zero, for +45% runtime and 48 retract round trips. On
+terrain the same wiring found real islands. **Running one fixture would have
+produced a confident wrong answer either way**, which is the concrete payoff
+of the acceptance gate's two-fixture rule.
+
+**Two verdicts were rewritten after looking at a picture.** B's −235 µm
+overcut reads like a mid-part collar in the aggregate; the render puts it at
+band **run-off**, where a band leaves the stock — narrower scope, different
+fix. And terrain's µm columns look like a quality result until
+`terrain_b_minus_d.png` shows the arms differing *everywhere* in unstructured
+speckle, with every arm missing the 22.5 µm dial by ~3×. That is the
+coarse-TIN objection which closed v3, re-derived from a fresh run rather than
+taken on the prior campaign's word.
+
+**What did survive the void campaign is its mechanism, not its conclusion.**
+§14's "Op B pays 0.79 retract trips per mm², D pays 0.028 — a 28×
+fragmentation gap" reproduces at **31.6×** on the groove and **39.5×** on
+terrain. The efficiency *ratio* it was used to support reverses (0.51 → 1.09
+and 2.12). Worth separating deliberately: footprint throughput rewards exactly
+the ground-covering the fragmentation is spent on, so the mm²/s table was the
+wrong place to read the mechanism off — the groove's rest pass scores the
+highest mm²/s of any arm while removing nothing.
+
+### A name that was about to lie
+
+Giving the ring cascade the oracle's vocabulary (untouched = never reached;
+standing = reached, left high) exposed that `ToolpathStats::
+standing_material_mm2` measures what the oracle calls **untouched** while
+wearing the word **standing**. The new field shipped for about an hour as
+`standing_material_estimate_mm2` — which reads as an estimate *of* that field
+and is false, they are different quantities — and is now
+`reached_uncut_estimate_mm2`. The older field is load-bearing across serde,
+the GUI and MCP, so it is documented in place with a conflict table and put to
+the operator rather than renamed. A wave about names that lie should not ship
+one.
+
+### Gate table, with the build each row came from (P11)
+
+Build **A** = `7d61ad3` + the harness. Build **B** = post-`0ea9b36`.
+
+| target | build | result |
+|---|---|---|
+| `axial_doc_step_multiple_h4` | A, B | 2 / 2 |
+| `chipload_advisory_disclosure_h4` | A, B | 5 / 5 |
+| `strategy_comparison_h4` sentry | A, B | 1 / 1 |
+| `strategy_comparison_h4` groove evidence | **A and B** | pass on both, **every digit identical** |
+| `strategy_comparison_h4` terrain evidence | B | pass |
+| `scallop_untouched_standing_h4` | B | 4 / 4 |
+| `checkpoint_b_resolution_ab` | B | 4 / 4 |
+| `standing_material_channel_am9` | B | 8 / 8 (+2 ignored, 174 s) |
+| `narrate_regions_closed_c8` | B | 5 / 5 |
+| `ramp_reach_clamp_pr8b` | B | 8 / 8 |
+| `air_cut_denominators_lh1` | B | 5 / 5 |
+| `retract_trip_channel_am7` | B | 4 / 4 |
+| `-p rs_cam_core --lib` | B | **2 227 passed / 3 failed, all known** (the three adaptive3d reds) |
+| `-p rs_cam_cli` | B | 16 / 16 |
+| `-p rs_cam_mcp` | B | 4 / 4 |
+| `-p rs_cam_viz --test-threads=1` | B | 247 / 247 |
+
+The groove row is deliberately run on **both** builds. It is what proves the
+`ScallopReport` split is genuinely report-only, and it doubles as a
+determinism check the P2.g campaign learned to demand — "envelopes equal"
+once turned out to be cross-run regeneration variance, and the rule that came
+out of it was *never compare across regenerations*. Here the reproduction was
+checked rather than assumed.
+
+`cargo fmt --check` clean and `cargo clippy --workspace --all-targets
+-D warnings` zero before every commit. Two clippy findings were mine, both in
+new test code: doc-list continuations needing indentation, and an
+`absurd_extreme_comparisons` on a tunable bound that currently sits at zero —
+kept as `<=` against the named constant behind a commented `#[allow]`, because
+writing `== 0` would silently decouple the check from the constant it is
+meant to enforce.
+
+### What a human still owns
+
+Checkpoint E is a stop, and ledger §6.3 is the menu. In short: one **user-facing**
+void claim existed (`FEATURE_CATALOG.md`) and its comparative clauses are
+struck; the planning corpus got pointer banners rather than edits, so the
+audit trail that made these four defects findable survives intact; and the
+re-measurement produced two new defects and a naming decision that want an
+operator. **Nothing in this wave is live** — every number is analytic or
+simulated, and §6.3(C) lists the seven things live validation must confirm.
+
+### Honest limits
+
+* **Debug build throughout**, by instruction (disk). Runtime seconds are
+  kinematics-integrated machine time so cross-arm runtime comparisons hold,
+  but generation seconds are debug-speed and mean nothing absolute.
+* **Small fixtures** — 44 × 28 mm and a 20 mm terrain window. Enough for a
+  real band mix and ~10⁵ columns; nothing about how a strategy scales on a
+  150 mm part.
+* **One tool, one cusp target, one threshold pair.** Row 12's "at ANY
+  threshold" is therefore untouched: one pair cannot falsify a claim
+  quantified over all of them.
+* **The pencil half of row 1 is not tested.** `pencil_claims` is off by
+  design so the only variable is the strategy; an absence under a disabled
+  feature is not evidence.
+* **The v3 closure was not re-run and stays closed** on reasons that were
+  never about the instruments. Re-opening it is a *fixture-quality* campaign
+  — honest tessellation, a gate bin above repeatability — and terrain's
+  Finding 7 is fresh evidence for exactly that.
+* **`GEOM_STANDING_MATERIAL` and the MCP per-toolpath summary do not carry
+  the new split**; narration does. Time-boxed out.

@@ -1,5 +1,14 @@
 # Unified finishing pass — plan + tracking
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
+
 Owner: Ricky + Fable. Started 2026-07-07 (same-day context: pencil ridge fix 29a6d61,
 F.4 catch-22 fix + rest-UX 37ef782, sliver guard d0d6d75, MCP cancel 482be35).
 

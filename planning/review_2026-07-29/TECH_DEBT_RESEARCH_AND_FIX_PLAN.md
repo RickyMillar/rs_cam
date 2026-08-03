@@ -1556,7 +1556,10 @@ After the wanaka live validation report lands:
     850 mm², +82.9% mm²/s on a synthetic plateau); no live wanaka run and no
     rendered surface on either half; and the scallop dial has no GUI widget,
     only registry/MCP and project TOML.
-11. **M5 offset_polygon** (Checkpoint D). 12. **H4** (Checkpoint E, last).
+11. **M5 offset_polygon** (Checkpoint D). 12. ~~**H4** (Checkpoint E, last).~~
+    **DONE, wave 15, 2026-08-04** — ledger published at
+    `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`; Checkpoint E is
+    the decision menu in its §6 and awaits the operator.
 13. **L1** final docs sweep (absorbs the backlog doc).
 
 ---
