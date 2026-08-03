@@ -4967,3 +4967,43 @@ reds** (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
   D-16.2 was found. A defect discovered by a test that needed the dial to
   work is the cheapest kind; the expensive kind is the one nobody's test
   needed.
+
+---
+
+## LIVE VALIDATION 2026-08-04 — end-of-programme, checklist C1–C7
+
+Driven by the orchestrator over the rs-cam MCP against the live GUI.
+Build: post-wave-16 HEAD (73dfcb9), release binary rebuilt and verified
+(36.6MB ELF, stub check passed) before connect. wanaka.toml loaded
+READ-ONLY, never saved; the C4/C3 experiment (pencil_claims=true,
+territory_clip=true on op 8) is IN-MEMORY ONLY — close the GUI without
+saving, or reload the project, to discard.
+
+| # | Item | Verdict | Evidence |
+|---|---|---|---|
+| C1 | Hookup-default regeneration on an old project | **PASS** | Cold project → ONE `generate_all(0.1)` → all 7 enabled ops Done in ~11 min (July: 5 manual rounds, >40 min). Hookup keys absent in TOML, loaded at 6.0/5.0; UF rapid 38,244→20,209 mm (−47%); 0 collisions at 0.1 mm. |
+| C2 | TSP-reorder value on a real part | **MEASURED** | Trips channel live: 604 round trips, 601 in-node / 3 between-node. The TSP's addressable surface on this part is 0.5% of trips — wave 14's "relink subsumes the reorder" finding confirmed on a real part. |
+| C3 | Per-point fan geometry live | **PASS** (render blocked by D-LV.1) | Claims fan emitted 1,202 moves on real valleys ("Crease claims (pencil) ×1"); tip-float channel fires with actionable text: 32/165 centreline points unreachable, worst residual 1.942 mm, "a smaller tip is the only fix". |
+| C4 | claims_reference Auto on a live cascade | **PASS** | `runtime.claims_reference`: setting=auto, resolved=machined_stock, derived=true, prior_stock_in_scope=true, territory_clip_requested=true, **territory_clip_skipped=false**, needs_attention=false, `why` carries the rough-chain caveat. A4 zero-removal finding correctly SILENT (real territory existed — snapshot was post-rough). |
+| C5 | M3 classifier cost on real relief | **PASS/absorbed** | Same project, same 0.1 mm: total runtime 14,660→12,945 s (−11.7%); air-cut of runtime 15.5→8.7%; VerySteep present (8 regions / 6,645 moves) where pre-fix measured zero. M3's predicted +5.6% cutting is invisible inside the net win. |
+| C6 | Collision stability across resolutions | **PASS w/ note** | Fixed toolpaths, no regeneration between sims: [0.5, 0.25, 0.1] = **[1, 0, 0]** vs pre-fix wanaka [0, 15, 20]. The fine-direction disease (planner blind to fine-grid ridges) is gone. The single 0.5 mm hit is a coarse-quantization false positive (grid 5× tip radius), refuted by both finer grids; tip-matched reading is authoritative per the standing rule. |
+| C7 | Reworded diagnostics on the live panel | **PASS** | Axial-DOC anomaly reads "no commanded DOC … check upstream coverage first" (H4 §5.2 text live); standing-material split with estimator limits; "absence of a number is not a zero" on both absent channels; staleness flips sim-derived verdicts to "simulation stale — re-run to verify"; narration honestly notes a cut trace predating the regenerated toolpath. |
+
+**NEW FINDING D-LV.1 (display, not machining):** `screenshot_toolpath` renders
+op 8's new-style UnifiedFinish emission almost empty (sparse fragments from
+199,745 moves / 60.5 km cutting) while the same toolpath simulates to a
+perfect carve with 0 collisions and old-style ops (Rivers) render fully.
+Suspect: the renderer's cutting-move classification not receiving the new
+emission's intent/annotation data (B7's hand-copied worker path is the
+shape-match). GUI-viewport check requested from the operator to scope
+exporter-only vs all GUI rendering. Machining correctness unaffected —
+proven by stock render + sim.
+
+**Minor UX note:** `generate_toolpath` resubmitted over a queued job returns
+the OLD job's "Generation was cancelled" rather than attaching to the new
+run — momentarily reads as a failure while `generation_status` shows the
+fresh run in flight. Cosmetic; documented resubmit semantics.
+
+Final state: project verdict OK at 0.1 mm — 0 collisions, 0 rapid
+collisions, runtime 13,108 s with the claims-enabled rest pass included.
+The programme's live-validation gate is CLOSED.
