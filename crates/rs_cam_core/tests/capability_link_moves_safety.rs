@@ -1545,6 +1545,23 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     let cutter = BallEndmill::new(3.0, 25.0);
     let params = UnifiedFinishParams {
         tolerance: 0.5,
+        // **Pinned, not inherited — and the reason is the whole point of this
+        // test.** `intra_region_hookup_mm` ships at 6.0 since 2026-08-03, and
+        // the relink it enables removes exactly the travel the barriered TSP
+        // below exists to shorten: intra-region fragment-to-fragment retract
+        // round trips. At the shipped default this fixture's rapid distance is
+        // **identical** with and without the reorder (393.93 mm both ways),
+        // so the assertion would be measuring an empty set.
+        //
+        // That is not a regression, it is the stronger lever winning — wave 12
+        // put it exactly right: *reordering shortens the hop; only linking
+        // removes the legs.* The capability is still real and still shipped,
+        // for fragments the relink cannot join (over its 6 mm cap, or across a
+        // gouge the link check refuses), and for projects that set the dial to
+        // 0. This test observes it in the configuration where it is
+        // observable, and says so rather than inheriting a default whose value
+        // silently decides whether the test measures anything.
+        intra_region_hookup_mm: 0.0,
         ..UnifiedFinishParams::default()
     };
     // `for_tool`'s parameter is a CUSP radius (finish_planner.rs doc). Inert
