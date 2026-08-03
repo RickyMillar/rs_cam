@@ -4365,6 +4365,53 @@ with the live thread dump as the evidence, rather than as unreproduced.
 **Rule worth keeping: `futex_do_wait` on N threads where N ≈ `nproc` is the
 resting state of a rayon program, not a symptom. Read `ps -L`, not `ps`.**
 
+### The hookup flip, and a refusal that was aimed at the wrong thing
+
+`unified_finish::intra_region_hookup_mm` ships **ON at 6.0 mm**.
+
+The authority is not a measurement taken in this wave. It is the **operator's
+ruling in the Checkpoint D session (2026-08-03)**, made on wave 12's measured
+table — trips 85 → 8, cycle 238.94 → 130.65 s (−45.3%), swept footprint
+identical at 850 mm², mm²/s +82.9%, relinker C1-sound — and carrying a
+condition: it is re-checked at the end-of-programme live validation. That IS
+the operator call wave 12 asked for when it declined to flip.
+
+**I initially refused this, and the refusal is worth recording because the
+instinct was right and the target was wrong.** The rule "do not flip a
+consciously-deferred default without the A/B that would judge it" is a good
+rule; this feature has been burned by its violation three times. But wave 12
+deferred the decision *to an operator*, and the operator had answered. Refusing
+at that point does not protect the operator — it overrides them. The check I
+skipped was cheap: *who was this deferred to, and have they since ruled?*
+A deferral names its decider, and "deferred" stops being true the moment that
+decider speaks.
+
+Two defaults moved, not one. Production reads `cfg.intra_region_hookup_mm`, so
+`operation_configs::default_unified_finish_intra_region_hookup_mm` is the
+shipped value and the registry serves it through `OperationConfig::new_default`.
+But `UnifiedFinishParams::default()` in core carried its own `0.0`, and leaving
+it would have left a core default disagreeing with the serde default that
+overrides it — this programme's recurring divergence class, and the one thing
+worse than a wrong default is two defaults. Both are now 6.0, and
+`intra_region_hookup_ships_on_by_operator_ruling` pins their agreement as well
+as the value.
+
+That sentry is the renamed
+`intra_region_hookup_is_measured_and_left_to_the_operator`. It changed job
+rather than being deleted: it still runs the A/B, because the safety invariant
+it carries — **keeping the tool down must never ADD retract round trips** —
+is only meaningful as a comparison.
+
+**One consequence to state plainly, because it is the kind that surprises
+people:** the field is `#[serde(default)]`ed for back-compat, so **every
+existing project TOML that omits it now loads at 6.0 rather than 0.0.** A
+saved job that was planned, simulated and signed off with the tool retracting
+between fragments will re-generate with it staying down. Projects that wrote
+the field explicitly are unaffected. There is no GUI widget for this dial —
+it is registry/MCP and project TOML only, same as the scallop one — so for
+most users the default IS the setting, which is precisely why the operator was
+asked rather than told.
+
 ### Gates
 
 `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -D warnings`
@@ -4392,12 +4439,9 @@ adaptive3d reds). Green: `finish_resolution_policy_pr3` (10),
 * **Slice 1 and the pocket rollout are committed; the wave's remaining brief
   items are not.** The param sweeps, the Criterion extension (7c), the docs
   sweep and the `intra_region_hookup_mm` flip are outstanding — see below.
-* **`intra_region_hookup_mm` was deliberately NOT flipped.** Wave 12 measured
-  it and left it off "for an operator with a part in front of them", and the
-  plan records that position. No new evidence arrived in this wave, and
-  flipping a default that was consciously deferred, without the A/B that would
-  judge it, is the exact antipattern this feature has already hit three times.
-  It needs either the original wave-14 brief's justification or an operator.
+* **`intra_region_hookup_mm` ships ON at 6.0** — see the section above. This
+  bullet previously read "deliberately NOT flipped", which was a refusal made
+  without checking who had already ruled.
 * **The Criterion suite (7c) IS extended, and this bullet said otherwise until
   it was checked.** `benches/perf_suite.rs` gained `offset_rosette24`,
   `offset_holed9` and four repeated-cascade cases (square 60 mm and 200 mm,
