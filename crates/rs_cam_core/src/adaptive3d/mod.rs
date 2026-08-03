@@ -2066,8 +2066,103 @@ mod tests {
     //   cargo test -p rs_cam_core --lib planner_sim_dexel --no-run
     // to localize the bug.
 
-    /// (divergent, total, interior, max_dz, violations[(row, col, planner_top, sim_top, surface, dz)])
-    type ParityResult = (u64, u64, u64, f64, Vec<(usize, usize, f64, f64, f64, f64)>);
+    /// Outcome of one planner-vs-simulator dexel parity run.
+    ///
+    /// Was a 5-tuple whose doc comment listed its own fields in the wrong
+    /// order (`total` and `interior` swapped); named fields now.
+    struct ParityResult {
+        /// Cells whose planner and simulator stock tops differ by more
+        /// than the run's tolerance.
+        divergent: u64,
+        /// …restricted to the interior population.
+        interior_divergent: u64,
+        /// Size of the interior population — the denominator the interior
+        /// bar is stated against. Registered 2026-08-04: before that both
+        /// parity tests gated `interior_divergent` against a tenth of the
+        /// WHOLE-GRID cell count, which includes the boundary ring the
+        /// interior count deliberately excludes. The bar was therefore
+        /// looser than it read (W0 §3.4).
+        interior_total: u64,
+        total_cells: u64,
+        /// Planner's stock top is HIGHER: the simulator removed more than
+        /// the planner's bookkeeping claims.
+        planner_higher: u64,
+        /// Simulator's stock top is HIGHER: the planner's bookkeeping
+        /// claims material its own emitted toolpath leaves standing. This
+        /// is the direction an emitter-side transform missing from the
+        /// planner's mirror must produce, and it is the sensitive
+        /// instrument for that defect class — see `assert_parity_bars`.
+        sim_higher: u64,
+        max_dz: f64,
+    }
+
+    impl ParityResult {
+        /// How lopsided the divergence is. 1.0 = balanced (consistent
+        /// with symmetric discretisation noise); large = one side is
+        /// systematically removing material the other does not.
+        fn directional_skew(&self) -> f64 {
+            let hi = self.planner_higher.max(self.sim_higher) as f64;
+            let lo = self.planner_higher.min(self.sim_higher).max(1) as f64;
+            hi / lo
+        }
+    }
+
+    /// Interior divergence bar, as a percentage of the INTERIOR
+    /// population (not of the whole grid — see `ParityResult`).
+    ///
+    /// Re-measured 2026-08-04 against fixed code, per plan rule 7: a
+    /// changed instrument requires re-measured thresholds, not a copied
+    /// pin. Old bar: `interior <= total_cells / 10` = 792 on this
+    /// fixture, against a population of 5300-ish interior cells — i.e. a
+    /// nominal "10%" that was really ~15% of what it counted, and 79%
+    /// spent on the day it was granted.
+    const INTERIOR_DIVERGENCE_BAR_PCT: f64 = 20.0;
+
+    /// Directional skew bar. This is the bar that catches the defect
+    /// class the count misses.
+    ///
+    /// Pre-registered from measurement either side of the fix (see the
+    /// re-registration commit body): the skew was 4.80x sim-side on
+    /// AgentSearch and 4.27x sim-side on ContourParallel before the
+    /// planner's stamp learned about the emitter's drape, and 1.55x /
+    /// 1.30x after. ContourParallel's gated interior count went UP across
+    /// that fix (429 -> 647) while its defect was repaired, which is
+    /// exactly why the count alone was a weak detector and why this bar
+    /// exists.
+    const DIRECTIONAL_SKEW_BAR: f64 = 2.5;
+
+    /// Both bars, applied identically to every strategy so a green
+    /// sibling can never again be mistaken for a clean one (W0 §4.5).
+    fn assert_parity_bars(r: &ParityResult, label: &str) {
+        let interior_bar =
+            (r.interior_total as f64 * INTERIOR_DIVERGENCE_BAR_PCT / 100.0).round() as u64;
+        assert!(
+            r.interior_divergent <= interior_bar,
+            "[{label}] planner and simulator dexels diverged on {} of {} INTERIOR cells \
+             ({:.1}%, bar {:.1}% = {interior_bar}; whole grid {}, max Δ {:.3}mm). The \
+             planner's internal stamping is producing a stock state inconsistent with \
+             replaying its own emitted moves — this is the wanaka Back Rough Z=10/Z=7 \
+             anomaly. See `stamp_emitted_segment`: it must apply EVERY transformation \
+             `segments_to_toolpath` applies.",
+            r.interior_divergent,
+            r.interior_total,
+            r.interior_divergent as f64 / r.interior_total.max(1) as f64 * 100.0,
+            INTERIOR_DIVERGENCE_BAR_PCT,
+            r.total_cells,
+            r.max_dz,
+        );
+        assert!(
+            r.directional_skew() <= DIRECTIONAL_SKEW_BAR,
+            "[{label}] divergence is {:.2}x lopsided (bar {DIRECTIONAL_SKEW_BAR:.2}x): \
+             planner_higher {} (simulator removed more), sim_higher {} (planner's \
+             bookkeeping claims more than its emitted path removes). Symmetric \
+             discretisation noise is balanced; a systematic skew means one side is \
+             applying a transformation the other is not.",
+            r.directional_skew(),
+            r.planner_higher,
+            r.sim_higher,
+        );
+    }
 
     fn run_planner_sim_parity(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
         run_planner_sim_parity_with_mesh(strategy, label, make_hemisphere_mesh())
@@ -2152,6 +2247,7 @@ mod tests {
         let total_cells = (grid.rows * grid.cols) as u64;
         let mut divergent = 0u64;
         let mut interior_divergent = 0u64;
+        let mut interior_total = 0u64;
         let mut planner_higher = 0u64; // sim removed more
         let mut sim_higher = 0u64; // planner removed more
         let mut max_dz = 0.0_f64;
@@ -2162,6 +2258,17 @@ mod tests {
         let interior_y_hi = mesh_bbox_for_interior.max.y - 1.0;
         for row in 0..grid.rows {
             for col in 0..grid.cols {
+                let (x, y) = grid.cell_to_world(row, col);
+                let is_interior = x > interior_x_lo
+                    && x < interior_x_hi
+                    && y > interior_y_lo
+                    && y < interior_y_hi;
+                if is_interior {
+                    // Counted for EVERY interior cell, divergent or not:
+                    // this is the denominator the interior bar is stated
+                    // against.
+                    interior_total += 1;
+                }
                 let p = stock_top_z_at(&planner_stock, row, col);
                 let s = stock_top_z_at(&sim_stock, row, col);
                 let dz = (p - s).abs();
@@ -2173,11 +2280,6 @@ mod tests {
                     } else if s > p + tol_mm {
                         sim_higher += 1;
                     }
-                    let (x, y) = grid.cell_to_world(row, col);
-                    let is_interior = x > interior_x_lo
-                        && x < interior_x_hi
-                        && y > interior_y_lo
-                        && y < interior_y_hi;
                     if is_interior {
                         interior_divergent += 1;
                         // Only collect INTERIOR violations — boundary
@@ -2195,8 +2297,9 @@ mod tests {
 
         eprintln!(
             "[{label}] PARITY: {divergent}/{total_cells} cells differ > {tol_mm:.2}mm; \
-             interior {interior_divergent}; planner_higher {planner_higher} (sim removed more); \
-             sim_higher {sim_higher} (planner removed more); max dz {max_dz:.3}mm",
+             interior {interior_divergent}/{interior_total}; planner_higher {planner_higher} \
+             (sim removed more); sim_higher {sim_higher} (planner removed more); \
+             max dz {max_dz:.3}mm",
         );
         for (row, col, p, s, surf, dz) in &violations {
             let (x, y) = grid.cell_to_world(*row, *col);
@@ -2205,13 +2308,15 @@ mod tests {
             );
         }
 
-        (
+        ParityResult {
             divergent,
             interior_divergent,
+            interior_total,
             total_cells,
+            planner_higher,
+            sim_higher,
             max_dz,
-            violations,
-        )
+        }
     }
 
     #[test]
@@ -2340,9 +2445,11 @@ mod tests {
     #[test]
     #[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
     fn planner_sim_dexel_parity_flat_agent_search() {
-        let (divergent, _interior, total, max_dz, _) =
-            run_planner_sim_parity_flat(ClearingStrategy3d::AgentSearch, "AgentSearch flat");
-        eprintln!("FLAT AgentSearch: {divergent}/{total} cells diverge (max Δ {max_dz:.3}mm)");
+        let r = run_planner_sim_parity_flat(ClearingStrategy3d::AgentSearch, "AgentSearch flat");
+        eprintln!(
+            "FLAT AgentSearch: {}/{} cells diverge (max Δ {:.3}mm)",
+            r.divergent, r.total_cells, r.max_dz
+        );
         // No assertion — diagnostic output. The hemisphere variants
         // assert; this test just prints so we can compare flat vs
         // hemisphere divergence rates side-by-side.
@@ -2351,11 +2458,14 @@ mod tests {
     #[test]
     #[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
     fn planner_sim_dexel_parity_flat_contour_parallel() {
-        let (divergent, _interior, total, max_dz, _) = run_planner_sim_parity_flat(
+        let r = run_planner_sim_parity_flat(
             ClearingStrategy3d::ContourParallel,
             "ContourParallel flat",
         );
-        eprintln!("FLAT ContourParallel: {divergent}/{total} cells diverge (max Δ {max_dz:.3}mm)");
+        eprintln!(
+            "FLAT ContourParallel: {}/{} cells diverge (max Δ {:.3}mm)",
+            r.divergent, r.total_cells, r.max_dz
+        );
     }
 
     /// Probe A — Bug 2 isolation. Build a toolpath that contains ONLY
@@ -2513,57 +2623,43 @@ mod tests {
         );
     }
 
+    /// Boundary divergence (cells outside the mesh footprint) is a
+    /// separate, known issue outside the scope of these parity tests —
+    /// see the planner-↔-sim stamping fix notes (Bug 1 / Bug 2). What
+    /// they guard is INSIDE-the-mesh stamping consistency.
+    ///
+    /// Residual interior divergence that both bars deliberately tolerate:
+    /// (a) F.a sub-cell blend drift — the simulator subdivides each
+    /// emitted segment at `sample_step_mm` and stamps each subsegment
+    /// separately while the planner stamps whole segments, so cells
+    /// straddling a subsegment boundary see compound `(1-f₁)(1-f₂)`
+    /// blends that under-saturate versus the single whole-segment `f`
+    /// (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4 predicts exactly
+    /// this); (b) `Cut` segments whose first emitted feed sweeps from the
+    /// emitter's true tool position rather than from the planner's raw
+    /// `last_pos` (documented as NOT FIXED in the drape-mirror commit).
+    /// Neither is directional, which is why the skew bar can be tight
+    /// while the count bar cannot.
     #[test]
     fn planner_sim_dexel_parity_agent_search() {
-        let (_divergent, interior, total, max_dz, _violations) =
-            run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
-        // Interior threshold: < 10% interior cells. Boundary divergence
-        // (cells outside the mesh footprint) is a separate, known issue
-        // outside the scope of this parity test — see the planner-↔-sim
-        // stamping fix notes (Bug 1 / Bug 2). What this test guards is
-        // INSIDE-the-mesh stamping consistency.
-        //
-        // The threshold was bumped from 1% to 10% when sub-cell stamping
-        // (F.a — see DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4)
-        // landed. F.a's multiplicative blend semantics do not compose
-        // perfectly under subsegmentation: the simulator subdivides each
-        // emitted segment at `sample_step_mm` for per-sample metrics and
-        // stamps each subsegment separately, while the planner stamps
-        // whole emitted segments. Cells straddling subsegment boundaries
-        // see compound `(1-f₁)(1-f₂)` blends that under-saturate vs the
-        // single whole-segment `f` blend. §6.F explicitly predicts this
-        // edge-cell drift ("F.a is not invisible to the planning layer
-        // … shallower bites at feature edges"). The 10% headroom keeps
-        // the test as a Bug-1 / Bug-2 regression catch without flagging
-        // the expected F.a drift.
-        let threshold = total / 10;
-        assert!(
-            interior <= threshold,
-            "Planner and simulator dexels diverged on {interior} INTERIOR cells \
-             (total {total}, threshold {threshold}, max Δ {max_dz:.3}mm). The \
-             planner's internal stamping is producing a stock state inconsistent \
-             with replaying its own emitted moves — this is the wanaka Back \
-             Rough Z=10/Z=7 anomaly. See test source for debugger entry point.",
-        );
+        let r = run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
+        assert_parity_bars(&r, "AgentSearch hemisphere");
     }
 
+    /// The same two bars as `planner_sim_dexel_parity_agent_search`, and
+    /// deliberately not a weaker set. This test was green throughout the
+    /// seven weeks its sibling was red while carrying the identical
+    /// defect at the identical 25 mm `max dz` — its old bar gated an
+    /// interior count against a tenth of the whole-grid count and was
+    /// only 54% spent, so it never reported. If one of the pair fails and
+    /// the other does not, the divergence is in that strategy's stamping
+    /// path — still a useful first bisection.
     #[test]
     fn planner_sim_dexel_parity_contour_parallel() {
-        let (_divergent, interior, total, max_dz, _violations) = run_planner_sim_parity(
+        let r = run_planner_sim_parity(
             ClearingStrategy3d::ContourParallel,
             "ContourParallel hemisphere",
         );
-        // See `planner_sim_dexel_parity_agent_search` for the threshold
-        // rationale: bumped from 1% to 10% under F.a sub-cell stamping
-        // (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4).
-        let threshold = total / 10;
-        assert!(
-            interior <= threshold,
-            "Planner and simulator dexels diverged on {interior} INTERIOR cells \
-             (total {total}, threshold {threshold}, max Δ {max_dz:.3}mm). If \
-             AgentSearch's parity test passes but this one fails, the divergence \
-             is in ContourParallel's stamping path (and vice versa) — useful \
-             first bisection.",
-        );
+        assert_parity_bars(&r, "ContourParallel hemisphere");
     }
 }
