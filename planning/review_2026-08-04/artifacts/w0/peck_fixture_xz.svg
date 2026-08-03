@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="400" viewBox="0 0 980 400">
+<style>text{font:12px monospace} .t{font:14px monospace;font-weight:bold}.s{font:10px monospace;fill:#555}</style>
+<rect width="980" height="400" fill="#fff"/>
+<text class="t" x="14" y="22">W0 / test 1 — peck_plunge_progresses… : XZ cross-section at entry XY (0,0)</text>
+<line x1="90" y1="144.0" x2="90" y2="300" stroke="#999"/>
+<line x1="85" y1="300.0" x2="90" y2="300.0" stroke="#999"/>
+<text class="s" x="38" y="304.0">z=-1.0</text>
+<line x1="85" y1="270.0" x2="90" y2="270.0" stroke="#999"/>
+<text class="s" x="38" y="274.0">z=-0.5</text>
+<line x1="85" y1="240.0" x2="90" y2="240.0" stroke="#999"/>
+<text class="s" x="38" y="244.0">z=+0.0</text>
+<line x1="85" y1="210.0" x2="90" y2="210.0" stroke="#999"/>
+<text class="s" x="38" y="214.0">z=+0.5</text>
+<line x1="85" y1="180.0" x2="90" y2="180.0" stroke="#999"/>
+<text class="s" x="38" y="184.0">z=+1.0</text>
+<line x1="85" y1="150.0" x2="90" y2="150.0" stroke="#999"/>
+<text class="s" x="38" y="154.0">z=+1.5</text>
+<line x1="90" y1="240.0" x2="610.0" y2="240.0" stroke="#8b5a2b" stroke-width="3"/>
+<text x="616.0" y="244.0" fill="#8b5a2b">make_test_flat surface z=0</text>
+<line x1="90" y1="210.0" x2="610.0" y2="210.0" stroke="#c00" stroke-dasharray="6 4" stroke-width="2"/>
+<text x="616.0" y="214.0" fill="#c00">leave floor = surface + 0.5 (drape target)</text>
+<line x1="90" y1="180.0" x2="610.0" y2="180.0" stroke="#06c" stroke-dasharray="3 3"/>
+<text x="616.0" y="184.0" fill="#06c">safe_z = 1.0</text>
+<text x="170.0" y="147.0" fill="#080">EXPECTED (pre-fa27b08)</text>
+<text class="s" x="170.0" y="161.0">entry.z=+0.00  EntryPlunge count = 2</text>
+<line x1="218.0" y1="180.0" x2="218.0" y2="180.0" stroke="#888" stroke-width="1.5" stroke-dasharray="4 3"/>
+<circle cx="218.0" cy="180.0" r="2.6" fill="#888"/>
+<line x1="232.0" y1="180.0" x2="232.0" y2="210.0" stroke="#080" stroke-width="3"/>
+<circle cx="232.0" cy="210.0" r="2.6" fill="#080"/>
+<line x1="246.0" y1="210.0" x2="246.0" y2="180.0" stroke="#888" stroke-width="1.5" stroke-dasharray="4 3"/>
+<circle cx="246.0" cy="180.0" r="2.6" fill="#888"/>
+<line x1="260.0" y1="180.0" x2="260.0" y2="240.0" stroke="#080" stroke-width="3"/>
+<circle cx="260.0" cy="240.0" r="2.6" fill="#080"/>
+<line x1="274.0" y1="240.0" x2="274.0" y2="180.0" stroke="#888" stroke-width="1.5" stroke-dasharray="4 3"/>
+<circle cx="274.0" cy="180.0" r="2.6" fill="#888"/>
+<text x="410.0" y="147.0" fill="#c00">ACTUAL (HEAD)</text>
+<text class="s" x="410.0" y="161.0">entry.z=+0.50  EntryPlunge count = 1</text>
+<line x1="458.0" y1="180.0" x2="458.0" y2="180.0" stroke="#888" stroke-width="1.5" stroke-dasharray="4 3"/>
+<circle cx="458.0" cy="180.0" r="2.6" fill="#888"/>
+<line x1="472.0" y1="180.0" x2="472.0" y2="210.0" stroke="#c00" stroke-width="3"/>
+<circle cx="472.0" cy="210.0" r="2.6" fill="#c00"/>
+<line x1="486.0" y1="210.0" x2="486.0" y2="180.0" stroke="#888" stroke-width="1.5" stroke-dasharray="4 3"/>
+<circle cx="486.0" cy="180.0" r="2.6" fill="#888"/>
+<text class="s" x="14" y="370">assert_eq!(entry_plunges, 2) — HEAD yields 1. The peck loop never iterates because the draped entry sits only depth_per_pass (0.5) below safe_z.</text>
+<text class="s" x="14" y="386">Consequence: the test no longer reaches the "dpp == PECK_CLEARANCE_MM" non-progressing-loop guard it is named for — it is vacuous as well as red.</text>
+</svg>
