@@ -148,3 +148,11 @@ The `intra_region_hookup_mm` prior is confirmed exactly as described and is now 
 P-2 and P-3 are the same data-loss class one severity step down: P-2 loses an operator-set field on every project, P-3 loses geometry on legacy files only.
 
 Per plan §M4, **nothing is fixed by this wave**. Each `fix now` item needs a red-first reproducer on the parent revision before any production change, and P-1's fix touches a serialized token — that is a Checkpoint-class decision, not a wave action.
+
+---
+
+## Orchestrator annotations — 2026-08-04
+
+- **P-3 population check executed**: every project TOML under `planning/` is `format_version = 3` (grep over `planning/**/*.toml`, 7 files). No v≤2 file exists for this operator, so P-3 is downgraded per the agent's own handoff: **`ruled out (no live population)`** — the loader defect is real but keep it as a candidate hardening item, not `fix now`. Counts become: fix now 2 (P-1, P-2) · candidate 18 · ruled out 12 + P-3.
+- **X-1 handed to W8**: the exporter/viewport span-walk divergence is folded into wave W8's brief alongside D-LV.1 (same defect shape, same files); not opened separately.
+- **P-1 (grblHAL silent downgrade)** is surfaced to the operator as a checkpoint-class decision — it changes a serialized token and the emitted G-code dialect; no fix begins without a ruling.
