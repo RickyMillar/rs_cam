@@ -4372,9 +4372,15 @@ adaptive3d reds). Green: `finish_resolution_policy_pr3` (10),
   flipping a default that was consciously deferred, without the A/B that would
   judge it, is the exact antipattern this feature has already hit three times.
   It needs either the original wave-14 brief's justification or an operator.
-* **The Criterion suite is still square-only** (7c). Wave 13 deferred it to
-  this wave to avoid pinning the exponential; this wave did not reach it, so it
-  is now deferred without that excuse.
+* **The Criterion suite (7c) IS extended, and this bullet said otherwise until
+  it was checked.** `benches/perf_suite.rs` gained `offset_rosette24`,
+  `offset_holed9` and four repeated-cascade cases (square 60 mm and 200 mm,
+  rosette-24, holed-9). The square-only benchmark was the one shape with no
+  reflex corners, therefore no arc joins, therefore the one shape the defect
+  could never appear on — the same blind spot as §15's convex oracle fixtures,
+  in a third place. What remains undone is running it: **no baseline numbers
+  were captured**, because that wants a release build and this wave was
+  debug-only by instruction.
 * **`cavalier_contours` still panics in RELEASE on the `Shape` path** and is
   still mapped to "collapsed offset", so a cascade can still terminate early
   and silently. Wave 13 filed it as a separate finding; wave 14 added a ring
