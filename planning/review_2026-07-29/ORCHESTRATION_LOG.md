@@ -3247,6 +3247,21 @@ source chords the surface; its undecimated marching-squares vertices gave it
 the denser path for free. A9 is still better on cusp and standing material on
 all five fixtures — by **1–11%**, not 15–58%.
 
+> **ERRATUM (wave 14, 2026-08-03): the margins in the table above are stale.**
+> Every number in it was measured on a build with (a) four-interval chord
+> probing, (b) the end-floor guard that ABANDONS a chord whose worst probe sits
+> within 50 µm of an end, and (c) drop-only ring decimation. Wave 14 changed
+> all three — the probe set is eight intervals, the split point is clamped
+> rather than abandoned, and the cascade carries arcs — after finding that (a)
+> and (b) were shipping tolerance violations of 142.4 µm and 216.9 µm against a
+> 100 µm tolerance. **The A0-vs-A9 gap in particular cannot be quoted:** it was
+> substantially a chord-density comparison, and wave 14 moved chord density on
+> the A0 side specifically. The DIRECTION of wave 9b's finding stands (the
+> instrument was ranking chord density as if it were stepover, and fixing the
+> refinement narrowed the gap); the magnitudes need re-measuring before use.
+
+
+
 ### Gates
 
 * **Sub-10 µm segments — MET.** 0 of ~5000 on every fixture, both arms,
@@ -4130,3 +4145,241 @@ like.
   (M5's fifth acceptance gate), deliberately: a benchmark written now would
   pin the exponential and be re-pinned by the fix in the same wave.
 * **No implementation.** Build cost is estimated, not measured.
+
+---
+
+## C-SEQUENCE WAVE 14 (M5 implementation), 2026-08-03
+
+**Checkpoint D option 1, implemented.** Commit `e3427f8`. Step 11 of the
+sequencing checklist is now ticked. Evidence:
+`CHECKPOINT_D_EVIDENCE.md` plus the new `tests/ring_sample_bound_w14.rs`.
+
+### The defect is gone, and pocket's hang went with it
+
+`polygon::OffsetRingSet` keeps cavalier's arc-carrying polylines as the
+cascade STATE and flattens exactly once, at the boundary where rings become
+feed moves, under an explicit `polygon::FlattenPolicy`. Wave 13 predicted
+0.0 µm off the erosion oracle and a *shrinking* vertex count; both hold in
+the shipped code.
+
+The headline nobody asked for is pocket's. `pocket_contours_with_cancel` on a
+**twelve-vertex cross at a 0.5 mm stepover** did not finish in 20 seconds
+(§8). It now returns in **under 0.01 s**, and the sentry
+`pocket_cascade_terminates_on_the_reflex_cross` checks ring count as well as
+wall clock — a cascade that collapses early and silently would otherwise pass
+a timing check for the wrong reason, which is a live possibility because
+cavalier can panic on the `Shape` path and be mapped to "collapsed offset".
+`polygon::pocket_offsets` is retired (7a); the R1 degenerate-input sentry
+moved to the replacement with its assertion untouched.
+
+Pocket also stopped shipping an unbounded fidelity defect that was never
+filed as one: each discarded arc-join bulge cut its corner by the join's
+sagitta — **29% of the offset distance at a 90° join** — compounding inward.
+
+### The +88% was put on the oracle, and the answer was not the one being asked for
+
+Scallop's flatten needs a SAMPLING bound as well as a deviation budget,
+because it reads every ring vertex as a drop-cutter sample and a deviation
+budget owes a straight run no points. The bound chosen (the flat-ground
+stepover) cost **+88% emitted moves** on the PR-3 ridge. Three bounds × three
+fixtures, scored on the M4 envelope oracle:
+
+| fixture (dial / tol) | bound | moves | cusp µm | gouge mm² | deepest µm |
+|---|---|---|---|---|---|
+| PR-3 ridge (0.050 / 0.010) | tolerance-scaled | 5076 | 68.2 | 0.000 | −27.3 |
+| | **flat-ground (ships)** | **2674** | **68.1** | **0.000** | **−27.3** |
+| | none | 899 | 68.1 | 0.000 | −27.5 |
+| grooved, tight (0.050 / 0.010) | tolerance-scaled | 12787 | 51.0 | 0.000 | −18.2 |
+| | **flat-ground (ships)** | **6639** | **51.0** | **0.000** | **−16.6** |
+| | none | 1261 | 51.0 | **1.570** | **−115.5** |
+| grooved, loose (0.020 / 0.100) | tolerance-scaled | 7195 | 42.7 | 0.576 | −63.8 |
+| | **flat-ground (ships)** | **13949** | **44.0** | **0.176** | **−49.6** |
+| | none | 1567 | 46.5 | **9.200** | **−116.5** |
+
+**Achieved cusp is parity in every row that matters.** The decision rule's
+"parity at +88% is waste" branch would have fired — and it would have been
+wrong, because the bound is not buying cusp. It is buying **gouge
+containment**: unbounded, a straight run whose endpoints bracket a groove wall
+has no interior sample, so the chord is lifted over the feature and cuts
+through it. 1.570 mm² at −115.5 µm on the tight grooved block, 9.200 mm² at
+−116.5 µm on the loose one, against 0.000 and 0.176 bounded.
+
+**The fixture the +88% was counted on cannot show this.** The PR-3 ridge is
+smooth; it reads 0.000 mm² gouge on all three arms. A quality question was
+being adjudicated on the one fixture with no features to gouge.
+
+The rule's fallback — scale the bound by the tolerance so tight dials get the
+density they demand — was built and measured, and it gets the sign backwards.
+On tight dials it costs ~2× the moves for ±0.2pp on-dial and 0.0 µm of cusp;
+on loose dials it saves moves and pays for them in gouge (0.576 vs 0.176 mm²).
+The chord tolerance governs how well a CURVE is approximated and has nothing
+to say about how far apart a SURFACE may be sampled. It is retained as a
+research arm because that distinction is easy to lose and expensive to lose.
+
+**So: the bound stays, at +88%, re-justified and re-pinned.** Not because the
+moves were defended, but because the question "what do they buy" had a
+different answer than the one it was asked for.
+
+### Two shipping tolerance violations, found by denser probing
+
+Both surfaced through
+`scallop_isofield_gouge_m4::chord_refinement_bounds_every_chord_from_either_ring_source`
+going red at a 100 µm tolerance:
+
+1. **Four probe intervals were passing by luck of endpoint phase.** A 0.374 mm
+   chord probed at t = 0.25/0.50/0.75 read under the 70 µm accept threshold
+   while its true worst sat at t = 0.316, **142.4 µm** under the surface — a
+   probe-to-truth ratio over 2.0 against the 1.35 the accept margin is
+   calibrated for. Four intervals did not survive a change of endpoint phase,
+   which means it was never bounding anything. Now **eight**: sampling error on
+   a smooth surface falls with the square of probe spacing, so this buys back a
+   factor of four, at one extra drop-cutter query per three.
+
+2. **A split point near an end abandoned the whole chord.** When the worst
+   probe landed within the 50 µm floor of either end, refinement returned —
+   tolerance violation and all — shipping **216.9 µm** against 100 µm on a
+   0.363 mm chord. **Denser probing made this worse, which is how it
+   surfaced:** with four probes the same chord split at t = 0.25 and passed,
+   i.e. the guard was rewarding a coarser check. The split is now CLAMPED into
+   the admissible band, and the moved point re-queries the surface instead of
+   re-using the probe's answer for a position it no longer sits at.
+
+Wave 9b's recorded margins are stale as a result; an erratum is attached to
+that entry. Its direction stands, its magnitudes need re-measuring.
+
+### The scope amendment, and why the ruling could not be followed literally
+
+Checkpoint D asked for `remove_redundant` "everywhere as the lossless
+companion". **It ships reachable only from the cascade**, and the justification
+is a measurement rather than a preference.
+
+`remove_redundant` is lossless with respect to the SHAPE. Several consumers
+are not using the polygon as a shape: scallop seeds its cascade with a
+rectangle sampled at the flat-ground stepover and lifts every vertex with a
+drop-cutter query; `project_curve` and `trace` project vertices onto a mesh
+the same way. Every intermediate point on those straight runs is *correctly*
+identified as carrying no geometry — and it carries all of the sampling.
+Dropped into the shared wrapper, it turned a four-island scallop pass into an
+**empty toolpath**, because the four surviving corners all sat off the part
+(`capability_link_moves_safety`). Inside the cascade it is safe, because
+`FlattenPolicy` re-establishes the density explicitly on the way out.
+
+**Losslessness is a property of a MEASURE, and "the shape" is not the only
+measure a polygon is carrying.** The same sentence explains the sampling bound
+above, and the two findings were reached independently a day apart.
+
+### Errata: two pins and one claim, all captured on a build that does not ship
+
+* `finish_resolution_policy_pr3` was pinned mid-wave at **899 moves** with a
+  "−36.8%" narrative. The shipped number is **2674 (+87.9% over M4's 1423)**.
+  899 is reproducible — it is exactly the `RingSampleBound::ToleranceOnly` arm
+  — so the stale pin was a real measurement of a configuration that does not
+  ship.
+* `crease_own_region_pr6b` likewise: taper 1387 → **1595**, ball 1072 → **1109**.
+* `scallop_candidates_m4::the_arms_are_actually_different` carried the defect
+  as a *claim*: it asserted A2 (every-vertex) ≡ A0 (Fixed20) because "Fixed20's
+  stride is 1 for any ring under 40 vertices, and the arc cascade's rings are
+  that sparse". True on the unbounded build; false once the bound lands
+  (6132 vs 6589 moves). Now `assert_ne!` with the mechanism named.
+
+The rule this yields: **a pin captured mid-wave describes the build it was
+captured on, not the wave's conclusion.** Re-capture after the last
+behavioural commit. This is the M4 erratum pattern for the second time, and
+the third instance was a claim rather than a number — which is the more
+dangerous form, because a stale number goes red and a stale rationale does
+not. It went red here only because the claim named its own mechanism, so the
+test could say WHICH premise had moved. That is the argument for writing
+assertions that carry their reasoning.
+
+### §15's anomaly, explained
+
+Wave 13 recorded that "the scallop oracle fixtures cannot exhibit the hang —
+their boundary is the convex mesh-bbox rectangle", and left it as a limit.
+It is more than a limit: **a convex boundary has no reflex corners, therefore
+no arc joins, therefore the defect's entire mechanism is absent.** Those
+fixtures could never have adjudicated the arc-join change; they were measuring
+the 3D lift and the chord refinement, both of which sit downstream of it. The
+quality answer and the runtime answer genuinely come from different fixtures,
+and wave 14's gouge finding is the concrete cost of that split: the fixture
+that showed the runtime defect (the reflex cross) and the fixture that shows
+the sampling defect (the grooved block) are both non-convex, and the smooth
+convex-ish ridge that carried the headline move count shows neither.
+
+The band-restricted-population oracle variant was **not built**. It was
+offered as optional-if-it-is-the-difference-between-gating-and-guessing, and
+it was not: the three-fixture × three-bound matrix gates slice 1 on its own,
+because gouge separates the arms by four orders of magnitude and needs no
+population restriction to be legible.
+
+### The "deadlock" was not one
+
+A `ring_sample_bound_w14 --ignored` run was observed at 1h18m, 0.0% CPU, 26
+threads parked in `futex_do_wait`, and reported as a possible shipping
+deadlock. It is not, and the arithmetic settles it: **`nproc` is 24**, and a
+rayon global pool keeps `nproc` workers alive and parked for the process
+lifetime. 24 + main + harness = **26**. All-threads-parked at 0% CPU is the
+NORMAL idle state of this binary, not a deadlock signature; the only real
+question it poses is what the main thread was blocked on.
+
+Evidence gathered before concluding:
+
+* **Five consecutive clean completions** of the identical run — 149 s, 144 s,
+  122 s, 122 s at ~400% CPU, plus one via cargo. Not reproducible.
+* **No code substrate for either hypothesised mechanism.** There is no `Mutex`
+  or `RwLock` anywhere in `scallop.rs` or `polygon.rs`; rayon appears in
+  exactly two places on this path (`slope.rs`'s batched `into_par_iter` and the
+  oracle's `par_chunks_mut`), neither under a lock. There is no channel and no
+  GUI consumer in a headless core test.
+* Two forced reproductions — killing cargo to orphan the child, and killing the
+  pipe reader to force EPIPE — **did not reproduce it**.
+
+Every observation (partial output, 0% CPU, all-parked, indefinite duration,
+non-recurrence when writing to a file) fits *main thread blocked writing to a
+reader that stopped consuming*, which lives in the test-output plumbing and
+not in the cascade. Recorded as unreproduced-in-five-attempts with the
+substrate ruled out, rather than "fixed".
+
+### Gates
+
+`cargo fmt --check` clean; `cargo clippy --workspace --all-targets -D warnings`
+zero, before the commit.
+
+`-p rs_cam_core --lib`: **2226 passed / 3 failed, all known** (the three
+adaptive3d reds). Green: `finish_resolution_policy_pr3` (10),
+`crease_own_region_pr6b` (3), `offset_polygon_degenerate_inputs_r1` (2),
+`offset_candidates_m5` (6 + 5 ignored), `standing_material_channel_am9` (4),
+`ring_sample_bound_w14` (1 + the evidence run), and the pocket cascade sentry.
+
+### What a human still owns
+
+* **No live GUI or wanaka run, and no rendered machined surface.** Every
+  number in this entry is analytic or 2D. The gouge finding in particular says
+  a bound is load-bearing on synthetic grooves; it has not been seen on a part.
+* **The scallop dial still has no GUI widget** — registry/MCP and project TOML
+  only, unchanged from wave 12.
+* **Whether +88% moves is an acceptable price** is now a stated trade rather
+  than an accident, but it is still a trade: the moves are gouge insurance
+  that a smooth part will never collect on.
+
+### Honest limits
+
+* **Slice 1 and the pocket rollout are committed; the wave's remaining brief
+  items are not.** The param sweeps, the Criterion extension (7c), the docs
+  sweep and the `intra_region_hookup_mm` flip are outstanding — see below.
+* **`intra_region_hookup_mm` was deliberately NOT flipped.** Wave 12 measured
+  it and left it off "for an operator with a part in front of them", and the
+  plan records that position. No new evidence arrived in this wave, and
+  flipping a default that was consciously deferred, without the A/B that would
+  judge it, is the exact antipattern this feature has already hit three times.
+  It needs either the original wave-14 brief's justification or an operator.
+* **The Criterion suite is still square-only** (7c). Wave 13 deferred it to
+  this wave to avoid pinning the exponential; this wave did not reach it, so it
+  is now deferred without that excuse.
+* **`cavalier_contours` still panics in RELEASE on the `Shape` path** and is
+  still mapped to "collapsed offset", so a cascade can still terminate early
+  and silently. Wave 13 filed it as a separate finding; wave 14 added a ring
+  count check to the pocket sentry so at least one path would notice, but the
+  underlying containment is unchanged and uninvestigated.
+* **Sub-decision 7b** (file §8's pocket non-termination as a tracked defect)
+  is satisfied in effect — the defect is fixed and sentried — but no ticket was
+  opened, so there is no record of it outside this log and the code.
