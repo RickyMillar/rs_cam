@@ -1094,17 +1094,63 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     refine_chord(w, b, ctx, depth - 1, out);
 }
 
+/// Sum, over one lifted ring, of the XY perimeter length "owned" by points
+/// the keep predicate DROPPED (`kept == false`, `ring_to_3d`'s coverage
+/// flag): half the incoming segment plus half the outgoing one, so a fully
+/// kept ring contributes `0.0` and the owned lengths of every point — kept
+/// or not — sum to exactly the ring's perimeter.
+///
+/// Feeds [`ScallopReport::standing_mm2`]: multiplied by the stepover that
+/// produced the ring, this turns "how much of this ring's length got
+/// excluded from the toolpath" into an area estimate.
+fn dropped_arc_length_mm(ring: &[(P3, bool)]) -> f64 {
+    let n = ring.len();
+    if n < 2 {
+        return 0.0;
+    }
+    // `seg[i]` is the XY length of the segment from `ring[i]` to
+    // `ring[(i + 1) % n]`.
+    let mut seg: Vec<f64> = Vec::with_capacity(n);
+    for i in 0..n {
+        // SAFETY: `i` and `(i + 1) % n` are both in `0..n`.
+        #[allow(clippy::indexing_slicing)]
+        let (a, b) = (ring[i].0, ring[(i + 1) % n].0);
+        seg.push(((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt());
+    }
+    let mut total = 0.0;
+    for i in 0..n {
+        // SAFETY: `i` is in `0..n`, so `ring[i]` is in bounds.
+        #[allow(clippy::indexing_slicing)]
+        let kept = ring[i].1;
+        if kept {
+            continue;
+        }
+        let prev = (i + n - 1) % n;
+        // SAFETY: `prev` and `i` are both in `0..n`, and `seg` has length
+        // `n` (built above from the same range).
+        #[allow(clippy::indexing_slicing)]
+        {
+            total += 0.5 * (seg[prev] + seg[i]);
+        }
+    }
+    total
+}
+
 /// Generate concentric offset rings from the outer boundary inward.
 ///
 /// Uses variable stepover: at each ring, samples the slope map to compute
 /// the average stepover that maintains constant scallop height, then offsets
 /// by that amount.
+///
+/// **Test/research seam, `pub`.** Production goes through
+/// `generate_scallop_rings_with_cancel` (private); this never-cancel
+/// convenience wrapper exists so the in-crate unit tests below — and the
+/// external `scallop_untouched_standing_h4` sentry, which cannot see a
+/// private item — can drive the cascade directly without a full mesh or
+/// toolpath generation.
 // infallible: cancel closure always returns false, so Cancelled is unreachable
 #[allow(clippy::too_many_arguments, clippy::expect_used)]
-// Production goes through the _with_cancel variant; this never-cancel
-// convenience wrapper is exercised by the unit tests below.
-#[cfg_attr(not(test), allow(dead_code))]
-fn generate_scallop_rings(
+pub fn generate_scallop_rings(
     boundary: &Polygon2,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1179,8 +1225,15 @@ fn generate_scallop_rings_with_cancel(
     if first_ring.len() < 3 {
         // Degenerate boundary — nothing was cut, but nothing was LEFT
         // uncut either: there is no region interior to report.
-        return Ok((rings_3d, 0.0));
+        return Ok((rings_3d, RingCascadeMetrics::default()));
     }
+    // M4 §5b: the seed boundary ring is excluded from `standing_mm2` — it
+    // was pushed before the offset loop starts, so no offset stepover
+    // "produced" it (the estimator's formula is arc length x THAT ring's
+    // stepover). Any of its own dropped points (e.g. a boundary rectangle
+    // whose corner sits off the mesh footprint) are therefore not counted;
+    // see `ScallopReport::standing_mm2`'s doc for this and the estimator's
+    // other stated limitations.
     rings_3d.push(first_ring);
 
     // M4 research candidate 3: take the rings from an iso-scallop field
@@ -1254,8 +1307,12 @@ fn generate_scallop_rings_with_cancel(
         // The field's termination is exact — every interior cell has a finite
         // pass index and every integer level below the maximum was extracted —
         // so there is no truncated core to report. The oracle checks that
-        // claim independently rather than taking it.
-        return Ok((rings_3d, 0.0));
+        // claim independently rather than taking it. `standing_mm2` is left
+        // at its default `0.0` too: this branch is a research seam no
+        // production entry point selects (`ScallopStepoverPolicy::SHIPPED`
+        // is `RingSource::OffsetCascade`), so the estimator was never
+        // extended to the iso-field's per-cell stepover.
+        return Ok((rings_3d, RingCascadeMetrics::default()));
     }
 
     // Iteratively offset inward.
@@ -1343,6 +1400,13 @@ fn generate_scallop_rings_with_cancel(
     // left uncut — silently, because the loop simply ends. That is what
     // this tracks (see the exhaustion warning below).
     let mut exhausted = true;
+
+    // M4 §5b: accumulated regardless of `exhausted` — a cascade that
+    // collapses normally can still have dropped points on individual rings
+    // (e.g. a ring brushing the edge of the mesh footprint), and
+    // `ScallopReport::standing_mm2` reports that independently of whether
+    // the cascade was truncated.
+    let mut standing_mm2 = 0.0_f64;
 
     for _ in 0..max_rings {
         check_cancel(cancel)?;
@@ -1457,6 +1521,10 @@ fn generate_scallop_rings_with_cancel(
             }
             let ring_3d = ring_to_3d(&poly.exterior, &lift_ctx);
             if ring_3d.len() >= 3 {
+                // M4 §5b: this ring's dropped points, valued at the
+                // stepover that just produced it — see
+                // `ScallopReport::standing_mm2`'s doc for the formula.
+                standing_mm2 += dropped_arc_length_mm(&ring_3d) * stepover;
                 rings_3d.push(ring_3d);
             }
         }
@@ -1465,16 +1533,25 @@ fn generate_scallop_rings_with_cancel(
     }
 
     let mut uncut_core_mm2 = 0.0;
+    // M4 §5b: hole-aware net area — `Polygon2::area()` is `|exterior| -
+    // Σ|hole|`, which is exactly `uncut_core_mm2`'s exterior-only sum
+    // corrected for holes. Floored at 0 per polygon rather than summed
+    // signed, so one polygon's degenerate hole geometry cannot pull an
+    // unrelated polygon's honest residual negative.
+    let mut untouched_mm2 = 0.0;
     if exhausted {
         let remaining: f64 = current_polys
             .iter()
             .map(|p| crate::polygon::shoelace_area(&p.exterior).abs())
             .sum();
         uncut_core_mm2 = remaining;
+        untouched_mm2 = current_polys.iter().map(|p| p.area().max(0.0)).sum();
         tracing::warn!(
             max_rings,
             rings_emitted = rings_3d.len(),
             uncut_core_mm2 = remaining,
+            untouched_mm2,
+            standing_mm2,
             // M1 §4.3: state the domain on the line that carries the number.
             measurement = %ScallopReport::PROVENANCE,
             "scallop: ring cascade hit max_rings without collapsing — the \
@@ -1485,7 +1562,14 @@ fn generate_scallop_rings_with_cancel(
         );
     }
 
-    Ok((rings_3d, uncut_core_mm2))
+    Ok((
+        rings_3d,
+        RingCascadeMetrics {
+            uncut_core_mm2,
+            untouched_mm2,
+            standing_mm2,
+        },
+    ))
 }
 
 /// Index of the point on `ring` closest to `target` among points that
@@ -1526,9 +1610,29 @@ fn rotate_ring(ring: &[(P3, bool)], start_idx: usize) -> Vec<(P3, bool)> {
     result
 }
 
-/// One boundary region's lifted rings, paired with the interior area the
-/// cascade failed to reach. `bool` per point is `ring_to_3d`'s keep flag.
-type RingCascade = (Vec<Vec<(P3, bool)>>, f64);
+/// The three area figures one boundary region's ring cascade produces,
+/// alongside its lifted rings (see [`RingCascade`]). A named struct rather
+/// than a 3-tuple so `generate_scallop_rings_with_cancel`'s callers cannot
+/// mix up which field is which — the exact mistake a positional tuple
+/// invites once there is more than one `f64` in it.
+///
+/// Every field is a per-region figure; `scallop_toolpath_research` sums
+/// these across every boundary region into [`ScallopReport`]'s
+/// identically-named fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RingCascadeMetrics {
+    /// See [`ScallopReport::uncut_core_mm2`].
+    pub uncut_core_mm2: f64,
+    /// See [`ScallopReport::untouched_mm2`].
+    pub untouched_mm2: f64,
+    /// See [`ScallopReport::standing_mm2`].
+    pub standing_mm2: f64,
+}
+
+/// One boundary region's lifted rings, paired with what the cascade found
+/// out about the geometry it just cut. `bool` per point is `ring_to_3d`'s
+/// keep flag.
+pub type RingCascade = (Vec<Vec<(P3, bool)>>, RingCascadeMetrics);
 
 /// What the ring cascade found out about the geometry it just cut.
 ///
@@ -1547,7 +1651,49 @@ pub struct ScallopReport {
     /// one on every slope. Raising the cap alone measured far worse
     /// (Op B +92% time, deep over-cut 34×), so this reports the symptom
     /// until `ring_stepover`'s min-across-ring collapse is fixed.
+    ///
+    /// **HOLE-BLIND** (M4 §5b, `MEASUREMENT_DOMAINS.md` X-5): computed from
+    /// each truncated polygon's EXTERIOR shoelace area only, so an island
+    /// inside the truncated core — a hole the cascade's own offset created,
+    /// or one the region boundary carried in — is counted as uncut even
+    /// though it is not part of the region. Kept exactly as-is (same
+    /// formula, same call sites) for continuity with every existing
+    /// consumer; see [`Self::untouched_mm2`] for the corrected figure.
     pub uncut_core_mm2: f64,
+    /// Hole-aware net area (mm²) the ring cascade never reached — the same
+    /// truncated-cascade polygons as [`Self::uncut_core_mm2`], but summing
+    /// `|exterior shoelace| − Σ|hole shoelace|` per polygon (floored at 0)
+    /// instead of the exterior alone, then summed over every boundary
+    /// region. `untouched_mm2 <= uncut_core_mm2` always; the gap is exactly
+    /// the hole-blindness [`Self::uncut_core_mm2`] carries forward.
+    ///
+    /// This is the production analogue of the M4 research oracle's
+    /// `OracleReport::untouched_mm2` — "area no cutter position ever
+    /// covered" — named identically so the two instruments are recognisable
+    /// as measuring the same thing (see
+    /// `tests/common/scallop_oracle.rs::OracleReport::untouched_mm2`'s doc).
+    /// `0.0` when every cascade collapsed normally, same condition as
+    /// [`Self::uncut_core_mm2`]. See [`Self::UNTOUCHED_PROVENANCE`] for the
+    /// measurement contract (M1).
+    pub untouched_mm2: f64,
+    /// Estimated area (mm²) the cascade's rings PASSED OVER but did not cut,
+    /// because the per-point keep predicate (`ring_to_3d`'s coverage flag —
+    /// no finite drop-cutter contact, or outside the finish heightmap's
+    /// coverage) dropped those ring vertices. Summed, over every offset ring
+    /// in every boundary region, as `Σ (arc length owned by dropped points)
+    /// × (that ring's offset stepover)` — see `dropped_arc_length_mm` for
+    /// "owned arc length". `0.0` when every ring point on every ring was
+    /// kept. Excludes the seed boundary ring (see
+    /// `generate_scallop_rings_with_cancel`'s comment at its push site: no
+    /// offset stepover produced it).
+    ///
+    /// This is the production analogue of the M4 research oracle's
+    /// `OracleReport::standing_mm2` — "reached, but left high" — though the
+    /// analogy is not exact; see [`Self::STANDING_PROVENANCE`] for the
+    /// estimator's stated limitations, in particular that it cannot tell
+    /// "dropped because off-part" from "dropped because left high" and so
+    /// can over-report on a mesh with real off-part gaps inside the region.
+    pub standing_mm2: f64,
     /// Rings the offset cascade PRODUCED, summed over every boundary region
     /// — before the coverage / slope / boundary keep-predicate has had a say.
     ///
@@ -1589,11 +1735,70 @@ impl ScallopReport {
             "ring polygons flattened at 0.1x the op chord tolerance (exterior shoelace)",
         );
 
+    /// What [`Self::untouched_mm2`] means (M1). **Same domain and stage as
+    /// [`Self::PROVENANCE`]** — both are exact shoelace areas taken from the
+    /// SAME truncated-cascade polygons at the same generation-time cascade
+    /// residual stage — but a DIFFERENT resolution: this one nets out each
+    /// polygon's holes before summing, where [`Self::PROVENANCE`] sums
+    /// exteriors only. Sharing the stage is deliberate (M4 §5b ruling): a
+    /// reader who already knows what `PROVENANCE` means should recognise
+    /// this as "the same measurement, corrected for holes", not an unrelated
+    /// figure.
+    pub const UNTOUCHED_PROVENANCE: crate::measurement::MeasurementProvenance =
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RingCascadeResidual,
+        )
+        .with_resolution_note(
+            "ring polygons flattened at 0.1x the op chord tolerance; hole-aware net area \
+             (exterior shoelace minus each hole's shoelace, floored at 0 per polygon) — the \
+             same truncated-cascade geometry as PROVENANCE, corrected for interior holes",
+        );
+
+    /// What [`Self::standing_mm2`] means (M1). A DIFFERENT
+    /// [`crate::measurement::MeasurementStage`] from [`Self::PROVENANCE`] /
+    /// [`Self::UNTOUCHED_PROVENANCE`] on purpose —
+    /// [`crate::measurement::MeasurementStage::RingCascadeStandingEstimate`]
+    /// — even though all three come from the same cascade run, so
+    /// [`crate::measurement::MeasurementProvenance::comparable_to`] refuses
+    /// to treat this ESTIMATOR as interchangeable with either exact polygon
+    /// area: it cannot be summed with or ratio'd against `uncut_core_mm2` or
+    /// `untouched_mm2` just because the domain label matches.
+    pub const STANDING_PROVENANCE: crate::measurement::MeasurementProvenance =
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RingCascadeStandingEstimate,
+        )
+        .with_resolution_note(
+            "estimator, not a polygon area: per ring, (arc length owned by ring points the \
+             keep predicate dropped) x (that ring's offset stepover), summed over every \
+             emitted offset ring in every boundary region; excludes the seed boundary ring; \
+             ignores residual DEPTH (unlike the oracle's standing_mult gate) and cannot \
+             distinguish a dropped point caused by off-part geometry from one caused by a \
+             real left-high residual",
+        );
+
     /// [`Self::uncut_core_mm2`] tagged with its domain — XY-projected, never
     /// a 3D surface area and never a share of one.
     #[must_use]
     pub const fn uncut_core(&self) -> crate::measurement::ProjectedXyAreaMm2 {
         crate::measurement::ProjectedXyAreaMm2::new(self.uncut_core_mm2)
+    }
+
+    /// [`Self::untouched_mm2`] tagged with its domain — see
+    /// [`Self::UNTOUCHED_PROVENANCE`].
+    #[must_use]
+    pub const fn untouched(&self) -> crate::measurement::ProjectedXyAreaMm2 {
+        crate::measurement::ProjectedXyAreaMm2::new(self.untouched_mm2)
+    }
+
+    /// [`Self::standing_mm2`] tagged with its domain — see
+    /// [`Self::STANDING_PROVENANCE`]. Remember this is an ESTIMATOR, not a
+    /// polygon area: the newtype only gates the domain arithmetic (rule 3),
+    /// it does not upgrade the estimator into an exact measurement.
+    #[must_use]
+    pub const fn standing(&self) -> crate::measurement::ProjectedXyAreaMm2 {
+        crate::measurement::ProjectedXyAreaMm2::new(self.standing_mm2)
     }
 }
 
@@ -1833,6 +2038,10 @@ pub fn scallop_toolpath_research(
     let mut trace = ScallopStepoverTrace::default();
     check_cancel(cancel)?;
     let mut uncut_core_mm2 = 0.0_f64;
+    // M4 §5b: the hole-aware and estimator siblings of `uncut_core_mm2`,
+    // accumulated in lockstep with it in the region loop below.
+    let mut untouched_mm2 = 0.0_f64;
+    let mut standing_mm2 = 0.0_f64;
     // Physical extent (heightmap padding / grid coverage) keeps the FULL
     // tool radius; all cusp/stepover math uses the cusp-forming radius
     // (tip sphere for tapered tools — see `cusp_radius`).
@@ -1983,7 +2192,7 @@ pub fn scallop_toolpath_research(
     let region_total = region_boundaries.len().max(1);
     for (region_index, region_boundary) in region_boundaries.iter().enumerate() {
         check_cancel(cancel)?;
-        let (region_rings, region_uncut) = generate_scallop_rings_with_cancel(
+        let (region_rings, region_metrics) = generate_scallop_rings_with_cancel(
             region_boundary,
             mesh,
             index,
@@ -2002,7 +2211,9 @@ pub fn scallop_toolpath_research(
         )?;
         ring_region.extend(std::iter::repeat_n(region_index, region_rings.len()));
         rings.extend(region_rings);
-        uncut_core_mm2 += region_uncut;
+        uncut_core_mm2 += region_metrics.uncut_core_mm2;
+        untouched_mm2 += region_metrics.untouched_mm2;
+        standing_mm2 += region_metrics.standing_mm2;
     }
 
     info!(rings = rings.len(), "Scallop rings generated");
@@ -2013,6 +2224,8 @@ pub fn scallop_toolpath_research(
             Vec::new(),
             ScallopReport {
                 uncut_core_mm2,
+                untouched_mm2,
+                standing_mm2,
                 cascade_ring_count: 0,
                 ring_count: 0,
             },
@@ -2313,6 +2526,8 @@ pub fn scallop_toolpath_research(
 
     let report = ScallopReport {
         uncut_core_mm2,
+        untouched_mm2,
+        standing_mm2,
         cascade_ring_count: rings.len(),
         // One annotation per emitted ring / kept run, in both the continuous
         // and the discrete branch — so this IS the emitted count, not a
@@ -2493,7 +2708,7 @@ mod tests {
         .unwrap();
 
         // Three rings on a 50 mm square cannot reach the middle.
-        let (rings, uncut_core_mm2) = generate_scallop_rings(
+        let (rings, metrics) = generate_scallop_rings(
             &boundary,
             &mesh,
             &si,
@@ -2517,9 +2732,10 @@ mod tests {
             "boundary ring + max_rings offset iterations"
         );
         assert!(
-            uncut_core_mm2 > 100.0,
+            metrics.uncut_core_mm2 > 100.0,
             "a 50 mm square capped at 3 rings leaves a large uncut core, \
-             got {uncut_core_mm2} mm²"
+             got {} mm²",
+            metrics.uncut_core_mm2
         );
     }
 
@@ -2552,7 +2768,7 @@ mod tests {
         let surface_hm = surface.heightmap;
         let slope_map = surface.slope_map;
 
-        let (rings, uncut_core_mm2) = generate_scallop_rings(
+        let (rings, metrics) = generate_scallop_rings(
             &boundary,
             &mesh,
             &si,
@@ -2575,10 +2791,16 @@ mod tests {
 
         // The cascade collapsed on its own, so nothing was left standing.
         // This is the control for `ring_cascade_reports_uncut_core_when_capped`
-        // below: same fixture, adequate cap, zero standing material.
+        // below: same fixture, adequate cap, zero standing material. M4 §5b:
+        // the hole-aware sibling must agree — no truncation, so no residual
+        // either way the area is computed.
         assert_eq!(
-            uncut_core_mm2, 0.0,
+            metrics.uncut_core_mm2, 0.0,
             "a cascade that collapses within its cap leaves no uncut core"
+        );
+        assert_eq!(
+            metrics.untouched_mm2, 0.0,
+            "a cascade that collapses within its cap leaves nothing untouched"
         );
 
         // Ring count should be bounded (polygon eventually collapses)

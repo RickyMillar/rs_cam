@@ -75,6 +75,17 @@ pub struct GenerationFindings {
     /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
     /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
     pub standing_material_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::standing_material_mm2`] —
+    /// summed the same way, over the same adapters, straight off
+    /// [`crate::scallop::ScallopReport::untouched_mm2`]. Same X-19
+    /// three-valued contract: `None` = no cascade ran.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
+    /// [`Self::standing_material_mm2`], off
+    /// [`crate::scallop::ScallopReport::standing_mm2`]. Same X-19 contract.
+    /// Remember this one is an estimator, not an exact area — see the
+    /// source field's doc for what it cannot distinguish.
+    pub reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1: a planned finish band whose cutting was entirely erased by
     /// height resolution — an unmachined feature. `None` = no banded
     /// decomposition ran, or every band it planned survived.
@@ -126,10 +137,27 @@ pub struct GenerationFindings {
 /// The first call is what turns "not measured" into "measured" — including
 /// when the measurement is zero, which is the distinction A/M9 exists to
 /// preserve. Only call it from an adapter that actually ran a cascade.
-fn record_standing_material(cell: &std::cell::RefCell<GenerationFindings>, area_mm2: f64) {
+///
+/// M4 §5b: takes all three `ScallopReport` area figures in one call —
+/// `uncut_core_mm2` (continuity), `untouched_mm2` (hole-aware) and
+/// `standing_mm2` (the dropped-point estimate) — because every call site
+/// already has a whole `ScallopReport`/`UnifiedFinishReport` in hand and the
+/// three always travel together; three separate `record_*` calls per site
+/// would only invite one being forgotten when a fourth cascade figure shows
+/// up later.
+fn record_standing_material(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    uncut_core_mm2: f64,
+    untouched_mm2: f64,
+    standing_mm2: f64,
+) {
     let mut findings = cell.borrow_mut();
     let prev = findings.standing_material_mm2.unwrap_or(0.0);
-    findings.standing_material_mm2 = Some(prev + area_mm2);
+    findings.standing_material_mm2 = Some(prev + uncut_core_mm2);
+    let prev_untouched = findings.untouched_material_mm2.unwrap_or(0.0);
+    findings.untouched_material_mm2 = Some(prev_untouched + untouched_mm2);
+    let prev_standing_estimate = findings.reached_uncut_estimate_mm2.unwrap_or(0.0);
+    findings.reached_uncut_estimate_mm2 = Some(prev_standing_estimate + standing_mm2);
 }
 
 /// Record a dropped-band finding (Wave D1). `None` is a no-op — an adapter
@@ -1475,7 +1503,12 @@ pub(crate) fn generate_scallop(
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
-    record_standing_material(ctx.findings, scallop_report.uncut_core_mm2);
+    record_standing_material(
+        ctx.findings,
+        scallop_report.uncut_core_mm2,
+        scallop_report.untouched_mm2,
+        scallop_report.standing_mm2,
+    );
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(
             &annotations,
@@ -1658,7 +1691,12 @@ pub(crate) fn generate_unified_finish(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    record_standing_material(ctx.findings, report.uncut_core_mm2);
+    record_standing_material(
+        ctx.findings,
+        report.uncut_core_mm2,
+        report.untouched_mm2,
+        report.standing_mm2,
+    );
     // Wave D1: an unmachined band is a generation-time finding with no home
     // on the toolpath — the whole reason `GenerationFindings` exists.
     record_dropped_band(

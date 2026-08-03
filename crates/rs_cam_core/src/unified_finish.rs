@@ -1093,6 +1093,17 @@ pub struct UnifiedFinishReport {
     /// residual, not a grid-quantised band area. The two must never be
     /// summed or ratio'd against each other.
     pub uncut_core_mm2: f64,
+    /// M4 §5b: the hole-aware sibling of [`Self::uncut_core_mm2`], summed
+    /// over the same mid-steep regions. `0.0` when every cascade collapsed
+    /// normally. See [`crate::scallop::ScallopReport::untouched_mm2`] and
+    /// [`crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE`].
+    pub untouched_mm2: f64,
+    /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
+    /// [`Self::uncut_core_mm2`], summed over the same mid-steep regions. See
+    /// [`crate::scallop::ScallopReport::standing_mm2`] and
+    /// [`crate::scallop::ScallopReport::STANDING_PROVENANCE`] for the
+    /// estimator's formula and stated limitations.
+    pub standing_mm2: f64,
     /// Wave D1: planned band regions whose cutting was entirely erased by
     /// height resolution (see [`DroppedBand`]). Empty on a healthy run.
     /// Folded into the per-toolpath finding by [`dropped_band_finding`].
@@ -1701,6 +1712,9 @@ pub fn unified_finish_toolpath_with_cancel(
     let mut shallow_grid: Option<DropCutterGrid> = None;
 
     let mut uncut_core_mm2 = 0.0_f64;
+    // M4 §5b: accumulated in lockstep with `uncut_core_mm2` below.
+    let mut untouched_mm2 = 0.0_f64;
+    let mut standing_mm2 = 0.0_f64;
     for (region_index, region) in planned.regions.iter().enumerate() {
         check_cancel(cancel)?;
         let region_set = RegionSet::new(vec![region.polygon.clone()]);
@@ -1829,6 +1843,10 @@ pub fn unified_finish_toolpath_with_cancel(
                 // Summed across every mid-steep region, so a truncated
                 // cascade in ANY of them reaches the op's report.
                 uncut_core_mm2 += scallop_report.uncut_core_mm2;
+                // M4 §5b: the hole-aware and estimator siblings, summed the
+                // same way.
+                untouched_mm2 += scallop_report.untouched_mm2;
+                standing_mm2 += scallop_report.standing_mm2;
                 (tp, anns)
             }
             FinishBand::Shallow => {
@@ -2233,6 +2251,8 @@ pub fn unified_finish_toolpath_with_cancel(
     report.claims = claims_report;
     report.region_table = region_table;
     report.uncut_core_mm2 = uncut_core_mm2;
+    report.untouched_mm2 = untouched_mm2;
+    report.standing_mm2 = standing_mm2;
 
     Ok((stitched, annotations, report))
 }

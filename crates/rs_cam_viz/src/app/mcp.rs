@@ -1128,6 +1128,10 @@ impl super::RsCamApp {
             // core generation findings; carrying it here is what puts the
             // figure in front of an agent narrating a live GUI toolpath.
             standing_material_mm2: result.stats.standing_material_mm2,
+            // M4 §5b: the hole-aware and estimator siblings, off the same
+            // GUI-worker-filled toolpath stats.
+            untouched_material_mm2: result.stats.untouched_material_mm2,
+            reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
             // Wave D1: an unmachined band and an unreachable valley floor
             // are exactly the kind of finding an agent narrating a LIVE GUI
             // toolpath has no other way to see.

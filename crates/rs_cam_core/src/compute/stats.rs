@@ -46,6 +46,10 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // keep reading `None` so no ratio is built on a fabricated zero
         // (`MEASUREMENT_DOMAINS.md` X-19).
         standing_material_mm2: None,
+        // M4 §5b: same rule, same reason — the split rides on the same
+        // generation-time `GenerationFindings`, not on the move list.
+        untouched_material_mm2: None,
+        reached_uncut_estimate_mm2: None,
         // Same rule (Wave D1): a band drop and a centreline float are
         // generation-time findings. This helper only sees moves, so it can
         // only honestly say "not measured".

@@ -80,6 +80,16 @@ pub struct ToolpathNarrationContext<'a> {
     /// which — an agent reading this report must never have to guess
     /// whether a silent zero means "clean" or "unknown".
     pub standing_material_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::standing_material_mm2`],
+    /// straight off
+    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// Same `None`/`Some(0.0)` contract.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
+    /// [`Self::standing_material_mm2`], straight off
+    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// Same `None`/`Some(0.0)` contract.
+    pub reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1: a planned finish band whose cutting was entirely erased by
     /// height resolution, straight off
     /// [`crate::compute::config::ToolpathStats::dropped_band`]. `None` =
@@ -308,6 +318,11 @@ pub fn narrate_toolpath_with_context(
         output.push_str("Semantic trace: not available.\n");
     }
     append_standing_material(&mut output, context.standing_material_mm2);
+    append_untouched_standing_split(
+        &mut output,
+        context.untouched_material_mm2,
+        context.reached_uncut_estimate_mm2,
+    );
     append_dropped_band(&mut output, context);
     append_clipped_band(&mut output, context);
     append_ramp_reach_clamp(&mut output, context);
@@ -738,6 +753,45 @@ fn append_standing_material(output: &mut String, measured: Option<f64>) {
             );
         }
     }
+}
+
+/// M4 §5b: one extra line, ONLY when the split was measured and at least one
+/// half clears the same floor `append_standing_material` uses — the line
+/// above already covers "not measured" and "measured clean", so this stays
+/// silent rather than repeating those states.
+///
+/// Two different figures, two different measurement contracts (M1): the
+/// "never reached" half is an exact hole-aware polygon area
+/// ([`crate::compute::config::UNTOUCHED_MATERIAL_PROVENANCE`]); the
+/// "reached but dropped" half is an ESTIMATOR
+/// ([`crate::compute::config::REACHED_UNCUT_ESTIMATE_PROVENANCE`]), so
+/// its number is prefixed `~` and its own domain/stage/resolution are stated
+/// separately rather than shared with the first.
+fn append_untouched_standing_split(
+    output: &mut String,
+    untouched_mm2: Option<f64>,
+    standing_estimate_mm2: Option<f64>,
+) {
+    use crate::compute::config::{
+        REACHED_UNCUT_ESTIMATE_DOMAIN, REACHED_UNCUT_ESTIMATE_RESOLUTION,
+        REACHED_UNCUT_ESTIMATE_STAGE, UNTOUCHED_MATERIAL_DOMAIN, UNTOUCHED_MATERIAL_RESOLUTION,
+        UNTOUCHED_MATERIAL_STAGE,
+    };
+    let (Some(untouched), Some(standing)) = (untouched_mm2, standing_estimate_mm2) else {
+        return;
+    };
+    if untouched <= STANDING_MATERIAL_NARRATION_FLOOR_MM2
+        && standing <= STANDING_MATERIAL_NARRATION_FLOOR_MM2
+    {
+        return;
+    }
+    output.push_str(&format!(
+        "  split: {untouched:.0} mm² never reached by any cutter position \
+         ({UNTOUCHED_MATERIAL_DOMAIN}; {UNTOUCHED_MATERIAL_STAGE}; \
+         {UNTOUCHED_MATERIAL_RESOLUTION}); ~{standing:.0} mm² estimated reached-but-dropped \
+         ({REACHED_UNCUT_ESTIMATE_DOMAIN}; {REACHED_UNCUT_ESTIMATE_STAGE}; \
+         {REACHED_UNCUT_ESTIMATE_RESOLUTION}).\n"
+    ));
 }
 
 /// Wave D1: one line, always, about bands that height resolution erased.
@@ -1673,6 +1727,8 @@ mod tests {
             material: None,
             // Adaptive3d runs no ring cascade: not measured.
             standing_material_mm2: None,
+            untouched_material_mm2: None,
+            reached_uncut_estimate_mm2: None,
             // Nor bands, nor centrelines (Wave D1): not measured either.
             dropped_band: None,
             clipped_band: None,

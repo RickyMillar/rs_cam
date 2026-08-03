@@ -1551,6 +1551,10 @@ impl ProjectSession {
                     cutting_distance: annotated.toolpath.total_cutting_distance(),
                     rapid_distance: annotated.toolpath.total_rapid_distance(),
                     standing_material_mm2: findings.standing_material_mm2,
+                    // M4 §5b: the hole-aware and estimator siblings, off the
+                    // same `GenerationFindings`.
+                    untouched_material_mm2: findings.untouched_material_mm2,
+                    reached_uncut_estimate_mm2: findings.reached_uncut_estimate_mm2,
                     // Wave D1: same channel, same rule — `None` is "not
                     // measured", never "nothing wrong".
                     dropped_band: findings.dropped_band.map(Box::new),
@@ -2860,6 +2864,10 @@ impl ProjectSession {
             // stats. `None` here is "not measured", which narration says out
             // loud rather than rendering as a zero.
             standing_material_mm2: result.stats.standing_material_mm2,
+            // M4 §5b: the hole-aware and estimator siblings, off the same
+            // toolpath stats.
+            untouched_material_mm2: result.stats.untouched_material_mm2,
+            reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
             // Wave D1: same rule. `None` reads as "not measured" and
             // narration says so rather than staying silent.
             dropped_band: result.stats.dropped_band.as_deref().copied(),
@@ -5207,6 +5215,8 @@ mod tests {
                 // Not measured: this fake never ran a cascade, planned no
                 // bands and emitted no centrelines.
                 standing_material_mm2: None,
+                untouched_material_mm2: None,
+                reached_uncut_estimate_mm2: None,
                 dropped_band: None,
                 tip_float: None,
                 deprecated_dial: None,
