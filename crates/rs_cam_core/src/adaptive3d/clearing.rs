@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::debug;
 
-use super::path::Adaptive3dSegment;
+use super::path::{Adaptive3dSegment, drape_path_to_leave, drape_point};
 use super::search::{
     blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
 };
@@ -431,6 +431,32 @@ fn stamp_along_path(
     }
 }
 
+/// The mesh geometry `segments_to_toolpath` needs in order to drape an
+/// emitted move up to `surface + stock_to_leave` (the `fa27b08` gouge
+/// guard). Carried into the planner's mirror stamp so both sides see the
+/// same path.
+///
+/// Every field is already on [`ClearZLevelContext`]; the struct exists
+/// only so the mirror can be handed the same four values from
+/// `waterline_cleanup`, which has no context.
+pub(super) struct StampDrape<'a> {
+    pub(super) mesh: &'a TriangleMesh,
+    pub(super) index: &'a SpatialIndex,
+    pub(super) cutter: &'a dyn MillingCutter,
+    pub(super) stock_to_leave: f64,
+}
+
+impl<'a> ClearZLevelContext<'a> {
+    pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
+        StampDrape {
+            mesh: self.mesh,
+            index: self.index,
+            cutter: self.cutter,
+            stock_to_leave: self.stock_to_leave,
+        }
+    }
+}
+
 /// Mirror in the planner's `material_stock` the swept-tube stamps that
 /// the simulator will produce when it replays the toolpath emitted by
 /// `segments_to_toolpath` for `segment`.
@@ -440,11 +466,22 @@ fn stamp_along_path(
 /// know where a `Link` feed starts from).
 ///
 /// `safe_z` / `tolerance` / `min_cutting_radius` match
-/// `Adaptive3dParams`; tolerance and min_cutting_radius are needed
-/// because `segments_to_toolpath` runs `simplify_path_3d` and
-/// `blend_corners_3d` on `Cut` paths before emitting feeds, so the
-/// simulator stamps the SIMPLIFIED+BLENDED path. To stay in lockstep
-/// the planner must do the same transformation here.
+/// `Adaptive3dParams`. The invariant this function exists to hold is
+/// that it applies **every** transformation `segments_to_toolpath`
+/// applies, so the planner stamps the SAME path the simulator will
+/// replay. Today that is three transformations, in the emitter's order:
+///
+/// 1. `drape_path_to_leave` / `drape_point` — the `fa27b08` gouge guard,
+///    which densifies to `<= cutter.radius()` and raises every point to
+///    `drop_cutter(x, y) + stock_to_leave`;
+/// 2. `simplify_path_3d` (RDP at `tolerance`);
+/// 3. `blend_corners_3d` (at `min_cutting_radius`).
+///
+/// If a fourth is ever added to the emitter it must be added here in the
+/// same commit. `fa27b08` added (1) to the emitter and not here, and the
+/// planner spent seven weeks believing it had removed material its own
+/// emitted toolpath leaves standing — see
+/// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
 #[allow(clippy::too_many_arguments)]
 fn stamp_emitted_segment(
     material_stock: &mut TriDexelStock,
@@ -455,15 +492,26 @@ fn stamp_emitted_segment(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
 ) {
     match segment {
         Adaptive3dSegment::Cut(path) => {
             // Mirror segments_to_toolpath's path transformation —
-            // simplify_path_3d (RDP) and blend_corners_3d — so the
-            // planner's swept stamps cover the SAME tubes the
-            // simulator will stamp from the emitted feeds.
+            // drape_path_to_leave, then simplify_path_3d (RDP), then
+            // blend_corners_3d — so the planner's swept stamps cover
+            // the SAME tubes the simulator will stamp from the emitted
+            // feeds. Order matters: the emitter drapes BEFORE
+            // simplifying, so the RDP sees the densified, lifted path.
             if path.len() >= 2 {
-                let simplified = simplify_path_3d(path, tolerance);
+                let draped = drape_path_to_leave(
+                    path,
+                    drape.mesh,
+                    drape.index,
+                    drape.cutter,
+                    drape.stock_to_leave,
+                    drape.cutter.radius(),
+                );
+                let simplified = simplify_path_3d(&draped, tolerance);
                 let blended = blend_corners_3d(&simplified, min_cutting_radius);
                 stamp_along_path(material_stock, lut, tool_radius, &blended);
             } else {
@@ -476,12 +524,25 @@ fn stamp_emitted_segment(
             // peck-plunge feeds get stamped — and the net swept-tube
             // of the interleaved peck/retract feeds is just the full
             // vertical descent from safe_z to entry.
+            //
+            // The emitter shadow-rebinds `entry` through `drape_point`
+            // on this arm before it plunges, so the descent stops at the
+            // draped Z, not the raw one. Mirror that. (The
+            // `RapidWithFloor` arm below has no such rebind in the
+            // emitter, so it must not get one here either.)
+            let entry = drape_point(
+                entry,
+                drape.mesh,
+                drape.index,
+                drape.cutter,
+                drape.stock_to_leave,
+            );
             let start = P3::new(entry.x, entry.y, safe_z);
             material_stock.stamp_linear_segment(
                 lut,
                 tool_radius,
                 start,
-                *entry,
+                entry,
                 StockCutDirection::FromTop,
             );
         }
@@ -538,6 +599,7 @@ fn push_segment_with_stamp(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
 ) {
     stamp_emitted_segment(
         material_stock,
@@ -548,6 +610,7 @@ fn push_segment_with_stamp(
         safe_z,
         tolerance,
         min_cutting_radius,
+        drape,
     );
     // Update last_pos based on segment's terminal XYZ before pushing.
     match &segment {
@@ -774,6 +837,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 push_segment_with_stamp(
                     segments,
@@ -785,6 +849,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
             }
         }
@@ -905,6 +970,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 if path.len() >= 2 {
                     push_segment_with_stamp(
@@ -917,6 +983,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 } else {
                     // Single-point run: emit as a tiny cut segment.
@@ -931,6 +998,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
             }
@@ -1099,6 +1167,7 @@ pub(super) fn clear_z_level_adaptive(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 push_segment_with_stamp(
                     segments,
@@ -1110,6 +1179,7 @@ pub(super) fn clear_z_level_adaptive(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
             }
         }
@@ -1140,11 +1210,20 @@ pub(super) fn waterline_cleanup(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    stock_to_leave: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
+    // Same drape the emitter applies to these segments; see
+    // `stamp_emitted_segment`.
+    let drape = StampDrape {
+        mesh,
+        index,
+        cutter,
+        stock_to_leave,
+    };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
     let waterline_scope = debug_ctx.map(|ctx| {
@@ -1195,6 +1274,7 @@ pub(super) fn waterline_cleanup(
             safe_z,
             tolerance,
             min_cutting_radius,
+            &drape,
         );
 
         let mut cleanup_path = vec![contour[0]];
@@ -1224,6 +1304,7 @@ pub(super) fn waterline_cleanup(
             safe_z,
             tolerance,
             min_cutting_radius,
+            &drape,
         );
         traced += 1;
     }
@@ -1777,6 +1858,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 if path_3d.len() >= 2 {
@@ -1791,6 +1873,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                     cut_count += 1;
                 }
@@ -1830,6 +1913,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 if path_3d.len() >= 2 {
@@ -1844,6 +1928,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                     cut_count += 1;
                 }
@@ -2179,6 +2264,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                             ctx.safe_z,
                                             ctx.tolerance,
                                             ctx.min_cutting_radius,
+                                            &ctx.stamp_drape(),
                                         );
                                         cut_count += 1;
                                     }
@@ -2207,6 +2293,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                         ctx.safe_z,
                                         ctx.tolerance,
                                         ctx.min_cutting_radius,
+                                        &ctx.stamp_drape(),
                                     );
                                 }
                             }
@@ -2233,6 +2320,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                     ctx.safe_z,
                                     ctx.tolerance,
                                     ctx.min_cutting_radius,
+                                    &ctx.stamp_drape(),
                                 );
                             }
                             sub_start = i;
@@ -2254,6 +2342,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                     ctx.safe_z,
                                     ctx.tolerance,
                                     ctx.min_cutting_radius,
+                                    &ctx.stamp_drape(),
                                 );
                                 cut_count += 1;
                             }
@@ -2277,6 +2366,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                 ctx.safe_z,
                                 ctx.tolerance,
                                 ctx.min_cutting_radius,
+                                &ctx.stamp_drape(),
                             );
                         }
                     }
@@ -2307,6 +2397,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 crate::adaptive::AdaptiveSegment::Link(p) => {
@@ -2336,6 +2427,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 crate::adaptive::AdaptiveSegment::Marker(_) => {
