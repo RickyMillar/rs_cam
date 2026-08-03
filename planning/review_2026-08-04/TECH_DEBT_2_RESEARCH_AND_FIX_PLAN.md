@@ -559,7 +559,7 @@ The orchestrator maintains this table in this file and appends factual details t
 |---|---|---|---|---|---|---|
 | W0 | H | R3 adaptive3d red baseline | NOT_STARTED | A | — | reproduce and classify all three reds |
 | W1 | H | R7 findings transport census/fix | NOT_STARTED | none for report wiring | — | exhaustive core→worker adapter design |
-| W2 | H | R7 arcfit intent evidence/fix | NOT_STARTED | F1 | — | capture mixed-intent baseline and consumer census |
+| W2 | H | R7 arcfit intent evidence/fix | AWAITING_CHECKPOINT | F1 | `planning/review_2026-08-04/ARCFIT_INTENT_EVIDENCE.md`; fixture `crates/rs_cam_core/tests/arcfit_intent_boundary_f1.rs` (4 exhibits, green = defect present); baselines re-confirmed at `894e060` | operator rules F1 Q1–Q4 (evidence doc §6); PR-6 blocked until then |
 | W3 | H | R1 feeds census/B3 | NOT_STARTED | B | — | build implementation/data-flow census |
 | W4 | H | R2 adversarial fixtures/findings | NOT_STARTED | C | — | fixture generators and per-op inventory |
 | W5 | M | R4 simulation issue census | NOT_STARTED | D | — | producer/consumer and measurability inventory |
