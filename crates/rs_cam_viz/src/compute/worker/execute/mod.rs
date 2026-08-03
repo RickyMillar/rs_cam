@@ -780,6 +780,10 @@ pub(super) fn run_compute_with_phase_tracker(
             // spans); generation-time findings come from the core call
             // above.
             stats.standing_material_mm2 = generation_findings.standing_material_mm2;
+            // M4 §5b: the hole-aware and estimator siblings — same
+            // parallel-copy rule, off the same `GenerationFindings`.
+            stats.untouched_material_mm2 = generation_findings.untouched_material_mm2;
+            stats.reached_uncut_estimate_mm2 = generation_findings.reached_uncut_estimate_mm2;
             // Wave D1: the GUI worker is a parallel copy of the session
             // path, so a finding that only lands on one of them is invisible
             // in exactly the product the operator uses.

@@ -142,6 +142,15 @@ pub enum MeasurementStage {
     Simulation,
     /// Measured on the emitted toolpath, with no reference to stock.
     Emission,
+    /// M4 §5b: the scallop ring cascade's PER-RING ESTIMATE of area passed
+    /// over but not cut, because the per-point keep predicate dropped ring
+    /// vertices — `(arc length owned by dropped points) x (that ring's
+    /// offset stepover)`, not a polygon area. Deliberately a DIFFERENT
+    /// stage from [`Self::RingCascadeResidual`], even though both come from
+    /// the same cascade run, so [`MeasurementProvenance::comparable_to`]
+    /// refuses to treat an ESTIMATOR as interchangeable with an exact
+    /// shoelace area over polygons the cascade never reached.
+    RingCascadeStandingEstimate,
 }
 
 impl MeasurementStage {
@@ -162,6 +171,9 @@ impl MeasurementStage {
             Self::RampReachClampSwath => "measured at generation (ramp-finish reach-clamp swath)",
             Self::Simulation => "measured in simulation",
             Self::Emission => "measured on the emitted toolpath",
+            Self::RingCascadeStandingEstimate => {
+                "estimated at generation (ring cascade dropped-point estimate)"
+            }
         }
     }
 }

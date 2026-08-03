@@ -166,6 +166,52 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
     pub standing_material_mm2: Option<f64>,
+    /// M4 §5b: the HOLE-AWARE sibling of [`Self::standing_material_mm2`].
+    /// `standing_material_mm2` is computed from each truncated cascade
+    /// polygon's EXTERIOR only (`MEASUREMENT_DOMAINS.md` X-5) — an island
+    /// inside the truncated core over-reports as uncut. This field nets out
+    /// holes instead, straight off
+    /// [`crate::scallop::ScallopReport::untouched_mm2`].
+    ///
+    /// Same three-valued contract as [`Self::standing_material_mm2`]: `None`
+    /// = not measured, `Some(0.0)` = measured and clean.
+    /// `untouched_material_mm2 <= standing_material_mm2` whenever both are
+    /// `Some` (same cascade run, hole-corrected). Read through
+    /// [`ToolpathStats::untouched_material`].
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: area the ring cascade **DID reach** — it ringed there — but
+    /// where the keep predicate dropped every point, so no cut landed.
+    /// Straight off [`crate::scallop::ScallopReport::standing_mm2`]. Same
+    /// three-valued contract.
+    ///
+    /// **This is NOT an estimate of [`Self::standing_material_mm2`].** It is
+    /// a different quantity, and the naming here is a trap worth stating
+    /// plainly (H4, wave 15 — this field was called
+    /// `standing_material_estimate_mm2` for exactly long enough to prove the
+    /// point):
+    ///
+    /// | field | what it is | oracle's word |
+    /// |---|---|---|
+    /// | [`Self::standing_material_mm2`] | truncated cascade core, exteriors only | **untouched** (never reached) |
+    /// | [`Self::untouched_material_mm2`] | the same core, hole-corrected | **untouched** (never reached) |
+    /// | this field | ringed, then every point dropped | **standing** (reached, left high) |
+    ///
+    /// So `standing_material_mm2` measures what the oracle calls
+    /// *untouched*, and this field measures what the oracle calls
+    /// *standing*. The older name predates the vocabulary and is load-bearing
+    /// across serde, the GUI and MCP, so it was not renamed here; see the
+    /// H4 ledger's Checkpoint E menu, which puts that rename to the operator.
+    ///
+    /// **Not an exact area** — it is `(arc length owned by dropped ring
+    /// points) x (offset stepover)`, summed per ring; see the source field's
+    /// doc for what it cannot distinguish (off-part geometry vs a genuine
+    /// left-high residual). Read through
+    /// [`ToolpathStats::reached_uncut_estimate`].
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1: a planned finish BAND whose cutting was entirely erased by
     /// height resolution — an unmachined feature.
     ///
@@ -691,6 +737,45 @@ impl ToolpathStats {
         })
     }
 
+    /// [`Self::untouched_material_mm2`] with its measurement contract
+    /// attached, or `None` when nothing measured it. M4 §5b sibling of
+    /// [`Self::standing_material`] — same rule, different provenance
+    /// ([`UNTOUCHED_MATERIAL_PROVENANCE`], hole-aware net area).
+    #[must_use]
+    pub fn untouched_material(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.untouched_material_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                UNTOUCHED_MATERIAL_PROVENANCE,
+            )
+        })
+    }
+
+    /// [`Self::reached_uncut_estimate_mm2`] with its measurement
+    /// contract attached, or `None` when nothing measured it. M4 §5b
+    /// sibling of [`Self::standing_material`] — same rule, different
+    /// provenance ([`REACHED_UNCUT_ESTIMATE_PROVENANCE`], an estimator,
+    /// not an exact area).
+    #[must_use]
+    pub fn reached_uncut_estimate(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.reached_uncut_estimate_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                REACHED_UNCUT_ESTIMATE_PROVENANCE,
+            )
+        })
+    }
+
     /// [`Self::tip_float`] with its measurement contract attached, or `None`
     /// when nothing measured it. Same rule as [`Self::standing_material`]:
     /// the value and its provenance travel together or not at all.
@@ -768,8 +853,58 @@ pub const STANDING_MATERIAL_STAGE: &str = STANDING_MATERIAL_PROVENANCE.stage.lab
 /// Not a grid measure: the residual is the ring polygons themselves, whose
 /// vertices are decimated to `0.75 ×` the finish heightmap cell during the
 /// cascade (`scallop.rs`). Exterior-shoelace: holes are not subtracted
-/// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound.
+/// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound. M4 §5b
+/// closed X-5 with a hole-aware sibling rather than by changing this
+/// figure — see [`UNTOUCHED_MATERIAL_PROVENANCE`].
 pub const STANDING_MATERIAL_RESOLUTION: &str = STANDING_MATERIAL_PROVENANCE.resolution_note;
+
+/// The measurement contract of [`ToolpathStats::untouched_material_mm2`]
+/// (M4 §5b) — the SINGLE source [`UNTOUCHED_MATERIAL_DOMAIN`] and friends
+/// derive from, exactly the pattern [`STANDING_MATERIAL_PROVENANCE`] set.
+///
+/// Same domain and stage as [`STANDING_MATERIAL_PROVENANCE`] — both are
+/// exact shoelace areas over the same truncated-cascade polygons — but this
+/// one is [`crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE`], which
+/// nets out holes where the other sums exteriors only.
+pub const UNTOUCHED_MATERIAL_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE;
+
+/// Measurement domain of [`ToolpathStats::untouched_material_mm2`].
+pub const UNTOUCHED_MATERIAL_DOMAIN: &str = UNTOUCHED_MATERIAL_PROVENANCE.domain.label();
+
+/// Pipeline stage [`ToolpathStats::untouched_material_mm2`] is measured at.
+pub const UNTOUCHED_MATERIAL_STAGE: &str = UNTOUCHED_MATERIAL_PROVENANCE.stage.label();
+
+/// Resolution of [`ToolpathStats::untouched_material_mm2`]: the hole-aware
+/// net area — see [`crate::scallop::ScallopReport::untouched_mm2`]'s doc.
+pub const UNTOUCHED_MATERIAL_RESOLUTION: &str = UNTOUCHED_MATERIAL_PROVENANCE.resolution_note;
+
+/// The measurement contract of
+/// [`ToolpathStats::reached_uncut_estimate_mm2`] (M4 §5b) — the SINGLE
+/// source [`REACHED_UNCUT_ESTIMATE_DOMAIN`] and friends derive from.
+///
+/// A DIFFERENT [`crate::measurement::MeasurementStage`] from
+/// [`STANDING_MATERIAL_PROVENANCE`] / [`UNTOUCHED_MATERIAL_PROVENANCE`] —
+/// [`crate::scallop::ScallopReport::STANDING_PROVENANCE`] — so
+/// [`crate::measurement::MeasurementProvenance::comparable_to`] refuses to
+/// treat this ESTIMATOR as interchangeable with either exact polygon area,
+/// even though all three travel on the same `ToolpathStats`.
+pub const REACHED_UNCUT_ESTIMATE_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::scallop::ScallopReport::STANDING_PROVENANCE;
+
+/// Measurement domain of [`ToolpathStats::reached_uncut_estimate_mm2`].
+pub const REACHED_UNCUT_ESTIMATE_DOMAIN: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE.domain.label();
+
+/// Pipeline stage [`ToolpathStats::reached_uncut_estimate_mm2`] is
+/// measured at.
+pub const REACHED_UNCUT_ESTIMATE_STAGE: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE.stage.label();
+
+/// Resolution of [`ToolpathStats::reached_uncut_estimate_mm2`]: an
+/// estimator, not a polygon area — see
+/// [`crate::scallop::ScallopReport::standing_mm2`]'s doc for the formula and
+/// its stated limitations.
+pub const REACHED_UNCUT_ESTIMATE_RESOLUTION: &str =
+    REACHED_UNCUT_ESTIMATE_PROVENANCE.resolution_note;
 
 /// Minimum clearance (mm) between `safe_z` and the top of the stock.
 ///
