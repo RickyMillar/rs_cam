@@ -128,6 +128,12 @@ pub struct GenerationFindings {
     /// pipeline did not run, so nothing was resolved.
     /// See [`crate::compute::config::ClaimsReferenceFinding`].
     pub claims_reference: Option<crate::compute::config::ClaimsReferenceFinding>,
+    /// A4: this rest pass's emitted cutting geometry never reaches under the
+    /// reference stock it was planned on, so it will remove nothing. `None` =
+    /// the measurement did not run (no resolved machined-stock reference, or
+    /// no cutting geometry) or it ran and found real engagement.
+    /// See [`crate::compute::config::ZeroRemovalFinding`].
+    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -236,6 +242,74 @@ fn record_claims_reference(
     finding: crate::compute::config::ClaimsReferenceFinding,
 ) {
     cell.borrow_mut().claims_reference = Some(finding);
+}
+
+/// The engagement (mm) at or below which a pass is reported as removing
+/// nothing (A4) — derived from the REFERENCE's own resolution, not dialled.
+///
+/// A reference stock is a sampled surface, and a pass riding exactly on
+/// ground it already cut still measures a little material above the cutter:
+/// the grid snaps each lookup to the nearest ray, and the simulation that
+/// built the surface stamped the tool at a finite spacing along its path.
+/// Both artefacts have the same shape as a cusp, so the floor is one:
+/// `cell² / (2 · tip radius)` — the height of the sampling residual the
+/// reference itself can manufacture.
+///
+/// This is not a tuned number. It was found by the A4 sentry FAILING: the
+/// naive tip-vs-top comparison read +21 µm on a pass that removed nothing,
+/// and comparing against the cutter's own profile only brought it to
+/// +18 µm. A fixed 10 µm floor would have declared that pass "engaged" for
+/// the rest of time, which is the one error this report must not make.
+///
+/// Floored at 1 µm so a flat cutter (no tip sphere) cannot produce an
+/// infinite or negative threshold.
+fn zero_removal_engagement_floor_mm(
+    stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> f64 {
+    let cell = stock.z_grid.cell_size;
+    let tip_r = cutter.cusp_radius();
+    if tip_r <= 0.0 {
+        return 1.0e-3;
+    }
+    (cell * cell / (2.0 * tip_r)).max(1.0e-3)
+}
+
+/// A4: measure the emitted cutting geometry against the reference stock the
+/// pass was planned on, and record a finding when it reaches nothing.
+///
+/// Only called where a rest pass resolved a REAL machined-stock reference —
+/// under any other reference the op is not a rest pass in the sense the
+/// finding is about, and the question "what did the prior op leave" has no
+/// answer in scope.
+///
+/// Measured PRE-dressup, on the geometry the planner emitted. The air-cut
+/// filter that runs later deletes moves that are wholly in air, and a pass
+/// riding exactly on the surface it already cut is not in air by that test
+/// — it survives, which is precisely how §3.2's rest pass came to spend
+/// 1 294 mm and 48 retract trips on nothing.
+fn record_zero_removal(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    toolpath: &crate::toolpath::Toolpath,
+    stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+) {
+    let engagement = crate::dressup::reference_engagement_of_cutting_moves(toolpath, stock, cutter);
+    // Nothing sampled = nothing measured. Not a finding (X-19's rule): an
+    // absent measurement is not a defect claim.
+    if engagement.sampled_positions == 0 {
+        return;
+    }
+    let floor_mm = zero_removal_engagement_floor_mm(stock, cutter);
+    if engagement.deepest_mm > floor_mm {
+        return;
+    }
+    cell.borrow_mut().zero_removal = Some(crate::compute::config::ZeroRemovalFinding {
+        deepest_engagement_mm: engagement.deepest_mm,
+        sampled_positions: engagement.sampled_positions,
+        cutting_distance_mm: toolpath.total_cutting_distance(),
+        floor_mm,
+    });
 }
 
 /// Record an offset stepover an operation derived from the reach policy
@@ -1697,6 +1771,20 @@ pub(crate) fn generate_unified_finish(
         report.untouched_mm2,
         report.standing_mm2,
     );
+    // A4: the pass has just been planned against a reference stock, and this
+    // is the only point where the emitted geometry and that reference are
+    // both in scope. Gated on the reference having RESOLVED to a real
+    // machined prior — under a self-probe reference `territory_clip` never
+    // ran and the op is not a rest pass in the sense this finding is about.
+    if let Some(cfg) = claims_cfg.as_ref()
+        && matches!(
+            cfg.crease_reference,
+            crate::unified_finish::CreaseReference::MachinedStock
+        )
+        && let Some(stock) = cfg.territory_stock
+    {
+        record_zero_removal(ctx.findings, &tp, stock, ctx.tool_def);
+    }
     // Wave D1: an unmachined band is a generation-time finding with no home
     // on the toolpath — the whole reason `GenerationFindings` exists.
     record_dropped_band(

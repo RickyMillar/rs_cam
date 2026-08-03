@@ -43,7 +43,65 @@ pub fn diagnostics_from_generation(
     out.extend(clipped_band(toolpath_id, stats));
     out.extend(ramp_reach_clamp(toolpath_id, stats));
     out.extend(claims_reference(toolpath_id, stats));
+    out.extend(zero_removal(toolpath_id, stats));
     out
+}
+
+/// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets
+/// under the reference stock it was planned against.
+///
+/// `Caution`, not `Blocking` and not `Info`. The operator's ruling is that
+/// this is a **report and not a refusal** — the pass may legitimately be
+/// wanted — but it is not advisory trivia either: on H4's §3.2 fixture the
+/// pass cost 45% of the arm's runtime and 48 retract round trips to remove
+/// nothing, and the most likely cause is a mis-aimed reference, which is a
+/// thing an operator would want to know before running it.
+///
+/// No area floor, unlike its neighbours: there is no small-value case here
+/// to be quiet about. Either the pass reaches material or it does not.
+fn zero_removal(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = the measurement did not run, or it ran and found real
+    // engagement. Neither is a claim (A/M9's rule).
+    let Some(f) = stats.zero_removal else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_ZERO_REMOVAL),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Measured at generation against the prior stock snapshot this pass
+        // was planned on — the same nearest-cell lookup the air-cut filter
+        // uses. A simulation cannot supersede it: a sim of this pass removes
+        // nothing either, and says so only as an absence.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "This rest pass removes no material: over {samples} sampled \
+             cutting positions the tool never gets under the stock the prior \
+             operation left (deepest reach {deepest:+.4} mm against a \
+             {floor:.4} mm floor, which is what the reference's own \
+             sampling can manufacture; positive would be INTO material). It \
+             still costs {cutting:.0} mm of cutting \
+             travel plus its retracts. Most often the reference is not what \
+             was intended — check that the prior operation actually left \
+             something here, and that this pass's stock-to-leave is BELOW \
+             what the prior pass left. Keeping the pass is a legitimate \
+             choice; running it unknowingly is not. [Material standing \
+             above the CUTTER's own surface, mm; measured at generation \
+             against the prior stock snapshot; sampled along the swept path \
+             at the stock grid cell. Report-only — no gate.]",
+            samples = f.sampled_positions,
+            deepest = f.deepest_engagement_mm,
+            floor = f.floor_mm,
+            cutting = f.cutting_distance_mm,
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// A/M6: which rest reference the claims pipeline ran against.

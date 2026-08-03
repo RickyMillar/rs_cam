@@ -1568,6 +1568,8 @@ impl ProjectSession {
                     ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
                     // A/M6: which rest reference the claims pipeline resolved to.
                     claims_reference: findings.claims_reference,
+                    // A4: a rest pass that will remove nothing.
+                    zero_removal: findings.zero_removal,
                     // A/M7 gate 1: retract round-trip count, split by
                     // in-node vs between-nodes when spans are trustworthy.
                     retract_trips: Some(crate::compute::stats::compute_retract_trips(
@@ -2878,6 +2880,10 @@ impl ProjectSession {
             // toolpath's own stats, and `None` means "never computed",
             // never "zero trips".
             retract_trips: result.stats.retract_trips,
+            // A4: a rest pass that removes nothing is exactly the kind of
+            // finding an agent narrating a live toolpath has no other way
+            // to see.
+            zero_removal: result.stats.zero_removal,
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -5228,6 +5234,7 @@ mod tests {
                 clipped_band: None,
                 ramp_reach_clamp: None,
                 claims_reference: None,
+                zero_removal: None,
                 retract_trips: None,
             },
             debug_trace: None,

@@ -800,6 +800,10 @@ pub(super) fn run_compute_with_phase_tracker(
             stats.ramp_reach_clamp = generation_findings.ramp_reach_clamp.map(Box::new);
             // A/M6: the resolved claims reference, same parallel-copy rule.
             stats.claims_reference = generation_findings.claims_reference;
+            // A4: same parallel-copy rule — a finding that lands only on the
+            // session path is invisible in exactly the product the operator
+            // uses (B7; this is the fifth field to need these lines).
+            stats.zero_removal = generation_findings.zero_removal;
             stats
         };
 

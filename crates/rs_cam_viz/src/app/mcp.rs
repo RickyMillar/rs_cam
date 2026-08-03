@@ -1142,6 +1142,10 @@ impl super::RsCamApp {
             // A/M7 gate 1: same parallel-copy rule as the findings above —
             // the GUI worker filled this on `result.stats`.
             retract_trips: result.stats.retract_trips,
+            // A4: a rest pass that costs motion and removes nothing is
+            // exactly what an agent narrating a LIVE toolpath cannot
+            // otherwise see.
+            zero_removal: result.stats.zero_removal,
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
