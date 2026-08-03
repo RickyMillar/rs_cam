@@ -2,6 +2,8 @@
 
 Comprehensive reference for AI-assisted toolpath quality analysis in rs_cam. This document consolidates simulation capabilities, diagnostic data sources, interpretation thresholds, and analysis workflows into one place.
 
+> Reconciled against the tree on 2026-08-04 by the L1 documentation sweep. For superseded finishing-strategy verdicts (speed/quality comparisons between operations, measured through instrument defects since fixed), see `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
 ---
 
 ## Quick Start
@@ -22,7 +24,7 @@ cargo run -p rs_cam_cli -- <subcommand> [options]
 cargo run -p rs_cam_cli -- sweep job.toml --param stepover --values "1.0,2.0,3.0" --output out/ --simulate
 
 # Automated parameter sweeps (test harness)
-cargo test --test param_sweep                          # All 54 sweeps
+cargo test --test param_sweep                          # All 56 sweeps
 cargo test --test param_sweep sweep_pocket             # One operation family
 cargo test --test param_sweep sweep_pocket_stepover    # One specific parameter
 ```
@@ -38,12 +40,12 @@ cargo test --test param_sweep sweep_pocket_stepover    # One specific parameter
 
 | Capability | Source | Produces | Access |
 |-----------|--------|----------|--------|
-| Stock simulation | `dexel_stock.rs` | Volume removal, per-sample metrics | GUI + CLI |
+| Stock simulation | `dexel_stock/` (directory module: `mod.rs`, `simulation.rs`, `stamping.rs`, `cut_direction.rs`) | Volume removal, per-sample metrics | GUI + CLI |
 | Cut trace | `simulation_cut.rs` | Chipload, engagement, MRR, air cut detection | GUI + JSON |
 | Collision detection | `collision.rs` | Events, min safe stickout, rapid collisions | GUI + CLI |
 | Performance trace | `debug_trace.rs` | Timing spans, computation hotspots | GUI + JSON |
 | Semantic trace | `semantic_trace.rs` | 26-kind structural hierarchy with move ranges | GUI + JSON |
-| Deviation analysis | `app/simulation.rs` | Per-vertex surface deviation colors | GUI |
+| Deviation analysis | `render/sim_render.rs` (color mapping) + `app/gpu_upload.rs` (render wiring) + `compute/simulate.rs` (per-column instrument) | Per-vertex surface deviation colors (display) + per-column `ColumnDeviation` (quality metrics) | GUI |
 | Fingerprinting | `fingerprint.rs` | Move counts, distances, feeds, bbox, stock metrics | CLI + JSON |
 | Feed optimization | `feedopt.rs` | Engagement-based adaptive feed rates | GUI + CLI |
 | Parameter sweeps | `fingerprint.rs` + `sweep.rs` | Diffs, SVGs, stock PNGs, G-code variants | CLI + test harness |
@@ -52,7 +54,7 @@ cargo test --test param_sweep sweep_pocket_stepover    # One specific parameter
 
 ## 1. Stock Simulation (Tri-Dexel)
 
-**Engine:** `crates/rs_cam_core/src/dexel_stock.rs` (1776 lines)
+**Engine:** `crates/rs_cam_core/src/dexel_stock/` (directory module: `mod.rs`, `simulation.rs`, `stamping.rs`, `cut_direction.rs`; 2882 lines total)
 
 The simulation uses a tri-dexel volumetric representation — three orthogonal grids (X, Y, Z) where each cell stores a list of material segments. This supports cuts from any cardinal direction and multi-setup carry-forward.
 
@@ -68,13 +70,13 @@ The simulation uses a tri-dexel volumetric representation — three orthogonal g
 For 3-axis routers, only the Z-grid (FromTop) is typically needed. Multi-setup adds other grids.
 
 ### Resolution
-Default ~0.5mm cell size. Finer = more accurate but slower. The SmallVec fast path keeps single-setup within ~20% of raw heightmap performance.
+Default ~0.5mm cell size. Finer = more accurate but slower. Dexel rays are `SmallVec<[DexelSegment; 1]>` (`crates/rs_cam_core/src/dexel.rs`), which keeps the common single-segment case off the heap; no committed benchmark backs a specific throughput percentage against a raw heightmap, so none is quoted here.
 
 ---
 
 ## 2. Cut Trace Analysis
 
-**Source:** `crates/rs_cam_core/src/simulation_cut.rs` (1220 lines)
+**Source:** `crates/rs_cam_core/src/simulation_cut.rs` (2706 lines)
 
 The cut trace captures per-sample metrics at ~mm intervals along every toolpath move.
 
@@ -82,15 +84,20 @@ The cut trace captures per-sample metrics at ~mm intervals along every toolpath 
 
 | Field | Meaning | Units |
 |-------|---------|-------|
-| `axial_doc_mm` | Depth of cut — how deep the tool engages | mm |
-| `radial_engagement` | Fraction of tool circumference in material | 0.0–1.0 |
+| `axial_doc_mm` | Legacy wire name for axial cutting engagement; pure-vertical plunges report `0.0` here | mm |
+| `axial_engagement_mm` | Maximum material height engaged by lateral/arc/helix cutting at this sample — the axis deflection/chip-geometry gates consume | mm |
+| `plunge_descent_mm` | Z descent from a pure-vertical plunge sample; lateral/arc samples leave this at zero | mm |
+| `engagement.radial_woc_fraction` | Cylinder-side width-of-cut as a fraction of cutter diameter. **Replaces the removed `radial_engagement` scalar** (dropped from `SimulationCutSample` 2026-05-20; a same-named field still exists on the unrelated `SimulationCutIssue` struct) | 0.0–1.0 |
+| `engagement` | Full structured `Engagement` vector (radial WOC fraction, axial DOC fraction, arc radians, mean chip thickness) — see `Engagement` in `simulation_cut.rs:66-68` | struct |
+| `cut_kinematics` | `CutKinematics` classification of this move (lateral/arc/helix/plunge/…) | enum |
+| `in_transit_span` | True when the move sits in a transit-style span (Entry, LeadOut, LinkBridge, WaterlineCleanup, DressupArtifact); the dexel reading there reports `stock_top − cutter_z` over neighbouring stock, not steady-state engagement — extreme-value metrics (`peak_axial_doc_mm`, `peak_chipload_mm_per_tooth`) skip these samples | bool |
 | `chipload_mm_per_tooth` | Material removed per flute per revolution | mm |
 | `mrr_mm3_s` | Material removal rate | mm³/s |
 | `removed_volume_est_mm3` | Cumulative volume removed | mm³ |
 | `is_cutting` | false = rapid/air move | bool |
 | `semantic_item_id` | Links sample to semantic structure | ID |
 | `position` | Tool center position | (x, y, z) |
-| `feed_rate` | Commanded feed rate | mm/min |
+| `feed_rate_mm_min` | Commanded feed rate | mm/min |
 | `spindle_rpm` | Spindle speed | RPM |
 | `cumulative_time_s` | Time from start | seconds |
 
@@ -103,9 +110,20 @@ The cut trace captures per-sample metrics at ~mm intervals along every toolpath 
 
 ### Aggregate Summaries
 
-- `SimulationToolpathCutSummary` — per-toolpath: total time, cutting/rapid split, air cut time, avg engagement, avg chipload
+- `SimulationToolpathCutSummary` — per-toolpath: total time, cutting/rapid split, air cut time, avg engagement, avg chipload, `peak_axial_doc_mm` / `peak_plunge_descent_mm` (lateral-engagement peak vs vertical-plunge peak, kept separate so deflection gates don't consume peck descent as cutter engagement), `metrics_not_applicable` (true for drill-kinematics toolpaths — the radial-WOC axis doesn't apply to Z-only moves; consult `drill_summaries` instead, §2.1 below), and `per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>` for axis-aware reporting (axial-DOC, arc, chip thickness, leading-edge speed) broken out by kinematics class instead of one blended scalar (`simulation_cut.rs:474-534`)
 - `SimulationSemanticCutSummary` — per-semantic-region: same metrics scoped to logical structure
 - `SimulationCutHotspot` — spatial engagement/computation bottlenecks
+
+**`average_engagement` is scalar and radial-WOC-only.** It is a time-weighted mean of `engagement.radial_woc_fraction` — it says nothing about axial DOC, arc, or chip thickness. For those, read `per_kinematics`. For drill toolpaths, `average_engagement` and `air_cut_time_s` are suppressed via `metrics_not_applicable`; read §2.1 instead.
+
+### 2.1 Drill toolpaths — a separate metrics family
+
+`metrics_not_applicable` means "no ENGAGEMENT metrics apply", not "no metrics at all." Drill ops (dexel polygon-to-material init can't see Z-only moves) produce their own metrics family instead:
+
+- `SimulationCutTrace::drill_summaries: Vec<DrillToolpathSummary>` — per-peck `DrillSample`, per-toolpath `DrillToolpathSummary` (peck adequacy, chip-welding risk, cycle time). Look up by `toolpath_id`, or use `SimulationCutTrace::drill_summary_for(toolpath_id)`.
+- `ToolpathLoadVerdict::drill_gates` (`crates/rs_cam_core/src/tool_load/drill_gates.rs:97-135`) — three gates: chip welding, peck adequacy, plunge feed sanity.
+
+FEATURE_CATALOG.md's Drill row already documents this correctly; nothing here should contradict it.
 
 ### State Queries (GUI)
 ```
@@ -115,7 +133,8 @@ SimulationState methods:
   cut_worst_items(id, limit)    — worst items by wasted time
   cut_hotspots(id, limit)       — hotspot regions sorted by duration
   current_cut_sample()          — current sample at scrubber position
-  issues(job)                   — all issues aggregated
+  issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) — all issues aggregated
+    (crates/rs_cam_viz/src/state/simulation.rs:1485; NOT `issues(job)`)
 ```
 
 ---
@@ -130,7 +149,7 @@ SimulationState methods:
 |----------|------|------|-------------|
 | Critical | `RapidCollision` | Machine crash | Tool/holder hits stock during G0 rapid moves |
 | High | Holder/shank collision (feed) | Tool damage, marks | Holder contacts stock during cutting moves |
-| Info | `min_safe_stickout_mm` | Advisory | Minimum tool extension to avoid all collisions |
+| Info | `min_safe_stickout` (Rust field name; `min_safe_stickout_mm` is only the JSON wire key) | Advisory | Minimum tool extension to avoid all collisions |
 
 ### Tool Assembly Model
 ```
@@ -146,19 +165,21 @@ ToolAssembly {
 
 ### APIs
 - `check_collisions_interpolated(toolpath, assembly, mesh, index, step)` — sampled collision check (0.1–2mm steps)
-- `check_rapid_collisions(toolpath, assembly, bbox)` — G0 moves vs stock bounding box
+- `check_rapid_collisions_against_stock(toolpath: &Toolpath, z_grid: &DexelGrid)` (`collision.rs:450`) — G0 moves checked against the DEXEL GRID, not a bounding box; there is no `check_rapid_collisions(toolpath, assembly, bbox)` function
 
 ### Output: `CollisionReport`
-- `collisions[]` — list of `CollisionEvent` (move_index, position, penetration_depth, segment_name)
-- `rapid_collisions[]` — list of `RapidCollision` (move_index, start, end)
-- `min_safe_stickout` — calculated minimum tool extension
+`CollisionReport` (`collision.rs:146-152`) carries exactly two fields:
+- `collisions: Vec<CollisionEvent>` (move_index, position, penetration_depth, segment_name)
+- `min_safe_stickout: f64` — calculated minimum tool extension
 - `is_clear()` — true if no collisions detected
+
+`rapid_collisions` is **not** on `CollisionReport` — it lives on `SimulationResult` (`crates/rs_cam_core/src/compute/simulate.rs:295-299`), as `rapid_collisions: Vec<RapidCollision>` plus `rapid_collision_move_indices: Vec<usize>` for timeline markers.
 
 ---
 
 ## 4. Performance Tracing
 
-**Source:** `crates/rs_cam_core/src/debug_trace.rs` (800+ lines)
+**Source:** `crates/rs_cam_core/src/debug_trace.rs` (676 lines)
 
 Hierarchical timing traces of toolpath generation algorithm phases.
 
@@ -178,7 +199,7 @@ Spans record why an algorithm phase ended — boundary hit, iteration limit, con
 
 ## 5. Semantic Tracing
 
-**Source:** `crates/rs_cam_core/src/semantic_trace.rs` (802 lines)
+**Source:** `crates/rs_cam_core/src/semantic_trace.rs` (1768 lines)
 
 Captures the logical structure of toolpath generation — what the algorithm was doing and why.
 
@@ -220,18 +241,30 @@ Each `ToolpathSemanticItem` has: id, parent_id, kind, label, move_start, move_en
 
 ## 6. Deviation Analysis
 
-**Source:** `crates/rs_cam_viz/src/app/simulation.rs`
+**Source:** color mapping `crates/rs_cam_viz/src/render/sim_render.rs:118` (`deviation_colors()`); render wiring `crates/rs_cam_viz/src/app/gpu_upload.rs:66-77` (`StockVizMode::Deviation`); pointwise instrument `crates/rs_cam_core/src/compute/simulate.rs:1034` (`collect_column_deviations()`).
 
 Computes surface deviation between target model and simulated stock result.
 
+**Measurement domain: this is a VERTICAL (Z) deviation, not surface-normal.** `deviation_colors()` computes `sim_z − model_z` (`sim_render.rs:105`), and the pointwise `ColumnDeviation.dev` is `column_top_z − model_z` in world frame (`compute/simulate.rs:262`) — both are Z-only. On a sloped face a Z deviation UNDERSTATES the true normal gouge by a factor of `cos(slope)`; steep terrain can carry a real normal-direction defect that reads small in Z. Mixing a Z-domain deviation with a surface-normal or projected-area domain has already produced one retracted number — see `planning/review_2026-07-29/MEASUREMENT_DOMAINS.md` X-1.
+
 ### Deviation Color Scheme
+
+Per `render/sim_render.rs:105-132`. Green is a FIXED ±0.1 mm band around zero — **not** "within the operation's tolerance"; there is no tolerance parameter in this path.
 
 | Color | Meaning | Threshold |
 |-------|---------|-----------|
-| Green | On target | Within tolerance |
-| Blue | Material remaining (undercut) | Stock above model surface |
-| Yellow | Slight overcut | 0.1–0.3 mm past model |
-| Red | Significant overcut (gouge) | > 0.3 mm past model |
+| Green | On target | Fixed ±0.1 mm band (not the operation's tolerance) |
+| Blue | Material remaining (leftover) | deviation > 0.1 mm |
+| Yellow | Slight overcut | 0.1–0.5 mm overcut |
+| Red | Significant overcut (gouge) | > 0.5 mm overcut |
+
+### The COLUMNS instrument — use this for quality metrics, not the vertex colors above
+
+`SimulationResult::column_deviations: Option<Vec<ColumnDeviation>>` (`compute/simulate.rs:245-315`, populated by `collect_column_deviations()` at `:1034`) is the **unaveraged per-dexel-column** deviation reading. Every `ColumnDeviation` carries `top_z`, world XY, a `group` (setup ordinal), and row/col indices — index results by row/col, never by inverse-transforming XY back to a grid cell.
+
+**Rule (`simulate.rs:245-255`): the per-vertex color path above averages and is for DISPLAY ONLY.** Vertex heights are corner-bilinear averages over 2×2 dexel columns (`dexel_mesh_mc::z_grid_marching_cubes`) — fine for a viewport, but the averaging filters machined micro-texture unevenly: grid-locked ridge patterns survive the average while phase-diverse ones cancel, so two surfaces with identical real texture can histogram very differently (P2.g Task 1, 2026-07-09). Quality metrics and fidelity histograms must read the unaveraged `column_deviations` samples instead.
+
+**Prerequisites before trusting a `column_deviations` read:** the sim cell must sit well below the tool's TIP radius (e.g. 0.1 mm for a Ø1 tip), and `SimulationResult::resolution_clamped` must be `false` — a `true` value means the requested resolution was coarsened to fit grid limits, and `column_grid_cell_mm` (`compute/simulate.rs:317`, the effective sampled cell size) then reads larger than requested. A column population scales with cell⁻², so comparing on-size percentages or collision counts across two different effective cells compares two different populations.
 
 ### Access
 GUI: Select "Deviation" in stock visualization mode dropdown. Computed per-checkpoint during playback.
@@ -258,13 +291,13 @@ Post-dressup that adjusts feed rates based on real-time material engagement.
 - `air_cut_threshold` — below this engagement, use max feed (air cutting)
 
 ### Benefits
-15–30% faster cycle times, eliminates burn marks from dwelling in light cuts, consistent chip load across varying engagement.
+Reduces feed rate in light-engagement regions and raises it in heavier ones to hold a more consistent chip load, which eliminates burn marks from dwelling in light cuts. The "15-30% faster cycle times" figure that used to appear here traces to an unmeasured assertion in the `feedopt.rs` module doc (`crates/rs_cam_core/src/feedopt.rs:11`) — no fixture, no baseline, no date attached. The capability is real; the number is not measured and is not quoted here.
 
 ---
 
 ## 8. Fingerprinting & Parameter Sweeps
 
-**Source:** `crates/rs_cam_core/src/fingerprint.rs` (1170 lines) + `crates/rs_cam_cli/src/sweep.rs`
+**Source:** `crates/rs_cam_core/src/fingerprint.rs` (1253 lines) + `crates/rs_cam_cli/src/sweep.rs`
 
 ### Toolpath Fingerprint
 Single-pass extraction of toolpath metrics: move counts (by type), distances (cutting/rapid), Z levels, feed rates, bounding box, rapid/cutting fractions.
@@ -289,7 +322,7 @@ rs_cam_cli sweep job.toml --param stepover --values "1.0,2.0,3.0" --output out/ 
 
 ### Test Harness Sweeps
 ```bash
-cargo test --test param_sweep                    # All 54 sweeps across 22 operations
+cargo test --test param_sweep                    # All 56 sweeps across 23 user-facing operations
 cargo test --test param_sweep sweep_pocket       # One operation family
 ```
 
@@ -353,11 +386,14 @@ Reference benchmarks for 3-axis wood router analysis.
 
 ### Efficiency
 
+**Air cut ratio has no single fixed band — it requires naming a denominator, and the codebase publishes two.** `air_cut_time_s` becomes a percentage of either `air_cut_pct_of_total_runtime` (cutting + rapids) or `air_cut_pct_of_cutting_time` (rapids excluded, always ≥ the total-runtime reading) — see `AirCutRatios` and its doc comment at `crates/rs_cam_core/src/simulation_cut.rs:537-566, 592-595`. Every SHIPPED threshold uses the total-runtime reading, and it is set PER OPERATION TYPE, not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed) for Drill/AlignmentPinDrill, 97.0 for ProjectCurve, 30.0 for the 3D finish family, 40.0 for 2.5D clearing/rough and 2D contour ops.
+
 | Metric | Good | Warning | Bad |
 |--------|------|---------|-----|
-| Air cut ratio | < 10% | 10–25% | > 25% |
-| Avg engagement (roughing) | 0.3–0.5 | 0.15–0.3 | < 0.15 |
-| Avg engagement (finishing) | 0.1–0.4 | 0.4–0.6 | > 0.6 |
+| Avg engagement (roughing) — `engagement.radial_woc_fraction` (radial-WOC axis only; not axial DOC, arc, or chip thickness) | 0.3–0.5 | 0.15–0.3 | < 0.15 |
+| Avg engagement (finishing) — same axis caveat | 0.1–0.4 | 0.4–0.6 | > 0.6 |
+
+Drill toolpaths suppress both `average_engagement` and air-cut readings via `metrics_not_applicable` — see §2.1.
 
 ### Chip Load (mm/tooth)
 
@@ -373,9 +409,9 @@ Reference benchmarks for 3-axis wood router analysis.
 |-----------|---------|------|
 | `chipload < 0.02` | Rubbing, not cutting | Heat buildup, burn marks, premature wear |
 | `chipload > 0.15` | Aggressive cutting | Tool breakage, tearout, chatter |
-| `radial_engagement ~ 1.0` | Full-width slotting | High forces — consider adaptive clearing |
+| `engagement.radial_woc_fraction ~ 1.0` | Full-width slotting | High forces — consider adaptive clearing |
 | `axial_doc > cutting_length` | Over-depth | Tool damage, shank contact |
-| `engagement < 0.02 at feed` | Air cutting | Wasted time, unnecessary wear |
+| `engagement.radial_woc_fraction < 0.02 at feed` | Air cutting | Wasted time, unnecessary wear |
 
 ---
 
@@ -386,12 +422,12 @@ Use this checklist when analyzing a toolpath program:
 ### Safety (Critical)
 - [ ] **Rapid collisions**: Any G0 moves through stock? (`RapidCollision` in collision report)
 - [ ] **Holder/shank collisions**: Holder contacting stock during cuts? (`CollisionEvent`)
-- [ ] **Min safe stickout**: Is current stickout sufficient? (`min_safe_stickout_mm`)
+- [ ] **Min safe stickout**: Is current stickout sufficient? (`CollisionReport::min_safe_stickout`; `min_safe_stickout_mm` is the JSON wire key only)
 - [ ] **Plunge rate**: Is plunge feed appropriate? (not faster than cutting feed without reason)
 - [ ] **Depth of cut**: Does `axial_doc_mm` exceed tool cutting length anywhere?
 
 ### Efficiency
-- [ ] **Air cutting ratio**: What % of cutting time is through air? (target < 10%)
+- [ ] **Air cutting ratio**: What % is air-cut, and against which denominator? Total-runtime (`air_cut_pct_of_total_runtime`) is what every shipped threshold uses — see the per-operation values in `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`), not a single fixed target
 - [ ] **Low engagement**: What % of time has engagement < 10%? (target < 25%)
 - [ ] **Rapid optimization**: Are rapid moves minimized? (TSP ordering enabled?)
 - [ ] **Link moves**: Are keep-tool-down linking moves used where appropriate?
@@ -431,7 +467,7 @@ SimulationIssueKind:
   HolderCollision  — Shank/holder contacts stock during feed
 ```
 
-Access via `SimulationState::issues(job)` in GUI, or parse JSON artifacts from CLI.
+Access via `SimulationState::issues(&mut self, gui: &GuiState, max_feed_mm_min: f64)` (`crates/rs_cam_viz/src/state/simulation.rs:1485`) in GUI, or parse JSON artifacts from CLI.
 
 ---
 
@@ -478,7 +514,7 @@ Collision markers colored by spatial density (5mm clustering radius):
 ### Core Simulation & Analysis
 | File | Purpose |
 |------|---------|
-| `crates/rs_cam_core/src/dexel_stock.rs` | Tri-dexel stock simulation engine |
+| `crates/rs_cam_core/src/dexel_stock/` (directory: `mod.rs`, `simulation.rs`, `stamping.rs`, `cut_direction.rs`) | Tri-dexel stock simulation engine |
 | `crates/rs_cam_core/src/simulation_cut.rs` | Cut trace metrics, issues, hotspots |
 | `crates/rs_cam_core/src/collision.rs` | Collision detection (holder, rapid) |
 | `crates/rs_cam_core/src/debug_trace.rs` | Performance tracing, computation hotspots |
@@ -489,7 +525,9 @@ Collision markers colored by spatial density (5mm clustering radius):
 ### GUI Integration
 | File | Purpose |
 |------|---------|
-| `crates/rs_cam_viz/src/app/simulation.rs` | Simulation orchestration, deviation |
+| `crates/rs_cam_viz/src/app/simulation.rs` | Simulation orchestration (checkpoint loading, playback) |
+| `crates/rs_cam_viz/src/render/sim_render.rs` | Deviation color mapping (`deviation_colors()`) |
+| `crates/rs_cam_viz/src/app/gpu_upload.rs` | Deviation render wiring (`StockVizMode::Deviation`) |
 | `crates/rs_cam_viz/src/state/simulation.rs` | SimulationState queries, issue aggregation |
 | `crates/rs_cam_viz/src/ui/sim_diagnostics.rs` | Diagnostic panel UI |
 | `crates/rs_cam_viz/src/ui/sim_timeline.rs` | Timeline controls |
@@ -511,13 +549,15 @@ Collision markers colored by spatial density (5mm clustering radius):
 
 ---
 
-## 16. Operations Reference (22 Operations)
+## 16. Operations Reference (23 user-facing operations)
+
+Per `crates/rs_cam_core/src/compute/catalog.rs:149-181`: 24 `OperationType` variants total = 11 2.5D + 12 3D + 1 system-only (`AlignmentPinDrill`, auto-generated for stock alignment pin holes, in neither user menu). 23 user-facing operations, matching `FEATURE_CATALOG.md`.
 
 ### 2.5D Operations (11)
 Face, Pocket, Profile, Adaptive, VCarve, Rest, Inlay, Zigzag, Trace, Drill, Chamfer
 
-### 3D Operations (11)
-3D Raster Finish (DropCutter), 3D Adaptive Rough, Waterline, Pencil, Scallop, Steep/Shallow, Ramp Finish, Spiral Finish, Radial Finish, Horizontal Finish, Project Curve
+### 3D Operations (12)
+3D Raster Finish (DropCutter), 3D Adaptive Rough, Waterline, Pencil, Scallop, Unified Finish, Steep/Shallow, Ramp Finish, Spiral Finish, Radial Finish, Horizontal Finish, Project Curve
 
 ### Tool Families (5)
 Flat end mill, Ball end mill, Bull nose, V-bit, Tapered ball nose

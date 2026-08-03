@@ -1,5 +1,15 @@
 # v3 PROCESS PROOF — cascade rest-clearing on scaled wanaka (handoff)
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+> Banner added by the L1 sweep (wave 16) completing A2's coverage; the body
+> below is a dated record and is deliberately NOT rewritten.
+
 Paste the short prompt at the bottom into a fresh session; this file is
 the operational brief. Full spec: `planning/unified_v3_design.md` §0.a
 (the reframed end goal) — read it first. Branch `experiment/adaptive-spiral`.

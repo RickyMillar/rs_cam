@@ -1,5 +1,15 @@
 # P2 — Unified finishing pass planner: design (DRAFT for review)
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+> Banner added by the L1 sweep (wave 16) completing A2's coverage; the body
+> below is a dated record and is deliberately NOT rewritten.
+
 Status: drafted overnight 2026-07-07→08 (Fable, from a code survey; user review
 pending before any implementation). Parent: `planning/unified_finishing_pass_plan.md`.
 
