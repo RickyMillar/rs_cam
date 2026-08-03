@@ -64,9 +64,22 @@ struct ToolpathDiagnostic<'a> {
     /// CLI-local for the same reason: it comes off the collision report the
     /// core diagnostic never sees.
     min_safe_stickout: Option<f64>,
-    /// A/M9. `null` = **not measured** (this operation runs no ring
-    /// cascade), never "nothing standing".
+    /// A/M9, renamed by wave 16 (Checkpoint E ruling A6 — the old name said
+    /// *standing*, the number means *untouched*). `null` = **not measured**
+    /// (this operation runs no ring cascade), never "nothing left uncut".
+    truncated_core_mm2: Option<f64>,
+    /// A6 compatibility duplicate: the SAME value as
+    /// [`Self::truncated_core_mm2`] under the pre-rename key, kept so
+    /// existing scripts reading this report keep working. Deprecated; it
+    /// carries no independent meaning and will not gain one.
     standing_material_mm2: Option<f64>,
+    /// B8: hole-aware sibling of [`Self::truncated_core_mm2`] — the same
+    /// truncated core with islands netted out. `null` = not measured.
+    untouched_material_mm2: Option<f64>,
+    /// B8: area the cascade reached and then dropped every point on — the
+    /// oracle's *standing*. An ESTIMATOR of a DIFFERENT quantity from the
+    /// core above; never sum or compare the two. `null` = not measured.
+    reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1. `null` = nothing dropped, or nothing that plans bands ran.
     unmachined_band_area_mm2: Option<f64>,
     /// Wave D1. `null` = the operation emits no centrelines (not measured);
@@ -106,7 +119,9 @@ impl<'a> ToolpathDiagnostic<'a> {
             // Superseded by the CLI's own collision check — see the field doc.
             collision_count: _evidence_collision_count,
             rapid_collision_count,
-            standing_material_mm2,
+            truncated_core_mm2,
+            untouched_material_mm2,
+            reached_uncut_estimate_mm2,
             unmachined_band_area_mm2,
             tip_float_points,
             max_tip_float_mm,
@@ -126,7 +141,11 @@ impl<'a> ToolpathDiagnostic<'a> {
             collision_count,
             rapid_collision_count: *rapid_collision_count,
             min_safe_stickout,
-            standing_material_mm2: *standing_material_mm2,
+            truncated_core_mm2: *truncated_core_mm2,
+            // A6: same value, pre-rename key, for existing readers.
+            standing_material_mm2: *truncated_core_mm2,
+            untouched_material_mm2: *untouched_material_mm2,
+            reached_uncut_estimate_mm2: *reached_uncut_estimate_mm2,
             unmachined_band_area_mm2: *unmachined_band_area_mm2,
             tip_float_points: *tip_float_points,
             max_tip_float_mm: *max_tip_float_mm,
@@ -689,7 +708,9 @@ mod tests {
             rapid_distance_mm: 90.5,
             collision_count: 3,
             rapid_collision_count: 2,
-            standing_material_mm2: Some(12.5),
+            truncated_core_mm2: Some(12.5),
+            untouched_material_mm2: Some(9.75),
+            reached_uncut_estimate_mm2: Some(1.5),
             unmachined_band_area_mm2: Some(3.25),
             tip_float_points: Some(4),
             max_tip_float_mm: Some(0.125),
@@ -727,7 +748,10 @@ mod tests {
   "collision_count": 3,
   "rapid_collision_count": 2,
   "min_safe_stickout": 21.5,
+  "truncated_core_mm2": 12.5,
   "standing_material_mm2": 12.5,
+  "untouched_material_mm2": 9.75,
+  "reached_uncut_estimate_mm2": 1.5,
   "unmachined_band_area_mm2": 3.25,
   "tip_float_points": 4,
   "max_tip_float_mm": 0.125
@@ -740,7 +764,9 @@ mod tests {
     #[test]
     fn unmeasured_channels_stay_null() {
         let core = rs_cam_core::session::ToolpathDiagnostic {
-            standing_material_mm2: None,
+            truncated_core_mm2: None,
+            untouched_material_mm2: None,
+            reached_uncut_estimate_mm2: None,
             unmachined_band_area_mm2: None,
             tip_float_points: None,
             max_tip_float_mm: None,
@@ -749,7 +775,12 @@ mod tests {
         let record = ToolpathDiagnostic::from_core(&core, None, None, 0, None);
         let json = serde_json::to_string(&record).unwrap();
         for key in [
+            "truncated_core_mm2",
+            // A6: the compatibility duplicate obeys the same contract — an
+            // unmeasured channel must be `null` under BOTH keys.
             "standing_material_mm2",
+            "untouched_material_mm2",
+            "reached_uncut_estimate_mm2",
             "unmachined_band_area_mm2",
             "tip_float_points",
             "max_tip_float_mm",

@@ -78,7 +78,7 @@ pub enum MeasurementDomain {
 impl MeasurementDomain {
     /// Human-readable domain label. `const` so callers can derive
     /// documentation constants from a provenance value rather than restating
-    /// it in prose (see `crate::compute::config::STANDING_MATERIAL_DOMAIN`).
+    /// it in prose (see `crate::compute::config::TRUNCATED_CORE_DOMAIN`).
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -584,7 +584,7 @@ pub const DEFAULT_FOOTPRINT_CELL_MM: f64 = 1.0;
 /// [`MeasurementStage::Emission`], cell `cell_mm` at
 /// [`CellSource::Explicit`]) — value and provenance travel together, the
 /// house rule this module exists to enforce (see
-/// `ToolpathStats::standing_material()` for the precedent this follows).
+/// `ToolpathStats::truncated_core()` for the precedent this follows).
 ///
 /// # What this measures — and what it does NOT
 ///

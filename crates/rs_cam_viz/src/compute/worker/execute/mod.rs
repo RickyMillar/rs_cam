@@ -779,7 +779,7 @@ pub(super) fn run_compute_with_phase_tracker(
             // `compute_stats_with_spans` only sees moves (and, when trusted,
             // spans); generation-time findings come from the core call
             // above.
-            stats.standing_material_mm2 = generation_findings.standing_material_mm2;
+            stats.truncated_core_mm2 = generation_findings.truncated_core_mm2;
             // M4 §5b: the hole-aware and estimator siblings — same
             // parallel-copy rule, off the same `GenerationFindings`.
             stats.untouched_material_mm2 = generation_findings.untouched_material_mm2;

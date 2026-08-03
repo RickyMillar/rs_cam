@@ -689,12 +689,30 @@ pub struct ToolpathDiagnostic {
     pub rapid_distance_mm: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
-    /// A/M9: generation-time standing material, XY-projected mm². `None`
-    /// serialises as `null` and means **not measured** (this operation runs
-    /// no ring cascade) — never "nothing standing". See
-    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    /// A/M9: generation-time truncated cascade core, XY-projected mm².
+    /// `None` serialises as `null` and means **not measured** (this operation
+    /// runs no ring cascade) — never "nothing left uncut". See
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`], which
+    /// carries the wave-16 rename (A6) and the vocabulary it fixes.
+    ///
+    /// The wire emits this under BOTH `truncated_core_mm2` and the legacy
+    /// key `standing_material_mm2`, same value — see the `Serialize` impl.
     /// Report-only: no verdict reads it.
-    pub standing_material_mm2: Option<f64>,
+    pub truncated_core_mm2: Option<f64>,
+    /// B8 (Checkpoint E): the hole-aware sibling of
+    /// [`Self::truncated_core_mm2`], off
+    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// `None` = not measured; `Some(0.0)` = a cascade ran and left no
+    /// unreached core. Narration has carried this split since wave 15; this
+    /// is the MCP per-toolpath summary catching up. Report-only.
+    pub untouched_material_mm2: Option<f64>,
+    /// B8 (Checkpoint E): area the cascade DID ring but where every point was
+    /// dropped — the oracle's *standing* (reached, left high), off
+    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// An ESTIMATOR, not an exact area, and a different quantity from
+    /// [`Self::truncated_core_mm2`]; the two must never be summed or
+    /// compared. Report-only.
+    pub reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1: XY-projected mm² of finish band that emitted no cutting
     /// because height resolution clipped its Z range away. `None`
     /// serialises as `null` and means **nothing dropped or nothing that
@@ -1411,7 +1429,7 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 14)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 17)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
@@ -1423,7 +1441,25 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         // `null` = not measured (A/M9). Consumers must not coerce it to 0.
-        s.serialize_field("standing_material_mm2", &self.standing_material_mm2)?;
+        s.serialize_field("truncated_core_mm2", &self.truncated_core_mm2)?;
+        // Wave 16 / A6 compatibility: the SAME value under the pre-rename
+        // key. This wire is Serialize-only, so `serde(alias)` — the read-side
+        // mechanism the ruling names — has nothing to attach to here; the
+        // emit-side equivalent is to keep publishing the old key until
+        // consumers move. New readers must take `truncated_core_mm2`; the
+        // duplicate is deprecated and carries no independent meaning.
+        // A reader must NOT put a `serde(alias)` over both — the field would
+        // arrive twice and serde rejects it (pinned in
+        // `tests/standing_material_channel_am9.rs`).
+        s.serialize_field("standing_material_mm2", &self.truncated_core_mm2)?;
+        // B8: the untouched/standing split narration has carried since wave
+        // 15. `null` = not measured on both. `reached_uncut_estimate_mm2` is
+        // an ESTIMATOR of a DIFFERENT quantity — never sum it with the core.
+        s.serialize_field("untouched_material_mm2", &self.untouched_material_mm2)?;
+        s.serialize_field(
+            "reached_uncut_estimate_mm2",
+            &self.reached_uncut_estimate_mm2,
+        )?;
         // Wave D1. Same contract: `null` = not measured / nothing found.
         // Consumers must not coerce any of these three to 0.
         s.serialize_field("unmachined_band_area_mm2", &self.unmachined_band_area_mm2)?;

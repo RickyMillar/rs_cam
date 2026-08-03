@@ -138,44 +138,68 @@ pub struct ToolpathStats {
     pub rapid_distance: f64,
     /// Generation-time finding, not a toolpath measurement: region-interior
     /// area a scallop ring cascade left UNCUT because it hit its ring cap
-    /// before collapsing.
+    /// before collapsing — the **truncated cascade core**.
+    ///
+    /// **Renamed in wave 16** (Checkpoint E ruling A6). It was
+    /// `standing_material_mm2` from A/M9 until 2026-08-04, and that name was
+    /// wrong in the one way a measurement name must never be: §5.3 gave the
+    /// cascade the M4 oracle's vocabulary, and *standing* there means
+    /// "reached, left high" while this field measures ground **no cutter
+    /// position ever entered**. That is the oracle's *untouched*. The
+    /// reached-but-uncut quantity is [`Self::reached_uncut_estimate_mm2`],
+    /// a different number entirely. `truncated_core_mm2` names the geometry
+    /// it actually sums and claims nothing about why.
+    ///
+    /// The old spelling survives ONLY as a legacy JSON key emitted beside
+    /// the new one on the two wires that carry it
+    /// ([`crate::session::ToolpathDiagnostic`]'s `Serialize` and the CLI's
+    /// per-toolpath report). No Rust identifier in this repo carries it.
+    ///
+    /// A consumer reading the CURRENT wire takes `truncated_core_mm2`
+    /// plainly; `#[serde(alias = "standing_material_mm2")]` is for documents
+    /// written BEFORE the rename, and must not be combined with reading the
+    /// dual-key wire — serde rejects the same field arriving twice. Both
+    /// halves of that are pinned in
+    /// `tests/standing_material_channel_am9.rs`.
     ///
     /// **Three-valued on purpose** (A/M9, `MEASUREMENT_DOMAINS.md` X-19):
     ///
     /// * `None` — **not measured**. The operation runs no ring cascade
     ///   (any 2.5D family, drop-cutter, waterline, drill …), or the result
     ///   came from a path that carries no [`GenerationFindings`]. Do NOT
-    ///   read this as "nothing standing"; it supports no ratio at all.
+    ///   read this as "nothing left uncut"; it supports no ratio at all.
     /// * `Some(0.0)` — **measured zero**: a cascade ran and collapsed, so
-    ///   nothing was left standing.
-    /// * `Some(a)` — `a` mm² was left standing.
+    ///   no core was left truncated.
+    /// * `Some(a)` — `a` mm² of region interior was never reached.
     ///
     /// The pre-A/M9 `f64` conflated the first two, which is the silent-zero
-    /// trap the audit logged: a reader building "% left standing" over a
+    /// trap the audit logged: a reader building "% left uncut" over a
     /// pocket would have divided a real area by an unmeasured zero.
     ///
     /// Domain / stage / resolution are fixed and declared by
-    /// [`STANDING_MATERIAL_PROVENANCE`], from which
-    /// [`STANDING_MATERIAL_DOMAIN`], [`STANDING_MATERIAL_STAGE`] and
-    /// [`STANDING_MATERIAL_RESOLUTION`] are derived — every user-visible
+    /// [`TRUNCATED_CORE_PROVENANCE`], from which
+    /// [`TRUNCATED_CORE_DOMAIN`], [`TRUNCATED_CORE_STAGE`] and
+    /// [`TRUNCATED_CORE_RESOLUTION`] are derived — every user-visible
     /// rendering of this number must state them (M1). Read the typed value
-    /// through [`ToolpathStats::standing_material`], which returns the area
+    /// through [`ToolpathStats::truncated_core`], which returns the area
     /// and its provenance together or `None`. Sourced from
     /// [`crate::compute::execute::GenerationFindings`]; read by the
-    /// diagnostics pipeline as `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`.
+    /// diagnostics pipeline as `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`
+    /// — the diagnostic **id** is a stable identity and deliberately keeps
+    /// the old word (`MEASUREMENT_DOMAINS.md` renaming table).
     ///
     /// Report-only: no gate consumes it and no verdict changes on it.
-    pub standing_material_mm2: Option<f64>,
-    /// M4 §5b: the HOLE-AWARE sibling of [`Self::standing_material_mm2`].
-    /// `standing_material_mm2` is computed from each truncated cascade
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the HOLE-AWARE sibling of [`Self::truncated_core_mm2`].
+    /// `truncated_core_mm2` is computed from each truncated cascade
     /// polygon's EXTERIOR only (`MEASUREMENT_DOMAINS.md` X-5) — an island
     /// inside the truncated core over-reports as uncut. This field nets out
     /// holes instead, straight off
     /// [`crate::scallop::ScallopReport::untouched_mm2`].
     ///
-    /// Same three-valued contract as [`Self::standing_material_mm2`]: `None`
+    /// Same three-valued contract as [`Self::truncated_core_mm2`]: `None`
     /// = not measured, `Some(0.0)` = measured and clean.
-    /// `untouched_material_mm2 <= standing_material_mm2` whenever both are
+    /// `untouched_material_mm2 <= truncated_core_mm2` whenever both are
     /// `Some` (same cascade run, hole-corrected). Read through
     /// [`ToolpathStats::untouched_material`].
     ///
@@ -186,7 +210,7 @@ pub struct ToolpathStats {
     /// Straight off [`crate::scallop::ScallopReport::standing_mm2`]. Same
     /// three-valued contract.
     ///
-    /// **This is NOT an estimate of [`Self::standing_material_mm2`].** It is
+    /// **This is NOT an estimate of [`Self::truncated_core_mm2`].** It is
     /// a different quantity, and the naming here is a trap worth stating
     /// plainly (H4, wave 15 — this field was called
     /// `standing_material_estimate_mm2` for exactly long enough to prove the
@@ -194,15 +218,15 @@ pub struct ToolpathStats {
     ///
     /// | field | what it is | oracle's word |
     /// |---|---|---|
-    /// | [`Self::standing_material_mm2`] | truncated cascade core, exteriors only | **untouched** (never reached) |
+    /// | [`Self::truncated_core_mm2`] | truncated cascade core, exteriors only | **untouched** (never reached) |
     /// | [`Self::untouched_material_mm2`] | the same core, hole-corrected | **untouched** (never reached) |
     /// | this field | ringed, then every point dropped | **standing** (reached, left high) |
     ///
-    /// So `standing_material_mm2` measures what the oracle calls
-    /// *untouched*, and this field measures what the oracle calls
-    /// *standing*. The older name predates the vocabulary and is load-bearing
-    /// across serde, the GUI and MCP, so it was not renamed here; see the
-    /// H4 ledger's Checkpoint E menu, which puts that rename to the operator.
+    /// Wave 15 shipped that table under a first column that still read
+    /// `standing_material_mm2` — a field labelled *standing* sitting in the
+    /// *untouched* row. Checkpoint E ruling A6 closed it: the first row's
+    /// field is now [`Self::truncated_core_mm2`], and only this field wears
+    /// the oracle's word *standing*.
     ///
     /// **Not an exact area** — it is `(arc length owned by dropped ring
     /// points) x (offset stepover)`, summed per ring; see the source field's
@@ -215,7 +239,7 @@ pub struct ToolpathStats {
     /// Wave D1: a planned finish BAND whose cutting was entirely erased by
     /// height resolution — an unmachined feature.
     ///
-    /// Three-valued for the same reason as [`Self::standing_material_mm2`]:
+    /// Three-valued for the same reason as [`Self::truncated_core_mm2`]:
     /// `None` = **not measured** (this operation plans no bands at all —
     /// anything that is not a `UnifiedFinish`), `Some(f)` = a banded
     /// decomposition ran AND at least one band was dropped. A banded op that
@@ -716,30 +740,30 @@ pub const TIP_FLOAT_STAGE: &str = TIP_FLOAT_PROVENANCE.stage.label();
 pub const TIP_FLOAT_RESOLUTION: &str = TIP_FLOAT_PROVENANCE.resolution_note;
 
 impl ToolpathStats {
-    /// [`Self::standing_material_mm2`] with its measurement contract attached,
+    /// [`Self::truncated_core_mm2`] with its measurement contract attached,
     /// or `None` when nothing measured it (M1 slice 1).
     ///
     /// The provenance cannot be set independently of the value — the two
     /// travel together or not at all — so a stats struct can never claim a
     /// domain it did not measure in.
     #[must_use]
-    pub fn standing_material(
+    pub fn truncated_core(
         &self,
     ) -> Option<(
         crate::measurement::ProjectedXyAreaMm2,
         crate::measurement::MeasurementProvenance,
     )> {
-        self.standing_material_mm2.map(|mm2| {
+        self.truncated_core_mm2.map(|mm2| {
             (
                 crate::measurement::ProjectedXyAreaMm2::new(mm2),
-                STANDING_MATERIAL_PROVENANCE,
+                TRUNCATED_CORE_PROVENANCE,
             )
         })
     }
 
     /// [`Self::untouched_material_mm2`] with its measurement contract
     /// attached, or `None` when nothing measured it. M4 §5b sibling of
-    /// [`Self::standing_material`] — same rule, different provenance
+    /// [`Self::truncated_core`] — same rule, different provenance
     /// ([`UNTOUCHED_MATERIAL_PROVENANCE`], hole-aware net area).
     #[must_use]
     pub fn untouched_material(
@@ -758,7 +782,7 @@ impl ToolpathStats {
 
     /// [`Self::reached_uncut_estimate_mm2`] with its measurement
     /// contract attached, or `None` when nothing measured it. M4 §5b
-    /// sibling of [`Self::standing_material`] — same rule, different
+    /// sibling of [`Self::truncated_core`] — same rule, different
     /// provenance ([`REACHED_UNCUT_ESTIMATE_PROVENANCE`], an estimator,
     /// not an exact area).
     #[must_use]
@@ -777,7 +801,7 @@ impl ToolpathStats {
     }
 
     /// [`Self::tip_float`] with its measurement contract attached, or `None`
-    /// when nothing measured it. Same rule as [`Self::standing_material`]:
+    /// when nothing measured it. Same rule as [`Self::truncated_core`]:
     /// the value and its provenance travel together or not at all.
     #[must_use]
     pub fn tip_float_measured(
@@ -788,7 +812,7 @@ impl ToolpathStats {
 
     /// [`Self::retract_trips`] with its measurement contract attached, or
     /// `None` when nothing measured it. Same rule as
-    /// [`Self::standing_material`]: the value and its provenance travel
+    /// [`Self::truncated_core`]: the value and its provenance travel
     /// together or not at all.
     #[must_use]
     pub fn retract_trip_measurement(
@@ -823,7 +847,7 @@ pub const RETRACT_TRIP_STAGE: &str = RETRACT_TRIP_PROVENANCE.stage.label();
 /// Resolution note of [`RetractTripCount`].
 pub const RETRACT_TRIP_RESOLUTION: &str = RETRACT_TRIP_PROVENANCE.resolution_note;
 
-/// The measurement contract of [`ToolpathStats::standing_material_mm2`] — the
+/// The measurement contract of [`ToolpathStats::truncated_core_mm2`] — the
 /// SINGLE source of truth the three prose constants below are derived from
 /// (M1 slice 1; before it they were three independent strings that narration
 /// and diagnostics concatenated, with nothing tying them to the code that
@@ -831,24 +855,24 @@ pub const RETRACT_TRIP_RESOLUTION: &str = RETRACT_TRIP_PROVENANCE.resolution_not
 ///
 /// It is exactly the scallop ring cascade's residual, because that is where
 /// the number comes from: [`crate::scallop::ScallopReport::PROVENANCE`].
-pub const STANDING_MATERIAL_PROVENANCE: crate::measurement::MeasurementProvenance =
+pub const TRUNCATED_CORE_PROVENANCE: crate::measurement::MeasurementProvenance =
     crate::scallop::ScallopReport::PROVENANCE;
 
-/// Measurement domain of [`ToolpathStats::standing_material_mm2`].
+/// Measurement domain of [`ToolpathStats::truncated_core_mm2`].
 ///
 /// It is a **projected** area — the shoelace area of the ring cascade's
 /// residual polygons in XY — and therefore NOT comparable with 3D surface
 /// area, dexel-top area or removed volume (non-negotiable rule 3).
-pub const STANDING_MATERIAL_DOMAIN: &str = STANDING_MATERIAL_PROVENANCE.domain.label();
+pub const TRUNCATED_CORE_DOMAIN: &str = TRUNCATED_CORE_PROVENANCE.domain.label();
 
-/// Pipeline stage [`ToolpathStats::standing_material_mm2`] is measured at.
+/// Pipeline stage [`ToolpathStats::truncated_core_mm2`] is measured at.
 ///
 /// Generation, from the cascade's own geometry. A simulation cannot
 /// reproduce it: material the toolpath never attempted to cut leaves no
 /// trace in a cut record, which is exactly why the defect survived.
-pub const STANDING_MATERIAL_STAGE: &str = STANDING_MATERIAL_PROVENANCE.stage.label();
+pub const TRUNCATED_CORE_STAGE: &str = TRUNCATED_CORE_PROVENANCE.stage.label();
 
-/// Resolution of [`ToolpathStats::standing_material_mm2`].
+/// Resolution of [`ToolpathStats::truncated_core_mm2`].
 ///
 /// Not a grid measure: the residual is the ring polygons themselves, whose
 /// vertices are decimated to `0.75 ×` the finish heightmap cell during the
@@ -856,13 +880,13 @@ pub const STANDING_MATERIAL_STAGE: &str = STANDING_MATERIAL_PROVENANCE.stage.lab
 /// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound. M4 §5b
 /// closed X-5 with a hole-aware sibling rather than by changing this
 /// figure — see [`UNTOUCHED_MATERIAL_PROVENANCE`].
-pub const STANDING_MATERIAL_RESOLUTION: &str = STANDING_MATERIAL_PROVENANCE.resolution_note;
+pub const TRUNCATED_CORE_RESOLUTION: &str = TRUNCATED_CORE_PROVENANCE.resolution_note;
 
 /// The measurement contract of [`ToolpathStats::untouched_material_mm2`]
 /// (M4 §5b) — the SINGLE source [`UNTOUCHED_MATERIAL_DOMAIN`] and friends
-/// derive from, exactly the pattern [`STANDING_MATERIAL_PROVENANCE`] set.
+/// derive from, exactly the pattern [`TRUNCATED_CORE_PROVENANCE`] set.
 ///
-/// Same domain and stage as [`STANDING_MATERIAL_PROVENANCE`] — both are
+/// Same domain and stage as [`TRUNCATED_CORE_PROVENANCE`] — both are
 /// exact shoelace areas over the same truncated-cascade polygons — but this
 /// one is [`crate::scallop::ScallopReport::UNTOUCHED_PROVENANCE`], which
 /// nets out holes where the other sums exteriors only.
@@ -884,7 +908,7 @@ pub const UNTOUCHED_MATERIAL_RESOLUTION: &str = UNTOUCHED_MATERIAL_PROVENANCE.re
 /// source [`REACHED_UNCUT_ESTIMATE_DOMAIN`] and friends derive from.
 ///
 /// A DIFFERENT [`crate::measurement::MeasurementStage`] from
-/// [`STANDING_MATERIAL_PROVENANCE`] / [`UNTOUCHED_MATERIAL_PROVENANCE`] —
+/// [`TRUNCATED_CORE_PROVENANCE`] / [`UNTOUCHED_MATERIAL_PROVENANCE`] —
 /// [`crate::scallop::ScallopReport::STANDING_PROVENANCE`] — so
 /// [`crate::measurement::MeasurementProvenance::comparable_to`] refuses to
 /// treat this ESTIMATOR as interchangeable with either exact polygon area,

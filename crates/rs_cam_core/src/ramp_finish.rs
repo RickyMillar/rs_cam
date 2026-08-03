@@ -136,7 +136,7 @@ pub struct RampReachClamp {
     /// **Read [`Self::AREA_PROVENANCE`] before comparing this to anything.**
     /// It is a PATH-SWATH area, not a ring-cascade residual and not a
     /// dexel-top area: it must never be summed with, or divided by,
-    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].
     pub lifted_area_mm2: Option<f64>,
 }
 
