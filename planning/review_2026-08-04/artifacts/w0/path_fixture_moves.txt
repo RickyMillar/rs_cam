@@ -1,0 +1,31 @@
+W0 — derived move tables for the two adaptive3d::path::tests reds
+Derived by mirroring path.rs arithmetic in Python; no crate change.
+
+== test 1  PRE-drape (fa27b08^ behaviour)
+   draped entry = (0.0, 0.0, 0.0)
+   [0] Linking rapid to (entry.xy, safe_z)    z=+1.000
+   [1] EntryPlunge feed                       z=+0.500
+   [2] Retract rapid                          z=+1.000
+   [3] EntryPlunge feed                       z=+0.000
+   [4] final Retract rapid to safe_z          z=+1.000
+   move count = 5   EntryPlunge count = 2   (assertion wants 2, and <= 6 moves)
+
+== test 1  POST-drape (HEAD behaviour)
+   draped entry = (0.0, 0.0, 0.5)
+   [0] Linking rapid to (entry.xy, safe_z)    z=+1.000
+   [1] EntryPlunge feed                       z=+0.500
+   [2] final Retract rapid to safe_z          z=+1.000
+   move count = 3   EntryPlunge count = 1   (assertion wants 2, and <= 6 moves)
+
+== test 2  PRE-drape (fa27b08^ behaviour)
+   cut1  = [(0.0, 0.0, -3.0), (5.0, 5.0, -3.0)]
+   entry = (20.0, 20.0, -2.0)
+   cut2  = [(20.0, 20.0, -2.0), (25.0, 25.0, -2.0)]
+   move at (5,5,-3) present? True   (test's `.expect("cut1 endpoint not found")`)
+
+== test 2  POST-drape (HEAD behaviour)
+   cut1  = [(0.0, 0.0, 0.5), (5.0, 5.0, 0.5)]
+   entry = (20.0, 20.0, 0.5)
+   cut2  = [(20.0, 20.0, 0.5), (25.0, 25.0, 0.5)]
+   move at (5,5,-3) present? False   (test's `.expect("cut1 endpoint not found")`)
+
