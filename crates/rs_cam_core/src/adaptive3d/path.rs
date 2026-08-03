@@ -1597,7 +1597,7 @@ pub(super) fn runtime_annotations_to_labels(
 )]
 mod tests {
     use super::*;
-    use crate::toolpath::{MoveIntent, MoveType};
+    use crate::toolpath::{Move, MoveIntent, MoveType};
 
     // F-038b: legacy `segments_to_toolpath` tests need a mesh + index +
     // cutter trio to call the new signature.
@@ -1645,6 +1645,13 @@ mod tests {
     /// the peck sentries below must be re-pinned deliberately, not
     /// silently retuned.
     const PECK_CLEARANCE_MM: f64 = 0.5;
+
+    /// Does `m` end at `p` (all three axes, exact-ish)?
+    fn at_point(m: &Move, p: P3) -> bool {
+        (m.target.x - p.x).abs() < 1e-9
+            && (m.target.y - p.y).abs() < 1e-9
+            && (m.target.z - p.z).abs() < 1e-9
+    }
 
     /// Z of every `EntryPlunge` feed in `tp`, in emission order.
     fn entry_plunge_zs(tp: &Toolpath) -> Vec<f64> {
@@ -1846,81 +1853,177 @@ mod tests {
         }
     }
 
-    /// Closes the F-5/F-6 regression found during the April 2026 Phase 2
-    /// empirical probes: a Rapid segment emitted after a Cut must lift
-    /// to safe_z FIRST (at the current XY), THEN traverse XY at safe_z,
-    /// THEN plunge. Before this fix, `segments_to_toolpath` only emitted
-    /// the traverse — a single diagonal rapid from the cut depth to
-    /// (entry.xy, safe_z) — which can cut through material as a rapid.
+    /// Body of the F-5/F-6 crash-class guard, run against a flat surface
+    /// at `surface_z`.
+    ///
+    /// Contract, in operator language: when the toolpath finishes a cut
+    /// deep in material and the next thing it does is a rapid to a new
+    /// entry point, the tool must come STRAIGHT UP to safe height first,
+    /// then traverse across at safe height, then descend. A single
+    /// diagonal rapid from the bottom of the cut to the next entry
+    /// ploughs through material at rapid feed.
+    ///
+    /// Assertions cover geometry AND intent. Every intent asserted here
+    /// is the one `segments_to_toolpath` sets at the emitter — this runs
+    /// on the pre-dressup emission, so no downstream rewriter (arcfit's
+    /// intent inheritance, R7-H2/W2) can be what makes it pass or fail.
+    /// Never re-key these assertions off post-dressup labels.
     ///
     /// See planning/adaptive_remediation_phase2_probes_2026-04-12.md.
-    #[test]
-    fn rapid_segment_lifts_to_safe_z_before_traverse() {
+    fn check_rapid_lifts_to_safe_z_before_traverse(surface_z: f64, expect_drape_lift: bool) {
         let params = minimal_params();
         // Cut path: end at (5, 5, -3) — tool is deep in material.
-        let cut1 = Adaptive3dSegment::Cut(vec![P3::new(0.0, 0.0, -3.0), P3::new(5.0, 5.0, -3.0)]);
+        let cut1_end_raw = P3::new(5.0, 5.0, -3.0);
         // Rapid to a new entry point at (20, 20, -2). This is what
         // Package F emits when is_clear_path_3d rejects a would-be Link.
-        let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
-        let cut2 =
-            Adaptive3dSegment::Cut(vec![P3::new(20.0, 20.0, -2.0), P3::new(25.0, 25.0, -2.0)]);
+        let entry_raw = P3::new(20.0, 20.0, -2.0);
+        let cut1 = Adaptive3dSegment::Cut(vec![P3::new(0.0, 0.0, -3.0), cut1_end_raw]);
+        let rapid = Adaptive3dSegment::Rapid(entry_raw);
+        let cut2 = Adaptive3dSegment::Cut(vec![entry_raw, P3::new(25.0, 25.0, -2.0)]);
 
-        let (mesh, si) = legacy_test_mesh();
+        let (mesh, si) = flat_mesh_at(100.0, surface_z);
         let cutter = legacy_test_cutter();
         let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params, &mesh, &si, &cutter);
 
-        // Sanity: there should be moves.
+        // Where fa27b08's drape puts the two landmarks on THIS surface.
+        // Derived from the production helper rather than hard-coded, so a
+        // drape-semantics change relocates the landmarks instead of
+        // silently deleting them (which is how this test went red).
+        let cut1_end = drape_point(&cut1_end_raw, &mesh, &si, &cutter, params.stock_to_leave);
+        let entry = drape_point(&entry_raw, &mesh, &si, &cutter, params.stock_to_leave);
+
+        // Non-vacuity: each caller declares whether its surface is meant
+        // to engage the drape, and we prove it did (or did not).
+        if expect_drape_lift {
+            assert!(
+                entry.z > entry_raw.z + 1e-9 && cut1_end.z > cut1_end_raw.z + 1e-9,
+                "fixture broken: the drape-ACTIVE case did not lift anything \
+                 (entry {} -> {}, cut1 end {} -> {})",
+                entry_raw.z,
+                entry.z,
+                cut1_end_raw.z,
+                cut1_end.z
+            );
+            assert!(
+                !tp.moves.iter().any(|m| at_point(m, cut1_end_raw)),
+                "fixture broken: the raw un-draped cut endpoint {:?} still appears \
+                 in the emitted path, so the drape never touched the emission",
+                cut1_end_raw
+            );
+        } else {
+            assert!(
+                (entry.z - entry_raw.z).abs() < 1e-12
+                    && (cut1_end.z - cut1_end_raw.z).abs() < 1e-12,
+                "fixture broken: the drape-INERT case moved a landmark \
+                 (entry {} -> {}, cut1 end {} -> {})",
+                entry_raw.z,
+                entry.z,
+                cut1_end_raw.z,
+                cut1_end.z
+            );
+        }
+
         assert!(!tp.moves.is_empty());
 
-        // After cut1 ends at (5,5,-3), expect:
-        //   - Rapid to (5,5,safe_z)        — lift in place
-        //   - Rapid to (20,20,safe_z)      — traverse at safe_z
-        //   - One or more peck feeds at (20,20,...) descending toward
-        //     entry.z = -2 (peck behaviour added 2026-05-02 to avoid
-        //     punched-hole plunges; see segments_to_toolpath).
-        //   - Feed to (20,20,-2)            — final plunge
-        let cut1_end = tp.moves.iter().position(|m| {
-            (m.target.x - 5.0).abs() < 1e-9
-                && (m.target.y - 5.0).abs() < 1e-9
-                && (m.target.z - (-3.0)).abs() < 1e-9
-        });
-        let i = cut1_end.expect("cut1 endpoint not found");
+        // After cut1 ends at its draped endpoint, expect:
+        //   - Rapid to (cut1_end.xy, safe_z)  — lift IN PLACE, Retract
+        //   - Rapid to (entry.xy, safe_z)     — traverse at safe_z, Linking
+        //   - One or more peck feeds at entry.xy descending toward entry.z
+        //     (peck behaviour added 2026-05-02 to avoid punched-hole
+        //     plunges; see segments_to_toolpath).
+        //   - Feed to entry                    — final plunge, EntryPlunge
+        let Some(i) = tp.moves.iter().position(|m| at_point(m, cut1_end)) else {
+            panic!(
+                "cut1's draped endpoint {cut1_end:?} is not in the emitted path — the \
+                 fixture no longer reaches the lift/traverse contract at all. Moves: {:#?}",
+                tp.moves
+            )
+        };
+        assert_eq!(
+            tp.moves[i].intent,
+            MoveIntent::ClearingCut,
+            "landmark should be cut1's own cutting feed, got {:?}",
+            tp.moves[i]
+        );
         assert!(
             matches!(tp.moves[i + 1].move_type, MoveType::Rapid)
-                && (tp.moves[i + 1].target.x - 5.0).abs() < 1e-9
-                && (tp.moves[i + 1].target.y - 5.0).abs() < 1e-9
+                && (tp.moves[i + 1].target.x - cut1_end.x).abs() < 1e-9
+                && (tp.moves[i + 1].target.y - cut1_end.y).abs() < 1e-9
                 && (tp.moves[i + 1].target.z - params.safe_z).abs() < 1e-9,
             "expected lift in place to safe_z, got {:?}",
             tp.moves[i + 1]
         );
+        assert_eq!(
+            tp.moves[i + 1].intent,
+            MoveIntent::Retract,
+            "the in-place lift is a retract, got {:?}",
+            tp.moves[i + 1]
+        );
         assert!(
             matches!(tp.moves[i + 2].move_type, MoveType::Rapid)
-                && (tp.moves[i + 2].target.x - 20.0).abs() < 1e-9
-                && (tp.moves[i + 2].target.y - 20.0).abs() < 1e-9
+                && (tp.moves[i + 2].target.x - entry.x).abs() < 1e-9
+                && (tp.moves[i + 2].target.y - entry.y).abs() < 1e-9
                 && (tp.moves[i + 2].target.z - params.safe_z).abs() < 1e-9,
-            "expected traverse to (20,20,safe_z), got {:?}",
+            "expected traverse to (entry.xy, safe_z), got {:?}",
             tp.moves[i + 2]
         );
-        // Walk past peck moves (all at XY = 20,20) until we land at z = -2.
+        assert_eq!(
+            tp.moves[i + 2].intent,
+            MoveIntent::Linking,
+            "the safe-Z traverse is a link, got {:?}",
+            tp.moves[i + 2]
+        );
+        // Walk past peck moves (all at entry XY) until we land at entry.z.
         let final_plunge_idx = tp.moves[i + 3..]
             .iter()
-            .position(|m| {
-                matches!(m.move_type, MoveType::Linear { .. })
-                    && (m.target.x - 20.0).abs() < 1e-9
-                    && (m.target.y - 20.0).abs() < 1e-9
-                    && (m.target.z - (-2.0)).abs() < 1e-9
-            })
+            .position(|m| matches!(m.move_type, MoveType::Linear { .. }) && at_point(m, entry))
             .map(|p| p + i + 3)
-            .expect("final plunge to entry.z = -2 not found after lift+traverse");
+            .unwrap_or_else(|| {
+                panic!("final plunge to the draped entry {entry:?} not found after lift+traverse")
+            });
+        assert_eq!(
+            tp.moves[final_plunge_idx].intent,
+            MoveIntent::EntryPlunge,
+            "the descent to entry.z is an entry plunge, got {:?}",
+            tp.moves[final_plunge_idx]
+        );
         // All moves between traverse and final plunge must be at the
-        // entry XY (peck phase doesn't drift in XY).
+        // entry XY (peck phase doesn't drift in XY). This is the
+        // structural half of "no diagonal rapid through material".
         for m in &tp.moves[i + 3..final_plunge_idx] {
             assert!(
-                (m.target.x - 20.0).abs() < 1e-9 && (m.target.y - 20.0).abs() < 1e-9,
+                (m.target.x - entry.x).abs() < 1e-9 && (m.target.y - entry.y).abs() < 1e-9,
                 "peck move drifted off entry XY: {:?}",
                 m
             );
         }
+    }
+
+    /// Drape-INERT fixture: the surface sits 50 mm below every commanded
+    /// Z, so `drape_path_to_leave` / `drape_point` are provably no-ops and
+    /// the lift/traverse/descend ordering is measured on the raw geometry.
+    ///
+    /// History (2026-08-04): this test used `make_test_flat(100.0)` — a
+    /// quad AT z = 0 — with `stock_to_leave = 0.5`. From fa27b08 the drape
+    /// lifted every fixture point from -3 / -2 up to +0.5, the landmark
+    /// search for (5, 5, -3) found nothing, and the test panicked at
+    /// `.expect("cut1 endpoint not found")` BEFORE evaluating any of its
+    /// three real assertions. The crash-class contract had zero live
+    /// coverage for seven weeks.
+    #[test]
+    fn rapid_segment_lifts_to_safe_z_before_traverse() {
+        check_rapid_lifts_to_safe_z_before_traverse(-50.0, false);
+    }
+
+    /// Drape-ACTIVE fixture: the surface sits ABOVE the commanded cut Z,
+    /// so fa27b08's drape lifts both the cut and the entry. The
+    /// lift-then-traverse-then-descend ordering must survive that. This
+    /// is the case that had no coverage at all before 2026-08-04 — it is
+    /// the case that silently broke the test above, and it is what a
+    /// future drape change would break next.
+    #[test]
+    fn rapid_lift_ordering_holds_when_the_drape_raises_the_entry() {
+        check_rapid_lifts_to_safe_z_before_traverse(0.0, true);
     }
 
     /// The lift-to-safe-z move should only be emitted when the tool is
