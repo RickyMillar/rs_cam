@@ -63,4 +63,6 @@ pub use semantic_helpers::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };
 pub use spans::{operation_spans, spans_from_adaptive3d_annotations};
-pub use stats::{compute_retract_trips, compute_stats, compute_stats_with_spans};
+pub use stats::{
+    compute_retract_trips, compute_stats, compute_stats_with_spans, stats_with_findings,
+};

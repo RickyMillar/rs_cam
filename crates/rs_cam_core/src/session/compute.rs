@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
-use crate::compute::config::{HeightContext, ToolpathStats};
+use crate::compute::config::HeightContext;
 use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::ClearingStrategy;
 use crate::compute::simulate::{
@@ -1546,37 +1546,24 @@ impl ProjectSession {
                     annotated = transformed.reconcile(&mut channels).into_inner();
                 }
 
-                let stats = ToolpathStats {
-                    move_count: annotated.toolpath.moves.len(),
-                    cutting_distance: annotated.toolpath.total_cutting_distance(),
-                    rapid_distance: annotated.toolpath.total_rapid_distance(),
-                    truncated_core_mm2: findings.truncated_core_mm2,
-                    // M4 §5b: the hole-aware and estimator siblings, off the
-                    // same `GenerationFindings`.
-                    untouched_material_mm2: findings.untouched_material_mm2,
-                    reached_uncut_estimate_mm2: findings.reached_uncut_estimate_mm2,
-                    // Wave D1: same channel, same rule — `None` is "not
-                    // measured", never "nothing wrong".
-                    dropped_band: findings.dropped_band.map(Box::new),
-                    tip_float: findings.tip_float,
-                    // PR-5: a retired dial still set in the loaded project.
-                    deprecated_dial: findings.deprecated_dial.map(Box::new),
-                    // PR-6a: the reach-policy stepover this op derived.
-                    derived_stepovers: findings.derived_stepovers.clone(),
-                    clipped_band: findings.clipped_band.map(Box::new),
-                    // PR-8b: what the ramp-finish reach clamp did.
-                    ramp_reach_clamp: findings.ramp_reach_clamp.map(Box::new),
-                    // A/M6: which rest reference the claims pipeline resolved to.
-                    claims_reference: findings.claims_reference,
-                    // A4: a rest pass that will remove nothing.
-                    zero_removal: findings.zero_removal,
-                    // A/M7 gate 1: retract round-trip count, split by
-                    // in-node vs between-nodes when spans are trustworthy.
-                    retract_trips: Some(crate::compute::stats::compute_retract_trips(
-                        &annotated.toolpath,
-                        annotated.spans_valid.then_some(annotated.spans.as_slice()),
-                    )),
-                };
+                // H2.1: ONE join, shared with the GUI compute worker. This
+                // used to be a struct literal that read `findings.<field>`
+                // eleven times — exhaustive on `ToolpathStats` but not on
+                // `GenerationFindings`, so a new finding was dropped here in
+                // silence. `stats_with_findings` destructures both sides, so
+                // it cannot be.
+                //
+                // Byte-equivalent to the literal it replaces:
+                // `Toolpath::total_cutting_distance` counts
+                // `Linear | ArcCW | ArcCCW` and the helper counts everything
+                // that is not `Rapid` — the same three variants, `MoveType`
+                // having exactly four. The rapid distance and the
+                // `compute_retract_trips` arguments were already identical.
+                let stats = crate::compute::stats::stats_with_findings(
+                    &annotated.toolpath,
+                    annotated.spans_valid.then_some(annotated.spans.as_slice()),
+                    findings,
+                );
 
                 let mut debug_trace = debug_recorder.finish();
                 let mut semantic_trace = semantic_recorder.finish();
@@ -3740,7 +3727,7 @@ fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
-    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, ToolpathStats};
     use crate::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
