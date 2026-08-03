@@ -1560,7 +1560,24 @@ After the wanaka live validation report lands:
     **DONE, wave 15, 2026-08-04** — ledger published at
     `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`; Checkpoint E is
     the decision menu in its §6 and awaits the operator.
-13. **L1** final docs sweep (absorbs the backlog doc).
+13. ~~**L1** final docs sweep (absorbs the backlog doc).~~
+    ✅ **DONE, wave 16, 2026-08-04** — `bfc50ad` (A6 rename + emit-side
+    compatibility + B8) / `e0f29ed` (A4 zero-removal finding, red-first; A5
+    and D-16.2 filed) / `410c9a8` (the documentation sweep itself:
+    `CLAUDE.md`, `FEATURE_CATALOG.md`,
+    `AI_MACHINIST_ANALYSIS_REFERENCE.md`, `feedopt.rs`, seven more A2
+    banners) / this commit (backlog absorption + the close-out entry).
+    Checkpoint E's rulings A1–A6, B6 and B8 are executed; B1–B5 and B7 stay
+    open with a named condition each, in the close-out entry's ledger.
+    **The sequencing checklist is complete.**
+    NOT fixed, stated: A6's ruling asked for a `serde(alias)` "so old
+    projects load" and there is no such load — the field was never
+    deserialized anywhere, so the compatibility was taken on the EMIT side
+    instead (both keys published, alias proven on a consumer-side reader).
+    `AI_MACHINIST_ANALYSIS_REFERENCE.md` had drifted two months and its
+    instrument guidance was steering readers onto a display-only path; that
+    is corrected, but the file is large and only the claims an audit could
+    tie to a code path were touched.
 
 ---
 

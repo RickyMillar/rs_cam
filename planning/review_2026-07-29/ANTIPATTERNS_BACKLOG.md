@@ -5,6 +5,28 @@ These are NOT scheduled programme items (M3/M4/M5/A-M6/A-M7/A-M10/H4/L1 are
 tracked elsewhere) — this is the "noticed along the way" ledger, grouped by
 pattern. Ordered roughly by leverage.
 
+## Disposition, closed by L1 (wave 16, 2026-08-04)
+
+L1 absorbs this document: every theme now carries a verdict, so nothing here
+is left in the ambiguous state where "logged" reads as "handled". Details are
+in each section; this is the index.
+
+| # | Theme | Disposition |
+|---|---|---|
+| P1 | No transform provenance contract | **FIXED — wave 2 (C1)**, `77267ce`: `*_with_provenance` is the compile-enforced convention, `SemanticLinkCarrier` retired, per-dressup items bind true ranges. Residue: the viz worker still only builds a semantic recorder under `debug_options.enabled`, so those remap paths stay untested in the default configuration. |
+| P2 | Silent-sentinel `0.0` (X-19 class) | **FIXED — wave 3 (C2)**, `ce426d6` + `96bc300`: `GridZ` newtype, private grid storage, 17-row consumer audit, 4 sentinels converted / 2 documented+tested / 8 ruled out. `steep_shallow`'s `min_z()` use was VERDICT: not defective — the bbox floor is intended for the waterline wall ladder. |
+| P3 | Per-surface reimplementation | **STRUCTURALLY CLOSED — wave 8 (C3)**, `c44a2be`: the CLI diagnostic exhaustively destructures the core struct, so divergence is a compile error. Two sub-bullets closed in place below. **But the GUI worker's hand-copied findings path is NOT closed** (ledger B7): wave 15 needed two more copy lines, wave 16 a fifth. Still open, and still the highest-frequency silent-drop shape in the repo. |
+| P4 | Stringly-typed vocabularies | **FIXED — wave 8 (C4)**, `ad445f3` / `b514046` / `263ba5d`. |
+| P5 | `ComputeMessage` at its size ceiling | **FIXED — wave 1 (C5)**, `88ea12f`: `ComputeMessage::Toolpath` is boxed, so the per-field tax is gone. Wave 16 added two `ToolpathStats` fields and paid nothing. |
+| P6 | No shared test-fixture library | **FIXED — wave 5 (C6)**, `c8e40f7` / `1cd6eee`: `tests/common/` with a bit-identity smoke harness pinning the shared generators to their donors. Wave 16's two new sentries were both written against it. |
+| P7 | Ignored mega-harness rot | **STILL OPEN.** No wave touched it. `v3_cascade_ab.rs` and `p2c_headless_ab_wanaka.rs` remain enormous, `#[ignore]`d, compile-checked only, and load-bearing. The decision the entry asks for (split / archive / schedule) is still unmade, and wave 15's `strategy_comparison_h4.rs` is a third harness of the same shape. |
+| P8 | Findings/report single-slot representation | **FIXED — wave 8 (C8)**. |
+| P9 | Model debt knowingly accepted | **THREE OF FOUR CLOSED — wave 10 (C9)**; bullet 4 is now a pinned OPEN ANOMALY (refining the rest cell makes the shipped detector find LESS), owner: whoever next touches `rest_field::measure_cross_section`. |
+| P10 | Repo hygiene one-offs | **FIXED — wave 1**, `288b19b` (whole-repo fmt) + `9e43b78` (`.gitignore`, which found a SECOND live instance). The foreign looping `cargo test` was environmental. |
+| P11 | Pins and claims captured mid-wave | **STILL OPEN as a practice.** The fix shape is recorded, not enforced by anything. Wave 16 hit its own instance from the other side — see the note appended to that section. |
+| P12 | Convex fixtures cannot adjudicate concave defects | **PARTLY ADDRESSED.** The offset bench is extended (rosette, holed, cascades); the M4 oracle fixtures are not, and that is recorded as a limit rather than fixed. |
+| P13 | A deferral that names no decider is not a decision | **NEW, wave 16.** See the section below. |
+
 ## P1. Transforms have no provenance contract (structural)
 
 No post-generation transform (dressups, clip, descent optimizer) can *report*
@@ -201,6 +223,17 @@ The three instances, in order of how hard they are to catch:
    reason does not** — unless the assertion names its own mechanism, which is
    the only reason this one was caught.
 
+**A fourth instance, wave 16, from the other side.** A4's sentry pinned a
+10 µm engagement floor chosen by reasoning rather than measurement. The
+sentry then failed, and the failure was the fixture telling the truth: a pass
+riding on ground it already cut measures ~18 µm of apparent material against
+a sampled reference, so the pin would have been wrong for the rest of time in
+the one direction the report must never err. The floor is now DERIVED from
+the reference's resolution and travels on the finding. The lesson generalises
+the section: **a threshold captured before its instrument is measured is the
+same defect as a pin captured mid-wave** — both record an intermediate state
+as a conclusion.
+
 **Fix shape:** (a) re-capture every pin after a wave's LAST behavioural
 commit, never during — cheap, and it would have prevented all of instance 1;
 (b) write assertions that carry their reasoning in the message, so a red says
@@ -236,6 +269,31 @@ fixed.
 **Related:** the standing programme rule *"never gate on an aggregate without
 rendering the surface"* — same family, different axis. That one is about the
 statistic hiding the defect; this one is about the fixture never containing it.
+
+## P13. A deferral that names no decider is not a decision (wave 14, adopted)
+
+**Observed:** wave 14, then applied deliberately by every wave after it.
+
+Wave 14 shipped `polygon::OffsetRingSet` and left two things undone. The
+difference between them is the whole point:
+
+* *"`FlattenPolicy` stays explicit at the boundary; migrating the remaining
+  consumers is deferred"* — a decision, because it names who decides (the
+  next consumer to need it) and on what evidence.
+* *"cavalier can panic on the `Shape` path and be mapped to a collapsed
+  offset"* — was, at first, a shrug. A known way for a hang to become a
+  silent wrong answer, with nobody named. It is now carried in the open-items
+  ledger with an owner condition attached.
+
+**The rule:** every "not fixed, stated" line must name **who decides and on
+what evidence**, or it is not a deferral — it is an unrecorded defect wearing
+a deferral's clothes. Waves 8 through 16 each close with an explicit
+"NOT fixed, stated" block for exactly this reason, and the Checkpoint E menu
+(ledger §6.3) is the same rule applied to a whole programme: nine open items,
+each with a named condition for re-opening.
+
+**Related:** P11 is this failure applied to numbers, P12 to fixtures. All
+three are the same shape — something intermediate recorded as if final.
 
 ## Process note (not repo debt)
 
