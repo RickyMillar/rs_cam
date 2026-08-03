@@ -1571,15 +1571,169 @@ pub fn even_tabs(count: usize, width: f64, height: f64) -> Vec<Tab> {
 // Air-cut filter dressup
 // ---------------------------------------------------------------------------
 
+/// How far the tool tip at `(x, y, z)` sits BELOW the stock surface, mm.
+///
+/// Positive = the tip is under the surface, i.e. in material. Negative = it
+/// is above it, in air. `None` = there is nothing to be in or out of: the
+/// column is empty (a through-hole) or the position is off the grid.
+///
+/// Nearest-cell lookup, never interpolated — the same rule
+/// `rest_field::measure_cross_section` states for the same reason: averaging
+/// dexel tops across a steep wall smears the cliff.
+///
+/// This is the ONE convention for "is the tool in material against this
+/// stock". [`is_in_air`] and A4's zero-removal measurement are both phrased
+/// on it rather than each carrying their own lookup, because two surfaces
+/// answering that question differently is how they come to disagree about
+/// what a pass did.
+fn tip_depth_below_surface(stock: &TriDexelStock, x: f64, y: f64, z: f64) -> Option<f64> {
+    let (row, col) = stock.z_grid.world_to_cell(x, y)?;
+    let top = stock.z_grid.top_z_at(row, col)?;
+    Some(top as f64 - z)
+}
+
 /// Check if position (x, y, z) is in air (no material above z at this XY).
 fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> bool {
-    if let Some((row, col)) = stock.z_grid.world_to_cell(x, y) {
-        match stock.z_grid.top_z_at(row, col) {
-            Some(top) => (top as f64) < z - tolerance,
-            None => true, // Empty ray = through-hole = definitely air
+    // Empty ray or off-grid = definitely air.
+    tip_depth_below_surface(stock, x, y, z).is_none_or(|depth| depth < -tolerance)
+}
+
+/// A4: how far material at the sampled column rises ABOVE the cutter's own
+/// surface there — i.e. how much this position actually removes.
+///
+/// The naive form of this measure (stock top minus TIP Z) reads a false
+/// positive on every curved or sloped surface, and the size of the error is
+/// exactly the grid's lateral quantisation: `world_to_cell` snaps to the
+/// nearest ray, up to `cell/√2` away from the tool axis, and the machined
+/// surface at that offset is legitimately higher than the tip by the
+/// cutter's own profile. On the A4 fixture that artefact measured
+/// **+21 µm** — the same order as the cusp the dials asked for, and enough
+/// to hide a pass that removes nothing behind a number that looks like
+/// engagement. It was found by the sentry failing, not by reasoning.
+///
+/// So the comparison is against `tip_z + height_at_radius(offset)`: the
+/// height of the cutter's surface directly above that ray. Material above
+/// THAT is material the cutter removes; material below it is the shape the
+/// cutter leaves behind.
+fn material_above_cutter(
+    stock: &TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+    x: f64,
+    y: f64,
+    z: f64,
+) -> Option<f64> {
+    let (row, col) = stock.z_grid.world_to_cell(x, y)?;
+    let top = stock.z_grid.top_z_at(row, col)?;
+    let (cx, cy) = stock.z_grid.cell_to_world(row, col);
+    let offset = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
+    // Beyond the cutter's own extent there is no surface to compare
+    // against; the caller is asking about a ray the tool does not cover.
+    let profile = cutter.height_at_radius(offset)?;
+    Some(top as f64 - (z + profile))
+}
+
+/// A4: how deep a toolpath's CUTTING geometry gets into a reference stock,
+/// and how many positions that verdict rests on.
+///
+/// Report-only. Nothing gates on it, and the operation is not refused —
+/// see [`reference_engagement_of_cutting_moves`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReferenceEngagement {
+    /// Deepest the tip reached below the reference surface, mm. `<= 0` means
+    /// it never got under the surface at all, so the pass can remove nothing.
+    pub deepest_mm: f64,
+    /// Positions sampled. `0` = nothing was measured (no cutting moves, or
+    /// none of them landed on the grid) — which is NOT a zero depth, and
+    /// callers must not read it as one.
+    pub sampled_positions: usize,
+}
+
+/// Walk every cutting move of `toolpath` against `stock` and report the
+/// deepest the tip got below its surface.
+///
+/// Sampled along the swept path at the stock grid's own cell size, exactly
+/// as [`swept_path_is_all_air`] does and for the same reason: a move whose
+/// ENDS are both above the surface can still plough through it in the
+/// middle, and an endpoint-only reading is biased in one direction (always
+/// toward "nothing here").
+///
+/// The tip column only, not a disc under the whole cutter. That is a stated
+/// limit, not an oversight: material inside the cutter's radius sits above
+/// the tip by the tool's own profile, so a disc-max reads positive on any
+/// curved surface and the measure would never be able to say "nothing". The
+/// price is that a pass which removes material ONLY under its flank —
+/// nothing a 3-axis surface-following pass does — reads as zero.
+#[must_use]
+pub fn reference_engagement_of_cutting_moves(
+    toolpath: &Toolpath,
+    stock: &TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> ReferenceEngagement {
+    let step = stock.z_grid.cell_size.max(1.0e-6);
+    let mut deepest = f64::NEG_INFINITY;
+    let mut sampled = 0usize;
+    let mut arc_buf: Vec<P3> = Vec::new();
+
+    let sample = |p: &P3, deepest: &mut f64, sampled: &mut usize| {
+        if let Some(depth) = material_above_cutter(stock, cutter, p.x, p.y, p.z) {
+            *sampled += 1;
+            if depth > *deepest {
+                *deepest = depth;
+            }
         }
-    } else {
-        true // Outside stock bounds = air
+    };
+
+    for (i, m) in toolpath.moves.iter().enumerate() {
+        if m.move_type == MoveType::Rapid {
+            continue;
+        }
+        let prev = i
+            .checked_sub(1)
+            .and_then(|k| toolpath.moves.get(k))
+            .map(|p| p.target);
+        let Some(prev) = prev else {
+            sample(&m.target, &mut deepest, &mut sampled);
+            continue;
+        };
+        match m.move_type {
+            MoveType::ArcCW { i: ci, j: cj, .. } | MoveType::ArcCCW { i: ci, j: cj, .. } => {
+                let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
+                crate::arc_util::linearize_arc_into(
+                    &mut arc_buf,
+                    prev,
+                    m.target,
+                    ci,
+                    cj,
+                    clockwise,
+                    step,
+                );
+                for p in &arc_buf {
+                    sample(p, &mut deepest, &mut sampled);
+                }
+            }
+            _ => {
+                let (dx, dy, dz) = (
+                    m.target.x - prev.x,
+                    m.target.y - prev.y,
+                    m.target.z - prev.z,
+                );
+                let len = (dx * dx + dy * dy + dz * dz).sqrt();
+                let steps = (len / step).ceil().max(1.0) as usize;
+                for k in 0..=steps {
+                    let t = k as f64 / steps as f64;
+                    sample(
+                        &P3::new(prev.x + dx * t, prev.y + dy * t, prev.z + dz * t),
+                        &mut deepest,
+                        &mut sampled,
+                    );
+                }
+            }
+        }
+    }
+
+    ReferenceEngagement {
+        deepest_mm: if sampled == 0 { 0.0 } else { deepest },
+        sampled_positions: sampled,
     }
 }
 

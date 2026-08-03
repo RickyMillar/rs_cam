@@ -369,6 +369,22 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub retract_trips: Option<RetractTripCount>,
+    /// A4: this rest pass will remove nothing against the reference it was
+    /// planned on. See [`ZeroRemovalFinding`].
+    ///
+    /// `None` = **not measured or nothing to report**, and the two are
+    /// deliberately not split here: the measurement only runs where both a
+    /// resolved machined-stock reference and emitted cutting geometry exist,
+    /// and a rest pass that DOES reach material is the overwhelming default.
+    /// Unlike the A/M9 channels this is not an area anyone would build a
+    /// ratio from, so the three-valued contract would buy a distinction with
+    /// no consumer.
+    ///
+    /// NOT boxed: three words, and the pointer would cost more than it saves
+    /// (same reasoning as [`Self::claims_reference`]).
+    ///
+    /// Report-only: no gate consumes it and generation is unaffected.
+    pub zero_removal: Option<ZeroRemovalFinding>,
 }
 
 /// A/M7 gate 1: how many retract round trips a toolpath took, and whether
@@ -421,6 +437,50 @@ impl RetractTripCount {
     pub const fn has_split(&self) -> bool {
         self.in_node.is_some() && self.between_nodes.is_some()
     }
+}
+
+/// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never
+/// reaches under the reference stock it was planned against.
+///
+/// H4 §3.2 Finding 1 is the incident: on the grooved block a same-tool
+/// cascade's rest pass cost +43.9 s (+45% of the arm's runtime), 1 294 mm of
+/// cutting and 48 retract round trips, and removed **zero** material —
+/// rendered, not inferred: the cross-arm column difference was uniformly
+/// zero over all 96 641 columns. The claims pipeline held both halves of the
+/// answer the whole time (the reference stock, and the territory it planned
+/// on), and nothing joined them up.
+///
+/// **A report, not a refusal**, on the operator's ruling: a pass that finds
+/// nothing is sometimes exactly what was wanted. Generation succeeds, the
+/// toolpath is untouched, and no verdict moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZeroRemovalFinding {
+    /// Deepest the tip reached BELOW the reference stock surface, mm, over
+    /// every sampled cutting position. `<= 0` is the finding's whole
+    /// premise: the tool never got under the surface, so there is nothing
+    /// for it to remove.
+    ///
+    /// Negative values are meaningful — they say how far ABOVE the stock the
+    /// pass flew, which separates "riding its own previous cut" (≈ 0) from
+    /// "aimed at a surface that is not there" (millimetres).
+    pub deepest_engagement_mm: f64,
+    /// Positions the verdict rests on. Never `0` on a recorded finding: with
+    /// nothing sampled there is no measurement, and an absent measurement is
+    /// not a defect claim (X-19).
+    pub sampled_positions: usize,
+    /// What the pass costs anyway, mm of cutting travel. This is the number
+    /// that makes the finding worth reading rather than a curiosity — §3.2's
+    /// pass paid 1 294 mm for nothing.
+    pub cutting_distance_mm: f64,
+    /// The threshold this verdict was taken against, mm — derived from the
+    /// REFERENCE's resolution, never dialled
+    /// (`compute::execute::zero_removal_engagement_floor_mm`).
+    ///
+    /// It travels with the finding because a reader must be able to see how
+    /// much room there was: a deepest reach of 18 µm against a 21 µm floor
+    /// is a different statement from 0 µm against 21 µm, and the second is
+    /// the only one that means "nothing at all".
+    pub floor_mm: f64,
 }
 
 /// Which rest reference a claims pipeline resolved to, and under what

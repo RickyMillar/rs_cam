@@ -85,6 +85,15 @@ pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
 /// execute, so a dexel run sees a clean pass and nothing else records that
 /// the descent was truncated.
 pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
+/// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets
+/// under the reference stock it was planned against — it will remove nothing,
+/// at full price in motion. Sim-independent: measured at generation against
+/// the prior stock snapshot, which is the only place both halves (the
+/// reference and the territory) are in scope at once.
+///
+/// A REPORT, not a refusal. An operator may legitimately want a pass that
+/// finds nothing; what is not acceptable is nothing saying so.
+pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled
@@ -189,6 +198,7 @@ pub const ALL: &[&str] = &[
     GEOM_STANDING_MATERIAL,
     GEOM_UNMACHINED_BAND,
     GEOM_TIP_FLOAT,
+    GEOM_ZERO_REMOVAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     QUALITY_STEPOVER_OVER_80_PCT,

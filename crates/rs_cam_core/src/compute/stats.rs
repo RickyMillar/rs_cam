@@ -63,6 +63,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         ramp_reach_clamp: None,
         // A/M6: same rule — no claims pipeline is visible from a move list.
         claims_reference: None,
+        // A4: same rule — a move list carries no reference stock to be
+        // measured against, so this helper cannot answer the question.
+        zero_removal: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).

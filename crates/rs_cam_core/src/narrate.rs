@@ -118,6 +118,13 @@ pub struct ToolpathNarrationContext<'a> {
     /// this stats struct never walked a move list (a placeholder, never a
     /// real generation) — narration says so rather than staying silent.
     pub retract_trips: Option<crate::compute::config::RetractTripCount>,
+    /// A4: this rest pass will remove nothing, off
+    /// [`crate::compute::config::ToolpathStats::zero_removal`]. `None` = the
+    /// measurement did not run, or it ran and found real engagement — and
+    /// unlike the A/M9 channels those two are not distinguished, because the
+    /// number supports no ratio. Narration therefore prints this line ONLY
+    /// when the finding is present.
+    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
 }
 
 #[derive(Debug, Clone)]
@@ -327,6 +334,7 @@ pub fn narrate_toolpath_with_context(
     append_clipped_band(&mut output, context);
     append_ramp_reach_clamp(&mut output, context);
     append_tip_float(&mut output, context.tip_float);
+    append_zero_removal(&mut output, context.zero_removal);
     append_retract_trips(&mut output, context.retract_trips);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
@@ -835,6 +843,40 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
             );
         }
     }
+}
+
+/// A4: one line when a rest pass will remove nothing, and silence otherwise.
+///
+/// Silence is right here, and it is a departure from the A/M9 lines above.
+/// Those distinguish *not measured* from *measured clean* because a reader
+/// might build a ratio on them. This one cannot be built on: an operation
+/// that engages material is the overwhelming default, and a "zero removal:
+/// none" line on every finishing toolpath would be a notice nobody reads.
+///
+/// The line leads with the COST, not the depth. "Removed nothing" is only
+/// interesting because the pass was paid for anyway.
+fn append_zero_removal(
+    output: &mut String,
+    finding: Option<crate::compute::config::ZeroRemovalFinding>,
+) {
+    let Some(f) = finding else { return };
+    output.push_str(&format!(
+        "Zero removal: this rest pass costs {cutting:.0} mm of cutting and \
+         removes NOTHING — over {samples} sampled positions its deepest \
+         reach below the prior operation's stock is {deepest:+.4} mm, \
+         against a {floor:.4} mm floor derived from the reference's own \
+         sampling (positive would be into material). Check the reference: \
+         the prior \
+         op may have left nothing here, or this pass's stock-to-leave may \
+         not be below what it left. Keeping the pass is a legitimate choice. \
+         [Material standing above the CUTTER's own surface, mm; generation \
+         stage; sampled along the swept path at the stock grid cell. \
+         Report-only — no gate consumes this.]\n",
+        cutting = f.cutting_distance_mm,
+        samples = f.sampled_positions,
+        deepest = f.deepest_engagement_mm,
+        floor = f.floor_mm,
+    ));
 }
 
 /// C8: one line, always, about material a ramp descent knowingly left.
@@ -1734,6 +1776,7 @@ mod tests {
             clipped_band: None,
             ramp_reach_clamp: None,
             tip_float: None,
+            zero_removal: None,
             retract_trips: None,
         };
 

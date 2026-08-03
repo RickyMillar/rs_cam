@@ -4726,3 +4726,65 @@ simulated, and §6.3(C) lists the seven things live validation must confirm.
   Finding 7 is fresh evidence for exactly that.
 * **`GEOM_STANDING_MATERIAL` and the MCP per-toolpath summary do not carry
   the new split**; narration does. Time-boxed out.
+
+---
+
+## Defects filed by wave 16 (Checkpoint E, A5 + one found in passing)
+
+Filed, not fixed. Each carries a reproduction pointer, because a defect
+without one is an opinion.
+
+### D-16.1 — banded finish overcuts by −235 µm where a band runs off the stock
+
+**Ruling A5.** Ledger §3.2 Finding 2. On `grooved_block(2.5, 70°, 1.2)` the
+`UnifiedFinish` mix arm leaves a **−235 µm overcut** — ten times the 22.5 µm
+cusp the dials asked for — while all-over scallop on the same fixture, same
+tool, same cusp target leaves **−34.1 µm**. The bulk of the surface is a wash
+(±25 µm on-size 96.93% vs 97.65%; p90 actually BETTER on the mix arm at 0.2
+vs 1.7 µm), so this is a tail, not a shift.
+
+**Where it is, and where it is not.** Rendered before it was written down,
+which changed the description: `groove_b_minus_d.png` shows the two arms
+differing ONLY inside the groove — outside it they are pixel-identical — and
+`groove_b_dev.png` puts the red cells at the groove's longitudinal ENDS,
+where the band runs off the block footprint. So it is a **boundary /
+run-off behaviour of the banded planner**, not the mid-part collar the
+aggregate alone would have suggested. That is a different thing to go and
+fix, and a smaller one.
+
+**Reproduction.** `crates/rs_cam_core/tests/strategy_comparison_h4.rs`,
+groove fixture, arms B and D, measurement grid 0.1 mm against a Ø1 tip,
+`resolution_clamped` false, 96 641 columns shared across arms. Renders in
+`target/h4_strategy/`.
+
+**Not fixed here** because it is a planner-geometry change at a band
+boundary, which moves emitted geometry and re-pins fingerprints — a wave,
+not a footnote. Owner: whoever next opens the band decomposition.
+
+### D-16.2 — `UnifiedFinish`'s SHALLOW band ignores `stock_to_leave`
+
+Found by the A4 sentry, not by audit: two arms differing only in the rest
+op's `stock_to_leave` emitted **byte-identical toolpaths**.
+
+`unified_finish.rs`'s `FinishBand::Shallow` builds a raw drop-cutter grid and
+hands it to `raster_toolpath_from_grid`, which takes no stock-to-leave
+argument at all. The mid-steep scallop band (`params.stock_to_leave`), the
+crease/claims pencil pass and the surface links all honour the dial; the
+raster band does not. So an operator who sets `stock_to_leave` on a
+`UnifiedFinish` gets it applied to part of the operation and silently
+dropped on the rest — and on a shallow-dominated part (79.8% of cutting on
+the §3.2 fixture) that is most of it.
+
+**Reproduction.** Two `UnifiedFinish` ops differing only in
+`stock_to_leave`, on any fixture the classifier sends to the Shallow band
+(`crates/rs_cam_core/tests/zero_removal_rest_pass_a4.rs`'s `bumpy_surface`
+does): identical `cutting_distance`, identical emitted Z.
+
+**Severity.** Not a gouge — the band cuts to the model surface, which is
+what a finish pass usually wants — but it is a dial that reports no error
+and does nothing, which is the class this programme has repeatedly found
+most expensive. It also makes `stock_to_leave` unusable as an experimental
+variable, which is how it was found.
+
+**Not fixed here**: it changes emitted geometry on every shallow band in the
+repo and re-pins fingerprints. Owner: whoever next touches the shallow band.
