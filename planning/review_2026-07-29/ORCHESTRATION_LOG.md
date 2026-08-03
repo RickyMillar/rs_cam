@@ -4418,10 +4418,28 @@ asked rather than told.
 zero, before the commit.
 
 `-p rs_cam_core --lib`: **2226 passed / 3 failed, all known** (the three
-adaptive3d reds). Green: `finish_resolution_policy_pr3` (10),
+adaptive3d reds).
+
+Green, pre-flip: `finish_resolution_policy_pr3` (10),
 `crease_own_region_pr6b` (3), `offset_polygon_degenerate_inputs_r1` (2),
 `offset_candidates_m5` (6 + 5 ignored), `standing_material_channel_am9` (4),
-`ring_sample_bound_w14` (1 + the evidence run), and the pocket cascade sentry.
+`ring_sample_bound_w14` (1 + the evidence run), the pocket cascade sentry,
+`scallop_candidates_m4` (3 + 4 ignored, 294 s),
+`scallop_oracle_validation_m4` (9, 207 s).
+
+Green, **post-flip** (built after the hookup default moved):
+`scallop_isofield_gouge_m4` (2 + 3 ignored, 460 s — the target that caught both
+chord-refinement violations), `scallop_intra_pass_relink_am7` (5),
+`unified_finish_semantic_regions` (4), `property_tests` (7),
+`generator_extremes_fuzz_r1` (1 + 2 ignored).
+
+**Build provenance is stated per target on purpose**, because the flip landed
+in the working tree while this suite was running. The two UnifiedFinish-facing
+targets happen to be on the post-flip side, which is the useful half; the
+pre-flip ones are scallop/offset-only and cannot see the dial. Recording which
+build each row came from is the whole of P11's lesson applied to a gate table
+rather than to a pin — the alternative is a green list whose members were not
+all measuring the same thing.
 
 ### What a human still owns
 
