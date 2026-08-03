@@ -264,6 +264,9 @@ each target.
 | transform provenance fingerprints | `cargo test -p rs_cam_core --test transform_provenance_fingerprints` | **3 passed, 0 failed** |
 | dressup span invariants | `cargo test -p rs_cam_core --test dressup_span_invariants` | **4 passed, 0 failed** |
 | F1 exhibit (new) | `cargo test -p rs_cam_core --test arcfit_intent_boundary_f1` | **4 passed, 0 failed** |
+| F1 exhibit lint | `cargo clippy -p rs_cam_core --test arcfit_intent_boundary_f1 -- -D warnings` | **exit 0, zero warnings** |
+| control — scallop relink (the test that discovered the defect) | `cargo test -p rs_cam_core --test scallop_intra_pass_relink_am7` | **5 passed, 0 failed** |
+| control — capability link-move safety | `cargo test -p rs_cam_core --test capability_link_moves_safety` | **17 passed, 0 failed** |
 
 The pinned FNV constants that PR-6 must re-pin, read from
 `tests/transform_provenance_fingerprints.rs` and **confirmed green** at
@@ -281,16 +284,12 @@ All five were originally captured at HEAD `5d32150` before the C1 wave; they
 are unchanged at `894e060`, so the baseline is stable and the delta PR-6
 produces is attributable to PR-6.
 
-**Not captured in this window (Cargo slot yielded to the adaptive3d agent,
-PR-1..3 priority):** `capability_link_moves_safety` and
-`scallop_intra_pass_relink_am7`. Per §3.3 F6/F7 neither runs arcfit, so
-neither is a pre-fix *fingerprint*; both are post-fix controls. Commands for
-PR-6:
-
-```
-cargo test -p rs_cam_core --test capability_link_moves_safety
-cargo test -p rs_cam_core --test scallop_intra_pass_relink_am7
-```
+The last three rows were run in a second Cargo window, after the slot cleared;
+commit `8963b75` had shipped without them and said so. Per §3.3 F6/F7 neither
+`capability_link_moves_safety` nor `scallop_intra_pass_relink_am7` runs arcfit,
+so neither is a pre-fix *fingerprint* — both are post-fix **controls**, and the
+green readings above are the baseline PR-6 compares them against. **No check in
+this wave is left unrun.**
 
 ---
 
@@ -400,6 +399,6 @@ one file's constants plus a re-run list.
   (§3.2 I2). This predates and is independent of the intent bug. It is a real
   finding about gate coverage that this wave surfaced but did not investigate;
   it deserves its own item.
-* **Two baseline targets not run** in this window (§4) because the single Cargo
-  slot belonged to the adaptive3d agent. Neither runs arcfit, so neither is a
-  pre-fix pin.
+* **Nothing in this wave is left unrun.** The two controls and the clippy gate
+  that commit `8963b75` shipped without were completed in a second Cargo window
+  and are recorded in §4.
