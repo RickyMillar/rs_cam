@@ -4788,3 +4788,182 @@ variable, which is how it was found.
 
 **Not fixed here**: it changes emitted geometry on every shallow band in the
 repo and re-pins fingerprints. Owner: whoever next touches the shallow band.
+
+---
+
+## C-SEQUENCE WAVE 16 (L1 + Checkpoint E), 2026-08-04
+
+The last wave. Step 13 is ticked, and with it the sequencing checklist is
+complete. This entry is the programme's close-out: the operator's Checkpoint
+E rulings as executed, the full wave table, what is shipped, what is open
+with an owner condition, and the live-validation checklist as the handoff.
+
+**Commits**
+
+| # | Hash | Scope |
+|---|------|-------|
+| 1 | `bfc50ad` | A6 rename + emit-side compatibility + B8 (the untouched/standing split on the diagnostic and the MCP summary) |
+| 2 | `e0f29ed` | A4 zero-removal report finding, red-first; A5 and one new defect filed |
+| 3 | `410c9a8` | L1 documentation sweep: `CLAUDE.md`, `FEATURE_CATALOG.md`, `AI_MACHINIST_ANALYSIS_REFERENCE.md`, `feedopt.rs`, seven more A2 banners |
+| 4 | *(this commit)* | backlog absorption, this entry, checklist step 13 |
+
+### The rulings, recorded verbatim as given
+
+> **A1** strike the comparative clauses from `FEATURE_CATALOG.md:34`
+> (capability description stays); **A2** pointer-not-rewrite (banners — H4
+> already placed 9, verify coverage); **A3** `PROGRESS.md` gets the one-line
+> supersession pointer; **A4** planner emits a report finding when a rest
+> pass's claimed territory removes nothing against its reference (a report,
+> NOT a refusal); **A5** file the −235 µm band-run-off overcut as a ledgered
+> defect; **A6** rename `ToolpathStats::standing_material_mm2` →
+> `truncated_core_mm2` WITH `#[serde(alias = "standing_material_mm2")]` so
+> old projects load, GUI/MCP consumers swept in one commit; **B6** chipload
+> advisory stays Info (ruled, do nothing); **B8** `GEOM_STANDING_MATERIAL` +
+> MCP per-toolpath summary carry the untouched/standing split that narration
+> already has.
+
+A1 and A3 were already in place from wave 15 and were verified, not redone.
+A2's nine banners are now sixteen. B6 was obeyed by doing nothing.
+
+### A6: the ruling's premise was wrong, and saying so is the point
+
+The ruling asked for `#[serde(alias)]` "so old projects load". **There is no
+such load.** `ToolpathStats` has never derived serde, no project TOML has
+ever carried the key, and both wires that publish the value are
+`Serialize`-only. The audit line that produced the premise — "load-bearing
+across serde project files, the GUI and MCP" — was itself an unverified
+claim in a ledger about unverified claims (P11's shape, one level up).
+
+So the intent was honoured where the mechanism could not be: the emitted
+JSON keeps publishing `standing_material_mm2` beside `truncated_core_mm2`,
+same value, deprecated. Writing the test found the sting: a consumer must not
+do BOTH — an alias over a dual-key document makes the field arrive twice and
+serde rejects it. That rejection is now asserted, because the tempting fix
+for it is deleting the legacy key, which is the break A6 exists to avoid.
+
+### A4: the measurement was wrong twice before it was right
+
+Both errors were caught by the sentry failing, neither by review.
+
+1. **Tip-vs-stock-top read +21 µm on a pass that removes nothing.** The grid
+   snaps each lookup to the nearest ray, up to `cell/√2` off the tool axis,
+   and the machined surface there is legitimately above the tip by the
+   cutter's own profile. Fixed by comparing against
+   `tip_z + height_at_radius(offset)` — material above the CUTTER, which is
+   what removal means.
+2. **That left +18 µm, not 0.** A reference stock is a *sampled* surface and
+   the simulation that built it stamped at finite spacing, so a pass riding
+   on ground it already cut can never read zero. The floor is therefore
+   derived — `cell²/(2·tip radius)` — and ships **on the finding**, because
+   "18 µm against a 20.8 µm floor" and "0 against 20.8" are different
+   statements and a reader must be able to tell which one they have.
+
+The margin on this fixture is thin (17.8 vs 20.8 µm) and is stated in the
+sentry rather than papered over: a finer simulation grid widens it, a coarser
+one narrows it.
+
+### The full programme
+
+| wave | item | key commits | outcome in one line |
+|---|---|---|---|
+| — | PR-0…PR-8 (base plan) | see entries above | measurement contract, tool-scale semantics, resolution policy, rest-routing radius, reach policy — the four instrument defects fixed |
+| 1 | C5 + C10 | `288b19b`, `88ea12f`, `9e43b78` | two recurring taxes ended; `.gitignore` had eaten a second source file |
+| 2 | C1 provenance | `61bd97c`, `77267ce`, `60e2c0f` | typestate contract; 15/15 fingerprints identical |
+| 3 | C2 sentinels | `ce426d6`, `96bc300` | `GridZ` + private grids; `steep_shallow` exonerated |
+| 4 | A/M12 + A/M11 | `3f47bcc`, `665cd1d`, `7642bf0`, `6edaaa1` | off-frame cancel/status, then the `generate_all` fixpoint — never ship an unobservable, unabortable loop |
+| 5 | C6 fixtures | `c8e40f7`, `1cd6eee` | `tests/common/` pinned bit-identically to its donors |
+| 6 | A/M6 `claims_reference` | `5c24d62`, `21edaea`, `486364f` | default flipped to `Auto`; root cause was `territory_clip`'s gating, narrower than "the reference mis-measures" |
+| 7a/7b | M3 classifier | `efabeec`, `05cac97`, `6c73810`, `0711568`, `5d8c115` | pre-registered hypothesis REFUTED by measurement; adopted COLUMNS-gated on 1 001 987 columns; generation −22.5%, cutting +5.6% |
+| 8 | C3 + C4 + C8 | `f792fe9`, `92eaea1`, `c44a2be`, `ad445f3`, `b514046`, `263ba5d`, `6d134c8`, `c1db76f`, `f5925f8`, `ef9dfec` | width-model unification, semantic keys, findings plumbing; three stale claims corrected, `regions 0` was three causes wearing one symptom |
+| 9/9b | M4 scallop | `ae5eed6`, `28503db`, `a61491b`, `dde7a54`, `a376b1e`, `99e1bdb` | gouge was three defects, two shipped; iso-field ADOPTION DECLINED because fixing the shipped arm dissolved the case for it |
+| 10 | C9 reach | `9963128`, `0dff17e`, `ef4011c`, `d8d09da` | sampled reach beats the V on the shapes it misreads; production does NOT switch (the grid is 50–250× too coarse); a plain trapezoid was never the counter-example |
+| 11 | A/M10 + A/M7 | `74571b5`, `a2741a5`, `b352214` | the `2 × cell_size` descent pad was the wrong SHAPE for the class; retract-trip + footprint instruments land |
+| 12 | relink + A/M7 | `9f3c708`, `adc54da`, `77f2b7a` | intra-pass hookup ON: trips 24 → 3, cycle −59.3%; the blocker was the GATE for the third time on this feature |
+| 13 | M5 research | `94c2610`, `2d051f4` | the comment was right about the symptom and 40× wrong about the size |
+| 14 | M5 implementation | `e3427f8` | arcs kept as cascade STATE; pocket's 20 s+ hang → under 0.01 s |
+| 15 | H4 | `7d61ad3`, `fe4bb09`, `0ea9b36`, `cad842d` | the ledger: four instruments, twenty rows, two fixtures re-measured; "scallop wins every time" is a split decision, and a cascade rest pass removed nothing at full price |
+| 16 | L1 + Checkpoint E | `bfc50ad`, `e0f29ed`, `410c9a8`, *(this)* | A4/A5/A6/B8 executed, user-facing docs reconciled with the code, backlog absorbed |
+
+### What is shipped
+
+Every instrument this programme was convened over is fixed and has a sentry.
+The behavioural changes that landed — the classification switch, the offset
+cascade's arc-carrying state, intra-pass hookup, the descent pad deletion,
+`claims_reference: Auto`, the waterline floor, the scallop chord defects —
+each carry their own evidence pack and their own gate. The reporting surface
+gained eleven report-only findings under one contract, and the ledger that
+says which historical verdicts they invalidate.
+
+### What is open, each with the condition for re-opening
+
+Nothing below is a surprise; every item was stated by the wave that left it.
+
+| item | owner condition |
+|---|---|
+| **B1** — the v3 closure (ledger row 5) | Re-opening is a FIXTURE-QUALITY campaign (honest tessellation, a gate bin above repeatability), not a strategy campaign. Unscheduled. |
+| **B2** — rows 9, 10 (scaled-fixture, cascade-invariance) | Downstream of §3. Re-open only if a mix worth scaling is found. |
+| **B3** — four disagreeing chipload numbers (§5.1) | The verdict mechanism is verified and the disclosure fixed; narration-nominal 0.0714 / clamped 0.0044→0.0250 / gate-observed 0.0007 / band 0.00458–0.00916 are still unreconciled. |
+| **B4** — A/L2, the Rivers 6.07 mm axial spike | §5.2 names the first thing to check (upstream coverage) and rules out the assumed mechanism. Not closed. |
+| **B5** — `arcfit`'s intent inheritance | A real defect standing since wave 12: it relabels lead/entry geometry as cutting, so every gate selecting a population BY LABEL reads it wrong. Fixing it re-pins fingerprints repo-wide. A wave, not a footnote. |
+| **B7** — the GUI worker's hand-copied findings path | Patched five times now, never fixed. The next field will need the same line. Owner: whoever is willing to make the copy structural (the CLI's exhaustive destructure is the pattern that works). |
+| **rest-grid anomaly** (P9 bullet 4) | Refining the rest cell makes the shipped detector find LESS feature and measured reach collapse toward zero. Pinned in `tests/rest_grid_resolution_c9.rs`. Owner: whoever next touches `rest_field::measure_cross_section`. |
+| **`VerySteep` Auto-heights** | Only `UnifiedFinish`'s `VerySteep` arm measures a height clip, so partial clips in MidSteep/Shallow are invisible. Behavioural fix, deliberately not taken inside a measurement programme. |
+| **cavalier `Shape` panic mapping** | A panic on the `Shape` path can be mapped to "collapsed offset" — a hang turning into a silent wrong answer. Now carried here rather than in a wave's prose (P13). |
+| **Criterion baselines** | The offset and classification benches have no committed baseline, so a regression is only visible to whoever happens to run them twice. |
+| **D-16.1** — the −235 µm band run-off (A5) | Filed above with renders and reproduction. A planner-geometry change at a band boundary; moves emitted geometry. |
+| **D-16.2** — `UnifiedFinish`'s shallow band ignores `stock_to_leave` | Filed above. A dial that reports no error and does nothing. |
+| **P7** — ignored mega-harness rot | Untouched by any wave, and wave 15 added a third harness of the same shape. |
+
+### The handoff: what live validation must confirm
+
+**Nothing in waves 15 or 16 is live.** Every number is headless, analytic or
+simulated. Addendum B §B.4's prerequisites apply in full: rebuild release
+BEFORE connecting (`.mcp.json` runs `cargo run --release` and a cold build
+blows the 30 s connect timeout with no error that points at the build);
+restore session state; **match sim resolution to the tool TIP**; regenerate
+rest ops after re-simulating, because a new simulation does **not** mark
+toolpaths stale; never save over wanaka.
+
+| # | Must confirm | Origin |
+|---|---|---|
+| C1 | **Hookup-default regeneration on an OLD project.** `intra_pass_hookup_mm` is `#[serde(default)]` at 3.0 and `intra_region_hookup_mm` ships ON at 6.0, so a saved project without the keys reloads with links and regenerates. The operator's Checkpoint D ruling carried this re-check as an explicit condition. | waves 12, 14 |
+| C2 | **TSP-reorder value on a real part.** Surface ops now reorder behind region-node barriers, and the span-tiling defect that inverted the mix table is fixed (`77f2b7a`). Never seen on a part. | wave 12 / span defect |
+| C3 | **Per-point fan geometry** (C9 claims fan) — measured pointwise, never rendered. | wave 10 |
+| C4 | **`claims_reference: Auto`** picks `machined_stock` in a real cascade and says so. This is D4's fix; if Auto mis-derives on a live chain, every cascade number regresses to void. | A/M6, `5c24d62` |
+| C5 | **M3's +5.6% cutting time** on wanaka-class relief. Quality is a wash and generation is 22.5% faster, but the honest classifier finds more very-steep ground and waterline is the expensive strategy. The lever if unwanted is `waterline_threshold_deg`, **not** the classifier. | wave 7b |
+| C6 | **Collision count stability across simulation resolutions** on a fixed toolpath (definition-of-done item 15). The live 20-collision reading was a 0.1 vs 0.5 mm resolution asymmetry, not an emission defect. **Never clear collisions across mismatched resolutions.** | wave 11 / A/M10 |
+| C7 | The **narration and chipload wording changes** of §5 read correctly on a real diagnostic panel. They are the only operator-visible output that wave moved. | wave 15 |
+
+Wave 16 adds two of its own to that list, both operator-visible and neither
+live: the `geom.zero_removal` diagnostic and its narration line (A4), and the
+dual-key JSON on the per-toolpath summary (A6) — a consumer reading the
+GUI/MCP wire should see both keys and the same number under each.
+
+### Gates
+
+`cargo fmt --check` clean and `cargo clippy --workspace --all-targets -D
+warnings` zero before every commit. Tests per crate: `rs_cam_cli` 16/16,
+`standing_material_channel_am9` 6/6, `zero_removal_rest_pass_a4` 2/2,
+`claims_reference_cascade_am6` 8/8, `air_cut_denominators_lh1` 4/4,
+`rs_cam_core --lib` 2 227 passed with **only the three permanent adaptive3d
+reds** (`peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance`,
+`rapid_segment_lifts_to_safe_z_before_traverse`,
+`planner_sim_dexel_parity_agent_search`).
+
+### Honest limits of this wave
+
+* **A4 is measured pre-dressup**, on the geometry the planner emitted. That
+  is deliberate — a pass riding on its own previous cut is not "in air" by
+  the air-cut filter's test and survives it — but it means a finding cannot
+  account for what a later dressup deletes.
+* **A4's tip-column measurement is not a disc.** A pass that removes material
+  only under its FLANK would read as zero. Nothing a 3-axis
+  surface-following pass does, and stated on the function rather than
+  discovered later.
+* **The A4 fixture is 40 × 40 mm and one tool.** It reproduces §3.2's SHAPE
+  (a rest pass replaying its own lines), not its scale.
+* **Neither new report is live.** See the handoff table.
+* **`stock_to_leave` could not be used as the A4 variable**, which is how
+  D-16.2 was found. A defect discovered by a test that needed the dial to
+  work is the cheapest kind; the expensive kind is the one nobody's test
+  needed.
