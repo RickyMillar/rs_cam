@@ -368,17 +368,24 @@ fn multi_node_op_reports_nonzero_trips_with_a_trustworthy_split() {
 /// shipped default-off ahead of the A/B that would have judged it.
 ///
 /// Wave 12 cleared the reason wave 11 gave for leaving BOTH off — the
-/// relinker does not drop cut positions — so the number is measured here and
-/// reported. It is deliberately NOT flipped: unlike scallop's ring-to-ring
-/// case, this one is a region-level decision whose value depends on how the
-/// planner's router links regions AFTERWARDS, and that trade belongs to an
-/// operator with a real part in front of them, not to a synthetic
-/// two-groove plateau.
+/// relinker does not drop cut positions — measured the number, and still
+/// declined to flip it, because a region-level trade depends on how the
+/// planner's router links regions AFTERWARDS and that belongs to an operator
+/// with a real part in front of them, not to a synthetic two-groove plateau.
 ///
-/// Report-only by design, with one safety invariant: keeping the tool down
-/// must never ADD retract round trips.
+/// **Wave 14: that operator was asked, and said ON at 6.0.** The ruling was
+/// made in the Checkpoint D session (2026-08-03) with wave 12's measured
+/// table as the evidence, and is re-checked at the end-of-programme live
+/// validation. `default_unified_finish_intra_region_hookup_mm` is now 6.0, so
+/// this test changed job: it no longer documents a deferral, it holds the
+/// shipped default and the safety invariant that travels with it.
+///
+/// The invariant is unchanged and is the whole point: **keeping the tool down
+/// must never ADD retract round trips.** The A/B is still run here rather than
+/// asserted from the default, because the comparison is what makes the
+/// invariant meaningful.
 #[test]
-fn intra_region_hookup_is_measured_and_left_to_the_operator() {
+fn intra_region_hookup_ships_on_by_operator_ruling() {
     let off = {
         let mut s = session_with_hookup(0.0);
         generate(&mut s, 0);
@@ -429,5 +436,22 @@ fn intra_region_hookup_is_measured_and_left_to_the_operator() {
         n_trips <= o_trips,
         "keeping the tool down must not ADD retract round trips: \
          {o_trips} -> {n_trips}"
+    );
+
+    // The shipped default IS the `on` arm. Pinned here so a silent revert to
+    // 0.0 — or a drift between the serde default and the core one — fails
+    // with the reason attached rather than quietly halving the feed rate.
+    assert_eq!(
+        UnifiedFinishConfig::default().intra_region_hookup_mm,
+        6.0,
+        "operator ruling (Checkpoint D session, 2026-08-03): the region-level \
+         hookup ships ON at 6.0 mm"
+    );
+    assert_eq!(
+        rs_cam_core::unified_finish::UnifiedFinishParams::default().intra_region_hookup_mm,
+        UnifiedFinishConfig::default().intra_region_hookup_mm,
+        "the core default and the serde default must agree — a config layer \
+         that disagrees with its own core is this programme's recurring \
+         divergence class"
     );
 }

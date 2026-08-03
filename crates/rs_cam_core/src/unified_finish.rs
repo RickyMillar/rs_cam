@@ -185,7 +185,15 @@ impl Default for UnifiedFinishParams {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 30.0,
-            intra_region_hookup_mm: 0.0,
+            // Kept in lockstep with
+            // `operation_configs::default_unified_finish_intra_region_hookup_mm`
+            // (ON at 6.0 since 2026-08-03, by operator ruling on wave 12's
+            // evidence). Production always overrides this from config, so
+            // only direct library callers and unit tests read it — which is
+            // exactly why it matters that it agrees: a core default and a
+            // serde default that disagree is the divergence class this
+            // programme has already found twice.
+            intra_region_hookup_mm: 6.0,
             classification_sampler: ClassificationSampler::PRODUCTION,
         }
     }
