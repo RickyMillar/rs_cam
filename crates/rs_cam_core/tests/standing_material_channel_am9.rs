@@ -87,8 +87,24 @@ fn scallop_op(scallop_height: f64) -> OperationConfig {
 /// bridges any feature below its own radius and the offset surface would read
 /// flat (`finish_setup.rs`'s documented blind spot).
 ///
-/// Measured at the time of writing: `max_rings = 119`, 120 rings emitted,
-/// 13.3 mm² left standing.
+/// Measured at A/M9: `max_rings = 119`, 120 rings emitted, 13.3 mm² left
+/// standing. **Re-measured at wave 14 (arc-carrying cascade): 0.70 mm².**
+///
+/// The cascade did not change its ring budget; it changed where its rings
+/// put their vertices. `ring_stepover` takes the MIN over the ring's
+/// samples, and the chord-flattened cascade's arc-join debris CLUSTERED at
+/// reflex corners — the highest-curvature, lowest-stepover places on the
+/// ring — so the minimum was being drawn from a sample set biased towards
+/// the tightest ground. The arc cascade's vertices are spread by the flatten
+/// policy instead, so the same minimum reads ~25% less conservative and the
+/// cascade reaches 19× further into the interior on this fixture.
+///
+/// That is an improvement in reach and a WEAKENING of an already-known
+/// defect's accidental safety margin (`CHECKPOINT_B_EVIDENCE.md`: "the fix is
+/// in `ring_stepover`, not in the budget"). It is the M4 envelope oracle's
+/// job to say whether the wider stepover holds the cusp — not this test's.
+/// This one only has to prove the truncation is REPORTED, and 0.70 mm²
+/// against a control that reads exactly 0.0 does that.
 fn truncated_cascade_session() -> ProjectSession {
     let half = 25.0;
     single_op_session(
@@ -186,9 +202,13 @@ fn truncated_cascade_is_visible_on_every_surface() {
         .expect("a scallop cascade measured its residual — this must not be `None`");
     println!("truncated cascade: standing material {area:.1} mm²");
     assert!(
-        area > 1.0,
+        area > 0.1,
         "the corrugation forces every ring below the flat-ground budget, so the \
-         cascade cannot reach the interior; got {area} mm²"
+         cascade cannot reach the interior; got {area} mm². The bar is 0.1 mm² \
+         rather than the 1.0 mm² A/M9 set because wave 14's arc-carrying \
+         cascade cut this fixture's truncation from 13.3 mm² to 0.70 mm² — see \
+         `truncated_cascade_session` for why. The control on flat ground reads \
+         exactly 0.0, so the separation is still categorical."
     );
 
     // 2. Narration — the agent-facing surface that was silent before A/M9.

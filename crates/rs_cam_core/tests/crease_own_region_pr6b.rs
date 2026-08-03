@@ -423,13 +423,43 @@ fn production_unified_finish_output_is_byte_identical() {
     // (−1.6513/−1.7358/−1.6931 → −1.7802/−1.7641/−1.7789) without passing
     // it. Denser, more consistent sampling of the SAME surface — not a new
     // pass, not a wander outside the groove rims, not a duplicate.
+    //
+    // BOTH RE-PINNED 2026-08-03 (C-sequence wave 14): taper 1874 → 1387
+    // (−26.0%), ball 1301 → 1072 (−17.6%). The mover is the arc-carrying
+    // offset cascade adopted at Checkpoint D — `UnifiedFinish` embeds scallop
+    // for its MidSteep band, which is exactly why this second pin exists, and
+    // wave 14 came looking for it rather than being told about it afterwards.
+    //
+    // Fewer moves, and the reason is that there are fewer VERTICES to emit,
+    // not fewer places visited: the cascade no longer flattens each ring's
+    // arc joins to chords before feeding it back in, so the accumulated
+    // arc-join debris — which drop-only decimation then had to remove again —
+    // never exists. Ring PLACEMENT is measured EXACT by the 2D erosion oracle
+    // (0.0 µm, against 143 µm for the flattened cascade), and the same-build
+    // M4 envelope A/B on the grooved block has the arc cascade at 46.5 µm
+    // achieved cusp / 3.17 mm² unfinished against decimation's 58.5 µm /
+    // 4.38 mm². The chord-sag gate that bounds what scallop feeds
+    // (`scallop_isofield_gouge_m4`) is green on both ring sources and all
+    // three fixtures at a 100 µm tolerance, after two chord-refinement
+    // defects this change exposed were fixed.
+    //
+    // **Both values below were re-captured a second time, at the END of wave
+    // 14** (taper 1387 -> 1595, ball 1072 -> 1109). The first capture was
+    // taken before `polygon::FlattenPolicy` gained its SAMPLING bound
+    // (`scallop::RingSampleBound`), so it described a build that does not
+    // ship. Same erratum as `finish_resolution_policy_pr3`'s, same lesson:
+    // pins are captured after a wave's last behavioural commit, not during.
+    // The added moves are ring samples on straight runs, and what they buy is
+    // measured on the envelope oracle in `ring_sample_bound_w14` — gouge
+    // containment on surfaces with slope discontinuities (1.570 mm² -> 0.000
+    // mm² on the grooved block), not achieved cusp.
     for (label, tool, expect) in [
         (
             "taper",
             tapered_ball_tool(),
-            (1874usize, 0x7858_b930_e4a8_bff7u64),
+            (1595usize, 0xfbd7_fd11_8b8f_2e25u64),
         ),
-        ("ball", ball_tool(), (1301usize, 0xcfab_a674_0efc_aeceu64)),
+        ("ball", ball_tool(), (1109usize, 0x0751_08d5_14d2_fcddu64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");

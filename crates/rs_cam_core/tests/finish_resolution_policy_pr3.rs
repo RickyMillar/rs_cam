@@ -111,9 +111,9 @@ fn scallop_fingerprint() {
     let tp = scallop_toolpath(&mesh, &index, &t, &params);
     assert_eq!(
         fingerprint(&tp),
-        (1423, 11432160290294522021),
-        "scallop output moved; re-pinned at M4 phase C (`dde7a54`) when chord \
-         refinement started bounding what it emits — see below"
+        (2674, 7524232187494395883),
+        "scallop output moved; re-pinned at wave 14 when the ring cascade \
+         started carrying arcs — see the history table below"
     );
 }
 
@@ -124,6 +124,57 @@ fn scallop_fingerprint() {
 // |---|---|---|
 // | `(1318, 4897619324930985607)` | HEAD `606b8d5`, before the H3 policy refactor | original capture |
 // | `(1423, 11432160290294522021)` | M4 phase C, `dde7a54` | +105 moves (+8.0%) |
+// | `(2674, 7524232187494395883)` | wave 14, arc-carrying cascade | **+1251 moves (+87.9%)** |
+//
+// ## Erratum — this pin was briefly wrong, and the wrong value is instructive
+//
+// An earlier wave-14 draft pinned `(899, 15769164453032324939)` and described
+// the move as **-36.8%**. That number was captured from a build in which the
+// ring flattening had a DEVIATION budget and no SAMPLING bound, and it did not
+// survive contact with `polygon::FlattenPolicy::with_max_segment` landing.
+// 899 is reproducible — it is exactly what
+// `ring_sample_bound_w14::sample_bound_matrix` reads for the
+// `RingSampleBound::ToleranceOnly` arm on this fixture — so the stale pin was
+// not noise; it was a real measurement of a configuration that does not ship.
+// The lesson is the M4 erratum's, again: **a pin captured mid-wave describes
+// the build it was captured on, not the wave's conclusion.** Re-capture pins
+// after the last behavioural commit of a wave, never during.
+//
+// ## Why the move is +88% and why that is bought, not spent
+//
+// Three independent causes, none of which this pin adjudicates — the gates
+// below and the oracle named in each do:
+//
+// 1. **The cascade carries arcs.** `offset_polygon`'s output is no longer
+//    chord-flattened between rings, so the ring vertex set is the flatten
+//    policy's instead of cavalier's accumulated arc-join debris decimated
+//    back down at `0.75 x cell`. Those points sit ON the true eroded ring
+//    rather than inside it — the 2D erosion oracle reads 0.0 µm for this
+//    cascade against 143 µm for the flattened one. On its own this cause
+//    REMOVES points.
+// 2. **The flattening states its sampling density** (`RingSampleBound`).
+//    A deviation budget puts points where a ring curves and owes a straight
+//    run none, but scallop reads every ring vertex as a drop-cutter sample.
+//    This is the cause of the +88%, and it is the one that was interrogated
+//    rather than assumed: `ring_sample_bound_w14` scores all three bounds on
+//    the M4 envelope oracle, and on THIS fixture the extra samples buy
+//    nothing measurable (68.1 µm achieved cusp bounded vs 68.1 µm unbounded,
+//    0.000 mm² gouge either way) — because a smooth ridge has no feature for
+//    a straight run to step over. On the grooved block, which does, the
+//    unbounded arm ships **1.570 mm² of gouge at -115.5 µm** against
+//    **0.000 mm²** bounded. The bound is load-bearing for GOUGE, not for
+//    cusp, and this fixture cannot show it. See that file's header.
+// 3. **Chord refinement got two fixes it needed to survive the phase change.**
+//    The probe set went from four intervals to eight, and a split point that
+//    lands within the 50 µm floor of an end is now CLAMPED into the
+//    admissible band instead of abandoning the whole chord. Both were found by
+//    `scallop_isofield_gouge_m4::chord_refinement_bounds_every_chord_from_either_ring_source`
+//    going red at 142.4 µm and then 216.9 µm against a 100 µm tolerance — on
+//    chords the four-probe check had been passing by luck of endpoint phase.
+//
+// More moves AND a bounded chord AND an exact ring. On the M4 grooved block
+// the same-build A/B has the arc cascade at 46.5 µm achieved cusp against
+// drop-only decimation's 58.5 µm, and 3.17 mm² unfinished against 4.38 mm².
 //
 // The M4 move is chord refinement gaining a guarantee it never had. Three
 // things changed, all of which can only ADD points to a chord that was

@@ -513,27 +513,119 @@ pub struct ScallopStepoverPolicy {
     pub across_polygons: PolygonReduce,
     pub ring_source: RingSource,
     pub cleanup: RingCleanup,
+    pub sample_bound: RingSampleBound,
 }
 
-/// **M5 research seam.** What the cascade does to an offset ring before it
-/// becomes the next ring's input.
+/// How dense a flattened ring's STRAIGHT runs are, independent of how
+/// accurately its curves are approximated.
+///
+/// Wave 14 seam, and it exists because the arc-carrying cascade separated two
+/// things that used to arrive fused. [`crate::polygon::FlattenPolicy`] has a
+/// deviation budget — how far a chord may sit from the arc it replaces — and
+/// that budget puts points where the ring CURVES and nowhere else. Correct for
+/// a consumer that wants a shape. Scallop is not one: it lifts every ring
+/// vertex with a drop-cutter query and asks a coverage mask whether that XY
+/// sits over real mesh, so a straight run's interior points are *samples of a
+/// surface*, and a deviation budget owes it none of them.
+///
+/// So the sampling density is stated here rather than inherited, and the
+/// variants are the candidates Checkpoint D's follow-up A/B scored on the M4
+/// envelope oracle (`ring_sample_bound_w14.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RingSampleBound {
+    /// **Shipped.** Spacing derived from the OPERATION'S OWN chord tolerance
+    /// and the cusp-forming radius — the surface-sampling analogue of the
+    /// scallop law, `2·√(2·r·tol)`, i.e. the chord across which a feature of
+    /// tool-tip curvature can hide a `tol`-deep deviation from the two
+    /// endpoints that bracket it. Tight tolerances buy density; loose ones
+    /// do not.
+    ToleranceScaled,
+    /// The flat-ground stepover — the spacing the outer boundary rectangle is
+    /// seeded at. Fixed with respect to the tolerance dial: it reads the cusp
+    /// height where [`Self::ToleranceScaled`] reads the chord tolerance.
+    #[default]
+    FlatGroundStepover,
+    /// No bound at all: the honest reading of "flatten to a tolerance", and
+    /// wrong for this consumer — on a mesh of disjoint islands the surviving
+    /// corners all sit off the part and the operation emits nothing.
+    /// Retained as the isolator that proves the bound is load-bearing.
+    ToleranceOnly,
+}
+
+impl RingSampleBound {
+    pub const ALL: [Self; 3] = [
+        Self::ToleranceScaled,
+        Self::FlatGroundStepover,
+        Self::ToleranceOnly,
+    ];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ToleranceScaled => "tolerance-scaled",
+            Self::FlatGroundStepover => "flat-ground stepover",
+            Self::ToleranceOnly => "tolerance only (no bound)",
+        }
+    }
+
+    /// The maximum emitted segment length, or `None` for "deviation budget
+    /// only". `cusp_r` is the cusp-forming radius, never the shank.
+    #[must_use]
+    pub fn max_segment_mm(
+        self,
+        cusp_r: f64,
+        scallop_height: f64,
+        chord_tolerance: f64,
+    ) -> Option<f64> {
+        let floor = cusp_r * 0.1;
+        match self {
+            Self::ToleranceScaled => Some(
+                crate::scallop_math::stepover_from_scallop_flat(cusp_r, chord_tolerance).max(floor),
+            ),
+            Self::FlatGroundStepover => Some(
+                crate::scallop_math::stepover_from_scallop_flat(cusp_r, scallop_height).max(floor),
+            ),
+            Self::ToleranceOnly => None,
+        }
+    }
+}
+
+/// What the cascade does to an offset ring before it becomes the next ring's
+/// input.
 ///
 /// The offset primitive doubles a concave ring's vertex count per pass
 /// (`tests/offset_growth_m5.rs`: added vertices == arc-join segments, 1:1),
-/// and [`Self::DecimateAtCell`] is the compensation scallop has shipped since
-/// P2.f. The other variants exist so Checkpoint D can see what each candidate
-/// costs on the SURFACE, not only in the vertex count — the M4 oracle scores
-/// them in `offset_candidates_m5.rs`.
+/// because `Polygon2::from_pline` throws away each arc join's bulge and keeps
+/// its two endpoints. Every variant below except [`Self::ArcCascade`] is a
+/// *brake* on that: something that removes vertices after the fact, at some
+/// price in geometry.
 ///
-/// [`Self::DecimateAtCell`] is what production passes, and the loop is
-/// byte-identical under it.
+/// [`Self::ArcCascade`] is what ships since Checkpoint D (2026-08-03): the
+/// rings keep their arcs between offsets and are flattened exactly once, at
+/// the boundary where they become feed moves, under
+/// [`crate::polygon::FlattenPolicy`]. It removes the mechanism instead of
+/// damping it — 0.0 µm off the erosion oracle where every brake is 4–300 µm,
+/// 200 rings bounded and *shrinking*, and no eroded-area price (drop-only
+/// decimation leaves +9.83% too much material on a comb).
+///
+/// The brakes are retained as research arms so the M4 envelope oracle can
+/// keep scoring the alternatives; **only `ArcCascade` is reachable from a
+/// production entry point.** They run on the flattened cascade, which is the
+/// only way they are comparable to what they compensated for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RingCleanup {
-    /// Shipped: drop-only decimation at `0.75 × heightmap cell`.
+    /// **Shipped since Checkpoint D.** Arcs are carried from ring to ring and
+    /// flattened once, at the emission boundary.
     #[default]
+    ArcCascade,
+    /// Drop-only decimation at `0.75 × heightmap cell` — what shipped from
+    /// P2.f until Checkpoint D. Retired from production: it is not bounded in
+    /// world units (1.8 mm error, 0.54 mm mean over-cut on a coarse pocket
+    /// boundary) and it rounds off features narrower than a few spacings
+    /// (+9.83% eroded area on the comb fixture).
     DecimateAtCell,
-    /// Nothing at all — the cascade every other consumer of `offset_polygon`
-    /// runs today.
+    /// Nothing at all — the flattened cascade every single-shot consumer of
+    /// `offset_polygon` runs today, with no brake.
     KeepEverything,
     /// `polygon::cleanup_collinear` at 1 nm: duplicates and genuinely
     /// collinear vertices only.
@@ -547,6 +639,7 @@ impl RingCleanup {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
+            Self::ArcCascade => "arc cascade",
             Self::DecimateAtCell => "decimate@0.75cell",
             Self::KeepEverything => "keep-all",
             Self::CollinearDedup => "collinear+dedup",
@@ -554,11 +647,22 @@ impl RingCleanup {
         }
     }
 
-    /// Reduce one offset result. `None` culls it.
+    /// True when the rings are carried as arcs rather than as polygons.
+    #[must_use]
+    pub const fn carries_arcs(self) -> bool {
+        matches!(self, Self::ArcCascade)
+    }
+
+    /// Reduce one offset result. `None` culls it. Only ever called on the
+    /// flattened (research) cascade.
     fn apply(self, poly: &Polygon2, min_spacing: f64, chord_tolerance: f64) -> Option<Polygon2> {
         match self {
+            // The arc cascade does its work in the arc domain, before this
+            // point; nothing is dropped here.
+            Self::ArcCascade | Self::KeepEverything => {
+                (poly.exterior.len() >= 3).then(|| poly.clone())
+            }
             Self::DecimateAtCell => decimate_ring_polygon(poly, min_spacing),
-            Self::KeepEverything => (poly.exterior.len() >= 3).then(|| poly.clone()),
             Self::CollinearDedup => crate::polygon::cleanup_collinear(poly, 1e-5, 1e-6),
             Self::SimplifyBounded => crate::polygon::simplify_bounded(poly, chord_tolerance * 0.1),
         }
@@ -574,20 +678,22 @@ impl ScallopStepoverPolicy {
         curvature: CurvaturePolicy::Raw,
         across_polygons: PolygonReduce::MinAcross,
         ring_source: RingSource::OffsetCascade,
-        cleanup: RingCleanup::DecimateAtCell,
+        cleanup: RingCleanup::ArcCascade,
+        sample_bound: RingSampleBound::FlatGroundStepover,
     };
 
     #[must_use]
     pub fn label(self) -> String {
         format!(
-            "{} / {} / {} / {} / {} / {} / {}",
+            "{} / {} / {} / {} / {} / {} / {} / {}",
             self.ring_source.label(),
             self.reducer.label(),
             self.sampling.label(),
             self.geometry.label(),
             self.curvature.label(),
             self.across_polygons.label(),
-            self.cleanup.label()
+            self.cleanup.label(),
+            self.sample_bound.label()
         )
     }
 
@@ -599,7 +705,8 @@ impl ScallopStepoverPolicy {
             && matches!(self.curvature, CurvaturePolicy::Raw)
             && matches!(self.across_polygons, PolygonReduce::MinAcross)
             && matches!(self.ring_source, RingSource::OffsetCascade)
-            && matches!(self.cleanup, RingCleanup::DecimateAtCell)
+            && matches!(self.cleanup, RingCleanup::ArcCascade)
+            && matches!(self.sample_bound, RingSampleBound::FlatGroundStepover)
     }
 
     /// The per-point stepover this policy's geometry+curvature choice yields,
@@ -886,7 +993,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     // gouge and the undecimated iso-field reached −995 µm on the grooved
     // block (`CHECKPOINT_C_EVIDENCE.md` §3.8).
     //
-    // And at least FOUR intervals, so the check cannot alias past the worst
+    // And at least EIGHT intervals, so the check cannot alias past the worst
     // point. `probe_step` is sized from the generation grid (`cell / 2`),
     // which on a 0.75 mm cell affords a 0.7 mm chord exactly one interior
     // probe — at its midpoint. A chord crossing a groove wall has its worst
@@ -896,9 +1003,23 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     // tolerance it was in fact violating. The grid sizes ring PLACEMENT; it
     // has no business sizing a tolerance check, which is an exact
     // drop-cutter query at any XY.
+    //
+    // M4 phase C set that minimum at FOUR and called it enough to stop the
+    // aliasing. Wave 14 falsified that on the mixed-slope ribbon: a 0.374 mm
+    // chord probed at t = 0.25/0.50/0.75 read under the 70 µm accept
+    // threshold while its true worst sat at t = 0.316, 142.4 µm under the
+    // surface — a probe-to-truth ratio of over 2.0 against the 1.35 the
+    // accept margin was calibrated for. Four intervals did not survive a
+    // change of endpoint PHASE, which means it was never bounding anything;
+    // it was passing by luck of where the ring vertices happened to land.
+    // Sampling error on a smooth surface falls with the square of the probe
+    // spacing, so eight intervals buys back a factor of four — enough that
+    // the accept margin is doing the job it is documented to do rather than
+    // covering for the probe set. It costs one extra drop-cutter query per
+    // three on chords that are probed at all.
     let step = ctx
         .probe_step
-        .min(len * 0.25)
+        .min(len * 0.125)
         .max(CHORD_REFINE_MIN_SPLIT_MM);
     let segments = (len / step).ceil().max(2.0);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -934,16 +1055,40 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     if err <= ctx.chord_tolerance * CHORD_REFINE_ACCEPT_FRACTION {
         return;
     }
-    let w = P3::new(a.x + dx * t, a.y + dy * t, surface_z);
-    // The split point must not orphan a sub-floor segment on either side.
-    // The probe grid alone does not guarantee this: `t` is the worst probe,
-    // and on a short chord that is the midpoint, but on a long one it can sit
-    // one probe step from an end.
-    let head = (w.x - a.x).hypot(w.y - a.y);
-    let tail = (b.x - w.x).hypot(b.y - w.y);
-    if head < CHORD_REFINE_MIN_SPLIT_MM || tail < CHORD_REFINE_MIN_SPLIT_MM {
-        return;
-    }
+    // The split point must not orphan a sub-floor segment on either side, so
+    // it is CLAMPED into the admissible band rather than abandoned.
+    //
+    // Wave 14: this used to `return` whenever the worst probe sat within
+    // `CHORD_REFINE_MIN_SPLIT_MM` of either end — i.e. a chord whose worst
+    // deviation is near an endpoint was left *entirely* unrefined, tolerance
+    // violation and all. Denser probing made that worse rather than better,
+    // which is how it surfaced: on the narrow ridge a 0.363 mm chord whose
+    // true worst sits at t = 0.158 read its worst probe at t = 0.125, whose
+    // head (45 µm) is under the 50 µm floor, so refinement declined and
+    // shipped a 216.9 µm violation of a 100 µm tolerance. With four probes
+    // the same chord split at t = 0.25 and passed — the guard was rewarding
+    // a coarser check, which is exactly backwards.
+    //
+    // Clamping keeps the floor's promise (no sub-50 µm segment is emitted)
+    // while still cutting the chord in two, and the offending stretch lands
+    // in the longer half where recursion can reach it. `len > 2 ×
+    // MIN_SPLIT` is guaranteed above, so the band is never empty.
+    let t_floor = CHORD_REFINE_MIN_SPLIT_MM / len;
+    let t_split = t.clamp(t_floor, 1.0 - t_floor);
+    let (wx, wy) = (a.x + dx * t_split, a.y + dy * t_split);
+    let split_z = if (t_split - t).abs() < f64::EPSILON {
+        surface_z
+    } else {
+        // The clamp moved the point, so the surface height there is a
+        // different query — never re-use the probe's answer for it.
+        let cl = point_drop_cutter(wx, wy, ctx.mesh, ctx.index, ctx.cutter);
+        if !cl.z.is_finite() || !heightmap_covered_at_world(ctx.heightmap, wx, wy) {
+            out.push((P3::new(wx, wy, ctx.min_z + ctx.stock_to_leave), false));
+            return;
+        }
+        cl.z + ctx.stock_to_leave
+    };
+    let w = P3::new(wx, wy, split_z);
     refine_chord(a, w, ctx, depth - 1, out);
     out.push((w, true));
     refine_chord(w, b, ctx, depth - 1, out);
@@ -1113,7 +1258,83 @@ fn generate_scallop_rings_with_cancel(
         return Ok((rings_3d, 0.0));
     }
 
-    // Iteratively offset inward
+    // Iteratively offset inward.
+    //
+    // Checkpoint D (2026-08-03): under the shipped `RingCleanup::ArcCascade`
+    // the cascade STATE is `arc_rings` — cavalier's own arc-carrying
+    // polylines — and `current_polys` is the flattened VIEW of it, produced
+    // once per ring by the single `FlattenPolicy` below and used for exactly
+    // two things: sampling the next stepover, and lifting to 3D. Nothing ever
+    // feeds a flattened ring back into an offset, which is what the whole
+    // vertex-doubling defect was. The research arms keep `arc_rings` at
+    // `None` and run the flattened cascade they were measured on.
+    // The flatten policy carries BOTH halves of what a ring flattening
+    // decides: how far a chord may sit from the arc it replaces (a tenth of
+    // the op's chord tolerance) and how long a chord may be before the ring
+    // stops being a usable sample of the surface.
+    //
+    // The sampling bound is the flat-ground stepover — the SAME spacing
+    // `scallop_toolpath_research` seeds the outer boundary rectangle at, and
+    // therefore the density every straight run in the shipped cascade has
+    // always carried. Straight runs are the case that matters: an arc-join
+    // gets its points from the deviation budget above, but a 50 mm straight
+    // edge gets none, and scallop reads every ring vertex as a drop-cutter
+    // sample plus a coverage-mask lookup.
+    //
+    // **This bound costs +88% emitted moves on the PR-3 ridge, so it was put
+    // on the envelope oracle rather than argued about**
+    // (`tests/ring_sample_bound_w14.rs`, three fixtures × three bounds). What
+    // came back is not what the +88% suggests:
+    //
+    // * On **achieved cusp it is parity, everywhere** — 68.1 µm bounded vs
+    //   68.1 µm unbounded on the ridge, 51.0 vs 51.0 on the tight grooved
+    //   block. The extra samples do not tighten the finish.
+    // * On **gouge it is decisive**: unbounded ships **1.570 mm² at -115.5 µm**
+    //   on the tight grooved block and **9.200 mm² at -116.5 µm** on the loose
+    //   one, against **0.000** and **0.176 mm²** bounded. A straight run whose
+    //   endpoints bracket a groove wall has no interior sample, so the chord
+    //   is lifted over the feature and cuts through it.
+    //
+    // So the bound is load-bearing for GOUGE CONTAINMENT, not for cusp — and
+    // a smooth fixture cannot show that (the ridge reads 0.000 mm² gouge on
+    // all three arms). Sampling density is a safety property of the surface,
+    // which is why it is not derived from the tolerance dial; see below.
+    //
+    // Three other candidates were measured and rejected:
+    //
+    // * **No bound** — the honest reading of "flatten to a tolerance". Wrong
+    //   twice over: the gouge above, and on a mesh of four disjoint islands
+    //   the four surviving corners all sit off the part and the operation
+    //   emits nothing at all.
+    // * **Tolerance-scaled** (`2·√(2·r·tol)`, the sampling analogue of the
+    //   scallop law) — the intuitive fix, and it gets the sign backwards. On
+    //   tight dials it costs ~2× the moves of the flat-ground bound
+    //   (5076 vs 2674 on the ridge; 12787 vs 6639 on the grooved block) for
+    //   ±0.2pp on-dial and 0.0 µm of cusp; on loose dials it saves moves and
+    //   pays for them in gouge (0.576 vs 0.176 mm²). The chord tolerance
+    //   governs how well a curve is approximated, and has nothing to say
+    //   about how far apart a surface may be sampled — it is retained as a
+    //   research arm precisely because that distinction is easy to lose.
+    // * **`0.75 × heightmap cell`**, the number drop-only decimation used as
+    //   its FLOOR, re-used as a ceiling — over-densifies by ~8× on this
+    //   fixture scale (+55% moves) for no fidelity the chord refinement was
+    //   not already going to add where the surface asks for it. Decimation
+    //   never added a point; reading its floor as a ceiling misreads what it
+    //   was doing.
+    let flatten = {
+        let base = crate::polygon::FlattenPolicy::from_chord_tolerance(chord_tolerance);
+        match policy
+            .sample_bound
+            .max_segment_mm(cusp_r, scallop_height, chord_tolerance)
+        {
+            Some(mm) => base.with_max_segment(mm),
+            None => base,
+        }
+    };
+    let mut arc_rings = policy
+        .cleanup
+        .carries_arcs()
+        .then(|| crate::polygon::OffsetRingSet::from_polygon(boundary));
     let mut current_polys = vec![boundary.clone()];
 
     // The loop's REAL terminator is the cascade collapsing to nothing
@@ -1172,43 +1393,57 @@ fn generate_scallop_rings_with_cancel(
             t.sample_spread.push((lo, mid, hi));
         }
 
-        // Offset all current polygons inward, then DECIMATE each result
-        // back to at most the heightmap's own sampling density.
-        // `offset_polygon` ADDS vertices on every call (concave corners
-        // sprout arc-approximation points; none are ever removed), so an
-        // iterated cascade compounds ~15–25% vertices per ring on concave
-        // boundaries — measured exponential on wanaka's dendritic
-        // mid-steep band (1178 → 261 000 vertices by ring 25, 10 s per
-        // offset and doubling; 2026-07-08, P2.c probe). Dropping only
-        // sub-cell points keeps the cascade linear while never touching a
-        // ring that is already at design density — classic convex
-        // boundaries (the full-footprint rectangle path, ~stepover-spaced)
-        // pass through byte-identical, which is why this stayed invisible
-        // until region-scoped scallop met a dendritic band. Slivers whose
-        // perimeter can't keep 3 points die here too.
+        // Offset every live ring inward.
+        //
+        // History, because the shape of this code is the shape of a defect
+        // that took three waves to name. Flattening cavalier's arc joins to
+        // chords between offsets ADDS vertices on every call — one reflex
+        // corner becomes two shallower reflex corners, each of which
+        // arc-joins on the next pass — so an iterated cascade DOUBLES on
+        // concave boundaries (measured exponential on wanaka's dendritic
+        // mid-steep band: 1178 → 261 000 vertices by ring 25, 10 s per
+        // offset; 2026-07-08, P2.c probe). P2.f damped it by dropping
+        // sub-cell points; M5 measured what that cost (unbounded in world
+        // units, and +9.83% eroded area where features are narrow), and
+        // Checkpoint D removed the mechanism instead: the arcs are never
+        // thrown away in the first place, so there is nothing to compound
+        // and nothing to damp. The cascade's vertex count now SHRINKS as the
+        // boundary erodes, which is what a healthy cascade does.
+        //
+        // Slivers whose flattened perimeter can't keep 3 points die here.
         let ring_min_spacing = heightmap.cell_size * 0.75;
-        let mut next_polys = Vec::new();
-        for (i, poly) in current_polys.iter().enumerate() {
-            let d = match policy.across_polygons {
-                PolygonReduce::MinAcross => stepover,
-                // SAFETY: `decisions` was built by mapping over
-                // `current_polys`, so the indices are in lockstep.
-                PolygonReduce::PerPolygon => {
-                    decisions.get(i).map_or(stepover, |dec| clamp(dec.selected))
-                }
-            };
-            for offset in offset_polygon(poly, d) {
-                // M5 research seam: `RingCleanup::DecimateAtCell` is what
-                // production passes and is the call this line always was.
-                if let Some(reduced) =
-                    policy
-                        .cleanup
-                        .apply(&offset, ring_min_spacing, chord_tolerance)
-                {
-                    next_polys.push(reduced);
+        // Per-polygon offset distance. `decisions` was built by mapping over
+        // `current_polys`, and the arc cascade's groups are one-to-one and
+        // in-order with `current_polys`, so the two stay in lockstep on both
+        // branches.
+        let distance_for = |i: usize| match policy.across_polygons {
+            PolygonReduce::MinAcross => stepover,
+            PolygonReduce::PerPolygon => decisions.get(i).map_or(stepover, |d| clamp(d.selected)),
+        };
+        let next_polys = if let Some(rings) = arc_rings.take() {
+            let distances: Vec<f64> = (0..rings.group_count().max(1)).map(distance_for).collect();
+            let next = rings.offset_per_group(&distances);
+            let polys = next.to_polygons(flatten);
+            arc_rings = Some(next);
+            polys
+                .into_iter()
+                .filter(|p| p.exterior.len() >= 3)
+                .collect()
+        } else {
+            let mut next_polys = Vec::new();
+            for (i, poly) in current_polys.iter().enumerate() {
+                for offset in offset_polygon(poly, distance_for(i)) {
+                    if let Some(reduced) =
+                        policy
+                            .cleanup
+                            .apply(&offset, ring_min_spacing, chord_tolerance)
+                    {
+                        next_polys.push(reduced);
+                    }
                 }
             }
-        }
+            next_polys
+        };
 
         if next_polys.is_empty() {
             exhausted = false;
@@ -1345,8 +1580,13 @@ impl ScallopReport {
             crate::measurement::MeasurementDomain::ProjectedXyArea,
             crate::measurement::MeasurementStage::RingCascadeResidual,
         )
+        // Wave 14: the rings are no longer decimated at the heightmap cell —
+        // they are arc-carrying offsets flattened once, at a tenth of the
+        // op's chord tolerance (`polygon::FlattenPolicy`). The old note named
+        // a step that no longer runs, which is exactly the drift this
+        // constant exists to prevent.
         .with_resolution_note(
-            "ring polygons decimated at 0.75x the finish heightmap cell (exterior shoelace)",
+            "ring polygons flattened at 0.1x the op chord tolerance (exterior shoelace)",
         );
 
     /// [`Self::uncut_core_mm2`] tagged with its domain — XY-projected, never
