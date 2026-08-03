@@ -1,5 +1,14 @@
 # Handoff prompt — P2.g: win the fine-quality tier (collar fix + band economics)
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
+
 Paste everything below into a fresh session.
 
 ---

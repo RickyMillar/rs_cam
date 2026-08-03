@@ -1,5 +1,14 @@
 # Pencil valley-targeting investigation — 2026-07-07
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
+
 Investigator: Fable (personally, per user directive — Opus missed these flaws 3×).
 Method: live GUI diagnostic loop on wanaka (LIVE-ONLY, never save) + code read + offline
 hillshade harness. One variable per iteration. Handoff:

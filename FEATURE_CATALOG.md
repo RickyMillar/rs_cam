@@ -32,7 +32,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
 | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
 | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped |
-| 3D | Unified Finish | `unified_finish.rs` + `finish_planner.rs` | Yes | Yes | Experimental (P2.f — regions by true-surface slope, waterline/scallop/raster per region, greedy link-costed routing; sweep-locked defaults 45/75; scallop chord-refinement + tip-radius cusp + serpentine, live-validated; −20% vs all-over raster at the SPEED tier (steep ≈ raster quality); at the fine tier plain Scallop currently wins on quality (overlap-collar dilution, P2.g); crease integration pending) |
+| 3D | Unified Finish | `unified_finish.rs` + `finish_planner.rs` | Yes | Yes | Experimental (P2.f — regions by true-surface slope, waterline/scallop/raster per region, greedy link-costed routing; sweep-locked defaults 45/75; scallop chord-refinement + tip-radius cusp + serpentine, live-validated; crease integration pending). **The tier-by-tier speed/quality comparison this row used to assert ("−20% at the speed tier", "plain Scallop wins the fine tier") is SUPERSEDED — it was measured through four instrument defects since fixed. See `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`; a dated verdict belongs in planning prose, not in a capability catalog.** |
 | 3D | Steep/Shallow | `steep_shallow.rs` | Yes | Yes | Shipped |
 | 3D | Ramp Finish | `ramp_finish.rs` | Yes | Yes | Shipped |
 | 3D | Spiral Finish | `spiral_finish.rs` | Yes | No | Shipped |

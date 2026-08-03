@@ -1,5 +1,14 @@
 # v3 process proof — working plan
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
+
 Live tracker. Companion to `v3_campaign_map.md` (what we tried and why it
 died) and `unified_v3_design.md` (the full chronological log).
 
