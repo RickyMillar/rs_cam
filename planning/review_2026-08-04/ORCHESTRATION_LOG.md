@@ -6,17 +6,21 @@ Basis: `TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md` at HEAD `7a84472`.
 
 | ID | Work | Status | Checkpoint | Evidence |
 |---|---|---|---|---|
-| W0 | R3 adaptive3d red baseline | NOT_STARTED | A | — |
-| W1 | R7 findings transport | NOT_STARTED | none for report wiring | — |
-| W2 | R7 arcfit intent | NOT_STARTED | F1 | — |
-| W3 | R1 feeds/Suggest census | NOT_STARTED | B | — |
+| W0 | R3 adaptive3d red baseline | DONE — **Checkpoint A RULED 2026-08-04: all three as proposed** (peck_plunge FIX_TEST, rapid_lift FIX_TEST, parity FIX_CODE + directional gate on contour_parallel); PR-1..3 implementation wave launched | A approved | `d40768a`, `14b0f70` |
+| W1 | R7 findings transport | DONE — census + structural join shipped, gates green | none (report wiring) | `41cb426`, `1de1094`, `c68f5d5` |
+| W2 | R7 arcfit intent | RESEARCHING (evidence harness, no output change) | F1 | — |
+| W3 | R1 feeds/Suggest census | RESEARCHING — census committed; §9 NOT-RUN verifications + Appendix-B assembler pending Cargo slot before Checkpoint B is presented | B | `2823d71`, `8285497` |
 | W4 | R2 adversarial 2D campaign | NOT_STARTED | C | — |
 | W5 | R4 simulation issue channel | NOT_STARTED | D | — |
-| W6 | R5 drill evidence/literature audit | NOT_STARTED | D | — |
+| W6 | R5 drill evidence/literature audit | NOT_STARTED — **HOLD from W3: no drill threshold recalibration before Checkpoint B item 1 (chipload unit question T4.1) is answered** | D | — |
 | W7 | R6 reference fixture/P7/rest anomaly | NOT_STARTED | E | — |
-| W8 | R7 finishing/export/read defects | NOT_STARTED | F2/F3 | — |
-| W9 | R8 bounded scouts | NOT_STARTED | none | — |
+| W8 | R7 finishing/export/read defects | NOT_STARTED — brief grew: + W9's X-1 (exporter/viewport span-walk divergence) + W1's B7 handoff (parallel narration-context literals) | F2/F3 | — |
+| W9 | R8 bounded scouts | DONE — P-3 downgraded (no live v≤2 population), P-1/P-2 escalated to operator, X-1 → W8 | none | `e9c6b46`, `10c3472` |
 | W10 | close-out/live validation | NOT_STARTED | G | — |
+
+### Checkpoint A — RULED 2026-08-04 (operator, via AskUserQuestion)
+
+Ruling: **"Approve all three as proposed."** (1) `peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance` → FIX_TEST — rebuild the fixture so the peck loop actually iterates under drape; the guard has been vacuous since `fa27b08`. (2) `rapid_segment_lifts_to_safe_z_before_traverse` → FIX_TEST — crash-class contract, currently zero live coverage. (3) `planner_sim_dexel_parity_agent_search` → FIX_CODE — `stamp_emitted_segment` must mirror the drape transform `segments_to_toolpath` applies; the green sibling `planner_sim_dexel_parity_contour_parallel` must be gated directionally in the same wave (its current bar is mis-registered and 79% spent at grant). `fa27b08` itself is correct and stays. Sequencing note honoured: the §2 sentry's MoveIntent assertion selects population at the emitter (source intent), not post-arcfit labels, pending W2/F1.
 
 Agents append entries using the required format in plan §3.1. The orchestrator updates this bootstrap table after a wave, merge, re-scope, or human checkpoint ruling. No agent self-approves a checkpoint.
 
