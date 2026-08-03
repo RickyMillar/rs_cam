@@ -1098,10 +1098,37 @@ fn default_unified_finish_territory_clip() -> bool {
     false
 }
 
-/// Default OFF pending the wanaka A/B that justifies a shipped-behaviour
-/// change (§9). Flip after the measurement, not before it.
+/// **ON at 6.0 mm since 2026-08-03 — an operator's call, on measured
+/// evidence.**
+///
+/// This dial was default-OFF through waves 11 and 12 on the rule "flip after
+/// the measurement, not before it". Wave 12 took the measurement, on the
+/// synthetic two-groove plateau, and cleared the blocker wave 11 had cited
+/// (`relink_fragments` does not drop cut positions — bisected four ways):
+///
+/// | | off | on (6.0 mm) |
+/// |---|---|---|
+/// | moves | 1437 | 1301 |
+/// | retract trips | 85 | **8** (−90.6%) |
+/// | cycle time | 238.94 s | **130.65 s** (−45.3%) |
+/// | swept footprint | 850 mm² | **850 mm²** (identical) |
+/// | mm²/s | 3.5574 | **6.5061** (+82.9%) |
+///
+/// Wave 12 still declined to flip it, and was right to: unlike scallop's
+/// ring-to-ring case this is a region-level trade whose value depends on how
+/// the planner's router links regions afterwards, and that belongs to an
+/// operator with a real part in front of them rather than to a synthetic
+/// plateau. **That operator was asked directly, in the Checkpoint D session
+/// (2026-08-03), with the table above as the evidence, and answered: ON at
+/// 6.0** — to be re-checked at the end-of-programme live validation.
+///
+/// So the authority for this value is not a measurement and not a default
+/// anyone drifted into; it is the ruling wave 12 explicitly deferred to.
+/// The safety invariant travels with it: keeping the tool down must never ADD
+/// retract round trips
+/// (`retract_trip_channel_am7::intra_region_hookup_ships_on_by_operator_ruling`).
 fn default_unified_finish_intra_region_hookup_mm() -> f64 {
-    0.0
+    6.0
 }
 
 /// Historical `PencilParams::default().hookup_distance`: what every
