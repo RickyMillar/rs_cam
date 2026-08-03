@@ -6,7 +6,7 @@
 
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::polygon::{Polygon2, offset_polygon};
+use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for pocket clearing.
@@ -107,33 +107,66 @@ pub fn pocket_contours_with_cancel(
             }
         }
 
-        // Generate inner contours by repeated stepover offset
-        let mut current = vec![comp.clone()];
+        // Generate inner contours by repeated stepover offset.
+        //
+        // **Checkpoint D (2026-08-03): this cascade carries ARCS.** It used to
+        // feed each flattened offset straight back into `offset_polygon`, and
+        // that is the vertex-doubling defect: `Polygon2::from_pline` discards
+        // every arc join's bulge and keeps both of its endpoints, so one
+        // reflex corner becomes two shallower reflex corners, each of which
+        // arc-joins on the next pass. Added vertices == arc-join segments,
+        // 1:1, measured on eight fixtures.
+        //
+        // Pocket was the consumer that paid the most for it and the one
+        // nobody had bounded. On a **twelve-vertex cross at a 0.5 mm
+        // stepover** this function DID NOT FINISH IN 20 SECONDS, and
+        // `polygon::pocket_offsets` — the same loop without the cancel hook,
+        // since retired — ran **13 minutes to 386 MB** before being killed
+        // (`CHECKPOINT_D_EVIDENCE.md` §8). Only the cancel hook made that a
+        // hang instead of a lock-up, which is not the same thing as being
+        // bounded.
+        //
+        // Keeping the arcs removes the mechanism: the cascade's vertex count
+        // now SHRINKS as the boundary erodes. It also fixes a fidelity defect
+        // that was never named as one — each discarded bulge cut its corner
+        // by the join's sagitta, `r·(1 − cos(θ/2))`, i.e. **29% of the offset
+        // distance at a 90° join**, unbounded and compounding inward.
+        //
+        // The flatten is DEVIATION-ONLY (`untoleranced`, 10 µm) with no
+        // sampling bound, and the contrast with scallop is the point:
+        // scallop reads ring vertices as drop-cutter SAMPLE POSITIONS and so
+        // must state a spacing (`scallop::RingSampleBound`), while a pocket
+        // ring IS the cut — a straight run across a pocket floor is a
+        // straight cut, and subdividing it would buy nothing. 10 µm is 14×
+        // tighter than the corner cut this path shipped before today.
+        let flatten = FlattenPolicy::untoleranced();
+        let mut rings = OffsetRingSet::from_polygon(comp);
         loop {
             check_cancel(cancel)?;
-            let mut next = Vec::new();
-            for poly in &current {
-                for inner in offset_polygon(poly, stepover) {
-                    if inner.exterior.len() >= 3 {
-                        all_contours.push(inner.exterior.clone());
+            rings = rings.offset(stepover);
+            if rings.is_empty() {
+                break;
+            }
+            let mut any = false;
+            for inner in rings.to_polygons(flatten) {
+                if inner.exterior.len() < 3 {
+                    continue;
+                }
+                any = true;
+                all_contours.push(inner.exterior.clone());
 
-                        // Include hole contours from inner offsets
-                        for hole in &inner.holes {
-                            if hole.len() >= 3 {
-                                let mut reversed = hole.clone();
-                                reversed.reverse(); // CW→CCW
-                                all_contours.push(reversed);
-                            }
-                        }
-
-                        next.push(inner);
+                // Include hole contours from inner offsets
+                for hole in &inner.holes {
+                    if hole.len() >= 3 {
+                        let mut reversed = hole.clone();
+                        reversed.reverse(); // CW→CCW
+                        all_contours.push(reversed);
                     }
                 }
             }
-            if next.is_empty() {
+            if !any {
                 break;
             }
-            current = next;
         }
     }
 
@@ -194,6 +227,58 @@ mod tests {
             safe_z: 10.0,
             climb: false,
         }
+    }
+
+    /// **The §8 defect, as a sentry.** A twelve-vertex cross at a 0.5 mm
+    /// stepover is not an exotic input — it is the shape class 2.5D pocketing
+    /// actually meets — and before Checkpoint D this call **did not finish in
+    /// 20 seconds** (and its no-cancel twin ran 13 minutes to 386 MB).
+    ///
+    /// The bound asserted here is deliberately generous: the point is
+    /// terminates-at-all versus exponential, not a performance pin, and a
+    /// tight wall-clock in a debug-build test would be flaky for reasons that
+    /// have nothing to do with this cascade.
+    ///
+    /// The ring-count check is the other half. Terminating early and quietly
+    /// would also "pass" a timing test — cavalier can panic on the `Shape`
+    /// path and `offset_polygon` maps that to a collapsed offset — so the
+    /// erosion depth is checked too. A 20 mm-wide arm eroded 0.5 mm per side
+    /// per ring admits ~20 rings before it closes.
+    #[test]
+    fn pocket_cascade_terminates_on_the_reflex_cross() {
+        let (a, b) = (20.0, 60.0);
+        let cross = Polygon2::new(vec![
+            P2::new(a, 0.0),
+            P2::new(b, 0.0),
+            P2::new(b, a),
+            P2::new(b + a, a),
+            P2::new(b + a, b),
+            P2::new(b, b),
+            P2::new(b, b + a),
+            P2::new(a, b + a),
+            P2::new(a, b),
+            P2::new(0.0, b),
+            P2::new(0.0, a),
+            P2::new(a, a),
+        ]);
+
+        let start = std::time::Instant::now();
+        let contours = pocket_contours(&cross, 0.0, 0.5);
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(20),
+            "the pocket cascade must terminate: took {elapsed:?} on a \
+             12-vertex cross at a 0.5 mm stepover (pre-Checkpoint-D this \
+             call did not return in 20 s)"
+        );
+        assert!(
+            contours.len() >= 15,
+            "expected the cascade to erode a 20 mm arm over many rings, got \
+             {} contours — a cascade that collapses early passes a timing \
+             check for the wrong reason",
+            contours.len()
+        );
     }
 
     #[test]

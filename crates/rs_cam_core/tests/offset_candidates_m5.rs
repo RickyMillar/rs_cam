@@ -259,11 +259,10 @@ fn the_arms_are_actually_different() {
 #[test]
 fn shipped_ring_cleanup_reproduces_the_shipped_scallop_path() {
     let tool = tools::wanaka_taper();
-    let p = scallop_params();
     let cancel = || false;
-    let resolution = FinishResolutionPolicy::legacy_envelope_quarter(&tool, p.tolerance);
+    let resolution = FinishResolutionPolicy::legacy_envelope_quarter(&tool, TOLERANCE_MM);
 
-    for (name, mesh) in oracle_fixtures() {
+    for (name, mesh, p) in oracle_fixtures() {
         let index = SpatialIndex::build(&mesh, 2.0);
         let (a, _, a_rep) = scallop_toolpath_structured_annotated_with_resolution(
             &mesh, &index, &tool, &p, None, None, resolution, &cancel,
@@ -291,7 +290,11 @@ fn shipped_ring_cleanup_reproduces_the_shipped_scallop_path() {
     }
     assert!(ScallopStepoverPolicy::SHIPPED.is_shipped());
     assert!(ScallopStepoverPolicy::default().is_shipped());
-    assert_eq!(RingCleanup::default(), RingCleanup::DecimateAtCell);
+    // Wave 14: the shipped cleanup is the arc-carrying cascade. Checkpoint D
+    // adopted it; `DecimateAtCell` survives only as a research arm.
+    assert_eq!(RingCleanup::default(), RingCleanup::ArcCascade);
+    assert!(RingCleanup::ArcCascade.carries_arcs());
+    assert!(!RingCleanup::DecimateAtCell.carries_arcs());
 }
 
 // ---------------------------------------------------------------------------
@@ -585,13 +588,43 @@ fn scallop_params() -> ScallopParams {
 }
 
 /// Checkpoint C's shapes, so the two evidence packs compare: a groove with
-/// genuine constant-slope walls, and a high-curvature ridge.
-fn oracle_fixtures() -> Vec<(&'static str, TriangleMesh)> {
+/// genuine constant-slope walls, and a high-curvature ridge — plus, since
+/// wave 14, one fixture whose REGION BOUNDARY IS CONCAVE.
+///
+/// That third entry is not decoration. Checkpoint C's two fixtures both run
+/// scallop over its default boundary, the mesh-bbox **rectangle**, and an
+/// inward parallel offset of a convex polygon **creates no arc joins at
+/// all** — the offset corners simply intersect. So on those two fixtures
+/// every arc-related cleanup is a no-op by construction, and the whole
+/// M4 cleanup table there is measuring one thing only: whether drop-only
+/// decimation kills the last ring or two as the rectangle shrinks below its
+/// spacing. §15 of `CHECKPOINT_D_EVIDENCE.md` recorded the resulting
+/// "identical cleanup rows" as unexplained; this is the explanation, and the
+/// remedy is a boundary with reflex corners in it.
+///
+/// A slope band supplies a concave region honestly — restrict the op to the
+/// groove FLANKS (`slope_from: 20.0`) and the region becomes stripes whose
+/// marching-squares boundary is full of reflex corners. **That variant was
+/// built, run, and is NOT in the list below**, because the oracle scores the
+/// whole mesh: with the flats deliberately unmachined it reports 640 mm²
+/// "unfinished" and a 216x cusp ratio, both of which are territory the
+/// operation was never asked to cut. Scoring a band-restricted op needs a
+/// band-restricted population, and that is M4's instrument to extend, not
+/// this file's. The concave evidence in this wave comes from instruments that
+/// can carry it: the 2D erosion oracle (exact, §6), the 200-ring growth gate
+/// (§7), the pocket cross (§8), the chord-sag gate on the mixed-slope ribbon,
+/// and `crease_own_region_pr6b`'s region-scoped unified-finish fingerprints.
+fn oracle_fixtures() -> Vec<(&'static str, TriangleMesh, ScallopParams)> {
     vec![
-        ("grooved block", meshes::grooved_block(6.0, 60.0, 3.0)),
+        (
+            "grooved block",
+            meshes::grooved_block(6.0, 60.0, 3.0),
+            scallop_params(),
+        ),
         (
             "narrow ridge",
             meshes::height_field(HALF, MESH_STEP, |x, _| 4.0 * (1.0 - x.abs()).max(0.0)),
+            scallop_params(),
         ),
     ]
 }
@@ -600,11 +633,10 @@ fn oracle_fixtures() -> Vec<(&'static str, TriangleMesh)> {
 #[ignore = "M5 evidence: M4 envelope oracle across ring cleanups; --ignored --nocapture"]
 fn scallop_oracle_across_ring_cleanups() {
     let tool = tools::wanaka_taper();
-    let p = scallop_params();
     let cancel = || false;
     let resolution = FinishResolutionPolicy::legacy_envelope_quarter(&tool, TOLERANCE_MM);
 
-    for (name, mesh) in oracle_fixtures() {
+    for (name, mesh, p) in oracle_fixtures() {
         let index = SpatialIndex::build(&mesh, 2.0);
         println!("\n### {name} — scallop cascade under each ring cleanup");
         println!(
@@ -614,6 +646,7 @@ fn scallop_oracle_across_ring_cleanups() {
             "|-------------------|-------|-------|--------|-------------|-------|-----------------|-----------------|------------|"
         );
         for cleanup in [
+            RingCleanup::ArcCascade,
             RingCleanup::DecimateAtCell,
             RingCleanup::KeepEverything,
             RingCleanup::CollinearDedup,

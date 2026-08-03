@@ -431,10 +431,61 @@ fn the_arms_are_actually_different() {
     for (id, hash, moves) in &prints {
         eprintln!("{id}: {moves} moves, fingerprint {hash:016x}");
     }
-    assert!(
-        distinct.len() >= all.len() - 1,
-        "on a 6°/60°/85° ribbon the arms must not collapse onto each other: \
-         {} distinct fingerprints from {} arms",
+    let print_of = |id: &str| -> u64 {
+        prints
+            .iter()
+            .find(|(i, ..)| *i == id)
+            .map(|(_, h, _)| *h)
+            .unwrap_or_default()
+    };
+
+    // Wave 14 (arc-carrying cascade): **A1 coincides with A0 on this fixture**,
+    // and the reason is arithmetic rather than a lost distinction.
+    //
+    // **A1 (`PerPolygon`) ≡ A0 (`MinAcross`)** — the ribbon's cascade never
+    // splits into more than one polygon, and a minimum over one number is that
+    // number. The old chord-flattened cascade did split, because the arc-join
+    // debris eventually pinched a ring in two; that split was an artefact of
+    // the defect, not a feature of the shape.
+    //
+    // It is pinned rather than papered over: if the mechanism changes, this
+    // fails and says so.
+    assert_eq!(
+        print_of("A0"),
+        print_of("A1"),
+        "A1 must coincide with A0 while the ribbon cascade stays single-polygon \
+         (a MIN over one polygon is that polygon)"
+    );
+    // **A2 must NOT coincide with A0, and this assertion is an erratum.**
+    //
+    // A mid-wave-14 draft of this file asserted A2 ≡ A0, reasoning that
+    // `Fixed20`'s stride is `1.max(ring.len() / 20)` — i.e. 1, therefore
+    // every-vertex — for any ring under 40 vertices, and that the arc
+    // cascade's rings are that sparse. The reasoning was sound and the
+    // premise was measured on a build that does not ship: it predated
+    // `scallop::RingSampleBound`, which subdivides a ring's straight runs at
+    // the flat-ground stepover so that scallop gets the surface samples it
+    // reads every ring vertex as. With the bound the rings clear 40 vertices
+    // comfortably, the stride exceeds 1, and the two arms separate again
+    // (6132 vs 6589 moves).
+    //
+    // Recorded rather than quietly deleted because the failure is the
+    // instrument working: the claim named its own mechanism, so when the
+    // mechanism moved the test said which one had moved instead of just
+    // going red.
+    assert_ne!(
+        print_of("A0"),
+        print_of("A2"),
+        "A2 must differ from A0 while rings carry more than 40 vertices \
+         (Fixed20's stride exceeds 1 there, so it is NOT sampling every vertex)"
+    );
+    let expected = all.len() - 1;
+    assert_eq!(
+        distinct.len(),
+        expected,
+        "on a 6°/60°/85° ribbon the arms must not collapse onto each other \
+         beyond the single arithmetic coincidence named above: {} distinct \
+         fingerprints from {} arms",
         distinct.len(),
         all.len()
     );

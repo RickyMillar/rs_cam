@@ -22,7 +22,7 @@ use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter, point_drop_cutt
 use rs_cam_core::fiber::{Fiber, Interval};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
-use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
+use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
 use rs_cam_core::pushcutter::batch_push_cutter;
 use rs_cam_core::radial_profile::RadialProfileLUT;
 use rs_cam_core::simulation_cut::{CutKinematics, SimulationCutSample, SimulationCutTrace};
@@ -250,24 +250,97 @@ fn bench_waterline(c: &mut Criterion) {
 
 // ── 5. Polygon offset & pocket benchmarks ────────────────────────────────
 
+/// A rosette: `lobes` reflex valleys that survive erosion. The M5 stress
+/// fixture (`tests/common/offset_lab.rs`), reproduced here so the benchmark
+/// covers the shape class the offset primitive actually struggles with.
+fn rosette_polygon(base: f64, amp: f64, lobes: usize, samples: usize) -> Polygon2 {
+    Polygon2::new(
+        (0..samples)
+            .map(|i| {
+                let t = std::f64::consts::TAU * i as f64 / samples as f64;
+                let r = base + amp * (lobes as f64 * t).sin();
+                rs_cam_core::geo::P2::new(r * t.cos(), r * t.sin())
+            })
+            .collect(),
+    )
+}
+
+/// A square with a 3×3 grid of circular holes — the `Shape::parallel_offset`
+/// path, and disjoint outputs once the holes eat through.
+fn holed_polygon(size: f64) -> Polygon2 {
+    let mut poly = square_polygon(size);
+    let pitch = size / 4.0;
+    for r in 1..=3 {
+        for c in 1..=3 {
+            let (cx, cy) = (
+                -size / 2.0 + pitch * c as f64,
+                -size / 2.0 + pitch * r as f64,
+            );
+            poly.holes.push(
+                (0..48)
+                    .map(|i| {
+                        // CW winding, per `Polygon2`'s hole contract.
+                        let t = -std::f64::consts::TAU * i as f64 / 48.0;
+                        rs_cam_core::geo::P2::new(cx + 8.0 * t.cos(), cy + 8.0 * t.sin())
+                    })
+                    .collect(),
+            );
+        }
+    }
+    poly
+}
+
+/// Run a cascade to collapse or `max_rings`, whichever comes first.
+fn run_cascade(seed: &Polygon2, step: f64, max_rings: usize) -> usize {
+    let mut rings = OffsetRingSet::from_polygon(seed);
+    let mut n = 0;
+    for _ in 0..max_rings {
+        rings = rings.offset(step);
+        if rings.is_empty() {
+            break;
+        }
+        black_box(rings.to_polygons(FlattenPolicy::untoleranced()));
+        n += 1;
+    }
+    n
+}
+
 fn bench_polygon_ops(c: &mut Criterion) {
     let mut group = c.benchmark_group("polygon_ops");
 
-    // Simple square offset
+    // ── single-shot `offset_polygon`: square, concave, holed ──────────────
+    // Checkpoint D sub-decision 7c: the offset benchmark was square-only,
+    // which is the one shape with no arc joins at all and therefore the one
+    // shape the vertex-inflation defect could never appear on.
     let sq = square_polygon(60.0);
     group.bench_function("offset_60mm_square", |b| {
         b.iter(|| black_box(offset_polygon(&sq, 3.0)))
     });
 
-    // Pocket offsets (multiple layers)
-    group.bench_function("pocket_offsets_60mm", |b| {
-        b.iter(|| black_box(pocket_offsets(&sq, 2.0)))
+    let rosette = rosette_polygon(60.0, 8.0, 24, 720);
+    group.bench_function("offset_rosette24", |b| {
+        b.iter(|| black_box(offset_polygon(&rosette, 0.5)))
     });
 
-    // Larger polygon
+    let holed = holed_polygon(200.0);
+    group.bench_function("offset_holed9", |b| {
+        b.iter(|| black_box(offset_polygon(&holed, 0.5)))
+    });
+
+    // ── repeated cascade: the case the arc-carrying path exists for ───────
+    group.bench_function("cascade_60mm_square", |b| {
+        b.iter(|| black_box(run_cascade(&sq, 2.0, 40)))
+    });
+    group.bench_function("cascade_rosette24", |b| {
+        b.iter(|| black_box(run_cascade(&rosette, 0.5, 40)))
+    });
+    group.bench_function("cascade_holed9", |b| {
+        b.iter(|| black_box(run_cascade(&holed, 0.5, 40)))
+    });
+
     let big = square_polygon(200.0);
-    group.bench_function("pocket_offsets_200mm", |b| {
-        b.iter(|| black_box(pocket_offsets(&big, 3.0)))
+    group.bench_function("cascade_200mm_square", |b| {
+        b.iter(|| black_box(run_cascade(&big, 3.0, 40)))
     });
 
     group.finish();

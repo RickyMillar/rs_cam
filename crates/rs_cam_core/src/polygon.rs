@@ -319,6 +319,60 @@ fn dedupe_pline(pline: Polyline<f64>) -> Polyline<f64> {
         .unwrap_or(pline)
 }
 
+/// cavalier's own lossless cleanup, applied to a CHORD-FLATTENED ring.
+///
+/// **Reachable only from the offset CASCADE ([`OffsetRingSet`]), never from
+/// the single-shot [`offset_polygon`] — wave 14, and the reason is a
+/// measurement.** Checkpoint D's ruling was for this cleanup to land
+/// "everywhere as the lossless companion". It cannot: `remove_redundant` is
+/// lossless with respect to the SHAPE, and several consumers are not using
+/// the polygon as a shape. `scallop` seeds its cascade with a rectangle
+/// sampled at the flat-ground stepover and lifts every vertex with a
+/// drop-cutter query; `project_curve` and `trace` project vertices onto a
+/// mesh the same way. Every intermediate point on those straight runs is
+/// correctly identified as carrying no geometry — and it carries all of the
+/// sampling. Dropped into the shared wrapper, this turned a four-island
+/// scallop pass into an EMPTY toolpath, because the four surviving corners
+/// all sat off the part (`capability_link_moves_safety`).
+///
+/// Inside the cascade it is safe, because [`FlattenPolicy`] re-establishes
+/// the sampling density explicitly on the way out — a stated contract instead
+/// of an inherited accident. That pairing is the whole point.
+///
+/// `remove_redundant`
+/// drops a vertex only when it is a repeat position within `pos_equal_eps` or
+/// when the triangle it forms with its neighbours has area under
+/// `pos_equal_eps` *and* the direction of travel does not reverse — so the
+/// worst deviation it can introduce is `2 · eps / base`, i.e. sub-micron on
+/// any segment longer than 20 µm and sub-nanometre on a 50 mm one. Nothing
+/// moves; debris leaves.
+///
+/// It is applied here on a **bulge-free** copy on purpose. Run on a polyline
+/// that still carries arcs, `remove_redundant` also merges two co-radial,
+/// co-centred arc segments into one — lossless in the ARC domain (that is the
+/// shrink [`OffsetRingSet`] is built on) but *not* in the flattened one,
+/// because the merged arc is then replaced by one long chord instead of two
+/// short ones. The domain the cleanup runs in has to match the domain the
+/// result is consumed in, and `offset_polygon`'s consumers get chords.
+fn cleaned_flat_ring(pline: &Polyline<f64>) -> Vec<P2> {
+    let raw: Vec<P2> = pline.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect();
+    let mut flat = Polyline::with_capacity(pline.vertex_count(), true);
+    for p in &raw {
+        flat.add(p.x, p.y, 0.0);
+    }
+    let Some(cleaned) = flat.remove_redundant(PLINE_POS_EQUAL_EPS) else {
+        // `None` means nothing was redundant — the common case, and the
+        // reason single-shot consumers see byte-identical output.
+        return raw;
+    };
+    if cleaned.vertex_count() < 3 {
+        // A ring that only survives as a sliver keeps its raw form; the
+        // callers' own `len() < 3` guards decide what to do with it.
+        return raw;
+    }
+    cleaned.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect()
+}
+
 fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
     if polygon.exterior.len() < 3 {
         return Vec::new();
@@ -557,28 +611,451 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
     out
 }
 
-/// Generate concentric inward offsets for pocket clearing.
-///
-/// Starting from the boundary, offsets inward by `stepover` repeatedly
-/// until the polygon collapses. Returns all offset contours from
-/// outermost to innermost.
-pub fn pocket_offsets(polygon: &Polygon2, stepover: f64) -> Vec<Vec<Polygon2>> {
-    let mut layers = Vec::new();
-    let mut current = vec![polygon.clone()];
+// ===========================================================================
+// The arc-carrying offset cascade — M5 / Checkpoint D, 2026-08-03
+// ===========================================================================
 
-    loop {
-        let mut next_layer = Vec::new();
-        for poly in &current {
-            next_layer.extend(offset_polygon(poly, stepover));
+/// How an offset ring stops being arcs and starts being straight feed moves.
+///
+/// **There is exactly one of these in the workspace, and this is it.** The
+/// defect Checkpoint D closed was not that flattening happens — a toolpath is
+/// polylines in the end — but that it happened *between* every pair of
+/// offsets, unbounded and un-named. [`Polygon2::from_pline`] discards each
+/// arc join's bulge and keeps its two endpoints, so a join of turn angle `θ`
+/// at offset radius `r` cuts the corner by its sagitta `r·(1 − cos(θ/2))`:
+/// **29% of the offset distance at a 90° join**, and then the two shallower
+/// corners it leaves behind each arc-join on the next pass. Measured 1:1
+/// (added vertices == arc-join segments) and exactly doubling, on every
+/// concave fixture (`CHECKPOINT_D_EVIDENCE.md` §3–§5).
+///
+/// A cascade that carries arcs and flattens ONCE, here, reads **0.0 µm** off
+/// the tolerance-free erosion oracle and *shrinks* 1.4%/ring instead of
+/// growing 35%/ring (§6, §7).
+///
+/// # Where the number comes from
+///
+/// The tolerance is a share of the calling operation's own chord tolerance —
+/// the one the operator set — and never a second, competing dial. On a 3D
+/// finishing op the emitted ring is then chord-refined against the surface
+/// (`scallop::refine_chord`), which accepts at
+/// `CHORD_REFINE_ACCEPT_FRACTION = 0.70` of that same tolerance and leaves
+/// the remaining 30% as headroom for the probe-vs-true-worst gap M4 measured
+/// at ~35% of the tolerance. Arc flattening is an error in XY, independent of
+/// that Z error, so it is budgeted at [`Self::CHORD_TOLERANCE_SHARE`] = 10%:
+/// small enough that the composed worst case stays inside the operator's
+/// number, large enough that the emitted chords stay longer than
+/// `scallop::CHORD_REFINE_MIN_SPLIT_MM` on any arc a stepover-sized offset
+/// can produce (chord ≈ `2·√(2·r·tol)`, i.e. 0.13 mm at r = 0.2 mm and a
+/// 10 µm budget).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlattenPolicy {
+    max_deviation_mm: f64,
+    /// See [`FlattenPolicy::with_max_segment`]. `None` = no sampling bound,
+    /// which is right for a consumer that treats the ring purely as a shape.
+    max_segment_mm: Option<f64>,
+}
+
+impl FlattenPolicy {
+    /// Share of the calling operation's chord tolerance the XY flattening is
+    /// allowed to consume. See the type doc for the derivation.
+    pub const CHORD_TOLERANCE_SHARE: f64 = 0.10;
+
+    /// Floor (mm). Ten times `toolpath::MIN_EMITTED_SEGMENT_MM`, the coarsest
+    /// shipped post's coordinate quantum — below this the flattening is
+    /// asking for precision the G-code cannot carry, and pays for it in
+    /// vertices.
+    pub const MIN_DEVIATION_MM: f64 = 0.001;
+
+    /// Ceiling (mm). A very loose operation tolerance must not buy a visibly
+    /// faceted wall; 50 µm is half the finest finishing tolerance in this
+    /// workspace and a third of `CHORD_REFINE_MIN_SEG_MM`'s reference pitch.
+    pub const MAX_DEVIATION_MM: f64 = 0.050;
+
+    /// What a consumer with no stated chord tolerance gets — 2.5D clearing
+    /// (pocket) has a stepover and a tool radius but no tolerance dial.
+    ///
+    /// 10 µm is 14× tighter than the corner cut that same path ships today
+    /// (§8: 141 µm max, −60 µm systematic over-cut on a 12-vertex cross at a
+    /// 0.5 mm stepover), and it is bounded, which the corner cut never was.
+    pub const UNTOLERANCED_MM: f64 = 0.010;
+
+    /// Derive the flatten budget from the operation's chord tolerance.
+    #[must_use]
+    pub fn from_chord_tolerance(chord_tolerance_mm: f64) -> Self {
+        let raw = chord_tolerance_mm * Self::CHORD_TOLERANCE_SHARE;
+        let clamped = if raw.is_finite() {
+            raw.clamp(Self::MIN_DEVIATION_MM, Self::MAX_DEVIATION_MM)
+        } else {
+            Self::UNTOLERANCED_MM
+        };
+        Self {
+            max_deviation_mm: clamped,
+            max_segment_mm: None,
         }
-        if next_layer.is_empty() {
-            break;
-        }
-        layers.push(next_layer.clone());
-        current = next_layer;
     }
 
-    layers
+    /// The budget for a consumer that has no tolerance dial to derive from.
+    #[must_use]
+    pub const fn untoleranced() -> Self {
+        Self {
+            max_deviation_mm: Self::UNTOLERANCED_MM,
+            max_segment_mm: None,
+        }
+    }
+
+    /// Cap the length of any emitted segment, subdividing straight runs to
+    /// suit — the SAMPLING half of the policy.
+    ///
+    /// **This exists because "flatten to a deviation tolerance" is only half
+    /// of what a ring flattening decides, and wave 14 learned the other half
+    /// the hard way.** A deviation budget puts points where the boundary
+    /// CURVES and nowhere else, which is correct if the ring is only ever
+    /// going to be a shape. It is wrong the moment a consumer treats the ring
+    /// vertices as SAMPLE POSITIONS: `scallop` lifts every ring vertex with a
+    /// drop-cutter query and asks a coverage mask whether that XY sits over
+    /// real mesh, so a 50 mm straight run with two endpoints is two samples of
+    /// a surface, not a straight cut. On a mesh of four disjoint islands both
+    /// endpoints land off the part, the run-splitter discards the whole run,
+    /// and the operation emits **nothing at all** — which is exactly what
+    /// happened, and what `capability_link_moves_safety` caught.
+    ///
+    /// The same trap sits under the "lossless" cleanup: scallop seeds its
+    /// cascade with a rectangle sampled at the flat-ground stepover, and
+    /// `remove_redundant` correctly identifies every one of those intermediate
+    /// points as carrying no geometry. It carries no geometry and all of the
+    /// sampling. **Losslessness is a property of a MEASURE, and "the shape" is
+    /// not the only measure a polygon is carrying.**
+    ///
+    /// So a consumer that samples through the ring states the density it needs
+    /// here, in world units, and gets it — instead of inheriting it from
+    /// whatever debris the offset primitive happened to leave behind.
+    #[must_use]
+    pub fn with_max_segment(self, max_segment_mm: f64) -> Self {
+        Self {
+            max_segment_mm: (max_segment_mm.is_finite() && max_segment_mm > 0.0)
+                .then_some(max_segment_mm),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub const fn max_deviation_mm(self) -> f64 {
+        self.max_deviation_mm
+    }
+
+    #[must_use]
+    pub const fn max_segment_mm(self) -> Option<f64> {
+        self.max_segment_mm
+    }
+}
+
+impl Default for FlattenPolicy {
+    fn default() -> Self {
+        Self::untoleranced()
+    }
+}
+
+/// One offset boundary and the holes inside it, in cavalier's own
+/// arc-carrying representation.
+#[derive(Clone, Debug)]
+struct RingGroup {
+    boundary: Polyline<f64>,
+    holes: Vec<Polyline<f64>>,
+}
+
+impl RingGroup {
+    fn vertex_count(&self) -> usize {
+        self.boundary.vertex_count()
+            + self
+                .holes
+                .iter()
+                .map(PlineSource::vertex_count)
+                .sum::<usize>()
+    }
+
+    /// Offset this group once, through the SAME cavalier entry points
+    /// `offset_polygon_inner` picks between, with the same panic containment
+    /// and the same hole/container pairing — the only difference is that the
+    /// bulges survive.
+    fn offset(&self, distance: f64) -> Vec<RingGroup> {
+        let boundary = dedupe_pline(self.boundary.clone());
+        if boundary.vertex_count() < 3 {
+            return Vec::new();
+        }
+        let holes: Vec<Polyline<f64>> = self
+            .holes
+            .iter()
+            .cloned()
+            .map(dedupe_pline)
+            .filter(|h| h.vertex_count() >= 3)
+            .collect();
+
+        // Same containment as `offset_one`: a cavalier panic is a collapsed
+        // offset, which every caller already handles as "the ring ended".
+        let out = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            if holes.is_empty() {
+                (boundary.parallel_offset(distance), Vec::new())
+            } else {
+                use cavalier_contours::shape_algorithms::Shape;
+                let mut plines = vec![boundary];
+                plines.extend(holes);
+                let shape = Shape::from_plines(plines);
+                let result = shape.parallel_offset(distance, Default::default());
+                (
+                    result
+                        .ccw_plines
+                        .into_iter()
+                        .map(|ip| ip.polyline)
+                        .collect::<Vec<_>>(),
+                    result
+                        .cw_plines
+                        .into_iter()
+                        .map(|ip| ip.polyline)
+                        .collect::<Vec<_>>(),
+                )
+            }
+        })) {
+            Ok(v) => v,
+            Err(_payload) => {
+                tracing::warn!(
+                    distance,
+                    boundary_verts = self.boundary.vertex_count(),
+                    holes = self.holes.len(),
+                    "offset cascade: cavalier_contours panicked; treating as a \
+                     collapsed offset (empty result)"
+                );
+                return Vec::new();
+            }
+        };
+        let (boundaries, holes) = out;
+
+        // The lossless companion, in the ARC domain: `remove_redundant`
+        // merges two co-radial, co-centred arcs into one and drops collinear
+        // line vertices. It is what turns the cascade's vertex curve from
+        // flat into shrinking (−1.4%/ring, §6) and it costs nothing.
+        let tidy = |pl: Polyline<f64>| -> Option<Polyline<f64>> {
+            let pl = pl.remove_redundant(PLINE_POS_EQUAL_EPS).unwrap_or(pl);
+            (pl.vertex_count() >= 3).then_some(pl)
+        };
+
+        let mut groups: Vec<RingGroup> = boundaries
+            .into_iter()
+            .filter_map(tidy)
+            .map(|boundary| RingGroup {
+                boundary,
+                holes: Vec::new(),
+            })
+            .collect();
+        for hole in holes.into_iter().filter_map(tidy) {
+            let Some(test) = hole.iter_vertexes().next().map(|v| P2::new(v.x, v.y)) else {
+                continue;
+            };
+            let owner = groups
+                .iter_mut()
+                .find(|g| flatten_for_containment(&g.boundary).contains_point(&test));
+            if let Some(owner) = owner {
+                owner.holes.push(hole);
+            } else if let Some(first) = groups.first_mut() {
+                // Same fallback `offset_polygon_inner` has always taken.
+                first.holes.push(hole);
+            }
+        }
+        groups
+    }
+
+    /// Flatten to a `Polygon2` — the ONE place the arcs leave the cascade.
+    fn to_polygon(&self, policy: FlattenPolicy) -> Polygon2 {
+        let mut out = Polygon2::new(flatten_ring(&self.boundary, policy));
+        out.holes = self
+            .holes
+            .iter()
+            .map(|h| flatten_ring(h, policy))
+            .filter(|h| h.len() >= 3)
+            .collect();
+        out
+    }
+}
+
+/// Tessellate one polyline's arcs at `policy`'s deviation budget, clean the
+/// result losslessly, and then subdivide any run longer than the policy's
+/// sampling bound.
+///
+/// Order matters: the lossless cleanup runs BEFORE the subdivision, so it
+/// removes cavalier's debris rather than the points the sampling bound just
+/// asked for.
+fn flatten_ring(pline: &Polyline<f64>, policy: FlattenPolicy) -> Vec<P2> {
+    let flat = pline
+        .arcs_to_approx_lines(policy.max_deviation_mm())
+        .unwrap_or_else(|| pline.clone());
+    let ring = cleaned_flat_ring(&flat);
+    match policy.max_segment_mm() {
+        Some(max) => subdivide_ring(&ring, max),
+        None => ring,
+    }
+}
+
+/// Split every closed-ring edge longer than `max_segment_mm` into equal
+/// pieces. Adds points ON the existing edges only — the ring's shape is
+/// bit-for-bit the same polygon, which is what makes this safe to apply after
+/// the geometry has been decided.
+fn subdivide_ring(ring: &[P2], max_segment_mm: f64) -> Vec<P2> {
+    let n = ring.len();
+    // NaN must fall through to "no subdivision", so the finite check is
+    // explicit rather than a negated comparison.
+    if n < 2 || !max_segment_mm.is_finite() || max_segment_mm <= 0.0 {
+        return ring.to_vec();
+    }
+    let mut out: Vec<P2> = Vec::with_capacity(n);
+    for i in 0..n {
+        // SAFETY: `i < n` and the modulo keeps the successor in range.
+        #[allow(clippy::indexing_slicing)]
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        out.push(a);
+        let len = (b.x - a.x).hypot(b.y - a.y);
+        if !len.is_finite() || len <= max_segment_mm {
+            continue;
+        }
+        let pieces = (len / max_segment_mm).ceil();
+        if !pieces.is_finite() || pieces > 100_000.0 {
+            continue;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let pieces = pieces as usize;
+        for k in 1..pieces {
+            let t = k as f64 / pieces as f64;
+            out.push(P2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+        }
+    }
+    out
+}
+
+/// A coarse flattening used ONLY to answer "is this hole inside that
+/// boundary" — never emitted, never fed back into the cascade, so its
+/// tolerance is a speed choice rather than a fidelity one.
+fn flatten_for_containment(pline: &Polyline<f64>) -> Polygon2 {
+    Polygon2::new(flatten_ring(
+        pline,
+        FlattenPolicy {
+            max_deviation_mm: FlattenPolicy::MAX_DEVIATION_MM,
+            max_segment_mm: None,
+        },
+    ))
+}
+
+/// A set of offset rings that keeps cavalier's arcs between offsets.
+///
+/// This is the cascade type Checkpoint D adopted. Use it wherever an
+/// operation feeds `offset_polygon`'s own output back into it — today
+/// [`crate::scallop`] and [`crate::pocket`]. A consumer that offsets **once**
+/// should keep calling [`offset_polygon`]: it inherits a single arc-join
+/// chord, which is a different and much smaller defect, and its topology
+/// stays exactly where it is.
+///
+/// Groups are stable in order and one-to-one with the polygons
+/// [`Self::to_polygons`] returns, so a caller can carry a per-group decision
+/// (scallop's per-polygon stepover) across an offset.
+#[derive(Clone, Debug, Default)]
+pub struct OffsetRingSet {
+    groups: Vec<RingGroup>,
+}
+
+impl OffsetRingSet {
+    /// Seed a cascade from one polygon, repairing self-intersection first —
+    /// exactly what [`offset_polygon`] does before it calls cavalier (R1.5).
+    #[must_use]
+    pub fn from_polygon(polygon: &Polygon2) -> Self {
+        let pieces: Vec<Polygon2> = if polygon.has_self_intersection() {
+            polygon.repaired()
+        } else {
+            vec![polygon.clone()]
+        };
+        Self::from_polygons(&pieces)
+    }
+
+    /// Seed a cascade from several polygons. Each becomes its own group, so
+    /// a panic or a collapse in one cannot take the others with it.
+    #[must_use]
+    pub fn from_polygons(polygons: &[Polygon2]) -> Self {
+        let groups = polygons
+            .iter()
+            .filter(|p| p.exterior.len() >= 3)
+            .filter_map(|p| {
+                let boundary = dedupe_pline(p.exterior_to_pline());
+                if boundary.vertex_count() < 3 {
+                    return None;
+                }
+                let holes = p
+                    .holes
+                    .iter()
+                    .filter_map(|hole| {
+                        let mut pl = Polyline::with_capacity(hole.len(), true);
+                        for pt in hole {
+                            pl.add(pt.x, pt.y, 0.0);
+                        }
+                        let pl = dedupe_pline(pl);
+                        (pl.vertex_count() >= 3).then_some(pl)
+                    })
+                    .collect();
+                Some(RingGroup { boundary, holes })
+            })
+            .collect();
+        Self { groups }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.groups.is_empty()
+    }
+
+    /// Number of independent boundaries. One-to-one with
+    /// [`Self::to_polygons`]' output, in the same order.
+    #[must_use]
+    pub fn group_count(&self) -> usize {
+        self.groups.len()
+    }
+
+    /// POLYLINE vertices — an arc is one vertex plus a bulge, so this is not
+    /// the count a toolpath would carry. For that, flatten first.
+    #[must_use]
+    pub fn vertex_count(&self) -> usize {
+        self.groups.iter().map(RingGroup::vertex_count).sum()
+    }
+
+    /// Offset every group by the same distance.
+    #[must_use]
+    pub fn offset(&self, distance: f64) -> Self {
+        Self {
+            groups: self
+                .groups
+                .iter()
+                .flat_map(|g| g.offset(distance))
+                .collect(),
+        }
+    }
+
+    /// Offset group `i` by `distances[i]`. Groups past the end of the slice
+    /// take the last distance given; an empty slice offsets nothing.
+    #[must_use]
+    pub fn offset_per_group(&self, distances: &[f64]) -> Self {
+        let Some(&fallback) = distances.last() else {
+            return Self::default();
+        };
+        Self {
+            groups: self
+                .groups
+                .iter()
+                .enumerate()
+                .flat_map(|(i, g)| g.offset(distances.get(i).copied().unwrap_or(fallback)))
+                .collect(),
+        }
+    }
+
+    /// Flatten the whole set — the boundary where the cascade's geometry
+    /// becomes toolpath geometry. One polygon per group, in group order.
+    #[must_use]
+    pub fn to_polygons(&self, policy: FlattenPolicy) -> Vec<Polygon2> {
+        self.groups.iter().map(|g| g.to_polygon(policy)).collect()
+    }
 }
 
 /// Detect containment among a flat list of polygons and nest inner polygons
@@ -1227,32 +1704,137 @@ mod tests {
         assert_relative_eq!(results[0].area(), sq.area(), epsilon = 0.1);
     }
 
+    /// The cascade that replaced `pocket_offsets` (retired at Checkpoint D:
+    /// no production caller, and it duplicated
+    /// `pocket_contours_with_cancel`'s loop *without* its cancel hook — it is
+    /// the function that ran 13 minutes and 386 MB in the M5 study).
     #[test]
-    fn test_pocket_offsets() {
+    fn ring_set_cascade_shrinks_layer_by_layer() {
         let sq = square(20.0); // 20x20
-        let layers = pocket_offsets(&sq, 3.0); // stepover = 3mm
+        let mut rings = OffsetRingSet::from_polygon(&sq);
+        let mut layers: Vec<Vec<Polygon2>> = Vec::new();
+        for _ in 0..10 {
+            rings = rings.offset(3.0);
+            if rings.is_empty() {
+                break;
+            }
+            layers.push(rings.to_polygons(FlattenPolicy::untoleranced()));
+        }
 
-        // With 20x20 square and 3mm stepover, we should get ~3 layers
-        // (half-width = 10, so 10/3 ≈ 3.33 layers)
+        // Half-width 10, stepover 3 → 3 rings before collapse.
         assert!(
-            layers.len() >= 2 && layers.len() <= 4,
+            (2..=4).contains(&layers.len()),
             "Expected 2-4 layers for 20x20 square with 3mm stepover, got {}",
             layers.len()
         );
 
-        // Each layer should have smaller area than the previous
         let mut prev_area: f64 = sq.area();
         for (i, layer) in layers.iter().enumerate() {
             let layer_area: f64 = layer.iter().map(|p| p.area()).sum();
             assert!(
                 layer_area < prev_area,
-                "Layer {} area ({}) should be less than previous ({})",
-                i,
-                layer_area,
-                prev_area
+                "Layer {i} area ({layer_area}) should be less than previous ({prev_area})"
             );
             prev_area = layer_area;
         }
+    }
+
+    /// The cascade must not inflate on the shape class that made it inflate:
+    /// a boundary with reflex corners, offset inward over and over.
+    #[test]
+    fn ring_set_cascade_does_not_inflate_on_a_reflex_boundary() {
+        // A plus/cross — four reflex corners, the §8 pocket fixture.
+        let (a, b) = (20.0, 60.0);
+        let cross = Polygon2::new(vec![
+            P2::new(a, 0.0),
+            P2::new(b, 0.0),
+            P2::new(b, a),
+            P2::new(b + a, a),
+            P2::new(b + a, b),
+            P2::new(b, b),
+            P2::new(b, b + a),
+            P2::new(a, b + a),
+            P2::new(a, b),
+            P2::new(0.0, b),
+            P2::new(0.0, a),
+            P2::new(a, a),
+        ]);
+        let mut rings = OffsetRingSet::from_polygon(&cross);
+        let mut worst = 0usize;
+        let mut count = 0usize;
+        for _ in 0..40 {
+            rings = rings.offset(0.5);
+            if rings.is_empty() {
+                break;
+            }
+            count += 1;
+            worst = worst.max(rings.vertex_count());
+        }
+        assert!(count >= 30, "cross should survive ~40 rings, got {count}");
+        // Production's chord-per-ring cascade reaches 42 148 vertices here
+        // and does not finish in 20 seconds. Two hundred is generous.
+        assert!(
+            worst < 200,
+            "arc cascade must stay bounded on a reflex boundary; peak {worst} vertices"
+        );
+    }
+
+    /// The flatten policy is the only thing that decides ring density, and it
+    /// answers to the operation's tolerance.
+    #[test]
+    fn flatten_policy_is_derived_from_the_op_tolerance_and_clamped() {
+        let p = FlattenPolicy::from_chord_tolerance(0.100);
+        assert_relative_eq!(p.max_deviation_mm(), 0.010, epsilon = 1e-12);
+        // Absurdly tight and absurdly loose tolerances both clamp.
+        assert_relative_eq!(
+            FlattenPolicy::from_chord_tolerance(1e-9).max_deviation_mm(),
+            FlattenPolicy::MIN_DEVIATION_MM,
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            FlattenPolicy::from_chord_tolerance(10.0).max_deviation_mm(),
+            FlattenPolicy::MAX_DEVIATION_MM,
+            epsilon = 1e-12
+        );
+        assert_relative_eq!(
+            FlattenPolicy::from_chord_tolerance(f64::NAN).max_deviation_mm(),
+            FlattenPolicy::UNTOLERANCED_MM,
+            epsilon = 1e-12
+        );
+        // A tighter budget can only add points, never move the ring off the
+        // arc it is approximating.
+        let sq = square(40.0);
+        let ring = OffsetRingSet::from_polygon(&sq).offset(-3.0);
+        let coarse = ring.to_polygons(FlattenPolicy::from_chord_tolerance(0.5));
+        let fine = ring.to_polygons(FlattenPolicy::from_chord_tolerance(0.01));
+        let coarse_n: usize = coarse.iter().map(|p| p.exterior.len()).sum();
+        let fine_n: usize = fine.iter().map(|p| p.exterior.len()).sum();
+        assert!(
+            fine_n > coarse_n,
+            "a tighter flatten budget must produce more points: {coarse_n} -> {fine_n}"
+        );
+    }
+
+    /// Holes have to survive the cascade, and stay attached to the boundary
+    /// that contains them.
+    #[test]
+    fn ring_set_cascade_keeps_holes_with_their_container() {
+        let mut sq = square(60.0);
+        // A CW hole, per `Polygon2`'s contract.
+        sq.holes.push(vec![
+            P2::new(-10.0, -10.0),
+            P2::new(-10.0, 10.0),
+            P2::new(10.0, 10.0),
+            P2::new(10.0, -10.0),
+        ]);
+        let rings = OffsetRingSet::from_polygon(&sq).offset(2.0);
+        let polys = rings.to_polygons(FlattenPolicy::untoleranced());
+        assert_eq!(polys.len(), 1, "one boundary in, one boundary out");
+        assert_eq!(
+            polys.first().map(|p| p.holes.len()),
+            Some(1),
+            "the hole must still be a hole of its container"
+        );
     }
 
     // --- containment detection tests ---
