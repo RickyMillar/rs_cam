@@ -15,8 +15,8 @@ use crate::state::toolpath::{
     FaceConfig, FaceDirection, HeightContext, HeightsConfig, InlayConfig, ProfileConfig,
     RestConfig, ZigzagConfig,
 };
+use rs_cam_core::compute::build_cutter;
 use rs_cam_core::compute::execute::execute_operation_annotated_with_regions;
-use rs_cam_core::compute::{build_cutter, compute_stats_with_spans};
 #[cfg(test)]
 use rs_cam_core::geo::P3;
 #[cfg(test)]
@@ -512,12 +512,14 @@ pub(super) fn run_compute_with_phase_tracker(
     let semantic_root = semantic_recorder
         .as_ref()
         .map(|recorder| recorder.root_context());
-    // Filled by the core generate below; stays default on paths that never
-    // reach it (cached / non-core branches), which report no findings.
-    let mut generation_findings = rs_cam_core::compute::execute::GenerationFindings::default();
-
     let result = (|| -> Result<ToolpathResult, ComputeError> {
-        let tp = {
+        // The findings ride out of the generate block with the toolpath they
+        // describe. They used to be a `let mut` default declared outside this
+        // closure and assigned into — a shape that only made sense while the
+        // stats mapping READ them field by field. The join MOVES them, so
+        // there is no default to fabricate and no window in which a caller
+        // could observe an empty one.
+        let (tp, generation_findings) = {
             let _phase_scope =
                 phase_tracker.map(|tracker| tracker.start_phase(req.operation.label()));
             let core_scope = debug_root
@@ -532,13 +534,12 @@ pub(super) fn run_compute_with_phase_tracker(
                 semantic_root.as_ref(),
                 core_debug_span_id,
             )?;
-            generation_findings = core_findings;
             if let Some(scope) = core_scope.as_ref()
                 && !generated.toolpath.moves.is_empty()
             {
                 scope.set_move_range(0, generated.toolpath.moves.len() - 1);
             }
-            generated
+            (generated, core_findings)
         };
 
         let mut current = tp;
@@ -772,39 +773,27 @@ pub(super) fn run_compute_with_phase_tracker(
             let _stats_scope = debug_root
                 .as_ref()
                 .map(|ctx| ctx.start_span("final_stats", "Compute stats"));
-            let mut stats = compute_stats_with_spans(
+            // H2.1: the worker no longer has a per-field surface here.
+            //
+            // This block used to be `compute_stats_with_spans(..)` followed
+            // by eleven `stats.<field> = generation_findings.<field>;`
+            // assignments — a mapping with no compile-time guard in either
+            // direction, which is why it had to be patched once per finding
+            // channel added (the comment on the last one said so: "this is
+            // the fifth field to need these lines"), and why
+            // `generate_via_core` was once able to drop every annotated
+            // side-channel at once without a single error.
+            //
+            // `stats_with_findings` is the ONE join, shared with
+            // `ProjectSession::generate_toolpath`. It destructures
+            // `GenerationFindings` exhaustively in core, so a new finding is
+            // a compile error there until someone routes it — and the GUI
+            // path inherits the routing rather than re-stating it.
+            rs_cam_core::compute::stats_with_findings(
                 &current.toolpath,
                 current.spans_valid.then_some(current.spans.as_slice()),
-            );
-            // `compute_stats_with_spans` only sees moves (and, when trusted,
-            // spans); generation-time findings come from the core call
-            // above.
-            stats.truncated_core_mm2 = generation_findings.truncated_core_mm2;
-            // M4 §5b: the hole-aware and estimator siblings — same
-            // parallel-copy rule, off the same `GenerationFindings`.
-            stats.untouched_material_mm2 = generation_findings.untouched_material_mm2;
-            stats.reached_uncut_estimate_mm2 = generation_findings.reached_uncut_estimate_mm2;
-            // Wave D1: the GUI worker is a parallel copy of the session
-            // path, so a finding that only lands on one of them is invisible
-            // in exactly the product the operator uses.
-            stats.dropped_band = generation_findings.dropped_band.map(Box::new);
-            stats.tip_float = generation_findings.tip_float;
-            // PR-5: same rule — the GUI worker is a parallel copy, so a
-            // finding that lands only on the session path is invisible in
-            // exactly the product the operator uses.
-            stats.deprecated_dial = generation_findings.deprecated_dial.map(Box::new);
-            // PR-6a: the reach-policy stepover, same parallel-copy rule.
-            stats.derived_stepovers = generation_findings.derived_stepovers.clone();
-            stats.clipped_band = generation_findings.clipped_band.map(Box::new);
-            // PR-8b: the ramp reach clamp, same parallel-copy rule.
-            stats.ramp_reach_clamp = generation_findings.ramp_reach_clamp.map(Box::new);
-            // A/M6: the resolved claims reference, same parallel-copy rule.
-            stats.claims_reference = generation_findings.claims_reference;
-            // A4: same parallel-copy rule — a finding that lands only on the
-            // session path is invisible in exactly the product the operator
-            // uses (B7; this is the fifth field to need these lines).
-            stats.zero_removal = generation_findings.zero_removal;
-            stats
+                generation_findings,
+            )
         };
 
         // §6.E build the drill-op view atomically with the annotated
