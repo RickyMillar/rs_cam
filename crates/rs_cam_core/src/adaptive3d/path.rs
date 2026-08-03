@@ -814,6 +814,7 @@ pub(super) fn adaptive_3d_segments(
                     params.safe_z,
                     params.tolerance,
                     params.min_cutting_radius,
+                    params.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -958,6 +959,7 @@ pub(super) fn adaptive_3d_segments(
                     params.safe_z,
                     params.tolerance,
                     params.min_cutting_radius,
+                    params.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -1137,7 +1139,7 @@ fn try_emit_stay_down_link(
 /// entry destinations (peck-plunge / helix / ramp descend to this Z) so an
 /// entry whose footprint laps higher neighbouring material can't plunge below
 /// the leave. Only ever raises Z.
-fn drape_point(
+pub(super) fn drape_point(
     p: &P3,
     mesh: &crate::mesh::TriangleMesh,
     index: &crate::mesh::SpatialIndex,
@@ -1152,7 +1154,7 @@ fn drape_point(
     }
 }
 
-fn drape_path_to_leave(
+pub(super) fn drape_path_to_leave(
     path: &[P3],
     mesh: &crate::mesh::TriangleMesh,
     index: &crate::mesh::SpatialIndex,
