@@ -5007,3 +5007,11 @@ fresh run in flight. Cosmetic; documented resubmit semantics.
 Final state: project verdict OK at 0.1 mm — 0 collisions, 0 rapid
 collisions, runtime 13,108 s with the claims-enabled rest pass included.
 The programme's live-validation gate is CLOSED.
+
+**D-LV.1 SCOPED (operator viewport check, 2026-08-04):** the live GUI 3D
+viewport renders op 8's Unified Finish toolpath correctly — the defect is
+confined to the `screenshot_toolpath` 6-view PNG exporter path (agent/MCP
+surface only). Suspect narrows to the exporter's move classification vs the
+new emission (arc-cascade arc moves / new intent tags), since the viewport
+renderer consumes the same toolpath and draws it. Severity downgraded:
+agent-tooling display defect, no operator-facing impact.
