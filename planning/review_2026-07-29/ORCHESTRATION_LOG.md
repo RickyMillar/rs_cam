@@ -4412,6 +4412,39 @@ it is registry/MCP and project TOML only, same as the scallop one — so for
 most users the default IS the setting, which is precisely why the operator was
 asked rather than told.
 
+The A/B re-ran clean on the flipped build and reproduces wave 12 almost to the
+decimal — trips **85 → 8**, cycle **239.09 → 130.80 s**, footprint **identical
+at 850.0 mm²**, mm²/s **3.5552 → 6.4986**. (Move counts differ by ~9 from wave
+12's, 1428→1292 against 1437→1301: that is wave 14's own arc cascade moving the
+scallop bands inside the op, not the relink.)
+
+### The flip made another shipped feature a no-op, and that is the right outcome
+
+`capability_link_moves_safety::unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth`
+went red on the flip, and the failure is worth more than the fix: rapid travel
+came back **identical** with and without the barriered TSP — 393.93 mm both
+ways, `+0.0%`. The reorder had nothing left to reorder.
+
+That is the two levers meeting. `optimize_rapid_order`'s barriered TSP shortens
+intra-region fragment-to-fragment hops; `intra_region_hookup_mm` **removes**
+those trips outright. Wave 12 called this in one line — *reordering shortens
+the hop; only linking removes the legs* — and here is the arithmetic agreeing
+with it. **At the shipped default, the barriered TSP buys UnifiedFinish nothing
+intra-region on this fixture.**
+
+It is not dead: it still applies to fragments the relink cannot join (beyond
+the 6 mm cap, or where the gouge-checked link refuses), and to projects that
+set the dial to 0. So the test now **pins its own dial at 0.0** instead of
+inheriting the default, with the reason in the source. A test whose subject is
+a capability must not let an unrelated default decide whether it measures
+anything — that is the same failure as a gate whose population cannot go red
+(P12), one layer over.
+
+**Worth an operator's attention at live validation:** if the relink subsumes
+intra-region travel this completely on real parts too, `optimize_rapid_order`
+is doing less for UnifiedFinish than its cost suggests, and that is a
+measurement nobody has taken on a part.
+
 ### Gates
 
 `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -D warnings`
@@ -4440,6 +4473,27 @@ pre-flip ones are scallop/offset-only and cannot see the dial. Recording which
 build each row came from is the whole of P11's lesson applied to a gate table
 rather than to a pin — the alternative is a green list whose members were not
 all measuring the same thing.
+
+**`--test param_sweep -- --ignored`: 56 / 56 ok**, on the fully flipped build
+— Checkpoint D's fourth evidence item, and it covers the arc cascade (pocket
+and scallop) and the hookup default in one run.
+
+Flip class, all post-flip: `retract_trip_channel_am7` (5, including the renamed
+sentry and both default pins), `scallop_intra_pass_relink_am7` (5),
+`unified_finish_semantic_regions` (4), `-p rs_cam_core --lib unified_finish`
+(21), and `capability_link_moves_safety` (**17**, after the one red above was
+root-caused and the test given its own dial).
+
+Final `cargo fmt --check` clean and `cargo clippy --workspace --all-targets
+-D warnings` zero, on the flipped build.
+
+**One red was found and it was mine.** Slice 1 was committed without running
+`capability_link_moves_safety`, so for a while the arc cascade was the leading
+suspect for that failure. It was not — pinning the dial to 0.0 turned the
+target green with the cascade untouched, which is what isolates it. The
+process lesson is small and repeatable: **when a target is not in the gate list
+and a later change makes it red, establish which change owns it before writing
+either one up.** Guessing would have put an erratum on the wrong feature.
 
 ### What a human still owns
 
