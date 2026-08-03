@@ -1600,17 +1600,59 @@ mod tests {
     use crate::toolpath::{MoveIntent, MoveType};
 
     // F-038b: legacy `segments_to_toolpath` tests need a mesh + index +
-    // cutter trio to call the new signature. Since they explicitly
-    // disable the keep-tool-down feature (`max_stay_down_distance_mm:
-    // Some(0.0)` in `minimal_params`), the heightfield never gets
-    // queried — a trivial flat mesh and an arbitrary endmill are fine.
+    // cutter trio to call the new signature.
+    //
+    // 2026-08-04: this helper's doc comment used to claim "the
+    // heightfield never gets queried" because `minimal_params` disables
+    // keep-tool-down (`max_stay_down_distance_mm: Some(0.0)`). That
+    // stopped being true at `fa27b08`, which made `segments_to_toolpath`
+    // drape every Cut point (`drape_path_to_leave`) and every plain-Rapid
+    // entry (`drape_point`) up to `drop_cutter(x, y) + stock_to_leave`
+    // unconditionally. On a flat mesh at z = 0 with `stock_to_leave` 0.5
+    // that lifts EVERY fixture point below +0.5 up to +0.5 — which is
+    // exactly how two of the tests below went red and vacuous. Use
+    // `flat_mesh_at` to place the surface out of the way when a fixture
+    // wants the drape inert.
     fn legacy_test_mesh() -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
-        let m = crate::mesh::make_test_flat(100.0);
+        flat_mesh_at(100.0, 0.0)
+    }
+
+    /// A `size`×`size` flat quad at height `z`. Fixtures that want the
+    /// `fa27b08` drape to be provably inert put the surface far BELOW
+    /// every commanded Z; fixtures that want it active put it above.
+    /// The drape is never disabled — it is a production gouge guard.
+    fn flat_mesh_at(size: f64, z: f64) -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
+        let h = size / 2.0;
+        let m = crate::mesh::TriangleMesh::from_raw(
+            vec![
+                P3::new(-h, -h, z),
+                P3::new(h, -h, z),
+                P3::new(h, h, z),
+                P3::new(-h, h, z),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+        );
         let si = crate::mesh::SpatialIndex::build(&m, 10.0);
         (m, si)
     }
+
     fn legacy_test_cutter() -> crate::tool::FlatEndmill {
         crate::tool::FlatEndmill::new(6.35, 25.0)
+    }
+
+    /// Mirrors the private constant in [`emit_peck_plunge`]. Kept as a
+    /// separate literal on purpose: if the production clearance moves,
+    /// the peck sentries below must be re-pinned deliberately, not
+    /// silently retuned.
+    const PECK_CLEARANCE_MM: f64 = 0.5;
+
+    /// Z of every `EntryPlunge` feed in `tp`, in emission order.
+    fn entry_plunge_zs(tp: &Toolpath) -> Vec<f64> {
+        tp.moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .map(|m| m.target.z)
+            .collect()
     }
 
     fn minimal_params() -> Adaptive3dParams {
@@ -1652,28 +1694,156 @@ mod tests {
         }
     }
 
+    /// Livelock guard, introduced with the F-001/F-002/F-003 batch
+    /// (`072c11a`): when the operator sets the peck depth equal to the
+    /// peck retract clearance, the entry plunge must still walk the hole
+    /// down. `emit_peck_plunge` advances `current_z` to the **committed
+    /// cut floor** (`next_z`); advancing it to the retract height instead
+    /// makes the loop non-progressing and the emitter never returns.
+    ///
+    /// Fixture history (2026-08-04): this test used to enter at z = 0 on
+    /// the flat mesh at z = 0 with `stock_to_leave = 0.5` and
+    /// `safe_z = 1.0`. From `fa27b08` the drape lifted that entry to
+    /// z = +0.5, so `safe_z - entry.z` collapsed to exactly
+    /// `depth_per_pass` and the peck loop stopped iterating at all. The
+    /// test failed `left: 1, right: 2` — and was simultaneously VACUOUS:
+    /// with zero iterations, reverting the progression fix could not
+    /// change its output. The surface now sits 50 mm below the entry so
+    /// the drape is provably inert (asserted) and the ladder runs.
+    ///
+    /// Note that under a reverted `current_z = retract_z` this fixture
+    /// livelocks rather than failing an assertion — that IS the defect it
+    /// guards. The bounded detector for the same production line is
+    /// `peck_plunge_commits_the_cut_floor_not_the_retract_height` below.
     #[test]
     fn peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance() {
         let mut params = minimal_params();
-        params.safe_z = 1.0;
-        params.depth_per_pass = 0.5;
+        params.safe_z = 5.0;
+        params.depth_per_pass = PECK_CLEARANCE_MM;
 
-        let rapid = Adaptive3dSegment::Rapid(P3::new(0.0, 0.0, 0.0));
-        let (mesh, si) = legacy_test_mesh();
+        // Surface 50 mm below the entry: the drape target is
+        // -50 + 0.5 leave, far under z = 0, so `drape_point` cannot lift
+        // the entry and the peck ladder is the only thing under test.
+        let (mesh, si) = flat_mesh_at(100.0, -50.0);
         let cutter = legacy_test_cutter();
-        let (tp, _) = segments_to_toolpath(&[rapid], &params, &mesh, &si, &cutter);
+        let entry = P3::new(0.0, 0.0, 0.0);
 
+        // Non-vacuity precondition: prove the drape is inert HERE rather
+        // than assuming it. This is the assertion whose absence let the
+        // old fixture rot silently for seven weeks.
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
         assert!(
-            tp.moves.len() <= 6,
+            (draped.z - entry.z).abs() < 1e-12,
+            "fixture broken: drape moved the entry from {} to {} — the peck loop \
+             below is no longer the thing under test",
+            entry.z,
+            draped.z
+        );
+
+        let (tp, _) = segments_to_toolpath(
+            &[Adaptive3dSegment::Rapid(entry)],
+            &params,
+            &mesh,
+            &si,
+            &cutter,
+        );
+
+        // Pre-registered ladder: the loop starts at safe_z = 5.0 and
+        // commits floors 4.5, 4.0, … 0.5 (9 iterations, since the guard
+        // is `current_z - entry.z > dpp`), then the terminal feed lands
+        // on entry.z = 0.0. Ten EntryPlunge feeds, each 0.5 mm deeper
+        // than the last.
+        const EXPECTED_PLUNGES: usize = 10;
+        let plunges = entry_plunge_zs(&tp);
+
+        // Runaway cap sized from the pre-registered count: a
+        // non-progressing loop that somehow terminates trips a bound
+        // instead of quietly emitting a long ladder.
+        assert!(
+            tp.moves.len() <= 4 * EXPECTED_PLUNGES,
             "DPP equal to peck clearance should not create a runaway plunge loop; got {} moves",
             tp.moves.len()
         );
-        let entry_plunges = tp
-            .moves
-            .iter()
-            .filter(|m| m.intent == MoveIntent::EntryPlunge)
-            .count();
-        assert_eq!(entry_plunges, 2);
+        assert_eq!(
+            plunges.len(),
+            EXPECTED_PLUNGES,
+            "peck ladder from safe_z {} to entry {} at {} mm/peck should emit {} \
+             EntryPlunge feeds; got {:?}",
+            params.safe_z,
+            entry.z,
+            params.depth_per_pass,
+            EXPECTED_PLUNGES,
+            plunges
+        );
+        // Every peck must commit a strictly deeper floor. This is the
+        // property `current_z = next_z` exists to hold: the retract
+        // between pecks must not become the next peck's starting height.
+        for w in plunges.windows(2) {
+            assert!(
+                w[1] < w[0] - 1e-9,
+                "peck ladder failed to progress: {:?}",
+                plunges
+            );
+        }
+        assert!(
+            (plunges[EXPECTED_PLUNGES - 1] - entry.z).abs() < 1e-9,
+            "final plunge must land exactly on the entry Z; got {:?}",
+            plunges
+        );
+    }
+
+    /// Bounded sibling of the livelock guard above, and the red-first
+    /// detector for the same production line (`current_z = next_z` in
+    /// `emit_peck_plunge`).
+    ///
+    /// With `depth_per_pass` at twice the peck clearance the reverted
+    /// code still terminates — it just descends by
+    /// `dpp - PECK_CLEARANCE_MM` per iteration instead of `dpp` — so the
+    /// defect shows up as a countable ladder instead of a hang: 9 plunges
+    /// (0.5 mm steps) under `current_z = retract_z` against 5 (1.0 mm
+    /// steps) under the shipped code.
+    #[test]
+    fn peck_plunge_commits_the_cut_floor_not_the_retract_height() {
+        let mut params = minimal_params();
+        params.safe_z = 5.0;
+        params.depth_per_pass = 2.0 * PECK_CLEARANCE_MM;
+
+        let (mesh, si) = flat_mesh_at(100.0, -50.0);
+        let cutter = legacy_test_cutter();
+        let entry = P3::new(0.0, 0.0, 0.0);
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
+        assert!(
+            (draped.z - entry.z).abs() < 1e-12,
+            "fixture broken: drape moved the entry from {} to {}",
+            entry.z,
+            draped.z
+        );
+
+        let (tp, _) = segments_to_toolpath(
+            &[Adaptive3dSegment::Rapid(entry)],
+            &params,
+            &mesh,
+            &si,
+            &cutter,
+        );
+
+        // Pre-registered: floors 4.0, 3.0, 2.0, 1.0 then the terminal
+        // feed to 0.0 — 5 plunges, each a full `depth_per_pass` apart.
+        let plunges = entry_plunge_zs(&tp);
+        assert_eq!(
+            plunges.len(),
+            5,
+            "each peck must step down by the full depth_per_pass; got {:?}",
+            plunges
+        );
+        for w in plunges.windows(2) {
+            assert!(
+                (w[0] - w[1] - params.depth_per_pass).abs() < 1e-9,
+                "peck step should equal depth_per_pass {}, got ladder {:?}",
+                params.depth_per_pass,
+                plunges
+            );
+        }
     }
 
     /// Closes the F-5/F-6 regression found during the April 2026 Phase 2
