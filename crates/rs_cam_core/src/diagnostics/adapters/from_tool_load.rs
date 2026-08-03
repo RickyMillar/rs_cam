@@ -84,12 +84,50 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diagnostic> {
     match v {
         ChiploadVerdict::Within {
-            approach_to_max, ..
+            approach_to_max,
+            burn_advisory,
+            ..
         } => {
             // Emit only when there's something to say — Within rows
             // carry no severity headline, but a Current diagnostic is
             // needed so the supersession reducer can silence the
             // pre-sim heuristics.
+            //
+            // H4 (wave 15) — the `Within` arm is NOT always a pass.
+            // F3.3 routes a genuine low-side trip here whenever the burn
+            // floor's provenance is too weak to refuse on
+            // (`ChipBoundsSource::low_side_is_advisory`): the verdict
+            // stays `Within` by design, but it carries a `burn_advisory`
+            // saying the median chip thickness sat BELOW the floor.
+            // This arm used to ignore that field entirely and render
+            // "Chipload within band (0.0007 mm/tooth)" beside evidence
+            // reading `min 0.00458` — a message its own citation
+            // contradicts on its face. The live validation of 2026-07-30
+            // filed exactly that as CONCERN 1, and could not tell it from
+            // a real pass.
+            //
+            // The VERDICT is deliberately unchanged (that is F3.3's
+            // ruling, and re-litigating it is not a reporting job), as is
+            // the id — `LOAD_CHIPLOAD_WITHIN` is what the supersession
+            // reducer keys on to silence the pre-sim heuristics — and so
+            // is the `Info` severity, because raising it would move badge
+            // counts, which is a product decision and not this wave's.
+            // What changes is that the message and the citation now say
+            // what happened.
+            let citation_metric = burn_advisory.as_deref().unwrap_or(approach_to_max);
+            let message = match burn_advisory.as_deref() {
+                Some(advisory) => format!(
+                    "Chipload {:.4} mm/tooth is BELOW the {:.4} burn floor — not refused because \
+                     the floor's provenance is {} (advisory only)",
+                    advisory.observed_mm_per_tooth,
+                    advisory.bounds.min_mm_per_tooth.unwrap_or(f64::NAN),
+                    advisory.bounds.source.row_id(),
+                ),
+                None => format!(
+                    "Chipload within band ({:.4} mm/tooth)",
+                    approach_to_max.observed_mm_per_tooth
+                ),
+            };
             Some(Diagnostic {
                 id: DiagnosticId::from(ids::LOAD_CHIPLOAD_WITHIN),
                 scope: Scope::Toolpath { id: tp_id },
@@ -98,18 +136,17 @@ fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diag
                 confidence: chipload_confidence(&approach_to_max.bounds.source),
                 state: DiagnosticState::Current,
                 source: Source::ToolLoad,
-                message: format!(
-                    "Chipload within band ({:.4} mm/tooth)",
-                    approach_to_max.observed_mm_per_tooth
-                ),
+                message,
                 evidence: Some(DiagnosticEvidence::LutCitation {
-                    row_id: "vendor_lut".to_owned(),
-                    min: approach_to_max.bounds.min_mm_per_tooth,
-                    max: Some(approach_to_max.bounds.max_mm_per_tooth),
-                    observed: approach_to_max.observed_mm_per_tooth,
+                    // Was hard-coded `"vendor_lut"`, which named a
+                    // calibrated row even when the bounds were derived.
+                    row_id: citation_metric.bounds.source.row_id().to_owned(),
+                    min: citation_metric.bounds.min_mm_per_tooth,
+                    max: Some(citation_metric.bounds.max_mm_per_tooth),
+                    observed: citation_metric.observed_mm_per_tooth,
                     unit: "mm/tooth".to_owned(),
                     extrapolated: matches!(
-                        approach_to_max.bounds.source,
+                        citation_metric.bounds.source,
                         ChipBoundsSource::VendorLutExtrapolated
                     ),
                 }),
