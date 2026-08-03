@@ -637,6 +637,25 @@ impl ChipBoundsSource {
             | ChipBoundsSource::VendorLutMissingAe => true,
         }
     }
+
+    /// Stable identifier for the provenance of these bounds, for use as
+    /// the `row_id` of a `LutCitation` and anywhere else a reader has to
+    /// tell a calibrated row from a derived one.
+    ///
+    /// H4 (wave 15): the chipload diagnostic hard-coded `"vendor_lut"`
+    /// here regardless of source, so the live validation of 2026-07-30
+    /// saw a citation reading `row_id: vendor_lut` and
+    /// `extrapolated: true` in the same breath. A citation that names a
+    /// row the bounds did not come from is worse than no citation.
+    #[must_use]
+    pub const fn row_id(self) -> &'static str {
+        match self {
+            ChipBoundsSource::VendorLut => "vendor_lut",
+            ChipBoundsSource::VendorLutExtrapolated => "vendor_lut_extrapolated",
+            ChipBoundsSource::VendorLutPointPreset => "vendor_lut_point_preset",
+            ChipBoundsSource::VendorLutMissingAe => "vendor_lut_missing_ae",
+        }
+    }
 }
 
 /// G17 C2 — informational entry-sample spike that exceeded the

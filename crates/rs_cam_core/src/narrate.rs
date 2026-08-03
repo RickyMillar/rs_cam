@@ -1349,9 +1349,27 @@ fn append_peak_doc_anomaly(
         || {
             use crate::compute::catalog::OperationType;
             match context.operation_kind {
-                Some(OperationType::DropCutter) => {
-                    "this op follows surface heights — no commanded DOC".to_owned()
-                }
+                // H4 wave 15 — every op in this arm follows the MODEL
+                // SURFACE, so it has no depth-per-pass to compare against.
+                // Only `DropCutter` was listed, which is why the live
+                // validation of 2026-07-30 read a `UnifiedFinish`'s
+                // 1.86 mm peak against a 0.3 mm `z_step` and filed it as a
+                // "~6x" anomaly (CONCERN 3). `z_step` is the waterline
+                // band's Z stepping, not a commanded DOC for the raster
+                // and scallop bands that produced the sample; the ratio
+                // had no denominator.
+                Some(
+                    OperationType::DropCutter
+                    | OperationType::Waterline
+                    | OperationType::Pencil
+                    | OperationType::Scallop
+                    | OperationType::UnifiedFinish
+                    | OperationType::SteepShallow
+                    | OperationType::RampFinish
+                    | OperationType::SpiralFinish
+                    | OperationType::RadialFinish
+                    | OperationType::HorizontalFinish,
+                ) => "this op follows surface heights — no commanded DOC".to_owned(),
                 Some(OperationType::ProjectCurve) => {
                     "this op follows the curve at a fixed surface offset — no commanded DOC"
                         .to_owned()
@@ -1377,7 +1395,15 @@ fn append_peak_doc_anomaly(
         }
     });
     anomalies.push(format!(
-        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. Large DOC spikes often point to arc-fit overshoot, lift-function bridging, or an uncleared-stock edge case.",
+        // H4 wave 15 — the advice used to lead with arc-fit overshoot and
+        // lift bridging. Arc-fit has now been exonerated twice on live
+        // spikes, and the probe in `tests/axial_doc_step_multiple_h4.rs`
+        // shows what the number actually is: the height of material this
+        // stamp removed. A pass over ground an earlier pass never visited
+        // reads an exact multiple of the step, at any depth and any pass
+        // index. Standing stock is therefore named FIRST, and the reader
+        // is told what is being measured before being offered a cause.
+        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. This is the height of material removed at one column, not a commanded step: an exact multiple of the step means that many steps of stock were standing there — check upstream coverage first, then lift-function bridging, then arc-fit overshoot.",
         sample.axial_doc_mm,
         sample.sample_index,
         sample.move_index,
