@@ -179,6 +179,64 @@ RampFinish has no standing-material area channel (lift magnitude only).~~
   one-cargo-job rule all session — an environment note for the operator, not
   a repo fix.
 
+## P11. Pins and claims captured mid-wave (three instances, escalating)
+
+**Observed:** M4, then wave 14 twice. A fingerprint or an expectation is
+re-captured while a wave is still landing behaviour, so it records an
+intermediate build. It then reads as the wave's conclusion forever.
+
+The three instances, in order of how hard they are to catch:
+
+1. **A stale number.** `finish_resolution_policy_pr3` pinned at 899 moves with
+   a "−36.8%" narrative; the shipped value is 2674 (+87.9%). Caught by the
+   test going red the next time it ran.
+2. **Stale numbers in a doc.** Wave 9b's A0-vs-A9 margin table, measured with
+   four-interval chord probing and drop-only decimation, both of which wave 14
+   changed. Nothing goes red; the numbers just quietly stop being true, and
+   they had already been cited twice.
+3. **A stale RATIONALE.** `scallop_candidates_m4` asserted A2 ≡ A0 *because*
+   "Fixed20's stride is 1 for any ring under 40 vertices, and the arc
+   cascade's rings are that sparse". The premise died when the sampling bound
+   landed. **This is the dangerous form: a stale number goes red, a stale
+   reason does not** — unless the assertion names its own mechanism, which is
+   the only reason this one was caught.
+
+**Fix shape:** (a) re-capture every pin after a wave's LAST behavioural
+commit, never during — cheap, and it would have prevented all of instance 1;
+(b) write assertions that carry their reasoning in the message, so a red says
+which premise moved rather than only that something did; (c) when a wave
+changes a mechanism, grep the log for entries whose numbers were measured on
+it and attach an erratum rather than leaving them to be re-cited.
+
+**Related:** the `feedback_instrument_integrity` memory ("a changed instrument
+makes its own docstring a lie you then cite") is the same failure one layer
+up. This is that pattern applied to expectations rather than to instruments.
+
+## P12. Convex fixtures cannot adjudicate concave defects (three places)
+
+**Observed:** wave 14, in three independent places at once. The offset
+vertex-inflation defect's entire mechanism is arc joins, which exist only at
+reflex corners. Yet:
+
+* the M4 scallop oracle fixtures are bounded by the convex mesh-bbox
+  rectangle, so they could never show it;
+* `benches/perf_suite.rs`'s offset benchmark was square-only — the one shape
+  with no reflex corners at all;
+* the PR-3 ridge, on which the +88%-moves question was posed, is smooth and
+  reads 0.000 mm² gouge on every arm, so a quality question was nearly
+  adjudicated on the one fixture with nothing to gouge.
+
+**Fix shape:** a fixture set for a geometric primitive must include the shape
+class the primitive struggles with, and the ONUS is on the fixture to prove it
+can exhibit the defect. "The gate was green" means nothing if the population
+could not have gone red. The bench is now extended (rosette, holed, cascades);
+the oracle fixtures are not, and that is recorded as a limit rather than
+fixed.
+
+**Related:** the standing programme rule *"never gate on an aggregate without
+rendering the surface"* — same family, different axis. That one is about the
+statistic hiding the defect; this one is about the fixture never containing it.
+
 ## Process note (not repo debt)
 
 IDE/rust-analyzer diagnostics were stale mid-edit snapshots after every agent
