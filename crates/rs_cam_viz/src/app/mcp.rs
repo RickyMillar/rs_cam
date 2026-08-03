@@ -1127,7 +1127,7 @@ impl super::RsCamApp {
             // A/M9: the GUI worker filled this on `result.stats` from the
             // core generation findings; carrying it here is what puts the
             // figure in front of an agent narrating a live GUI toolpath.
-            standing_material_mm2: result.stats.standing_material_mm2,
+            truncated_core_mm2: result.stats.truncated_core_mm2,
             // M4 §5b: the hole-aware and estimator siblings, off the same
             // GUI-worker-filled toolpath stats.
             untouched_material_mm2: result.stats.untouched_material_mm2,

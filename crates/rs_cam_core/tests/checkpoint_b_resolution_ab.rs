@@ -53,7 +53,7 @@
 //!   stock cusp; it is comparable BETWEEN ARMS, which is all Checkpoint B
 //!   needs.
 //! * `standing material` — `ScallopReport::uncut_core_mm2`, the same number
-//!   `ToolpathStats::standing_material_mm2` carries (projected XY area, ring
+//!   `ToolpathStats::truncated_core_mm2` carries (projected XY area, ring
 //!   cascade residual stage — see `standing_material_channel_am9.rs`).
 //! * `rapid grazes` — a REFERENCE-FIELD probe, not the dexel simulator: a
 //!   rapid sampled at reference-cell spacing whose Z drops below the

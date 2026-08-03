@@ -14,7 +14,7 @@
 //! (`planning/unified_v3_design.md` §13/§14c/§14h).
 
 use crate::compute::config::{
-    STANDING_MATERIAL_DOMAIN, STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE, ToolpathStats,
+    TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE, ToolpathStats,
 };
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
@@ -35,7 +35,7 @@ pub fn diagnostics_from_generation(
     stats: &ToolpathStats,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    out.extend(standing_material(toolpath_id, stats));
+    out.extend(truncated_core(toolpath_id, stats));
     out.extend(unmachined_band(toolpath_id, stats));
     out.extend(tip_float(toolpath_id, stats));
     out.extend(deprecated_dial(toolpath_id, stats));
@@ -284,11 +284,20 @@ fn deprecated_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
 /// Split out of [`diagnostics_from_generation`] by Wave D1 — it used to
 /// early-`return` the whole adapter when nothing measured a cascade, which
 /// would have made every later finding conditional on this one.
-fn standing_material(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+///
+/// **B8 (Checkpoint E):** the message now carries the M4 §5b untouched /
+/// standing split that narration has had since wave 15. The two halves are
+/// different measurements — an exact hole-aware polygon area, and an
+/// estimator — so they are stated as two clauses with their own words, never
+/// summed. The diagnostic **id** keeps the pre-wave-16 spelling
+/// (`geom.standing_material`) on purpose: it is a stable identity that GUI
+/// filters and suppression rules key on, and `MEASUREMENT_DOMAINS.md`'s
+/// renaming table rules it out of the A6 rename.
+fn truncated_core(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     // `None` = not measured (no ring cascade ran). An absent measurement is
     // not a defect claim, and it is NOT the same as a measured zero — see
-    // `ToolpathStats::standing_material_mm2` (A/M9).
-    let Some(area) = stats.standing_material_mm2 else {
+    // `ToolpathStats::truncated_core_mm2` (A/M9).
+    let Some(area) = stats.truncated_core_mm2 else {
         return Vec::new();
     };
     // NaN never reports either, for the same reason.
@@ -312,17 +321,52 @@ fn standing_material(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
              region: the scallop ring cascade hit its ring cap before the \
              offsets collapsed, so the INTERIOR was never reached. The part \
              will have a raised island. Reduce the region, coarsen the \
-             scallop height, or split the operation. \
+             scallop height, or split the operation.{split} \
              [{domain}; {stage}; {resolution}. Report-only — no gate.]",
-            domain = STANDING_MATERIAL_DOMAIN,
-            stage = STANDING_MATERIAL_STAGE,
-            resolution = STANDING_MATERIAL_RESOLUTION,
+            split = untouched_standing_clause(stats),
+            domain = TRUNCATED_CORE_DOMAIN,
+            stage = TRUNCATED_CORE_STAGE,
+            resolution = TRUNCATED_CORE_RESOLUTION,
         ),
         evidence: None,
         fix: None,
         supersedes: vec![],
         suppressed_diagnostics: vec![],
     }]
+}
+
+/// B8: the M4 §5b split, rendered as a sentence to append to the
+/// `geom.standing_material` message — or the empty string when nothing
+/// measured it.
+///
+/// Deliberately additive: an operator reading the existing message loses
+/// nothing, and the split only appears where it was actually measured. The
+/// two halves keep their own vocabulary — *never reached* for the exact
+/// hole-aware area, *reached, left high* for the estimator, which is
+/// prefixed `~` because it is `(dropped arc length) × stepover` and not an
+/// area anyone measured. They are not summed, and the message says why.
+fn untouched_standing_clause(stats: &ToolpathStats) -> String {
+    match (
+        stats.untouched_material_mm2,
+        stats.reached_uncut_estimate_mm2,
+    ) {
+        // Not measured (nothing that runs a cascade reported the split) —
+        // stay silent rather than render an absence as a zero.
+        (None, None) => String::new(),
+        (untouched, standing) => {
+            let untouched = untouched
+                .filter(|v| v.is_finite())
+                .map_or_else(|| "not measured".to_owned(), |v| format!("{v:.0} mm²"));
+            let standing = standing
+                .filter(|v| v.is_finite())
+                .map_or_else(|| "not measured".to_owned(), |v| format!("~{v:.0} mm²"));
+            format!(
+                " Split: {untouched} never reached (hole-aware, exact) and \
+                 {standing} reached but left high (an estimator, not an area). \
+                 Different measurements — do not add them."
+            )
+        }
+    }
 }
 
 /// C8: a planned finish band whose Z ladder height resolution SHORTENED
@@ -483,9 +527,9 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
 mod tests {
     use super::*;
 
-    fn stats(standing_material_mm2: f64) -> ToolpathStats {
+    fn stats(truncated_core_mm2: f64) -> ToolpathStats {
         ToolpathStats {
-            standing_material_mm2: Some(standing_material_mm2),
+            truncated_core_mm2: Some(truncated_core_mm2),
             ..ToolpathStats::default()
         }
     }
@@ -538,9 +582,9 @@ mod tests {
         // M1: an area with no declared domain is exactly the unlabelled
         // `f64` the audit found being compared across domains.
         for needle in [
-            STANDING_MATERIAL_DOMAIN,
-            STANDING_MATERIAL_STAGE,
-            STANDING_MATERIAL_RESOLUTION,
+            TRUNCATED_CORE_DOMAIN,
+            TRUNCATED_CORE_STAGE,
+            TRUNCATED_CORE_RESOLUTION,
         ] {
             assert!(
                 d.message.contains(needle),

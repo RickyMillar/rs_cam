@@ -73,20 +73,20 @@ pub struct ToolpathNarrationContext<'a> {
     pub material: Option<&'a crate::material::Material>,
     /// A/M9: the generation-time standing-material finding for this
     /// toolpath, straight off
-    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`].
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].
     ///
     /// `None` = not measured (no ring cascade ran, or the caller has no
     /// stats), `Some(0.0)` = a cascade measured zero. Narration states
     /// which — an agent reading this report must never have to guess
     /// whether a silent zero means "clean" or "unknown".
-    pub standing_material_mm2: Option<f64>,
-    /// M4 §5b: the hole-aware sibling of [`Self::standing_material_mm2`],
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`],
     /// straight off
     /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
     /// Same `None`/`Some(0.0)` contract.
     pub untouched_material_mm2: Option<f64>,
     /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
-    /// [`Self::standing_material_mm2`], straight off
+    /// [`Self::truncated_core_mm2`], straight off
     /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
     /// Same `None`/`Some(0.0)` contract.
     pub reached_uncut_estimate_mm2: Option<f64>,
@@ -317,7 +317,7 @@ pub fn narrate_toolpath_with_context(
     } else {
         output.push_str("Semantic trace: not available.\n");
     }
-    append_standing_material(&mut output, context.standing_material_mm2);
+    append_truncated_core(&mut output, context.truncated_core_mm2);
     append_untouched_standing_split(
         &mut output,
         context.untouched_material_mm2,
@@ -724,9 +724,9 @@ const STANDING_MATERIAL_NARRATION_FLOOR_MM2: f64 = 1.0;
 /// surface, so silence here is the same failure mode. Every phrasing states
 /// the measurement's domain, stage and resolution (M1) — an unlabelled mm²
 /// invites exactly the cross-domain comparison the audit found.
-fn append_standing_material(output: &mut String, measured: Option<f64>) {
+fn append_truncated_core(output: &mut String, measured: Option<f64>) {
     use crate::compute::config::{
-        STANDING_MATERIAL_DOMAIN, STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE,
+        TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
     };
     match measured {
         // NaN falls in here too: an unmeasured cascade is not a claim.
@@ -734,15 +734,15 @@ fn append_standing_material(output: &mut String, measured: Option<f64>) {
             output.push_str(&format!(
                 "Standing material: {area:.0} mm² left UNCUT inside the machining region — \
                  the ring cascade hit its ring cap before the offsets collapsed, so the \
-                 part will carry a raised island. {STANDING_MATERIAL_DOMAIN}; \
-                 {STANDING_MATERIAL_STAGE}; {STANDING_MATERIAL_RESOLUTION}. \
+                 part will carry a raised island. {TRUNCATED_CORE_DOMAIN}; \
+                 {TRUNCATED_CORE_STAGE}; {TRUNCATED_CORE_RESOLUTION}. \
                  Report-only — no gate consumes this.\n"
             ));
         }
         Some(area) if area.is_finite() => {
             output.push_str(&format!(
                 "Standing material: none — {area:.0} mm² measured, the ring cascade collapsed \
-                 normally. {STANDING_MATERIAL_DOMAIN}; {STANDING_MATERIAL_STAGE}.\n"
+                 normally. {TRUNCATED_CORE_DOMAIN}; {TRUNCATED_CORE_STAGE}.\n"
             ));
         }
         _ => {
@@ -756,7 +756,7 @@ fn append_standing_material(output: &mut String, measured: Option<f64>) {
 }
 
 /// M4 §5b: one extra line, ONLY when the split was measured and at least one
-/// half clears the same floor `append_standing_material` uses — the line
+/// half clears the same floor `append_truncated_core` uses — the line
 /// above already covers "not measured" and "measured clean", so this stays
 /// silent rather than repeating those states.
 ///
@@ -1726,7 +1726,7 @@ mod tests {
             is_drill_cycle: false,
             material: None,
             // Adaptive3d runs no ring cascade: not measured.
-            standing_material_mm2: None,
+            truncated_core_mm2: None,
             untouched_material_mm2: None,
             reached_uncut_estimate_mm2: None,
             // Nor bands, nor centrelines (Wave D1): not measured either.
@@ -1765,23 +1765,23 @@ mod tests {
     /// different facts, and the one that used to be missing entirely
     /// (`Some(a)`) is the one that shipped a raised island.
     #[test]
-    fn standing_material_line_distinguishes_all_three_states() {
+    fn truncated_core_line_distinguishes_all_three_states() {
         let mut standing = String::new();
-        append_standing_material(&mut standing, Some(837.0));
+        append_truncated_core(&mut standing, Some(837.0));
         assert!(standing.contains("837 mm² left UNCUT"), "{standing}");
         assert!(standing.contains("Report-only"), "{standing}");
         assert!(
-            standing.contains(crate::compute::config::STANDING_MATERIAL_DOMAIN),
+            standing.contains(crate::compute::config::TRUNCATED_CORE_DOMAIN),
             "the number must declare its domain: {standing}"
         );
 
         let mut clean = String::new();
-        append_standing_material(&mut clean, Some(0.0));
+        append_truncated_core(&mut clean, Some(0.0));
         assert!(clean.contains("Standing material: none"), "{clean}");
         assert!(clean.contains("measured"), "{clean}");
 
         let mut unknown = String::new();
-        append_standing_material(&mut unknown, None);
+        append_truncated_core(&mut unknown, None);
         assert!(
             unknown.contains("Standing material: not measured"),
             "{unknown}"
@@ -1794,7 +1794,7 @@ mod tests {
         // A sliver below the floor is not an island — same floor as the
         // diagnostics adapter, so the two surfaces cannot disagree.
         let mut sliver = String::new();
-        append_standing_material(&mut sliver, Some(0.5));
+        append_truncated_core(&mut sliver, Some(0.5));
         assert!(sliver.contains("Standing material: none"), "{sliver}");
     }
 

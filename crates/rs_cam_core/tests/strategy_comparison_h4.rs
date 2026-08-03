@@ -93,7 +93,7 @@
 //!    strategy-mix claims this file re-measures were expressed as a share of
 //!    CUTTING, so distance is the column that can actually answer them.
 //! 5. Rapid collisions, generation wall seconds, per-op and whole-arm
-//!    runtime seconds, `stats.standing_material_mm2` (report "not measured"
+//!    runtime seconds, `stats.truncated_core_mm2` (report "not measured"
 //!    on `None`, never fabricate `0.0` — A/M9's X-19 rule).
 //!
 //! # Verdict discipline — the point of this wave
@@ -584,7 +584,7 @@ struct OpReport {
     retract_trips: Option<RetractTripCount>,
     retract_provenance: Option<MeasurementProvenance>,
     mix: Vec<MixRow>,
-    standing_material_mm2: Option<f64>,
+    truncated_core_mm2: Option<f64>,
     cutting_distance_mm: f64,
     move_count: usize,
 }
@@ -625,7 +625,7 @@ fn measure_op(
         retract_trips,
         retract_provenance,
         mix,
-        standing_material_mm2: result.stats.standing_material_mm2,
+        truncated_core_mm2: result.stats.truncated_core_mm2,
         cutting_distance_mm: result.stats.cutting_distance,
         move_count: result.stats.move_count,
     }
@@ -925,7 +925,7 @@ fn report_op(op: &OpReport) {
         }
         _ => eprintln!("     retract trips: not measured"),
     }
-    match op.standing_material_mm2 {
+    match op.truncated_core_mm2 {
         Some(a) => eprintln!("     standing material: {a:.1} mm²"),
         None => eprintln!("     standing material: not measured"),
     }

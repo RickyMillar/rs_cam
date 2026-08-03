@@ -1550,7 +1550,7 @@ impl ProjectSession {
                     move_count: annotated.toolpath.moves.len(),
                     cutting_distance: annotated.toolpath.total_cutting_distance(),
                     rapid_distance: annotated.toolpath.total_rapid_distance(),
-                    standing_material_mm2: findings.standing_material_mm2,
+                    truncated_core_mm2: findings.truncated_core_mm2,
                     // M4 §5b: the hole-aware and estimator siblings, off the
                     // same `GenerationFindings`.
                     untouched_material_mm2: findings.untouched_material_mm2,
@@ -2863,7 +2863,7 @@ impl ProjectSession {
             // A/M9: the generation-time finding rides on this toolpath's own
             // stats. `None` here is "not measured", which narration says out
             // loud rather than rendering as a zero.
-            standing_material_mm2: result.stats.standing_material_mm2,
+            truncated_core_mm2: result.stats.truncated_core_mm2,
             // M4 §5b: the hole-aware and estimator siblings, off the same
             // toolpath stats.
             untouched_material_mm2: result.stats.untouched_material_mm2,
@@ -3088,7 +3088,11 @@ impl ProjectSession {
                     rapid_distance_mm: result.stats.rapid_distance,
                     collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
-                    standing_material_mm2: result.stats.standing_material_mm2,
+                    truncated_core_mm2: result.stats.truncated_core_mm2,
+                    // B8 — the untouched/standing split, on the same wire as
+                    // the core it must not be confused with.
+                    untouched_material_mm2: result.stats.untouched_material_mm2,
+                    reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
                     // Wave D1 — the MCP wire. `None` serialises null.
                     unmachined_band_area_mm2: result
                         .stats
@@ -5214,7 +5218,7 @@ mod tests {
                 rapid_distance: 0.0,
                 // Not measured: this fake never ran a cascade, planned no
                 // bands and emitted no centrelines.
-                standing_material_mm2: None,
+                truncated_core_mm2: None,
                 untouched_material_mm2: None,
                 reached_uncut_estimate_mm2: None,
                 dropped_band: None,

@@ -10,7 +10,7 @@
 //!
 //! 1. `narrate_toolpath` — the agent-facing surface — never mentioned it, so
 //!    an agent narrating a truncated cascade saw nothing at all.
-//! 2. `ToolpathStats::standing_material_mm2` was a bare `f64` whose `0.0`
+//! 2. `ToolpathStats::truncated_core_mm2` was a bare `f64` whose `0.0`
 //!    meant BOTH "a cascade ran and left nothing" and "no cascade ran, so
 //!    nothing was measured" (X-19, the silent-zero trap). Any "% left
 //!    standing" a reader built on the second case was unfounded.
@@ -38,7 +38,7 @@ use common::tools::{ball_tool_config, endmill_tool_config, tapered_ball_tool_con
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
-    STANDING_MATERIAL_DOMAIN, STANDING_MATERIAL_RESOLUTION, STANDING_MATERIAL_STAGE,
+    TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
 };
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern, ScallopConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
@@ -157,7 +157,7 @@ fn measured(session: &ProjectSession) -> Option<f64> {
         .get_result(0)
         .expect("generated result")
         .stats
-        .standing_material_mm2
+        .truncated_core_mm2
 }
 
 fn standing_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
@@ -171,9 +171,9 @@ fn standing_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
 /// unlabelled area the audit found being compared across domains.
 fn declares_domain_stage_and_resolution(text: &str) {
     for needle in [
-        STANDING_MATERIAL_DOMAIN,
-        STANDING_MATERIAL_STAGE,
-        STANDING_MATERIAL_RESOLUTION,
+        TRUNCATED_CORE_DOMAIN,
+        TRUNCATED_CORE_STAGE,
+        TRUNCATED_CORE_RESOLUTION,
     ] {
         assert!(
             text.contains(needle),
@@ -255,7 +255,7 @@ fn truncated_cascade_is_visible_on_every_surface() {
         .find(|t| t.toolpath_id == ToolpathId(0) || t.name == "Scallop")
         .expect("per-toolpath summary");
     assert_eq!(
-        summary.standing_material_mm2,
+        summary.truncated_core_mm2,
         Some(area),
         "the summary must carry the same measurement, not a re-derivation"
     );
@@ -345,7 +345,159 @@ fn operation_without_a_cascade_reports_not_measured() {
         project
             .per_toolpath
             .iter()
-            .all(|t| t.standing_material_mm2.is_none()),
+            .all(|t| t.truncated_core_mm2.is_none()),
         "the MCP summary must serialise `null`, not 0.0, for an unmeasured op"
+    );
+}
+
+// ── Wave 16 / Checkpoint E ──────────────────────────────────────────────
+
+/// A6 — the rename's compatibility contract, proved on the real wire.
+///
+/// `ToolpathStats::standing_material_mm2` became `truncated_core_mm2` on
+/// 2026-08-04 because the old name asserted the M4 oracle's *standing*
+/// ("reached, left high") for a number that measures its *untouched*
+/// ("never reached"). The ruling asked for the rename to be a
+/// non-event for anything already reading the figure.
+///
+/// The audit behind that ruling assumed a `Deserialize` surface (project
+/// files), and there is none — `ToolpathStats` has never been serde at all,
+/// and every wire that carries the value is `Serialize`-only. So the
+/// read-side mechanism the ruling names, `#[serde(alias)]`, is demonstrated
+/// here on the CONSUMER side, which is where it can actually run: a reader
+/// that adopts the alias parses BOTH an old document and the current wire
+/// into the new field name. What production does is the emit-side
+/// equivalent — keep publishing the old key beside the new one.
+///
+/// Gate, not characterisation. Fixed: the truncated-cascade fixture and its
+/// measured area. Domain: XY-projected mm², generation stage.
+#[test]
+fn the_old_key_still_loads_and_the_wire_still_emits_it() {
+    #[derive(serde::Deserialize)]
+    struct LegacyReader {
+        /// Exactly the migration a consumer performs.
+        #[serde(alias = "standing_material_mm2")]
+        truncated_core_mm2: Option<f64>,
+    }
+
+    let mut session = truncated_cascade_session();
+    generate(&mut session, 0);
+    let area = measured(&session).expect("a cascade measured its residual");
+
+    // 1. A pre-rename document — only the old key exists — loads into the
+    //    new name. This is the "old projects load" half of the ruling.
+    //
+    //    A hand-written literal, not the measured area: what is under test is
+    //    the KEY mapping, and routing a 17-significant-digit `f64` out through
+    //    JSON and back tests the parser's last ULP instead (it moved one, the
+    //    first time this was written that way).
+    let parsed: LegacyReader = serde_json::from_str(r#"{"standing_material_mm2": 13.75}"#)
+        .expect("old key must still load");
+    assert_eq!(
+        parsed.truncated_core_mm2,
+        Some(13.75),
+        "a document written before the rename must deserialize unchanged"
+    );
+
+    // 2. The live wire emits BOTH keys, same value, so a script that never
+    //    migrates keeps working and one that does gets the honest name.
+    let project = session.diagnostics();
+    let summary = project
+        .per_toolpath
+        .iter()
+        .find(|t| t.toolpath_id == ToolpathId(0))
+        .expect("per-toolpath summary");
+    let json = serde_json::to_value(summary).expect("summary serialises");
+    assert_eq!(
+        json.get("truncated_core_mm2").and_then(|v| v.as_f64()),
+        Some(area),
+        "the new key must carry the measurement:\n{json}"
+    );
+    assert_eq!(
+        json.get("standing_material_mm2").and_then(|v| v.as_f64()),
+        Some(area),
+        "the pre-rename key must still be emitted with the SAME value — a \
+         consumer that never migrates must not silently read `null`:\n{json}"
+    );
+
+    // 3. The cost of (2), pinned rather than left to be discovered: a reader
+    //    that adopts the alias AND reads the current wire sees the same field
+    //    twice, and serde rejects that. The alias is for OLD documents; on the
+    //    current wire a consumer takes `truncated_core_mm2` plainly. Written
+    //    as an assertion because the tempting "fix" — dropping the legacy key
+    //    — is exactly the compatibility break A6 was ruled to avoid.
+    let via_alias: Result<LegacyReader, _> = serde_json::from_value(json);
+    let err = via_alias
+        .err()
+        .expect("the alias cannot ALSO be used on the dual-key wire")
+        .to_string();
+    assert!(
+        err.contains("duplicate field"),
+        "expected serde's duplicate-field rejection, got: {err}"
+    );
+}
+
+/// B8 — the untouched/standing split reaches the diagnostic message and the
+/// MCP per-toolpath summary, not only narration.
+///
+/// Wave 15 shipped the split (`ScallopReport::untouched_mm2` /
+/// `standing_mm2`) to narration and time-boxed the other two surfaces out.
+/// The two halves are different measurements — one an exact hole-aware
+/// polygon area, one an estimator — so the assertion here is not just that
+/// numbers appear but that the message keeps them apart.
+///
+/// Gate, not characterisation.
+#[test]
+fn the_untouched_standing_split_reaches_the_diagnostic_and_the_summary() {
+    let mut session = truncated_cascade_session();
+    generate(&mut session, 0);
+
+    let stats = &session.get_result(0).expect("result").stats;
+    let untouched = stats
+        .untouched_material_mm2
+        .expect("wave 15 measured the hole-aware half on a truncated cascade");
+
+    let diags = session
+        .diagnose_toolpath_with_trace(0, None)
+        .expect("diagnose");
+    let d = standing_diagnostic(&diags).expect("geom.standing_material diagnostic");
+    assert!(
+        d.message.contains("never reached"),
+        "the diagnostic must name the untouched half in the oracle's words:\n{}",
+        d.message
+    );
+    assert!(
+        d.message.contains("reached but left high"),
+        "the diagnostic must name the standing half too — the whole point of \
+         the split is that the two are not the same material:\n{}",
+        d.message
+    );
+    assert!(
+        d.message.contains("do not add them"),
+        "an exact area and an estimator must not be presented as summable:\n{}",
+        d.message
+    );
+    assert!(
+        d.message
+            .contains(&format!("{untouched:.0} mm² never reached")),
+        "the diagnostic must print the measured hole-aware area itself:\n{}",
+        d.message
+    );
+
+    // The MCP per-toolpath summary carries both halves as numbers.
+    let project = session.diagnostics();
+    let summary = project
+        .per_toolpath
+        .iter()
+        .find(|t| t.toolpath_id == ToolpathId(0))
+        .expect("per-toolpath summary");
+    assert_eq!(
+        summary.untouched_material_mm2,
+        Some(untouched),
+        "the summary must carry the same measurement, not a re-derivation"
+    );
+    assert_eq!(
+        summary.reached_uncut_estimate_mm2, stats.reached_uncut_estimate_mm2,
+        "and the estimator half travels with it, `None` included"
     );
 }

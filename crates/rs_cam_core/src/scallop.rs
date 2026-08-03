@@ -1720,7 +1720,7 @@ impl ScallopReport {
     ///
     /// This is the single source the user-visible standing-material strings
     /// are derived from
-    /// ([`crate::compute::config::STANDING_MATERIAL_DOMAIN`] and friends).
+    /// ([`crate::compute::config::TRUNCATED_CORE_DOMAIN`] and friends).
     pub const PROVENANCE: crate::measurement::MeasurementProvenance =
         crate::measurement::MeasurementProvenance::new(
             crate::measurement::MeasurementDomain::ProjectedXyArea,

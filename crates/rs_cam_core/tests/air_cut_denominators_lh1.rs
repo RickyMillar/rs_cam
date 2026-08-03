@@ -187,7 +187,7 @@ fn narration_air_cut_line_names_its_denominators() {
         flute_count: Some(2),
         is_drill_cycle: false,
         material: None,
-        standing_material_mm2: None,
+        truncated_core_mm2: None,
         untouched_material_mm2: None,
         reached_uncut_estimate_mm2: None,
         dropped_band: None,

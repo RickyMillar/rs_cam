@@ -71,17 +71,17 @@ pub struct GenerationFindings {
     /// `None` means **no cascade ran**, so nothing was measured; `Some(0.0)`
     /// means a cascade ran and collapsed. Only the adapters that actually
     /// run one write here, which is what keeps the two apart all the way to
-    /// [`crate::compute::config::ToolpathStats::standing_material_mm2`]
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
     /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
     /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
-    pub standing_material_mm2: Option<f64>,
-    /// M4 §5b: the hole-aware sibling of [`Self::standing_material_mm2`] —
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`] —
     /// summed the same way, over the same adapters, straight off
     /// [`crate::scallop::ScallopReport::untouched_mm2`]. Same X-19
     /// three-valued contract: `None` = no cascade ran.
     pub untouched_material_mm2: Option<f64>,
     /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
-    /// [`Self::standing_material_mm2`], off
+    /// [`Self::truncated_core_mm2`], off
     /// [`crate::scallop::ScallopReport::standing_mm2`]. Same X-19 contract.
     /// Remember this one is an estimator, not an exact area — see the
     /// source field's doc for what it cannot distinguish.
@@ -145,15 +145,15 @@ pub struct GenerationFindings {
 /// three always travel together; three separate `record_*` calls per site
 /// would only invite one being forgotten when a fourth cascade figure shows
 /// up later.
-fn record_standing_material(
+fn record_truncated_core(
     cell: &std::cell::RefCell<GenerationFindings>,
     uncut_core_mm2: f64,
     untouched_mm2: f64,
     standing_mm2: f64,
 ) {
     let mut findings = cell.borrow_mut();
-    let prev = findings.standing_material_mm2.unwrap_or(0.0);
-    findings.standing_material_mm2 = Some(prev + uncut_core_mm2);
+    let prev = findings.truncated_core_mm2.unwrap_or(0.0);
+    findings.truncated_core_mm2 = Some(prev + uncut_core_mm2);
     let prev_untouched = findings.untouched_material_mm2.unwrap_or(0.0);
     findings.untouched_material_mm2 = Some(prev_untouched + untouched_mm2);
     let prev_standing_estimate = findings.reached_uncut_estimate_mm2.unwrap_or(0.0);
@@ -1503,7 +1503,7 @@ pub(crate) fn generate_scallop(
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
-    record_standing_material(
+    record_truncated_core(
         ctx.findings,
         scallop_report.uncut_core_mm2,
         scallop_report.untouched_mm2,
@@ -1691,7 +1691,7 @@ pub(crate) fn generate_unified_finish(
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    record_standing_material(
+    record_truncated_core(
         ctx.findings,
         report.uncut_core_mm2,
         report.untouched_mm2,
@@ -2207,7 +2207,7 @@ pub fn execute_operation_annotated(
     // through every test and CLI call site.
     //
     // A/M9: dropping them is now HONEST rather than lossy-silent. Stats
-    // built off this path leave `standing_material_mm2` at `None` — "not
+    // built off this path leave `truncated_core_mm2` at `None` — "not
     // measured" — instead of the `0.0` that used to read as "nothing
     // standing". A caller that needs the finding must use
     // `execute_operation_annotated_with_regions`, which both production
