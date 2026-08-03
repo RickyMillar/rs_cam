@@ -1,5 +1,15 @@
 # Project: Speed up freeform-relief finishing
 
+> **SUPERSEDED IN PART — H4, 2026-08-04.** Strategy verdicts in this file
+> were measured through four instrument defects that are now fixed
+> (classification grid 6x too coarse; finish-planner dials 6x/36x too large;
+> rest-routing radius = shaft not tip; `claims_reference: self_probe`).
+> Those verdicts are **void, not falsified** — the comparison could not have
+> come out any other way. Which specific claims, and what replaced them:
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+> Banner added by the L1 sweep (wave 16) completing A2's coverage; the body
+> below is a dated record and is deliberately NOT rewritten.
+
 **Umbrella tracker.** Goal: finish carved reliefs (wanaka-class, organic rivermap
 meshes) **fast without losing detail**. Single source of truth across phases; links
 out to the detailed docs. Owner: Ricky. Started 2026-06-24.

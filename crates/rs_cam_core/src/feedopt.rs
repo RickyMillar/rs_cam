@@ -8,8 +8,16 @@
 //!
 //! Benefits for wood:
 //! - Eliminates burn marks from lingering in light cuts
-//! - 15-30% faster cycle times on variable-engagement operations
+//! - Shorter cycle times on variable-engagement operations
 //! - Consistent chip load → better surface finish
+//!
+//! **The "15-30% faster cycle times" this list used to assert is struck**
+//! (L1, 2026-08-04). It carried no fixture, no baseline, no date and no
+//! measurement anywhere in the repo, and it had been copied out of here into
+//! `AI_MACHINIST_ANALYSIS_REFERENCE.md` and published to users as a
+//! capability. The capability is real; the number was never measured. If a
+//! number is wanted here, it needs both sides of the ratio stated — see
+//! `planning/review_2026-07-29/MEASUREMENT_DOMAINS.md`.
 
 use crate::dexel::ray_top;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
