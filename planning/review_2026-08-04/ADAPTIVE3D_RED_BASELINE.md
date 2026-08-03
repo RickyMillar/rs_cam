@@ -673,8 +673,8 @@ is exactly how tests 1 and 2 became vacuous.
 
 | Surface | Assessment |
 |---|---|
-| `stamp_emitted_segment` (`clearing.rs:449`) | the single planner-side mirror of the emitter. One definition, called only via `push_segment_with_stamp` (`clearing.rs:526`). |
-| `push_segment_with_stamp` call sites | ~14 in `clearing.rs` across ContourParallel, ContourSpiral, Adaptive and AgentSearch dispatches — every one changes behaviour if the stamp changes. |
+| `stamp_emitted_segment` (`clearing.rs:449`) | the single planner-side mirror of the emitter. One definition, called only via `push_segment_with_stamp` (`clearing.rs:531`). |
+| `push_segment_with_stamp` call sites | **20** in `clearing.rs` (definition at `:531`) across the ContourParallel, ContourSpiral, Adaptive and AgentSearch dispatches — every one changes behaviour if the stamp changes. |
 | `ClearZLevelContext` | already carries `mesh`, `index`, `cutter`, `stock_to_leave` (`clearing.rs:265-273`), so mirroring the drape needs **no new plumbing into the context** — only extra parameters on the two helpers. |
 | Planner cost | `drape_path_to_leave` densifies to ≤ tool radius and runs `point_drop_cutter` per point. Mirroring it inside the planner adds one drop-cutter query per stamped point per Z level — a real generation-time cost on 3D roughing that must be measured, not assumed. This is the main reason a `FIX_CODE` here needs Checkpoint A rather than being folded into W0. |
 | Downstream of planner stock | `material_remaining_at_level` / `material_remaining_in_region` gate whether a Z level is cleared at all (`clearing.rs:597`, `965`, `1394`); `final_material_stock` feeds `FromRemainingStock` chains and rest analysis. Changing planner stamping changes **which levels get cut**, so it is an output-changing behavioural fix, not a metric repair. |
