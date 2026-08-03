@@ -4333,11 +4333,37 @@ Evidence gathered before concluding:
 * Two forced reproductions — killing cargo to orphan the child, and killing the
   pipe reader to force EPIPE — **did not reproduce it**.
 
-Every observation (partial output, 0% CPU, all-parked, indefinite duration,
-non-recurrence when writing to a file) fits *main thread blocked writing to a
-reader that stopped consuming*, which lives in the test-output plumbing and
-not in the cascade. Recorded as unreproduced-in-five-attempts with the
-substrate ruled out, rather than "fixed".
+**Then the signature was caught live, on a healthy run, and it is a reading
+error.** `scallop_candidates_m4` mid-flight, thread by thread:
+
+```
+PID     STAT ELAPSED %CPU NLWP WCHAN
+1178487 Sl     04:48  193   26 futex_do_wait     <- the process
+  TID   STAT %CPU WCHAN
+1178487 Sl    0.0 futex_do_wait                  <- MAIN thread: 0.0%, parked
+1178489 Rl   99.6 -                              <- a worker: RUNNING
+1178491 Sl    0.4 futex_do_wait   (x24 rayon workers, parked)
+```
+
+That test completed normally 6 seconds later (294.45 s, 3 passed). **A
+perfectly healthy run presents as "main thread at 0.0% CPU, 26 threads in
+`futex_do_wait`"** — because the main thread hands work to the pool and parks,
+and the pool parks whatever it is not currently using. `ps` reporting the
+process or the main thread shows 0.0%; the work is on a sibling TID.
+
+So the original report was not observing a deadlock, it was observing rayon.
+The one number that would have distinguished them is **per-THREAD** CPU
+(`ps -L`), and the one that would have settled it instantly is `nproc`.
+
+The remaining question — why the earlier run did not finish — is answered by
+the same arithmetic: nothing was wrong with it either, beyond `ps` being read
+at the process level. Every observation (partial output, apparent 0% CPU,
+all-parked, non-recurrence when writing to a file) fits a long-but-progressing
+run plus a stalled output reader. Recorded as **diagnosed and not a defect**,
+with the live thread dump as the evidence, rather than as unreproduced.
+
+**Rule worth keeping: `futex_do_wait` on N threads where N ≈ `nproc` is the
+resting state of a rayon program, not a symptom. Read `ps -L`, not `ps`.**
 
 ### Gates
 
