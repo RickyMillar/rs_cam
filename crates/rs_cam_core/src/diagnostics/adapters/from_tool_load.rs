@@ -577,6 +577,78 @@ fn drill_gates_to_diagnostics(
     ]
 }
 
+/// Render the band a `Within` reading sits in, when it adds anything
+/// the headline number does not already say.
+fn band_suffix(lo: Option<f64>, hi: Option<f64>, threshold: f64) -> String {
+    match (lo, hi) {
+        // Two-sided (plunge feed): the full envelope is the useful
+        // context, and `threshold` is only the nearer edge of it.
+        (Some(lo), Some(hi)) => format!("; band {lo:.2}–{hi:.2}"),
+        // One-sided-up with the ceiling already in the headline.
+        (None, Some(hi)) if (hi - threshold).abs() < 1e-9 => String::new(),
+        (None, Some(hi)) => format!("; band up to {hi:.2}"),
+        (Some(lo), None) => format!("; band from {lo:.2}"),
+        (None, None) => String::new(),
+    }
+}
+
+/// R-1 — word the relation the outcome actually describes.
+///
+/// One `Exceeds` variant carries three distinct relations, and the
+/// shipped message asserted the same one for all three:
+///
+/// - *below the floor* (plunge feed, `Elevated`) — shipped as
+///   `Plunge feed envelope exceeds: 16.67 vs 50.00`, where the number
+///   is the genuinely violated bound but the verb points the wrong way;
+/// - *inside the advisory band, below the ceiling* (chip welding,
+///   `Elevated`) — shipped as `Chip welding (D/d) exceeds: 7.33 vs
+///   8.00`, at `Severity::Caution`, about a value **below** the bound
+///   it was said to exceed. Nothing was violated;
+/// - *above the ceiling* (`Critical`) — the only case the shipped
+///   wording was right about.
+///
+/// The relation is recoverable without new state: compare `observed`
+/// against `threshold`. Below it, this is either a floor violation
+/// (there is a lower band edge, so the bound is a floor) or an
+/// approach to a ceiling.
+fn drill_exceedance_message(
+    label: &str,
+    observed: f64,
+    threshold: f64,
+    severity: DrillGateSeverity,
+    envelope_lo: Option<f64>,
+    envelope_hi: Option<f64>,
+    unit: &str,
+) -> String {
+    if observed >= threshold {
+        // Genuine upward exceedance — the bound was crossed.
+        return format!("{label} exceeds: {observed:.2} vs {threshold:.2} {unit}");
+    }
+    // `observed < threshold`. If the outcome names a band below the
+    // observation's bound, the bound being reported is a FLOOR and the
+    // reading fell under it.
+    let below_a_floor = envelope_lo.is_some_and(|lo| observed < lo);
+    if below_a_floor {
+        let ceiling = envelope_hi
+            .map(|hi| format!(", envelope {threshold:.2}–{hi:.2}"))
+            .unwrap_or_default();
+        return format!("{label} below minimum: {observed:.2} vs {threshold:.2} {unit}{ceiling}");
+    }
+    // Advisory band: approaching the bound, not over it. Name the band
+    // it entered so the reader can see how much room is left.
+    let entered = envelope_lo
+        .map(|lo| format!(" (advisory band from {lo:.2})"))
+        .unwrap_or_default();
+    let verb = match severity {
+        DrillGateSeverity::Elevated => "approaching",
+        // Defensive: a Critical below its own bound is not a shape this
+        // gate produces. Say what is true rather than inventing a
+        // violation.
+        DrillGateSeverity::Critical => "under review against",
+    };
+    format!("{label} {verb} limit: {observed:.2} of {threshold:.2} {unit}{entered}")
+}
+
 fn drill_gate_to_diagnostic(
     id: &str,
     label: &str,
@@ -589,7 +661,8 @@ fn drill_gate_to_diagnostic(
         DrillGateOutcome::Within {
             observed,
             threshold,
-            ..
+            envelope_lo,
+            envelope_hi,
         } => Diagnostic {
             id: DiagnosticId::from(id),
             scope,
@@ -598,11 +671,17 @@ fn drill_gate_to_diagnostic(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
-            message: format!("{label} within ({observed:.2})"),
+            message: format!(
+                "{label} within ({observed:.2} of {threshold:.2}{})",
+                band_suffix(*envelope_lo, *envelope_hi, *threshold)
+            ),
             evidence: Some(DiagnosticEvidence::GeometryCompare {
                 lhs_label: label.to_owned(),
                 lhs_value: *observed,
-                rhs_label: "threshold".to_owned(),
+                // R-3: name what this bound IS. For chip welding it is
+                // the advisory boundary the verdict was decided at, not
+                // the material threshold a band further out.
+                rhs_label: "bound".to_owned(),
                 rhs_value: *threshold,
                 unit: unit.to_owned(),
             }),
@@ -614,7 +693,8 @@ fn drill_gate_to_diagnostic(
             observed,
             threshold,
             severity,
-            ..
+            envelope_lo,
+            envelope_hi,
         } => Diagnostic {
             id: DiagnosticId::from(id),
             scope,
@@ -626,7 +706,15 @@ fn drill_gate_to_diagnostic(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
-            message: format!("{label} exceeds: {observed:.2} vs {threshold:.2}"),
+            message: drill_exceedance_message(
+                label,
+                *observed,
+                *threshold,
+                *severity,
+                *envelope_lo,
+                *envelope_hi,
+                unit,
+            ),
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id: tp_id,
                 sample_start: 0,
