@@ -125,8 +125,10 @@ to make the "never compare across cells" rule concrete with numbers. It must
 **not** be used to choose a bin.
 
 **B-5 (non-repeatable region).** Report the slope band and cell combinations
-where the required bin exceeds the smallest *interesting* quality difference
-(taken as 20 µm, the coarsest scallop dial in the spec's range). Those
+where the required bin exceeds the smallest *interesting* quality difference —
+**taken as 20 µm, one fifth of the shipped 0.1 mm `scallop_height` default**
+(`crates/rs_cam_core/src/scallop.rs:128`), on the grounds that a difference
+smaller than a fifth of the dial is not worth a campaign. Those
 combinations are declared **non-reportable** and no gate may be written on
 them. Prediction, from §1 and to be checked: **VerySteep at every cell ≥
 0.05 mm is non-reportable**, and MidSteep is non-reportable at ≥ 0.10 mm.
