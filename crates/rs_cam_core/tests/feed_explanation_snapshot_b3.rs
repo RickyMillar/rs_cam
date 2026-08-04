@@ -171,7 +171,8 @@ fn material() -> Material {
 #[derive(Debug, Clone)]
 struct FeedExplanation {
     /// **Stage 1 — commanded.** `feed / (rpm · flutes)`, the quantity
-    /// `narrate.rs:426` prints as "nominal chipload". Unit: mm of linear
+    /// `narrate.rs:426` prints (as "commanded feed-per-tooth" since T1.2,
+    /// "nominal chipload" before it). Unit: mm of linear
     /// *advance* per tooth.
     commanded_fpt_mm: f64,
     /// **Stage 2 — LUT band.** `chip_load_min/max_mm` off the matched row
