@@ -5,7 +5,7 @@
 
 [onsrud_hwood]
 name = "Onsrud Cutter Hardwood Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["flat", "ball", "vbit"]
@@ -65,7 +65,7 @@ notes = "Hobby-oriented online calculator."
 
 [onsrud_doc_rule]
 name = "Onsrud DOC Rule (1.5-4.5x tool diameter pre-derate)"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["flat"]
@@ -122,7 +122,7 @@ notes = "Convenience alias used in Phase 1 cells that want a literal `shaw_chipl
 
 [onsrud_swood]
 name = "Onsrud Cutter — Series 60/85 Softwood Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_60_softwood.pdf"
+citation_url = "https://www.onsrud.com/images/Soft%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["flat", "ball"]
@@ -132,7 +132,7 @@ notes = "Onsrud softwood chart — chipload/SFM by tool series + diameter. Indus
 
 [onsrud_plywood]
 name = "Onsrud Cutter — Plywood / Composite Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_plywood.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Plywood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["flat", "compression"]
@@ -142,7 +142,7 @@ notes = "Onsrud plywood chart — covers cabinet-grade & birch plywood. Compress
 
 [onsrud_plastic]
 name = "Onsrud Cutter — Plastics Feed Chart (HDPE / acrylic / phenolic)"
-citation_url = "https://www.onsrud.com/files/pdf/plastic_chart.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Plastic.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["flat", "o-flute"]
@@ -152,13 +152,13 @@ notes = "Plastics class — feed/RPM windows are *narrow* (chip welding above, r
 
 [onsrud_drill]
 name = "Onsrud Drill / Spur-Point Feed Defaults"
-citation_url = "https://www.onsrud.com/files/pdf/drill_chart.pdf"
+citation_url = "https://www.onsrud.com/images/Drill.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["drill", "brad-point"]
 ops = ["drill"]
 materials = ["hardwood", "softwood", "plywood"]
-notes = "Drill IPR / peck guidance. Plunge feed is the same as drill feed (vertical-only kinematics)."
+notes = "Drill Cutting Data Recommendations (page 124 of the PCT-19 catalogue). Contains chip load per tooth by cutting diameter for series 72-000 Wood (0.009-0.017 in/tooth, D3-8 mm), 70-500 Plastic and four composite series; gang drills footnoted at 4,500 RPM / 150 IPM; RPM and feedrate formulas. It contains NO peck guidance, NO hole-depth guidance and NO depth-to-diameter guidance — a case-insensitive search for `peck` / `hole depth` returns zero hits (W6 audit 2026-08-04, item R-13). The previous note claimed 'drill IPR / peck guidance' and the previous URL was a hard 404. Plunge feed is the same as drill feed (vertical-only kinematics)."
 
 [amana_vbit]
 name = "Amana Tool — V-Bit / Engraving Feed Chart"
@@ -202,13 +202,13 @@ notes = "Closed-form chip-thinning correction RCTF = D / (2 × sqrt(ae × (D - a
 
 [fpl_wood_handbook]
 name = "USDA Forest Products Lab — Wood Handbook, FPL-GTR-282 (2021)"
-citation_url = "https://www.fpl.fs.fed.us/documnts/fplgtr/fpl_gtr282.pdf"
+citation_url = "https://research.fs.usda.gov/treesearch/62200"
 authority_tier = "gold"
 last_verified = "2026-06-03"
 covers = ["all"]
 ops = ["all"]
 materials = ["hardwood", "softwood", "tropical"]
-notes = "Janka, specific gravity, MOE, Kc (specific cutting energy) by species. Source of truth for material-edge cells (Janka 3680 ipe vs 1290 oak scaling)."
+notes = "Janka, specific gravity, MOE, Kc (specific cutting energy) by species. Source of truth for material-edge cells (Janka 3680 ipe vs 1290 oak scaling). URL corrected 2026-08-04: the `fs.fed.us` host was retired by the USDA FS and no longer resolves; this is the publication's live TreeSearch record. NOT a drilling source — the handbook has no machining or drilling chapter in either the 2021 (GTR-282) or 2010 (GTR-190) edition, and citations of a '§3.7' or a 'Ch.19 drilling' section were unsupported (GTR-190 Ch.19 is *Specialty Treatments*). Dropped from every drill cell's sources, W6 audit item R-14."
 
 [vectric_drill_default]
 name = "Vectric VCarve / Aspire — Drill Toolpath Defaults"
@@ -218,7 +218,7 @@ last_verified = "2026-06-03"
 covers = ["drill"]
 ops = ["drill"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
-notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database."
+notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database. NOT VERIFIED as a document (W6 audit 2026-08-04, ledger W6-N6): the URL is Vectric's live documentation portal root, HTTP 200, but no published drill-defaults table was located behind it. Community tier; treat as a statement of community practice, not a cited chart."
 
 [amana_plastic_oflute]
 name = "Amana Solid Carbide Plastic Cutting Spiral Single O-Flute Speed Chart v2"
