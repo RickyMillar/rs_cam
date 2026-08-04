@@ -579,9 +579,38 @@ fn janka_to_drill_chip_welding_dtd(janka_lbf: f64) -> f64 {
 /// readily and tolerate deep individual pecks; dense exotics trap
 /// shorter, harder chips and require shallow pecks even within a
 /// pecking cycle. Pre-2026-06-03 this accessor returned a flat 2.0
-/// for every wood species, collapsing softwood pecks (literature
-/// 3–8×D — Onsrud Drill Chart, FPL Wood Handbook §3.7, Vectric drill
-/// defaults) to the same 1.0×D Suggest default as dense hardwood.
+/// for every wood species, collapsing softwood pecks to the same
+/// 1.0×D Suggest default as dense hardwood.
+///
+/// **Provenance: REPO-AUTHORED. No primary source states a per-peck
+/// depth-to-diameter limit for wood** (W6 audit, 2026-08-04 —
+/// `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md` §6.1–6.3
+/// and its NOT VERIFIED ledger entry W6-N5). Three corrections to the
+/// citation this comment used to carry:
+/// - The "3–8×D" figure is a **total-hole** regime statement (the
+///   depth at which pecking becomes necessary), not a per-peck
+///   ceiling. Its closest retrievable match in this repo is the CNC
+///   Cookbook deep-hole reference already listed in `CREDITS.md`
+///   ("5 diameters deep without issue; 5 to 7 diameters use peck
+///   drilling"), which is written for metal twist drills and carries
+///   no material banding. It was transcribed into a per-peck role it
+///   never claimed.
+/// - The Onsrud drill chart (retrieved 2026-08-04,
+///   `https://www.onsrud.com/images/Drill.pdf`) contains chip load per
+///   tooth by cutting diameter and nothing else: a case-insensitive
+///   search for `peck` / `hole depth` returns zero hits, on it and on
+///   the four other retrieved Onsrud wood/plywood/plastic charts.
+/// - The FPL Wood Handbook has no drilling chapter in either edition;
+///   GTR-190 Ch.19 is *Specialty Treatments* and every occurrence of
+///   "peck" in it is *pecky cypress* or *bird peck*. There is no §3.7
+///   on drilling.
+///
+/// The values below are therefore repo heuristics, held (not moved) at
+/// Checkpoint D 2026-08-04 with the citation corrected instead. The
+/// general machining convention for per-peck depth (0.5–1.0×D full
+/// peck) is 6–12× shallower and is recorded as secondary evidence
+/// only; it is not grounds to move these numbers without a bench
+/// trial. See audit item R-9.
 ///
 /// Three bands, mirroring `janka_to_drill_chip_welding_dtd`:
 /// - softwood (Janka ≤ 700 lbf) → 6.0  → Suggest default 3.0×D
@@ -1078,9 +1107,10 @@ impl Material {
         match self {
             // Wood species — Janka-banded per-peck max. Pre-2026-06-03
             // this returned a flat 2.0 for every wood, which collapsed
-            // softwood Suggest pecks to 1.0×D (matrix band 3–8×D) and
-            // matched dense hardwood. See `janka_to_drill_per_peck_max_dtd`
-            // for the band rationale and sources.
+            // softwood Suggest pecks to 1.0×D and matched dense
+            // hardwood. The bands are REPO-AUTHORED — see
+            // `janka_to_drill_per_peck_max_dtd` for why the sources
+            // this used to cite do not contain per-peck guidance.
             Material::SolidWood { species } => janka_to_drill_per_peck_max_dtd(species.janka_lbf()),
             Material::SolidWoodByJanka { janka_lbf, .. } => {
                 janka_to_drill_per_peck_max_dtd(*janka_lbf)
@@ -1120,15 +1150,28 @@ impl Material {
     /// min the cutter rubs / burns; above the max it breaks or
     /// stalls. Same dispatch pattern as the chip-welding methods.
     ///
-    /// Provenance (F1, 2026-06-10): the wood band brackets the
-    /// literature drill chipload range — Onsrud wood-drilling bulletin
-    /// and Vectric drill defaults give 0.08–0.18 mm/tooth × 2 flutes
-    /// at the 8–14 kRPM small-drill band ≈ 210–430 mm/min per mm Ø at
-    /// the top of the range; the 50 floor is the rubbing onset below
-    /// which dwell-burning dominates (FPL Wood Handbook Ch.19). See
-    /// `tests/literature_matrix/cells.toml` drill cells for the bound
-    /// sources. Non-wood rows remain engineering placeholders pending
-    /// vendor data (esp. Aluminum / Fiberglass — noted inline).
+    /// Provenance, corrected 2026-08-04 (W6 audit §6.2/§6.4, item
+    /// R-10 — the numbers are held, the citation is not). The claim
+    /// this comment used to carry was **circular**: it derived the
+    /// wood band from "0.08–0.18 mm/tooth" attributed to an Onsrud
+    /// wood-drilling bulletin, but that band is the literature
+    /// matrix's own `feed_per_tooth` cell, and the cell was fitted to
+    /// this code's output (it brackets the shipped formula to three
+    /// decimals at both ends). No Onsrud wood-drilling bulletin
+    /// stating it was located; the retrieved Onsrud drill chart
+    /// (`https://www.onsrud.com/images/Drill.pdf`, 2026-08-04) prints
+    /// 0.229–0.432 mm/tooth for series 72-000 Wood, which does not
+    /// overlap that band at any diameter. The 50 floor was attributed
+    /// to "FPL Wood Handbook Ch.19"; Ch.19 is *Specialty Treatments*
+    /// and the handbook has no drilling content in either edition.
+    ///
+    /// So: the envelope is **repo-authored**, defensible in order of
+    /// magnitude and consistent across the four sites that use it
+    /// (this accessor, `feeds::calculate` Step 9c, `drill_gates`,
+    /// `narrate`) — see the audit's unit-consistency PASS in §2.3 —
+    /// but it is not sourced. Non-wood rows remain engineering
+    /// placeholders pending vendor data (esp. Aluminum / Fiberglass —
+    /// noted inline).
     ///
     /// Consumed by `tool_load::drill_gates` (gate + narrate via
     /// `classify_plunge_feed`) and `feeds::calculate` Step 9c (suggest
