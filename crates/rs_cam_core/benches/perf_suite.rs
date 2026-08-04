@@ -99,6 +99,7 @@ fn make_cut_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationCu
                 semantic_item_id: None,
                 span_path: Vec::new(),
                 in_transit_span: false,
+                source_intent: None,
             }
         })
         .collect()

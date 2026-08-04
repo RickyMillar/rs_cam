@@ -220,6 +220,9 @@ pub(super) struct CuttingCaptureParams<'a> {
     /// WaterlineCleanup/DressupArtifact). Marks every sample emitted from
     /// this move as `in_transit_span = true`.
     pub(super) in_transit_span: bool,
+    /// R-11: the generator's own `MoveIntent` for this move, carried onto
+    /// every emitted sample. See `SimulationCutSample::source_intent`.
+    pub(super) source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
@@ -726,6 +729,9 @@ pub(super) struct SegmentSampleParams<'a> {
     pub(super) span_path: &'a [SpanId],
     /// P3: move sits in a transit-style span. See `CuttingCaptureParams`.
     pub(super) in_transit_span: bool,
+    /// R-11: the generator's own `MoveIntent` for this move, carried onto
+    /// every emitted sample. See `SimulationCutSample::source_intent`.
+    pub(super) source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 pub(super) fn sample_segment_runtime(
@@ -778,6 +784,7 @@ pub(super) fn sample_segment_runtime(
             semantic_item_id: params.semantic_item_id,
             span_path: params.span_path.to_vec(),
             in_transit_span: params.in_transit_span,
+            source_intent: params.source_intent,
         });
         *next_sample_index += 1;
     }

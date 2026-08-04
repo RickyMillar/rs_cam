@@ -207,6 +207,7 @@ impl TriDexelStock {
                             semantic_item_id,
                             span_path,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -229,6 +230,7 @@ impl TriDexelStock {
                             semantic_item_id,
                             span_path,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -255,6 +257,7 @@ impl TriDexelStock {
                             cut_kinematics: classify_cut_kinematics(start, end, false),
                             capture_arc_engagement,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         cancel,
                         &mut cumulative_time_s,
@@ -285,6 +288,7 @@ impl TriDexelStock {
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
                                 in_transit_span,
+                                source_intent: Some(intent),
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -324,6 +328,7 @@ impl TriDexelStock {
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
                                 in_transit_span,
+                                source_intent: Some(intent),
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -544,6 +549,7 @@ impl TriDexelStock {
                 semantic_item_id: params.semantic_item_id,
                 span_path: params.span_path.to_vec(),
                 in_transit_span: params.in_transit_span,
+                source_intent: params.source_intent,
             });
             *next_sample_index += 1;
         }
