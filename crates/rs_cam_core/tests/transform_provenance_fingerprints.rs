@@ -292,10 +292,26 @@ fn arc_raster_full_dressups_fingerprint() {
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
+    // RE-PINNED by PR-6 (H2.2 / Checkpoint F1), build `246b7ae` + the arcfit
+    // intent-key change. Was `(40, 9_877_459_821_106_430_315)`.
+    //
+    // Mechanism: the move COUNT is unchanged at 40 and no coordinate moved —
+    // the hash is over the `Debug` rendering, which includes `Move::intent`,
+    // and four moves changed LABEL only. `arc_raster`'s cut body is built with
+    // `Toolpath::feed_to` (intent `Unknown`); with `intent` now in arc-fit's
+    // run key the four dressup-inserted `LeadOut` segments are no longer
+    // swallowed into an `Unknown`-labelled arc. Intent histogram, before →
+    // after: `Unknown` 24 → 20, `LeadOut` 0 → 4; everything else identical.
+    // This is exactly the relabelling H2.2 exists to stop, and it costs zero
+    // arcs (8 before, 8 after) and zero moves.
+    //
+    // The other four pinned constants in this file did NOT move: `three_pass`
+    // and all three `face_full_chain` stages are byte-identical.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (40, 9_877_459_821_106_430_315),
-        "arc_raster geometry moved; captured at HEAD 5d32150 before C1"
+        (40, 5_428_414_886_474_768_522),
+        "arc_raster geometry moved; re-pinned by PR-6 (arcfit intent key), \
+         originally captured at HEAD 5d32150 before C1"
     );
     assert_eq!(
         link_sites(&recorder.finish()),

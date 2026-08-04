@@ -35,12 +35,23 @@ use crate::transform_provenance::{ReconcileSet, Transformed};
 /// Only fits arcs in the XY plane (constant Z within tolerance).
 ///
 /// Span-aware (Phase 3e / #54):
-/// - Honors `RapidOrderBarrier` and `DepthPass` boundaries: a candidate arc run
-///   that would span across such a barrier is truncated at the barrier.
+/// - Honors `RapidOrderBarrier`, `DepthPass` and (H2.2 / Checkpoint F1 Q2)
+///   `Region` boundaries: a candidate arc run that would span across such a
+///   barrier is truncated at the barrier. `Region` joined the set so a fitted
+///   arc can never straddle two region nodes — both regions' `move_range`s
+///   would otherwise land on the same index and stop tiling, which is the
+///   invariant `region_node_ranges_tile_the_stitched_toolpath` exists to guard.
 /// - Each inserted arc is tagged with a `DressupArtifact` span labeled "arc-fit".
 /// - Input spans are remapped through the N-to-1 collapse via `MoveRemap`.
 /// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
 ///   spans pass through untouched.
+///
+/// Intent-aware (H2.2 / Checkpoint F1 Q1+Q3): the run key carries
+/// `Move::intent` as an equality term, so a candidate run is homogeneous in
+/// intent by construction and the collapsed arc's own intent is exact rather
+/// than inherited from whichever move happened to come first. `MoveIntent`
+/// equality is STRICT — `Unknown` is not a wildcard and breaks against every
+/// tagged intent (ruled at Checkpoint F1 Q3).
 pub fn fit_arcs(
     annotated: AnnotatedToolpath,
     tolerance: f64,
@@ -63,8 +74,28 @@ pub fn fit_arcs_with_provenance(
     // moves[b]; we treat it as cutting the arc-eligible run so any candidate
     // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
     // barrier at index `b` with start < b < end blocks that window.
+    //
+    // `rapid_order_barriers()` supplies the `RapidOrderBarrier` / `DepthPass`
+    // set. H2.2 (Checkpoint F1 Q2) adds BOTH edges of every `SpanKind::Region`
+    // span on top of it, locally to arc-fit: a region's first move must not be
+    // glued to the previous region's last one in a single arc, or the two
+    // regions' `move_range`s collapse onto one index and the region-node
+    // tiling invariant breaks. This is deliberately NOT folded into
+    // `rapid_order_barriers()` — that set is also read by TSP reordering and
+    // by `execute`'s barrier-count branch, and widening it there would be a
+    // second, unruled output move.
     let barriers: std::collections::BTreeSet<usize> = if annotated.spans_valid {
-        annotated.rapid_order_barriers().into_iter().collect()
+        annotated
+            .rapid_order_barriers()
+            .into_iter()
+            .chain(
+                annotated
+                    .spans
+                    .iter()
+                    .filter(|s| s.kind == SpanKind::Region)
+                    .flat_map(|s| [s.start_move, s.end_move]),
+            )
+            .collect()
     } else {
         std::collections::BTreeSet::new()
     };
@@ -118,15 +149,26 @@ pub fn fit_arcs_with_provenance(
 
         let start = &moves[i - 1].target;
 
-        // Collect consecutive linear moves at the same feed rate. Z may vary:
-        // `try_fit_arc` accepts a run only if it forms a valid planar arc
-        // (constant Z) OR a helix (Z linear with swept angle), so runs no longer
-        // split on every Z change — helical entries and spiral descents now
-        // arc-fit into G2/G3 with a Z endpoint instead of dozens of tiny G1s.
+        // Collect consecutive linear moves at the same feed rate AND the same
+        // intent. Z may vary: `try_fit_arc` accepts a run only if it forms a
+        // valid planar arc (constant Z) OR a helix (Z linear with swept angle),
+        // so runs no longer split on every Z change — helical entries and
+        // spiral descents now arc-fit into G2/G3 with a Z endpoint instead of
+        // dozens of tiny G1s.
+        //
+        // H2.2: `intent` is an equality term of the run key. Without it a
+        // homogeneous `FinishingCut` run continuing at the same feed into the
+        // `LeadOut` arc `apply_lead_in_out` appended was collapsed into one arc
+        // labelled `FinishingCut` whose target is a lead-out position the
+        // finishing pass never cut. Equality is strict: `Unknown` breaks
+        // against every tagged intent (Checkpoint F1 Q3).
+        let run_intent = m.intent;
         let mut end_idx = i;
         while end_idx < moves.len() {
             match moves[end_idx].move_type {
-                MoveType::Linear { feed_rate: f } if (f - feed_rate).abs() < FEED_EPS => {
+                MoveType::Linear { feed_rate: f }
+                    if (f - feed_rate).abs() < FEED_EPS && moves[end_idx].intent == run_intent =>
+                {
                     end_idx += 1;
                 }
                 _ => break,
@@ -188,9 +230,10 @@ pub fn fit_arcs_with_provenance(
             let ij_i = arc.cx - start.x;
             let ij_j = arc.cy - start.y;
 
-            // Collapsed-arc intent inherits from the source feed segments.
-            // All collapsed segments share `feed_rate` already; intent
-            // taken from the first collapsed source move.
+            // Collapsed-arc intent comes from the source feed segments. The
+            // run key holds `intent` equal across `moves[i..end_idx]`, so
+            // every collapsed source move carries this same intent — reading
+            // the first one is exact, not an inheritance guess (H2.2).
             let arc_intent = moves[i].intent;
 
             let arc_idx = result.moves.len();

@@ -26,18 +26,28 @@
 //! `FinishingCut`-*labelled* moves (2 cosmetic hits) to comparing cut
 //! POSITIONS (21 apparently real ones). What it did not correct is that the
 //! POPULATION was still selected by that label. And `arcfit::fit_arcs`
-//! groups a run by FEED RATE, not by intent, taking the collapsed arc's
+//! grouped a run by FEED RATE, not by intent, taking the collapsed arc's
 //! intent from its first source move — so a run of `FinishingCut` moves
 //! followed by the `LeadOut` arc that `apply_lead_in_out` had just appended
-//! collapses into ONE arc labelled `FinishingCut`, whose target is the
+//! collapsed into ONE arc labelled `FinishingCut`, whose target is the
 //! lead-out's endpoint, up to 1.2 mm off the machined surface.
 //!
-//! All 21 "lost cut positions" are exactly that: `LeadOut` endpoints
-//! (measured — see `the_positions_the_relink_removes_are_lead_outs`). And
-//! one lead-out disappears per link BY CONSTRUCTION, because a link removes
-//! a fragment boundary and a fragment boundary is what a lead-out
-//! terminates. The suspiciously exact 1:1 ratio was that arithmetic, not an
-//! off-by-one.
+//! All 21 "lost cut positions" were exactly that: `LeadOut` endpoints
+//! (measured). And one lead-out disappeared per link BY CONSTRUCTION,
+//! because a link removes a fragment boundary and a fragment boundary is
+//! what a lead-out terminates. The suspiciously exact 1:1 ratio was that
+//! arithmetic, not an off-by-one.
+//!
+//! **Closed 2026-08-04 (PR-6, H2.2 / Checkpoint F1).** `arcfit::fit_arcs`
+//! now carries `Move::intent` in its run key, so no arc spans an intent
+//! boundary and no lead-out is relabelled. Re-measured on this fixture:
+//! **21 phantom lost positions → 0**, links unchanged at 21.
+//! `the_relink_removes_no_cut_position_and_the_labels_are_honest` (renamed
+//! from `the_positions_the_relink_removes_are_lead_outs`) now pins the
+//! post-fix contract in both directions. The two `arc_fitting: false`
+//! configs in this file are NOT bug dodges and stay: `dressups_without_relabelling`
+//! is the structural dressup-free control, and the `unfitted` session is
+//! how the un-collapsed source intents are read at all.
 //!
 //! Bisected three ways, all reported by this file's sentries and by
 //! `surface_link`'s own unit tests: the relinker alone loses nothing, the
@@ -274,18 +284,31 @@ fn the_relink_loses_no_cut_position() {
     );
 }
 
-/// THE SEMANTIC GATE, on the FULL production stack. Positions do disappear
-/// there — one per link — and this pins what they are, so the day one of
-/// them is a real cut the test fails instead of being re-baselined.
+/// THE SEMANTIC GATE, on the FULL production stack.
 ///
-/// Two independent adjudications, because the point of wave 12 is that the
-/// label alone is not evidence:
+/// **RE-PINNED 2026-08-04 by PR-6 (H2.2 / Checkpoint F1).** Wave 12 measured
+/// 21 positions disappearing from the `FinishingCut`-labelled population,
+/// one per link, and pinned that arithmetic together with the proof that all
+/// 21 were relabelled `LeadOut` endpoints. PR-6 removed the relabelling at
+/// source — `arcfit::fit_arcs` now carries `intent` in its run key — so the
+/// `FinishingCut` population no longer contains any lead-out geometry and
+/// **nothing disappears at all: 21 → 0 with `links` unchanged at 21.**
 ///
-/// * pre-arc-fit intent: every disappearing position is a `LeadOut`;
-/// * geometry: every disappearing position sits OFF the drop-cutter
-///   surface, while the surviving cut positions sit exactly on it.
+/// That is this file's own defect closing. The test therefore inverts:
+/// where it used to adjudicate WHAT was lost, it now asserts that NOTHING
+/// is, plus the source-side contract that makes it true.
+///
+/// Three adjudications, because the point of wave 12 was that the label
+/// alone is not evidence:
+///
+/// * count: zero positions disappear, while the link count stays non-zero
+///   (a zero-link run would make the gate vacuous);
+/// * label integrity: no position in the arc-fitted `FinishingCut`
+///   population is a `LeadOut` in the un-fitted path — the H2.2 contract,
+///   checked at the exact site that discovered its absence;
+/// * geometry: the surviving cut positions sit on the drop-cutter surface.
 #[test]
-fn the_positions_the_relink_removes_are_lead_outs() {
+fn the_relink_removes_no_cut_position_and_the_labels_are_honest() {
     let off = corrugated_session(0.0);
     let on = corrugated_session(candidate_hookup_mm());
     // Same baseline with the arc fitter off: the un-collapsed path still
@@ -316,32 +339,56 @@ fn the_positions_the_relink_removes_are_lead_outs() {
         lost.len()
     );
 
-    // (1) Every one of them is a lead-out before the arc fitter relabels it.
+    // (1) Nothing disappears — and the gate is not vacuous, because the
+    // relink demonstrably removed fragment boundaries.
+    assert!(
+        links > 0,
+        "A/M7 control: the relink must actually remove retract round trips, \
+         or this gate proves nothing; got {links}"
+    );
+    assert_eq!(
+        lost.len(),
+        0,
+        "A/M7: the relink must lose no labelled cut position. Was 21 (all of \
+         them relabelled lead-outs) until PR-6 put `intent` in arcfit's run \
+         key; a non-zero reading now is either a real relinker regression or \
+         the H2.2 relabelling coming back. First at {:?}",
+        lost.first().map(|m| m.target)
+    );
+
+    // (2) The H2.2 contract at the site that discovered its absence: every
+    // position in the arc-fitted `FinishingCut` population must still be a
+    // `FinishingCut` in the un-fitted path. Before PR-6 at least 21 of them
+    // were `LeadOut` endpoints wearing a cutting label.
     let mut intents: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut unmatched = 0usize;
-    for m in &lost {
+    for m in &off_cut {
         match raw_tp.toolpath().moves.iter().find(|r| same_position(r, m)) {
             Some(r) => *intents.entry(format!("{:?}", r.intent)).or_default() += 1,
             None => unmatched += 1,
         }
     }
-    println!("A/M7 pre-arc-fit intents of the disappearing positions: {intents:?}");
+    // Reading the histogram: `EntryRamp` entries are position ALIASING, not
+    // relabelling. A ring closes on its own start point, so a cut move's
+    // target coincides exactly with the ramp end that opened the fragment,
+    // and `find` returns the earlier (ramp) move. The count tracks the
+    // fragment count — 22 fragments joined by 21 links — not a defect. Only
+    // `LeadOut` is adjudicated, because only `LeadOut` is off-surface.
+    println!("A/M7 pre-arc-fit intents of the labelled cut positions: {intents:?}");
     assert_eq!(unmatched, 0, "every position must exist un-fitted too");
     assert_eq!(
         intents.get("LeadOut").copied().unwrap_or(0),
-        lost.len(),
-        "A/M7: everything the relink removes must be LEAD-OUT geometry — a \
-         link deletes a fragment boundary, and a lead-out is what terminates \
-         one. Anything else in {intents:?} is a real cut going missing."
-    );
-    assert_eq!(
-        lost.len(),
-        links,
-        "one lead-out per removed fragment boundary, by construction"
+        0,
+        "A/M7: no arc-fitted `FinishingCut` position may be a LEAD-OUT in \
+         the un-fitted path. That relabelling is exactly what invalidated \
+         wave 11's reading; H2.2 removed it at source. Intents seen: \
+         {intents:?}"
     );
 
-    // (2) Geometry, independent of any label: the removed positions are not
-    // on the surface being machined; the surviving ones are.
+    // (3) Geometry, independent of any label: the surviving cut positions
+    // sit on the surface being machined. The `lost` loop below is a residual
+    // guard — with `lost` now empty it costs nothing, and if a position ever
+    // disappears again it still has to prove it was not a real cut.
     let mesh = sawtooth_plate(20.0, 6.0, 2.0);
     let index = SpatialIndex::build(&mesh, 5.0);
     let tool = BallEndmill::new(BALL_DIAMETER_MM, 25.0);
