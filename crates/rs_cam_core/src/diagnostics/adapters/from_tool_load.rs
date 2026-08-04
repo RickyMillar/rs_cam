@@ -47,7 +47,19 @@ pub fn diagnostics_from_load_verdict(verdict: &ToolpathLoadVerdict) -> Vec<Diagn
     let suppress_milling_na = verdict.drill_gates.is_some() && all_milling_not_applicable(verdict);
 
     if !suppress_milling_na {
-        if let Some(d) = chipload_to_diagnostic(verdict.toolpath_id, &verdict.chipload) {
+        if let Some(d) = chipload_to_diagnostic(
+            verdict.toolpath_id,
+            &verdict.chipload,
+            verdict.feed_explanation.as_deref(),
+        ) {
+            out.push(d);
+        }
+        // T1.5 (census P-10) — the only same-unit comparison the pipeline
+        // can make, and the only one nothing surfaced.
+        if let Some(d) = commanded_above_band_to_diagnostic(
+            verdict.toolpath_id,
+            verdict.feed_explanation.as_deref(),
+        ) {
             out.push(d);
         }
         if let Some(d) = power_to_diagnostic(verdict.toolpath_id, &verdict.power) {
@@ -81,7 +93,118 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 
 // ── chipload ────────────────────────────────────────────────────────
 
-fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diagnostic> {
+/// T1.2 — the qualifier every chipload message needs before it quotes a
+/// number: which statistic, in which unit, and what separates it from
+/// the commanded value an operator actually set.
+///
+/// Pre-T1.2 the messages said "Chipload ... mm/tooth", which named
+/// neither the statistic nor the unit and read as if it were the same
+/// quantity as the commanded feed-per-tooth. It is not: it is an
+/// arc-mean CHIP thickness renormalised to the matched row's nominal
+/// arc and evaluated at the kinematically-predicted feed. On the live
+/// 2026-07-30 operation those two multipliers accounted for a 97×
+/// difference, and nothing on screen mentioned either of them.
+///
+/// Empty when no explanation is available, so the message degrades to
+/// its old shape rather than asserting something unmeasured.
+fn observed_qualifier(explanation: Option<&crate::feeds::FeedExplanation>) -> String {
+    match explanation {
+        Some(e) => format!(
+            " [{}, {}; commanded {:.4} mm/tooth advance, {}]",
+            e.gate.statistic.label(),
+            e.gate.unit(),
+            e.commanded.feed_per_tooth_mm,
+            e.multiplier_clause(),
+        ),
+        None => String::new(),
+    }
+}
+
+/// T1.6 — row provenance on EVERY verdict, not only extrapolated ones.
+///
+/// Pre-T1.6 a row scaled 0.99× and a row scaled 0.38× both reported as
+/// `vendor_lut`, and a `semi_finish` row winning a `finish` query was
+/// invisible. Both are reported here; neither changes a verdict.
+fn row_provenance_clause(explanation: Option<&crate::feeds::FeedExplanation>) -> String {
+    let Some(e) = explanation else {
+        return String::new();
+    };
+    let mut parts = vec![format!("row {}", e.band.observation_id)];
+    if e.band.is_scaled() {
+        parts.push(format!(
+            "scaled ×{:.4} diameter × ×{:.4} hardness from Ø{:.3} mm",
+            e.band.diameter_scale, e.band.hardness_scale, e.band.row_diameter_mm
+        ));
+    }
+    if e.band.pass_role_substituted() {
+        parts.push(format!(
+            "pass role {:?} substituted for the requested {:?}",
+            e.band.row_pass_role, e.band.queried_pass_role
+        ));
+    }
+    format!(" ({})", parts.join("; "))
+}
+
+/// T1.5 (census P-10) — the commanded feed-per-tooth against the matched
+/// band's maximum.
+///
+/// Both sides are a linear advance per tooth: this is the one comparison
+/// in the whole chipload pipeline that needs no unit conversion and no
+/// stage caveat, and it was the only one nothing surfaced.
+/// `narrate.rs:426` computed the left-hand side and printed it beside
+/// nothing; the right-hand side sat on the verdict.
+///
+/// Severity `Info` per the standing B6 ruling: this reports a COMMANDED
+/// value against an AUTHORED band. It observes nothing about the cut, so
+/// it must not compete with the sim-backed gates for operator attention.
+fn commanded_above_band_to_diagnostic(
+    tp_id: ToolpathId,
+    explanation: Option<&crate::feeds::FeedExplanation>,
+) -> Option<Diagnostic> {
+    let e = explanation?;
+    let ratio = e.commanded_over_band_max()?;
+    if ratio <= 1.0 {
+        return None;
+    }
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
+        scope: Scope::Toolpath { id: tp_id },
+        category: Category::ToolLoad,
+        severity: Severity::Info,
+        // The band's own provenance decides how much this is worth:
+        // an extrapolated or point-preset row is a weaker yardstick.
+        confidence: chipload_confidence(&e.band.bounds_source),
+        state: DiagnosticState::Current,
+        source: Source::ToolLoad,
+        message: format!(
+            "Commanded feed-per-tooth {:.4} mm/tooth is {ratio:.1}× the matched \
+             band maximum {:.4} mm/tooth — same unit, same stage, so this \
+             comparison needs no conversion{}",
+            e.commanded.feed_per_tooth_mm,
+            e.band.max_mm_per_tooth,
+            row_provenance_clause(explanation),
+        ),
+        evidence: Some(DiagnosticEvidence::LutCitation {
+            row_id: e.band.bounds_source.row_id().to_owned(),
+            min: e.band.min_mm_per_tooth,
+            max: Some(e.band.max_mm_per_tooth),
+            observed: e.commanded.feed_per_tooth_mm,
+            unit: "mm/tooth".to_owned(),
+            extrapolated: e.band.is_extrapolated,
+        }),
+        fix: None,
+        // Deliberately supersedes nothing: this is a commanded-vs-authored
+        // report and must not silence a sim-backed gate.
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
+}
+
+fn chipload_to_diagnostic(
+    tp_id: ToolpathId,
+    v: &ChiploadVerdict,
+    explanation: Option<&crate::feeds::FeedExplanation>,
+) -> Option<Diagnostic> {
     match v {
         ChiploadVerdict::Within {
             approach_to_max,
@@ -115,16 +238,23 @@ fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diag
             // What changes is that the message and the citation now say
             // what happened.
             let citation_metric = burn_advisory.as_deref().unwrap_or(approach_to_max);
+            // T1.2 — name the statistic, name the unit, and name the two
+            // multipliers that separate this number from the commanded
+            // one. See `observed_qualifier` for why a bare "Chipload
+            // ... mm/tooth" was actively misleading.
+            let qualifier = observed_qualifier(explanation);
+            let provenance = row_provenance_clause(explanation);
             let message = match burn_advisory.as_deref() {
                 Some(advisory) => format!(
-                    "Chipload {:.4} mm/tooth is BELOW the {:.4} burn floor — not refused because \
-                     the floor's provenance is {} (advisory only)",
+                    "Observed chip thickness {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
+                     — not refused because the floor's provenance is {} (advisory only)\
+                     {qualifier}{provenance}",
                     advisory.observed_mm_per_tooth,
                     advisory.bounds.min_mm_per_tooth.unwrap_or(f64::NAN),
                     advisory.bounds.source.row_id(),
                 ),
                 None => format!(
-                    "Chipload within band ({:.4} mm/tooth)",
+                    "Observed chip thickness within band ({:.4} mm){qualifier}{provenance}",
                     approach_to_max.observed_mm_per_tooth
                 ),
             };
@@ -163,12 +293,18 @@ fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diag
             let (id_str, msg_prefix) = match side {
                 crate::tool_load::verdict::ChipSide::Low => (
                     ids::LOAD_CHIPLOAD_LOW,
-                    "Chipload too low — burn / rubbing risk",
+                    "Chip thickness too low — burn / rubbing risk",
                 ),
-                crate::tool_load::verdict::ChipSide::High => {
-                    (ids::LOAD_CHIPLOAD_HIGH, "Chipload too high — breakage risk")
-                }
+                crate::tool_load::verdict::ChipSide::High => (
+                    ids::LOAD_CHIPLOAD_HIGH,
+                    "Chip thickness too high — breakage risk",
+                ),
             };
+            // T1.2 — same qualifier on the trip arm as on the Within
+            // arm; an `Exceeds` message that hides its stage is worse
+            // than a `Within` one, because it prompts an action.
+            let qualifier = observed_qualifier(explanation);
+            let provenance = row_provenance_clause(explanation);
             Some(Diagnostic {
                 id: DiagnosticId::from(id_str),
                 scope: Scope::Toolpath { id: tp_id },
@@ -178,7 +314,7 @@ fn chipload_to_diagnostic(tp_id: ToolpathId, v: &ChiploadVerdict) -> Option<Diag
                 state: DiagnosticState::Current,
                 source: Source::ToolLoad,
                 message: format!(
-                    "{msg_prefix}: {:.4} mm/tooth",
+                    "{msg_prefix}: {:.4} mm{qualifier}{provenance}",
                     triggering.observed_mm_per_tooth
                 ),
                 evidence: Some(DiagnosticEvidence::SampleRange {
