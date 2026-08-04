@@ -5,6 +5,7 @@
 
 use crate::geo::P3;
 use crate::toolpath::{MoveIntent, Toolpath};
+use serde::{Deserialize, Serialize};
 
 /// Drill cycle type, matching standard G-code canned cycles.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -22,6 +23,43 @@ pub enum DrillCycle {
     /// G73: Chip break — small retract between pecks.
     /// Parameters are (peck_depth, retract_amount) in mm.
     ChipBreak(f64, f64),
+}
+
+/// Which drill cycle produced a verdict — enough to word a remedy
+/// correctly, without dragging the non-serializable
+/// [`crate::drill::DrillCycle`] (which carries f64 payloads) onto the
+/// wire.
+///
+/// R-4 (2026-08-04): remedies were keyed on `CriterionKind` alone, so
+/// the peck-adequacy remedy told a `Simple` cycle to "reduce peck
+/// depth" — on a cycle with no peck depth — and the chip-welding
+/// remedy told an already-pecking op to "switch to a peck cycle". Both
+/// are reachable on one hole, giving two contradictory instructions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrillCycleKind {
+    Simple,
+    Dwell,
+    Peck,
+    ChipBreak,
+}
+
+impl DrillCycleKind {
+    pub fn of(cycle: DrillCycle) -> Self {
+        match cycle {
+            DrillCycle::Simple => DrillCycleKind::Simple,
+            DrillCycle::Dwell(_) => DrillCycleKind::Dwell,
+            DrillCycle::Peck(_) => DrillCycleKind::Peck,
+            DrillCycle::ChipBreak(_, _) => DrillCycleKind::ChipBreak,
+        }
+    }
+
+    /// True when the cycle interrupts the descent to clear or break
+    /// chips — i.e. when "switch to a peck cycle" is not advice, it is
+    /// a description of what the op is already doing.
+    pub fn is_pecking(self) -> bool {
+        matches!(self, DrillCycleKind::Peck | DrillCycleKind::ChipBreak)
+    }
 }
 
 /// Parameters for a drilling operation.
