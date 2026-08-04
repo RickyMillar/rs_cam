@@ -7,8 +7,9 @@
 
 use super::cell::{AntiPattern, Band, CellsFile, ExpectedBands, Invariant, LiteratureCell};
 use super::freshness::{
-    audit_citations, build_freshness_report, decay_fail_enabled, render_citation_audit_text,
-    render_freshness_json, render_freshness_text,
+    audit_citation_urls, audit_citations, build_freshness_report, decay_fail_enabled,
+    render_citation_audit_text, render_freshness_json, render_freshness_text,
+    render_url_audit_text,
 };
 use super::invariant::{
     BandMode, SubVerdict, SubVerdictDetail, anti_pattern_check, band_check, convex_hull_check,
@@ -62,11 +63,31 @@ pub fn run(cells_path: &Path, sources_path: &Path) {
     let citation = audit_citations(&parsed, &sources);
     println!("{}", render_citation_audit_text(&citation));
 
+    // P1 (W6 audit §8.3): offline shape validation of every
+    // `citation_url`. Same tier as the citation audit above — it fails
+    // the run unconditionally, because a source row that cites no
+    // retrievable document is a maintenance defect, not a warning. No
+    // network I/O: this cannot see a 404, only a malformed or
+    // placeholder link.
+    let bad_urls = audit_citation_urls(&sources);
+    println!("{}", render_url_audit_text(&bad_urls));
+
     let mut maintenance_failures: Vec<String> = Vec::new();
     if !citation.missing.is_empty() {
         maintenance_failures.push(format!(
             "{} cell citation(s) reference unknown sources",
             citation.missing.len()
+        ));
+    }
+    if !bad_urls.is_empty() {
+        maintenance_failures.push(format!(
+            "{} source(s) with a malformed or placeholder citation_url: {}",
+            bad_urls.len(),
+            bad_urls
+                .iter()
+                .map(|m| m.key.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
         ));
     }
     let stale = freshness.stale_keys();

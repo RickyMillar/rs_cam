@@ -266,6 +266,104 @@ pub fn render_freshness_json(report: &FreshnessReport) -> String {
     serde_json::to_string_pretty(&obj).unwrap_or_else(|_| "{}".into())
 }
 
+// --- Citation URL shape audit (P1) ----------------------------------------
+
+/// One `sources.toml` row whose `citation_url` is not a usable link.
+#[derive(Debug)]
+pub struct MalformedUrl {
+    pub key: String,
+    pub value: Option<String>,
+    pub reason: String,
+}
+
+/// Offline validation of every source row's `citation_url`.
+///
+/// W6 audit (2026-08-04) §8.2 "Hole 1": `citation_url` was **never
+/// read** — `build_freshness_report` reads only `last_verified`, and
+/// `audit_citations` is a referential-integrity check on source *keys*.
+/// Six rows shipped the literal string `"(pending)"` and every one of
+/// them was reported `fresh`.
+///
+/// This is deliberately a **shape** check, not a liveness check: it does
+/// no network I/O, adds no dependency, and is safe to run in CI. It
+/// cannot detect a URL that has rotted to 404 — that is the opt-in
+/// liveness proposal (P3), which is not implemented and belongs to the
+/// `/refresh-lit-matrix` walk.
+///
+/// Rules, each with a failure the census actually contained:
+/// 1. field present (a row with no `citation_url` at all cites nothing)
+/// 2. non-empty after trimming
+/// 3. not a `(...)`-shaped sentinel — catches `"(pending)"`, `"(tbd)"`,
+///    `"(none)"` and any future placeholder of the same shape
+/// 4. starts with `http://` or `https://`
+/// 5. has a host, and the host contains a dot (rejects `https://` alone,
+///    `https://localhost`, and accidental path-only strings)
+pub fn audit_citation_urls(sources: &BTreeMap<String, toml::Value>) -> Vec<MalformedUrl> {
+    let mut bad = Vec::new();
+    for (key, value) in sources {
+        let raw = value
+            .as_table()
+            .and_then(|t| t.get("citation_url"))
+            .and_then(|v| v.as_str());
+        let Some(raw) = raw else {
+            bad.push(MalformedUrl {
+                key: key.clone(),
+                value: None,
+                reason: "missing `citation_url` field".to_owned(),
+            });
+            continue;
+        };
+        let url = raw.trim();
+        let reason = if url.is_empty() {
+            Some("empty `citation_url`".to_owned())
+        } else if url.starts_with('(') && url.ends_with(')') {
+            Some(format!(
+                "placeholder sentinel `{url}` — a source with no retrievable \
+                 document must either carry a real URL or be rewritten as \
+                 repo-authored (see CREDITS.md)"
+            ))
+        } else if !(url.starts_with("http://") || url.starts_with("https://")) {
+            Some("not an http(s) URL".to_owned())
+        } else {
+            let rest = url
+                .split_once("://")
+                .map(|(_, rest)| rest)
+                .unwrap_or_default();
+            let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+            if host.is_empty() {
+                Some("no host".to_owned())
+            } else if !host.contains('.') {
+                Some(format!("host `{host}` has no dot"))
+            } else {
+                None
+            }
+        };
+        if let Some(reason) = reason {
+            bad.push(MalformedUrl {
+                key: key.clone(),
+                value: Some(url.to_owned()),
+                reason,
+            });
+        }
+    }
+    bad
+}
+
+pub fn render_url_audit_text(bad: &[MalformedUrl]) -> String {
+    let mut s = String::new();
+    s.push_str("=== Citation URL shape audit (offline; no network) ===\n");
+    if bad.is_empty() {
+        s.push_str("  all citation_url values are well-formed links\n");
+    } else {
+        s.push_str(&format!("  {} malformed citation_url(s):\n", bad.len()));
+        for m in bad {
+            let shown = m.value.as_deref().unwrap_or("<absent>");
+            s.push_str(&format!("  - `{}` = `{}` — {}\n", m.key, shown, m.reason));
+        }
+    }
+    s
+}
+
 // --- Citation audit -------------------------------------------------------
 
 #[derive(Debug)]
