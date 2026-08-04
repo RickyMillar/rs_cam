@@ -453,6 +453,61 @@ The integrated feeds/material stack also depends on direct material and formula 
 
 Those sources underpin material hardness anchors, sheet-good ordering, and conservative cutting-force assumptions used by the current integrated model.
 
+### Drill-subsystem provenance (corrected 2026-08-04)
+
+The drilling stack — the three drill gates (chip welding, peck adequacy,
+plunge feed), the drill RPM tiers, and the drill chipload multiplier — was
+audited against its own citations on 2026-08-04
+(`planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`). No drill number
+was moved; several citations did not survive. Recorded here so the lineage is
+honest rather than implied:
+
+Retrieved and verified (2026-08-04):
+
+- Onsrud drill cutting data: <https://www.onsrud.com/images/Drill.pdf> —
+  chip load per tooth by cutting diameter, series 72-000 Wood
+  (0.009–0.017 in/tooth, Ø3–8 mm) plus plastic and composite series;
+  gang drills footnoted at 4,500 RPM / 150 IPM; RPM and feedrate formulas.
+  It contains **no** peck, hole-depth or depth-to-diameter guidance.
+  (Supersedes a dead `files/pdf/drill_chart.pdf` link whose registry note
+  claimed "drill IPR / peck guidance".)
+- Onsrud hardwood / softwood / plywood / plastic cutting data:
+  <https://www.onsrud.com/images/Hard%20Wood.pdf>,
+  `Soft%20Wood.pdf`, `Hard%20Plywood.pdf`, `Hard%20Plastic.pdf`.
+- USDA FPL Wood Handbook FPL-GTR-282 (2021):
+  <https://research.fs.usda.gov/treesearch/62200> (the `fs.fed.us` host was
+  retired). Used for Janka / density / material properties only — the
+  handbook has **no drilling content** in either the 2021 (GTR-282) or 2010
+  (GTR-190) edition, and previous citations of a "§3.7" or a "Ch.19
+  drilling" section were unsupported. GTR-190 Ch.19 is *Specialty
+  Treatments*.
+- CNC Cookbook deep-hole drilling reference (already listed above under
+  acceptance benchmark seed sources) is the closest retrievable statement of
+  the **total-hole** regime at which pecking becomes necessary
+  ("5 diameters deep without issue; 5 to 7 diameters use peck drilling").
+  It is written for metal twist drills and carries no material banding.
+
+Declared repo-authored / unsourced (values held, not moved):
+
+- Per-peck maximum depth-to-diameter bands (`drill_per_peck_max_dtd`:
+  6 / 5 / 4 by Janka; plywood 1.5; plastic 1.0). No primary source stating a
+  per-peck D/d limit for wood was located. The "3–8×D" figure previously
+  cited is a total-hole regime number, not a per-peck ceiling.
+- Chip-welding thresholds (`drill_chip_welding_threshold_dtd`: 8 / 6 / 5;
+  plywood 5; plastic 4; aluminum 3; foam 12).
+- Plunge-feed envelopes (`drill_plunge_feed_envelope_per_mm`, wood
+  50–400 mm/min per mm Ø). The band previously cited to Onsrud/Vectric was
+  the literature matrix's own cell, which had been fitted to this code's
+  output; it does not overlap the retrieved Onsrud chart at any diameter.
+- Drill RPM tiers (8–14k / 6–10k / 4–8k by diameter).
+- `DRILL_CHIPLOAD_MULTIPLIER = 2.5` (`feeds/mod.rs`). Unsourced; its former
+  justification was arithmetically false and has been removed from the code.
+  Against the Onsrud chart above the implied factor is ~5, but that row is a
+  fixed-RPM gang-drill datum and is not usable as a recalibration target.
+- `vectric_drill_default` (literature-matrix registry): Vectric publishes a
+  documentation portal, not a retrievable drill-defaults table. The row is
+  community-tier and represents community CAM practice, not a cited document.
+
 ### Formula provenance
 
 The feeds/speeds implementation in `rs_cam_core` uses:
