@@ -6,9 +6,9 @@ Basis: `TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md` at HEAD `7a84472`.
 
 | ID | Work | Status | Checkpoint | Evidence |
 |---|---|---|---|---|
-| W0 | R3 adaptive3d red baseline | DONE — **Checkpoint A RULED 2026-08-04: all three as proposed** (peck_plunge FIX_TEST, rapid_lift FIX_TEST, parity FIX_CODE + directional gate on contour_parallel); PR-1..3 implementation wave launched | A approved | `d40768a`, `14b0f70` |
+| W0 | R3 adaptive3d red baseline | DONE + **PR-1..3 EXECUTED 2026-08-04**: `cargo test -p rs_cam_core --lib` = 2232 passed / **0 failed** — permanent-red allowlist ended. PR-1 `894e060` peck fixture (livelock-red proven), PR-2 `0b6478c` rapid lift on drape-inert + drape-active fixtures (intent asserted at emitter), PR-3a `8853fdb` StampDrape mirror (interior 854→704, skew 4.80×→1.55×; cost +15–45% recorded), PR-3b `24c9a12` shared directional bars (count bar cannot detect this mechanism — interior RISES across the repair; directional 2.5× bar is the detector, fails pre-fix on BOTH strategies) | A approved + executed | `d40768a`, `14b0f70`, `894e060`, `0b6478c`, `8853fdb`, `24c9a12` |
 | W1 | R7 findings transport | DONE — census + structural join shipped, gates green | none (report wiring) | `41cb426`, `1de1094`, `c68f5d5` |
-| W2 | R7 arcfit intent | RESEARCHING (evidence harness, no output change) | F1 | — |
+| W2 | R7 arcfit intent | DONE (evidence) — **Checkpoint F1 RULED 2026-08-04, all four approved**: Q1 intent term + re-pin package; Q2 Region boundaries bundled; Q3 Unknown strict (arc-count cost must be measured+reported); Q4 condition::merge_linear_runs included in PR-6 scope (separate commit). PR-6 launched | F1 approved | `8963b75`, `260277b` |
 | W3 | R1 feeds/Suggest census | RESEARCHING — census committed; §9 NOT-RUN verifications + Appendix-B assembler pending Cargo slot before Checkpoint B is presented | B | `2823d71`, `8285497` |
 | W4 | R2 adversarial 2D campaign | NOT_STARTED | C | — |
 | W5 | R4 simulation issue channel | NOT_STARTED | D | — |
@@ -17,6 +17,10 @@ Basis: `TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md` at HEAD `7a84472`.
 | W8 | R7 finishing/export/read defects | NOT_STARTED — brief grew: + W9's X-1 (exporter/viewport span-walk divergence) + W1's B7 handoff (parallel narration-context literals) | F2/F3 | — |
 | W9 | R8 bounded scouts | DONE — P-3 downgraded (no live v≤2 population), P-1/P-2 escalated to operator, X-1 → W8 | none | `e9c6b46`, `10c3472` |
 | W10 | close-out/live validation | NOT_STARTED | G | — |
+
+### Checkpoint F1 — RULED 2026-08-04 (operator, via AskUserQuestion)
+
+All four questions approved as recommended: **Q1** run key becomes `(Linear, feed ±FEED_EPS, intent ==, no barrier inside)` with the bounded re-pin package (5 transform-provenance FNVs, old/new values recorded, declared consumer re-run list). **Q2** `SpanKind::Region` boundaries join the barrier set in the same PR (protects `region_node_ranges_tile_the_stitched_toolpath`'s invariant). **Q3** `MoveIntent::Unknown` is STRICT (breaks against every tagged intent); PR-6 must measure and report the actual arc-count cost. **Q4** `condition::merge_linear_runs` (identical missing key term, default-on Roughing) is IN PR-6's scope as a separate commit with its own before/after. PR-6 inverts the four `arcfit_intent_boundary_f1` exhibits to red-first evidence.
 
 ### Checkpoint A — RULED 2026-08-04 (operator, via AskUserQuestion)
 
