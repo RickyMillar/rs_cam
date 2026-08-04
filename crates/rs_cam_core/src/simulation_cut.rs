@@ -215,6 +215,30 @@ pub struct SimulationCutSample {
     /// P3 — see `planning/P3_TRANSIT_PEAK_DOC_RCA.md`.
     #[serde(default)]
     pub in_transit_span: bool,
+    /// **Source role** of the move this sample was emitted from — the
+    /// generator's own [`crate::toolpath::MoveIntent`] tag, carried through
+    /// unmodified.
+    ///
+    /// R-11 (census §8.2 / Checkpoint D). Before this field the only
+    /// per-sample role handle was the collapsed boolean
+    /// [`Self::in_transit_span`], which answers "was this move in a
+    /// transit-style span" and nothing else. Any probe that wanted to group
+    /// samples by *what the generator meant them to be* had to re-join
+    /// through `move_index` against the annotated toolpath — see
+    /// `SIMULATION_ISSUE_CHANNEL_CENSUS.md` §6.5 item 3 — and there was no
+    /// MCP route to it at all.
+    ///
+    /// This is deliberately a **source** key (programme rule 5): it survives
+    /// arc-fitting, TSP reordering and every other post-transform relabel,
+    /// because it is what the generator emitted, not what a later pass
+    /// inferred.
+    ///
+    /// **`None` = not carried**, never "Unknown": legacy traces
+    /// deserialised before this field existed, and hand-built test fixtures.
+    /// `Some(MoveIntent::Unknown)` is the distinct case of a generator that
+    /// emitted a move without tagging it. Do not coerce one to the other.
+    #[serde(default)]
+    pub source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 impl SimulationCutSample {
@@ -246,6 +270,7 @@ impl SimulationCutSample {
             semantic_item_id: None,
             span_path: Vec::new(),
             in_transit_span: false,
+            source_intent: None,
         }
     }
 }

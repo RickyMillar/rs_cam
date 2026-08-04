@@ -2383,6 +2383,7 @@ mod tests {
                     semantic_item_id: Some(2),
                     span_path: Vec::new(),
                     in_transit_span: false,
+                    source_intent: None,
                 },
                 rs_cam_core::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
@@ -2408,6 +2409,7 @@ mod tests {
                     semantic_item_id: Some(3),
                     span_path: Vec::new(),
                     in_transit_span: false,
+                    source_intent: None,
                 },
             ],
         );

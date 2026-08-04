@@ -49,7 +49,10 @@ pub enum MoveType {
 /// migrated. All in-tree generators emit non-`Unknown` tags; the
 /// simulator's kinematic classifier remains as the fallback for
 /// `Unknown`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize, Hash,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum MoveIntent {
     /// Drill-cycle plunge (true end-cutting). Engagement metrics do not apply.
     Drilling,
