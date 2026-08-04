@@ -320,7 +320,7 @@ per-adapter read:
 | **rest** | **NO** | `generate_rest` builds no `cancel_fn` and uses the non-cancellable `depth::toolpath_at_levels` (`execute.rs:709`) |
 | **drill** | **NO** | `generate_drill` never touches `ctx.cancel` (`execute.rs:639`) |
 
-Pinned by `uncancellable_2d_families_are_exactly_the_declared_two` so the
+Pinned by `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` so the
 findings document cannot go stale silently. Making the two cancellable is a
 behaviour change and needs Checkpoint C.
 

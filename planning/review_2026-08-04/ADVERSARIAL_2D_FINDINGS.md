@@ -19,17 +19,17 @@ shipped GUI, reach this without doing anything unusual?
 
 | # | Finding | Severity | Reachability | Evidence | Disposition |
 |---|---|---|---|---|---|
-| **F-1** | An empty offset at the boundary layer removes the boundary clip **entirely** — a `ToolContainment::Inside` request whose offset comes back empty produces *no containment*, not a collapsed one | **HIGH — over-cut** | **HIGH** — `BoundaryConfig` is a GUI dial, on the live worker path | code, §3.1 | Checkpoint C **D-3a** |
-| **F-2** | A library panic, a `< 3`-vertex guard and a genuine collapse are the same observable value; no channel can carry the difference, and no operator surface shows any of them | HIGH — diagnosability | HIGH — every 2D op | pinned test, §3.2 | Checkpoint C **D-1**, **D-2**, **D-4** |
-| **F-3** | The primary captured panic class is a `debug_assert!` — the shipped containment is a **debug-only** net for it, and release behaviour is unvalidated | HIGH | HIGH — release is what ships | source read, §3.3 | Checkpoint C **D-5** |
-| **F-10** | **Pocket's ring cascade has no ring cap and no divergence check — its only exit is collapse.** A contract-violating CW exterior makes every offset *grow*: it never collapses, never caps, and allocated **22.9 GB RSS without terminating** | HIGH — unbounded resource | **LOW** — both importers normalise winding; measured and asserted, §3.7 | measured + bounded probe, §3.7 | Checkpoint C |
-| **F-11** | **A `NaN` vertex trips a `debug_assert!` in `static_aabb2d_index 2.0.0` — a *transitive* dependency R1's census never covered.** In release that check is skipped and the offset proceeds on a corrupt spatial index, which the library's own docs call "unexpected behavior" | HIGH | MEDIUM — nothing filters non-finite coordinates anywhere | measured, §3.8 | Checkpoint C **D-5** |
-| **F-12** | **A perfectly VALID fixture reaches a third panic site** — `pline_seg.rs:33` *"v1 must not be on top of v2"*, on a zero-length arc segment. Also a `debug_assert!`: in release it divides by a zero chord length and returns a **NaN arc centre** instead of panicking. Contained → the pocket ring cascade ends early → an inlay female pocket silently leaves material | HIGH | **HIGH** — no contract violation is needed to reach it | measured, §3.9 | Checkpoint C **D-1**, **D-5** |
-| **F-4** | **Rest and Drill ignore a cancel flag entirely** | MEDIUM | HIGH — both in the 2D menu | measured, §3.4 | Checkpoint C |
-| **F-5** | Profile, Trace and Zigzag poll cancellation **only between Z levels** — on a single-level operation they are uncancellable in practice | MEDIUM | HIGH | code + measured, §3.4 | Checkpoint C |
-| **F-6** | A boundary offset that *splits* keeps only `boundaries.first()` on the single-region path; the multi-region path keeps them all | LOW–MEDIUM — under-cut | MEDIUM | code, §3.5 | Checkpoint C **D-3c** |
+| **F-1** | An empty offset at the boundary layer removes the boundary clip **entirely** — a `ToolContainment::Inside` request whose offset comes back empty produces *no containment*, not a collapsed one | **HIGH — over-cut** | **HIGH** — `BoundaryConfig` is a GUI dial, on the live worker path | code, F-1 below | Checkpoint C **D-3a** |
+| **F-2** | A library panic, a `< 3`-vertex guard and a genuine collapse are the same observable value; no channel can carry the difference, and no operator surface shows any of them | HIGH — diagnosability | HIGH — every 2D op | pinned test, F-2 below | Checkpoint C **D-1**, **D-2**, **D-4** |
+| **F-3** | The primary captured panic class is a `debug_assert!` — the shipped containment is a **debug-only** net for it, and release behaviour is unvalidated | HIGH | HIGH — release is what ships | source read, F-3 below | Checkpoint C **D-5** |
+| **F-10** | **Pocket's ring cascade has no ring cap and no divergence check — its only exit is collapse.** A contract-violating CW exterior makes every offset *grow*: it never collapses, never caps, and allocated **22.9 GB RSS without terminating** | HIGH — unbounded resource | **LOW** — both importers normalise winding; asserted, not assumed | measured + bounded probe, F-10 below | Checkpoint C |
+| **F-11** | **A `NaN` vertex trips a `debug_assert!` in `static_aabb2d_index 2.0.0` — a *transitive* dependency R1's census never covered.** In release that check is skipped and the offset proceeds on a corrupt spatial index, which the library's own docs call "unexpected behavior" | HIGH | MEDIUM — nothing filters non-finite coordinates anywhere | measured, F-11 below | Checkpoint C **D-5** |
+| **F-12** | **A perfectly VALID fixture reaches a third panic site** — `pline_seg.rs:33` *"v1 must not be on top of v2"*, on a zero-length arc segment. Also a `debug_assert!`: in release it divides by a zero chord length and returns a **NaN arc centre** instead of panicking. Contained → the pocket ring cascade ends early → an inlay female pocket silently leaves material | HIGH | **HIGH** — no contract violation is needed to reach it | measured, F-12 below | Checkpoint C **D-1**, **D-5** |
+| **F-4** | **Rest and Drill ignore a cancel flag entirely** | MEDIUM | HIGH — both in the 2D menu | measured, F-4/F-5 below | Checkpoint C |
+| **F-5** | Profile, Trace and Zigzag poll cancellation **only between Z levels** — on a single-level operation they are uncancellable in practice | MEDIUM | HIGH | code + measured, F-4/F-5 below | Checkpoint C |
+| **F-6** | A boundary offset that *splits* keeps only `boundaries.first()` on the single-region path; the multi-region path keeps them all | LOW–MEDIUM — under-cut | MEDIUM | code, F-6 below | Checkpoint C **D-3c** |
 | **F-7** | `adaptive3d/clearing.rs:1818` lifts every offset vertex onto a heightmap with no declared sampling density — structurally the defect `FlattenPolicy::with_max_segment` exists for | MEDIUM | MEDIUM — 3D lane | code, `OFFSET_CONSUMER_ROLLOUT.md` O-1 | hand off to W8 |
-| **F-8** | Two sites silently skip a requested boundary offset and keep the un-offset polygon | LOW–MEDIUM | MEDIUM | code, §3.6 | Checkpoint C **D-3b** |
+| **F-8** | Two sites silently skip a requested boundary offset and keep the un-offset polygon | LOW–MEDIUM | MEDIUM | code, F-8 below | Checkpoint C **D-3b** |
 | **F-9** | Before this wave, **pocket was the only 2D family with any wall-clock or ring-count sentry**; the other eight had none | LOW (process) | — | census | closed by this wave |
 
 ### 1.1 What was actually run
@@ -37,12 +37,12 @@ shipped GUI, reach this without doing anything unusual?
 | Instrument | Result |
 |---|---|
 | `adversarial_2d_fixtures_contain_their_mechanism` | **PASS** — 22 fixtures, 11 classes, all render, all prove their mechanism |
-| `cancellable_2d_families_return_after_the_flag_is_set` | **PASS** — latencies in §3.4 |
+| `cancellable_2d_families_return_after_the_flag_is_set` | **PASS** — latencies in F-4/F-5 below |
 | `cavalier_shape_failure_r2` (4 tests) | **PASS** — 4 passed, 0 failed, 1 ignored, 0.67 s |
 | `every_2d_operation_survives_its_worst_fixtures` | **NOT COMPLETED** — see F-10; the run it was in reached 22.9 GB RSS |
 | `adversarial_2d_full_campaign` | **PARTIAL — 33 of 198 cells**, §1.2. Stopped on F-12, then blocked by a full disk |
 | `the_reflex_cross_generator_is_bit_identical_to_its_donor` | **NOT RUN** — written after the last successful build; `cargo check` and `cargo fmt --check` clean, focused test unverified |
-| `uncancellable_2d_families_are_exactly_the_declared_two` | **NOT RUN** — same |
+| `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` | **NOT RUN** — same |
 | `the_pocket_ring_cascade_is_bounded_only_by_collapse` | **NOT RUN** — same. Its *conclusion* is measured (F-10 was observed twice, at 22.9 GB and 6.6 GB); the bounded probe that replaces the observation with an assertion has not itself been executed |
 | `cargo clippy --workspace --all-targets -- -D warnings` | **NOT RUN** — blocked by the full disk |
 
@@ -249,8 +249,7 @@ The sites that *do* panic in release are different ones:
 `shape_algorithms/mod.rs:786` and `pline_offset.rs:1401`
 (`unreachable!("loop_count exceeded max_loop_count while stitching slices
 together")`), the hard `assert!`s at `pline_view.rs:316/374/438`, and the
-`unwrap`/`expect`/raw-indexing sites listed in `CAVALIER_SHAPE_FAILURE.md`
-§3.3.
+`unwrap`/`expect`/raw-indexing sites listed in `CAVALIER_SHAPE_FAILURE.md` §3.3.
 
 This was known when R1 landed
 (`planning/TECH_DEBT_REVIEW_2026-06-10.md:43-44`) and has not been decided
@@ -259,7 +258,7 @@ behaviour is recorded as `NOT EXERCISED`, never as `PASS`.
 
 ### F-4 / F-5 — the cancellation asymmetry
 
-Pinned by `uncancellable_2d_families_are_exactly_the_declared_two`, which
+Pinned by `exactly_two_2d_families_ignore_a_pre_set_cancel_flag`, which
 pre-sets the cancel flag and classifies every family by whether it comes back
 with a cancellation error.
 
@@ -289,8 +288,6 @@ Making either group cancellable changes behaviour and needs Checkpoint C. The
 existing sentry `execute.rs:4145`
 (`cancellable_families_honour_a_preset_cancel_flag`) must be extended in the
 same PR or its coverage claim goes stale.
-
-### F-7bis note
 
 ### F-10 — pocket's cascade is bounded only by collapse
 

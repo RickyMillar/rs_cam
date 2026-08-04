@@ -291,9 +291,9 @@ impl Fixture {
 pub struct Mechanism {
     pub total_vertices: usize,
     pub rings: usize,
-    /// Corners where the boundary turns *into* the material (interior angle
-    /// > 180°), counted on every ring with its own winding taken into
-    /// account, so a hole's concavity is not miscounted as convexity.
+    /// Corners where the boundary turns *into* the material (interior
+    /// angle above 180°), counted on every ring with its own winding taken
+    /// into account, so a hole's concavity is not miscounted as convexity.
     pub reflex_corners: usize,
     pub min_segment_mm: f64,
     pub segments_below_pos_eps: usize,
@@ -1259,6 +1259,45 @@ pub fn run_op(
         cut_length_mm: length,
         cut_runs: runs,
         min_z,
+    }
+}
+
+/// Generate with the cancel flag **already true before the call**.
+///
+/// Distinct from [`run_op_with_cancel`] with a zero delay, and the difference
+/// is not academic: that variant arms a timer thread, so even at zero the
+/// store races the generate and the answer changes between runs. Measured —
+/// the same matrix classified `profile` and `zigzag` as ignoring the flag on
+/// one run and honouring it on the next. A question about *whether* an
+/// operation reads its flag has to be asked without a race in it.
+pub fn run_op_precancelled(
+    session: &mut ProjectSession,
+    index: usize,
+    op: &str,
+    fixture: &'static str,
+) -> RunRecord {
+    let cancel = AtomicBool::new(true);
+    let t0 = Instant::now();
+    let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        session.generate_toolpath(index, &cancel).map(|_| ())
+    })) {
+        Ok(Ok(())) => Outcome::Ok,
+        Ok(Err(e)) => Outcome::Err(format!("{e:?}")),
+        Err(payload) => Outcome::Panic(panic_message(&*payload)),
+    };
+    RunRecord {
+        op: op.to_owned(),
+        fixture,
+        wall: t0.elapsed(),
+        outcome,
+        rss_growth_kb: None,
+        peak_rss_kb: None,
+        moves: 0,
+        cutting_moves: 0,
+        rapid_moves: 0,
+        cut_length_mm: 0.0,
+        cut_runs: 0,
+        min_z: 0.0,
     }
 }
 
