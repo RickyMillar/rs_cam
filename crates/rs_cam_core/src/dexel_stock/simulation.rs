@@ -478,13 +478,20 @@ impl TriDexelStock {
                 params.spindle_rpm,
                 params.flute_count,
             );
-            let effective_chip_thickness_mm = effective_chip_thickness_mm(
+            // F-4: one chip-model evaluation, both statistics off it. The
+            // arc-MEAN is what the chipload gate reads as
+            // `effective_chip_thickness_mm`; the arc-PEAK is what the
+            // `Engagement` vector's `peak_chip_thickness_mm` is documented
+            // to carry. Pre-fix the peak slot held the mean and the mean
+            // slot held the commanded advance per tooth.
+            let chip_stats = chip_thickness_stats(
                 cutter,
                 axial_engagement_mm,
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 params.flute_count,
             );
+            let effective_chip_thickness_mm = chip_stats.map(|stats| stats.mean_mm);
             let flute_length = cutter.length().max(1e-9);
             let engagement = crate::simulation_cut::Engagement {
                 radial_woc_fraction: radial_engagement,
@@ -493,8 +500,15 @@ impl TriDexelStock {
                 // for emitters that have nothing to divide by).
                 axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
                 arc_radians: arc_engagement_radians,
-                mean_chip_thickness_mm: Some(chipload_mm_per_tooth),
-                peak_chip_thickness_mm: effective_chip_thickness_mm,
+                // F-4 (census T1.3, Checkpoint B Q2): these two carried
+                // each other's values — `mean_` held the commanded
+                // advance per tooth (already published as
+                // `chipload_mm_per_tooth` on the sample) and `peak_` held
+                // the arc-MEAN chip, so the "peak" read *below* the
+                // "mean" on every partial-immersion cut. Both now come
+                // off the shipped chip model under their own names.
+                mean_chip_thickness_mm: chip_stats.map(|stats| stats.mean_mm),
+                peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
                 leading_edge_speed_mm_min: params.feed_rate_mm_min,
                 // Step 2 carries direction as a substrate; climb/conventional
                 // discrimination needs perp-axis side info from stamping
@@ -585,6 +599,67 @@ pub fn effective_chip_thickness_mm(
     feed_per_tooth_mm: f64,
     flute_count: u32,
 ) -> Option<f64> {
+    chip_thickness_stats(
+        cutter,
+        axial_doc_mm,
+        arc_engagement_radians,
+        feed_per_tooth_mm,
+        flute_count,
+    )
+    .map(|stats| stats.mean_mm)
+}
+
+/// PEAK (maximum instantaneous) chip thickness across the engagement
+/// arc — `ChipGeometry::max_chip_thickness_mm`, the thickness the flute
+/// sees at its most-engaged angular position.
+///
+/// The sibling of [`effective_chip_thickness_mm`], added by F-4 (census
+/// T1.3). It is **not** the value any gate compares against: the
+/// chipload gate is deliberately calibrated on the arc-average (see the
+/// note on [`effective_chip_thickness_mm`], and
+/// `tests/chipload_formula_calibration.rs`). Its consumer is the
+/// report-only `Engagement::peak_chip_thickness_mm`, whose doc comment
+/// has always described this quantity while the field carried the mean.
+///
+/// Below full slotting `peak > mean` always, by the closed form
+/// `mean/peak = (2/arc)·(1 − cos(arc/2))`.
+pub fn peak_chip_thickness_mm(
+    cutter: &dyn MillingCutter,
+    axial_doc_mm: f64,
+    arc_engagement_radians: Option<f64>,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Option<f64> {
+    chip_thickness_stats(
+        cutter,
+        axial_doc_mm,
+        arc_engagement_radians,
+        feed_per_tooth_mm,
+        flute_count,
+    )
+    .map(|stats| stats.peak_mm)
+}
+
+/// The two chip-thickness statistics the simulator publishes, from one
+/// [`MillingCutter::chip_geometry`] evaluation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChipThicknessStats {
+    /// Arc-AVERAGE chip thickness (mm) — `ChipGeometry::mean_chip_thickness_mm`.
+    pub mean_mm: f64,
+    /// Arc-PEAK chip thickness (mm) — `ChipGeometry::max_chip_thickness_mm`.
+    pub peak_mm: f64,
+}
+
+/// Evaluate the shipped chip model once and return both statistics.
+/// `None` when there is no engagement arc (Z-only moves) or the cutter
+/// declines the geometry.
+pub fn chip_thickness_stats(
+    cutter: &dyn MillingCutter,
+    axial_doc_mm: f64,
+    arc_engagement_radians: Option<f64>,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Option<ChipThicknessStats> {
     let arc = arc_engagement_radians?;
     cutter
         .chip_geometry(
@@ -595,7 +670,10 @@ pub fn effective_chip_thickness_mm(
             EngagementMode::Slot,
         )
         .ok()
-        .map(|geometry| geometry.mean_chip_thickness_mm)
+        .map(|geometry| ChipThicknessStats {
+            mean_mm: geometry.mean_chip_thickness_mm,
+            peak_mm: geometry.max_chip_thickness_mm,
+        })
 }
 
 fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {
