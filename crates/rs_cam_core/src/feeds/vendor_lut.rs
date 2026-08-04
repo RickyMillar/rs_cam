@@ -832,6 +832,64 @@ mod tests {
         }
     }
 
+    /// R-17 (2026-08-04) — the INVERSE of the rule above, which was
+    /// one-directional: it asserts every *row* is queryable, and
+    /// nothing asserted that every *queryable family* has rows.
+    ///
+    /// Drill is the silent inverse case. `LutOperationFamily::Drill`
+    /// exists in the schema, `op_family_to_lut` maps the Drill and
+    /// AlignmentPinDrill operations onto it, and
+    /// `vendor_lookup::passes_must_match` returns `false` immediately on
+    /// family mismatch — so every drill query is a guaranteed miss, and
+    /// has been since the family was added. Nothing anywhere said so.
+    /// Every drill number in this engine is a hardcoded material
+    /// constant or the `k0·D^p·(1/H)^q × DRILL_CHIPLOAD_MULTIPLIER`
+    /// formula, and softening the LUT diameter/hardness exponents
+    /// cannot move any of them.
+    ///
+    /// This test does not fail on an empty family — authoring drill LUT
+    /// rows is not in scope and inventing them would be worse than
+    /// having none. It fails when the *documented* set of empty
+    /// families stops matching reality, in either direction: a family
+    /// that quietly empties out, or drill rows arriving without this
+    /// note being updated.
+    #[test]
+    fn queryable_families_without_rows_are_a_stated_fact() {
+        use crate::compute::catalog::OperationType;
+        use crate::feeds::vendor_normalize::op_family_to_lut;
+
+        /// Queryable families with zero bundled rows, as of 2026-08-04.
+        /// Every query for one of these is a guaranteed miss that falls
+        /// back to the formula path.
+        const KNOWN_EMPTY: &[LutOperationFamily] = &[LutOperationFamily::Drill];
+
+        let queryable: std::collections::HashSet<LutOperationFamily> = OperationType::ALL
+            .iter()
+            .map(|op| op_family_to_lut(op.registry_entry().spec.feeds_family))
+            .collect();
+        let lut = VendorLut::embedded();
+        let mut actual: Vec<String> = queryable
+            .into_iter()
+            .filter(|fam| {
+                !lut.observations
+                    .iter()
+                    .any(|obs| obs.operation_family == *fam)
+            })
+            .map(|fam| format!("{fam:?}"))
+            .collect();
+        actual.sort();
+        let mut expected: Vec<String> = KNOWN_EMPTY.iter().map(|f| format!("{f:?}")).collect();
+        expected.sort();
+        assert_eq!(
+            actual, expected,
+            "the set of queryable LUT families with zero rows changed. Every \
+             family listed here is a guaranteed lookup miss for every query \
+             that names it, which is a fact about what this engine can and \
+             cannot source from vendor data — say so deliberately rather than \
+             letting it drift. Update KNOWN_EMPTY and the doc comment together."
+        );
+    }
+
     fn synthetic_row() -> VendorObservation {
         // SAFETY: parse of a known-good literal.
         #[allow(clippy::expect_used)]
