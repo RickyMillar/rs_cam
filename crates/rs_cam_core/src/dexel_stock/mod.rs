@@ -12,6 +12,10 @@ pub use cut_direction::StockCutDirection;
 pub use simulation::{
     ChipThicknessStats, chip_thickness_stats, effective_chip_thickness_mm, peak_chip_thickness_mm,
 };
+/// The dexel engagement channel's two measurement floors. Re-exported from
+/// the (private) stamping kernel because [`crate::sim_measurability`] and its
+/// consumers need to cite the numbers they abstain on.
+pub use stamping::FRESH_MATERIAL_THRESHOLD_MM;
 
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 

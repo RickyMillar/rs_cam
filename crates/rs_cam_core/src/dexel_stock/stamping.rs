@@ -155,6 +155,62 @@ fn segment_cell_coverage(
     (cov, t_center, center_d_sq)
 }
 
+/// F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
+/// sub-cell blend leaves residual material at boundary cells (any cell with
+/// coverage < 1) that subsequent passes "bite", which would otherwise inflate
+/// radial engagement on repeated passes over already-cleared territory (e.g.
+/// `radial_engagement_air_cut_reads_zero`).
+///
+/// Requiring `coverage ≥ 0.95` means only cells that this stamp covers
+/// essentially-fully contribute to the width-of-cut measurement. With 4×4
+/// sub-sampling (1/16 quantization), the gate is equivalent to "cov = 1.0" —
+/// only fast-path fully-inside cells contribute. For a full slot this still
+/// yields radial ≈ (2r − 2·cell_size_subsample) / (2r) ≈ 0.97 (above the
+/// existing `> 0.85` slot assertion), and on air cuts over previously-cleared
+/// paths it reads exactly zero (the cov=1.0 cells were cleared by the prior
+/// pass, so pre_fresh = 0).
+///
+/// This is census §5.1's **Floor 2**, and unlike
+/// [`FRESH_MATERIAL_THRESHOLD_MM`] it *is* a function of cell size: two
+/// distinct qualifying cell centres at different perpendicular offsets are
+/// needed for a width to exist at all, so a round-tip tool at cut depth `d`
+/// needs `cell ≲ √(2·R_tip·d − d²)`. A Ø1 mm ball tip at `d = 0.05 mm`
+/// has a contact radius of ≈ 0.218 mm, so a 0.25 mm grid yields at most one
+/// qualifying cell and reads zero. That is the quantitative form of the
+/// standing rule "sim cell must be well below the tool TIP radius".
+const PERP_COVERAGE_GATE: f32 = 0.95;
+
+/// Threshold for "fresh material exists above the cutter at this cell",
+/// millimetres. A cell contributes to the perpendicular-extent measurement —
+/// and therefore to `radial_engagement`, to the engagement arc derived from
+/// it, and to everything downstream (`average_engagement`, `air_cut_time_s`
+/// and both its percentages, chip thickness, the chipload gate) — only if it
+/// held more than this much material above the cutter surface *before* the
+/// stamp.
+///
+/// **This is a documented measurement limit, not a tunable.** Ruled at
+/// Checkpoint D (Q2/D-7, 2026-08-04) after
+/// `SIMULATION_ISSUE_CHANNEL_CENSUS.md` §5.1 measured what it does: a pass
+/// removing 0.02 mm per stamp removes real material (63.7 mm³ on the census
+/// fixture), reports its removed *height* correctly, and reports radial
+/// engagement of **exactly zero** and ~96% air cut. Lowering the number
+/// re-admits the float-noise cells it exists to reject — near-flush dexel
+/// artifacts where a previous stamp left material fractionally above the
+/// cutter surface. Real bites are mm-scale.
+///
+/// The honest fix is therefore not a smaller constant but an **abstention**:
+/// [`crate::sim_measurability`] detects passes sitting under this floor and
+/// marks the engagement-derived metrics `NotMeasurable`, so the gates that
+/// consume them decline to produce a verdict instead of publishing a
+/// precise-looking percentage that clears every bar. Collision detection and
+/// gross material removal are unaffected and stay live.
+///
+/// Note this floor is **independent of cell size**. There is a second,
+/// separate lateral-resolution condition (`cell ≲ √(2·R_tip·d − d²)`,
+/// census §5.1 "Floor 2") governed by [`PERP_COVERAGE_GATE`]; the two fail
+/// for different reasons and `sim_measurability` reports them apart.
+pub const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
+
 /// Coverage at or above which a cell counts as **completely** swept, and the
 /// sliver-safe bound (`DexelGrid::conservative_top`) may be lowered.
 ///
@@ -553,26 +609,9 @@ pub(super) fn stamp_segment_with_metrics(
     let mut perp_max = f64::NEG_INFINITY;
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
-    // Threshold for "fresh material exists above the cutter at this cell".
-    // 0.05 mm filters out near-flush dexel artifacts where the previous stamp
-    // left material fractionally above the cutter surface due to floating
-    // point. Real bites are mm-scale.
-    const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
-    // F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
-    // sub-cell blend leaves residual material at boundary cells (any cell
-    // with coverage < 1) that subsequent passes "bite", which would
-    // otherwise inflate radial engagement on repeated passes over already-
-    // cleared territory (e.g., `radial_engagement_air_cut_reads_zero`).
-    //
-    // Requiring `coverage ≥ 0.95` means only cells that this stamp covers
-    // essentially-fully contribute to the width-of-cut measurement. With
-    // 4×4 sub-sampling (1/16 quantization), the gate is equivalent to
-    // "cov = 1.0" — only fast-path fully-inside cells contribute. For a
-    // full slot this still yields radial ≈ (2r − 2·cell_size_subsample) /
-    // (2r) ≈ 0.97 (above the existing `> 0.85` slot assertion), and on
-    // air cuts over previously-cleared paths it reads exactly zero (the
-    // cov=1.0 cells were cleared by the prior pass, so pre_fresh = 0).
-    const PERP_COVERAGE_GATE: f32 = 0.95;
+    // Both measurement floors this loop applies — the fixed material floor
+    // `FRESH_MATERIAL_THRESHOLD_MM` and the lateral-resolution gate
+    // `PERP_COVERAGE_GATE` — are module-level constants; see their docs.
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
