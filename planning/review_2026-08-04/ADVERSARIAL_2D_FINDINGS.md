@@ -22,11 +22,12 @@ shipped GUI, reach this without doing anything unusual?
 | **F-1** | An empty offset at the boundary layer removes the boundary clip **entirely** — a `ToolContainment::Inside` request whose offset comes back empty produces *no containment*, not a collapsed one | **HIGH — over-cut** | **HIGH** — `BoundaryConfig` is a GUI dial, on the live worker path | code, F-1 below | Checkpoint C **D-3a** |
 | **F-2** | A library panic, a `< 3`-vertex guard and a genuine collapse are the same observable value; no channel can carry the difference, and no operator surface shows any of them | HIGH — diagnosability | HIGH — every 2D op | pinned test, F-2 below | Checkpoint C **D-1**, **D-2**, **D-4** |
 | **F-3** | The primary captured panic class is a `debug_assert!` — the shipped containment is a **debug-only** net for it, and release behaviour is unvalidated | HIGH | HIGH — release is what ships | source read, F-3 below | Checkpoint C **D-5** |
-| **F-10** | **Pocket's ring cascade has no ring cap and no divergence check — its only exit is collapse.** A contract-violating CW exterior makes every offset *grow*: it never collapses, never caps, and allocated **22.9 GB RSS without terminating** | HIGH — unbounded resource | **LOW** — both importers normalise winding; asserted, not assumed | measured + bounded probe, F-10 below | Checkpoint C |
+| **F-10** | **Pocket's ring cascade has no ring cap and no divergence check — its only exit is collapse.** A contract-violating CW exterior makes every offset *grow*: it never collapses, never caps, and allocated **22.9 GB RSS without terminating** | HIGH — unbounded resource | **LOW** — both importers normalise winding; asserted, not assumed | measured, then pinned by a bounded probe (13× / 40 rings) | Checkpoint C |
 | **F-11** | **A `NaN` vertex trips a `debug_assert!` in `static_aabb2d_index 2.0.0` — a *transitive* dependency R1's census never covered.** In release that check is skipped and the offset proceeds on a corrupt spatial index, which the library's own docs call "unexpected behavior" | HIGH | MEDIUM — nothing filters non-finite coordinates anywhere | measured, F-11 below | Checkpoint C **D-5** |
 | **F-12** | **A perfectly VALID fixture reaches a third panic site** — `pline_seg.rs:33` *"v1 must not be on top of v2"*, on a zero-length arc segment. Also a `debug_assert!`: in release it divides by a zero chord length and returns a **NaN arc centre** instead of panicking. Contained → the pocket ring cascade ends early → an inlay female pocket silently leaves material | HIGH | **HIGH** — no contract violation is needed to reach it | measured, F-12 below | Checkpoint C **D-1**, **D-5** |
-| **F-4** | **Rest and Drill ignore a cancel flag entirely** | MEDIUM | HIGH — both in the 2D menu | measured, F-4/F-5 below | Checkpoint C |
-| **F-5** | Profile, Trace and Zigzag poll cancellation **only between Z levels** — on a single-level operation they are uncancellable in practice | MEDIUM | HIGH | code + measured, F-4/F-5 below | Checkpoint C |
+| **F-13** | **Drill emits a `NaN` hole position and reports success** — one NaN vertex becomes a NaN centroid becomes an emitted hole | MEDIUM | MEDIUM | measured, F-13 below | Checkpoint C |
+| **F-4** | **Rest and Drill ignore a cancel flag entirely** — measured deterministically, three runs | MEDIUM | HIGH — both in the 2D menu | measured, F-4 below | Checkpoint C |
+| **F-5** | Adaptive takes **2.3 s** to notice a cancel flag; Profile/Trace/Zigzag poll only *between* Z levels, so work inside a level cannot be interrupted | MEDIUM | HIGH | measured, F-5 below | Checkpoint C |
 | **F-6** | A boundary offset that *splits* keeps only `boundaries.first()` on the single-region path; the multi-region path keeps them all | LOW–MEDIUM — under-cut | MEDIUM | code, F-6 below | Checkpoint C **D-3c** |
 | **F-7** | `adaptive3d/clearing.rs:1818` lifts every offset vertex onto a heightmap with no declared sampling density — structurally the defect `FlattenPolicy::with_max_segment` exists for | MEDIUM | MEDIUM — 3D lane | code, `OFFSET_CONSUMER_ROLLOUT.md` O-1 | hand off to W8 |
 | **F-8** | Two sites silently skip a requested boundary offset and keep the un-offset polygon | LOW–MEDIUM | MEDIUM | code, F-8 below | Checkpoint C **D-3b** |
@@ -34,24 +35,52 @@ shipped GUI, reach this without doing anything unusual?
 
 ### 1.1 What was actually run
 
+All measurements at `0e7d38b` + this wave's test-only commits, debug build.
+
 | Instrument | Result |
 |---|---|
 | `adversarial_2d_fixtures_contain_their_mechanism` | **PASS** — 22 fixtures, 11 classes, all render, all prove their mechanism |
+| `the_reflex_cross_generator_is_bit_identical_to_its_donor` | **PASS** — C6 donor proof, `f64::to_bits` per coordinate |
+| `every_2d_operation_survives_its_worst_fixtures` | **PASS** — 9 families × 3 curated fixtures; no panic, no silent empty, no ceiling breach |
+| `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` | **PASS** — see the correction below |
+| `the_pocket_ring_cascade_is_bounded_only_by_collapse` | **PASS** — 13× area growth over 40 rings, control collapses at 12 |
 | `cancellable_2d_families_return_after_the_flag_is_set` | **PASS** — latencies in F-4/F-5 below |
-| `cavalier_shape_failure_r2` (4 tests) | **PASS** — 4 passed, 0 failed, 1 ignored, 0.67 s |
-| `every_2d_operation_survives_its_worst_fixtures` | **NOT COMPLETED** — see F-10; the run it was in reached 22.9 GB RSS |
-| `adversarial_2d_full_campaign` | **PARTIAL — 33 of 198 cells**, §1.2. Stopped on F-12, then blocked by a full disk |
-| `the_reflex_cross_generator_is_bit_identical_to_its_donor` | **NOT RUN** — written after the last successful build; `cargo check` and `cargo fmt --check` clean, focused test unverified |
-| `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` | **NOT RUN** — same |
-| `the_pocket_ring_cascade_is_bounded_only_by_collapse` | **NOT RUN** — same. Its *conclusion* is measured (F-10 was observed twice, at 22.9 GB and 6.6 GB); the bounded probe that replaces the observation with an assertion has not itself been executed |
-| `cargo clippy --workspace --all-targets -- -D warnings` | **NOT RUN** — blocked by the full disk |
+| whole target: `cargo test -p rs_cam_core --test adversarial_2d_campaign_r2` | **6 passed, 0 failed, 1 ignored, 16.83 s** |
+| `cavalier_shape_failure_r2` | **4 passed, 0 failed, 1 ignored, 0.67 s** |
+| `cargo fmt --check` | clean (hand-formatted, no rustfmt cascade) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | **clean** |
+| `adversarial_2d_full_campaign` | **PARTIAL — 33 of 198 cells**, §1.2. Stopped on F-12, then by a full disk. The 165 uncollected cells are `NOT RUN`, not passing. |
 
-**Blocker, stated.** The machine's root filesystem reached **100% (889 GB of
-935 GB, 72 MB free)** during this wave. Cargo cannot build. Three focused
-tests and the clippy gate are therefore unverified, and are marked as such
-rather than assumed. `cargo check` on both new test targets and
-`cargo fmt --check` were clean at the last build that succeeded, which covers
-compilation and formatting but not behaviour or lints.
+**Two environmental interruptions, recorded because they shaped the
+evidence.** The machine's root filesystem reached **100% (889 GB of 935 GB,
+72 MB free)** mid-wave and Cargo could not build for a period; the three
+tests written in that window were committed as `NOT RUN` and verified once
+space returned. Earlier, the first campaign run consumed **22.9 GB RSS**
+without terminating — that is F-10, not a machine fault.
+
+### 1.1b A finding this wave withdrew — and why it is recorded anyway
+
+`exactly_two_2d_families_ignore_a_pre_set_cancel_flag` first reported **five**
+ignorers (drill, profile, rest, trace, zigzag) against the two
+`execute.rs:499-508` documents. There was a ready mechanism, and it is true:
+profile, trace and zigzag wire cancellation only around the depth loop, and
+their per-level generators (`profile_toolpath`, `trace_polygon_at_z`,
+`zigzag_toolpath`) take no cancel parameter, so a single-level operation has
+nothing between entry and completion that reads the flag. The test was
+rewritten to pin five, renamed, and the docs updated.
+
+**The next run reported three.**
+
+The instrument was racing itself: the harness set the flag from a timer
+thread, so even at a zero delay the store raced the generate.
+`run_op_precancelled` sets it synchronously before the call, and three
+consecutive runs then give `["drill", "rest"]` every time.
+
+The mechanism was real; the conclusion was an artefact of the harness. It is
+written up here, and in the test's own docs, because *"check both sides of a
+ratio are the same measure"* has a sibling: **check that the thing you are
+measuring is not your own timing.** A near-miss that leaves no trace teaches
+nothing.
 
 ### 1.2 The measured matrix — 33 of 198 cells
 
@@ -258,36 +287,64 @@ behaviour is recorded as `NOT EXERCISED`, never as `PASS`.
 
 ### F-4 / F-5 — the cancellation asymmetry
 
-Pinned by `exactly_two_2d_families_ignore_a_pre_set_cancel_flag`, which
-pre-sets the cancel flag and classifies every family by whether it comes back
-with a cancellation error.
+Two measurements, and they answer different questions. Keeping them apart is
+the whole of §1.1b's lesson.
 
-| Family | Honours the flag? | Granularity |
-|---|---|---|
-| pocket | yes | **per offset ring** (`pocket.rs:88`) + per Z level |
-| adaptive | yes | per pass |
-| inlay | yes | per ring (female pocket) / per scan line (female v-carve) |
-| v-carve | yes | **per scan line** (`vcarve.rs:118`) |
-| profile | yes | **per Z level only** — `profile_toolpath` has no cancel parameter at all |
-| trace | yes | **per Z level only** — `trace_polygon_at_z` has no check |
-| zigzag | yes | **per Z level only** — `zigzag_toolpath` has no check |
-| **rest** | **NO** | `generate_rest` builds no `cancel_fn` and calls the non-cancellable `depth::toolpath_at_levels` (`execute.rs:709`) |
-| **drill** | **NO** | `generate_drill` never touches `ctx.cancel` (`execute.rs:639`) |
+**F-4 — which families read the flag at all.** Flag set synchronously before
+the call (`exactly_two_2d_families_ignore_a_pre_set_cancel_flag`), three
+consecutive runs, identical each time:
 
-`execute.rs:499-508` states the registry-wide version: 19 of 23 families
-cancellable; Drill, AlignmentPinDrill, Rest and Chamfer are not. All four are
-in `OperationType::ALL_2D`, i.e. all four are in the GUI's 2D menu.
+| | families |
+|---|---|
+| honour it | adaptive, inlay, pocket, profile, trace, v-carve, zigzag |
+| **ignore it** | **drill, rest** |
 
-**F-5's practical edge:** a per-Z-level check is not cancellation on a
-single-level operation, and it is not cancellation *inside* a level however
-many there are. The campaign measures post-flag latency rather than total
-runtime for exactly this reason, and reports `NOT EXERCISED (finished first)`
-rather than a pass when the generate beat the flag.
+That matches `execute.rs:499-508` exactly: 19 of 23 registered families are
+cancellable, and Drill, AlignmentPinDrill, Rest and Chamfer are not. All four
+are in `OperationType::ALL_2D` — all four are in the GUI's 2D menu. `rest`
+builds no `cancel_fn` and calls the non-cancellable `depth::toolpath_at_levels`
+(`execute.rs:709`); `drill` never touches `ctx.cancel` (`execute.rs:639`).
 
-Making either group cancellable changes behaviour and needs Checkpoint C. The
-existing sentry `execute.rs:4145`
-(`cancellable_families_honour_a_preset_cancel_flag`) must be extended in the
-same PR or its coverage claim goes stale.
+**F-5 — how quickly a family that does read the flag comes back.** Flag set
+150 ms into the generate, latency measured **from that moment**, on
+`rosette-24`:
+
+| family | latency after the flag | total | granularity |
+|---|---|---|---|
+| adaptive | **2.292 s** | 2.443 s | per pass |
+| v-carve | 0.007 s | 0.157 s | **per scan line** (`vcarve.rs:118`) |
+| inlay | 0.003 s | 0.154 s | per ring / per scan line |
+| pocket | NOT EXERCISED | 0.082 s | per offset ring (`pocket.rs:88`) |
+| profile | NOT EXERCISED | 0.035 s | per Z level only |
+| trace | NOT EXERCISED | 0.007 s | per Z level only |
+| zigzag | NOT EXERCISED | 0.107 s | per Z level only |
+
+`NOT EXERCISED` means the generate finished before the flag was ever set —
+recorded honestly, never as a pass.
+
+**What is actually open here.** Adaptive takes **2.3 seconds** to notice, two
+orders above the other two measured. And profile, trace and zigzag poll only
+*between* Z levels: their per-level generators take no cancel parameter, so
+work already inside a level cannot be interrupted regardless of level count.
+Neither is a defect on this evidence — the first is a granularity choice, the
+second is documented — but both are what an operator experiences as "the
+cancel button did nothing".
+
+Making `rest` or `drill` cancellable changes behaviour and needs Checkpoint C.
+The shipped sentry `cancellable_families_honour_a_preset_cancel_flag`
+(`execute.rs:4145`) must be extended in the same PR or its coverage claim goes
+stale.
+
+### F-13 — drill emits a `NaN` hole position and reports success
+
+`drill × invalid-nan` returns `Ok` with 6 moves, 2 of them cutting, and
+`cut_length_mm = NaN`. `drill_holes_for_config` (`execute.rs:618-629`) takes
+the arithmetic mean of each polygon's exterior vertices as the hole centre, so
+one `NaN` vertex makes the whole centroid `NaN`, and nothing between there and
+emission rejects it. Same root as F-11: no validating constructor on
+`Polygon2`, no non-finite filter anywhere. Severity is bounded by the fact
+that a `NaN` coordinate reaching a post is a G-code the controller will
+reject — but it is emitted, and reported as a success.
 
 ### F-10 — pocket's cascade is bounded only by collapse
 
@@ -505,8 +562,17 @@ the call's own peak: exact when the call is the largest allocator so far, and
 zero when an earlier call already peaked higher — reported as `≤ prior peak`,
 never as "used no memory". Non-Linux returns `unmeasured`.
 
-**Cancellation.** The flag is set from a timer thread after 150 ms and the
-record reports latency **from that moment**, not total runtime.
+**Cancellation — two seams, and mixing them up cost this wave a false
+finding (§1.1b).**
+
+- `run_op_precancelled` sets the flag **synchronously, before the call**. That
+  answers "does this family read its flag at all", deterministically. Use it
+  for any question about presence.
+- `run_op_with_cancel(after)` arms a **timer thread** and reports latency from
+  the moment the flag was set, not total runtime. That answers "how quickly
+  does it come back", which is the only thing a timer can answer honestly.
+  **At any delay, including zero, its store races the generate**, so it must
+  never be used to classify a family as ignoring the flag.
 
 **Failure conditions.** (1) any panic; (2) `Ok` with zero cutting moves on an
 `Expectation::MustCut` fixture; (3) exceeding the ceiling. A typed `Err` is
@@ -523,8 +589,11 @@ are recorded in the matrix instead of failing the gate.
 
 ## 5. Honest limits
 
-- **Debug only.** No release build (programme rule 11). F-3 makes that a real
-  gap rather than a formality.
+- **Debug only.** No release build (programme rule 11). F-3, F-11 and F-12
+  make that a real gap rather than a formality: all three are `debug_assert!`s
+  whose release behaviour is a different question that has not been asked.
+- **One conclusion was withdrawn mid-wave** (§1.1b). The rest of this document
+  should be read knowing that.
 - **F-1, F-6, F-7 and F-8 are code-path findings, not reproductions.** Every
   link is cited; none was driven end-to-end to observe the bad output. Any
   Checkpoint-C-approved fix should start by building that reproduction,
