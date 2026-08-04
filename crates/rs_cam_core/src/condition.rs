@@ -16,6 +16,16 @@
 //! [`crate::arcfit::fit_arcs`]: it never merges across a `RapidOrderBarrier` or
 //! `DepthPass` boundary, tags nothing new, and remaps input spans through the
 //! N-to-M collapse. When `spans_valid` is `false`, spans pass through untouched.
+//!
+//! H2.2 / Checkpoint F1 Q4: the run key also carries `Move::intent`, so RDP
+//! can never fold a dropped move's geometry into a kept move of a different
+//! intent. `MoveIntent::Unknown` is strict, not a wildcard — same rule as
+//! arc-fit. One difference from arc-fit is deliberate and STATED: arc-fit
+//! also breaks on `SpanKind::Region` edges (Q2), this pass does not. Q4
+//! authorised the intent term here, nothing wider. A merge that spans two
+//! `Region` nodes can still fold region A's dropped geometry into region B's
+//! first kept move — same class, unowned, re-open condition is any wave that
+//! reads region-level geometry off a `segment_merge`-enabled operation.
 
 use crate::geo::P3;
 use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
@@ -91,14 +101,26 @@ pub fn merge_linear_runs_with_provenance(
             continue;
         };
 
-        // Extend a maximal run of consecutive same-feed linear moves, stopping
-        // before any barrier.
+        // Extend a maximal run of consecutive same-feed, same-INTENT linear
+        // moves, stopping before any barrier.
+        //
+        // H2.2 / Checkpoint F1 Q4: `intent` is an equality term of the run
+        // key, the same term `arcfit::fit_arcs` gained. This pass does not
+        // relabel — every retained move is kept verbatim — but RDP drops
+        // points and folds a dropped move's geometry into the NEXT KEPT move,
+        // which without this term could carry a different intent. On a
+        // collinear run the whole thing collapsed to one move wearing the
+        // last block's label. Equality is strict here too: `Unknown` is not a
+        // wildcard.
         let run_start = i;
+        let run_intent = moves[run_start].intent;
         let mut end = run_start + 1;
         while end < moves.len() {
             match moves[end].move_type {
                 MoveType::Linear { feed_rate: f }
-                    if (f - feed_rate).abs() < FEED_EPS && !barriers.contains(&end) =>
+                    if (f - feed_rate).abs() < FEED_EPS
+                        && moves[end].intent == run_intent
+                        && !barriers.contains(&end) =>
                 {
                     end += 1;
                 }
@@ -289,6 +311,62 @@ mod tests {
         assert!(
             matches!(last.move_type, MoveType::Linear { feed_rate } if (feed_rate - 500.0).abs() < 1e-9)
         );
+    }
+
+    /// Runs at different INTENTS are not merged across the intent change.
+    ///
+    /// H2.2 / Checkpoint F1 Q4 — the sibling of the arcfit defect. This pass
+    /// does not relabel (every retained move is kept verbatim), but RDP drops
+    /// points across an intent boundary and folds a dropped move's geometry
+    /// into the **next kept move**, which used to be allowed to carry a
+    /// different intent. On a perfectly collinear run the whole thing
+    /// collapsed to ONE move labelled with the LAST block's intent, and the
+    /// first block's geometry was attributed to it.
+    ///
+    /// Red-first: at `3dbec75` (arcfit fixed, this pass not yet) the
+    /// boundary point below vanished and the output held a single `Linking`
+    /// move.
+    #[test]
+    fn does_not_merge_across_intent_change() {
+        use crate::toolpath::MoveIntent;
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        // Perfectly collinear, ONE feed. Only intent distinguishes the halves,
+        // so only the intent term can stop the merge.
+        for k in 1..=5 {
+            tp.feed_to_with_intent(P3::new(k as f64, 0.0, 0.0), 1000.0, MoveIntent::ClearingCut);
+        }
+        for k in 6..=10 {
+            tp.feed_to_with_intent(P3::new(k as f64, 0.0, 0.0), 1000.0, MoveIntent::Linking);
+        }
+
+        let out = merge_linear_runs(AnnotatedToolpath::new(tp), 0.1);
+
+        // Each half still collapses fully — the added term costs nothing on a
+        // run it should have kept — so exactly two cut moves survive.
+        assert_eq!(
+            cut_move_count(&out.toolpath),
+            2,
+            "one merged move per intent block, got {:?}",
+            out.toolpath.moves
+        );
+        // The boundary point is the evidence: it is where the clearing cut
+        // stops, and it must not be swallowed by the link that follows.
+        let boundary = out
+            .toolpath
+            .moves
+            .iter()
+            .find(|m| (m.target.x - 5.0).abs() < 1e-9)
+            .expect("the intent boundary at x=5 must survive the merge");
+        assert_eq!(
+            boundary.intent,
+            MoveIntent::ClearingCut,
+            "the surviving boundary move belongs to the clearing block"
+        );
+        let last = out.toolpath.moves.last().unwrap();
+        assert!((last.target.x - 10.0).abs() < 1e-9);
+        assert_eq!(last.intent, MoveIntent::Linking);
     }
 
     /// Spans remap cleanly and invariants hold after a merge.
