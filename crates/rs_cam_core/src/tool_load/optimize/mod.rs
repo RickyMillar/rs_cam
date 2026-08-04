@@ -1687,6 +1687,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1698,6 +1699,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1839,6 +1841,7 @@ mod tests {
                 deflection: within_deflection_verdict(0.030),
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }
         };
         // Faster but parked at LUT max (chipload 0.07 → distance 1.0
@@ -2242,6 +2245,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -2288,6 +2292,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let advisory_candidate = synthetic_candidate(2100.0, 75.0, verdict);
@@ -2579,6 +2584,7 @@ mod stage1_grid_tests {
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         }
     }
 

@@ -93,6 +93,7 @@ fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
         },
         drill_gates: None,
         modulation_summary: None,
+        feed_explanation: None,
     }
 }
 

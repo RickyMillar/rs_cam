@@ -202,6 +202,19 @@ pub struct ToolpathLoadVerdict {
     /// consumers that iterate criteria stay byte-stable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modulation_summary: Option<ModulationSummary>,
+    /// T1.1 — the stage-labelled record relating the chipload gate's
+    /// number to the commanded one, with every stage's unit named.
+    ///
+    /// `Some` whenever the chipload gate reached a modelled verdict;
+    /// `None` when it refused before matching a vendor row (an
+    /// `Unmodeled` verdict has no stages to label) or for drill ops.
+    ///
+    /// Report-only and additive: no gate, threshold or severity reads
+    /// it. See `crates/rs_cam_core/src/feeds/explanation.rs` for the
+    /// rule it is written under — it labels stages, it does not pick a
+    /// winner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_explanation: Option<Box<crate::feeds::FeedExplanation>>,
 }
 
 impl ToolpathLoadVerdict {
@@ -1159,6 +1172,7 @@ mod tests {
             },
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert_eq!(v.modeled_count(), 2);
         assert!(!v.any_exceeded());
@@ -1205,6 +1219,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
@@ -1250,6 +1265,7 @@ mod tests {
                     },
                     drill_gates: None,
                     modulation_summary: None,
+                    feed_explanation: None,
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId(1),
@@ -1284,6 +1300,7 @@ mod tests {
                     },
                     drill_gates: None,
                     modulation_summary: None,
+                    feed_explanation: None,
                 },
             ],
         };
@@ -1327,6 +1344,7 @@ mod tests {
                 plunge_feed: plunge,
             }),
             modulation_summary: None,
+            feed_explanation: None,
         };
 
         let healthy = drill_verdict(DrillGateOutcome::Within {
@@ -1403,6 +1421,7 @@ mod tests {
                     },
                     drill_gates: None,
                     modulation_summary: None,
+                    feed_explanation: None,
                 },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
@@ -1419,6 +1438,7 @@ mod tests {
                     },
                     drill_gates: None,
                     modulation_summary: None,
+                    feed_explanation: None,
                 },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
@@ -1436,6 +1456,7 @@ mod tests {
                     },
                     drill_gates: None,
                     modulation_summary: None,
+                    feed_explanation: None,
                 },
             ],
         };
@@ -1491,6 +1512,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         // Resolver hit — name flows into the entry.
@@ -1756,6 +1778,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
@@ -1822,6 +1845,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         let exceeded = r.exceeded_criteria();
@@ -1892,6 +1916,7 @@ mod tests {
             },
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         for status in v.criteria() {
             assert_eq!(
@@ -1932,6 +1957,7 @@ mod tests {
             deflection: DeflectionVerdict::Unmodeled { reason },
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1951,6 +1977,7 @@ mod tests {
             },
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -2031,6 +2058,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         let s = r.summary(|id| {
@@ -2083,6 +2111,7 @@ mod tests {
                 },
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }],
         };
         let s = r.summary(|_| None);

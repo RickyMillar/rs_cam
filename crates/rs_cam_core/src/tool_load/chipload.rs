@@ -293,8 +293,90 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// — Item D of the tool-load fidelity plan) and `Adaptive3d`
 /// (Adaptive → Pocket so the LUT envelope reflects pocket-style
 /// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
+/// Every stage of [`crate::feeds::FeedExplanation`] except the gate
+/// observation, which cannot be filled until the verdict has chosen
+/// between its median and peak statistics.
+struct PartialFeedStages {
+    commanded: crate::feeds::CommandedStage,
+    band: crate::feeds::LutBandStage,
+    lut_arc: crate::feeds::LutArcStage,
+    achieved_feed: crate::feeds::AchievedFeedStage,
+    sample_count: usize,
+}
+
+/// The chipload verdict, plus the stage-labelled record explaining how
+/// its number relates to the commanded one (census T1.1).
+///
+/// `None` for the explanation whenever the gate refused before matching
+/// a row — an `Unmodeled` verdict has no stages to label.
+pub(crate) fn evaluate_with_explanation(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+) -> (ChiploadVerdict, Option<Box<crate::feeds::FeedExplanation>>) {
+    let mut partial = None;
+    let verdict = evaluate_inner(ctx, env, &mut partial);
+    let explanation = partial.map(|p| {
+        // Stage 5 must name the statistic the VERDICT quotes, not a
+        // statistic of this function's choosing — the two arms report
+        // different ones and conflating them is the labelling defect
+        // this record exists to end.
+        let (statistic, value_mm) = match &verdict {
+            ChiploadVerdict::Within {
+                approach_to_min,
+                approach_to_max,
+                burn_advisory,
+                ..
+            } => burn_advisory
+                .as_deref()
+                .or(approach_to_min.as_ref())
+                .map(|m| {
+                    (
+                        crate::feeds::ObservedStatistic::Median,
+                        m.observed_mm_per_tooth,
+                    )
+                })
+                .unwrap_or((
+                    crate::feeds::ObservedStatistic::Peak,
+                    approach_to_max.observed_mm_per_tooth,
+                )),
+            ChiploadVerdict::Exceeds {
+                side, triggering, ..
+            } => (
+                match side {
+                    ChipSide::Low => crate::feeds::ObservedStatistic::Median,
+                    ChipSide::High => crate::feeds::ObservedStatistic::Peak,
+                },
+                triggering.observed_mm_per_tooth,
+            ),
+            ChiploadVerdict::Unmodeled { .. } => {
+                (crate::feeds::ObservedStatistic::Median, f64::NAN)
+            }
+        };
+        Box::new(crate::feeds::FeedExplanation {
+            commanded: p.commanded,
+            band: p.band,
+            lut_arc: p.lut_arc,
+            achieved_feed: p.achieved_feed,
+            gate: crate::feeds::GateObservationStage {
+                statistic,
+                value_mm,
+                sample_count: p.sample_count,
+            },
+        })
+    });
+    (verdict, explanation)
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
+    evaluate_inner(ctx, env, &mut None)
+}
+
+fn evaluate_inner(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+    partial_stages: &mut Option<PartialFeedStages>,
+) -> ChiploadVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
         tool,
@@ -487,6 +569,50 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         Confidence::Validated
     };
 
+    // T1.1 — capture the commanded stage and the achieved-feed stage
+    // BEFORE the sample loop consumes `steady_samples`. Both are already
+    // computed by this gate; pre-T1.1 they were used and dropped, which
+    // is why an operator could see the gate's number and the commanded
+    // number and have nothing relating them.
+    let commanded_stage = steady_samples.first().map(|(_, s)| {
+        let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
+        crate::feeds::CommandedStage {
+            feed_rate_mm_min: operation_feed_rate_mm_min,
+            spindle_rpm: s.spindle_rpm,
+            flute_count: s.flute_count,
+            feed_per_tooth_mm: if divisor > 0.0 {
+                operation_feed_rate_mm_min / divisor
+            } else {
+                0.0
+            },
+        }
+    });
+    let achieved_feed_stage = {
+        let predicted_feeds_present = !trace.predicted_feeds.is_empty();
+        let median_ratio = if predicted_feeds_present {
+            let mut ratios: Vec<f64> = steady_samples
+                .iter()
+                .map(|(_, s)| {
+                    super::effective_feed_for_sample(s, &trace.predicted_feeds)
+                        / s.feed_rate_mm_min.max(1e-9)
+                })
+                .collect();
+            if ratios.is_empty() {
+                None
+            } else {
+                ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                #[allow(clippy::indexing_slicing)] // SAFETY: non-empty checked above
+                Some(ratios[ratios.len() / 2])
+            }
+        } else {
+            None
+        };
+        crate::feeds::AchievedFeedStage {
+            predicted_feeds_present,
+            median_ratio,
+        }
+    };
+
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: (f64, usize) = (0.0, 0);
     let mut valid_count: usize = 0;
@@ -610,6 +736,33 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             peak_in_range = (cl_normalized, i);
         }
     }
+
+    // T1.1 — assemble everything except stage 5, which needs the verdict
+    // arm (median for the burn side, peak for the breakage side) and is
+    // filled in by `evaluate_with_explanation`. Nothing here is
+    // recomputed: every field is a value this gate already derived.
+    *partial_stages = commanded_stage.map(|commanded| PartialFeedStages {
+        commanded,
+        band: crate::feeds::LutBandStage {
+            observation_id: result.observation_id.clone(),
+            bounds_source: source,
+            row_diameter_mm: result.row_diameter_mm,
+            queried_diameter_mm: lookup_diameter_at_peak,
+            diameter_scale: result.chipload_diameter_scale,
+            hardness_scale: result.chipload_hardness_scale,
+            is_extrapolated: result.is_extrapolated,
+            queried_pass_role: pass_role,
+            row_pass_role: result.row_pass_role,
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
+        },
+        lut_arc: crate::feeds::LutArcStage {
+            nominal_arc_rad: arc_lut_nominal,
+            mean_chip_factor: lut_factor,
+        },
+        achieved_feed: achieved_feed_stage,
+        sample_count: valid_count,
+    });
 
     // Burn-risk: median of per-sample chip thickness vs LUT min.
     // Sort once and re-use both for the median chip thickness and for

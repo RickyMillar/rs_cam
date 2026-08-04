@@ -17,6 +17,7 @@
 
 pub mod cutter_constraints;
 pub mod explain;
+pub mod explanation;
 pub mod force;
 pub mod geometry;
 pub mod geometry_class;
@@ -29,6 +30,10 @@ pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
+pub use explanation::{
+    ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
+    LutArcStage, LutBandStage, ObservedStatistic,
+};
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
 pub use vendor_lut::VendorLut;
