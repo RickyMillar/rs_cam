@@ -13,7 +13,7 @@
 //! | `adversarial_2d_fixtures_contain_their_mechanism` | geometry only | **non-vacuity.** Every fixture proves it contains the defect class it claims BEFORE it is allowed to gate anything |
 //! | `the_reflex_cross_generator_is_bit_identical_to_its_donor` | trivial | C6 donor proof for the one generator lifted from a shipped sentry |
 //! | `every_2d_operation_survives_its_worst_fixtures` | CI | the acceptance gate: no panic, no silent-empty success, bounded wall clock |
-//! | `uncancellable_2d_families_are_exactly_the_declared_two` | CI | pins the cancellation asymmetry rather than letting it be rediscovered |
+//! | `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` | CI | pins the cancellation asymmetry rather than letting it be rediscovered |
 //! | `adversarial_2d_full_campaign` | `#[ignore]`, minutes | the full operation × fixture matrix that produces `ADVERSARIAL_2D_FINDINGS.md`'s table and the SVG gallery |
 //!
 //! # What counts as a failure
@@ -35,7 +35,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout
 )]
 
 mod common;
@@ -681,16 +682,42 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 // 4. The cancellation asymmetry, pinned
 // ---------------------------------------------------------------------------
 
-/// `compute::execute`'s own doc says four of twenty-three registered families
-/// are uncancellable: Drill, AlignmentPinDrill, Rest and Chamfer. Two of them
-/// are in this campaign's nine.
+/// **Exactly two of the nine 2D families never read their cancel flag:
+/// `rest` and `drill`.**
 ///
-/// This test does not assert that the two *become* cancellable — that would
-/// be a behaviour change and it needs Checkpoint C. It pins the fact, so the
-/// findings document cannot go stale silently and so a future fix has a
-/// red-first target.
+/// `generate_rest` builds no `cancel_fn` and calls the non-cancellable
+/// `depth::toolpath_at_levels` (`execute.rs:709`); `generate_drill` never
+/// touches `ctx.cancel` (`execute.rs:639`). This agrees with
+/// `compute::execute`'s own doc (`execute.rs:499-508`) — Drill,
+/// AlignmentPinDrill, Rest and Chamfer are the four uncancellable families
+/// registry-wide, and two of them are in this campaign's nine.
+///
+/// The flag is set **synchronously, before the call**
+/// ([`adv::run_op_precancelled`]), and that detail is the whole test.
+///
+/// > **An earlier version of this test used the timer-based
+/// > [`adv::run_op_with_cancel`] at a zero delay and reported five ignorers on
+/// > one run and three on the next**, because the timer thread's store races
+/// > the generate. It very nearly became a finding — "profile, trace and
+/// > zigzag are uncancellable at one depth level" — with a plausible
+/// > mechanism attached (their per-level generators take no cancel
+/// > parameter). The mechanism is real; the conclusion was an artefact of the
+/// > instrument. Three consecutive runs of the synchronous version give
+/// > `["drill", "rest"]` every time.
+///
+/// What remains true about `profile`/`trace`/`zigzag` is narrower and is
+/// measured elsewhere, by
+/// `cancellable_2d_families_return_after_the_flag_is_set`: they read the flag
+/// *between* Z levels, so they cannot interrupt work already inside one. On
+/// the rosette fixture all three report `NOT EXERCISED (finished first)` —
+/// honest, and not the same claim.
+///
+/// This test does not assert that `rest` or `drill` *should* become
+/// cancellable — that is a behaviour change and it needs Checkpoint C. It
+/// pins the measured fact so the findings document cannot go stale silently
+/// and a future fix has a red-first target.
 #[test]
-fn uncancellable_2d_families_are_exactly_the_declared_two() {
+fn exactly_two_2d_families_ignore_a_pre_set_cancel_flag() {
     let all = adv::fixtures();
     let f = all
         .iter()
@@ -703,7 +730,7 @@ fn uncancellable_2d_families_are_exactly_the_declared_two() {
     let mut honoured = Vec::new();
     for (name, op, kind) in op_matrix(f.tool_d) {
         let mut session = build_session(f, op, kind);
-        let rec = adv::run_op_with_cancel(&mut session, 0, name, f.name, Duration::ZERO);
+        let rec = adv::run_op_precancelled(&mut session, 0, name, f.name);
         match &rec.outcome {
             Outcome::Err(msg) if msg.to_ascii_lowercase().contains("cancel") => {
                 honoured.push(name);
@@ -713,7 +740,7 @@ fn uncancellable_2d_families_are_exactly_the_declared_two() {
     }
     {
         let mut session = rest_session(f);
-        let rec = adv::run_op_with_cancel(&mut session, 0, "rest", f.name, Duration::ZERO);
+        let rec = adv::run_op_precancelled(&mut session, 0, "rest", f.name);
         match &rec.outcome {
             Outcome::Err(msg) if msg.to_ascii_lowercase().contains("cancel") => {
                 honoured.push("rest");
@@ -727,27 +754,29 @@ fn uncancellable_2d_families_are_exactly_the_declared_two() {
     println!("honoured a pre-set cancel flag: {honoured:?}");
     println!("IGNORED a pre-set cancel flag:  {ignored:?}");
 
-    // `compute::execute`'s own doc (`execute.rs:499-508`) names four
-    // uncancellable families across the whole registry — Drill,
-    // AlignmentPinDrill, Rest and Chamfer. Two of them are in this
-    // campaign's nine. This does NOT assert they should be cancellable:
-    // that is a behaviour change and it needs Checkpoint C. It pins the
-    // fact, so the findings document cannot go stale silently and a future
-    // fix has a red-first target.
     assert_eq!(
         ignored,
         vec!["drill", "rest"],
         "the set of 2D families that ignore a pre-set cancel flag has \
          changed. If a family was FIXED, delete it from this list and say so \
-         in ADVERSARIAL_2D_FINDINGS.md; if one REGRESSED, that is the defect"
+         in ADVERSARIAL_2D_FINDINGS.md (F-4); if one REGRESSED, that is the \
+         defect"
     );
     assert_eq!(
-        honoured.len(),
-        7,
-        "expected the other seven families to honour the flag, got {honoured:?}"
+        honoured,
+        vec![
+            "adaptive", "inlay", "pocket", "profile", "trace", "vcarve", "zigzag"
+        ],
+        "the other seven read the flag at least once before emitting"
     );
     // Reachability, so the list above cannot silently describe dead code.
-    for op in [OperationType::Rest, OperationType::Drill] {
+    for op in [
+        OperationType::Rest,
+        OperationType::Drill,
+        OperationType::Profile,
+        OperationType::Trace,
+        OperationType::Zigzag,
+    ] {
         assert!(
             OperationType::ALL_2D.contains(&op),
             "{op:?} must be in the 2D menu for this finding to matter"
