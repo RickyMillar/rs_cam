@@ -416,7 +416,7 @@ Next action / checkpoint request: none — Checkpoint F1 was ruled before this w
 
 Status: DONE (research/documentation only; no production file, no data file, no `CREDITS.md` entry touched).
 
-Commit(s): `b4fe0c5` (docs only — `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` + this log entry).
+Commit(s): `0c642e0` (docs only — `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` + this log entry).
 
 Parent/revision measured: `63d5e8b`, branch `experiment/adaptive-spiral`.
 
