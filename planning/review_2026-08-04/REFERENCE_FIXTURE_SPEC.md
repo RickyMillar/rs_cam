@@ -60,9 +60,12 @@ relocated objection is stronger:
    discretisation error against, so "how much of my residual is the fixture"
    is not a question it can answer at any refinement.
 2. **Its facet scale collides with the finishing scale.** Median facet edge is
-   **0.200 mm**; p99 is **0.626 mm**. Finishing stepovers in this repo run
-   0.1–0.4 mm. Facet creases and machining cusps are therefore the same size,
-   in the same places, and an aggregate cannot separate them.
+   **0.200 mm**; p99 is **0.626 mm**. The shipped `scallop_height` default is
+   **0.1 mm** (`crates/rs_cam_core/src/scallop.rs:128`), which on a Ø1 ball is
+   a stepover of `d = 2√(2Rh − h²) = 0.600 mm` — i.e. **the shipped finishing
+   stepover equals this fixture's p99 facet edge to three digits, and is 3× its
+   median.** Facet creases and machining cusps are therefore the same size, in
+   the same places, and no aggregate can separate them.
 3. **A single-density TIN cannot be right everywhere** (§4.4): the step needed
    to hold a fixed sag varies by a factor of ~39 between flat and 85° ground on
    a single R8 sphere. One global density is either wasteful on the flat or
@@ -353,8 +356,8 @@ differs. W4's `adversarial2d.rs` is untouched.
 | dial | range | why |
 |---|---|---|
 | ball radius ρ | 0.5, 1.0, 1.5, 3.175 mm | brackets the Z5 comb's R ladder so the reach floor changes sign within the sweep |
-| stepover | 0.05–0.40 mm | flat-ground cusp 0.6–40 µm on ρ=0.5 — spans the whole bin question |
-| scallop dial | 5, 10, 20, 40 µm | ≥ the §8 minimum reportable bin at the qualified cell |
+| stepover | 0.05–0.60 mm | flat-ground cusp 0.6–100 µm on ρ=0.5; the top of the range is the shipped default |
+| scallop dial | 10, 20, 40, **100** µm | 100 µm is the shipped `scallop.rs:128` default and must be in range, or the fixture tests dials nobody ships |
 | stock_to_leave | 0.0 and 0.2 mm | 0.0 is the oracle's clean case; 0.2 exercises the D-16.2 shape |
 | sim cell | 0.05, 0.10, 0.25 mm | §8; 0.25 is the **prior** campaign's cell, kept only to reproduce its alias |
 
