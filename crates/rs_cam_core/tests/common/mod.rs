@@ -26,6 +26,7 @@
 //!
 //! | module | what it holds |
 //! |---|---|
+//! | [`adversarial2d`] | R2's hostile 2D fixtures, their non-vacuity measures, the wall-clock/RSS watchdog, the cancellation seam, and the SVG renderers |
 //! | [`meshes`] | synthetic mesh generators: plateau, grooved block, sawtooth plate, height fields, profile extrusion |
 //! | [`offset_lab`] | M5's 2D-offset bench: fixtures, cascade runner, per-ring attribution, erosion oracle |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
@@ -49,6 +50,7 @@
     clippy::indexing_slicing
 )]
 
+pub mod adversarial2d;
 pub mod fingerprint;
 pub mod meshes;
 pub mod offset_lab;
