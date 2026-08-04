@@ -7,10 +7,22 @@
 //! verifying that every source key a cell cites actually exists in
 //! `sources.toml`.
 //!
+//! Two independent clocks per source (P2, W6 audit §8.3):
+//!   - `last_verified` — when the row's NUMBERS were last read out of
+//!     the document.
+//!   - `url_verified`  — when the row's LINK was last confirmed to
+//!     resolve to a document.
+//!
+//! They answer different questions and rot independently: a chart can
+//! move to a new URL without its contents changing, and a stable URL
+//! can be re-published with new numbers. `url_verified` absent means the
+//! link has never been confirmed, and is reported as such rather than
+//! being backfilled from `last_verified`.
+//!
 //! Knobs (env vars):
 //!   - `LIT_MATRIX_TODAY="YYYY-MM-DD"` — override "today" for the
-//!     freshness clock. Defaults to the plan date "2026-06-03" so the
-//!     report is deterministic in CI.
+//!     freshness clock. Set it to pin a report for a reproducible
+//!     comparison; unset, the clock reads the real system date (P4).
 //!   - `LIT_MATRIX_DECAY_FAIL=1` — promote stale (>18 months) sources
 //!     from a warning to a hard failure. Default is warn-only.
 //!
@@ -27,7 +39,10 @@
 use super::cell::CellsFile;
 use std::collections::{BTreeMap, BTreeSet};
 
-const DEFAULT_TODAY: &str = "2026-06-03";
+/// Fallback used only when the system clock cannot be read at all
+/// (`SystemTime::now()` before the Unix epoch). Not a default in the
+/// normal sense — see [`today_str`].
+const CLOCK_UNAVAILABLE_FALLBACK: &str = "2026-06-03";
 const FRESH_MONTHS: i32 = 12;
 const STALE_MONTHS: i32 = 18;
 
@@ -54,6 +69,19 @@ pub struct SourceRow {
     pub last_verified: Option<String>,
     pub age_months: Option<i32>,
     pub bucket: FreshnessBucket,
+    /// P2 (W6 audit §8.3): the date the row's `citation_url` was last
+    /// confirmed to resolve to a document, separate from the date its
+    /// *numbers* were last read out of that document.
+    ///
+    /// `None` means the link has **never** been confirmed — which is
+    /// the honest state for the rows the census found dead (hard 404 /
+    /// retired host) and for the rows it could not determine (403
+    /// bot-block, unreachable from the sandbox). It is deliberately not
+    /// backfilled with `last_verified`: that would assert a check
+    /// nobody performed.
+    pub url_verified: Option<String>,
+    pub url_age_months: Option<i32>,
+    pub url_bucket: Option<FreshnessBucket>,
     pub note: String,
 }
 
@@ -76,6 +104,18 @@ impl FreshnessReport {
             }
         }
         (f, w, s)
+    }
+
+    /// Rows whose `citation_url` has never been confirmed to resolve.
+    /// Report-only: a link that was never checked is a maintenance
+    /// signal, not a failure — the hard failure is a *malformed* URL
+    /// (`audit_citation_urls`, P1).
+    pub fn url_unverified_keys(&self) -> Vec<String> {
+        self.rows
+            .iter()
+            .filter(|r| r.url_verified.is_none())
+            .map(|r| r.key.clone())
+            .collect()
     }
 
     pub fn stale_keys(&self) -> Vec<String> {
@@ -125,8 +165,73 @@ fn classify(age_months: i32) -> FreshnessBucket {
     }
 }
 
+/// Convert days since the Unix epoch to a civil (year, month, day), UTC.
+///
+/// UTC rather than local time is deliberate: the buckets are
+/// month-granularity, a day of timezone skew cannot move one, and a
+/// clock that depends on the operator's timezone would make two
+/// machines disagree about the same file.
+///
+/// Howard Hinnant's `civil_from_days`, proleptic Gregorian, valid for
+/// any date this repo will ever see. Integer arithmetic only — the
+/// matrix has a zero-new-deps policy, so `chrono` is not available.
+fn civil_from_days(z: i64) -> (i32, i32, i32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as i32, d as i32)
+}
+
+/// "Today", for the freshness clock.
+///
+/// P4 (W6 audit §8.3). This used to be the hardcoded constant
+/// `"2026-06-03"` — **the same date 30 of the 32 source rows carry as
+/// `last_verified`**, with the other two at 2026-05-29, which the
+/// day-of-month rule also floors to age 0. Absent `LIT_MATRIX_TODAY`,
+/// every row computed `age_months = 0` and classified `Fresh`
+/// permanently, by construction: a default run could never produce a
+/// `warn` or `stale` row no matter how much time passed. The
+/// `/refresh-lit-matrix` skill's whole premise ("re-verify stale rows
+/// roughly once a year") depends on this report being able to say
+/// `stale`, so the freeze disabled the skill rather than just the test.
+///
+/// The clock now reads the real system date. That makes the *report*
+/// time-dependent, which is the point — the buckets are a maintenance
+/// signal, not an assertion. Determinism where it is actually needed
+/// (reproducing a report, pinning a comparison) comes from
+/// `LIT_MATRIX_TODAY`, and the only hard failure in this file is the
+/// offline URL-shape check, which does not read the clock at all.
 fn today_str() -> String {
-    std::env::var("LIT_MATRIX_TODAY").unwrap_or_else(|_| DEFAULT_TODAY.to_owned())
+    let pinned = std::env::var("LIT_MATRIX_TODAY").ok();
+    let epoch_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs());
+    today_from_parts(pinned, epoch_secs)
+}
+
+/// The decision `today_str` makes, without the two impure reads — so it
+/// is testable without mutating process environment (this workspace
+/// denies `unsafe_code`, and `std::env::set_var` is unsafe).
+fn today_from_parts(pinned: Option<String>, epoch_secs: Option<u64>) -> String {
+    if let Some(pinned) = pinned {
+        return pinned;
+    }
+    match epoch_secs {
+        Some(secs) => {
+            let (y, m, d) = civil_from_days((secs / 86_400) as i64);
+            format!("{y:04}-{m:02}-{d:02}")
+        }
+        // System clock before the epoch: fall back rather than panic.
+        None => CLOCK_UNAVAILABLE_FALLBACK.to_owned(),
+    }
 }
 
 /// Build the freshness report by walking the parsed `sources.toml`
@@ -144,17 +249,51 @@ pub fn build_freshness_report(sources: &BTreeMap<String, toml::Value>) -> Freshn
             .and_then(|t| t.get("last_verified"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_owned());
+        let url_verified = value
+            .as_table()
+            .and_then(|t| t.get("url_verified"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned());
+        // The link's own clock. Ages on the same buckets as the
+        // content clock, so a link that has not been touched in 18
+        // months reads `stale` even when the numbers were re-read
+        // yesterday.
+        let (url_age_months, url_bucket) = match url_verified.as_deref().and_then(parse_ymd) {
+            Some(u) => {
+                let age = months_between(u, today);
+                (Some(age), Some(classify(age)))
+            }
+            None => (None, None),
+        };
 
         match last_verified.as_deref().and_then(parse_ymd) {
             Some(v_ymd) => {
                 let age = months_between(v_ymd, today);
                 let bucket = classify(age);
+                // P4's self-detecting half: `months_between` floors at
+                // 0, so a date AHEAD of "today" is indistinguishable
+                // from one verified this morning. Name it instead of
+                // absorbing it — this is what a re-frozen clock, or a
+                // mistyped year, looks like.
+                let note = if (v_ymd.0, v_ymd.1, v_ymd.2) > (today.0, today.1, today.2) {
+                    format!(
+                        "last_verified {} is in the FUTURE relative to today {} — \
+                         a verification date cannot be ahead of the clock",
+                        last_verified.as_deref().unwrap_or("<none>"),
+                        today_s,
+                    )
+                } else {
+                    String::new()
+                };
                 rows.push(SourceRow {
                     key: key.clone(),
                     last_verified: last_verified.clone(),
                     age_months: Some(age),
                     bucket,
-                    note: String::new(),
+                    url_verified: url_verified.clone(),
+                    url_age_months,
+                    url_bucket,
+                    note,
                 });
             }
             None => {
@@ -169,6 +308,9 @@ pub fn build_freshness_report(sources: &BTreeMap<String, toml::Value>) -> Freshn
                     last_verified,
                     age_months: None,
                     bucket: FreshnessBucket::Stale,
+                    url_verified,
+                    url_age_months,
+                    url_bucket,
                     note,
                 });
             }
@@ -208,6 +350,19 @@ pub fn render_freshness_text(report: &FreshnessReport) -> String {
         "  buckets: fresh <{} months, warn {}-{} months, stale ≥{} months\n",
         FRESH_MONTHS, FRESH_MONTHS, STALE_MONTHS, STALE_MONTHS
     ));
+    let unverified = report.url_unverified_keys();
+    s.push_str(&format!(
+        "  citation_url clock: {} of {} rows have a confirmed link; {} never confirmed\n",
+        total - unverified.len(),
+        total,
+        unverified.len(),
+    ));
+    if !unverified.is_empty() {
+        s.push_str(&format!(
+            "  never-confirmed links (report-only): {}\n",
+            unverified.join(", ")
+        ));
+    }
     // Only list warn/stale rows in the human-readable output — a wall
     // of "fresh" entries is noise.
     let mut printed_any = false;
@@ -251,6 +406,9 @@ pub fn render_freshness_json(report: &FreshnessReport) -> String {
                 "last_verified": r.last_verified,
                 "age_months": r.age_months,
                 "bucket": r.bucket.as_str(),
+                "url_verified": r.url_verified,
+                "url_age_months": r.url_age_months,
+                "url_bucket": r.url_bucket.map(FreshnessBucket::as_str),
                 "note": r.note,
             })
         })
@@ -261,6 +419,7 @@ pub fn render_freshness_json(report: &FreshnessReport) -> String {
         "fresh": fresh,
         "warn": warn,
         "stale": stale,
+        "url_unverified": report.url_unverified_keys().len(),
         "rows": rows,
     });
     serde_json::to_string_pretty(&obj).unwrap_or_else(|_| "{}".into())
@@ -479,6 +638,39 @@ mod tests {
         assert_eq!(classify(17), FreshnessBucket::Warn);
         assert_eq!(classify(18), FreshnessBucket::Stale);
         assert_eq!(classify(99), FreshnessBucket::Stale);
+    }
+
+    /// P4: the clock must actually advance. Anchors are the epoch and
+    /// three dates whose day-numbers are independently checkable.
+    #[test]
+    fn civil_from_days_anchors() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(19_723), (2024, 1, 1));
+        assert_eq!(civil_from_days(20_607), (2026, 6, 3));
+        // Leap day, to catch an off-by-one in the era arithmetic.
+        assert_eq!(civil_from_days(19_782), (2024, 2, 29));
+    }
+
+    /// The pin still works — that is what keeps a report reproducible
+    /// now that the default is a real date — and the unpinned path
+    /// tracks the clock instead of a constant.
+    #[test]
+    fn today_is_pinned_when_asked_and_real_otherwise() {
+        assert_eq!(
+            today_from_parts(Some("2027-01-15".to_owned()), Some(0)),
+            "2027-01-15",
+            "an explicit pin must win over the clock"
+        );
+        // 2026-06-03T00:00:00Z = 20607 days after the epoch.
+        assert_eq!(today_from_parts(None, Some(20_607 * 86_400)), "2026-06-03");
+        // One year on, the same code must say so — this is the
+        // property the frozen constant could not have.
+        assert_eq!(today_from_parts(None, Some(20_972 * 86_400)), "2027-06-03");
+        assert_eq!(
+            today_from_parts(None, None),
+            CLOCK_UNAVAILABLE_FALLBACK,
+            "an unreadable clock falls back rather than panicking"
+        );
     }
 
     #[test]
