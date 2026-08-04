@@ -1574,15 +1574,51 @@ fn append_air_cut_anomaly(
                 crate::drill_metrics::ChipWeldingRisk::High => "high",
             };
             let cycle_time_s = d.feed_time_s + d.dwell_time_s;
+            // R-6 / audit §7 "wording gaps": narrate used to print the
+            // risk WORD with no threshold and the peck-pattern BOOLEAN
+            // with neither ratio nor threshold, so the reader had no way
+            // to check the work — `chip-welding risk elevated` gave no
+            // hint whether the bar was 5, 6 or 8. Both bars are
+            // material-derived and cheap to state, so state them.
+            let (welding_bar, peck_bar) = context
+                .material
+                .map(|m| {
+                    (
+                        m.drill_chip_welding_threshold_dtd(),
+                        m.drill_per_peck_max_dtd(),
+                    )
+                })
+                .unwrap_or((f64::NAN, f64::NAN));
+            let bars = if welding_bar.is_finite() {
+                format!(" [material bars: chip welding {welding_bar:.1}×, per-peck {peck_bar:.1}×]")
+            } else {
+                String::new()
+            };
+            // The peck-adequacy remedy is cycle-dependent (R-4): a
+            // Simple/Dwell hole has no peck depth to reduce.
+            let peck_verdict = if d.peck_pattern_adequate {
+                format!("adequate ({:.1}× per peck)", d.per_peck_max_dtd)
+            } else if d.cycle.is_pecking() {
+                format!(
+                    "INADEQUATE at {:.1}× per peck — reduce peck depth",
+                    d.per_peck_max_dtd
+                )
+            } else {
+                format!(
+                    "INADEQUATE at {:.1}× in one descent — switch to a peck cycle",
+                    d.per_peck_max_dtd
+                )
+            };
             anomalies.push(format!(
-                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× total / {:.1}× evacuation-credited (chip-welding risk {}), peck pattern {}.",
+                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× total / {:.1}× evacuation-credited (chip-welding risk {}), peck pattern {}.{}",
                 d.hole_count,
                 d.peck_count,
                 d.deepest_hole_mm,
                 d.max_depth_to_diameter,
                 d.chip_welding_dtd,
                 risk,
-                if d.peck_pattern_adequate { "adequate" } else { "INADEQUATE — reduce peck depth" },
+                peck_verdict,
+                bars,
             ));
             // Cycle-time + chip-evacuation breakdown (one line, all
             // drill-natural metrics — no engagement or air-cut here).

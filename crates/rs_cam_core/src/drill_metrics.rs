@@ -149,6 +149,10 @@ pub struct DrillToolpathSummary {
     /// Time-weighted mean of `chip_evacuation_score` across every emitted
     /// peck (0..1). Aggregate read for narrate / MCP.
     pub avg_chip_evacuation_score: f64,
+    /// Which cycle produced this summary. Carried so a consumer can
+    /// word advice correctly without re-reading the `DrillOp` — a
+    /// `Simple` hole has no peck depth to reduce (R-4).
+    pub cycle: crate::drill::DrillCycleKind,
 }
 
 /// Thin convenience wrapper around
@@ -365,6 +369,7 @@ pub fn build_drill_toolpath_summary(
         per_peck_max_dtd,
         peck_pattern_adequate,
         avg_chip_evacuation_score,
+        cycle: crate::drill::DrillCycleKind::of(drill_op.cycle),
     }
 }
 

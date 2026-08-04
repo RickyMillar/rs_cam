@@ -9,6 +9,7 @@
 //!
 //! See `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.E / Step 3 PR2.
 
+pub use crate::drill::DrillCycleKind;
 use crate::drill_metrics::{
     ChipWeldingRisk, DrillToolpathSummary, chip_welding_threshold, per_peck_max_depth_to_diameter,
 };
@@ -72,43 +73,6 @@ pub enum DrillGateOutcome {
         #[serde(skip_serializing_if = "Option::is_none", default)]
         envelope_hi: Option<f64>,
     },
-}
-
-/// Which drill cycle produced a verdict — enough to word a remedy
-/// correctly, without dragging the non-serializable
-/// [`crate::drill::DrillCycle`] (which carries f64 payloads) onto the
-/// wire.
-///
-/// R-4 (2026-08-04): remedies were keyed on `CriterionKind` alone, so
-/// the peck-adequacy remedy told a `Simple` cycle to "reduce peck
-/// depth" — on a cycle with no peck depth — and the chip-welding
-/// remedy told an already-pecking op to "switch to a peck cycle". Both
-/// are reachable on one hole, giving two contradictory instructions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DrillCycleKind {
-    Simple,
-    Dwell,
-    Peck,
-    ChipBreak,
-}
-
-impl DrillCycleKind {
-    pub fn of(cycle: crate::drill::DrillCycle) -> Self {
-        match cycle {
-            crate::drill::DrillCycle::Simple => DrillCycleKind::Simple,
-            crate::drill::DrillCycle::Dwell(_) => DrillCycleKind::Dwell,
-            crate::drill::DrillCycle::Peck(_) => DrillCycleKind::Peck,
-            crate::drill::DrillCycle::ChipBreak(_, _) => DrillCycleKind::ChipBreak,
-        }
-    }
-
-    /// True when the cycle interrupts the descent to clear or break
-    /// chips — i.e. when "switch to a peck cycle" is not advice, it is
-    /// a description of what the op is already doing.
-    pub fn is_pecking(self) -> bool {
-        matches!(self, DrillCycleKind::Peck | DrillCycleKind::ChipBreak)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
