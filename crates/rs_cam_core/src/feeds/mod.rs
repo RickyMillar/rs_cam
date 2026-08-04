@@ -1230,7 +1230,50 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // geometry-hint's shape-correct area (V-bit triangular,
     // flat/ball/bull/tapered rectangular) — same contract as the
     // cutter trait's `mrr_cross_section_mm2` the Sim verdict reads.
+    //
+    // ── F-2: the two power axes, and which one each number lives on ──
+    //
+    // Census §2.6 (C-8) / §6.3 F-2, ruled at Checkpoint B Q3: Suggest's
+    // ceiling omitted `machine.safety_factor` while
+    // `tool_load::power::evaluate` applies it (`power.rs:214`).
+    //
+    // There are two internally-consistent axes here, and the pre-fix bug
+    // was mixing them, not the absence of a multiply:
+    //
+    //   RAW axis    — `raw_feed` (pre-Step-9) vs `power_at_rpm(rpm)`.
+    //   COMMANDED   — the final feed (Step 9 has applied `safety_factor`)
+    //                 vs `power_at_rpm(rpm) · safety_factor`.
+    //
+    // The CLAMP below lives on the RAW axis and is correct there: it
+    // enforces `required(raw_feed) <= power_at_rpm(rpm)`, and since Step
+    // 9 then scales the feed by `safety_factor` (and Steps 7/9b/9c only
+    // reduce it further), the commanded result satisfies the gate's
+    // `required(final) <= power_at_rpm · safety_factor` by construction.
+    // Multiplying this clamp's ceiling by `safety_factor` as well would
+    // apply the factor TWICE — measured: it drops a power-limited feed a
+    // further 25 % and drove the literature-matrix cell
+    // `flat_6mm_pocket_al6061_lut` to `major` by pushing chipload to
+    // 0.0269 mm/tooth, within 10 % of the 0.025 rubbing floor. That is a
+    // feed-moving recalibration, which Q3 did not authorise and §7
+    // forbids re-pinning silently.
+    //
+    // What genuinely lacked parity is the PUBLISHED pair. `power_kw`
+    // (below, at the FINAL feed) is a COMMANDED-axis number, and
+    // `available_power_kw` — its denominator in the modal's headroom bar
+    // (`rs_cam_viz/src/ui/properties/mod.rs:1911`) — was a RAW-axis one.
+    // The modal therefore showed 1/safety_factor (1.25×–1.33×) more
+    // headroom than the verdict would allow. Both published numbers now
+    // sit on the gate's axis; the `PowerLimited` warning's pair is
+    // reported there too, preserving its ratio.
+    //
+    // Measured (tests/power_ceiling_parity_f2.rs): across all three
+    // shipped presets × ten species × Ø3/Ø6/Ø12 slots the power branch
+    // never fires at all — rigidity and the machine cutting ceiling bind
+    // first, peak utilisation 23.6 % — so no shipped-profile feed moves.
     let available_power = machine.power_at_rpm(rpm);
+    // The gate's ceiling (`power.rs:214`) — what every published power
+    // number below is quoted against.
+    let gate_available_power = available_power * machine.safety_factor;
     let mut power_limited = false;
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
@@ -1244,8 +1287,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             feed = raw_feed * power_factor;
             power_limited = true;
             warnings.push(FeedsWarning::PowerLimited {
-                required_kw: required_power,
-                available_kw: available_power,
+                // Both terms moved onto the gate's COMMANDED axis so the
+                // warning compares like with like; the ratio, and hence
+                // the derate it explains, is unchanged.
+                required_kw: required_power * machine.safety_factor,
+                available_kw: gate_available_power,
             });
         }
     }
@@ -1471,7 +1517,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: actual_power,
-        available_power_kw: available_power,
+        // F-2: the gate's ceiling, not the raw spindle curve — this is
+        // the denominator `power_kw` (evaluated at the FINAL feed) is
+        // rendered against. See the Step 6 axis note above.
+        available_power_kw: gate_available_power,
         power_limited,
         mrr_mm3_min: mrr,
         warnings,
