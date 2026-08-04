@@ -12,7 +12,7 @@ Basis: `TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md` at HEAD `7a84472`.
 | W3 | R1 feeds/Suggest census | DONE (research) — census rev 2 + six NOT-RUNs executed (3 self-contradictions corrected in place: lit sources FRESH, ball-nose divergence NONEXISTENT — only truncated-tip V-bit on Adaptive3d, one "sentry" was ignored); B3 identity executable at +0.0000% (`feed_explanation_snapshot_b3.rs`, 7 tests); unit gap is PER-ROW 2.4–40.4× (median 10.9×). AWAITING_CHECKPOINT B | B | `2823d71`, `8285497`, `6bc856f`, `5f7bb25`, `2e706bd` |
 | W4 | R2 adversarial 2D campaign | NOT_STARTED | C | — |
 | W5 | R4 simulation issue channel | NOT_STARTED | D | — |
-| W6 | R5 drill evidence/literature audit | NOT_STARTED — **HOLD from W3: no drill threshold recalibration before Checkpoint B item 1 (chipload unit question T4.1) is answered** | D | — |
+| W6 | R5 drill evidence/literature audit | RESEARCHING — **hold LIFTED 2026-08-04 by B-lit** (T4.1 answered: advance-per-tooth, all families, none ambiguous; drill gates consume neither f_lut nor LUT ae bands). Re-scoped per B-lit: + DRILL_CHIPLOAD_MULTIPLIER=2.5 provenance, + does any drill threshold read a LUT band, + onsrud_drill CREDITS lineage (its URL is one of four gold-tier 404s), + citation_url validation gap (freshness engine reports 32 fresh while 4 citation URLs are 404) | D | — |
 | W7 | R6 reference fixture/P7/rest anomaly | NOT_STARTED | E | — |
 | W8 | R7 finishing/export/read defects | NOT_STARTED — brief grew: + W9's X-1 (exporter/viewport span-walk divergence) + W1's B7 handoff (parallel narration-context literals) | F2/F3 | — |
 | W9 | R8 bounded scouts | DONE — P-3 downgraded (no live v≤2 population), P-1/P-2 escalated to operator, X-1 → W8 | none | `e9c6b46`, `10c3472` |
