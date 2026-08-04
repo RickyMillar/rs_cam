@@ -753,6 +753,12 @@ pub enum VerdictKind {
     PlungeStress,
     AirCut,
     GeneratedEmpty,
+    /// A gate declined to produce a verdict because the metric it reads is
+    /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
+    /// [`crate::sim_measurability`]. This is **not** a warning about the
+    /// toolpath; it is a statement about the simulation, and it carries the
+    /// reason plus what remains valid (collision detection always does).
+    MeasurabilityAbstained,
 }
 
 impl VerdictKind {
@@ -763,6 +769,7 @@ impl VerdictKind {
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
+            Self::MeasurabilityAbstained => "measurability_abstained",
         }
     }
 }
@@ -809,6 +816,13 @@ pub struct ProjectEvidence<'a> {
     /// frame rate (the 2026-06-11 setup-tab lag). Batch callers that
     /// want the sweep use [`ProjectSession::holder_collision_counts`].
     pub holder_collisions: Vec<(ToolpathId, usize)>,
+    /// Simulation cell size (mm) the trace was captured at, when known.
+    ///
+    /// Read only by [`crate::sim_measurability`], and only to enrich the
+    /// reason payload of a `CellTooCoarseForTipContact` abstention with the
+    /// number the operator would have to change. It never decides a verdict,
+    /// so `None` costs nothing but a vaguer message.
+    pub resolution_mm: Option<f64>,
 }
 
 impl<'a> ProjectEvidence<'a> {
@@ -825,6 +839,7 @@ impl<'a> ProjectEvidence<'a> {
             rapid_collision_move_indices: &sim.rapid_collision_move_indices,
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
+            resolution_mm: Some(sim.column_grid_cell_mm),
         }
     }
 

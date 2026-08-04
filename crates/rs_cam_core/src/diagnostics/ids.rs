@@ -38,6 +38,11 @@ pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
+/// A gate declined to produce a verdict because the metric it reads is not
+/// measurable on this trace (Checkpoint D Q2 — [`crate::sim_measurability`]).
+/// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
+/// toolpath, it is a statement about the simulation.
+pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
@@ -184,6 +189,7 @@ pub const ALL: &[&str] = &[
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
+    PROJECT_MEASURABILITY_ABSTAINED,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
     FEEDS_SHANK_TOO_LARGE,

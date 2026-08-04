@@ -96,6 +96,7 @@ pub mod scallop_isofield;
 pub mod scallop_math;
 pub mod semantic_trace;
 pub mod session;
+pub mod sim_measurability;
 pub mod simulation;
 pub mod simulation_cut;
 pub mod slope;
