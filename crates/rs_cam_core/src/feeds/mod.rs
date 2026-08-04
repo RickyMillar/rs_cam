@@ -440,12 +440,32 @@ pub struct FeedsResult {
     /// chipload-bounds re-derivation step in `enforce_invariants` can
     /// reach the row without re-querying.
     pub matched_lut_row: Option<vendor_lookup::LookupResult>,
-    /// Cutter-shape effective diameter at the calculator's commanded
-    /// axial DOC (mm). The doc-derating scale that produced
-    /// `chipload_bounds` is `geometry::doc_derating_scale(dpp /
-    /// effective_diameter_mm)`. Carried on the result so the axial-DOC
-    /// envelope pass can re-derive bounds after mutating DPP without
-    /// re-walking the chip-geometry pipeline.
+    /// **Chip-thinning** effective diameter at the calculator's
+    /// commanded axial DOC (mm) — `feeds::effective_diameter`, i.e.
+    /// "what actually touches material" (a Ø6 ball at 0.05 mm DOC
+    /// reports 0.44 mm, not 6.0).
+    ///
+    /// **This is NOT the denominator of `chipload_bounds`' DOC derate,
+    /// despite what this comment used to say.** `calculate` derives
+    /// that ratio from the **LUT-semantics** engaged diameter —
+    /// `ToolGeometryHint::engaged_diameter_at_doc`, "which vendor row
+    /// applies", `D` for flat/ball/bull — and the two live in
+    /// same-named bindings, the second shadowing the first inside one
+    /// function. Census F-3 / C-2 / C-5 (T1.4, 2026-08-04); the two
+    /// sites are commented at their definitions.
+    ///
+    /// The one consumer that *does* re-derate against this field is
+    /// `suggest::recompute_chipload_bounds_for_dpp`, which therefore
+    /// uses a different denominator from `calculate`. Measured
+    /// (`feed_explanation_snapshot_b3::the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry`):
+    /// flat, ball, bull and tapered-ball never diverge — only a
+    /// truncated-tip V-bit does, and only on Adaptive3d, the sole
+    /// operation that mutates DPP. Unifying them is census T2.4 /
+    /// T3.6, not this report-only wave.
+    ///
+    /// Carried on the result so the axial-DOC envelope pass can
+    /// re-derive bounds after mutating DPP without re-walking the
+    /// chip-geometry pipeline.
     pub effective_diameter_mm: f64,
     /// Full derate chain that turned the "target" chipload into the
     /// recommended feed. Lets the UI show *why* the recommended
@@ -779,6 +799,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // (e.g. a 5.5 mm-tip 20° V-bit at DOC=0.5 saw SFM derived from
     // 5.5 mm instead of the ~0.18 mm engaged tip) — audit finding
     // "nominal-D leakage through formula path".
+    //
+    // NAMING WARNING (census F-3, T1.4). This binding is the
+    // **LUT-semantics** engaged diameter — "which vendor row applies"
+    // — and it is what the chipload-band DOC derate below divides by.
+    // Step 5 rebinds the same name `effective_d` to the **chip-thinning**
+    // diameter (`feeds::effective_diameter`, "what actually touches
+    // material"), shadowing this one for the rest of the function, and
+    // it is *that* one which is published as
+    // `FeedsResult::effective_diameter_mm`. Two different questions,
+    // one identifier. Collapsing them is census T2.4; until then, read
+    // the shadow point before assuming which diameter a line means.
     let axial_doc_for_eff_d = input.axial_depth_mm.unwrap_or(d).max(0.0);
     let effective_d = input.tool_geometry.engaged_diameter_at_doc(
         axial_doc_for_eff_d,
@@ -1165,6 +1196,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 5: Feed rate ---
+    //
+    // SHADOW POINT (census F-3, T1.4). From here on `effective_d` is the
+    // **chip-thinning** diameter, NOT the LUT-semantics one the chipload
+    // band was derated by at Step 2'. This is the value published as
+    // `FeedsResult::effective_diameter_mm`.
     let effective_d = effective_diameter(
         input.tool_geometry,
         d,
