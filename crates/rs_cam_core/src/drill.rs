@@ -81,6 +81,84 @@ pub fn drill_toolpath(holes: &[[f64; 2]], params: &DrillParams) -> Toolpath {
     tp
 }
 
+/// mm above the previous cut depth that a G83 re-entry rapid stops at.
+/// The tool then FEEDS this last stretch again, which is why it counts
+/// toward cycle time (R-2).
+pub const PECK_REENTRY_CLEARANCE_MM: f64 = 0.5;
+
+/// One fed descent, as the emitter emits it: a feed move from `from_z`
+/// down to `to_z`, both in setup-local Z.
+///
+/// R-2 (2026-08-04). This exists so the cycle is described **once**.
+/// Before it, `drill::drill_peck_full_retract` expanded the cycle rooted
+/// at the R-plane while `drill_metrics::peck_descents` expanded it rooted
+/// at `hole.top_z`, and the two disagreed by construction: on shipped
+/// defaults the emitter produced 5 feed-downs totalling 17.0 mm and the
+/// summary reported 4 totalling 10.0 mm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FedDescent {
+    pub from_z: f64,
+    pub to_z: f64,
+}
+
+impl FedDescent {
+    /// Total fed distance, air included.
+    pub fn length(&self) -> f64 {
+        (self.from_z - self.to_z).max(0.0)
+    }
+
+    /// The portion of this descent that is below the material surface —
+    /// what the flutes actually cut. The rest is the approach through
+    /// air above `top_z` (the first descent starts at the R-plane) or
+    /// re-cut clearance.
+    pub fn cutting_length(&self, top_z: f64) -> f64 {
+        (self.from_z.min(top_z) - self.to_z).max(0.0)
+    }
+}
+
+/// Expand a drill cycle into the sequence of feed moves it emits,
+/// rooted at the R-plane exactly as the emitter is.
+///
+/// Guards against a non-positive or non-finite peck depth by degrading
+/// to a single full-depth descent. The two loops this replaces had no
+/// such guard and spun forever on a zero, sub-epsilon or negative peck —
+/// reachable through MCP `set_toolpath_param` and hand-edited project
+/// TOML, since `ParamDef::required("peck_depth", "f64")` carries no
+/// range (the GUI's 0.5..=50.0 clamp is the only thing that stopped it).
+pub fn fed_descents(cycle: DrillCycle, bottom_z: f64, retract_z: f64) -> Vec<FedDescent> {
+    let single = vec![FedDescent {
+        from_z: retract_z,
+        to_z: bottom_z,
+    }];
+    let (peck, reentry) = match cycle {
+        DrillCycle::Simple | DrillCycle::Dwell(_) => return single,
+        DrillCycle::Peck(p) => (p, PECK_REENTRY_CLEARANCE_MM),
+        DrillCycle::ChipBreak(p, retract_amount) => (p, retract_amount.max(0.0)),
+    };
+    if !peck.is_finite() || peck <= 0.0 || retract_z <= bottom_z {
+        return single;
+    }
+
+    let mut out = Vec::new();
+    let mut current_z = retract_z;
+    let mut from_z = retract_z;
+    loop {
+        let target_z = (current_z - peck).max(bottom_z);
+        out.push(FedDescent {
+            from_z,
+            to_z: target_z,
+        });
+        if (target_z - bottom_z).abs() < 1e-9 {
+            break;
+        }
+        current_z = target_z;
+        // The full/partial retract parks the tool here; the next feed
+        // move starts from it, re-cutting the clearance.
+        from_z = target_z + reentry;
+    }
+    out
+}
+
 /// G83 peck drill: feed down by peck_depth, rapid to retract_z, rapid back
 /// to previous depth + clearance, repeat.
 fn drill_peck_full_retract(
@@ -91,32 +169,27 @@ fn drill_peck_full_retract(
     peck_depth: f64,
     bottom_z: f64,
 ) {
-    const CLEARANCE: f64 = 0.5; // mm above previous depth for re-entry
-
-    let mut current_z = params.retract_z;
-
-    loop {
-        let target_z = (current_z - peck_depth).max(bottom_z);
-        // Feed down to next peck depth
+    // Feed targets come from the shared schedule (R-2) so the metrics
+    // cannot describe a different cycle than this emits. The rapids
+    // between them stay here — they are emission, not schedule.
+    let descents = fed_descents(DrillCycle::Peck(peck_depth), bottom_z, params.retract_z);
+    let last = descents.len().saturating_sub(1);
+    for (i, descent) in descents.iter().enumerate() {
         tp.feed_to_with_intent(
-            P3::new(x, y, target_z),
+            P3::new(x, y, descent.to_z),
             params.feed_rate,
             MoveIntent::Drilling,
         );
-
-        if (target_z - bottom_z).abs() < 1e-9 {
-            // Reached full depth — retract and done
-            tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
-            break;
-        }
-
-        // Retract fully to R-plane
+        // Retract fully to the R-plane after every peck, including the
+        // last one.
         tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
-        // Rapid back to just above previous cut depth
-        let reentry_z = target_z + CLEARANCE;
-        tp.rapid_to_with_intent(P3::new(x, y, reentry_z), MoveIntent::Linking);
-
-        current_z = target_z;
+        if i < last {
+            // Rapid back to just above the previous cut depth.
+            tp.rapid_to_with_intent(
+                P3::new(x, y, descent.to_z + PECK_REENTRY_CLEARANCE_MM),
+                MoveIntent::Linking,
+            );
+        }
     }
 }
 
@@ -131,28 +204,28 @@ fn drill_chip_break(
     retract_amount: f64,
     bottom_z: f64,
 ) {
-    let mut current_z = params.retract_z;
-
-    loop {
-        let target_z = (current_z - peck_depth).max(bottom_z);
-        // Feed down to next peck depth
+    // Same shared schedule as G83 (R-2); only the retract between
+    // pecks differs — a small lift rather than a trip to the R-plane.
+    let descents = fed_descents(
+        DrillCycle::ChipBreak(peck_depth, retract_amount),
+        bottom_z,
+        params.retract_z,
+    );
+    let last = descents.len().saturating_sub(1);
+    for (i, descent) in descents.iter().enumerate() {
         tp.feed_to_with_intent(
-            P3::new(x, y, target_z),
+            P3::new(x, y, descent.to_z),
             params.feed_rate,
             MoveIntent::Drilling,
         );
-
-        if (target_z - bottom_z).abs() < 1e-9 {
-            // Reached full depth — retract and done
+        if i < last {
+            tp.rapid_to_with_intent(
+                P3::new(x, y, descent.to_z + retract_amount),
+                MoveIntent::Retract,
+            );
+        } else {
             tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
-            break;
         }
-
-        // Small retract for chip breaking
-        let retract_z = target_z + retract_amount;
-        tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Retract);
-
-        current_z = target_z;
     }
 }
 

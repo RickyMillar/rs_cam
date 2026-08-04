@@ -426,6 +426,10 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
+                // Same expression `generate_drill` passes to
+                // `DrillParams::retract_z`, so the summary models the
+                // cycle this op emits (R-2).
+                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
@@ -457,6 +461,7 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
+                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         _ => None,

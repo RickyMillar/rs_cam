@@ -1342,6 +1342,8 @@ mod tests {
                     envelope_hi: None,
                 },
                 plunge_feed: plunge,
+                // R-7: no hole attribution in a hand-built verdict.
+                worst_hole_id: None,
             }),
             modulation_summary: None,
             feed_explanation: None,

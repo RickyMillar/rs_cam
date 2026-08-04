@@ -230,6 +230,13 @@ fn drill_cylinder_seam_lands_near_mc_wall() {
         spindle_rpm: 8000,
         flute_count: 2,
         material: Material::default(),
+        // R-2: no R-plane air in this fixture — it models the cycle
+        // from the material surface, which is what this test's numbers
+        // were written against. Production sets
+        // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
+        // 5 mm by default); `drill_evidence_wording_d3.rs` is the
+        // sentry that pins the emitter-matching case.
+        retract_z_mm: 0.0,
     };
     let drill_refs: Vec<&DrillOp> = vec![&drill];
     append_drill_cylinders(&mut mesh, &drill_refs);

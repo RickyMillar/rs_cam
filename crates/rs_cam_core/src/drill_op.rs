@@ -115,6 +115,19 @@ pub struct DrillOp {
     /// time; consumed by drill-specific gates (chip welding, peck
     /// adequacy) in PR2.
     pub material: Material,
+    /// The R-plane (setup-local Z): the height the tool rapids down to
+    /// and starts FEEDING from, once per peck.
+    ///
+    /// R-2 (2026-08-04). This is `effective_safe_z(cfg.retract_z,
+    /// stock_top)` = `max(raw, stock_top + SAFE_Z_CLEARANCE_MM)`, and
+    /// since `SAFE_Z_CLEARANCE_MM` is 5.0 while the `DrillConfig`
+    /// default `retract_z` is 2.0, it is `stock_top + 5.0` on any
+    /// default project. The emitter has always rooted its peck grid
+    /// here — that is the Fanuc G83 convention and it is correct — but
+    /// `DrillOp` did not carry it, so every metric derived from this
+    /// struct modelled a cycle starting at the material surface and
+    /// silently dropped the approach feed and every re-entry.
+    pub retract_z_mm: f64,
 }
 
 /// Dual-representation payload of a [`ToolpathComputeResult`].

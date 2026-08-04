@@ -416,6 +416,8 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
                 envelope_lo: Some(50.0),
                 envelope_hi: Some(400.0),
             },
+            // R-7: no hole attribution in a hand-built verdict.
+            worst_hole_id: None,
         }),
         modulation_summary: None,
         feed_explanation: None,
