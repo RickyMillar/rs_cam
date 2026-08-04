@@ -1,33 +1,43 @@
-//! **Checkpoint F1 exhibit — arcfit's run key ignores `MoveIntent`.**
+//! **Checkpoint F1 sentries — arcfit's run key carries `MoveIntent`.**
 //!
 //! Oracle: `planning/review_2026-08-04/TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md`
 //! §H2 / R7 fix-shape 2 and Checkpoint F1; evidence package in
 //! `planning/review_2026-08-04/ARCFIT_INTENT_EVIDENCE.md`.
 //!
-//! ## What these tests assert, and why they look backwards
+//! ## What these tests guard
 //!
-//! Every assertion below pins the **current, defective** behaviour on
-//! purpose. `arcfit::fit_arcs` groups a candidate run by
+//! Before PR-6, `arcfit::fit_arcs` grouped a candidate run by
 //! `(MoveType::Linear, feed_rate ± FEED_EPS)` and by span barrier only —
-//! `Move::intent` is not part of the key — then takes the collapsed arc's
-//! intent from the FIRST source move (`arcfit.rs:194`). So a homogeneous
-//! `FinishingCut` run followed by the `LeadOut` arc `apply_lead_in_out`
-//! appended, and by whatever comes next at the same feed, collapses into
-//! ONE arc labelled `FinishingCut` whose target is the *lead-out's*
-//! endpoint — a position that is not on the machined surface.
+//! `Move::intent` was not part of the key — then took the collapsed arc's
+//! intent from the FIRST source move. So a homogeneous `FinishingCut` run
+//! continuing at the same feed into the `LeadOut` arc `apply_lead_in_out`
+//! had just appended collapsed into ONE arc labelled `FinishingCut` whose
+//! target was the *lead-out's* endpoint — a position that is not on the
+//! machined surface. That relabelling is what invalidated wave 11's "21
+//! dropped cut positions" reading (see `scallop_intra_pass_relink_am7.rs`'s
+//! header): the gate selected its population by a label that a downstream
+//! transform had rewritten.
 //!
-//! That relabelling is what invalidated wave 11's "21 dropped cut
-//! positions" reading (see `scallop_intra_pass_relink_am7.rs`'s header):
-//! the gate selected its population by a label that a downstream transform
-//! had rewritten.
+//! PR-6 added `intent ==` to the run key (Checkpoint F1 Q1), made
+//! `MoveIntent::Unknown` STRICT rather than a wildcard (Q3), and joined
+//! `SpanKind::Region` boundaries to arc-fit's barrier set (Q2). Every
+//! assertion below now pins the CORRECT behaviour:
 //!
-//! ## This file is red-first, inverted-later
+//! * no fitted arc spans an intent boundary;
+//! * no fitted arc spans a `Region` boundary;
+//! * homogeneous runs still collapse — the fix costs no arc it should keep;
+//! * a move's span kind and its own intent agree.
 //!
-//! It is deliberately NOT `#[ignore]`d: an ignored characterization rots in
-//! silence. These assertions must **fail loudly** the moment the H2.2
-//! intent-boundary fix lands — that failure is the fix's own red-first
-//! evidence. When PR-6 lands, invert each assertion as its doc comment
-//! directs; do not delete the test.
+//! ## History — this file was red-first
+//!
+//! Wave W2 shipped these as four positive assertions of the DEFECT at
+//! `8963b75`, deliberately not `#[ignore]`d, so that the H2.2 fix would
+//! break them loudly. It did: at PR-6's parent `246b7ae` the four passed;
+//! with the fix applied three failed (the fourth, `f1_control_…`, is the
+//! control and passed unchanged both times). That failure is PR-6's
+//! red-first evidence and is recorded in its commit body. The assertions
+//! were then inverted in place, exactly as each doc comment directed —
+//! not deleted.
 //!
 //! No production code is touched by this file. It is an instrument.
 
@@ -64,10 +74,10 @@ fn count_intent(tp: &Toolpath, intent: MoveIntent) -> usize {
     tp.moves.iter().filter(|m| m.intent == intent).count()
 }
 
-// ── Exhibit 1: the run key, in isolation ─────────────────────────────────
+// ── Sentry 1: the run key, in isolation ──────────────────────────────────
 
-/// **F1 exhibit 1 — `FinishingCut → LeadOut → Entry` collapses into one
-/// `FinishingCut` arc.**
+/// **F1 sentry 1 — `FinishingCut → LeadOut → LeadIn` fits as THREE arcs,
+/// one per intent.**
 ///
 /// Eighteen co-circular moves at ONE feed, tagged in three homogeneous
 /// blocks: 6 `FinishingCut`, then 6 `LeadOut`, then 6 `LeadIn` (which
@@ -75,15 +85,16 @@ fn count_intent(tp: &Toolpath, intent: MoveIntent) -> usize {
 /// Geometry is deliberately uniform so nothing but the intent distinguishes
 /// the blocks — this isolates the run key from any geometric cause.
 ///
-/// TODAY: one arc, intent `FinishingCut`, landing on the last `LeadIn`
-/// point. Twelve moves' worth of non-cutting geometry is now labelled as
-/// finishing cut, and the `LeadOut` / `LeadIn` populations are empty.
+/// Before PR-6: ONE arc, intent `FinishingCut`, landing on the last
+/// `LeadIn` point; twelve moves' worth of non-cutting geometry relabelled
+/// as finishing cut and both transit populations emptied.
 ///
-/// AFTER THE FIX, invert to: at least three arcs (or linear fallbacks), no
-/// arc whose source moves span two intents, and `LeadOut` / `LeadIn` counts
-/// preserved at 1 arc each (or 6 linears each).
+/// Now: three arcs, each ending exactly where its own block ends, each
+/// keeping its own label. The homogeneous halves still collapse fully —
+/// six source moves per arc — so the added key term costs nothing on a
+/// run it should have kept.
 #[test]
-fn f1_exhibit_mixed_intent_run_collapses_into_one_finishing_arc() {
+fn f1_sentry_each_intent_block_fits_its_own_arc() {
     let (cx, cy, r, z, feed) = (0.0, 0.0, 8.0, -2.0, 1000.0);
     // 5° steps: per-segment sagitta ≈ c²/(8r) ≈ 0.0060 mm, well inside TOL.
     let pt = |k: usize| {
@@ -112,42 +123,48 @@ fn f1_exhibit_mixed_intent_run_collapses_into_one_finishing_arc() {
     let arcs: Vec<&Move> = out.moves.iter().filter(|m| is_arc(m)).collect();
     assert_eq!(
         arcs.len(),
-        1,
-        "F1 exhibit: the whole mixed-intent run collapses into ONE arc \
-         (got {} arcs across {} moves)",
+        3,
+        "F1 sentry: one arc per intent block (got {} arcs across {} moves)",
         arcs.len(),
         out.moves.len()
     );
 
-    // DEFECT, PINNED: the arc that swallowed six LeadOut and six LeadIn
-    // moves is labelled a finishing cut.
-    assert_eq!(
-        arcs[0].intent,
-        MoveIntent::FinishingCut,
-        "F1 exhibit: collapsed arc inherits the FIRST source move's intent"
-    );
+    // Each arc keeps its own block's label — no arc inherits a neighbour's.
+    assert_eq!(arcs[0].intent, MoveIntent::FinishingCut);
+    assert_eq!(arcs[1].intent, MoveIntent::LeadOut);
+    assert_eq!(arcs[2].intent, MoveIntent::LeadIn);
 
-    // DEFECT, PINNED: it lands on the last LeadIn point — 60° of arc past
-    // where the finishing cut actually ended.
-    let end = pt(18);
-    assert!(
-        (arcs[0].target.x - end.x).abs() < 1e-9 && (arcs[0].target.y - end.y).abs() < 1e-9,
-        "F1 exhibit: the 'FinishingCut' arc targets the LeadIn endpoint \
-         ({:?}), not the cut's own end {:?}",
-        arcs[0].target,
-        pt(6)
-    );
+    // …and each ends exactly where its own block ends. The `FinishingCut`
+    // arc stops at the true cut end pt(6); before PR-6 it ran to pt(18).
+    for (arc, k) in arcs.iter().zip([6usize, 12, 18]) {
+        let end = pt(k);
+        assert!(
+            (arc.target.x - end.x).abs() < 1e-9 && (arc.target.y - end.y).abs() < 1e-9,
+            "F1 sentry: {:?} arc must end on its own block's last point {:?}, got {:?}",
+            arc.intent,
+            end,
+            arc.target
+        );
+    }
 
-    // DEFECT, PINNED: both transit populations vanish from the output.
+    // Both transit populations survive — exactly one collapsed arc each.
     assert_eq!(
         count_intent(&out, MoveIntent::LeadOut),
-        0,
-        "F1 exhibit: every LeadOut move is relabelled away"
+        1,
+        "F1 sentry: the LeadOut block survives as its own arc"
     );
     assert_eq!(
         count_intent(&out, MoveIntent::LeadIn),
-        0,
-        "F1 exhibit: every LeadIn move is relabelled away"
+        1,
+        "F1 sentry: the LeadIn block survives as its own arc"
+    );
+
+    // The fix must not fragment a homogeneous run: rapid + 3 arcs, nothing
+    // left as a residual linear.
+    assert_eq!(
+        out.moves.len(),
+        4,
+        "F1 sentry: each 6-move homogeneous block still collapses fully"
     );
 }
 
@@ -195,9 +212,9 @@ fn f1_control_a_feed_change_already_splits_the_run() {
     );
 }
 
-// ── Exhibit 2: the production path that produces the mix ─────────────────
+// ── Sentry 2: the production path that produces the mix ──────────────────
 
-/// **F1 exhibit 2 — the same collapse via the shipped dressup chain.**
+/// **F1 sentry 2 — the lead-out survives the shipped dressup chain.**
 ///
 /// This is exhibit 1 without the hand-tagging: a curved finishing pass goes
 /// through `apply_lead_in_out` (which appends the `LeadOut` quarter-arc and
@@ -218,10 +235,17 @@ fn f1_control_a_feed_change_already_splits_the_run() {
 /// cut's own circle. Arc-fit's `tolerance` means near-matches collapse too;
 /// this fixture just makes the collapse deterministic.
 ///
-/// AFTER THE FIX, invert to: `LeadOut` moves survive as their own arc (or
-/// as linears), and no arc's target is a lead-out point.
+/// Before PR-6 the greedy fitter extended the cut's own circle into the
+/// lead-out by as many segments as `tolerance` allowed — here exactly one —
+/// and relabelled that segment `FinishingCut`, landing ~1.18 mm off the
+/// machined surface. One lead-out position relabelled per pass is precisely
+/// the "1 lost cut position per junction" arithmetic wave 11 mis-read as a
+/// relinker defect (`scallop_intra_pass_relink_am7.rs` header).
+///
+/// Now: no arc labelled `FinishingCut` targets a lead-out source point, and
+/// the `FinishingCut` arc ends exactly on the true cut end.
 #[test]
-fn f1_exhibit_lead_out_is_swallowed_by_the_finishing_arc() {
+fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
     let (r, z, feed, plunge) = (6.0, -2.0, 1000.0, 300.0);
     let safe_z = 10.0;
     // CCW quarter turn, 5° steps.
@@ -263,56 +287,53 @@ fn f1_exhibit_lead_out_is_swallowed_by_the_finishing_arc() {
     // Step 5 of the dressup chain.
     let out = fit_arcs(led, TOL, TOOL_R).toolpath;
 
-    // DEFECT, PINNED: an arc labelled `FinishingCut` lands on a LEAD-OUT
-    // source point — geometry the finishing pass never cut.
-    //
-    // Measured mechanism: the greedy fitter extends the cut's own circle
-    // as far into the lead-out as `tolerance` allows, which here is exactly
-    // one lead-out segment. That one move is relabelled `FinishingCut`; the
-    // remaining seven start a fresh run and collapse into an arc that DOES
-    // keep `LeadOut`. One lead-out position relabelled per pass is precisely
-    // the "1 lost cut position per junction" arithmetic wave 11 mis-read as
-    // a relinker defect (`scallop_intra_pass_relink_am7.rs` header).
-    let swallowing_arc = out
+    // No move labelled `FinishingCut` may land on a LEAD-OUT source point.
+    // The `is_arc` filter is deliberately absent: a residual linear carrying
+    // the wrong label would be the same defect in a different move type.
+    let swallowed: Vec<&Move> = out
         .moves
         .iter()
-        .find(|m| {
+        .filter(|m| {
             m.intent == MoveIntent::FinishingCut
-                && is_arc(m)
                 && lead_out_pts
                     .iter()
                     .any(|p| (m.target.x - p.x).abs() < 1e-9 && (m.target.y - p.y).abs() < 1e-9)
         })
-        .expect(
-            "F1 exhibit 2: expected an arc labelled FinishingCut whose target \
-             is a LEAD-OUT source point (the boundary-crossing collapse)",
-        );
-
-    // …and it is off the machined surface by a millimetre-scale distance,
-    // not a rounding artefact. The field reading was "up to 1.2 mm off the
-    // machined surface"; this fixture reproduces ~1.18 mm.
-    let off_surface = ((swallowing_arc.target.x - true_cut_end.x).powi(2)
-        + (swallowing_arc.target.y - true_cut_end.y).powi(2))
-    .sqrt();
+        .collect();
     assert!(
-        off_surface > 1.0,
-        "F1 exhibit 2: the relabelled arc should land ~1.18 mm past the true \
-         cut end; measured {off_surface:.3} mm"
+        swallowed.is_empty(),
+        "F1 sentry 2: {} move(s) labelled FinishingCut target a LEAD-OUT \
+         source point — the boundary-crossing collapse is back",
+        swallowed.len()
     );
 
-    // DEFECT, PINNED: the lead-out population shrinks. Eight source moves
-    // go in; the survivors collapse into ONE arc still labelled LeadOut,
-    // and one source move is gone from the population entirely.
-    assert_eq!(
-        count_intent(&out, MoveIntent::LeadOut),
-        1,
-        "F1 exhibit 2: {lead_outs} LeadOut source moves collapse to one \
-         surviving LeadOut arc"
+    // The last cutting-labelled move stops exactly on the machined surface,
+    // not ~1.18 mm past it.
+    let last_cut = out
+        .moves
+        .iter()
+        .rfind(|m| m.intent == MoveIntent::FinishingCut)
+        .expect("the finishing pass survives arc-fitting");
+    let off_surface = ((last_cut.target.x - true_cut_end.x).powi(2)
+        + (last_cut.target.y - true_cut_end.y).powi(2))
+    .sqrt();
+    assert!(
+        off_surface < 1e-9,
+        "F1 sentry 2: the last FinishingCut move must end on the true cut \
+         end; measured {off_surface:.6} mm past it"
+    );
+
+    // The lead-out population is intact: all eight source moves collapse
+    // into arcs that all still read `LeadOut`, none relabelled away.
+    assert!(
+        count_intent(&out, MoveIntent::LeadOut) >= 1,
+        "F1 sentry 2: {lead_outs} LeadOut source moves must survive as \
+         LeadOut-labelled output"
     );
 }
 
-/// **F1 exhibit 3 — the `LeadOut` span and the arc's intent disagree about
-/// the same move.**
+/// **F1 sentry 3 — the `LeadOut` span and the arc's intent agree about the
+/// same move.**
 ///
 /// `apply_lead_in_out` pushes a `SpanKind::LeadOut` span over the moves it
 /// appends. `fit_arcs` remaps that span through the N-to-1 collapse, so it
@@ -327,9 +348,10 @@ fn f1_exhibit_lead_out_is_swallowed_by_the_finishing_arc() {
 /// `machine_kinematics` cycle-time attribution) see `FinishingCut` and
 /// include it.
 ///
-/// AFTER THE FIX both channels must agree; invert to assert agreement.
+/// Before PR-6 they contradicted each other on at least one index. Now
+/// they agree.
 #[test]
-fn f1_exhibit_span_and_intent_contradict_on_the_collapsed_arc() {
+fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
     use rs_cam_core::toolpath_spans::{Span, SpanKind};
 
     let (r, z, feed, plunge) = (6.0, -2.0, 1000.0, 300.0);
@@ -370,15 +392,93 @@ fn f1_exhibit_span_and_intent_contradict_on_the_collapsed_arc() {
         "the LeadOut span survives the remap onto the collapsed arc"
     );
 
-    // DEFECT, PINNED: at least one move is inside a LeadOut span while its
-    // own intent says FinishingCut.
+    // No move inside a LeadOut span may claim to be a finishing cut.
     let contradictory = covered
         .iter()
         .filter(|&&i| out.toolpath.moves[i].intent == MoveIntent::FinishingCut)
         .count();
+    assert_eq!(
+        contradictory, 0,
+        "F1 sentry 3: {contradictory} move(s) sit inside a LeadOut span \
+         while their own intent reads FinishingCut — the two channels that \
+         both answer 'what is this move' disagree again"
+    );
+}
+
+// ── Sentry 4: Checkpoint F1 Q2 — Region boundaries break an arc ──────────
+
+/// **F1 sentry 4 — no fitted arc straddles a `SpanKind::Region` boundary.**
+///
+/// Twelve co-circular moves at one feed and ONE intent, split into two
+/// `Region` spans at the midpoint. Nothing in the intent term can see that
+/// boundary — only the barrier set can. Before PR-6 `Region` was not in
+/// arc-fit's barrier set, so the whole run collapsed into a single arc, both
+/// regions' `move_range`s landed on that one index, and they stopped tiling
+/// — the exact invariant `region_node_ranges_tile_the_stitched_toolpath`
+/// (`unified_finish.rs`) exists to protect.
+///
+/// Ruled at Checkpoint F1 Q2 and bundled into PR-6. Note this is a
+/// LOCAL barrier: `AnnotatedToolpath::rapid_order_barriers()` is unchanged,
+/// because TSP reordering and `execute`'s barrier-count branch also read it.
+#[test]
+fn f1_sentry_no_arc_straddles_a_region_boundary() {
+    use rs_cam_core::toolpath_spans::{Span, SpanKind};
+
+    let (r, z, feed) = (8.0, -2.0, 1000.0);
+    let pt = |k: usize| {
+        let a = (k as f64) * 5.0_f64.to_radians();
+        P3::new(r * a.cos(), r * a.sin(), z)
+    };
+
+    let mut tp = Toolpath::new();
+    tp.rapid_to_with_intent(pt(0), MoveIntent::Linking);
+    for k in 1..=12 {
+        tp.feed_to_with_intent(pt(k), feed, MoveIntent::FinishingCut);
+    }
+    let n = tp.moves.len();
+    // Region A covers moves 1..7, region B covers 7..13. Same intent, same
+    // feed, co-circular geometry: only the Region edge can break this run.
+    let annotated = AnnotatedToolpath::with_spans(
+        tp,
+        vec![
+            Span::new(0, n, SpanKind::Operation),
+            Span::new(1, 7, SpanKind::Region).with_label("region-a"),
+            Span::new(7, n, SpanKind::Region).with_label("region-b"),
+        ],
+    );
+
+    let out = fit_arcs(annotated, TOL, TOOL_R);
+    out.check_invariants()
+        .expect("post-arc spans still pass invariants");
+
+    let arcs: Vec<&Move> = out.toolpath.moves.iter().filter(|m| is_arc(m)).collect();
+    assert_eq!(
+        arcs.len(),
+        2,
+        "F1 sentry 4: the run must break at the Region edge — one arc per \
+         region (got {} arcs across {} moves)",
+        arcs.len(),
+        out.toolpath.moves.len()
+    );
+
+    // The regions still tile: each Region span covers a non-empty, disjoint,
+    // contiguous move range in the output.
+    let mut ranges: Vec<(usize, usize)> = out
+        .spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Region)
+        .map(|s| (s.start_move, s.end_move))
+        .collect();
+    ranges.sort_unstable();
+    assert_eq!(ranges.len(), 2, "both Region spans survive the remap");
     assert!(
-        contradictory > 0,
-        "F1 exhibit 3: expected at least one move inside a LeadOut span \
-         whose intent reads FinishingCut; spans and intents already agree"
+        ranges[0].1 <= ranges[1].0,
+        "F1 sentry 4: Region move_ranges must stay disjoint after the \
+         collapse, got {ranges:?}"
+    );
+    assert!(
+        ranges[0].0 < ranges[0].1 && ranges[1].0 < ranges[1].1,
+        "F1 sentry 4: neither Region may collapse to an empty range, got \
+         {ranges:?}"
     );
 }
