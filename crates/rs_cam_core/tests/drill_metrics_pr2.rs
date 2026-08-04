@@ -167,11 +167,19 @@ fn drill_session_produces_drill_summary_with_pecks() {
         summary.peck_count,
         "drill_samples count should match summary.peck_count"
     );
+    // R-5 re-pin (2026-08-04): the `Peck` arm used to return a flat 1.0
+    // regardless of peck depth, so this asserted `> 0.99` on every
+    // sample. That flatness is exactly what let narrate print
+    // "score 1.00 (1=cleared)" beside "peck pattern INADEQUATE". The
+    // score now falls off with the per-peck D/d, so a healthy pecking
+    // op reads high but not free. The bar is what "well evacuated"
+    // means for this fixture (Ø4, 3 mm peck = 0.75 D/d in softwood),
+    // not a restatement of the constant.
     assert!(
         drill_samples_for_tp
             .iter()
-            .all(|s| s.chip_evacuation_score > 0.99),
-        "Peck cycle should produce chip_evacuation_score ~1.0 across pecks; got values: {:?}",
+            .all(|s| s.chip_evacuation_score > 0.85),
+        "Peck cycle at 0.75 D/d should evacuate well across pecks; got values: {:?}",
         drill_samples_for_tp
             .iter()
             .map(|s| s.chip_evacuation_score)

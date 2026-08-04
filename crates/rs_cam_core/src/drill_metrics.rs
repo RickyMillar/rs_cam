@@ -30,10 +30,26 @@ pub struct DrillSample {
     pub hole_id: usize,
     /// 0-based peck index within this hole.
     pub peck_index: u32,
-    /// Z descent of this peck (mm), always positive. For the last peck of a
-    /// `Peck` / `ChipBreak` cycle this is typically smaller than the cycle's
-    /// nominal peck depth (it's clamped against the hole's `bottom_z`).
+    /// Z distance FED on this descent (mm), always positive — what the
+    /// emitter emits, air included.
+    ///
+    /// R-2 (2026-08-04): this used to be the modelled cutting descent
+    /// of a cycle rooted at `hole.top_z`, which is not the cycle the
+    /// emitter emits. The emitter roots at the R-plane (the Fanuc G83
+    /// convention, and correct), so the first descent of every hole is
+    /// partly or wholly air, and every descent after a retract re-feeds
+    /// the re-entry clearance. Both are real machine time and both were
+    /// invisible. See [`cutting_descent_mm`] for the part that cuts.
+    ///
+    /// [`cutting_descent_mm`]: DrillSample::cutting_descent_mm
     pub descent_mm: f64,
+    /// The portion of `descent_mm` below the material surface — the
+    /// part that removes stock. `0.0` for a descent that is entirely
+    /// approach through air above `top_z`.
+    ///
+    /// Gate-relevant depth reads this, never `descent_mm`: adding air
+    /// above the stock must not move a verdict.
+    pub cutting_descent_mm: f64,
     /// Cumulative descent below the hole's `top_z` after this peck (mm).
     /// Used by gates to compute depth-to-diameter ratios.
     pub cumulative_depth_mm: f64,
@@ -250,20 +266,30 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
         if total_depth == 0.0 {
             continue;
         }
-        let descents = peck_descents(&drill_op.cycle, total_depth);
-        let mut cum = 0.0;
+        // R-2: the emitter's own schedule, rooted at the R-plane. A
+        // `retract_z_mm` below `top_z` (never produced by
+        // `effective_safe_z`, but a hand-built `DrillOp` can express
+        // it) degrades to starting at the surface rather than
+        // inventing negative air.
+        let entry_z = drill_op.retract_z_mm.max(hole.top_z);
+        let descents = crate::drill::fed_descents(drill_op.cycle, hole.bottom_z, entry_z);
         let n = descents.len();
-        for (i, descent) in descents.into_iter().enumerate() {
-            cum += descent;
+        for (i, descent) in descents.iter().enumerate() {
+            let cutting = descent.cutting_length(hole.top_z);
+            // Depth below the surface reached by the END of this
+            // descent — the emitter's grid revisits depth after a
+            // re-entry, so this is a position, not a running sum.
+            let cum = (hole.top_z - descent.to_z).max(0.0);
             let dtd = cum / diameter;
             let score =
-                chip_evacuation_score(dtd, descent / diameter, drill_op.cycle, &drill_op.material);
+                chip_evacuation_score(dtd, cutting / diameter, drill_op.cycle, &drill_op.material);
             let dwell_s = if i + 1 == n { dwell_each } else { 0.0 };
             samples.push(DrillSample {
                 toolpath_id,
                 hole_id,
                 peck_index: i as u32,
-                descent_mm: descent,
+                descent_mm: descent.length(),
+                cutting_descent_mm: cutting,
                 cumulative_depth_mm: cum,
                 axial_chipload_mm_per_rev: chipload_mm_per_rev,
                 dwell_s,
@@ -379,28 +405,6 @@ pub fn classify_chip_welding(max_dtd: f64, material: &Material) -> ChipWeldingRi
     }
 }
 
-/// Expand a drill cycle into per-peck Z descents (always positive) totaling
-/// `total_depth`. For `Simple` / `Dwell`, returns a single-element vector.
-fn peck_descents(cycle: &DrillCycle, total_depth: f64) -> Vec<f64> {
-    match *cycle {
-        DrillCycle::Simple | DrillCycle::Dwell(_) => vec![total_depth],
-        DrillCycle::Peck(peck) | DrillCycle::ChipBreak(peck, _) => {
-            let peck = peck.max(f64::MIN_POSITIVE);
-            let mut out = Vec::new();
-            let mut remaining = total_depth;
-            while remaining > 1e-9 {
-                let step = remaining.min(peck);
-                out.push(step);
-                remaining -= step;
-            }
-            if out.is_empty() {
-                out.push(total_depth);
-            }
-            out
-        }
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -427,6 +431,13 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             material,
+            // R-2: no R-plane air in this fixture — it models the cycle
+            // from the material surface, which is what this test's numbers
+            // were written against. Production sets
+            // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
+            // 5 mm by default); `drill_evidence_wording_d3.rs` is the
+            // sentry that pins the emitter-matching case.
+            retract_z_mm: 0.0,
         }
     }
 
@@ -442,15 +453,34 @@ mod tests {
         assert!((samples[0].cumulative_depth_mm - 12.0).abs() < 1e-9);
     }
 
+    /// R-2 re-pin. 12 mm depth, 5 mm peck, fixture rooted at the
+    /// surface (`retract_z_mm: 0.0`) so the only change from the old
+    /// expectation is the one R-2 is about.
+    ///
+    /// Before: this asserted fed descents of 5, 5, 2 — the *modelled*
+    /// cycle. The emitter retracts to the R-plane after each peck and
+    /// rapids back to `previous_depth + 0.5`, so it FEEDS that 0.5 mm
+    /// again: the real descents are 5.0, 5.5, 2.5, and the last one
+    /// still lands the hole at 12 mm. The old numbers were not a
+    /// tighter bar, they were a different cycle.
     #[test]
     fn peck_cycle_emits_one_per_peck_with_final_clamp() {
-        // 12 mm depth, 5 mm peck → descents 5, 5, 2.
         let op = op_with(DrillCycle::Peck(5.0), 4.0, 12.0, Material::default());
         let samples = emit_drill_samples(ToolpathId(0), &op);
         assert_eq!(samples.len(), 3);
+        // Fed distance, including the re-cut re-entry clearance.
         assert!((samples[0].descent_mm - 5.0).abs() < 1e-9);
-        assert!((samples[1].descent_mm - 5.0).abs() < 1e-9);
-        assert!((samples[2].descent_mm - 2.0).abs() < 1e-9);
+        assert!((samples[1].descent_mm - 5.5).abs() < 1e-9);
+        assert!((samples[2].descent_mm - 2.5).abs() < 1e-9);
+        // With no air above the surface, every fed millimetre cuts.
+        for s in &samples {
+            assert!(
+                (s.cutting_descent_mm - s.descent_mm).abs() < 1e-9,
+                "no R-plane air in this fixture, so fed == cutting"
+            );
+        }
+        // Depth reached is unchanged — that is the invariant the old
+        // expectation was really protecting.
         assert!((samples[2].cumulative_depth_mm - 12.0).abs() < 1e-9);
     }
 
@@ -494,17 +524,36 @@ mod tests {
         assert_eq!(s.chip_welding_risk, ChipWeldingRisk::Low);
     }
 
+    /// R-5 re-pin. A pecking cycle still scores high — that is the
+    /// credit the retract earns — but no longer a flat 1.0 regardless
+    /// of peck depth, which is what let narrate print
+    /// "score 1.00 (1=cleared)" beside "peck pattern INADEQUATE".
+    ///
+    /// 2 mm peck on Ø4 = 0.5 D/d against the softwood chip-welding
+    /// threshold 8: exp(-0.5/8) = 0.939.
     #[test]
-    fn peck_cycle_chip_evacuation_is_high() {
+    fn peck_cycle_chip_evacuation_is_high_but_not_free() {
         let op = op_with(DrillCycle::Peck(2.0), 4.0, 16.0, Material::default());
         let samples = emit_drill_samples(ToolpathId(0), &op);
         for s in &samples {
             assert!(
-                s.chip_evacuation_score >= 0.99,
-                "Peck cycle should fully evacuate; got {}",
+                s.chip_evacuation_score >= 0.9,
+                "a shallow peck cycle should evacuate well; got {}",
                 s.chip_evacuation_score
             );
         }
+        // A peck an order of magnitude deeper must score materially
+        // worse on the same hole.
+        let deep = op_with(DrillCycle::Peck(16.0), 4.0, 16.0, Material::default());
+        let deep_samples = emit_drill_samples(ToolpathId(0), &deep);
+        let worst = deep_samples
+            .iter()
+            .map(|s| s.chip_evacuation_score)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            worst < 0.7,
+            "a 4×D single peck must not claim to be cleared; got {worst}"
+        );
     }
 
     #[test]
