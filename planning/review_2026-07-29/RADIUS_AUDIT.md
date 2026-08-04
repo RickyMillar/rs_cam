@@ -96,6 +96,54 @@ Yes, narrowly for these two commits. `BallEndmill::diameter()` returns its actua
 
 No. The unchanged sweeps are explained by fixture choice, not proof of safety. Add the synthetic tapered ribbon sentry above and at least one tapered-tool parameter sweep/end-to-end UnifiedFinish case.
 
+## Intake from the drill audit — 2026-08-05 (R-12)
+
+Handed over from the second tech-debt programme's drill audit
+(`planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md` §2.4, item
+R-12), ruled at that programme's Checkpoint D as **belonging to this
+programme's queue, not to a drill threshold change**. Recorded here, not
+fixed: no code moved for this item.
+
+**The same defect class as the findings above, on a path the audit did
+not cover: all three drill gates divide by the ENVELOPE radius.**
+
+`DrillOp::tool_diameter_mm` is set at `compute/execute.rs` as
+`tool_def.radius() * 2.0`, with `tool_profile: ToolProfile::Flat`
+hardcoded regardless of the assigned tool. `radius()` is the envelope
+radius by contract (`tool/mod.rs`) — "for a tapered ball it is the SHAFT
+radius … it overstates the cutter's reach at finishing depth by up to
+14×".
+
+No precondition in `catalog.rs` restricts a `Drill` or
+`AlignmentPinDrill` op to a flat or twist tool. So assigning a
+tapered-ball or V-bit to a drill op makes all three gates —
+depth-to-diameter, peck/D, and feed/D — divide by a diameter up to 14×
+too large. Every one of them reads **low**, and every one of them
+reports `Within` on a grossly overloaded cutter. Unlike the finishing
+cases above, two of these three gates block g-code export when they
+trip, so the failure mode is a silent pass rather than a silent
+mis-plan.
+
+Why it is here rather than fixed there: the correct divisor is the
+cutting diameter at the engaged depth, which is exactly the
+**contact-width/reach at actual axial engagement** class this audit's
+first finding names as missing. Fixing it inside the drill subsystem
+would mean inventing a fourth local answer to the question this
+programme exists to answer once.
+
+Two things that would each close it, either order:
+
+1. A precondition on the drill operations restricting them to
+   flat/twist tool geometry — cheap, and arguably correct on its own
+   terms (a tapered ball is not a drill), but it only removes the
+   population rather than fixing the measure.
+2. Routing `DrillOp::tool_diameter_mm` through the engagement-radius
+   API, which is the same fix the finishing sites need.
+
+Re-open condition: whoever takes the contact-width class. A red-first
+fixture is cheap and does not exist yet — a tapered-ball tool on a drill
+op, asserting the gate divides by the tip diameter and not the shaft.
+
 ## Verification
 
 Commands run:
