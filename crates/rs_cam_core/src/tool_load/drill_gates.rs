@@ -25,15 +25,29 @@ pub enum DrillGateOutcome {
         /// The measurement being gated (units depend on the gate — see
         /// [`DrillGatesVerdict`]).
         observed: f64,
-        /// Material-aware threshold the observation was compared against.
-        /// For two-sided gates (plunge feed) this is the *nearer*
-        /// envelope bound — consult `envelope_lo` / `envelope_hi` for
-        /// the actual band; pre-F1 this overload made an at-the-floor
+        /// **The bound that decided this verdict**, which is not always
+        /// the material threshold.
+        ///
+        /// For two-sided gates (plunge feed) it is the *nearer*
+        /// envelope bound; pre-F1 this overload made an at-the-floor
         /// reading (`threshold == observed == envelope_lo`) look like a
         /// healthy headroom number.
+        ///
+        /// For chip welding it is the **advisory boundary `0.75 × t`**,
+        /// not `t` (R-3, 2026-08-04). `Low` is decided at `0.75t`, and
+        /// displaying `t` beside a `Within` verdict overstated headroom
+        /// by the width of the whole Elevated band: a Ø4 × 23.6 mm
+        /// softwood hole read `within (5.90)` against `8.00` — 26 %
+        /// implied headroom on a reading with 1.7 % real headroom. The
+        /// hard ceiling rides alongside in `envelope_hi`.
         threshold: f64,
-        /// Full envelope for two-sided gates; `None` for one-sided
-        /// gates (chip welding, peck adequacy).
+        /// The band this verdict sits in. `None` on a side means the
+        /// band is unbounded there (chip welding `Low` has no
+        /// meaningful floor; the `High` band has no ceiling).
+        ///
+        /// Carried by every gate since R-3, not just the two-sided
+        /// one — a consumer can always ask "what band am I in, and what
+        /// is next?" without knowing which gate it is looking at.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         envelope_lo: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -41,7 +55,13 @@ pub enum DrillGateOutcome {
     },
     Exceeds {
         observed: f64,
-        /// The violated bound.
+        /// The bound this outcome is measured against. **Read
+        /// `severity` before wording it**: at `Elevated` on a
+        /// one-sided-up gate the observation is *below* this bound
+        /// (the advisory band is `[0.75t, t)`), and at `Elevated` on
+        /// the plunge gate it is below the envelope FLOOR. Only
+        /// `Critical` on an upward gate means the bound was crossed
+        /// upward. Wording this as "exceeds: 7.33 vs 8.00" was R-1.
         threshold: f64,
         /// Coarse severity flag for UI styling. `Elevated` is a warning;
         /// `Critical` is a hard exceedance the operator should act on.
@@ -104,6 +124,11 @@ pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGate
 
 fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) -> DrillGateOutcome {
     let threshold = chip_welding_threshold(material);
+    // R-3: the classifier's bands are Low [0, 0.75t), Elevated
+    // [0.75t, t), High [t, ∞). Every outcome now carries the band it
+    // sits in, so no consumer has to re-derive `0.75 ×` to know what
+    // decided the verdict or what comes next.
+    let advisory = threshold * 0.75;
     // Evacuation-credited ratio (F1): for peck cycles the deepest single
     // peck governs chip packing, not the total hole — `observed` must be
     // the value the risk was actually classified from.
@@ -111,22 +136,24 @@ fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) ->
     match summary.chip_welding_risk {
         ChipWeldingRisk::Low => DrillGateOutcome::Within {
             observed,
-            threshold,
+            // The boundary that decided `Low` — NOT the material
+            // threshold, which is a band further away (R-3).
+            threshold: advisory,
             envelope_lo: None,
-            envelope_hi: None,
+            envelope_hi: Some(advisory),
         },
         ChipWeldingRisk::Elevated => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Elevated,
-            envelope_lo: None,
-            envelope_hi: None,
+            envelope_lo: Some(advisory),
+            envelope_hi: Some(threshold),
         },
         ChipWeldingRisk::High => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Critical,
-            envelope_lo: None,
+            envelope_lo: Some(threshold),
             envelope_hi: None,
         },
     }
@@ -148,19 +175,23 @@ fn evaluate_peck_adequacy(drill_op: &DrillOp, summary: &DrillToolpathSummary) ->
             peck.min(summary.deepest_hole_mm) / diameter
         }
     };
+    // One-sided gate: `t` really is the bound that decides both arms,
+    // so `threshold` needs no correction here. It carries its band for
+    // uniformity (R-3) — this gate has no advisory tier at all, which
+    // is itself worth being able to see from the outside.
     if peak_peck_dtd <= threshold {
         DrillGateOutcome::Within {
             observed: peak_peck_dtd,
             threshold,
             envelope_lo: None,
-            envelope_hi: None,
+            envelope_hi: Some(threshold),
         }
     } else {
         DrillGateOutcome::Exceeds {
             observed: peak_peck_dtd,
             threshold,
             severity: DrillGateSeverity::Critical,
-            envelope_lo: None,
+            envelope_lo: Some(threshold),
             envelope_hi: None,
         }
     }
