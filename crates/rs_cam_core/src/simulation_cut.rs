@@ -85,14 +85,33 @@ pub struct Engagement {
     /// Engagement arc in radians (entry → exit). `None` for plunges and
     /// other Z-only moves where the concept does not apply.
     pub arc_radians: Option<f64>,
-    /// Commanded mean chip thickness — geometric mean of instantaneous chip
-    /// thickness across the engagement arc, equal to commanded
-    /// `chipload_mm_per_tooth` for steady-state lateral cuts.
+    /// Arc-AVERAGE chip thickness (mm of *chip*) — the mean of
+    /// instantaneous chip thickness over the engagement arc,
+    /// `ChipGeometry::mean_chip_thickness_mm` via
+    /// [`crate::dexel_stock::chip_thickness_stats`]. Same value the
+    /// chipload gate reads off
+    /// [`SimulationCutSample::effective_chip_thickness_mm`].
+    ///
+    /// **This is NOT the commanded advance per tooth.** That quantity is
+    /// [`SimulationCutSample::chipload_mm_per_tooth`], and below full
+    /// slotting the two differ by `(2/arc)·(1 − cos(arc/2))·sin(arc)`
+    /// — a factor of ~0.373 at half immersion.
+    ///
+    /// F-4 (census T1.3, 2026-08-04): this field used to be assigned the
+    /// commanded advance per tooth while its doc comment claimed the
+    /// arc-mean. Corrected at the emitter, not by rewording.
     pub mean_chip_thickness_mm: Option<f64>,
-    /// Peak chip thickness across the engagement arc — what the flute
-    /// experiences at its most-engaged angular position. Sources from the
-    /// existing `effective_chip_thickness_mm` field, which already carries
-    /// the geometric-peak math (see stamping.rs notes).
+    /// Arc-PEAK chip thickness (mm of *chip*) — what the flute
+    /// experiences at its most-engaged angular position,
+    /// `ChipGeometry::max_chip_thickness_mm` via
+    /// [`crate::dexel_stock::peak_chip_thickness_mm`].
+    ///
+    /// Always `>= mean_chip_thickness_mm`. F-4: this field used to be
+    /// assigned the arc-MEAN, so it read *below* the sibling named
+    /// "mean" on every partial-immersion cut.
+    ///
+    /// No gate consumes it — the chipload gate is deliberately
+    /// calibrated on the arc-average (`tests/chipload_formula_calibration.rs`).
     pub peak_chip_thickness_mm: Option<f64>,
     /// Feed velocity at the engaged cutting edge (mm/min). For 3-axis
     /// lateral moves this is `feed_rate_mm_min`. Used by the chipload gate.

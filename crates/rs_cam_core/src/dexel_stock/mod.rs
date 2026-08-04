@@ -9,7 +9,9 @@ mod simulation;
 mod stamping;
 
 pub use cut_direction::StockCutDirection;
-pub use simulation::effective_chip_thickness_mm;
+pub use simulation::{
+    ChipThicknessStats, chip_thickness_stats, effective_chip_thickness_mm, peak_chip_thickness_mm,
+};
 
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 

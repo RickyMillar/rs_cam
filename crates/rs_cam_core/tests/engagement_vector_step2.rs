@@ -135,8 +135,15 @@ fn mk_sample(
             radial_woc_fraction: radial,
             axial_doc_fraction: Some((axial_mm / 25.0).clamp(0.0, 1.0)),
             arc_radians: arc,
-            mean_chip_thickness_mm: Some(0.02),
-            peak_chip_thickness_mm: Some(0.018),
+            // F-4 (2026-08-04): this fixture used to read
+            // `mean: 0.02, peak: 0.018` — i.e. a "peak" below its own
+            // "mean", the exact swap the emitter carried. No assertion
+            // in this file reads either value, so the fixture was
+            // enshrining the defect rather than testing it. Ordered
+            // correctly now; the swap itself is pinned by
+            // `tests/engagement_chip_thickness_labels_f4.rs`.
+            mean_chip_thickness_mm: Some(0.018),
+            peak_chip_thickness_mm: Some(0.02),
             leading_edge_speed_mm_min: 1000.0,
             direction: EngagementDirection::Mixed,
         },
