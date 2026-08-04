@@ -1506,6 +1506,23 @@ fn append_peak_doc_anomaly(
             "ℹ"
         }
     });
+    // R-13 (census §8.2, §6.5): the advice below used to end with "an exact
+    // multiple of the step means that many steps of stock were standing
+    // there" on EVERY op — including the ones that have no step. Naming the
+    // absence of a denominator and then handing the reader a ratio to form
+    // is the same category error the line's own `threshold_text` just
+    // avoided, and it is how the Rivers B4 spike came to be reported as
+    // "20.4x commanded" against a surface OFFSET. Ops with no commanded
+    // axial step now get the measurement and the first cause, and no
+    // multiple to compute.
+    let advice = if context.depth_per_pass_mm.is_some() {
+        "an exact multiple of the step means that many steps of stock were standing there \
+         — check upstream coverage first, then lift-function bridging, then arc-fit overshoot"
+    } else {
+        "this op commands no axial step, so there is no multiple to read it against \
+         — a large value means the pass crossed material an upstream op left standing; \
+         check upstream coverage first, then lift-function bridging, then arc-fit overshoot"
+    };
     anomalies.push(format!(
         // H4 wave 15 — the advice used to lead with arc-fit overshoot and
         // lift bridging. Arc-fit has now been exonerated twice on live
@@ -1515,7 +1532,7 @@ fn append_peak_doc_anomaly(
         // reads an exact multiple of the step, at any depth and any pass
         // index. Standing stock is therefore named FIRST, and the reader
         // is told what is being measured before being offered a cause.
-        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. This is the height of material removed at one column, not a commanded step: an exact multiple of the step means that many steps of stock were standing there — check upstream coverage first, then lift-function bridging, then arc-fit overshoot.",
+        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. This is the height of material removed at one column, not a commanded step: {advice}.",
         sample.axial_doc_mm,
         sample.sample_index,
         sample.move_index,
@@ -1627,7 +1644,16 @@ fn append_air_cut_anomaly(
     if cutting_time_s <= 0.0 {
         return;
     }
-    let marker = if air_pct_of_cutting > AIR_CUT_WARNING_PERCENT {
+    // D7 (census §3.5), ruled at Checkpoint D D-5: the marker follows the
+    // TOTAL-RUNTIME reading, like every other air-cut threshold in the
+    // workspace — the GUI's 20%, the CLI's 40%, and every per-operation band
+    // in `OperationType::air_cut_high_threshold_pct`. This line prints both
+    // numbers and used to set its ⚠ from the un-thresholded one, so a
+    // retract-heavy op could carry a warning marker that no shipped gate
+    // agreed with. The line still REPORTS the cutting-time reading, which is
+    // what it has always reported and what CLAUDE.md documents; only the
+    // marker moved, and no number changed.
+    let marker = if air_pct_of_total > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
         "ℹ"
@@ -1647,7 +1673,12 @@ fn append_air_cut_anomaly(
                 | OperationType::RampFinish
                 | OperationType::SpiralFinish
                 | OperationType::RadialFinish
-                | OperationType::HorizontalFinish,
+                | OperationType::HorizontalFinish
+                // R-5 (census §3.5 D8): `UnifiedFinish` is in the 3D-finish
+                // air-cut band in `catalog.rs` but was missing here, so the
+                // one op most likely to post a high reading got the empty
+                // hint.
+                | OperationType::UnifiedFinish,
             ) => {
                 " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
             }
