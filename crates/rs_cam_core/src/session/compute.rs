@@ -3129,12 +3129,34 @@ impl ProjectSession {
         // is intrinsic. Per-TP thresholds live on `OperationType`
         // (see `OperationType::air_cut_high_threshold_pct`).
         // P1 — see planning/P1_AIR_CUT_THRESHOLDS_RCA.md.
-        let air_cut_offenders: Vec<(String, f64)> = evidence
+        //
+        // Checkpoint D Q2 (2026-08-04): before comparing anything against a
+        // threshold, ask whether the number is a measurement. A pass under
+        // the dexel's 0.05 mm fresh-material floor removes material fine and
+        // reports engagement of exactly zero, i.e. ~96% air cut — which
+        // trips every shipped band. Those toolpaths ABSTAIN, with the reason
+        // published beside the verdicts rather than silently dropped.
+        let measurability = evidence
             .cut_trace
             .map(|trace| {
-                air_cut_offenders_for_toolpaths(&trace.toolpath_summaries, &self.toolpath_configs)
+                crate::sim_measurability::MeasurabilityReport::from_trace(
+                    trace,
+                    evidence.resolution_mm,
+                )
             })
             .unwrap_or_default();
+        let air_cut_scan = evidence
+            .cut_trace
+            .map(|trace| {
+                air_cut_offenders_for_toolpaths(
+                    &trace.toolpath_summaries,
+                    &self.toolpath_configs,
+                    &measurability,
+                )
+            })
+            .unwrap_or_default();
+        let air_cut_offenders = air_cut_scan.offenders;
+        let air_cut_abstentions = air_cut_scan.abstentions;
 
         // P2: plunge-stress warnings for small ball / tapered-ball tools.
         // Fix 2 caps fresh LUT recommendations, but pre-Fix-2 projects carry
@@ -3250,17 +3272,16 @@ impl ProjectSession {
                 .iter()
                 // LH-1: the threshold is on the TOTAL-RUNTIME measure; the
                 // headline says so rather than leaving "air-cut" ambiguous.
-                .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut of total runtime"))
-                .collect();
-            let offender_ids: Vec<ToolpathId> = air_cut_offenders
-                .iter()
-                .filter_map(|(n, _)| {
-                    self.toolpath_configs
-                        .iter()
-                        .find(|tc| tc.name == *n)
-                        .map(|tc| tc.id)
+                .map(|o| {
+                    format!(
+                        "'{}' is {:.0}% air-cut of total runtime",
+                        o.name, o.air_cut_pct
+                    )
                 })
                 .collect();
+            // R-7: the id came with the finding. No name round-trip, so
+            // duplicate names cannot collapse two toolpaths into one.
+            let offender_ids: Vec<ToolpathId> = air_cut_offenders.iter().map(|o| o.id).collect();
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Polish,
                 kind: VerdictKind::AirCut,
@@ -3274,6 +3295,41 @@ impl ProjectSession {
                     move_index: None,
                     z_value: None,
                     count: None,
+                },
+            });
+        }
+
+        // Checkpoint D Q2: state every abstention. A gate that silently
+        // declines is indistinguishable from a gate that passed, which is
+        // the whole failure this ruling addresses — so the abstention gets a
+        // verdict of its own, naming the toolpath, the reason, and what is
+        // still trustworthy.
+        if !air_cut_abstentions.is_empty() {
+            let names: Vec<String> = air_cut_abstentions
+                .iter()
+                .map(|a| format!("'{}': {}", a.name, a.reason.describe()))
+                .collect();
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Polish,
+                kind: VerdictKind::MeasurabilityAbstained,
+                headline: format!(
+                    "NOT MEASURED: air-cut % withheld for {} toolpath(s) — {}",
+                    air_cut_abstentions.len(),
+                    names.join("; ")
+                ),
+                offender_toolpath_ids: air_cut_abstentions.iter().map(|a| a.id).collect(),
+                fix_hint: "This is a statement about the SIMULATION, not the toolpath. \
+                           Collision detection, material removal and axial DOC are \
+                           unaffected and remain valid. Where the reason is a coarse \
+                           cell, re-simulate below the tool's TIP radius; where it is \
+                           the fixed 0.05 mm fresh-material floor, the engagement \
+                           channel cannot see a pass this shallow at any resolution — \
+                           judge it on removed material and surface quality instead."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: Some(air_cut_abstentions.len()),
                 },
             });
         }
@@ -3621,19 +3677,65 @@ impl ProjectSession {
     }
 }
 
+/// Outcome of scanning every toolpath's air-cut percentage against its
+/// op-kind's high-water threshold.
+///
+/// Two lists, because a gate now has three possible answers, not two: it
+/// fired, it stayed silent, or **it declined to answer**. Collapsing the
+/// third into the second is exactly the failure the census measured — a
+/// finishing pass under the measurement floor reads 95.9% air cut and trips
+/// a 30% band while removing material perfectly well.
+#[derive(Debug, Default)]
+struct AirCutScan {
+    /// Toolpaths over their threshold.
+    offenders: Vec<AirCutOffender>,
+    /// Toolpaths where the air-cut metric is `NotMeasurable`, so no verdict
+    /// was formed either way.
+    abstentions: Vec<AirCutAbstention>,
+}
+
+/// One toolpath over its op-kind's air-cut threshold.
+///
+/// R-7 / census D6: carries the `ToolpathId` alongside the display name.
+/// The verdict used to publish names only and re-resolve them to ids by
+/// string match against `toolpath_configs`, so two toolpaths sharing a name
+/// collapsed to whichever came first — the verdict then pointed the operator
+/// at the innocent one. The identity now travels with the finding; the name
+/// is for display.
+#[derive(Debug, Clone)]
+struct AirCutOffender {
+    id: ToolpathId,
+    name: String,
+    air_cut_pct: f64,
+}
+
+/// One toolpath whose air-cut metric is not measurable. Same identity rule
+/// as [`AirCutOffender`].
+#[derive(Debug, Clone)]
+struct AirCutAbstention {
+    id: ToolpathId,
+    name: String,
+    reason: crate::sim_measurability::MeasurabilityReason,
+}
+
 /// Identify toolpaths whose air-cut percentage exceeds their op-kind's
-/// high-water threshold. Returns `(toolpath_name, air_cut_pct)` pairs.
+/// high-water threshold — **abstaining** where the metric is not measurable.
 ///
 /// Pure helper; takes only the data it needs so it can be unit-tested
 /// without constructing a full `SimulationResult`. See
-/// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale.
+/// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale and
+/// [`crate::sim_measurability`] for the abstention rule (Checkpoint D Q2,
+/// 2026-08-04). No threshold moved; a `NotMeasurable` metric simply stops
+/// feeding this gate.
 fn air_cut_offenders_for_toolpaths(
     toolpath_summaries: &[crate::simulation_cut::SimulationToolpathCutSummary],
     toolpath_configs: &[super::ToolpathConfig],
-) -> Vec<(String, f64)> {
+    measurability: &crate::sim_measurability::MeasurabilityReport,
+) -> AirCutScan {
+    use crate::sim_measurability::SimMetric;
     use crate::simulation_cut::AirCutRatios;
 
-    let mut offenders = Vec::new();
+    let mut scan = AirCutScan::default();
     for tp_summary in toolpath_summaries {
         if tp_summary.total_runtime_s <= 0.0 {
             continue;
@@ -3644,19 +3746,46 @@ fn air_cut_offenders_for_toolpaths(
         else {
             continue;
         };
+        // Census D5: a disabled toolpath is not part of the job. Its summary
+        // can outlive the disable (traces are not cleared on toggle), so
+        // without this the operator gets a warning about an op that will not
+        // run, and no way to make it go away. The sibling
+        // `plunge_stress_offenders_for_session` has always checked this.
+        if !tc.enabled {
+            continue;
+        }
         let Some(threshold) = tc.operation.op_type().air_cut_high_threshold_pct() else {
             continue;
         };
+        // Checkpoint D Q2: the metric this gate reads may not be a
+        // measurement at all. Abstain with the reason rather than compare a
+        // non-number against a threshold. Note the abstention is recorded,
+        // not swallowed — the caller publishes it.
+        let verdict = measurability.for_metric(tp_summary.toolpath_id, SimMetric::AirCut);
+        if verdict.abstains() {
+            if let Some(reason) = verdict.reason() {
+                scan.abstentions.push(AirCutAbstention {
+                    id: tc.id,
+                    name: tc.name.clone(),
+                    reason,
+                });
+            }
+            continue;
+        }
         // LH-1: `air_cut_high_threshold_pct` is defined against TOTAL runtime
         // (cutting + rapids). Named accessor, not a bare division, so the
         // choice is visible here and cannot silently drift to the
         // cutting-time reading the MCP narration prints.
         let air_pct = tp_summary.air_cut_pct_of_total_runtime();
         if air_pct > threshold {
-            offenders.push((tc.name.clone(), air_pct));
+            scan.offenders.push(AirCutOffender {
+                id: tc.id,
+                name: tc.name.clone(),
+                air_cut_pct: air_pct,
+            });
         }
     }
-    offenders
+    scan
 }
 
 /// Identify toolpaths whose configured plunge rate exceeds the safe cap
@@ -4804,7 +4933,7 @@ mod tests {
             OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         )];
         let sums = vec![summary(0, 92.1)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "ProjectCurve at baseline air-cut should not warn; got {offenders:?}"
@@ -4820,7 +4949,7 @@ mod tests {
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         )];
         let sums = vec![summary(0, 28.5)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "Adaptive3d below 40% threshold should be silent; got {offenders:?}"
@@ -4836,8 +4965,154 @@ mod tests {
             OperationConfig::DropCutter(DropCutterConfig::default()),
         )];
         let sums = vec![summary(0, 11.5)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(offenders.is_empty(), "DropCutter at 11.5% should be silent");
+    }
+
+    #[test]
+    fn air_cut_gate_ignores_disabled_toolpaths() {
+        // Census D5. A disabled toolpath is not part of the job, but its
+        // summary survives the toggle, so the verdict used to keep warning
+        // about an op that will never run — with no way to silence it. The
+        // sibling plunge-stress scan has always checked `enabled`.
+        let mut tps = vec![make_tp(
+            0,
+            "Switched Off",
+            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+        )];
+        let sums = vec![summary(0, 60.0)];
+        assert_eq!(
+            air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default())
+                .offenders
+                .len(),
+            1,
+            "enabled toolpath over the band must warn"
+        );
+
+        tps[0].enabled = false;
+        assert!(
+            air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default())
+                .offenders
+                .is_empty(),
+            "a disabled toolpath must not raise a verdict"
+        );
+    }
+
+    #[test]
+    fn air_cut_offenders_carry_their_own_id_not_a_name_lookup() {
+        // Census D6 / R-7. Two toolpaths, same name, only the SECOND over
+        // the band. Resolving the offender by name found the first match and
+        // pointed the operator at the innocent toolpath.
+        let tps = vec![
+            make_tp(
+                0,
+                "Rough",
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+            make_tp(
+                1,
+                "Rough",
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+        ];
+        let sums = vec![summary(0, 5.0), summary(1, 60.0)];
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default());
+        assert_eq!(scan.offenders.len(), 1);
+        assert_eq!(
+            scan.offenders[0].id,
+            ToolpathId(1),
+            "the offender must be the toolpath that actually breached, not the \
+             first one sharing its name"
+        );
+    }
+
+    #[test]
+    fn air_cut_gate_abstains_instead_of_warning_when_engagement_is_unmeasurable() {
+        // Checkpoint D Q2. The census's shallow arm: a pass under the 0.05 mm
+        // fresh-material floor reads ~96% air cut while removing material
+        // perfectly well. RED-FIRST: with an empty (all-measurable) report
+        // the gate fires, which is the shipped behaviour and the defect.
+        use crate::sim_measurability::{
+            Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
+        };
+
+        let tps = vec![make_tp(
+            0,
+            "Spring Pass",
+            OperationConfig::Pocket(PocketConfig::default()),
+        )];
+        let sums = vec![summary(0, 95.9)];
+
+        let fired = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default());
+        assert_eq!(
+            fired.offenders.len(),
+            1,
+            "without a measurability report the gate compares the unmeasurable \
+             number against the band and warns — this is the behaviour being fixed"
+        );
+        assert!(fired.abstentions.is_empty());
+
+        // GREEN: told the metric is not a measurement, the gate declines.
+        let reason = MeasurabilityReason::BelowFreshMaterialFloor {
+            peak_removed_mm: 0.02,
+            floor_mm: 0.05,
+            blind_fraction: 0.98,
+        };
+        let report = MeasurabilityReport {
+            entries: vec![MetricMeasurability {
+                toolpath_id: ToolpathId(0),
+                metric: SimMetric::AirCut,
+                measurability: Measurability::NotMeasurable(reason),
+            }],
+            cell_mm: Some(0.25),
+        };
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &report);
+        assert!(
+            scan.offenders.is_empty(),
+            "a NotMeasurable metric must stop feeding its gate; got {:?}",
+            scan.offenders
+        );
+        assert_eq!(
+            scan.abstentions.len(),
+            1,
+            "the abstention must be RECORDED, not swallowed — a silent decline \
+             is indistinguishable from a pass"
+        );
+        assert_eq!(scan.abstentions[0].name, "Spring Pass");
+    }
+
+    #[test]
+    fn air_cut_gate_still_warns_when_the_metric_is_only_degraded() {
+        // `Degraded` is not an abstention: the reading still describes the
+        // measurable majority of the pass, and declining there would hide
+        // more than it protects.
+        use crate::sim_measurability::{
+            Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
+        };
+
+        let tps = vec![make_tp(
+            0,
+            "Mostly Measured",
+            OperationConfig::Pocket(PocketConfig::default()),
+        )];
+        let sums = vec![summary(0, 95.9)];
+        let report = MeasurabilityReport {
+            entries: vec![MetricMeasurability {
+                toolpath_id: ToolpathId(0),
+                metric: SimMetric::AirCut,
+                measurability: Measurability::Degraded(
+                    MeasurabilityReason::BelowFreshMaterialFloor {
+                        peak_removed_mm: 0.02,
+                        floor_mm: 0.05,
+                        blind_fraction: 0.2,
+                    },
+                ),
+            }],
+            cell_mm: Some(0.25),
+        };
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &report);
+        assert_eq!(scan.offenders.len(), 1, "Degraded must NOT abstain");
+        assert!(scan.abstentions.is_empty());
     }
 
     #[test]
@@ -4849,10 +5124,10 @@ mod tests {
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         )];
         let sums = vec![summary(0, 60.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "Adaptive3d at 60% should warn");
-        assert_eq!(offenders[0].0, "Bad Rough");
-        assert!((offenders[0].1 - 60.0).abs() < 1e-6);
+        assert_eq!(offenders[0].name, "Bad Rough");
+        assert!((offenders[0].air_cut_pct - 60.0).abs() < 1e-6);
     }
 
     #[test]
@@ -4864,7 +5139,7 @@ mod tests {
             OperationConfig::DropCutter(DropCutterConfig::default()),
         )];
         let sums = vec![summary(0, 40.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "DropCutter at 40% should warn");
     }
 
@@ -4877,7 +5152,7 @@ mod tests {
             OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         )];
         let sums = vec![summary(0, 99.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "ProjectCurve at 99% should warn");
     }
 
@@ -4890,7 +5165,7 @@ mod tests {
             OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
         )];
         let sums = vec![summary(0, 100.0)]; // dexel reports 100% always
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "AlignmentPinDrill must never trigger air-cut warning (P4 suppression)"
@@ -5004,9 +5279,9 @@ mod tests {
             ),
         ];
         let sums = vec![summary(0, 92.0), summary(1, 60.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1);
-        assert_eq!(offenders[0].0, "Bad Rough");
+        assert_eq!(offenders[0].name, "Bad Rough");
     }
 
     // ── strategy advisor: optimized-candidate modulation (step 5) ────
