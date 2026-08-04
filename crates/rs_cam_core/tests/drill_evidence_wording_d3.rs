@@ -220,6 +220,44 @@ fn within_chip_welding_displays_the_boundary_that_decided_it() {
     }
 }
 
+// ── R-6 · the ratio computed twice and exposed zero times ────────────
+
+/// `build_drill_toolpath_summary` computed the worst single-peck D/d as
+/// a local `per_peck_max_dtd` and stored only the derived boolean;
+/// `evaluate_peck_adequacy` recomputed the same quantity from the
+/// config. Two implementations of one number, and no consumer could
+/// display the number behind `peck_pattern_adequate` — narrate printed
+/// `peck pattern INADEQUATE` with no ratio and no threshold beside it.
+///
+/// This test could not be written against the parent revision: the
+/// summary had no field to assert on, so it lands with its fix.
+#[test]
+fn summary_exposes_the_per_peck_ratio_the_gate_decides_on() {
+    let d = op(DrillCycle::Peck(22.0), 3.0, 25.0, 300.0);
+    let samples = emit_drill_samples(ToolpathId(0), &d);
+    let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+    let gate_observed = gates(&d).peck_adequacy.observed();
+    assert!(
+        (summary.per_peck_max_dtd - gate_observed).abs() < 1e-9,
+        "R-6: the summary's per-peck ratio ({}) must be the same number \
+         the gate decides on ({gate_observed}) — one implementation, not two",
+        summary.per_peck_max_dtd
+    );
+    assert!(
+        !summary.peck_pattern_adequate,
+        "fixture must be the inadequate one, so the boolean and the ratio \
+         behind it can be compared"
+    );
+    // And the published ratio must be the CUTTING geometry, not a max
+    // over sample descents — the two agreed before R-2 and must not be
+    // allowed to silently re-converge on the sample stream.
+    assert!(
+        (summary.per_peck_max_dtd - 22.0 / 3.0).abs() < 1e-9,
+        "expected min(peck, depth)/d = 7.33, got {}",
+        summary.per_peck_max_dtd
+    );
+}
+
 // ── R-7 · evidence that points at sample 0 ────────────────────────────
 
 /// Drill `Exceeds` diagnostics shipped

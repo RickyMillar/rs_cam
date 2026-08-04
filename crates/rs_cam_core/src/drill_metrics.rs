@@ -89,6 +89,16 @@ pub struct DrillToolpathSummary {
     pub dwell_time_s: f64,
     /// `top_z - bottom_z` for the deepest hole in the toolpath (mm).
     pub deepest_hole_mm: f64,
+    /// Index into [`DrillOp::holes`] of the hole `deepest_hole_mm` came
+    /// from — the hole every depth-derived gate verdict is about.
+    /// `None` when the toolpath has no hole with positive depth.
+    ///
+    /// R-7 (2026-08-04): drill exceedance diagnostics carried
+    /// `SampleRange { sample_start: 0, sample_end: 0 }`, pointing the
+    /// operator at a real sample that had nothing to do with the
+    /// finding. Drill samples are keyed `(hole_id, peck_index)`, so the
+    /// identity was available and simply never carried.
+    pub deepest_hole_index: Option<usize>,
     /// `deepest_hole_mm / tool_diameter` — total-hole ratio, kept for
     /// cycle-time / geometry reads.
     pub max_depth_to_diameter: f64,
@@ -99,6 +109,21 @@ pub struct DrillToolpathSummary {
     pub chip_welding_dtd: f64,
     /// Material-aware classification — see [`ChipWeldingRisk`].
     pub chip_welding_risk: ChipWeldingRisk,
+    /// Worst single-peck depth-to-diameter ratio in this toolpath —
+    /// the number [`peck_pattern_adequate`] and the peck-adequacy gate
+    /// are both decided from.
+    ///
+    /// R-6 (2026-08-04): this quantity was computed twice and exposed
+    /// zero times. `build_drill_toolpath_summary` derived it from the
+    /// sample stream and stored only the boolean;
+    /// `tool_load::drill_gates::evaluate_peck_adequacy` re-derived it
+    /// from the config. Two implementations of one number, and no
+    /// consumer could display the number behind the boolean. There is
+    /// now one implementation — [`per_peck_max_depth_to_diameter_of`] —
+    /// and the gate reads this field.
+    ///
+    /// [`peck_pattern_adequate`]: DrillToolpathSummary::peck_pattern_adequate
+    pub per_peck_max_dtd: f64,
     /// True when the cycle's peck depth (or absence of pecking, for
     /// `Simple` / `Dwell`) keeps each single peck under the material's safe
     /// per-peck depth-to-diameter ratio. False indicates the operator
@@ -128,21 +153,68 @@ pub fn per_peck_max_depth_to_diameter(material: &Material) -> f64 {
     material.drill_per_peck_max_dtd()
 }
 
+/// The worst single-peck depth-to-diameter ratio a cycle produces.
+///
+/// **The** implementation (R-6). `Simple` / `Dwell` cut the whole hole
+/// in one descent, so the worst peck is the hole; `Peck` / `ChipBreak`
+/// step by the nominal peck depth, except where the hole is shallower
+/// than one peck, in which case the single descent is the hole.
+///
+/// Deliberately closed-form over the *cutting* geometry rather than a
+/// max over the emitted sample stream. The two agreed exactly before
+/// R-2, because the first modelled descent was `min(peck, total)`; they
+/// would stop agreeing the moment the sample stream models the
+/// emitter's R-plane rooting, where the first descent carries air. A
+/// gate must not read a number that moves when air is added above the
+/// stock, so it reads this.
+pub fn per_peck_max_depth_to_diameter_of(
+    cycle: DrillCycle,
+    deepest_hole_mm: f64,
+    diameter_mm: f64,
+) -> f64 {
+    let diameter = diameter_mm.max(f64::MIN_POSITIVE);
+    match cycle {
+        DrillCycle::Simple | DrillCycle::Dwell(_) => deepest_hole_mm / diameter,
+        DrillCycle::Peck(peck) | DrillCycle::ChipBreak(peck, _) => {
+            peck.min(deepest_hole_mm) / diameter
+        }
+    }
+}
+
 /// Per-peck chip-evacuation heuristic.
 ///
 /// `cum_depth_to_diameter`: cumulative descent / diameter after this peck.
-/// `cycle`: the drill cycle in effect — `Peck` evacuates fully between
-/// pecks (high score regardless of depth); `Simple` / `Dwell` keep all
-/// chips in the flutes (score falls off with depth); `ChipBreak` breaks
-/// chips but doesn't clear them (intermediate falloff).
+/// `per_peck_dtd`: this peck's own cutting descent / diameter — what
+/// the flutes have to clear in one go before the next retract.
+/// `cycle`: the drill cycle in effect — `Peck` retracts fully between
+/// pecks, so the flutes only ever hold one peck's worth of chips;
+/// `Simple` / `Dwell` keep all chips in the flutes (score falls off with
+/// total depth); `ChipBreak` breaks chips but doesn't clear them
+/// (intermediate falloff).
+///
+/// R-5 (2026-08-04): the `Peck` arm returned a hard **1.0 regardless of
+/// peck depth**, so `avg_chip_evacuation_score` was 1.00 for any pecking
+/// op — including one whose peck was 7.33×D. Narrate printed, two lines
+/// apart, `peck pattern INADEQUATE — reduce peck depth` and
+/// `mean chip-evacuation score 1.00 (0=trapped, 1=cleared)`. A score
+/// whose own legend says 1 = cleared, beside a verdict saying evacuation
+/// is inadequate, because the arm ignored the depth the verdict was
+/// about.
+///
+/// The arm now falls off with the **per-peck** ratio on the same
+/// exponential the other arms use against the material's chip-welding
+/// threshold — the retract earns the credit, the peck depth spends it.
+/// A shallow peck still scores ~1.0, which is what makes the credit
+/// meaningful.
 pub fn chip_evacuation_score(
     cum_depth_to_diameter: f64,
+    per_peck_dtd: f64,
     cycle: DrillCycle,
     material: &Material,
 ) -> f64 {
     let threshold = chip_welding_threshold(material);
     match cycle {
-        DrillCycle::Peck(_) => 1.0,
+        DrillCycle::Peck(_) => (-per_peck_dtd.max(0.0) / threshold).exp().clamp(0.0, 1.0),
         DrillCycle::Simple | DrillCycle::Dwell(_) => {
             (-cum_depth_to_diameter / threshold).exp().clamp(0.0, 1.0)
         }
@@ -184,7 +256,8 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
         for (i, descent) in descents.into_iter().enumerate() {
             cum += descent;
             let dtd = cum / diameter;
-            let score = chip_evacuation_score(dtd, drill_op.cycle, &drill_op.material);
+            let score =
+                chip_evacuation_score(dtd, descent / diameter, drill_op.cycle, &drill_op.material);
             let dwell_s = if i + 1 == n { dwell_each } else { 0.0 };
             samples.push(DrillSample {
                 toolpath_id,
@@ -214,10 +287,12 @@ pub fn build_drill_toolpath_summary(
     let diameter = drill_op.tool_diameter_mm.max(f64::MIN_POSITIVE);
     let feed = drill_op.feed_rate_mm_min.max(f64::MIN_POSITIVE);
     let mut deepest = 0.0_f64;
-    for hole in &drill_op.holes {
+    let mut deepest_hole_index: Option<usize> = None;
+    for (idx, hole) in drill_op.holes.iter().enumerate() {
         let d = (hole.top_z - hole.bottom_z).max(0.0);
         if d > deepest {
             deepest = d;
+            deepest_hole_index = Some(idx);
         }
     }
     let max_dtd = deepest / diameter;
@@ -226,17 +301,16 @@ pub fn build_drill_toolpath_summary(
     let mut dwell_time_s = 0.0;
     let mut weighted_score_sum = 0.0;
     let mut peck_count = 0usize;
-    let mut per_peck_max_dtd = 0.0_f64;
+    // R-6: one implementation, closed-form over the cutting geometry —
+    // NOT a max over the sample stream, whose descents model the
+    // emitter and therefore include air above the stock.
+    let per_peck_max_dtd = per_peck_max_depth_to_diameter_of(drill_op.cycle, deepest, diameter);
     for s in samples {
         let peck_time = (s.descent_mm / feed) * 60.0;
         feed_time_s += peck_time;
         dwell_time_s += s.dwell_s;
         weighted_score_sum += s.chip_evacuation_score * peck_time;
         peck_count += 1;
-        let single_dtd = s.descent_mm / diameter;
-        if single_dtd > per_peck_max_dtd {
-            per_peck_max_dtd = single_dtd;
-        }
     }
     let avg_chip_evacuation_score = if feed_time_s > 0.0 {
         weighted_score_sum / feed_time_s
@@ -258,9 +332,11 @@ pub fn build_drill_toolpath_summary(
         feed_time_s,
         dwell_time_s,
         deepest_hole_mm: deepest,
+        deepest_hole_index,
         max_depth_to_diameter: max_dtd,
         chip_welding_dtd: effective_welding_dtd,
         chip_welding_risk,
+        per_peck_max_dtd,
         peck_pattern_adequate,
         avg_chip_evacuation_score,
     }

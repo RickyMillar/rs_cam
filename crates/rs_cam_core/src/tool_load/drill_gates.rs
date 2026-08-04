@@ -102,6 +102,16 @@ pub struct DrillGatesVerdict {
     /// burning) and "feed too fast" (cutter breakage) without needing
     /// vendor-LUT data.
     pub plunge_feed: DrillGateOutcome,
+    /// Index into `DrillOp::holes` of the hole the two depth-derived
+    /// verdicts (chip welding, peck adequacy) are about — both key off
+    /// the deepest hole. `None` when no hole has positive depth.
+    ///
+    /// R-7: carried so a diagnostic can name the offending hole instead
+    /// of fabricating a sample range. The plunge-feed verdict is
+    /// hole-independent (`feed / diameter`) and is deliberately not
+    /// attributed to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worst_hole_id: Option<usize>,
 }
 
 /// Thin convenience wrapper around
@@ -119,6 +129,7 @@ pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGate
         chip_welding: evaluate_chip_welding(summary, &drill_op.material),
         peck_adequacy: evaluate_peck_adequacy(drill_op, summary),
         plunge_feed: evaluate_plunge_feed(drill_op),
+        worst_hole_id: summary.deepest_hole_index,
     }
 }
 
@@ -161,20 +172,15 @@ fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) ->
 
 fn evaluate_peck_adequacy(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGateOutcome {
     let threshold = per_peck_max_depth_to_diameter(&drill_op.material);
-    let diameter = drill_op.tool_diameter_mm.max(f64::MIN_POSITIVE);
-    // Reconstruct the worst single-peck D/d from cycle + total depth. For
-    // Simple / Dwell that's the whole hole; for Peck / ChipBreak it's the
-    // nominal peck depth (or the clamped final peck if smaller).
-    let peak_peck_dtd = match drill_op.cycle {
-        crate::drill::DrillCycle::Simple | crate::drill::DrillCycle::Dwell(_) => {
-            summary.deepest_hole_mm / diameter
-        }
-        crate::drill::DrillCycle::Peck(peck) | crate::drill::DrillCycle::ChipBreak(peck, _) => {
-            // Nominal peck depth wins unless every hole is shallower than peck —
-            // in which case the deepest single peck equals the full hole.
-            peck.min(summary.deepest_hole_mm) / diameter
-        }
-    };
+    // R-6: read the number the summary published rather than
+    // re-deriving it here. Pre-fix this gate recomputed the worst
+    // single-peck D/d from `cycle` + `deepest_hole_mm` while
+    // `build_drill_toolpath_summary` computed the same quantity from
+    // the sample stream and stored only a boolean — two
+    // implementations of one number, neither visible to a consumer.
+    // `drill_metrics::per_peck_max_depth_to_diameter_of` is now the
+    // single implementation and this reads its result.
+    let peak_peck_dtd = summary.per_peck_max_dtd;
     // One-sided gate: `t` really is the bound that decides both arms,
     // so `threshold` needs no correction here. It carries its band for
     // uniformity (R-3) — this gate has no advisory tier at all, which

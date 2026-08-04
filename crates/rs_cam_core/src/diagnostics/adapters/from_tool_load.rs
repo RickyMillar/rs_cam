@@ -71,11 +71,9 @@ pub fn diagnostics_from_load_verdict(verdict: &ToolpathLoadVerdict) -> Vec<Diagn
     }
 
     if let Some(drill) = verdict.drill_gates.as_ref() {
-        out.extend(drill_gates_to_diagnostics(
-            verdict.toolpath_id,
-            drill,
-            &scope,
-        ));
+        // The toolpath identity rides on `scope`; drill diagnostics
+        // carry no per-sample evidence to attribute (R-7).
+        out.extend(drill_gates_to_diagnostics(drill, &scope));
     }
 
     out
@@ -544,35 +542,33 @@ fn deflection_supersedes() -> Vec<DiagnosticId> {
 
 // ── drill gates ─────────────────────────────────────────────────────
 
-fn drill_gates_to_diagnostics(
-    tp_id: ToolpathId,
-    drill: &DrillGatesVerdict,
-    scope: &Scope,
-) -> Vec<Diagnostic> {
+fn drill_gates_to_diagnostics(drill: &DrillGatesVerdict, scope: &Scope) -> Vec<Diagnostic> {
     vec![
         drill_gate_to_diagnostic(
             ids::DRILL_CHIP_WELDING,
             "Chip welding (D/d)",
             &drill.chip_welding,
             scope.clone(),
-            tp_id,
             "ratio",
+            drill.worst_hole_id,
         ),
         drill_gate_to_diagnostic(
             ids::DRILL_PECK_ADEQUACY,
             "Peck adequacy (peck/D)",
             &drill.peck_adequacy,
             scope.clone(),
-            tp_id,
             "ratio",
+            drill.worst_hole_id,
         ),
         drill_gate_to_diagnostic(
             ids::DRILL_PLUNGE_FEED,
             "Plunge feed envelope",
             &drill.plunge_feed,
             scope.clone(),
-            tp_id,
             "mm/min per mm Ø",
+            // Hole-independent by construction (`feed / diameter`) —
+            // attributing it to a hole would be a second fabrication.
+            None,
         ),
     ]
 }
@@ -654,9 +650,17 @@ fn drill_gate_to_diagnostic(
     label: &str,
     outcome: &DrillGateOutcome,
     scope: Scope,
-    tp_id: ToolpathId,
     unit: &str,
+    worst_hole_id: Option<usize>,
 ) -> Diagnostic {
+    // R-7: drill gates are closed-form ratios over config + material.
+    // The honest evidence for one is the comparison itself, plus the
+    // hole it is about when the verdict is depth-derived — never a
+    // `SampleRange`, which asserts a location in the sample stream that
+    // was not measured.
+    let hole_clause = worst_hole_id
+        .map(|h| format!(" [deepest hole #{}]", h + 1))
+        .unwrap_or_default();
     match outcome {
         DrillGateOutcome::Within {
             observed,
@@ -706,23 +710,24 @@ fn drill_gate_to_diagnostic(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
-            message: drill_exceedance_message(
-                label,
-                *observed,
-                *threshold,
-                *severity,
-                *envelope_lo,
-                *envelope_hi,
-                unit,
+            message: format!(
+                "{}{hole_clause}",
+                drill_exceedance_message(
+                    label,
+                    *observed,
+                    *threshold,
+                    *severity,
+                    *envelope_lo,
+                    *envelope_hi,
+                    unit,
+                )
             ),
-            evidence: Some(DiagnosticEvidence::SampleRange {
-                toolpath_id: tp_id,
-                sample_start: 0,
-                sample_end: 0,
-                observed: *observed,
-                threshold: Some(*threshold),
+            evidence: Some(DiagnosticEvidence::GeometryCompare {
+                lhs_label: label.to_owned(),
+                lhs_value: *observed,
+                rhs_label: "bound".to_owned(),
+                rhs_value: *threshold,
                 unit: unit.to_owned(),
-                locality: EvidenceLocality::default(),
             }),
             fix: None,
             supersedes: vec![],
