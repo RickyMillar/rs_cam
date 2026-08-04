@@ -5230,7 +5230,7 @@ expr = "doc * woc * feed_rate / 60000"
 ceiling = 0.20
 unit = "cm^3/s"
 severity_on_fail = "moderate"
-sources = ["fanuc_kc_table", "aluminum_machining_guide", "shapeoko_wiki"]
+sources = ["sumitomo_kc_table", "aluminum_machining_guide", "shapeoko_wiki"]
 
 [[cell.invariants]]
 name = "envelope_pocket_al_hobby"
