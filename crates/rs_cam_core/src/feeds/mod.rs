@@ -835,9 +835,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // chip evacuation, not surface speed, is the limiting factor. The
     // wood-drill band tightens as diameter grows — small drills (≤6 mm)
     // tolerate 8-14k, mid drills (≤10 mm) cap around 10k, and big
-    // drills (>10 mm) cap around 6-8k (Onsrud wood-drilling bulletin,
-    // Vectric default drill cycle, FPL Wood Handbook Ch.19, Sandvik
-    // Coromant rotating-tools handbook). The milling SFM formula above
+    // drills (>10 mm) cap around 6-8k. **Citation corrected
+    // 2026-08-04 (W6 audit §6.1/§6.2): these tiers are REPO-AUTHORED.**
+    // The "Onsrud wood-drilling bulletin" cited here was not located;
+    // the retrieved Onsrud drill chart publishes exactly one wood-drill
+    // RPM, the 4,500 gang-drill footnote, and no band. The FPL Wood
+    // Handbook has no drilling chapter (Ch.19 is *Specialty
+    // Treatments*). The tiers remain defensible as hobby-router
+    // spindle practice and are held, not moved. The milling SFM formula above
     // would push small-D drills past 16k where chipload starves and
     // the cut rubs/burns. Pre-2026-06-02 drill ops routed through
     // `Pocket` family and inherited milling RPM (audit finding: "Drill
@@ -859,14 +864,44 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // fallback path matches the LUT path's band semantics. For Flat /
     // Ball / Bull this collapses to nominal D.
     //
-    // Drill ops get a multiplier on top because drill chipload bands
-    // are ~2.5× higher than milling chipload at similar D (drilling
-    // cuts at full radius and needs feed-per-rev to chip-evacuate; the
-    // milling formula was calibrated against partial-engagement cuts).
-    // Without this, a softwood drill at 12k RPM × milling-formula
-    // chipload lands at ~0.03 mm/rev, well below the 0.05-0.15 mm/rev
-    // drilling band — classic rubbing-and-burning recipe (audit
-    // finding: implied chipload 0.026 on Wanaka Pin Drill / Holes).
+    // Drill ops get a multiplier on top: drilling cuts at full radius
+    // and needs feed-per-rev to chip-evacuate, while the milling
+    // formula was calibrated against partial-engagement cuts.
+    //
+    // **The value is REPO-AUTHORED and UNSOURCED. Its former
+    // justification was arithmetically false and has been removed**
+    // (W6 audit, 2026-08-04, §5 / item R-11 —
+    // `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`).
+    // What that comment claimed, and what is actually true:
+    //   - Claimed "milling-formula chipload lands at ~0.03 mm/rev" for
+    //     a softwood drill. With the shipped `ChipLoadFormula::default`
+    //     (k0 0.024, p 0.61, q 1.26) and GenericSoftwood the
+    //     un-multiplied formula reads 0.094 mm/rev at Ø3, 0.143 at Ø6
+    //     and 0.219 at Ø12 — 3.1×–7.3× the quoted figure, and already
+    //     inside or above the "0.05–0.15 mm/rev" band the comment said
+    //     it fell below.
+    //   - Claimed the audit observation "implied chipload 0.026 on
+    //     Wanaka Pin Drill / Holes". Real, but it was the *stored* op's
+    //     feed/(rpm × flutes) AFTER the milling plunge baseline
+    //     clobbered the drill-tuned feed — the mechanism Step 9c fixed
+    //     separately (see the plunge-rate aliasing below). This factor
+    //     and that clamp were two corrections for one defect.
+    //   - Claimed drill bands are "~2.5× higher" than milling. No
+    //     retrievable source states any such ratio. Against the one
+    //     primary wood-drill chart located (Onsrud series 72-000 Wood,
+    //     `https://www.onsrud.com/images/Drill.pdf`, retrieved
+    //     2026-08-04) the factor implied is 4.76–5.41 — i.e. 2.5 is
+    //     directionally right and roughly HALF the size that chart
+    //     implies, not an over-correction.
+    //
+    // The value is deliberately HELD at Checkpoint D 2026-08-04. Two
+    // reasons, both stated: the Onsrud wood row is footnoted "gang
+    // drills run at 4,500 RPM and 150 IPM" (a rigid multi-spindle
+    // production borer, not a hobby router with collet stickout), so
+    // it cannot be used as a recalibration target on its own; and this
+    // is the one drill number that rides the formula chipload, so it
+    // sequences behind the gate-side unit conversion (T3.1) and the
+    // optimizer-target re-derivation. Do not move it before then.
     const DRILL_CHIPLOAD_MULTIPLIER: f64 = 2.5;
     let milling_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
     let formula_chipload = if input.operation == OperationFamily::Drill {
