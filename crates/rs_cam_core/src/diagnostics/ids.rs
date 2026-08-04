@@ -14,6 +14,14 @@
 pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high";
 pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low";
 pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within";
+/// T1.5 (census P-10) — the commanded feed-per-tooth sits above the
+/// matched vendor row's published maximum. This is the ONLY same-unit,
+/// same-stage comparison the chipload pipeline can make (both sides are
+/// a linear advance per tooth); it was computed at `narrate.rs:426` and
+/// discarded. Info-tier per the standing B6 advisory ruling — it reports
+/// a commanded value against an authored band, and does not observe the
+/// cut.
+pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band";
 pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds";
 pub const LOAD_POWER_WITHIN: &str = "load.power.within";
 pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds";
@@ -163,6 +171,7 @@ pub const ALL: &[&str] = &[
     LOAD_CHIPLOAD_HIGH,
     LOAD_CHIPLOAD_LOW,
     LOAD_CHIPLOAD_WITHIN,
+    LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND,
     LOAD_POWER_EXCEEDS,
     LOAD_POWER_WITHIN,
     LOAD_DEFLECTION_EXCEEDS,
