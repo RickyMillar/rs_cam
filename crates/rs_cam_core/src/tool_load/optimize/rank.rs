@@ -202,6 +202,7 @@ mod tests {
                 deflection,
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             },
             stage: SearchStage::Refined,
             reconciled_cycle_time_s: None,

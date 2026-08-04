@@ -449,9 +449,14 @@ pub fn evaluate_toolpath(
             crate::drill_metrics::build_drill_toolpath_summary(ctx.toolpath_id, drill_op, &samples);
         drill_gates::evaluate(drill_op, &summary)
     });
+    // T1.1 — the chipload gate hands back its stage-labelled record
+    // alongside the verdict. Assembled here, at the single
+    // `ToolpathLoadVerdict` assembly site, so every report path (gcode
+    // export, optimizer, GUI) sees the same one.
+    let (chipload_verdict, feed_explanation) = chipload::evaluate_with_explanation(ctx, &env);
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id,
-        chipload: chipload::evaluate(ctx, &env),
+        chipload: chipload_verdict,
         power: power::evaluate(ctx, &env),
         deflection: deflection::evaluate(ctx, &env),
         drill_gates,
@@ -461,6 +466,7 @@ pub fn evaluate_toolpath(
         // the one that diverged when gcode re-assembled verdicts inline.
         modulation_summary: sim_trace
             .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id).cloned()),
+        feed_explanation,
     }
 }
 

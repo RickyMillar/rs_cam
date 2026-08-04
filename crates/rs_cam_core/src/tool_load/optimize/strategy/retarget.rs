@@ -322,6 +322,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -346,6 +347,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
@@ -372,6 +374,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 2);
@@ -399,6 +402,7 @@ mod tests {
             deflection: exceeds_deflection(0.32),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 3);
@@ -429,6 +433,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -455,6 +460,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert!(strat.candidates(&view, &burn).is_empty());
 
@@ -465,6 +471,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
@@ -495,6 +502,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);

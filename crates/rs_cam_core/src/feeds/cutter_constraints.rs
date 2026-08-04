@@ -556,6 +556,7 @@ mod tests {
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         }
     }
 

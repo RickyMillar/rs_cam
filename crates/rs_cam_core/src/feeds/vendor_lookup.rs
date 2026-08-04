@@ -83,6 +83,16 @@ pub struct LookupResult {
     /// than ±40 % (`|ln(diameter × hardness)| > ln(1.4)`). Verdicts derived
     /// from this row must be reported with `Confidence::Approximate`.
     pub is_extrapolated: bool,
+    /// The matched observation's OWN pass role, which is **not**
+    /// necessarily the one that was queried: pass role is a scoring
+    /// term (`score_observation`, −25 points), not a hard filter, so a
+    /// `semi_finish` row can and does win a `finish` query. Carried so
+    /// a report can disclose that substitution instead of presenting
+    /// the row as if it answered the question asked.
+    ///
+    /// Census T1.6 (2026-08-04); whether pass role should become a hard
+    /// filter is Checkpoint B item T4.4 and is **not** decided here.
+    pub row_pass_role: crate::feeds::vendor_lut::LutPassRole,
 }
 
 /// Diameter + hardness-scored LUT lookup for non-angle-aware cutters.
@@ -372,6 +382,7 @@ fn build_result(
         chipload_diameter_scale: diameter_scale,
         chipload_hardness_scale: hardness_scale,
         is_extrapolated,
+        row_pass_role: obs.pass_role,
     }
 }
 

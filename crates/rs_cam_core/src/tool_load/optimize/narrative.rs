@@ -1049,6 +1049,7 @@ mod tests {
             deflection: defl,
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1346,6 +1347,7 @@ mod tests {
                 deflection: within_deflection(0.030),
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             },
             None,
         );
