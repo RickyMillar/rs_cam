@@ -585,7 +585,15 @@ fn draw_project_section(
                 SimulationIssueKind::RapidCollision,
                 SimulationIssueKind::HolderCollision,
                 SimulationIssueKind::Hotspot,
+                SimulationIssueKind::Annotation,
             ];
+            // R-4 (census §3.5 D3): `Annotation` was in NEITHER list, so
+            // generation-time debug annotations reached this panel and were
+            // silently dropped — the one issue kind with no home. It is a
+            // curated, generator-authored note, so it belongs with the
+            // must-address cluster's neighbours rather than beside the
+            // per-run tallies; it is listed last there so it cannot outrank
+            // a collision.
             let kinds_info = [
                 SimulationIssueKind::LowEngagement,
                 SimulationIssueKind::AirCut,
@@ -689,8 +697,16 @@ fn draw_project_section(
                             (
                                 SimulationIssueKind::LowEngagement,
                                 low_eng_pct,
-                                "Time spent cutting at very light radial engagement \
-                                 (< 2% of diameter).",
+                                // R-3 (census §3.5 D2): this said "< 2% of
+                                // diameter", which is the AIR-CUT trigger,
+                                // not this one. Low engagement is the band
+                                // ABOVE it — `0.02 <= radial_woc < 0.10`
+                                // (`simulation_cut.rs`). As written, the two
+                                // informational rows described the same
+                                // threshold and neither described this row.
+                                "Time spent cutting at light radial engagement \
+                                 (2-10% of diameter). Below 2% counts as air cut, \
+                                 on the row above.",
                                 "",
                             ),
                         ];
@@ -704,8 +720,11 @@ fn draw_project_section(
                                 egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
                             )
                             .on_hover_text(format!(
-                                "{what}\n{} flagged samples — a per-sample emission \
-                                 tally, not a defect count.{denominator_note}",
+                                "{what}\n{} flagged SAMPLES — a per-sample emission \
+                                 tally, not a defect count, and not the same \
+                                 population as the coalesced issue RUNS the MCP and \
+                                 CLI report (on the census fixture the two differed \
+                                 by 43x).{denominator_note}",
                                 count_for(kind)
                             ));
                             ui.end_row();
@@ -1071,33 +1090,27 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             // hard-fail framing for tools where the LUT row is
             // significantly stretched.
             let is_extrapolated = matches!(status.confidence, Some(Confidence::Approximate(_)));
-            let reason_str = match (status.kind, burn_risk) {
-                (CriterionKind::Chipload, true) => {
-                    "chipload below vendor min — rubbing/burning risk. \
-                     At low chipload the tool edge rubs instead of cutting; \
-                     friction generates heat that glazes and burns the wood. \
-                     Increase feed rate or reduce RPM."
-                }
-                (CriterionKind::Chipload, false) => {
-                    "chipload above vendor max — breakage risk. \
-                     Reduce feed rate or increase RPM."
-                }
-                (CriterionKind::Power, _) => "predicted spindle power exceeds machine limit",
-                (CriterionKind::Deflection, _) => {
-                    "tip deflection exceeds 200 µm — finish/breakage risk"
-                }
-                (CriterionKind::DrillChipWelding, _) => {
-                    "hole depth-to-diameter exceeds the material chip-welding \
-                     threshold — switch to a peck cycle or reduce depth"
-                }
-                (CriterionKind::DrillPeckAdequacy, _) => {
-                    "single peck too deep for the material — reduce peck depth"
-                }
-                (CriterionKind::DrillPlungeFeed, _) => {
-                    "plunge feed above the material envelope — breakage risk. \
-                     Reduce feed rate."
-                }
-            };
+            // R-4 (2026-08-04): the remedy now comes from the verdict
+            // that tripped, not from a match on `kind` here. A drill
+            // remedy depends on the CYCLE — "reduce peck depth" is
+            // wrong for a `Simple` hole, "switch to a peck cycle" is
+            // wrong for an op already pecking — and the cycle is known
+            // in core and was never carried this far. The fallback is
+            // the chipload side split, which is the one distinction
+            // this site legitimately makes on its own.
+            let reason_str = status
+                .exceeded
+                .as_ref()
+                .map(|e| e.remedy)
+                .unwrap_or(match (status.kind, burn_risk) {
+                    (CriterionKind::Chipload, true) => {
+                        "chipload below vendor min — rubbing/burning risk. \
+                         At low chipload the tool edge rubs instead of cutting; \
+                         friction generates heat that glazes and burns the wood. \
+                         Increase feed rate or reduce RPM."
+                    }
+                    _ => "load criterion exceeded",
+                });
             let conf = match status.confidence {
                 Some(Confidence::Validated) | None => "validated".to_owned(),
                 Some(Confidence::Approximate(why)) => format!("approximate: {why}"),

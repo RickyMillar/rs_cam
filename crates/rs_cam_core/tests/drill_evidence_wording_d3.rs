@@ -34,7 +34,8 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::Material;
 use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGatesVerdict};
 use rs_cam_core::tool_load::verdict::{
-    ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict, UnmodeledReason,
+    ChiploadVerdict, CriterionKind, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict,
+    UnmodeledReason,
 };
 
 /// The R-plane every shipped drill op actually gets:
@@ -222,6 +223,84 @@ fn within_chip_welding_displays_the_boundary_that_decided_it() {
         }
         other => panic!("fixture must read Within, got {other:?}"),
     }
+}
+
+// ── R-4 · the remedy that contradicts the cycle ───────────────────────
+
+/// F1 (2026-06-10) fixed a chip-welding verdict whose remedy said
+/// "switch to a peck cycle" on an op that was already pecking. The
+/// peck-adequacy gate has the mirror image and it was never fixed:
+/// `evaluate_peck_adequacy` trips `Simple` / `Dwell` cycles on the
+/// **whole-hole** ratio, and the operator was then told, verbatim
+/// (`viz/src/ui/sim_diagnostics.rs:1094` at 0afb51b):
+///
+/// ```text
+/// single peck too deep for the material — reduce peck depth
+/// ```
+///
+/// on a cycle that has no peck depth to reduce. Fixture D3: Ø4 × 30 mm
+/// softwood `Simple` → 7.5 > 6.0 → Exceeds(Critical).
+///
+/// Lands with its fix: the remedy did not exist in core at 0afb51b —
+/// it was a `match` on `CriterionKind` inside the GUI, which cannot see
+/// the cycle.
+#[test]
+fn peck_adequacy_remedy_must_not_say_reduce_peck_depth_on_a_simple_cycle() {
+    let d = op(DrillCycle::Simple, 4.0, 30.0, 300.0);
+    let v = verdict_with(gates(&d));
+    let exceeded = v.exceeded_criteria();
+    let peck = exceeded
+        .iter()
+        .find(|c| c.kind == CriterionKind::DrillPeckAdequacy)
+        .expect("fixture must trip peck adequacy");
+    assert!(
+        !peck.remedy.contains("reduce peck depth"),
+        "R-4: a Simple cycle has no peck depth to reduce. Got `{}`",
+        peck.remedy
+    );
+    assert!(
+        peck.remedy.contains("peck cycle"),
+        "R-4: the remedy for an un-pecked over-deep hole should name the \
+         peck cycle as the fix. Got `{}`",
+        peck.remedy
+    );
+}
+
+/// The symmetric half. Post-F1, chip welding still reaches `High` on a
+/// cycle that is already pecking — peck/D ≥ t is reachable inside GUI
+/// bounds (Ø1 tool, 10 mm peck → 10.0 > 8.0). The unconditional remedy
+/// then told a pecking op to start pecking, and both remedies are
+/// reachable on one hole, so the operator could be handed two
+/// contradictory instructions about one number.
+#[test]
+fn chip_welding_remedy_must_not_tell_a_pecking_op_to_start_pecking() {
+    let d = op(DrillCycle::Peck(10.0), 1.0, 20.0, 300.0);
+    let v = verdict_with(gates(&d));
+    let exceeded = v.exceeded_criteria();
+    let cw = exceeded
+        .iter()
+        .find(|c| c.kind == CriterionKind::DrillChipWelding)
+        .expect("fixture must trip chip welding at Critical");
+    assert!(
+        !cw.remedy.contains("switch to a peck cycle"),
+        "R-4: this op IS pecking — that is F1's defect, on the original \
+         gate this time. Got `{}`",
+        cw.remedy
+    );
+    // And the un-pecked case must keep the advice that is still right.
+    let simple = op(DrillCycle::Simple, 4.0, 40.0, 300.0);
+    let sv = verdict_with(gates(&simple));
+    let sc = sv.exceeded_criteria();
+    let scw = sc
+        .iter()
+        .find(|c| c.kind == CriterionKind::DrillChipWelding)
+        .expect("Simple fixture must trip chip welding");
+    assert!(
+        scw.remedy.contains("switch to a peck cycle"),
+        "a Simple cycle over the chip-welding threshold should still be \
+         told to peck. Got `{}`",
+        scw.remedy
+    );
 }
 
 // ── R-6 · the ratio computed twice and exposed zero times ────────────

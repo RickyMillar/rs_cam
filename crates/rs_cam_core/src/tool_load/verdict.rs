@@ -267,15 +267,15 @@ impl ToolpathLoadVerdict {
         if let Some(d) = &self.drill_gates {
             all.push(
                 d.chip_welding
-                    .as_criterion_status(CriterionKind::DrillChipWelding),
+                    .as_criterion_status(CriterionKind::DrillChipWelding, d.cycle),
             );
             all.push(
                 d.peck_adequacy
-                    .as_criterion_status(CriterionKind::DrillPeckAdequacy),
+                    .as_criterion_status(CriterionKind::DrillPeckAdequacy, d.cycle),
             );
             all.push(
                 d.plunge_feed
-                    .as_criterion_status(CriterionKind::DrillPlungeFeed),
+                    .as_criterion_status(CriterionKind::DrillPlungeFeed, d.cycle),
             );
         }
         all
@@ -1046,6 +1046,22 @@ pub struct ExceededCriterion {
     pub kind: CriterionKind,
     pub label: &'static str,
     pub reason_label: &'static str,
+    /// What the operator should actually do about it.
+    ///
+    /// R-4 (2026-08-04): this used to live in the GUI, keyed on
+    /// `CriterionKind` alone, which is not enough information to word a
+    /// drill remedy — the advice depends on the CYCLE. The
+    /// peck-adequacy remedy said "reduce peck depth" on `Simple` and
+    /// `Dwell` cycles, which have no peck depth (F1 fixed exactly this
+    /// defect on the sibling gate in 2026-06 and left this one), and
+    /// the chip-welding remedy said "switch to a peck cycle"
+    /// unconditionally, including on ops that were already pecking.
+    /// Both are reachable on a single hole, so an operator could be
+    /// given two contradictory instructions about one number.
+    ///
+    /// Lives here so the decision is made once, beside the cycle that
+    /// determines it, rather than in each consumer.
+    pub remedy: &'static str,
 }
 
 impl ExceededCriterion {
@@ -1054,6 +1070,10 @@ impl ExceededCriterion {
             kind: CriterionKind::Chipload,
             label: "chipload",
             reason_label: "burn risk",
+            remedy: "chipload below vendor min — rubbing/burning risk. At low \
+                     chipload the tool edge rubs instead of cutting; friction \
+                     generates heat that glazes and burns the wood. Increase \
+                     feed rate or reduce RPM.",
         }
     }
 
@@ -1062,6 +1082,8 @@ impl ExceededCriterion {
             kind: CriterionKind::Chipload,
             label: "chipload",
             reason_label: "breakage",
+            remedy: "chipload above vendor max — breakage risk. Reduce feed \
+                     rate or increase RPM.",
         }
     }
 
@@ -1070,6 +1092,7 @@ impl ExceededCriterion {
             kind: CriterionKind::Power,
             label: "power",
             reason_label: "spindle power",
+            remedy: "predicted spindle power exceeds machine limit",
         }
     }
 
@@ -1078,22 +1101,49 @@ impl ExceededCriterion {
             kind: CriterionKind::Deflection,
             label: "deflection",
             reason_label: "stiffness",
+            remedy: "tip deflection exceeds 200 µm — finish/breakage risk",
         }
     }
 
-    pub fn drill_chip_welding() -> Self {
+    /// R-4: on a cycle that is already pecking, "switch to a peck
+    /// cycle" is not advice — it is a description of the op. What is
+    /// left to change is the peck depth or the hole itself.
+    pub fn drill_chip_welding(cycle: crate::tool_load::drill_gates::DrillCycleKind) -> Self {
         Self {
             kind: CriterionKind::DrillChipWelding,
             label: "chip welding",
             reason_label: "deep hole",
+            remedy: if cycle.is_pecking() {
+                "hole depth-to-diameter exceeds the material chip-welding \
+                 threshold even with the evacuation credit this cycle earns — \
+                 reduce peck depth, or use a shorter hole or a larger drill."
+            } else {
+                "hole depth-to-diameter exceeds the material chip-welding \
+                 threshold — switch to a peck cycle or reduce depth"
+            },
         }
     }
 
-    pub fn drill_peck_adequacy() -> Self {
+    /// R-4 — F1's defect, on the sibling gate. This trips `Simple` and
+    /// `Dwell` cycles on the WHOLE-HOLE ratio (a Ø4 × 30 mm softwood
+    /// `Simple` hole reads 7.5 > 6.0), and the shipped remedy then told
+    /// the operator to "reduce peck depth" on a cycle that has none.
+    pub fn drill_peck_adequacy(cycle: crate::tool_load::drill_gates::DrillCycleKind) -> Self {
         Self {
             kind: CriterionKind::DrillPeckAdequacy,
             label: "peck depth",
-            reason_label: "peck too deep",
+            reason_label: if cycle.is_pecking() {
+                "peck too deep"
+            } else {
+                "no peck cycle"
+            },
+            remedy: if cycle.is_pecking() {
+                "single peck too deep for the material — reduce peck depth"
+            } else {
+                "this cycle cuts the hole in one descent, and the hole is too \
+                 deep for the material to clear chips that way — switch to a \
+                 peck cycle (there is no peck depth to reduce)"
+            },
         }
     }
 
@@ -1102,6 +1152,8 @@ impl ExceededCriterion {
             kind: CriterionKind::DrillPlungeFeed,
             label: "plunge feed",
             reason_label: "breakage",
+            remedy: "plunge feed above the material envelope — breakage risk. \
+                     Reduce feed rate.",
         }
     }
 
@@ -1344,6 +1396,7 @@ mod tests {
                 plunge_feed: plunge,
                 // R-7: no hole attribution in a hand-built verdict.
                 worst_hole_id: None,
+                cycle: crate::tool_load::drill_gates::DrillCycleKind::Peck,
             }),
             modulation_summary: None,
             feed_explanation: None,
