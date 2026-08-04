@@ -13,11 +13,15 @@ Method: per-concept `rg` sweeps over `crates/*/src` (production only; `#[cfg(tes
 bodies excluded by brace-matched module range), then per-site reading of the
 enclosing function. Where a claim rests on arithmetic rather than a read, the
 arithmetic is shown inline with its inputs so it can be checked without a build.
-**No Cargo command was run** — the single machine-wide slot was held by W1
-(`standing_material_channel_am9`, then `-p rs_cam_core --lib`) plus a foreign
-`spec-index` job for the whole of this wave. Everything marked
-`NOT RUN — slot unavailable` in §9 is a claim this document deliberately does
-not make.
+**Revision 2, 2026-08-04.** The first issue ran no Cargo command — the single
+machine-wide slot was held throughout by W1 and a foreign `spec-index` job — and
+recorded six checks as `NOT RUN — slot unavailable` rather than guessing them.
+The slot then eased and **all six were executed**; §9 now carries the measured
+results with a `CONFIRMED` / `CONTRADICTED` verdict against each static
+prediction. Three predictions were contradicted; the corrections are inline and
+banner-marked, and the superseded text is quoted rather than deleted. The
+executable half of the reconciliation is
+`crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs` (commit `5f7bb25`).
 
 ---
 
@@ -56,9 +60,12 @@ gate verdict.
    **arc-mean chip thickness at the LUT row's nominal engagement arc, evaluated
    at the kinematically-predicted feed**; the band it is compared against is a
    vendor **feed-per-tooth**. On the live row those differ by
-   `1 / mean_chip_factor(0.586 rad) = 12.4×` before the −87 % predicted-feed
-   factor is applied. The reconciliation closes to 0.24 % (§4.3). **This is a
-   unit mismatch inside one comparison, not four independent bugs.**
+   `1 / mean_chip_factor(0.5862 rad) = 12.43×` before the −87 % predicted-feed
+   factor is applied. The reconciliation closes **exactly** through shipped code
+   (§9 item 1). **This is a unit mismatch inside one comparison, not four
+   independent bugs.** Measured over all 65 `ae`-bearing rows in the embedded
+   LUT that convention gap is **2.4×–40.4×, median 10.9×** — row-dependent, not
+   a constant (§9.2).
 2. **Nobody surfaces that the same operation ran at 7.8× the band maximum on
    the axis the vendor actually publishes.** Narration nominal 0.0714 mm/tooth
    vs band max 0.00916 mm/tooth is a *valid* comparison (same unit, same stage)
@@ -424,7 +431,7 @@ Matched LUT row (recoverable from N4, see §4.2):
 | **N1 vs N4** | ✅ both advance/tooth | ✅ commanded vs authored | **VALID** | the op runs at **7.8× the band max**. Nothing surfaces it. |
 | **N2 vs N4** | ✅ | ✅ | **VALID** | the floor (0.0250) is **2.73× the band max** (0.00916). Two policies contradict. |
 | **N2pre vs N1** | ✅ | ✅ | **VALID** | 0.0044 vs 0.0714 = **16×**. Suggest's recompute and the persisted value are far apart — expected if the op was hand-tuned or optimizer-written, but nothing labels which. |
-| **N3 vs N4** | ❌ chip vs advance | ✅ | **INVALID as printed** | biased low by `mean_chip_factor(lut_arc)`; on this row **12.4×** |
+| **N3 vs N4** | ❌ chip vs advance | ✅ | **INVALID as printed** | biased low by `mean_chip_factor(lut_arc)`; on this row **12.43×** (measured, §9) |
 | **N3 vs N1** | ❌ | ❌ commanded vs achieved | **INVALID as printed** | differs by the arc factor **and** the −87 % predicted-feed factor; neither is disclosed |
 | **N1 vs N2pre** vs **N3** | — | — | — | three of the four are the *same* physical quantity at different stages; one is a different quantity |
 
@@ -437,26 +444,34 @@ LUT nominal arc          chipload.rs:127 lut_nominal_arc_rad
   ae_mid = (0.08 + 0.45)/2                       = 0.2650 mm
   ratio  = 1 − 2·ae_mid / row_diameter
          = 1 − 2·0.2650 / 3.175                  = 0.83307
-  arc    = acos(0.83307)                         = 0.58565 rad
+  arc    = acos(0.83307)                         = 0.5861602 rad
 
 LUT arc factor           chipload.rs:109 mean_chip_factor
-  h_max  = sin(0.58565)                          = 0.55271
-  f_lut  = (2·0.55271 / 0.58565)·(1 − cos(0.29283))
-         = 1.88752 · 0.042565                    = 0.080335
+  h_max  = sin(0.5861602)                        = 0.5530385
+  f_lut  = (2·0.5530385 / 0.5861602)·(1 − cos(0.2930801))
+         = 1.8869876 · 0.0426519                 = 0.0804824
 
 Predicted-feed factor    modulation_summary, ORCHESTRATION_LOG.md:1300
   median_feed_delta_pct  = −87.18 %              → 0.12820
 
 Predicted N3
   N1 · f_lut · feed_factor
-  = 0.0714 · 0.080335 · 0.12820                  = 0.0007353 mm
+  = 0.0714 · 0.0804824 · 0.12820                 = 0.00073669 mm
 
-Recorded N3                                      = 0.0007371 mm
-Residual                                         = +0.24 %
+Recorded N3                                      = 0.00073713 mm
+Residual                                         = +0.06 %
 ```
 
-The 0.24 % residual is inside the rounding of the quoted N1 (4 d.p.) and the
-median-vs-mean difference between the two statistics. **N3 is fully explained.**
+The 0.06 % residual is inside the rounding of the quoted N1 (4 d.p.) and
+`median_feed_delta_pct` (2 d.p.). **N3 is fully explained.**
+
+> **Corrected 2026-08-04 (executed).** The first issue of this document gave
+> `arc = 0.58565`, `f_lut = 0.080335` and a `+0.24 %` residual. Those were a
+> hand-arithmetic slip on my part, not a property of the code: the correct
+> values are `0.5861602` and `0.0804824`, and the residual against the logged
+> live value is `+0.06 %`. Driven through shipped code at the fixture's exact
+> stage values the identity is **exact** — residual `+0.0000 %` — see §9 item 1
+> and `tests/feed_explanation_snapshot_b3.rs`.
 
 Note what the algebra shows: after D9's renormalisation the sample's own
 engagement arc **cancels out** —
@@ -565,11 +580,11 @@ value from the same code; **≈** = same concept, different code or input;
 
 | id | divergence | mechanism | risk |
 |---|---|---|---|
-| **P-1** | gate's observed unit ≠ band unit | C-13 / §4 | **HIGH** — every chipload verdict on an `ae`-bearing row is biased low by `1/f_lut` (4.3× on a typical roughing row, 12.4× on the live finish row) |
+| **P-1** | gate's observed unit ≠ band unit | C-13 / §4 | **HIGH** — every chipload verdict on an `ae`-bearing row is biased low by `1/f_lut`. Measured over all **65** `ae`-bearing rows in the embedded LUT: `f_lut` spans **0.0247–0.4117**, median **0.0919** ⇒ a bias of **2.4×–40.4×**, median **10.9×** (§9 item 6) |
 | **P-2** | Suggest's power ceiling omits `safety_factor` | `feeds/mod.rs:1233` vs `power.rs:214` | **HIGH** — Suggest can ship a feed the gate calls `Exceeds`; ~1.28× on its own, ~1.58× with the width difference |
 | **P-3** | Suggest and gate can match different LUT rows | C-4 | **HIGH** — the band Suggest aims at is not the band the verdict cites |
 | **P-4** | rubbing floor vs LUT band on small tools | C-12 | **HIGH** — clamps *up* past the band max on Ø≲2 mm tools |
-| **P-5** | `recompute_chipload_bounds_for_dpp` divides by the chip-thinning diameter | C-5 | **MEDIUM** — up to 2× band error on ball tools at shallow DOC, only after a DPP mutation |
+| **P-5** | `recompute_chipload_bounds_for_dpp` divides by the chip-thinning diameter | C-5 | **LOW (corrected 2026-08-04)** — measured over a DOC sweep on every cutter shape, flat/ball/bull/tapered-ball **never** diverge; only a truncated-tip V-bit does, and only on Adaptive3d, the sole op that sets `dpp_mutated`. The census's original "2× on ball tools" was wrong. §9 item 5 |
 | **P-6** | power's radial width ≠ commanded `ae` | C-8 | **MEDIUM** — ~1.23× at 30 % radial, direction is conservative on the gate side |
 | **P-7** | deflection reads `axial_engagement_mm`, others read `axial_doc_mm` | C-9 | **MEDIUM** — undeclared; if the two fields ever diverge, three gates split silently |
 | **P-8** | chipload's steady-state filter tests commanded feed, metric uses predicted | C-10 | **MEDIUM** — on a −87 % kinematically-throttled path the filter is measuring the wrong feed |
@@ -630,12 +645,23 @@ cells `tests/literature_matrix/cells.toml`, freshness engine
 | `_litmatrix_ipe_janka_scaling.rs` | chipload (hardness) | relative only: `ipe_fpt < oak_fpt`; anchor 1290 | `vendor_lookup::hardness_scale_factor:306`, `family_default_janka:291` | `fpl_wood_handbook` |
 | `_litmatrix_scallop_refuses_flat.rs` | *geometry, not feeds* | typed refusal | `validate_tool_for_operation` (`feeds/mod.rs:656`) | `shaw_metal_cutting` |
 
-**Freshness state at 2026-08-04:** the matrix clock defaults to `2026-06-03`
-(`freshness.rs:30`), at which every source reads *fresh*. Against the real date
-all 32 sources are **14–15 months old ⇒ `warn`**, none yet `stale` (flips
-2026-12-03). Stale is warn-only unless `LIT_MATRIX_DECAY_FAIL=1`
-(`freshness.rs:358`, `runner.rs:73`). **NOT RUN — slot unavailable**: the
-freshness report and citation audit were not executed this wave.
+**Freshness state at 2026-08-04 — EXECUTED, and the census's static reading was
+WRONG.** `LIT_MATRIX_TODAY=2026-08-04 cargo test -p rs_cam_core --test
+literature_matrix -- --nocapture`: **19 passed, 0 failed**, report
+`{"fresh": 32, "warn": 0, "stale": 0, "today": "2026-08-04"}`, and the citation
+audit prints *"all citations resolve to known sources"*.
+
+The first issue of this document predicted "all 32 sources are 14–15 months old
+⇒ `warn`". That was wrong: it confused the sources' `accessed_on` dates with
+their `last_verified` dates. Every source in `sources.toml` carries
+`last_verified = 2026-06-03`, so at the real date all 32 read **2 months old,
+`fresh`**, and nothing is due for `/refresh-lit-matrix` on age grounds. Warn
+begins at 12 months (`freshness.rs:31`) and stale at 18 (`:32`), i.e.
+2027-06-03 and 2027-12-03. Stale remains warn-only unless
+`LIT_MATRIX_DECAY_FAIL=1` (`freshness.rs:358`, `runner.rs:73`).
+
+**This removes an obligation the census had invented, and leaves the real gaps
+below untouched** — freshness was never the problem; *coverage* is (gap 1).
 
 **Gaps the census must record, not fix:**
 
@@ -683,7 +709,7 @@ Tiers 2–4 are Checkpoint B material.** Nothing here is a decision.
 | T1.4 | Fix **F-3**: correct the `effective_diameter_mm` doc comment to name the diameter actually used, and document the shadowing in `calculate` | `feeds/mod.rs:443-449, 783, 1168` | docs-only; paired with T2.1 |
 | T1.5 | Surface **N1 vs N4** — narration and diagnostics compare commanded fpt to the matched band and say so | `narrate.rs:426-427`, `from_tool_load.rs` | fixture with commanded fpt 5× band max must produce a visible line; today it produces none |
 | T1.6 | Record the LUT scale factors and the `pass_role` mismatch on every verdict, not only extrapolated ones | `chipload.rs:473-488`, `verdict.rs` | a 0.99×-scaled row and a 0.38×-scaled row must be distinguishable in the report |
-| T1.7 | Add the **test-only feed-explanation snapshot assembler** the plan authorises, driving the B3 fixture end-to-end | `crates/rs_cam_core/tests/` | reproduces §4.3's arithmetic from live code rather than by hand |
+| T1.7 | ~~Add~~ **DONE 2026-08-04, commit `5f7bb25`** — the test-only feed-explanation snapshot assembler, driving the B3 fixture end-to-end | `crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs` | 7 tests green; reproduces §4.3 from live code at residual +0.0000 % and carries the §9 items 1, 2, 5 measurements |
 
 ### Tier 2 — structural parity (same numbers, one owner)
 
@@ -705,12 +731,12 @@ Each row lists what would move and by how much, from the analysis above.
 
 | id | proposal | who moves, by how much | evidence needed |
 |---|---|---|---|
-| T3.1 | **Resolve F-1**: either convert the gate's observation to advance-per-tooth (`÷ mean_chip_factor(lut_arc)`), or convert the band to arc-mean chip (`× f_lut`), or keep both and compare in a declared third unit | every chipload verdict on an `ae`-bearing row moves by `f_lut` — **4.3×** on a typical Amana roughing row (`f_lut ≈ 0.233`), **12.4×** on the live scallop row. Direction depends on which side is converted. Verdicts will flip. | a primary source for the vendor convention; the B3 fixture; a full re-run of `predicted_feed_gates_f035`, `sim_chipload_invariant`, `wanaka_e2e_chipload_gate`, `chipload_formula_calibration`, CLI smoke baselines |
+| T3.1 | **Resolve F-1**: either convert the gate's observation to advance-per-tooth (`÷ mean_chip_factor(lut_arc)`), or convert the band to arc-mean chip (`× f_lut`), or keep both and compare in a declared third unit | every chipload verdict on an `ae`-bearing row moves by `f_lut` — **4.27×** on a typical Amana hardwood pocket-roughing row (`f_lut = 0.23413`, measured), **12.43×** on the live scallop row, and **2.4×–40.4×** across the 65 `ae`-bearing rows (§9 item 6). Direction depends on which side is converted. Verdicts will flip. | a primary source for the vendor convention; the B3 fixture; a full re-run of `predicted_feed_gates_f035`, `sim_chipload_invariant`, `chipload_formula_calibration` and CLI smoke baselines (**not** `wanaka_e2e_chipload_gate` — it is `#[ignore]`d and is not a live gate, §9 item 4) |
 | T3.2 | **Resolve F-2**: apply `machine.safety_factor` to Suggest's available power | Suggest's power-limit factor tightens by `1/safety_factor` ≈ **1.25–1.33×**; feeds drop only where `power_limited` already fires | smoke baselines; `flat_12mm_adaptive2d_oak_power` cell |
 | T3.3 | **Resolve C-12**: make the rubbing floor diameter-aware (or band-aware: `max(floor(D), band_min)`), or subordinate it to the band | affects tools where `0.025 > band_max` — on the live row the clamp target drops from 0.0250 to ≤0.00916, a **2.7× feed reduction** on that op | `_litmatrix_rubbing_floor_clamp`, `_litmatrix_rpm_only_lut_chipload`, `flat_3mm_pocket_softwood` (already at 0.020); a primary source for a diameter-dependent floor |
 | T3.4 | **Resolve C-6/C-7**: pick one diameter and one hardness law | LUT bands move by `s^(1−0.61)` — **1.46×** at the live 0.38 scale, larger at extreme scales | primary sources; `_litmatrix_ipe_janka_scaling` re-pin |
 | T3.5 | **Resolve C-13/F-5**: replace `arc_fit_ratio_for_op` with a projection of the gate's actual mechanism (`f_lut × expected_feed_ratio`) | only Adaptive3d and DropCutter feed-up currently fires; magnitude depends on T3.1 | recalibration against a post-T3.1 gate, on ≥2 fixtures |
-| T3.6 | **Resolve P-5**: use the LUT-semantics diameter in `recompute_chipload_bounds_for_dpp` | up to **2×** band change on ball tools at shallow DOC after a DPP mutation | targeted fixture; Suggest smoke |
+| T3.6 | **Resolve P-5**: use the LUT-semantics diameter in `recompute_chipload_bounds_for_dpp` | **Adaptive3d + truncated-tip V-bit only** (measured, §9 item 5); no ball/bull/flat/tapered case exists. Demoted from tier 3 to a tier-2 hygiene fix — the shadowed binding and false doc comment stay worth removing, the number does not move on any other geometry | `feed_explanation_snapshot_b3::the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry` |
 | T3.7 | **Resolve P-8/P-9**: one declared steady-state population across the three gates, keyed on the same feed the metric uses | peaks may move on kinematically-throttled paths | `lead_in_out_feed_rates_f040`, `adaptive_feed_modulation_pipeline_f036b` |
 | T3.8 | **Resolve P-6**: one declared radial-width definition for power | ≈**1.23×** at 30 % radial | `flat_12mm_adaptive2d_oak_power` |
 | T3.9 | **Resolve P-16**: one feed ceiling for Suggest and the optimizer | optimizer proposals above the cutting ceiling disappear | optimizer fixtures |
@@ -729,31 +755,92 @@ Each row lists what would move and by how much, from the analysis above.
 
 **Ordering constraint.** T3.1 must precede T3.3, T3.5 and every drill
 recalibration in M2, because it changes the axis those thresholds are expressed
-on. T1.7 must precede T3.1, because a hand-checked arithmetic reconciliation is
-not evidence a gate change can be re-measured against.
+on. T1.7 had to precede T3.1 — a hand-checked arithmetic reconciliation is not
+evidence a gate change can be re-measured against — and **is now satisfied**
+(`5f7bb25`), so T3.1 is unblocked on the instrument side and waits only on the
+Checkpoint B ruling.
 
 ---
 
-## 9. What could not be verified without the Cargo slot
+## 9. Verification — executed 2026-08-04
 
-The slot was held for the whole wave (W1 `standing_material_channel_am9`, then
-`cargo test -p rs_cam_core --lib`, plus a foreign `spec-index` job). Per plan
-§2 rule 10 this wave ran **zero** Cargo commands. The following are therefore
-**NOT RUN — slot unavailable**, and no output for them is asserted anywhere
-above:
+The first issue of this document ran **zero** Cargo commands: the single
+machine-wide slot was held throughout by W1 and a foreign `spec-index` job, and
+six checks were recorded as `NOT RUN — slot unavailable` rather than guessed.
+The slot then eased. **All six have now been executed.** Each row records the
+census's static prediction, the measured result, and a `CONFIRMED` /
+`CONTRADICTED` verdict.
 
-| # | what | intended command |
-|---|---|---|
-| 1 | Live re-derivation of §4.3 from shipped code rather than by hand | the T1.7 snapshot assembler, `cargo test -p rs_cam_core --test <new>` |
-| 2 | `mean_chip_factor(0.58565) = 0.080335` confirmed against `chip_geometry` rather than against `chipload.rs:109`'s mirror | `cargo test -p rs_cam_core --lib tool_load::chipload::` |
-| 3 | Literature-matrix freshness report and citation audit at the real date | `LIT_MATRIX_TODAY=2026-08-04 cargo test -p rs_cam_core --test literature_matrix` |
-| 4 | Current green/red state of `predicted_feed_gates_f035`, `chipload_advisory_disclosure_h4`, `sim_chipload_invariant`, `chipload_formula_calibration`, `wanaka_e2e_chipload_gate`, `tapered_width_model_parity_c3` | per-test `cargo test -p rs_cam_core --test <name>` |
-| 5 | Whether the Ball-nose P-5 divergence is reachable in a shipped configuration (needs a DPP-mutating axial-envelope pass on a ball tool) | targeted fixture |
-| 6 | The exact live `f_lut` for the *roughing* rows (the 0.233 figure is quoted from `chipload.rs:108`'s own docstring, not measured) | `--lib` unit probe |
+Executed at HEAD with `2823d71` + `8285497` applied; the assembler landed as
+`5f7bb25` (`crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs`).
 
-Known reds inherited and **not** attributable to this wave: three
-`adaptive3d` `--lib` tests and `wanaka_suggest_baseline` (environmental, plan
-§2 rule 9).
+| # | check | static prediction | executed result | verdict |
+|---|---|---|---|---|
+| 1 | §4.3 identity re-derived through shipped code | residual ≈ +0.24 % | **residual +0.0000 %** at the fixture's exact stage values; **+0.06 %** against the logged live N3 | **CONFIRMED, and stronger** — the +0.24 % was my hand-arithmetic slip, not code behaviour (§4.3 banner) |
+| 2 | `mean_chip_factor` vs `chip_geometry` | mirror assumed exact | **exact across 10 arcs, max abs Δ < 1e-12**; the two anchors are the closed forms `2/π` and `(4/π)(1−√2/2)` | **CONFIRMED** |
+| 3 | litmatrix freshness + citation audit at the real date | "all 32 sources 14–15 months old ⇒ `warn`" | **19 passed, 0 failed**; `{"fresh": 32, "warn": 0, "stale": 0}`; *"all citations resolve to known sources"* | **CONTRADICTED** — every source carries `last_verified = 2026-06-03`, i.e. 2 months old. The census confused `accessed_on` with `last_verified`. See §7 |
+| 4 | the six feeds sentries | unknown | **20 passed, 0 failed, 1 ignored.** `chipload_advisory_disclosure_h4` 5/5, `chipload_formula_calibration` 3/3, `predicted_feed_gates_f035` 4/4, `sim_chipload_invariant` 3/3, `tapered_width_model_parity_c3` 5/5. `wanaka_e2e_chipload_gate` is **`#[ignore]`d** (`:52`, *"blocked on O3 helix-descent + O4 burn-risk edge filter"*) — it is not a live gate and §8's T3.1 must not count it as one | **PARTIALLY CONTRADICTED** — the census listed six sentries; only five run |
+| 5 | P-5 reachability | "up to 2× band error **on ball tools** at shallow DOC" | over a 120-step DOC sweep driven through `feeds::calculate`: **flat, ball, bull and tapered-ball never diverge** (identical derate at every DOC). **Only a truncated-tip V-bit diverges** — worst \|Δscale\| **0.4589** at 0.10 mm DOC, on a 20° Ø6 bit with a 1.0 mm tip flat | **CONTRADICTED** — see below |
+| 6 | roughing-row `f_lut` | "≈ 0.233, quoted from a docstring" | `amana-flat-hardwood-pocket-6000-2f` ⇒ **0.23413**; the f035 fixture's arc ⇒ 0.23384. Across **all 65** `ae`-bearing rows in the embedded LUT: **0.0247 – 0.4117**, median **0.0919** | **CONFIRMED, and widened** — see below |
+
+### 9.1 Item 5 — why the ball-nose claim was wrong
+
+The census reasoned from the shadowed `effective_d` binding in
+`feeds::calculate` (`:783` LUT semantics, `:1168` chip-thinning semantics) that
+the two DOC-derate denominators could straddle the 1.0 ratio on a ball nose.
+They cannot, and the geometry says why: for a ball in its spherical region the
+chip-thinning diameter is `2√(ap(D−ap))`, so `ratio₃ > 1` would require
+`ap > 0.8·D` — but the spherical region ends at `ap = D/2`. Above `D/2` the two
+diameters are *identical*. The same argument closes bull-nose at its corner
+radius. Tapered-ball delegates to the LUT-semantics function outright (C3), and
+flat is `D` on both sides.
+
+The one shape that *can* diverge is a **truncated-tip V-bit**, because
+`VBitEndmill::width_at_height` (`tool/vbit.rs:145-149`) ignores `tip_diameter`
+entirely while `feeds::geometry::vbit_width_at_depth` (`geometry.rs:282-289`)
+adds it. Combined with `pick_axial_envelope` setting `dpp_mutated` on
+**Adaptive3d alone** (`suggest.rs:1348-1356`; VCarve explicitly declines it at
+`:1360-1364`, the whole finish-3D family is warning-only at `:1374-1412`), and
+`REG_ADAPTIVE3D` carrying `ToolConstraintsDef::ANY_TOOL` (`catalog.rs:1768`,
+`supports_v_bit: true`), the reachable case is exactly **Adaptive3d + V-bit**.
+
+Two consequences, both recorded rather than fixed:
+
+- **P-5 drops from MEDIUM to LOW** and **T3.6 moves from tier 3 to tier 2**: the
+  shadowed binding and the false doc comment (F-3) are still worth removing, but
+  no operator-visible number moves on any geometry except Adaptive3d + V-bit.
+- **New, smaller finding (P-19).** The hint↔trait parity sentry
+  `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+  pins the V-bit case at `tip_diameter: 0.0` (`feeds/mod.rs:3534-3536`) — a
+  pointed bit, where the two agree by construction. **It has never covered a
+  truncated-tip V-bit.** Owner: this lane, as a tier-2 sentry widening.
+
+### 9.2 Item 6 — the unit gap is row-dependent, not a constant
+
+The census quoted a single "4.3× on a typical roughing row". Measured over
+every `ae`-bearing row in the embedded LUT, `f_lut = mean_chip_factor(row arc)`
+spans **0.0247** (`garr-a3-alum-finish-6000-flat-3f`) to **0.4117**
+(`amana-facing-softwood-face-22000-2f`), median **0.0919**.
+
+So the F-1 convention gap is **2.4× to 40.4×, median 10.9×, depending on which
+row matched** — it is not one number to divide out. Any T3.1 conversion is
+therefore a per-row correction whose magnitude varies by **16.6×** across the
+shipped LUT, which materially raises the blast radius of that decision and is
+new information for Checkpoint B.
+
+### 9.3 Still not run
+
+- **Nothing from the original six.** All executed.
+- Not attempted this wave, and not claimed anywhere: CLI smoke baselines, the
+  `param_sweep` families, and any full-project simulation. None is required to
+  settle a Checkpoint B question; all belong to the tier-3 re-measurement that
+  follows an approved T3.1.
+
+**Known-red state at time of execution:** the three `adaptive3d` `--lib` tests
+are **fixed** (W0 closed; `-p rs_cam_core --lib` reported 2232 passed / 0
+failed), so this document no longer treats them as known reds.
+`wanaka_suggest_baseline` remains environmental per plan §2 rule 9 and was not
+run.
 
 ---
 
@@ -776,11 +863,39 @@ tier 2 is blocked until item 1 is answered.
    `CREDITS.md`.
 7. **T4.4 — pass role: filter or score?**
 8. **T3.5 — retire or re-key `arc_fit_ratio_for_op`** once item 2 is settled.
-9. **Scope confirmation:** T1.1–T1.7 (report-only) may proceed under PR-7 now;
-   T2.1–T2.9 (structural, number-preserving) may proceed after item 1 is
-   answered even if items 2–8 remain open.
+9. **Scope confirmation:** T1.1–T1.6 (report-only) may proceed under PR-7 now
+   — T1.7 is already done (`5f7bb25`); T2.1–T2.9 (structural,
+   number-preserving) may proceed after item 1 is answered even if items 2–8
+   remain open.
 10. **Hand-off:** T4.7 drill questions transfer to M2/R5 rather than expanding
     this wave.
+
+### 10.1 What the 2026-08-04 execution changed in this list
+
+The measured results (§9) moved three things and added one. **No item was
+removed and no decision was pre-empted.**
+
+| change | effect on the decision list |
+|---|---|
+| Item 1 (T4.1) is **bigger** than the census framed it | the convention gap is **not one constant**. Across the 65 `ae`-bearing rows it spans 2.4×–40.4× (median 10.9×), so approving T3.1 approves a **per-row** correction varying by 16.6×, not a single divide. This raises the blast radius and is the most consequential new fact for the operator. §9.2 |
+| Item 1 is now **decidable on evidence** | the identity is executable (`5f7bb25`) rather than hand-checked, so whichever way T4.1 rules, the change can be re-measured against a green instrument. This was the stated blocker in the first issue. |
+| **T3.6 leaves the numeric tier** | P-5's ball-nose divergence does not exist. The reachable case is Adaptive3d + truncated-tip V-bit only, so T3.6 becomes a tier-2 hygiene fix and **no longer needs a Checkpoint B ruling**. One fewer numeric decision. §9.1 |
+| **Literature freshness is a non-issue** | all 32 sources are 2 months old and `fresh`; the census's "14–15 months ⇒ warn" was wrong. No `/refresh-lit-matrix` obligation attaches to items 1, 4 or 6 on **age** grounds. The *coverage* gap (invariant/anti-pattern citations unaudited, §7 gap 1) is untouched and still stands. §9 item 3 |
+| **New item — see below** | one sentry-coverage gap surfaced that the operator should see alongside item 1. |
+
+**New item 11 — sentry coverage, not a policy decision.** Two shipped sentries
+are weaker than the census assumed and should be widened as tier-2 work before
+any T3.1 re-measurement leans on them:
+
+- `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+  pins the V-bit arm at `tip_diameter: 0.0` (`feeds/mod.rs:3534-3536`), so the
+  hint↔trait parity claim has never been tested on a truncated-tip bit — the
+  exact geometry §9.1 shows can diverge.
+- `wanaka_e2e_chipload_gate` is `#[ignore]`d (`:52`) and is **not** a live gate,
+  so the six-sentry feeds set is really five. T3.1's re-measurement plan must
+  not count it.
+
+Neither needs an operator ruling; both need an owner, and this lane is it.
 
 ---
 
@@ -849,10 +964,14 @@ diagnostics/adapters/from_tool_load.rs:119  advisory disclosure (H4)
 simulation_cut.rs:88-96    Engagement chip-thickness doc comments  ◄── F-4
 ```
 
-## Appendix B — the B3 fixture, specified but not built
+## Appendix B — the B3 fixture, as specified and as built
+
+**Built 2026-08-04 as `crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs`
+(commit `5f7bb25`), 7 tests, all green.** The specification below is preserved
+as written; two points diverged in construction and both are noted at the end.
 
 Per plan §H1 acceptance gate 1 the fixture must emit four explicitly named
-values and explain every delta. Specification, for PR-7:
+values and explain every delta. Specification, as pre-registered:
 
 - **Tool:** tapered ball, tip Ø1.0, taper 5.26°, shank Ø6 (the wanaka geometry,
   synthesised in-test — **not** loaded from `wanaka.toml`).
@@ -870,3 +989,37 @@ values and explain every delta. Specification, for PR-7:
   stays `Within` with a `burn_advisory` and `row_id "vendor_lut_extrapolated"`.
 - **Non-vacuity:** with `predicted_feeds` empty the fixture must produce a
   materially different N3, proving the feed factor is live.
+
+**As built — every pre-registered bar met, and two deliberate divergences:**
+
+1. **Five stages, not four.** The spec said "four explicitly named values". The
+   assembler emits **five**: commanded fpt, LUT band **plus its provenance**
+   (row id, both scales, extrapolation flag, `ChipBoundsSource`), the LUT arc
+   factor, the achieved/commanded feed factor, and the gate observation. The
+   arc factor and the feed factor are the two multipliers that explain the
+   N1→N3 delta; naming the delta without naming its terms would have reproduced
+   the defect the fixture exists to expose.
+2. **`HardMaple` was confirmed, not assumed.** Janka 1450 exactly matches the
+   row, so the measured hardness scale is `×1.0000` and the diameter scale
+   `×0.3005` is the only one moving — the shape the live evidence string
+   described.
+3. **Two sample arcs, not one.** The spec's non-vacuity condition (empty
+   `predicted_feeds`) is `the_predicted_feed_factor_is_live`. A second,
+   stronger one was added: two fixtures differing **only** in sample arc, whose
+   raw chips differ 9.19×, must produce an identical observation. That is the
+   executable form of §4.3's "the sample arc cancels" claim, and it is the
+   single most load-bearing statement in the census.
+4. **Residual bar tightened by the result.** The spec asked for "within 1 %".
+   Measured: **+0.0000 %**. The assertion is left at 1 % so it tolerates future
+   legitimate change without silently passing on a broken identity.
+5. **Scope grew by one test.** `the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry`
+   is not a B3 test; it is §9 item 5. It lives here because it needs the same
+   cutter fixtures, and because leaving a contradicted census claim unmeasured
+   would have been worse than the file's slightly wider remit.
+
+**What the fixture deliberately does not assert:** which side of the unit gap
+is correct. `the_gate_observation_and_the_band_are_not_the_same_quantity`
+measures the ratio and prints *"Which side is correct is Checkpoint B item
+T4.1."* The plan's constraint on this assembler — *label stages rather than
+choose a winner in prose* — is a constraint on the assertions, not only on the
+comments, and it is honoured.
