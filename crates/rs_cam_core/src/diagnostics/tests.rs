@@ -418,6 +418,7 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
             },
             // R-7: no hole attribution in a hand-built verdict.
             worst_hole_id: None,
+            cycle: crate::tool_load::drill_gates::DrillCycleKind::Peck,
         }),
         modulation_summary: None,
         feed_explanation: None,

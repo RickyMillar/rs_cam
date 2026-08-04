@@ -74,6 +74,43 @@ pub enum DrillGateOutcome {
     },
 }
 
+/// Which drill cycle produced a verdict — enough to word a remedy
+/// correctly, without dragging the non-serializable
+/// [`crate::drill::DrillCycle`] (which carries f64 payloads) onto the
+/// wire.
+///
+/// R-4 (2026-08-04): remedies were keyed on `CriterionKind` alone, so
+/// the peck-adequacy remedy told a `Simple` cycle to "reduce peck
+/// depth" — on a cycle with no peck depth — and the chip-welding
+/// remedy told an already-pecking op to "switch to a peck cycle". Both
+/// are reachable on one hole, giving two contradictory instructions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrillCycleKind {
+    Simple,
+    Dwell,
+    Peck,
+    ChipBreak,
+}
+
+impl DrillCycleKind {
+    pub fn of(cycle: crate::drill::DrillCycle) -> Self {
+        match cycle {
+            crate::drill::DrillCycle::Simple => DrillCycleKind::Simple,
+            crate::drill::DrillCycle::Dwell(_) => DrillCycleKind::Dwell,
+            crate::drill::DrillCycle::Peck(_) => DrillCycleKind::Peck,
+            crate::drill::DrillCycle::ChipBreak(_, _) => DrillCycleKind::ChipBreak,
+        }
+    }
+
+    /// True when the cycle interrupts the descent to clear or break
+    /// chips — i.e. when "switch to a peck cycle" is not advice, it is
+    /// a description of what the op is already doing.
+    pub fn is_pecking(self) -> bool {
+        matches!(self, DrillCycleKind::Peck | DrillCycleKind::ChipBreak)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DrillGateSeverity {
@@ -112,6 +149,17 @@ pub struct DrillGatesVerdict {
     /// attributed to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worst_hole_id: Option<usize>,
+    /// The cycle these verdicts are about. Consumed only by remedy
+    /// wording (R-4) — no gate reads it.
+    #[serde(default = "default_cycle_kind")]
+    pub cycle: DrillCycleKind,
+}
+
+/// Pre-R-4 wire payloads carry no cycle. `Peck` is the safe default for
+/// a *remedy*: it suppresses "switch to a peck cycle" rather than
+/// asserting a cycle the payload never named.
+fn default_cycle_kind() -> DrillCycleKind {
+    DrillCycleKind::Peck
 }
 
 /// Thin convenience wrapper around
@@ -130,6 +178,7 @@ pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGate
         peck_adequacy: evaluate_peck_adequacy(drill_op, summary),
         plunge_feed: evaluate_plunge_feed(drill_op),
         worst_hole_id: summary.deepest_hole_index,
+        cycle: DrillCycleKind::of(drill_op.cycle),
     }
 }
 
@@ -281,6 +330,7 @@ impl DrillGateOutcome {
     pub fn as_criterion_status(
         &self,
         kind: crate::tool_load::verdict::CriterionKind,
+        cycle: DrillCycleKind,
     ) -> crate::tool_load::verdict::CriterionStatus<'_> {
         use crate::tool_load::verdict::{
             CriterionKind, CriterionStatus, ExceededCriterion, LoadState,
@@ -297,8 +347,10 @@ impl DrillGateOutcome {
             } => (
                 LoadState::Exceeds,
                 Some(match kind {
-                    CriterionKind::DrillChipWelding => ExceededCriterion::drill_chip_welding(),
-                    CriterionKind::DrillPeckAdequacy => ExceededCriterion::drill_peck_adequacy(),
+                    CriterionKind::DrillChipWelding => ExceededCriterion::drill_chip_welding(cycle),
+                    CriterionKind::DrillPeckAdequacy => {
+                        ExceededCriterion::drill_peck_adequacy(cycle)
+                    }
                     // The plunge-feed arm — and the fallback for any
                     // milling kind passed in error.
                     _ => ExceededCriterion::drill_plunge_feed(),
@@ -467,7 +519,7 @@ mod tests {
         let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
         let status = critical
             .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
         assert_eq!(status.state, LoadState::Exceeds);
         assert!(status.exceeded.is_some());
 
@@ -475,7 +527,7 @@ mod tests {
         let elevated = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 12.0, 100.0));
         let status = elevated
             .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
         assert_eq!(status.state, LoadState::Within);
         assert!(status.exceeded.is_none());
     }
