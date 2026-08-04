@@ -424,7 +424,23 @@ fn append_operation_context(output: &mut String, context: &ToolpathNarrationCont
         && flutes > 0
     {
         let chipload = feed / f64::from(rpm) / f64::from(flutes);
-        parts.push(format!("nominal chipload {:.4}mm/tooth", chipload));
+        // T1.2 — say which quantity this is. It is the COMMANDED linear
+        // advance per tooth, the axis vendor tables are published on. It
+        // is NOT the chipload gate's number, which is an arc-mean chip
+        // thickness at the matched row's nominal arc, evaluated at the
+        // kinematically-predicted feed — routinely two orders of
+        // magnitude smaller. Calling both "chipload" is what produced
+        // the four-disagreeing-numbers report of 2026-07-30.
+        //
+        // The comparison of this value against the matched vendor band
+        // (census T1.5) is a diagnostic, `load.chipload.commanded_above_band`
+        // — narration does not do LUT lookups, so it names the quantity
+        // and leaves the comparison to the channel that has the band.
+        parts.push(format!(
+            "commanded feed-per-tooth {:.4}mm/tooth (linear advance; \
+             not the chipload gate's chip-thickness reading)",
+            chipload
+        ));
     }
 
     if !parts.is_empty() {
