@@ -111,9 +111,9 @@ fn scallop_fingerprint() {
     let tp = scallop_toolpath(&mesh, &index, &t, &params);
     assert_eq!(
         fingerprint(&tp),
-        (2674, 7524232187494395883),
-        "scallop output moved; re-pinned at wave 14 when the ring cascade \
-         started carrying arcs — see the history table below"
+        (2820, 9136261611286019458),
+        "scallop output moved; re-pinned at F2 (2026-08-06) when the ring \
+         coverage guard became exact — see the history table below"
     );
 }
 
@@ -125,6 +125,24 @@ fn scallop_fingerprint() {
 // | `(1318, 4897619324930985607)` | HEAD `606b8d5`, before the H3 policy refactor | original capture |
 // | `(1423, 11432160290294522021)` | M4 phase C, `dde7a54` | +105 moves (+8.0%) |
 // | `(2674, 7524232187494395883)` | wave 14, arc-carrying cascade | **+1251 moves (+87.9%)** |
+// | `(2820, 9136261611286019458)` | F2 (D-16.1), 2026-08-06 | +146 moves (+5.5%) — the ring-lift coverage guard became EXACT |
+//
+// ## The F2 move, in one paragraph
+//
+// `ring_to_3d`'s keep predicate used to read the GENERATION heightmap's
+// per-cell `covered` mask with nearest-cell rounding. That cell is
+// `envelope_radius / 4` — six times the classification cell — so the guard
+// both admitted vertices up to half a cell OUTSIDE the footprint (D-16.1's
+// overcut) and rejected vertices up to half a cell INSIDE it (this ridge
+// fixture's case: the mask is sampled on a padded grid whose edge cells are
+// uncovered, so ring vertices near the mesh edge rounded to an uncovered
+// cell and were dropped). The guard is now
+// `dropcutter::point_is_over_mesh_xy` — a zero-radius spatial-index query
+// plus point-in-triangle, the same exact predicate the Shallow raster band
+// has always used. On this fixture the correction runs in the KEEP
+// direction: fewer spurious run splits near the edge, +146 emitted moves.
+// Off-footprint cut targets on the D-16.1 grooved fixture went 131 -> 0 in
+// the same change.
 //
 // ## Erratum — this pin was briefly wrong, and the wrong value is instructive
 //

@@ -751,36 +751,41 @@ pub struct ScallopStepoverTrace {
     pub sample_spread: Vec<(f64, f64, f64)>,
 }
 
-/// Whether `(x, y)` lands on a [`crate::slope::SurfaceHeightmap`] cell whose
-/// vertical ray actually hit the mesh (`SurfaceHeightmap::covered`).
-/// Mirrors `SlopeMap::world_to_cell`'s nearest-cell rounding so lookups
-/// resolve consistently with the sibling `slope_map` built from the same
-/// heightmap grid (both share `origin_x`/`origin_y`/`cell_size`/`rows`/`cols`).
-fn heightmap_covered_at_world(hm: &crate::slope::SurfaceHeightmap, x: f64, y: f64) -> bool {
-    let col_f = (x - hm.origin_x) / hm.cell_size;
-    let row_f = (y - hm.origin_y) / hm.cell_size;
-    if col_f < -0.5 || row_f < -0.5 {
-        return false;
-    }
-    let col = col_f.round();
-    let row = row_f.round();
-    if col < 0.0 || row < 0.0 || col >= hm.cols as f64 || row >= hm.rows as f64 {
-        return false;
-    }
-    // SAFETY: bounds checked above against hm.cols/hm.rows.
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let covered = hm.covered_at(row as usize, col as usize);
-    covered
+/// Whether `(x, y)` sits over real mesh surface, EXACTLY.
+///
+/// Delegates to [`crate::dropcutter::point_is_over_mesh_xy`] — a zero-radius
+/// spatial-index query plus point-in-triangle, the same predicate the Shallow
+/// raster band uses (`unified_finish.rs`, "the tool rides the edge and carves
+/// a trench around the part").
+///
+/// **Wave F2 / D-16.1.** This used to read the *generation* heightmap's
+/// per-cell `covered` mask with nearest-cell rounding. That mask answers for
+/// the nearest cell, and the generation cell is `envelope_radius / 4` —
+/// 0.75 mm on the reference tool, six times the 0.125 mm classification cell
+/// the bands are decided on. So the guard admitted ring vertices up to half a
+/// generation cell (**0.375 mm**) outside the true footprint, `point_drop_cutter`
+/// returned a rim-riding CL there, and the tip cut `r − √(r² − d²)` below the
+/// surface. Measured on `grooved_block(2.5, 70°, 1.2)`: 131 off-footprint
+/// cutting targets, worst run-off 0.3750 mm — the quantization bound on the
+/// nose (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2,
+/// §2.8). The guard was already the right idea; it was merely mis-quantized.
+///
+/// The mask is no longer consulted at all, so the heightmap's cell size no
+/// longer decides where a ring is allowed to cut — only where it is *sampled*
+/// (`RingLiftCtx::probe_step`, ring decimation spacing), which is what that
+/// grid is actually for.
+fn point_is_covered(ctx: &RingLiftCtx<'_>, x: f64, y: f64) -> bool {
+    crate::dropcutter::point_is_over_mesh_xy(x, y, ctx.mesh, ctx.index)
 }
 
 /// Lift a 2D polygon ring to 3D by drop-cutter Z queries, pairing each point
 /// with whether it sits over real mesh surface.
 ///
 /// The `bool` is `true` only when `point_drop_cutter` found a finite contact
-/// AND the surface heightmap's per-cell `covered` mask agrees the vertical
-/// ray at that XY actually passed through the mesh — `point_drop_cutter`
+/// AND [`point_is_covered`] — the exact point-in-triangle test — agrees the
+/// vertical ray at that XY actually passed through the mesh. `point_drop_cutter`
 /// alone can't tell that apart from cutter-radius rim contact just past a
-/// hole or the mesh edge (see `SurfaceHeightmap::covered`'s doc comment).
+/// hole or the mesh edge, and rim contact is an overcut, not a surface.
 ///
 /// Excluded (`false`) points still carry a Z (`min_z + stock_to_leave`) so
 /// the tuple is always well-formed, but callers must run rings through the
@@ -848,7 +853,6 @@ struct RingLiftCtx<'a> {
     mesh: &'a TriangleMesh,
     index: &'a SpatialIndex,
     cutter: &'a dyn MillingCutter,
-    heightmap: &'a crate::slope::SurfaceHeightmap,
     stock_to_leave: f64,
     min_z: f64,
     /// Max allowed gap between a straight feed chord and the true
@@ -908,7 +912,7 @@ fn ring_to_3d(ring: &[P2], ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
         .map(|p| {
             let cl = point_drop_cutter(p.x, p.y, ctx.mesh, ctx.index, ctx.cutter);
             let finite = cl.z.is_finite();
-            let kept = finite && heightmap_covered_at_world(ctx.heightmap, p.x, p.y);
+            let kept = finite && point_is_covered(ctx, p.x, p.y);
             let z = if finite {
                 cl.z + ctx.stock_to_leave
             } else {
@@ -1032,7 +1036,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
         let x = a.x + dx * t;
         let y = a.y + dy * t;
         let cl = point_drop_cutter(x, y, ctx.mesh, ctx.index, ctx.cutter);
-        if !cl.z.is_finite() || !heightmap_covered_at_world(ctx.heightmap, x, y) {
+        if !cl.z.is_finite() || !point_is_covered(ctx, x, y) {
             out.push((P3::new(x, y, ctx.min_z + ctx.stock_to_leave), false));
             return;
         }
@@ -1082,7 +1086,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
         // The clamp moved the point, so the surface height there is a
         // different query — never re-use the probe's answer for it.
         let cl = point_drop_cutter(wx, wy, ctx.mesh, ctx.index, ctx.cutter);
-        if !cl.z.is_finite() || !heightmap_covered_at_world(ctx.heightmap, wx, wy) {
+        if !cl.z.is_finite() || !point_is_covered(ctx, wx, wy) {
             out.push((P3::new(wx, wy, ctx.min_z + ctx.stock_to_leave), false));
             return;
         }
@@ -1212,7 +1216,6 @@ fn generate_scallop_rings_with_cancel(
         mesh,
         index,
         cutter,
-        heightmap,
         stock_to_leave,
         min_z,
         chord_tolerance,
@@ -3075,14 +3078,12 @@ mod tests {
         mesh: &'a TriangleMesh,
         si: &'a SpatialIndex,
         cutter: &'a BallEndmill,
-        heightmap: &'a crate::slope::SurfaceHeightmap,
         probe_step: f64,
     ) -> RingLiftCtx<'a> {
         RingLiftCtx {
             mesh,
             index: si,
             cutter,
-            heightmap,
             stock_to_leave: 0.0,
             min_z: mesh.bbox.min.z,
             chord_tolerance: 0.05,
@@ -3094,12 +3095,11 @@ mod tests {
     fn chord_refinement_lifts_path_over_sharp_ridge() {
         let (mesh, si) = make_ridge_mesh();
         let cutter = BallEndmill::new(1.0, 10.0);
-        let never = || false;
-        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
-            &mesh, &si, &cutter, 0.5, &never,
-        )
-        .unwrap();
-        let ctx = lift_ctx_for(&mesh, &si, &cutter, &surface.heightmap, 0.25);
+        // The ring-lift context no longer carries a heightmap (F2: the
+        // coverage guard is the exact point-in-triangle test), so this test
+        // no longer builds a finish surface just to hand one over — the
+        // probe step it actually needs is passed directly.
+        let ctx = lift_ctx_for(&mesh, &si, &cutter, 0.25);
 
         // Two exact surface points on the flats either side of the ridge —
         // pre-fix, the emitted chord between them cut straight through the
@@ -3147,12 +3147,11 @@ mod tests {
     fn chord_refinement_no_op_on_flat() {
         let (mesh, si) = make_flat_mesh();
         let cutter = ball_cutter();
-        let never = || false;
-        let surface = crate::finish_setup::build_finish_surface_with_cell_size_and_cancel(
-            &mesh, &si, &cutter, 1.0, &never,
-        )
-        .unwrap();
-        let ctx = lift_ctx_for(&mesh, &si, &cutter, &surface.heightmap, 0.5);
+        // The ring-lift context no longer carries a heightmap (F2: the
+        // coverage guard is the exact point-in-triangle test), so this test
+        // no longer builds a finish surface just to hand one over — the
+        // probe step it actually needs is passed directly.
+        let ctx = lift_ctx_for(&mesh, &si, &cutter, 0.5);
 
         let ring = vec![
             P2::new(-20.0, -20.0),
