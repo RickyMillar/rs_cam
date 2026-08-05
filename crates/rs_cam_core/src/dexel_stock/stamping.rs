@@ -184,9 +184,12 @@ const PERP_COVERAGE_GATE: f32 = 0.95;
 /// millimetres. A cell contributes to the perpendicular-extent measurement —
 /// and therefore to `radial_engagement`, to the engagement arc derived from
 /// it, and to everything downstream (`average_engagement`, `air_cut_time_s`
-/// and both its percentages, chip thickness, the chipload gate) — only if it
-/// held more than this much material above the cutter surface *before* the
-/// stamp.
+/// and both its percentages, and chip thickness) — only if it held more than
+/// this much material above the cutter surface *before* the stamp.
+///
+/// **The chipload gate is no longer on that downstream list** (2026-08-06):
+/// it observes advance per tooth, which is kinematic and does not read this
+/// floor. Chip thickness still does, and so does everything above.
 ///
 /// **This is a documented measurement limit, not a tunable.** Ruled at
 /// Checkpoint D (Q2/D-7, 2026-08-04) after

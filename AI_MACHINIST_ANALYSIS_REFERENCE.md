@@ -91,7 +91,7 @@ The cut trace captures per-sample metrics at ~mm intervals along every toolpath 
 | `engagement` | Full structured `Engagement` vector (radial WOC fraction, axial DOC fraction, arc radians, mean chip thickness) — see `Engagement` in `simulation_cut.rs:66-68` | struct |
 | `cut_kinematics` | `CutKinematics` classification of this move (lateral/arc/helix/plunge/…) | enum |
 | `in_transit_span` | True when the move sits in a transit-style span (Entry, LeadOut, LinkBridge, WaterlineCleanup, DressupArtifact); the dexel reading there reports `stock_top − cutter_z` over neighbouring stock, not steady-state engagement — extreme-value metrics (`peak_axial_doc_mm`, `peak_chipload_mm_per_tooth`) skip these samples | bool |
-| `chipload_mm_per_tooth` | Material removed per flute per revolution | mm |
+| `chipload_mm_per_tooth` | **Commanded advance per tooth** — `feed_rate / rpm / flutes`. It is a kinematic quantity, not a measured chip thickness; do not read it as "material removed per flute" | mm |
 | `mrr_mm3_s` | Material removal rate | mm³/s |
 | `removed_volume_est_mm3` | Cumulative volume removed | mm³ |
 | `is_cutting` | false = rapid/air move | bool |
@@ -121,7 +121,10 @@ The cut trace captures per-sample metrics at ~mm intervals along every toolpath 
 `metrics_not_applicable` means "no ENGAGEMENT metrics apply", not "no metrics at all." Drill ops (dexel polygon-to-material init can't see Z-only moves) produce their own metrics family instead:
 
 - `SimulationCutTrace::drill_summaries: Vec<DrillToolpathSummary>` — per-peck `DrillSample`, per-toolpath `DrillToolpathSummary` (peck adequacy, chip-welding risk, cycle time). Look up by `toolpath_id`, or use `SimulationCutTrace::drill_summary_for(toolpath_id)`.
-- `ToolpathLoadVerdict::drill_gates` (`crates/rs_cam_core/src/tool_load/drill_gates.rs:97-135`) — three gates: chip welding, peck adequacy, plunge feed sanity.
+- `ToolpathLoadVerdict::drill_gates` (`crates/rs_cam_core/src/tool_load/drill_gates.rs`) — three gates: chip welding, peck adequacy, plunge feed sanity. `DrillToolpathSummary::per_peck_max_dtd` publishes the ratio the peck gate reads, so the number and the verdict can be checked against each other.
+- The cycle model is rooted at the **R-plane**, matching what `drill.rs` actually emits, through one shared `drill::fed_descents`. On shipped defaults the first descent is entirely in air; before 2026-08-04 the summary rooted at the hole top and under-reported `peck_count` by 25% and cycle time by 41%. Invariant, sentried: **every gate reads cutting geometry, never fed distance** (`DrillSample::cutting_descent_mm` beside `descent_mm`).
+- **All three drill thresholds are repo-authored.** The cited Onsrud drill chart and the FPL Wood Handbook were both retrieved in 2026-08-04 and contain no peck or depth-to-diameter guidance for wood at all. Checkpoint D held the values and corrected the citations. Do not present them to an operator as vendor-backed.
+- **The gates divide by the tool's ENVELOPE radius** with a flat profile hardcoded, and `Drill` accepts any tool. On a tapered ball this overstates diameter by up to 14×, so all three read `Within` on an overloaded cutter — and two block export when they trip, so the failure mode is a silent pass. Ledgered to the radius programme.
 
 FEATURE_CATALOG.md's Drill row already documents this correctly; nothing here should contradict it.
 
@@ -395,7 +398,21 @@ Reference benchmarks for 3-axis wood router analysis.
 
 Drill toolpaths suppress both `average_engagement` and air-cut readings via `metrics_not_applicable` — see §2.1.
 
-### Chip Load (mm/tooth)
+### Chip Load — ADVANCE PER TOOTH (mm/tooth)
+
+**Read the axis before the numbers.** These bands, the vendor LUT's
+`chipload_min/max_mm_tooth`, and the shipped chipload gate all live on
+one axis: **advance per tooth**, `feed ÷ (rpm × flutes)`. That was
+established from primary sources on 2026-08-04 — Onsrud, Freud and Amana
+each print the formula verbatim beside the column, and Amana's chart
+reproduces `IPM ÷ (RPM × flutes)` to its own printed precision.
+
+Until 2026-08-06 the gate compared a dexel-measured **arc-mean chip
+thickness** against these bands instead. The two differ by a per-row
+factor measured across the shipped LUT at **2.4×–40.4×, median 10.9×**,
+so any pre-2026-08-06 verdict, advisory or tuning note quoting a
+"chipload" reading is on a different axis from the one below and must
+not be compared to it. The normalisation was deleted, not inverted.
 
 | Material | Good | Warning | Bad |
 |----------|------|---------|-----|
@@ -403,12 +420,18 @@ Drill toolpaths suppress both `average_engagement` and air-cut readings via `met
 | Hardwood (oak, maple) | 0.03–0.08 | 0.01–0.03 | < 0.01 or > 0.10 |
 | MDF/plywood | 0.04–0.10 | 0.02–0.04 | < 0.02 or > 0.12 |
 
+The gate does **not** read these prose bands — it reads the matched
+vendor LUT row, scaled to the query's diameter and hardness by `D^0.61`
+and `Janka^-0.5`. Both exponents are **repo-derived**; no primary source
+publishes either (`CREDITS.md`). On a sub-Ø2 tool the diameter law moves
+a band by more than 1.5×, so treat small-tool verdicts as provisional.
+
 ### Cutting Interpretation
 
 | Condition | Symptom | Risk |
 |-----------|---------|------|
-| `chipload < 0.02` | Rubbing, not cutting | Heat buildup, burn marks, premature wear |
-| `chipload > 0.15` | Aggressive cutting | Tool breakage, tearout, chatter |
+| advance per tooth < 0.02 | Rubbing, not cutting | Heat buildup, burn marks, premature wear |
+| advance per tooth > 0.15 | Aggressive cutting | Tool breakage, tearout, chatter |
 | `engagement.radial_woc_fraction ~ 1.0` | Full-width slotting | High forces — consider adaptive clearing |
 | `axial_doc > cutting_length` | Over-depth | Tool damage, shank contact |
 | `engagement.radial_woc_fraction < 0.02 at feed` | Air cutting | Wasted time, unnecessary wear |
@@ -454,6 +477,28 @@ Use this checklist when analyzing a toolpath program:
 ---
 
 ## 11. Issue Aggregation
+
+**Start at the triage block, not at this list.** `SimulationTriage`
+(`crates/rs_cam_core/src/sim_triage.rs`, built once by
+`ProjectSession::simulation_triage`) is the single typed contract the
+GUI panel, MCP `get_diagnostics` (`resp["triage"]`), the CLI `project`
+report and narration all consume. It partitions into `measurability`,
+`safety`, `actions` and `advisories`; advisories are capped (10 per
+toolpath, 50 per project) and spatially deduped, carrying `truncated`
+and a true pre-cap `total_matching` so a bounded list never hides its
+own size. Safety events share no list with advisories and are never
+deduped away.
+
+Alongside it, `sim_measurability::MeasurabilityReport` says when a
+metric could not be resolved at the selected cell. A `NotMeasurable`
+metric ABSTAINS from its gate with a stated reason rather than
+publishing a hard zero that clears every bar; collision detection stays
+live regardless.
+
+The raw list below still exists and still ships. Three different
+quantities have shipped under the name "issue count" — coalesced
+segments, per-sample counts, and MCP's post-filter count — and one
+`get_cut_trace` response can display all three, so do not compare them.
 
 The simulation state aggregates all issues into a unified list:
 

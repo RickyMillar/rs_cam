@@ -28,7 +28,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 2.5D | Drill | `drill.rs` | Yes | No | Shipped — first-class `OperationFamily` with peck cycles, diameter-scaled `peck_depth` / `plunge_rate_base`, and drill-native metrics (`DrillToolpathSummary` + `drill_gates`) in place of engagement axes. Hole targets can be picked from imported DXF (POINT entities + circle/arc centres, with layer attribution) via viewport click or per-layer "select all"; default (no selection) drills every closed-polygon centroid |
 | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped |
 | 3D | 3D Finish | `dropcutter.rs` | Yes | Yes | Shipped |
-| 3D | 3D Rough | `adaptive3d.rs` | Yes | Yes | Shipped |
+| 3D | 3D Rough | `adaptive3d.rs` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count |
 | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
 | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
 | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped |
@@ -71,13 +71,13 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - dogbone overcuts
 - lead-in / lead-out arcs
 - link moves / keep-tool-down linking
-- arc fitting to `G2` / `G3`
+- arc fitting to `G2` / `G3`. **Arcs do not cross an intent boundary** (2026-08-04): the fitter's run key carries `Move::intent` and breaks on `Region` span edges, so a fitted arc's label is exact rather than inherited from its first source move. Fitted arcs are tagged `SpanKind::GeometryRefit` and stay **in** tool-load gate populations; only true dressup bridges (dogbones, links, lead-outs) are excluded
 - feed optimization dressup with stock-aware engagement estimation on supported workflows
 - air-cut filter dressup: removes cutting moves through cleared stock when using remaining-stock mode
 - stock-aware generation: per-toolpath "Use remaining stock" toggle pre-simulates prior operations to build actual material state
 - per-operation manual pre/post G-code blocks (editable in GUI, emitted in export)
 - TSP rapid-order optimization
-- stock-boundary clipping with center / inside / outside containment
+- stock-boundary clipping with center / inside / outside containment. **Not unconditional** (2026-08-05): when the boundary offset *collapses*, the path passes through unclipped rather than over-clipped, and the report-only `ToolpathStats::boundary_clip_dropped` finding names it; when the offset *fails* (rejected input or a contained library panic), the operation now refuses instead of silently emitting an uncontained path
 - dual compute lanes: toolpath generation plus analysis (simulation / collision)
 - lane-status chips and a single `Cancel All` overlay action
 
@@ -101,7 +101,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 
 ### Export
 
-- G-code: GRBL, LinuxCNC, Mach3
+- G-code: GRBL, grblHAL, LinuxCNC, Mach3 (`PostFormat`; grblHAL differs from GRBL by accepting `M6`/`M7`, which GRBL's post filters out)
 - SVG toolpath preview
 - HTML setup sheet
 - TOML project/job persistence with editable-state round-trip
@@ -109,18 +109,21 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ### Verification
 
 - tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal face orientations)
-- agent-readable MCP toolpath narration (`narrate_toolpath`) for Z-level structure, cut-run vs marching-squares region counts, engagement histogram, suspicious arcs, peak axial DOC, and air-cut summaries
+- agent-readable MCP toolpath narration (`narrate_toolpath`) for Z-level structure, cut-run vs marching-squares region counts, engagement histogram, suspicious arcs, peak axial DOC, and air-cut summaries — timed at 4 ms on a 12.6k-move pass with a 70k-sample cut trace (2026-08-06)
+- bounded typed simulation triage (`SimulationTriage`, `ProjectSession::simulation_triage`) — one contract consumed by the GUI diagnostics panel, MCP `get_diagnostics`, the CLI `project` report and narration: safety events, then actions, then capped/deduped advisories with a true pre-cap count. Replaces reading the raw `issue_count`, of which three different quantities ship under one name
+- measurability abstention (`sim_measurability::MeasurabilityReport`) — a metric that cannot be resolved at the selected cell reports `NotMeasurable` with a reason and its gate ABSTAINS, instead of a hard zero dressed as a percent clearing every bar. Collision detection is never disabled by an abstention; the GUI prints a `NOT MEASURED:` strip above the panel
 - structural toolpath spans (`Operation`, `DepthPass`, `Region`, entry/lead/link/dressup artifacts) propagated into simulation cut samples for span-aware filtering and outline navigation
 - playback, scrub, and checkpoints
 - tool visualization during playback
 - holder/shank collision checks
 - deterministic renderless GUI regression harness with stable automation IDs
-- literature-matrix feeds validation suite — 56 cited cells × 19 invariants exercising the feeds engine against vendor / handbook chipload, RPM, and drill envelopes (`crates/rs_cam_core/tests/literature_matrix/` plus the `_litmatrix_*` sentries)
-- drill ops produce drill-native verification (`DrillToolpathSummary`, `drill_gates` for chip welding / peck adequacy / plunge feed sanity) instead of engagement metrics, which don't apply to Z-only kinematics
+- literature-matrix feeds validation suite — 56 cited cells × 19 invariants exercising the feeds engine against vendor chipload and RPM envelopes (`crates/rs_cam_core/tests/literature_matrix/` plus the `_litmatrix_*` sentries). The **drill** per-peck and chip-welding bands in it are declared repo-authored, not vendor or handbook: a 2026-08-04 audit retrieved the cited Onsrud drill chart and the FPL Wood Handbook and neither contains peck or depth-to-diameter guidance for wood
+- drill ops produce drill-native verification (`DrillToolpathSummary` incl. `per_peck_max_dtd`, `drill_gates` for chip welding / peck adequacy / plunge feed sanity) instead of engagement metrics, which don't apply to Z-only kinematics. The cycle model is rooted at the **R-plane**, matching the emitter, through one shared `drill::fed_descents`
 
 ### Provenance gates
 
-- source-freshness reporter — flags warn/stale vendor citations in `crates/rs_cam_core/tests/literature_matrix/sources.toml`
+- source-freshness reporter — flags warn/stale vendor citations in `crates/rs_cam_core/tests/literature_matrix/sources.toml`, plus offline `citation_url` shape validation. The clock runs: it was frozen until 2026-08-04 because its default "today" equalled the seed date of 30 of 32 rows, so no row could ever age
+- procedural analytic reference fixture (ARP-1, `crates/rs_cam_core/tests/common/reference_plate.rs`) — closed-form height and normal everywhere, tessellated to a measured rule; worst-zone p99 tessellation error 4.54 um against a 50 um grid-alias floor at the finest cell this repo has ever simulated. Quality bins are qualified against it, not against `terrain.stl`
 - `/refresh-lit-matrix` skill — guided re-verification or replacement of stale citations
 
 ## Known partial areas
@@ -138,6 +141,10 @@ These features exist in state, UI, or helper code, but are not yet end-to-end co
 | BREP face selection scope | Face-derived boundaries work only for approximately-horizontal planar faces; non-planar and tilted faces produce no polygon (falls back to stock bounds). Surface classifier is heuristic (axis-aligned planes only). |
 | BREP hover highlighting | Rendering path supports hover colors, but hover face tracking is not yet wired (face under cursor is not detected on mouse move) |
 | ~~Workholding rigidity UI~~ | Fully wired: GUI ComboBox (Low/Medium/High) on stock panel, passed through to feeds calculator |
+| 2D offset failure reporting | `offset_polygon_reported` distinguishes collapse / rejected input / library failure, and four families (pocket, profile, trace, zigzag) opt in and publish `ToolpathStats::offset_library_failures`. The other consumers still call the plain name and honestly report `None` = not measured. The count is per offset **call**, not per ring |
+| Offset panic classes in debug vs release | Three `debug_assert!` sites (two in transitive dependencies) are caught in debug and **not** in release, where the library proceeds on unvalidated input. Accepted and documented, not measured; `offset_library_failures` is not comparable across builds |
+| UnifiedFinish band residual | The band mix's off-part run-off is fixed and measured at zero, but ~200 um of overcut remains on the grooved reference fixture, located to the rim/wall break line and attributed to the shallow raster band. Open with a named single-column follow-up |
+| Drill gate tool divisor | All three drill gates divide by the tool's **envelope** radius with a flat profile hardcoded, and `Drill` carries no tool precondition. On a tapered ball this overstates diameter and the gates read `Within` on an overloaded cutter — a silent pass. Tracked in the radius programme |
 
 ## CLI surface
 

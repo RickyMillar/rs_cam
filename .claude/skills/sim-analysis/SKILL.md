@@ -22,10 +22,29 @@ State access: `rs_cam_viz/src/state/simulation.rs` — `SimulationState` methods
 |-------|---------|
 | `axial_doc_mm` | Depth of cut — how deep the tool engages |
 | `radial_engagement` | Fraction of tool diameter engaged (0.0–1.0) |
-| `chipload_mm_per_tooth` | Material per flute per revolution |
+| `chipload_mm_per_tooth` | Commanded **advance per tooth** — `feed / rpm / flutes`. Kinematic, not a measured chip |
 | `mrr_mm3_s` | Material removal rate |
 | `is_cutting` | false = rapid/air move |
 | `semantic_item_id` | Links sample to semantic structure |
+
+## Read the triage block first
+
+`SimulationTriage` (`ProjectSession::simulation_triage`, MCP
+`get_diagnostics` → `resp["triage"]`, CLI `project`, GUI panel) is the
+bounded typed answer and the one contract all four surfaces consume.
+Order: `measurability` → `safety` → `actions` → `advisories`. Advisories
+are capped (10/toolpath, 50/project) and spatially deduped; `truncated`
+and `total_matching` tell you what was hidden. Safety events never share
+a list with advisories.
+
+`measurability` says when a metric could **not** be resolved at the
+selected cell, in which case its gate abstains rather than publishing a
+hard zero. The motivating case: a 0.02 mm-deep pass reads air 95.9% and
+engagement 0.0000 while removing 63.7 mm³. Collision detection stays
+live regardless.
+
+Do not compare "issue counts" between surfaces — three different
+quantities ship under that name.
 
 ## Issue Types
 
@@ -46,11 +65,23 @@ State access: `rs_cam_viz/src/state/simulation.rs` — `SimulationState` methods
 
 | Metric | Good | Warning | Bad |
 |--------|------|---------|-----|
-| Air cut ratio | < 10% | 10–25% | > 25% |
+| Air cut ratio (see note) | < 10% | 10–25% | > 25% |
 | Avg engagement (rough) | 0.3–0.5 | 0.15–0.3 | < 0.15 |
 | Avg engagement (finish) | 0.1–0.4 | 0.4–0.6 | > 0.6 |
-| Chipload (softwood) | 0.05–0.12 mm | 0.02–0.05 | < 0.02 or > 0.15 |
-| Chipload (hardwood) | 0.03–0.08 mm | 0.01–0.03 | < 0.01 or > 0.10 |
+| Advance per tooth (softwood) | 0.05–0.12 mm | 0.02–0.05 | < 0.02 or > 0.15 |
+| Advance per tooth (hardwood) | 0.03–0.08 mm | 0.01–0.03 | < 0.01 or > 0.10 |
+
+Two caveats on that table:
+
+- **Air cut**: the shipped bars are per operation type against the
+  total-runtime denominator, not one 10/25% band — see
+  `OperationType::air_cut_high_threshold_pct` and the denominator note
+  in `CLAUDE.md`. The row above is a rule of thumb for 2.5D clearing.
+- **Chipload is advance per tooth**, `feed / (rpm x flutes)`, and so is
+  the vendor LUT band the gate actually reads. Until 2026-08-06 the gate
+  compared a measured arc-mean chip thickness against that band — a
+  different axis, off by a per-row 2.4x-40.4x. Any older note quoting a
+  "chipload" reading is not comparable to a current one.
 
 ## Semantic Trace
 

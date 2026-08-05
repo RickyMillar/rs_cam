@@ -5,6 +5,30 @@ Wave: W9 (M4 / R8), research-only, no-Cargo lane
 Parent revision inspected: `63d5e8b` (branch `experiment/adaptive-spiral`)
 Method: source reading only — `rg` / `grep` / `Read` / registry sources. **No Cargo command was run**, so nothing here is a runtime observation; every claim is a code-location claim plus a stated reproduction hypothesis.
 
+> **ERRATUM, 2026-08-06 (W10 close-out, plan §L1 stale-rationale sweep).**
+> Every "twelve report-only findings" statement in this document was
+> correct when written and is now **fourteen**: Checkpoint C landed two
+> `ToolpathStats` slots, not one — `offset_library_failures`
+> (`crates/rs_cam_core/src/compute/config.rs:420`) **and**
+> `boundary_clip_dropped` (`:438`). The contract split moves with it:
+> **eleven** share the `None` = not-measured / `Some(0.0)` = measured-clean
+> contract and **three** are deliberately outside it (`derived_stepovers`,
+> `zero_removal`, `boundary_clip_dropped`), not ten and two. The record
+> below stands verbatim per errata discipline; `CLAUDE.md` and
+> `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §0 carry the current counts.
+
+> **Second erratum, same date and wave.** Two of this map's three `fix
+> now` items were ruled and executed on 2026-08-06 and their present-tense
+> risk statements no longer hold: **P-1** (grblHAL downgraded by both
+> project-path readers) is fixed by one shared resolver — and a **fourth**
+> reader this map did not name, `crates/rs_cam_viz/src/io/project.rs:835`,
+> was found by `rg` and routed through it too; **P-2** (setup datum not
+> persisted) is fixed by consolidating viz's two byte-identical private
+> datum copies onto one core definition and deleting `SetupRuntime`
+> outright. **P-3** was downgraded by the orchestrator to *ruled out (no
+> live population)* on 2026-08-04 and was not fixed. See
+> `TECH_DEBT_2_CLOSEOUT.md` §1 (M4) and `ORCHESTRATION_LOG.md` "io-fixes".
+
 ## How to read this
 
 Each area gets one page: a data-flow map, then the top five risks ranked by

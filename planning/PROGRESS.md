@@ -19,7 +19,7 @@
 - 14 direct CLI commands plus TOML job execution
 - STL, SVG, DXF, and STEP import with BREP face selection
 - 5 cutter families
-- GRBL, LinuxCNC, and Mach3 post-processors
+- GRBL, grblHAL, LinuxCNC, and Mach3 post-processors
 - feeds/speeds calculator with machine, material, and vendor-LUT inputs
 - tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal faces) and holder/shank collision checks
 - typed GUI project persistence with missing-model warnings and editable-state round-trip
@@ -28,7 +28,53 @@
 - controller-first GUI architecture with canonical operation metadata and split compute/controller modules
 - shared adaptive support module used by both 2D and 3D adaptive search/control code
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
-- MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
+- MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
+- bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
+
+## Recent work (2026-08-06)
+
+### Second technical-debt programme — closed
+
+Nine plan items (H0–H3, M1–M4, L1) and thirteen inherited ledger rows,
+across 133 commits on `experiment/adaptive-spiral`. Eight human
+checkpoints ruled and executed (A, B, C, D, E, F1, F2, F3); Checkpoint G,
+the final read-only live validation, is **planned and not yet run** — its
+checklist is `planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §6.
+
+Full per-item verdicts, the deferral ledger with owners, and the
+measurement provenance index are in that close-out; the factual record
+per wave is `planning/review_2026-08-04/ORCHESTRATION_LOG.md`. Headlines:
+
+- **The `cargo test -p rs_cam_core --lib` accepted-red allowlist is
+  empty** — three permanent adaptive3d reds since `fa27b08`, all one
+  un-mirrored stock-to-leave drape, bisected over 343 revisions. Final
+  gate: 2260 passed / 0 failed / 12 ignored. `wanaka_suggest_baseline`
+  remains the single declared environmental exception.
+- **The chipload gate observes advance per tooth.** The vendor column's
+  convention was verified from primary sources and the gate-side
+  chip-thickness normalisation deleted; scaling laws `D^0.61` /
+  `Janka^-0.5` adopted, both declared repo-derived in `CREDITS.md`;
+  Suggest's rubbing floor subordinated to the matched band, which it had
+  been over-riding by 3.47×.
+- **A cascade or library failure can no longer masquerade as success.**
+  Typed offset failure channel, boundary-clip refusal, bounded pocket
+  ring cascade, and all nine 2D families honouring cancellation.
+- **Simulation diagnostics are bounded and can say "not measurable".**
+- **Drill verdicts stopped contradicting their own evidence**, the peck
+  model is rooted where the emitter roots it, and the thresholds are now
+  declared repo-authored rather than cited to documents that do not
+  contain them.
+- **grblHAL survived on disk and nowhere else** — both project-path post
+  readers silently downgraded it to GRBL; one resolver now serves all
+  four. The setup datum now reaches the project file.
+- **An analytic reference fixture (ARP-1) qualifies the bins**, and the
+  finding that matters is that the fixture stopped being the limit —
+  tessellation error is an order of magnitude below the grid-alias
+  floor.
+
+**Top open item**: Checkpoint G live validation, un-run. Second: the
+UnifiedFinish band residual (~200 um at the rim/wall break, located to
+the shallow raster band, mechanism unproven).
 
 ## Recent work (2026-07-30)
 
@@ -1180,7 +1226,7 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 ## Current priorities
 
 - **G16 layered scoring (in flight)** — multi-commit follow-on to the G16 reorg, softens binary gates and adds composite scoring. Design doc §11: `planning/OPTIMIZER_REFACTOR_G16.md`. **Tracker (read first): `planning/G16_LAYERED_SCORING_PROGRESS.md`**.
-- **MCP server polish** — MCP server (`rs_cam_mcp`) is shipped with 16 tools; ongoing work to integrate with running GUI session for real-time AI agent access. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
+- **MCP server polish** — the GUI-embedded MCP server registers roughly 68 tools against the live `ProjectSession` (the "16 tools, integration ongoing" reading this line used to carry is long superseded). Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
 - **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
 - **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`
 - **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
@@ -1346,7 +1392,7 @@ retirement on sweep parity), plus cycloid-advance refinement.
 
 - `cargo run -q -p rs_cam_cli -- --help` succeeds
 - `cargo fmt --check` passes
-- `cargo test -q` passes on the workspace
+- per-crate `cargo test -q -p rs_cam_core` (and `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) pass. Do **not** run `cargo test` at workspace scope on this repo — see `CLAUDE.md`
 - `cargo clippy --workspace --all-targets -- -D warnings` passes
 
 Update this file when the shipped surface or verification status changes materially.
