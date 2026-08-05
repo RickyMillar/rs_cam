@@ -2161,6 +2161,10 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         feed_rate_mm_min: 300.0,
         spindle_rpm: 18_000,
         flute_count: 2,
+        // R-2 (8e9dc6f) added this field; these two fixtures were missed and
+        // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
+        // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
+        retract_z_mm: 15.0,
         material: Material::default(),
     });
 
@@ -2251,6 +2255,10 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         feed_rate_mm_min: 300.0,
         spindle_rpm: 18_000,
         flute_count: 2,
+        // R-2 (8e9dc6f) added this field; these two fixtures were missed and
+        // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
+        // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
+        retract_z_mm: 15.0,
         material: Material::default(),
     });
 
