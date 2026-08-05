@@ -21,11 +21,13 @@ in each section; this is the index.
 | P6 | No shared test-fixture library | **FIXED — wave 5 (C6)**, `c8e40f7` / `1cd6eee`: `tests/common/` with a bit-identity smoke harness pinning the shared generators to their donors. Wave 16's two new sentries were both written against it. |
 | P7 | Ignored mega-harness rot | **STILL OPEN.** No wave touched it. `v3_cascade_ab.rs` and `p2c_headless_ab_wanaka.rs` remain enormous, `#[ignore]`d, compile-checked only, and load-bearing. The decision the entry asks for (split / archive / schedule) is still unmade, and wave 15's `strategy_comparison_h4.rs` is a third harness of the same shape. |
 | P8 | Findings/report single-slot representation | **FIXED — wave 8 (C8)**. |
-| P9 | Model debt knowingly accepted | **THREE OF FOUR CLOSED — wave 10 (C9)**; bullet 4 is now a pinned OPEN ANOMALY (refining the rest cell makes the shipped detector find LESS), owner: whoever next touches `rest_field::measure_cross_section`. |
+| P9 | Model debt knowingly accepted | **THREE OF FOUR CLOSED — wave 10 (C9)**; bullet 4 is now a pinned OPEN ANOMALY (refining the rest cell makes the shipped detector find LESS), owner: whoever next touches `rest_field::box_smooth_rest` / `nms_candidates` [owner re-pointed 2026-08-05, Checkpoint E ruling Q4/E10 — see `planning/review_2026-08-04/REST_GRID_ANOMALY_STUDY.md` §10; was `rest_field::measure_cross_section` — that function is downstream of the defect: it walks correctly from the cell it is given, and its own rim-quantisation contribution is bounded to one cell (≤0.5mm, ~0.25mm mean) and cannot by itself move reach by the logged 0.583mm, whereas `box_smooth_rest`'s fixed 3×3 window followed by `nms_candidates`'s single-cell argmax displace the ridge O(h) inboard of the true rest maximum on an asymmetric peak; `rest_grid_resolution_c9` stays green and untouched until a replacement explains and supersedes it]. |
 | P10 | Repo hygiene one-offs | **FIXED — wave 1**, `288b19b` (whole-repo fmt) + `9e43b78` (`.gitignore`, which found a SECOND live instance). The foreign looping `cargo test` was environmental. |
 | P11 | Pins and claims captured mid-wave | **STILL OPEN as a practice.** The fix shape is recorded, not enforced by anything. Wave 16 hit its own instance from the other side — see the note appended to that section. |
 | P12 | Convex fixtures cannot adjudicate concave defects | **PARTLY ADDRESSED.** The offset bench is extended (rosette, holed, cascades); the M4 oracle fixtures are not, and that is recorded as a limit rather than fixed. |
 | P13 | A deferral that names no decider is not a decision | **NEW, wave 16.** See the section below. |
+| P14 | Absolute-mm NMS prominence floor vanishes under refinement | **NEW, found incidentally by W7 during the rest-grid anomaly study (Checkpoint E ruling Q4/E11), NOT FIXED.** Latent on the shipped groove fixtures; bites hardest on broad smooth rest maxima, i.e. real parts. See the section below. |
+| P15 | A refused rest branch outside the threshold mask disappears from both lists | **NEW, found incidentally by W7 during the rest-grid anomaly study (Checkpoint E ruling Q4/E11), NOT FIXED.** A reporting blind spot independent of the rest-grid anomaly. See the section below. |
 
 ## P1. Transforms have no provenance contract (structural)
 
@@ -186,7 +188,16 @@ RampFinish has no standing-material area channel (lift magnitude only).~~
   closing this one: refining the rest cell makes the shipped detector find
   LESS feature and makes measured reach collapse toward zero. Pinned as an
   open anomaly in `tests/rest_grid_resolution_c9.rs`; owner is whoever next
-  touches `rest_field::measure_cross_section`.
+  touches `rest_field::box_smooth_rest` / `nms_candidates` [owner re-pointed
+  2026-08-05, Checkpoint E ruling Q4/E10 — see
+  `planning/review_2026-08-04/REST_GRID_ANOMALY_STUDY.md` §10; was
+  `rest_field::measure_cross_section` — downstream of the defect: its
+  rim-quantisation contribution is bounded to one cell (≤0.5mm, ~0.25mm
+  mean) and cannot by itself move reach by the logged 0.583mm, while
+  `box_smooth_rest`'s fixed 3×3 window plus `nms_candidates`'s single-cell
+  argmax displace the ridge O(h) inboard of the true rest maximum on an
+  asymmetric peak; `rest_grid_resolution_c9` stays green and untouched until
+  a replacement explains and supersedes it].
 
 ## P10. Repo hygiene one-offs
 
@@ -294,6 +305,53 @@ each with a named condition for re-opening.
 
 **Related:** P11 is this failure applied to numbers, P12 to fixtures. All
 three are the same shape — something intermediate recorded as if final.
+
+## P14. Absolute-mm NMS prominence floor against a one-cell difference
+
+**Observed:** found incidentally by W7 during the rest-grid anomaly study,
+not part of the anomaly itself. Ledgered under Checkpoint E ruling Q4/E11.
+Evidence: `planning/review_2026-08-04/REST_GRID_ANOMALY_STUDY.md` §3.4.
+
+`rest_field.rs:1382,1418,1444` — `prominence = max(0.1·min_valley_depth,
+NMS_PROMINENCE_FLOOR_MM)` with the floor at **0.005 mm absolute**, compared
+against a difference measured over **ONE cell** of a box-smoothed field. For
+a smooth maximum that one-cell difference scales as `½|f″|h²`, so against a
+constant absolute bar it **vanishes under refinement** — a fine grid loses
+ridges a coarse one keeps.
+
+**Reproduction:** build a rest field with a broad SMOOTH maximum (not a
+groove kink) and sweep `cell_mm`; candidate count falls as h falls. Note
+explicitly that this is NOT what happens on the two c9 groove fixtures — a
+groove's rest peak is a kink, so its one-cell prominence GROWS with
+refinement, which is why this is latent rather than observed. It bites
+hardest on broad smooth rest maxima, i.e. real parts.
+
+**Status:** NOT FIXED.
+
+**Owner condition:** whoever next changes NMS prominence or adds a
+smooth-maximum rest fixture; re-open when a fixture with a broad smooth rest
+maximum exists.
+
+## P15. A refused rest branch outside the threshold mask disappears from both lists
+
+**Observed:** found incidentally by W7 during the rest-grid anomaly study,
+not part of the anomaly itself. Ledgered under Checkpoint E ruling Q4/E11.
+Evidence: `planning/review_2026-08-04/REST_GRID_ANOMALY_STUDY.md` §4.
+
+`rest_field.rs:986` — `clearing_comps.insert(comp)` is guarded by `comp !=
+usize::MAX`. A branch that is detected, traced, measured, and then REFUSED,
+whose ridge cells all sit outside the threshold mask, lands in neither
+`centerlines` nor `clearing_regions` and vanishes without trace. This is a
+**reporting blind spot** independent of the rest-grid anomaly.
+
+**Reproduction:** any branch reaching `branch_verdict` with a non-Pencil
+verdict and `comp == usize::MAX`.
+
+**Status:** NOT FIXED.
+
+**Owner condition:** whoever next touches `detect_rest_valleys`'s routing
+exit; re-open with a fixture that produces `comp == usize::MAX` on a refused
+branch.
 
 ## Process note (not repo debt)
 
