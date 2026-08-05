@@ -67,6 +67,16 @@ pub struct ToolpathNarrationContext<'a> {
     /// suppresses the air-cut anomaly in narration. F4 of
     /// `planning/OPTIMIZER_UX_DIALIN_FIXES.md`.
     pub is_drill_cycle: bool,
+    /// Measurability of this toolpath's metrics — the SAME
+    /// [`crate::sim_measurability::MeasurabilityReport`] the gates and the
+    /// triage read (Checkpoint D Q2). `None` when the caller has not built
+    /// one; narration then says nothing about measurability rather than
+    /// implying everything was measured.
+    ///
+    /// When a metric here is `NotMeasurable`, narration must not print its
+    /// percentage as a number — the ruling's rule, applied at the surface
+    /// most likely to be quoted back as evidence.
+    pub measurability: Option<&'a crate::sim_measurability::MeasurabilityReport>,
     /// Stock material — used by the drill-cycle narration block to
     /// evaluate the plunge-feed envelope (material-aware mm/min per mm
     /// of cutter diameter). `None` falls back to envelope-free reporting.
@@ -1689,6 +1699,24 @@ fn append_air_cut_anomaly(
     // agreed with. The line still REPORTS the cutting-time reading, which is
     // what it has always reported and what CLAUDE.md documents; only the
     // marker moved, and no number changed.
+    // Checkpoint D Q2: when the engagement channel could not measure this
+    // pass, the percentage is not a reading and must not be printed as one.
+    // Narration is where these numbers get quoted back as evidence, so it is
+    // the last place that should publish a precise-looking figure the gates
+    // have already declined to act on.
+    if let (Some(report), Some(tp_id)) = (context.measurability, context.toolpath_id)
+        && let Some(reason) = {
+            let verdict = report.for_metric(tp_id, crate::sim_measurability::SimMetric::AirCut);
+            verdict.abstains().then(|| verdict.reason()).flatten()
+        }
+    {
+        anomalies.push(format!(
+            "ℹ air cut: NOT MEASURED — {} Collision detection, material removal \
+             and axial DOC are unaffected.",
+            reason.describe()
+        ));
+        return;
+    }
     let marker = if air_pct_of_total > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
@@ -1838,6 +1866,7 @@ mod tests {
         let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let trace = SimulationCutTrace::from_samples(1.0, vec![sample(ToolpathId(7), 1, 8.0, 0.0)]);
         let context = ToolpathNarrationContext {
+            measurability: None,
             toolpath_id: Some(ToolpathId(7)),
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),

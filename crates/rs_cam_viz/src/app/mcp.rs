@@ -1095,7 +1095,17 @@ impl super::RsCamApp {
             .as_deref()
             .or(result.semantic_trace.as_deref());
         let debug_trace = rt.debug_trace.as_deref().or(result.debug_trace.as_deref());
+        // Checkpoint D Q2: narration reads the same measurability report the
+        // gates and the triage do, so the MCP narration cannot publish an
+        // air-cut percentage the gates have already declined to act on.
+        let measurability = cut_trace.map(|trace| {
+            rs_cam_core::sim_measurability::MeasurabilityReport::from_trace(
+                trace,
+                Some(state.simulation.resolution),
+            )
+        });
         let context = rs_cam_core::narrate::ToolpathNarrationContext {
+            measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
@@ -4632,36 +4642,10 @@ fn build_span_cut_summaries(
 /// Pulls boundaries from `state.simulation.results`, rapid collisions
 /// from `state.simulation.checks`, and the cut trace from the results
 /// arc.
-fn viz_project_evidence(
+pub(crate) fn viz_project_evidence(
     state: &crate::state::AppState,
 ) -> rs_cam_core::session::ProjectEvidence<'_> {
-    let boundaries = state
-        .simulation
-        .results
-        .as_ref()
-        .map(|r| {
-            r.boundaries
-                .iter()
-                .map(|b| (b.id, b.start_move, b.end_move))
-                .collect()
-        })
-        .unwrap_or_default();
-    let cut_trace = state
-        .simulation
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_deref());
-    rs_cam_core::session::ProjectEvidence {
-        boundaries,
-        rapid_collisions: &state.simulation.checks.rapid_collisions,
-        rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
-        cut_trace,
-        holder_collisions: state.simulation.holder_collision_counts_by_tp(),
-        // The cell the GUI last simulated at. Read only to enrich a
-        // measurability abstention's reason with the number the operator
-        // would have to change; it never decides a verdict.
-        resolution_mm: Some(state.simulation.resolution),
-    }
+    state.simulation.project_evidence()
 }
 
 /// Build the per-DepthPass histogram for [`mcp_get_tool_load_report`].

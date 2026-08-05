@@ -21,6 +21,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::narrate::{ToolpathNarrationContext, narrate_toolpath_with_context};
+use rs_cam_core::sim_measurability::{MeasurabilityReport, SimMetric};
 use rs_cam_core::simulation_cut::{Engagement, SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
@@ -156,6 +157,80 @@ fn a_genuinely_high_total_runtime_reading_still_warns() {
         "90% air of TOTAL runtime must still warn; got: {}",
         air_cut_line(&text)
     );
+}
+
+#[test]
+fn narration_withholds_the_air_cut_percentage_when_it_is_not_a_measurement() {
+    // Checkpoint D Q2, at the surface most likely to be quoted back as
+    // evidence. RED-FIRST: before this, narration printed "air cut: 66.7% of
+    // cutting time / 20.0% of total runtime" for a pass whose engagement
+    // channel measured nothing — a precise-looking figure the gates had
+    // already declined to act on.
+    let mut samples = Vec::new();
+    for i in 0..60 {
+        samples.push(SimulationCutSample {
+            toolpath_id: ToolpathId(0),
+            move_index: 1,
+            sample_index: i,
+            segment_time_s: 1.0,
+            cumulative_time_s: i as f64,
+            is_cutting: true,
+            // Removes material, reads exactly zero: the census's floor case.
+            engagement: Engagement::with_radial_woc(0.0),
+            removed_volume_est_mm3: 0.4,
+            axial_engagement_mm: 0.02,
+            ..SimulationCutSample::test_fixture()
+        });
+    }
+    let trace = SimulationCutTrace::from_samples(0.5, samples);
+    let report = MeasurabilityReport::from_trace(&trace, Some(0.25));
+    assert!(
+        report.abstains(ToolpathId(0), SimMetric::AirCut),
+        "fixture must actually be unmeasurable"
+    );
+
+    let context = ToolpathNarrationContext {
+        toolpath_id: Some(ToolpathId(0)),
+        operation_kind: Some(OperationType::Scallop),
+        measurability: Some(&report),
+        ..Default::default()
+    };
+    let text =
+        narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), &context);
+    let line = air_cut_line(&text);
+    assert!(
+        line.contains("NOT MEASURED"),
+        "narration must withhold the number, not print it; got: {line}"
+    );
+    assert!(
+        line.contains("0.05") || line.contains("floor"),
+        "and it must say WHY; got: {line}"
+    );
+    assert!(
+        line.contains("Collision detection"),
+        "and what remains valid; got: {line}"
+    );
+    // The AIR-CUT percentage specifically must be gone. (The reason text
+    // legitimately quotes what fraction of samples read blind — that is a
+    // statement about the instrument, not a reading of the metric.)
+    assert!(
+        !line.contains("of total runtime") && !line.contains("of cutting time"),
+        "no air-cut percentage may be published for an unmeasurable metric; got: {line}"
+    );
+}
+
+#[test]
+fn narration_still_publishes_the_percentage_when_it_is_measured() {
+    // The control: without an abstention the line is unchanged.
+    let context = ToolpathNarrationContext {
+        toolpath_id: Some(ToolpathId(0)),
+        operation_kind: Some(OperationType::Pocket),
+        measurability: None,
+        ..Default::default()
+    };
+    let line = air_cut_line(&narrate(&context));
+    assert!(line.contains('%'), "got: {line}");
+    assert!(!line.contains("NOT MEASURED"), "got: {line}");
 }
 
 #[test]
