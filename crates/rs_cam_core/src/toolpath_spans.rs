@@ -270,6 +270,37 @@ impl SpanKind {
     }
 }
 
+// ── SpanClass ───────────────────────────────────────────────────────────
+
+/// How one cutting move should be *presented*, derived from its span path by
+/// [`AnnotatedToolpath::classify_span_path`].
+///
+/// This is a rendering decision, not a machining one: it says which visual
+/// taxonomy bucket a move falls into, and nothing about how it cuts. It exists
+/// so the interactive viewport and the PNG exporter cannot drift apart again —
+/// see [`AnnotatedToolpath::classify_span_path`] for the rules and for the
+/// divergence (X-1 / D-LV.1) it closed.
+///
+/// Rapids never reach this type; both renderers split them off by
+/// [`crate::toolpath::MoveType`] before classifying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanClass {
+    /// Inside a [`SpanKind::Entry`] span — a lead-in / plunge / ramp / helix.
+    Entry,
+    /// Inside a [`SpanKind::LeadOut`] span.
+    LeadOut,
+    /// Inside a [`SpanKind::LinkBridge`] span — a linker-inserted bridge.
+    LinkBridge,
+    /// Inside a [`SpanKind::DressupArtifact`] span and inside none of the
+    /// three kinds above — a dressup-added bridge (today: dogbones).
+    Dressup,
+    /// Ordinary cutting geometry. `pass_index` carries the enclosing
+    /// [`SpanKind::DepthPass`]'s index when there is one, for a per-pass
+    /// lightness shift; `None` means "no depth-pass span on this move's
+    /// path", which is the common case for single-pass and 3D surface ops.
+    Cut { pass_index: Option<u32> },
+}
+
 // ── SpanPayload ─────────────────────────────────────────────────────────
 
 /// Optional structured payload for span-specific data.
@@ -653,6 +684,88 @@ impl AnnotatedToolpath {
                 )
             })
             .collect()
+    }
+
+    /// Classify one move's span path into a single presentation decision.
+    ///
+    /// **This is the one classifier.** Both renderers of a toolpath consume
+    /// it and nothing else:
+    ///
+    /// * the interactive GUI viewport
+    ///   (`rs_cam_viz::render::toolpath_render::ToolpathGpuData::from_toolpath`), and
+    /// * the PNG/6-view exporter
+    ///   ([`crate::stock_mesh::toolpath_to_tube_mesh_with_spans`], reached from
+    ///   `screenshot_toolpath`).
+    ///
+    /// Before this existed the two walked the span path in **opposite
+    /// directions** and disagreed about `DressupArtifact` precedence, so a
+    /// move nested inside two interesting spans was coloured by the outermost
+    /// kind live and the innermost kind in the PNG, and the exporter had no
+    /// equivalent of the viewport's [`SpanKind::DepthPass`] `pass_index`
+    /// gradient at all (X-1 / D-LV.1, `planning/review_2026-08-04/`).
+    ///
+    /// The rules below are the **viewport's**, verbatim — that renderer is the
+    /// one an operator validated, so it is the reference and the exporter is
+    /// the side that moves:
+    ///
+    /// 1. Walk the path **forward**, i.e. outermost span first (the order
+    ///    [`Self::span_paths_by_move`] and [`Self::span_path_at`] produce).
+    /// 2. The first [`SpanKind::Entry`] / [`SpanKind::LeadOut`] /
+    ///    [`SpanKind::LinkBridge`] encountered wins outright — an outer
+    ///    link bridge beats a lead-in nested inside it.
+    /// 3. [`SpanKind::DressupArtifact`] does **not** win outright: it is
+    ///    remembered and the walk continues, so one of the three kinds above
+    ///    nested inside a dressup still takes precedence.
+    /// 4. [`SpanKind::DepthPass`] contributes its `pass_index` (last one on
+    ///    the path wins) for the per-pass lightness shift. It never decides
+    ///    the class by itself.
+    /// 5. [`SpanKind::GeometryRefit`] is deliberately transparent — an
+    ///    arc-fitted move is the same cut re-represented, not a dressup
+    ///    bridge, so it renders as ordinary cutting geometry (Checkpoint D
+    ///    Q3, ruled 2026-08-04).
+    /// 6. Everything else ([`SpanKind::Operation`], [`SpanKind::Region`], …)
+    ///    is transparent.
+    ///
+    /// Returns [`SpanClass::Cut`] with no `pass_index` when
+    /// [`Self::spans_valid`] is false — an invalidated span table may not be
+    /// read for presentation.
+    ///
+    /// Note the ordering caveat inherited from [`Self::span_paths_by_move`]:
+    /// "outermost first" is really "in `spans` array order", which generators
+    /// emit outermost-first. A generator that emitted a child before its
+    /// parent would change rule 2's answer. That is a pre-existing property
+    /// of the span table, not of this function, and it is now at least
+    /// *consistently* pre-existing across both renderers.
+    pub fn classify_span_path(&self, path: &[SpanId]) -> SpanClass {
+        if !self.spans_valid {
+            return SpanClass::Cut { pass_index: None };
+        }
+        let mut pass_index: Option<u32> = None;
+        let mut dressup = false;
+        for sid in path {
+            let Some(span) = self.spans.get(sid.0 as usize) else {
+                continue;
+            };
+            match span.kind {
+                SpanKind::Entry => return SpanClass::Entry,
+                SpanKind::LeadOut => return SpanClass::LeadOut,
+                SpanKind::LinkBridge => return SpanClass::LinkBridge,
+                SpanKind::DressupArtifact => dressup = true,
+                SpanKind::DepthPass => {
+                    if let Some(SpanPayload::DepthPass { pass_index: p, .. }) = span.payload {
+                        pass_index = Some(p);
+                    }
+                }
+                // Transparent: GeometryRefit (rule 5), Operation, Region,
+                // and every other kind (rule 6).
+                _ => {}
+            }
+        }
+        if dressup {
+            SpanClass::Dressup
+        } else {
+            SpanClass::Cut { pass_index }
+        }
     }
 
     /// Precompute [`Self::span_path_at`] for every move index in the toolpath.

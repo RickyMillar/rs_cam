@@ -144,17 +144,46 @@ const SPAN_LEADOUT_COLOR: [f32; 3] = [0.95, 0.35, 0.85];
 const SPAN_LINK_BRIDGE_COLOR: [f32; 3] = [0.55, 0.55, 0.6];
 const SPAN_DRESSUP_COLOR: [f32; 3] = [0.65, 0.55, 0.4];
 
-/// Convert an annotated toolpath into a tube mesh, coloring cutting
-/// segments by their innermost interesting [`crate::toolpath_spans::SpanKind`]
-/// (Entry → cyan, LeadOut → magenta, LinkBridge → dim grey, DressupArtifact →
-/// muted brown). Default cuts stay green; rapids stay orange-red. Falls
-/// through to the move-color path if the toolpath carries no spans.
+/// Per-pass lightness shift applied to [`CUT_COLOR`] from a
+/// [`crate::toolpath_spans::SpanKind::DepthPass`] `pass_index`.
+///
+/// Deliberately the same curve as the live viewport's
+/// (`rs_cam_viz::render::toolpath_render`): a ±~9% spread cycling over four
+/// passes, so a screenshot and the GUI stratify depth passes the same way.
+/// Before X-1 was closed the exporter had no gradient at all and every pass
+/// came out the same flat green.
+fn pass_shifted(base: [f32; 3], pass_index: Option<u32>) -> [f32; 3] {
+    let Some(p) = pass_index else {
+        return base;
+    };
+    let f = 1.0 + ((p as f32 % 4.0) - 1.5) * 0.06;
+    [
+        (base[0] * f).min(1.0),
+        (base[1] * f).min(1.0),
+        (base[2] * f).min(1.0),
+    ]
+}
+
+/// Convert an annotated toolpath into a tube mesh, colouring cutting segments
+/// by [`crate::toolpath_spans::AnnotatedToolpath::classify_span_path`] —
+/// Entry → cyan, LeadOut → magenta, LinkBridge → dim grey, DressupArtifact →
+/// muted brown, ordinary cuts green with a per-depth-pass lightness shift.
+/// Rapids stay orange-red. Falls through to the move-color path if the
+/// toolpath carries no spans.
+///
+/// The classification decision itself lives in core and is shared verbatim
+/// with the live GUI viewport. It used to be duplicated here with the walk
+/// running the other way round and `DressupArtifact` winning outright, which
+/// coloured nested spans differently in a PNG than on screen and dropped the
+/// depth-pass gradient entirely (X-1, `planning/review_2026-08-04/`); this
+/// function now only maps the shared
+/// [`crate::toolpath_spans::SpanClass`] onto colours.
 pub fn toolpath_to_tube_mesh_with_spans(
     annotated: &crate::toolpath_spans::AnnotatedToolpath,
     ribbon_radius: f32,
     include_rapids: bool,
 ) -> StockMesh {
-    use crate::toolpath_spans::SpanKind;
+    use crate::toolpath_spans::SpanClass;
 
     if !annotated.spans_valid || annotated.spans.is_empty() {
         return toolpath_to_tube_mesh(&annotated.toolpath, ribbon_radius, include_rapids);
@@ -182,20 +211,15 @@ pub fn toolpath_to_tube_mesh_with_spans(
         let Some(path) = move_paths.get(move_idx) else {
             return CUT_COLOR;
         };
-        // Innermost-first walk; pick the first kind we have a colour for.
-        for span_id in path.iter().rev() {
-            let Some(span) = annotated.spans.get(span_id.0 as usize) else {
-                continue;
-            };
-            match span.kind {
-                SpanKind::Entry => return SPAN_ENTRY_COLOR,
-                SpanKind::LeadOut => return SPAN_LEADOUT_COLOR,
-                SpanKind::LinkBridge => return SPAN_LINK_BRIDGE_COLOR,
-                SpanKind::DressupArtifact => return SPAN_DRESSUP_COLOR,
-                _ => continue,
-            }
+        // ONE classifier, shared with the live viewport. Do not re-derive a
+        // precedence rule here — that is exactly what X-1 was.
+        match annotated.classify_span_path(path) {
+            SpanClass::Entry => SPAN_ENTRY_COLOR,
+            SpanClass::LeadOut => SPAN_LEADOUT_COLOR,
+            SpanClass::LinkBridge => SPAN_LINK_BRIDGE_COLOR,
+            SpanClass::Dressup => SPAN_DRESSUP_COLOR,
+            SpanClass::Cut { pass_index } => pass_shifted(CUT_COLOR, pass_index),
         }
-        CUT_COLOR
     };
 
     for m_idx in 1..toolpath.moves.len() {
