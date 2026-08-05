@@ -27,6 +27,46 @@
 //! tool is larger than the stock and an unbounded over-cut when a dependency
 //! assertion fired. See `planning/review_2026-08-04/CAVALIER_SHAPE_FAILURE.md`
 //! and `ADVERSARIAL_2D_FINDINGS.md` F-1/F-2/F-12.
+//!
+//! ## Debug versus release — the contract is not build-invariant
+//!
+//! **Accepted and documented at Checkpoint C, Q4 option (a). Not fixed, and
+//! not measured.** Three of the panic classes the containment above catches
+//! are `debug_assert!`s inside `cavalier_contours` and its transitive
+//! dependency `static_aabb2d_index`. In a release build they do not fire,
+//! nothing unwinds, there is nothing for `catch_unwind` to contain, and the
+//! library proceeds on the input the assertion was there to reject:
+//!
+//! | class | site | release behaviour, as documented by the source — NOT verified by running |
+//! |---|---|---|
+//! | slice stitching (F-3) | `pline_view.rs:507` — *"start index should be less than or equal to end index"* | proceeds with `start_index > end_index`, stitching a malformed slice into a ring |
+//! | spatial index (F-11) | `static_aabb2d_index.rs:266` — `min_x <= max_x` | builds a corrupt index and offsets on it. The library's own doc at `:255-258` says an invalid box "may lead to a panic **or unexpected behaviour**" |
+//! | zero-length arc (F-12) | `pline_seg.rs:33` — *"v1 must not be on top of v2"* | divides by a zero chord length, returning a NaN radius and arc centre into the offset geometry. Needs no malformed input at all — a valid 24-lobe rosette reaches it |
+//!
+//! Four consequences a reader has to carry:
+//!
+//! 1. **`ToolpathStats::offset_library_failures` is not comparable across
+//!    builds.** A release run legitimately reports fewer, and a lower number
+//!    there is not an improvement — it is the same input going unchecked.
+//! 2. The sites that *do* panic in release are different ones and the
+//!    containment still earns its keep against them:
+//!    `shape_algorithms/mod.rs:786` and `pline_offset.rs:1401`
+//!    (`unreachable!("loop_count exceeded max_loop_count …")`), the hard
+//!    `assert!`s at `pline_view.rs:316`/`:374`/`:438`, and the `unwrap` /
+//!    `expect` / raw-indexing sites in `CAVALIER_SHAPE_FAILURE.md` §3.3.
+//! 3. `Cargo.toml`'s `panic = "unwind"` in `[profile.release]` is what keeps
+//!    every `catch_unwind` here from being dead code. Changing it to `abort`
+//!    turns a contained offset failure into a killed process.
+//! 4. **No release evidence exists either way.** Every measurement behind this
+//!    contract is a debug measurement (programme rule 11 forbids release
+//!    builds in an implementation wave), and the failure arms of
+//!    `tests/boundary_clip_escape_f1.rs`,
+//!    `tests/skipped_boundary_offset_f8.rs` and
+//!    `tests/cavalier_shape_failure_r2.rs` are `cfg!(debug_assertions)`-gated
+//!    so they say so rather than asserting something false in release. The
+//!    probe that would settle it is item 8 of §4.4 in
+//!    `planning/review_2026-08-04/TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md`, owned
+//!    by the Checkpoint G live-validation wave.
 
 use crate::geo::P2;
 use cavalier_contours::polyline::{PlineCreation, PlineSource, PlineSourceMut, Polyline};

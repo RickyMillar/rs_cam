@@ -771,6 +771,22 @@ Only after Checkpoint G:
 5. For each approved behavioural batch: inspect params/status, generate, simulate, narrate only through the approved bounded path, capture simulation/toolpath renders, and record collisions at matched resolutions.
 6. Confirm the final operator-facing feed/drill/issue wording and screenshot exporter output; compare fixed-path outputs, not a stale toolpath against fresh stock.
 7. Append a factual live report; classify paths as `PASS`, `NOT EXERCISED`, `CONCERN`, or `FAIL` — never turn unexercised into pass.
+8. **Release-behaviour probe of the three `debug_assert!` panic classes** (Checkpoint C, Q4 option a — the divergence was accepted and documented, not measured, and this is the first legitimate opportunity to measure it; it also closes the deferral logged in `ORCHESTRATION_LOG.md` §"Release behaviour of all three panic classes"). Owner: the W10 live-validation wave. **Do not run this in an implementation wave** — §4.3's release-build rule still applies everywhere else.
+
+   The three classes and what each is claimed to do in release, from `CAVALIER_SHAPE_FAILURE.md` §3.1/§4 R-4b and `ADVERSARIAL_2D_FINDINGS.md` F-3/F-11/F-12:
+
+   | class | site | debug | claimed release behaviour — UNVERIFIED |
+   |---|---|---|---|
+   | slice stitching | `cavalier_contours` `pline_view.rs:507` | asserts, contained | proceeds with `start_index > end_index`, stitching a malformed slice into a ring |
+   | spatial index | `static_aabb2d_index.rs:266` | asserts, contained | builds a corrupt index and offsets on it — the library's own docs say "a panic **or unexpected behaviour**" |
+   | zero-length arc | `pline_seg.rs:33` | asserts, contained | divides by a zero chord, returning a NaN radius and centre into the offset geometry |
+
+   Method, read-only, against the release GUI:
+
+   1. Run the two shipped sentries in release and record which arms report their release branch rather than asserting: `cargo test --release -p rs_cam_core --test boundary_clip_escape_f1 --test skipped_boundary_offset_f8 --test cavalier_shape_failure_r2`. Every failure arm in those files is `cfg!(debug_assertions)`-gated and prints a release line instead, so a release run is expected to be green and to say so — a green release run is **not** evidence that the classes are benign, only that the sentries are honest about not exercising them.
+   2. On the live Wanaka project, generate the 2D families that reach the offset (pocket, profile, trace, zigzag, inlay) and record `offset_library_failures` from `narrate_toolpath` in release, beside the debug number for the same project. **A lower release count is the expected divergence, not an improvement** — it means the assertions did not fire and the library proceeded on unvalidated input.
+   3. Compare the emitted geometry, not the counts: if a release run produces a toolpath a debug run refused or truncated, that difference IS the finding. Render it; `ADVERSARIAL_2D_FINDINGS.md`'s own rule is that an aggregate without a rendered surface is not evidence.
+   4. Classify each of the three classes `PASS` / `NOT EXERCISED` / `CONCERN` / `FAIL` separately. `NOT EXERCISED` is the likely and acceptable answer for classes the live project never reaches; recording it as `PASS` is not.
 
 ---
 
