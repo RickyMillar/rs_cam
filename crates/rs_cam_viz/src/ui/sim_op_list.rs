@@ -729,6 +729,7 @@ pub fn draw(
             SpanKind::LeadOut => 3,
             SpanKind::LinkBridge => 3,
             SpanKind::DressupArtifact => 3,
+            SpanKind::GeometryRefit => 2,
             SpanKind::WaterlineCleanup => 3,
             SpanKind::RapidOrderBarrier => 4,
         }
@@ -743,6 +744,7 @@ pub fn draw(
             SpanKind::LeadOut => "Lead-out",
             SpanKind::LinkBridge => "Link bridge",
             SpanKind::DressupArtifact => "Dressup",
+            SpanKind::GeometryRefit => "Arc fit",
             SpanKind::WaterlineCleanup => "Waterline cleanup",
             SpanKind::RapidOrderBarrier => "Order barrier",
         }
@@ -757,6 +759,7 @@ pub fn draw(
             SpanKind::LeadOut => egui::Color32::from_rgb(220, 150, 110),
             SpanKind::LinkBridge => egui::Color32::from_rgb(110, 200, 210),
             SpanKind::DressupArtifact => egui::Color32::from_rgb(220, 120, 200),
+            SpanKind::GeometryRefit => egui::Color32::from_rgb(140, 190, 160),
             SpanKind::WaterlineCleanup => egui::Color32::from_rgb(180, 200, 130),
             SpanKind::RapidOrderBarrier => egui::Color32::from_rgb(120, 120, 130),
         }

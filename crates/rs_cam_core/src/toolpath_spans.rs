@@ -167,8 +167,40 @@ pub enum SpanKind {
     LeadOut,
     /// A linker bridge inserted by `apply_link_moves`.
     LinkBridge,
-    /// A dressup-introduced segment (dogbone, arc-fit replacement).
+    /// A dressup-introduced **bridge** segment: a motion the dressup added
+    /// that is not part of the commanded cut. Today that is the dogbone
+    /// overcut/return pair (`dressup::apply_dogbones`).
+    ///
+    /// This kind is on the transit list
+    /// ([`AnnotatedToolpath::transit_moves_bitmap`]) and in
+    /// `tool_load::locality::is_phantom_transit`'s phantom set, because at
+    /// such a bridge the dexel reads `stock_top − cutter_z` over
+    /// *neighbouring* uncleared stock rather than steady-state engagement
+    /// (`planning/archive/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    ///
+    /// Arc-fit replacements used to land here too. They do not any more —
+    /// see [`Self::GeometryRefit`]. Checkpoint D Q3, ruled 2026-08-04.
     DressupArtifact,
+    /// A transform re-represented the **same cut** in different geometry:
+    /// today, the arc `arcfit::fit_arcs` fitted through a run of linear
+    /// moves, within `arc_tolerance`.
+    ///
+    /// Deliberately NOT on the transit list and NOT in
+    /// `is_phantom_transit`'s phantom set. A fitted arc engages the same
+    /// material along the same path as the moves it replaced; its dexel
+    /// readings are steady-state cutting readings and belong in the
+    /// chipload / power / deflection gate populations and in the peak
+    /// accumulators.
+    ///
+    /// Why this is its own kind rather than a label on
+    /// [`Self::DressupArtifact`]: that kind carried two incompatible
+    /// meanings, and because arc-fit is default-on for all three process
+    /// roles, the transit classification silently removed nearly every
+    /// cutting sample of a curve-heavy op from every gate
+    /// (`planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md`
+    /// §7). Splitting the kind makes every consumer's match arm a
+    /// compile-time decision instead of an inherited default.
+    GeometryRefit,
     /// Hard barrier *before* `start_move`. TSP must not reorder across this
     /// move boundary. Always zero-width: `start_move == end_move`.
     RapidOrderBarrier,
@@ -192,7 +224,7 @@ impl SpanKind {
     /// `as_key`'s match is exhaustive, so the compiler will stop you there
     /// first, and [`Self::from_key`] is derived from this list so that the
     /// agent-facing vocabulary cannot drift from the enum.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Operation,
         Self::DepthPass,
         Self::Region,
@@ -200,6 +232,7 @@ impl SpanKind {
         Self::LeadOut,
         Self::LinkBridge,
         Self::DressupArtifact,
+        Self::GeometryRefit,
         Self::RapidOrderBarrier,
         Self::WaterlineCleanup,
     ];
@@ -222,6 +255,7 @@ impl SpanKind {
             Self::LeadOut => "lead_out",
             Self::LinkBridge => "link_bridge",
             Self::DressupArtifact => "dressup_artifact",
+            Self::GeometryRefit => "geometry_refit",
             Self::RapidOrderBarrier => "rapid_order_barrier",
             Self::WaterlineCleanup => "waterline_cleanup",
         }
@@ -555,6 +589,10 @@ impl AnnotatedToolpath {
     /// reading reflects "stock height we're flying over" rather than
     /// engagement (the lift-bridge artifact pattern documented in
     /// `planning/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    ///
+    /// [`SpanKind::GeometryRefit`] is deliberately absent: an arc-fitted
+    /// move is the same cut re-represented, not a motion flying over
+    /// neighbouring stock (Checkpoint D Q3, 2026-08-04).
     pub fn transit_moves_bitmap(&self) -> Vec<bool> {
         let n = self.toolpath.moves.len();
         let mut out = vec![false; n];
@@ -591,6 +629,13 @@ impl AnnotatedToolpath {
     /// spans. Coverage caveat: dressup-inserted moves
     /// (`DressupArtifact` spans) usually carry `Unknown` intent and
     /// are NOT marked transit by this fallback.
+    ///
+    /// Arc-fitted moves used to be a second, larger divergence here: the
+    /// span bitmap marked them transit and this fallback did not, so the
+    /// same toolpath's arcs were in or out of the gate population depending
+    /// on whether an earlier transform had invalidated spans
+    /// (census §7.4). Since arcs carry [`SpanKind::GeometryRefit`], which
+    /// is not a transit kind, the two paths agree about them.
     pub fn transit_moves_bitmap_from_intents(&self) -> Vec<bool> {
         use crate::toolpath::MoveIntent as I;
         self.toolpath
@@ -886,7 +931,7 @@ impl MoveRemap {
     /// ([`crate::dressup`]), arc-fitting ([`crate::arcfit`]), and path
     /// simplification ([`crate::condition`]). Callers append their own
     /// transform-introduced spans (e.g. `Entry`, `DressupArtifact`,
-    /// `LinkBridge`) to the returned vec afterward.
+    /// `GeometryRefit`, `LinkBridge`) to the returned vec afterward.
     ///
     /// TSP's reordering pass ([`crate::tsp`]) additionally has to detect
     /// *foreign-move intrusion* — a permutation can interleave moves from

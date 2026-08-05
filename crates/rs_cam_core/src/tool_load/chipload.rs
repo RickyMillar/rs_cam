@@ -704,11 +704,14 @@ fn evaluate_inner(
         // population that drove this gate" — and it OVERSTATES that
         // population by however many transit samples the trip set rejected.
         //
-        // On a curve-heavy finishing path that gap is large, because arc-fit
-        // tags every fitted arc `SpanKind::DressupArtifact` and that kind is
-        // on the transit list: one committed fixture carries 630 such spans
-        // on a single op. Counter-intuitively, MORE arc-fitting means FEWER
-        // samples actually gating.
+        // The gap used to be enormous on curve-heavy finishing paths: arc-fit
+        // tagged every fitted arc `SpanKind::DressupArtifact`, which is on
+        // the transit list, so MORE arc-fitting meant FEWER samples actually
+        // gating — one committed fixture carries 630 such spans on a single
+        // op. Checkpoint D Q3 (2026-08-04) moved fitted arcs to
+        // `SpanKind::GeometryRefit`, which is not a transit kind, so that
+        // term is gone. What remains is the genuine transit population
+        // (entries, link bridges, lead-outs, dogbones, waterline cleanup).
         //
         // Left as-is deliberately: `sample_count` is a shipped wire field
         // and moving it is a separate, gated change. Documented here so the

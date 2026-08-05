@@ -460,7 +460,8 @@ pub fn render_stock_composite(
 ///
 /// Cutting segments are coloured by their innermost
 /// [`crate::toolpath_spans::SpanKind`] (Entry / LeadOut / LinkBridge /
-/// DressupArtifact get distinct colours) — same taxonomy as the live 3D
+/// DressupArtifact get distinct colours; GeometryRefit does not — an
+/// arc-fitted move renders as ordinary cutting geometry) — same taxonomy as the live 3D
 /// renderer. Toolpaths without spans fall back to the plain green/orange
 /// cut/rapid scheme.
 #[allow(clippy::indexing_slicing)]

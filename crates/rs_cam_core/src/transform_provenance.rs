@@ -42,7 +42,7 @@
 //! `AnnotatedToolpath::spans` are remapped by the transform itself and ride
 //! home inside the payload. That is not a loophole, it is a necessity: a
 //! transform does not merely translate span indices, it *emits* spans
-//! (`Entry`, `DressupArtifact`, `LinkBridge`), and the reorder transform
+//! (`Entry`, `DressupArtifact`, `GeometryRefit`, `LinkBridge`), and the reorder transform
 //! additionally has to drop spans whose contents a permutation interleaved
 //! with foreign moves ([`crate::tsp`]'s foreign-intrusion filter). No generic
 //! consumer can do that. Spans therefore cannot be forgotten for a different

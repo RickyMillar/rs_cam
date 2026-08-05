@@ -304,7 +304,7 @@ pub struct CutTraceParam {
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// a span of this kind. Accepted values match `SpanKind`:
     /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
-    /// "dressup_artifact", "rapid_order_barrier".
+    /// "dressup_artifact", "geometry_refit", "rapid_order_barrier".
     #[allow(dead_code)]
     pub span_kind: Option<String>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
@@ -330,7 +330,8 @@ pub struct InspectSpansParam {
     pub index: usize,
     /// Optional `SpanKind` filter (snake_case). Accepted values:
     /// "operation", "depth_pass", "region", "entry", "lead_out",
-    /// "link_bridge", "dressup_artifact", "rapid_order_barrier".
+    /// "link_bridge", "dressup_artifact", "geometry_refit",
+    /// "rapid_order_barrier".
     pub kind: Option<String>,
     /// Optional parent span id (vec index). Restricts results to spans whose
     /// move range is contained within the parent's range. Pair with `kind` to
