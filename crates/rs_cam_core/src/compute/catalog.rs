@@ -1020,6 +1020,24 @@ impl ParamDef {
             description: Some(description),
         }
     }
+
+    /// A required parameter that carries an agent-facing description.
+    ///
+    /// The sibling of [`Self::optional_desc`] for the required case, added
+    /// so a dial whose SEMANTICS an agent cannot guess from its name can say
+    /// what it does. First used by F3 / D-16.2.
+    const fn required_desc(
+        name: &'static str,
+        type_name: &'static str,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: false,
+            description: Some(description),
+        }
+    }
 }
 
 // ── Phase 1 operation registry (architectural refactor 2026-06-06) ────
@@ -1400,7 +1418,16 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("raster_stepover", "f64"),
     ParamDef::required("z_step", "f64"),
     ParamDef::required("sampling", "f64"),
-    ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required_desc(
+        "stock_to_leave",
+        "f64",
+        "Material left on the finished surface (mm), applied as a VERTICAL +Z offset on \
+         the cut. Honoured by all three bands (shallow raster, mid-steep scallop, \
+         very-steep waterline) since 2026-08-06 — before that only the scallop band \
+         applied it. Vertical, not surface-normal: on a wall at angle theta from \
+         horizontal what remains measured normal to the surface is stock_to_leave * \
+         cos(theta).",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     // v3 S1/S2 claims pipeline: serde-defaulted for project-file back-compat

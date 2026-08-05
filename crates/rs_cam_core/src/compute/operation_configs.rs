@@ -915,6 +915,19 @@ pub struct UnifiedFinishConfig {
     pub raster_stepover: f64,
     pub z_step: f64,
     pub sampling: f64,
+    /// Material left on the finished surface (mm), applied as a vertical
+    /// `+Z` offset on the cut.
+    ///
+    /// Honoured by **all three bands** — shallow raster, mid-steep scallop
+    /// and very-steep waterline — since F3 / D-16.2 (2026-08-06). Before
+    /// that only the scallop band applied it and the other two silently
+    /// dropped it; the field carried no doc comment at all, and neither the
+    /// GUI dial nor the MCP `ParamDef` said so.
+    ///
+    /// It is a VERTICAL offset, not a surface-normal one: on a wall at angle
+    /// θ from horizontal what remains measured normal to the surface is
+    /// `stock_to_leave · cos θ`. That is the repo-wide convention for every
+    /// finish operation, so bands and their links stay flush with each other.
     pub stock_to_leave: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
