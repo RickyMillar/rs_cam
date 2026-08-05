@@ -211,11 +211,23 @@ async fn a_read_with_no_published_snapshot_refuses_instead_of_inventing_one() {
     );
 }
 
-/// The idle lane must be untouched by all of this: no deadline, no snapshot,
-/// the ordinary GUI round-trip. Proven by the fact that a read against an
-/// *idle* stalled GUI does NOT return — it waits, exactly as before.
+/// An idle lane is NOT an exemption: a cheap read answers inside the gate
+/// whatever the GUI thread is doing.
+///
+/// **This test deliberately replaces `an_idle_lane_keeps_the_old_unbounded_
+/// read_behaviour`, which pinned the opposite behaviour** (C6, ruled
+/// 2026-08-06). That test asserted `outcome.is_err()` — i.e. that a read
+/// against an idle-lane stalled GUI *never returns* — on the assumption that
+/// only a generation could hold the frame loop. It cannot hold: every drained
+/// MCP request is handled in one frame on the egui main thread, so a long
+/// `narrate_toolpath` or `get_cut_trace` stalls the loop with the lane idle,
+/// and in that state all five cheap reads blocked for the whole read. The old
+/// sentry would have stayed green through exactly the stall H2.6 is about.
+///
+/// The guarantee pinned here is the new one: **< 1 s, independent of lane
+/// activity**, with the answer explicitly marked as a snapshot.
 #[tokio::test]
-async fn an_idle_lane_keeps_the_old_unbounded_read_behaviour() {
+async fn cheap_reads_answer_within_the_gate_even_with_the_lane_idle() {
     struct IdleLane;
     impl LaneControl for IdleLane {
         fn snapshot(&self) -> LaneSnapshot {
@@ -229,6 +241,8 @@ async fn an_idle_lane_keeps_the_old_unbounded_read_behaviour() {
         }
     }
 
+    // The receiver is held but never drained: a GUI frame loop stalled by
+    // something that is NOT a generation — the C6 case.
     let (tx, _rx) = std::sync::mpsc::channel();
     let server = EmbeddedCamServer::new(
         tx,
@@ -237,14 +251,40 @@ async fn an_idle_lane_keeps_the_old_unbounded_read_behaviour() {
         published_cache(),
     );
 
-    // 1.5 s is double the busy deadline: if the idle path had picked up the
-    // fallback, this would resolve.
-    let outcome = tokio::time::timeout(Duration::from_millis(1500), server.list_toolpaths()).await;
-    assert!(
-        outcome.is_err(),
-        "an idle lane must not divert reads to the snapshot — behaviour there is \
-         unchanged, got: {outcome:?}"
+    let started = Instant::now();
+    let resp = tokio::time::timeout(GATE, server.list_toolpaths())
+        .await
+        .expect(
+            "list_toolpaths must answer within the 1 s gate with the lane IDLE — this is \
+                 the guarantee C6 added, replacing a sentry that pinned the block",
+        );
+    let elapsed = started.elapsed();
+
+    let v: serde_json::Value = serde_json::from_str(&resp).expect("valid json");
+    assert_eq!(
+        v["served_from"], "snapshot",
+        "a read the stalled frame loop could not answer must say it came from the snapshot, \
+         not pass a lagging view off as live: {resp}"
     );
+    assert_eq!(
+        v["ok"], true,
+        "the snapshot was published, so this must succeed: {resp}"
+    );
+    assert_eq!(
+        v["data"][1]["name"], "Unified Finish 6",
+        "the snapshot payload must still be the real list_toolpaths body: {resp}"
+    );
+    // The summary must not claim a generation that is not running.
+    let summary = v["summary"].as_str().unwrap_or_default();
+    assert!(
+        !summary.contains("generation is in flight"),
+        "with the lane idle the fallback must not blame a generation: {summary}"
+    );
+    assert!(
+        summary.contains("in-band read"),
+        "the fallback should name what is actually holding the frame loop: {summary}"
+    );
+    assert!(elapsed < GATE, "answered in {elapsed:?}, gate is {GATE:?}");
 }
 
 /// `generation_status` must name the in-flight index and stage, and it must
