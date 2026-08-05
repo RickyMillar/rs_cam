@@ -2,15 +2,15 @@ D-16.1 band run-off reproduction (Tier 0 probe, NO simulation)
 fixture: grooved_block(2.5, 70, 1.2) — footprint x [-20.0, 20.0] y [-12.0, 12.0] z [-1.200, 0.000]
 tool: Ø1 tip / 7deg / Ø6 shank — envelope r 3.000 mm, cusp r 0.500 mm
 overlap_mm: 2
-moves: 14221 total, 14141 cutting (FinishingCut|EntryPlunge)
-band move counts: shallow 10856, mid_steep 3365, very_steep 0
-OFF-FOOTPRINT cutting targets: 131
-by intent: FinishingCut 123, EntryPlunge 8
-off-footprint LINKING targets (not asserted on): 52
-worst distance past the footprint edge: 0.3750 mm
-violating X range: -4.438 .. 4.141 mm
-violating Y range: -12.375 .. 12.349 mm
+moves: 13420 total, 13414 cutting (FinishingCut|EntryPlunge)
+band move counts: shallow 10509, mid_steep 2911, very_steep 0
+OFF-FOOTPRINT cutting targets: 0
+by intent: FinishingCut 0, EntryPlunge 0
+off-footprint LINKING targets (not asserted on): 0
+worst distance past the footprint edge: 0.0000 mm
+violating X range: NaN .. NaN mm
+violating Y range: NaN .. NaN mm
 attribution by region span:
-         MidSteep/scallop: 131 off-footprint of 3287 cutting
-         Shallow/raster: 0 off-footprint of 10854 cutting
+         MidSteep/scallop: 0 off-footprint of 2907 cutting
+         Shallow/raster: 0 off-footprint of 10507 cutting
 

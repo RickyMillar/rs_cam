@@ -220,11 +220,6 @@ const NO_OVERLAP_MM: f64 = 0.0;
 /// How much smaller the control arm's run-off population must be (test 3).
 const CONTROL_REDUCTION_FACTOR: usize = 10;
 
-/// Multiple of the dialled cusp height that the worst run-off gouge must
-/// exceed in test 4. See that test's doc comment for why the bar is 2× and
-/// not the 10.4× the defect was filed at.
-const GOUGE_BAR_CUSPS: f64 = 2.0;
-
 /// `0.3² / (8 · 0.5 · 1.0)` = 22.5 µm — the flat-surface cusp a 0.3 mm
 /// stepover leaves on this tool's 0.5 mm tip radius. Spelled as arithmetic,
 /// copied verbatim from `strategy_comparison_h4.rs::cusp_mm`, so parity with
@@ -745,42 +740,46 @@ fn unified_finish_emits_cutting_moves_outside_the_model_footprint() {
     let half_gen_cell_mm = fixture_cutter().envelope_radius_mm() / 8.0;
 
     assert!(
-        !p.violations.is_empty(),
-        "INVERT THIS LINE WHEN THE FIX LANDS.\n\
+        p.violations.is_empty(),
+        "SENTRY (was D-16.1's reproduction, INVERTED 2026-08-06 when the fix \
+         landed).\n\
          \n\
-         D-16.1 reproduction: at the shipped overlap_mm = {overlap}, \
          UnifiedFinish emitted {n_bad} of {n_all} cutting-move targets \
          ({pct:.2}%) at XY positions NO triangle of the model covers, \
          measured with the Shallow band's own guard \
-         (index.query(x, y, 0.0) + Triangle::contains_point_xy).\n\
+         (index.query(x, y, 0.0) + Triangle::contains_point_xy). It must emit \
+         ZERO.\n\
          \n\
          Furthest past the footprint edge: {worst_past:.4} mm. Violating X \
          range {x_lo:.3} .. {x_hi:.3} mm; Y range {y_lo:.3} .. {y_hi:.3} mm — \
-         the footprint ends at y = ±{GROOVE_Y_HALF_MM}, so these cluster just \
-         outside it, within about half a generation cell \
-         ({half_gen_cell_mm:.3} mm).\n\
+         the footprint ends at y = ±{GROOVE_Y_HALF_MM}. Half a generation \
+         cell is {half_gen_cell_mm:.3} mm; a worst distance near that value \
+         is the signature of the ORIGINAL defect returning.\n\
          \n\
          Attributed by region span:\n\
          {table}\
          Off-footprint LINKING targets (excluded from the assertion — \
          different emitter, see is_cut's doc): {links}.\n\
          \n\
-         Mechanism (module header carries the file:line):\n\
-         (1) decompose extracts the MidSteep band polygon through \
-         region_polygons_from_mask, which dilates the mask by overlap_mm \
-         BEFORE marching squares and never re-clamps to coverage, so the \
-         polygon runs {overlap} mm past the last covered classification cell;\n\
-         (2) that polygon is the scallop ring-cascade seed, and ring_to_3d's \
-         coverage guard heightmap_covered_at_world ROUNDS the query XY to the \
-         nearest cell of the 0.75 mm generation heightmap — six times coarser \
-         than the 0.125 mm classification cell — so points up to half a \
-         generation cell outside the footprint are admitted, and \
-         point_drop_cutter returns a rim-riding CL for them.\n\
+         What this used to be, and what fixed it. At the shipped \
+         overlap_mm = {overlap} the MidSteep band polygon is dilated 2 mm \
+         OUTWARD by region_polygons_from_mask before marching squares, and \
+         that polygon is the scallop ring-cascade seed \
+         (scallop.rs, `generate_scallop_rings` call site). ring_to_3d's \
+         coverage guard used to read the 0.75 mm GENERATION heightmap with \
+         nearest-cell rounding — six times coarser than the 0.125 mm \
+         classification cell — so it admitted ring vertices up to half a \
+         generation cell (0.375 mm) outside the footprint, where \
+         point_drop_cutter returns a rim-riding CL that cuts \
+         `r − √(r² − d²)` below the surface. Measured then: 131 \
+         off-footprint of 3287 MidSteep cutting targets, worst 0.3750 mm — \
+         the quantization bound on the nose. F2 replaced that guard with the \
+         EXACT point-in-triangle test the Shallow band next door already \
+         used (`dropcutter::point_is_over_mesh_xy`), and the population went \
+         to zero.\n\
          \n\
-         A FAILURE HERE IS GOOD NEWS: it means no cut target leaves the \
-         footprint any more. Replace `!p.violations.is_empty()` with \
-         `p.violations.is_empty()`, rewrite this message, then collapse test \
-         4 — it will have nothing left to measure.",
+         If this test fails, a coverage guard somewhere on the scallop ring \
+         path has gone back to consulting a sampled mask. Do not relax it.",
         overlap = p.overlap_mm,
     );
 }
@@ -810,11 +809,20 @@ fn the_overlap_dial_is_the_cause() {
     let control = probe(NO_OVERLAP_MM);
     let mesh = fixture_mesh();
 
+    // 2026-08-06: this used to assert `!shipped.violations.is_empty()` —
+    // "the control is vacuous if the shipped arm has no run-off". Post-fix
+    // BOTH arms are empty by design, so that guard would fail forever. The
+    // control survives because what it really proves is that the dilation
+    // does not, on its own, put cut targets off the footprint — and it now
+    // proves that from zero on both sides, which is the stronger statement.
+    // The non-vacuity that matters is BELOW: the control arm must still
+    // generate a real mid-steep band, or "zero run-off" would just mean
+    // "nothing was generated".
     assert!(
-        !shipped.violations.is_empty(),
-        "THE CONTROL IS VACUOUS: the shipped arm produced no run-off to \
-         compare against. See test 2 and fix that first — a 'reduction' \
-         measured from zero says nothing."
+        !shipped.cutting.is_empty(),
+        "THE CONTROL IS VACUOUS: the shipped arm emitted no cutting targets \
+         at all ({} moves total)",
+        shipped.total_moves
     );
     assert!(
         control.mid_steep_moves > 0,
@@ -847,23 +855,23 @@ fn the_overlap_dial_is_the_cause() {
     let worst_control = control.worst_past_edge_mm(&mesh.bbox);
 
     assert!(
-        n_control * CONTROL_REDUCTION_FACTOR <= n_shipped,
-        "the run-off does NOT collapse when the dilation is removed, so test \
-         2's population cannot be attributed to overlap_mm.\n\
+        n_control == 0 && n_shipped == 0,
+        "BOTH arms must now be free of off-footprint cut targets — the \
+         coverage guard is exact, so the overlap dial can no longer put one \
+         there whatever it is set to.\n\
          \n\
          overlap_mm = {shipped_dial}: {n_shipped} off-footprint cutting \
          targets of {shipped_all}, worst {worst_shipped:.4} mm past the edge.\n\
          overlap_mm = {control_dial}: {n_control} of {control_all}, worst \
          {worst_control:.4} mm past the edge.\n\
-         Reduction {ratio:.2}× — the bar is {CONTROL_REDUCTION_FACTOR}×.\n\
+         Ratio {ratio:.2}× (was the measure when this was a reduction test; \
+         the bar was {CONTROL_REDUCTION_FACTOR}×).\n\
          \n\
-         Two ways this fails. Either the dilation is NOT the cause and the \
-         mechanism in the module header is wrong — in which case test 2 is \
-         still a real finding, but its explanation must be re-traced before \
-         anyone acts on it — or a second, independent path is putting cut \
-         targets off the footprint even with no dilation, which is a SEPARATE \
-         defect and should be filed as one rather than folded in here. Do not \
-         weaken the bar to make this green.",
+         Before F2 this test measured a COLLAPSE rather than a zero: the \
+         shipped arm ran 131 targets off the footprint and the undilated \
+         control a small fraction of that, which is what attributed the \
+         population to `overlap_mm`. That attribution is now history, and \
+         the assertion is the stronger one it enabled.",
         shipped_dial = shipped.overlap_mm,
         control_dial = control.overlap_mm,
         shipped_all = shipped.cutting.len(),
@@ -871,148 +879,70 @@ fn the_overlap_dial_is_the_cause() {
     );
 }
 
-// ── Test 4: the OVERCUT, in the depth domain ─────────────────────────────
+// ── Test 4: no excluded sentinel reaches the emitted path ───────────────
 
-/// **REPRODUCTION (depth domain) — the off-footprint targets are commanded
-/// BELOW the top of the stock, into material that should never be touched.**
+/// **What is left of the depth-domain reproduction, once the population it
+/// measured is gone.**
 ///
-/// **THIS TEST PINS A DEFECT. IT IS GREEN TODAY.** When the fix lands there
-/// is no population left to measure and this test should be collapsed into
-/// test 2's inverted form (or reduced to `assert!(violations.is_empty())`).
+/// This test used to be `off_footprint_targets_command_a_deeper_z_than_the_
+/// surface`: it took D-16.1's 131 off-footprint targets, measured each
+/// against the stock top, and asserted the worst gouge exceeded 2× the
+/// dialled cusp. On the filed configuration it read an order of magnitude
+/// above that bar — the rim-riding CL, the flank of the tool resting on the
+/// mesh edge from outside, with no surface under it at all.
 ///
-/// ## Why the oracle is NOT `point_drop_cutter` at the same XY
+/// **After F2 there are no off-footprint targets, so that measurement has no
+/// population and was retired rather than left to pass by finding nothing.**
+/// Its EXISTENCE half is test 2's, inverted. What survives here is its other
+/// assertion, which never depended on the run-off population and guards a
+/// separate, worse failure: `ring_to_3d` marks an off-mesh vertex excluded
+/// and parks it at `min_z + stock_to_leave`, and the shared run-splitter is
+/// supposed to retract around every such stretch. If one ever reaches the
+/// emitted path, the tool is commanded to the bottom of the Z range in
+/// mid-air. A non-finite drop-cutter probe under an EMITTED cutting target
+/// is that leak's signature.
 ///
-/// The obvious comparison — commanded Z against `point_drop_cutter(x, y,
-/// …).z` — is CIRCULAR. `scallop::ring_to_3d` (`scallop.rs:905-921`) *sets*
-/// the commanded Z to exactly `point_drop_cutter(p.x, p.y, …).z +
-/// stock_to_leave`, and `stock_to_leave` is 0.0 on this arm, so the two agree
-/// to floating point BY CONSTRUCTION. Re-measuring that would produce a
-/// beautiful zero and prove nothing. This test REPORTS the agreement — it is
-/// the mechanism's fingerprint — but does not assert on it as if it were an
-/// error term.
-///
-/// The honest reference is the **top of the stock**. Outside the footprint
-/// there is no surface — the vertical ray hits nothing, which is the very
-/// definition of the violating population — so the material there is solid
-/// stock all the way up. On this fixture the stock top is `z = 0`, the rim
-/// plane, which is also `mesh.bbox.max.z`; any commanded `z < 0` at an
-/// off-footprint XY is a gouge of exactly that depth. (Same framing
-/// `strategy_comparison_h4.rs::stock_for_groove` uses: stock
-/// `origin_z = −(depth + 2)`, height `depth + 2`, top at 0.)
-///
-/// ## Both outcomes are handled
-///
-/// The drop-cutter probe is also run at each violating XY and its finiteness
-/// counted. A FINITE probe at an XY with no triangle underneath is precisely
-/// stage 2's rim-riding CL, and is what the assertion expects. A NON-FINITE
-/// probe would mean an excluded sentinel point (`min_z + stock_to_leave`,
-/// `scallop.rs:915` and `scallop.rs:1036`) leaked past the run-splitter into
-/// the emitted path — a **different and worse** defect, with the tool
-/// commanded to the bottom of the Z range in mid-air. The test fails loudly
-/// and says so, rather than silently averaging the two together.
-///
-/// ## Why the bar is 2× the cusp and not the filed 10×
-///
-/// D-16.1 was filed at −235 µm against a 22.5 µm cusp — 10.4×. That figure is
-/// the drop-cutter CL at the FAR corner of the admit strip, where a ring
-/// vertex sits a full half generation cell (0.375 mm) past the rim. Where ring
-/// vertices actually land inside that strip is a function of the cascade's
-/// stepover, which `ring_stepover` takes as a MIN across each ring — so
-/// pinning the bar at an observed maximum would be a bar on ring PLACEMENT,
-/// not on the defect. `GOUGE_BAR_CUSPS = 2.0` (45 µm) is the smallest bar that
-/// cannot be explained by cusp-scale geometry or numeric noise. The measured
-/// worst is reported in the message; on the filed configuration it runs an
-/// order of magnitude above the bar, because the dilated mid-steep polygon
-/// reaches out over the groove FLOOR (z = −1.2) as well as over the rim.
+/// Non-vacuity: this runs over every cutting target the arm emits (thousands
+/// on this fixture), not over a filtered subset, so it cannot pass by finding
+/// nothing. The count is asserted.
 #[test]
-fn off_footprint_targets_command_a_deeper_z_than_the_surface() {
+fn no_emitted_cut_target_sits_where_the_surface_probe_finds_nothing() {
     let mesh = fixture_mesh();
     let index = SpatialIndex::build_auto(&mesh);
     let cutter = fixture_cutter();
     let p = shipped_probe();
 
     assert!(
-        !p.violations.is_empty(),
-        "NOTHING TO MEASURE: the shipped arm produced no off-footprint \
-         cutting targets, so this test would pass by finding nothing. That is \
-         either the fix landing (good — see test 2, invert it, and collapse \
-         this test into it) or the reproduction breaking (bad). Test 2 \
-         adjudicates; do not read a green here as evidence on its own."
+        p.cutting.len() > 1000,
+        "population guard: only {} cutting targets — this fixture emits \
+         thousands, so something upstream moved and a green below would mean \
+         nothing",
+        p.cutting.len(),
     );
 
-    let stock_top_z = mesh.bbox.max.z;
-    let mut worst_gouge_mm = f64::NEG_INFINITY;
-    let mut worst_at = (0.0_f64, 0.0_f64, 0.0_f64);
-    let mut nonfinite_probes = 0usize;
-    let mut worst_probe_disagreement_mm = 0.0_f64;
-    let mut below_stock_top = 0usize;
-
-    for t in &p.violations {
-        let gouge = stock_top_z - t.z;
-        if gouge > worst_gouge_mm {
-            worst_gouge_mm = gouge;
-            worst_at = (t.x, t.y, t.z);
-        }
-        if gouge > 0.0 {
-            below_stock_top += 1;
-        }
+    let mut nonfinite: Vec<(f64, f64, f64)> = Vec::new();
+    for t in &p.cutting {
         let cl = point_drop_cutter(t.x, t.y, &mesh, &index, &cutter);
-        if cl.z.is_finite() {
-            worst_probe_disagreement_mm = worst_probe_disagreement_mm.max((cl.z - t.z).abs());
-        } else {
-            nonfinite_probes += 1;
+        if !cl.z.is_finite() {
+            nonfinite.push((t.x, t.y, t.z));
         }
     }
 
-    let n_bad = p.violations.len();
-    let cusp = cusp_mm();
-    let bar_mm = GOUGE_BAR_CUSPS * cusp;
-    let worst_um = worst_gouge_mm * 1000.0;
-    let cusp_um = cusp * 1000.0;
-    let factor = worst_gouge_mm / cusp;
-    let (wx, wy, wz) = worst_at;
-
-    // ── the mechanism's fingerprint, asserted as itself ─────────────────
-    assert_eq!(
-        nonfinite_probes, 0,
-        "{nonfinite_probes} of {n_bad} off-footprint cut targets have a \
-         NON-FINITE point_drop_cutter probe. That is not D-16.1: a kept ring \
-         vertex requires `finite && heightmap_covered_at_world(...)` \
-         (scallop.rs:911), and a refinement probe that fails either test \
-         pushes an EXCLUDED point at `min_z + stock_to_leave` and returns \
-         (scallop.rs:1036), which the run-splitter is supposed to retract \
-         around. A non-finite probe under an EMITTED cut therefore means an \
-         excluded sentinel leaked into the path and the tool is being sent to \
-         the bottom of the Z range in mid-air — a separate and worse defect. \
-         File it separately; do not fold it into D-16.1."
-    );
-
     assert!(
-        worst_gouge_mm > bar_mm,
-        "the run-off targets do not sit meaningfully below the stock top, so \
-         D-16.1's DEPTH claim is not reproduced here (its EXISTENCE claim, \
-         test 2, is unaffected).\n\
+        nonfinite.is_empty(),
+        "{} of {} EMITTED cutting targets sit at an XY where point_drop_cutter \
+         finds no surface at all (first: {:?}).\n\
          \n\
-         {n_bad} off-footprint cutting targets; {below_stock_top} of them \
-         below the stock top (z = {stock_top_z:.3} mm — the rim plane, which \
-         is also mesh.bbox.max.z). Worst gouge {worst_um:.1} µm at \
-         ({wx:.3}, {wy:.3}, {wz:.4}), i.e. {factor:.1}× the dialled cusp \
-         height of {cusp_um:.1} µm. The bar is {GOUGE_BAR_CUSPS}× = \
-         {bar_mm:.4} mm.\n\
-         \n\
-         Mechanism fingerprint: the largest disagreement between the commanded \
-         Z and point_drop_cutter at the same XY is \
-         {worst_probe_disagreement_mm:.9} mm. It is ~0 BY CONSTRUCTION — \
-         ring_to_3d sets the commanded Z to that CL plus stock_to_leave (0.0 \
-         on this arm) — which is exactly the point: the commanded depth is a \
-         RIM-RIDING cutter location, the flank of the tool resting on the mesh \
-         edge from outside, and there is no surface under it at all. D-16.1 \
-         was filed at −235 µm, 10.4× the cusp.\n\
-         \n\
-         If this fails while test 2 still passes, the tool is leaving the \
-         footprint but staying at or above the stock top — worth knowing, and \
-         a much milder defect. Re-read the population before relaxing \
-         anything."
+         A kept ring vertex requires `finite && point_is_covered(...)`, and a \
+         refinement probe failing either test pushes an EXCLUDED point at \
+         `min_z + stock_to_leave` and returns — which the run-splitter is \
+         supposed to turn into a retract. A non-finite probe under an emitted \
+         cut therefore means an excluded sentinel leaked into the path and \
+         the tool is being sent to the bottom of the Z range in mid-air. That \
+         is a separate and worse defect from D-16.1; file it as one.",
+        nonfinite.len(),
+        p.cutting.len(),
+        nonfinite.first(),
     );
 }
 

@@ -205,6 +205,34 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
     })
 }
 
+/// Does the vertical ray at `(x, y)` pass through the mesh footprint?
+///
+/// The **exact** coverage predicate: a zero-radius spatial-index query plus
+/// `Triangle::contains_point_xy`, with no grid, no cell and no rounding. It
+/// is the one thing `point_drop_cutter` cannot tell you — the cutter has a
+/// radius, so it reports a contact whenever it touches ANY nearby triangle,
+/// including the *rim* of a mesh that does not cover that XY. A CL taken
+/// there rests on the mesh's end edge and its tip sits `r − √(r² − d²)`
+/// **below** the surface: a rim-riding overcut, or (over a hole) a trench
+/// carved right around the part.
+///
+/// Every consumer that needs "is this point over real surface" should call
+/// this rather than consulting a sampled coverage mask. A mask answers for
+/// the nearest CELL, so it admits points up to half a cell outside the true
+/// footprint — which is D-16.1 (`planning/review_2026-08-04/`
+/// `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2): scallop's ring lift read a
+/// 0.75 mm generation heightmap and cut 0.375 mm past the part edge.
+///
+/// Cost is one extra `index.query` at radius 0 — the single-cell fast path,
+/// and cheap next to the `point_drop_cutter` call it accompanies.
+pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
+    index.query(x, y, 0.0).iter().any(|&idx| {
+        // SAFETY: idx comes from SpatialIndex which only stores valid face indices
+        #[allow(clippy::indexing_slicing)]
+        mesh.faces[idx].contains_point_xy(x, y)
+    })
+}
+
 /// One grid cell's CL point (clamped to `min_z`) and, when requested,
 /// whether its vertical ray passes through a mesh triangle footprint —
 /// the `covered` predicate `SurfaceHeightmap` needs and `DropCutterGrid`
@@ -225,12 +253,7 @@ pub(crate) fn sample_grid_cell<C: MillingCutter + ?Sized>(
     if cl.z < min_z {
         cl.z = min_z;
     }
-    let covered = with_coverage
-        && index.query(x, y, 0.0).iter().any(|&idx| {
-            // SAFETY: idx comes from SpatialIndex which only stores valid face indices
-            #[allow(clippy::indexing_slicing)]
-            mesh.faces[idx].contains_point_xy(x, y)
-        });
+    let covered = with_coverage && point_is_over_mesh_xy(x, y, mesh, index);
     (cl, covered)
 }
 
