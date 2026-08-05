@@ -33,11 +33,22 @@ use rs_cam_mcp::server::{
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
-/// the published snapshot — and only while a generation is actually in
-/// flight. When the lane is idle, reads wait as long as they always did.
+/// the published snapshot.
 ///
-/// A/M12 gate: `list_toolpaths` must answer in < 1 s during a long
-/// generation. 750 ms leaves headroom for the fallback render.
+/// A/M12 gate: `list_toolpaths` must answer in < 1 s. 750 ms leaves headroom
+/// for the fallback render.
+///
+/// **C6 (2026-08-06): this deadline no longer depends on lane activity.** It
+/// used to apply only while a toolpath generation was in flight, on the
+/// assumption that the generation was the only thing that could hold the
+/// frame loop. It is not: `drain_mcp_requests` handles every drained request
+/// in one frame on the egui main thread, so a long `narrate_toolpath` or
+/// `get_cut_trace` stalls the loop with the lane **idle** — and in that state
+/// all five cheap reads took the unbounded path and blocked for the full
+/// narration. That hole is H2.6's actual subject
+/// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.D.1).
+/// The guarantee is now what agents were always told it was: a cheap read
+/// answers within a second, whatever the GUI is doing.
 const BUSY_READ_DEADLINE: Duration = Duration::from_millis(750);
 
 /// Embedded MCP server that forwards requests to the GUI thread.
@@ -103,20 +114,22 @@ impl EmbeddedCamServer {
         }
     }
 
-    /// A/M12: a cheap, no-argument read that **cannot** be trapped behind a
-    /// running generation.
+    /// A/M12 + C6: a cheap, no-argument read that **cannot** be trapped
+    /// behind anything the GUI thread is doing.
     ///
-    /// While the toolpath lane is idle this behaves exactly like
-    /// [`Self::send_request`] — same payload, same unbounded wait, no
-    /// behaviour change. While a generation is in flight the GUI round-trip
-    /// races [`BUSY_READ_DEADLINE`]; if the frame loop loses, the answer comes
-    /// from the last snapshot the GUI published, wrapped so the caller can
-    /// never mistake a snapshot for a live read.
+    /// The GUI round-trip always races [`BUSY_READ_DEADLINE`]; if the frame
+    /// loop loses, the answer comes from the last snapshot the GUI published,
+    /// wrapped so the caller can never mistake a snapshot for a live read.
+    /// When the frame loop answers in time — the overwhelmingly common case,
+    /// since these five reads are O(1) once the loop reaches them — the
+    /// payload is the live one, byte for byte as before.
+    ///
+    /// **C6 changed the condition, not the mechanism.** The deadline used to
+    /// be armed only while the toolpath lane was active, so a frame loop
+    /// stalled by a long READ (lane idle) blocked every cheap read for the
+    /// full duration. Nothing about the busy path moved; the idle path
+    /// stopped being a special case.
     async fn cheap_read(&self, kind: McpRequestKind, cached: McpReadKind) -> String {
-        if !self.generation.snapshot().is_active() {
-            return Self::format_result(self.send_request(kind).await);
-        }
-
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let request = McpRequest {
             kind,
@@ -141,6 +154,18 @@ impl EmbeddedCamServer {
     /// Render the stalled-frame-loop answer for a cheap read.
     fn snapshot_fallback(&self, cached: McpReadKind) -> String {
         let lane = self.generation.snapshot();
+        // C6: the fallback is now reachable with the lane IDLE, so the text
+        // must not assert a generation that is not running. A stalled frame
+        // loop with nothing generating means a long in-band read is holding
+        // it — which is the case this deadline was widened to cover, and
+        // saying "a generation is in flight" there would be a lie an agent
+        // would then act on.
+        let stall_reason = if lane.is_active() {
+            " because a toolpath generation is in flight"
+        } else {
+            " and no generation is running — a long in-band read (narrate_toolpath, \
+             get_cut_trace, get_tool_load_report) is holding the frame loop"
+        };
         let in_flight = serde_json::json!({
             "toolpath_index": lane.active_toolpath_index,
             "toolpath_id": lane.active_toolpath_id,
@@ -158,12 +183,12 @@ impl EmbeddedCamServer {
                     "served_from": "snapshot",
                     "snapshot_age_s": age.as_secs_f64(),
                     "summary": format!(
-                        "The GUI frame loop did not answer {tool} within {} ms because a \
-                         toolpath generation is in flight. This is the last snapshot it \
-                         published, {:.1} s ago — a lagging view, not a live read. \
-                         `generation_status` is always live; `cancel_generation` always \
-                         answers.",
+                        "The GUI frame loop did not answer {tool} within {} ms{}. This is \
+                         the last snapshot it published, {:.1} s ago — a lagging view, not \
+                         a live read. `generation_status` is always live; \
+                         `cancel_generation` always answers.",
                         BUSY_READ_DEADLINE.as_millis(),
+                        stall_reason,
                         age.as_secs_f64(),
                     ),
                     "generation_in_flight": in_flight,
@@ -174,10 +199,11 @@ impl EmbeddedCamServer {
                 "ok": false,
                 "served_from": "nothing",
                 "error": format!(
-                    "{tool} could not be answered: the GUI frame loop is busy with a \
-                     generation and has never published a snapshot (no frame has \
-                     completed since startup). Use `generation_status` for live lane \
-                     state, or `cancel_generation` to stop the job."
+                    "{tool} could not be answered: the GUI frame loop did not respond{} \
+                     and has never published a snapshot (no frame has completed since \
+                     startup). Use `generation_status` for live lane state, or \
+                     `cancel_generation` to stop a running job.",
+                    stall_reason,
                 ),
                 "generation_in_flight": in_flight,
             })),
