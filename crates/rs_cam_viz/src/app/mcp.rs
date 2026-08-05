@@ -4847,6 +4847,7 @@ fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
         | SpanKind::LeadOut
         | SpanKind::LinkBridge
         | SpanKind::DressupArtifact
+        | SpanKind::GeometryRefit
         | SpanKind::WaterlineCleanup
         | SpanKind::RapidOrderBarrier => Vec::new(),
     }
@@ -4913,6 +4914,7 @@ fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
         SpanKind::LeadOut => "LeadOut",
         SpanKind::LinkBridge => "LinkBridge",
         SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::GeometryRefit => "GeometryRefit",
         SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
         // Transport-only carrier (task #14) — stripped before a toolpath

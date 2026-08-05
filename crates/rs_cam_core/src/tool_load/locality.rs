@@ -136,6 +136,13 @@ pub fn classify_sample_locality(
 ///   DOC derating) silently inflates the gate's view of cutter
 ///   engagement (P3_TRANSIT_PEAK_DOC_RCA.md).
 ///
+/// [`SpanKind::GeometryRefit`] (arc-fit) is **not** in that set. Checkpoint
+/// D Q3 (2026-08-04) narrowed the predicate: until then arc-fit shared
+/// `DressupArtifact` with the dogbone bridge, and because arc-fitting is
+/// default-on for all three process roles that removed nearly every cutting
+/// sample of a curve-heavy operation from every gate
+/// (`planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md` §7).
+///
 /// Consulting `sample.in_transit_span` first makes this the canonical
 /// gate-side predicate — callers don't need to know whether they have
 /// span_lookup plumbed; the dexel-stamper-set flag covers every transit
@@ -164,6 +171,13 @@ pub fn is_steady_state_for_gate(
 /// decision) must drop these samples entirely — surfacing the inflated
 /// value as an `entry_spike` advisory misleads the operator
 /// (P3_TRANSIT_PEAK_DOC_RCA.md).
+///
+/// [`SpanKind::GeometryRefit`] is **not** phantom transit. Arc-fit's
+/// replacement arc follows the same path through the same material as the
+/// linear moves it collapsed; there is no neighbouring stock to misread.
+/// It shared `DressupArtifact` with the dogbone bridge until Checkpoint D
+/// Q3 (2026-08-04); the population effect of that conflation is pinned by
+/// `tests/arcfit_gate_population_d4.rs`.
 ///
 /// `Entry` is **not** phantom-transit even though it's also marked
 /// `in_transit_span = true`: a configured plunge / ramp / helix entry

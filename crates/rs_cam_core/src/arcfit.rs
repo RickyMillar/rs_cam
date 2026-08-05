@@ -41,7 +41,14 @@ use crate::transform_provenance::{ReconcileSet, Transformed};
 ///   arc can never straddle two region nodes — both regions' `move_range`s
 ///   would otherwise land on the same index and stop tiling, which is the
 ///   invariant `region_node_ranges_tile_the_stitched_toolpath` exists to guard.
-/// - Each inserted arc is tagged with a `DressupArtifact` span labeled "arc-fit".
+/// - Each inserted arc is tagged with a [`SpanKind::GeometryRefit`] span
+///   labeled "arc-fit". It was `SpanKind::DressupArtifact` until Checkpoint D
+///   Q3 (2026-08-04); that kind is on the transit list, so every arc-fitted
+///   cutting sample was dropped from the chipload / power / deflection gate
+///   populations and from both peak accumulators. A fitted arc is the same
+///   cut re-represented within `tolerance`, not a bridge over neighbouring
+///   stock, so it now carries its own kind and stays in those populations.
+///   See `planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md` §7.
 /// - Input spans are remapped through the N-to-1 collapse via `MoveRemap`.
 /// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
 ///   spans pass through untouched.
@@ -279,7 +286,7 @@ pub fn fit_arcs_with_provenance(
     let new_spans = if spans_valid {
         let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in arc_positions {
-            remapped.push(Span::new(pos, pos + 1, SpanKind::DressupArtifact).with_label("arc-fit"));
+            remapped.push(Span::new(pos, pos + 1, SpanKind::GeometryRefit).with_label("arc-fit"));
         }
         remapped
     } else {
@@ -1036,7 +1043,7 @@ mod tests {
         // barrier in the middle. Arc-fit must not collapse a single arc
         // across the barrier — both halves should be arc-fit (or each smaller
         // run preserved) but the barrier index itself must NOT fall inside
-        // any DressupArtifact arc span.
+        // any GeometryRefit arc span.
         let tp = circle_linear_toolpath(64);
         let n_in = tp.moves.len();
         // Place barrier at the midpoint of the linear run.
@@ -1053,7 +1060,7 @@ mod tests {
         // With the barrier, no arc may span the boundary.
         let result = fit_arcs(annotated, 0.1, f64::INFINITY);
 
-        // Build a remap from old indices to the new arc/move via DressupArtifact
+        // Build a remap from old indices to the new arc/move via GeometryRefit
         // span coverage in the new toolpath. Any arc that COVERS a barrier in
         // OLD indices would have collapsed across — we instead check the
         // structural invariant: the total number of moves is reduced (arcs
@@ -1073,13 +1080,13 @@ mod tests {
         assert_eq!(barriers.len(), 1, "barrier preserved exactly once");
         assert!(barriers[0].is_boundary(), "barrier stays zero-width");
 
-        // No DressupArtifact (arc-fit) span may contain the barrier index in
+        // No GeometryRefit (arc-fit) span may contain the barrier index in
         // the new toolpath — that would mean we collapsed across it.
         let barrier_new_idx = barriers[0].start_move;
         for s in result
             .spans
             .iter()
-            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .filter(|s| s.kind == SpanKind::GeometryRefit)
         {
             assert!(
                 !(s.start_move < barrier_new_idx && s.end_move > barrier_new_idx),
@@ -1099,7 +1106,7 @@ mod tests {
     #[test]
     fn fit_arcs_remaps_spans_and_tags_artifact() {
         // No barriers — a clean arc-eligible run. Operation span should shrink
-        // to match new move count, and DressupArtifact spans should tag the
+        // to match new move count, and GeometryRefit spans should tag the
         // arcs.
         let tp = circle_linear_toolpath(64);
         let n_in = tp.moves.len();
@@ -1121,11 +1128,11 @@ mod tests {
         let artifacts: Vec<&Span> = result
             .spans
             .iter()
-            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .filter(|s| s.kind == SpanKind::GeometryRefit)
             .collect();
         assert!(
             !artifacts.is_empty(),
-            "at least one DressupArtifact (arc-fit) span"
+            "at least one GeometryRefit (arc-fit) span"
         );
         for a in &artifacts {
             assert_eq!(a.label, "arc-fit");
@@ -1136,7 +1143,7 @@ mod tests {
                     result.toolpath.moves[a.start_move].move_type,
                     MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
                 ),
-                "DressupArtifact span must tag an arc move"
+                "GeometryRefit span must tag an arc move"
             );
         }
 

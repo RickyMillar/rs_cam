@@ -551,7 +551,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "inspect_spans",
-        description = "Inspect the structural spans (Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath. With no filter, returns a summary: total `kind_counts` plus outermost spans (Operation + DepthPass) under `top_level` with child counts. Pass `kind`, `parent_id`, `pass_index`, or `region_id` to retrieve detail spans under `spans`. `kind` is a SpanKind name in snake_case. `parent_id` is a span id from a previous call (drill: Operation → DepthPass → Region). `pass_index` matches DepthPass payload; `region_id` matches Region payload. `max_spans` caps the result (default 50; report `truncated` + `total_matching` when capped). Run generate_toolpath first."
+        description = "Inspect the structural spans (Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, GeometryRefit, RapidOrderBarrier) of a generated toolpath. With no filter, returns a summary: total `kind_counts` plus outermost spans (Operation + DepthPass) under `top_level` with child counts. Pass `kind`, `parent_id`, `pass_index`, or `region_id` to retrieve detail spans under `spans`. `kind` is a SpanKind name in snake_case. `parent_id` is a span id from a previous call (drill: Operation → DepthPass → Region). `pass_index` matches DepthPass payload; `region_id` matches Region payload. `max_spans` caps the result (default 50; report `truncated` + `total_matching` when capped). Run generate_toolpath first."
     )]
     async fn inspect_spans(
         &self,

@@ -142,7 +142,9 @@ pub fn draw(
                         .on_hover_text("Linker bridges inserted between regions");
                     ui.checkbox(&mut f.show_dressup, "DressupArtifact")
                         .on_hover_text(
-                            "Dogbones, arc-fit replacements, other dressup-introduced segments",
+                            "Dogbone overcuts and other dressup-introduced bridge segments \
+                             (arc-fit replacements are ordinary cutting geometry and are \
+                             not filtered here)",
                         );
                     if any_hidden && ui.button("Reset").clicked() {
                         *f = crate::state::viewport::SpanKindFilter::default();
