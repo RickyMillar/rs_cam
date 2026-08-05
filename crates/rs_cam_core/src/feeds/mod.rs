@@ -602,12 +602,27 @@ pub enum FeedsWarning {
     },
     /// Vendor-LUT or formula chipload derated below the rubbing
     /// floor (typically extreme-Janka hardwoods scaling an oak-anchored
-    /// LUT row down). The engine clamps to `RUBBING_FLOOR_MM_TOOTH`
-    /// and emits this so the operator sees the honest derate instead
-    /// of a silent ploughing recipe.
+    /// LUT row down). The engine clamps up and emits this so the
+    /// operator sees the honest derate instead of a silent ploughing
+    /// recipe.
     ChiploadClampedToFloor {
         requested: f64,
+        /// The floor actually applied — [`RUBBING_FLOOR_MM_TOOTH`], or
+        /// the matched row's derated band maximum when that sits lower.
+        /// See [`effective_rubbing_floor`].
         floor: f64,
+        /// `Some(global)` when `floor` was capped by the matched band's
+        /// ceiling, carrying the global chip-formation threshold the
+        /// recipe therefore does **not** reach. This combination is a
+        /// genuine, unresolvable conflict between two shipped policies:
+        /// the vendor row says anything above `floor` breaks the tool,
+        /// the chip-formation rule says anything below `global` burns
+        /// the work. The engine picks the vendor ceiling (never command
+        /// past a band we are told is breakage-side) and surfaces the
+        /// residual rubbing risk here rather than hiding it behind a
+        /// number that silently changed meaning.
+        /// `None` when the global floor applied unmodified.
+        band_capped_from: Option<f64>,
     },
     /// Drill-cycle feed clamped into the material plunge-feed envelope
     /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
@@ -706,7 +721,62 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
 /// typically very hard species (Janka >> the matched row's anchor) or
 /// extreme diameter shrinkage — is clamped up and a
 /// `FeedsWarning::ChiploadClampedToFloor` warning is emitted.
-const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
+///
+/// **This is a *global* threshold, not the value the clamp applies.**
+/// It carries no diameter and no material, while every other chipload
+/// bound in the crate is a scaled vendor band. The clamp applies
+/// [`effective_rubbing_floor`], which subordinates this constant to the
+/// matched row's band ceiling.
+pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
+
+/// The floor the Step-9b clamp actually applies:
+/// `min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)`.
+///
+/// # Why the global constant cannot be used directly
+///
+/// `RUBBING_FLOOR_MM_TOOTH` is diameter- and material-independent;
+/// [`ChiploadBounds`] is the same vendor row's chipload window after the
+/// diameter, hardness and DOC derates. On small tools the two cross.
+/// Measured on the census's B3 reference row (Ø1 tapered ball, 2 flutes,
+/// scallop finish, hard maple — `tests/feed_explanation_snapshot_b3.rs`)
+/// the derated band is 0.003605–0.007211 mm/tooth and the global floor
+/// is **3.47× the band maximum**. Clamping *up* to 0.025 there commanded
+/// a chipload the post-sim chipload gate's own envelope
+/// (`tool_load::chipload`) reads as `Exceeds(High)` — breakage-side. A
+/// floor whose stated job is to stop the recipe *undershooting* a band
+/// was pushing it clean over the top of that band.
+///
+/// # What is preserved, and what is given up
+///
+/// The rubbing/burnishing threshold is a real phenomenon and the clamp
+/// survives unchanged wherever the band has room for it (the common
+/// case: at Ø6 in oak the band is 0.034–0.059, entirely above the
+/// floor, and `min` returns the constant). What is given up is the
+/// claim that the engine can always *reach* chip formation: when the
+/// whole band sits under 0.025 mm/tooth, no feed exists that both
+/// clears the rubbing threshold and stays inside the vendor window.
+/// The engine then commands the band maximum — the furthest from
+/// rubbing it can go without commanding a chipload it is told is
+/// breakage-side — and
+/// `FeedsWarning::ChiploadClampedToFloor::band_capped_from` discloses
+/// the global threshold that was not met, so the residual burn risk is
+/// surfaced rather than silently absorbed into a smaller number.
+///
+/// # Bands that do not exist
+///
+/// RPM-only vendor rows and the formula fallback publish no chipload
+/// window (`chipload_bounds == None`); there is nothing to subordinate
+/// to and the global constant applies unmodified. That path is pinned
+/// by `tests/_litmatrix_rpm_only_lut_chipload.rs`.
+///
+/// FEEDS_CENSUS C-12 / T3.3 / T4.2; ruled 2026-08-06.
+#[must_use]
+pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
+    match band {
+        Some(b) if b.max_mm_per_tooth > 0.0 => RUBBING_FLOOR_MM_TOOTH.min(b.max_mm_per_tooth),
+        _ => RUBBING_FLOOR_MM_TOOTH,
+    }
+}
 
 /// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM
 /// band narrows and drops as diameter grows: chip evacuation scales
@@ -1459,16 +1529,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // bug if it ever regresses to zero feed — we don't want this
     // floor silently masking a zero-chipload regression.
     // (Literature-matrix cell flat_6mm_pocket_ipe_hardness.)
+    //
+    // The floor applied is `effective_rubbing_floor(chipload_bounds)`,
+    // NOT the bare `RUBBING_FLOOR_MM_TOOTH` constant: the global
+    // threshold is subordinated to the matched row's derated band
+    // ceiling so the clamp can never push feed past the very band it
+    // exists to keep the recipe inside. See that function for the
+    // derivation and for what is given up when a whole band sits below
+    // the global threshold (FEEDS_CENSUS C-12 / T3.3, ruled 2026-08-06).
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;
-        if commanded_fpt > 0.0 && commanded_fpt < RUBBING_FLOOR_MM_TOOTH {
+        let floor = effective_rubbing_floor(chipload_bounds);
+        if commanded_fpt > 0.0 && commanded_fpt < floor {
             warnings.push(FeedsWarning::ChiploadClampedToFloor {
                 requested: commanded_fpt,
-                floor: RUBBING_FLOOR_MM_TOOTH,
+                floor,
+                band_capped_from: (floor < RUBBING_FLOOR_MM_TOOTH)
+                    .then_some(RUBBING_FLOOR_MM_TOOTH),
             });
             let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
-            let target_feed = RUBBING_FLOOR_MM_TOOTH * fpt_divisor;
+            let target_feed = floor * fpt_divisor;
             feed = target_feed.min(machine_max_feed_after_safety);
         }
     }

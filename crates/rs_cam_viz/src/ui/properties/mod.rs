@@ -1960,9 +1960,16 @@ fn draw_feeds_card(
                     rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
                         requested,
                         floor,
-                    } => format!(
-                        "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
-                    ),
+                        band_capped_from,
+                    } => match band_capped_from {
+                        None => format!(
+                            "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
+                        ),
+                        Some(global) => format!(
+                            "Chipload raised to band ceiling: {requested:.3} -> {floor:.3}mm/tooth \
+                             (band is entirely below the {global:.3} rubbing floor)"
+                        ),
+                    },
                     rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                         requested,
                         actual,
