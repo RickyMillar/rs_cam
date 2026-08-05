@@ -225,11 +225,12 @@ pub fn export_gcode_checked(
     // behind `policy.accept_unmodeled`.
     let report = project_load_report(project, sim_trace);
 
-    let post_format = match project.post_config().format.to_ascii_lowercase().as_str() {
-        "linuxcnc" | "linux_cnc" => PostFormat::LinuxCnc,
-        "mach3" => PostFormat::Mach3,
-        _ => PostFormat::Grbl,
-    };
+    // W9 / P-1: this used to open-code a token match that had no
+    // `"grblhal"` arm, so a grblHAL project exported GRBL. One
+    // resolver now; an unrecognised token still falls back to GRBL
+    // (the historic behaviour) rather than refusing the export.
+    let post_format =
+        PostFormat::from_token(&project.post_config().format).unwrap_or(PostFormat::Grbl);
     let post = post_format.definition();
 
     let phases: Vec<GcodePhase<'_>> = project
@@ -823,7 +824,15 @@ pub fn replace_rapids_with_feed(gcode: &str, high_feedrate: f64, post: &PostDefi
 #[serde(rename_all = "snake_case")]
 pub enum PostFormat {
     Grbl,
+    /// `rename_all = "snake_case"` serialises this as `"grbl_hal"`,
+    /// while the project-file writer spells it `"grblhal"`
+    /// ([`PostFormat::to_token`]). The alias makes the typed serde wire
+    /// (the viz fallback schema) accept the project-file spelling too,
+    /// so a grblHAL project cannot be rejected by whichever loader
+    /// happens to read it. Serialisation output is unchanged.
+    #[serde(alias = "grblhal")]
     GrblHal,
+    #[serde(alias = "linuxcnc")]
     LinuxCnc,
     Mach3,
 }
@@ -856,17 +865,47 @@ impl PostFormat {
             PostFormat::Mach3 => post::mach3(),
         }
     }
+
+    /// The canonical token this format is written as in a project /
+    /// job file. Every writer must go through here — `to_token` and
+    /// [`Self::from_token`] are the only two halves of the on-disk
+    /// spelling, so they cannot drift apart the way four hand-written
+    /// `match` arms did (W9 / P-1).
+    pub fn to_token(self) -> &'static str {
+        match self {
+            PostFormat::Grbl => "grbl",
+            PostFormat::GrblHal => "grblhal",
+            PostFormat::LinuxCnc => "linuxcnc",
+            PostFormat::Mach3 => "mach3",
+        }
+    }
+
+    /// **The** resolver for a post token read off disk or off a CLI
+    /// flag. Case-insensitive; accepts the underscore spellings as
+    /// aliases of the canonical [`Self::to_token`] output.
+    ///
+    /// W9 / P-1: three production readers used to open-code this match
+    /// and only one of them knew `"grblhal"` — the other two fell
+    /// through to `Grbl`, so selecting grblHAL in the GUI, saving and
+    /// reloading silently downgraded both the dropdown and the emitted
+    /// G-code dialect. Anything that turns a string into a
+    /// `PostFormat` must call this rather than re-derive it. Returning
+    /// `None` (rather than defaulting) is deliberate: the caller
+    /// chooses whether an unknown token is a fallback or an error.
+    pub fn from_token(name: &str) -> Option<PostFormat> {
+        match name.trim().to_lowercase().as_str() {
+            "grbl" => Some(PostFormat::Grbl),
+            "grblhal" | "grbl_hal" => Some(PostFormat::GrblHal),
+            "linuxcnc" | "linux_cnc" => Some(PostFormat::LinuxCnc),
+            "mach3" => Some(PostFormat::Mach3),
+            _ => None,
+        }
+    }
 }
 
 /// Get a `PostDefinition` by name (CLI / config-string lookup).
 pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
-    match name.to_lowercase().as_str() {
-        "grbl" => Some(PostFormat::Grbl.definition()),
-        "grblhal" | "grbl_hal" => Some(PostFormat::GrblHal.definition()),
-        "linuxcnc" | "linux_cnc" => Some(PostFormat::LinuxCnc.definition()),
-        "mach3" => Some(PostFormat::Mach3.definition()),
-        _ => None,
-    }
+    PostFormat::from_token(name).map(PostFormat::definition)
 }
 
 #[cfg(test)]
@@ -1055,6 +1094,66 @@ mod tests {
         assert!(get_post_definition("linux_cnc").is_some());
         assert!(get_post_definition("mach3").is_some());
         assert!(get_post_definition("unknown").is_none());
+    }
+
+    /// W9 / P-1. Every token this repo writes must resolve back to the
+    /// format that wrote it. `PostFormat::ALL` drives the loop so a
+    /// fifth dialect cannot be added with a `to_token` arm and no
+    /// `from_token` arm — the exact asymmetry that lost grblHAL.
+    #[test]
+    fn every_post_token_round_trips_through_the_resolver() {
+        for &format in PostFormat::ALL {
+            let token = format.to_token();
+            assert_eq!(
+                PostFormat::from_token(token),
+                Some(format),
+                "{token:?} did not resolve back to {format:?}"
+            );
+            assert_eq!(
+                get_post_definition(token).map(|d| d.name.as_str()),
+                Some(format.definition().name.as_str()),
+                "{token:?} resolved to the wrong post definition"
+            );
+        }
+    }
+
+    /// The resolver is case- and whitespace-insensitive, and the
+    /// underscore spellings stay accepted as aliases.
+    #[test]
+    fn the_post_resolver_accepts_the_alias_spellings() {
+        assert_eq!(
+            PostFormat::from_token("  GRBLHAL "),
+            Some(PostFormat::GrblHal)
+        );
+        assert_eq!(
+            PostFormat::from_token("grbl_hal"),
+            Some(PostFormat::GrblHal)
+        );
+        assert_eq!(
+            PostFormat::from_token("LinuxCNC"),
+            Some(PostFormat::LinuxCnc)
+        );
+        assert_eq!(PostFormat::from_token("cobalt"), None);
+    }
+
+    /// The typed serde wire (the viz fallback project schema) must
+    /// accept the project-file spelling as well as its own
+    /// `snake_case` output, or a grblHAL project written by the primary
+    /// writer is unreadable by the fallback loader.
+    #[test]
+    fn the_typed_post_wire_accepts_both_spellings() {
+        assert_eq!(
+            serde_json::from_str::<PostFormat>("\"grblhal\"").ok(),
+            Some(PostFormat::GrblHal)
+        );
+        assert_eq!(
+            serde_json::from_str::<PostFormat>("\"grbl_hal\"").ok(),
+            Some(PostFormat::GrblHal)
+        );
+        assert_eq!(
+            serde_json::from_str::<PostFormat>("\"linuxcnc\"").ok(),
+            Some(PostFormat::LinuxCnc)
+        );
     }
 
     #[test]

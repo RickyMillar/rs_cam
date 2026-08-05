@@ -832,11 +832,10 @@ fn load_legacy_project(
     }
     job.post.spindle_speed = legacy.job.spindle_speed;
     job.post.safe_z = legacy.job.safe_z;
-    job.post.format = match legacy.job.post.as_str() {
-        "linuxcnc" => PostFormat::LinuxCnc,
-        "mach3" => PostFormat::Mach3,
-        _ => PostFormat::Grbl,
-    };
+    // W9 / P-1, fourth reader (the risk map named three): the legacy
+    // loader dropped `"grblhal"` on the same floor as the two on the
+    // primary path. Routed through the tested resolver too.
+    job.post.format = PostFormat::from_token(&legacy.job.post).unwrap_or(PostFormat::Grbl);
     job.file_path = Some(path.to_path_buf());
     job.dirty = false;
 
