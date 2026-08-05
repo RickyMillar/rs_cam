@@ -289,7 +289,8 @@ pub enum SpanPayload {
 /// **Any future mix table, routing decision or report grouping must be built
 /// on this role (or on a [`SpanKind`]), never on `label`.** `label` is
 /// free text for humans; nothing downstream may depend on its shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RegionSpanRole {
     /// A planner territory node. `region_id` indexes the planner's own
     /// region table (e.g. `UnifiedFinishReport::region_table`). The node set
