@@ -186,6 +186,10 @@ fn narration_air_cut_line_names_its_denominators() {
         spindle_rpm: Some(18_000),
         flute_count: Some(2),
         is_drill_cycle: false,
+        // Checkpoint D Q2 — the abstention channel. `None` = this fixture
+        // makes no measurability claim, which is distinct from claiming
+        // everything was measurable.
+        measurability: None,
         material: None,
         truncated_core_mm2: None,
         zero_removal: None,
@@ -196,6 +200,9 @@ fn narration_air_cut_line_names_its_denominators() {
         ramp_reach_clamp: None,
         tip_float: None,
         retract_trips: None,
+        // Checkpoint C — the 2D failure contract's two report-only slots.
+        offset_library_failures: None,
+        boundary_clip_dropped: None,
     };
 
     let report = narrate_toolpath_with_context(

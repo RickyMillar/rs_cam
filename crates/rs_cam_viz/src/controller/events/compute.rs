@@ -1843,8 +1843,9 @@ impl<B: ComputeBackend> AppController<B> {
         // SAFETY: resp is a known JSON object we just constructed.
         #[allow(clippy::indexing_slicing)]
         {
-            resp["triage"] =
-                serde_json::to_value(&triage).unwrap_or_else(|_| serde_json::json!(null));
+            // `Value::Null` is a constant, so the lazy form is the
+            // `unnecessary_lazy_evaluations` lint.
+            resp["triage"] = serde_json::to_value(&triage).unwrap_or(serde_json::Value::Null);
         }
 
         resp
