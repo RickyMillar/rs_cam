@@ -267,7 +267,7 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
         &mut findings,
     );
 
-    let err = result.err().expect(
+    let err = result.expect_err(
         "the live clip must refuse a containment it could not compute — \
          passing the path through unclipped is exactly F-1",
     );
@@ -348,8 +348,10 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
     assert!((dropped.tool_diameter_mm - tool_diameter).abs() < 1e-9);
 
     // And it reaches the operator surface, not just the struct.
-    let mut stats = rs_cam_core::compute::config::ToolpathStats::default();
-    stats.boundary_clip_dropped = findings.boundary_clip_dropped;
+    let stats = rs_cam_core::compute::config::ToolpathStats {
+        boundary_clip_dropped: findings.boundary_clip_dropped,
+        ..Default::default()
+    };
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
         rs_cam_core::ids::ToolpathId(1),
         &stats,
