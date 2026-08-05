@@ -2832,7 +2832,17 @@ impl ProjectSession {
             .simulation
             .as_ref()
             .and_then(|sim| sim.cut_trace.as_deref());
+        // Checkpoint D Q2: narration reads the SAME measurability report the
+        // gates and the triage do, so it cannot publish a percentage the
+        // gates have already declined to act on.
+        let measurability = cut_trace.map(|trace| {
+            crate::sim_measurability::MeasurabilityReport::from_trace(
+                trace,
+                self.simulation.as_ref().map(|sim| sim.column_grid_cell_mm),
+            )
+        });
         let context = crate::narrate::ToolpathNarrationContext {
+            measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
@@ -2892,6 +2902,20 @@ impl ProjectSession {
     /// (one `collision_check` per computed toolpath) to build full
     /// evidence — appropriate for CLI/export, NOT for per-frame UI.
     #[instrument(skip(self))]
+    /// [`Self::simulation_triage`] against this session's own simulation —
+    /// the convenience path for batch callers that do not assemble their own
+    /// [`ProjectEvidence`].
+    pub fn triage(&self) -> crate::sim_triage::SimulationTriage {
+        let no_cancel = AtomicBool::new(false);
+        let holder_collisions = self.holder_collision_counts(&no_cancel);
+        let Some(sim) = self.simulation.as_ref() else {
+            return crate::sim_triage::SimulationTriage::default();
+        };
+        let evidence =
+            ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions);
+        self.simulation_triage(&evidence)
+    }
+
     pub fn diagnostics(&self) -> ProjectDiagnostics {
         let no_cancel = AtomicBool::new(false);
         let holder_collisions = self.holder_collision_counts(&no_cancel);
@@ -2943,6 +2967,52 @@ impl ProjectSession {
     /// supplied, rapid collision counts are 0 — we don't fall back to the
     /// inaccurate original-bbox check.
     #[instrument(skip_all)]
+    /// The page-one answer: one [`crate::sim_triage::SimulationTriage`] for
+    /// every consumer — GUI panel, MCP JSON, CLI report, narration.
+    ///
+    /// This is the single construction site on purpose. The census found
+    /// five surfaces each assembling, ranking and truncating the issue
+    /// channel their own way, which is how the GUI came to rank collisions
+    /// last while `sim_op_list.rs` ranked them first. Anything that wants to
+    /// answer "what should I act on?" calls this; nothing re-derives it.
+    pub fn simulation_triage(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+    ) -> crate::sim_triage::SimulationTriage {
+        use crate::sim_triage::{SimulationTriage, TriageInputs};
+
+        let Some(trace) = evidence.cut_trace else {
+            return SimulationTriage::default();
+        };
+        let diagnostics =
+            crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
+                &self.diagnostics_with_evidence(evidence),
+            );
+        let measurability = crate::sim_measurability::MeasurabilityReport::from_trace(
+            trace,
+            evidence.resolution_mm,
+        );
+        let tool_diameters_mm = self
+            .toolpath_configs
+            .iter()
+            .filter_map(|tc| {
+                let tool_cfg = self.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
+                let cutter = crate::compute::cutter::build_cutter(tool_cfg);
+                Some((tc.id, crate::tool::MillingCutter::diameter(&cutter)))
+            })
+            .collect();
+
+        SimulationTriage::build(&TriageInputs {
+            trace,
+            measurability: &measurability,
+            diagnostics: &diagnostics,
+            rapid_collisions: evidence.rapid_collisions,
+            holder_collisions: &evidence.holder_collisions,
+            tool_diameters_mm: &tool_diameters_mm,
+            region_of: None,
+        })
+    }
+
     pub fn diagnostics_with_evidence(&self, evidence: &ProjectEvidence<'_>) -> ProjectDiagnostics {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;

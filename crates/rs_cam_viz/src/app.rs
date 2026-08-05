@@ -4,7 +4,7 @@ mod export;
 mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
-mod mcp;
+pub(crate) mod mcp;
 mod simulation;
 mod viewport;
 

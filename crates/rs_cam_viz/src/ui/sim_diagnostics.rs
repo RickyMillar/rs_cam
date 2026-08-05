@@ -573,6 +573,55 @@ fn draw_project_section(
                 }
             }
 
+            // Checkpoint D Q2 / census §4: the measurability strip, ABOVE
+            // everything else, because it qualifies everything else. Read
+            // from the shared `ProjectSession::simulation_triage` contract —
+            // the same object the MCP `get_diagnostics` response, the CLI
+            // report and narration consume, so the four surfaces cannot
+            // disagree about what was measured.
+            //
+            // Rendered only when something is NOT measurable: a strip that
+            // says "everything was measured" on every project is a strip
+            // nobody reads by the time it matters.
+            {
+                use rs_cam_core::sim_measurability::Measurability;
+                let evidence = sim.project_evidence();
+                let triage = session.simulation_triage(&evidence);
+                let unmeasured: Vec<_> = triage
+                    .measurability
+                    .entries
+                    .iter()
+                    .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
+                    .collect();
+                if !unmeasured.is_empty() {
+                    let metrics: std::collections::BTreeSet<&str> =
+                        unmeasured.iter().map(|e| e.metric.label()).collect();
+                    let toolpaths: std::collections::BTreeSet<usize> =
+                        unmeasured.iter().map(|e| e.toolpath_id.0).collect();
+                    let reason = unmeasured
+                        .first()
+                        .and_then(|e| e.measurability.reason())
+                        .map(|r| r.describe())
+                        .unwrap_or_default();
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "NOT MEASURED: {} for {} operation(s)",
+                            metrics.into_iter().collect::<Vec<_>>().join(", "),
+                            toolpaths.len()
+                        ))
+                        .small()
+                        .strong()
+                        .color(theme::TEXT_MUTED),
+                    )
+                    .on_hover_text(format!(
+                        "{reason}\n\nCollision detection, material removal and axial \
+                         DOC are unaffected and remain valid. Gates reading the \
+                         withheld metrics abstain rather than judge it."
+                    ));
+                }
+            }
+
             // Roadmap C.1 — partition the issue count by SimulationIssueKind into
             // a "must address" cluster (collisions, hotspots) and an
             // informational cluster (low engagement, air cut). The single

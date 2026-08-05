@@ -1832,6 +1832,21 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
+        // The page-one answer, from the SAME `ProjectSession::simulation_triage`
+        // the GUI panel, the CLI report and narration read. An agent asking
+        // "what should I act on?" reads `triage.safety` then `triage.actions`
+        // and never has to know that `issue_count` above is a different
+        // population from `air_cut_issue_count` — which is the confusion the
+        // census documented and this field exists to end.
+        let evidence = crate::app::mcp::viz_project_evidence(&self.state);
+        let triage = self.state.session.simulation_triage(&evidence);
+        // SAFETY: resp is a known JSON object we just constructed.
+        #[allow(clippy::indexing_slicing)]
+        {
+            resp["triage"] =
+                serde_json::to_value(&triage).unwrap_or_else(|_| serde_json::json!(null));
+        }
+
         resp
     }
 

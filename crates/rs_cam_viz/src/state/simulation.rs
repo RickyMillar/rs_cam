@@ -1482,6 +1482,36 @@ impl SimulationState {
         )))
     }
 
+    /// Build the core [`ProjectEvidence`] borrow view from viz state.
+    ///
+    /// One builder, so the GUI panel, the MCP handlers and anything else on
+    /// the viz side hand core the same evidence. It lives here rather than in
+    /// `app::mcp` because that module is behind the `mcp` feature and the GUI
+    /// needs this with or without it.
+    pub fn project_evidence(&self) -> rs_cam_core::session::ProjectEvidence<'_> {
+        let boundaries = self
+            .results
+            .as_ref()
+            .map(|r| {
+                r.boundaries
+                    .iter()
+                    .map(|b| (b.id, b.start_move, b.end_move))
+                    .collect()
+            })
+            .unwrap_or_default();
+        rs_cam_core::session::ProjectEvidence {
+            boundaries,
+            rapid_collisions: &self.checks.rapid_collisions,
+            rapid_collision_move_indices: &self.checks.rapid_collision_move_indices,
+            cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
+            holder_collisions: self.holder_collision_counts_by_tp(),
+            // The cell the GUI last simulated at. Read only to enrich a
+            // measurability abstention's reason with the number the operator
+            // would have to change; it never decides a verdict.
+            resolution_mm: Some(self.resolution),
+        }
+    }
+
     pub fn issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Vec<SimulationIssue> {
         self.sync_debug_state(gui, max_feed_mm_min);
         let cache_key = self.issue_cache_key(gui, max_feed_mm_min);
