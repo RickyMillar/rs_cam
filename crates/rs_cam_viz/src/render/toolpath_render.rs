@@ -2,22 +2,19 @@ use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
-use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanKind, SpanPayload};
+use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanClass};
 use std::collections::HashMap;
 use std::ops::Range;
 
 // Re-export palette from centralized colors module for backward compatibility.
 pub use super::colors::{TOOLPATH_PALETTE, palette_color};
 
-/// Per-move color classification derived from the span path. Internal helper
-/// for [`ToolpathGpuData::from_toolpath`].
-enum SpanColor {
-    Entry,
-    LeadOut,
-    LinkBridge,
-    Dressup,
-    Default { pass_index: Option<u32> },
-}
+// Per-move colour classification used to be a private `SpanColor` enum with
+// its own walk of the span path, duplicated (differently, and wrongly) by the
+// PNG exporter. The decision now lives in core as
+// `AnnotatedToolpath::classify_span_path` -> `SpanClass`, and both renderers
+// read it. The rules that function implements are *these* rules — this
+// renderer is the reference; the exporter is the side that moved (X-1).
 
 fn push_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], color: [f32; 3]) {
     out.push(LineVertex {
@@ -94,7 +91,7 @@ impl ToolpathGpuData {
     }
 
     /// Build GPU data from an [`AnnotatedToolpath`], coloring cutting moves by
-    /// [`SpanKind`] and palette + Z-depth blend.
+    /// [`AnnotatedToolpath::classify_span_path`] and palette + Z-depth blend.
     ///
     /// Coloring:
     /// - `Entry` spans → bright cyan tint (overrides palette)
@@ -205,39 +202,17 @@ impl ToolpathGpuData {
 
         // Precompute per-move span paths so coloring is O(1) per move.
         let span_paths = annotated.span_paths_by_move();
-        let spans = annotated.spans.as_slice();
-        let spans_valid = annotated.spans_valid;
 
-        // Classify a move's span path into a coloring decision.
-        let classify = |move_idx: usize| -> SpanColor {
-            if !spans_valid {
-                return SpanColor::Default { pass_index: None };
-            }
-            let Some(path) = span_paths.get(move_idx) else {
-                return SpanColor::Default { pass_index: None };
-            };
-            let mut pass_index: Option<u32> = None;
-            let mut decision = SpanColor::Default { pass_index: None };
-            for sid in path {
-                let Some(sp) = spans.get(sid.0 as usize) else {
-                    continue;
-                };
-                match sp.kind {
-                    SpanKind::Entry => return SpanColor::Entry,
-                    SpanKind::LeadOut => return SpanColor::LeadOut,
-                    SpanKind::LinkBridge => return SpanColor::LinkBridge,
-                    SpanKind::DressupArtifact => decision = SpanColor::Dressup,
-                    SpanKind::DepthPass => {
-                        if let Some(SpanPayload::DepthPass { pass_index: p, .. }) = sp.payload {
-                            pass_index = Some(p);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            match decision {
-                SpanColor::Dressup => SpanColor::Dressup,
-                _ => SpanColor::Default { pass_index },
+        // Classify a move's span path into a coloring decision. The rules
+        // (forward walk; Entry/LeadOut/LinkBridge win outright; Dressup is
+        // remembered but does not short-circuit; DepthPass contributes
+        // `pass_index`; GeometryRefit and Region are transparent) are
+        // unchanged — they simply live in core now, so the PNG exporter can
+        // apply the same ones instead of its own reversed walk (X-1).
+        let classify = |move_idx: usize| -> SpanClass {
+            match span_paths.get(move_idx) {
+                Some(path) => annotated.classify_span_path(path),
+                None => SpanClass::Cut { pass_index: None },
             }
         };
 
@@ -269,19 +244,19 @@ impl ToolpathGpuData {
                         });
                     }
                     _ => match classify(i) {
-                        SpanColor::Entry if span_filter.show_entry => {
+                        SpanClass::Entry if span_filter.show_entry => {
                             push_segment(&mut cut_verts, p0, p1, entry_color);
                         }
-                        SpanColor::LeadOut if span_filter.show_lead_out => {
+                        SpanClass::LeadOut if span_filter.show_lead_out => {
                             push_segment(&mut cut_verts, p0, p1, leadout_color);
                         }
-                        SpanColor::LinkBridge if span_filter.show_link_bridge => {
+                        SpanClass::LinkBridge if span_filter.show_link_bridge => {
                             push_dashed_segment(&mut cut_verts, p0, p1, linkbridge_color);
                         }
-                        SpanColor::Dressup if span_filter.show_dressup => {
+                        SpanClass::Dressup if span_filter.show_dressup => {
                             push_segment(&mut cut_verts, p0, p1, dressup_color);
                         }
-                        SpanColor::Default { pass_index } => {
+                        SpanClass::Cut { pass_index } => {
                             let c0 = z_color(from.z, pass_index);
                             let c1 = z_color(to.z, pass_index);
                             cut_verts.push(LineVertex {
@@ -1223,7 +1198,7 @@ mod tests {
         let spans = vec![Span::new(1, 2, SpanKind::Entry)];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
 
-        // Move 1 (entry) → SpanColor::Entry
+        // Move 1 (entry) → SpanClass::Entry
         let paths = annotated.span_paths_by_move();
         let move1_path = paths.get(1).expect("move 1 path");
         let move2_path = paths.get(2).expect("move 2 path");
