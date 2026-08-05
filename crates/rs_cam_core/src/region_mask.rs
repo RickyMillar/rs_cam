@@ -53,6 +53,46 @@ pub fn region_polygons_from_mask(
     cell_mm: f64,
     dilate_mm: f64,
 ) -> Vec<Polygon2> {
+    region_polygons_from_mask_clamped(mask, origin_x, origin_y, cell_mm, dilate_mm, None)
+}
+
+/// [`region_polygons_from_mask`] with an optional **coverage clamp** applied
+/// to the dilated mask before marching squares.
+///
+/// `clamp` is a same-shaped mask of cells the result may occupy — in the
+/// finish planner, the surface COVERAGE mask, i.e. "a vertical ray here hit
+/// the model". Dilation may still grow the region freely INSIDE that set,
+/// which is what `overlap_mm` exists for; it simply cannot grow the region
+/// off the part.
+///
+/// **Clamp to COVERAGE, never to the band's own mask.** The dial's entire
+/// purpose is to make neighbouring bands overlap *each other*, so that the
+/// scallop rings of one band and the raster of the next meet without a seam.
+/// Clamping to the band would reduce every region to its own undilated
+/// footprint and reintroduce that seam. This is D-16.1's stage 1
+/// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2,
+/// §2.9 item (i)): at the shipped `overlap_mm = 2.0` a mid-steep band polygon
+/// ran ~2 mm past the last covered classification cell, and that polygon is
+/// the scallop ring-cascade SEED, so the first several rings sat entirely
+/// outside the model footprint. The coverage guard inside `ring_to_3d` is
+/// what stops those rings cutting (F2's first commit made that guard exact),
+/// but a seed boundary that leaves the part is a pathological input in its
+/// own right: it costs ring iterations, it distorts the offset cascade's
+/// first steps, and it leaves the guard as the only thing between the dial
+/// and an overcut. This removes the input rather than only rejecting its
+/// output.
+///
+/// `None` reproduces [`region_polygons_from_mask`] exactly — the rest-depth
+/// pencil pipeline passes it, because its masks are already derived from a
+/// rest field that has no meaning off the part.
+pub fn region_polygons_from_mask_clamped(
+    mask: &Grid2<bool>,
+    origin_x: f64,
+    origin_y: f64,
+    cell_mm: f64,
+    dilate_mm: f64,
+    clamp: Option<&[bool]>,
+) -> Vec<Polygon2> {
     let nx = mask.nx();
     let ny = mask.ny();
     if nx == 0 || ny == 0 || mask.as_slice().iter().all(|&v| !v) {
@@ -68,6 +108,35 @@ pub fn region_polygons_from_mask(
         std::borrow::Cow::Owned(dist.iter().map(|&d| d <= radius_cells).collect())
     } else {
         std::borrow::Cow::Borrowed(mask.as_slice())
+    };
+
+    // D-16.1 stage 1: the dilation may grow the region anywhere inside
+    // `clamp`, and nowhere outside it. Applied AFTER the EDT so the distance
+    // transform still sees the true mask — clamping the input instead would
+    // change which cells are near-neighbours and quietly alter the dilation
+    // itself.
+    let dilated: std::borrow::Cow<'_, [bool]> = match clamp {
+        Some(allow) if allow.len() == dilated.len() => std::borrow::Cow::Owned(
+            dilated
+                .iter()
+                .zip(allow.iter())
+                .map(|(&d, &a)| d && a)
+                .collect(),
+        ),
+        // A mismatched clamp is a caller bug, not a silent no-op: it would
+        // mean two grids that must share a shape do not. Say so and carry
+        // on unclamped rather than truncating against the wrong grid.
+        Some(allow) => {
+            warn!(
+                clamp_len = allow.len(),
+                grid_len = dilated.len(),
+                "region_polygons_from_mask: coverage clamp has a different cell count from \
+                 the band mask; ignoring it. The two grids must come from the same \
+                 classification pass."
+            );
+            dilated
+        }
+        None => dilated,
     };
 
     // `marching_squares_bool_grid` takes `(rows, cols)`; this grid's

@@ -85,7 +85,7 @@ use crate::grid_field::distance_transform_2d;
 use crate::grid2::Grid2;
 use crate::measurement::{CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use crate::polygon::Polygon2;
-use crate::region_mask::region_polygons_from_mask;
+use crate::region_mask::{region_polygons_from_mask, region_polygons_from_mask_clamped};
 use crate::rest_field::RestCenterline;
 use crate::slope::SlopeMap;
 
@@ -469,8 +469,28 @@ pub fn decompose(
     let mut regions = Vec::new();
     for band in BAND_ORDER {
         let mask = band_mask_grid(&labels, rows, cols, band);
-        let polys =
-            region_polygons_from_mask(&mask, origin_x, origin_y, cell, params.overlap_mm.max(0.0));
+        // D-16.1 (F2, 2026-08-06): the `overlap_mm` dilation may grow a band
+        // polygon freely INSIDE the covered surface — that is the whole point
+        // of the dial, and it is what keeps neighbouring bands overlapping
+        // each other with no seam — but it may not grow one off the model.
+        //
+        // Before this clamp the mid-steep band polygon ran ~2 mm past the
+        // last covered classification cell at the shipped default, and that
+        // polygon IS the scallop ring-cascade seed, so the first rings sat
+        // entirely outside the footprint. `ring_to_3d`'s coverage guard is
+        // what stops them cutting; this stops them existing.
+        //
+        // The clamp is COVERAGE, never the band's own mask: clamping to the
+        // band would collapse every region to its undilated footprint and
+        // reintroduce the inter-band seam `overlap_mm` exists to close.
+        let polys = region_polygons_from_mask_clamped(
+            &mask,
+            origin_x,
+            origin_y,
+            cell,
+            params.overlap_mm.max(0.0),
+            Some(covered),
+        );
         regions.extend(
             polys
                 .into_iter()
@@ -1642,17 +1662,94 @@ mod tests {
 
     // ── overlap / determinism / degenerate inputs ───────────────────────
 
+    /// `overlap_mm` still grows a band polygon — but only where there is a
+    /// NEIGHBOURING BAND to grow into.
+    ///
+    /// This is the half of the dial that must survive D-16.1's fix. The dial
+    /// exists so the scallop rings of one band and the raster of the next
+    /// meet without a seam, which needs each polygon to reach a little way
+    /// into its neighbour's territory. F2's coverage clamp
+    /// (`region_mask::region_polygons_from_mask_clamped`) restricts the
+    /// dilation to the COVERED surface and nothing else; a clamp to the
+    /// band's own mask would have killed this and reintroduced the seam.
     #[test]
-    fn overlap_dilates_band_polygons() {
+    fn overlap_dilates_a_band_into_its_neighbour() {
+        let rows = 80;
+        let cols = 80;
+        let cell = 1.0;
+        let z = dome_z_grid(rows, cols, cell, 30.0);
+        let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
+        let covered = margin_covered(rows, cols);
+
+        let area = |d: &PlannedRegions| -> f64 {
+            d.regions
+                .iter()
+                .map(|r| r.polygon.signed_area().abs())
+                .sum()
+        };
+
+        let base = decompose(
+            &slope_map,
+            &covered,
+            &[],
+            &FinishPlannerParams {
+                overlap_mm: 0.0,
+                ..FinishPlannerParams::for_tool(3.0)
+            },
+        );
+        let dilated = decompose(
+            &slope_map,
+            &covered,
+            &[],
+            &FinishPlannerParams {
+                overlap_mm: 2.0,
+                ..FinishPlannerParams::for_tool(3.0)
+            },
+        );
+
+        // Non-vacuity: a dome must classify into more than one band, or
+        // there is no neighbour to overlap and this test says nothing.
+        let bands: std::collections::HashSet<_> = base.regions.iter().map(|r| r.band).collect();
+        assert!(
+            bands.len() >= 2,
+            "the dome fixture produced only {} band(s) ({:?}); with a single band there is no \
+             neighbour to dilate into and this test is vacuous",
+            bands.len(),
+            bands,
+        );
+
+        let a0 = area(&base);
+        let a2 = area(&dilated);
+        assert!(
+            a2 > a0 * 1.02,
+            "overlap_mm = 2.0 must still grow the band polygons where a neighbour exists: \
+             total region area {a0:.1} mm² -> {a2:.1} mm². If these are equal, the coverage \
+             clamp has been tightened to the BAND rather than to COVERAGE, and every band \
+             seam in the repo has just reopened.",
+        );
+    }
+
+    /// ...and it may not grow one PAST the covered surface. D-16.1.
+    ///
+    /// **This test replaces `overlap_dilates_band_polygons`, which asserted
+    /// the opposite** — that a lone band's polygon grows 2 mm outward in all
+    /// four directions on a fixture whose only neighbour is uncovered grid.
+    /// That growth is D-16.1's stage 1: the polygon becomes the scallop
+    /// ring-cascade seed, so its rings start outside the model footprint,
+    /// where the drop cutter returns a rim-riding CL that cuts below the
+    /// surface. On the committed grooved fixture that was 131 off-footprint
+    /// cutting targets, worst 0.375 mm past the edge.
+    ///
+    /// The fixture is unchanged; only the expectation is inverted.
+    #[test]
+    fn overlap_never_grows_a_band_past_the_covered_surface() {
         let rows = 60;
         let cols = 60;
         let cell = 1.0;
         let z = vec![0.0; rows * cols];
         let slope_map = SlopeMap::from_z_grid(&z, rows, cols, 0.0, 0.0, cell);
 
-        // Wider margin (6 cells) than the shared helper's minimum: the
-        // dilated (overlap=2.0) polygon must stay clear of the grid's true
-        // boundary or marching squares drops the loop entirely.
+        // A 6-cell uncovered margin: everything outside it is off the part.
         let margin = 6usize;
         let mut covered = vec![true; rows * cols];
         for r in 0..rows {
@@ -1690,10 +1787,23 @@ mod tests {
         let (bminx, bminy, bmaxx, bmaxy) = poly_bbox(&base.regions[0].polygon);
         let (dminx, dminy, dmaxx, dmaxy) = poly_bbox(&dilated.regions[0].polygon);
 
-        assert!((bminx - dminx - 2.0).abs() <= 1.0, "left growth");
-        assert!((bminy - dminy - 2.0).abs() <= 1.0, "bottom growth");
-        assert!((dmaxx - bmaxx - 2.0).abs() <= 1.0, "right growth");
-        assert!((dmaxy - bmaxy - 2.0).abs() <= 1.0, "top growth");
+        // One cell of slack absorbs marching squares' half-cell contour
+        // placement; 2 mm of growth is two cells and cannot hide in it.
+        for (name, base_v, dil_v) in [
+            ("left", bminx, dminx),
+            ("bottom", bminy, dminy),
+            ("right", bmaxx, dmaxx),
+            ("top", bmaxy, dmaxy),
+        ] {
+            assert!(
+                (base_v - dil_v).abs() <= 1.0,
+                "{name} edge moved {:.3} mm when overlap_mm went 0 -> 2 on a band with NO \
+                 covered neighbour. The dilation has escaped the coverage clamp, which is \
+                 D-16.1's stage 1: this polygon is a scallop ring-cascade seed, and a seed \
+                 outside the footprint puts the tool on the model's rim.",
+                (base_v - dil_v).abs(),
+            );
+        }
     }
 
     #[test]
