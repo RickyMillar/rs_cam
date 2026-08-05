@@ -64,6 +64,30 @@ use rs_cam_core::tool_load::verdict::{
 
 /// The live numbers, kept verbatim so this file reproduces the operator's
 /// screen rather than a stand-in for it.
+// ── Historical note, 2026-08-06 ─────────────────────────────────────
+//
+// `LIVE_OBSERVED` below is a **pre-conversion** number and this file
+// keeps it deliberately. The chipload gate stopped observing an arc-mean
+// chip thickness on 2026-08-06 (`tool_load::chipload`'s header;
+// `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for the
+// primary sources), so the live operation that produced these three
+// constants would today read 0.009153 mm/tooth — 99.9 % of `LIVE_MAX` —
+// and carry **no** burn advisory.
+//
+// Nothing here is re-pinned, because nothing here tests the gate. Every
+// verdict below is hand-built, and what these tests pin is the H4
+// contract: that a `Within` arm carrying a demoted low-side trip must
+// SAY SO rather than read as a pass, and that the citation must name the
+// row the bounds came from. That contract is unchanged and is the reason
+// the fixture stays on the live numbers — it is the screen an operator
+// actually filed a report about.
+//
+// The one thing that did move is the wording the adapter emits
+// ("chip thickness" → "feed-per-tooth"); the substring assertions below
+// were chosen against the *structure* of the message ("BELOW",
+// "advisory", "within band") and are unaffected. That is not luck: a
+// wording test lives in `chipload_report_wording_t12_t15.rs`, and this
+// file was written not to duplicate it.
 const LIVE_MIN: f64 = 0.004_579_474_936_024_669;
 const LIVE_MAX: f64 = 0.009_158_949_872_049_339;
 const LIVE_OBSERVED: f64 = 0.000_737_134_613_778_461_9;

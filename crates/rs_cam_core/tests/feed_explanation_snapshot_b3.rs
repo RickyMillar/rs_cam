@@ -18,7 +18,7 @@
 //! | gate observed | 0.000737 |
 //! | gate band | 0.00458 – 0.00916 |
 //!
-//! `planning/review_2026-08-04/FEEDS_CENSUS.md` §4.3 reconciles the gate
+//! `planning/review_2026-08-04/FEEDS_CENSUS.md` §4.3 reconciled the gate
 //! observation **by hand**, to +0.24 %:
 //!
 //! ```text
@@ -26,6 +26,51 @@
 //!               × mean_chip_factor(LUT nominal arc)   ← 0.080335 on that row
 //!               × predicted_feed / commanded_feed     ← 0.1282 (−87.18 %)
 //! ```
+//!
+//! ## THE FLIP — re-pinned 2026-08-06
+//!
+//! `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` answered
+//! Checkpoint B item T4.1 from primary sources: the vendor chipload
+//! column is a linear **advance per tooth** in every source family in
+//! the shipped LUT, and the `ae` window the middle term normalises to is
+//! a repo-authored application window, not a vendor measurement
+//! condition (§2.3). The middle term was therefore **deleted**, and this
+//! fixture's operation moves:
+//!
+//! | | before | after |
+//! |---|---:|---:|
+//! | gate observed | 0.000737 mm | **0.009153 mm/tooth** |
+//! | band on this fixture | 0.003605 – 0.007211 | unchanged |
+//! | position | **20 % of the MINIMUM** | **127 % of the MAXIMUM** |
+//! | verdict | `Within` + **burn** advisory | **`Exceeds(High)`** — breakage |
+//! | commanded (unchanged) | 0.0714 mm/tooth | = 9.90× the band maximum |
+//!
+//! The gate reported an operation **27 % past its breakage ceiling** as
+//! sitting five times below its burn floor — and issued a *burn*
+//! advisory, i.e. advice to speed up, for an operation already over the
+//! top of its band. Both the magnitude and the SIDE were wrong.
+//!
+//! ## Correction to B-lit's own prediction, measured here
+//!
+//! `CHIPLOAD_LITERATURE_VERDICT.md` §3.2 predicted this operation would
+//! land at *"99.9 % of band maximum"* against a band of
+//! `0.004579 – 0.009159`. That band is the **live 2026-07-30 session's**,
+//! whose evidence string reads `diameter scale x0.42`. This committed
+//! fixture resolves its lookup diameter from the sample's axial DOC and
+//! lands at `d-scale 0.3005`, giving the narrower band above. Same row
+//! (`amana-tapered-hardwood-scallop-3175-2f`), same arc factor
+//! (0.080482, matching B-lit's `f_lut` to six figures), different
+//! diameter scale.
+//!
+//! So B-lit's direction is confirmed and its severity is **understated**:
+//! it wrote *"one percent more effective feed and the same op is
+//! `Exceeds(High)`"*. On the committed fixture the operation is already
+//! 27 % past. Recorded rather than smoothed over — the fixture is not
+//! adjusted to reproduce the predicted verdict, because the prediction
+//! was the estimate and this is the measurement.
+//!
+//! The tests below are restated, not deleted, so the inversion is
+//! visible in the diff.
 //!
 //! A hand-checked arithmetic identity is not evidence a gate change can be
 //! re-measured against. This file re-derives the same identity **through
@@ -47,8 +92,9 @@
 //!    than the production chip model. This drives
 //!    `MillingCutter::chip_geometry` across an arc sweep and shows the mirror
 //!    is exact. Without this the whole reconciliation rests on a copy.
-//! 2. [`the_gate_observation_reconciles_to_the_three_labelled_stages`] — the
-//!    census's identity, live.
+//! 2. [`the_gate_observation_reconciles_to_the_two_labelled_stages`] — the
+//!    census's identity minus the deleted term, live, and the verdict
+//!    flip it produces.
 //! 3. [`the_sample_engagement_arc_cancels_out_of_the_gate_observation`] —
 //!    the census's strongest structural claim: after D9 the sample's own arc
 //!    algebraically cancels, so "observed chipload" carries no information
@@ -57,9 +103,11 @@
 //! 4. [`the_predicted_feed_factor_is_live`] — non-vacuity. With
 //!    `predicted_feeds` empty the observation must move by exactly the feed
 //!    ratio, proving stage 4 is not inert in this fixture.
-//! 5. [`the_gate_observation_and_the_band_are_not_the_same_quantity`] — the
-//!    unit finding (census F-1), stated as a measured ratio, with **no claim
-//!    about which side is correct**. That is Checkpoint B item T4.1.
+//! 5. [`the_gate_observation_and_the_band_are_now_the_same_quantity`] —
+//!    **inverted 2026-08-06.** It measured census F-1 as a ratio and
+//!    deliberately took no position, because T4.1 was open. T4.1 is
+//!    answered, so the test now asserts the units agree and records what
+//!    the old ratio was.
 //! 6. [`the_commanded_feed_per_tooth_is_never_compared_to_the_band`] —
 //!    census P-10. The only same-unit comparison available is not made by
 //!    any verdict, and here it is far above the band.
@@ -187,9 +235,14 @@ struct FeedExplanation {
     hardness_scale: f64,
     extrapolated: bool,
     bounds_source: ChipBoundsSource,
-    /// **Stage 3 — LUT arc factor.** `mean_chip / feed_per_tooth` at the
-    /// engagement arc the matched row was authored against, measured
-    /// through `MillingCutter::chip_geometry`. Dimensionless.
+    /// **The deleted stage.** `mean_chip / feed_per_tooth` at the
+    /// engagement arc the matched row's repo-authored `ae` window
+    /// implies, measured through `MillingCutter::chip_geometry`.
+    /// Dimensionless.
+    ///
+    /// Kept in this record as the **exhibit of what the gate used to
+    /// multiply by** — it is what turns 0.009153 into 0.000737 — and is
+    /// no longer part of any identity. Nothing in production computes it.
     lut_arc_rad: f64,
     lut_arc_factor: f64,
     /// **Stage 4 — achieved-feed factor.** `predicted / commanded`, the
@@ -197,8 +250,9 @@ struct FeedExplanation {
     /// Dimensionless. `1.0` when the trace carries no predicted feeds.
     predicted_feed_factor: f64,
     /// **Stage 5 — gate observation.** What `tool_load::chipload::evaluate`
-    /// reports. Unit: mm of *chip*, at the LUT row's nominal arc, at the
-    /// achieved feed, taken as the median over the steady-state set.
+    /// reports. Since 2026-08-06: mm of linear *advance* per tooth at the
+    /// achieved feed, taken as the median over the steady-state set —
+    /// the same unit as stage 1 and stage 2.
     gate_observed_mm: f64,
     /// Which arm the verdict landed on, and whether the low side was
     /// demoted to an advisory (F3.3).
@@ -207,11 +261,24 @@ struct FeedExplanation {
 }
 
 impl FeedExplanation {
-    /// The census §4.3 identity, evaluated from the labelled stages. This
-    /// is a *prediction of stage 5 from stages 1, 3 and 4* — it is not
-    /// itself an observation.
+    /// The identity, evaluated from the labelled stages: stage 1 × stage
+    /// 4. A *prediction of stage 5*, not itself an observation.
+    ///
+    /// The census's §4.3 form carried a third factor,
+    /// [`Self::lut_arc_factor`]. B-lit deleted it. The residual assertion
+    /// against this prediction is the same one the census's form carried
+    /// (≤ 1 %), which is Checkpoint B's evidence item 4 for the
+    /// conversion.
     fn predicted_gate_observation(&self) -> f64 {
-        self.commanded_fpt_mm * self.lut_arc_factor * self.predicted_feed_factor
+        self.commanded_fpt_mm * self.predicted_feed_factor
+    }
+
+    /// What the pre-conversion gate would have reported on this fixture:
+    /// the same prediction times the deleted chip-geometry factor. Kept
+    /// so the flip is a measured number in this file rather than a claim
+    /// in a comment.
+    fn pre_conversion_gate_observation(&self) -> f64 {
+        self.predicted_gate_observation() * self.lut_arc_factor
     }
 
     fn report(&self, title: &str) {
@@ -234,7 +301,7 @@ impl FeedExplanation {
             self.bounds_source
         );
         eprintln!(
-            "  stage 3  LUT arc {:.6} rad -> factor {:.6}          (dimensionless)",
+            "  DELETED  LUT arc {:.6} rad -> factor {:.6}          (no longer applied)",
             self.lut_arc_rad, self.lut_arc_factor
         );
         eprintln!(
@@ -242,7 +309,7 @@ impl FeedExplanation {
             self.predicted_feed_factor
         );
         eprintln!(
-            "  stage 5  gate observation           {:.9} mm        (chip, at LUT arc, at achieved feed)",
+            "  stage 5  gate observation           {:.9} mm/tooth  (advance, at achieved feed)",
             self.gate_observed_mm
         );
         eprintln!(
@@ -250,7 +317,7 @@ impl FeedExplanation {
             self.verdict_label, self.burn_advisory
         );
         eprintln!(
-            "  identity 1x3x4 = {:.9}   observed = {:.9}   residual {:+.4} %",
+            "  identity 1x4 = {:.9}   observed = {:.9}   residual {:+.4} %",
             self.predicted_gate_observation(),
             self.gate_observed_mm,
             100.0 * (self.gate_observed_mm / self.predicted_gate_observation() - 1.0)
@@ -466,7 +533,14 @@ fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
 /// FEEDS_CENSUS.md §9 item 2. The census read the arc factor off
 /// `tool_load::chipload::mean_chip_factor` — a private mirror of the
 /// production chip model. If the mirror had drifted, the entire §4.3
-/// reconciliation would be arithmetic about the wrong function.
+/// reconciliation would have been arithmetic about the wrong function.
+///
+/// **The production mirror was deleted on 2026-08-06 with D9.** This
+/// test is kept and is still not vacuous: `MillingCutter::chip_geometry`
+/// still ships and is still read by `is_bipolar_engagement`, the MCP
+/// per-sample peak and the narration histogram, and the closed form
+/// below is still the right one for it. What the test no longer does is
+/// underwrite a gate identity.
 ///
 /// Drives `MillingCutter::chip_geometry` at unit feed per tooth across an
 /// arc sweep and compares against the mirror's closed form. Also pins the
@@ -502,8 +576,9 @@ fn stage_3_lut_arc_factor_matches_shipped_chip_geometry() {
         assert!(
             (shipped - mirrored).abs() < 1e-12,
             "arc {arc}: production chip_geometry gives {shipped}, the chipload gate's private \
-             mean_chip_factor mirror gives {mirrored}. The census's arithmetic is written against \
-             the mirror; a drift here invalidates it."
+             the closed-form mirror gives {mirrored}. A drift here invalidates the census's \
+             §4.3 arithmetic and every statement in this file about what the pre-conversion \
+             gate observed."
         );
     }
 
@@ -513,60 +588,125 @@ fn stage_3_lut_arc_factor_matches_shipped_chip_geometry() {
     //   arc = π/2 ⇒ (2·1/(π/2))·(1 − cos(π/4)) = (4/π)(1 − √2/2) ≈ 0.3729
     assert!(
         (mirror(std::f64::consts::PI) - std::f64::consts::FRAC_2_PI).abs() < 1e-12,
-        "slot anchor moved: mean_chip_factor(π) must be exactly 2/π"
+        "slot anchor moved: the arc-mean factor at π must be exactly 2/π"
     );
     let half_immersion = (4.0 / std::f64::consts::PI) * (1.0 - std::f64::consts::FRAC_1_SQRT_2);
     assert!(
         (mirror(std::f64::consts::FRAC_PI_2) - half_immersion).abs() < 1e-12,
-        "half-immersion anchor moved: mean_chip_factor(π/2) must be exactly (4/π)(1 − √2/2)"
+        "half-immersion anchor moved: the arc-mean factor at π/2 must be exactly (4/π)(1 − √2/2)"
     );
     eprintln!(
-        "CONFIRMED: mean_chip_factor is exact against MillingCutter::chip_geometry across \
+        "CONFIRMED: the arc-mean closed form is exact against MillingCutter::chip_geometry across \
          10 arcs (max |Δ| < 1e-12)."
     );
 }
 
 // ── 2. The identity ─────────────────────────────────────────────────────
 
-/// FEEDS_CENSUS.md §4.3, live. The gate's observation is the commanded
-/// feed-per-tooth times the matched row's arc factor times the
-/// achieved/commanded feed ratio — three labelled stages, no fourth term.
+/// FEEDS_CENSUS.md §4.3, live, **minus the term the literature verdict
+/// deleted**: the gate's observation is the commanded feed-per-tooth
+/// times the achieved/commanded feed ratio. Two labelled stages, no
+/// third term.
+///
+/// This is Checkpoint B evidence item 4 for the conversion — "the B3
+/// fixture re-run with its residual assertion intact; the identity must
+/// still close at ≤ 1 %". It does, against a different identity.
+///
+/// It is also **the flip**, measured: the same fixture, the same row,
+/// the same feed, and a verdict that used to carry a *burn* advisory is
+/// now a hard *breakage* trip. See the module header for the correction
+/// this measurement makes to B-lit's own §3.2 prediction.
 #[test]
-fn the_gate_observation_reconciles_to_the_three_labelled_stages() {
+fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     let e = explain(SAMPLE_ARC_A_RAD, true);
     e.report("live-shaped fixture (arc A, predicted feeds on)");
 
     let residual = e.gate_observed_mm / e.predicted_gate_observation() - 1.0;
     assert!(
         residual.abs() < 0.01,
-        "the census claims gate_observed = commanded_fpt x lut_arc_factor x feed_factor. \
+        "gate_observed must equal commanded_fpt x feed_factor. \
          Predicted {:.9}, observed {:.9}, residual {:+.4} %. A residual above 1 % means a term \
-         the census did not name is participating.",
+         nothing named is participating.",
         e.predicted_gate_observation(),
         e.gate_observed_mm,
         100.0 * residual
     );
 
-    // The verdict shape the live session saw: a weakly-provenanced low-side
-    // trip demoted to an advisory (F3.3), not a hard refusal.
     assert!(
         e.extrapolated,
         "the fixture is meant to reproduce an extrapolated row"
     );
-    assert_eq!(e.verdict_label, "Within");
+
+    // ── THE FLIP ────────────────────────────────────────────────────
+    //
+    // INVERTED 2026-08-06. These two assertions used to read
+    //     assert_eq!(e.verdict_label, "Within");
+    //     assert!(e.burn_advisory, "an observation this far below the
+    //             floor must surface as a burn advisory (F3.3 + H4)");
+    // and both were true of the DEFECT: the observation was 0.000737,
+    // five times under a floor of 0.003605, because the gate multiplied
+    // the commanded advance by a chip-geometry factor derived from a
+    // repo-authored stepover window. Measured on the axis the vendor
+    // publishes, the operation is 27 % PAST its ceiling.
+    let band_min = e.band_min_mm.expect("row publishes a floor");
+    let of_max = e.gate_observed_mm / e.band_max_mm;
+    assert_eq!(
+        e.verdict_label, "Exceeds",
+        "the operation is at {:.1} % of its band MAXIMUM ({:.6}) — this is a breakage \
+         trip, and reporting it as anything softer is the pre-conversion defect surviving",
+        100.0 * of_max,
+        e.band_max_mm
+    );
     assert!(
-        e.burn_advisory,
-        "an observation this far below the floor must surface as a burn advisory (F3.3 + H4)"
+        !e.burn_advisory,
+        "a BURN advisory (advice to speed up) on an operation over its breakage ceiling \
+         is the exact inversion this conversion removed"
+    );
+    assert!(
+        of_max > 1.0,
+        "observed {:.6} must sit above the ceiling {:.6}; got {:.4}x",
+        e.gate_observed_mm,
+        e.band_max_mm,
+        of_max
+    );
+
+    // And the size of what was deleted, on this row, as a number.
+    let pre = e.pre_conversion_gate_observation();
+    eprintln!(
+        "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of band MIN {band_min:.6} \
+         (Within + BURN advisory); post-conversion observed {:.9} = {:.1} % of band MAX \
+         {:.6} (Exceeds HIGH, breakage). Deleted factor {:.6}x on this row. \
+         B-lit §3.2 predicted 99.9 % of max against the LIVE session's wider band \
+         (d-scale 0.42); this fixture's d-scale is {:.4}.",
+        100.0 * pre / band_min,
+        e.gate_observed_mm,
+        100.0 * of_max,
+        e.band_max_mm,
+        e.lut_arc_factor,
+        e.diameter_scale,
+    );
+    assert!(
+        pre < band_min,
+        "the exhibit only holds if the pre-conversion reading really was below the floor"
     );
 }
 
 // ── 3. The structural claim ─────────────────────────────────────────────
 
-/// FEEDS_CENSUS.md §4.3's strongest claim: after D9 the sample's own
+/// FEEDS_CENSUS.md §4.3's strongest claim, and the one that made the
+/// deletion possible rather than merely desirable: the sample's own
 /// engagement arc cancels algebraically —
 /// `cl_norm = fz · f(arc_sample) · f_lut / f(arc_sample) = fz · f_lut` —
-/// so the gate's "observed chipload" carries **no information about the
-/// sample's engagement**, which is the thing the metric is named for.
+/// so the gate's "observed chipload" carried **no information about the
+/// sample's engagement**, which is the thing the metric was named for.
+///
+/// Still true after the conversion, and now true by construction rather
+/// than by cancellation: the observation is `effective_feed / (rpm ·
+/// flutes)` and there is no arc term to cancel. Kept because a reader
+/// should be able to see that the gate is not engagement-aware — and
+/// because that is precisely what `is_bipolar_engagement` and the
+/// chipload entry-spike advisory now cannot get from it (recorded in
+/// `tool_load::chipload`).
 ///
 /// Two fixtures differing only in sample arc (1.5 rad vs 0.4 rad — a
 /// factor of 3.4 in the raw chip thickness) must report the same
@@ -633,45 +773,79 @@ fn the_predicted_feed_factor_is_live() {
 
 // ── 5. The unit finding, measured — no verdict on which side is right ────
 
-/// FEEDS_CENSUS.md F-1. The gate's observation is an arc-mean **chip
-/// thickness**; the band it is compared against is a vendor **advance per
-/// tooth**. This test measures the ratio between the two conventions on
-/// this row and asserts only that it is far from 1.
+/// **INVERTED 2026-08-06.** This test was named
+/// `the_gate_observation_and_the_band_are_not_the_same_quantity` and
+/// measured census F-1 as a ratio while deliberately taking no position
+/// on which side was right, because Checkpoint B item T4.1 was open.
 ///
-/// **It does not claim either side is wrong.** Whether a vendor chipload
-/// column is an advance or a mean chip is Checkpoint B item T4.1, a
-/// literature question. This test exists so that when T4.1 is answered the
-/// magnitude is already measured.
+/// T4.1 is answered: `CHIPLOAD_LITERATURE_VERDICT.md` §2 verifies, per
+/// source family and with verbatim quotations, that the vendor column is
+/// a linear advance per tooth — and on the Amana chart behind *this*
+/// fixture's row the identity is numerically self-verifying against the
+/// chart's own IPM column. The gate's observation was converted to
+/// match. The test now asserts they agree, and keeps the old ratio as
+/// the record of how far apart they were.
 #[test]
-fn the_gate_observation_and_the_band_are_not_the_same_quantity() {
+fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
     let e = explain(SAMPLE_ARC_A_RAD, true);
+
+    // The identity that makes them comparable: observation = commanded
+    // advance × achieved-feed ratio, with no change of quantity.
+    let expected = e.commanded_fpt_mm * e.predicted_feed_factor;
+    assert!(
+        (e.gate_observed_mm / expected - 1.0).abs() < 0.01,
+        "the gate must report a linear advance per tooth: expected {expected:.9}, \
+         got {:.9}",
+        e.gate_observed_mm
+    );
+
+    // The size of the old mismatch, kept as evidence rather than a claim.
     let convention_ratio = 1.0 / e.lut_arc_factor;
     assert!(
         convention_ratio > 2.0,
-        "if the two conventions ever coincide this test is vacuous; got {convention_ratio}"
+        "the exhibit only means something if the two conventions really were far \
+         apart on this row; got {convention_ratio}"
     );
     eprintln!(
-        "MEASURED (no verdict): the gate reports mm of CHIP; the band publishes mm of ADVANCE. \
-         On row {} the two conventions differ by {convention_ratio:.2}x \
-         (arc {:.5} rad, factor {:.6}). Which side is correct is Checkpoint B item T4.1.",
+        "MEASURED: on row {} the pre-conversion gate reported mm of CHIP against a band of \
+         ADVANCE, differing by {convention_ratio:.2}x (arc {:.5} rad from a repo-authored \
+         ae window, factor {:.6}). T4.1 answered: the column is an advance per tooth.",
         e.row_id, e.lut_arc_rad, e.lut_arc_factor
     );
 
-    // Restate the live shape: the observation sits below the floor while
-    // the verdict stays Within on provenance alone (F3.3).
+    // And the consequence, restated: the live session read this
+    // operation as below its floor. It is above its CEILING.
     let min = e.band_min_mm.expect("row publishes a floor");
     assert!(
-        e.gate_observed_mm < min,
-        "the fixture must reproduce the below-floor observation the live session read"
+        e.gate_observed_mm > min,
+        "observed {:.9} must now sit ABOVE the floor {min:.9} — the live session's \
+         below-floor reading was the unit defect",
+        e.gate_observed_mm
+    );
+    assert!(
+        e.gate_observed_mm > e.band_max_mm,
+        "and above the ceiling {:.9}: the defect inverted the SIDE, not only the size",
+        e.band_max_mm
+    );
+    assert!(
+        e.pre_conversion_gate_observation() < min,
+        "...and the pre-conversion reading must reproduce below it, or the flip is not real"
     );
 }
 
 // ── 6. The comparison nobody makes ──────────────────────────────────────
 
 /// FEEDS_CENSUS.md P-10. Commanded feed-per-tooth and the vendor band are
-/// the **same unit at compatible stages** — the one pair among the four
-/// live numbers whose comparison is unambiguously valid. No verdict makes
-/// it. Here it is far above the band, and the gate says `Within`.
+/// the same unit at compatible stages. No verdict makes the comparison —
+/// it is a diagnostic (`load.chipload.commanded_above_band`, T1.5). Here
+/// the commanded value is far above the band and the gate still says
+/// `Within`, because the machine will not reach the commanded feed.
+///
+/// Unchanged by the 2026-08-06 conversion, and now readable: the gate's
+/// own number is the SAME quantity at the achieved feed, so the pair
+/// "7.80× commanded / 1.00× achieved" is a single statement about one
+/// operation. B-lit §3.2 calls their ratio — the −87 % kinematic
+/// throttle — the operator-actionable fact, not either figure alone.
 #[test]
 fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
     let e = explain(SAMPLE_ARC_A_RAD, true);
@@ -681,15 +855,31 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
         "the fixture must reproduce a commanded feed-per-tooth well above the band max, or the \
          missing comparison has nothing to surface; got {overshoot}x"
     );
+    // Pre-conversion this read `assert_eq!(e.verdict_label, "Within")`
+    // with the note "and the gate must nonetheless report Within — that
+    // IS the finding". The P-10 finding it carried is that no verdict
+    // makes the commanded-vs-band comparison; that is still true (the
+    // comparison is a diagnostic). What is no longer true is that the
+    // gate disagreed with it — the gate now agrees, on the same axis, at
+    // the achieved feed, and trips.
     assert_eq!(
-        e.verdict_label, "Within",
-        "and the gate must nonetheless report Within — that IS the finding"
+        e.verdict_label, "Exceeds",
+        "the gate now trips on the same axis the alarm reports; before the conversion \
+         it read Within while the commanded value sat {overshoot:.2}x over the band"
     );
+    let achieved_over_band = e.gate_observed_mm / e.band_max_mm;
     eprintln!(
-        "MEASURED: commanded {:.6} mm/tooth vs band max {:.6} mm/tooth = {overshoot:.2}x over, \
-         same unit, same stage — and the verdict is Within. No production consumer makes this \
-         comparison (census P-10).",
-        e.commanded_fpt_mm, e.band_max_mm
+        "MEASURED: commanded {:.6} mm/tooth vs band max {:.6} = {overshoot:.2}x over; \
+         ACHIEVED {:.6} vs the same max = {achieved_over_band:.2}x; throttle {:.4}. \
+         One statement at two feeds — the pair is the finding, not either figure.",
+        e.commanded_fpt_mm,
+        e.band_max_mm,
+        e.gate_observed_mm,
+        achieved_over_band / overshoot,
+    );
+    assert!(
+        (achieved_over_band / overshoot - PREDICTED_FEED_FRACTION).abs() < 1e-6,
+        "the two ratios must differ by exactly the achieved-feed fraction"
     );
 }
 
