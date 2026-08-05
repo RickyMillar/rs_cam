@@ -72,16 +72,42 @@ pub struct LookupResult {
     /// debug/UI to show how far the query's diameter diverged from the
     /// row's calibration.
     pub row_diameter_mm: f64,
-    /// Linear scale factor applied to chipload bounds for diameter:
-    /// `query.diameter_mm / row.diameter_mm`. 1.0 = exact match, no scaling.
+    /// Scale factor **applied** to the chipload bounds for diameter:
+    /// `(query.diameter_mm / row.diameter_mm) ^ CHIPLOAD_DIAMETER_EXPONENT`.
+    /// 1.0 = exact match, no scaling. Equal to
+    /// [`Self::chipload_diameter_ratio_raw`] while the shipped exponent is
+    /// 1.0; the two are stored separately so they cannot be conflated when
+    /// it is not.
     pub chipload_diameter_scale: f64,
-    /// Linear scale factor applied to chipload bounds for hardness:
-    /// `row.hardness_value / query.hardness_value` when kinds match,
-    /// 1.0 otherwise. Softer query → larger factor → higher chipload.
+    /// Scale factor **applied** to the chipload bounds for hardness:
+    /// `(row.hardness_value / query.hardness_value) ^ CHIPLOAD_HARDNESS_EXPONENT`
+    /// when kinds match, 1.0 otherwise. Softer query → larger factor →
+    /// higher chipload.
     pub chipload_hardness_scale: f64,
-    /// True when the combined chipload scaling diverges from 1.0 by more
-    /// than ±40 % (`|ln(diameter × hardness)| > ln(1.4)`). Verdicts derived
-    /// from this row must be reported with `Confidence::Approximate`.
+    /// The **raw** diameter transfer ratio `query.diameter_mm /
+    /// row.diameter_mm`, before any scaling law is applied (clamped only by
+    /// [`SCALE_CLAMP_LO`]/[`SCALE_CLAMP_HI`]). This — not the applied scale
+    /// — is what [`Self::is_extrapolated`] measures, because "how far is
+    /// this row from the query" is a property of the row and the query, not
+    /// of the exponent the crate currently believes relates them.
+    pub chipload_diameter_ratio_raw: f64,
+    /// The **raw** hardness transfer ratio `row.hardness_value /
+    /// query.hardness_value` (or the family-anchor substitute), before any
+    /// scaling law. See [`Self::chipload_diameter_ratio_raw`].
+    pub chipload_hardness_ratio_raw: f64,
+    /// True when the combined **raw** transfer ratio diverges from 1.0 by
+    /// more than ±40 % (`|ln(raw_diameter × raw_hardness)| > ln(1.4)`).
+    /// Verdicts derived from this row must be reported with
+    /// `Confidence::Approximate`.
+    ///
+    /// **Read on the raw ratios deliberately** (the B-lit §4.1 rider,
+    /// 2026-08-06). Computing it on the *applied* scales lets a softened
+    /// exponent shrink the product back inside the threshold and silently
+    /// un-flag a row that is exactly as far from the query as it was —
+    /// which downgrades `Confidence::Approximate` to `Validated` and, via
+    /// `ChipBoundsSource::low_side_is_advisory`, converts a burn advisory
+    /// into a hard `Exceeds(Low)` trip. Pinned by
+    /// `tests/chipload_extrapolation_flag_rider.rs`.
     pub is_extrapolated: bool,
     /// The matched observation's OWN pass role, which is **not**
     /// necessarily the one that was queried: pass role is a scoring
@@ -262,17 +288,69 @@ pub fn enumerate_matching_rows(lut: &VendorLut, criteria: &LookupCriteria) -> Ve
 /// `is_extrapolated` flag is set, and the verdict is downgraded to
 /// `Approximate`. 0.1× / 10× covers a 100× diameter span which is well past
 /// any real wood-tool extrapolation we want to do.
-const SCALE_CLAMP_LO: f64 = 0.1;
-const SCALE_CLAMP_HI: f64 = 10.0;
+pub const SCALE_CLAMP_LO: f64 = 0.1;
+pub const SCALE_CLAMP_HI: f64 = 10.0;
 
 /// Threshold past which a scaled row is reported as extrapolated. ±40 %
-/// (≈ ln 1.4) on the *combined* diameter × hardness scale. Picked to span
-/// the LUT's existing diameter-row spacing (3.175 mm → 6.0 mm = 1.89×) so
-/// neighbouring rows don't trip Approximate, but a 1 mm tip against a
-/// 3.175 mm row (0.31× = ln 1.16) does.
-const APPROX_LN_THRESHOLD: f64 = 0.336_472_236_621_213_07; // f64::ln(1.4)
+/// (≈ ln 1.4) on the *combined* raw diameter × hardness transfer ratio.
+/// Picked to span the LUT's existing diameter-row spacing (3.175 mm →
+/// 6.0 mm = 1.89×) so neighbouring rows don't trip Approximate, but a 1 mm
+/// tip against a 3.175 mm row (0.31× = ln 1.16) does.
+pub const CHIPLOAD_EXTRAPOLATION_LN_THRESHOLD: f64 = 0.336_472_236_621_213_07; // f64::ln(1.4)
 
-fn diameter_scale_factor(query_d: f64, row_d: Option<f64>) -> f64 {
+/// Exponent on the raw diameter transfer ratio when carrying a vendor
+/// chipload band from the row's calibrated diameter to the query's.
+///
+/// **SHIPPED VALUE: 1.0** — a linear carry-over. `CHIPLOAD_LITERATURE_VERDICT.md`
+/// §4.1 regresses the shipped vendor charts and recommends `0.61`
+/// (per-family fitted range 0.23–1.25, row-weighted centre 0.52), matching
+/// `machine::ChipLoadFormula::default().p` so the LUT path would adopt the
+/// formula path rather than both moving. **That adoption is NOT made here.**
+/// Checkpoint B Q4 requires a separate approval carrying magnitudes; those
+/// are measured in `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`.
+///
+/// The exponent exists as a named constant — rather than being implicit in
+/// a bare division — precisely so the raw ratio and the applied scale are
+/// distinguishable *before* the value moves. See
+/// [`LookupResult::is_extrapolated`].
+pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 1.0;
+
+/// Exponent on the raw hardness transfer ratio. **SHIPPED VALUE: 1.0.**
+/// `CHIPLOAD_LITERATURE_VERDICT.md` §4.2 recommends `0.5`, bracketed
+/// [0.48, 0.67] by USDA FPL GTR-190 Table 5–11a under constant force per
+/// tooth, and notes that the *formula* path's true composite exponent on
+/// the Janka axis is already 0.504 (`(janka/600)^0.4` raised to `^-1.26`),
+/// not the 1.26 the census reported. **Not adopted here** — see
+/// [`CHIPLOAD_DIAMETER_EXPONENT`].
+pub const CHIPLOAD_HARDNESS_EXPONENT: f64 = 1.0;
+
+/// Apply a chipload transfer law to a raw ratio.
+///
+/// Separated from the ratio itself so that `is_extrapolated` can read the
+/// ratio while the band reads the scale. At `exponent == 1.0` this is
+/// bit-identical to the input (IEEE-754 `pow(x, 1) == x`), which
+/// `tests/chipload_extrapolation_flag_rider.rs` asserts, so introducing the
+/// seam moves no shipped number.
+#[must_use]
+pub fn apply_chipload_law(raw_ratio: f64, exponent: f64) -> f64 {
+    raw_ratio.powf(exponent)
+}
+
+/// **The extrapolation rule**, on the RAW transfer ratios.
+///
+/// `|ln(raw_diameter_ratio × raw_hardness_ratio)| > ln 1.4`. Exposed so a
+/// consumer (and the rider sentry) can ask the question without
+/// re-deriving the threshold, and so the answer cannot drift from the one
+/// [`LookupResult::is_extrapolated`] carries.
+#[must_use]
+pub fn is_extrapolated_for_ratios(raw_diameter_ratio: f64, raw_hardness_ratio: f64) -> bool {
+    (raw_diameter_ratio * raw_hardness_ratio).ln().abs() > CHIPLOAD_EXTRAPOLATION_LN_THRESHOLD
+}
+
+/// The RAW diameter transfer ratio `query / row`, clamped only against
+/// absurd extrapolation. No law is applied here — see
+/// [`apply_chipload_law`].
+fn diameter_ratio_raw(query_d: f64, row_d: Option<f64>) -> f64 {
     match row_d {
         Some(rd) if rd > 0.0 && query_d > 0.0 => {
             (query_d / rd).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI)
@@ -313,7 +391,10 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
     }
 }
 
-fn hardness_scale_factor(query: &LookupQuery, obs: &VendorObservation) -> f64 {
+/// The RAW hardness transfer ratio `row / query`, clamped only against
+/// absurd extrapolation. No law is applied here — see
+/// [`apply_chipload_law`].
+fn hardness_ratio_raw(query: &LookupQuery, obs: &VendorObservation) -> f64 {
     match (
         query.hardness_kind,
         query.hardness_value,
@@ -353,10 +434,17 @@ fn build_result(
     diameter_match_score: i64,
     _idx: usize,
 ) -> LookupResult {
-    let diameter_scale = diameter_scale_factor(query.diameter_mm, obs.diameter_mm);
-    let hardness_scale = hardness_scale_factor(query, obs);
+    // The rider (B-lit §4.1 ⚠): the extrapolation flag reads the RAW
+    // transfer ratios; only the band reads the applied scales. While both
+    // exponents are 1.0 these are the same numbers, which is exactly why
+    // the separation has to be made now rather than at the moment an
+    // exponent moves.
+    let diameter_ratio_raw = diameter_ratio_raw(query.diameter_mm, obs.diameter_mm);
+    let hardness_ratio_raw = hardness_ratio_raw(query, obs);
+    let is_extrapolated = is_extrapolated_for_ratios(diameter_ratio_raw, hardness_ratio_raw);
+    let diameter_scale = apply_chipload_law(diameter_ratio_raw, CHIPLOAD_DIAMETER_EXPONENT);
+    let hardness_scale = apply_chipload_law(hardness_ratio_raw, CHIPLOAD_HARDNESS_EXPONENT);
     let total_scale = diameter_scale * hardness_scale;
-    let is_extrapolated = total_scale.ln().abs() > APPROX_LN_THRESHOLD;
 
     LookupResult {
         chip_load_mm: chipload_midpoint(obs) * total_scale,
@@ -381,6 +469,8 @@ fn build_result(
         row_diameter_mm: obs.diameter_mm.unwrap_or(0.0),
         chipload_diameter_scale: diameter_scale,
         chipload_hardness_scale: hardness_scale,
+        chipload_diameter_ratio_raw: diameter_ratio_raw,
+        chipload_hardness_ratio_raw: hardness_ratio_raw,
         is_extrapolated,
         row_pass_role: obs.pass_role,
     }
