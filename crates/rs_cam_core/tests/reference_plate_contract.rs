@@ -1052,8 +1052,8 @@ fn tessellation_rule_reports_both_terms_and_beats_the_alias_floor() {
     let plate = ReferencePlate::arp1().with_tess_epsilon(0.001);
     println!("\nARP-1 tessellation at eps = 1 um:");
     println!(
-        "  {:<20} {:>10} {:>10} {:>10} {:>10}  {}",
-        "zone", "arc", "xy", "lambda/8", "adopted", "bound by"
+        "  {:<20} {:>10} {:>10} {:>10} {:>10}  bound by",
+        "zone", "arc", "xy", "lambda/8", "adopted"
     );
     for zone in Zone::ALL {
         let Some(s) = plate.tess_step_for(zone) else {

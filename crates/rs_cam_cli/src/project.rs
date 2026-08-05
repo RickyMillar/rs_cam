@@ -697,6 +697,88 @@ fn fmt_opt_u32(v: Option<u32>) -> String {
     }
 }
 
+/// Render the shared [`SimulationTriage`] contract.
+///
+/// The census found five surfaces each assembling, ranking and truncating
+/// the issue channel their own way. This one renders the shared object and
+/// adds nothing of its own — including the truncation notice, which comes
+/// from `Bounded` rather than from a local `.take(10)` that forgets to say
+/// so (R-6's defect, one layer up).
+fn print_triage_report(triage: &rs_cam_core::sim_triage::SimulationTriage) {
+    use rs_cam_core::sim_measurability::Measurability;
+
+    // Measurability first: it qualifies everything below it.
+    let unmeasured: Vec<_> = triage
+        .measurability
+        .entries
+        .iter()
+        .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
+        .collect();
+    if !unmeasured.is_empty() {
+        eprintln!("Measurability:");
+        for e in &unmeasured {
+            let reason = e
+                .measurability
+                .reason()
+                .map(|r| r.describe())
+                .unwrap_or_default();
+            eprintln!(
+                "  NOT MEASURED  {} on toolpath {} — {reason}",
+                e.metric.label(),
+                e.toolpath_id.0
+            );
+        }
+        eprintln!();
+    }
+
+    if !triage.safety.is_empty() {
+        eprintln!("Safety ({}):", triage.safety.len());
+        for f in &triage.safety {
+            eprintln!("  {}", f.diagnostic.message);
+        }
+        eprintln!();
+    }
+
+    if !triage.actions.is_empty() {
+        eprintln!("Act on ({}):", triage.actions.len());
+        for f in &triage.actions {
+            eprintln!("  {}", f.diagnostic.message);
+        }
+        eprintln!();
+    }
+
+    if !triage.advisories.items.is_empty() {
+        eprintln!("Advisories:");
+        for f in &triage.advisories.items {
+            let seen = if f.occurrences > 1 {
+                format!(" (x{})", f.occurrences)
+            } else {
+                String::new()
+            };
+            eprintln!("  {}{seen}", f.diagnostic.message);
+        }
+        if triage.advisories.truncated {
+            eprintln!("  ... {} more not shown", triage.advisories.hidden());
+        }
+        eprintln!();
+    }
+
+    // The class-D tallies, demoted to a footer and each named for the
+    // population it counts — the 43x gap the census measured is visible here
+    // instead of inferable.
+    let c = &triage.counts;
+    eprintln!(
+        "Counts: {} samples | {} flagged-air + {} flagged-low (per SAMPLE) | \
+         {} issue runs (COALESCED, the legacy \"issue_count\") | {} hotspots",
+        c.samples_total,
+        c.flagged_samples_air,
+        c.flagged_samples_low,
+        c.issue_segments,
+        c.hotspots_total
+    );
+    eprintln!();
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -800,86 +882,4 @@ mod tests {
             );
         }
     }
-}
-
-/// Render the shared [`SimulationTriage`] contract.
-///
-/// The census found five surfaces each assembling, ranking and truncating
-/// the issue channel their own way. This one renders the shared object and
-/// adds nothing of its own — including the truncation notice, which comes
-/// from `Bounded` rather than from a local `.take(10)` that forgets to say
-/// so (R-6's defect, one layer up).
-fn print_triage_report(triage: &rs_cam_core::sim_triage::SimulationTriage) {
-    use rs_cam_core::sim_measurability::Measurability;
-
-    // Measurability first: it qualifies everything below it.
-    let unmeasured: Vec<_> = triage
-        .measurability
-        .entries
-        .iter()
-        .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
-        .collect();
-    if !unmeasured.is_empty() {
-        eprintln!("Measurability:");
-        for e in &unmeasured {
-            let reason = e
-                .measurability
-                .reason()
-                .map(|r| r.describe())
-                .unwrap_or_default();
-            eprintln!(
-                "  NOT MEASURED  {} on toolpath {} — {reason}",
-                e.metric.label(),
-                e.toolpath_id.0
-            );
-        }
-        eprintln!();
-    }
-
-    if !triage.safety.is_empty() {
-        eprintln!("Safety ({}):", triage.safety.len());
-        for f in &triage.safety {
-            eprintln!("  {}", f.diagnostic.message);
-        }
-        eprintln!();
-    }
-
-    if !triage.actions.is_empty() {
-        eprintln!("Act on ({}):", triage.actions.len());
-        for f in &triage.actions {
-            eprintln!("  {}", f.diagnostic.message);
-        }
-        eprintln!();
-    }
-
-    if !triage.advisories.items.is_empty() {
-        eprintln!("Advisories:");
-        for f in &triage.advisories.items {
-            let seen = if f.occurrences > 1 {
-                format!(" (x{})", f.occurrences)
-            } else {
-                String::new()
-            };
-            eprintln!("  {}{seen}", f.diagnostic.message);
-        }
-        if triage.advisories.truncated {
-            eprintln!("  ... {} more not shown", triage.advisories.hidden());
-        }
-        eprintln!();
-    }
-
-    // The class-D tallies, demoted to a footer and each named for the
-    // population it counts — the 43x gap the census measured is visible here
-    // instead of inferable.
-    let c = &triage.counts;
-    eprintln!(
-        "Counts: {} samples | {} flagged-air + {} flagged-low (per SAMPLE) | \
-         {} issue runs (COALESCED, the legacy \"issue_count\") | {} hotspots",
-        c.samples_total,
-        c.flagged_samples_air,
-        c.flagged_samples_low,
-        c.issue_segments,
-        c.hotspots_total
-    );
-    eprintln!();
 }

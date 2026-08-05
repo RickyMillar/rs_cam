@@ -177,7 +177,6 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
         source: BoundarySource::Stock,
         containment: BoundaryContainment::Center,
         offset: SHRINK,
-        ..BoundaryConfig::default()
     };
     let stock_bbox = BoundingBox3::from_points([P3::new(0.0, 0.0, -5.0), P3::new(TINY, TINY, 0.0)]);
 
