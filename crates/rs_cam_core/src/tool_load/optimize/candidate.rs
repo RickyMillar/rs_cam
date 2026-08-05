@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::feeds::vendor_lookup::MatchedRow;
+use crate::panic_message::panic_payload_message;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
@@ -339,19 +340,6 @@ pub(crate) fn evaluate_candidate(
     }
 }
 
-/// Best-effort human-readable message from a `catch_unwind` payload.
-/// `panic!("...")` yields `&str`; `panic!("{x}")`-style formatting
-/// yields `String`; anything else gets a placeholder.
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "non-string panic payload".to_owned()
-    }
-}
-
 fn evaluate_candidate_inner(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
@@ -551,7 +539,7 @@ pub(crate) fn refine_stage2(
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::panic_payload_message;
+    use crate::panic_message::panic_payload_message;
 
     // R1 isolation seam: the payload shapes catch_unwind hands back for
     // the panic styles the geometry stack actually produces.

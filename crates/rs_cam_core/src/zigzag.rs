@@ -39,8 +39,20 @@ pub struct ZigzagParams {
     angle = params.angle,
 ))]
 pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
-    let lines = zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
-    lines_to_toolpath(&lines, params)
+    zigzag_toolpath_reported(polygon, params).0
+}
+
+/// [`zigzag_toolpath`] with Checkpoint C's offset failure channel attached:
+/// `1` when the wall inset failed rather than collapsed, `0` otherwise.
+///
+/// An empty result here is silent in a way the others are not: zigzag returns
+/// no passes at all, which reads exactly like "the pocket is narrower than
+/// the tool".
+#[must_use]
+pub fn zigzag_toolpath_reported(polygon: &Polygon2, params: &ZigzagParams) -> (Toolpath, usize) {
+    let (lines, failures) =
+        zigzag_lines_reported(polygon, params.tool_radius, params.stepover, params.angle);
+    (lines_to_toolpath(&lines, params), failures)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -53,8 +65,21 @@ pub fn zigzag_lines(
     stepover: f64,
     angle_deg: f64,
 ) -> Vec<[P2; 2]> {
+    zigzag_lines_reported(polygon, tool_radius, stepover, angle_deg).0
+}
+
+/// [`zigzag_lines`] with Checkpoint C's offset failure channel attached.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[must_use]
+pub fn zigzag_lines_reported(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    angle_deg: f64,
+) -> (Vec<[P2; 2]>, usize) {
     if polygon.exterior.len() < 3 || stepover <= 0.0 {
-        return Vec::new();
+        // Refused before any offset was attempted, so nothing was observed.
+        return (Vec::new(), 0);
     }
 
     let angle_rad = angle_deg.to_radians();
@@ -62,9 +87,10 @@ pub fn zigzag_lines(
     let sin_a = angle_rad.sin();
 
     // Inset the polygon by tool radius to avoid wall contact
-    let inset = crate::polygon::offset_polygon(polygon, tool_radius);
+    let (inset, failure) = crate::polygon::offset_polygon_reported(polygon, tool_radius);
+    let failures = usize::from(failure.is_some());
     if inset.is_empty() {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Collect all inset polygon edges (exterior + holes from all result polygons)
@@ -84,7 +110,7 @@ pub fn zigzag_lines(
     }
 
     if all_edges.is_empty() {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Project all vertices onto the scan direction to find range
@@ -105,7 +131,7 @@ pub fn zigzag_lines(
     }
 
     if perp_max - perp_min < 1e-10 {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Generate scan lines at stepover intervals
@@ -148,7 +174,7 @@ pub fn zigzag_lines(
         }
     }
 
-    lines
+    (lines, failures)
 }
 
 /// Find intersection parameters along the scan direction for a scan line.

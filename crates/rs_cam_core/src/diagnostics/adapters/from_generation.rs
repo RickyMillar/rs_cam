@@ -44,7 +44,111 @@ pub fn diagnostics_from_generation(
     out.extend(ramp_reach_clamp(toolpath_id, stats));
     out.extend(claims_reference(toolpath_id, stats));
     out.extend(zero_removal(toolpath_id, stats));
+    out.extend(offset_library_failures(toolpath_id, stats));
+    out.extend(boundary_clip_dropped(toolpath_id, stats));
     out
+}
+
+/// Checkpoint C (Q2): a boundary containment that collapsed, so the path is
+/// not contained by anything.
+///
+/// `Caution`. It is not `Blocking` because the pass-through is the ruled
+/// behaviour for this cause and the resulting path is usually harmless — but
+/// it is not `Info` either: a safety setting the operator switched on is not
+/// in force, and that is a thing to know before pressing cycle start. The
+/// sibling case, where the containment collapsed because an offset FAILED,
+/// never reaches here at all — it refuses the generate.
+fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = stats.boundary_clip_dropped else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_BOUNDARY_CLIP_DROPPED),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Observed at generation, where the containment was resolved. A
+        // simulation cannot supersede it: an unclipped path simulates
+        // perfectly well, which is precisely the problem.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "Boundary containment `{containment:?}` was requested and its \
+             offset collapsed to nothing across all {regions} source \
+             region(s) at a {dia:.3} mm tool, so this toolpath was emitted \
+             with NO boundary clip — not with a tighter one. The usual cause \
+             is benign: the tool is wider than the region it was asked to \
+             stay inside, nothing there is machinable, and leaving the path \
+             unclipped is better than silently deleting it. But nothing is \
+             containing this path. Check it against the boundary you meant, \
+             or use a smaller tool. [Generation stage; report-only — no gate \
+             consumes this.]",
+            containment = f.containment,
+            regions = f.source_region_count,
+            dia = f.tool_diameter_mm,
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// Checkpoint C (Q1 / D-2): 2D offsets in this generation that FAILED rather
+/// than collapsed.
+///
+/// `Caution`, not `Blocking`: the toolpath is real and runnable, and the
+/// operator's ruling on the failure contract was explicitly *not* to turn a
+/// contained panic into a refusal — an operation that lost one ring may still
+/// be producing usable geometry everywhere else. What is not acceptable is
+/// nothing saying so, which is the state F-12 measured: an inlay's female
+/// pocket stopped early on a dependency's `debug_assert!`, left material, and
+/// reported success.
+///
+/// `Some(0)` is silent. It is a real measurement — every offset was clean —
+/// but a per-toolpath notice that nothing happened is a notice nobody reads,
+/// and the same rule already governs `zero_removal` and `deprecated_dial`.
+fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = no offset ran through the reporting name, so nothing was
+    // measured. Not a claim of any kind (A/M9's rule).
+    let Some(n) = stats.offset_library_failures.filter(|n| *n > 0) else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_OFFSET_LIBRARY_FAILURE),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Observed at generation, at the one chokepoint where the dependency
+        // is called. A simulation cannot supersede it: the geometry the
+        // failed offset would have produced is simply absent from the path,
+        // so a sim of this toolpath is clean and says nothing.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{n} 2D offset call(s) in this operation FAILED rather than \
+             collapsing: cavalier_contours panicked on the input and the \
+             failure was contained into an empty result, or an input guard \
+             refused the ring. Whatever the offset was bounding — a pocket \
+             ring, a cutter-compensated contour, an inset — is missing from \
+             this toolpath, which can therefore leave material where it looks \
+             finished. Check the source geometry for self-intersecting or \
+             pinched rings, repeated vertices and non-finite coordinates. \
+             This count is NOT build-invariant: most of the assertions behind \
+             it are `debug_assert!`s in a dependency, so a release build \
+             reports fewer and proceeds on the unvalidated input instead — a \
+             lower number there is not an improvement. [Count of offset \
+             CALLS, not distinct rings — a depth-stepped operation re-offsets \
+             the same geometry once per Z level; generation stage. \
+             Report-only — no gate.]"
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets

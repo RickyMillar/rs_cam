@@ -40,8 +40,9 @@
 )]
 
 use rs_cam_core::compute::config::{
-    ClaimsReferenceFinding, ClippedBandFinding, DeprecatedDialFinding, DerivedStepoverFinding,
-    DroppedBandFinding, TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
+    BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding, ClippedBandFinding,
+    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, TipFloatFinding,
+    ToolpathStats, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
@@ -149,6 +150,17 @@ fn every_finding_recorded() -> GenerationFindings {
             cutting_distance_mm: 900.0,
             floor_mm: 0.01,
         }),
+        // Checkpoint C (Q1 / D-2). `Some(2)` rather than `Some(0)` on
+        // purpose: this fixture's job is to make a dropped field read as its
+        // default, and `Some(0)` is itself a meaningful measured value here.
+        offset_library_failures: Some(2),
+        // Checkpoint C (Q2). Recorded by the boundary clip, which runs after
+        // the adapter returns — the join must carry it anyway.
+        boundary_clip_dropped: Some(BoundaryClipDroppedFinding {
+            containment: BoundaryContainment::Inside,
+            tool_diameter_mm: 6.0,
+            source_region_count: 3,
+        }),
     }
 }
 
@@ -185,6 +197,8 @@ fn every_recorded_finding_survives_the_single_join() {
         ramp_reach_clamp,
         claims_reference,
         zero_removal,
+        offset_library_failures,
+        boundary_clip_dropped,
     } = stats;
 
     assert_eq!(truncated_core_mm2, findings.truncated_core_mm2);
@@ -214,6 +228,8 @@ fn every_recorded_finding_survives_the_single_join() {
     );
     assert_eq!(claims_reference, findings.claims_reference);
     assert_eq!(zero_removal, findings.zero_removal);
+    assert_eq!(offset_library_failures, findings.offset_library_failures);
+    assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -268,6 +284,11 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert!(stats.ramp_reach_clamp.is_none());
     assert_eq!(stats.claims_reference, None);
     assert_eq!(stats.zero_removal, None);
+    assert_eq!(
+        stats.offset_library_failures, None,
+        "an operation that ran no reporting offset has measured nothing —          `Some(0)` here would claim every offset was clean"
+    );
+    assert_eq!(stats.boundary_clip_dropped, None);
     assert!(
         stats.retract_trips.is_some(),
         "retract trips are computed after generation from the move list, so \

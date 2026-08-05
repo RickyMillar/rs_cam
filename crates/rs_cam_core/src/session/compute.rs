@@ -1429,6 +1429,10 @@ impl ProjectSession {
         match tp_result {
             Ok((annotated, findings)) => {
                 let mut annotated = annotated;
+                // Checkpoint C (Q2): the boundary clip below can add a
+                // finding of its own, so the findings stay mutable until the
+                // join rather than being moved straight into it.
+                let mut findings = findings;
 
                 if !annotated.toolpath.moves.is_empty() {
                     core_scope.set_move_range(0, annotated.toolpath.moves.len().saturating_sub(1));
@@ -1503,7 +1507,9 @@ impl ProjectSession {
                                 heights.retract_z,
                                 &semantic_root,
                                 &mut channels,
+                                &mut findings,
                             )
+                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
                         } else {
                             Self::apply_boundary_clip(
                                 annotated,
@@ -1515,7 +1521,9 @@ impl ProjectSession {
                                 heights.retract_z,
                                 &semantic_root,
                                 &mut channels,
+                                &mut findings,
                             )
+                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
                         };
                 }
 
@@ -1753,9 +1761,11 @@ impl ProjectSession {
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::transform_provenance::ReconcileSet<'_>,
-    ) -> crate::toolpath_spans::AnnotatedToolpath {
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
+    {
         use crate::boundary::{
-            ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
 
         // Resolve the source polygon for the boundary (ModelSilhouette /
@@ -1790,18 +1800,32 @@ impl ProjectSession {
         };
 
         let tool_radius = tool_diameter / 2.0;
-        let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
-        // An empty `boundaries` means the boundary collapsed (e.g. the tool
-        // is larger than the stock): the set clipper passes the toolpath
-        // through with an identity mapping, so the collapsed and the clipped
-        // path leave the channels in provably the same state.
-        let clipped = clip_annotated_to_boundary_set(
-            annotated,
-            boundaries.first().map(std::slice::from_ref).unwrap_or(&[]),
-            safe_z,
-        )
-        .reconcile(channels)
-        .into_inner();
+        let (boundaries, offset_failure) =
+            effective_boundary_reported(&stock_poly, containment, tool_radius);
+        // Checkpoint C, Q2 (F-1). An empty `boundaries` means the set clipper
+        // passes the toolpath through with an identity mapping — i.e. the
+        // containment the operator asked for is NOT APPLIED. That is correct
+        // for one cause and an unbounded over-cut for the other, and until
+        // Checkpoint C nothing here could tell them apart.
+        if boundaries.is_empty() {
+            Self::resolve_collapsed_containment(
+                offset_failure,
+                boundary_config.containment,
+                tool_diameter,
+                1,
+                findings,
+            )?;
+        }
+        // Checkpoint C, D-3c: the WHOLE set, not `boundaries.first()`. A
+        // containment offset that splits its source into several polygons
+        // used to keep piece 1 and clip everything outside it away — an
+        // under-cut nobody chose, and the multi-region path at
+        // `apply_boundary_clip_multi` already disagreed by keeping them all.
+        // The multi-region semantics win: membership downstream is "inside
+        // ANY", which is what a split containment means.
+        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
+            .reconcile(channels)
+            .into_inner();
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
@@ -1822,7 +1846,64 @@ impl ProjectSession {
             }
         }
 
-        clipped
+        Ok(clipped)
+    }
+
+    /// The Checkpoint C (Q2) decision, in one place because both boundary
+    /// clip paths must make it identically.
+    ///
+    /// An empty effective boundary is either a **genuine collapse** — the
+    /// pass-through case `boundary::clip_annotated_to_boundary_set`'s
+    /// contract was written for, where the tool is larger than the region and
+    /// nothing there is machinable — or the residue of an offset that
+    /// **failed**. Option (b) of D-3a: pass through on the first WITH a typed
+    /// finding naming the containment that was dropped, refuse on the second.
+    ///
+    /// `Ok(())` means "pass through; the finding is recorded". `Err` stops the
+    /// generate. Deliberately not a `bool`: the refusal has to be
+    /// unignorable at the call site.
+    pub fn resolve_collapsed_containment(
+        offset_failure: Option<crate::polygon::OffsetFailure>,
+        containment: crate::compute::config::BoundaryContainment,
+        tool_diameter: f64,
+        source_region_count: usize,
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<(), crate::compute::execute::OperationError> {
+        if let Some(failure) = offset_failure {
+            // NOT a pass-through. The safety argument for emitting an
+            // unclipped path — "nothing here is machinable anyway" — rests
+            // entirely on the boundary having genuinely run out of geometry,
+            // and a failure establishes exactly nothing about that.
+            return Err(crate::compute::execute::OperationError::MissingGeometry(
+                format!(
+                    "boundary containment `{containment:?}` could not be \
+                     computed: {reason}. Refusing to emit this toolpath: an \
+                     empty containment is passed through UNCLIPPED, which is \
+                     safe only when the boundary genuinely collapsed (tool \
+                     larger than the region), and this one did not — it \
+                     failed. Repair the boundary geometry (self-intersecting \
+                     or pinched rings, repeated vertices, non-finite \
+                     coordinates) or set the containment to `Center`.",
+                    reason = failure.describe(),
+                ),
+            ));
+        }
+        crate::compute::execute::record_boundary_clip_dropped(
+            findings,
+            crate::compute::config::BoundaryClipDroppedFinding {
+                containment,
+                tool_diameter_mm: tool_diameter,
+                source_region_count,
+            },
+        );
+        tracing::warn!(
+            ?containment,
+            tool_diameter,
+            source_region_count,
+            "boundary containment collapsed — toolpath emitted with NO \
+             boundary clip (genuine collapse, recorded as a finding)"
+        );
+        Ok(())
     }
 
     /// Multi-region variant of [`Self::apply_boundary_clip`] for
@@ -1853,9 +1934,11 @@ impl ProjectSession {
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::transform_provenance::ReconcileSet<'_>,
-    ) -> crate::toolpath_spans::AnnotatedToolpath {
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
+    {
         use crate::boundary::{
-            ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
 
         // Per-region keep-out subtraction + user offset (regions that
@@ -1875,23 +1958,37 @@ impl ProjectSession {
         // may split one region into several (or collapse it to none) — flatten
         // everything into one set; membership downstream is "inside ANY".
         let tool_radius = tool_diameter / 2.0;
-        let boundaries: Vec<crate::polygon::Polygon2> = processed
-            .as_slice()
-            .iter()
-            .flat_map(|region| effective_boundary(region, containment, tool_radius))
-            .collect();
+        let mut boundaries: Vec<crate::polygon::Polygon2> = Vec::new();
+        // Checkpoint C, Q2: the failure channel is aggregated across regions
+        // the same way `offset_polygon_reported` aggregates across repaired
+        // pieces — a library failure outranks a rejected input — so one bad
+        // region cannot be hidden by a dozen clean ones.
+        let mut offset_failure: Option<crate::polygon::OffsetFailure> = None;
+        for region in processed.as_slice() {
+            let (out, failure) = effective_boundary_reported(region, containment, tool_radius);
+            boundaries.extend(out);
+            if failure.is_some()
+                && (offset_failure.is_none()
+                    || failure.as_ref().is_some_and(
+                        crate::polygon::OffsetFailure::is_library_failure,
+                    ))
+            {
+                offset_failure = failure;
+            }
+        }
 
         if boundaries.is_empty() {
             // Every region collapsed (offset/inset ate them all) — same
-            // "boundary collapsed" semantics as the single-polygon path:
-            // the toolpath passes through with an identity mapping, which is
-            // still reconciled so the collapsed and clipped paths leave the
-            // channels in provably the same state.
-            tracing::warn!(
-                region_count = regions.len(),
-                "DerivedRestRegions boundary collapsed (all regions vanished under \
-                 offset/containment inset) — leaving toolpath unclipped"
-            );
+            // "boundary collapsed" semantics as the single-polygon path, and
+            // now the same Checkpoint C decision: pass through with a typed
+            // finding on a genuine collapse, refuse when an offset failed.
+            Self::resolve_collapsed_containment(
+                offset_failure,
+                boundary_config.containment,
+                tool_diameter,
+                regions.len(),
+                findings,
+            )?;
         }
 
         let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
@@ -1918,7 +2015,7 @@ impl ProjectSession {
             }
         }
 
-        clipped
+        Ok(clipped)
     }
 
     /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
@@ -2881,6 +2978,15 @@ impl ProjectSession {
             // finding an agent narrating a live toolpath has no other way
             // to see.
             zero_removal: result.stats.zero_removal,
+            // Checkpoint C: a contained offset failure is invisible
+            // everywhere else — the only other trace it leaves is a
+            // `tracing::warn!` in a process that usually installs no
+            // subscriber.
+            offset_library_failures: result.stats.offset_library_failures,
+            // Checkpoint C: a containment that was requested and is not in
+            // force is exactly the thing an agent reading a toolpath has no
+            // other way to see.
+            boundary_clip_dropped: result.stats.boundary_clip_dropped,
         };
 
         Ok(crate::narrate::narrate_toolpath_with_context(
@@ -5567,6 +5673,8 @@ mod tests {
                 ramp_reach_clamp: None,
                 claims_reference: None,
                 zero_removal: None,
+                offset_library_failures: None,
+                boundary_clip_dropped: None,
                 retract_trips: None,
             },
             debug_trace: None,
@@ -5731,7 +5839,9 @@ mod tests {
             safe_z,
             &semantic_ctx,
             &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        );
+            &mut crate::compute::execute::GenerationFindings::default(),
+        )
+        .expect("a boundary that resolves cannot refuse");
 
         assert!(clipped.spans_valid, "spans stay valid through the set clip");
         assert_eq!(clipped.spans.len(), 1);
@@ -5784,6 +5894,7 @@ mod tests {
 
         let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
         let semantic_ctx = recorder.root_context();
+        let mut findings = crate::compute::execute::GenerationFindings::default();
 
         let clipped = ProjectSession::apply_boundary_clip_multi(
             annotated,
@@ -5794,7 +5905,10 @@ mod tests {
             20.0,
             &semantic_ctx,
             &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        );
+            &mut findings,
+        )
+        .expect("a GENUINE collapse still passes through — Checkpoint C only \
+                 refuses when the offset FAILED");
 
         assert_eq!(
             clipped.toolpath.moves.len(),
@@ -5808,6 +5922,21 @@ mod tests {
                 .iter()
                 .all(|m| m.move_type != crate::toolpath::MoveType::Rapid),
             "no retracts inserted when the boundary collapses"
+        );
+        // Checkpoint C, Q2: the pass-through is kept, and it is no longer
+        // silent. Before this the operator got an unclipped path and a
+        // `tracing::warn!` in a process with no subscriber.
+        let dropped = findings
+            .boundary_clip_dropped
+            .expect("a dropped containment must be recorded as a finding");
+        assert_eq!(
+            dropped.containment,
+            crate::compute::config::BoundaryContainment::default(),
+            "the finding names the containment that was requested"
+        );
+        assert_eq!(
+            dropped.source_region_count, 1,
+            "the finding names how many source regions all collapsed"
         );
     }
 }

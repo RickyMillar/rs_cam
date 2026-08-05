@@ -135,6 +135,21 @@ pub struct ToolpathNarrationContext<'a> {
     /// number supports no ratio. Narration therefore prints this line ONLY
     /// when the finding is present.
     pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    /// Checkpoint C: contained 2D-offset failures, off
+    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    /// `None` = this operation made no offset call through the reporting
+    /// name, so nothing was measured — NOT "no offset failed". Narration
+    /// prints the line only when the count is non-zero: a "0 contained
+    /// failures" line on every 2D toolpath would be a notice nobody reads,
+    /// and the measured-clean case is already readable from the absence of
+    /// a warning.
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C: the machining-boundary containment that collapsed, off
+    /// [`crate::compute::config::ToolpathStats::boundary_clip_dropped`].
+    /// `None` = nothing was dropped. Narration prints this whenever it is
+    /// present — an unclipped path where a containment was requested is not
+    /// a routine event.
+    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
 }
 
 #[derive(Debug, Clone)]
@@ -345,6 +360,8 @@ pub fn narrate_toolpath_with_context(
     append_ramp_reach_clamp(&mut output, context);
     append_tip_float(&mut output, context.tip_float);
     append_zero_removal(&mut output, context.zero_removal);
+    append_offset_library_failures(&mut output, context.offset_library_failures);
+    append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
     append_retract_trips(&mut output, context.retract_trips);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
@@ -902,6 +919,64 @@ fn append_zero_removal(
         samples = f.sampled_positions,
         deepest = f.deepest_engagement_mm,
         floor = f.floor_mm,
+    ));
+}
+
+/// Checkpoint C: one line when a 2D offset failed rather than collapsed.
+///
+/// Silent on `None` (nothing measured) and on `Some(0)` (measured clean) —
+/// the same rule `append_zero_removal` follows, and for the same reason: a
+/// line on every 2D toolpath saying nothing happened is a line nobody reads.
+///
+/// The line has to carry the debug/release caveat, because the count is not
+/// build-invariant: most of what it counts are `debug_assert!`s inside
+/// `cavalier_contours` and its spatial-index dependency, which do not fire
+/// in release. A reader comparing a release run against this number needs to
+/// know that a lower count there is not an improvement.
+fn append_offset_library_failures(output: &mut String, failures: Option<usize>) {
+    let Some(n) = failures.filter(|n| *n > 0) else {
+        return;
+    };
+    output.push_str(&format!(
+        "Offset failures: {n} 2D offset call(s) in this generation did not \
+         collapse — they FAILED, and the failure was contained and mapped to \
+         an empty result. Whatever those offsets were bounding (a pocket \
+         ring, a compensated contour, an inset) is missing from this \
+         toolpath, so it may leave material where it looks finished. Check \
+         the geometry that fed this operation for self-intersection, repeated \
+         vertices or non-finite coordinates. NOTE: this count is not \
+         build-invariant — most of the assertions behind it are \
+         `debug_assert!`s in a dependency and do not fire in a release build, \
+         where the library proceeds on the unvalidated input instead. \
+         [Count of offset CALLS, not of distinct rings; generation stage. \
+         Report-only — no gate consumes this.]\n"
+    ));
+}
+
+/// Checkpoint C: one line when a requested boundary containment collapsed
+/// and the toolpath was therefore emitted unclipped.
+///
+/// Always printed when present, unlike its offset-failure neighbour: this is
+/// not a report about geometry quality, it is a report that a SAFETY setting
+/// the operator turned on is not in force on this path.
+fn append_boundary_clip_dropped(
+    output: &mut String,
+    finding: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+) {
+    let Some(f) = finding else { return };
+    output.push_str(&format!(
+        "Boundary containment DROPPED: `{containment:?}` was requested and \
+         its offset collapsed to nothing across all {regions} source \
+         region(s) at a {dia:.3} mm tool, so this toolpath was emitted with \
+         NO boundary clip — not with a smaller one. The usual cause is \
+         benign (the tool is wider than the region it was asked to stay \
+         inside, so nothing there is machinable anyway) and the path is left \
+         unclipped rather than silently deleted. But nothing is containing \
+         this path: check it against the boundary you meant before running \
+         it. [Generation stage; report-only — no gate consumes this.]\n",
+        containment = f.containment,
+        regions = f.source_region_count,
+        dia = f.tool_diameter_mm,
     ));
 }
 
@@ -1889,6 +1964,8 @@ mod tests {
             ramp_reach_clamp: None,
             tip_float: None,
             zero_removal: None,
+            offset_library_failures: None,
+            boundary_clip_dropped: None,
             retract_trips: None,
         };
 

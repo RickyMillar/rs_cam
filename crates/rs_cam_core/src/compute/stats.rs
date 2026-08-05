@@ -67,6 +67,14 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // A4: same rule — a move list carries no reference stock to be
         // measured against, so this helper cannot answer the question.
         zero_removal: None,
+        // Checkpoint C: same rule again — whether an offset failed is a
+        // generation-time event and leaves no trace on the moves. `None`
+        // here means "this helper never watched an offset", never "no
+        // offset failed".
+        offset_library_failures: None,
+        // Same rule: a dropped boundary containment is a decision taken
+        // after generation, invisible in the move list it produced.
+        boundary_clip_dropped: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -134,6 +142,8 @@ pub fn stats_with_findings(
         ramp_reach_clamp: _,
         claims_reference: _,
         zero_removal: _,
+        offset_library_failures: _,
+        boundary_clip_dropped: _,
     } = compute_stats_with_spans(tp, spans);
 
     // Guard 1: the generation-owned half. No `..` — a new finding stops
@@ -150,6 +160,8 @@ pub fn stats_with_findings(
         ramp_reach_clamp,
         claims_reference,
         zero_removal,
+        offset_library_failures,
+        boundary_clip_dropped,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -172,6 +184,8 @@ pub fn stats_with_findings(
         ramp_reach_clamp: ramp_reach_clamp.map(Box::new),
         claims_reference,
         zero_removal,
+        offset_library_failures,
+        boundary_clip_dropped,
     }
 }
 

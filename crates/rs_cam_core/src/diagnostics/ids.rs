@@ -112,6 +112,26 @@ pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
 /// A REPORT, not a refusal. An operator may legitimately want a pass that
 /// finds nothing; what is not acceptable is nothing saying so.
 pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
+/// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
+/// `cavalier_contours` panicked and was contained, or one of the offset
+/// module's own input guards refused the ring — rather than collapsing.
+/// Sim-independent: the emitted path is exactly what a simulation would
+/// execute, and the geometry the failed offset would have produced simply
+/// is not in it, so a dexel run sees a clean, shorter pass and nothing else
+/// records that a bound went missing.
+///
+/// A REPORT, not a refusal, everywhere except the boundary-containment layer
+/// (`GEOM_BOUNDARY_CLIP_DROPPED`'s neighbour case), where the same failure
+/// stops the generate instead.
+pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure";
+/// Checkpoint C (Q2 / D-3a option b): a machining-boundary containment was
+/// requested, its offset collapsed to nothing, and the toolpath was therefore
+/// emitted with NO boundary clip at all — not with a smaller one. Usually
+/// benign (the tool is wider than the region it was told to stay inside), and
+/// deliberately still a pass-through rather than a refusal, because deleting
+/// the path instead would break the case the contract was written for. What
+/// it is not is silent any more.
+pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped";
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled

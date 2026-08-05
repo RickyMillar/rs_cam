@@ -4,7 +4,7 @@
 //! following the design contour. A single pass at each depth level.
 
 use crate::geo::{P2, P3};
-use crate::polygon::{Polygon2, offset_polygon};
+use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Which side of the boundary the tool cuts on.
@@ -50,19 +50,39 @@ pub struct ProfileParams {
     side = ?params.side,
 ))]
 pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
+    profile_toolpath_reported(polygon, params).0
+}
+
+/// [`profile_toolpath`] with Checkpoint C's offset failure channel attached.
+///
+/// The second element counts offset CALLS that failed rather than collapsed
+/// (see [`crate::polygon::OffsetFailure`]). `0` is a measurement — every
+/// offset was clean — and the caller may record it as such; there is no
+/// "not measured" state here because this function always makes the call.
+///
+/// It matters for profile specifically because a failed offset and a
+/// collapsed one produce the same empty toolpath, and for an OUTSIDE profile
+/// a collapse is nearly impossible: an outward offset of a valid ring has no
+/// geometric reason to vanish, so an empty result there is almost always the
+/// failure this channel names.
+#[must_use]
+pub fn profile_toolpath_reported(polygon: &Polygon2, params: &ProfileParams) -> (Toolpath, usize) {
     if params.compensate_in_controller {
         // Controller handles the offset — toolpath follows the exact boundary.
         let pts = polygon.exterior.clone();
         if pts.len() < 3 {
-            return Toolpath::new();
+            return (Toolpath::new(), 0);
         }
-        contour_to_toolpath(&pts, params)
+        // No offset is made on this branch, so there is nothing to count.
+        (contour_to_toolpath(&pts, params), 0)
     } else {
-        let contour = profile_contour(polygon, params.tool_radius, params.side);
-        match contour {
+        let (contour, failures) =
+            profile_contour_reported(polygon, params.tool_radius, params.side);
+        let tp = match contour {
             Some(pts) => contour_to_toolpath(&pts, params),
             None => Toolpath::new(),
-        }
+        };
+        (tp, failures)
     }
 }
 
@@ -70,19 +90,32 @@ pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath 
 ///
 /// Returns None if the offset collapses.
 pub fn profile_contour(polygon: &Polygon2, tool_radius: f64, side: ProfileSide) -> Option<Vec<P2>> {
+    profile_contour_reported(polygon, tool_radius, side).0
+}
+
+/// [`profile_contour`] with Checkpoint C's offset failure channel attached:
+/// `1` when the single offset this makes failed rather than collapsed, `0`
+/// otherwise.
+#[must_use]
+pub fn profile_contour_reported(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    side: ProfileSide,
+) -> (Option<Vec<P2>>, usize) {
     let distance = match side {
         ProfileSide::Inside => tool_radius,   // inward (positive)
         ProfileSide::Outside => -tool_radius, // outward (negative)
     };
 
-    let results = offset_polygon(polygon, distance);
+    let (results, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
 
     // Take the first (largest) result contour
-    results
+    let contour = results
         .into_iter()
         .next()
         .filter(|p| p.exterior.len() >= 3)
-        .map(|p| p.exterior)
+        .map(|p| p.exterior);
+    (contour, usize::from(failure.is_some()))
 }
 
 /// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared

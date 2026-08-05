@@ -74,6 +74,7 @@ pub mod material;
 pub mod measurement;
 pub mod mesh;
 pub mod narrate;
+pub(crate) mod panic_message;
 pub mod pencil;
 pub mod pencil_dihedral;
 pub mod pocket;

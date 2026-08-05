@@ -134,6 +134,27 @@ pub struct GenerationFindings {
     /// no cutting geometry) or it ran and found real engagement.
     /// See [`crate::compute::config::ZeroRemovalFinding`].
     pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
+    /// calls came back with a [`crate::polygon::OffsetFailure`].
+    ///
+    /// `None` = the operation made no offset call through the reporting
+    /// name, so nothing was measured; `Some(0)` = it did and every one was
+    /// clean. Only the adapters that opt into
+    /// [`crate::polygon::offset_polygon_reported`] write here, which is what
+    /// keeps those two apart all the way to
+    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C (Q2 / D-3a option b): the machining-boundary containment
+    /// collapsed and the clip was therefore not applied. `None` = nothing was
+    /// dropped. See [`crate::compute::config::BoundaryClipDroppedFinding`].
+    ///
+    /// Unlike every other field here this one is recorded AFTER the operation
+    /// adapter has returned — the boundary clip is a post-dressup step in
+    /// `ProjectSession::generate_toolpath` and in the GUI worker — so it is
+    /// written through `&mut GenerationFindings` rather than through
+    /// [`ExecutionContext::findings`]. Both writers hold the findings by then;
+    /// the join has not run yet.
+    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -242,6 +263,43 @@ fn record_claims_reference(
     finding: crate::compute::config::ClaimsReferenceFinding,
 ) {
     cell.borrow_mut().claims_reference = Some(finding);
+}
+
+/// Record how many 2D offset calls this generation made that came back with
+/// a [`crate::polygon::OffsetFailure`] (Checkpoint C, Q1 / D-2).
+///
+/// **Call this even when the count is zero.** That is what turns "not
+/// measured" into "measured clean", and the whole point of the slot is that
+/// those are different answers — an operation that runs no offsets at all
+/// must keep reading `None`. Only call it from an adapter that actually
+/// routed its offsets through
+/// [`crate::polygon::offset_polygon_reported`] (or a `_reported` sibling);
+/// an adapter still on the plain name has measured nothing and must not
+/// claim a zero.
+///
+/// Accumulates, like `record_cascade_residual`: an operation offsets once
+/// per polygon per Z level and each of those is a separate opportunity to
+/// fail.
+pub(crate) fn record_offset_library_failures(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    failures: usize,
+) {
+    let mut findings = cell.borrow_mut();
+    findings.offset_library_failures =
+        Some(findings.offset_library_failures.unwrap_or(0) + failures);
+}
+
+/// Record that a machining-boundary containment collapsed and the clip was
+/// not applied (Checkpoint C, Q2).
+///
+/// Takes `&mut GenerationFindings`, not the `RefCell`: the boundary clip runs
+/// after the adapter returned, at a point where both writers own the findings
+/// outright.
+pub fn record_boundary_clip_dropped(
+    findings: &mut GenerationFindings,
+    finding: crate::compute::config::BoundaryClipDroppedFinding,
+) {
+    findings.boundary_clip_dropped = Some(finding);
 }
 
 /// The engagement (mm) at or below which a pass is reported as removing
@@ -867,12 +925,18 @@ pub(crate) fn generate_zigzag(
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: a plain `Cell` accumulator, local to this generate and
+    // captured by the per-level closure. Deliberately not a thread-local
+    // collector (`CAVALIER_SHAPE_FAILURE.md` §6 D-1 option C, declined):
+    // the count is threaded, visible in the signatures it passes through,
+    // and testable without a global.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                Ok(crate::zigzag::zigzag_toolpath(
+                let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
                     poly,
                     &crate::zigzag::ZigzagParams {
                         tool_radius,
@@ -883,13 +947,16 @@ pub(crate) fn generate_zigzag(
                         safe_z,
                         angle: cfg.angle,
                     },
-                ))
+                );
+                offset_failures.set(offset_failures.get() + failures);
+                Ok(tp)
             },
             &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    record_offset_library_failures(ctx.findings, offset_failures.get());
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
@@ -911,6 +978,8 @@ pub(crate) fn generate_trace(
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
         let params = crate::trace::TraceParams {
             tool_radius: ctx.tool_def.radius(),
@@ -925,12 +994,17 @@ pub(crate) fn generate_trace(
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
-            |z| Ok(crate::trace::trace_polygon_at_z(poly, z, &params)),
+            |z| {
+                let (tp, failures) = crate::trace::trace_polygon_at_z_reported(poly, z, &params);
+                offset_failures.set(offset_failures.get() + failures);
+                Ok(tp)
+            },
             &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    record_offset_library_failures(ctx.findings, offset_failures.get());
     let generated = generated_with_depth_run_spans(combined, &levels);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_trace_spans(&generated.spans, &generated.toolpath, sem);
@@ -966,12 +1040,14 @@ pub(crate) fn generate_profile(
     let plunge_rate = op.plunge_rate();
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                let pass_tp = crate::profile::profile_toolpath(
+                let (pass_tp, failures) = crate::profile::profile_toolpath_reported(
                     poly,
                     &crate::profile::ProfileParams {
                         tool_radius,
@@ -985,6 +1061,7 @@ pub(crate) fn generate_profile(
                             == crate::compute::CompensationType::InControl,
                     },
                 );
+                offset_failures.set(offset_failures.get() + failures);
                 if pass_tp.moves.is_empty() {
                     return Ok(pass_tp);
                 }
@@ -1004,6 +1081,7 @@ pub(crate) fn generate_profile(
         .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    record_offset_library_failures(ctx.findings, offset_failures.get());
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
@@ -1029,13 +1107,18 @@ pub(crate) fn generate_pocket(
     let plunge_rate = op.plunge_rate();
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    // Pocket is the family this channel was built for — F-12 — because its
+    // cascade's only exit is a collapsed ring and a contained panic looks
+    // exactly like one.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| match cfg.pattern {
                 crate::compute::operation_configs::PocketPattern::Contour => {
-                    crate::pocket::pocket_toolpath_with_cancel(
+                    let (tp, failures) = crate::pocket::pocket_toolpath_reported_with_cancel(
                         poly,
                         &crate::pocket::PocketParams {
                             tool_radius,
@@ -1047,10 +1130,12 @@ pub(crate) fn generate_pocket(
                             climb: cfg.climb,
                         },
                         &cancel_fn,
-                    )
+                    )?;
+                    offset_failures.set(offset_failures.get() + failures);
+                    Ok(tp)
                 }
                 crate::compute::operation_configs::PocketPattern::Zigzag => {
-                    Ok(crate::zigzag::zigzag_toolpath(
+                    let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
                         poly,
                         &crate::zigzag::ZigzagParams {
                             tool_radius,
@@ -1061,7 +1146,9 @@ pub(crate) fn generate_pocket(
                             safe_z,
                             angle: cfg.angle,
                         },
-                    ))
+                    );
+                    offset_failures.set(offset_failures.get() + failures);
+                    Ok(tp)
                 }
             },
             &cancel_fn,
@@ -1069,6 +1156,7 @@ pub(crate) fn generate_pocket(
         .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    record_offset_library_failures(ctx.findings, offset_failures.get());
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,

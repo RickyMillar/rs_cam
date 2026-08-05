@@ -7,7 +7,7 @@
 use crate::geo::{P2, P3};
 use crate::marching_squares::{cell_case, cell_segments};
 use crate::mesh::TriangleMesh;
-use crate::polygon::{Polygon2, detect_containment, offset_polygon};
+use crate::polygon::{Polygon2, detect_containment};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// How the tool relates to the machining boundary.
@@ -28,17 +28,57 @@ pub enum ToolContainment {
 /// - `Outside`: expands boundary by `tool_radius` so the cutter center can reach the edge
 ///
 /// May return multiple polygons if the offset splits the shape, or empty if it collapses.
+///
+/// **An empty result is not self-explanatory and its two causes are not
+/// equally safe** — see [`effective_boundary_reported`], which is what every
+/// production call site uses.
+#[must_use]
 pub fn effective_boundary(
     boundary: &Polygon2,
     containment: ToolContainment,
     tool_radius: f64,
 ) -> Vec<Polygon2> {
+    effective_boundary_reported(boundary, containment, tool_radius).0
+}
+
+/// [`effective_boundary`] with the offset failure channel attached
+/// (Checkpoint C, Q2 — the fix for F-1).
+///
+/// # Why this layer, specifically, cannot use the plain name
+///
+/// Everywhere else in the 2D stack an empty offset is an under-cut: a pocket
+/// ring ends, a machinability probe says "not machinable", a trace emits
+/// nothing. Here it is the opposite. An empty containment does not shrink the
+/// boundary to nothing — [`clip_annotated_to_boundary_set`] reads an empty
+/// slice as *do not clip*, so the toolpath is emitted with **no containment
+/// at all**. An operator who asked for "keep the whole cutter inside this
+/// boundary" gets a path that is not bounded by anything.
+///
+/// That pass-through is correct for the cause its contract names — the tool
+/// is larger than the stock, nothing is machinable, and emitting the
+/// unclipped path is at least not a silent deletion. It is an unbounded
+/// over-cut for the other cause, a contained `cavalier_contours` panic. The
+/// two were the same `Vec::new()` until Checkpoint C, so no caller could
+/// choose between them; now they can, and the ruling is that they must:
+/// pass through on a genuine collapse (with a finding naming the containment
+/// that was dropped), refuse on a failure.
+#[must_use]
+pub fn effective_boundary_reported(
+    boundary: &Polygon2,
+    containment: ToolContainment,
+    tool_radius: f64,
+) -> (Vec<Polygon2>, Option<crate::polygon::OffsetFailure>) {
     match containment {
-        ToolContainment::Center => vec![boundary.clone()],
+        // No offset is made, so there is nothing that could fail.
+        ToolContainment::Center => (vec![boundary.clone()], None),
         // cavalier_contours: positive = inward for CCW exterior
-        ToolContainment::Inside => offset_polygon(boundary, tool_radius),
+        ToolContainment::Inside => {
+            crate::polygon::offset_polygon_reported(boundary, tool_radius)
+        }
         // negative = outward
-        ToolContainment::Outside => offset_polygon(boundary, -tool_radius),
+        ToolContainment::Outside => {
+            crate::polygon::offset_polygon_reported(boundary, -tool_radius)
+        }
     }
 }
 

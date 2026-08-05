@@ -5,8 +5,12 @@
 //! `Vec::new()` with a `tracing::warn!`. Every 2D consumer reads an empty
 //! `Vec` as "the polygon collapsed" and completes successfully with an empty
 //! or truncated toolpath. So a library panic, a `< 3`-vertex guard, and a
-//! genuine geometric collapse are **the same observable event** to every
+//! genuine geometric collapse were **the same observable event** to every
 //! caller and to the operator.
+//!
+//! **Checkpoint C (2026-08-04) ruled that, Q1 shape B**, and
+//! `the_three_empty_results_are_distinguishable` below is the restated
+//! contract — see its doc for what changed and what deliberately did not.
 //!
 //! This file is the instrument for that. It is deliberately *not* a gate on
 //! the panic: whether cavalier panics is the library's business and R1
@@ -17,7 +21,7 @@
 //! |---|---|
 //! | `the_captured_panic_asset_still_reaches_cavalier_unrepaired` | the R1 asset is still the input class it was captured as — a fixture that no longer contains the mechanism cannot evidence anything |
 //! | `no_hostile_input_escapes_the_offset_chokepoint_as_a_panic` | the containment holds across the whole R2 fixture library, not just the one captured asset |
-//! | `a_contained_panic_is_indistinguishable_from_a_collapse` | **the defect, pinned.** Both return `vec![]` from the same function, with no channel that separates them |
+//! | `the_three_empty_results_are_distinguishable` | **the contract, restated.** `offset_polygon` still returns `vec![]` for all three; `offset_polygon_reported` now names which one it was |
 //! | `census_direct_cavalier_calls` (`#[ignore]`) | the census: which fixtures reach which cavalier assertion, with payload and source location |
 //!
 //! # Debug vs release — stated, because the answer differs
@@ -258,43 +262,67 @@ fn no_hostile_input_escapes_the_offset_chokepoint_as_a_panic() {
 // 3. The defect, pinned
 // ---------------------------------------------------------------------------
 
-/// **The R2-H2 defect, as an assertion.**
+/// **The R2-H2 defect's replacement contract, as an assertion.**
 ///
-/// Three structurally different events return the identical value from the
-/// identical function:
+/// This test used to be `a_contained_panic_is_indistinguishable_from_a_collapse`
+/// and it pinned the defect: three structurally different events —
 ///
-/// 1. a ring below the `< 3`-vertex guard (`polygon.rs:377`);
+/// 1. a ring below the `< 3`-vertex guard;
 /// 2. a genuine geometric collapse (the arm is thinner than twice the offset);
-/// 3. a contained `cavalier_contours` panic (`polygon.rs:293-303`).
+/// 3. a contained `cavalier_contours` panic —
 ///
-/// All three are `Vec::new()`. `offset_polygon` returns `Vec<Polygon2>`, so
-/// there is no channel that could carry the difference even if a caller
-/// wanted it — and no caller asks, because none can.
+/// all returned the identical `Vec::new()` from the identical function, with
+/// no channel that could carry the difference. It was written to break the
+/// moment a typed channel landed, so that whoever implemented Checkpoint C
+/// had to restate the contract here on purpose rather than let it drift.
 ///
-/// This test passes **today**, describing the current contract. It is written
-/// so that it will FAIL the moment a typed failure channel is introduced,
-/// which is the point: whoever implements Checkpoint C's ruling has to come
-/// here and state the new contract deliberately.
+/// **Checkpoint C, Q1, shape B is what landed**, and the restated contract
+/// has two halves that must BOTH hold:
+///
+/// * `offset_polygon` is unchanged — all three are still `vec![]` from it.
+///   Fifteen geometry-only call sites depend on that and pay no churn.
+/// * `offset_polygon_reported` separates them: `None` for the collapse (a
+///   collapse is **not** a failure and is deliberately not a variant of
+///   `OffsetFailure`), `RejectedInput` for the guard, `LibraryFailure` for
+///   the contained panic.
+///
+/// # Why case 3 is asserted only under `debug_assertions`
+///
+/// The panic this reaches is `static_aabb2d_index`'s `min_x <= max_x`
+/// (R-4b/F-11), and it is a `debug_assert!`. In a release build it does not
+/// fire, the corrupt spatial index is built anyway, and there is nothing for
+/// the containment to catch. That divergence is accepted and documented
+/// (Checkpoint C, Q4 option a) rather than papered over with an assertion
+/// that would be false in release.
 #[test]
-fn a_contained_panic_is_indistinguishable_from_a_collapse() {
+fn the_three_empty_results_are_distinguishable() {
+    use rs_cam_core::polygon::{OffsetFailure, OffsetRejection, offset_polygon_reported};
+
     // (1) below the vertex guard
     let two = adv::two_vertex(60.0);
-    let from_guard = offset_polygon(&two, 1.0);
+    let (from_guard, guard_cause) = offset_polygon_reported(&two, 1.0);
 
     // (2) a genuine collapse: a 3 mm-wide bridge offset inward by 5 mm
     let slot = adv::thin_slot(40.0, 3.0, 30.0);
     // Isolate the bridge so the offset really does have nothing left.
     let bridge_only = Polygon2::rectangle(0.0, 0.0, 30.0, 3.0);
-    let from_collapse = offset_polygon(&bridge_only, 5.0);
+    let (from_collapse, collapse_cause) = offset_polygon_reported(&bridge_only, 5.0);
     assert!(
         slot.exterior.len() == 12,
         "the thin-slot fixture is a 12-vertex dumbbell"
     );
 
-    // (3) the captured panic asset, which the containment maps to empty.
+    // (3) a fixture that actually trips a contained panic. NOT the R1 capture
+    // any more: R-2b measured that `Polygon2::repaired` (R1.5, a month after
+    // the capture) splits the self-intersecting asset before cavalier sees
+    // it, so it returns 1 polygon and exercises no containment at all. The
+    // NaN fixture is the class that still reaches an assertion.
     let (captured, distance) = load_captured(&wanaka_capture_path()).expect("R1 capture asset");
-    let from_capture = offset_polygon(&captured, distance);
+    let (from_capture, capture_cause) = offset_polygon_reported(&captured, distance);
+    let nan = adv::non_finite(60.0);
+    let (from_nan, nan_cause) = offset_polygon_reported(&nan, 1.0);
 
+    // Half one: the old name's behaviour is untouched.
     assert!(
         from_guard.is_empty(),
         "a two-vertex ring must not produce an offset"
@@ -303,21 +331,63 @@ fn a_contained_panic_is_indistinguishable_from_a_collapse() {
         from_collapse.is_empty(),
         "a 3 mm bridge offset inward 5 mm must collapse"
     );
-    println!(
-        "guard: {} polys | collapse: {} polys | captured R1 asset: {} polys",
-        from_guard.len(),
-        from_collapse.len(),
-        from_capture.len()
-    );
-    // The contract, stated as an assertion: the value carries no information
-    // about WHICH of the three happened.
     assert_eq!(
+        offset_polygon(&two, 1.0).len(),
         from_guard.len(),
-        from_collapse.len(),
-        "the vertex guard and a real collapse are the same observable value — \
-         if this ever fails, a typed failure channel has landed and \
-         CAVALIER_SHAPE_FAILURE.md's §6 contract needs re-ruling"
+        "`offset_polygon` must stay a pure projection of \
+         `offset_polygon_reported`'s first element"
     );
+
+    println!(
+        "guard: {} polys {:?} | collapse: {} polys {:?} | R1 asset: {} polys \
+         {:?} | NaN: {} polys {:?}",
+        from_guard.len(),
+        guard_cause,
+        from_collapse.len(),
+        collapse_cause,
+        from_capture.len(),
+        capture_cause,
+        from_nan.len(),
+        nan_cause,
+    );
+
+    // Half two: the causes are distinct.
+    assert_eq!(
+        guard_cause,
+        Some(OffsetFailure::RejectedInput {
+            reason: OffsetRejection::ExteriorBelowTriangle
+        }),
+        "a ring below the vertex guard is a REJECTED INPUT, not a collapse"
+    );
+    assert_eq!(
+        collapse_cause, None,
+        "a genuine geometric collapse is not a failure and must report no \
+         cause — if this becomes `Some`, a collapse has been renamed into a \
+         defect and every consumer's meaning changes with it"
+    );
+
+    if cfg!(debug_assertions) {
+        match nan_cause {
+            Some(OffsetFailure::LibraryFailure { assertion }) => {
+                assert!(
+                    !assertion.is_empty(),
+                    "D-4: the payload must reach the caller, not be discarded \
+                     — an empty assertion string is the old `Err(_payload)`"
+                );
+                println!("contained library failure names: {assertion}");
+            }
+            other => panic!(
+                "in a debug build a NaN vertex reaches static_aabb2d_index's \
+                 `min_x <= max_x` assertion and the containment must report it \
+                 as a LibraryFailure; got {other:?}"
+            ),
+        }
+    } else {
+        println!(
+            "release build: the NaN class trips only `debug_assert!`s, so no \
+             library failure is observable here (Checkpoint C Q4 option a)"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
