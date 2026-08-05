@@ -31,6 +31,7 @@
 //! | [`chain`] | the F.4 generate/simulate fixpoint ladder + measurement-resolution re-sim, shared by wanaka-chain harnesses |
 //! | [`meshes`] | synthetic mesh generators: plateau, grooved block, sawtooth plate, height fields, profile extrusion |
 //! | [`offset_lab`] | M5's 2D-offset bench: fixtures, cascade runner, per-ring attribution, erosion oracle |
+//! | [`reference_plate`] | **ARP-1**, the analytic reference plate: 16 non-blending closed-form zones with exact normals, curvatures, band areas and tool-reach floors, tessellated per zone in its own natural parameter |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
 //! | [`session`] | `LoadedModel` / `StockConfig` / the 17-field `ToolpathConfig` / one-op `ProjectSession` builders |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
@@ -58,6 +59,7 @@ pub mod chain;
 pub mod fingerprint;
 pub mod meshes;
 pub mod offset_lab;
+pub mod reference_plate;
 pub mod scallop_oracle;
 pub mod session;
 pub mod tools;
