@@ -308,11 +308,12 @@ impl GuiState {
     /// Build a `PostConfig` (viz enum format) from the session's string-based config.
     pub fn post_from_session(session_post: &rs_cam_core::session::ProjectPostConfig) -> PostConfig {
         PostConfig {
-            format: match session_post.format.to_ascii_lowercase().as_str() {
-                "linuxcnc" => PostFormat::LinuxCnc,
-                "mach3" => PostFormat::Mach3,
-                _ => PostFormat::Grbl,
-            },
+            // W9 / P-1: the open-coded match this replaces had no
+            // `"grblhal"` arm, so reloading a grblHAL project silently
+            // reset the Post panel's dropdown to GRBL. `from_token` is
+            // the tested resolver; an unknown token still falls back to
+            // GRBL rather than failing the load.
+            format: PostFormat::from_token(&session_post.format).unwrap_or(PostFormat::Grbl),
             spindle_speed: session_post.spindle_speed,
             safe_z: session_post.safe_z,
             high_feedrate_mode: session_post.high_feedrate_mode,
@@ -324,13 +325,10 @@ impl GuiState {
     /// Sync session post config from the viz-friendly PostConfig.
     pub fn post_to_session(post: &PostConfig) -> rs_cam_core::session::ProjectPostConfig {
         rs_cam_core::session::ProjectPostConfig {
-            format: match post.format {
-                PostFormat::Grbl => "grbl",
-                PostFormat::GrblHal => "grblhal",
-                PostFormat::LinuxCnc => "linuxcnc",
-                PostFormat::Mach3 => "mach3",
-            }
-            .to_owned(),
+            // Same tokens as before, now from the single writer half of
+            // the resolver pair (`PostFormat::to_token`) so the spelling
+            // cannot drift from what `from_token` accepts.
+            format: post.format.to_token().to_owned(),
             spindle_speed: post.spindle_speed,
             safe_z: post.safe_z,
             high_feedrate_mode: post.high_feedrate_mode,
@@ -361,5 +359,56 @@ impl GuiState {
 impl Default for GuiState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    /// W9 / P-1. `post_from_session` used to open-code a token match
+    /// with no `"grblhal"` arm, so every project reload silently reset
+    /// the Post panel's dropdown from grblHAL to GRBL. Driven off
+    /// `PostFormat::ALL` so a fifth dialect cannot be added with a
+    /// writer arm and no reader arm.
+    #[test]
+    fn every_post_format_survives_the_session_round_trip() {
+        for &format in PostFormat::ALL {
+            let post = PostConfig {
+                format,
+                ..PostConfig::default()
+            };
+            let session_post = GuiState::post_to_session(&post);
+            assert_eq!(
+                GuiState::post_from_session(&session_post).format,
+                format,
+                "{format:?} did not survive post_to_session -> post_from_session \
+                 (token was {:?})",
+                session_post.format
+            );
+        }
+    }
+
+    /// The serialized spelling is part of the file format — pin it so
+    /// the P-1 fix cannot be "rename the token".
+    #[test]
+    fn the_written_post_tokens_are_the_shipped_spellings() {
+        let tokens: Vec<&str> = PostFormat::ALL.iter().map(|f| f.to_token()).collect();
+        assert_eq!(tokens, vec!["grbl", "grblhal", "linuxcnc", "mach3"]);
+    }
+
+    /// An unrecognised token still loads as GRBL rather than failing
+    /// the project load.
+    #[test]
+    fn an_unknown_post_token_reads_back_as_grbl() {
+        let session_post = rs_cam_core::session::ProjectPostConfig {
+            format: "cobalt-cnc".to_owned(),
+            ..Default::default()
+        };
+        assert_eq!(
+            GuiState::post_from_session(&session_post).format,
+            PostFormat::Grbl
+        );
     }
 }
