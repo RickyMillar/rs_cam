@@ -1,3 +1,89 @@
+// ============================================================================
+// ARCHIVED 2026-08-05 — Checkpoint E ruling Q3/E5
+// (planning/review_2026-08-04/MEGA_HARNESS_POLICY.md §2, §7 E5;
+//  planning/review_2026-07-29/ORCHESTRATION_LOG.md:23)
+//
+// ARCHIVED, NOT DELETED. NEVER RUN AGAIN. Campaign closed. This file was
+// renamed from `crates/rs_cam_core/tests/p2c_headless_ab_wanaka.rs` to
+// `.rs.archived` specifically so it can no longer compile or be picked up
+// as a cargo test target — a `.rs` file anywhere under `tests/` becomes a
+// target, so the extension change is load-bearing, not cosmetic.
+//
+// WHY IT WAS ARCHIVED
+// --------------------
+// It reads a live, user-modified project file
+// (`planning/airrun_2026-06-01/wanaka.toml`) at 15 call sites, every one
+// a `.expect("load wanaka.toml")` (verified by grep against this file,
+// not transcribed): lines 829, 899, 1062, 1152, 1259, 1366, 1694, 2184,
+// 2390, 2770, 2933, 3021, 3298, 3378, 3513. Its own doc (originally
+// `:55-58`, the `enabled_finish_index` doc comment below) already
+// recorded that wanaka.toml "is user-live and evolves under live
+// sessions (2026-07-09: '3D Finish 6' was disabled ...)", which is why
+// `enabled_finish_index()` exists at all — and that helper PANICS if
+// zero or more than one enabled finish op is found. A user toggling an
+// op in the GUI breaks the harness. A verdict that changes when somebody
+// drags a slider is not a verdict.
+//
+// THE STALE PINNED-A CONSTANTS (grepped verbatim from this file, not
+// transcribed — do not cite these as a baseline for anything):
+//   line 43:  const BASELINE_RAPID_COLLISIONS: usize = 4;
+//             (doc: "Pre-existing full-chain collision count (P0/P1
+//             baseline, 2026-07-07)") — ASSERTED at lines 744 and 805
+//             (`assert!(out_b.collisions <= BASELINE_RAPID_COLLISIONS, ...)`).
+//   line 710: const PINNED_A_PROJECT_S: f64 = 8919.5;
+//   line 711: const PINNED_A_FINISH_S: f64 = 6883.4;
+//             (measured 2026-07-08) — printed at many sites (e.g. lines
+//             726-737, 3036-3082, 3184-3268, 3432-3462) but NEVER
+//             asserted. The doc asked for a re-run "whenever the chain
+//             or simulator changes materially" and nothing enforced
+//             that; the chain has changed materially several times
+//             since 2026-07-08. These numbers are STALE and must not be
+//             cited as a baseline by anything going forward.
+//
+// INTER-TEST FILESYSTEM COUPLING: `p2g_stamp_probe` (line 1427) and
+// `p2g_dense_env_probe` (line 2046) each read
+// `target/p2f_fidelity/p2g_sess_*_moves.txt` with
+// `.expect("run p2g_session_op8_dump first")` (lines 1452, 2062) — a
+// test-ordering dependency through the filesystem, not something to
+// schedule.
+//
+// STRANDED DATED STATUS NOTE (§6 rule 3 — dated result prose does not
+// live in a test file): the doc comment above `s1_claims_ab` (originally
+// around line 3712, inside the 3704-3729 block) opens with "KNOWN RED on
+// wanaka as of 2026-07-13 (why `pencil_claims` defaults off): ..." — a
+// historical status note stranded in `#[ignore]`d code. It explains why
+// `pencil_claims` ships OFF (additive claims cost +22.5% finish time for
+// zero measured quality gain, because the crease self-probe marks
+// exactly the valleys the tool cannot reach) and says S2 is the
+// acceptance harness for the follow-up work. It is preserved unedited
+// below (search for "KNOWN RED"); nothing here re-asserts or extends it.
+//
+// WHAT WAS EXTRACTED, AND WHERE IT NOW LIVES
+// -------------------------------------------
+// The reusable, byte-identical-with-v3_cascade_ab.rs halves were split
+// out to `crates/rs_cam_core/tests/common/` BEFORE this archive move:
+//   - `common/bandmap.rs`: `BandMap` + `BAND_NAMES` + `code_at`
+//     (donor :255-278), `build_band_map` (donor :295-368, now
+//     parameterised by `tool_radius: f64` — this file called it
+//     hard-coded to the Ø6 ball / `for_tool(3.0)` convention),
+//     `save_band_map_png` (donor :373-402), `DEV_EDGES` /
+//     `DEV_BIN_COUNT` / `DEV_BIN_LABELS` / `BandAcc` (donor :407-425),
+//     `band_shares` (donor :3659-3698), `outer_region_spans`
+//     (donor :3630-3651), and a generalised `ensure_target_subdir`
+//     (donor: this file's `p2f_output_dir`, donor :279-287).
+//   - `common/chain.rs`: `run_fixpoint_ladder` (the F.4 generate/simulate
+//     ladder + final ConstrainedMax simulation; donor :107-147, the
+//     precise byte-identical sub-range within `run_chain` — NOT the
+//     full :96-254 span, and NOT `ChainOutcome`, which diverged
+//     structurally from v3's copy and was left behind) and
+//     `run_measurement_sim` (donor :432-448).
+// Everything else in this file — `enabled_finish_index`,
+// `wanaka_project_path`, `ChainOutcome`, the full `run_chain` wrapper,
+// `fidelity_report`, and all 27 `#[test]`/`#[ignore]` bodies — was NOT
+// extracted and is preserved here, unmodified, as the historical record
+// of the P2.c/P2.f/P2.g/S1 campaigns.
+// ============================================================================
+
 //! P2.c A/B checkpoint #1 (build order, `planning/unified_finish_planner_design.md`):
 //! the UnifiedFinish op (naive per-band concatenation, no router) vs the
 //! P1-optimized stack's "3D Finish 6" drop-cutter raster, on the full

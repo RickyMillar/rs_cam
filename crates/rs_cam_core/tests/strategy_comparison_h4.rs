@@ -173,6 +173,59 @@
 //! `H4_SIM_MM` (mm, default 0.1 — the tip-matched measurement grid; a Ø1 tip
 //! has a 0.5 mm tip radius, and `feedback_rest_measurement_prerequisites`
 //! requires the sim cell to sit well under the TIP radius).
+//!
+//! # SCHEDULED (Checkpoint E, 2026-08-05, Q3/E6)
+//!
+//! Ruling: `planning/review_2026-08-04/MEGA_HARNESS_POLICY.md` §5, §7 E6;
+//! `planning/review_2026-07-29/ORCHESTRATION_LOG.md:23`. Unlike its two
+//! siblings (`p2c_headless_ab_wanaka.rs`, `v3_cascade_ab.rs` — both
+//! ARCHIVED the same day, see `tests/ARCHIVED_HARNESSES.md`), this harness
+//! is **SCHEDULED**, not archived: it reads no mutable file, hard-codes no
+//! machine-local path, and asserts no winner.
+//!
+//! - **Owner**: the finishing/quality lane (W8).
+//! - **Cadence**: on demand, before any strategy-comparison question is
+//!   asked in that lane — PLUS its non-ignored CI sentry on every run (see
+//!   below). Not a periodic re-run schedule; the ignored arms are
+//!   expensive (several generations + simulations per fixture) and are
+//!   meant to be invoked deliberately, not swept up by a blanket `cargo
+//!   test`.
+//! - **`h4_harness_arithmetic_sentry`** (line 1368 as of this edit —
+//!   verified by reading this file, not preceded by `#[ignore]`) **stays
+//!   in the normal `cargo test -p rs_cam_core` suite.** This is
+//!   deliberate, not an oversight to fix: it is the cheap arithmetic
+//!   guard (runs against `tiny_groove`, no full fixture, no `--ignored`)
+//!   that keeps the expensive ignored arms honest between the on-demand
+//!   runs above. (The original Checkpoint E census cited "~line 1322" —
+//!   that was correct pre-edit; this SCHEDULED block and the `quantile`
+//!   import fix below it shifted line numbers, so it is re-quoted here
+//!   at its current value rather than left to drift silently.)
+//!
+//! **Known debt, recorded and left unfixed except where noted:**
+//!
+//! - The fifth copy of the `out_dir()` pattern (line 901 as of this edit)
+//!   — a `common::out_dir(name)` helper does not exist yet.
+//! - ~138 lines shared byte-identically with
+//!   `classification_columns_ab_m3.rs` (`render()`, the `terrain()` crop,
+//!   …) — not yet extracted to `common/columns.rs`.
+//!   `checkpoint_b_resolution_ab.rs` carries its own third copy of at
+//!   least part of this and would also want it.
+//! - **FIXED, 2026-08-05, as the one permitted exception**: the local
+//!   `quantile` was a byte-identical duplicate of
+//!   `common::scallop_oracle::quantile` despite this file already having
+//!   `mod common;` — it now imports the shared one instead. Recorded here
+//!   for the record, not as something still open.
+//!
+//! Per the C6 migration policy (`tests/common/mod.rs`), the remaining
+//! debt above is intentionally left in place: **opportunistic, never in
+//! bulk.** Move it when this file is next edited for a substantive
+//! reason, not as a standalone tidy-up.
+//!
+//! **Caveat on the result tables above** (§ "Measured, wave 15,
+//! 2026-08-04"): those numbers are prose in a test file and will rot the
+//! same way the archived harnesses' pinned constants did, if nobody
+//! re-runs them. The on-demand cadence above exists specifically to stop
+//! that — re-run before citing this table, don't assume it still holds.
 
 #![allow(
     clippy::unwrap_used,
@@ -207,6 +260,7 @@ use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::Move;
 
 use common::meshes::grooved_block;
+use common::scallop_oracle::quantile;
 use common::session::{mesh_model, pinned_heights, single_op_session_with, toolpath_config};
 use common::tools::tapered_cutter;
 
@@ -537,14 +591,6 @@ struct Columns {
     on_size_25um: f64,
     worst_overcut_um: f64,
     worst_leftover_um: f64,
-}
-
-fn quantile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
-    sorted[idx.min(sorted.len() - 1)]
 }
 
 fn score(devs: &[f64]) -> Columns {
