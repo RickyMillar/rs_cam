@@ -205,6 +205,33 @@ narrate/parameterized-read holes A/M12 left open (get_toolpath_params still
 queues behind the frame loop; narrate_toolpath is a ~12min GUI-thread
 grind — research an off-thread or incremental path).
 
+> **ERRATUM, 2026-08-06 (W10 close-out, plan §L1 stale-rationale sweep;
+> measured by W8 and F23-impl):** two present-tense claims in the
+> paragraph above are no longer true, and the commission text stands
+> verbatim per errata discipline rather than being rewritten.
+>
+> - *"D-16.2 (shallow band ignores stock_to_leave)"* — **landed**
+>   (`921c94e`), and it was **wider than filed**: the very-steep
+>   waterline band dropped the dial too, so fixing Shallow alone would
+>   have created a `stock_to_leave`-sized step at the shallow↔waterline
+>   seam that did not previously exist. Both bands now honour it, on the
+>   vertical `+Z` convention, and the caveat is propagated to the config
+>   field, the GUI dial and the MCP `ParamDef` (`bbc443d`).
+> - *"narrate_toolpath is a ~12min GUI-thread grind"* — **retired**
+>   (`66507e4`). Timed on an idle lane, `ProjectSession::narrate_toolpath`
+>   costs **0.004 s** on 12,580 moves with a 69,808-sample cut trace. The
+>   720 s figure was a single wall-clock reading taken *during* a
+>   40-minute `generate_all` in which everything queued; no profile was
+>   ever taken and the loop sizes do not reach it.
+>
+> **The commission's structural conclusion survives both corrections.**
+> The read path really is an unbounded super-linear scan on the frame-loop
+> thread; what died is its 720 s justification, not the defect. Reproduce
+> with `crates/rs_cam_core/tests/narration_cost_probe_h26.rs`. The
+> snapshot layer the paragraph implies (C2–C5) was deliberately **not
+> attempted** on inherited numbers — see `ORCHESTRATION_LOG.md`
+> "F23-impl" and `TECH_DEBT_2_CLOSEOUT.md` §4 row **C25**.
+
 ### R8. Untouched territory sweep (bounded scouting only)
 
 Import/mesh layer (STL/STEP/BREP, SVG/DXF), project IO round-tripping

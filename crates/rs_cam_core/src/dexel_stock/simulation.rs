@@ -586,17 +586,27 @@ impl TriDexelStock {
     }
 }
 
-/// Per-sample chip thickness exposed to the chipload gate as
-/// `SimulationCutSample::effective_chip_thickness_mm`. The gate
-/// compares this value against the vendor LUT's `chip_load_max_mm`.
+/// Per-sample chip thickness, published as
+/// `SimulationCutSample::effective_chip_thickness_mm`.
+///
+/// **The chipload gate no longer compares this against the vendor LUT
+/// band** (2026-08-06). The vendor column was verified from primary
+/// sources to be an *advance per tooth*, not a chip thickness, so the
+/// gate's observation became `effective_feed ÷ (rpm · flutes)` and the
+/// chip-geometry step was deleted rather than inverted. What survives
+/// here: this value still feeds the gate's *sample-validity* predicate
+/// (a sample with no resolvable chip model is still refused), and it is
+/// still the honest per-sample chip figure for anyone who wants one.
+/// The vestigial predicate is recorded in `tool_load::chipload`'s own
+/// docs, with its own re-open condition; widening it moves the gate's
+/// population, so it was deliberately left byte-identical across the
+/// conversion.
 ///
 /// Convention: AVERAGE chip thickness across the engagement arc
-/// (`geometry.mean_chip_thickness_mm`). Vendor LUT chip-load bounds
-/// are authored against the average chip a flute sees over its
-/// engagement arc, not the peak instantaneous value at the most
-/// favorable angle. Returning the peak (`geometry.max_chip_thickness_mm`)
-/// overstates by ~2.6× at half immersion (`arc = π/2`) and trips the
-/// breakage-risk gate on otherwise-healthy cuts. See
+/// (`geometry.mean_chip_thickness_mm`), not the peak instantaneous
+/// value at the most favorable angle. Returning the peak
+/// (`geometry.max_chip_thickness_mm`) overstates by ~2.6× at half
+/// immersion (`arc = π/2`). See
 /// `tests/chipload_formula_calibration.rs`.
 pub fn effective_chip_thickness_mm(
     cutter: &dyn MillingCutter,

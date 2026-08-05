@@ -7,6 +7,18 @@ GUI worker and every downstream boundary that hand-copies it. Arcfit
 agent-read performance (H2.6) belong to other waves and are not touched
 here.
 
+> **ERRATUM, 2026-08-06 (W10 close-out, plan §L1 stale-rationale sweep).**
+> Every "twelve report-only findings" statement in this document was
+> correct when written and is now **fourteen**: Checkpoint C landed two
+> `ToolpathStats` slots, not one — `offset_library_failures`
+> (`crates/rs_cam_core/src/compute/config.rs:420`) **and**
+> `boundary_clip_dropped` (`:438`). The contract split moves with it:
+> **eleven** share the `None` = not-measured / `Some(0.0)` = measured-clean
+> contract and **three** are deliberately outside it (`derived_stepovers`,
+> `zero_removal`, `boundary_clip_dropped`), not ten and two. The record
+> below stands verbatim per errata discipline; `CLAUDE.md` and
+> `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §0 carry the current counts.
+
 Research question answered (plan §H2 RQ1): *can the CLI's exhaustive
 destructuring serde-view pattern be used for the GUI worker mapping without
 dragging GUI-only state into core, and what is core-owned / GUI-owned /

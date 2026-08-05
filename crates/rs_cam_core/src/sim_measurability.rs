@@ -83,7 +83,14 @@ pub enum SimMetric {
     /// `low_engagement_time_s`. Derived from `radial_woc_fraction < 0.02`.
     AirCut,
     /// `arc_engagement_radians` and everything downstream of it — chip
-    /// thickness, and the chipload gate that reads it.
+    /// thickness, and the per-kinematics chip reporting that reads it.
+    ///
+    /// **NOT the chipload gate.** Since 2026-08-06 that gate observes
+    /// advance per tooth (`effective_feed / (rpm · flutes)`), which is
+    /// kinematic and does not depend on the measured arc, so an
+    /// abstention here does not and should not disarm it. Recorded
+    /// explicitly because the previous wording said the opposite and
+    /// would have mis-scoped what this variant abstains from.
     ChipEngagement,
     /// `axial_engagement_mm` / `peak_axial_doc_mm`. Measured as
     /// `pre_ray_len − post_ray_len`, with no coverage gate; survives both
