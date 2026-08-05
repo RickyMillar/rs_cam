@@ -94,6 +94,7 @@ fn params() -> WaterlineParams {
         feed_rate: 1000.0,
         plunge_rate: 500.0,
         safe_z: 25.0,
+        stock_to_leave: 0.0,
     }
 }
 
