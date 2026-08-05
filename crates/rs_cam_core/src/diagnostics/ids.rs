@@ -43,6 +43,11 @@ pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
 /// toolpath, it is a statement about the simulation.
 pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
+/// R-12 (census §6.4). A surface-following pass is cutting through material
+/// an upstream operation left standing. The actionable half of the "Rivers
+/// B4" investigation: the simulator's reading was correct all along, and what
+/// was missing was anyone saying what it meant.
+pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
@@ -190,6 +195,7 @@ pub const ALL: &[&str] = &[
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
     PROJECT_MEASURABILITY_ABSTAINED,
+    PROJECT_CROSSES_STANDING_MATERIAL,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
     FEEDS_SHANK_TOO_LARGE,

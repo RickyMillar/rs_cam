@@ -342,6 +342,16 @@ impl SimulationTriage {
             });
         }
 
+        // R-12 (census §6.4) — the actionable half of "Rivers B4".
+        for tp in &inputs.trace.toolpath_summaries {
+            if tp.metrics_not_applicable {
+                continue;
+            }
+            if let Some(f) = standing_material_finding(inputs.trace, tp.toolpath_id) {
+                actions.push(f);
+            }
+        }
+
         // ── Class C ────────────────────────────────────────────────────
         let mut advisories: Vec<Finding> = Vec::new();
         for (i, h) in inputs.trace.hotspots.iter().enumerate() {
@@ -411,6 +421,119 @@ impl SimulationTriage {
             counts: ChannelCounts::from_trace(inputs.trace),
         }
     }
+}
+
+/// Fraction of a pass's cutting samples that must sit far above its own
+/// typical bite before the pass is reported as crossing standing material.
+///
+/// The census fixture measured 4.7% of samples over 10x the commanded
+/// offset against 94.1% at or below 1.5x — a clear bimodal signature, not a
+/// tail. 2% is well under the measured case and well over the handful of
+/// samples any pass produces at a step or a corner.
+pub const STANDING_MATERIAL_SAMPLE_FRACTION: f64 = 0.02;
+
+/// How many times its own median bite a sample must remove to count.
+pub const STANDING_MATERIAL_MULTIPLE: f64 = 3.0;
+
+/// Report a finishing/surface-following pass that is cutting through material
+/// an upstream operation deliberately left standing.
+///
+/// **The reference is the pass's OWN median removed height, not a commanded
+/// depth.** That is the whole point of the finding. Census §6.4 traced a
+/// `project_curve` op reported as "20.4x commanded" — a ratio formed by
+/// dividing a removed HEIGHT by a surface OFFSET, two different quantities,
+/// on an op that has no axial step to divide by at all. Every competing
+/// explanation (lift bridging, entry transients, arc-fit artifacts) was
+/// refuted by four independent structural tags; the surviving one was
+/// confirmed by a direct upstream-stock reading of 5.20 mm standing above
+/// the cutter.
+///
+/// The simulator was right. What was missing was anyone saying what its
+/// reading MEANT. Measuring against the pass's own median gives a
+/// denominator that exists for every op, and it is what makes the bimodal
+/// signature — a surface-following majority plus a distinct population
+/// ploughing through a step — visible as one sentence.
+fn standing_material_finding(
+    trace: &SimulationCutTrace,
+    toolpath_id: ToolpathId,
+) -> Option<Finding> {
+    let mut heights: Vec<f64> = trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting && s.axial_engagement_mm > 0.0)
+        .map(|s| s.axial_engagement_mm)
+        .collect();
+    if heights.len() < 50 {
+        // Too few bites to have a meaningful median; saying nothing is
+        // better than reporting noise as a structural fact.
+        return None;
+    }
+    heights.sort_by(f64::total_cmp);
+    let median = *heights.get(heights.len() / 2)?;
+    if median <= 0.0 {
+        return None;
+    }
+
+    let bar = median * STANDING_MATERIAL_MULTIPLE;
+    let over: Vec<f64> = heights.iter().copied().filter(|h| *h > bar).collect();
+    let fraction = over.len() as f64 / heights.len() as f64;
+    if fraction < STANDING_MATERIAL_SAMPLE_FRACTION {
+        return None;
+    }
+    let peak = over.last().copied().unwrap_or(bar);
+
+    let worst_sample = trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+        .max_by(|a, b| a.axial_engagement_mm.total_cmp(&b.axial_engagement_mm))?;
+
+    Some(Finding {
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_CROSSES_STANDING_MATERIAL),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_CROSSES_STANDING_MATERIAL),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: format!(
+                "crosses material an upstream op left standing: {:.1}% of cutting                  samples remove more than {:.2} mm (3x this pass's own {:.2} mm                  median bite), peaking at {:.2} mm",
+                fraction * 100.0,
+                bar,
+                median,
+                peak
+            ),
+            evidence: Some(DiagnosticEvidence::SampleRange {
+                toolpath_id,
+                sample_start: worst_sample.sample_index,
+                sample_end: worst_sample.sample_index,
+                observed: peak,
+                threshold: Some(bar),
+                unit: "mm".to_owned(),
+                locality: Default::default(),
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: over.len(),
+        worst: WorstEvidence {
+            position: worst_sample.position,
+            move_index: worst_sample.move_index,
+            duration_s: 0.0,
+            wasted_runtime_s: 0.0,
+            min_radial_engagement: worst_sample.engagement.radial_woc_fraction,
+            sample_count: over.len(),
+        },
+    })
 }
 
 fn collision_finding(
@@ -814,6 +937,76 @@ mod tests {
                 "toolpath {tp} should keep exactly its own budget"
             );
         }
+    }
+
+    #[test]
+    fn r12_a_pass_ploughing_through_an_unroughed_step_is_reported() {
+        // Census §6.4's signature, reproduced in miniature: a
+        // surface-following majority plus a distinct population removing
+        // multiples of it. The reference is the pass's OWN median, because
+        // the op that produced the original reading has no commanded axial
+        // step to divide by — that missing denominator is what turned a
+        // correct measurement into a "20.4x commanded" anomaly report.
+        let mut samples = Vec::new();
+        for i in 0..200 {
+            let deep = i % 20 == 0; // 5% of samples
+            samples.push(SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: if deep { 4.0 } else { 0.2 },
+                engagement: Engagement::with_radial_woc(0.3),
+                removed_volume_est_mm3: 1.0,
+                ..SimulationCutSample::test_fixture()
+            });
+        }
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let m = MeasurabilityReport::default();
+        let d = BTreeMap::new();
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+
+        let f = t
+            .actions
+            .iter()
+            .find(|f| f.diagnostic.id.as_str() == ids::PROJECT_CROSSES_STANDING_MATERIAL)
+            .expect("the standing-material finding must fire");
+        assert_eq!(f.diagnostic.severity, Severity::Caution);
+        assert!(
+            f.diagnostic.message.contains("own"),
+            "the message must name its reference as the pass's OWN median, so \
+             nobody re-forms the ratio that started this; got: {}",
+            f.diagnostic.message
+        );
+        assert_eq!(f.occurrences, 10, "5% of 200 samples");
+    }
+
+    #[test]
+    fn r12_stays_quiet_on_an_even_surface_following_pass() {
+        let samples: Vec<_> = (0..200)
+            .map(|i| SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: 0.2,
+                engagement: Engagement::with_radial_woc(0.3),
+                removed_volume_est_mm3: 1.0,
+                ..SimulationCutSample::test_fixture()
+            })
+            .collect();
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let m = MeasurabilityReport::default();
+        let d = BTreeMap::new();
+        let t = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        assert!(
+            !t.actions
+                .iter()
+                .any(|f| f.diagnostic.id.as_str() == ids::PROJECT_CROSSES_STANDING_MATERIAL),
+            "an even pass must not be reported"
+        );
     }
 
     #[test]
