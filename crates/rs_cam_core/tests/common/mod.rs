@@ -27,6 +27,8 @@
 //! | module | what it holds |
 //! |---|---|
 //! | [`adversarial2d`] | R2's hostile 2D fixtures, their non-vacuity measures, the wall-clock/RSS watchdog, the cancellation seam, and the SVG renderers |
+//! | [`bandmap`] | the finish-planner band-territory `BandMap` + deviation-histogram instrument (stock-mesh-vertex-deviation lineage — see its module doc for why this is NOT the `column_deviations`/COLUMNS lineage h4 uses) |
+//! | [`chain`] | the F.4 generate/simulate fixpoint ladder + measurement-resolution re-sim, shared by wanaka-chain harnesses |
 //! | [`meshes`] | synthetic mesh generators: plateau, grooved block, sawtooth plate, height fields, profile extrusion |
 //! | [`offset_lab`] | M5's 2D-offset bench: fixtures, cascade runner, per-ring attribution, erosion oracle |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
@@ -51,6 +53,8 @@
 )]
 
 pub mod adversarial2d;
+pub mod bandmap;
+pub mod chain;
 pub mod fingerprint;
 pub mod meshes;
 pub mod offset_lab;

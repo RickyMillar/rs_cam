@@ -1,3 +1,78 @@
+// ============================================================================
+// ARCHIVED 2026-08-05 — Checkpoint E ruling Q3/E5
+// (planning/review_2026-08-04/MEGA_HARNESS_POLICY.md §3, §7 E5;
+//  planning/review_2026-07-29/ORCHESTRATION_LOG.md:23)
+//
+// ARCHIVED, NOT DELETED. Renamed from
+// `crates/rs_cam_core/tests/v3_cascade_ab.rs` to `.rs.archived` so it can
+// no longer compile or be picked up as a cargo test target.
+//
+// WHY IT WAS ARCHIVED — IT WAS ALREADY DEAD, NOT MERELY STALE
+// -------------------------------------------------------------
+// Line 54 hard-codes an absolute, machine-local path and asserts it
+// exists (grepped verbatim from this file):
+//
+//     54: let path = PathBuf::from("/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl");
+//
+// followed by `assert!(path.exists(), ...)` at lines 55-61. This harness
+// cannot run on any other machine, or on this one after that directory
+// is cleaned — and nothing detected it because the file still compiles
+// (the dead path is only touched at test runtime, inside `#[ignore]`d
+// bodies). This is not a stale-baseline problem like its sibling
+// `p2c_headless_ab_wanaka.rs.archived`; it is an already-dead harness
+// that happened to keep building.
+//
+// CORRECTING THE ORIGINAL BRIEF: contrary to what an earlier brief
+// assumed, this file does NOT read `planning/airrun_2026-06-01/wanaka.toml`
+// — that string appears only in comments (originally lines 23, 58, 212).
+// Its machine/post/tool blocks are a SNAPSHOT copied into a ~449-line
+// TOML literal inside `write_fixture_project`, which is the RIGHT
+// pattern and is preserved intact below, deliberately. It also asserts
+// NO baseline constants: its gates in `verdict()` (originally
+// :3375-3509) are self-referential (`collisions == 0`, cascade time <
+// D's time) and its own doc (originally :3427-3432) explicitly declines
+// to inherit p2c's collision baseline.
+//
+// CAMPAIGN STATUS: CLOSED 2026-07-28, "NOT PROVABLE on this fixture".
+// One of this file's own docstrings is a formal retraction of its
+// earlier conclusion — preserved unedited below, originally around lines
+// 3763-3775 (search for "RETRACTED"), opening: '**The "~17% of covered
+// area reclaimed" conclusion this docstring used to state is RETRACTED**
+// (M1 / LH-4, 2026-07-29). It divided an overlap-dilated XY-projected
+// mm² sum by a boolean grid-cell count: two different domains, and a
+// numerator that double-counts the 2 mm dilation ring across bands.'
+//
+// WHAT MUST SURVIVE THE ARCHIVE, AND DOES, UNMODIFIED, BELOW
+// -------------------------------------------------------------
+//   - `ensure_scaled_stl` (originally :126-213) — the ×2 scaling
+//     procedure; reproducible.
+//   - `write_fixture_project` (originally :214-721), INCLUDING the
+//     449-line TOML literal — the only committed, immutable record of
+//     the scaled-wanaka fixture. Not trimmed to save lines.
+//   - `Dials` (originally :1688-1764) — records what every measurement
+//     before 2026-07-27 ran with.
+// None of these were extracted to `common/` — they are v3-fixture-
+// specific (the ×2 scaling, the 449-line snapshot, the dial record) and
+// have no p2c twin, so there was nothing to split out; they simply stay
+// here as the historical record.
+//
+// WHAT WAS EXTRACTED TO `common/` (from the p2c donor, since this file's
+// copies were verified byte-identical to p2c's for these ranges):
+// `common/bandmap.rs` (`BandMap`, `build_band_map` — parameterised by
+// `tool_radius`, this file called it with `0.5` where p2c used `3.0`,
+// `save_band_map_png`, `DEV_EDGES`/`BandAcc`, `band_shares`,
+// `outer_region_spans`) and `common/chain.rs` (`run_fixpoint_ladder`,
+// `run_measurement_sim`). This file's own `build_band_map` additionally
+// carries an LH-4 coverage-accounting block (originally :1208-1255,
+// using `rs_cam_core::measurement::*` provenance types) that p2c never
+// had — that block was NOT a duplicate to begin with, so it was not
+// extracted; it is preserved here as-is. Likewise this file's own
+// `fidelity_report` is a deliberately trimmed variant of p2c's (per its
+// own comment: keeps only the deviation PNG + FIDELITY-COLUMNS table),
+// not a byte-identical twin, so it was left in place rather than forced
+// into a shared function.
+// ============================================================================
+
 //! v3 process-proof cascade harness on wanaka ×2
 //! (`planning/unified_v3_design.md` §0.a; `planning/v3_process_proof_prompt.md`).
 //!
