@@ -4540,7 +4540,16 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
         "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
-        "Stock to Leave" => "Finishing allowance kept on the surface for a later pass.",
+        // F3 / D-16.2: one label, shared by every finish op that exposes the
+        // dial — so the caveat here is the repo-wide one (a vertical offset,
+        // not a surface-normal one), not a per-op note. The "ignored on the
+        // shallow band" caveat this dial USED to deserve is gone: since
+        // 2026-08-06 all three UnifiedFinish bands honour it.
+        "Stock to Leave" => {
+            "Finishing allowance kept on the surface for a later pass. Applied as a vertical \
+             offset: on a wall sloped at angle A, what remains measured normal to the surface \
+             is this value x cos(A)."
+        }
         "Slope From" => {
             "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped."
         }
