@@ -1367,6 +1367,12 @@ impl super::RsCamApp {
 
         let hotspot_count = hotspots.len();
         let issue_count = issues.len();
+        // R-1 (census §8.2): both arrays are capped and, until now, nothing
+        // in the response said so. An agent that read `issues` and compared
+        // its length against `issue_count` saw a silent disagreement and had
+        // no way to tell truncation from a filter.
+        let issues_truncated = issue_count > max_i;
+        let hotspots_truncated = hotspot_count > max_h;
 
         let summaries_val =
             serde_json::to_value(&summaries).unwrap_or_else(|_| serde_json::json!([]));
@@ -1428,14 +1434,38 @@ impl super::RsCamApp {
             })
             .collect();
 
+        // R-2 (census §3.5 D4): this response carried TWO fields named
+        // `issue_count` measuring different populations — the top-level one
+        // (this request's filters applied) and `summary.issue_count` nested
+        // inside `summary` (the whole trace, filters ignored). An agent
+        // reading a filtered response could pick either and both looked
+        // authoritative. The legacy keys keep their exact values for wire
+        // compatibility; the disambiguating names sit beside them and say
+        // which population each counts.
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
             "span_summaries": span_summaries,
             "hotspots": hotspots_val,
             "hotspot_count": hotspot_count,
+            "hotspots_truncated": hotspots_truncated,
+            "hotspots_total_matching": hotspot_count,
+            "hotspots_returned": hotspots_val.as_array().map_or(0, |a| a.len()),
             "issue_count": issue_count,
             "issues": issues_val,
+            "issues_truncated": issues_truncated,
+            "issues_total_matching": issue_count,
+            "issues_returned": issues_val.as_array().map_or(0, |a| a.len()),
+            // Explicit aliases for the two same-named counts, so neither has
+            // to be inferred from where it sits in the object.
+            "issue_count_matching_filter": issue_count,
+            "issue_count_project_wide": ct.summary.issue_count,
+            // And what the number actually IS: coalesced contiguous
+            // air/low-engagement RUNS, not per-sample tallies. The per-sample
+            // tallies are `air_cut_issue_count` / `low_engagement_issue_count`
+            // on the semantic summaries, and on the census fixture they were
+            // 43x larger under a near-identical name.
+            "issue_count_population": "coalesced_segments",
             "drill_summaries": drill_summaries_val,
             "drill_samples": drill_samples_val,
             "toolpath_summaries": toolpath_summaries_val,
@@ -4627,6 +4657,10 @@ fn viz_project_evidence(
         rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
         cut_trace,
         holder_collisions: state.simulation.holder_collision_counts_by_tp(),
+        // The cell the GUI last simulated at. Read only to enrich a
+        // measurability abstention's reason with the number the operator
+        // would have to change; it never decides a verdict.
+        resolution_mm: Some(state.simulation.resolution),
     }
 }
 
