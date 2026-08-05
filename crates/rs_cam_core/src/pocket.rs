@@ -75,14 +75,14 @@ pub fn pocket_toolpath_reported_with_cancel(
     polygon: &Polygon2,
     params: &PocketParams,
     cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, usize), Cancelled> {
-    let (contours, failures) = pocket_contours_reported_with_cancel(
+) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
+    let (contours, report) = pocket_contours_reported_with_cancel(
         polygon,
         params.tool_radius,
         params.stepover,
         cancel,
     )?;
-    Ok((contours_to_toolpath(&contours, params), failures))
+    Ok((contours_to_toolpath(&contours, params), report))
 }
 
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
@@ -94,6 +94,110 @@ pub fn pocket_contours(polygon: &Polygon2, tool_radius: f64, stepover: f64) -> V
     #[allow(clippy::expect_used)]
     pocket_contours_with_cancel(polygon, tool_radius, stepover, &never_cancel)
         .expect("non-cancellable pocket contours should never be cancelled")
+}
+
+/// Checkpoint C, Q3 (F-10): what stopped a pocket ring cascade, when it was
+/// not the cascade running out of geometry.
+///
+/// The loop's only exit used to be `rings.is_empty()`. That is fine while
+/// every offset shrinks, and whether it shrinks depends on the input's
+/// WINDING, because cavalier's offset sign is relative to the polyline's own
+/// direction: on a CW exterior a positive distance GROWS the ring. W4
+/// measured the consequence — a CW-wound fixture grew 13x per ring and
+/// allocated **22.9 GB without terminating**, with nothing in the log naming
+/// the cell. `pocket.rs`'s own comment already said the quiet part: *"Only
+/// the cancel hook made that a hang instead of a lock-up, which is not the
+/// same thing as being bounded."*
+///
+/// Reachability is LOW and asserted rather than assumed — both importers call
+/// `Polygon2::ensure_winding`, as does `detect_containment` — but the bound
+/// was missing from the LOOP, and the winding guard is a property of two
+/// importers, not of the cascade. Any future producer that does not normalise
+/// re-arms it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CascadeBound {
+    /// The ring count passed the geometric maximum.
+    ///
+    /// This bound cannot fire on a convergent cascade: each ring erodes at
+    /// least `stepover` from every side, so a shape whose largest extent is
+    /// `E` cannot need more than `E / stepover` rings before it collapses.
+    /// Exceeding that means the cascade is NOT converging — a
+    /// contract-violating CW exterior, a non-finite coordinate, or a
+    /// non-positive stepover.
+    RingCount,
+    /// The wall-clock budget ran out.
+    ///
+    /// The safety net for the other failure shape: not too many rings, but
+    /// rings that each take too long. Machine-dependent by nature, so it is
+    /// set generously and is the bound of last resort.
+    WallClock,
+}
+
+/// What a pocket ring cascade did, beyond the contours it returned.
+///
+/// The established pattern (`scallop::ScallopReport`): the algorithm reports,
+/// the adapter records into [`crate::compute::execute::GenerationFindings`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PocketCascadeReport {
+    /// Offset calls that FAILED rather than collapsed — Checkpoint C's Q1
+    /// channel, counted over the compensation offset and every ring.
+    pub offset_failures: usize,
+    /// Rings the cascade emitted.
+    pub rings: usize,
+    /// Which bound stopped it, if a bound did. `None` is the normal case:
+    /// the cascade collapsed on its own.
+    pub stopped_by: Option<CascadeBound>,
+    /// XY-projected area (mm²) of ring interior still standing when a bound
+    /// stopped the cascade — material this pocket will NOT clear.
+    ///
+    /// `None` when no bound fired, which is the same three-valued contract
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`] carries
+    /// and is why it can be recorded straight onto that existing channel
+    /// rather than needing a new one. On the divergent-winding case this
+    /// number is enormous, which is exactly the right signal.
+    pub truncated_core_mm2: Option<f64>,
+}
+
+/// Wall-clock budget for one pocket ring cascade.
+///
+/// Deliberately generous: this is the bound of last resort, and a tight
+/// wall-clock in a debug build would fire for reasons that have nothing to do
+/// with divergence. The `pocket_cascade_terminates_on_the_reflex_cross`
+/// sentry — the hardest shape this cascade is known to meet — completes in
+/// well under a second.
+const CASCADE_WALL_CLOCK: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// The geometric maximum number of rings a CONVERGENT cascade can need.
+///
+/// Each ring erodes at least `stepover` from every side, so a shape whose
+/// largest extent is `E` collapses within `E / stepover` rings. The `+ 2`
+/// absorbs the arc-join and flattening slack; the floor of 8 keeps a
+/// degenerate-but-finite input from being capped to nothing.
+///
+/// A non-finite or non-positive stepover — which would otherwise offset by
+/// zero forever, never emptying and never erroring — falls to the floor and
+/// terminates.
+fn geometric_ring_cap(polygon: &Polygon2, stepover: f64) -> usize {
+    let mut min = (f64::INFINITY, f64::INFINITY);
+    let mut max = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in &polygon.exterior {
+        if !p.x.is_finite() || !p.y.is_finite() {
+            continue;
+        }
+        min = (min.0.min(p.x), min.1.min(p.y));
+        max = (max.0.max(p.x), max.1.max(p.y));
+    }
+    let extent = (max.0 - min.0).max(max.1 - min.1);
+    if !extent.is_finite() || extent <= 0.0 || !stepover.is_finite() || stepover <= 0.0 {
+        return 8;
+    }
+    let rings = (extent / stepover).ceil();
+    if !rings.is_finite() || rings > 1e7 {
+        return 10_000_000;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let rings = rings as usize;
+    rings.saturating_add(2).max(8)
 }
 
 /// Cancellable variant of [`pocket_contours`]. Checks `cancel` as its very
@@ -118,12 +222,24 @@ pub fn pocket_contours_reported_with_cancel(
     tool_radius: f64,
     stepover: f64,
     cancel: &dyn CancelCheck,
-) -> Result<(Vec<Vec<P2>>, usize), Cancelled> {
+) -> Result<(Vec<Vec<P2>>, PocketCascadeReport), Cancelled> {
     check_cancel(cancel)?;
     // First offset: tool radius compensation (tool edge touches wall)
     let (compensated, compensation_failure) =
         crate::polygon::offset_polygon_reported(polygon, tool_radius);
-    let mut offset_failures = usize::from(compensation_failure.is_some());
+    let mut report = PocketCascadeReport {
+        offset_failures: usize::from(compensation_failure.is_some()),
+        rings: 0,
+        stopped_by: None,
+        truncated_core_mm2: None,
+    };
+
+    // Checkpoint C, Q3 (F-10): the two explicit bounds. Both are derived or
+    // generous rather than tuned — see `geometric_ring_cap` and
+    // `CASCADE_WALL_CLOCK` — because the job here is to make divergence
+    // terminate and be reported, not to cap legitimate work.
+    let ring_cap = geometric_ring_cap(polygon, stepover);
+    let started = std::time::Instant::now();
 
     let mut all_contours: Vec<Vec<P2>> = Vec::new();
 
@@ -179,14 +295,55 @@ pub fn pocket_contours_reported_with_cancel(
         let mut rings = OffsetRingSet::from_polygon(comp);
         loop {
             check_cancel(cancel)?;
+            // The bounds are checked BEFORE the offset, so the ring that
+            // would have exceeded them is never allocated. On the divergent
+            // case that is the difference between stopping and adding
+            // another 13x of geometry.
+            let bound = if report.rings >= ring_cap {
+                Some(CascadeBound::RingCount)
+            } else if started.elapsed() >= CASCADE_WALL_CLOCK {
+                Some(CascadeBound::WallClock)
+            } else {
+                None
+            };
+            if let Some(bound) = bound {
+                // What the cascade would still have had to clear. Recorded
+                // rather than discarded: a truncated pocket leaves material,
+                // and the whole point of a bound is that it must not be the
+                // silent kind.
+                let standing: f64 = rings
+                    .to_polygons(flatten)
+                    .iter()
+                    .map(|p| p.area().abs())
+                    .sum();
+                report.stopped_by = Some(bound);
+                report.truncated_core_mm2 = Some(standing);
+                tracing::warn!(
+                    ?bound,
+                    rings = report.rings,
+                    ring_cap,
+                    stepover,
+                    standing_mm2 = standing,
+                    elapsed_s = started.elapsed().as_secs_f64(),
+                    "pocket ring cascade hit an explicit bound and stopped — \
+                     it is NOT converging. The usual cause is a CW-wound \
+                     exterior (Polygon2's contract is CCW; cavalier's offset \
+                     sign is relative to the polyline's own direction, so a \
+                     positive distance GROWS a CW ring), a non-finite \
+                     coordinate, or a non-positive stepover. Material is left \
+                     standing."
+                );
+                break;
+            }
             let (next, failure) = rings.offset_reported(stepover);
             rings = next;
             if failure.is_some() {
-                offset_failures += 1;
+                report.offset_failures += 1;
             }
             if rings.is_empty() {
                 break;
             }
+            report.rings += 1;
             let mut any = false;
             for inner in rings.to_polygons(flatten) {
                 if inner.exterior.len() < 3 {
@@ -210,7 +367,7 @@ pub fn pocket_contours_reported_with_cancel(
         }
     }
 
-    Ok((all_contours, offset_failures))
+    Ok((all_contours, report))
 }
 
 /// Convert 2D contour rings into a 3D toolpath at the given parameters.
@@ -319,6 +476,175 @@ mod tests {
              check for the wrong reason",
             contours.len()
         );
+    }
+
+    /// **F-10, bounded** — Checkpoint C, Q3.
+    ///
+    /// W4's `the_pocket_ring_cascade_is_bounded_only_by_collapse` proved the
+    /// parent unbounded, and it did so *safely*: it drives
+    /// `OffsetRingSet::offset` directly under its own 40-ring cap and
+    /// measures the AREA TREND, showing a CW-wound square growing past 4x
+    /// with no sign of collapsing. That probe still passes and must — the
+    /// cascade PRIMITIVE is deliberately still unbounded, because a bound is
+    /// a consumer's policy, not a geometry type's.
+    ///
+    /// This is the other half: the same fixture through the PRODUCTION
+    /// entry point, which now terminates.
+    ///
+    /// # Why this fails on the unbounded parent within a small time budget
+    ///
+    /// The cancel closure trips after `BUDGET`. Pre-fix, the only exit from
+    /// the loop was `rings.is_empty()`, which a CW exterior never reaches, so
+    /// the call ran until the closure fired and came back `Err(Cancelled)` —
+    /// this test's first assertion. Post-fix the ring cap stops it far
+    /// sooner and the call returns `Ok`. The budget also means the parent is
+    /// never given long enough to reach the 22.9 GB W4 measured; the growth
+    /// itself is evidenced by W4's probe rather than re-run here.
+    ///
+    /// The smallest fixture that demonstrates growth is W4's: a 60 mm square,
+    /// CW-wound, at a 2.4 mm stepover.
+    #[test]
+    fn the_pocket_cascade_is_bounded_on_a_diverging_cw_exterior() {
+        use std::time::{Duration, Instant};
+
+        const BUDGET: Duration = Duration::from_secs(5);
+        const STEP: f64 = 2.4;
+        const SIZE: f64 = 60.0;
+
+        // `Polygon2`'s contract is CCW (polygon.rs:9-12) and nothing
+        // validates it. Reversing the exterior is all it takes.
+        let mut cw = Polygon2::rectangle(0.0, 0.0, SIZE, SIZE);
+        cw.exterior.reverse();
+        assert!(
+            !cw.has_correct_winding(),
+            "this fixture must actually be CW, or it proves nothing"
+        );
+
+        let started = Instant::now();
+        let deadline = || started.elapsed() > BUDGET;
+        let (contours, report) =
+            pocket_contours_reported_with_cancel(&cw, 0.0, STEP, &deadline).unwrap_or_else(|_| {
+                panic!(
+                    "the cascade did not terminate within {BUDGET:?} on a \
+                     CW-wound {SIZE} mm square — it is bounded only by \
+                     collapse, which a growing ring never reaches. This is \
+                     F-10, and it allocated 22.9 GB without terminating when \
+                     W4 met it."
+                )
+            });
+
+        assert_eq!(
+            report.stopped_by,
+            Some(CascadeBound::RingCount),
+            "a diverging cascade must stop on the RING CAP, not on the \
+             wall-clock net — if this reports WallClock the cap is not doing \
+             the work and the bound is machine-dependent"
+        );
+        let standing = report
+            .truncated_core_mm2
+            .expect("a bound that fires must report the material it left");
+        assert!(
+            standing > 0.0,
+            "a diverging cascade leaves ring interior standing: {standing}"
+        );
+        assert!(
+            !contours.is_empty(),
+            "the bound truncates the cascade; it does not delete the work \
+             already done"
+        );
+        println!(
+            "CW {SIZE} mm square @ {STEP} mm: stopped by {:?} after {} rings, \
+             {standing:.0} mm² standing, {:?} elapsed",
+            report.stopped_by,
+            report.rings,
+            started.elapsed(),
+        );
+    }
+
+    /// The other side of the bound: it must not fire on convergent work.
+    ///
+    /// A cap that also truncates legitimate pockets would be a worse defect
+    /// than the one it fixes, and it would be invisible — the cascade would
+    /// simply stop early and the pocket would look finished.
+    #[test]
+    fn the_cascade_bound_never_fires_on_convergent_work() {
+        // The reflex cross, the hardest shape this cascade is known to meet.
+        let (a, b) = (20.0, 60.0);
+        let cross = Polygon2::new(vec![
+            P2::new(a, 0.0),
+            P2::new(b, 0.0),
+            P2::new(b, a),
+            P2::new(b + a, a),
+            P2::new(b + a, b),
+            P2::new(b, b),
+            P2::new(b, b + a),
+            P2::new(a, b + a),
+            P2::new(a, b),
+            P2::new(0.0, b),
+            P2::new(0.0, a),
+            P2::new(a, a),
+        ]);
+        let never = || false;
+        for (label, poly, radius, step) in [
+            ("reflex cross @ 0.5", cross, 0.0, 0.5),
+            (
+                "600 mm plate @ 0.05",
+                Polygon2::rectangle(0.0, 0.0, 600.0, 600.0),
+                0.0,
+                0.05,
+            ),
+            (
+                "30 mm square, Ø6.35 tool",
+                Polygon2::rectangle(0.0, 0.0, 30.0, 30.0),
+                3.175,
+                2.0,
+            ),
+        ] {
+            let (_, report) =
+                pocket_contours_reported_with_cancel(&poly, radius, step, &never).unwrap();
+            assert_eq!(
+                report.stopped_by, None,
+                "{label}: a convergent cascade must collapse on its own — a \
+                 bound firing here means the cap is too tight and pockets \
+                 are being silently truncated"
+            );
+            assert_eq!(
+                report.truncated_core_mm2, None,
+                "{label}: no bound fired, so nothing was left standing to \
+                 measure — `Some(0.0)` here would be a fabricated \
+                 measurement (X-19)"
+            );
+        }
+    }
+
+    /// A zero or negative stepover offsets by zero (or outward) forever: the
+    /// rings never empty and the loop never exits. The geometric cap's floor
+    /// is what makes that terminate.
+    ///
+    /// `NaN` is checked separately and deliberately NOT asserted to hit the
+    /// cap. It terminates for a different reason — the offset panics inside
+    /// `static_aabb2d_index`'s bounding-box check, the Q1 chokepoint contains
+    /// it, and a contained failure reads as a collapsed ring. That is a
+    /// debug-build path (`debug_assert!`; Checkpoint C, Q4), so the only
+    /// property worth asserting across builds is that the call comes back at
+    /// all. The stderr panic line it prints is the containment working.
+    #[test]
+    fn a_non_positive_stepover_terminates() {
+        let sq = Polygon2::rectangle(0.0, 0.0, 60.0, 60.0);
+        let never = || false;
+        for step in [0.0, -1.0] {
+            let (_, report) = pocket_contours_reported_with_cancel(&sq, 0.0, step, &never)
+                .unwrap_or_else(|_| panic!("stepover {step} must terminate, not hang"));
+            assert_eq!(
+                report.stopped_by,
+                Some(CascadeBound::RingCount),
+                "stepover {step}: the ring cap is the only thing that can \
+                 stop an offset that never shrinks"
+            );
+        }
+        let (_, nan_report) = pocket_contours_reported_with_cancel(&sq, 0.0, f64::NAN, &never)
+            .expect("a NaN stepover must terminate, not hang");
+        println!("NaN stepover terminated via {:?}", nan_report.stopped_by);
     }
 
     #[test]
