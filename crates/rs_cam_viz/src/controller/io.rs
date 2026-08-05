@@ -360,6 +360,11 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
             name: setup.name.clone(),
             face_up: setup.face_up,
             z_rotation: setup.z_rotation,
+            // W9 / P-2: the fallback loader always read these two off
+            // the file and then dropped them here, so even the path
+            // that DID parse the datum lost it. Carried through now.
+            datum: setup.datum.clone(),
+            model_ids: setup.model_ids.clone(),
             fixtures: setup
                 .fixtures
                 .iter()

@@ -337,12 +337,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                 .collect();
             if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0) {
-                let setup_rt = state.gui.setup_rt_or_default(setup_id.0);
                 setup::draw(
                     ui,
                     setup_id,
                     setup_data,
-                    setup_rt,
                     pin_count,
                     has_flip_axis,
                     &all_models,
@@ -422,9 +420,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|t| (t.id, t.summary(), t.diameter))
                 .collect();
-            // Filter models by setup's model_ids (empty = all).
-            // For now use all models — setup model scoping will be
-            // wired via SetupRuntime in a later pass.
+            // NOT filtered by the owning setup's `model_ids` (empty =
+            // all). W9 / P-2 gave that field a home on `SetupData` and
+            // on the wire, so the operator's choice now survives a save
+            // — but this dropdown still lists every model. Stated
+            // rather than silently fixed: filtering here changes which
+            // models a toolpath can be reassigned to, which is a UI
+            // behaviour change P-2 was not scoped to make.
             let models: Vec<_> = state
                 .session
                 .models()

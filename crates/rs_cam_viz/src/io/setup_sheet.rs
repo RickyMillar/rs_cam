@@ -217,6 +217,27 @@ tr:nth-child(even) {{ background: #24242e; }}
                     setup.z_rotation.label(),
                 ),
             );
+            // W9 / P-2: the datum is the operator's zeroing procedure
+            // and the setup sheet is the sheet they work from, so it
+            // prints here now that the value survives a save. Emitted
+            // only when it is non-default, so sheets for projects that
+            // never touched the Setup panel are unchanged.
+            if !setup.datum.is_default() {
+                let _ = std::fmt::Write::write_fmt(
+                    &mut html,
+                    format_args!(
+                        "<p>Datum — XY: {}, Z: {}</p>\n",
+                        escape_html(setup.datum.xy_method.label()),
+                        escape_html(&setup.datum.z_method.label()),
+                    ),
+                );
+                if !setup.datum.notes.is_empty() {
+                    let _ = std::fmt::Write::write_fmt(
+                        &mut html,
+                        format_args!("<p>Datum notes: {}</p>\n", escape_html(&setup.datum.notes)),
+                    );
+                }
+            }
             if i > 0 && setup.face_up != prev_face {
                 let _ = std::fmt::Write::write_fmt(
                     &mut html,

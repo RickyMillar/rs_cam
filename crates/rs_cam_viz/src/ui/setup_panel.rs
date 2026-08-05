@@ -1,10 +1,10 @@
 use super::AppEvent;
 use crate::state::AppState;
 use crate::state::job::{FaceUp, ModelId, SetupId};
-use crate::state::runtime::XYDatum;
 use crate::state::selection::Selection;
 use crate::ui::theme;
 use rs_cam_core::session::SetupData;
+use rs_cam_core::session::XYDatum;
 
 /// Left panel for the Setup workspace: setup list with summary cards.
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
@@ -176,16 +176,14 @@ fn draw_setup_card(
                     egui::Color32::from_rgb(100, 140, 180),
                 );
 
-                // Datum chip
-                let datum_config = state.gui.setup_rt.get(&setup.id);
-                let datum = datum_config
-                    .map(|srt| match &srt.datum.xy_method {
-                        XYDatum::CornerProbe(c) => format!("Corner ({})", c.label()),
-                        XYDatum::CenterOfStock => "Center".into(),
-                        XYDatum::AlignmentPins => "Pins".into(),
-                        XYDatum::Manual => "Manual".into(),
-                    })
-                    .unwrap_or_else(|| "Corner (Front-Left)".into());
+                // Datum chip. Persisted project state since W9 / P-2 —
+                // no GUI overlay, so no "not set yet" fallback either.
+                let datum = match &setup.datum.xy_method {
+                    XYDatum::CornerProbe(c) => format!("Corner ({})", c.label()),
+                    XYDatum::CenterOfStock => "Center".to_owned(),
+                    XYDatum::AlignmentPins => "Pins".to_owned(),
+                    XYDatum::Manual => "Manual".to_owned(),
+                };
                 chip(ui, "XY", &datum, egui::Color32::from_rgb(140, 160, 100));
             });
 

@@ -6,8 +6,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError, SetupData,
-    ToolpathConfig,
+    DatumConfig, Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError,
+    SetupData, ToolpathConfig, XYDatum, ZDatum,
 };
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
@@ -296,6 +296,21 @@ pub struct ProjectSetupSection {
     pub z_rotation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pause_message: Option<String>,
+    /// Setup datum — how the operator zeroes the machine (W9 / P-2).
+    /// Key names and spellings match what the viz fallback schema
+    /// already wrote (`crates/rs_cam_viz/src/io/project.rs`), so the two
+    /// loaders agree instead of drifting. All three are written only
+    /// when non-default, so files saved before this landed and projects
+    /// that never touched the datum stay byte-identical.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub xy_datum: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub z_datum: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub datum_notes: String,
+    /// Models in scope for this setup; empty = all (W9 / P-2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_ids: Vec<usize>,
     #[serde(default)]
     pub fixtures: Vec<ProjectFixtureSection>,
     #[serde(default)]
@@ -672,6 +687,29 @@ fn toolpath_config_from_section(
     }
 }
 
+/// Read the setup datum off a TOML setup section (W9 / P-2).
+///
+/// An **absent or empty** key keeps the type default rather than being
+/// handed to `from_key`. The two are equivalent today — both `from_key`
+/// implementations fall through to the default — but writing the guard
+/// makes "the file said nothing" and "the file said something we don't
+/// recognise" distinguishable if either fall-through ever changes.
+fn datum_from_section(section: &ProjectSetupSection) -> DatumConfig {
+    DatumConfig {
+        xy_method: if section.xy_datum.is_empty() {
+            XYDatum::default()
+        } else {
+            XYDatum::from_key(&section.xy_datum)
+        },
+        z_method: if section.z_datum.is_empty() {
+            ZDatum::default()
+        } else {
+            ZDatum::from_key(&section.z_datum)
+        },
+        notes: section.datum_notes.clone(),
+    }
+}
+
 /// Convert TOML fixture sections into session `Fixture` values.
 fn build_fixtures(sections: &[ProjectFixtureSection]) -> Vec<Fixture> {
     sections
@@ -956,6 +994,12 @@ pub(super) fn build_session_from_project(
                 name: setup_section.name.clone(),
                 face_up,
                 z_rotation,
+                datum: datum_from_section(setup_section),
+                model_ids: setup_section
+                    .model_ids
+                    .iter()
+                    .map(|&id| crate::compute::stock_config::ModelId(id))
+                    .collect(),
                 fixtures,
                 keep_out_zones,
                 toolpath_indices: tp_indices,
@@ -989,6 +1033,8 @@ pub(super) fn build_session_from_project(
                 name: "Default".to_owned(),
                 face_up: FaceUp::Top,
                 z_rotation: ZRotation::default(),
+                datum: DatumConfig::default(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpath_indices: tp_indices,
