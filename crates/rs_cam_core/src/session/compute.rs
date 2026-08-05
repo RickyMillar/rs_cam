@@ -1245,12 +1245,19 @@ impl ProjectSession {
                     }
                 }
             } else {
+                // D-3b: a containment whose user offset FAILED refuses here
+                // too. The adaptive3d pre-clip is an optimisation, but it
+                // shares its source polygon with the real clip below (see
+                // this function's doc), so letting the two disagree about
+                // whether the boundary is computable is how a pre-clip and
+                // an enforcement clip end up bounding different regions.
                 Self::resolve_containment_polygon(
                     &boundary_config,
                     &emission_stock_bbox,
                     mesh.as_deref(),
                     &keep_out_footprints,
                 )
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?
             }
         } else {
             None
@@ -1702,8 +1709,8 @@ impl ProjectSession {
         stock_bbox: &BoundingBox3,
         mesh: Option<&crate::mesh::TriangleMesh>,
         keep_out_footprints: &[crate::polygon::Polygon2],
-    ) -> Option<crate::polygon::Polygon2> {
-        use crate::boundary::subtract_keepouts;
+    ) -> Result<Option<crate::polygon::Polygon2>, crate::compute::execute::OperationError> {
+        use crate::boundary::{UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts};
         use crate::compute::config::BoundarySource;
 
         let mut stock_poly = match &boundary_config.source {
@@ -1733,12 +1740,34 @@ impl ProjectSession {
             stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
         }
         if boundary_config.offset.abs() > 1e-9 {
-            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
-            if let Some(largest) = crate::polygon::largest_by_area(&offset_polys) {
-                stock_poly = largest.clone();
+            // Checkpoint C, D-3b (F-8). This used to be
+            // `if let Some(largest) = ... { stock_poly = largest }` with no
+            // `else` — on an empty result the requested offset silently did
+            // not happen and `stock_poly` kept its UN-OFFSET value. For a
+            // negative offset that is an over-cut: the path ends up clipped
+            // to a larger region than the operator asked for.
+            match apply_user_boundary_offset(&stock_poly, boundary_config.offset) {
+                UserOffsetOutcome::Resolved(p) => stock_poly = p,
+                // D-3c: dropped, not un-offset — the multi-region path's
+                // semantics (`RegionSet::processed`), so the two agree.
+                UserOffsetOutcome::Collapsed => return Ok(None),
+                UserOffsetOutcome::Failed(failure) => {
+                    return Err(crate::compute::execute::OperationError::MissingGeometry(
+                        format!(
+                            "the machining boundary's {offset:+.3} mm offset could \
+                             not be computed: {reason}. Refusing rather than \
+                             continuing with the UN-OFFSET boundary, which would \
+                             clip this toolpath to a larger region than was asked \
+                             for. Repair the boundary geometry, or set the offset \
+                             to zero.",
+                            offset = boundary_config.offset,
+                            reason = failure.describe(),
+                        ),
+                    ));
+                }
             }
         }
-        Some(stock_poly)
+        Ok(Some(stock_poly))
     }
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
@@ -1777,20 +1806,26 @@ impl ProjectSession {
         // always provided here, so the rectangle fallback inside
         // `resolve_containment_polygon` is unreachable in practice; kept for
         // parity with that function's `Option` signature.
-        let stock_poly = Self::resolve_containment_polygon(
-            boundary_config,
-            stock_bbox,
-            mesh,
-            keep_out_footprints,
-        )
-        .unwrap_or_else(|| {
-            crate::polygon::Polygon2::rectangle(
-                stock_bbox.min.x,
-                stock_bbox.min.y,
-                stock_bbox.max.x,
-                stock_bbox.max.y,
-            )
-        });
+        // Checkpoint C, D-3b: `None` now means the user offset COLLAPSED the
+        // containment, and the old `.unwrap_or_else(|| stock rectangle)`
+        // would have resurrected the very un-offset boundary the collapse
+        // says is wrong. A collapsed containment is a collapsed containment
+        // wherever it happens, so it takes the same ruled decision as an
+        // empty `effective_boundary`.
+        let Some(stock_poly) =
+            Self::resolve_containment_polygon(boundary_config, stock_bbox, mesh, keep_out_footprints)?
+        else {
+            Self::resolve_collapsed_containment(
+                None,
+                boundary_config.containment,
+                tool_diameter,
+                1,
+                findings,
+            )?;
+            return Ok(clip_annotated_to_boundary_set(annotated, &[], safe_z)
+                .reconcile(channels)
+                .into_inner());
+        };
 
         // Map BoundaryContainment -> ToolContainment.
         let containment = match boundary_config.containment {

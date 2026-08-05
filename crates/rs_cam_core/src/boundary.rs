@@ -82,6 +82,62 @@ pub fn effective_boundary_reported(
     }
 }
 
+/// What applying [`crate::compute::config::BoundaryConfig::offset`] to a
+/// containment polygon produced (Checkpoint C, D-3b — the fix for F-8).
+///
+/// The three sites that applied the user offset all shared this shape:
+///
+/// ```ignore
+/// let offset_polys = offset_polygon(p, -boundary_config.offset);
+/// if let Some(largest) = offset_polys.into_iter().max_by(area) { *p = largest; }
+/// ```
+///
+/// On an empty result `p` silently keeps its **un-offset** value: the offset
+/// the operator dialled just does not happen. For a NEGATIVE offset — the
+/// operator shrinking the machining boundary inwards, the protective
+/// direction — that leaves the toolpath clipped to a LARGER region than
+/// asked for. An over-cut, in the one direction `polygon.rs`'s own safety
+/// argument says cannot happen, and with nothing anywhere saying so.
+///
+/// This enum is the "distinguish nothing-from-something" D-3b asked for.
+#[derive(Debug, Clone)]
+pub enum UserOffsetOutcome {
+    /// The offset produced geometry. Largest-by-area, exactly as before.
+    Resolved(Polygon2),
+    /// The offset ate the polygon.
+    ///
+    /// **The region is dropped, never silently un-offset.** That choice is
+    /// D-3c's, and it is not invented here: it is what the multi-region path
+    /// has always done — `RegionSet::processed` drops a region that collapses
+    /// under the offset — so the two paths now agree instead of answering the
+    /// same question differently. A single containment that drops leaves no
+    /// containment, which routes into the same collapsed-containment decision
+    /// an empty `effective_boundary` does: pass through, with a finding.
+    Collapsed,
+    /// The offset FAILED (see [`crate::polygon::OffsetFailure`]). Not a
+    /// collapse, and not something to proceed past.
+    Failed(crate::polygon::OffsetFailure),
+}
+
+/// Apply `BoundaryConfig::offset` to a containment polygon, distinguishing
+/// the three outcomes (Checkpoint C, D-3b).
+///
+/// Sign convention is the caller-facing one and it is flipped here, once,
+/// where it can be read: cavalier's positive distance is an INWARD shrink,
+/// while a positive `BoundaryConfig::offset` means "expand outward".
+#[must_use]
+pub fn apply_user_boundary_offset(polygon: &Polygon2, user_offset: f64) -> UserOffsetOutcome {
+    let (offset_polys, failure) =
+        crate::polygon::offset_polygon_reported(polygon, -user_offset);
+    if let Some(failure) = failure {
+        return UserOffsetOutcome::Failed(failure);
+    }
+    match crate::polygon::largest_by_area(&offset_polys) {
+        Some(largest) => UserOffsetOutcome::Resolved(largest.clone()),
+        None => UserOffsetOutcome::Collapsed,
+    }
+}
+
 /// Add rectangular keep-out zones as holes in a boundary polygon.
 ///
 /// Each keep-out polygon's exterior is reversed to CW winding and added as a hole.
