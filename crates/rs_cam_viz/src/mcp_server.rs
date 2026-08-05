@@ -430,7 +430,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "narrate_toolpath",
-        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics. COST: this runs on the GUI thread and scales with move count — ~12 min was measured on a 148k-move finishing op, during which other GUI-served calls queue behind it. `generation_status` and `cancel_generation` are unaffected."
+        description = "Return a concise prose narration of one generated toolpath: Z-level structure, perimeter-sweep estimates, suspicious large arcs, peak axial DOC, and air-cut percentage. Prefer this first for agent debugging before raw traces/screenshots. Run generate_toolpath first; run_simulation first for DOC/air-cut metrics. COST: this runs on the GUI thread and scales with move count. Timed on an idle lane (2026-08-06): 4 ms on a 12.6k-move scallop pass with a 70k-sample cut trace. The \"~12 min\" figure previously quoted here was a single wall-clock observation taken DURING a 40-minute generate_all, i.e. mostly queue time, and has been retired. Other GUI-served calls do queue behind this one; `generation_status` and `cancel_generation` are unaffected, and the five cheap no-argument reads now fall back to a published snapshot rather than blocking."
     )]
     async fn narrate_toolpath(
         &self,
