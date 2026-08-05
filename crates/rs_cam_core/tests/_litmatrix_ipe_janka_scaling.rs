@@ -3,7 +3,8 @@
 //! winning vendor row carries no per-row `hardness_value`.
 //!
 //! Cell: `flat_3mm_pocket_ipe_extreme`. Pre-fix, the LUT path's
-//! `hardness_scale_factor` (in `feeds/vendor_lookup.rs`) silently
+//! `hardness_ratio_raw` (in `feeds/vendor_lookup.rs`, named
+//! `hardness_scale_factor` until 2026-08-06) silently
 //! degraded to identity (scale = 1.0) whenever the matched row was
 //! missing its `hardness_value` annotation — even when the row WAS
 //! wood-family tagged. The Ipe 3 mm pocket query matched
@@ -13,11 +14,44 @@
 //!
 //! The fix synthesises a family-default Janka anchor (1290 for
 //! `Hardwood`) when the row has no per-row hardness and the query is
-//! Janka-tagged, so Ipe (3510) derates by ≈ 1290 / 3510 ≈ 0.37×
-//! against the Hardwood anchor.
+//! Janka-tagged, so Ipe (3510) derates against the Hardwood anchor.
 //!
 //! This sentry locks in: for the 3 mm flat-end pocket query, Ipe must
-//! command a strictly lower chipload than red oak.
+//! command a strictly lower chipload than red oak. **The assertion is
+//! DIRECTIONAL** — it pins the sign of the derate, not its size, and
+//! that is deliberate: several downstream clamps (RCTF, LD-overhang,
+//! rubbing floor, safety factor) close part of the gap, so a magnitude
+//! assertion here would be pinning their composition rather than the
+//! hardness law.
+//!
+//! ## Docstring corrected 2026-08-06 — the "≈ 0.37×" was two claims,
+//! ## one of which was never true of this test
+//!
+//! It used to read *"so Ipe (3510) derates by ≈ 1290 / 3510 ≈ 0.37×
+//! against the Hardwood anchor"*. Two problems:
+//!
+//! 1. `0.37×` is the **hardness scale applied to the LUT row's band**,
+//!    not the derate this test observes. What the test measures is
+//!    `feed_rate / (rpm × flutes)` out of the whole of
+//!    `feeds::calculate`, after every clamp. Quoting the scale factor as
+//!    if it were the outcome invited exactly the magnitude assertion the
+//!    paragraph above explains this test must not make.
+//! 2. `1290 / 3510` is the ratio under the **shipped `^1.0` hardness
+//!    law**. `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`
+//!    §4.2 recommends `Janka^-0.5`, under which the same transfer is
+//!    `0.3675^0.5 = 0.606×`. That recommendation is **not adopted** —
+//!    `vendor_lookup::CHIPLOAD_HARDNESS_EXPONENT` ships at 1.0 and its
+//!    magnitudes are in `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`
+//!    pending a separate approval — but a number written into a
+//!    docstring as if it were a law is the "stale rationale outliving
+//!    the code" class the programme's P11 names, and this one would go
+//!    stale the day that approval lands.
+//!
+//! B-lit §4.2 also settles a census claim about this file: the census's
+//! T3.4 evidence column listed an `_litmatrix_ipe_janka_scaling` re-pin
+//! as required if the hardness law moves. **It is not required** — the
+//! assert is directional and `0.606 < 1.0` holds. Only this docstring
+//! would need touching, which is why it has been made law-agnostic now.
 
 #![allow(
     clippy::unwrap_used,
@@ -78,11 +112,13 @@ fn ipe_chipload_derates_below_oak_when_row_lacks_hardness_annotation() {
 
     // Ipe (Janka 3510) is ~2.7× harder than red oak (Janka 1290).
     // After the family-anchor fix, the LUT row (no hardness_value,
-    // material_family = hardwood) should derate Ipe against the
-    // Hardwood default (1290) by roughly 1290 / 3510 ≈ 0.37×.
-    // Other downstream clamps (RCTF, LD-overhang, rubbing floor,
-    // safety) may close some of that gap, but Ipe's fpt must remain
-    // strictly below oak's after the fix.
+    // material_family = hardwood) derates Ipe against the Hardwood
+    // default (1290) — by `(1290/3510)^q` where `q` is
+    // `vendor_lookup::CHIPLOAD_HARDNESS_EXPONENT`. The SIGN of that
+    // derate is what this test pins; its size is a law parameter and
+    // deliberately not asserted here (see the module docstring).
+    // Downstream clamps (RCTF, LD-overhang, rubbing floor, safety) close
+    // part of the gap, but Ipe's fpt must remain strictly below oak's.
     assert!(
         ipe_fpt < oak_fpt,
         "Ipe (Janka 3510) chipload {ipe_fpt:.4} must derate below \
