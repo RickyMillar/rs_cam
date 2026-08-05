@@ -238,7 +238,7 @@
 mod common;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
@@ -912,6 +912,12 @@ fn out_dir() -> PathBuf {
 /// leftover, grey = on-size, black = no column. Copied from
 /// `classification_columns_ab_m3.rs::render`.
 fn render(cells: &HashMap<(usize, usize), f64>, scale_um: f64, name: &str) {
+    render_into(&out_dir(), cells, scale_um, name);
+}
+
+/// [`render`] with an explicit output directory, so a probe can write
+/// its exhibits next to the evidence document that cites them.
+fn render_into(dir: &Path, cells: &HashMap<(usize, usize), f64>, scale_um: f64, name: &str) {
     let (rows, cols) = cells.keys().fold((0usize, 0usize), |(r, c), &(rr, cc)| {
         (r.max(rr + 1), c.max(cc + 1))
     });
@@ -935,7 +941,7 @@ fn render(cells: &HashMap<(usize, usize), f64>, scale_um: f64, name: &str) {
         px[i + 2] = bb;
         px[i + 3] = 255;
     }
-    let path = out_dir().join(format!("{name}.png"));
+    let path = dir.join(format!("{name}.png"));
     image::save_buffer(
         &path,
         &px,
@@ -1462,5 +1468,504 @@ fn h4_harness_arithmetic_sentry() {
          if this fails, either the Region spans overlap (worth knowing) or one of the two \
          distance-summing algorithms in this file is wrong, and nothing this file reports about \
          cutting-distance mix can be trusted until it is fixed"
+    );
+}
+
+// ── D-16.1 residual locating probe (io-fixes wave, 2026-08-06) ──────────
+//
+// F23-impl closed D-16.1's MECHANISM claim (`ring_to_3d`'s rounded
+// coverage guard: 131 of 3,287 mid-steep cut targets sat outside the part
+// footprint, worst distance past the edge 0.375 mm = half a generation
+// cell; after the exact point-in-triangle predicate, 0 of 3,133 and
+// 0.000 mm). It did NOT close the QUALITY claim: with zero off-footprint
+// targets, arm B still overcuts by −201.6 µm, and W8's superposition
+// (169 µm rim-riding + 34 µm chord refinement + ~30 µm unaccounted) did
+// not survive measurement — removing the 169 µm term moved the total by
+// 33 µm.
+//
+// F23-impl's own "NOT FIXED, STATED" entry names the re-open condition
+// verbatim: *"a column-index probe on the grooved fixture that locates
+// the worst-overcut column and attributes it — the harness already
+// carries `ColumnDeviation`'s row/col, so this is instrumentation, not a
+// campaign."* This is that probe. It changes NO finishing geometry: it
+// runs the two arms the H4 harness already defines and reads their
+// columns.
+//
+// What it can and cannot do, stated up front:
+//
+// * It can LOCATE the residual (which columns, where on the groove
+//   profile, how many, how concentrated) and it can separate
+//   "B-specific" from "hard for everyone" by reading arm D's deviation
+//   at the SAME (row, col).
+// * It cannot prove a mechanism. Naming the geometry that owns the worst
+//   columns is a hypothesis with an address, not an attribution.
+//
+// ```text
+// cargo test -p rs_cam_core --test strategy_comparison_h4 --release \
+//     -- --ignored --nocapture --test-threads=1 d16_1_residual
+// ```
+
+/// Where the probe's exhibits go — next to the evidence document that
+/// cites them, not into `target/`.
+fn probe_artifact_dir() -> PathBuf {
+    let dir = common::repo_root()
+        .join("planning")
+        .join("review_2026-08-04")
+        .join("artifacts")
+        .join("io_probe");
+    std::fs::create_dir_all(&dir).expect("create the io_probe artifact dir");
+    dir
+}
+
+/// Where a column sits on the groove's transverse profile. The profile
+/// is a function of x only (`GroovedBlock` is invariant in y), so this
+/// is exact rather than sampled.
+///
+/// The three surface zones are the profile's own faces, partitioned
+/// strictly — no "corner" zone competing with them. At the shipped
+/// parameters the wall is only `depth / tan(70°)` = 0.437 mm wide in x,
+/// so a corner band wide enough to be interesting would swallow it.
+/// Proximity to a profile break is reported separately, by
+/// [`dist_to_profile_break`], which keeps the partition clean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum GrooveZone {
+    /// Flat rim, |x| >= rim half-width. 0°.
+    Rim,
+    /// The 70° wall. Mid-steep by construction.
+    Wall,
+    /// Flat floor, |x| <= floor half-width. 0°.
+    Floor,
+    /// Outside the mesh footprint entirely (stock margin).
+    OffPart,
+}
+
+/// Half-width of the groove floor: where the wall meets the flat.
+fn groove_floor_half() -> f64 {
+    GROOVE_RIM_HALF_WIDTH_MM - GROOVE_DEPTH_MM / GROOVE_WALL_DEG.to_radians().tan()
+}
+
+/// Distance (mm) from a column to the nearer of the two profile breaks
+/// on its side — floor/wall or wall/rim. Small values are the corners
+/// the cutter cannot enter; large values are open faces.
+fn dist_to_profile_break(x: f64) -> f64 {
+    let ax = x.abs();
+    (ax - groove_floor_half())
+        .abs()
+        .min((ax - GROOVE_RIM_HALF_WIDTH_MM).abs())
+}
+
+impl GrooveZone {
+    fn label(self) -> &'static str {
+        match self {
+            GrooveZone::Rim => "rim (flat)",
+            GrooveZone::Wall => "wall (70 deg)",
+            GrooveZone::Floor => "floor (flat)",
+            GrooveZone::OffPart => "off-part",
+        }
+    }
+
+    /// Classify by |x| against the profile's own breakpoints.
+    fn of(x: f64, y: f64) -> Self {
+        if x.abs() > GROOVE_X_EXTENT_MM || y.abs() > GROOVE_Y_HALF_MM {
+            return GrooveZone::OffPart;
+        }
+        let ax = x.abs();
+        if ax >= GROOVE_RIM_HALF_WIDTH_MM {
+            GrooveZone::Rim
+        } else if ax > groove_floor_half() {
+            GrooveZone::Wall
+        } else {
+            GrooveZone::Floor
+        }
+    }
+}
+
+/// One overcut column, with everything needed to attribute it.
+#[derive(Debug, Clone, Copy)]
+struct OvercutColumn {
+    /// Dexel grid address — the identity that survives a cross-arm
+    /// comparison (MEMORY.md: index by row/col, never inverse-transform
+    /// XY).
+    cell: (usize, usize),
+    /// Arm B deviation, µm. Negative = overcut.
+    b_um: f64,
+    /// Arm D deviation at the SAME cell, µm.
+    d_um: f64,
+    x: f64,
+    y: f64,
+}
+
+/// One arm, kept whole: the probe needs the session (for moves and the
+/// semantic trace), not just the scored columns.
+struct ProbeArm {
+    label: String,
+    session: ProjectSession,
+    columns: Vec<ColumnDeviation>,
+}
+
+fn run_probe_arm(label: &str, op: OperationConfig, sim_mm: f64) -> ProbeArm {
+    let mesh = grooved_fixture();
+    let heights = pinned_heights(0.0, -GROOVE_DEPTH_MM);
+    let mut session = single_op_session_with(
+        stock_for_groove(),
+        session_tool(),
+        mesh_model(mesh, label),
+        label,
+        op,
+        |cfg| {
+            cfg.heights = heights;
+        },
+    );
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .unwrap_or_else(|e| panic!("{label}: generation failed: {e:?}"));
+    session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: sim_mm,
+                ..Default::default()
+            },
+            &cancel,
+        )
+        .unwrap_or_else(|e| panic!("{label}: measurement simulation failed: {e:?}"));
+    let columns = session
+        .simulation_result()
+        .and_then(|s| s.column_deviations.clone())
+        .unwrap_or_else(|| panic!("{label}: no column_deviations"));
+    ProbeArm {
+        label: label.to_owned(),
+        session,
+        columns,
+    }
+}
+
+/// Which Region (band + strategy) owns the cutting move nearest a given
+/// XY, and how far away that move actually is. Returns `None` when the
+/// op has no semantic trace or no cutting moves.
+fn nearest_region_to(
+    session: &ProjectSession,
+    x: f64,
+    y: f64,
+) -> Option<(String, String, f64, usize)> {
+    let result = session.get_result(0)?;
+    let moves = &result.toolpath().moves;
+    let trace = result.semantic_trace.as_ref()?;
+
+    let mut best: Option<(f64, usize)> = None;
+    for (i, mv) in moves.iter().enumerate() {
+        if !mv.move_type.is_cutting() {
+            continue;
+        }
+        let d = ((mv.target.x - x).powi(2) + (mv.target.y - y).powi(2)).sqrt();
+        match best {
+            Some((bd, _)) if bd <= d => {}
+            _ => best = Some((d, i)),
+        }
+    }
+    let (dist, idx) = best?;
+
+    for item in trace
+        .items
+        .iter()
+        .filter(|i| i.kind == ToolpathSemanticKind::Region)
+    {
+        if let Some((s, e)) = item.move_start.zip(item.move_end)
+            && idx >= s
+            && idx <= e
+        {
+            let text = |key: SemanticKey| {
+                item.params
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(unlabelled)")
+                    .to_owned()
+            };
+            return Some((
+                text(SemanticKey::Band),
+                text(SemanticKey::Strategy),
+                dist,
+                idx,
+            ));
+        }
+    }
+    Some(("(no region span)".to_owned(), String::new(), dist, idx))
+}
+
+#[test]
+#[ignore = "D-16.1 residual locating probe: two arms (UnifiedFinish, Scallop) on the grooved \
+            fixture, each with its own generation + 0.1 mm measurement simulation. Research \
+            only — it asserts non-vacuity and prints, it does not gate quality. Run --release, \
+            --test-threads=1."]
+fn d16_1_residual_locating_probe() {
+    let sim_mm = env_f64("H4_SIM_MM", DEFAULT_SIM_MM);
+    let overcut_gate_um = env_f64("D161_OVERCUT_UM", 50.0);
+
+    eprintln!(
+        "D-16.1 residual probe — grooved_block(rim={GROOVE_RIM_HALF_WIDTH_MM}, \
+         wall={GROOVE_WALL_DEG}deg, depth={GROOVE_DEPTH_MM}), sim {sim_mm} mm"
+    );
+    let floor_half = groove_floor_half();
+    eprintln!(
+        "  profile breakpoints: floor |x| <= {floor_half:.4}, wall {floor_half:.4} < |x| < \
+         {GROOVE_RIM_HALF_WIDTH_MM}, rim |x| >= {GROOVE_RIM_HALF_WIDTH_MM}; part y in \
+         [-{GROOVE_Y_HALF_MM}, {GROOVE_Y_HALF_MM}]"
+    );
+
+    let b = run_probe_arm(
+        "B unified",
+        OperationConfig::UnifiedFinish(unified_arm_config()),
+        sim_mm,
+    );
+    let d = run_probe_arm(
+        "D scallop",
+        OperationConfig::Scallop(scallop_arm_config()),
+        sim_mm,
+    );
+
+    let b_cells = by_cell(&b.columns);
+    let d_cells = by_cell(&d.columns);
+    // XY per (row, col), taken from B (both arms share the grid geometry —
+    // same stock, same resolution — which the agreement check below tests
+    // rather than assumes).
+    let mut xy: HashMap<(usize, usize), (f64, f64)> = HashMap::new();
+    for c in &b.columns {
+        xy.insert((c.row, c.col), (c.x, c.y));
+    }
+    let mut grid_disagreements = 0usize;
+    for c in &d.columns {
+        if let Some(&(bx, by)) = xy.get(&(c.row, c.col))
+            && ((bx - c.x).abs() > 1e-6 || (by - c.y).abs() > 1e-6)
+        {
+            grid_disagreements += 1;
+        }
+    }
+    assert_eq!(
+        grid_disagreements, 0,
+        "the two arms' (row, col) grids must address the same world XY, or every cross-arm \
+         comparison below is meaningless"
+    );
+
+    let common: Vec<(usize, usize)> = b_cells
+        .keys()
+        .filter(|k| d_cells.contains_key(*k))
+        .copied()
+        .collect();
+    assert!(
+        common.len() > 10_000,
+        "only {} common columns — the probe has no population",
+        common.len()
+    );
+    eprintln!(
+        "  columns: B {}, D {}, common {}",
+        b_cells.len(),
+        d_cells.len(),
+        common.len()
+    );
+
+    // ── Per-zone table ──────────────────────────────────────────────
+    let mut per_zone: HashMap<GrooveZone, (Vec<f64>, Vec<f64>)> = HashMap::new();
+    for key in &common {
+        let (&bd, &dd) = (
+            b_cells.get(key).unwrap_or(&f64::NAN),
+            d_cells.get(key).unwrap_or(&f64::NAN),
+        );
+        let Some(&(x, y)) = xy.get(key) else { continue };
+        let entry = per_zone.entry(GrooveZone::of(x, y)).or_default();
+        entry.0.push(bd * 1000.0);
+        entry.1.push(dd * 1000.0);
+    }
+    let mut zones: Vec<_> = per_zone.into_iter().collect();
+    zones.sort_by_key(|(z, _)| *z);
+    eprintln!(
+        "\n  {:<16} {:>8} {:>12} {:>12} {:>12} {:>12}",
+        "zone", "columns", "B worst um", "D worst um", "B p50 |um|", "D p50 |um|"
+    );
+    for (zone, (bs, ds)) in &zones {
+        let worst = |v: &[f64]| v.iter().copied().fold(0.0_f64, f64::min);
+        let p50 = |v: &[f64]| {
+            let mut a: Vec<f64> = v.iter().map(|d| d.abs()).collect();
+            a.sort_by(f64::total_cmp);
+            quantile(&a, 0.50)
+        };
+        eprintln!(
+            "  {:<16} {:>8} {:>12.1} {:>12.1} {:>12.2} {:>12.2}",
+            zone.label(),
+            bs.len(),
+            worst(bs),
+            worst(ds),
+            p50(bs),
+            p50(ds)
+        );
+    }
+
+    // ── The overcut set ─────────────────────────────────────────────
+    let mut overcut: Vec<OvercutColumn> = Vec::new();
+    for key in &common {
+        let b_um = b_cells.get(key).copied().unwrap_or(0.0) * 1000.0;
+        if b_um >= -overcut_gate_um {
+            continue;
+        }
+        let d_um = d_cells.get(key).copied().unwrap_or(0.0) * 1000.0;
+        let Some(&(x, y)) = xy.get(key) else { continue };
+        overcut.push(OvercutColumn {
+            cell: *key,
+            b_um,
+            d_um,
+            x,
+            y,
+        });
+    }
+    overcut.sort_by(|a, b| a.b_um.total_cmp(&b.b_um));
+
+    eprintln!(
+        "\n  columns overcut worse than {overcut_gate_um:.0} um on B: {} of {} ({:.4}%)",
+        overcut.len(),
+        common.len(),
+        100.0 * overcut.len() as f64 / common.len() as f64
+    );
+    if overcut.is_empty() {
+        eprintln!("  no residual at this gate — nothing to attribute");
+        return;
+    }
+
+    let xs: Vec<f64> = overcut.iter().map(|o| o.x).collect();
+    let ys: Vec<f64> = overcut.iter().map(|o| o.y).collect();
+    let min_max = |v: &[f64]| {
+        (
+            v.iter().copied().fold(f64::INFINITY, f64::min),
+            v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        )
+    };
+    let (x_lo, x_hi) = min_max(&xs);
+    let (y_lo, y_hi) = min_max(&ys);
+    let at_ends = ys
+        .iter()
+        .filter(|y| y.abs() > GROOVE_Y_HALF_MM - 1.0)
+        .count();
+    eprintln!(
+        "  overcut-set extent: x [{x_lo:.3}, {x_hi:.3}], y [{y_lo:.3}, {y_hi:.3}]; \
+         {at_ends} of {} ({:.1}%) sit within 1 mm of a longitudinal end",
+        overcut.len(),
+        100.0 * at_ends as f64 / overcut.len() as f64
+    );
+
+    let mut zone_counts: HashMap<GrooveZone, usize> = HashMap::new();
+    for o in &overcut {
+        *zone_counts.entry(GrooveZone::of(o.x, o.y)).or_default() += 1;
+    }
+    let mut zc: Vec<_> = zone_counts.into_iter().collect();
+    zc.sort_by_key(|(z, _)| *z);
+    eprintln!("  overcut set by zone:");
+    for (zone, n) in zc {
+        eprintln!(
+            "    {:<16} {n:>7} ({:.1}%)",
+            zone.label(),
+            100.0 * n as f64 / overcut.len() as f64
+        );
+    }
+
+    // Proximity to a profile break, reported separately from the zone
+    // partition (see `GrooveZone`'s doc for why the two are not one
+    // table). The envelope radius is 3.0 mm and the cusp radius 0.5 mm,
+    // so the 0.5 / 1.0 bins are the scales at which "the cutter cannot
+    // enter this corner" is a live explanation.
+    let mut break_bins = [0usize; 4];
+    for o in &overcut {
+        let d = dist_to_profile_break(o.x);
+        let bin = if d < 0.25 {
+            0
+        } else if d < 0.5 {
+            1
+        } else if d < 1.0 {
+            2
+        } else {
+            3
+        };
+        break_bins[bin] += 1;
+    }
+    eprintln!("  overcut set by distance to the nearer profile break:");
+    for (label, n) in [
+        ("< 0.25 mm", break_bins[0]),
+        ("0.25-0.5 mm", break_bins[1]),
+        ("0.5-1.0 mm", break_bins[2]),
+        (">= 1.0 mm", break_bins[3]),
+    ] {
+        eprintln!(
+            "    {label:<16} {n:>7} ({:.1}%)",
+            100.0 * n as f64 / overcut.len() as f64
+        );
+    }
+
+    // ── The worst columns, one line each ────────────────────────────
+    eprintln!(
+        "\n  {:>4} {:>9} {:>9} {:>11} {:>11} {:>8} {:<16} {:<26} {:>9}",
+        "#", "x", "y", "B dev um", "D dev um", "d_break", "zone", "B nearest region", "cut dist"
+    );
+    for (i, o) in overcut.iter().take(12).enumerate() {
+        let (band, strategy, dist, idx) = nearest_region_to(&b.session, o.x, o.y)
+            .unwrap_or_else(|| ("(no trace)".to_owned(), String::new(), f64::NAN, 0));
+        let region = format!("{band}/{strategy}");
+        let (x, y, b_um, d_um) = (o.x, o.y, o.b_um, o.d_um);
+        eprintln!(
+            "  {:>4} {x:>9.3} {y:>9.3} {b_um:>11.1} {d_um:>11.1} {:>8.3} {:<16} {region:<26} \
+             {dist:>9.3}  (row {}, col {}, move {idx})",
+            i + 1,
+            dist_to_profile_break(x),
+            GrooveZone::of(x, y).label(),
+            o.cell.0,
+            o.cell.1
+        );
+    }
+
+    // ── Is the residual B-specific? ─────────────────────────────────
+    let both_bad = overcut.iter().filter(|o| o.d_um < -overcut_gate_um).count();
+    eprintln!(
+        "\n  of B's {} overcut columns, {both_bad} ({:.1}%) are ALSO overcut past the gate on \
+         arm D — the rest are B-specific",
+        overcut.len(),
+        100.0 * both_bad as f64 / overcut.len() as f64
+    );
+
+    // ── Exhibits ────────────────────────────────────────────────────
+    let dir = probe_artifact_dir();
+    render_into(&dir, &b_cells, 250.0, "d161_probe_b_dev");
+    render_into(&dir, &d_cells, 250.0, "d161_probe_d_dev");
+    let diff: HashMap<(usize, usize), f64> = common
+        .iter()
+        .map(|k| {
+            (
+                *k,
+                b_cells.get(k).copied().unwrap_or(0.0) - d_cells.get(k).copied().unwrap_or(0.0),
+            )
+        })
+        .collect();
+    render_into(&dir, &diff, 250.0, "d161_probe_b_minus_d");
+    let mask: HashMap<(usize, usize), f64> = common
+        .iter()
+        .map(|k| {
+            let bd = b_cells.get(k).copied().unwrap_or(0.0);
+            (
+                *k,
+                if bd * 1000.0 < -overcut_gate_um {
+                    bd
+                } else {
+                    0.0
+                },
+            )
+        })
+        .collect();
+    render_into(&dir, &mask, 250.0, "d161_probe_b_overcut_mask");
+
+    // Non-vacuity only. This probe reports; it does not gate.
+    assert!(
+        b.columns.len() > 10_000 && d.columns.len() > 10_000,
+        "both arms must produce a real column population"
+    );
+    eprintln!(
+        "\n  probe complete — arms {} / {}; exhibits in {}",
+        b.label,
+        d.label,
+        dir.display()
     );
 }
