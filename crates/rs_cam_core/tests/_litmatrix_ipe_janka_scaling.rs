@@ -36,22 +36,22 @@
 //!    `feeds::calculate`, after every clamp. Quoting the scale factor as
 //!    if it were the outcome invited exactly the magnitude assertion the
 //!    paragraph above explains this test must not make.
-//! 2. `1290 / 3510` is the ratio under the **shipped `^1.0` hardness
-//!    law**. `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`
-//!    §4.2 recommends `Janka^-0.5`, under which the same transfer is
-//!    `0.3675^0.5 = 0.606×`. That recommendation is **not adopted** —
-//!    `vendor_lookup::CHIPLOAD_HARDNESS_EXPONENT` ships at 1.0 and its
-//!    magnitudes are in `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`
-//!    pending a separate approval — but a number written into a
-//!    docstring as if it were a law is the "stale rationale outliving
-//!    the code" class the programme's P11 names, and this one would go
-//!    stale the day that approval lands.
+//! 2. `1290 / 3510` was the ratio under the then-shipped `^1.0`
+//!    hardness law. **`vendor_lookup::CHIPLOAD_HARDNESS_EXPONENT` was
+//!    adopted at 0.5 later the same day**, so the transfer this cell
+//!    exercises is now `0.3675^0.5 = 0.606×`, not `0.3675×`. A number
+//!    written into a docstring as if it were a law is the "stale
+//!    rationale outliving the code" class the programme's P11 names,
+//!    and this one would have gone stale within hours of being written.
 //!
-//! B-lit §4.2 also settles a census claim about this file: the census's
-//! T3.4 evidence column listed an `_litmatrix_ipe_janka_scaling` re-pin
-//! as required if the hardness law moves. **It is not required** — the
-//! assert is directional and `0.606 < 1.0` holds. Only this docstring
-//! would need touching, which is why it has been made law-agnostic now.
+//! B-lit §4.2 also settled a census claim about this file, and the
+//! adoption confirmed it: the census's T3.4 evidence column listed an
+//! `_litmatrix_ipe_janka_scaling` re-pin as required if the hardness law
+//! moves. **It was not required.** The law moved and this file's
+//! assertion did not, because it is directional and `0.606 < 1.0` holds
+//! exactly as `0.3675 < 1.0` did. Nothing here changed for the
+//! adoption — the docstring had already been made law-agnostic, which
+//! is why.
 
 #![allow(
     clippy::unwrap_used,

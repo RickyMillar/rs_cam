@@ -72,6 +72,38 @@
 //! The tests below are restated, not deleted, so the inversion is
 //! visible in the diff.
 //!
+//! ## …AND THE FLIP WAS UNDONE THE SAME DAY, BY THE DIAMETER LAW
+//!
+//! `vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT` moved `1.0 → 0.61`
+//! (`CHIPLOAD_LITERATURE_VERDICT.md` §4.1; magnitudes in
+//! `LAW_MAGNITUDE_TABLES.md` §2, operator-ruled 2026-08-06). This
+//! fixture is the single most exposed cell in the repo to that change:
+//! it queries a **Ø0.954 mm** lookup diameter against a **Ø3.175 mm**
+//! row, the largest down-transfer any committed fixture makes.
+//!
+//! | | pre-conversion | post-conversion | post-law |
+//! |---|---:|---:|---:|
+//! | gate observed | 0.000737 | **0.009153** | 0.009153 *(unchanged)* |
+//! | d-scale applied | 0.3005 | 0.3005 | **0.4802** (×1.598) |
+//! | band | 0.003605–0.007211 | same | **0.005763–0.011525** |
+//! | position | 20 % of MIN | **127 % of MAX** | **79 % of MAX** |
+//! | verdict | `Within` + burn advisory | **`Exceeds(High)`** | **`Within`**, no advisory |
+//! | commanded 0.0714 vs band max | 9.90× | 9.90× | **6.20×** |
+//!
+//! **Read the two events separately — they are not a revert.** The unit
+//! deletion moved the *observation* by 12.43× and that stands; the
+//! diameter law moved the *band* by 1.598× and that is what un-trips the
+//! verdict. The conversion wave's finding — that the gate reported an
+//! operation as five times under its burn floor when it was not, and
+//! issued advice to speed up — is unaffected: the pre-conversion reading
+//! is still below the floor, still asserted, still the defect. What no
+//! longer holds is the *secondary* claim that the corrected reading put
+//! this operation past its breakage ceiling. On a Ø1 tool the `^1.0`
+//! band was too narrow, and the vendors' own charts say so.
+//!
+//! Every assertion the law moved is restated in place with the old value
+//! and the reason quoted, never deleted.
+//!
 //! A hand-checked arithmetic identity is not evidence a gate change can be
 //! re-measured against. This file re-derives the same identity **through
 //! the shipped code**, with no generator, arc fitter, lead-in, dressup or
@@ -647,25 +679,47 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     // five times under a floor of 0.003605, because the gate multiplied
     // the commanded advance by a chip-geometry factor derived from a
     // repo-authored stepover window. Measured on the axis the vendor
-    // publishes, the operation is 27 % PAST its ceiling.
+    // publishes, the operation was 27 % PAST its ceiling.
+    //
+    // RE-PINNED AGAIN 2026-08-06, SAME DAY, by the diameter law.
+    // `vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT` moved 1.0 → 0.61, so a
+    // Ø0.954 lookup against a Ø3.175 row carries d-scale 0.3005 → 0.4802
+    // (×1.598) and this fixture's band widens 0.003605–0.007211 →
+    // 0.005763–0.011525. The observation does NOT move — it is
+    // `commanded × achieved-feed ratio` and touches no band — so the
+    // operation lands at 79 % of its (wider) maximum and the verdict
+    // returns to `Within`.
+    //
+    // Both re-pins are honest and they do not cancel:
+    //   * the unit deletion moved the observation 0.000737 → 0.009153
+    //     (12.43×) and that is unaffected;
+    //   * the diameter law moved the BAND and that is what un-trips it.
+    // What is no longer true is "this operation is over its breakage
+    // ceiling". What is still true, and is the finding the file exists
+    // for, is that the pre-conversion reading sat five times under the
+    // floor while the corrected one sits comfortably inside the band —
+    // asserted below, unchanged.
     let band_min = e.band_min_mm.expect("row publishes a floor");
     let of_max = e.gate_observed_mm / e.band_max_mm;
     assert_eq!(
         e.verdict_label,
-        "Exceeds",
-        "the operation is at {:.1} % of its band MAXIMUM ({:.6}) — this is a breakage \
-         trip, and reporting it as anything softer is the pre-conversion defect surviving",
+        "Within",
+        "the operation is at {:.1} % of its band MAXIMUM ({:.6}). Under the retired \
+         ^1.0 diameter law this read `Exceeds` at 127 %; the ^0.61 law widened the \
+         band by 1.598x on this Ø1 query and the trip went away.",
         100.0 * of_max,
         e.band_max_mm
     );
     assert!(
         !e.burn_advisory,
-        "a BURN advisory (advice to speed up) on an operation over its breakage ceiling \
-         is the exact inversion this conversion removed"
+        "no burn advisory: the observation {:.9} is above the floor {band_min:.9}. \
+         (Pre-conversion it was BELOW the floor and the advisory fired — that \
+         inversion is what the unit deletion removed, and it stays removed.)",
+        e.gate_observed_mm
     );
     assert!(
-        of_max > 1.0,
-        "observed {:.6} must sit above the ceiling {:.6}; got {:.4}x",
+        of_max < 1.0 && e.gate_observed_mm > band_min,
+        "observed {:.6} must sit inside the band {band_min:.6}..{:.6}; got {:.4}x of max",
         e.gate_observed_mm,
         e.band_max_mm,
         of_max
@@ -676,9 +730,10 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     eprintln!(
         "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of band MIN {band_min:.6} \
          (Within + BURN advisory); post-conversion observed {:.9} = {:.1} % of band MAX \
-         {:.6} (Exceeds HIGH, breakage). Deleted factor {:.6}x on this row. \
-         B-lit §3.2 predicted 99.9 % of max against the LIVE session's wider band \
-         (d-scale 0.42); this fixture's d-scale is {:.4}.",
+         {:.6}. Deleted factor {:.6}x on this row. Under the retired ^1.0 diameter law \
+         this was Exceeds(High) at 127 % of a 0.003605-0.007211 band; the ^0.61 law \
+         widened it by 1.598x (d-scale {:.4}) and the verdict returned to Within. \
+         The observation itself did not move.",
         100.0 * pre / band_min,
         e.gate_observed_mm,
         100.0 * of_max,
@@ -815,7 +870,7 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
     );
 
     // And the consequence, restated: the live session read this
-    // operation as below its floor. It is above its CEILING.
+    // operation as below its floor. It is not.
     let min = e.band_min_mm.expect("row publishes a floor");
     assert!(
         e.gate_observed_mm > min,
@@ -823,9 +878,23 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
          below-floor reading was the unit defect",
         e.gate_observed_mm
     );
+    // RE-PINNED 2026-08-06 (laws). This read
+    //     assert!(e.gate_observed_mm > e.band_max_mm,
+    //             "and above the ceiling ...: the defect inverted the SIDE");
+    // and it was true of the band as the `^1.0` diameter law scaled it.
+    // Adopting `D^0.61` widens a Ø1 query against a Ø3.175 row by
+    // d-scale 0.3005 → 0.4802 (×1.598), band 0.003605–0.007211 →
+    // 0.005763–0.011525. The SAME observation, 0.009153, is now inside.
+    // The unit deletion's finding survives — the pre-conversion reading
+    // was below the floor and the corrected one is not, which is the
+    // inversion — but the corrected reading is no longer past the
+    // ceiling on this fixture.
     assert!(
-        e.gate_observed_mm > e.band_max_mm,
-        "and above the ceiling {:.9}: the defect inverted the SIDE, not only the size",
+        e.gate_observed_mm < e.band_max_mm,
+        "under the ^0.61 diameter law the observation {:.9} sits BELOW the widened \
+         ceiling {:.9}. If it is above again, the band moved back and the whole \
+         re-pin below is stale.",
+        e.gate_observed_mm,
         e.band_max_mm
     );
     assert!(
@@ -856,17 +925,34 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
         "the fixture must reproduce a commanded feed-per-tooth well above the band max, or the \
          missing comparison has nothing to surface; got {overshoot}x"
     );
-    // Pre-conversion this read `assert_eq!(e.verdict_label, "Within")`
-    // with the note "and the gate must nonetheless report Within — that
-    // IS the finding". The P-10 finding it carried is that no verdict
-    // makes the commanded-vs-band comparison; that is still true (the
-    // comparison is a diagnostic). What is no longer true is that the
-    // gate disagreed with it — the gate now agrees, on the same axis, at
-    // the achieved feed, and trips.
+    // This assertion has now been written three ways, and the third is
+    // the first one's value with a different reason behind it — which is
+    // worth saying out loud rather than letting the diff read as a
+    // revert.
+    //
+    //  1. Pre-conversion: `assert_eq!(verdict_label, "Within")`, noted as
+    //     "the gate must nonetheless report Within — that IS the
+    //     finding". True because the gate compared a CHIP thickness to
+    //     an ADVANCE band, 12.43× apart.
+    //  2. Post-conversion (`0a45e35`): `"Exceeds"` — same axis at last,
+    //     and the achieved feed genuinely sat 1.27× over a
+    //     0.003605–0.007211 band.
+    //  3. Post-law (2026-08-06): `"Within"` again — the observation is
+    //     unchanged at 0.009153, but `D^0.61` widened the band to
+    //     0.005763–0.011525 on this Ø1 query, so the achieved feed is
+    //     inside it at 0.79×.
+    //
+    // The P-10 finding the test carries is untouched by all three: no
+    // verdict compares the COMMANDED feed-per-tooth to the band, and the
+    // commanded value here is still 6.20× over the maximum while the
+    // verdict says nothing about it. That comparison is a diagnostic
+    // (`load.chipload.commanded_above_band`, T1.5), and the assertion
+    // above (`overshoot > 2.0`) is the part that must never soften.
     assert_eq!(
-        e.verdict_label, "Exceeds",
-        "the gate now trips on the same axis the alarm reports; before the conversion \
-         it read Within while the commanded value sat {overshoot:.2}x over the band"
+        e.verdict_label, "Within",
+        "the gate reads the ACHIEVED feed, which is inside the ^0.61-widened band, \
+         while the COMMANDED value sits {overshoot:.2}x over the same maximum and no \
+         verdict says so — that gap is P-10 and it survives every re-pin"
     );
     let achieved_over_band = e.gate_observed_mm / e.band_max_mm;
     eprintln!(

@@ -22,43 +22,68 @@
 //! sentry (zero-chipload should still surface via the formula
 //! fallback path, not be silently bumped to 0.025).
 //!
-//! ## RE-PIN 2026-08-06 — the floor is subordinated to the band
+//! ## RE-PINNED TWICE ON 2026-08-06 — this cell pins a floor×band
+//! ## INTERACTION, and both sides moved on the same day
 //!
-//! `FEEDS_CENSUS.md` C-12 / T3.3 established that the global constant
-//! and the matched row's derated band cross on hard and small work, and
-//! the operator ruled the floor may never exceed the band ceiling it
-//! exists to keep the recipe inside (`feeds::effective_rubbing_floor`).
+//! `LAW_MAGNITUDE_TABLES.md` §5.1 named this file as the sharpest
+//! consequence of the whole feeds programme precisely because it asserts
+//! a *relationship* between a global constant and a scaled vendor band,
+//! and two separate rulings moved one side each. Both passes are
+//! recorded; the middle column is a real committed state, not a
+//! hypothetical.
 //!
-//! **This cell was one of the crossings.** Ipe scales the Ø6
-//! hardwood-anchored row's band to 0.013219–0.022721 mm/tooth, so the
-//! 0.025 global floor sat **1.10× above the band maximum** — the clamp
-//! was lifting the Ipe recipe past the vendor window's own ceiling.
-//! Measured through `feeds::calculate` on this fixture:
+//! | | parent `777a78b` | after floor (`2d1bfc8`) | after laws |
+//! |---|---:|---:|---:|
+//! | derated band (mm/tooth) | 0.013219–0.022721 | unchanged | **0.020567–0.035350** |
+//! | pre-clamp `requested` | 0.014128 | unchanged | **0.021982** |
+//! | floor applied | 0.025000 | **0.022721** | **0.025000** |
+//! | commanded feed-per-tooth | 0.025000 | **0.022721** | 0.025000 |
+//! | feed (mm/min @ 15 000 rpm × 2F) | 750.00 | **681.62** | 750.00 |
+//! | `ChiploadClampedToFloor` fires | yes | yes | **yes** |
+//! | `band_capped_from` | *(no field)* | `Some(0.025)` | **`None`** |
 //!
-//! | | before (parent) | after |
-//! |---|---:|---:|
-//! | derated band (mm/tooth) | 0.013219 – 0.022721 | unchanged |
-//! | pre-clamp `requested` | 0.014128 | unchanged |
-//! | floor applied | **0.025000** | **0.022721** (band ceiling) |
-//! | commanded feed-per-tooth | **0.025000** | **0.022721** |
-//! | feed (mm/min @ 15 000 rpm, 2F) | **750.00** | **681.62** |
-//! | `ChiploadClampedToFloor` fires | yes | yes |
-//! | `band_capped_from` | *(field did not exist)* | `Some(0.025)` |
+//! **Pass 1 — the floor is subordinated to the band** (FEEDS_CENSUS
+//! C-12 / T3.3; `feeds::effective_rubbing_floor`). This cell was one of
+//! the crossings the census found: at `^1.0` hardness scaling the Ipe
+//! band topped out at 0.022721 and the global floor sat 1.10× above it,
+//! so the clamp was lifting the recipe past the vendor window's own
+//! ceiling. The clamp target became the band ceiling and the recipe got
+//! slower.
 //!
-//! Mechanism: `feeds::calculate` Step 9b now clamps to
-//! `min(RUBBING_FLOOR_MM_TOOTH, chipload_bounds.max_mm_per_tooth)`
-//! instead of the bare constant. Direction: the Ipe recipe gets
-//! **slower**, which is the conservative side on the breakage axis and
-//! the *un*conservative side on the burn axis — hence the new
-//! `band_capped_from` disclosure, asserted below, which tells the
-//! operator the recipe is still under the chip-formation threshold and
-//! no feed exists that is not.
+//! **Pass 2 — the hardness law moves the band out from under the
+//! floor.** Adopting `Janka^-0.5` scales this row by `0.3675^0.5 =
+//! 0.6062` instead of `0.3675`, i.e. **×1.556** — exactly the
+//! multiplier `LAW_MAGNITUDE_TABLES.md` §5 measured in advance
+//! (0.01322–0.02272 → 0.02057–0.03535). The band ceiling 0.035350 now
+//! clears the 0.025 floor, `effective_rubbing_floor` returns the global
+//! constant again, and every number in this cell returns to its parent
+//! value.
 //!
-//! The cell's assertion is restated accordingly: it no longer pins the
-//! literal 0.025 (which this row cannot reach without leaving its band)
-//! but pins **the clamp firing and landing exactly on the band
-//! ceiling**, which is what the cell was always testing — that the
-//! engine does not serve a silently-derated ploughing recipe.
+//! ### The predicted sentry break did NOT happen, and the prediction
+//! ### was wrong for a stateable reason
+//!
+//! `LAW_MAGNITUDE_TABLES.md` §5.1 predicted that under the hardness law
+//! *"the clamp would then **stop firing**,
+//! `ipe_pocket_emits_chipload_clamped_warning` would go RED"*. Measured
+//! here, **it still fires**. The prediction reasoned from the band
+//! *midpoint* Suggest reads (0.01797 → 0.02796, above 0.025). The
+//! quantity the Step-9b clamp actually tests is the **commanded
+//! feed-per-tooth after the safety-factor, LD-overhang and power
+//! derates**, which is 0.021982 — still below the floor. A ×1.556 band
+//! move was not enough to lift a value that had already been derated by
+//! ~21 % below its own midpoint. Published as failed rather than
+//! quietly satisfied: the document's *direction* was right, its
+//! *conclusion* was not, and the difference is the derate chain between
+//! the band and the feed.
+//!
+//! Net effect of both passes on this cell: **no change**. That is not
+//! the same as nothing happening — it is two independent moves that
+//! cancel, and the file asserts each of them so the cancellation cannot
+//! be mistaken for inertness.
+//!
+//! The **oak control** did move, slightly: `h_scale` 1.0662 → 1.0326
+//! (×0.968), band 0.034118–0.058640 → 0.033042–0.056791, feed-per-tooth
+//! 0.036464 → 0.035314. It still never clamps, which is what it is for.
 
 #![allow(
     clippy::unwrap_used,
@@ -82,10 +107,20 @@ const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
 /// The Ipe cell's derated band ceiling, measured 2026-08-06 through
 /// `feeds::calculate` (row `amana-flat-hardwood-pocket-6000-2f`, raw
-/// hardness ratio 1290/3510 = 0.3675 applied at `^1.0`). Pinned as a
+/// hardness ratio 1290/3510 = 0.3675 applied at `^0.5`). Pinned as a
 /// literal so a change to the scaling law shows up here as a diff and
-/// not as a silently-tracking assertion.
-const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.022_720_797_720_797_72;
+/// not as a silently-tracking assertion. **Was 0.022720797720797720**
+/// under the retired `^1.0` hardness law; ×1.556.
+const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.035_350_302_327_474_86;
+
+/// The commanded feed-per-tooth Step 9b sees for this cell, *before* the
+/// clamp — i.e. after the safety-factor, LD-overhang and power derates
+/// have been applied to the band-derived target. Pinned because it is
+/// the quantity `LAW_MAGNITUDE_TABLES.md` §5.1's prediction confused
+/// with the band midpoint: the midpoint went above the floor and this
+/// did not, which is why the clamp still fires. Was 0.014128326084665594
+/// under the retired `^1.0` law.
+const IPE_PRE_CLAMP_REQUESTED_MM_TOOTH: f64 = 0.021_981_648_910_896_722;
 
 fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
@@ -129,11 +164,12 @@ fn record_the_cell() {
 
 #[test]
 fn ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor() {
-    // RE-PINNED 2026-08-06 (was: `>= 0.025`, the bare global constant).
-    // The Ipe-derated band tops out at 0.022721, BELOW the global floor,
-    // so 0.025 is not reachable without commanding past the vendor
-    // window. The clamp target is now the band ceiling and this cell
-    // pins that value.
+    // RE-PINNED TWICE 2026-08-06 — see this file's docstring table.
+    // Pass 1 (floor subordination) moved the clamp target down to the
+    // band ceiling 0.022721; pass 2 (`Janka^-0.5`) moved the ceiling up
+    // to 0.035350, which clears the global floor, so the global constant
+    // applies again and the value returns to 0.025. Both moves are
+    // asserted so the net-zero is a measured cancellation, not inertness.
     let result = calc_ipe_6mm();
     let rpm = result.rpm;
     let flutes = 2.0_f64;
@@ -150,14 +186,19 @@ fn ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor() {
         band.max_mm_per_tooth,
     );
     assert!(
-        band.max_mm_per_tooth < RUBBING_FLOOR_MM_TOOTH,
-        "fixture precondition: this cell exists because the Ipe band ceiling \
-         {:.6} sits BELOW the {RUBBING_FLOOR_MM_TOOTH} global floor. If that is no \
-         longer true the cell is testing something else.",
+        band.max_mm_per_tooth > RUBBING_FLOOR_MM_TOOTH,
+        "fixture precondition, INVERTED by the hardness law: the Ipe band ceiling \
+         {:.6} must now sit ABOVE the {RUBBING_FLOOR_MM_TOOTH} global floor, so this \
+         cell exercises the un-subordinated branch of `effective_rubbing_floor`. \
+         Under the retired ^1.0 law it sat below, at 0.022721.",
         band.max_mm_per_tooth,
     );
 
     let effective_floor = RUBBING_FLOOR_MM_TOOTH.min(band.max_mm_per_tooth);
+    assert!(
+        (effective_floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
+        "with the band clear of the floor the effective floor IS the global constant",
+    );
     let chipload = result.feed_rate_mm_min / (rpm * flutes);
     assert!(
         chipload >= effective_floor - 1e-9,
@@ -191,8 +232,15 @@ fn ipe_pocket_emits_chipload_clamped_warning() {
         })
         .unwrap_or_else(|| {
             panic!(
-                "Expected FeedsWarning::ChiploadClampedToFloor for Ipe pocket cell \
-                 (pre-clamp chipload ~0.0141 < band ceiling 0.0227). Warnings: {:?}",
+                "Expected FeedsWarning::ChiploadClampedToFloor for Ipe pocket cell. \
+                 LAW_MAGNITUDE_TABLES.md §5.1 predicted this assertion would go RED \
+                 under `Janka^-0.5`, reasoning from the band MIDPOINT (0.01797 → \
+                 0.02796, above the floor). The clamp tests the COMMANDED \
+                 feed-per-tooth after the safety/LD/power derates, which is \
+                 {IPE_PRE_CLAMP_REQUESTED_MM_TOOTH:.6} — still below \
+                 {RUBBING_FLOOR_MM_TOOTH}. If this panic ever fires, that prediction \
+                 has finally come true and the cell must move to a harder or smaller \
+                 combination. Warnings: {:?}",
                 result.warnings,
             )
         });
@@ -204,17 +252,23 @@ fn ipe_pocket_emits_chipload_clamped_warning() {
          should be below the applied floor {floor:.6}",
     );
     assert!(
-        (floor - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < 1e-9,
-        "RE-PINNED 2026-08-06: the applied floor is the band ceiling \
-         {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}, not the global \
-         {RUBBING_FLOOR_MM_TOOTH}. Got {floor:.9}.",
+        (requested - IPE_PRE_CLAMP_REQUESTED_MM_TOOTH).abs() < 1e-9,
+        "RE-PINNED 2026-08-06 (was 0.014128326084665594 under the retired ^1.0 \
+         hardness law): the pre-clamp commanded feed-per-tooth is \
+         {IPE_PRE_CLAMP_REQUESTED_MM_TOOTH:.9}. Got {requested:.9}.",
+    );
+    assert!(
+        (floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
+        "RE-PINNED TWICE 2026-08-06. The floor commit made this the band ceiling \
+         0.022720797720797720; the hardness law lifted the ceiling to \
+         {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}, clear of the global floor, so the \
+         applied floor is the global {RUBBING_FLOOR_MM_TOOTH} again. Got {floor:.9}.",
     );
     assert_eq!(
-        band_capped_from,
-        Some(RUBBING_FLOOR_MM_TOOTH),
-        "the operator must be told the global chip-formation threshold was \
-         NOT reached — this recipe is still in the rubbing regime and no feed \
-         inside the vendor band escapes it.",
+        band_capped_from, None,
+        "the band no longer caps the floor on this cell, so nothing is disclosed. \
+         `Some(_)` here would mean the hardness law stopped clearing the band over \
+         the floor — see the docstring table.",
     );
 }
 

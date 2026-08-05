@@ -7,16 +7,35 @@ separate approval with magnitudes"*
 (`planning/review_2026-08-04/ORCHESTRATION_LOG.md:39`).
 Recommendation being sized: `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` §4.
 
-> ## STATUS: MEASURE-ONLY. NOTHING HERE IS ADOPTED.
+> ## STATUS UPDATE 2026-08-06 — ADOPTED. This document is now a record,
+> ## not a request, and one of its predictions was WRONG.
 >
-> `feeds::vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT` and
-> `CHIPLOAD_HARDNESS_EXPONENT` both ship at **1.0** and this wave did not
-> move them. Every "proposed" number below is computed *in a test* by
-> applying `0.61` / `0.5` to the same raw ratios production uses. The
-> harness is committed: `crates/rs_cam_core/tests/law_magnitude_measurement.rs`
-> (`#[ignore]`d; run with `-- --ignored --nocapture`).
+> The operator ruled on 2026-08-06 (`ORCHESTRATION_LOG.md`, "Post-conversion
+> rulings"): **adopt both exponents, after the rubbing-floor re-derivation.**
+> `CHIPLOAD_DIAMETER_EXPONENT` now ships at **0.61** and
+> `CHIPLOAD_HARDNESS_EXPONENT` at **0.5**. Everything below labelled
+> "proposed" is therefore what ships; everything labelled "today" is the
+> retired `^1.0` pair.
 >
-> **This document asks for a decision. It does not record one.**
+> **§5.1's prediction about `_litmatrix_rubbing_floor_clamp` did not
+> reproduce.** It predicted the clamp would *stop firing* on the Ipe cell
+> because the band midpoint moves 0.01797 → 0.02796, above the 0.025 floor.
+> Measured after adoption, the clamp **still fires**: the quantity Step 9b
+> tests is the commanded feed-per-tooth *after* the safety-factor,
+> LD-overhang and power derates, which is **0.021982**, still below the
+> floor. Direction right, conclusion wrong. See the file's own docstring.
+>
+> **A consequence §5 did not size at all:** on the B3 fixture the diameter
+> law widens the band by ×1.598 and **reverses the conversion wave's
+> headline verdict flip** — `Exceeds(High)` at 127 % of max becomes
+> `Within` at 79 % of max, with the observation unchanged. Re-pinned in
+> `tests/feed_explanation_snapshot_b3.rs`.
+>
+> The harness that produced the tables is committed:
+> `crates/rs_cam_core/tests/law_magnitude_measurement.rs` (`#[ignore]`d;
+> run with `-- --ignored --nocapture`). It reads the live constants, so
+> re-running it now compares 0.61/0.5 against themselves — re-point its
+> local `PROPOSED_*` literals at `1.0` to reproduce the retired baseline.
 
 ---
 

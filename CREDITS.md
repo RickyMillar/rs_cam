@@ -137,7 +137,7 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
-### Chipload column convention
+### Chipload column convention and scaling laws
 
 The vendor `chipload_*_mm_tooth` columns in
 `crates/rs_cam_core/data/vendor_lut/observations/` are **linear advance per
@@ -177,13 +177,43 @@ repo-authored application windows (their `ae_rule` strings say so — "scallop
 driven", "10% to 30%D", "width-at-depth") and carry no vendor authority. The
 post-simulation chipload gate consumed them until 2026-08-06 and no longer does.
 
-The scaling exponents in `feeds::vendor_lookup` (diameter, hardness) are
-**shipped at `^1.0`** and are repo-authored. `CHIPLOAD_LITERATURE_VERDICT.md` §4
-regresses the shipped vendor charts and recommends `D^0.61` / `Janka^-0.5`, with
-lineage and stated uncertainty; that recommendation is **not adopted** and its
-measured cost is in `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`
-pending a separate approval. Neither exponent is a physical constant and neither
-should be cited as one.
+Scaling exponents in `feeds::vendor_lookup` and `machine::ChipLoadFormula` are
+**regressions over those same vendor charts, derived by this repo**, not
+vendor-published constants. No vendor publishes an exponent, and as far as
+`CHIPLOAD_LITERATURE_VERDICT.md` §4 could establish no primary source gives a
+chipload–diameter exponent at all. Adopted 2026-08-06 (operator ruling), the LUT
+path taking the formula path's values so only one implementation moves:
+
+- diameter, `chipload ∝ D^0.61` — **derived here.** Per-family fitted exponents
+  span 0.23–1.25 (Onsrud, 50 series-fits over its own Hard Wood / Soft Wood
+  charts, median 0.37; Amana Spektra over a 16x diameter span, 0.586–0.619;
+  Freud 1.05–1.25); row-count-weighted central estimate 0.52, unweighted
+  cross-family median 0.40. 0.61 is chosen because it is already
+  `machine::ChipLoadFormula::default().p`, because it is what the widest-span
+  series measures, and because it sits inside the physical bracket `[0, 1]` set
+  by the deflection-limited and strength-limited ends. Fits are grouped by
+  (source, subfamily, material family, flute count, pass role) — an ungrouped
+  Onsrud fit returns a *negative* exponent purely because its 60-000 and 60-200
+  series differ by 3x at the same diameter.
+- hardness, `chipload ∝ Janka^-0.5` — **derived here, bracketed by a primary
+  source.** USDA Forest Service, *Wood Handbook — Wood as an Engineering
+  Material*, GTR-190 (2010) Ch. 5 Table 5–11a gives side hardness ∝ G^1.49
+  (softwoods) / G^2.09 (hardwoods) against compression- and shear-parallel ∝
+  G^0.85–1.13; constant force per tooth implies `Janka^-0.48 … -0.67`, and 0.5
+  is the conservative edge of that bracket.
+  <https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf>
+  (accessed 2026-08-04; the URL the LUT manifest already carries as
+  `fpl_ch5_2010`). The vendors' own charts derate **less** than this — 125
+  matched Onsrud hardwood/softwood cell pairs give a geometric-mean ratio of
+  0.930, implying an exponent ≈ 0.08, and four V-groove families publish the
+  same chipload for both woods (exponent 0) — so 0.5 is deliberately
+  conservative for cross-material row transfer, which is what this exponent is
+  used for.
+
+Neither exponent is a physical constant and neither should be cited as one.
+Their measured cost across the shipped LUT (11 712 query/row pairs) is in
+`planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`, and the harness that
+produced it is `crates/rs_cam_core/tests/law_magnitude_measurement.rs`.
 
 ### Feed-aware lateral cutting-force model (deflection)
 
