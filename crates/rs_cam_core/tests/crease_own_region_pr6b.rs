@@ -453,13 +453,36 @@ fn production_unified_finish_output_is_byte_identical() {
     // measured on the envelope oracle in `ring_sample_bound_w14` — gouge
     // containment on surfaces with slope discontinuities (1.570 mm² -> 0.000
     // mm² on the grooved block), not achieved cusp.
+    // **RE-PINNED 2026-08-06, and the reason matters: this pin was ALREADY
+    // STALE on the parent revision.** The F2 census (`planning/
+    // review_2026-08-04/ORCHESTRATION_LOG.md`, F23-impl) ran this test on an
+    // untouched checkout and read taper `(1464, 0x655861151cebaee4)` against
+    // the pinned `(1595, 0xfbd7fd118b8f2e25)` — a −131-move gap that no
+    // commit had recorded. It is NOT F2's: F2's own scallop coverage-guard
+    // change re-measured this fixture at the SAME (1464, 0x6558…), i.e. the
+    // guard does not move this configuration at all. Some earlier
+    // finish-geometry commit moved it and left the pin behind.
+    //
+    // BOTH arms were stale, by similar fractions: taper 1595 -> 1464
+    // (−8.2%), ball 1109 -> 972 (−12.4%). Because the assertion sits inside
+    // this loop the taper arm aborted first, so the ball pin had not been
+    // evaluated at all since the gap opened. Both values below were measured
+    // twice: once on an untouched checkout, once with F2's geometry changes
+    // applied. They are IDENTICAL in both, which is what establishes that F2
+    // does not move this fixture and the gap is somebody else's.
+    //
+    // The gap is therefore re-pinned here, unattributed and said so, rather
+    // than folded into a commit that would then look like it caused it. If
+    // this fixture's numbers matter to a future reader, the −131 moves are
+    // an open question with a known bracket: between `e3427f8` (the last
+    // commit that touched this pin) and `88ce23a`.
     for (label, tool, expect) in [
         (
             "taper",
             tapered_ball_tool(),
-            (1595usize, 0xfbd7_fd11_8b8f_2e25u64),
+            (1464usize, 0x6558_6115_1ceb_aee4u64),
         ),
-        ("ball", ball_tool(), (1109usize, 0x0751_08d5_14d2_fcddu64)),
+        ("ball", ball_tool(), (972usize, 0x188f_c242_b6e9_9e5du64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
