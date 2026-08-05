@@ -1969,3 +1969,401 @@ fn d16_1_residual_locating_probe() {
         dir.display()
     );
 }
+
+// ── D-16.1's single-column contact probe (W10) ──────────────────────────
+//
+// `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §7.6 wrote the re-open condition
+// for D-16.1's residual word for word, and this is it:
+//
+// > take the single column `row 64, col 245` (`x = 2.500, y = −7.600`)
+// > and move 4841 on the grooved fixture, and dump the drop-cutter
+// > contact evaluation for that move — which triangles were sampled,
+// > which one won, and what the tool's lowest point was. One column, one
+// > move, no simulation.
+//
+// The hypothesis under test (§7.5, stated there as a hypothesis and
+// explicitly unmeasured): the rim→wall break at |x| = 2.5 is a convex
+// break descending into the groove, and a drop-cutter contact evaluated
+// on the wrong triangle puts the tool tip below the rim plane there.
+//
+// This probe RUNS NO SIMULATION. It generates arm B once to recover the
+// emitted move, then evaluates `dropcutter::point_drop_cutter`'s own
+// candidate set triangle by triangle. It reports; it gates nothing. Its
+// only assertions are non-vacuity bars — a candidate set that is empty,
+// or a winner that never contacted, means the probe measured nothing and
+// must not be read as a negative result.
+
+/// Which face of the groove profile a triangle belongs to, decided from
+/// its own centroid rather than from any name — the same partition
+/// `GrooveZone::of` applies to columns, so a triangle and a column that
+/// report "rim" are making the same statement.
+fn triangle_zone(tri: &rs_cam_core::geo::Triangle) -> GrooveZone {
+    let cx = (tri.v[0].x + tri.v[1].x + tri.v[2].x) / 3.0;
+    let cy = (tri.v[0].y + tri.v[1].y + tri.v[2].y) / 3.0;
+    GrooveZone::of(cx, cy)
+}
+
+/// The grooved fixture's profile in closed form: rim flat at z = 0, wall
+/// at `GROOVE_WALL_DEG` descending inward, floor flat at −depth. This is
+/// the fixture's definition, not a fit — `grooved_block` builds exactly
+/// this and `GrooveZone::of` partitions on the same two breakpoints.
+fn groove_surface_z(x: f64) -> f64 {
+    let ax = x.abs();
+    if ax >= GROOVE_RIM_HALF_WIDTH_MM {
+        0.0
+    } else if ax > groove_floor_half() {
+        -(GROOVE_RIM_HALF_WIDTH_MM - ax) * GROOVE_WALL_DEG.to_radians().tan()
+    } else {
+        -GROOVE_DEPTH_MM
+    }
+}
+
+/// One triangle's contribution to a drop-cutter query.
+struct ContactRow {
+    face: usize,
+    zone: GrooveZone,
+    normal_z: f64,
+    x_lo: f64,
+    x_hi: f64,
+    covers_xy: bool,
+    facet_hit: bool,
+    contacted: bool,
+    z: f64,
+}
+
+/// Evaluate `point_drop_cutter`'s candidate set one triangle at a time.
+/// The winner is `argmax(z)` over contacted triangles and is asserted to
+/// equal the shipped whole-query answer — max is order-independent, so
+/// if those two ever disagree the decomposition is wrong and every row
+/// below is meaningless.
+fn contact_dump(
+    x: f64,
+    y: f64,
+    mesh: &TriangleMesh,
+    index: &rs_cam_core::mesh::SpatialIndex,
+    cutter: &dyn MillingCutter,
+) -> (Vec<ContactRow>, rs_cam_core::tool::CLPoint) {
+    use rs_cam_core::tool::CLPoint;
+
+    let whole = rs_cam_core::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+    let mut rows = Vec::new();
+    for &face in &index.query(x, y, cutter.radius()) {
+        let tri = &mesh.faces[face];
+
+        let mut facet_cl = CLPoint::new(x, y);
+        let facet_hit = cutter.facet_drop(&mut facet_cl, tri);
+
+        let mut cl = CLPoint::new(x, y);
+        cutter.drop_cutter(&mut cl, tri);
+
+        let xs = [tri.v[0].x, tri.v[1].x, tri.v[2].x];
+        rows.push(ContactRow {
+            face,
+            zone: triangle_zone(tri),
+            normal_z: tri.normal.z,
+            x_lo: xs.iter().copied().fold(f64::INFINITY, f64::min),
+            x_hi: xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            covers_xy: tri.contains_point_xy(x, y),
+            facet_hit,
+            contacted: cl.contacted,
+            z: cl.z,
+        });
+    }
+
+    let decomposed = rows
+        .iter()
+        .filter(|r| r.contacted)
+        .map(|r| r.z)
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        !whole.contacted || (decomposed - whole.z).abs() < 1e-9,
+        "per-triangle decomposition ({decomposed}) must reproduce the shipped whole-query answer \
+         ({}) — if it does not, every attribution below is meaningless",
+        whole.z
+    );
+    (rows, whole)
+}
+
+/// Print one contact dump, worst-first by contributed Z, and return the
+/// winning row's zone.
+fn print_contact_dump(
+    what: &str,
+    x: f64,
+    y: f64,
+    rows: &[ContactRow],
+    whole: &rs_cam_core::tool::CLPoint,
+) -> Option<GrooveZone> {
+    eprintln!(
+        "\n  === {what}: drop-cutter contact at (x {x:.4}, y {y:.4}) ===\n  \
+         candidate triangles from SpatialIndex::query(radius {:.3}): {}",
+        3.0,
+        rows.len()
+    );
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|a, b| rows[*b].z.total_cmp(&rows[*a].z));
+
+    eprintln!(
+        "  {:>6} {:<16} {:>9} {:>9} {:>9} {:>7} {:>7} {:>10} {:>10} {:>6}",
+        "face",
+        "zone",
+        "nz",
+        "tri x_lo",
+        "tri x_hi",
+        "covers",
+        "facet",
+        "contact",
+        "cl z mm",
+        "won"
+    );
+    let mut winner_zone = None;
+    for (rank, &i) in order.iter().enumerate() {
+        let r = &rows[i];
+        let won = r.contacted && whole.contacted && (r.z - whole.z).abs() < 1e-9;
+        if won && winner_zone.is_none() {
+            winner_zone = Some(r.zone);
+        }
+        // The query radius is the SHAFT (3.0 mm), so on a 0.05 mm-dense
+        // fixture almost every candidate contacts and a complete dump is
+        // 1300 lines of noise. The winner is `argmax(z)`, so the top of
+        // this ordering is the whole attribution; print 40 and say how
+        // many were suppressed rather than pretending the tail matters.
+        if rank >= 40 {
+            continue;
+        }
+        eprintln!(
+            "  {:>6} {:<16} {:>9.4} {:>9.3} {:>9.3} {:>7} {:>7} {:>10} {:>10} {:>6}",
+            r.face,
+            r.zone.label(),
+            r.normal_z,
+            r.x_lo,
+            r.x_hi,
+            if r.covers_xy { "yes" } else { "no" },
+            if r.facet_hit { "yes" } else { "no" },
+            if r.contacted { "yes" } else { "NO" },
+            if r.contacted {
+                format!("{:.6}", r.z)
+            } else {
+                "-".to_owned()
+            },
+            if won { "<==" } else { "" }
+        );
+    }
+    let contacting = rows.iter().filter(|r| r.contacted).count();
+    eprintln!(
+        "  ({} of {} candidates contacted; {} rows suppressed below rank 40)",
+        contacting,
+        rows.len(),
+        rows.len().saturating_sub(40)
+    );
+    eprintln!(
+        "  winner: {} at cl z {:.6} mm (tool lowest point); analytic surface z here {:.6} mm; \
+         delta {:.1} um",
+        winner_zone.map(GrooveZone::label).unwrap_or("(none)"),
+        whole.z,
+        groove_surface_z(x),
+        (whole.z - groove_surface_z(x)) * 1000.0
+    );
+    winner_zone
+}
+
+#[test]
+#[ignore = "D-16.1 single-column contact probe (FINISHING_OPEN_DEFECTS_EVIDENCE.md §7.6): one \
+            generation of arm B, NO simulation, then a per-triangle drop-cutter dump at the \
+            named column and the named move. Research only — non-vacuity bars, no quality gate."]
+fn d16_1_single_column_contact_probe() {
+    use rs_cam_core::mesh::SpatialIndex;
+
+    let probe_x = env_f64("D161_COL_X", 2.500);
+    let probe_y = env_f64("D161_COL_Y", -7.600);
+    let move_index = env_f64("D161_MOVE", 4841.0) as usize;
+
+    eprintln!(
+        "D-16.1 contact probe — grooved_block(rim={GROOVE_RIM_HALF_WIDTH_MM}, \
+         wall={GROOVE_WALL_DEG}deg, depth={GROOVE_DEPTH_MM}); NO SIMULATION.\n  \
+         named column: x {probe_x:.4}, y {probe_y:.4} (row 64, col 245 in the io-fixes probe's \
+         0.1 mm grid); named move: {move_index}"
+    );
+    eprintln!(
+        "  profile: floor |x| <= {:.4} at z {:.3}; wall {:.4} < |x| < {GROOVE_RIM_HALF_WIDTH_MM}; \
+         rim |x| >= {GROOVE_RIM_HALF_WIDTH_MM} at z 0.000",
+        groove_floor_half(),
+        -GROOVE_DEPTH_MM,
+        groove_floor_half()
+    );
+
+    // ── Arm B, generation only ──────────────────────────────────────
+    let heights = pinned_heights(0.0, -GROOVE_DEPTH_MM);
+    let mut session = single_op_session_with(
+        stock_for_groove(),
+        session_tool(),
+        mesh_model(grooved_fixture(), "B unified"),
+        "B unified",
+        OperationConfig::UnifiedFinish(unified_arm_config()),
+        |cfg| {
+            cfg.heights = heights;
+        },
+    );
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .unwrap_or_else(|e| panic!("B unified: generation failed: {e:?}"));
+    let result = session.get_result(0).expect("arm B produced no result");
+    let moves = result.toolpath().moves.clone();
+    eprintln!(
+        "  arm B emitted {} moves (generation only, no simulation)",
+        moves.len()
+    );
+    assert!(
+        !moves.is_empty(),
+        "arm B emitted no moves — the probe has no population"
+    );
+
+    // ── The named move ──────────────────────────────────────────────
+    let named = moves.get(move_index).cloned();
+    match &named {
+        Some(mv) => eprintln!(
+            "\n  move {move_index}: target ({:.4}, {:.4}, {:.4}) {:?} {:?}; \
+             analytic surface z at its x = {:.4} mm, so commanded is {:.1} um {} the surface",
+            mv.target.x,
+            mv.target.y,
+            mv.target.z,
+            mv.move_type,
+            mv.intent,
+            groove_surface_z(mv.target.x),
+            (mv.target.z - groove_surface_z(mv.target.x)).abs() * 1000.0,
+            if mv.target.z < groove_surface_z(mv.target.x) {
+                "BELOW"
+            } else {
+                "above"
+            }
+        ),
+        None => eprintln!(
+            "\n  move {move_index} does not exist in this generation ({} moves) — the index came \
+             from the io-fixes run and generation is deterministic, so a miss here is itself a \
+             finding. The nearest-cutting-move search below stands on its own.",
+            moves.len()
+        ),
+    }
+
+    // Independent of the pinned index: which emitted cutting move is
+    // actually nearest the named column, and what does it command?
+    let mut best: Option<(f64, usize, Move)> = None;
+    for (i, mv) in moves.iter().enumerate() {
+        if !mv.move_type.is_cutting() {
+            continue;
+        }
+        let d = ((mv.target.x - probe_x).powi(2) + (mv.target.y - probe_y).powi(2)).sqrt();
+        match best {
+            Some((bd, _, _)) if bd <= d => {}
+            _ => best = Some((d, i, mv.clone())),
+        }
+    }
+    let (near_dist, near_idx, near_mv) = best.expect("arm B emitted no cutting moves");
+    eprintln!(
+        "  nearest cutting move to the named column: index {near_idx} at ({:.4}, {:.4}, {:.4}), \
+         {:.4} mm away, {:?}",
+        near_mv.target.x, near_mv.target.y, near_mv.target.z, near_dist, near_mv.intent
+    );
+
+    // ── The contact dumps ───────────────────────────────────────────
+    let mesh = grooved_fixture();
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = rs_cam_core::compute::build_cutter(&session_tool());
+    eprintln!(
+        "\n  cutter: envelope r {:.3} mm (query radius), cusp r {:.3} mm",
+        cutter.radius(),
+        cutter.cusp_radius_mm()
+    );
+
+    let (col_rows, col_cl) = contact_dump(probe_x, probe_y, &mesh, &index, &cutter);
+    assert!(
+        !col_rows.is_empty(),
+        "the named column's candidate set is empty — the probe measured nothing"
+    );
+    assert!(
+        col_cl.contacted,
+        "the named column produced no contact at all — the probe measured nothing"
+    );
+    let col_winner = print_contact_dump("named column", probe_x, probe_y, &col_rows, &col_cl);
+
+    let mv_for_dump = named.clone().unwrap_or_else(|| near_mv.clone());
+    let (mv_rows, mv_cl) = contact_dump(
+        mv_for_dump.target.x,
+        mv_for_dump.target.y,
+        &mesh,
+        &index,
+        &cutter,
+    );
+    let mv_winner = print_contact_dump(
+        if named.is_some() {
+            "named move"
+        } else {
+            "nearest cutting move (named index absent)"
+        },
+        mv_for_dump.target.x,
+        mv_for_dump.target.y,
+        &mv_rows,
+        &mv_cl,
+    );
+    eprintln!(
+        "  commanded z {:.6} vs drop-cutter z {:.6} at the same XY — commanded is {:.1} um {}",
+        mv_for_dump.target.z,
+        mv_cl.z,
+        (mv_for_dump.target.z - mv_cl.z).abs() * 1000.0,
+        if mv_for_dump.target.z < mv_cl.z {
+            "BELOW the drop-cutter answer"
+        } else {
+            "at/above the drop-cutter answer"
+        }
+    );
+
+    // ── Supplementary, and labelled as such ─────────────────────────
+    //
+    // One column answers "which triangle won here". It cannot say
+    // whether the break is a corner the query walks past. A bounded
+    // sweep across the break at the SAME y costs nothing (no
+    // simulation, 41 point queries) and is the difference between
+    // locating the residual and explaining it. Reported separately so
+    // it cannot be mistaken for the §7.6 deliverable.
+    eprintln!("\n  --- supplementary: drop-cutter across the rim/wall break at y {probe_y:.3} ---");
+    eprintln!(
+        "  {:>9} {:>12} {:>12} {:>11} {:<16} {:>7}",
+        "x", "dropcut z", "surface z", "delta um", "winner zone", "facet"
+    );
+    let mut worst: Option<(f64, f64)> = None;
+    for step in -20i32..=20 {
+        let x = probe_x + f64::from(step) * 0.05;
+        let (rows, cl) = contact_dump(x, probe_y, &mesh, &index, &cutter);
+        if !cl.contacted {
+            continue;
+        }
+        let winner = rows
+            .iter()
+            .filter(|r| r.contacted && (r.z - cl.z).abs() < 1e-9)
+            .map(|r| (r.zone, r.facet_hit))
+            .next();
+        let delta_um = (cl.z - groove_surface_z(x)) * 1000.0;
+        match worst {
+            Some((w, _)) if w <= delta_um => {}
+            _ => worst = Some((delta_um, x)),
+        }
+        eprintln!(
+            "  {x:>9.3} {:>12.6} {:>12.6} {delta_um:>11.1} {:<16} {:>7}",
+            cl.z,
+            groove_surface_z(x),
+            winner.map(|(z, _)| z.label()).unwrap_or("(none)"),
+            winner
+                .map(|(_, f)| if f { "yes" } else { "no" })
+                .unwrap_or("-")
+        );
+    }
+    if let Some((d, x)) = worst {
+        eprintln!("  worst tool-tip-below-surface across the sweep: {d:.1} um at x {x:.3}");
+    }
+
+    eprintln!(
+        "\n  probe complete. Column winner: {}; move winner: {}.",
+        col_winner.map(GrooveZone::label).unwrap_or("(none)"),
+        mv_winner.map(GrooveZone::label).unwrap_or("(none)")
+    );
+}
