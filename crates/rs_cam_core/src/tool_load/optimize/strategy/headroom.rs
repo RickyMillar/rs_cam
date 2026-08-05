@@ -604,6 +604,8 @@ mod stage0_solve_tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
             row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         };
@@ -653,6 +655,8 @@ mod stage0_solve_tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
             row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         };
