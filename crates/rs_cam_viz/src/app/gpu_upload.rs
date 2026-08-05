@@ -596,16 +596,17 @@ impl RsCamApp {
                 && let Some(setup) = active_setup_ref.as_ref()
                 && let Some(sd) = active_session_setup
             {
-                use crate::state::runtime::{Corner, XYDatum};
+                use rs_cam_core::session::{Corner, XYDatum};
 
                 let (eff_w, eff_d, eff_h) = setup.effective_stock(&stock);
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
 
-                // Read datum from SetupRuntime
-                let datum = state.gui.setup_rt.get(&sd.id).map(|sr| &sr.datum);
+                // The datum is persisted project state (W9 / P-2), read
+                // straight off the setup instead of a GUI-side overlay.
+                let datum = &sd.datum;
 
                 // Datum in setup-local frame: XY at corner/center, Z at top surface
-                let local_datum: Option<P3> = datum.and_then(|d| match &d.xy_method {
+                let local_datum: Option<P3> = match &datum.xy_method {
                     XYDatum::CornerProbe(corner) => {
                         let x = match corner {
                             Corner::FrontLeft | Corner::BackLeft => 0.0,
@@ -619,7 +620,7 @@ impl RsCamApp {
                     }
                     XYDatum::CenterOfStock => Some(P3::new(eff_w / 2.0, eff_d / 2.0, eff_h)),
                     _ => None,
-                });
+                };
 
                 if let Some(local) = local_datum {
                     // Always in local frame — use local coords directly.

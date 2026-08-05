@@ -1,8 +1,7 @@
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
-use crate::state::runtime::{Corner, SetupRuntime, XYDatum, ZDatum};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
-use rs_cam_core::session::{Fixture, FixtureKind, KeepOutZone, SetupData};
+use rs_cam_core::session::{Corner, Fixture, FixtureKind, KeepOutZone, SetupData, XYDatum, ZDatum};
 
 fn fixture_kind_label(kind: FixtureKind) -> &'static str {
     match kind {
@@ -31,7 +30,6 @@ pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,
     setup_data: &mut SetupData,
-    setup_rt: &mut SetupRuntime,
     pin_count: usize,
     has_flip_axis: bool,
     all_models: &[(ModelId, String)],
@@ -110,7 +108,7 @@ pub fn draw(
             .color(egui::Color32::from_rgb(180, 180, 195)),
     );
 
-    let xy_label = match &setup_rt.datum.xy_method {
+    let xy_label = match &setup_data.datum.xy_method {
         XYDatum::CornerProbe(corner) => format!("Corner Probe ({})", corner.label()),
         XYDatum::CenterOfStock => "Center of Stock".into(),
         XYDatum::AlignmentPins => "Alignment Pins".into(),
@@ -125,88 +123,88 @@ pub fn draw(
                     let label = format!("Corner Probe ({})", corner.label());
                     if ui
                         .selectable_label(
-                            setup_rt.datum.xy_method == XYDatum::CornerProbe(corner),
+                            setup_data.datum.xy_method == XYDatum::CornerProbe(corner),
                             &label,
                         )
                         .clicked()
                     {
-                        setup_rt.datum.xy_method = XYDatum::CornerProbe(corner);
+                        setup_data.datum.xy_method = XYDatum::CornerProbe(corner);
                         events.push(AppEvent::FixtureChanged);
                     }
                 }
                 if ui
                     .selectable_label(
-                        setup_rt.datum.xy_method == XYDatum::CenterOfStock,
+                        setup_data.datum.xy_method == XYDatum::CenterOfStock,
                         "Center of Stock",
                     )
                     .clicked()
                 {
-                    setup_rt.datum.xy_method = XYDatum::CenterOfStock;
+                    setup_data.datum.xy_method = XYDatum::CenterOfStock;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        setup_rt.datum.xy_method == XYDatum::AlignmentPins,
+                        setup_data.datum.xy_method == XYDatum::AlignmentPins,
                         "Alignment Pins",
                     )
                     .clicked()
                 {
-                    setup_rt.datum.xy_method = XYDatum::AlignmentPins;
+                    setup_data.datum.xy_method = XYDatum::AlignmentPins;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
-                    .selectable_label(setup_rt.datum.xy_method == XYDatum::Manual, "Manual")
+                    .selectable_label(setup_data.datum.xy_method == XYDatum::Manual, "Manual")
                     .clicked()
                 {
-                    setup_rt.datum.xy_method = XYDatum::Manual;
+                    setup_data.datum.xy_method = XYDatum::Manual;
                     events.push(AppEvent::FixtureChanged);
                 }
             });
     });
 
-    let z_label = setup_rt.datum.z_method.label();
+    let z_label = setup_data.datum.z_method.label();
     ui.horizontal(|ui| {
         ui.label("Z Method:");
         egui::ComboBox::from_id_salt("z_datum")
             .selected_text(&z_label)
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(setup_rt.datum.z_method == ZDatum::StockTop, "Stock Top")
+                    .selectable_label(setup_data.datum.z_method == ZDatum::StockTop, "Stock Top")
                     .clicked()
                 {
-                    setup_rt.datum.z_method = ZDatum::StockTop;
+                    setup_data.datum.z_method = ZDatum::StockTop;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        setup_rt.datum.z_method == ZDatum::MachineTable,
+                        setup_data.datum.z_method == ZDatum::MachineTable,
                         "Machine Table",
                     )
                     .clicked()
                 {
-                    setup_rt.datum.z_method = ZDatum::MachineTable;
+                    setup_data.datum.z_method = ZDatum::MachineTable;
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
                     .selectable_label(
-                        matches!(setup_rt.datum.z_method, ZDatum::FixedOffset(_)),
+                        matches!(setup_data.datum.z_method, ZDatum::FixedOffset(_)),
                         "Fixed Offset",
                     )
                     .clicked()
                 {
-                    setup_rt.datum.z_method = ZDatum::FixedOffset(0.0);
+                    setup_data.datum.z_method = ZDatum::FixedOffset(0.0);
                     events.push(AppEvent::FixtureChanged);
                 }
                 if ui
-                    .selectable_label(setup_rt.datum.z_method == ZDatum::Manual, "Manual")
+                    .selectable_label(setup_data.datum.z_method == ZDatum::Manual, "Manual")
                     .clicked()
                 {
-                    setup_rt.datum.z_method = ZDatum::Manual;
+                    setup_data.datum.z_method = ZDatum::Manual;
                     events.push(AppEvent::FixtureChanged);
                 }
             });
     });
-    if let ZDatum::FixedOffset(ref mut z) = setup_rt.datum.z_method {
+    if let ZDatum::FixedOffset(ref mut z) = setup_data.datum.z_method {
         ui.horizontal(|ui| {
             ui.label("  Z Offset:");
             if ui
@@ -220,7 +218,10 @@ pub fn draw(
 
     ui.horizontal(|ui| {
         ui.label("Notes:");
-        if ui.text_edit_singleline(&mut setup_rt.datum.notes).changed() {
+        if ui
+            .text_edit_singleline(&mut setup_data.datum.notes)
+            .changed()
+        {
             events.push(AppEvent::FixtureChanged);
         }
     });
@@ -234,7 +235,7 @@ pub fn draw(
                 .small()
                 .color(egui::Color32::from_rgb(140, 180, 140)),
         );
-    } else if setup_rt.datum.xy_method == XYDatum::AlignmentPins {
+    } else if setup_data.datum.xy_method == XYDatum::AlignmentPins {
         ui.label(
             egui::RichText::new("No pins defined — add them in Stock properties")
                 .small()
@@ -256,7 +257,7 @@ pub fn draw(
                 .color(egui::Color32::from_rgb(120, 120, 130)),
         );
     } else {
-        if setup_rt.model_ids.is_empty() {
+        if setup_data.model_ids.is_empty() {
             ui.label(
                 egui::RichText::new("All models (unconstrained)")
                     .small()
@@ -265,27 +266,33 @@ pub fn draw(
         }
         for &(model_id, ref model_name) in all_models {
             let mut checked =
-                setup_rt.model_ids.is_empty() || setup_rt.model_ids.contains(&model_id);
+                setup_data.model_ids.is_empty() || setup_data.model_ids.contains(&model_id);
             if ui.checkbox(&mut checked, model_name.as_str()).changed() {
                 if checked {
                     // When toggling on: if currently "all", start explicit list with this one.
-                    if setup_rt.model_ids.is_empty() {
+                    if setup_data.model_ids.is_empty() {
                         // On check: if explicit list exists, add to it.
-                        setup_rt.model_ids.push(model_id);
-                    } else if !setup_rt.model_ids.contains(&model_id) {
-                        setup_rt.model_ids.push(model_id);
+                        setup_data.model_ids.push(model_id);
+                    } else if !setup_data.model_ids.contains(&model_id) {
+                        setup_data.model_ids.push(model_id);
                     }
                     // If all models are now checked, revert to empty (= all).
-                    if setup_rt.model_ids.len() == all_models.len() {
-                        setup_rt.model_ids.clear();
+                    if setup_data.model_ids.len() == all_models.len() {
+                        setup_data.model_ids.clear();
                     }
                 } else {
                     // When toggling off: if currently "all", materialise the full list first.
-                    if setup_rt.model_ids.is_empty() {
-                        setup_rt.model_ids = all_models.iter().map(|(id, _)| *id).collect();
+                    if setup_data.model_ids.is_empty() {
+                        setup_data.model_ids = all_models.iter().map(|(id, _)| *id).collect();
                     }
-                    setup_rt.model_ids.retain(|id| *id != model_id);
+                    setup_data.model_ids.retain(|id| *id != model_id);
                 }
+                // W9 / P-2: this toggle used to write a GUI overlay that
+                // was never saved, so nothing marked the project dirty.
+                // It now writes persisted project state, and an edit
+                // that does not set the dirty flag is an edit the user
+                // can lose by closing the window.
+                events.push(AppEvent::FixtureChanged);
             }
         }
     }

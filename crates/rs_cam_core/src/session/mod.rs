@@ -39,7 +39,9 @@ use crate::compute::config::{
     BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
 };
 use crate::compute::simulate::SimulationResult;
-use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
+use crate::compute::stock_config::{
+    FixtureId, KeepOutId, ModelId, ModelKind, ModelUnits, StockConfig,
+};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
@@ -422,6 +424,174 @@ impl KeepOutZone {
     }
 }
 
+// ── Setup datum (W9 / P-2) ─────────────────────────────────────────────
+//
+// The datum is how the operator ties the model's origin to the physical
+// machine before pressing start. It lived only in the GUI overlay
+// (`rs_cam_viz`'s `SetupRuntime`) and had no home on the wire, so every
+// save dropped it: set "Z Datum = Machine Table", reload, and the panel
+// read "Stock Top" again with nothing in the file to say otherwise. It
+// is operator-set and safety-relevant, so it belongs to the project, not
+// to a window. `to_key`/`from_key` follow `FixtureKind`'s convention and
+// use the same spellings the viz fallback schema already wrote.
+
+/// Which corner of the stock the operator probes for the XY datum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Corner {
+    #[default]
+    FrontLeft,
+    FrontRight,
+    BackLeft,
+    BackRight,
+}
+
+impl Corner {
+    pub const ALL: &[Corner] = &[
+        Corner::FrontLeft,
+        Corner::FrontRight,
+        Corner::BackLeft,
+        Corner::BackRight,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Corner::FrontLeft => "Front-Left",
+            Corner::FrontRight => "Front-Right",
+            Corner::BackLeft => "Back-Left",
+            Corner::BackRight => "Back-Right",
+        }
+    }
+
+    pub fn to_key(&self) -> &'static str {
+        match self {
+            Corner::FrontLeft => "fl",
+            Corner::FrontRight => "fr",
+            Corner::BackLeft => "bl",
+            Corner::BackRight => "br",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        match s {
+            "fr" => Corner::FrontRight,
+            "bl" => Corner::BackLeft,
+            "br" => Corner::BackRight,
+            _ => Corner::FrontLeft,
+        }
+    }
+}
+
+/// How the operator establishes XY zero for this setup.
+#[derive(Debug, Clone, PartialEq)]
+pub enum XYDatum {
+    CornerProbe(Corner),
+    CenterOfStock,
+    AlignmentPins,
+    Manual,
+}
+
+impl Default for XYDatum {
+    fn default() -> Self {
+        XYDatum::CornerProbe(Corner::FrontLeft)
+    }
+}
+
+impl XYDatum {
+    pub fn label(&self) -> &str {
+        match self {
+            XYDatum::CornerProbe(c) => match c {
+                Corner::FrontLeft => "Corner Probe (Front-Left)",
+                Corner::FrontRight => "Corner Probe (Front-Right)",
+                Corner::BackLeft => "Corner Probe (Back-Left)",
+                Corner::BackRight => "Corner Probe (Back-Right)",
+            },
+            XYDatum::CenterOfStock => "Center of Stock",
+            XYDatum::AlignmentPins => "Alignment Pins",
+            XYDatum::Manual => "Manual",
+        }
+    }
+
+    pub fn to_key(&self) -> String {
+        match self {
+            XYDatum::CornerProbe(c) => format!("corner_{}", c.to_key()),
+            XYDatum::CenterOfStock => "center".into(),
+            XYDatum::AlignmentPins => "pins".into(),
+            XYDatum::Manual => "manual".into(),
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        if let Some(corner) = s.strip_prefix("corner_") {
+            XYDatum::CornerProbe(Corner::from_key(corner))
+        } else {
+            match s {
+                "center" => XYDatum::CenterOfStock,
+                "pins" => XYDatum::AlignmentPins,
+                "manual" => XYDatum::Manual,
+                _ => XYDatum::default(),
+            }
+        }
+    }
+}
+
+/// How the operator establishes Z zero for this setup.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ZDatum {
+    #[default]
+    StockTop,
+    MachineTable,
+    FixedOffset(f64),
+    Manual,
+}
+
+impl ZDatum {
+    pub fn label(&self) -> String {
+        match self {
+            ZDatum::StockTop => "Stock Top".into(),
+            ZDatum::MachineTable => "Machine Table".into(),
+            ZDatum::FixedOffset(z) => format!("Fixed Offset ({z:.1} mm)"),
+            ZDatum::Manual => "Manual".into(),
+        }
+    }
+
+    pub fn to_key(&self) -> String {
+        match self {
+            ZDatum::StockTop => "stock_top".into(),
+            ZDatum::MachineTable => "table".into(),
+            ZDatum::FixedOffset(z) => format!("offset:{z}"),
+            ZDatum::Manual => "manual".into(),
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        if let Some(val) = s.strip_prefix("offset:") {
+            ZDatum::FixedOffset(val.parse().unwrap_or(0.0))
+        } else {
+            match s {
+                "table" => ZDatum::MachineTable,
+                "manual" => ZDatum::Manual,
+                _ => ZDatum::StockTop,
+            }
+        }
+    }
+}
+
+/// How to establish the work coordinate system for a setup.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DatumConfig {
+    pub xy_method: XYDatum,
+    pub z_method: ZDatum,
+    pub notes: String,
+}
+
+impl DatumConfig {
+    /// True when this is the untouched default — the writer skips the
+    /// keys entirely in that case, so old files stay byte-identical.
+    pub fn is_default(&self) -> bool {
+        *self == DatumConfig::default()
+    }
+}
+
 /// A setup's orientation and toolpath indices.
 pub struct SetupData {
     pub id: usize,
@@ -429,6 +599,16 @@ pub struct SetupData {
     pub face_up: FaceUp,
     /// Rotation of the stock about the vertical (Z) axis.
     pub z_rotation: ZRotation,
+    /// How the operator zeroes the machine for this setup. Persisted
+    /// since W9 / P-2; before that it was GUI-only overlay state and
+    /// was lost on every save.
+    pub datum: DatumConfig,
+    /// Models in scope for this setup. **Empty means "all models"** —
+    /// it is not the same as an explicit list naming every model, and
+    /// it is not derivable from the setup's toolpaths (a toolpath names
+    /// exactly one model; the scope is what the operator allowed, not
+    /// what got used). Persisted for that reason.
+    pub model_ids: Vec<ModelId>,
     /// Workholding fixtures in this setup.
     pub fixtures: Vec<Fixture>,
     /// Keep-out zones in this setup.
@@ -963,6 +1143,8 @@ impl ProjectSession {
                 name: "Setup 1".to_owned(),
                 face_up: FaceUp::default(),
                 z_rotation: ZRotation::default(),
+                datum: DatumConfig::default(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpath_indices: Vec::new(),
@@ -1639,6 +1821,10 @@ mod tests {
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
                 pause_message: None,
+                xy_datum: String::new(),
+                z_datum: String::new(),
+                datum_notes: String::new(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
@@ -1830,6 +2016,10 @@ mod tests {
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
                 pause_message: None,
+                xy_datum: String::new(),
+                z_datum: String::new(),
+                datum_notes: String::new(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {

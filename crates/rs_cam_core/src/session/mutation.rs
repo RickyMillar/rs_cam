@@ -665,6 +665,8 @@ impl ProjectSession {
             name,
             face_up,
             z_rotation: ZRotation::default(),
+            datum: crate::session::DatumConfig::default(),
+            model_ids: Vec::new(),
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpath_indices: Vec::new(),
