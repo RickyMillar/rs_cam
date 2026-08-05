@@ -196,6 +196,31 @@ impl RefuseReason {
 /// `tool_load::suggest::project_suggestions` access pattern — this
 /// function does just the LUT match without the full feed/RPM
 /// recommendation machinery the optimizer made redundant.
+///
+/// # ⚠ Unit caveat for the viewport heatmap — reported 2026-08-06, NOT fixed
+///
+/// The band this returns is a linear **advance per tooth**
+/// (`CHIPLOAD_LITERATURE_VERDICT.md` §2, verified per source family).
+/// Its one GUI consumer colours segments by
+/// `max(effective_chip_thickness_mm)` per move
+/// (`rs_cam_viz::app::gpu_upload::build_chipload_per_move` →
+/// `render::toolpath_render::chipload_segment_color`), which is an
+/// arc-mean **chip thickness**. Those are different quantities, and the
+/// heatmap therefore paints "rubbing risk" blue over cuts that are not
+/// rubbing — the same defect the post-sim chipload gate carried until
+/// 2026-08-06 and the same direction (the chip reads low against an
+/// advance band, by `1/mean_chip_factor(arc)`, which is 1.6× at a full
+/// slot and larger at every narrower engagement).
+///
+/// Deliberately not fixed here. The band is correct; the consumer picks
+/// the wrong per-move quantity, the fix is one line in a crate this wave
+/// does not own, and it is a *visible* change to an operator-facing
+/// surface that should ship with a screenshot rather than inside a
+/// core-side unit conversion. Owner: the viz/MCP lane. Re-open
+/// condition: none needed — it is named here and in the wave's log
+/// entry. The honest per-move quantity is
+/// `effective_feed_for_sample(s) / (rpm · flutes)`, which is what the
+/// gate now reports.
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,

@@ -732,6 +732,36 @@ enum ArcFitDispatch {
 /// | Profile | 0.80 | Default | side-step, mostly full-flute height |
 /// | Trace, Chamfer, Pencil, Inlay, Face | 0.50 | Default | conservative middle |
 /// | Drill, AlignmentPinDrill, VCarve, ProjectCurve | — | NotApplicable | feature-driven or Z-only |
+/// # ⚠ STALE SINCE 2026-08-06 — this table predicts a quantity the gate
+/// # no longer reports. NOT fixed here, on purpose.
+///
+/// Every ratio below was fitted against the post-sim chipload gate's
+/// **arc-mean chip thickness** observation. That observation was deleted
+/// on 2026-08-06: the gate now reports `effective_feed / (rpm · flutes)`,
+/// a linear advance per tooth (`tool_load::chipload`'s header, and
+/// `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for the
+/// primary sources). Against that observation the correct arc-fit ratio
+/// is the **achieved/commanded feed ratio**, which this pre-sim
+/// predictor cannot know — not a per-operation-family constant, because
+/// the quantity the constants approximate no longer exists.
+///
+/// B-lit §3.3 and §6.1 (C-13 / F-5) rule the disposition explicitly:
+/// **retire this table, do not re-key it.** The census's earlier advice
+/// — "replace with `f_lut × expected_feed_ratio`" — is superseded.
+///
+/// It is left standing here because retiring it is a *number-moving*
+/// change to Suggest, not to the gate: `feeds::suggest::recalibrate_feed_for_chipload`
+/// solves `target_nominal = target / arc_fit_ratio` and is gated on
+/// `ArcFitRatioSource::Calibrated`, so today only Adaptive3d (0.25) and
+/// DropCutter (0.15) get a feed lift at all. Setting every ratio to 1.0
+/// would (a) change the solved feed on those two families by 4× and
+/// 6.7×, and (b) extend the lift to every other family for the first
+/// time. That is a separate approval with its own before/after, and
+/// folding it into the unit conversion would make the conversion's
+/// verdict-flip table unattributable.
+///
+/// Owner: census T3.5. Re-open condition: none needed — it is the next
+/// item in the same chain.
 fn arc_fit_ratio_for_op(op_type: OperationType) -> ArcFitDispatch {
     use ArcFitRatioSource::{Calibrated, Default as DefSrc};
     match op_type {
@@ -822,6 +852,11 @@ pub struct ObservedChiploadPrediction {
     pub arc_fit_ratio: f64,
     /// Forward-predicted median chipload the gate will report (mm/tooth):
     /// `nominal_mm_per_tooth × arc_fit_ratio`.
+    ///
+    /// ⚠ **Stale since 2026-08-06** — see [`arc_fit_ratio_for_op`]. The
+    /// gate now reports a linear advance per tooth, so the honest
+    /// prediction is `nominal_mm_per_tooth × achieved_feed_ratio`, which
+    /// this pre-sim predictor cannot measure. Owner: census T3.5.
     pub observed_median_mm_per_tooth: f64,
     /// Provenance of the arc-fit ratio — calibrated against a Wanaka
     /// cell, conservative default, or refusal.

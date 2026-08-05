@@ -9,18 +9,40 @@
 //!
 //! - **T1.2.** `"Chipload within band (0.0007 mm/tooth)"` named neither
 //!   the statistic nor the unit, and read as the same quantity as the
-//!   commanded feed-per-tooth an operator had set. It is not: it is an
-//!   arc-mean CHIP thickness renormalised to the matched row's nominal
-//!   arc and evaluated at the kinematically-predicted feed. The live
-//!   validation of 2026-07-30 filed exactly that confusion and could not
-//!   tell it from a real pass.
+//!   commanded feed-per-tooth an operator had set. At the time it was
+//!   not: it was an arc-mean CHIP thickness renormalised to the matched
+//!   row's nominal arc and evaluated at the kinematically-predicted
+//!   feed. The live validation of 2026-07-30 filed exactly that
+//!   confusion and could not tell it from a real pass.
 //! - **T1.5** (census P-10). The commanded feed-per-tooth vs the matched
-//!   band maximum is the ONLY same-unit, same-stage comparison the
-//!   pipeline can make. It was computed at `narrate.rs:426` and thrown
+//!   band maximum was the ONLY same-unit, same-stage comparison the
+//!   pipeline could make. It was computed at `narrate.rs:426` and thrown
 //!   away. On the live operation it read **7.8×**.
 //! - **T1.6.** A row scaled 0.99× and a row scaled 0.38× both reported
 //!   as `vendor_lut`; a `semi_finish` row winning a `finish` query was
 //!   invisible.
+//!
+//! ## Re-pinned 2026-08-06 — the quantity changed, the disclosure rule did not
+//!
+//! `CHIPLOAD_LITERATURE_VERDICT.md` established the vendor column is a
+//! linear advance per tooth, so the gate's chip-geometry stage was
+//! deleted and the observation became `effective_feed / (rpm · flutes)`.
+//! Two T1.2 assertions below were pinned to the OLD quantity's wording
+//! and are restated, not dropped:
+//!
+//! - `contains("chip thickness")` → `contains("feed-per-tooth")`. The
+//!   rule T1.2 encodes is *"name the quantity"*, and the quantity moved.
+//! - `contains("arc factor")` → asserted **ABSENT**. A message that
+//!   still named an arc-normalisation multiplier would be describing a
+//!   step that no longer runs, which is the exact "stale rationale
+//!   outliving the code" class the programme's P11 names. Asserting its
+//!   absence is stronger than deleting the assertion.
+//!
+//! T1.5's `"same unit, same stage"` clause is unchanged and is now
+//! *more* true, not less: the gate's own observation joined the same
+//! unit. What the alarm loses is its **uniqueness** — it is no longer
+//! the only legitimate comparison — which is recorded here and is why
+//! `FeedExplanation::gate_over_band_max` exists beside it.
 //!
 //! Nothing here moves a verdict, a threshold or a severity. The T1.5
 //! diagnostic is `Info` per the standing B6 ruling and deliberately
@@ -164,10 +186,22 @@ fn the_chipload_message_names_its_statistic_unit_and_multipliers() {
         .expect("the fixture must produce a chipload diagnostic");
     eprintln!("\n  chipload message:\n    {}\n", chipload.message);
 
+    // Case-insensitive: the same clause appears sentence-initial on the
+    // trip arm ("Feed-per-tooth too high ...") and mid-sentence on the
+    // Within arm ("Observed feed-per-tooth within band ...").
     assert!(
-        chipload.message.contains("chip thickness"),
-        "the message must name the quantity as a CHIP THICKNESS, not a bare \
-         \"chipload\": {}",
+        chipload.message.to_lowercase().contains("feed-per-tooth"),
+        "the message must name the quantity as a FEED-PER-TOOTH (linear advance), \
+         not a bare \"chipload\": {}",
+        chipload.message
+    );
+    // RESTATED 2026-08-06 (was: must CONTAIN "chip thickness"). The gate
+    // stopped observing a chip thickness; a message that still said so
+    // would be a stale rationale outliving the code.
+    assert!(
+        !chipload.message.to_lowercase().contains("chip thickness"),
+        "the message must NOT name a chip thickness — the gate has not observed \
+         one since the 2026-08-06 unit conversion: {}",
         chipload.message
     );
     assert!(
@@ -176,10 +210,12 @@ fn the_chipload_message_names_its_statistic_unit_and_multipliers() {
         "the message must name WHICH order statistic it quotes: {}",
         chipload.message
     );
+    // RESTATED 2026-08-06 (was: must CONTAIN "arc factor"). There is no
+    // arc normalisation left to name.
     assert!(
-        chipload.message.contains("arc factor"),
-        "the message must name the arc-normalisation multiplier separating it \
-         from the commanded value: {}",
+        !chipload.message.contains("arc factor"),
+        "the message must NOT name an arc-normalisation multiplier — D9 is \
+         deleted and no such step runs: {}",
         chipload.message
     );
     assert!(
@@ -226,6 +262,37 @@ fn the_commanded_over_band_alarm_is_surfaced() {
     assert!(
         alarm.evidence.is_some(),
         "the alarm must cite the band it compared against"
+    );
+}
+
+#[test]
+fn the_gate_observation_is_now_on_the_same_axis_as_the_alarm() {
+    // The conversion's operator-facing payoff, asserted. Before
+    // 2026-08-06 the COMMANDED-vs-band alarm and the gate's own verdict
+    // were on different axes, so an operator could read "7.8x over the
+    // band" and "Within" and have no way to relate them. They are now
+    // the same measure at two feeds, and their ratio is the kinematic
+    // throttle.
+    let v = verdict();
+    let e = v
+        .feed_explanation
+        .as_deref()
+        .expect("the fixture reaches a modelled verdict");
+    let commanded_ratio = e.commanded_over_band_max().expect("band max is positive");
+    let achieved_ratio = e.gate_over_band_max().expect("gate observation is finite");
+    eprintln!(
+        "  commanded {commanded_ratio:.2}x band max -> achieved {achieved_ratio:.2}x \
+         (throttle {:.4})",
+        achieved_ratio / commanded_ratio
+    );
+    assert_eq!(
+        e.commanded.unit(),
+        e.gate.unit(),
+        "the alarm's axis and the gate's axis must be the same unit"
+    );
+    assert!(
+        (achieved_ratio / commanded_ratio - PREDICTED_FEED_FRACTION).abs() < 1e-6,
+        "the two ratios must differ by exactly the achieved-feed ratio"
     );
 }
 

@@ -152,6 +152,124 @@ pub struct ToolpathNarrationContext<'a> {
     pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
 }
 
+/// Is this toolpath a drill cycle, for the purposes of
+/// [`ToolpathNarrationContext::is_drill_cycle`]?
+///
+/// The flag exists to suppress engagement/air-cut narration on **Z-only
+/// kinematics**: the engagement model is XY-only, so a plunge reads 0 %
+/// engagement and 100 % air, and narrating that as an anomaly is noise.
+/// So the question this answers is not "does this path contain a drill" but
+/// "is this path's cutting entirely vertical".
+///
+/// **B7 divergence 1, resolved 2026-08-06.** The two narrations disagreed
+/// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.D.5):
+///
+/// - core asked `op_type().is_drill_kinematics()` — blind to any generator
+///   that emits `MoveIntent::Drilling` without declaring a drill op type;
+/// - the GUI asked op-type **OR any** `Drilling` move — which reports a drill
+///   cycle for a v-carve that merely *entered* with a drilled hole, and so
+///   suppresses that op's air-cut anomaly. W8 named that as the consequence.
+///
+/// This is neither: a drill op type still qualifies outright, and otherwise
+/// the path qualifies only when it drills and does **no** non-vertical
+/// cutting. That keeps the GUI's intent signal (a legacy generator's
+/// Z-only path is recognised) while removing the false positive it bought.
+pub fn is_drill_cycle_for_narration(
+    op_type: crate::compute::catalog::OperationType,
+    moves: &[crate::toolpath::Move],
+) -> bool {
+    use crate::toolpath::MoveIntent;
+    if op_type.is_drill_kinematics() {
+        return true;
+    }
+    let mut drilled = false;
+    for m in moves {
+        match m.intent {
+            MoveIntent::Drilling => drilled = true,
+            // Cutting that is NOT a plunge — the engagement model applies,
+            // so this toolpath is not a Z-only cycle whatever else it does.
+            MoveIntent::ClearingCut
+            | MoveIntent::FinishingCut
+            | MoveIntent::EntryHelix
+            | MoveIntent::EntryRamp
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut => return false,
+            // Plunges, links, retracts and unlabelled moves say nothing
+            // either way.
+            _ => {}
+        }
+    }
+    drilled
+}
+
+impl<'a> ToolpathNarrationContext<'a> {
+    /// The ONE join from [`crate::compute::config::ToolpathStats`] into
+    /// narration.
+    ///
+    /// **Exhaustive by construction.** The destructuring below names every
+    /// field of `ToolpathStats` with no `..` rest pattern, so adding an
+    /// eighteenth finding fails to compile *here* until somebody decides, in
+    /// writing, whether narration carries it. A channel narration
+    /// deliberately does not carry is bound to `_` with a comment saying
+    /// why — never elided.
+    ///
+    /// **Why it exists (B7).** Two hand-written literals populated these
+    /// fields independently — `session/compute.rs`'s and
+    /// `crates/rs_cam_viz/src/app/mcp.rs`'s — and a new `ToolpathStats`
+    /// channel needed three coordinated edits with the compiler enforcing
+    /// only that the *context* be complete, never that it be **fed**. Both
+    /// were exhaustive when W8 audited them
+    /// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md`
+    /// §3.D.5), so this closes a latent hazard rather than a live divergence
+    /// — but the struct derives `Default`, so either literal could have been
+    /// "tidied" with `..Default::default()` and started silently defaulting.
+    ///
+    /// Callers set the identity/tool/material fields themselves and then
+    /// call this; it touches nothing but the stats-derived channels.
+    pub fn absorb_stats(&mut self, stats: &crate::compute::config::ToolpathStats) {
+        let crate::compute::config::ToolpathStats {
+            // Narration walks the move list itself, so these three are
+            // recomputed rather than carried — they are not findings.
+            move_count: _,
+            cutting_distance: _,
+            rapid_distance: _,
+
+            truncated_core_mm2,
+            untouched_material_mm2,
+            reached_uncut_estimate_mm2,
+            dropped_band,
+            tip_float,
+            clipped_band,
+            ramp_reach_clamp,
+            retract_trips,
+            zero_removal,
+            offset_library_failures,
+            boundary_clip_dropped,
+
+            // NOT rendered by narration. Deliberate, and listed so the
+            // omission is a decision on the record rather than an oversight:
+            //  - deprecated_dial:   surfaced as a load/diagnostic notice
+            //  - derived_stepovers: an audit trail, not a part measurement
+            //  - claims_reference:  surfaced by `get_toolpath_params.runtime`
+            deprecated_dial: _,
+            derived_stepovers: _,
+            claims_reference: _,
+        } = stats;
+
+        self.truncated_core_mm2 = *truncated_core_mm2;
+        self.untouched_material_mm2 = *untouched_material_mm2;
+        self.reached_uncut_estimate_mm2 = *reached_uncut_estimate_mm2;
+        self.dropped_band = dropped_band.as_deref().copied();
+        self.clipped_band = clipped_band.as_deref().copied();
+        self.ramp_reach_clamp = ramp_reach_clamp.as_deref().copied();
+        self.tip_float = *tip_float;
+        self.retract_trips = *retract_trips;
+        self.zero_removal = *zero_removal;
+        self.offset_library_failures = *offset_library_failures;
+        self.boundary_clip_dropped = *boundary_clip_dropped;
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ZLevelSummary {
     z: f64,
@@ -452,12 +570,17 @@ fn append_operation_context(output: &mut String, context: &ToolpathNarrationCont
     {
         let chipload = feed / f64::from(rpm) / f64::from(flutes);
         // T1.2 — say which quantity this is. It is the COMMANDED linear
-        // advance per tooth, the axis vendor tables are published on. It
-        // is NOT the chipload gate's number, which is an arc-mean chip
-        // thickness at the matched row's nominal arc, evaluated at the
-        // kinematically-predicted feed — routinely two orders of
-        // magnitude smaller. Calling both "chipload" is what produced
-        // the four-disagreeing-numbers report of 2026-07-30.
+        // advance per tooth, the axis vendor tables are published on.
+        //
+        // Until 2026-08-06 this line also carried a disclaimer that it
+        // was "not the chipload gate's chip-thickness reading". That
+        // disclaimer is now FALSE and has been removed: the gate observes
+        // the same quantity, at the kinematically-achieved feed rather
+        // than the commanded one (`tool_load::chipload`'s header, and
+        // `CHIPLOAD_LITERATURE_VERDICT.md` for why). The two still differ
+        // — routinely by a large factor on a corner-heavy 3D path — but
+        // they differ by a *feed ratio*, not by a change of quantity,
+        // which is a difference an operator can act on.
         //
         // The comparison of this value against the matched vendor band
         // (census T1.5) is a diagnostic, `load.chipload.commanded_above_band`
@@ -465,7 +588,7 @@ fn append_operation_context(output: &mut String, context: &ToolpathNarrationCont
         // and leaves the comparison to the channel that has the band.
         parts.push(format!(
             "commanded feed-per-tooth {:.4}mm/tooth (linear advance; \
-             not the chipload gate's chip-thickness reading)",
+             the chipload gate reports the same quantity at the achieved feed)",
             chipload
         ));
     }

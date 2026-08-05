@@ -97,11 +97,20 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 ///
 /// Pre-T1.2 the messages said "Chipload ... mm/tooth", which named
 /// neither the statistic nor the unit and read as if it were the same
-/// quantity as the commanded feed-per-tooth. It is not: it is an
-/// arc-mean CHIP thickness renormalised to the matched row's nominal
-/// arc and evaluated at the kinematically-predicted feed. On the live
-/// 2026-07-30 operation those two multipliers accounted for a 97×
-/// difference, and nothing on screen mentioned either of them.
+/// quantity as the commanded feed-per-tooth. At the time it was not: it
+/// was an arc-mean CHIP thickness renormalised to the matched row's
+/// nominal arc and evaluated at the kinematically-predicted feed, and on
+/// the live 2026-07-30 operation those two multipliers accounted for a
+/// 97× difference with nothing on screen mentioning either.
+///
+/// Since the 2026-08-06 unit conversion it **is** the same quantity as
+/// the commanded feed-per-tooth, evaluated at the achieved feed
+/// (`tool_load::chipload`'s header). The qualifier stays, and stays
+/// mandatory: it now discloses the one remaining multiplier, which is
+/// the kinematic throttle — the fact the verdict document calls
+/// operator-actionable. An operator reading "0.0092 mm/tooth, Within"
+/// beside a commanded 0.0714 is being told something real, and the
+/// clause is where it gets told.
 ///
 /// Empty when no explanation is available, so the message degrades to
 /// its old shape rather than asserting something unmeasured.
@@ -244,7 +253,7 @@ fn chipload_to_diagnostic(
             let provenance = row_provenance_clause(explanation);
             let message = match burn_advisory.as_deref() {
                 Some(advisory) => format!(
-                    "Observed chip thickness {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
+                    "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
                      — not refused because the floor's provenance is {} (advisory only)\
                      {qualifier}{provenance}",
                     advisory.observed_mm_per_tooth,
@@ -252,7 +261,7 @@ fn chipload_to_diagnostic(
                     advisory.bounds.source.row_id(),
                 ),
                 None => format!(
-                    "Observed chip thickness within band ({:.4} mm){qualifier}{provenance}",
+                    "Observed feed-per-tooth within band ({:.4} mm){qualifier}{provenance}",
                     approach_to_max.observed_mm_per_tooth
                 ),
             };
@@ -291,11 +300,11 @@ fn chipload_to_diagnostic(
             let (id_str, msg_prefix) = match side {
                 crate::tool_load::verdict::ChipSide::Low => (
                     ids::LOAD_CHIPLOAD_LOW,
-                    "Chip thickness too low — burn / rubbing risk",
+                    "Feed-per-tooth too low — burn / rubbing risk",
                 ),
                 crate::tool_load::verdict::ChipSide::High => (
                     ids::LOAD_CHIPLOAD_HIGH,
-                    "Chip thickness too high — breakage risk",
+                    "Feed-per-tooth too high — breakage risk",
                 ),
             };
             // T1.2 — same qualifier on the trip arm as on the Within

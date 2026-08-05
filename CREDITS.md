@@ -137,6 +137,54 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+### Chipload column convention
+
+The vendor `chipload_*_mm_tooth` columns in
+`crates/rs_cam_core/data/vendor_lut/observations/` are **linear advance per
+tooth** — `feed_rate ÷ (spindle_rpm × cutting_edges)` — not chip thickness.
+Verified 2026-08-04 against the publishers' own definitions (see
+`planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for verbatim
+quotations, access dates and the per-family confidence table):
+
+- **LMT Onsrud**, *Hard Wood* / *Soft Wood Cutting Data Recommendations* —
+  <https://www.onsrud.com/images/Hard%20Wood.pdf>,
+  <https://www.onsrud.com/images/Soft%20Wood.pdf> (accessed 2026-08-04).
+  Column: "Recommended Chip Load per Tooth by Cutting Diameter". Prints
+  "Chip Load = Feed Rate / (RPM x # of cutting edges)".
+- **Freud**, *Router Bit Feed Rates and Speeds for CNC* (2017-08-22) —
+  <https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf>
+  (accessed 2026-08-04). Prints the same identity plus a worked example.
+- **Amana Tool**, *ZrN 2D/3D Carving Feed and Chip Load Chart* and siblings —
+  column "Chip Load Per Tooth (Based on 18,000 RPM)"; prints
+  "To find Chip Load = IPM / (RPM x # of Flutes)". The charts publish IPM and
+  chip load side by side at fixed RPM, so the identity is self-verifying to the
+  chart's printed precision. Retrieved 2026-08-04 via the ToolsToday mirror
+  <https://toolstoday.com/content/ProductFile/Attachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf>
+  (amanatool.com returns HTTP 403 to automated fetch).
+- **Garr Tool**, *Chip Thinning* —
+  <https://www.garrtool.com/knowledge-base/chip-thinning/> (accessed 2026-08-04).
+  Establishes that the published chip load is the **programmed** feed per tooth
+  and equals the maximum chip thickness only at radial engagement >= 50 % of
+  diameter.
+
+The axial derate applied by `feeds::geometry::doc_derating_scale`
+(1.00 / 0.75 / 0.50 at DOC = 1 / 2 / 3 x D) is published verbatim and identically
+by all three wood vendors above.
+
+No wood source in the shipped LUT publishes a **radial** engagement condition
+for its chipload column; the `ae_min_mm` / `ae_max_mm` values on wood rows are
+repo-authored application windows (their `ae_rule` strings say so — "scallop
+driven", "10% to 30%D", "width-at-depth") and carry no vendor authority. The
+post-simulation chipload gate consumed them until 2026-08-06 and no longer does.
+
+The scaling exponents in `feeds::vendor_lookup` (diameter, hardness) are
+**shipped at `^1.0`** and are repo-authored. `CHIPLOAD_LITERATURE_VERDICT.md` §4
+regresses the shipped vendor charts and recommends `D^0.61` / `Janka^-0.5`, with
+lineage and stated uncertainty; that recommendation is **not adopted** and its
+measured cost is in `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`
+pending a separate approval. Neither exponent is a physical constant and neither
+should be cited as one.
+
 ### Feed-aware lateral cutting-force model (deflection)
 
 `crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection

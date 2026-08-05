@@ -19,29 +19,46 @@
 //! | gate observed | 0.000737 |
 //! | gate band | 0.00458 – 0.00916 |
 //!
-//! Three of those are the same physical quantity at three stages; one is
-//! a different quantity wearing the same label. The census closed the
-//! arithmetic exactly (§4.3):
+//! The census closed the arithmetic exactly (§4.3): the gate's number
+//! was the commanded feed-per-tooth times a chip-geometry factor times
+//! the achieved/commanded feed ratio. Every term was computed inside
+//! `tool_load::chipload` and then **discarded**. This record keeps them,
+//! each under its own name and unit.
+//!
+//! ## What changed on 2026-08-06 — the chip-geometry stage is gone
+//!
+//! `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` answered
+//! Checkpoint B item T4.1 from primary sources: **every vendor family in
+//! the shipped LUT publishes its chipload column as a linear advance per
+//! tooth**, `feed ÷ (rpm × cutting edges)` — printed as a defining
+//! identity by Onsrud, Freud, Amana and Garr, and numerically
+//! self-verifying on the Amana chart behind the live B3 row. No wood
+//! source publishes a *radial* engagement condition for the column at
+//! all; the LUT's `ae` windows are repo-authored application windows
+//! (verdict §2.3), not vendor measurement conditions.
+//!
+//! So the gate's chip-geometry step was not a conversion between two
+//! published quantities — it converted a published advance into a chip
+//! that nothing published. It has been **deleted**, not inverted, and
+//! the gate now observes
 //!
 //! ```text
-//! gate_observed = commanded_fpt × mean_chip_factor(LUT nominal arc)
-//!                              × predicted_feed / commanded_feed
+//! gate_observed = effective_feed / (rpm · flutes)
+//!               = commanded_fpt × predicted_feed / commanded_feed
 //! ```
 //!
-//! Every term on the right is computed inside `tool_load::chipload` and
-//! then **discarded**. This record keeps them, each under its own name
-//! and unit.
+//! which is the same unit as stage 1 and stage 2. The old "stage 3 — LUT
+//! arc" is therefore no longer a stage in this pipeline; the row's `ae`
+//! window survives on [`LutBandStage`] as report-only provenance.
 //!
 //! ## The one rule this type is written under
 //!
-//! **It labels stages. It does not pick a winner.** No method here says
-//! which number is "the" chipload, and none converts between stages —
-//! whether the gate's observation and the vendor band should be
-//! compared in one unit at all is Checkpoint B item T4.1, still open.
-//! [`FeedExplanation::commanded_over_band_max`] is the single ratio
-//! offered, and it is offered precisely because it is the **only
-//! same-unit, same-stage comparison** available (census P-10): both
-//! sides are a linear advance per tooth.
+//! **It labels stages. It does not pick a winner.** What it may now also
+//! say — because the literature settled it, not because this module
+//! decided it — is that stages 1, 2 and 4 are all the **same unit**:
+//! [`ADVANCE_PER_TOOTH`]. [`FeedExplanation::commanded_over_band_max`]
+//! and the gate's own verdict are therefore comparisons of like with
+//! like, differing only by the disclosed achieved-feed ratio.
 
 use serde::{Deserialize, Serialize};
 
@@ -102,7 +119,8 @@ impl CommandedStage {
 /// **Stage 2 — the vendor band, and where it came from.**
 ///
 /// Bounds are post-scaling and post-DOC-derate: exactly the numbers the
-/// verdict is judged against.
+/// verdict is judged against. Unit: linear advance per tooth, verified
+/// per source family in `CHIPLOAD_LITERATURE_VERDICT.md` §2.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LutBandStage {
     /// The matched observation's id, e.g.
@@ -125,6 +143,25 @@ pub struct LutBandStage {
     /// Pass role the winning row actually publishes. **May differ** —
     /// pass role is a scoring term, not a filter (census §5, T4.4).
     pub row_pass_role: LutPassRole,
+    /// The row's calibrated radial-engagement window (mm), if it carries
+    /// one. **Report-only and deliberately inert.**
+    ///
+    /// Until 2026-08-06 the gate derived an engagement arc from the
+    /// midpoint of this window and renormalised its observation to it
+    /// (D9). `CHIPLOAD_LITERATURE_VERDICT.md` §2.3 established that on
+    /// every wood row these values are *repo-authored application
+    /// windows* — `"scallop driven"`, `"10% to 30%D"`, `"width-at-depth"`
+    /// — not transcriptions of a vendor measurement condition. No wood
+    /// chart in the LUT publishes a radial condition for its chipload
+    /// column; all three that state a condition state an axial one. The
+    /// only vendor-published `ae` rules in the whole LUT belong to the
+    /// two metal families, both at or above 0.5 D.
+    ///
+    /// Kept on the record because the operator should be able to see
+    /// what the row claims, and because its absence still classifies the
+    /// bounds source (`ChipBoundsSource::VendorLutMissingAe`). Nothing
+    /// computes with it.
+    pub ae_window_mm: Option<(f64, f64)>,
     /// Lower bound (mm/tooth), `None` when the row publishes no minimum.
     pub min_mm_per_tooth: Option<f64>,
     /// Upper bound (mm/tooth). Always present — the gate rejects rows
@@ -163,26 +200,16 @@ impl LutBandStage {
     }
 }
 
-/// **Stage 3 — the engagement arc the row was authored at.**
+/// **Stage 3 — achieved vs commanded feed.**
 ///
-/// `mean_chip / feed_per_tooth` at that arc: the first of the two
-/// multipliers between stage 1 and stage 5. Dimensionless.
-///
-/// `None` when the row carries no `ae` calibration, in which case the
-/// gate skipped its arc normalisation entirely (`VendorLutMissingAe`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct LutArcStage {
-    pub nominal_arc_rad: Option<f64>,
-    pub mean_chip_factor: Option<f64>,
-}
-
-/// **Stage 4 — achieved vs commanded feed.**
-///
-/// The second multiplier: the substitution
+/// The **only** multiplier between stage 1 and stage 4: the substitution
 /// `tool_load::effective_feed_for_sample` performs when the trace
 /// carries a kinematics-predicted feed map (F-035). On a corner-heavy
 /// 3D path this routinely reads far below 1.0 — the live B3 op ran at
 /// 0.128, i.e. −87 %.
+///
+/// Before 2026-08-06 there was a second multiplier here, a chip-geometry
+/// factor. It is gone; see the module header.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AchievedFeedStage {
     /// True when the trace carried a populated predicted-feed map. When
@@ -193,24 +220,28 @@ pub struct AchievedFeedStage {
     pub median_ratio: Option<f64>,
 }
 
-/// **Stage 5 — what the gate reported.**
+/// **Stage 4 — what the gate reported.**
 ///
-/// Unit is *mm of chip*, not mm of advance: it is an arc-mean chip
-/// thickness renormalised to stage 3's arc and evaluated at stage 4's
-/// feed. That it is compared against a stage-2 band published in mm of
-/// advance is census F-1, and **this record takes no position on it**.
+/// Unit is [`ADVANCE_PER_TOOTH`], the same as stages 1 and 2:
+/// `effective_feed / (rpm · flutes)`, i.e. stage 1 evaluated at stage
+/// 3's achieved feed. Census F-1 — the gate comparing a chip thickness
+/// against a band of advance — is closed by deletion (module header).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GateObservationStage {
     pub statistic: ObservedStatistic,
     pub value_mm: f64,
-    /// Steady-state samples that produced a usable chip thickness.
+    /// Steady-state samples that entered the gate's population.
+    ///
+    /// Still gated on the sample carrying a resolvable chip-thickness
+    /// reading, which the observation itself no longer uses — see
+    /// `tool_load::chipload`'s note on the vestigial validity predicate.
     pub sample_count: usize,
 }
 
 impl GateObservationStage {
     #[must_use]
     pub const fn unit(&self) -> &'static str {
-        "mm of arc-mean chip thickness, at the LUT row's nominal arc"
+        ADVANCE_PER_TOOTH
     }
 }
 
@@ -220,20 +251,25 @@ impl GateObservationStage {
 pub struct FeedExplanation {
     pub commanded: CommandedStage,
     pub band: LutBandStage,
-    pub lut_arc: LutArcStage,
     pub achieved_feed: AchievedFeedStage,
     pub gate: GateObservationStage,
 }
 
 impl FeedExplanation {
-    /// Stage 1 ÷ stage 2's maximum — **the only same-unit, same-stage
-    /// comparison in this record**, and the one nothing surfaced before
-    /// (census P-10 / T1.5).
+    /// Stage 1 ÷ stage 2's maximum — the **commanded** operation against
+    /// the authored band, the comparison nothing surfaced before (census
+    /// P-10 / T1.5).
     ///
     /// Both sides are a linear advance per tooth, so a value of 7.8
     /// means the operation is commanded to advance 7.8× further per
     /// tooth than the matched vendor row's published maximum. `None`
     /// when the band maximum is not positive.
+    ///
+    /// Since 2026-08-06 this is no longer the record's *only* legitimate
+    /// ratio — [`Self::gate_over_band_max`] is the same comparison at the
+    /// achieved feed, and the two differ by exactly stage 3. Reporting
+    /// both, labelled, is what the verdict document calls the
+    /// operator-actionable fact: the kinematic throttle between them.
     #[must_use]
     pub fn commanded_over_band_max(&self) -> Option<f64> {
         if self.band.max_mm_per_tooth > 0.0 {
@@ -243,33 +279,44 @@ impl FeedExplanation {
         }
     }
 
-    /// Stage 1 × stage 3 × stage 4 — the census §4.3 identity, i.e. what
-    /// stage 5 should read if the two multipliers fully explain the
-    /// delta. Returns `None` when either multiplier is unmeasured.
-    ///
-    /// This is a *prediction of* stage 5, never a replacement for it:
-    /// the record always reports the gate's own observation as stage 5.
+    /// Stage 4 ÷ stage 2's maximum — what the operation **achieved**
+    /// against the same band. `None` when the band maximum is not
+    /// positive or the gate produced no finite observation.
     #[must_use]
-    pub fn predicted_gate_observation_mm(&self) -> Option<f64> {
-        let arc_factor = self.lut_arc.mean_chip_factor?;
-        let feed_ratio = self.achieved_feed.median_ratio.unwrap_or(1.0);
-        Some(self.commanded.feed_per_tooth_mm * arc_factor * feed_ratio)
+    pub fn gate_over_band_max(&self) -> Option<f64> {
+        if self.band.max_mm_per_tooth > 0.0 && self.gate.value_mm.is_finite() {
+            Some(self.gate.value_mm / self.band.max_mm_per_tooth)
+        } else {
+            None
+        }
     }
 
-    /// The multipliers between the commanded number an operator set and
+    /// Stage 1 × stage 3 — what stage 4 must read if the achieved-feed
+    /// ratio fully explains the delta between commanded and observed.
+    ///
+    /// Since the chip-geometry stage was deleted this identity has one
+    /// multiplier instead of two, so it is always computable: an absent
+    /// predicted-feed map means a ratio of 1.0 *by absence of data*, and
+    /// [`AchievedFeedStage::predicted_feeds_present`] is how a reader
+    /// tells that apart from a measured 1.0.
+    ///
+    /// This is a *prediction of* stage 4, never a replacement for it:
+    /// the record always reports the gate's own observation as stage 4.
+    #[must_use]
+    pub fn predicted_gate_observation_mm(&self) -> Option<f64> {
+        let feed_ratio = self.achieved_feed.median_ratio.unwrap_or(1.0);
+        Some(self.commanded.feed_per_tooth_mm * feed_ratio)
+    }
+
+    /// The multiplier between the commanded number an operator set and
     /// the number the verdict quotes, as a human-readable clause. Used
-    /// by the diagnostic adapter so a report never states stage 5
+    /// by the diagnostic adapter so a report never states stage 4
     /// without stating what separates it from stage 1.
     #[must_use]
     pub fn multiplier_clause(&self) -> String {
-        let arc = match self.lut_arc.mean_chip_factor {
-            Some(f) => format!("×{f:.4} arc factor"),
-            None => "no arc normalisation (row has no ae calibration)".to_owned(),
-        };
-        let feed = match self.achieved_feed.median_ratio {
+        match self.achieved_feed.median_ratio {
             Some(r) => format!("×{r:.4} achieved/commanded feed"),
             None => "×1.0 feed (no predicted-feed map)".to_owned(),
-        };
-        format!("{arc}, {feed}")
+        }
     }
 }

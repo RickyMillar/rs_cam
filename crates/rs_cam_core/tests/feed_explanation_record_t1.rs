@@ -12,18 +12,42 @@
 //! participates. `planning/airrun_2026-06-01/wanaka.toml` is NOT an
 //! input (plan §2 rule 9).
 //!
+//! ## Re-pinned 2026-08-06 — four stages, not five
+//!
+//! `CHIPLOAD_LITERATURE_VERDICT.md` settled Checkpoint B item T4.1: the
+//! vendor chipload column is a linear **advance per tooth** in every
+//! source family in the shipped LUT, so the gate's chip-geometry stage
+//! was converting a published advance into a chip nothing published. It
+//! was deleted. The record's stages are now
+//! `1 commanded → 2 band → 3 achieved feed → 4 gate observation`, and
+//! stages 1, 2 and 4 share one unit.
+//!
+//! Two assertions in this file were written to be TRUE OF THE DEFECT and
+//! are therefore inverted rather than deleted, so the change of contract
+//! is visible in the diff instead of vanishing:
+//!
+//! - `the_record_never_collapses_the_stages_to_one_number` asserted
+//!   `gate.unit().contains("chip")`. It now asserts the units are equal
+//!   and that the stages are nonetheless distinct **numbers** — which is
+//!   the honest form of the original rule: the defect was never that the
+//!   units differed, it was that the record might collapse three values
+//!   into one.
+//! - `a_modelled_verdict_carries_a_fully_populated_explanation` asserted
+//!   `assert_ne!(gate.unit(), commanded.unit())` with the message *"that
+//!   they do not is the entire finding this record exists to carry"*.
+//!   The finding was real and is now **fixed**, so the assertion becomes
+//!   `assert_eq!` and says why.
+//!
 //! What these tests pin:
 //!
 //! 1. [`a_modelled_verdict_carries_a_fully_populated_explanation`] — all
-//!    five stages present and distinctly named, which is T1.1's
+//!    four stages present and distinctly named, which is T1.1's
 //!    acceptance bar.
 //! 2. [`the_record_reproduces_the_census_identity`] — stage 1 × stage 3
-//!    × stage 4 predicts stage 5. The same identity the B3 assembler
-//!    proved, now through the shipped record rather than a test-local
-//!    copy.
+//!    predicts stage 4. Same identity as before, minus the term the
+//!    literature verdict removed.
 //! 3. [`the_record_surfaces_the_commanded_over_band_ratio`] — T1.5's
-//!    number: the only same-unit comparison available, computed and
-//!    discarded before this wave.
+//!    number, plus its achieved-feed twin, and the throttle between them.
 //! 4. [`the_record_discloses_scaling_on_an_unextrapolated_row`] — T1.6:
 //!    a scaled row must be distinguishable from an unscaled one even
 //!    when the ±40 % extrapolation flag is clear.
@@ -31,9 +55,8 @@
 //!    `Unmodeled` verdict has no stages, and the record must be absent
 //!    rather than fabricated.
 //! 6. [`the_record_never_collapses_the_stages_to_one_number`] — the
-//!    rule the type is written under, asserted: stages 1, 2 and 5 are
-//!    genuinely different values here, and nothing in the API converts
-//!    between them.
+//!    rule the type is written under, asserted: stages 1, 2 and 4 are
+//!    genuinely different values here.
 
 #![allow(
     clippy::unwrap_used,
@@ -194,13 +217,16 @@ fn a_modelled_verdict_carries_a_fully_populated_explanation() {
     assert!(explanation.band.row_diameter_mm > 0.0);
     assert_eq!(explanation.band.queried_pass_role, LutPassRole::Finish);
 
-    // Stage 3 — LUT arc factor.
+    // Stage 2 — the row's `ae` window survives as report-only
+    // provenance. It is NOT consumed by anything (verdict §2.3: on wood
+    // rows these are repo-authored application windows).
     assert!(
-        explanation.lut_arc.mean_chip_factor.is_some(),
-        "the fixture's row carries an ae band, so the arc factor must be measured"
+        explanation.band.ae_window_mm.is_some(),
+        "the fixture's row publishes an ae window, so the record must carry it \
+         — inert, but visible"
     );
 
-    // Stage 4 — achieved feed.
+    // Stage 3 — achieved feed.
     assert!(explanation.achieved_feed.predicted_feeds_present);
     let ratio = explanation
         .achieved_feed
@@ -211,27 +237,41 @@ fn a_modelled_verdict_carries_a_fully_populated_explanation() {
         "achieved/commanded ratio should be {PREDICTED_FEED_FRACTION}, got {ratio}"
     );
 
-    // Stage 5 — gate observation.
+    // Stage 4 — gate observation.
     assert!(explanation.gate.value_mm > 0.0);
     assert!(explanation.gate.sample_count > 0);
-    assert_ne!(
+    // INVERTED 2026-08-06. This assertion previously read `assert_ne!`
+    // with the message "that they do not is the entire finding this
+    // record exists to carry". The finding was correct and has been
+    // fixed: the gate now observes the same quantity as stage 1 and the
+    // same quantity stage 2 publishes, so a comparison between them is
+    // legitimate for the first time. Restated rather than deleted,
+    // because the contract change is the point.
+    assert_eq!(
         explanation.gate.unit(),
         explanation.commanded.unit(),
-        "stage 5 and stage 1 must not claim the same unit — that they do not \
-         is the entire finding this record exists to carry"
+        "since the 2026-08-06 unit conversion stage 4 and stage 1 MUST claim \
+         the same unit — the gate reports the commanded quantity at the \
+         achieved feed"
+    );
+    assert_eq!(
+        explanation.gate.unit(),
+        explanation.band.unit_family(),
+        "and the same unit family the vendor band publishes, which is what \
+         makes the verdict's own comparison valid"
     );
 
     eprintln!(
         "\n  stage 1 commanded fpt   {:.6} {}\n  stage 2 band            {:?} .. {:.6} ({}) row {}\n  \
-         stage 3 arc factor      {:?}\n  stage 4 feed ratio      {:?}\n  stage 5 gate            {:.9} {} [{}]\n  \
-         multipliers: {}",
+         stage 2 ae window       {:?} (report-only)\n  stage 3 feed ratio      {:?}\n  stage 4 gate            {:.9} {} [{}]\n  \
+         multiplier: {}",
         explanation.commanded.feed_per_tooth_mm,
         explanation.commanded.unit(),
         explanation.band.min_mm_per_tooth,
         explanation.band.max_mm_per_tooth,
         explanation.band.unit(),
         explanation.band.observation_id,
-        explanation.lut_arc.mean_chip_factor,
+        explanation.band.ae_window_mm,
         explanation.achieved_feed.median_ratio,
         explanation.gate.value_mm,
         explanation.gate.unit(),
@@ -242,25 +282,26 @@ fn a_modelled_verdict_carries_a_fully_populated_explanation() {
 
 #[test]
 fn the_record_reproduces_the_census_identity() {
-    // FEEDS_CENSUS.md §4.3: gate_observed = commanded_fpt × arc factor ×
-    // achieved/commanded feed. The B3 assembler proved this through a
-    // test-local copy of the stages; here it is proved through the
-    // shipped record, which is what makes the record trustworthy as a
-    // report rather than a decoration.
+    // FEEDS_CENSUS.md §4.3, minus the term the literature verdict
+    // deleted: gate_observed = commanded_fpt × achieved/commanded feed.
+    // The B3 assembler proved the original through a test-local copy of
+    // the stages; here it is proved through the shipped record, which is
+    // what makes the record trustworthy as a report rather than a
+    // decoration.
     let verdict = verdict_for(true, true);
     let explanation = verdict.feed_explanation.as_deref().unwrap();
     let predicted = explanation
         .predicted_gate_observation_mm()
-        .expect("both multipliers are measured on this fixture");
+        .expect("the single multiplier is measured on this fixture");
     let observed = explanation.gate.value_mm;
     let residual = observed / predicted - 1.0;
     eprintln!(
-        "  identity 1x3x4 = {predicted:.9}   observed = {observed:.9}   residual {:+.4} %",
+        "  identity 1x3 = {predicted:.9}   observed = {observed:.9}   residual {:+.4} %",
         100.0 * residual
     );
     assert!(
         residual.abs() < 0.01,
-        "the record's own stages must explain its own stage 5 to within 1 %; \
+        "the record's own stages must explain its own stage 4 to within 1 %; \
          predicted {predicted:.9}, observed {observed:.9}, residual {:+.4} %",
         100.0 * residual
     );
@@ -287,8 +328,27 @@ fn the_record_surfaces_the_commanded_over_band_ratio() {
          matched band on the commanded axis; got {ratio:.2}x"
     );
     // Both sides of this ratio must be the SAME unit, or the number is
-    // meaningless. That is the whole reason it is the one ratio offered.
+    // meaningless.
     assert_eq!(explanation.commanded.unit(), explanation.band.unit_family());
+
+    // And its achieved-feed twin, new on 2026-08-06. The pair, and the
+    // throttle between them, is the operator-actionable statement the
+    // verdict document asks for: 7.8x commanded, 1.0x achieved, -87 %
+    // kinematic throttle.
+    let achieved_ratio = explanation
+        .gate_over_band_max()
+        .expect("the gate produced a finite observation on this fixture");
+    let throttle = achieved_ratio / ratio;
+    eprintln!(
+        "  achieved {:.6} mm/tooth vs band max = {achieved_ratio:.2}x; \
+         throttle achieved/commanded = {throttle:.4}",
+        explanation.gate.value_mm
+    );
+    assert!(
+        (throttle - PREDICTED_FEED_FRACTION).abs() < 1e-6,
+        "the two band ratios must differ by exactly stage 3 (the achieved-feed \
+         ratio {PREDICTED_FEED_FRACTION}); got {throttle}"
+    );
 }
 
 #[test]
@@ -342,6 +402,9 @@ fn the_record_never_collapses_the_stages_to_one_number() {
     // The rule the type is written under, asserted rather than asked
     // for in a comment: on a real operation the three headline stages
     // are genuinely different numbers, and the record keeps them apart.
+    // Note the fixture carries a predicted-feed map, so stage 4 differs
+    // from stage 1 by a MEASURED throttle; without one they would be
+    // equal by construction and this test would be vacuous.
     let verdict = verdict_for(true, true);
     let e = verdict.feed_explanation.as_deref().unwrap();
     let commanded = e.commanded.feed_per_tooth_mm;
@@ -351,13 +414,19 @@ fn the_record_never_collapses_the_stages_to_one_number() {
         (commanded - band_max).abs() > 1e-9
             && (commanded - observed).abs() > 1e-9
             && (band_max - observed).abs() > 1e-9,
-        "stages 1 ({commanded:.9}), 2 ({band_max:.9}) and 5 ({observed:.9}) must \
+        "stages 1 ({commanded:.9}), 2 ({band_max:.9}) and 4 ({observed:.9}) must \
          remain distinct — collapsing them is the defect"
     );
-    // And the units say why they are allowed to differ.
-    assert!(
-        e.gate.unit().contains("chip"),
-        "stage 5's unit must name it as a chip thickness"
+    // INVERTED 2026-08-06: stages 1 and 4 now share a unit, so the
+    // record's protection is no longer "they are labelled differently"
+    // but "they are measured at different points in the pipeline". The
+    // assertion above is the one that matters and it is unchanged; what
+    // follows is the restated version of the old `contains("chip")`
+    // check.
+    assert_eq!(
+        e.gate.unit(),
+        e.commanded.unit(),
+        "stage 4 and stage 1 are the same quantity at different feeds"
     );
     assert!(
         e.commanded.unit().contains("advance"),

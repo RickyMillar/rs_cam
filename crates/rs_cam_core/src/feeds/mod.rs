@@ -32,7 +32,7 @@ pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
-    LutArcStage, LutBandStage, ObservedStatistic,
+    LutBandStage, ObservedStatistic,
 };
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
@@ -1431,7 +1431,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // push it under:
     //   1. Vendor-LUT scaling for extreme-Janka hardwoods
     //      (e.g. Ipe 3510 lbf vs an oak-anchored 1290 lbf row scales
-    //      chipload by 0.367 via `vendor_lookup::hardness_scale_factor`),
+    //      chipload by 0.367 via `vendor_lookup::hardness_ratio_raw`),
     //      producing a 0.0124 mm/tooth target before any feed derates.
     //   2. Post-clamp derates (safety factor 0.75-0.80, LD overhang,
     //      power-limit) compounding a low-but-above-floor target down
