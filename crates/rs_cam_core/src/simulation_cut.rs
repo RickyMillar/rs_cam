@@ -1286,6 +1286,71 @@ impl SummaryAccumulator {
     }
 }
 
+/// Scatter one toolpath's samples into per-span accumulators in **one pass**
+/// over the sample vector.
+///
+/// Returns a vector of length `span_count`, indexed by span id. A span with
+/// no samples comes back as a `SummaryAccumulator::default()` whose
+/// `sample_count` is `0` — callers filter on that, exactly as the per-span
+/// loop they are replacing did.
+///
+/// **A sample belongs to every span in its `span_path`, not to one of them.**
+/// Spans nest (Operation ⊃ Region ⊃ DepthPass ⊃ Entry …), and the per-span
+/// summaries are read as "everything that happened inside this span", so the
+/// scatter fans each sample out across its whole path. That is the one
+/// behavioural detail a single-pass rewrite can get wrong, and it is what
+/// separates this from `build_per_depth_pass_summary`'s sibling loop, which
+/// picks the *first* matching id because depth passes do not nest.
+///
+/// `accept` optionally restricts which span ids accumulate (the
+/// `get_cut_trace` span filter). `None` accumulates every span.
+///
+/// # Why this exists
+///
+/// The GUI's `get_cut_trace` used to run this as a nested loop — for every
+/// span, a full scan of the project's entire sample vector — so a bare
+/// `get_cut_trace()` cost `Σ_toolpaths (spans × total_samples)`, on the egui
+/// frame-loop thread, with every other queued MCP request waiting behind it.
+/// An accidental quadratic, diagnosed as C1 in
+/// `planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.D.2.
+/// Cost here is `Σ_samples |span_path|` plus `span_count`, i.e. linear in the
+/// trace with a small constant.
+pub fn accumulate_by_span(
+    samples: &[SimulationCutSample],
+    toolpath_id: ToolpathId,
+    span_count: usize,
+    accept: Option<&std::collections::HashSet<u32>>,
+) -> Vec<SummaryAccumulator> {
+    let mut accs: Vec<SummaryAccumulator> = (0..span_count)
+        .map(|_| SummaryAccumulator::default())
+        .collect();
+    if span_count == 0 {
+        return accs;
+    }
+    for sample in samples.iter().filter(|s| s.toolpath_id == toolpath_id) {
+        for (pos, &SpanId(id)) in sample.span_path.iter().enumerate() {
+            // The loop this replaces asked `span_path.contains(id)` once per
+            // span, so a path that repeats an id counted the sample ONCE.
+            // Preserve that: skip an id already seen earlier in this path.
+            if sample.span_path.iter().take(pos).any(|&SpanId(p)| p == id) {
+                continue;
+            }
+            if accept.is_some_and(|set| !set.contains(&id)) {
+                continue;
+            }
+            let Some(acc) = accs.get_mut(id as usize) else {
+                // A span id past the end of this toolpath's span table.
+                // Dropped rather than panicking: span tables and traces can
+                // be regenerated independently, and a stale id is not worth
+                // taking the frame loop down for.
+                continue;
+            };
+            acc.observe(sample);
+        }
+    }
+    accs
+}
+
 struct HotspotAccumulator {
     toolpath_id: ToolpathId,
     semantic_item_id: Option<u64>,

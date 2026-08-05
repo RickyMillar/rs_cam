@@ -4544,6 +4544,17 @@ impl super::RsCamApp {
 ///
 /// Returns summaries for every structural span that has samples in the current
 /// trace. When a span filter is active, only accepted span ids are summarized.
+///
+/// **C1 (2026-08-06).** This used to nest a full scan of the project's entire
+/// sample vector inside a loop over every span, so a bare `get_cut_trace()`
+/// cost `Σ_toolpaths (spans × total_samples)` — on the egui frame-loop
+/// thread, with every other queued MCP request waiting behind it. The
+/// accumulation now happens in one pass in
+/// [`rs_cam_core::simulation_cut::accumulate_by_span`], which owns the
+/// nesting rule (a sample belongs to EVERY span in its `span_path`) and is
+/// pinned against a verbatim transcription of the old walk by
+/// `crates/rs_cam_core/tests/span_summary_single_pass_c1.rs`. This function
+/// keeps only the JSON shaping; no wire key changed.
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
@@ -4554,8 +4565,6 @@ fn build_span_cut_summaries(
         Option<std::collections::HashSet<u32>>,
     >,
 ) -> serde_json::Value {
-    use rs_cam_core::toolpath_spans::SpanId;
-
     let mut out = Vec::new();
     let n = state.session.toolpath_count();
     for idx in 0..n {
@@ -4575,28 +4584,33 @@ fn build_span_cut_summaries(
             continue;
         }
         let spans = result.spans();
+        // C1: ONE pass over the trace for this toolpath, scattering each
+        // sample into every span of its path. An always-reject filter (a
+        // span filter that matched nothing for this toolpath) short-circuits
+        // to an empty accept set rather than scanning at all.
+        let accepted: Option<std::collections::HashSet<u32>> = if span_filter_active {
+            Some(
+                accepted_by_toolpath
+                    .get(&tc.id)
+                    .and_then(|set| set.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            None
+        };
+        let accs = rs_cam_core::simulation_cut::accumulate_by_span(
+            &trace.samples,
+            tc.id,
+            spans.len(),
+            accepted.as_ref(),
+        );
         for (span_index, span) in spans.iter().enumerate() {
             let span_id = span_index as u32;
-            if span_filter_active {
-                let accepted = accepted_by_toolpath
-                    .get(&tc.id)
-                    .and_then(|set| set.as_ref());
-                if !accepted.is_some_and(|set| set.contains(&span_id)) {
-                    continue;
-                }
-            }
 
             use rs_cam_core::simulation_cut::AirCutRatios;
-            let mut acc = rs_cam_core::simulation_cut::SummaryAccumulator::default();
-            for sample in trace
-                .samples
-                .iter()
-                .filter(|sample| sample.toolpath_id == tc.id)
-            {
-                if sample.span_path.iter().any(|SpanId(id)| *id == span_id) {
-                    acc.observe(sample);
-                }
-            }
+            let Some(acc) = accs.get(span_index) else {
+                continue;
+            };
             if acc.sample_count == 0 {
                 continue;
             }
@@ -4637,7 +4651,7 @@ fn build_span_cut_summaries(
                 // axial-DOC for plunge-heavy passes and arc-WOC for lateral
                 // ones without parsing a separate summary. See
                 // planning/DEXEL_Z_ONLY_INVESTIGATION.md §6.D.
-                "per_kinematics": render_per_kinematics_json(&acc),
+                "per_kinematics": render_per_kinematics_json(acc),
             }));
         }
     }
