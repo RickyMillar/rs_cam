@@ -4,7 +4,7 @@
 //!
 //! Cell: `flat_6mm_pocket_ipe_hardness`. Pre-fix, Ipe (Janka 3510)
 //! scaled an oak-anchored (~1290 lbf) vendor LUT row by 1290/3510 ≈
-//! 0.367 via `vendor_lookup::hardness_scale_factor`, producing a
+//! 0.367 via `vendor_lookup::hardness_ratio_raw`, producing a
 //! 0.0124 mm/tooth chipload — well below the 0.025 mm/tooth chip-
 //! formation floor where wood-router cutting becomes ploughing /
 //! burning. The engine then served that as a valid recipe with no
