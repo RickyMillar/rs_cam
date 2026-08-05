@@ -23,6 +23,15 @@ const Z_LEVEL_EPS_MM: f64 = 0.01;
 /// plunge from a ramped/angled entry.
 const XY_STATIONARY_EPS_MM: f64 = 0.01;
 
+/// How close a closing rapid's XY must be to the cut endpoint a lead-out arc
+/// departed from before it is treated as "the generator wrote this as a pure
+/// vertical lift and the arc made it stale".
+///
+/// Deliberately tight — the same coarse "same position" scale as
+/// [`XY_STATIONARY_EPS_MM`], not a lead-out radius. A rapid one arc radius
+/// away is heading somewhere on purpose and must not be rewritten.
+const LEAD_OUT_RETRACT_EPS_MM: f64 = 0.01;
+
 // ---------------------------------------------------------------------------
 // Ramp / Helix entry
 // ---------------------------------------------------------------------------
@@ -814,8 +823,52 @@ pub fn apply_lead_in_out_with_provenance(
     let mut entry_ranges: Vec<std::ops::Range<usize>> = Vec::new();
     let mut leadout_ranges: Vec<std::ops::Range<usize>> = Vec::new();
 
+    // Where the last emitted lead-out arc left the tool, and the cut endpoint
+    // it departed from. Consumed by the very next move — see the retract
+    // rewrite below.
+    let mut lead_out_landed: Option<(P3, P3)> = None;
+
     let mut i = 0;
     while i < moves.len() {
+        // ── The retract must retract from where the tool IS ──────────────
+        //
+        // A lead-out arc is INSERTED between the last cut and the pass's
+        // closing rapid, so a rapid that was emitted at the cut endpoint —
+        // a pure vertical lift when the generator wrote it — becomes a
+        // diagonal rapid travelling BACKWARDS across the surface it has just
+        // finished, while climbing to safe Z. Over a feature taller than the
+        // climb at that XY, that is a rapid through stock.
+        //
+        // Found 2026-08-06 by F2: sharpening scallop's coverage guard moved
+        // the last fragment of the corrugated A/M7 fixture from a corner to
+        // the plate centre, and the same closing retract that had always
+        // been diagonal started clipping a ridge — `scallop_intra_pass_
+        // relink_am7::no_new_collisions_at_the_finest_resolution`, 0 -> 1
+        // rapid collision at 0.1 mm. The retract was latent, not new: the
+        // relinker emits it at the FRAGMENT exit (`surface_link.rs`'s
+        // trailing `rapid_to_with_intent`), which this dressup then makes
+        // stale by appending the arc.
+        //
+        // The repair is narrow on purpose: only a rapid that lands exactly
+        // on the cut endpoint the arc just departed from is rewritten, and
+        // only in XY, to the arc's own endpoint. That turns it back into the
+        // pure vertical lift it was written as. A rapid heading anywhere
+        // else is a real traverse and is left alone.
+        if let Some((cut_end, arc_end)) = lead_out_landed.take()
+            && moves[i].move_type == MoveType::Rapid
+            && moves[i].target.z > cut_end.z
+            && (moves[i].target.x - cut_end.x).abs() < LEAD_OUT_RETRACT_EPS_MM
+            && (moves[i].target.y - cut_end.y).abs() < LEAD_OUT_RETRACT_EPS_MM
+        {
+            let new_idx = result.moves.len();
+            let mut lifted = moves[i].clone();
+            lifted.target = P3::new(arc_end.x, arc_end.y, moves[i].target.z);
+            result.moves.push(lifted);
+            old_to_new.push(Some(new_idx..new_idx + 1));
+            i += 1;
+            continue;
+        }
+
         // Detect the start of a cutting pass: a plunge (downward feed) followed
         // by horizontal feed moves at the same Z.
         if i > 0 && is_plunge(&moves[i - 1], &moves[i]) {
@@ -959,6 +1012,12 @@ pub fn apply_lead_in_out_with_provenance(
                         );
                     }
                     let lo_end = result.moves.len();
+                    // Remember where the arc left the tool, so a closing
+                    // rapid still aimed at `cut_end` can be lifted from HERE
+                    // instead of travelling back across the finished surface.
+                    if let Some(last) = result.moves.last() {
+                        lead_out_landed = Some((cut_end, last.target));
+                    }
                     // The old cut-end move covers cut_idx..lo_end (itself plus
                     // the appended lead-out arc).
                     old_to_new.push(Some(cut_idx..lo_end));
