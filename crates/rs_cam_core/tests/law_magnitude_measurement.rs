@@ -43,9 +43,16 @@ use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
 
-/// B-lit §4.1's recommendation. **Not shipped.**
+/// B-lit §4.1's recommendation. **SHIPPED since 2026-08-06** — this is
+/// now equal to `CHIPLOAD_DIAMETER_EXPONENT`, so every "today vs
+/// proposed" ratio this harness prints reads ×1.000. To reproduce the
+/// tables in `LAW_MAGNITUDE_TABLES.md`, set this to `1.0` (the retired
+/// linear law) and read the ratios in the opposite direction. Left
+/// pointing at the adopted value so the harness reports the truth about
+/// what ships rather than a frozen comparison.
 const PROPOSED_DIAMETER_EXPONENT: f64 = 0.61;
-/// B-lit §4.2's recommendation. **Not shipped.**
+/// B-lit §4.2's recommendation. **SHIPPED since 2026-08-06** — see
+/// [`PROPOSED_DIAMETER_EXPONENT`].
 const PROPOSED_HARDNESS_EXPONENT: f64 = 0.5;
 
 struct Cell {
@@ -153,8 +160,10 @@ fn measure_law_magnitudes_on_the_named_cells() {
          hardness ^{CHIPLOAD_HARDNESS_EXPONENT}"
     );
     println!(
-        "proposed (B-lit §4, NOT adopted): diameter ^{PROPOSED_DIAMETER_EXPONENT}, \
-         hardness ^{PROPOSED_HARDNESS_EXPONENT}\n"
+        "comparison exponents: diameter ^{PROPOSED_DIAMETER_EXPONENT}, \
+         hardness ^{PROPOSED_HARDNESS_EXPONENT} (B-lit §4 — ADOPTED 2026-08-06, \
+         so the two rows above and below now agree and every ratio reads 1.000; \
+         set the PROPOSED_* consts to 1.0 to reproduce LAW_MAGNITUDE_TABLES.md)\n"
     );
     println!(
         "| cell | winning row | raw d | raw h | band today (mm/tooth) | band proposed | band × | flag today | flag proposed |"

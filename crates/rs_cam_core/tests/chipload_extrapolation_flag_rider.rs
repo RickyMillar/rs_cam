@@ -25,15 +25,42 @@
 //! crate currently believes converts one to the other. This file pins it
 //! there.
 //!
-//! **Red-first note.** Under the shipped `^1.0` laws the raw ratio and the
-//! applied scale are numerically identical, so the defect cannot be
-//! observed on shipped values — it is a *latent* one that fires the moment
+//! **Red-first note.** Under the then-shipped `^1.0` laws the raw ratio and
+//! the applied scale were numerically identical, so the defect could not be
+//! observed on shipped values — it was a *latent* one that fires the moment
 //! an exponent moves. [`the_pre_fix_rule_silently_un_flags_a_row_when_an_exponent_softens`]
 //! therefore reproduces the pre-fix expression inline (the technique
 //! `boundary_clip_escape_f1` uses) and shows it going `true → false` on
 //! arithmetic alone, then shows the shipped rule holding. That test's first
-//! two assertions run against the parent tree unmodified; the third does
+//! two assertions ran against the `29303b5` parent unmodified; the third did
 //! not compile there, because `is_extrapolated_for_ratios` did not exist.
+//!
+//! ## THE EXPONENTS MOVED — 2026-08-06, and the rider held
+//!
+//! `CHIPLOAD_DIAMETER_EXPONENT` is now **0.61** and
+//! `CHIPLOAD_HARDNESS_EXPONENT` is now **0.5**. This is the exact event
+//! the rider was written to survive, so it is worth stating plainly what
+//! the file measures now:
+//!
+//! - [`a_live_lut_query_in_the_trap_window_carries_the_flag`] — **the
+//!   rider itself. Unmodified and green.** Every shipped flag still equals
+//!   the raw-ratio rule's answer, at Ø1 / 2 / 3.175 / 6 / 12, i.e. the
+//!   **8.0 % of (query, row) pairs** measured in `LAW_MAGNITUDE_TABLES.md`
+//!   §1 that would have silently lost their flag did not lose it.
+//! - [`the_flag_is_exponent_invariant_and_the_applied_scale_is_not`] —
+//!   **green, re-pinned**: its "does the applied scale move?" control now
+//!   compares the live laws against the **retired** `^1.0` pair rather
+//!   than against the proposed one, which is the same statement now that
+//!   the proposal is what ships.
+//! - [`the_pre_fix_rule_silently_un_flags_a_row_when_an_exponent_softens`]
+//!   — **green, re-pinned**: it is a historical exhibit and must keep
+//!   demonstrating `^1.0 → ^0.61`, so it reads a local
+//!   [`RETIRED_LINEAR_EXPONENT`] instead of the live constant. Reading the
+//!   live constant would have made it compare 0.61 against 0.61 and assert
+//!   nothing.
+//! - [`the_shipped_laws_are_identity_so_this_wave_moves_no_band`] — this
+//!   one was **true of the previous wave only**, and is restated rather
+//!   than deleted. See its body.
 
 #![allow(
     clippy::unwrap_used,
@@ -53,11 +80,21 @@ use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
 
-/// The exponents B-lit §4 recommends and this wave deliberately does NOT
-/// adopt. Used here only to demonstrate the trap; `LAW_MAGNITUDE_TABLES.md`
-/// carries their measured cost.
+/// The exponents B-lit §4 recommended. **Adopted 2026-08-06** — they are
+/// now `vendor_lookup::{CHIPLOAD_DIAMETER_EXPONENT,
+/// CHIPLOAD_HARDNESS_EXPONENT}`. Kept as local literals so the exhibit
+/// below keeps demonstrating the *transition*, which is what it is for;
+/// if they ever disagree with the live constants that is a signal, and
+/// [`the_shipped_laws_are_identity_so_this_wave_moves_no_band`] asserts
+/// they do not.
 const PROPOSED_DIAMETER_EXPONENT: f64 = 0.61;
 const PROPOSED_HARDNESS_EXPONENT: f64 = 0.5;
+
+/// The linear law that shipped until 2026-08-06. The exhibit needs a
+/// *pair* of exponents to show the flag moving between them, so it reads
+/// this rather than the live constant — which is now the softened side of
+/// the same pair.
+const RETIRED_LINEAR_EXPONENT: f64 = 1.0;
 
 /// The pre-fix rule, verbatim from `vendor_lookup::build_result` at parent
 /// `29303b5`: `total_scale.ln().abs() > APPROX_LN_THRESHOLD`, where
@@ -72,13 +109,18 @@ fn the_pre_fix_rule_silently_un_flags_a_row_when_an_exponent_softens() {
     // B-lit §4.1 names the windows: d_scale ∈ [0.58, 0.71] ∪ [1.40, 1.72]
     // lose the flag under `^0.61`. Take one row from each side.
     for &raw_d in &[0.60_f64, 0.71, 1.45, 1.70] {
-        let applied_today = apply_chipload_law(raw_d, CHIPLOAD_DIAMETER_EXPONENT);
+        // RE-PINNED 2026-08-06: was `CHIPLOAD_DIAMETER_EXPONENT`, which is
+        // now 0.61 — the softened side. The exhibit is about the move
+        // BETWEEN the two laws, so the retired one must be named
+        // explicitly or the test compares 0.61 with 0.61.
+        let applied_today = apply_chipload_law(raw_d, RETIRED_LINEAR_EXPONENT);
         let applied_softened = apply_chipload_law(raw_d, PROPOSED_DIAMETER_EXPONENT);
 
-        // (a) The shipped laws flag it. This assertion holds on the parent.
+        // (a) The retired ^1.0 law flags it. This assertion holds on the
+        //     `29303b5` parent against the then-live constant.
         assert!(
             pre_fix_flag(applied_today),
-            "raw diameter ratio {raw_d} must be flagged under the shipped ^1.0 law \
+            "raw diameter ratio {raw_d} must be flagged under the retired ^1.0 law \
              (applied {applied_today}); if not, the fixture is not in the trap window"
         );
         // (b) Softening the exponent un-flags it, with the row no closer to
@@ -111,7 +153,7 @@ fn the_pre_fix_rule_silently_un_flags_a_row_when_an_exponent_softens() {
     let raw_h = 1.50_f64;
     assert!(pre_fix_flag(apply_chipload_law(
         raw_h,
-        CHIPLOAD_HARDNESS_EXPONENT
+        RETIRED_LINEAR_EXPONENT
     )));
     assert!(!pre_fix_flag(apply_chipload_law(
         raw_h,
@@ -141,15 +183,19 @@ fn the_flag_is_exponent_invariant_and_the_applied_scale_is_not() {
             shipped, under_proposed_laws,
             "flag for raw ratios ({raw_d}, {raw_h}) must not depend on the law"
         );
-        // And the quantity the pre-fix rule read DOES move.
-        let applied_today = apply_chipload_law(raw_d, CHIPLOAD_DIAMETER_EXPONENT)
+        // And the quantity the pre-fix rule read DOES move. RE-PINNED
+        // 2026-08-06: the "proposed" side is now what ships, so the
+        // control compares the LIVE laws against the RETIRED linear pair.
+        // Same statement, opposite end held fixed.
+        let applied_retired = apply_chipload_law(raw_d, RETIRED_LINEAR_EXPONENT)
+            * apply_chipload_law(raw_h, RETIRED_LINEAR_EXPONENT);
+        let applied_live = apply_chipload_law(raw_d, CHIPLOAD_DIAMETER_EXPONENT)
             * apply_chipload_law(raw_h, CHIPLOAD_HARDNESS_EXPONENT);
-        let applied_proposed = apply_chipload_law(raw_d, PROPOSED_DIAMETER_EXPONENT)
-            * apply_chipload_law(raw_h, PROPOSED_HARDNESS_EXPONENT);
         if (raw_d - 1.0).abs() > 1e-9 || (raw_h - 1.0).abs() > 1e-9 {
             assert!(
-                (applied_today - applied_proposed).abs() > 1e-9,
-                "({raw_d}, {raw_h}) must move under the proposed laws or it proves nothing"
+                (applied_retired - applied_live).abs() > 1e-9,
+                "({raw_d}, {raw_h}) must move between the retired and live laws \
+                 or it proves nothing"
             );
         }
     }
@@ -161,18 +207,38 @@ fn the_flag_is_exponent_invariant_and_the_applied_scale_is_not() {
 
 #[test]
 fn the_shipped_laws_are_identity_so_this_wave_moves_no_band() {
-    // The rider is structural. It must be provable that it changes no
-    // shipped number: both exponents are 1.0, and `apply_chipload_law` at
-    // exponent 1.0 must be the identity **bit-for-bit**, not merely close —
-    // otherwise the rider would smuggle a numeric change in behind a
-    // refactor.
-    assert!((CHIPLOAD_DIAMETER_EXPONENT - 1.0).abs() < f64::EPSILON);
-    assert!((CHIPLOAD_HARDNESS_EXPONENT - 1.0).abs() < f64::EPSILON);
+    // RESTATED 2026-08-06, name kept so the change is visible in the diff.
+    //
+    // This read:
+    //     assert!((CHIPLOAD_DIAMETER_EXPONENT - 1.0).abs() < f64::EPSILON);
+    //     assert!((CHIPLOAD_HARDNESS_EXPONENT - 1.0).abs() < f64::EPSILON);
+    // and it was the rider wave's own proof that introducing the
+    // `apply_chipload_law` seam smuggled no numeric change in behind a
+    // refactor. The exponents have since been adopted, so the claim is
+    // now false BY DESIGN and pinning it would freeze the decision the
+    // operator made.
+    //
+    // Two things survive it, and both are load-bearing:
+    assert!(
+        (CHIPLOAD_DIAMETER_EXPONENT - PROPOSED_DIAMETER_EXPONENT).abs() < f64::EPSILON,
+        "the live diameter law must be the one LAW_MAGNITUDE_TABLES.md measured \
+         ({PROPOSED_DIAMETER_EXPONENT}); got {CHIPLOAD_DIAMETER_EXPONENT}. Every \
+         magnitude in that document, and every re-pin made against it, is keyed to \
+         this value."
+    );
+    assert!(
+        (CHIPLOAD_HARDNESS_EXPONENT - PROPOSED_HARDNESS_EXPONENT).abs() < f64::EPSILON,
+        "the live hardness law must be the one LAW_MAGNITUDE_TABLES.md measured \
+         ({PROPOSED_HARDNESS_EXPONENT}); got {CHIPLOAD_HARDNESS_EXPONENT}"
+    );
+    // And the identity property of the seam itself, unchanged — so a
+    // rollback to `^1.0` is provably a bit-for-bit no-op rather than a
+    // second numeric event.
     for &r in &[
         0.1_f64, 0.3005, 0.5, 0.6, 0.71, 0.9999, 1.0, 1.4, 2.0, 2.4167, 3.0, 10.0,
     ] {
         assert_eq!(
-            apply_chipload_law(r, 1.0).to_bits(),
+            apply_chipload_law(r, RETIRED_LINEAR_EXPONENT).to_bits(),
             r.to_bits(),
             "exponent 1.0 must be bit-identical for {r}"
         );
