@@ -464,6 +464,7 @@ where
         cut_trace,
         cut_trace_path,
         resolution_clamped: core_result.resolution_clamped,
+        column_grid_cell_mm: core_result.column_grid_cell_mm,
         prior_stocks: core_result.prior_stocks,
     })
 }

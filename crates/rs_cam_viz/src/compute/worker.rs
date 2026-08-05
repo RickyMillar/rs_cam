@@ -249,6 +249,17 @@ pub struct SimulationResult {
     pub cut_trace_path: Option<PathBuf>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// The dexel COLUMN grid cell this simulation actually used (mm),
+    /// forwarded verbatim from
+    /// `rs_cam_core::compute::simulate::SimulationResult::column_grid_cell_mm`.
+    ///
+    /// B7 divergence 2 (2026-08-06): this is a property of the TRACE, and it
+    /// is not the same quantity as `SimulationState::resolution`, which is
+    /// the dial the NEXT simulation will use. The measurability floors are
+    /// cell-size dependent, so a reader that consults the dial can return a
+    /// different `NotMeasurable` verdict from core's on identical evidence.
+    /// Carried so the GUI's narration can ask the same question core's does.
+    pub column_grid_cell_mm: f64,
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves — forwarded verbatim from the core
     /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks`.

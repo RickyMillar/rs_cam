@@ -2977,7 +2977,7 @@ impl ProjectSession {
                 self.simulation.as_ref().map(|sim| sim.column_grid_cell_mm),
             )
         });
-        let context = crate::narrate::ToolpathNarrationContext {
+        let mut context = crate::narrate::ToolpathNarrationContext {
             measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
@@ -2993,40 +2993,21 @@ impl ProjectSession {
                     .unwrap_or(self.post.spindle_speed),
             ),
             flute_count: Some(tool.flute_count),
-            is_drill_cycle: tc.operation.op_type().is_drill_kinematics(),
+            // B7 divergence 1, resolved 2026-08-06: the intent-aware
+            // expression is now shared with the GUI's narration via
+            // `is_drill_cycle_for_narration`, so the two readers can no
+            // longer disagree about whether a toolpath is a drill cycle.
+            is_drill_cycle: crate::narrate::is_drill_cycle_for_narration(
+                tc.operation.op_type(),
+                &result.annotated().toolpath.moves,
+            ),
             material: Some(&self.stock.material),
-            // A/M9: the generation-time finding rides on this toolpath's own
-            // stats. `None` here is "not measured", which narration says out
-            // loud rather than rendering as a zero.
-            truncated_core_mm2: result.stats.truncated_core_mm2,
-            // M4 §5b: the hole-aware and estimator siblings, off the same
-            // toolpath stats.
-            untouched_material_mm2: result.stats.untouched_material_mm2,
-            reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
-            // Wave D1: same rule. `None` reads as "not measured" and
-            // narration says so rather than staying silent.
-            dropped_band: result.stats.dropped_band.as_deref().copied(),
-            clipped_band: result.stats.clipped_band.as_deref().copied(),
-            ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
-            tip_float: result.stats.tip_float,
-            // A/M7 gate 1: same rule — the finding rides on this
-            // toolpath's own stats, and `None` means "never computed",
-            // never "zero trips".
-            retract_trips: result.stats.retract_trips,
-            // A4: a rest pass that removes nothing is exactly the kind of
-            // finding an agent narrating a live toolpath has no other way
-            // to see.
-            zero_removal: result.stats.zero_removal,
-            // Checkpoint C: a contained offset failure is invisible
-            // everywhere else — the only other trace it leaves is a
-            // `tracing::warn!` in a process that usually installs no
-            // subscriber.
-            offset_library_failures: result.stats.offset_library_failures,
-            // Checkpoint C: a containment that was requested and is not in
-            // force is exactly the thing an agent reading a toolpath has no
-            // other way to see.
-            boundary_clip_dropped: result.stats.boundary_clip_dropped,
+            // Every ToolpathStats-derived channel is filled by
+            // `absorb_stats` below — one exhaustive join, so a new finding
+            // cannot reach one narration and miss the other (B7).
+            ..Default::default()
         };
+        context.absorb_stats(&result.stats);
 
         Ok(crate::narrate::narrate_toolpath_with_context(
             result.annotated(),

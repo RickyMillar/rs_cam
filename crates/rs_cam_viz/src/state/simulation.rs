@@ -436,6 +436,11 @@ pub struct SimulationResults {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// Artifact path for the simulation cutting metrics trace.
     pub cut_trace_path: Option<PathBuf>,
+    /// The dexel COLUMN grid cell this simulation used (mm). See
+    /// `crate::compute::worker::SimulationResult::column_grid_cell_mm` — it
+    /// is a property of THIS trace, not of `SimulationState::resolution`,
+    /// which is the dial the next run will use.
+    pub column_grid_cell_mm: f64,
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves, keyed by toolpath id (F.4). Mirrors core's
     /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks` —
@@ -2401,6 +2406,7 @@ mod tests {
             },
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
             prior_stocks: HashMap::new(),
         });
         sim

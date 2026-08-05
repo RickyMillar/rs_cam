@@ -1063,6 +1063,28 @@ impl super::RsCamApp {
         json_str(self.controller.build_mcp_diagnostics())
     }
 
+    /// The tool a narration describes: the toolpath's OWN tool, or nothing.
+    ///
+    /// **B7 divergence 3 — a defect, fixed 2026-08-06.** The GUI narration
+    /// used to append `.or_else(|| tools().first())` to this lookup, so when
+    /// `tool_id` did not resolve it narrated with **another tool's
+    /// geometry**: the diameter behind the large-arc threshold, the flute
+    /// count behind every chipload sentence, and the cutter handed to
+    /// `narrate_toolpath_with_context` itself. Nothing in the emitted text
+    /// said so. Core's sibling narration has always errored instead
+    /// (`session/compute.rs`, `SessionError::ToolNotFound`).
+    ///
+    /// A tool id that does not resolve is a broken project, not a routine
+    /// state, so the honest answer is a refusal naming the id — which is
+    /// what the caller emits. Exhibit:
+    /// `narration_tool_lookup_refuses_where_the_parent_took_another_tool`.
+    fn narration_tool_for(
+        tools: &[rs_cam_core::compute::tool_config::ToolConfig],
+        tool_id: usize,
+    ) -> Option<&rs_cam_core::compute::tool_config::ToolConfig> {
+        tools.iter().find(|tool| tool.id.0 == tool_id)
+    }
+
     fn mcp_narrate_toolpath(&self, index: usize) -> String {
         let state = self.controller.state();
         let Some(tc) = state.session.get_toolpath_config(index) else {
@@ -1074,14 +1096,11 @@ impl super::RsCamApp {
         let Some(result) = rt.result.as_ref() else {
             return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
         };
-        let Some(tool_config) = state
-            .session
-            .tools()
-            .iter()
-            .find(|tool| tool.id.0 == tc.tool_id)
-            .or_else(|| state.session.tools().first())
-        else {
-            return "Error: no tools are configured for this project".to_owned();
+        let Some(tool_config) = Self::narration_tool_for(state.session.tools(), tc.tool_id) else {
+            return format!(
+                "Error: toolpath {index} references tool id {} but no such tool is configured.                  Narration refuses rather than describing this toolpath with another tool's                  geometry.",
+                tc.tool_id,
+            );
         };
 
         let tool = rs_cam_core::compute::build_cutter(tool_config);
@@ -1090,21 +1109,39 @@ impl super::RsCamApp {
             .results
             .as_ref()
             .and_then(|sim| sim.cut_trace.as_deref());
-        let semantic_trace = rt
+        // B7 divergence 4: prefer the traces carried by the RESULT being
+        // narrated, and only then the runtime's. The old order preferred
+        // `rt.*`, so a narration could describe `result`'s move list using a
+        // trace produced by a later generation. Core has no `rt` overlay and
+        // has always read `result.*`; this makes the GUI agree, while still
+        // falling back to `rt.*` for the paths that only populate there.
+        let semantic_trace = result
             .semantic_trace
             .as_deref()
-            .or(result.semantic_trace.as_deref());
-        let debug_trace = rt.debug_trace.as_deref().or(result.debug_trace.as_deref());
+            .or(rt.semantic_trace.as_deref());
+        let debug_trace = result.debug_trace.as_deref().or(rt.debug_trace.as_deref());
         // Checkpoint D Q2: narration reads the same measurability report the
         // gates and the triage do, so the MCP narration cannot publish an
         // air-cut percentage the gates have already declined to act on.
+        //
+        // B7 divergence 2: the cell size is the one the TRACE was measured
+        // at (`SimulationResult::column_grid_cell_mm`), not the resolution
+        // dial's current value — those are two different quantities, and the
+        // measurability floors are cell-size dependent, so reading the dial
+        // could return a different `NotMeasurable` verdict from core's on
+        // identical evidence. `state.simulation.resolution` is what the next
+        // simulation WILL use; it is not a property of this trace.
         let measurability = cut_trace.map(|trace| {
             rs_cam_core::sim_measurability::MeasurabilityReport::from_trace(
                 trace,
-                Some(state.simulation.resolution),
+                state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .map(|sim| sim.column_grid_cell_mm),
             )
         });
-        let context = rs_cam_core::narrate::ToolpathNarrationContext {
+        let mut context = rs_cam_core::narrate::ToolpathNarrationContext {
             measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
@@ -1120,50 +1157,26 @@ impl super::RsCamApp {
                     .unwrap_or(state.session.post_config().spindle_speed),
             ),
             flute_count: Some(tool_config.flute_count),
-            // §6.C / §6.I revision: prefer the MoveIntent::Drilling signal
-            // from the toolpath; fall back to op-kind for legacy generators.
-            is_drill_cycle: result
-                .annotated
-                .toolpath
-                .moves
-                .iter()
-                .any(|m| matches!(m.intent, rs_cam_core::toolpath::MoveIntent::Drilling))
-                || matches!(
-                    tc.operation.op_type(),
-                    rs_cam_core::compute::catalog::OperationType::Drill
-                        | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
-                ),
+            // B7 divergence 1: the shared expression. Core used op-type
+            // alone (blind to a generator that emits Drilling moves without
+            // declaring a drill op type); this side used op-type OR ANY
+            // Drilling move (which called a v-carve with a drilled entry a
+            // drill cycle and suppressed its air-cut anomaly). The shared
+            // helper is neither — see its doc.
+            is_drill_cycle: rs_cam_core::narrate::is_drill_cycle_for_narration(
+                tc.operation.op_type(),
+                &result.annotated.toolpath.moves,
+            ),
             material: Some(&state.session.stock_config().material),
-            // A/M9: the GUI worker filled this on `result.stats` from the
-            // core generation findings; carrying it here is what puts the
-            // figure in front of an agent narrating a live GUI toolpath.
-            truncated_core_mm2: result.stats.truncated_core_mm2,
-            // M4 §5b: the hole-aware and estimator siblings, off the same
-            // GUI-worker-filled toolpath stats.
-            untouched_material_mm2: result.stats.untouched_material_mm2,
-            reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
-            // Wave D1: an unmachined band and an unreachable valley floor
-            // are exactly the kind of finding an agent narrating a LIVE GUI
-            // toolpath has no other way to see.
-            dropped_band: result.stats.dropped_band.as_deref().copied(),
-            clipped_band: result.stats.clipped_band.as_deref().copied(),
-            ramp_reach_clamp: result.stats.ramp_reach_clamp.as_deref().copied(),
-            tip_float: result.stats.tip_float,
-            // A/M7 gate 1: same parallel-copy rule as the findings above —
-            // the GUI worker filled this on `result.stats`.
-            retract_trips: result.stats.retract_trips,
-            // A4: a rest pass that costs motion and removes nothing is
-            // exactly what an agent narrating a LIVE toolpath cannot
-            // otherwise see.
-            zero_removal: result.stats.zero_removal,
-            // Checkpoint C: a contained offset failure, and a containment
-            // that was requested and is not in force, are both invisible
-            // everywhere else — the only other trace either leaves is a
-            // `tracing::warn!` in a process that usually installs no
-            // subscriber.
-            offset_library_failures: result.stats.offset_library_failures,
-            boundary_clip_dropped: result.stats.boundary_clip_dropped,
+            // Every ToolpathStats-derived channel is filled by
+            // `absorb_stats` below — the SAME join core's narration uses, so
+            // a new finding cannot reach one narration and miss the other
+            // (B7). The GUI worker fills `result.stats` from the core
+            // generation findings; carrying them here is what puts those
+            // figures in front of an agent narrating a live GUI toolpath.
+            ..Default::default()
         };
+        context.absorb_stats(&result.stats);
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
@@ -5115,7 +5128,81 @@ fn build_inspect_spans_response(
 )]
 mod tests {
     use super::*;
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+
+    // ── B7 divergence 3: the wrong-tool fallback ────────────────────────
+    //
+    // Two tools with visibly different geometry, and a toolpath pointing at
+    // a THIRD id that does not exist. The parent revision's lookup is
+    // transcribed verbatim so the defect stays executable: checking out the
+    // parent was not available to this wave (the working tree is shared with
+    // another live lane), and a transcription keeps failing if anyone
+    // reintroduces the fallback, which a one-off checkout would not.
+
+    fn two_tool_fixture() -> Vec<ToolConfig> {
+        let mut a = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        a.name = "Ø6 flat".to_owned();
+        a.diameter = 6.0;
+        a.flute_count = 2;
+        let mut b = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
+        b.name = "Ø1 ball".to_owned();
+        b.diameter = 1.0;
+        b.flute_count = 4;
+        vec![a, b]
+    }
+
+    /// The parent revision's lookup, transcribed from
+    /// `mcp_narrate_toolpath` at parent `88ce23a`.
+    fn parent_revision_tool_lookup(tools: &[ToolConfig], tool_id: usize) -> Option<&ToolConfig> {
+        tools
+            .iter()
+            .find(|tool| tool.id.0 == tool_id)
+            .or_else(|| tools.first())
+    }
+
+    /// **The exhibit.** On an unresolvable tool id the parent silently
+    /// returned the FIRST tool — a Ø6 2-flute end mill standing in for a Ø1
+    /// 4-flute ball nose. That diameter sets narration's large-arc threshold
+    /// and every tool-scaled hint; the flute count sits under every chipload
+    /// sentence; and the same `ToolConfig` builds the cutter handed to
+    /// `narrate_toolpath_with_context`. Nothing in the emitted text said the
+    /// numbers were about another tool.
+    #[test]
+    fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
+        let tools = two_tool_fixture();
+        const MISSING_ID: usize = 99;
+
+        let parent = parent_revision_tool_lookup(&tools, MISSING_ID)
+            .expect("the parent revision always found *a* tool — that is the defect");
+        assert_eq!(
+            parent.name, "Ø6 flat",
+            "the transcribed parent must reproduce the fallback, or this exhibit proves \
+             nothing",
+        );
+        assert!(
+            (parent.diameter - 1.0).abs() > 4.0 && parent.flute_count != 4,
+            "the fixture must make the substitution VISIBLE — a fallback to a tool with the \
+             same geometry would be harmless and would not demonstrate the defect",
+        );
+
+        assert!(
+            crate::app::RsCamApp::narration_tool_for(&tools, MISSING_ID).is_none(),
+            "the shipped lookup must refuse an unresolvable tool id rather than narrate \
+             with another tool's geometry",
+        );
+    }
+
+    /// Non-vacuity: the refusal is not a blanket one. A resolvable id still
+    /// returns its OWN tool, and not the first one.
+    #[test]
+    fn narration_tool_lookup_still_finds_the_toolpaths_own_tool() {
+        let tools = two_tool_fixture();
+        let found =
+            crate::app::RsCamApp::narration_tool_for(&tools, 2).expect("tool id 2 is configured");
+        assert_eq!(found.name, "Ø1 ball");
+        assert!((found.diameter - 1.0).abs() < 1e-9);
+    }
 
     /// Build a representative span tree:
     /// - Operation 0..30
