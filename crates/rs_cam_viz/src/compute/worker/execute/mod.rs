@@ -163,17 +163,33 @@ fn generate_via_core(
             {
                 *p = subtract_keepouts(p, &req.keep_out_footprints);
             }
-            if let Some(p) = poly.as_mut()
+            // Checkpoint C, D-3b (F-8). This was
+            // `if let Some(largest) = ... { *p = largest }` with no `else`:
+            // on an empty result the requested offset silently did not
+            // happen and `p` kept its UN-OFFSET value, which for a negative
+            // offset clips to a LARGER region than was asked for. Dropped
+            // now, matching the multi-region path (D-3c) and the session's
+            // `resolve_containment_polygon`.
+            if let Some(p) = poly.as_ref()
                 && req.boundary.offset.abs() > 1e-9
             {
-                let offset_polys = rs_cam_core::polygon::offset_polygon(p, -req.boundary.offset);
-                if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                    a.area()
-                        .partial_cmp(&b.area())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                }) {
-                    *p = largest;
-                }
+                use rs_cam_core::boundary::{UserOffsetOutcome, apply_user_boundary_offset};
+                poly = match apply_user_boundary_offset(p, req.boundary.offset) {
+                    UserOffsetOutcome::Resolved(p) => Some(p),
+                    UserOffsetOutcome::Collapsed => None,
+                    UserOffsetOutcome::Failed(failure) => {
+                        return Err(rs_cam_core::compute::OperationError::MissingGeometry(
+                            format!(
+                                "the machining boundary's {:+.3} mm offset could not \
+                                 be computed: {}. Refusing rather than continuing \
+                                 with the UN-OFFSET boundary.",
+                                req.boundary.offset,
+                                failure.describe(),
+                            ),
+                        )
+                        .into());
+                    }
+                };
             }
             poly
         }
@@ -679,15 +695,31 @@ pub(super) fn run_compute_with_phase_tracker(
                 // negative = shrink). Mirrors session/compute.rs apply_boundary_clip.
                 // cavalier_contours convention: positive distance is INWARD shrink,
                 // so flip the sign to match the user-facing convention.
+                // Checkpoint C, D-3b (F-8): same three-way decision as the
+                // pre-boundary site above and the session's
+                // `resolve_containment_polygon`. A collapsed user offset
+                // drops the containment (which then takes the ruled
+                // collapsed-containment path below); a FAILED one refuses,
+                // because continuing on the un-offset boundary clips to a
+                // larger region than was asked for.
+                let mut containment_collapsed = false;
                 if req.boundary.offset.abs() > 1e-9 {
-                    let offset_polys =
-                        rs_cam_core::polygon::offset_polygon(&stock_poly, -req.boundary.offset);
-                    if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    }) {
-                        stock_poly = largest;
+                    use rs_cam_core::boundary::{UserOffsetOutcome, apply_user_boundary_offset};
+                    match apply_user_boundary_offset(&stock_poly, req.boundary.offset) {
+                        UserOffsetOutcome::Resolved(p) => stock_poly = p,
+                        UserOffsetOutcome::Collapsed => containment_collapsed = true,
+                        UserOffsetOutcome::Failed(failure) => {
+                            return Err(rs_cam_core::compute::OperationError::MissingGeometry(
+                                format!(
+                                    "the machining boundary's {:+.3} mm offset could \
+                                     not be computed: {}. Refusing rather than \
+                                     continuing with the UN-OFFSET boundary.",
+                                    req.boundary.offset,
+                                    failure.describe(),
+                                ),
+                            )
+                            .into());
+                        }
                     }
                 }
                 let containment = match req.boundary.containment {
@@ -698,8 +730,11 @@ pub(super) fn run_compute_with_phase_tracker(
                     }
                 };
                 let tool_diameter = req.tool.envelope_diameter();
-                let (boundaries, offset_failure) =
-                    effective_boundary_reported(&stock_poly, containment, tool_diameter / 2.0);
+                let (boundaries, offset_failure) = if containment_collapsed {
+                    (Vec::new(), None)
+                } else {
+                    effective_boundary_reported(&stock_poly, containment, tool_diameter / 2.0)
+                };
                 // Checkpoint C, Q2 (F-1): this is the LIVE GUI worker's copy
                 // of the boundary-clip escape. An empty `boundaries` used to
                 // fall out of `if let Some(boundary) = boundaries.first()`
