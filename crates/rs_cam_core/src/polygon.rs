@@ -496,10 +496,7 @@ fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<Offse
         offset_polygon_inner(polygon, distance)
     })) {
         Ok(Ok(v)) => (v, None),
-        Ok(Err(reason)) => (
-            Vec::new(),
-            Some(OffsetFailure::RejectedInput { reason }),
-        ),
+        Ok(Err(reason)) => (Vec::new(), Some(OffsetFailure::RejectedInput { reason })),
         Err(payload) => {
             let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
             tracing::warn!(
@@ -511,7 +508,10 @@ fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<Offse
                  despite self-intersection repair already having run; \
                  treating as collapsed offset (empty result)"
             );
-            (Vec::new(), Some(OffsetFailure::LibraryFailure { assertion }))
+            (
+                Vec::new(),
+                Some(OffsetFailure::LibraryFailure { assertion }),
+            )
         }
     }
 }

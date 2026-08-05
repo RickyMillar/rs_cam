@@ -72,13 +72,9 @@ pub fn effective_boundary_reported(
         // No offset is made, so there is nothing that could fail.
         ToolContainment::Center => (vec![boundary.clone()], None),
         // cavalier_contours: positive = inward for CCW exterior
-        ToolContainment::Inside => {
-            crate::polygon::offset_polygon_reported(boundary, tool_radius)
-        }
+        ToolContainment::Inside => crate::polygon::offset_polygon_reported(boundary, tool_radius),
         // negative = outward
-        ToolContainment::Outside => {
-            crate::polygon::offset_polygon_reported(boundary, -tool_radius)
-        }
+        ToolContainment::Outside => crate::polygon::offset_polygon_reported(boundary, -tool_radius),
     }
 }
 
@@ -127,8 +123,7 @@ pub enum UserOffsetOutcome {
 /// while a positive `BoundaryConfig::offset` means "expand outward".
 #[must_use]
 pub fn apply_user_boundary_offset(polygon: &Polygon2, user_offset: f64) -> UserOffsetOutcome {
-    let (offset_polys, failure) =
-        crate::polygon::offset_polygon_reported(polygon, -user_offset);
+    let (offset_polys, failure) = crate::polygon::offset_polygon_reported(polygon, -user_offset);
     if let Some(failure) = failure {
         return UserOffsetOutcome::Failed(failure);
     }

@@ -1812,8 +1812,12 @@ impl ProjectSession {
         // says is wrong. A collapsed containment is a collapsed containment
         // wherever it happens, so it takes the same ruled decision as an
         // empty `effective_boundary`.
-        let Some(stock_poly) =
-            Self::resolve_containment_polygon(boundary_config, stock_bbox, mesh, keep_out_footprints)?
+        let Some(stock_poly) = Self::resolve_containment_polygon(
+            boundary_config,
+            stock_bbox,
+            mesh,
+            keep_out_footprints,
+        )?
         else {
             Self::resolve_collapsed_containment(
                 None,
@@ -2004,9 +2008,9 @@ impl ProjectSession {
             boundaries.extend(out);
             if failure.is_some()
                 && (offset_failure.is_none()
-                    || failure.as_ref().is_some_and(
-                        crate::polygon::OffsetFailure::is_library_failure,
-                    ))
+                    || failure
+                        .as_ref()
+                        .is_some_and(crate::polygon::OffsetFailure::is_library_failure))
             {
                 offset_failure = failure;
             }
@@ -5942,8 +5946,10 @@ mod tests {
             &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
             &mut findings,
         )
-        .expect("a GENUINE collapse still passes through — Checkpoint C only \
-                 refuses when the offset FAILED");
+        .expect(
+            "a GENUINE collapse still passes through — Checkpoint C only \
+                 refuses when the offset FAILED",
+        );
 
         assert_eq!(
             clipped.toolpath.moves.len(),
