@@ -1239,3 +1239,156 @@ geometry or an agent-facing default.
 - **§4 (F-7)** and **§5 (R7-L1)** are research deliverables. Neither proposes a
   change this programme should make; both name an owner and a re-open
   condition.
+
+---
+
+## 7. D-16.1's residual, located — the rim/wall break, not the groove end
+
+Date: 2026-08-06 · Wave: io-fixes · Research only, **no finishing geometry
+was changed**.
+
+### 7.0 Why this section exists
+
+F23-impl closed D-16.1's **mechanism** claim and explicitly left its
+**quality** claim open. With zero cut targets outside the part footprint,
+arm B still overcut by **−201.6 µm**, and W8's superposition (169 µm
+rim-riding + 34 µm chord refinement + ~30 µm unaccounted) did not survive
+measurement — removing the 169 µm term moved the total by 33 µm, not 169.
+Its `NOT FIXED, STATED` entry named the re-open condition word for word:
+
+> a column-index probe on the grooved fixture that locates the
+> worst-overcut column and attributes it — the harness already carries
+> `ColumnDeviation`'s row/col, so this is instrumentation, not a campaign.
+
+That probe is now committed as
+`d16_1_residual_locating_probe` in
+`crates/rs_cam_core/tests/strategy_comparison_h4.rs` (`#[ignore]`d;
+research only — it asserts non-vacuity and reports, it gates nothing).
+
+```text
+cargo test -p rs_cam_core --test strategy_comparison_h4 --release \
+    -- --ignored --nocapture --test-threads=1 d16_1_residual
+```
+
+Fixture / population / resolution: `grooved_block(2.5, 70°, 1.2)`, the
+project's own Ø1-tip / 7° / Ø6-shaft taper (envelope r 3.0, cusp r 0.5),
+both arms simulated at **0.1 mm**, **96,641 columns common to both** (B
+96,641, D 96,641 — full overlap). Arm B is the shipped `UnifiedFinish`
+band mix; arm D is all-over `Scallop` at the same cusp target. Both arms'
+`(row, col)` grids are asserted to address the same world XY before any
+cross-arm number is read.
+
+Exhibits, rendered and read **before** this section was written:
+`planning/review_2026-08-04/artifacts/io_probe/d161_probe_b_dev.png`,
+`d161_probe_d_dev.png`, `d161_probe_b_minus_d.png`,
+`d161_probe_b_overcut_mask.png`.
+
+### 7.1 Fact — where the residual is
+
+| zone | columns | B worst µm | D worst µm | B p50 \|µm\| | D p50 \|µm\| |
+|---|---:|---:|---:|---:|---:|
+| rim (flat, \|x\| ≥ 2.5) | 84,832 | **−201.6** | −34.1 | **0.00** | **0.00** |
+| wall (70°, 2.0632 < \|x\| < 2.5) | 1,928 | −54.6 | −15.9 | 36.77 | 27.13 |
+| floor (flat, \|x\| ≤ 2.0632) | 9,881 | −0.0 | −0.0 | 5.63 | 7.26 |
+
+The whole-arm worst overcut lives on the **rim** — the flat, 0°,
+shallow-raster territory — whose **median absolute deviation is 0.00 µm
+on both arms**. A band that is otherwise exact carries the worst column
+in the run. That is the signature of a corner artifact, not of a band-wide
+error.
+
+Localised: **477 of 96,641 columns (0.4936%)** are overcut worse than
+50 µm on arm B.
+
+- **100.0% of them sit within 0.25 mm of a profile break.** The
+  0.25–0.5, 0.5–1.0 and ≥ 1.0 mm bins are all **zero**.
+- **99.8% (476/477) are on the rim side** of the rim/wall break; exactly
+  one is on the wall.
+- Overcut-set extent: `x ∈ [−2.500, 2.600]`, `y ∈ [−11.800, 11.800]`.
+  x is pinned to the two break lines at ±2.5 (plus one 0.1 mm sim cell);
+  y spans essentially the **entire** 24 mm groove.
+
+### 7.2 Fact — the "one longitudinal end" reading is refuted
+
+F23-impl located the residual from a render as sitting "at one
+longitudinal end of the groove — the same place the run-off was". The
+column index says otherwise: only **32 of 477 (6.7%)** sit within 1 mm of
+a longitudinal end. The residual is a **line along the rim/wall break
+running the full length of the groove**, with its brightest cell near
+`y = −7.6`. The overcut mask render shows exactly that — a one-cell-wide
+stripe at a single x, not an end patch.
+
+This is a correction to a stated F23-impl uncertainty, which had flagged
+that the location was "from the render, not from a column-index probe".
+It was the right thing to flag.
+
+### 7.3 Fact — the residual is B-specific, but the corner is not
+
+**0 of B's 477 overcut columns (0.0%)** are also overcut past the 50 µm
+gate on arm D. At those same cells D reads −17 to −26 µm.
+
+But arm D is **not** clean at the break: its own worst column is −34.1 µm
+and the D render shows the same thin orange line at the same `x = ±2.5`.
+So the rim/wall break is hard for both strategies, and arm B is roughly
+**6× worse** there than the all-over scallop control.
+
+### 7.4 Fact — which band owns it
+
+Every one of the twelve worst columns has `Shallow/raster` as the Region
+owning its nearest cutting move, at a nearest-cut distance of
+**0.000–0.100 mm** — the raster pass is cutting on the break line itself,
+not near it. The worst column is `x = 2.500, y = −7.600`, `row 64,
+col 245`, B −201.6 µm against D −17.3 µm, nearest cutting move index
+4841.
+
+**This is the finding that matters for the ruling.** F2 sharpened the
+coverage guard in `ring_to_3d` — the **scallop ring** path, which serves
+the **mid-steep** band. The residual is owned by the **Shallow raster**
+band. The fix and the defect are in different bands. That is a sufficient
+explanation for why removing the 169 µm rim-riding term moved the total
+by 33 µm: F2 corrected a real defect, in a band that was not carrying the
+worst column.
+
+### 7.5 Interpretation, and the limit of what this probe can say
+
+The probe **locates** and **attributes to a band**. It does not prove a
+mechanism, and this section will not pretend otherwise.
+
+The hypothesis with an address — stated as a hypothesis: the rim→wall
+break at `|x| = 2.5` is a **convex** break descending into the groove.
+A raster pass advancing across the flat rim at 0.3 mm stepover with a
+0.5 mm-radius tip has its last on-rim contact point where the tool is
+simultaneously tangent to the rim plane and to the 70° wall; a
+drop-cutter contact evaluated on the rim triangle alone puts the tip
+below the rim plane there. Every quantity in that sentence is the right
+order of magnitude for 200 µm, and the 0.25 mm bin holding 100% of the
+population is consistent with a cusp-radius-scaled corner effect. **None
+of it is measured.** Confirming it needs a contact-point probe at a
+single named column, not another aggregate.
+
+### 7.6 Owner and re-open condition
+
+**Owner:** the next finishing wave.
+
+**Re-open condition (specific, and cheaper than what was just done):**
+take the single column `row 64, col 245` (`x = 2.500, y = −7.600`) and
+move 4841 on the grooved fixture, and dump the drop-cutter contact
+evaluation for that move — which triangles were sampled, which one won,
+and what the tool's lowest point was. One column, one move, no
+simulation. If the winning triangle is the rim rather than the wall, the
+mechanism above is confirmed and the fix is a band-local one in the
+Shallow raster path; if it is not, this hypothesis is dead and the
+`Shallow/raster` attribution in §7.4 still stands and still narrows the
+search.
+
+**What is now settled and should not be re-scouted:** the residual is not
+the off-footprint run-off (F2 closed that, and it is 0 by measurement);
+it is not a longitudinal-end effect (§7.2); it is not in the mid-steep
+scallop band (§7.4); and it is not a universal geometric floor, because
+the same corner costs arm D 34 µm and arm B 202 µm (§7.3).
+
+**Not addressed here:** the `worst leftover` growth (222.9 → 339.7 µm)
+that F23-impl also left open. The per-zone table above is consistent with
+its "edge collar" attribution — the wall band carries B p50 36.77 µm
+against D 27.13 µm — but that is one aggregate agreeing with a guess, not
+a measurement, and it is left open with the same owner.
