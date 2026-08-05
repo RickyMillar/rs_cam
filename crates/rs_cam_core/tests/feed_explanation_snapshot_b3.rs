@@ -651,7 +651,8 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     let band_min = e.band_min_mm.expect("row publishes a floor");
     let of_max = e.gate_observed_mm / e.band_max_mm;
     assert_eq!(
-        e.verdict_label, "Exceeds",
+        e.verdict_label,
+        "Exceeds",
         "the operation is at {:.1} % of its band MAXIMUM ({:.6}) — this is a breakage \
          trip, and reporting it as anything softer is the pre-conversion defect surviving",
         100.0 * of_max,
