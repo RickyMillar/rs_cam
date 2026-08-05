@@ -400,7 +400,7 @@ fn d16_2_fixture_cuts_a_shallow_band_and_only_a_shallow_band() {
 /// `(max_shift - STOCK_TO_LEAVE_MM).abs() < 1e-9`. Nothing else in this
 /// test changes.**
 #[test]
-fn exhibit_shallow_band_ignores_stock_to_leave_entirely() {
+fn shallow_band_honours_stock_to_leave_exactly() {
     let fixture = bumpy_fixture();
 
     let arm0 = run(&fixture, 0.0);
@@ -437,31 +437,29 @@ fn exhibit_shallow_band_ignores_stock_to_leave_entirely() {
     let max_shift = max_abs_shift(&zs0, &zs_half);
 
     assert!(
-        max_shift < 1e-9,
-        "INVERT THIS LINE WHEN THE FIX LANDS.\n\
+        (max_shift - STOCK_TO_LEAVE_MM).abs() < 1e-9,
+        "SENTRY (was D-16.2's exhibit, INVERTED 2026-08-06 when the fix \
+         landed).\n\
          \n\
-         D-16.2 exhibit: UnifiedFinish's SHALLOW (raster) band ignores \
-         `stock_to_leave`. Two ops differing ONLY in that dial (0.0 vs \
-         {STOCK_TO_LEAVE_MM} mm) emitted {n} cut positions each whose Z \
-         differed by at most {max_shift:.12} mm — i.e. not at all.\n\
+         UnifiedFinish's SHALLOW (raster) band must shift its cut Z by \
+         EXACTLY +{STOCK_TO_LEAVE_MM} mm when the dial moves from 0.0 to \
+         {STOCK_TO_LEAVE_MM} mm. Measured over {n} cut positions the largest \
+         shift is {max_shift:.12} mm.\n\
          \n\
-         Root cause: `unified_finish.rs:1919` (the `FinishBand::Shallow` \
-         arm) calls `toolpath.rs:607` `raster_toolpath_from_grid(grid, \
-         feed_rate, plunge_rate, safe_z, min_z, boundary_regions)`. That \
-         signature has no stock-to-leave parameter and the body performs no \
-         Z arithmetic — every emitted target is \
-         `grid.get(row, col).position()` verbatim off a raw \
-         `batch_drop_cutter_with_cancel` grid (whose `0.0` argument is \
-         `direction_deg`, not a leave allowance). The dial reports no error \
-         and does nothing.\n\
+         A ZERO here is the original defect returning: the band arm hands a \
+         raw `batch_drop_cutter_with_cancel` grid to \
+         `raster_toolpath_from_grid`, whose signature has no stock-to-leave \
+         parameter and whose body does no Z arithmetic — every emitted \
+         target is `grid.get(row, col).position()` verbatim. The fix lifts \
+         the grid itself (and moves the off-mesh sentinel and the filter \
+         threshold with it, so the emitted point count cannot change).\n\
          \n\
-         A FAILURE HERE IS GOOD NEWS: it means the shallow band now shifts \
-         its cut Z. Expected shift is exactly +{STOCK_TO_LEAVE_MM} mm, the \
-         same pure `cl.z + stock_to_leave` convention `scallop.rs`'s \
-         `ring_to_3d`, `pencil.rs` and `surface_link.rs` already use. \
-         Replace `max_shift < 1e-9` with \
-         `(max_shift - STOCK_TO_LEAVE_MM).abs() < 1e-9` and change nothing \
-         else.",
+         A shift that is non-zero but not exactly the dialled value means \
+         somebody switched this band to a surface-normal offset on its own. \
+         The repo-wide convention is a pure vertical `cl.z + stock_to_leave` \
+         — `scallop.rs`'s `ring_to_3d`, `pencil.rs`, `surface_link.rs`, \
+         `steep_shallow.rs` — and a band that diverges puts a step at its \
+         own seam.",
         n = zs0.len(),
     );
 }
@@ -585,7 +583,7 @@ fn control_mid_steep_band_honours_stock_to_leave_exactly() {
 /// separately; do not fold it into D-16.2 just because the two exhibits
 /// share a file.
 #[test]
-fn exhibit_very_steep_band_ignores_stock_to_leave_separate_defect() {
+fn very_steep_band_honours_stock_to_leave_exactly() {
     let fixture = hemisphere_fixture();
 
     let arm0 = run(&fixture, 0.0);
@@ -631,32 +629,29 @@ fn exhibit_very_steep_band_ignores_stock_to_leave_separate_defect() {
     let max_shift = max_abs_shift(&zs0, &zs_half);
 
     assert!(
-        max_shift < 1e-9,
-        "INVERT THIS LINE WHEN THE FIX LANDS — but note this is a SEPARATE \
-         defect from D-16.2 as filed.\n\
+        (max_shift - STOCK_TO_LEAVE_MM).abs() < 1e-9,
+        "SENTRY (was the VERY-STEEP twin of D-16.2's exhibit, INVERTED \
+         2026-08-06 when the fix landed).\n\
          \n\
-         VerySteep (waterline) exhibit: two ops differing ONLY in \
-         `stock_to_leave` (0.0 vs {STOCK_TO_LEAVE_MM} mm) emitted {n} \
-         very-steep cut positions each whose Z differed by at most \
-         {max_shift:.12} mm — i.e. not at all.\n\
+         UnifiedFinish's VERY-STEEP (waterline) band must shift its cut Z by \
+         EXACTLY +{STOCK_TO_LEAVE_MM} mm when the dial moves from 0.0 to \
+         {STOCK_TO_LEAVE_MM} mm. Measured over {n} very-steep cut positions \
+         the largest shift is {max_shift:.12} mm.\n\
          \n\
-         Root cause: `waterline::WaterlineParams` has four fields \
-         (`sampling`, `feed_rate`, `plunge_rate`, `safe_z`) and no \
-         stock-to-leave field at all, so `unified_finish.rs`'s \
-         `FinishBand::VerySteep` arm has nothing to pass. Unlike the \
-         shallow band this cannot be fixed by threading an existing dial \
-         one level deeper: `WaterlineParams` needs the field first, and \
-         whoever adds it must also rule on whether the Z LADDER LEVELS move \
-         with the allowance or only the contours at each level.\n\
+         A ZERO here is the original defect returning: `WaterlineParams` had \
+         four fields and no stock-to-leave at all, so this arm had nothing to \
+         pass. The fix added the field and lifts every contour point by it, \
+         BEFORE the boundary run-splitter and the minimum-segment floor, so \
+         neither the run topology nor the emitted point count moves with the \
+         dial — only Z.\n\
          \n\
-         A FAILURE HERE IS GOOD NEWS. Expected shift is \
-         +{STOCK_TO_LEAVE_MM} mm if the fix follows the `cl.z + \
-         stock_to_leave` convention every honouring path uses; replace \
-         `max_shift < 1e-9` with \
-         `(max_shift - STOCK_TO_LEAVE_MM).abs() < 1e-9` in that case. If \
-         the ruling was 'levels move too', the shift may be exact on the \
-         contours and quantised on the ladder — re-derive the assertion \
-         from the ruling rather than pattern-matching test 2.",
+         The ruling (Checkpoint F3, 2026-08-06) was to fix Shallow and \
+         VerySteep TOGETHER, on the shared vertical convention: fixing \
+         Shallow alone would have put a `stock_to_leave`-sized step at the \
+         shallow-to-waterline seam that did not exist before. The Z LADDER \
+         LEVELS are deliberately NOT moved — the ladder is where contours \
+         are computed, the lift is what the tool then rides at, and moving \
+         both would double-count.",
         n = zs0.len(),
     );
 }

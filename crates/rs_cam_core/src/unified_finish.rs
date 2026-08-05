@@ -139,8 +139,28 @@ pub struct UnifiedFinishParams {
     pub z_step: f64,
     /// Waterline contour sampling (mm).
     pub sampling: f64,
-    /// Stock to leave on the surface (mm) — scallop path only (raster and
-    /// waterline don't take one today; parity with the standalone ops).
+    /// Stock to leave (mm) — honoured by **all three bands**.
+    ///
+    /// Applied as a `+Z` shift on the drop-cutter contact point: mid-steep
+    /// scallop lifts each ring vertex, shallow raster lifts each grid point
+    /// (with the off-mesh sentinel and its filter threshold moving together),
+    /// very-steep waterline lifts each contour point. Surface links and the
+    /// crease/claims pencil ride at the same offset, so no band seam steps.
+    ///
+    /// **F3 / D-16.2 (2026-08-06).** This doc used to read "scallop path only
+    /// (raster and waterline don't take one today; parity with the standalone
+    /// ops)". Two of the three bands silently dropped the operator's dial, and
+    /// the "parity" claim was false against `SteepShallow`, whose shallow
+    /// raster has always applied it. Both bands were fixed together — fixing
+    /// shallow alone would have introduced a `stock_to_leave`-sized step at
+    /// the shallow↔waterline seam that did not exist before.
+    ///
+    /// **The approximation, stated.** A vertical lift leaves
+    /// `stock_to_leave · cos θ` measured normal to the surface — 0.71× at 45°
+    /// down to 0.26× at 75°. Every finish op in the repo shares this
+    /// convention and two pin it in unit tests; whether it should become a
+    /// surface-normal offset is a separate repo-wide question, deliberately
+    /// NOT coupled to this field.
     pub stock_to_leave: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1775,6 +1795,11 @@ pub fn unified_finish_toolpath_with_cancel(
                     feed_rate: params.feed_rate,
                     plunge_rate: params.plunge_rate,
                     safe_z: params.safe_z,
+                    // D-16.2 (F3): the VerySteep band honours the dial too.
+                    // Before this the field did not exist on
+                    // `WaterlineParams` at all, so this arm could not pass
+                    // one — the twin defect of the Shallow band's.
+                    stock_to_leave: params.stock_to_leave,
                 };
                 // `waterline_toolpath_with_cancel` ladders start_z..final_z
                 // by `z_step` internally — no need to precompute levels.
@@ -1911,11 +1936,40 @@ pub fn unified_finish_toolpath_with_cancel(
                                 pt.contacted = false;
                             }
                         }
+                        // D-16.2 (F3, 2026-08-06): honour `stock_to_leave`.
+                        //
+                        // `raster_toolpath_from_grid` emits every target as
+                        // `grid.get(row, col).position()` verbatim — it takes
+                        // no stock-to-leave argument and does no Z arithmetic
+                        // — so until this lift the dial was silently dropped
+                        // on the whole Shallow band while the MidSteep band
+                        // next door honoured it. The convention is the repo's
+                        // shared one: a pure **+Z shift on the drop-cutter
+                        // contact point**, identical to `scallop.rs`'s
+                        // `cl.z + stock_to_leave` and to `steep_shallow.rs`'s
+                        // shipped shallow raster. (It is an approximation —
+                        // what survives measured normal to the surface is
+                        // `stock_to_leave·cos θ` — but it is the SAME
+                        // approximation every finish op in the repo makes,
+                        // and diverging here alone would put a step at every
+                        // band seam.)
+                        //
+                        // The off-mesh sentinel moves WITH the grid, and the
+                        // filter threshold below moves with it too. Lifting
+                        // the sentinel while leaving the threshold at
+                        // `effective_min_z` would stop off-mesh points being
+                        // filtered and let the tool ride the mesh rim — the
+                        // exact trench the coverage guard above prevents.
+                        if params.stock_to_leave != 0.0 {
+                            for pt in &mut grid.points {
+                                pt.z += params.stock_to_leave;
+                            }
+                        }
                         check_cancel(cancel)?;
                         shallow_grid.insert(grid)
                     }
                 };
-                let effective_min_z = mesh.bbox.min.z - 0.1;
+                let effective_min_z = mesh.bbox.min.z - 0.1 + params.stock_to_leave;
                 let tp = raster_toolpath_from_grid(
                     grid,
                     params.feed_rate,

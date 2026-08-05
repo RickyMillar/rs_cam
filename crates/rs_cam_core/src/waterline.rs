@@ -29,6 +29,31 @@ pub struct WaterlineParams {
     pub plunge_rate: f64,
     /// Safe Z for rapid moves.
     pub safe_z: f64,
+    /// Stock to leave (mm), applied as a **+Z shift on every emitted contour
+    /// point** — the repo-wide finish convention (`scallop.rs`'s
+    /// `cl.z + stock_to_leave`, `steep_shallow.rs`'s `z_adjusted = z +
+    /// stock_to_leave` for exactly this contour shape).
+    ///
+    /// Added by F3 / D-16.2 (2026-08-06). Until then `WaterlineParams` had no
+    /// such field, so the `UnifiedFinish` VerySteep band **could not** pass
+    /// one and silently dropped the operator's dial — the twin of the Shallow
+    /// band's defect, found while mapping it
+    /// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.B).
+    /// Fixing only Shallow would have put a `stock_to_leave`-sized step at
+    /// the shallow↔waterline seam that does not exist today, so both bands
+    /// were fixed together.
+    ///
+    /// `0.0` reproduces the pre-fix toolpath byte-for-byte: the lift is
+    /// skipped entirely, not applied as `+0.0`.
+    ///
+    /// **Known approximation, deliberately shared rather than corrected
+    /// here.** A vertical lift leaves `stock_to_leave·cos θ` measured normal
+    /// to the surface, which on the near-vertical walls this band exists for
+    /// is a small fraction of the dialled value. Every finish op in the repo
+    /// makes the same approximation; whether the convention should become
+    /// normal-direction is a separate repo-wide question and is NOT coupled
+    /// to this field.
+    pub stock_to_leave: f64,
 }
 
 /// Generate a single waterline contour at a given Z height.
@@ -160,8 +185,21 @@ pub fn waterline_toolpath_with_cancel(
 
     for z in waterline_z_levels(start_z, final_z, z_step) {
         check_cancel(cancel)?;
-        let contours =
+        let mut contours =
             waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
+
+        // D-16.2: the whole contour rides up by `stock_to_leave`. Applied to
+        // the CL points BEFORE the boundary run-splitter and the
+        // minimum-segment floor, so neither the run topology nor the emitted
+        // point count can change with the dial — only Z. Skipped entirely at
+        // `0.0`, so the pre-fix path is byte-identical there.
+        if params.stock_to_leave != 0.0 {
+            for contour in &mut contours {
+                for p in contour.iter_mut() {
+                    p.z += params.stock_to_leave;
+                }
+            }
+        }
 
         for contour in &contours {
             if contour.len() < 3 {
@@ -356,6 +394,7 @@ mod tests {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 25.0,
+            stock_to_leave: 0.0,
         };
 
         let tp = waterline_toolpath(&mesh, &index, &tool, 15.0, 5.0, 5.0, &params);
@@ -423,6 +462,7 @@ mod tests {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 25.0,
+            stock_to_leave: 0.0,
         };
         let never_cancel = || false;
 
@@ -458,6 +498,7 @@ mod tests {
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 25.0,
+            stock_to_leave: 0.0,
         };
         let never_cancel = || false;
 

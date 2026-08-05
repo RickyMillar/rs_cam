@@ -2340,6 +2340,12 @@ pub(crate) fn generate_waterline(
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
+        // `WaterlineConfig` exposes no stock-to-leave dial, so the
+        // standalone op has an ABSENT capability, not a dropped one: no
+        // operator can set a value here and get nothing back. Same
+        // disposition as standalone DropCutter
+        // (`FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.C).
+        stock_to_leave: 0.0,
     };
     let tp = crate::waterline::waterline_toolpath_with_cancel(
         m,
