@@ -559,17 +559,26 @@ The orchestrator maintains this table in this file and appends factual details t
 
 | ID | Priority | Work | Status | Blocking checkpoint | Evidence / commit | Next owner action |
 |---|---|---|---|---|---|---|
-| W0 | H | R3 adaptive3d red baseline | NOT_STARTED | A | — | reproduce and classify all three reds |
-| W1 | H | R7 findings transport census/fix | NOT_STARTED | none for report wiring | — | exhaustive core→worker adapter design |
-| W2 | H | R7 arcfit intent evidence/fix | AWAITING_CHECKPOINT | F1 | `planning/review_2026-08-04/ARCFIT_INTENT_EVIDENCE.md`; fixture `crates/rs_cam_core/tests/arcfit_intent_boundary_f1.rs` (4 exhibits, green = defect present); all baselines + controls green at `894e060`, clippy clean | operator rules F1 Q1–Q4 (evidence doc §6); PR-6 blocked until then |
-| W3 | H | R1 feeds census/B3 | NOT_STARTED | B | — | build implementation/data-flow census |
-| W4 | H | R2 adversarial fixtures/findings | NOT_STARTED | C | — | fixture generators and per-op inventory |
-| W5 | M | R4 simulation issue census | NOT_STARTED | D | — | producer/consumer and measurability inventory |
-| W6 | M | R5 drill evidence/literature audit | NOT_STARTED | D | — | run source freshness and gate matrix |
-| W7 | M | R6 reference fixtures/P7/rest anomaly | NOT_STARTED | E | — | procedural fixture/repeatability study |
-| W8 | M | R7 finishing defects/export/read performance | NOT_STARTED | F2/F3 | — | reproduce each defect in isolation |
-| W9 | M | R8 bounded scouts | NOT_STARTED | none | — | one-page maps only |
-| W10 | L | final evidence/docs/live validation | NOT_STARTED | G | — | consolidate after approved fixes |
+| W0 | H | R3 adaptive3d red baseline | DONE | A ruled + executed | `d40768a`, `14b0f70`; PR-1..3 `894e060` `0b6478c` `8853fdb` `24c9a12` | none — allowlist empty |
+| W1 | H | R7 findings transport census/fix | DONE | none (report wiring) | `41cb426`, `1de1094`, `c68f5d5` | none |
+| W2 | H | R7 arcfit intent evidence/fix | DONE | F1 ruled + executed | `8963b75`, `260277b`; PR-6 `3dbec75` `5fad7e2` | none |
+| W3 | H | R1 feeds census/B3 | DONE | B ruled + executed | `2823d71`, `8285497`, `6bc856f`, `5f7bb25`, `2e706bd`; B-lit `0c642e0`; PR-8 six commits; conversion `6e19461` `0a45e35` `08e7c88`; feeds-final `2d1bfc8` `62ffd5c` | none — residual divergences ledgered in the close-out §4 |
+| W4 | H | R2 adversarial fixtures/findings | DONE | C ruled + executed | `0b1e0fa`, `737d9bd`, `f9378d9`; C-impl `693579c` `6ec9737` `1a6849a` `c8b6615` | 165 matrix cells remain NOT RUN (close-out §4 `A2D-165`) |
+| W5 | M | R4 simulation issue census | DONE | D ruled + executed | `0e1c996`, `c03227f`; D-impl-1 nine commits; D-impl-2 five | none |
+| W6 | M | R5 drill evidence/literature audit | DONE | D ruled + executed | `DRILL_GATE_EVIDENCE_AUDIT.md`; D-impl-3 fourteen commits | dead non-drill citation URLs → `/refresh-lit-matrix` |
+| W7 | M | R6 reference fixtures/P7/rest anomaly | DONE | E ruled + executed | seven commits; E-impl `6f85b8e` `3404b02` `8d92056` `1be1ff9` `559f90c` | B-2 unrun ⇒ **no bin adopted** (close-out §4 `B2-BIN`) |
+| W8 | M | R7 finishing defects/export/read performance | DONE | F2/F3 ruled + executed | `e568ea2`, `473a097`, `a025d19`; F23-impl twelve commits; io-fixes `a80020a` `a092d1a` `65dea4d` `9aafdf5` | D-16.1's quality claim open; C2–C5 not attempted |
+| W9 | M | R8 bounded scouts | DONE | none | `e9c6b46`, `10c3472` | 17 items to the next programme's intake |
+| W10 | L | final evidence/docs/live validation | DONE (docs); **live validation NOT RUN** | **G — pending operator authorization** | `3d10f7b`, `fdb0ae6`, `TECH_DEBT_2_CLOSEOUT.md` | operator rules Checkpoint G; plan is close-out §6 (24 items) |
+
+**Reconciled 2026-08-06 at close-out.** Every lane is DONE; eight
+checkpoints ruled and executed (A, B, C, D, E, F1, F2, F3). Checkpoint G
+has not run. Final gate: `cargo test -p rs_cam_core --lib` 2260 / 0 / 12;
+`cargo fmt --check --all` clean; zero-warning workspace clippy. The
+accepted-red allowlist is empty. Per-item verdicts, the 78-row deferral
+ledger and the definition-of-done audit are in
+`TECH_DEBT_2_CLOSEOUT.md`; the factual record per wave is
+`ORCHESTRATION_LOG.md`.
 
 ### Required status update format
 
