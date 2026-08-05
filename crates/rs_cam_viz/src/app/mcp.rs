@@ -1156,6 +1156,13 @@ impl super::RsCamApp {
             // exactly what an agent narrating a LIVE toolpath cannot
             // otherwise see.
             zero_removal: result.stats.zero_removal,
+            // Checkpoint C: a contained offset failure, and a containment
+            // that was requested and is not in force, are both invisible
+            // everywhere else — the only other trace either leaves is a
+            // `tracing::warn!` in a process that usually installs no
+            // subscriber.
+            offset_library_failures: result.stats.offset_library_failures,
+            boundary_clip_dropped: result.stats.boundary_clip_dropped,
         };
 
         rs_cam_core::narrate::narrate_toolpath_with_context(

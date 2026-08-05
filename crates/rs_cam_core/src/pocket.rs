@@ -6,7 +6,7 @@
 
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
+use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2};
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for pocket clearing.
@@ -58,9 +58,31 @@ pub fn pocket_toolpath_with_cancel(
     params: &PocketParams,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
-    let contours =
-        pocket_contours_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
-    Ok(contours_to_toolpath(&contours, params))
+    Ok(pocket_toolpath_reported_with_cancel(polygon, params, cancel)?.0)
+}
+
+/// [`pocket_toolpath_with_cancel`] with Checkpoint C's offset failure
+/// channel attached.
+///
+/// The second element counts offset calls that FAILED rather than collapsed
+/// — the compensation offset plus every ring of the cascade. It matters most
+/// here, and F-12 is why: the cascade's only exit is a collapsed ring, and a
+/// contained panic IS a collapsed ring to that loop. An inlay's female pocket
+/// stopped early on a `debug_assert!` inside a transitive dependency, left
+/// material standing, and reported a successful generate — the loop cannot
+/// tell "the pocket is finished" from "the offset broke".
+pub fn pocket_toolpath_reported_with_cancel(
+    polygon: &Polygon2,
+    params: &PocketParams,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, usize), Cancelled> {
+    let (contours, failures) = pocket_contours_reported_with_cancel(
+        polygon,
+        params.tool_radius,
+        params.stepover,
+        cancel,
+    )?;
+    Ok((contours_to_toolpath(&contours, params), failures))
 }
 
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
@@ -85,9 +107,23 @@ pub fn pocket_contours_with_cancel(
     stepover: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<Vec<P2>>, Cancelled> {
+    Ok(pocket_contours_reported_with_cancel(polygon, tool_radius, stepover, cancel)?.0)
+}
+
+/// [`pocket_contours_with_cancel`] with Checkpoint C's offset failure
+/// channel attached — see [`pocket_toolpath_reported_with_cancel`] for why
+/// this cascade is the one that most needs it.
+pub fn pocket_contours_reported_with_cancel(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<(Vec<Vec<P2>>, usize), Cancelled> {
     check_cancel(cancel)?;
     // First offset: tool radius compensation (tool edge touches wall)
-    let compensated = offset_polygon(polygon, tool_radius);
+    let (compensated, compensation_failure) =
+        crate::polygon::offset_polygon_reported(polygon, tool_radius);
+    let mut offset_failures = usize::from(compensation_failure.is_some());
 
     let mut all_contours: Vec<Vec<P2>> = Vec::new();
 
@@ -143,7 +179,11 @@ pub fn pocket_contours_with_cancel(
         let mut rings = OffsetRingSet::from_polygon(comp);
         loop {
             check_cancel(cancel)?;
-            rings = rings.offset(stepover);
+            let (next, failure) = rings.offset_reported(stepover);
+            rings = next;
+            if failure.is_some() {
+                offset_failures += 1;
+            }
             if rings.is_empty() {
                 break;
             }
@@ -170,7 +210,7 @@ pub fn pocket_contours_with_cancel(
         }
     }
 
-    Ok(all_contours)
+    Ok((all_contours, offset_failures))
 }
 
 /// Convert 2D contour rings into a 3D toolpath at the given parameters.

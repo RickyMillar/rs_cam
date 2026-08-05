@@ -385,6 +385,91 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it and generation is unaffected.
     pub zero_removal: Option<ZeroRemovalFinding>,
+    /// Checkpoint C (Q1 / D-2): how many times this generation's 2D offsets
+    /// came back with a [`crate::polygon::OffsetFailure`] instead of a
+    /// result — a `cavalier_contours` panic the chokepoint contained, or an
+    /// input one of its own guards refused.
+    ///
+    /// **Three-valued, the A/M9 X-19 contract**, and this one earns it:
+    ///
+    /// * `None` — **not measured**. The operation runs no 2D offset at all
+    ///   (every 3D family, drill), or it runs one through the plain
+    ///   [`crate::polygon::offset_polygon`] name that drops the channel. Do
+    ///   NOT read this as "no failures".
+    /// * `Some(0)` — **measured clean**: every offset this operation made
+    ///   either produced geometry or collapsed honestly.
+    /// * `Some(n)` — `n` offset CALLS failed. Not `n` distinct polygons: a
+    ///   depth-stepped operation re-offsets the same geometry once per Z
+    ///   level, so a single bad ring on a ten-level pocket reports ten.
+    ///
+    /// Why it needs a channel at all: before this, a contained panic and a
+    /// geometric collapse were the same `Vec::new()` and the only trace was
+    /// a `tracing::warn!` in a process that usually installs no subscriber.
+    /// The measured cost of that is F-12 — an inlay's female pocket whose
+    /// ring cascade stopped early on a `debug_assert!` in a transitive
+    /// dependency, left material standing, and reported a successful
+    /// generate.
+    ///
+    /// **Debug/release divergence applies** (Checkpoint C, Q4 option a).
+    /// Most of the assertions counted here are `debug_assert!`s, so the same
+    /// project generated in release can legitimately report a lower count
+    /// while the library proceeds on unvalidated input instead. See
+    /// [`crate::polygon`]'s `## Failure contract`.
+    ///
+    /// Report-only: no gate consumes it and generation is unaffected.
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C (Q2 / D-3a option b): the machining-boundary containment
+    /// this operation asked for **collapsed**, so the toolpath was emitted
+    /// unclipped. See [`BoundaryClipDroppedFinding`].
+    ///
+    /// `None` = no containment was dropped: either no boundary clip ran, or
+    /// it ran and produced geometry. There is no "measured zero" to
+    /// distinguish here — the finding is an event, not a quantity — so the
+    /// two-valued reading is the honest one, the same call
+    /// [`Self::zero_removal`] makes and for the same reason.
+    ///
+    /// The **failure** case is not here, because it is not a finding: an
+    /// empty containment caused by a contained offset failure REFUSES the
+    /// generate instead (`OperationError`). This slot is only ever the
+    /// legitimate collapse.
+    ///
+    /// Report-only: no gate consumes it. The toolpath is real and runnable;
+    /// what it is not is contained.
+    pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
+}
+
+/// Checkpoint C (Q2): a boundary containment that collapsed, and the clip
+/// that was therefore not applied.
+///
+/// F-1 is the incident this exists for. `boundary::effective_boundary` turns
+/// a containment setting into geometry with a single offset, and
+/// `clip_annotated_to_boundary_set`'s documented contract is that an EMPTY
+/// boundary slice *"is not an error and not a clip: the toolpath passes
+/// through with an identity mapping."* Both call sites implement exactly
+/// that. So an operator who set `Inside` — "keep the whole cutter inside this
+/// boundary", a safety containment — could get a path with no containment at
+/// all, and nothing anywhere said so.
+///
+/// The pass-through itself is **kept**, because the cause it was written for
+/// is real: when the tool is larger than the stock nothing is machinable
+/// anyway, and emitting the unclipped path is better than silently deleting
+/// it. What was missing is the operator being told. That is this finding.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundaryClipDroppedFinding {
+    /// The containment mode that was requested and not applied. `Center`
+    /// cannot appear: it makes no offset, so it cannot collapse.
+    pub containment: BoundaryContainment,
+    /// Tool diameter (mm) the containment was insetting by. Half of this is
+    /// the offset distance that ate the boundary, so it is the number that
+    /// makes "the tool is larger than the stock" checkable rather than
+    /// asserted.
+    pub tool_diameter_mm: f64,
+    /// How many source polygons went into the containment before the offset.
+    /// `1` on the single-polygon path; on the `DerivedRestRegions` path this
+    /// is the region count, and *every one* of them collapsed — a rest
+    /// boundary made of many small islands eaten by the inset reads very
+    /// differently from one stock rectangle that was too small.
+    pub source_region_count: usize,
 }
 
 /// A/M7 gate 1: how many retract round trips a toolpath took, and whether

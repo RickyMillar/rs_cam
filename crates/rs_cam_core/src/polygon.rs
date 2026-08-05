@@ -2,6 +2,31 @@
 //!
 //! Internal representation uses nalgebra P2. Converts to geo-types and
 //! cavalier_contours at operation boundaries per architecture rules.
+//!
+//! # Failure contract
+//!
+//! Ruled at Checkpoint C (2026-08-04), Q1 shape B. An offset that returns no
+//! geometry has three possible causes and they are not interchangeable:
+//!
+//! | cause | reported as | what a consumer should do |
+//! |---|---|---|
+//! | genuine geometric collapse | `(empty, None)` | proceed — this is the expected outcome of offsetting a shape past its own width |
+//! | this module's own guard refused the input | `(empty, Some(`[`OffsetFailure::RejectedInput`]`))` | do not treat as a collapse |
+//! | `cavalier_contours` panicked, and was contained | `(_, Some(`[`OffsetFailure::LibraryFailure`]`))` | do not treat as a collapse |
+//!
+//! [`offset_polygon`] and [`OffsetRingSet::offset`] keep the old
+//! `Vec<Polygon2>` / `Self` shape and drop the channel;
+//! [`offset_polygon_reported`] and [`OffsetRingSet::offset_reported`] keep
+//! it. That split is deliberate: fifteen call sites use the result as pure
+//! geometry (containment, masking, a largest-by-area pick) and pay no churn,
+//! while the sites where the difference has a cost opt in.
+//!
+//! The cost is not hypothetical. At the boundary layer an empty offset does
+//! not shrink a containment to nothing — it removes the containment
+//! **entirely** (`crate::boundary`), which is a correct pass-through when the
+//! tool is larger than the stock and an unbounded over-cut when a dependency
+//! assertion fired. See `planning/review_2026-08-04/CAVALIER_SHAPE_FAILURE.md`
+//! and `ADVERSARIAL_2D_FINDINGS.md` F-1/F-2/F-12.
 
 use crate::geo::P2;
 use cavalier_contours::polyline::{PlineCreation, PlineSource, PlineSourceMut, Polyline};
@@ -242,6 +267,109 @@ impl Polygon2 {
     }
 }
 
+/// Why an offset produced nothing, when the answer is **not** "the geometry
+/// ran out" (Checkpoint C, Q1, shape B — `CAVALIER_SHAPE_FAILURE.md` §6 D-1).
+///
+/// **A genuine geometric collapse is deliberately not a variant of this
+/// enum.** It is the expected, common, correct outcome of offsetting a shape
+/// inward past its own width, and it is reported as `(empty, None)` — the
+/// absence of a failure, not a failure with a benign name. Three structurally
+/// different events used to share one observable value (`Vec::new()`) and
+/// R2's `a_contained_panic_is_indistinguishable_from_a_collapse` pinned that
+/// as the defect; this type is the channel the return value never had.
+///
+/// The distinction has a consumer with a real cost attached. At the boundary
+/// layer an empty offset does not shrink the containment to nothing, it
+/// **removes the containment entirely** (`boundary.rs`, F-1), and that is a
+/// legitimate pass-through when the tool is simply larger than the stock and
+/// an unbounded over-cut when a dependency assertion fired. Nothing
+/// downstream could tell those apart, because nothing upstream carried the
+/// difference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OffsetFailure {
+    /// The input never reached `cavalier_contours` — one of this module's own
+    /// preconditions rejected it.
+    RejectedInput { reason: OffsetRejection },
+    /// `cavalier_contours` (or a transitive dependency of it) panicked and
+    /// the chokepoint's `catch_unwind` contained it.
+    ///
+    /// `assertion` is the panic payload's message, e.g. *"start index should
+    /// be less than or equal to end index if polyline is open"*. There is no
+    /// source location: see [`crate::panic_message`] for why a library
+    /// primitive cannot recover one.
+    ///
+    /// **Debug/release divergence applies** (Checkpoint C, Q4 option a). Most
+    /// of the assertions this arm catches are `debug_assert!`s, so in a
+    /// release build they do not fire and this arm is never taken for those
+    /// classes — the library proceeds on the unvalidated input instead. See
+    /// this module's `## Failure contract` docs.
+    LibraryFailure { assertion: String },
+}
+
+/// Which precondition of this module rejected an offset input.
+///
+/// These are the guards that already existed — this enum names them, it does
+/// not add any. In particular **no non-finite-coordinate check is performed**:
+/// `NaN` still reaches `cavalier_contours` (F-11/F-13 in
+/// `ADVERSARIAL_2D_FINDINGS.md`), where in a debug build it trips
+/// `static_aabb2d_index`'s `min_x <= max_x` assertion and surfaces as a
+/// [`OffsetFailure::LibraryFailure`], and in a release build it does not.
+/// Adding a validating constructor to [`Polygon2`] is a separate, unruled
+/// item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OffsetRejection {
+    /// The exterior ring carried fewer than three vertices.
+    ExteriorBelowTriangle,
+    /// The exterior ring fell below three vertices once repeat positions
+    /// within `PLINE_POS_EQUAL_EPS` were removed.
+    ExteriorDegenerateAfterDedupe,
+}
+
+impl OffsetFailure {
+    /// `true` for [`Self::LibraryFailure`] — the arm that means a dependency
+    /// broke rather than that we refused the input.
+    ///
+    /// The two are treated the same way by every consumer ruled so far (both
+    /// REFUSE at the boundary layer, both count at the report-only layer);
+    /// this predicate exists so a consumer that ever needs to separate them
+    /// does not re-derive the match.
+    #[must_use]
+    pub const fn is_library_failure(&self) -> bool {
+        matches!(self, Self::LibraryFailure { .. })
+    }
+
+    /// One line naming what went wrong, for an operator-facing message.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            Self::RejectedInput { reason } => match reason {
+                OffsetRejection::ExteriorBelowTriangle => {
+                    "the exterior ring has fewer than three vertices".to_owned()
+                }
+                OffsetRejection::ExteriorDegenerateAfterDedupe => {
+                    "the exterior ring collapses below three vertices once repeat \
+                     positions are removed"
+                        .to_owned()
+                }
+            },
+            Self::LibraryFailure { assertion } => {
+                format!("cavalier_contours failed: {assertion}")
+            }
+        }
+    }
+
+    /// Keep the more serious of two failures — a library failure outranks a
+    /// rejected input — so one offset over several repaired pieces reports
+    /// the worst thing that happened rather than the first.
+    fn merge(a: Option<Self>, b: Option<Self>) -> Option<Self> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(if a.is_library_failure() { a } else { b }),
+            (Some(a), None) => Some(a),
+            (None, b) => b,
+        }
+    }
+}
+
 /// Offset a polygon by `distance`.
 ///
 /// Uses cavalier_contours for arc-preserving parallel offset.
@@ -259,21 +387,53 @@ impl Polygon2 {
 /// repaired via `Polygon2::repaired` *before* it ever reaches
 /// cavalier_contours, since that's the actual class of degenerate input
 /// most likely to hit the panic path below.
+///
+/// **This name says nothing about WHY the result is empty.** Callers that
+/// need to tell a collapse from a failure call
+/// [`offset_polygon_reported`]; this one delegates to it and drops the
+/// channel, which is what keeps the fifteen geometry-only call sites at zero
+/// churn (Checkpoint C, Q1, shape B).
+#[must_use]
 pub fn offset_polygon(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
+    offset_polygon_reported(polygon, distance).0
+}
+
+/// [`offset_polygon`] with the failure channel attached.
+///
+/// `None` means **no failure**: either the offset produced geometry, or it
+/// collapsed the way an inward offset of a thin shape is supposed to. `Some`
+/// means the emptiness (or the partial result) has a cause that is not
+/// geometry — see [`OffsetFailure`].
+///
+/// A `Some` failure does **not** imply an empty result. A self-intersecting
+/// input is repaired into several pieces before cavalier is called (R1.5),
+/// and one piece can fail while its siblings succeed. That case is real, it
+/// is what F-12 costs an operator (an inlay pocket that ends early and
+/// reports success), and it is why the failure is reported whenever it
+/// happens rather than only when nothing came back.
+#[must_use]
+pub fn offset_polygon_reported(
+    polygon: &Polygon2,
+    distance: f64,
+) -> (Vec<Polygon2>, Option<OffsetFailure>) {
     let pieces: Vec<Polygon2> = if polygon.has_self_intersection() {
         polygon.repaired()
     } else {
         vec![polygon.clone()]
     };
 
-    pieces
-        .iter()
-        .flat_map(|piece| offset_one(piece, distance))
-        .collect()
+    let mut out: Vec<Polygon2> = Vec::new();
+    let mut failure: Option<OffsetFailure> = None;
+    for piece in &pieces {
+        let (polys, f) = offset_one(piece, distance);
+        out.extend(polys);
+        failure = OffsetFailure::merge(failure, f);
+    }
+    (out, failure)
 }
 
 /// The single chokepoint where cavalier_contours' offset is called.
-fn offset_one(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
+fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<OffsetFailure>) {
     // R1 (tech-debt review 2026-06-10): cavalier_contours 0.7.0 asserts
     // on some degenerate offset inputs ("start index should be less
     // than or equal to end index if polyline is open" in
@@ -286,20 +446,32 @@ fn offset_one(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
     // "polygon collapsed" — pocket rings end, the adaptive machinability
     // probe reports not-machinable — all under-cut directions, never a
     // gouge.
+    //
+    // Checkpoint C (Q1): the emptiness is still the return value, but the
+    // CAUSE now leaves with it. The `warn!` also names the assertion
+    // (D-4) instead of discarding the payload, so "cavalier panicked"
+    // becomes "cavalier tripped THIS invariant" in a log an operator or an
+    // agent can actually act on.
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         offset_polygon_inner(polygon, distance)
     })) {
-        Ok(v) => v,
-        Err(_payload) => {
+        Ok(Ok(v)) => (v, None),
+        Ok(Err(reason)) => (
+            Vec::new(),
+            Some(OffsetFailure::RejectedInput { reason }),
+        ),
+        Err(payload) => {
+            let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
             tracing::warn!(
                 distance,
                 exterior_verts = polygon.exterior.len(),
                 holes = polygon.holes.len(),
+                assertion = %assertion,
                 "offset_polygon: cavalier_contours panicked on degenerate input \
                  despite self-intersection repair already having run; \
                  treating as collapsed offset (empty result)"
             );
-            Vec::new()
+            (Vec::new(), Some(OffsetFailure::LibraryFailure { assertion }))
         }
     }
 }
@@ -373,26 +545,34 @@ fn cleaned_flat_ring(pline: &Polyline<f64>) -> Vec<P2> {
     cleaned.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect()
 }
 
-fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
+/// The offset itself, minus the panic containment.
+///
+/// `Err` is this module's own refusal — the guards that were previously
+/// bare `return Vec::new()`s indistinguishable from a collapse. `Ok(vec![])`
+/// is a genuine collapse and stays that way.
+fn offset_polygon_inner(
+    polygon: &Polygon2,
+    distance: f64,
+) -> Result<Vec<Polygon2>, OffsetRejection> {
     if polygon.exterior.len() < 3 {
-        return Vec::new();
+        return Err(OffsetRejection::ExteriorBelowTriangle);
     }
 
     if polygon.holes.is_empty() {
         // Simple case: just offset the exterior
         let pline = dedupe_pline(polygon.exterior_to_pline());
         if pline.vertex_count() < 3 {
-            return Vec::new();
+            return Err(OffsetRejection::ExteriorDegenerateAfterDedupe);
         }
         let results = pline.parallel_offset(distance);
-        results.iter().map(Polygon2::from_pline).collect()
+        Ok(results.iter().map(Polygon2::from_pline).collect())
     } else {
         // Polygon with holes: use Shape to handle hole interaction
         use cavalier_contours::shape_algorithms::Shape;
 
         let exterior = dedupe_pline(polygon.exterior_to_pline());
         if exterior.vertex_count() < 3 {
-            return Vec::new();
+            return Err(OffsetRejection::ExteriorDegenerateAfterDedupe);
         }
         let mut plines = vec![exterior];
         for hole in &polygon.holes {
@@ -447,7 +627,7 @@ fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Vec<Polygon2> {
             }
         }
 
-        polygons
+        Ok(polygons)
     }
 }
 
@@ -777,10 +957,19 @@ impl RingGroup {
     /// `offset_polygon_inner` picks between, with the same panic containment
     /// and the same hole/container pairing — the only difference is that the
     /// bulges survive.
-    fn offset(&self, distance: f64) -> Vec<RingGroup> {
+    ///
+    /// The second chokepoint, and it carries the same failure channel as the
+    /// single-shot one (Checkpoint C, Q1). `None` is a collapse; `Some` is a
+    /// cause.
+    fn offset(&self, distance: f64) -> (Vec<RingGroup>, Option<OffsetFailure>) {
         let boundary = dedupe_pline(self.boundary.clone());
         if boundary.vertex_count() < 3 {
-            return Vec::new();
+            return (
+                Vec::new(),
+                Some(OffsetFailure::RejectedInput {
+                    reason: OffsetRejection::ExteriorDegenerateAfterDedupe,
+                }),
+            );
         }
         let holes: Vec<Polyline<f64>> = self
             .holes
@@ -816,15 +1005,20 @@ impl RingGroup {
             }
         })) {
             Ok(v) => v,
-            Err(_payload) => {
+            Err(payload) => {
+                let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
                 tracing::warn!(
                     distance,
                     boundary_verts = self.boundary.vertex_count(),
                     holes = self.holes.len(),
+                    assertion = %assertion,
                     "offset cascade: cavalier_contours panicked; treating as a \
                      collapsed offset (empty result)"
                 );
-                return Vec::new();
+                return (
+                    Vec::new(),
+                    Some(OffsetFailure::LibraryFailure { assertion }),
+                );
             }
         };
         let (boundaries, holes) = out;
@@ -860,7 +1054,7 @@ impl RingGroup {
                 first.holes.push(hole);
             }
         }
-        groups
+        (groups, None)
     }
 
     /// Flatten to a `Polygon2` — the ONE place the arcs leave the cascade.
@@ -1022,32 +1216,50 @@ impl OffsetRingSet {
     }
 
     /// Offset every group by the same distance.
+    ///
+    /// Drops the failure channel; call [`Self::offset_reported`] to keep it.
     #[must_use]
     pub fn offset(&self, distance: f64) -> Self {
-        Self {
-            groups: self
-                .groups
-                .iter()
-                .flat_map(|g| g.offset(distance))
-                .collect(),
+        self.offset_reported(distance).0
+    }
+
+    /// [`Self::offset`] with the failure channel attached — same contract as
+    /// [`offset_polygon_reported`]: `None` is a collapse, `Some` is a cause,
+    /// and a `Some` does not imply an empty set (one group can fail while its
+    /// siblings survive).
+    #[must_use]
+    pub fn offset_reported(&self, distance: f64) -> (Self, Option<OffsetFailure>) {
+        let mut groups = Vec::new();
+        let mut failure = None;
+        for g in &self.groups {
+            let (out, f) = g.offset(distance);
+            groups.extend(out);
+            failure = OffsetFailure::merge(failure, f);
         }
+        (Self { groups }, failure)
     }
 
     /// Offset group `i` by `distances[i]`. Groups past the end of the slice
     /// take the last distance given; an empty slice offsets nothing.
     #[must_use]
     pub fn offset_per_group(&self, distances: &[f64]) -> Self {
+        self.offset_per_group_reported(distances).0
+    }
+
+    /// [`Self::offset_per_group`] with the failure channel attached.
+    #[must_use]
+    pub fn offset_per_group_reported(&self, distances: &[f64]) -> (Self, Option<OffsetFailure>) {
         let Some(&fallback) = distances.last() else {
-            return Self::default();
+            return (Self::default(), None);
         };
-        Self {
-            groups: self
-                .groups
-                .iter()
-                .enumerate()
-                .flat_map(|(i, g)| g.offset(distances.get(i).copied().unwrap_or(fallback)))
-                .collect(),
+        let mut groups = Vec::new();
+        let mut failure = None;
+        for (i, g) in self.groups.iter().enumerate() {
+            let (out, f) = g.offset(distances.get(i).copied().unwrap_or(fallback));
+            groups.extend(out);
+            failure = OffsetFailure::merge(failure, f);
         }
+        (Self { groups }, failure)
     }
 
     /// Flatten the whole set — the boundary where the cascade's geometry

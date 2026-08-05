@@ -519,7 +519,10 @@ pub(super) fn run_compute_with_phase_tracker(
         // stats mapping READ them field by field. The join MOVES them, so
         // there is no default to fabricate and no window in which a caller
         // could observe an empty one.
-        let (tp, generation_findings) = {
+        // Checkpoint C (Q2): the boundary clip below can add a finding of
+        // its own, so these stay mutable until the join rather than being
+        // moved straight into it.
+        let (tp, mut generation_findings) = {
             let _phase_scope =
                 phase_tracker.map(|tracker| tracker.start_phase(req.operation.label()));
             let core_scope = debug_root
@@ -578,7 +581,7 @@ pub(super) fn run_compute_with_phase_tracker(
                 .map(|ctx| ctx.start_span("boundary_clip", "Clip to boundary"));
             let boundary_span_id = boundary_scope.as_ref().map(|scope| scope.id());
             use rs_cam_core::boundary::{
-                ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
+                ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
                 model_silhouette, subtract_keepouts,
             };
             use rs_cam_core::compute::config::BoundarySource;
@@ -633,7 +636,8 @@ pub(super) fn run_compute_with_phase_tracker(
                     effective_safe_z(req),
                     &semantic_ctx,
                     &mut channels,
-                );
+                    &mut generation_findings,
+                )?;
                 if let Some(scope) = boundary_scope.as_ref()
                     && !current.toolpath.moves.is_empty()
                 {
@@ -693,19 +697,38 @@ pub(super) fn run_compute_with_phase_tracker(
                         ToolContainment::Outside
                     }
                 };
-                let boundaries = effective_boundary(
-                    &stock_poly,
-                    containment,
-                    req.tool.envelope_diameter() / 2.0,
-                );
-                if let Some(boundary) = boundaries.first() {
+                let tool_diameter = req.tool.envelope_diameter();
+                let (boundaries, offset_failure) =
+                    effective_boundary_reported(&stock_poly, containment, tool_diameter / 2.0);
+                // Checkpoint C, Q2 (F-1): this is the LIVE GUI worker's copy
+                // of the boundary-clip escape. An empty `boundaries` used to
+                // fall out of `if let Some(boundary) = boundaries.first()`
+                // with an implicit `else { do not clip }` — the containment
+                // silently not applied. Same ruling as the session path:
+                // pass through with a typed finding on a genuine collapse,
+                // refuse when the offset failed.
+                if boundaries.is_empty() {
+                    rs_cam_core::session::ProjectSession::resolve_collapsed_containment(
+                        offset_failure,
+                        req.boundary.containment,
+                        tool_diameter,
+                        1,
+                        &mut generation_findings,
+                    )?;
+                } else {
                     // C1: one implementation of "clip, then bring every
                     // index-carrying channel along" — spans included. This
                     // used to be three hand-rolled lines here, and the same
                     // three in each session clip.
+                    //
+                    // Checkpoint C, D-3c: the WHOLE set, not
+                    // `boundaries.first()`. A containment that splits under
+                    // the offset used to keep piece 1 and clip everything
+                    // outside it away; the multi-region path already kept
+                    // them all, and that is the semantics that won.
                     current = clip_annotated_to_boundary_set(
                         current,
-                        std::slice::from_ref(boundary),
+                        &boundaries,
                         effective_safe_z(req),
                     )
                     .reconcile(&mut channels)

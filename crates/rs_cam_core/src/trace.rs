@@ -6,7 +6,7 @@
 use crate::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled};
-use crate::polygon::{Polygon2, offset_polygon};
+use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Cutter compensation direction relative to the travel direction.
@@ -48,21 +48,34 @@ pub struct TraceParams {
 /// at the given `z`. This is the building block for depth-stepped tracing;
 /// callers handle multi-pass iteration.
 pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> Toolpath {
-    let working_polygons: Vec<Polygon2> = match params.compensation {
-        TraceCompensation::None => vec![polygon.clone()],
-        TraceCompensation::Left => {
-            let result = offset_polygon(polygon, -params.tool_radius);
+    trace_polygon_at_z_reported(polygon, z, params).0
+}
+
+/// [`trace_polygon_at_z`] with Checkpoint C's offset failure channel
+/// attached: `1` when the compensation offset failed rather than collapsed,
+/// `0` otherwise (including when no compensation is configured and no offset
+/// is made — trace's caller records the total across levels, so a
+/// no-compensation trace honestly reports a measured zero).
+#[must_use]
+pub fn trace_polygon_at_z_reported(
+    polygon: &Polygon2,
+    z: f64,
+    params: &TraceParams,
+) -> (Toolpath, usize) {
+    let (working_polygons, failures): (Vec<Polygon2>, usize) = match params.compensation {
+        TraceCompensation::None => (vec![polygon.clone()], 0),
+        TraceCompensation::Left | TraceCompensation::Right => {
+            let distance = if matches!(params.compensation, TraceCompensation::Left) {
+                -params.tool_radius
+            } else {
+                params.tool_radius
+            };
+            let (result, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
+            let failures = usize::from(failure.is_some());
             if result.is_empty() {
-                return Toolpath::new();
+                return (Toolpath::new(), failures);
             }
-            result
-        }
-        TraceCompensation::Right => {
-            let result = offset_polygon(polygon, params.tool_radius);
-            if result.is_empty() {
-                return Toolpath::new();
-            }
-            result
+            (result, failures)
         }
     };
 
@@ -73,7 +86,7 @@ pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> T
             trace_ring(&mut tp, hole, z, params);
         }
     }
-    tp
+    (tp, failures)
 }
 
 /// Generate a toolpath that traces polygon contours with depth stepping.
