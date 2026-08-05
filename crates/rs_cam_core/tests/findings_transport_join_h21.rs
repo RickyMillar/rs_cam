@@ -286,7 +286,8 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert_eq!(stats.zero_removal, None);
     assert_eq!(
         stats.offset_library_failures, None,
-        "an operation that ran no reporting offset has measured nothing —          `Some(0)` here would claim every offset was clean"
+        "an operation that ran no reporting offset has measured nothing — \
+         `Some(0)` here would claim every offset was clean"
     );
     assert_eq!(stats.boundary_clip_dropped, None);
     assert!(

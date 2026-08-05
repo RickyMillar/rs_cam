@@ -13,7 +13,7 @@
 //! | `adversarial_2d_fixtures_contain_their_mechanism` | geometry only | **non-vacuity.** Every fixture proves it contains the defect class it claims BEFORE it is allowed to gate anything |
 //! | `the_reflex_cross_generator_is_bit_identical_to_its_donor` | trivial | C6 donor proof for the one generator lifted from a shipped sentry |
 //! | `every_2d_operation_survives_its_worst_fixtures` | CI | the acceptance gate: no panic, no silent-empty success, bounded wall clock |
-//! | `exactly_two_2d_families_ignore_a_pre_set_cancel_flag` | CI | pins the cancellation asymmetry rather than letting it be rediscovered |
+//! | `no_2d_family_ignores_a_pre_set_cancel_flag` | CI | was `exactly_two_..._ignore_...`, pinning F-4; Checkpoint C Q3 made rest and drill cancellable and the pin was restated deliberately |
 //! | `adversarial_2d_full_campaign` | `#[ignore]`, minutes | the full operation × fixture matrix that produces `ADVERSARIAL_2D_FINDINGS.md`'s table and the SVG gallery |
 //!
 //! # What counts as a failure
@@ -592,6 +592,21 @@ fn every_2d_operation_survives_its_worst_fixtures() {
 /// *"Only the cancel hook made that a hang instead of a lock-up, which is not
 /// the same thing as being bounded."* M5 removed the vertex-growth
 /// mechanism; it did not add a bound.
+///
+/// # This still passes after Checkpoint C's Q3 fix, and that is correct
+///
+/// Q3 bounded the **consumer**, not the primitive:
+/// `pocket::pocket_contours_reported_with_cancel` now carries a geometric
+/// ring cap plus a wall-clock net and reports which one fired
+/// (`pocket::CascadeBound`), pinned by
+/// `pocket::tests::the_pocket_cascade_is_bounded_on_a_diverging_cw_exterior`
+/// on this same CW fixture. `OffsetRingSet::offset` is deliberately left
+/// unbounded — a bound is a consumer's policy, not a geometry type's, and
+/// scallop's cascade already carries its own `max_rings`.
+///
+/// So this probe keeps measuring exactly what it always measured: that the
+/// PRIMITIVE diverges on a CW exterior. If it ever starts terminating, the
+/// primitive has gained a policy and F-10 does need re-ruling.
 #[test]
 fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
     use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet};
@@ -682,15 +697,29 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 // 4. The cancellation asymmetry, pinned
 // ---------------------------------------------------------------------------
 
-/// **Exactly two of the nine 2D families never read their cancel flag:
-/// `rest` and `drill`.**
+/// **All nine 2D families in this campaign now read their cancel flag.**
 ///
-/// `generate_rest` builds no `cancel_fn` and calls the non-cancellable
-/// `depth::toolpath_at_levels` (`execute.rs:709`); `generate_drill` never
-/// touches `ctx.cancel` (`execute.rs:639`). This agrees with
-/// `compute::execute`'s own doc (`execute.rs:499-508`) — Drill,
-/// AlignmentPinDrill, Rest and Chamfer are the four uncancellable families
-/// registry-wide, and two of them are in this campaign's nine.
+/// This test was called `exactly_two_2d_families_ignore_a_pre_set_cancel_flag`
+/// and it pinned F-4: `generate_rest` built no `cancel_fn` and called the
+/// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
+/// touched `ctx.cancel` at all. Its own doc said what it was for — *"it pins
+/// the measured fact so the findings document cannot go stale silently and a
+/// future fix has a red-first target"* — and it did exactly that: making the
+/// two cancellable under Checkpoint C, Q3 turned it red, which is how this
+/// restatement came to be written on purpose rather than by drift.
+///
+/// The fix (2026-08-05): `generate_rest` polls `ctx.cancel` as its first
+/// statement and runs its levels through `toolpath_at_levels_with_cancel`;
+/// `generate_drill` polls as its first statement. Both are also in
+/// `compute::execute`'s in-crate `cancellable_families_honour_a_preset_cancel_flag`
+/// case list, which is the coverage claim `ExecutionContext`'s doc says goes
+/// stale otherwise. Registry-wide that leaves AlignmentPinDrill and Chamfer,
+/// neither of which is in this campaign's nine.
+///
+/// **Rest's first statement is the cancel check, ahead of its prev-tool
+/// precondition.** That ordering is deliberate and this test depends on it:
+/// a rest op with no previous tool would otherwise report the precondition
+/// error and a pre-set flag would look ignored.
 ///
 /// The flag is set **synchronously, before the call**
 /// ([`adv::run_op_precancelled`]), and that detail is the whole test.
@@ -712,12 +741,11 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 /// the rosette fixture all three report `NOT EXERCISED (finished first)` —
 /// honest, and not the same claim.
 ///
-/// This test does not assert that `rest` or `drill` *should* become
-/// cancellable — that is a behaviour change and it needs Checkpoint C. It
-/// pins the measured fact so the findings document cannot go stale silently
-/// and a future fix has a red-first target.
+/// The empty-`ignored` assertion is kept as an assertion rather than deleted:
+/// a family that stops polling is the regression this file exists to catch,
+/// and "nobody ignores it" is a claim that has to keep being checked.
 #[test]
-fn exactly_two_2d_families_ignore_a_pre_set_cancel_flag() {
+fn no_2d_family_ignores_a_pre_set_cancel_flag() {
     let all = adv::fixtures();
     let f = all
         .iter()
@@ -754,20 +782,20 @@ fn exactly_two_2d_families_ignore_a_pre_set_cancel_flag() {
     println!("honoured a pre-set cancel flag: {honoured:?}");
     println!("IGNORED a pre-set cancel flag:  {ignored:?}");
 
-    assert_eq!(
-        ignored,
-        vec!["drill", "rest"],
-        "the set of 2D families that ignore a pre-set cancel flag has \
-         changed. If a family was FIXED, delete it from this list and say so \
-         in ADVERSARIAL_2D_FINDINGS.md (F-4); if one REGRESSED, that is the \
-         defect"
+    assert!(
+        ignored.is_empty(),
+        "these 2D families ignored a pre-set cancel flag: {ignored:?}. \
+         Checkpoint C (Q3) closed F-4 by making rest and drill cancellable, \
+         so any name here is a REGRESSION — an operator's cancel button does \
+         nothing for it"
     );
     assert_eq!(
         honoured,
         vec![
-            "adaptive", "inlay", "pocket", "profile", "trace", "vcarve", "zigzag"
+            "adaptive", "drill", "inlay", "pocket", "profile", "rest", "trace", "vcarve",
+            "zigzag"
         ],
-        "the other seven read the flag at least once before emitting"
+        "all nine read the flag at least once before emitting"
     );
     // Reachability, so the list above cannot silently describe dead code.
     for op in [

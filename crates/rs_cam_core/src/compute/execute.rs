@@ -187,6 +187,22 @@ fn record_truncated_core(
     findings.reached_uncut_estimate_mm2 = Some(prev_standing_estimate + standing_mm2);
 }
 
+/// Record ONLY the continuity residual, for a cascade that has no hole-aware
+/// or estimator sibling to report (Checkpoint C, Q3).
+///
+/// Pocket's cascade hits this: when a bound stops it, the standing ring area
+/// is exactly what
+/// [`crate::compute::config::ToolpathStats::truncated_core_mm2`] means, but
+/// pocket computes no `untouched_mm2` and no `standing_mm2`. Going through
+/// [`record_truncated_core`] with two zeroes would publish "measured zero" for
+/// two measures nobody took — the silent-zero trap X-19 exists to prevent —
+/// so those two stay `None`.
+fn record_truncated_core_only(cell: &std::cell::RefCell<GenerationFindings>, uncut_core_mm2: f64) {
+    let mut findings = cell.borrow_mut();
+    let prev = findings.truncated_core_mm2.unwrap_or(0.0);
+    findings.truncated_core_mm2 = Some(prev + uncut_core_mm2);
+}
+
 /// Record a dropped-band finding (Wave D1). `None` is a no-op — an adapter
 /// that planned bands and dropped none must not overwrite an earlier
 /// finding with an absence.
@@ -564,11 +580,14 @@ impl From<String> for OperationError {
 /// SpiralFinish, RadialFinish, HorizontalFinish (the 2026-07 mesh-finish
 /// fix's 11), plus Pocket, Profile, Zigzag, Trace, Face, ProjectCurve,
 /// VCarve, Inlay (the flat-2D S.5 fix,
-/// planning/finishing_stack_review_2026-07.md — 19 of 23 registered
-/// families as of that fix; the remaining four — Drill, AlignmentPinDrill,
-/// Rest, Chamfer — are still uncancellable). Adding cancel support to
-/// another family means adding it to that sentry's case list too, or the
-/// coverage claim here silently goes stale.
+/// planning/finishing_stack_review_2026-07.md), plus Rest and Drill
+/// (Checkpoint C Q3, 2026-08-05 — W4's F-4 measured those two ignoring a
+/// pre-set flag entirely: `generate_rest` built no `cancel_fn` and called the
+/// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
+/// read `ctx.cancel`). 21 of 23 registered families; the remaining two are
+/// AlignmentPinDrill and Chamfer. Adding cancel support to another family
+/// means adding it to that sentry's case list too, or the coverage claim here
+/// silently goes stale.
 pub struct ExecutionContext<'a> {
     /// Write-only sink for generation-time findings (see
     /// [`GenerationFindings`]). A `Cell` rather than a return value so an
@@ -704,6 +723,14 @@ pub(crate) fn generate_drill(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Drill, "generate_drill");
+    // Checkpoint C, Q3: drill is cancellable now. It never touched
+    // `ctx.cancel` at all (F-4). A drill cycle is short, so the check is at
+    // the entry point rather than per hole — the point is that a pre-set flag
+    // must short-circuit before any work, which is the same contract every
+    // other cancellable family's first statement provides.
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
     let holes = drill_holes_for_config(cfg, ctx.polygons)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
@@ -762,6 +789,13 @@ pub(crate) fn generate_rest(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Rest, "generate_rest");
+    // Checkpoint C, Q3: checked as the very first statement, before the
+    // prev-tool precondition below. A pre-set flag must short-circuit before
+    // any work AND before any other refusal, or "cancelled" gets reported as
+    // whatever else happened to be wrong first.
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
     let polys = require_polygons(ctx.polygons)?;
     let ptr = ctx
         .prev_tool_radius
@@ -769,23 +803,35 @@ pub(crate) fn generate_rest(
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    // Checkpoint C, Q3: rest is cancellable now. It built no `cancel_fn` at
+    // all and called the non-cancellable `depth::toolpath_at_levels`, so a
+    // rest pass over many Z levels could not be interrupted — one of the two
+    // families W4 measured as ignoring a pre-set flag entirely (F-4).
+    // Granularity is per Z level, the same as profile/trace/zigzag.
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::rest::rest_machining_toolpath(
-                poly,
-                &crate::rest::RestParams {
-                    prev_tool_radius: ptr,
-                    tool_radius,
-                    cut_depth: z,
-                    stepover: cfg.stepover,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    angle: cfg.angle,
-                },
-            )
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                Ok(crate::rest::rest_machining_toolpath(
+                    poly,
+                    &crate::rest::RestParams {
+                        prev_tool_radius: ptr,
+                        tool_radius,
+                        cut_depth: z,
+                        stepover: cfg.stepover,
+                        feed_rate: op.feed_rate(),
+                        plunge_rate: op.plunge_rate(),
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                ))
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
     Ok(with_depth_run_annotation(
@@ -1112,13 +1158,17 @@ pub(crate) fn generate_pocket(
     // cascade's only exit is a collapsed ring and a contained panic looks
     // exactly like one.
     let offset_failures = std::cell::Cell::new(0usize);
+    // Checkpoint C, Q3: standing area left by a cascade that hit a bound.
+    // `None` = no bound fired anywhere, which is the `truncated_core_mm2`
+    // "not measured" reading and must not be coerced to a zero.
+    let truncated_by_bound: std::cell::Cell<Option<f64>> = std::cell::Cell::new(None);
     for poly in polys {
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| match cfg.pattern {
                 crate::compute::operation_configs::PocketPattern::Contour => {
-                    let (tp, failures) = crate::pocket::pocket_toolpath_reported_with_cancel(
+                    let (tp, report) = crate::pocket::pocket_toolpath_reported_with_cancel(
                         poly,
                         &crate::pocket::PocketParams {
                             tool_radius,
@@ -1131,7 +1181,19 @@ pub(crate) fn generate_pocket(
                         },
                         &cancel_fn,
                     )?;
-                    offset_failures.set(offset_failures.get() + failures);
+                    offset_failures.set(offset_failures.get() + report.offset_failures);
+                    // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
+                    // leaves material, and that is exactly what
+                    // `truncated_core_mm2` already means — "region interior a
+                    // ring cascade left UNCUT because it hit a cap before
+                    // collapsing". Recorded on the existing channel rather
+                    // than a new one, so it reaches narrate, the diagnostics
+                    // list and MCP with no extra plumbing.
+                    if let Some(standing) = report.truncated_core_mm2 {
+                        truncated_by_bound.set(Some(
+                            truncated_by_bound.get().unwrap_or(0.0) + standing,
+                        ));
+                    }
                     Ok(tp)
                 }
                 crate::compute::operation_configs::PocketPattern::Zigzag => {
@@ -1157,6 +1219,9 @@ pub(crate) fn generate_pocket(
         combined.moves.extend(tp.moves);
     }
     record_offset_library_failures(ctx.findings, offset_failures.get());
+    if let Some(standing) = truncated_by_bound.get() {
+        record_truncated_core_only(ctx.findings, standing);
+    }
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
@@ -4387,6 +4452,23 @@ mod tests {
                 "Inlay",
                 OperationConfig::new_default(OperationType::Inlay),
                 ToolType::VBit,
+                false,
+                true,
+            ),
+            // Checkpoint C, Q3 (F-4). Added in the same commit that made them
+            // cancellable — the doc on `ExecutionContext` says the coverage
+            // claim goes stale otherwise, and this is what keeps it honest.
+            (
+                "Rest",
+                OperationConfig::new_default(OperationType::Rest),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Drill",
+                OperationConfig::new_default(OperationType::Drill),
+                ToolType::EndMill,
                 false,
                 true,
             ),
