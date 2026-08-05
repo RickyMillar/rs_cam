@@ -1024,9 +1024,19 @@ fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
             rs_cam_core::feeds::FeedsWarning::ShankTooLarge { shank_mm, max_mm } => {
                 format!("Shank {shank_mm:.1} mm exceeds max {max_mm:.1} mm")
             }
-            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { requested, floor } => {
-                format!("Chipload below rubbing floor: {requested:.3} → {floor:.3} mm/tooth")
-            }
+            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
+                requested,
+                floor,
+                band_capped_from,
+            } => match band_capped_from {
+                None => {
+                    format!("Chipload below rubbing floor: {requested:.3} → {floor:.3} mm/tooth")
+                }
+                Some(global) => format!(
+                    "Chipload raised to band ceiling: {requested:.3} → {floor:.3} mm/tooth \
+                     (whole band is below the {global:.3} rubbing floor — expect burnishing)"
+                ),
+            },
             rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,
                 actual,

@@ -21,12 +21,51 @@
 //! The `> 0.0` guard intentionally preserves the RPM-only-LUT-row
 //! sentry (zero-chipload should still surface via the formula
 //! fallback path, not be silently bumped to 0.025).
+//!
+//! ## RE-PIN 2026-08-06 — the floor is subordinated to the band
+//!
+//! `FEEDS_CENSUS.md` C-12 / T3.3 established that the global constant
+//! and the matched row's derated band cross on hard and small work, and
+//! the operator ruled the floor may never exceed the band ceiling it
+//! exists to keep the recipe inside (`feeds::effective_rubbing_floor`).
+//!
+//! **This cell was one of the crossings.** Ipe scales the Ø6
+//! hardwood-anchored row's band to 0.013219–0.022721 mm/tooth, so the
+//! 0.025 global floor sat **1.10× above the band maximum** — the clamp
+//! was lifting the Ipe recipe past the vendor window's own ceiling.
+//! Measured through `feeds::calculate` on this fixture:
+//!
+//! | | before (parent) | after |
+//! |---|---:|---:|
+//! | derated band (mm/tooth) | 0.013219 – 0.022721 | unchanged |
+//! | pre-clamp `requested` | 0.014128 | unchanged |
+//! | floor applied | **0.025000** | **0.022721** (band ceiling) |
+//! | commanded feed-per-tooth | **0.025000** | **0.022721** |
+//! | feed (mm/min @ 15 000 rpm, 2F) | **750.00** | **681.62** |
+//! | `ChiploadClampedToFloor` fires | yes | yes |
+//! | `band_capped_from` | *(field did not exist)* | `Some(0.025)` |
+//!
+//! Mechanism: `feeds::calculate` Step 9b now clamps to
+//! `min(RUBBING_FLOOR_MM_TOOTH, chipload_bounds.max_mm_per_tooth)`
+//! instead of the bare constant. Direction: the Ipe recipe gets
+//! **slower**, which is the conservative side on the breakage axis and
+//! the *un*conservative side on the burn axis — hence the new
+//! `band_capped_from` disclosure, asserted below, which tells the
+//! operator the recipe is still under the chip-formation threshold and
+//! no feed exists that is not.
+//!
+//! The cell's assertion is restated accordingly: it no longer pins the
+//! literal 0.025 (which this row cannot reach without leaving its band)
+//! but pins **the clamp firing and landing exactly on the band
+//! ceiling**, which is what the cell was always testing — that the
+//! engine does not serve a silently-derated ploughing recipe.
 
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::print_stdout
 )]
 
 use rs_cam_core::feeds::{
@@ -36,7 +75,17 @@ use rs_cam_core::feeds::{
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
+/// The literature value, re-declared locally on purpose: a
+/// literature-matrix cell must pin the published number independently
+/// of whatever the crate currently believes it is.
 const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
+
+/// The Ipe cell's derated band ceiling, measured 2026-08-06 through
+/// `feeds::calculate` (row `amana-flat-hardwood-pocket-6000-2f`, raw
+/// hardness ratio 1290/3510 = 0.3675 applied at `^1.0`). Pinned as a
+/// literal so a change to the scaling law shows up here as a diff and
+/// not as a silently-tracking assertion.
+const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.022_720_797_720_797_72;
 
 fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
@@ -64,52 +113,119 @@ fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
     })
 }
 
+/// Records the cell's live numbers so the re-pin table in this file's
+/// docstring can be re-measured rather than trusted.
+/// `cargo test -p rs_cam_core --test _litmatrix_rubbing_floor_clamp -- --nocapture`
 #[test]
-fn ipe_pocket_chipload_never_drops_below_rubbing_floor() {
+fn record_the_cell() {
+    for (label, result) in [("ipe", calc_ipe_6mm()), ("oak", calc_oak_6mm())] {
+        let fpt = result.feed_rate_mm_min / (result.rpm * 2.0);
+        println!(
+            "{label}: rpm={:.0} feed={:.4} fpt={:.6} band={:?} warnings={:?}",
+            result.rpm, result.feed_rate_mm_min, fpt, result.chipload_bounds, result.warnings
+        );
+    }
+}
+
+#[test]
+fn ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor() {
+    // RE-PINNED 2026-08-06 (was: `>= 0.025`, the bare global constant).
+    // The Ipe-derated band tops out at 0.022721, BELOW the global floor,
+    // so 0.025 is not reachable without commanding past the vendor
+    // window. The clamp target is now the band ceiling and this cell
+    // pins that value.
     let result = calc_ipe_6mm();
     let rpm = result.rpm;
     let flutes = 2.0_f64;
 
     assert!(rpm > 0.0, "engine produced rpm = {rpm}");
 
+    let band = result
+        .chipload_bounds
+        .expect("the Ipe cell matches a chipload-bearing row");
+    assert!(
+        (band.max_mm_per_tooth - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < 1e-9,
+        "the cell's derated band ceiling moved: {:.9} vs pinned {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}. \
+         A scaling-law change must re-pin this file, not slide past it.",
+        band.max_mm_per_tooth,
+    );
+    assert!(
+        band.max_mm_per_tooth < RUBBING_FLOOR_MM_TOOTH,
+        "fixture precondition: this cell exists because the Ipe band ceiling \
+         {:.6} sits BELOW the {RUBBING_FLOOR_MM_TOOTH} global floor. If that is no \
+         longer true the cell is testing something else.",
+        band.max_mm_per_tooth,
+    );
+
+    let effective_floor = RUBBING_FLOOR_MM_TOOTH.min(band.max_mm_per_tooth);
     let chipload = result.feed_rate_mm_min / (rpm * flutes);
     assert!(
-        chipload >= RUBBING_FLOOR_MM_TOOTH - 1e-9,
-        "Ipe-derated chipload {chipload:.6} fell below rubbing floor \
-         {RUBBING_FLOOR_MM_TOOTH} (feed_rate={}, rpm={rpm}, flutes={flutes}). \
-         The Step-2c rubbing-floor clamp regressed.",
+        chipload >= effective_floor - 1e-9,
+        "Ipe-derated chipload {chipload:.6} fell below the effective rubbing floor \
+         {effective_floor:.6} (feed_rate={}, rpm={rpm}, flutes={flutes}). \
+         The Step-9b rubbing-floor clamp regressed.",
         result.feed_rate_mm_min,
+    );
+    assert!(
+        chipload <= band.max_mm_per_tooth + 1e-9,
+        "the clamp raised Ipe chipload to {chipload:.6}, past the matched row's \
+         derated band maximum {:.6} — the floor is once again overshooting the \
+         band it protects (FEEDS_CENSUS C-12).",
+        band.max_mm_per_tooth,
     );
 }
 
 #[test]
 fn ipe_pocket_emits_chipload_clamped_warning() {
     let result = calc_ipe_6mm();
-    let has_clamp_warning = result
+    let clamp = result
         .warnings
         .iter()
-        .any(|w| matches!(w, FeedsWarning::ChiploadClampedToFloor { .. }));
+        .find_map(|w| match w {
+            FeedsWarning::ChiploadClampedToFloor {
+                requested,
+                floor,
+                band_capped_from,
+            } => Some((*requested, *floor, *band_capped_from)),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "Expected FeedsWarning::ChiploadClampedToFloor for Ipe pocket cell \
+                 (pre-clamp chipload ~0.0141 < band ceiling 0.0227). Warnings: {:?}",
+                result.warnings,
+            )
+        });
+    let (requested, floor, band_capped_from) = clamp;
+
     assert!(
-        has_clamp_warning,
-        "Expected FeedsWarning::ChiploadClampedToFloor for Ipe pocket cell \
-         (pre-clamp chipload ~0.0124 < floor 0.025). Warnings: {:?}",
-        result.warnings,
+        requested < floor,
+        "the warning must report a genuine clamp: requested {requested:.6} \
+         should be below the applied floor {floor:.6}",
+    );
+    assert!(
+        (floor - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < 1e-9,
+        "RE-PINNED 2026-08-06: the applied floor is the band ceiling \
+         {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}, not the global \
+         {RUBBING_FLOOR_MM_TOOTH}. Got {floor:.9}.",
+    );
+    assert_eq!(
+        band_capped_from,
+        Some(RUBBING_FLOOR_MM_TOOTH),
+        "the operator must be told the global chip-formation threshold was \
+         NOT reached — this recipe is still in the rubbing regime and no feed \
+         inside the vendor band escapes it.",
     );
 }
 
-#[test]
-fn oak_pocket_chipload_above_floor_is_not_clamped() {
-    // Anti-regression: a normal-Janka species (oak) must NOT trigger
-    // the clamp warning — the LUT chipload sits comfortably above the
-    // floor and the engine should pass it through verbatim. This locks
-    // in that the clamp only fires on the rubbing-floor edge case.
+fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
 
-    let result = calculate(&FeedsInput {
+    calculate(&FeedsInput {
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 22.0,
@@ -125,7 +241,16 @@ fn oak_pocket_chipload_above_floor_is_not_clamped() {
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
-    });
+    })
+}
+
+#[test]
+fn oak_pocket_chipload_above_floor_is_not_clamped() {
+    // Anti-regression: a normal-Janka species (oak) must NOT trigger
+    // the clamp warning — the LUT chipload sits comfortably above the
+    // floor and the engine should pass it through verbatim. This locks
+    // in that the clamp only fires on the rubbing-floor edge case.
+    let result = calc_oak_6mm();
 
     let has_clamp_warning = result
         .warnings
