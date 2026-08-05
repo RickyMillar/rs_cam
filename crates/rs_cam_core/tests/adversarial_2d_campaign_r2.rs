@@ -792,8 +792,7 @@ fn no_2d_family_ignores_a_pre_set_cancel_flag() {
     assert_eq!(
         honoured,
         vec![
-            "adaptive", "drill", "inlay", "pocket", "profile", "rest", "trace", "vcarve",
-            "zigzag"
+            "adaptive", "drill", "inlay", "pocket", "profile", "rest", "trace", "vcarve", "zigzag"
         ],
         "all nine read the flag at least once before emitting"
     );

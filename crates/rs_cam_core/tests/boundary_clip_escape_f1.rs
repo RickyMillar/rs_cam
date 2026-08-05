@@ -207,11 +207,8 @@ fn a_failed_containment_now_refuses_the_generate() {
         println!("release build: no contained failure to refuse on");
         return;
     }
-    let (_, cause) = effective_boundary_reported(
-        &non_finite_square(60.0),
-        ToolContainment::Inside,
-        3.0,
-    );
+    let (_, cause) =
+        effective_boundary_reported(&non_finite_square(60.0), ToolContainment::Inside, 3.0);
     let cause = cause.expect("debug build: the NaN vertex trips the index assertion");
 
     let mut findings = GenerationFindings::default();
@@ -332,8 +329,10 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         &mut rs_cam_core::transform_provenance::ReconcileSet::new(Some(&recorder), None),
         &mut findings,
     )
-    .expect("a GENUINE collapse must still pass through — this is the case \
-             `boundary.rs:79-83` documents and option (c) was declined over");
+    .expect(
+        "a GENUINE collapse must still pass through — this is the case \
+             `boundary.rs:79-83` documents and option (c) was declined over",
+    );
 
     assert_eq!(
         clipped.toolpath.moves.len(),
@@ -356,8 +355,9 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         &stats,
     );
     assert!(
-        diags.iter().any(|d| d.id.as_str()
-            == rs_cam_core::diagnostics::ids::GEOM_BOUNDARY_CLIP_DROPPED),
+        diags
+            .iter()
+            .any(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::GEOM_BOUNDARY_CLIP_DROPPED),
         "a warning nobody sees is not a warning (programme rule 4): {diags:?}"
     );
 }

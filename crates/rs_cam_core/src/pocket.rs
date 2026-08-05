@@ -76,12 +76,8 @@ pub fn pocket_toolpath_reported_with_cancel(
     params: &PocketParams,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
-    let (contours, report) = pocket_contours_reported_with_cancel(
-        polygon,
-        params.tool_radius,
-        params.stepover,
-        cancel,
-    )?;
+    let (contours, report) =
+        pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
     Ok((contours_to_toolpath(&contours, params), report))
 }
 
@@ -522,8 +518,8 @@ mod tests {
 
         let started = Instant::now();
         let deadline = || started.elapsed() > BUDGET;
-        let (contours, report) =
-            pocket_contours_reported_with_cancel(&cw, 0.0, STEP, &deadline).unwrap_or_else(|_| {
+        let (contours, report) = pocket_contours_reported_with_cancel(&cw, 0.0, STEP, &deadline)
+            .unwrap_or_else(|_| {
                 panic!(
                     "the cascade did not terminate within {BUDGET:?} on a \
                      CW-wound {SIZE} mm square — it is bounded only by \

@@ -761,13 +761,10 @@ pub(super) fn run_compute_with_phase_tracker(
                     // the offset used to keep piece 1 and clip everything
                     // outside it away; the multi-region path already kept
                     // them all, and that is the semantics that won.
-                    current = clip_annotated_to_boundary_set(
-                        current,
-                        &boundaries,
-                        effective_safe_z(req),
-                    )
-                    .reconcile(&mut channels)
-                    .into_inner();
+                    current =
+                        clip_annotated_to_boundary_set(current, &boundaries, effective_safe_z(req))
+                            .reconcile(&mut channels)
+                            .into_inner();
                     if let Some(root) = semantic_root.as_ref() {
                         let scope =
                             root.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");

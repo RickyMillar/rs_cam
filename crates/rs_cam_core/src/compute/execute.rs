@@ -1190,9 +1190,8 @@ pub(crate) fn generate_pocket(
                     // than a new one, so it reaches narrate, the diagnostics
                     // list and MCP with no extra plumbing.
                     if let Some(standing) = report.truncated_core_mm2 {
-                        truncated_by_bound.set(Some(
-                            truncated_by_bound.get().unwrap_or(0.0) + standing,
-                        ));
+                        truncated_by_bound
+                            .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
                     }
                     Ok(tp)
                 }
