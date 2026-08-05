@@ -697,6 +697,22 @@ fn evaluate_inner(
             }
             _ => cl,
         };
+        // R-10 (census §7.5, report-only). NOTE THE ORDER: this increments
+        // BEFORE the `is_phantom_transit` skip immediately below, so
+        // `valid_count` counts samples the loop then discards. It is
+        // published as `sample_count` on the verdict, where it reads as "the
+        // population that drove this gate" — and it OVERSTATES that
+        // population by however many transit samples the trip set rejected.
+        //
+        // On a curve-heavy finishing path that gap is large, because arc-fit
+        // tags every fitted arc `SpanKind::DressupArtifact` and that kind is
+        // on the transit list: one committed fixture carries 630 such spans
+        // on a single op. Counter-intuitively, MORE arc-fitting means FEWER
+        // samples actually gating.
+        //
+        // Left as-is deliberately: `sample_count` is a shipped wire field
+        // and moving it is a separate, gated change. Documented here so the
+        // next reader does not take it for the gate's true denominator.
         valid_count += 1;
         // Finding 3 split (2026-06-04): phantom-transit samples
         // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)

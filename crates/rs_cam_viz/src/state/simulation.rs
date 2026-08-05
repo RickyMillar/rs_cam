@@ -1606,10 +1606,17 @@ impl SimulationState {
             }
         }
 
+        // D1 (census §3.5), ruled at Checkpoint D D-6. Severity was a
+        // TIEBREAK under `move_index`, so an operator stepping the list with
+        // `focus_issue_delta` reached collisions in path order — i.e. at
+        // random relative to how much they matter — and a second,
+        // contradictory rank in `sim_op_list.rs` put collisions first. One
+        // rank now, severity-major, with `move_index` as the LAST key:
+        // "what should I look at" is answered before "where is it".
         issues.sort_by(|left, right| {
-            left.move_index
-                .cmp(&right.move_index)
-                .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
+            issue_kind_rank(left.kind)
+                .cmp(&issue_kind_rank(right.kind))
+                .then_with(|| left.move_index.cmp(&right.move_index))
                 .then_with(|| left.label.cmp(&right.label))
         });
         let elapsed = start.elapsed();
@@ -2181,14 +2188,28 @@ impl Default for SavedViewportState {
     }
 }
 
+/// Display rank, **worst first**. Lower sorts earlier.
+///
+/// D1 (census §3.5), ruled D-6. This used to run the other way — collisions
+/// last, behind hotspots, annotations and per-sample air-cut noise — while
+/// `sim_op_list.rs` ranked collisions first. Two contradictory orderings
+/// over one list is how a rapid-through-stock ends up below an air-cut run
+/// in the panel the operator scans before pressing go.
+///
+/// The order mirrors the census §3.1 classes: safety, then action-required,
+/// then bounded advisories, then the diagnostic-sample tallies that are
+/// emission noise by construction.
 fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
     match kind {
-        SimulationIssueKind::Hotspot => 0,
-        SimulationIssueKind::Annotation => 1,
-        SimulationIssueKind::AirCut => 2,
-        SimulationIssueKind::LowEngagement => 3,
-        SimulationIssueKind::RapidCollision => 4,
-        SimulationIssueKind::HolderCollision => 5,
+        // Class A — physical damage if run.
+        SimulationIssueKind::RapidCollision => 0,
+        SimulationIssueKind::HolderCollision => 1,
+        // Class C — bounded advisories.
+        SimulationIssueKind::Hotspot => 2,
+        SimulationIssueKind::Annotation => 3,
+        // Class D/E — per-run tallies, not defect counts.
+        SimulationIssueKind::LowEngagement => 4,
+        SimulationIssueKind::AirCut => 5,
     }
 }
 
@@ -2416,6 +2437,43 @@ mod tests {
         if let Some(results) = sim.results.as_mut() {
             results.cut_trace = Some(Arc::new(trace));
         }
+    }
+
+    #[test]
+    fn the_issue_list_is_ordered_by_severity_not_by_move_index() {
+        // D1 (census §3.5), ruled D-6. RED-FIRST SHAPE: the collision sits at
+        // a LATER move than the air-cut run, so under the old ordering
+        // (`move_index` primary, kind only as a tiebreak) it sorted BELOW the
+        // per-run air-cut noise — and an operator stepping the list with
+        // `focus_issue_delta` reached it after the noise, if at all.
+        let gui = gui_with_traces();
+        let mut sim = simulation_for_toolpath();
+        attach_cut_trace(&mut sim);
+        sim.checks.rapid_collision_move_indices = vec![8];
+
+        let issues = sim.issues(&gui, TEST_MAX_FEED);
+        assert!(
+            issues.len() >= 2,
+            "fixture must produce a collision AND at least one air-cut run"
+        );
+        assert_eq!(
+            issues[0].kind,
+            SimulationIssueKind::RapidCollision,
+            "the collision must sort first even though it is at the LAST move; \
+             got {:?}",
+            issues
+                .iter()
+                .map(|i| (i.kind, i.move_index))
+                .collect::<Vec<_>>()
+        );
+        // And the air-cut tallies sort last, behind everything curated.
+        assert_eq!(
+            issues
+                .last()
+                .map(|i| i.kind)
+                .expect("non-empty after the length assertion above"),
+            SimulationIssueKind::AirCut
+        );
     }
 
     #[test]

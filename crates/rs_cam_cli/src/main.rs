@@ -346,15 +346,21 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
             if low_eng_issues > 0 {
                 parts.push(format!("{} low engagement", low_eng_issues));
             }
-            eprintln!("  Issues: {}", parts.join(", "));
+            // Census §1.4: these are COALESCED RUNS, not per-sample tallies,
+            // and the two populations differ by ~43x on a real cut. Printing
+            // a bare "N air cuts" invited the reader to size the problem off
+            // a number that mostly measures how often the cutter crosses a
+            // boundary. Naming the population costs one word.
+            eprintln!("  Issue runs: {}", parts.join(", "));
         }
         eprintln!();
     }
 
     // Top hotspots by wasted time
     if !trace.hotspots.is_empty() {
+        const MAX_HOTSPOT_ROWS: usize = 10;
         eprintln!("Top issues by wasted time:");
-        for (i, hs) in trace.hotspots.iter().take(10).enumerate() {
+        for (i, hs) in trace.hotspots.iter().take(MAX_HOTSPOT_ROWS).enumerate() {
             let kind_label = if hs.air_cut_time_s > hs.low_engagement_time_s {
                 "AirCut"
             } else {
@@ -371,6 +377,15 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
                 hs.wasted_runtime_s,
                 hs.average_engagement,
             );
+        }
+        // R-6 (census §3.5 D9): this list has always silently stopped at ten
+        // while every GUI list says how many it withheld. A reader who saw
+        // exactly ten rows had no way to know whether that was the whole
+        // truth or the top of a much longer tail.
+        if let Some(hidden) = trace.hotspots.len().checked_sub(MAX_HOTSPOT_ROWS)
+            && hidden > 0
+        {
+            eprintln!("  ... {hidden} more not shown");
         }
         eprintln!();
     }
