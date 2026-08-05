@@ -107,6 +107,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         },
         cut_trace: None,
         cut_trace_path: None,
+        column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
     });
 
@@ -187,6 +188,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
             resolution_clamped: false,
             prior_stocks: std::collections::HashMap::new(),
         }))));
@@ -560,6 +562,7 @@ fn simulation_results_capture_setup_boundaries() {
                 rapid_collision_move_indices: Vec::new(),
                 cut_trace: None,
                 cut_trace_path: None,
+                column_grid_cell_mm: 0.5,
                 resolution_clamped: false,
                 prior_stocks: std::collections::HashMap::new(),
             },
@@ -736,6 +739,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
             resolution_clamped: false,
             prior_stocks: std::collections::HashMap::new(),
         }))));
@@ -1570,6 +1574,7 @@ fn reset_simulation_cancels_analysis_lane() {
         },
         cut_trace: None,
         cut_trace_path: None,
+        column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
     });
 
@@ -2648,6 +2653,7 @@ impl ComputeBackend for RestChainBackend {
                 rapid_collision_move_indices: Vec::new(),
                 cut_trace: None,
                 cut_trace_path: None,
+                column_grid_cell_mm: 0.5,
                 resolution_clamped: false,
                 prior_stocks,
             }))));

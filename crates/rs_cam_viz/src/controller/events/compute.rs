@@ -935,6 +935,7 @@ impl<B: ComputeBackend> AppController<B> {
                             stock_bbox,
                             cut_trace: simulation.cut_trace,
                             cut_trace_path: simulation.cut_trace_path,
+                            column_grid_cell_mm: simulation.column_grid_cell_mm,
                             prior_stocks,
                         });
 
