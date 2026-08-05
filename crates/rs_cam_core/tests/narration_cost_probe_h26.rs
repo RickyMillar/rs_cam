@@ -46,8 +46,8 @@
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-use rs_cam_core::compute::operation_configs::ScallopConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::ScallopConfig;
 use rs_cam_core::session::SimulationOptions;
 
 mod common;
