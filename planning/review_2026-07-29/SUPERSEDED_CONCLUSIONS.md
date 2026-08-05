@@ -421,6 +421,25 @@ fresh run rather than from the prior campaign's word. It is also the
 strongest single argument for the fixture-quality campaign §4 recommends: on
 this mesh, no instrument fix can make a ±10 µm bin mean anything.
 
+> **ERRATUM, 2026-08-05 (Checkpoint E ruling Q3 / ask E3; measured by W7,
+> executed by E-impl):** the "1.8% of triangles carrying 40.8% of the area"
+> statistic quoted in the paragraph above **does not reproduce** against
+> `crates/rs_cam_core/tests/fixtures/terrain.stl`. The full correction is
+> recorded at the §4 site below and is not repeated here; the record above
+> stands verbatim, per errata discipline. In short: the measured truth is
+> **1.8% → 57.0%**, the 40.8% figure sits on **99 triangles (0.05%)**, and
+> the objection **relocates rather than disappears** — the shipped
+> `scallop_height` default's stepover on a Ø1 ball (0.600 mm) matches this
+> fixture's p99 facet edge (0.626 mm) to three digits, so facet creases and
+> machining cusps are the same size in the same places.
+>
+> **This paragraph's own conclusion survives the correction intact.** *"On
+> this mesh, no instrument fix can make a ±10 µm bin mean anything"* remains
+> true, and is now supported by a second, independent argument: a ±10 µm bin
+> at the 0.25 mm cell this campaign ran is below its own grid-alias floor
+> (`cell·tan θ`) by 25× on flat ground and 93× at 75°. See
+> `planning/review_2026-08-04/REFERENCE_FIXTURE_REPEATABILITY.md` §1.
+
 #### Finding 8 — the rest pass works HERE, unlike on the groove, and the fragmentation gap holds
 
 Arm C's rest op cut 415.2 mm across all three bands and **did** change the
@@ -495,6 +514,41 @@ independent of D1–D4 and that both still stand:
 1. **The fixture is a coarse TIN.** 1.8% of its triangles carry 40.8% of
    its area. A quality gate on such a mesh is measuring the tessellation as
    much as the toolpath.
+
+   > **ERRATUM (2026-08-05, Checkpoint E ruling Q3/E3, measured by W7,
+   > executed by E-impl):** the "1.8% of triangles carry 40.8% of area"
+   > claim in item 1 above does not reproduce against
+   > `crates/rs_cam_core/tests/fixtures/terrain.stl`. Measured directly from
+   > the binary STL with exact cross-product triangle areas: 214,997
+   > triangles, 26,226 mm² total area. Measured truth: the top **1.8%** of
+   > triangles carry **57.0%** of area, not 40.8%; the **40.8%** figure sits
+   > on **99 triangles = 0.05%** of the mesh. Restricted to upward-facing
+   > relief only (214,233 tris, 14,841 mm² = 56.6% of total): top 1.8% carry
+   > 25.5%; 40.8% of area is carried by 16,485 triangles = 7.69%. The
+   > whole-mesh reading is dominated by the **base box** — the single
+   > largest facet has a 70.7 mm edge (the 100×100 mm bottom face's
+   > diagonal) and 43.4% of the mesh area is not relief at all; the cited
+   > statistic was most likely computed on a different asset (the scaled
+   > wanaka part) and attributed to terrain.stl. **This does not
+   > rehabilitate the fixture — it relocates the objection, and the
+   > relocated objection is stronger:** the shipped `scallop_height` default
+   > of 0.1 mm (`crates/rs_cam_core/src/scallop.rs:128`) is, on a Ø1 ball, a
+   > stepover of `d = 2√(2Rh − h²) = 0.600 mm` — which matches terrain.stl's
+   > p99 facet edge of 0.626 mm to three digits and is 3× its median (0.200
+   > mm), so facet creases and machining cusps are the same size in the same
+   > places and no aggregate can separate them. terrain.stl also has no
+   > ground truth other than itself (it is a TIN; the facets *are* the
+   > model), so "how much of my residual is the fixture" is unanswerable at
+   > any refinement. Consequence recorded by Checkpoint E: terrain.stl
+   > remains **characterization-only**; ARP-1
+   > (`planning/review_2026-08-04/REFERENCE_FIXTURE_SPEC.md` §1.1/§1.2) is
+   > the adopted analytic fixture, and the two-fixture rule stands.
+   > Reproduce with
+   > `planning/review_2026-08-04/artifacts/w7/measure_terrain_tin.py`. (The
+   > same figure recurs at §3.3 above, "the fixture is a coarse TIN, 1.8% of
+   > triangles carrying 40.8% of the area" — this erratum applies there
+   > too; the record is left verbatim per errata discipline.)
+
 2. **The gate bin was below repeatability.** The ±10 µm bin is smaller than
    the run-to-run variation and is **aliased by the 0.25 mm grid**. That
    gate ranked operation D above one that left a **28 mm uncut block** —
