@@ -425,6 +425,182 @@ fn the_two_published_peaks_agree_on_an_arc_fitted_op() {
     println!("summary peak axial engagement: {summary_peak:.4} mm");
 }
 
+// ── The modelled verdict delta, on the synthetic fixture ─────────────────
+
+/// **The verdict half of the ruling's evidence, where the gates actually
+/// run.**
+///
+/// `verdict_delta_probe_on_the_committed_fixture` below measures the real
+/// project fixture, but every gate there returns
+/// `Unmodeled(StaleSimulation)` in BOTH arms — so it can report metric
+/// deltas and population deltas, and nothing about verdicts. A table of
+/// unmodelled verdicts is not a verdict-delta table.
+///
+/// This test closes that gap on the committed synthetic fixture: one
+/// arc-fitted cutting pass, one hand-built `ToolpathLoadContext`, and the
+/// shipped `tool_load::evaluate_toolpath` run twice — once on the trace as
+/// the fixed code produces it, once on the same samples carrying the
+/// parent's classification. Both traces are built through
+/// `SimulationCutTrace::from_samples`, so the published peaks come from the
+/// real `SummaryAccumulator` rather than a re-implementation of it here.
+///
+/// The assertions are on the INSTRUMENT, not on a verdict: the two arms
+/// must genuinely differ in population, and the gates must reach a modelled
+/// verdict at least once — otherwise the table is vacuous and says so. What
+/// the verdicts actually do is printed and recorded, whichever way it falls.
+#[test]
+fn modelled_gate_verdicts_across_the_two_classifications() {
+    use rs_cam_core::compute::catalog::OperationType;
+    use rs_cam_core::compute::tool_config::ToolMaterial;
+    use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+    use rs_cam_core::material::Material;
+    use rs_cam_core::simulation_cut::SimulationCutTrace;
+    use rs_cam_core::tool::ToolDefinition;
+    use rs_cam_core::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
+
+    let fitted = fit_arcs(circular_finishing_pass(), ARC_TOLERANCE_MM, TOOL_RADIUS_MM);
+    assert!(count_arcs(&fitted.toolpath) > 0, "fixture must fit arcs");
+    let samples = simulate(&fitted);
+
+    // Which moves are arc-fit spans — the only thing the fix changes.
+    let mut refit = vec![false; fitted.toolpath.moves.len()];
+    for span in fitted.spans.iter() {
+        if span.kind == SpanKind::GeometryRefit {
+            for m in span.range() {
+                if let Some(slot) = refit.get_mut(m) {
+                    *slot = true;
+                }
+            }
+        }
+    }
+
+    // Parent arm: restore the transit flag the `DressupArtifact` tag used to
+    // set. See the committed-fixture probe below for why this reproduces the
+    // parent exactly (and for the one class where it would not).
+    let parent_samples: Vec<SimulationCutSample> = samples
+        .iter()
+        .cloned()
+        .map(|mut s| {
+            if refit.get(s.move_index).copied().unwrap_or(false) {
+                s.in_transit_span = true;
+            }
+            s
+        })
+        .collect();
+
+    let flipped = parent_samples
+        .iter()
+        .zip(samples.iter())
+        .filter(|(a, b)| a.in_transit_span != b.in_transit_span)
+        .count();
+    assert!(
+        flipped > 0,
+        "the two arms carry identical samples — nothing is being compared"
+    );
+
+    let trace_fixed = SimulationCutTrace::from_samples(SAMPLE_STEP_MM, samples);
+    let trace_parent = SimulationCutTrace::from_samples(SAMPLE_STEP_MM, parent_samples);
+
+    let tool = ToolDefinition::new(
+        Box::new(FlatEndmill::new(TOOL_RADIUS_MM * 2.0, 25.0)),
+        TOOL_RADIUS_MM * 2.0,
+        30.0,
+        20.0,
+        30.0,
+        2,
+        ToolMaterial::Carbide,
+    );
+    let material = Material::default();
+    let ctx = ToolpathLoadContext {
+        toolpath_id: ToolpathId(0),
+        tool: &tool,
+        material: &material,
+        operation_family: LutOperationFamily::Contour,
+        pass_role: LutPassRole::Finish,
+        operation_feed_rate_mm_min: 1200.0,
+        operation_kind: OperationType::Profile,
+        // The gates build their `SpanLookup` from here — without it
+        // `is_phantom_transit` degrades to the flag-only fallback and the
+        // ancestry half of the predicate is never exercised.
+        spans: Some(&fitted.spans),
+        drill_op: None,
+    };
+    let bands = ToleranceBands::default();
+
+    // A machine profile, so the power gate models a verdict too rather than
+    // declining with `NotImplemented("machine profile not provided")`.
+    let machine = rs_cam_core::machine::MachineProfile::default();
+    let vp = evaluate_toolpath(&ctx, Some(&trace_parent), Some(&machine), &bands);
+    let vf = evaluate_toolpath(&ctx, Some(&trace_fixed), Some(&machine), &bands);
+
+    let sp = trace_parent
+        .toolpath_summaries
+        .iter()
+        .find(|s| s.toolpath_id == ToolpathId(0));
+    let sf = trace_fixed
+        .toolpath_summaries
+        .iter()
+        .find(|s| s.toolpath_id == ToolpathId(0));
+
+    println!("\n=== D-4 MODELLED verdict delta — synthetic arc-fitted pass ===");
+    println!("samples re-marked transit for the parent arm: {flipped}");
+    if let (Some(p), Some(f)) = (sp, sf) {
+        println!(
+            "  peak_axial_doc_mm:          parent {:.4}  →  fixed {:.4}",
+            p.peak_axial_doc_mm, f.peak_axial_doc_mm
+        );
+        println!(
+            "  peak_chipload_mm_per_tooth: parent {:.6}  →  fixed {:.6}",
+            p.peak_chipload_mm_per_tooth, f.peak_chipload_mm_per_tooth
+        );
+    }
+    println!("  chipload   parent: {:?}", vp.chipload);
+    println!("  chipload   fixed : {:?}", vf.chipload);
+    println!("  power      parent: {:?}", vp.power);
+    println!("  power      fixed : {:?}", vf.power);
+    println!("  deflection parent: {:?}", vp.deflection);
+    println!("  deflection fixed : {:?}", vf.deflection);
+
+    let changed = [
+        (
+            "chipload",
+            format!("{:?}", vp.chipload),
+            format!("{:?}", vf.chipload),
+        ),
+        (
+            "power",
+            format!("{:?}", vp.power),
+            format!("{:?}", vf.power),
+        ),
+        (
+            "deflection",
+            format!("{:?}", vp.deflection),
+            format!("{:?}", vf.deflection),
+        ),
+    ];
+    for (name, before, after) in &changed {
+        if before != after {
+            println!("  *** {name} CHANGED ***");
+        }
+    }
+
+    // Non-vacuity on the INSTRUMENT: at least one gate must reach a modelled
+    // verdict, or this table is three rows of "the gate declined" and proves
+    // nothing either way.
+    let modelled = [
+        format!("{:?}", vf.chipload),
+        format!("{:?}", vf.power),
+        format!("{:?}", vf.deflection),
+    ]
+    .iter()
+    .any(|d| !d.starts_with("Unmodeled"));
+    assert!(
+        modelled,
+        "every gate declined on the fixed arm — the fixture cannot show a \
+         verdict delta, so it must be repaired rather than reported"
+    );
+}
+
 // ── The verdict-delta probe on a committed fixture ───────────────────────
 
 /// **The measured verdict-delta instrument the Q3 ruling required.**
@@ -432,17 +608,36 @@ fn the_two_published_peaks_agree_on_an_arc_fitted_op() {
 /// Runs the full session pipeline on the committed
 /// `tests/fixtures/test_job.toml` — the same fixture W5's Rivers probe used,
 /// whose `Project Curve 6` op carries 630 arc-fit spans (census §6.4) — and
-/// prints, per toolpath: the three tool-load gate verdicts,
-/// `peak_axial_doc_mm`, `peak_chipload_mm_per_tooth`, the arc-fit span
-/// count, and the arc-fitted share of cutting samples that reach the gate
-/// population.
+/// prints, per toolpath, both arms side by side: the three tool-load gate
+/// verdicts, the two published peaks, and the gate population.
+///
+/// ## Both arms come from ONE simulation, on purpose
+///
+/// The naive method — run the probe at the parent revision, run it again
+/// with the fix, diff the two tables — is not sound on this tree. Several
+/// agents commit to it concurrently, and a generation change landing between
+/// the two runs would show up as a verdict delta this fix did not cause.
+///
+/// So the probe generates and simulates once, then derives the parent's
+/// classification from the same trace: every sample whose move sits inside a
+/// [`SpanKind::GeometryRefit`] span gets `in_transit_span = true`, which is
+/// exactly what `transit_moves_bitmap` did when those spans were
+/// `DressupArtifact`. Both arms then go through the shipped
+/// `gcode::project_load_report`, which is the same assembly site
+/// `ProjectSession::tool_load_report` uses.
+///
+/// **Equivalence, stated.** At the parent an arc-fitted sample was phantom
+/// for two independent reasons: `DressupArtifact` ancestry, and the
+/// `in_transit_span` flag. `is_phantom_transit` ORs them, so restoring the
+/// flag reproduces the parent verdict for every sample **except** one class:
+/// an arc nested inside an `Entry` span, where the parent's ancestry test
+/// wins over the flag's `&& !Entry` guard. The probe counts that class and
+/// prints it; when it is zero the emulation is exact.
 ///
 /// It asserts nothing about verdict values on purpose: the deliverable is a
-/// **table**, produced at the parent revision and again with the fix, and
-/// diffed. Asserting a verdict here would be the vacuous verdict bar the
+/// table. Asserting a verdict here would be the vacuous verdict bar the
 /// ruling explicitly rejected. The non-vacuity assertions are on the
-/// fixture: it must still generate, still simulate, and still exercise
-/// arc-fitting.
+/// fixture: it must still generate, still simulate, and still fit arcs.
 ///
 /// ```text
 /// cargo test -p rs_cam_core --test arcfit_gate_population_d4 -- --ignored --nocapture
@@ -450,9 +645,11 @@ fn the_two_published_peaks_agree_on_an_arc_fitted_op() {
 #[test]
 #[ignore = "expensive: generates + simulates the committed terrain fixture; run explicitly with --ignored"]
 fn verdict_delta_probe_on_the_committed_fixture() {
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
 
+    use rs_cam_core::ids::ToolpathId;
     use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -484,70 +681,217 @@ fn verdict_delta_probe_on_the_committed_fixture() {
         .run_simulation(&opts, &cancel)
         .expect("second simulation completes");
 
-    let sim = session.simulation_result().expect("simulation result");
-    let trace = sim.cut_trace.as_ref().expect("metric cut trace");
-    let report = session.tool_load_report();
+    // `SimulationResult::cut_trace` is an `Arc`; deref before cloning so the
+    // parent arm gets its own mutable copy rather than a second handle.
+    let trace_fixed = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.as_deref())
+        .expect("metric cut trace")
+        .clone();
+
+    // Per-toolpath mask of moves that sit inside an arc-fit span, plus the
+    // Entry-nesting count that bounds the emulation's exactness.
+    let mut refit_moves: HashMap<ToolpathId, Vec<bool>> = HashMap::new();
+    let mut arc_spans_by_id: HashMap<ToolpathId, usize> = HashMap::new();
+    let mut arcs_nested_in_entry = 0_usize;
+    for (index, tc) in session.toolpath_configs().iter().enumerate() {
+        let Some(result) = session.get_result(index) else {
+            continue;
+        };
+        let annotated = result.annotated();
+        let mut mask = vec![false; annotated.toolpath.moves.len()];
+        let mut count = 0_usize;
+        for span in annotated.spans.iter() {
+            if span.kind != SpanKind::GeometryRefit {
+                continue;
+            }
+            count += 1;
+            for m in span.range() {
+                if let Some(slot) = mask.get_mut(m) {
+                    *slot = true;
+                }
+                if annotated
+                    .span_path_at(m)
+                    .iter()
+                    .filter_map(|id| annotated.spans.get(id.0 as usize))
+                    .any(|s| s.kind == SpanKind::Entry)
+                {
+                    arcs_nested_in_entry += 1;
+                }
+            }
+        }
+        arc_spans_by_id.insert(tc.id, count);
+        refit_moves.insert(tc.id, mask);
+    }
+
+    // The parent classification, restored on the same samples.
+    let mut trace_parent = trace_fixed.clone();
+    let mut flipped = 0_usize;
+    for sample in &mut trace_parent.samples {
+        let in_refit = refit_moves
+            .get(&sample.toolpath_id)
+            .and_then(|m| m.get(sample.move_index))
+            .copied()
+            .unwrap_or(false);
+        if in_refit && !sample.in_transit_span {
+            sample.in_transit_span = true;
+            flipped += 1;
+        }
+    }
+
+    // `gcode::sim_trace_is_fresh` (gcode/mod.rs:301-311) returns false as soon
+    // as ANY enabled toolpath has no compute result, and every gate then
+    // reports `Unmodeled(StaleSimulation)` instead of a real verdict — which
+    // would make the whole table read "no change" for a reason that has
+    // nothing to do with this fix. On this fixture some ops never become
+    // generatable. Disable exactly those, symmetrically for both arms; they
+    // contributed no samples to either trace.
+    let ungenerated: Vec<usize> = (0..session.toolpath_configs().len())
+        .filter(|i| session.get_result(*i).is_none())
+        .collect();
+    for i in &ungenerated {
+        if let Some(tc) = session.toolpath_configs_mut().get_mut(*i) {
+            tc.enabled = false;
+        }
+    }
+    println!(
+        "disabled {} un-generated toolpath(s): {ungenerated:?}",
+        ungenerated.len()
+    );
+    println!(
+        "sim_trace_is_fresh: fixed={} parent={}",
+        rs_cam_core::gcode::sim_trace_is_fresh(&session, &trace_fixed),
+        rs_cam_core::gcode::sim_trace_is_fresh(&session, &trace_parent)
+    );
+
+    let report_fixed = rs_cam_core::gcode::project_load_report(&session, Some(&trace_fixed));
+    let report_parent = rs_cam_core::gcode::project_load_report(&session, Some(&trace_parent));
 
     println!("\n=== D-4 verdict-delta table — committed test_job.toml ===");
+    println!(
+        "samples re-marked transit for the PARENT arm: {flipped}; \
+         arc moves nested inside an Entry span: {arcs_nested_in_entry} \
+         (0 ⇒ the parent emulation is exact)"
+    );
+
     let mut total_arc_spans = 0_usize;
+    let mut changed_rows = 0_usize;
     for (index, tc) in session.toolpath_configs().iter().enumerate() {
         let id = tc.id;
         let Some(result) = session.get_result(index) else {
             continue;
         };
         let annotated = result.annotated();
-        let arc_spans = annotated
-            .spans
-            .iter()
-            .filter(|s| s.label == "arc-fit")
-            .count();
+        let arc_spans = arc_spans_by_id.get(&id).copied().unwrap_or(0);
         total_arc_spans += arc_spans;
 
-        let summary = trace
-            .toolpath_summaries
-            .iter()
-            .find(|s| s.toolpath_id == id);
-        let verdict = report.per_toolpath.iter().find(|v| v.toolpath_id == id);
-
         let lookup = SpanLookup::new(&annotated.spans);
-        let mine: Vec<&SimulationCutSample> = trace
+        let cutting_fixed: Vec<&SimulationCutSample> = trace_fixed
             .samples
             .iter()
             .filter(|s| s.toolpath_id == id && s.is_cutting)
             .collect();
-        let in_gate = mine
+        let cutting_parent: Vec<&SimulationCutSample> = trace_parent
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == id && s.is_cutting)
+            .collect();
+        let in_gate_fixed = cutting_fixed
+            .iter()
+            .filter(|s| is_steady_state_for_gate(s, Some(&lookup)))
+            .count();
+        let in_gate_parent = cutting_parent
             .iter()
             .filter(|s| is_steady_state_for_gate(s, Some(&lookup)))
             .count();
 
+        // The two published peaks, recomputed under each arm's filter.
+        // Mirrors `SummaryAccumulator::observe` (`simulation_cut.rs:1163`).
+        let peaks = |samples: &[&SimulationCutSample]| -> (f64, f64) {
+            let mut doc = 0.0_f64;
+            let mut cl = 0.0_f64;
+            for s in samples {
+                if !s.in_transit_span {
+                    doc = doc.max(s.axial_engagement_mm.max(0.0));
+                    cl = cl.max(s.chipload_mm_per_tooth.max(0.0));
+                }
+            }
+            (doc, cl)
+        };
+        // Peaks are accumulated over ALL samples, not only cutting ones.
+        let all_fixed: Vec<&SimulationCutSample> = trace_fixed
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == id)
+            .collect();
+        let all_parent: Vec<&SimulationCutSample> = trace_parent
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == id)
+            .collect();
+        let (doc_fixed, cl_fixed) = peaks(&all_fixed);
+        let (doc_parent, cl_parent) = peaks(&all_parent);
+
+        let vf = report_fixed
+            .per_toolpath
+            .iter()
+            .find(|v| v.toolpath_id == id);
+        let vp = report_parent
+            .per_toolpath
+            .iter()
+            .find(|v| v.toolpath_id == id);
+
+        let row_changed = in_gate_fixed != in_gate_parent
+            || (doc_fixed - doc_parent).abs() > 1e-9
+            || (cl_fixed - cl_parent).abs() > 1e-12;
+        let verdicts_changed = match (vf, vp) {
+            (Some(a), Some(b)) => {
+                format!("{:?}", a.chipload) != format!("{:?}", b.chipload)
+                    || format!("{:?}", a.power) != format!("{:?}", b.power)
+                    || format!("{:?}", a.deflection) != format!("{:?}", b.deflection)
+            }
+            _ => false,
+        };
+        if row_changed || verdicts_changed {
+            changed_rows += 1;
+        }
+
         println!(
-            "\nTP{index} id={id} {:?}\n  arc-fit spans: {arc_spans}\n  \
-             cutting samples: {} in gate: {in_gate} ({:.1}%)",
+            "\nTP{index} id={id} {:?}  [arc-fit spans: {arc_spans}]{}",
             tc.name,
-            mine.len(),
-            if mine.is_empty() {
-                0.0
+            if verdicts_changed {
+                "  *** VERDICT CHANGED ***"
             } else {
-                in_gate as f64 / mine.len() as f64 * 100.0
+                ""
             }
         );
-        if let Some(s) = summary {
-            println!(
-                "  peak_axial_doc_mm: {:.4}  peak_chipload_mm_per_tooth: {:.6}",
-                s.peak_axial_doc_mm, s.peak_chipload_mm_per_tooth
-            );
-        }
-        if let Some(v) = verdict {
-            println!("  chipload:   {:?}", v.chipload);
-            println!("  power:      {:?}", v.power);
-            println!("  deflection: {:?}", v.deflection);
+        println!(
+            "  gate population (cutting):  parent {in_gate_parent}/{}  →  fixed {in_gate_fixed}/{}",
+            cutting_parent.len(),
+            cutting_fixed.len()
+        );
+        println!("  peak_axial_doc_mm:          parent {doc_parent:.4}  →  fixed {doc_fixed:.4}");
+        println!("  peak_chipload_mm_per_tooth: parent {cl_parent:.6}  →  fixed {cl_fixed:.6}");
+        if let (Some(a), Some(b)) = (vf, vp) {
+            println!("  chipload   parent: {:?}", b.chipload);
+            println!("  chipload   fixed : {:?}", a.chipload);
+            println!("  power      parent: {:?}", b.power);
+            println!("  power      fixed : {:?}", a.power);
+            println!("  deflection parent: {:?}", b.deflection);
+            println!("  deflection fixed : {:?}", a.deflection);
         }
     }
+
+    println!("\nrows with any change: {changed_rows}");
 
     // Non-vacuity: if the fixture stops exercising arc-fitting, this probe
     // measures nothing and must say so rather than print a clean table.
     assert!(
         total_arc_spans > 0,
         "fixture produced no arc-fit spans — the probe is vacuous"
+    );
+    assert!(
+        flipped > 0,
+        "no sample changed classification — the two arms are the same trace"
     );
 }
