@@ -478,3 +478,65 @@ the directory with `R2_ARTIFACT_DIR`).
   describing the defect.** It is deliberately written to break when a typed
   channel lands, so the contract has to be re-stated on purpose rather than
   drifting.
+
+---
+
+## 9. What Checkpoint C ruled, and what shipped (postscript, 2026-08-05)
+
+Added by the C-impl lane. §1–§8 above are W4's research and are left exactly
+as written; this section records the disposition so a reader arriving at the
+research does not have to guess which parts are still open.
+
+**Ruled 2026-08-04** (`ORCHESTRATION_LOG.md`, "Checkpoint C — RULED"):
+
+| item | ruling | shipped |
+|---|---|---|
+| D-1 shape | **B**, the side channel | `polygon::offset_polygon_reported` / `OffsetRingSet::offset_reported`; old names delegate |
+| D-1 variants | `Collapsed` is **not** a variant — a collapse is `(empty, None)` | `OffsetFailure::{RejectedInput, LibraryFailure}` |
+| D-2 | 13th `ToolpathStats` slot | `offset_library_failures: Option<usize>`, X-19 contract, through narrate + diagnostics + MCP |
+| D-3a | option **(b)** | pass through on genuine collapse WITH `boundary_clip_dropped`; REFUSE on failure; tool-larger-than-stock case preserved and sentried |
+| D-3b | distinguish nothing-vs-something | `boundary::apply_user_boundary_offset` -> `UserOffsetOutcome` at all three sites |
+| D-3c | multi-region semantics win | single-region clips now take the whole boundary set; a collapsed user offset DROPS the region, as `RegionSet::processed` always did |
+| D-4 | record the payload | `crate::panic_message::panic_payload_message` at both chokepoints; the `warn!` names the assertion |
+| D-5 | option **(a)** | accepted and documented — see below |
+
+**Deliberately NOT done**, so it is not mistaken for an oversight:
+
+- **No non-finite pre-check.** §4 R-4b's `NaN` class still reaches the
+  library. F-11 and F-13 are unruled, and a validating constructor on
+  `Polygon2` is separate work. `polygon::OffsetRejection`'s doc says this out
+  loud rather than letting a reader assume the guard exists.
+- **A contained panic is still not a hard error**, except at the boundary
+  containment layer where D-3a specifically ruled it must refuse.
+- **`OffsetFailure::LibraryFailure` carries the assertion text and no source
+  location.** `catch_unwind`'s payload does not contain one; recovering it
+  needs a process-global panic hook, which is what §7's census installs and
+  why that census is `#[ignore]`d and single-threaded. A library primitive
+  called from parallel worker threads must not install one. See
+  `crate::panic_message`.
+
+**§8's first honest limit is unchanged and now has an owner.** Every result
+here is still a debug result. Checkpoint C accepted the divergence rather than
+fixing it (D-5 option a), so it is documented in two places — `polygon`'s
+module doc, `## Debug versus release`, which names all three classes with what
+release does instead — and the measurement is scheduled as item 8 of §4.4 in
+`TECH_DEBT_2_RESEARCH_AND_FIX_PLAN.md`, owned by the Checkpoint G
+live-validation wave. The failure arms of the shipped sentries are
+`cfg!(debug_assertions)`-gated so that a release run reports "not exercised"
+instead of asserting something false.
+
+**§5.2 property 3 and §8's last bullet are both discharged.**
+`a_contained_panic_is_indistinguishable_from_a_collapse` was written to break
+when a typed channel landed. It broke, and was restated as
+`the_three_empty_results_are_distinguishable`, which asserts both halves: the
+old name's behaviour is unchanged, and the reported one separates the causes.
+
+**F-1 is reproduced.** §5.3 was a code-path finding — W4 recorded that it had
+not driven a panicking boundary polygon through `apply_boundary_clip` and
+observed an unclipped toolpath. `crates/rs_cam_core/tests/boundary_clip_escape_f1.rs`
+does, and keeps the reproduction: its first arm runs the two statements the
+pre-fix code ran and shows a cut 500 mm outside a 60 mm `Inside` containment
+surviving as a cut.
+
+Commits: `693579c` (the failure contract), `6ec9737` (D-3b/D-3c), `1a6849a`
+(Q3 bounds and cancellation).
