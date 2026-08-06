@@ -107,11 +107,28 @@ impl EmbeddedCamServer {
         self.request_tx
             .send(request)
             .map_err(|e| format!("Failed to send MCP request: {e}"))?;
-        self.egui_ctx.request_repaint();
+        self.wake_gui();
         match response_rx.await {
             Ok(resp) => resp.result,
             Err(e) => Err(format!("MCP response channel closed: {e}")),
         }
+    }
+
+    /// Ask the GUI to run a frame, and record that something is now waiting
+    /// on it.
+    ///
+    /// **G-LV.1 — the repaint is necessary and not sufficient.** Every
+    /// enqueue path calls this, so no request ever sits in the channel for
+    /// want of asking. But a repaint *request* is only a request: on Wayland
+    /// a hidden or occluded surface receives no compositor frame callbacks,
+    /// winit therefore never emits `RedrawRequested`, and the loop parks
+    /// with the request pending forever (see [`FrameLoopBeat`] for the
+    /// citation). The counter is what survives that: it is how
+    /// `generation_status` and `cancel_generation` can tell a caller their
+    /// work is stranded rather than finished.
+    fn wake_gui(&self) {
+        self.reads.frame_loop().record_sent();
+        self.egui_ctx.request_repaint();
     }
 
     /// A/M12 + C6: a cheap, no-argument read that **cannot** be trapped
@@ -139,7 +156,7 @@ impl EmbeddedCamServer {
         if let Err(e) = self.request_tx.send(request) {
             return Self::format_result(Err(format!("Failed to send MCP request: {e}")));
         }
-        self.egui_ctx.request_repaint();
+        self.wake_gui();
 
         // Dropping `response_rx` on timeout is safe and already the house
         // pattern: every GUI-side resolution is `let _ = sender.send(..)`, and
@@ -160,7 +177,17 @@ impl EmbeddedCamServer {
         // it — which is the case this deadline was widened to cover, and
         // saying "a generation is in flight" there would be a lie an agent
         // would then act on.
-        let stall_reason = if lane.is_active() {
+        // G-LV.1 added a third case, and it has to come first: a frame loop
+        // that has not run at all is not "busy", and telling the caller to
+        // wait for a long read that is not running would send them to wait
+        // out a stall that never ends on its own.
+        let frame_loop = self.reads.frame_loop();
+        let stall_reason = if frame_loop.is_parked() {
+            " because the GUI frame loop is not running at all — see `frame_loop` \
+             below; a hidden, occluded or screen-locked window gets no repaints, and \
+             nothing dispatched from a repaint (every other MCP call, every \
+             generate_all round handoff) will advance until it is visible again"
+        } else if lane.is_active() {
             " because a toolpath generation is in flight"
         } else {
             " and no generation is running — a long in-band read (narrate_toolpath, \
@@ -247,7 +274,7 @@ impl EmbeddedCamServer {
         self.request_tx
             .send(request)
             .map_err(|e| format!("Failed to send MCP request: {e}"))?;
-        self.egui_ctx.request_repaint();
+        self.wake_gui();
 
         // No `timeout` becomes a deadline that never resolves, so the
         // branch below is simply never the `select!` winner — avoids both
@@ -1214,15 +1241,15 @@ impl EmbeddedCamServer {
         description = "Cancel whatever toolpath generation is currently in flight (the toolpath compute lane) — the fix for a runaway generate_toolpath/generate_all call that would otherwise hang indefinitely. Served on the MCP server thread, never queued behind the GUI frame loop, so it answers and sets the cancel flag whatever the GUI is doing. It sets a flag: the worker stops at its next cancellation checkpoint, which is not instantaneous. `was_busy` describes the lane at the moment you asked. The cancelled toolpath's status reverts to pending (not Done); any pending generate_toolpath/generate_all call for it resolves on its own shortly after with a cancelled outcome."
     )]
     pub async fn cancel_generation(&self) -> String {
-        build_cancel_generation_response(&self.generation.request_cancel())
+        build_cancel_generation_response(&self.generation.request_cancel(), self.reads.frame_loop())
     }
 
     #[tool(
         name = "generation_status",
-        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress."
+        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress. ALSO carries `frame_loop`: an idle lane does NOT mean your call finished — if `frame_loop.healthy` is false, the GUI window is not repainting and every MCP request plus every generate_all round handoff is stranded until it is visible again."
     )]
     pub async fn generation_status(&self) -> String {
-        build_generation_status_response(&self.generation.snapshot())
+        build_generation_status_response(&self.generation.snapshot(), self.reads.frame_loop())
     }
 
     #[tool(
