@@ -783,6 +783,28 @@ impl RsCamApp {
 
         self.controller.process_auto_regen();
 
+        // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
+        // frame to reach it — the compute drain, `generate_all`'s fixpoint
+        // round handoff (`settle_generate_all_round` ->
+        // `resume_generate_all_after_simulation`, both reached from
+        // `drain_compute_results`), and the screenshot pump all live in this
+        // function. The lane-activity check below covers the window where a
+        // job is running; this covers the gap it cannot see — the round
+        // boundary, where the lane has gone idle, the result is still in the
+        // channel, and nothing has yet asked for the frame that would pick it
+        // up. Stated once here rather than at each handoff site: a per-site
+        // request is one refactor away from being forgotten, and this
+        // condition is exactly "an MCP caller is still owed something".
+        #[cfg(feature = "mcp")]
+        if self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .is_some_and(|pending| pending.awaiting_gui() > 0)
+        {
+            ctx.request_repaint();
+        }
+
         let active_lanes = self
             .controller
             .lane_snapshots()
@@ -804,6 +826,15 @@ impl RsCamApp {
             }
             ctx.request_repaint();
         }
+
+        // G-LV.1: last statement in the frame. Closes the bracket
+        // `drain_mcp_requests` opened, so `frame_loop.in_frame` covers the
+        // whole body — a frame that spends 30 s inside a narration or a mesh
+        // upload reports as BUSY, not as the parked window G-LV.1 is about.
+        // Keep this last: anything after it runs outside the bracket and
+        // would be misattributed.
+        #[cfg(feature = "mcp")]
+        self.end_mcp_frame();
     }
 }
 

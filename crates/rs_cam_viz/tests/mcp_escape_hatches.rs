@@ -244,11 +244,18 @@ async fn cheap_reads_answer_within_the_gate_even_with_the_lane_idle() {
     // The receiver is held but never drained: a GUI frame loop stalled by
     // something that is NOT a generation — the C6 case.
     let (tx, _rx) = std::sync::mpsc::channel();
+    let cache = published_cache();
+    // G-LV.1: the loop is stalled *inside* a frame — that is what a long
+    // in-band read is. Without this the harness would model a loop that is
+    // not running at all (G-LV.1's parked case), which is a different stall
+    // with a different remedy, and this test's whole subject is the wording
+    // that tells them apart.
+    cache.frame_loop().frame_begin();
     let server = EmbeddedCamServer::new(
         tx,
         egui::Context::default(),
         GenerationControl::new(Arc::new(IdleLane)),
-        published_cache(),
+        cache,
     );
 
     let started = Instant::now();
@@ -402,6 +409,165 @@ async fn generate_then_status_then_cancel_over_the_mcp_surface() {
     //    inferring from a CPU graph (the error the live run recorded).
     let after: serde_json::Value = serde_json::from_str(&server.generation_status().await).unwrap();
     assert_eq!(after["lane_state"], "cancelling");
+}
+
+// ── G-LV.1: the frame loop itself can be the thing that is stopped ───────
+//
+// Measured live 2026-08-07 (release build at 73e2376, wanaka,
+// simulation_resolution_mm 0.1): a `generate_all` fixpoint run stalled
+// indefinitely between rounds after the GUI window stopped repainting. The
+// lane finished `3D Rough 6` and went idle; the simulate-round handoff never
+// ran; `generation_status` answered "idle: no toolpath generation in flight".
+// `list_toolpaths` snapshot ages grew 155 s -> 268 s while a server-thread
+// `generation_status` produced 0 CPU ticks in the following 8 s.
+//
+// The mechanism is below the app: `request_repaint()` reaches
+// `Window::request_redraw`, and winit's Wayland loop will not emit
+// `RedrawRequested` while the surface awaits a compositor frame callback
+// (`wayland/event_loop/mod.rs`: `if window.frame_callback_state() ==
+// FrameCallbackState::Requested { return None }`). A hidden or occluded
+// surface gets none. eframe's rescue for invisible windows is gated on
+// `is_invisible_or_minimized`, and winit's Wayland `is_visible()` /
+// `is_minimized()` both return `None`, so it never fires.
+//
+// These sentries therefore pin what IS in our gift: the request path always
+// asks for the frame, and when the frame never comes the escape hatches say
+// so instead of reporting a clean idle lane.
+
+/// A context that counts the wake-ups an integration would act on.
+///
+/// `Context::has_requested_repaint()` is useless as a spy here: a fresh
+/// context starts with `outstanding: 1` ("let's run a couple of frames at the
+/// start"), so it answers `true` before anything has asked. The repaint
+/// *callback* is the real signal — it is the hook eframe installs to turn a
+/// cross-thread `request_repaint()` into a winit wake-up.
+fn counting_ctx() -> (egui::Context, Arc<std::sync::atomic::AtomicUsize>) {
+    let ctx = egui::Context::default();
+    let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sink = Arc::clone(&wakes);
+    ctx.set_request_repaint_callback(move |_| {
+        sink.fetch_add(1, Ordering::SeqCst);
+    });
+    (ctx, wakes)
+}
+
+/// Every enqueue must ask for a repaint. Necessary, not sufficient — but a
+/// request that never even asks is a stall on any platform.
+#[tokio::test]
+async fn every_mcp_enqueue_requests_a_repaint() {
+    let lane = StuckLane::new("preflight");
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let (ctx, wakes) = counting_ctx();
+    let control = GenerationControl::new(Arc::clone(&lane) as Arc<dyn LaneControl>);
+    let server = EmbeddedCamServer::new(tx, ctx, control, published_cache());
+
+    assert_eq!(
+        wakes.load(Ordering::SeqCst),
+        0,
+        "nothing has asked for a frame yet"
+    );
+
+    // A cheap read (the `cheap_read` path) — bounded, so this returns.
+    let _ = server.list_toolpaths().await;
+    assert!(
+        wakes.load(Ordering::SeqCst) >= 1,
+        "list_toolpaths must wake the GUI: its request is dispatched from a repaint"
+    );
+}
+
+/// The `send_with_progress` path — the one `generate_all` takes — must wake
+/// the GUI too, and must record that something is now waiting on it.
+#[tokio::test]
+async fn generate_all_enqueue_wakes_the_gui_and_is_counted_as_stranded() {
+    let lane = StuckLane::new("preflight");
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let (ctx, wakes) = counting_ctx();
+    let cache = published_cache();
+    let control = GenerationControl::new(Arc::clone(&lane) as Arc<dyn LaneControl>);
+    let server = EmbeddedCamServer::new(tx, ctx, control, cache.clone());
+
+    let reply: serde_json::Value = serde_json::from_str(
+        &server
+            .generate_all_without_peer(Some(1), Some(false), None)
+            .await,
+    )
+    .unwrap();
+    assert_eq!(reply["status"], "running");
+
+    assert!(
+        wakes.load(Ordering::SeqCst) >= 1,
+        "generate_all must wake the GUI or its very first round never starts"
+    );
+    assert_eq!(
+        cache.frame_loop().backlog(),
+        1,
+        "the request is in the channel and no frame has taken it — that is the \
+         stranded count `generation_status` reports"
+    );
+    assert!(
+        cache.frame_loop().is_parked(),
+        "a loop that has never run a frame, with work already sent to it, is parked"
+    );
+}
+
+/// The G-LV.1 trap itself, over the MCP surface: lane idle, GUI not painting,
+/// a `generate_all` still owed an answer. `generation_status` must not let
+/// that read as completion — and must still answer inside the gate.
+#[tokio::test]
+async fn generation_status_flags_a_parked_frame_loop_holding_a_generate_all() {
+    struct IdleLane;
+    impl LaneControl for IdleLane {
+        fn snapshot(&self) -> LaneSnapshot {
+            LaneSnapshot::idle(ComputeLane::Toolpath)
+        }
+        fn request_cancel(&self) -> CancelOutcome {
+            CancelOutcome {
+                was_busy: false,
+                snapshot: LaneSnapshot::idle(ComputeLane::Toolpath),
+            }
+        }
+    }
+
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let cache = published_cache();
+    let server = EmbeddedCamServer::new(
+        tx,
+        egui::Context::default(),
+        GenerationControl::new(Arc::new(IdleLane)),
+        cache.clone(),
+    );
+
+    // The live shape: a generate_all was dispatched by an earlier frame and
+    // is still awaiting completion, and no frame has run since.
+    cache.frame_loop().frame_begin();
+    cache.frame_loop().beat(1, true);
+    std::thread::sleep(rs_cam_viz::mcp_bridge::PARKED_FRAME_LOOP + Duration::from_millis(100));
+
+    let started = Instant::now();
+    let v: serde_json::Value = serde_json::from_str(&server.generation_status().await).unwrap();
+    assert!(
+        started.elapsed() < GATE,
+        "generation_status must stay inside the A/M12 gate: {:?}",
+        started.elapsed()
+    );
+
+    assert_eq!(
+        v["busy"], false,
+        "the lane really is idle — that is the trap"
+    );
+    assert_eq!(v["frame_loop"]["healthy"], false);
+    assert_eq!(v["frame_loop"]["awaiting_generate_all"], true);
+    assert_eq!(v["frame_loop"]["in_frame"], false);
+
+    let summary = v["summary"].as_str().unwrap();
+    assert!(
+        summary.contains("does NOT mean your call completed"),
+        "an idle lane behind a parked loop must not read as success: {summary}"
+    );
+    assert!(
+        summary.contains("generate_all"),
+        "and must name what is stranded: {summary}"
+    );
 }
 
 /// Throughput guard for the snapshot machinery itself. The publish runs on the

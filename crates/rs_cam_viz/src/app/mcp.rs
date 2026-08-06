@@ -51,6 +51,14 @@ impl super::RsCamApp {
             return;
         };
 
+        // G-LV.1: open the frame bracket. It closes in `end_mcp_frame` at
+        // the very bottom of `update`, so "in a frame" spans the whole frame
+        // body — dispatch, event handling and render alike. That is what
+        // lets the MCP server thread tell a loop that is *inside* something
+        // long from one that is not running at all: both look like "no
+        // recent frame" from outside, and only the first ends on its own.
+        self.mcp_reads.frame_loop().frame_begin();
+
         // Drain all pending requests (non-blocking).
         let mut requests = Vec::new();
         loop {
@@ -63,9 +71,34 @@ impl super::RsCamApp {
 
         for request in requests {
             self.handle_mcp_request(ctx, request);
+            self.mcp_reads.frame_loop().record_handled();
         }
 
         self.publish_mcp_read_snapshot();
+    }
+
+    /// G-LV.1: close the frame bracket opened in [`Self::drain_mcp_requests`]
+    /// and publish what the frame left undone. Called last in `update`.
+    ///
+    /// The outstanding count has to come from `PendingMcpCompute`, not from
+    /// the request channel: a `generate_all` is dispatched once and then
+    /// spends its whole life waiting on *future* frames it never queued a
+    /// request for, so a channel counter reads zero for exactly the call
+    /// whose stall started this.
+    pub(crate) fn end_mcp_frame(&mut self) {
+        if self.mcp_receiver.is_none() {
+            return;
+        }
+        let (awaiting, awaiting_generate_all) = self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .map_or((0, false), |pending| {
+                (pending.awaiting_gui(), pending.awaiting_generate_all())
+            });
+        self.mcp_reads
+            .frame_loop()
+            .beat(awaiting, awaiting_generate_all);
     }
 
     /// A/M12: republish the cheap, no-argument reads so the MCP server thread
