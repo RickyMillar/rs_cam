@@ -56,6 +56,10 @@ programme.
 | feeds-final | rubbing floor + laws | **DONE** — floor before exponents, as ruled; the two moves **cancel to the byte** on the Ipe cell; one named prediction published as failed | post-conversion rulings | `2d1bfc8`, `62ffd5c` |
 | io-fixes | P-1 / P-2 + D-16.1 locating probe | **DONE** — a **fourth** grblHAL reader the risk map missed; `SetupRuntime` deleted rather than mirrored; the residual located to the rim/wall break | post-conversion rulings | `a80020a`, `a092d1a`, `65dea4d`, `9aafdf5` |
 
+### Checkpoint G — RULED 2026-08-06 (operator, via AskUserQuestion)
+
+**AUTHORIZED**: release build + final read-only live validation per the close-out's 24-item plan, including the first-ever release-behaviour measurement of the three debug_assert classes. **arc_fit_ratio_for_op: LEDGERED for the next programme** with the evidence-package requirement (retirement moves Suggest 4×/6.7× on two families; sim chipload remains the arbiter; the gate no longer consumes it).
+
 ### Post-conversion rulings — RULED 2026-08-06 (operator, via AskUserQuestion)
 
 **Flip table: the unit deletion STANDS as committed** (`0a45e35` confirmed shipped — operations now reading Exceeds(High) were genuinely over band; the old reading was the lie). **Laws: adopt D^0.61 + Janka^-0.5 AFTER the floor re-derivation** (the named `_litmatrix_rubbing_floor_clamp` Ipe sentry pins the floor×law interaction — floor first, then exponents with the re-pin package). **Rubbing floor: re-derivation APPROVED now** — band/row-aware, red-first, Suggest before/after recorded; a fine-tool Suggest can no longer clamp above the gate's ceiling. **W9 P-1 + P-2 BOTH APPROVED**: grblHAL project-path readers route through the existing tested resolver (red-first round-trip, serialized token unchanged); setup datum joins the project schema (additive serde default, save/load round-trip test).
