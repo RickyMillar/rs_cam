@@ -1,11 +1,19 @@
+use rs_cam_core::adaptive_shared::{
+    radial_woc_fraction_from_leading_arc, target_engagement_fraction,
+};
 use rs_cam_core::feeds::FeedsResult;
 
 use crate::state::toolpath::{
-    Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, DropCutterConfig, PencilConfig,
-    RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, WaterlineConfig,
+    Adaptive3dConfig, Adaptive3dEntryStyle, ClaimsReference, ClearingStrategy, DropCutterConfig,
+    PencilConfig, RegionOrdering, ScallopConfig, ScallopDirection, SteepShallowConfig, StockSource,
+    UnifiedFinishConfig, WaterlineConfig,
 };
 
 use super::super::{dv, dv_pill};
+
+/// Fallback tool radius (1/8" endmill) when the active tool's radius is
+/// unavailable or non-physical — keeps the load↔stepover bridge finite.
+const FALLBACK_TOOL_RADIUS: f64 = 3.175;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
@@ -42,25 +50,35 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
 pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
+    tool_radius: f64,
     feeds_result: Option<&FeedsResult>,
 ) {
     // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
     // (finishing-pass param the LUT doesn't speak to).
     let stepover_sugg = feeds_result.map(|r| (r.radial_width_mm, &r.chipload_source));
     let dpp_sugg = feeds_result.map(|r| (r.axial_depth_mm, &r.chipload_source));
+    // The ContourSpiral strategy holds engagement flat by construction, so
+    // its primary knob is the friendly "Optimal load" slider (it derives
+    // the stepover). The raw stepover pill is retired for that strategy and
+    // shown derived instead.
+    let spiral = matches!(cfg.clearing_strategy, ClearingStrategy::ContourSpiral);
     egui::Grid::new("a3d_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv_pill(
-                ui,
-                "Stepover:",
-                &mut cfg.stepover,
-                " mm",
-                0.1,
-                0.05..=50.0,
-                stepover_sugg,
-            );
+            if spiral {
+                draw_spiral_load_control(ui, cfg, tool_radius);
+            } else {
+                dv_pill(
+                    ui,
+                    "Stepover:",
+                    &mut cfg.stepover,
+                    " mm",
+                    0.1,
+                    0.05..=50.0,
+                    stepover_sugg,
+                );
+            }
             dv_pill(
                 ui,
                 "Depth/Pass:",
@@ -72,16 +90,8 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             );
             dv(
                 ui,
-                "Floor Stock:",
+                "Stock to Leave:",
                 &mut cfg.stock_to_leave_axial,
-                " mm",
-                0.05,
-                0.0..=10.0,
-            );
-            dv(
-                ui,
-                "Wall Stock:",
-                &mut cfg.stock_to_leave_radial,
                 " mm",
                 0.05,
                 0.0..=10.0,
@@ -183,6 +193,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     ClearingStrategy::ContourParallel => "Contour Parallel",
                     ClearingStrategy::Adaptive => "Adaptive",
                     ClearingStrategy::AgentSearch => "Agent Search",
+                    ClearingStrategy::ContourSpiral => "Contour Spiral",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -204,6 +215,16 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                         "Per-step direction search with preflight skip and widen-band \
                          recovery. Slow to generate — use when Contour Parallel or \
                          Adaptive leave uncut bands on difficult geometry.",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::ContourSpiral,
+                        "Contour Spiral",
+                    )
+                    .on_hover_text(
+                        "Constructive inside-out spiral per slice: one continuous \
+                         stay-down pass per region with engagement bounded by the \
+                         stepover. Experimental (Stage 1, algorithm review 2026-06-12).",
                     );
                 });
             ui.end_row();
@@ -255,6 +276,50 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         });
 }
 
+/// Clamp the active tool's radius to a finite, positive value for the
+/// load↔stepover bridge.
+fn sane_tool_radius(tool_radius: f64) -> f64 {
+    if tool_radius.is_finite() && tool_radius > 0.0 {
+        tool_radius
+    } else {
+        FALLBACK_TOOL_RADIUS
+    }
+}
+
+/// "Optimal load" row for the ContourSpiral strategy: the slider derives
+/// `cfg.stepover` from a leading-arc engagement fraction via the
+/// [`target_engagement_fraction`] bridge, so the operator dials the load
+/// the spiral holds rather than a raw stepover. (The trochoidal relief cap
+/// `trochoid_cap_mult` stays at its tuned engine default — it's a
+/// corner-relief mechanism that rarely fires on open roughing, so it's not
+/// surfaced as a knob.)
+fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_radius: f64) {
+    let r = sane_tool_radius(tool_radius);
+
+    // Derived live from the raw stepover so existing projects (and the
+    // feeds suggestion that wrote `stepover`) round-trip through the knob.
+    let mut load_pct = (target_engagement_fraction(cfg.stepover, r) * 100.0).clamp(5.0, 45.0);
+    ui.label("Optimal load:").on_hover_text(
+        "Cutter engagement the spiral holds on every steady wrap \
+         (leading-arc fraction of the tool). Sets the stepover for you — \
+         more load = wider step = fewer passes but a heavier cut.",
+    );
+    if ui
+        .add(egui::Slider::new(&mut load_pct, 5.0..=45.0).suffix("%"))
+        .changed()
+    {
+        cfg.stepover = 2.0 * r * radial_woc_fraction_from_leading_arc(load_pct / 100.0);
+    }
+    ui.end_row();
+    ui.label("");
+    ui.label(
+        egui::RichText::new(format!("→ stepover ≈ {:.2} mm", cfg.stepover))
+            .small()
+            .color(egui::Color32::from_rgb(140, 140, 150)),
+    );
+    ui.end_row();
+}
+
 pub(in crate::ui::properties) fn draw_waterline_params(
     ui: &mut egui::Ui,
     cfg: &mut WaterlineConfig,
@@ -279,23 +344,128 @@ pub(in crate::ui::properties) fn draw_waterline_params(
 pub(in crate::ui::properties) fn draw_pencil_params(
     ui: &mut egui::Ui,
     cfg: &mut PencilConfig,
+    tools: &[(crate::state::job::ToolId, String, f64)],
     _feeds_result: Option<&FeedsResult>,
+    // P2 pencil-panel consolidation (2026-07): the "Rest reference" group
+    // below owns `stock_source` directly (Fresh ⇔ reference tool, Remaining
+    // Stock ⇔ machined stock) instead of leaving it to the separate generic
+    // "Use remaining stock" checkbox the properties panel used to show for
+    // every op — that checkbox silently overrode this panel's reference-tool
+    // pick at generation time (`rest_depth_arm`'s R2 stock preference). The
+    // panel is special-cased for this one call site rather than widening
+    // every `draw_*_params` signature.
+    stock_source: &mut StockSource,
+    // Set true when the group above changes `stock_source`; the caller
+    // translates this into `entry.stale_since = Some(Instant::now())`
+    // (mirrors how the old checkbox marked itself stale in
+    // `properties/mod.rs`). Changes to `cfg` itself are already covered by
+    // the generic op-before/op-after snapshot in the caller.
+    stale: &mut bool,
 ) {
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
     // the Feeds tab (W3.2).
+    let curvature = cfg.detector.trim().eq_ignore_ascii_case("curvature");
+    let rest_depth = {
+        let d = cfg.detector.trim();
+        d.eq_ignore_ascii_case("rest_depth")
+            || d.eq_ignore_ascii_case("restdepth")
+            || d.eq_ignore_ascii_case("rest")
+    };
     egui::Grid::new("pen_p")
         .num_columns(2)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
-            dv(
-                ui,
-                "Bitangency Angle:",
-                &mut cfg.bitangency_angle,
-                " deg",
-                1.0,
-                90.0..=180.0,
-            );
+            // Valley-detection front-end. Rest depth = dual-tool rest field (the
+            // aligned detector — the reference tool decides where pencil runs);
+            // Dihedral = mesh-crease detection (clean CAD-style corners);
+            // Curvature = curvature crest lines (dialled by Valley Saliency).
+            ui.label("Detector:");
+            let selected = if rest_depth {
+                "Rest depth (recommended)"
+            } else if curvature {
+                "Curvature (crest)"
+            } else {
+                "Dihedral (crease)"
+            };
+            egui::ComboBox::from_id_salt("pen_detector")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(rest_depth, "Rest depth (recommended)")
+                        .clicked()
+                    {
+                        cfg.detector = "rest_depth".to_owned();
+                    }
+                    if ui
+                        .selectable_label(!curvature && !rest_depth, "Dihedral (crease)")
+                        .clicked()
+                    {
+                        cfg.detector = "dihedral".to_owned();
+                    }
+                    if ui
+                        .selectable_label(curvature, "Curvature (crest)")
+                        .clicked()
+                    {
+                        cfg.detector = "curvature".to_owned();
+                    }
+                });
+            ui.end_row();
+            if rest_depth {
+                // Rest-depth dials. Rest Cell is the XY grid resolution; Route
+                // Width × sets how wide a rest region may be before it routes to
+                // clearing instead of a single pencil centreline (× pencil radius).
+                dv(
+                    ui,
+                    "Rest Cell:",
+                    &mut cfg.rest_cell_mm,
+                    " mm",
+                    0.05,
+                    0.1..=2.0,
+                );
+                // PR-5: RETIRED. The pencil/clearing decision is now the
+                // coverage criterion (reachable band vs the fan the op can
+                // emit), so nothing reads this. Still shown, still saved, so
+                // an operator who set it can see the value they set and the
+                // notice that explains it — hiding the widget would leave a
+                // live number in the project file with no way to see it.
+                dv(
+                    ui,
+                    "Route Width × (retired):",
+                    &mut cfg.route_width_factor,
+                    "",
+                    0.1,
+                    0.5..=10.0,
+                );
+                ui.end_row();
+            } else if curvature {
+                // Curvature-detector dials. Valley Saliency is the significance
+                // knob: min concave curvature |κ₂| (1/mm) a valley must reach —
+                // low traces every seam, high keeps only deep sharp valleys.
+                dv(
+                    ui,
+                    "Valley Saliency:",
+                    &mut cfg.valley_saliency,
+                    " 1/mm",
+                    0.01,
+                    0.0..=2.0,
+                );
+                ui.label("Curv. Smoothing:");
+                let mut s = cfg.curvature_smoothing as i32;
+                if ui.add(egui::DragValue::new(&mut s).range(0..=20)).changed() {
+                    cfg.curvature_smoothing = s.max(0) as usize;
+                }
+                ui.end_row();
+            } else {
+                dv(
+                    ui,
+                    "Bitangency Angle:",
+                    &mut cfg.bitangency_angle,
+                    " deg",
+                    1.0,
+                    90.0..=180.0,
+                );
+            }
             dv(
                 ui,
                 "Min Cut Length:",
@@ -327,6 +497,112 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.05..=10.0,
             );
             dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+            // Reference-tool rest gate: keep only valleys the pencil tool (the
+            // op's own tool) reaches more than this deeper than the bigger
+            // reference finish tool. 0 = off (trace every detected valley); raise
+            // to skip shallow/already-reachable seams.
+            dv(
+                ui,
+                "Min Valley Depth:",
+                &mut cfg.min_valley_depth,
+                " mm",
+                0.05,
+                0.0..=5.0,
+            );
+            // Rest reference: what "rest" is measured against — feeds every
+            // detector's rest gate (RestDepth's own field IS this reference;
+            // Dihedral/Curvature's reach-gap, `min_valley_depth`, also gates
+            // off it), so this is shown for all three detectors, not just
+            // RestDepth. Two ways to supply it, unified into one choice
+            // instead of two overlapping controls:
+            // - Machined stock (`stock_source = FromRemainingStock`): R2, the
+            //   actual simulated stock a prior toolpath left.
+            // - Reference tool (`stock_source = Fresh`): R1, a real library
+            //   tool's true geometry or a synthetic nominal-Ø ball.
+            ui.label("Rest reference:").on_hover_text(
+                "What 'rest' is measured against — the material a previous \
+                 step left. Machined stock uses the simulated result of \
+                 prior ops (most accurate, needs a simulation first); a \
+                 reference tool approximates it analytically.",
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(
+                        *stock_source == StockSource::FromRemainingStock,
+                        "Machined stock (requires simulation)",
+                    )
+                    .clicked()
+                    && *stock_source != StockSource::FromRemainingStock
+                {
+                    *stock_source = StockSource::FromRemainingStock;
+                    *stale = true;
+                }
+                if ui
+                    .selectable_label(*stock_source == StockSource::Fresh, "Reference tool")
+                    .clicked()
+                    && *stock_source != StockSource::Fresh
+                {
+                    *stock_source = StockSource::Fresh;
+                    *stale = true;
+                }
+            });
+            ui.end_row();
+            if *stock_source == StockSource::FromRemainingStock {
+                // `rest_depth_arm` (and the generic
+                // `attach_generic_rest_analysis`) require the simulated
+                // stock's XY bbox to overlap this model's — a silent frame
+                // mismatch would read garbage rest everywhere, so instead
+                // they fall back to the reference-tool resolution below.
+                ui.label("");
+                ui.label(
+                    egui::RichText::new(
+                        "Falls back to the reference tool if the simulated \
+                         stock doesn't overlap this model's frame.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(140, 140, 150)),
+                );
+                ui.end_row();
+            } else {
+                // R1: "Nominal Ø" = a synthetic ball at Reference Tool Ø; or
+                // pick a real library tool whose TRUE geometry (flat/vbit/
+                // tapered) defines the rest — a flat leaves a different rest
+                // shape than a ball of the same diameter.
+                ui.label("Reference:");
+                let ref_label = cfg
+                    .reference_tool_id
+                    .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                    .map(|(_, s, _)| s.as_str())
+                    .unwrap_or("Nominal Ø");
+                egui::ComboBox::from_id_salt("pen_reference_tool")
+                    .selected_text(ref_label)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(cfg.reference_tool_id.is_none(), "Nominal Ø")
+                            .clicked()
+                        {
+                            cfg.reference_tool_id = None;
+                        }
+                        for (id, name, _) in tools {
+                            let selected = cfg.reference_tool_id == Some(*id);
+                            if ui.selectable_label(selected, name.as_str()).clicked() {
+                                cfg.reference_tool_id = Some(*id);
+                            }
+                        }
+                    });
+                ui.end_row();
+                // The nominal diameter only applies when no real tool is chosen.
+                if cfg.reference_tool_id.is_none() {
+                    dv(
+                        ui,
+                        "Reference Tool Ø:",
+                        &mut cfg.reference_tool_diameter,
+                        " mm",
+                        0.5,
+                        0.5..=25.0,
+                    );
+                }
+            }
             dv(
                 ui,
                 "Stock to Leave:",
@@ -406,6 +682,249 @@ pub(in crate::ui::properties) fn draw_scallop_params(
                 0.0..=10.0,
             );
         });
+}
+
+/// P2.c orchestrator params (`planning/unified_finish_planner_design.md`).
+/// Mirrors `draw_scallop_params`' shape closely: no stepover pill (raster
+/// stepover here is a plain editable field, not chipload-derived), no
+/// feed/plunge/spindle widgets (those live on the Feeds tab, same as every
+/// other 3D finish op's params panel — see the comment on
+/// `draw_scallop_params`). No stepover-pattern diagram either (same
+/// silent-gap acceptance as `StepoverPattern::from_operation`'s `_ => None`
+/// fallback covers Scallop).
+/// A/M6: the "Rest Claims" block of the Unified Finish panel — the claims
+/// pipeline's four dials, plus a readout of which reference the last
+/// generation actually RESOLVED to and why.
+///
+/// The readout exists because `claims_reference: Auto` resolves against
+/// something no config field records: whether a simulated prior stock was in
+/// scope. Before A/M6 the dials were not in the panel at all and the
+/// resolution appeared only in a `tracing::warn!` that no GUI run
+/// subscribes to.
+fn draw_unified_finish_claims(
+    ui: &mut egui::Ui,
+    cfg: &mut UnifiedFinishConfig,
+    resolved: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    stock_source: StockSource,
+) {
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new("Rest Claims").strong());
+    egui::Grid::new("uf_claims")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Pencil Claims:");
+            ui.checkbox(&mut cfg.pencil_claims, "").on_hover_text(
+                "Run the crease/rest detector inside this operation and cut its \
+                     claimed valleys as an extra pass. Off by default: on a \
+                     single-tool op the analytic detector marks exactly what this \
+                     cutter cannot reach. Every dial below is INERT while this is off.",
+            );
+            ui.end_row();
+
+            ui.label("Rest Reference:");
+            egui::ComboBox::from_id_salt("uf_claims_ref")
+                .selected_text(match cfg.claims_reference {
+                    ClaimsReference::Auto => "Auto (derive)",
+                    ClaimsReference::SelfProbe => "Analytic self-probe",
+                    ClaimsReference::MachinedStock => "Machined prior stock",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::Auto,
+                        "Auto (derive)",
+                    )
+                    .on_hover_text(
+                        "Use the machined prior stock when one is in scope, and the \
+                         analytic self-probe when none is. Pin the self-probe instead \
+                         if the previous pass was a ROUGHING pass — a stock-referenced \
+                         detector reads roughing terraces as phantom creases.",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::SelfProbe,
+                        "Analytic self-probe",
+                    )
+                    .on_hover_text(
+                        "Derive rest from the design surface: where can this cutter \
+                         not reach the model. Right for a FIRST finish pass and for a \
+                         rough-referenced chain; wrong for a same-tool rest pass, \
+                         where it names precisely what the pass cannot fix (measured \
+                         −88.7% cutting once corrected).",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.claims_reference,
+                        ClaimsReference::MachinedStock,
+                        "Machined prior stock",
+                    )
+                    .on_hover_text(
+                        "Measure rest against the material the previous pass actually \
+                         left. Needs this operation's stock source set to remaining \
+                         stock, and an upstream pass that has been generated AND \
+                         simulated.",
+                    );
+                });
+            ui.end_row();
+
+            ui.label("Territory Clip:");
+            ui.checkbox(&mut cfg.territory_clip, "").on_hover_text(
+                "Confine generation to rest ISLANDS instead of the full surface. \
+                     Runs only under the machined-stock reference — under a self-probe \
+                     reference the 'rest islands' are geometric, not material, so the \
+                     clip is skipped and this becomes an all-over pass.",
+            );
+            ui.end_row();
+
+            dv(
+                ui,
+                "Min Rest Depth:",
+                &mut cfg.min_rest_depth_mm,
+                " mm",
+                0.005,
+                0.0..=1.0,
+            );
+        });
+
+    // The resolved reference: what the LAST generation used, not what the
+    // dial says. `None` before the operation has generated, or when claims
+    // are off and nothing was resolved.
+    match resolved {
+        Some(f) => {
+            let r = f.resolution;
+            let loud = r.needs_attention() || f.territory_clip_skipped();
+            let colour = if loud {
+                egui::Color32::from_rgb(220, 180, 60)
+            } else {
+                egui::Color32::from_rgb(150, 190, 150)
+            };
+            let used = match r.reference() {
+                rs_cam_core::unified_finish::CreaseReference::MachinedStock => {
+                    "machined prior stock"
+                }
+                rs_cam_core::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+            };
+            let verb = if r.is_derived() { "derived" } else { "pinned" };
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} Last generated against the {used} ({verb}).",
+                    if loud { "\u{26A0}" } else { "\u{2713}" }
+                ))
+                .small()
+                .color(colour),
+            )
+            .on_hover_text(r.why());
+            if f.territory_clip_skipped() {
+                ui.label(
+                    egui::RichText::new(
+                        "\u{26A0} Territory Clip was requested and SKIPPED — this pass \
+                         covered its full territory, not rest islands.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                );
+            }
+        }
+        None if cfg.pencil_claims => {
+            ui.label(
+                egui::RichText::new(
+                    "Not generated yet — the resolved rest reference appears here after \
+                     this operation runs.",
+                )
+                .small()
+                .color(egui::Color32::from_rgb(150, 150, 150)),
+            );
+        }
+        None => {}
+    }
+
+    // Auto's input is the stock source, and that lives in a different
+    // section of the same panel — say so where the choice is made rather
+    // than leaving the operator to discover it from a generated finding.
+    if cfg.pencil_claims
+        && cfg.claims_reference != ClaimsReference::SelfProbe
+        && stock_source == StockSource::Fresh
+    {
+        ui.label(
+            egui::RichText::new(
+                "\u{26A0} This operation cuts FRESH stock, so no machined prior is in \
+                 scope and the machined-stock reference cannot be used. Set Stock \
+                 Source to remaining stock, then generate and simulate the upstream \
+                 operation.",
+            )
+            .small()
+            .color(egui::Color32::from_rgb(220, 180, 60)),
+        );
+    }
+}
+
+pub(in crate::ui::properties) fn draw_unified_finish_params(
+    ui: &mut egui::Ui,
+    cfg: &mut UnifiedFinishConfig,
+    _feeds_result: Option<&FeedsResult>,
+    resolved_claims_reference: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    stock_source: StockSource,
+) {
+    egui::Grid::new("uf_p")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            dv(
+                ui,
+                "Steep Threshold:",
+                &mut cfg.steep_threshold_deg,
+                " deg",
+                1.0,
+                5.0..=85.0,
+            );
+            dv(
+                ui,
+                "Waterline Threshold:",
+                &mut cfg.waterline_threshold_deg,
+                " deg",
+                1.0,
+                // `.min(89.0)` keeps the range well-formed even when
+                // Steep Threshold sits near its own 85° ceiling (85 + 5 =
+                // 90 would otherwise invert against the 89° upper bound).
+                (cfg.steep_threshold_deg + 5.0).min(89.0)..=89.0,
+            );
+            dv(ui, "Overlap:", &mut cfg.overlap_mm, " mm", 0.1, 0.0..=10.0);
+            dv(
+                ui,
+                "Scallop Height:",
+                &mut cfg.scallop_height,
+                " mm",
+                0.01,
+                0.01..=2.0,
+            );
+            dv(
+                ui,
+                "Tolerance:",
+                &mut cfg.tolerance,
+                " mm",
+                0.01,
+                0.01..=1.0,
+            );
+            dv(
+                ui,
+                "Raster Stepover:",
+                &mut cfg.raster_stepover,
+                " mm",
+                0.1,
+                0.05..=50.0,
+            );
+            dv(ui, "Z Step:", &mut cfg.z_step, " mm", 0.1, 0.05..=20.0);
+            dv(ui, "Sampling:", &mut cfg.sampling, " mm", 0.1, 0.1..=5.0);
+            dv(
+                ui,
+                "Stock to Leave:",
+                &mut cfg.stock_to_leave,
+                " mm",
+                0.05,
+                0.0..=10.0,
+            );
+        });
+    draw_unified_finish_claims(ui, cfg, resolved_claims_reference, stock_source);
 }
 
 pub(in crate::ui::properties) fn draw_steep_shallow_params(

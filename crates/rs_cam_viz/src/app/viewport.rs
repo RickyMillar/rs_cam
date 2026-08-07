@@ -28,6 +28,7 @@ impl RsCamApp {
 
         let workspace = self.controller.state().workspace;
         let isolate = self.controller.state().viewport.isolate_toolpath;
+        let drill_pick = self.active_drill_toolpath();
 
         let hit = {
             let state = self.controller.state();
@@ -38,6 +39,7 @@ impl RsCamApp {
                 self.controller.collision_positions(),
                 workspace,
                 isolate,
+                drill_pick,
             )
         };
 
@@ -46,6 +48,50 @@ impl RsCamApp {
         } else {
             self.controller.state_mut().selection = Selection::None;
         }
+    }
+
+    /// If the current selection is a drill / alignment-pin-drill toolpath in
+    /// the Toolpaths workspace, return its id so the viewport offers drill
+    /// target picking. Otherwise `None`.
+    fn active_drill_toolpath(&self) -> Option<crate::state::toolpath::ToolpathId> {
+        use rs_cam_core::compute::catalog::OperationConfig;
+        let state = self.controller.state();
+        if state.workspace != Workspace::Toolpaths {
+            return None;
+        }
+        let Selection::Toolpath(id) = state.selection else {
+            return None;
+        };
+        let tc = state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)?;
+        matches!(
+            tc.operation,
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+        )
+        .then_some(id)
+    }
+
+    /// A cheap key describing the active drill op's target selection, used to
+    /// trigger a GPU re-upload of the viewport markers when it changes from
+    /// any source. `None` when no drill op is selected.
+    pub(super) fn current_drill_marker_key(&self) -> Option<(usize, Vec<[f64; 2]>)> {
+        use rs_cam_core::compute::catalog::OperationConfig;
+        let id = self.active_drill_toolpath()?;
+        let state = self.controller.state();
+        let tc = state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)?;
+        let selected = match &tc.operation {
+            OperationConfig::Drill(c) => c.selected_holes.clone(),
+            OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
+            _ => None,
+        };
+        Some((id.0, selected.unwrap_or_default()))
     }
 
     fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {
@@ -151,6 +197,12 @@ impl RsCamApp {
             (_, PickHit::Toolpath { id, .. }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
+            (Workspace::Toolpaths, PickHit::DrillTarget { toolpath_id, xy }) => {
+                // Toggle this target in the drill op's selection (undo-tracked).
+                self.controller
+                    .events_mut()
+                    .push(crate::ui::AppEvent::ToggleDrillTarget { toolpath_id, xy });
+            }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
                 // Route face toggle through controller event for undo support.
                 // The controller handler also updates visual selection and pending_upload.
@@ -184,6 +236,34 @@ impl RsCamApp {
                     .map(|tc| tc.name.clone())
             })
         };
+        // Rest-depth heatmap legend info (threshold, peak rest mm) for the
+        // currently selected toolpath, if it carries a `rest_grid` — read
+        // once here (outside the mutable-borrow block below) so both the
+        // Show ▼ checkbox gating and the legend can use it without
+        // re-fetching. `None` when nothing's selected or the selection has
+        // no rest data (most toolpaths — only the pencil rest-depth
+        // detector populates this).
+        let selected_rest_grid_info: Option<(f64, f32)> = {
+            let state = self.controller.state();
+            match state.selection {
+                Selection::Toolpath(tp_id) => state
+                    .gui
+                    .toolpath_rt
+                    .get(&tp_id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .and_then(|r| r.annotated.rest_grid.as_ref())
+                    .map(|grid| {
+                        let peak = grid
+                            .rest
+                            .iter()
+                            .copied()
+                            .filter(|v| v.is_finite())
+                            .fold(0.0_f32, f32::max);
+                        (grid.threshold, peak)
+                    }),
+                _ => None,
+            }
+        };
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(
@@ -195,6 +275,7 @@ impl RsCamApp {
                 &mut state.viewport,
                 &lane_snapshots,
                 events,
+                selected_rest_grid_info,
             );
         }
 
@@ -245,6 +326,7 @@ impl RsCamApp {
                     self.controller.collision_positions(),
                     state.workspace,
                     state.viewport.isolate_toolpath,
+                    None,
                 )
             {
                 self.last_hover_face = Some(face_id);
@@ -278,6 +360,7 @@ impl RsCamApp {
                     self.controller.collision_positions(),
                     state.workspace,
                     state.viewport.isolate_toolpath,
+                    None,
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
             {
@@ -357,6 +440,9 @@ impl RsCamApp {
             show_solid_stock: state.viewport.show_stock && state.workspace == Workspace::Setup,
             show_height_planes: state.workspace == Workspace::Toolpaths
                 && matches!(state.selection, Selection::Toolpath(_)),
+            show_rest_heatmap: state.viewport.show_rest_heatmap
+                && state.workspace == Workspace::Toolpaths
+                && selected_rest_grid_info.is_some(),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,
@@ -752,7 +838,7 @@ fn span_path_tooltip(
             ) => {
                 format!("DepthPass {} (z={:.2})", pass_index, z_level)
             }
-            (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+            (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
                 format!("Region {}", region_id)
             }
             _ if !span.label.is_empty() => format!("{:?} {}", span.kind, span.label),

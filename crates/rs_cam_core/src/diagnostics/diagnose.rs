@@ -13,8 +13,8 @@
 
 use super::Diagnostic;
 use super::adapters::{
-    from_feeds, from_model_refs, from_preconditions, from_project_diagnostics, from_stale_default,
-    from_static_checks, from_tool_load,
+    from_feeds, from_generation, from_model_refs, from_preconditions, from_project_diagnostics,
+    from_stale_default, from_static_checks, from_tool_load,
 };
 use super::supersession::apply_supersession;
 use crate::compute::catalog::OperationConfig;
@@ -51,6 +51,11 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// don't have a session in hand — precondition checks are then
     /// silently skipped.
     pub preconditions: Option<&'a PreconditionContext>,
+    /// Generation-time findings for this toolpath (standing material and
+    /// anything later added to [`crate::compute::execute::GenerationFindings`]),
+    /// carried on the stats the session already keeps. `None` for callers
+    /// without a generated result — the checks are skipped, not crashed.
+    pub stats: Option<&'a crate::compute::config::ToolpathStats>,
     /// Model cross-reference context (F-023). Carries the toolpath's
     /// `model_id` together with whether it resolves against the loaded
     /// project models, so the unified pipeline emits a `Blocking`
@@ -68,6 +73,7 @@ pub struct ToolpathDiagnoseInputs<'a> {
 /// 3. feeds-calculator warnings (`FeedsResult::warnings`)
 /// 4. feeds heuristic hints (`feed_vs_lut`, etc.)
 /// 5. tool-load gates (sim-backed)
+/// 6. generation-time findings (standing material)
 ///
 /// Then [`apply_supersession`] drops the heuristic shadows once
 /// rigorous evidence is current.
@@ -112,6 +118,12 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
     }
     if let Some(load) = inputs.load_verdict {
         out.extend(from_tool_load::diagnostics_from_load_verdict(load));
+    }
+    if let Some(stats) = inputs.stats {
+        out.extend(from_generation::diagnostics_from_generation(
+            inputs.toolpath_id,
+            stats,
+        ));
     }
     apply_supersession(out)
 }

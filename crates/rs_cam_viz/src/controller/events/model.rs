@@ -24,7 +24,17 @@ impl<B: ComputeBackend> AppController<B> {
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
-        if old_setup != new_setup {
+        // `upload_gpu_data` (app/gpu_upload.rs) keys the height-plane and
+        // rest-heatmap overlays off "whichever toolpath is currently
+        // `Selection::Toolpath`", rebuilt only when `pending_upload` fires —
+        // not every frame. The setup-changed check above catches switching
+        // setups, but switching the selected *toolpath within the same
+        // setup* (e.g. selecting a pencil rest-analysis toolpath right
+        // after a scallop in the same setup) left both overlays showing
+        // stale data from whichever toolpath was selected the last time
+        // something else happened to set `pending_upload`. Any actual
+        // selection change needs the same treatment.
+        if old_setup != new_setup || self.state.selection != *selection {
             self.pending_upload = true;
         }
         self.state.selection = selection.clone();
@@ -151,6 +161,53 @@ impl<B: ComputeBackend> AppController<B> {
             self.report_tool_library_error("Dedupe catalog failed", &e);
         }
         self.refresh_tool_library_snapshot();
+    }
+
+    // ── Machine library (snapshot model) ────────────────────────────────
+
+    /// Import a library machine as a SNAPSHOT copy into the project's
+    /// inline machine (no live link), then invalidate machine-dependent
+    /// state — mirrors `MachineChanged`.
+    pub(crate) fn import_machine_from_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::load(name) {
+            Ok(profile) => {
+                *self.state.session.machine_mut() = profile;
+                self.state.session.invalidate_machine();
+                self.state.gui.mark_edited();
+                self.set_status(format!("Imported machine '{name}' (snapshot copy)"));
+            }
+            Err(e) => self.report_machine_library_error("Import machine failed", &e),
+        }
+    }
+
+    pub(crate) fn save_machine_to_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::save(name, self.state.session.machine()) {
+            Ok(path) => self.set_status(format!("Saved machine to {}", path.display())),
+            Err(e) => self.report_machine_library_error("Save machine failed", &e),
+        }
+    }
+
+    pub(crate) fn delete_machine_from_library(&mut self, name: &str) {
+        match rs_cam_core::machine_library::delete(name) {
+            Ok(()) => self.set_status(format!("Deleted machine '{name}' from library")),
+            Err(e) => self.report_machine_library_error("Delete machine failed", &e),
+        }
+    }
+
+    pub(crate) fn rename_machine_in_library(&mut self, old: &str, new: &str) {
+        match rs_cam_core::machine_library::rename(old, new) {
+            Ok(()) => self.set_status(format!("Renamed machine '{old}' → '{new}'")),
+            Err(e) => self.report_machine_library_error("Rename machine failed", &e),
+        }
+    }
+
+    fn report_machine_library_error(
+        &mut self,
+        context: &str,
+        err: &rs_cam_core::machine_library::MachineLibraryError,
+    ) {
+        tracing::error!("{context}: {err}");
+        self.push_notification(format!("{context}: {err}"), super::super::Severity::Error);
     }
 
     pub(crate) fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
@@ -604,6 +661,7 @@ impl<B: ComputeBackend> AppController<B> {
                     post_gcode: None,
                     boundary: crate::state::toolpath::BoundaryConfig::default(),
                     boundary_inherit: true,
+                    rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
                     stock_source: crate::state::toolpath::StockSource::Fresh,
                     coolant: rs_cam_core::gcode::CoolantMode::Off,
                     face_selection: None,

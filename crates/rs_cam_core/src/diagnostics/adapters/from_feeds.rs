@@ -130,7 +130,11 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        FeedsWarning::ChiploadClampedToFloor { requested, floor } => Diagnostic {
+        FeedsWarning::ChiploadClampedToFloor {
+            requested,
+            floor,
+            band_capped_from,
+        } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR),
             scope: Scope::Toolpath { id: tp_id },
             category: Category::ToolLoad,
@@ -138,11 +142,24 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
-            message: format!(
-                "Chipload clamped to rubbing floor: {requested:.4} → {floor:.4} mm/tooth \
-                 (post-derate chipload below chip-formation threshold; \
-                 expect honest output above floor instead of ploughing recipe)"
-            ),
+            message: match band_capped_from {
+                None => format!(
+                    "Chipload clamped to rubbing floor: {requested:.4} → {floor:.4} mm/tooth \
+                     (post-derate chipload below chip-formation threshold; \
+                     expect honest output above floor instead of ploughing recipe)"
+                ),
+                // The matched vendor band tops out below the global
+                // chip-formation threshold, so no feed satisfies both.
+                // Say so — the operator is still in the rubbing regime
+                // and the number alone no longer implies otherwise.
+                Some(global) => format!(
+                    "Chipload clamped to the matched band ceiling: {requested:.4} → \
+                     {floor:.4} mm/tooth. The whole derated band sits below the \
+                     {global:.4} mm/tooth chip-formation floor, so no feed clears \
+                     rubbing without exceeding the band — still expect burnishing. \
+                     Use a larger tool, a softer material, or accept the finish."
+                ),
+            },
             evidence: None,
             fix: None,
             supersedes: vec![],

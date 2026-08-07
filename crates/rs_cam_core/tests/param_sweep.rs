@@ -314,6 +314,9 @@ fn default_profile_params() -> ProfileParams {
 
 fn default_adaptive_params() -> AdaptiveParams {
     AdaptiveParams {
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+        path_strategy: rs_cam_core::adaptive::PathStrategy2d::Agent,
+        trochoid_cap_mult: 1.2,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,
@@ -334,6 +337,7 @@ fn default_waterline_params() -> WaterlineParams {
         feed_rate: 1000.0,
         plunge_rate: 500.0,
         safe_z: 30.0,
+        stock_to_leave: 0.0,
     }
 }
 
@@ -739,6 +743,41 @@ fn sweep_adaptive_min_cutting_radius() {
     }
 }
 
+#[test]
+#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+fn sweep_adaptive_engagement_measure() {
+    // F1 A/B (algorithm review 2026-06-12): DiskArea is the historical
+    // measure, LeadingArc the units-correct one. The path MUST change —
+    // the disk-area controller converges on a different effective
+    // stepover than commanded.
+    let poly = rect_polygon();
+    let cutter = FlatEndmill::new(6.35, 25.0);
+
+    let result = run_sweep_with_sim(
+        "adaptive",
+        "engagement_measure",
+        serde_json::json!("DiskArea"),
+        &[serde_json::json!("LeadingArc")],
+        &stock_bounds_2d(),
+        0.5,
+        &cutter,
+        StockCutDirection::FromTop,
+        |override_val| {
+            let mut p = default_adaptive_params();
+            if override_val.is_some() {
+                p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
+            }
+            rs_cam_core::adaptive::adaptive_toolpath(&poly, &p)
+        },
+    );
+
+    for v in &result.variants {
+        let ctx = format!("adaptive engagement_measure={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "cutting_distance_mm", &ctx);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // DROP CUTTER (3D FINISH) SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
@@ -754,7 +793,7 @@ fn generate_dropcutter(
     min_z: f64,
 ) -> Toolpath {
     let grid = batch_drop_cutter(mesh, index, cutter, stepover, 0.0, min_z);
-    raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None)
+    raster_toolpath_from_grid(&grid, feed_rate, plunge_rate, safe_z, None, None)
 }
 
 #[test]
@@ -1294,10 +1333,10 @@ fn default_chamfer_params() -> ChamferParams {
         chamfer_width: 1.0,
         tip_offset: 0.1,
         tool_half_angle: std::f64::consts::FRAC_PI_4, // 45 degrees
-        tool_radius: 6.35,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,
+        top_z: 0.0,
     }
 }
 
@@ -1339,6 +1378,7 @@ fn default_vcarve_params() -> VCarveParams {
         plunge_rate: 400.0,
         safe_z: 10.0,
         tolerance: 0.05,
+        top_z: 0.0,
     }
 }
 
@@ -1458,6 +1498,8 @@ fn sweep_rest_prev_tool_radius() {
 
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: 3.175,
         envelope_radius: 3.175,
         stepover: 2.0,
@@ -1548,11 +1590,18 @@ fn sweep_adaptive3d_clearing_strategy() {
         "adaptive3d",
         "clearing_strategy",
         serde_json::json!("contour_parallel"),
-        &[serde_json::json!("adaptive")],
+        &[
+            serde_json::json!("adaptive"),
+            serde_json::json!("contour_spiral"),
+        ],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if ov.is_some() {
-                p.clearing_strategy = ClearingStrategy3d::Adaptive;
+            match ov.and_then(|v| v.as_str()) {
+                Some("adaptive") => p.clearing_strategy = ClearingStrategy3d::Adaptive,
+                Some("contour_spiral") => {
+                    p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
+                }
+                _ => {}
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
@@ -1587,6 +1636,33 @@ fn sweep_adaptive3d_z_blend() {
     }
 }
 
+#[test]
+#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+fn sweep_adaptive3d_engagement_measure() {
+    // F1 A/B for the 3D AgentSearch dispatch (delegates per-slice to the
+    // 2D adaptive engine, so the measure flows through ClearZLevelContext).
+    let (mesh, index) = hemisphere_mesh();
+    let cutter = FlatEndmill::new(6.35, 25.0);
+    let result = run_sweep(
+        "adaptive3d",
+        "engagement_measure",
+        serde_json::json!("DiskArea"),
+        &[serde_json::json!("LeadingArc")],
+        |ov| {
+            let mut p = default_adaptive3d_params();
+            p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+            if ov.is_some() {
+                p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
+            }
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+        },
+    );
+    for v in &result.variants {
+        let ctx = format!("adaptive3d engagement_measure={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // PENCIL SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
@@ -1603,6 +1679,16 @@ fn default_pencil_params() -> PencilParams {
         plunge_rate: 400.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        min_valley_depth: 0.0,
+        bisector_strength: 0.0,
+        reference_tool_diameter: 0.0,
+        detector: rs_cam_core::pencil::PencilDetector::Dihedral,
+        valley_saliency: 0.05,
+        curvature_smoothing: 3,
+        rest_cell_mm: 0.5,
+        route_width_factor: 2.0,
+        reference_cutter: None,
+        link_kinematics: None,
     }
 }
 
@@ -1670,6 +1756,10 @@ fn default_scallop_params() -> ScallopParams {
         plunge_rate: 500.0,
         safe_z: 30.0,
         stock_to_leave: 0.0,
+        // Sweep baselines were recorded before A/M7's intra-pass relink;
+        // opt out so the sweep JSON fingerprints don't quietly shift.
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
     }
 }
 
@@ -2026,6 +2116,7 @@ fn default_inlay_params() -> InlayParams {
         plunge_rate: 400.0,
         safe_z: 10.0,
         tolerance: 0.05,
+        top_z: 0.0,
     }
 }
 

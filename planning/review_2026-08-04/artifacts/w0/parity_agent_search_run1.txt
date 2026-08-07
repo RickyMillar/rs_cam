@@ -1,0 +1,41 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/rs_cam_core-919a16a4876a4f2d)
+
+running 1 test
+[AgentSearch hemisphere] PARITY: 2692/7921 cells differ > 0.53mm; interior 854; planner_higher 464 (sim removed more); sim_higher 2228 (planner removed more); max dz 25.000mm
+  (  8,   9) world (-18.41, -18.94) surface   0.00: planner top   6.24  sim top   1.08  Δ  5.16mm
+  (  8,  32) world ( -6.24, -18.94) surface  10.86: planner top   0.50  sim top   1.03  Δ  0.53mm
+  (  8,  33) world ( -5.71, -18.94) surface  11.14: planner top   0.50  sim top   1.16  Δ  0.66mm
+  (  8,  34) world ( -5.18, -18.94) surface  11.32: planner top   0.54  sim top   4.54  Δ  3.99mm
+  (  8,  35) world ( -4.65, -18.94) surface  11.49: planner top   1.15  sim top   4.73  Δ  3.58mm
+  (  8,  36) world ( -4.12, -18.94) surface  11.66: planner top   2.53  sim top   4.88  Δ  2.36mm
+  (  8,  39) world ( -2.54, -18.94) surface  12.02: planner top   7.00  sim top   7.60  Δ  0.60mm
+  (  8,  40) world ( -2.01, -18.94) surface  12.13: planner top   6.62  sim top   7.63  Δ  1.01mm
+  (  8,  41) world ( -1.48, -18.94) surface  12.18: planner top   6.25  sim top   7.64  Δ  1.39mm
+  (  8,  42) world ( -0.95, -18.94) surface  12.22: planner top   6.25  sim top   7.62  Δ  1.37mm
+  (  8,  43) world ( -0.42, -18.94) surface  12.25: planner top   6.25  sim top   7.60  Δ  1.35mm
+  (  8,  44) world (  0.11, -18.94) surface  12.27: planner top   6.25  sim top   7.56  Δ  1.31mm
+  (  8,  45) world (  0.64, -18.94) surface  12.24: planner top   6.25  sim top   7.54  Δ  1.29mm
+  (  8,  46) world (  1.17, -18.94) surface  12.20: planner top   6.25  sim top   7.52  Δ  1.27mm
+  (  8,  47) world (  1.70, -18.94) surface  12.17: planner top   6.25  sim top   7.15  Δ  0.90mm
+  (  8,  51) world (  3.81, -18.94) surface  11.76: planner top   3.41  sim top   4.72  Δ  1.31mm
+  (  8,  52) world (  4.34, -18.94) surface  11.59: planner top   1.97  sim top   4.69  Δ  2.73mm
+  (  8,  53) world (  4.87, -18.94) surface  11.42: planner top   1.30  sim top   4.71  Δ  3.40mm
+  (  8,  54) world (  5.40, -18.94) surface  11.24: planner top   0.82  sim top   1.95  Δ  1.13mm
+  (  8,  55) world (  5.93, -18.94) surface  11.03: planner top   0.53  sim top   1.64  Δ  1.11mm
+
+thread 'adaptive3d::tests::planner_sim_dexel_parity_agent_search' (1054668) panicked at crates/rs_cam_core/src/adaptive3d/mod.rs:2540:9:
+Planner and simulator dexels diverged on 854 INTERIOR cells (total 7921, threshold 792, max Δ 25.000mm). The planner's internal stamping is producing a stock state inconsistent with replaying its own emitted moves — this is the wanaka Back Rough Z=10/Z=7 anomaly. See test source for debugger entry point.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test adaptive3d::tests::planner_sim_dexel_parity_agent_search ... FAILED
+
+failures:
+
+failures:
+    adaptive3d::tests::planner_sim_dexel_parity_agent_search
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2241 filtered out; finished in 2.02s
+
+error: test failed, to rerun pass `-p rs_cam_core --lib`
+Command exited with non-zero status 101
+WALL 2.24s MAXRSS 83904kB

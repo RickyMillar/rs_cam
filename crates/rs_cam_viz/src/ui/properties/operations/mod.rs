@@ -19,7 +19,7 @@ pub(super) use finishing::{
 pub(super) use project::draw_project_curve_params;
 pub(super) use surface_3d::{
     draw_adaptive3d_params, draw_dropcutter_params, draw_pencil_params, draw_scallop_params,
-    draw_steep_shallow_params, draw_waterline_params,
+    draw_steep_shallow_params, draw_unified_finish_params, draw_waterline_params,
 };
 
 use crate::state::job::ToolType;
@@ -1949,6 +1949,13 @@ pub fn collect_diagnostics(
         // `validate_geometry_selection` already covers this case
         // inline. MCP routes through `diagnose_toolpath_with_trace`.
         model_refs: None,
+        // A/M9: generation-time findings (standing material) ride on the
+        // entry's own result. Passing `None` here was why the GUI's
+        // diagnostics ribbon — the surface a router operator actually
+        // reads — stayed silent about a raised island the core diagnostic
+        // pipeline already knew about. `None` before generation is honest:
+        // nothing has been measured yet.
+        stats: entry.result.as_ref().map(|result| &result.stats),
     };
     rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs)
 }
@@ -1977,6 +1984,8 @@ mod tests {
             polygons: Some(Arc::new(vec![Polygon2::rectangle(
                 -10.0, -10.0, 10.0, 10.0,
             )])),
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
@@ -1992,6 +2001,8 @@ mod tests {
             kind: Some(ModelKind::Stl),
             mesh: Some(Arc::new(make_test_flat(20.0))),
             polygons: None,
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
@@ -2029,6 +2040,7 @@ mod tests {
             face_selection: None,
             debug_options: Default::default(),
             feeds_provenance: Default::default(),
+            rest_analysis: Default::default(),
         }
     }
 
@@ -2197,6 +2209,7 @@ mod tests {
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
             model_refs: Some(&model_refs),
+            stats: None,
         };
         let gui_diags = rs_cam_core::diagnostics::diagnose_toolpath_inputs(&inputs);
 

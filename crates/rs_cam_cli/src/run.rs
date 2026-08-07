@@ -117,6 +117,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
                 post_gcode: None,
                 boundary: BoundaryConfig::default(),
                 boundary_inherit: true,
+                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
                 stock_source: StockSource::default(),
                 coolant: CoolantMode::Off,
                 face_selection: None,
@@ -170,7 +171,6 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     session
         .export_gcode_with_policy(
             output,
-            None,
             rs_cam_core::gcode::ToolLoadExportPolicy {
                 accept_unmodeled: true,
                 accept_exceeded: false,

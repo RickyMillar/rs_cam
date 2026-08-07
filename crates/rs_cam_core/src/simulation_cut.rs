@@ -70,23 +70,48 @@ pub enum EngagementDirection {
 pub struct Engagement {
     /// 0..1 — cylinder-side width-of-cut as a fraction of cutter diameter.
     pub radial_woc_fraction: f64,
-    /// 0..1 — axial depth-of-cut as a fraction of flute length. `0.0` when
-    /// flute length is unavailable at the sample emitter (some test
-    /// fixtures, legacy traces); consumers should treat zero as "unknown"
-    /// rather than "no axial engagement". Use `axial_doc_mm` on the
-    /// sample for the absolute reading.
-    pub axial_doc_fraction: f64,
+    /// 0..1 — axial depth-of-cut as a fraction of flute length.
+    ///
+    /// **`None` = not measured** (C2, 2026-07-30): the emitter had no flute
+    /// length to divide by — legacy traces, drill/analytical samples, and
+    /// fixtures built from `Engagement::default()`. It used to be `0.0`, which
+    /// consumers were asked *by a doc comment* to read as "unknown" rather
+    /// than "no axial engagement"; that is exactly the silent-sentinel class
+    /// A/M9 retired for standing material, so the ask is now a type.
+    /// `Some(0.0)` is a measured zero. The dexel simulator always measures.
+    /// Use `axial_doc_mm` on the sample for the absolute reading.
+    #[serde(default)]
+    pub axial_doc_fraction: Option<f64>,
     /// Engagement arc in radians (entry → exit). `None` for plunges and
     /// other Z-only moves where the concept does not apply.
     pub arc_radians: Option<f64>,
-    /// Commanded mean chip thickness — geometric mean of instantaneous chip
-    /// thickness across the engagement arc, equal to commanded
-    /// `chipload_mm_per_tooth` for steady-state lateral cuts.
+    /// Arc-AVERAGE chip thickness (mm of *chip*) — the mean of
+    /// instantaneous chip thickness over the engagement arc,
+    /// `ChipGeometry::mean_chip_thickness_mm` via
+    /// [`crate::dexel_stock::chip_thickness_stats`]. Same value the
+    /// chipload gate reads off
+    /// [`SimulationCutSample::effective_chip_thickness_mm`].
+    ///
+    /// **This is NOT the commanded advance per tooth.** That quantity is
+    /// [`SimulationCutSample::chipload_mm_per_tooth`], and below full
+    /// slotting the two differ by `(2/arc)·(1 − cos(arc/2))·sin(arc)`
+    /// — a factor of ~0.373 at half immersion.
+    ///
+    /// F-4 (census T1.3, 2026-08-04): this field used to be assigned the
+    /// commanded advance per tooth while its doc comment claimed the
+    /// arc-mean. Corrected at the emitter, not by rewording.
     pub mean_chip_thickness_mm: Option<f64>,
-    /// Peak chip thickness across the engagement arc — what the flute
-    /// experiences at its most-engaged angular position. Sources from the
-    /// existing `effective_chip_thickness_mm` field, which already carries
-    /// the geometric-peak math (see stamping.rs notes).
+    /// Arc-PEAK chip thickness (mm of *chip*) — what the flute
+    /// experiences at its most-engaged angular position,
+    /// `ChipGeometry::max_chip_thickness_mm` via
+    /// [`crate::dexel_stock::peak_chip_thickness_mm`].
+    ///
+    /// Always `>= mean_chip_thickness_mm`. F-4: this field used to be
+    /// assigned the arc-MEAN, so it read *below* the sibling named
+    /// "mean" on every partial-immersion cut.
+    ///
+    /// No gate consumes it — the chipload gate is deliberately
+    /// calibrated on the arc-average (`tests/chipload_formula_calibration.rs`).
     pub peak_chip_thickness_mm: Option<f64>,
     /// Feed velocity at the engaged cutting edge (mm/min). For 3-axis
     /// lateral moves this is `feed_rate_mm_min`. Used by the chipload gate.
@@ -190,6 +215,30 @@ pub struct SimulationCutSample {
     /// P3 — see `planning/P3_TRANSIT_PEAK_DOC_RCA.md`.
     #[serde(default)]
     pub in_transit_span: bool,
+    /// **Source role** of the move this sample was emitted from — the
+    /// generator's own [`crate::toolpath::MoveIntent`] tag, carried through
+    /// unmodified.
+    ///
+    /// R-11 (census §8.2 / Checkpoint D). Before this field the only
+    /// per-sample role handle was the collapsed boolean
+    /// [`Self::in_transit_span`], which answers "was this move in a
+    /// transit-style span" and nothing else. Any probe that wanted to group
+    /// samples by *what the generator meant them to be* had to re-join
+    /// through `move_index` against the annotated toolpath — see
+    /// `SIMULATION_ISSUE_CHANNEL_CENSUS.md` §6.5 item 3 — and there was no
+    /// MCP route to it at all.
+    ///
+    /// This is deliberately a **source** key (programme rule 5): it survives
+    /// arc-fitting, TSP reordering and every other post-transform relabel,
+    /// because it is what the generator emitted, not what a later pass
+    /// inferred.
+    ///
+    /// **`None` = not carried**, never "Unknown": legacy traces
+    /// deserialised before this field existed, and hand-built test fixtures.
+    /// `Some(MoveIntent::Unknown)` is the distinct case of a generator that
+    /// emitted a move without tagging it. Do not coerce one to the other.
+    #[serde(default)]
+    pub source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 impl SimulationCutSample {
@@ -221,6 +270,7 @@ impl SimulationCutSample {
             semantic_item_id: None,
             span_path: Vec::new(),
             in_transit_span: false,
+            source_intent: None,
         }
     }
 }
@@ -328,11 +378,17 @@ pub struct KinematicsSummary {
     pub average_radial_woc_fraction: f64,
     /// Maximum `engagement.radial_woc_fraction` observed.
     pub peak_radial_woc_fraction: f64,
-    /// Time-weighted mean of `engagement.axial_doc_fraction`. `0.0` when
-    /// no samples carried a non-zero axial-DOC fraction.
-    pub average_axial_doc_fraction: f64,
-    /// Maximum `engagement.axial_doc_fraction` observed.
-    pub peak_axial_doc_fraction: f64,
+    /// Time-weighted mean of `engagement.axial_doc_fraction` over the
+    /// samples that carried one. `None` = **not measured**: no sample in this
+    /// class reported an axial-DOC fraction at all (C2 — same contract as
+    /// [`Self::average_arc_radians`] beside it). `Some(0.0)` means measured
+    /// and zero.
+    #[serde(default)]
+    pub average_axial_doc_fraction: Option<f64>,
+    /// Maximum `engagement.axial_doc_fraction` observed; `None` when none was
+    /// measured (see [`Self::average_axial_doc_fraction`]).
+    #[serde(default)]
+    pub peak_axial_doc_fraction: Option<f64>,
     /// Maximum lateral/arc/helix axial engagement observed (millimetres).
     pub peak_axial_doc_mm: f64,
     /// Maximum pure-vertical plunge descent observed (millimetres).
@@ -368,6 +424,10 @@ pub struct SimulationToolpathCutSummary {
     /// downstream consumers MUST suppress it via the flag; it does not
     /// indicate an actual problem. Per-kinematics breakdown is on
     /// `per_kinematics` for callers that need an axis-aware reading.
+    ///
+    /// To express this as a percentage use [`AirCutRatios`] and name the
+    /// denominator — `total_runtime_s` and `cutting_runtime_s` give two
+    /// different numbers and both have shipped under the name "air cut %".
     pub air_cut_time_s: f64,
     /// Time spent cutting with `0.02 ≤ engagement.radial_woc_fraction < 0.10`.
     /// Same axis + caveats as `air_cut_time_s`.
@@ -407,6 +467,13 @@ pub struct SimulationToolpathCutSummary {
     /// that kinematics class for this toolpath."
     #[serde(default)]
     pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
+    /// F-034 integrator runtime decomposed by `MoveIntent` class
+    /// (P0 unified-finishing probe). `Some` only when the simulation
+    /// ran with a kinematics context — naive traces leave it `None`.
+    /// On the project-wide summary this is the field-wise sum across
+    /// toolpaths the integrator walked.
+    #[serde(default)]
+    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -499,7 +566,101 @@ pub struct SimulationCutSummary {
     /// dexel-fidelity roadmap.
     #[serde(default)]
     pub per_kinematics: BTreeMap<CutKinematics, KinematicsSummary>,
+    /// F-034 integrator runtime decomposed by `MoveIntent` class
+    /// (P0 unified-finishing probe). `Some` only when the simulation
+    /// ran with a kinematics context — naive traces leave it `None`.
+    /// On the project-wide summary this is the field-wise sum across
+    /// toolpaths the integrator walked.
+    #[serde(default)]
+    pub runtime_by_intent: Option<crate::machine_kinematics::CycleTimeBreakdown>,
 }
+
+// ── LH-1: air cut has TWO denominators; both must be named ──────────────
+
+/// Air-cut time expressed as a percentage — under the **name of its
+/// denominator**, because there are two and they are not the same number.
+///
+/// `air_cut_time_s` is a duration. Turning it into a "%" requires choosing
+/// what it is a percentage *of*, and this codebase historically chose both:
+///
+/// | surface | denominator |
+/// |---|---|
+/// | `ProjectDiagnostics::air_cut_percentage`, the GUI banner + "% of total runtime" chips, the `>20%` verdict rule, `OperationType::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
+/// | the MCP `narrate_toolpath` air-cut line, and `CLAUDE.md`'s metric caveats | **cutting runtime** (rapids excluded) |
+///
+/// On a retract-heavy op the two differ by a large factor: total runtime is
+/// always ≥ cutting runtime, so the total-runtime reading is always the
+/// smaller (and never fires a threshold the cutting-time reading would).
+/// Neither is wrong; publishing either as a bare "air cut %" is
+/// (`MEASUREMENT_DOMAINS.md` LH-1 / X-3).
+///
+/// **Thresholds follow the total-runtime measure.** Every shipped threshold
+/// — the GUI's 20%, the CLI's 40%, and every per-operation value in
+/// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`] —
+/// was tuned against [`Self::air_cut_pct_of_total_runtime`] and keeps using
+/// it. This trait changed no number; it named them.
+///
+/// Both readings share the same caveat as the numerator: `air_cut_time_s` is
+/// triggered on the radial-WOC axis only, so consumers MUST suppress it when
+/// [`SimulationToolpathCutSummary::metrics_not_applicable`] is set.
+pub trait AirCutRatios {
+    /// Time at `radial_woc_fraction < 0.02` (seconds).
+    fn air_cut_seconds(&self) -> f64;
+    /// Total integrator runtime including rapids (seconds).
+    fn total_runtime_seconds(&self) -> f64;
+    /// Cutting-feed runtime, rapids excluded (seconds).
+    fn cutting_runtime_seconds(&self) -> f64;
+
+    /// Air-cut time as a percentage of **total runtime (cutting + rapids)** —
+    /// the measure every shipped threshold is tuned against. `0.0` when the
+    /// toolpath has no runtime.
+    #[must_use]
+    fn air_cut_pct_of_total_runtime(&self) -> f64 {
+        let total = self.total_runtime_seconds();
+        if total > 0.0 {
+            self.air_cut_seconds() / total * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Air-cut time as a percentage of **cutting time (rapids excluded)** —
+    /// always ≥ [`Self::air_cut_pct_of_total_runtime`], and the measure the
+    /// MCP narration reports. `0.0` when the toolpath has no cutting time.
+    #[must_use]
+    fn air_cut_pct_of_cutting_time(&self) -> f64 {
+        let cutting = self.cutting_runtime_seconds();
+        if cutting > 0.0 {
+            self.air_cut_seconds() / cutting * 100.0
+        } else {
+            0.0
+        }
+    }
+}
+
+macro_rules! impl_air_cut_ratios {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl AirCutRatios for $ty {
+            fn air_cut_seconds(&self) -> f64 {
+                self.air_cut_time_s
+            }
+            fn total_runtime_seconds(&self) -> f64 {
+                self.total_runtime_s
+            }
+            fn cutting_runtime_seconds(&self) -> f64 {
+                self.cutting_runtime_s
+            }
+        })+
+    };
+}
+
+impl_air_cut_ratios!(
+    SimulationCutSummary,
+    SimulationToolpathCutSummary,
+    SimulationSemanticCutSummary,
+    SimulationCutHotspot,
+    SummaryAccumulator,
+);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutTrace {
@@ -880,7 +1041,11 @@ pub struct KinematicsAccumulator {
     pub radial_woc_time_weighted_sum: f64,
     pub peak_radial_woc_fraction: f64,
     pub axial_doc_fraction_time_weighted_sum: f64,
-    pub peak_axial_doc_fraction: f64,
+    /// Runtime of the samples that actually carried an axial-DOC fraction —
+    /// the denominator for the mean, and what makes "measured zero"
+    /// distinguishable from "never measured" (C2).
+    pub axial_doc_observed_runtime_s: f64,
+    pub peak_axial_doc_fraction: Option<f64>,
     pub peak_axial_doc_mm: f64,
     pub peak_plunge_descent_mm: f64,
     /// Sum of `arc_radians * segment_time_s` for samples carrying arc; paired
@@ -919,8 +1084,12 @@ impl KinematicsAccumulator {
         let eng = &sample.engagement;
         self.radial_woc_time_weighted_sum += eng.radial_woc_fraction * dt;
         self.peak_radial_woc_fraction = self.peak_radial_woc_fraction.max(eng.radial_woc_fraction);
-        self.axial_doc_fraction_time_weighted_sum += eng.axial_doc_fraction * dt;
-        self.peak_axial_doc_fraction = self.peak_axial_doc_fraction.max(eng.axial_doc_fraction);
+        if let Some(axial) = eng.axial_doc_fraction {
+            self.axial_doc_fraction_time_weighted_sum += axial * dt;
+            self.axial_doc_observed_runtime_s += dt;
+            self.peak_axial_doc_fraction =
+                Some(self.peak_axial_doc_fraction.map_or(axial, |p| p.max(axial)));
+        }
         // P3: transit-span samples produce dexel-bridge artifacts on peak
         // DOC. Defer to the same gating the top-level accumulator uses.
         if !sample.in_transit_span {
@@ -955,10 +1124,10 @@ impl KinematicsAccumulator {
                 0.0
             },
             peak_radial_woc_fraction: self.peak_radial_woc_fraction,
-            average_axial_doc_fraction: if self.cutting_runtime_s > 1e-9 {
-                self.axial_doc_fraction_time_weighted_sum / t
+            average_axial_doc_fraction: if self.axial_doc_observed_runtime_s > 1e-9 {
+                Some(self.axial_doc_fraction_time_weighted_sum / self.axial_doc_observed_runtime_s)
             } else {
-                0.0
+                None
             },
             peak_axial_doc_fraction: self.peak_axial_doc_fraction,
             peak_axial_doc_mm: self.peak_axial_doc_mm,
@@ -1081,6 +1250,7 @@ impl SummaryAccumulator {
             average_mrr_mm3_s,
             metrics_not_applicable: false,
             per_kinematics,
+            runtime_by_intent: None,
         }
     }
 
@@ -1111,8 +1281,74 @@ impl SummaryAccumulator {
             total_removed_volume_est_mm3: self.total_removed_volume_est_mm3,
             average_mrr_mm3_s,
             per_kinematics,
+            runtime_by_intent: None,
         }
     }
+}
+
+/// Scatter one toolpath's samples into per-span accumulators in **one pass**
+/// over the sample vector.
+///
+/// Returns a vector of length `span_count`, indexed by span id. A span with
+/// no samples comes back as a `SummaryAccumulator::default()` whose
+/// `sample_count` is `0` — callers filter on that, exactly as the per-span
+/// loop they are replacing did.
+///
+/// **A sample belongs to every span in its `span_path`, not to one of them.**
+/// Spans nest (Operation ⊃ Region ⊃ DepthPass ⊃ Entry …), and the per-span
+/// summaries are read as "everything that happened inside this span", so the
+/// scatter fans each sample out across its whole path. That is the one
+/// behavioural detail a single-pass rewrite can get wrong, and it is what
+/// separates this from `build_per_depth_pass_summary`'s sibling loop, which
+/// picks the *first* matching id because depth passes do not nest.
+///
+/// `accept` optionally restricts which span ids accumulate (the
+/// `get_cut_trace` span filter). `None` accumulates every span.
+///
+/// # Why this exists
+///
+/// The GUI's `get_cut_trace` used to run this as a nested loop — for every
+/// span, a full scan of the project's entire sample vector — so a bare
+/// `get_cut_trace()` cost `Σ_toolpaths (spans × total_samples)`, on the egui
+/// frame-loop thread, with every other queued MCP request waiting behind it.
+/// An accidental quadratic, diagnosed as C1 in
+/// `planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.D.2.
+/// Cost here is `Σ_samples |span_path|` plus `span_count`, i.e. linear in the
+/// trace with a small constant.
+pub fn accumulate_by_span(
+    samples: &[SimulationCutSample],
+    toolpath_id: ToolpathId,
+    span_count: usize,
+    accept: Option<&std::collections::HashSet<u32>>,
+) -> Vec<SummaryAccumulator> {
+    let mut accs: Vec<SummaryAccumulator> = (0..span_count)
+        .map(|_| SummaryAccumulator::default())
+        .collect();
+    if span_count == 0 {
+        return accs;
+    }
+    for sample in samples.iter().filter(|s| s.toolpath_id == toolpath_id) {
+        for (pos, &SpanId(id)) in sample.span_path.iter().enumerate() {
+            // The loop this replaces asked `span_path.contains(id)` once per
+            // span, so a path that repeats an id counted the sample ONCE.
+            // Preserve that: skip an id already seen earlier in this path.
+            if sample.span_path.iter().take(pos).any(|&SpanId(p)| p == id) {
+                continue;
+            }
+            if accept.is_some_and(|set| !set.contains(&id)) {
+                continue;
+            }
+            let Some(acc) = accs.get_mut(id as usize) else {
+                // A span id past the end of this toolpath's span table.
+                // Dropped rather than panicking: span tables and traces can
+                // be regenerated independently, and a stale id is not worth
+                // taking the frame loop down for.
+                continue;
+            };
+            acc.observe(sample);
+        }
+    }
+    accs
 }
 
 struct HotspotAccumulator {
@@ -1298,6 +1534,76 @@ mod tests {
     use super::*;
     use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder};
     use crate::toolpath::Toolpath;
+
+    /// C2: an unmeasured axial-DOC fraction must not be averaged in as a
+    /// zero. The mean is taken over the samples that carried one — the same
+    /// contract `average_arc_radians` has had since Step 2 — and a class where
+    /// nothing was measured reports `None`, not `0.0`.
+    #[test]
+    fn unmeasured_axial_doc_fraction_is_none_not_a_zero_in_the_mean() {
+        let sample = |axial: Option<f64>, dt: f64, idx: usize| SimulationCutSample {
+            toolpath_id: ToolpathId(1),
+            move_index: idx,
+            sample_index: idx,
+            position: [idx as f64, 0.0, -1.0],
+            cumulative_time_s: dt * (idx as f64 + 1.0),
+            segment_time_s: dt,
+            is_cutting: true,
+            cut_kinematics: CutKinematics::Linear,
+            feed_rate_mm_min: 600.0,
+            engagement: Engagement {
+                radial_woc_fraction: 0.5,
+                axial_doc_fraction: axial,
+                ..Default::default()
+            },
+            ..SimulationCutSample::test_fixture()
+        };
+
+        // Nothing measured anywhere → None, and the radial axis is unaffected.
+        let none_trace =
+            SimulationCutTrace::from_samples(0.5, vec![sample(None, 0.4, 0), sample(None, 0.6, 1)]);
+        let lin = none_trace
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert_eq!(lin.average_axial_doc_fraction, None);
+        assert_eq!(lin.peak_axial_doc_fraction, None);
+        assert!((lin.average_radial_woc_fraction - 0.5).abs() < 1e-9);
+
+        // One measured 0.8 over 0.4 s, one unmeasured over 0.6 s: the mean is
+        // 0.8 (over the observed runtime), NOT 0.32 (over all cutting time),
+        // which is what the pre-C2 zero-sentinel produced.
+        let mixed = SimulationCutTrace::from_samples(
+            0.5,
+            vec![sample(Some(0.8), 0.4, 0), sample(None, 0.6, 1)],
+        );
+        let lin = mixed
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert!(
+            lin.average_axial_doc_fraction
+                .is_some_and(|a| (a - 0.8).abs() < 1e-9),
+            "mean must be over MEASURED runtime, got {:?}",
+            lin.average_axial_doc_fraction
+        );
+        assert!(
+            lin.peak_axial_doc_fraction
+                .is_some_and(|p| (p - 0.8).abs() < 1e-9)
+        );
+
+        // A measured zero is still a measurement.
+        let zero = SimulationCutTrace::from_samples(0.5, vec![sample(Some(0.0), 0.4, 0)]);
+        let lin = zero
+            .summary
+            .per_kinematics
+            .get(&CutKinematics::Linear)
+            .expect("linear samples were observed");
+        assert_eq!(lin.average_axial_doc_fraction, Some(0.0));
+        assert_eq!(lin.peak_axial_doc_fraction, Some(0.0));
+    }
 
     #[test]
     fn trace_from_samples_accumulates_summary_and_issues() {

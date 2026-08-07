@@ -52,7 +52,7 @@ fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         category,
         severity: severity_from_legacy(v.severity),
         confidence: Confidence::Static,
-        state: DiagnosticState::Current,
+        state: state_for(v.kind),
         source: Source::Simulation,
         message,
         evidence,
@@ -77,5 +77,22 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::PlungeStress => (ids::PROJECT_PLUNGE_STRESS, Category::Safety),
         VerdictKind::AirCut => (ids::PROJECT_AIR_CUT_HIGH, Category::Efficiency),
         VerdictKind::GeneratedEmpty => (ids::PROJECT_GENERATED_EMPTY, Category::State),
+        VerdictKind::MeasurabilityAbstained => {
+            (ids::PROJECT_MEASURABILITY_ABSTAINED, Category::State)
+        }
+    }
+}
+
+/// Freshness state for a verdict kind.
+///
+/// Every verdict but one asserts something about the toolpath from current
+/// evidence. `MeasurabilityAbstained` asserts the opposite — that the
+/// evidence for a particular metric does not exist — so it takes
+/// `NotApplicable`, the state that already means "not a warning"
+/// (`diagnostics/mod.rs`). Checkpoint D Q2, 2026-08-04.
+fn state_for(kind: VerdictKind) -> DiagnosticState {
+    match kind {
+        VerdictKind::MeasurabilityAbstained => DiagnosticState::NotApplicable,
+        _ => DiagnosticState::Current,
     }
 }

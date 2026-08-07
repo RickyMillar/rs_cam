@@ -244,6 +244,10 @@ pub struct ProjectToolpathSection {
     /// When true, inherit boundary from stock default.
     #[serde(default = "default_true")]
     pub boundary_inherit: bool,
+    /// Op-agnostic rest analysis (P2.5). Absent in projects saved before this
+    /// config existed — defaults to disabled.
+    #[serde(default, skip_serializing_if = "rest_analysis_is_default")]
+    pub rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig,
     // Legacy fields — read for backward compat, never written.
     #[serde(default, skip_serializing)]
     boundary_enabled: bool,
@@ -275,6 +279,10 @@ pub struct ProjectToolpathSection {
 
 fn feeds_provenance_is_empty(p: &rs_cam_core::feeds::FeedsProvenance) -> bool {
     *p == rs_cam_core::feeds::FeedsProvenance::default()
+}
+
+fn rest_analysis_is_default(r: &rs_cam_core::compute::config::RestAnalysisConfig) -> bool {
+    *r == rs_cam_core::compute::config::RestAnalysisConfig::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -574,6 +582,7 @@ impl ProjectToolpathSection {
             heights: toolpath.heights.clone(),
             boundary: toolpath.boundary.clone(),
             boundary_inherit: toolpath.boundary_inherit,
+            rest_analysis: toolpath.rest_analysis.clone(),
             boundary_enabled: false,
             boundary_containment: BoundaryContainment::Center,
             coolant: toolpath.coolant,
@@ -671,17 +680,18 @@ fn load_typed_project(
     job.name = project.job.name;
     job.stock = project.job.stock;
     job.post = project.job.post;
-    // A machine_ref makes the library file authoritative; fall back to
-    // the inline copy (with a warning) when the referenced file is gone.
-    job.machine_ref = project.job.machine_ref.clone();
-    let resolved = rs_cam_core::machine_library::resolve(
-        project.job.machine_ref.as_deref(),
-        project.job.machine,
-    );
-    job.machine = resolved.profile;
-    if let Some(detail) = resolved.warning {
-        warnings.push(ProjectLoadWarning::MachineRefFallback { detail });
+    // Snapshot semantics (like `[[tools]]`): the inline `[job.machine]`
+    // is authoritative. A legacy `machine_ref` is dropped on load — the
+    // inline machine migrates forward as-is; re-save clears the ref.
+    if project.job.machine_ref.is_some() {
+        warnings.push(ProjectLoadWarning::MachineRefFallback {
+            detail: "legacy machine_ref dropped — the machine is now stored inline \
+                     (snapshot model). Re-save to clear it from the file."
+                .to_owned(),
+        });
     }
+    job.machine_ref = None;
+    job.machine = project.job.machine;
     job.file_path = Some(path.to_path_buf());
     job.dirty = false;
 
@@ -822,11 +832,10 @@ fn load_legacy_project(
     }
     job.post.spindle_speed = legacy.job.spindle_speed;
     job.post.safe_z = legacy.job.safe_z;
-    job.post.format = match legacy.job.post.as_str() {
-        "linuxcnc" => PostFormat::LinuxCnc,
-        "mach3" => PostFormat::Mach3,
-        _ => PostFormat::Grbl,
-    };
+    // W9 / P-1, fourth reader (the risk map named three): the legacy
+    // loader dropped `"grblhal"` on the same floor as the two on the
+    // primary path. Routed through the tested resolver too.
+    job.post.format = PostFormat::from_token(&legacy.job.post).unwrap_or(PostFormat::Grbl);
     job.file_path = Some(path.to_path_buf());
     job.dirty = false;
 
@@ -1219,6 +1228,7 @@ fn restore_project_toolpath(
         }
     }
     init.debug_options = section.debug_options;
+    init.rest_analysis = section.rest_analysis;
     let mut toolpath = ToolpathEntry::from_init(init);
     toolpath.feeds_provenance = section.feeds_provenance;
     toolpath.clear_runtime_state();
@@ -1629,9 +1639,16 @@ mod tests {
         toolpath.dressups.entry_style = DressupEntryStyle::Ramp;
         toolpath.dressups.feed_optimization = true;
         toolpath.heights.bottom_z = HeightMode::Manual(-4.2);
+        // P2.2: `DerivedRestRegions` is the newest boundary source and the
+        // one most likely to regress silently (a struct variant round-trips
+        // differently from the unit variants above it) — exercise it here
+        // rather than `Stock` so a serde/TOML mapping mistake fails this
+        // test instead of shipping quietly.
         toolpath.boundary = BoundaryConfig {
             enabled: true,
-            source: BoundarySource::Stock,
+            source: BoundarySource::DerivedRestRegions {
+                source_toolpath_id: ToolpathId(99),
+            },
             containment: BoundaryContainment::Inside,
             offset: 0.0,
         };
@@ -1668,6 +1685,18 @@ mod tests {
         assert!(toolpath.result.is_none());
         assert!(toolpath.stale_since.is_some());
         assert!(matches!(toolpath.operation, OperationConfig::Pocket(_)));
+        assert_eq!(
+            toolpath.boundary,
+            BoundaryConfig {
+                enabled: true,
+                source: BoundarySource::DerivedRestRegions {
+                    source_toolpath_id: ToolpathId(99),
+                },
+                containment: BoundaryContainment::Inside,
+                offset: 0.0,
+            }
+        );
+        assert!(!toolpath.boundary_inherit);
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
@@ -1715,6 +1744,63 @@ mod tests {
                 ..
             }) if (stock_to_leave_radial - 0.7).abs() < 1e-9 && (stock_to_leave_axial - 0.4).abs() < 1e-9
         ));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    /// P2.5: `RestAnalysisConfig` round-trips through save/load like
+    /// `BoundaryConfig` does — a non-default value (including the
+    /// `reference_tool_id` `Option`, the field most likely to round-trip
+    /// wrong) must survive a save/load cycle unchanged.
+    #[test]
+    fn round_trip_persists_rest_analysis_config() {
+        let temp_dir = unique_temp_dir();
+        let project_path = temp_dir.join("rest_analysis.toml");
+        let fixture_path = repo_root().join("fixtures/demo_star.svg");
+        let model = import::import_model(&fixture_path, 3, ModelKind::Svg, ModelUnits::Millimeters)
+            .unwrap();
+
+        let mut job = JobState::new();
+        job.name = "Rest Analysis Round Trip".to_owned();
+        job.tools.push(sample_tool());
+        job.models.push(model);
+
+        let mut toolpath = ToolpathEntry::new(
+            ToolpathId(7),
+            "Scallop A".to_owned(),
+            job.tools[0].id,
+            ModelId(job.models[0].id),
+            OperationConfig::new_default(OperationType::Scallop),
+        );
+        toolpath.rest_analysis = rs_cam_core::compute::config::RestAnalysisConfig {
+            enabled: true,
+            reference_tool_id: Some(rs_cam_core::compute::tool_config::ToolId(3)),
+            cell_mm: 0.75,
+            min_valley_depth: 0.12,
+            region_margin_mm: 1.5,
+            // PR-7: routing dials left at their `None` (ask-the-policy)
+            // defaults, so this round-trip also proves the new optional
+            // fields survive a save/load without being written out.
+            ..Default::default()
+        };
+        job.push_toolpath(toolpath);
+
+        save_project(&job, &project_path).unwrap();
+        let loaded = load_project(&project_path).unwrap();
+
+        assert!(loaded.warnings.is_empty());
+        let toolpath = loaded.job.all_toolpaths().next().unwrap();
+        assert_eq!(
+            toolpath.rest_analysis,
+            rs_cam_core::compute::config::RestAnalysisConfig {
+                enabled: true,
+                reference_tool_id: Some(rs_cam_core::compute::tool_config::ToolId(3)),
+                cell_mm: 0.75,
+                min_valley_depth: 0.12,
+                region_margin_mm: 1.5,
+                ..Default::default()
+            }
+        );
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

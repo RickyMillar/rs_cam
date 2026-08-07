@@ -201,6 +201,8 @@ fn wanaka_back_rough_first_and_last_z_layers() {
     // multiple Z layers fit; the project's 4mm leaves only the topmost
     // layer for the back-rough roughing pass before the finishing op.
     let params = Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: cutter.radius(),
         envelope_radius: cutter.radius(),
         stepover: 2.53,

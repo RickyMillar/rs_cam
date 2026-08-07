@@ -3,7 +3,7 @@
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig};
 use crate::compute::stock_config::{FixtureId, KeepOutId, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::FaceUp;
@@ -94,6 +94,11 @@ impl ProjectSession {
             return Err(SessionError::ToolpathNotFound(index));
         }
 
+        // Propagate BEFORE the removal reshuffles indices: downstream
+        // rest-machining results were generated against the stock this
+        // toolpath left (see `invalidate_result_chain`).
+        self.invalidate_output_dependents(index, true);
+
         self.toolpath_configs.remove(index);
         self.results.remove(&index);
 
@@ -156,11 +161,139 @@ impl ProjectSession {
             }
         }
 
+        // Plan order changed for both toolpaths: each moved op's own
+        // FromRemainingStock result (if any) and everything downstream of
+        // either position may have been generated against a stock sequence
+        // that no longer exists (see `invalidate_result_chain`). Each moved
+        // op is covered as "downstream" of the other's seed.
+        self.invalidate_output_dependents(from_index, true);
+        self.invalidate_output_dependents(to_index, true);
+
         self.simulation = None;
         Ok(())
     }
 
-    /// Enable or disable a toolpath.
+    /// Invalidate a toolpath's cached result plus every cached result that
+    /// consumed its outputs, then drop the simulation.
+    ///
+    /// Dependency closure (2026-07-09, the live-v2 staleness collision
+    /// class): a `FromRemainingStock` toolpath's geometry — including the
+    /// `optimize_entry_descents` rapids lowered to `prior stock top + 2 mm`
+    /// — is generated against the stock its UPSTREAM ops leave. When an
+    /// upstream op's material-removal contribution changes (param edit,
+    /// enable/disable, reorder, removal) and the downstream result is kept,
+    /// the next simulation runs those baked descents against a stock that
+    /// no longer matches: the GUI incident showed 20 rapid collisions at
+    /// z = 19.996 (old finished ceiling 17.996 + 2 mm clearance) grazing
+    /// the raw stock top at 20 — a real gouge hazard at rapid feed, not an
+    /// instrument artifact. Cached results that can no longer be trusted
+    /// must die with the edit:
+    ///
+    /// - every LATER toolpath in the same setup (plan order) with
+    ///   `StockSource::FromRemainingStock`, downstream of any op whose
+    ///   stock contribution changed;
+    /// - every toolpath whose enabled `DerivedRestRegions` boundary source
+    ///   is an invalidated toolpath (its clip regions came from that cached
+    ///   result);
+    /// - transitively, to fixpoint (an invalidated rest op's own output
+    ///   feeds further rest ops).
+    ///
+    /// `stock_chain_changed`: whether THIS toolpath's contribution to the
+    /// setup's material-removal sequence changed. Pass `true` from content
+    /// edits on an enabled toolpath and from enable/disable flips (both
+    /// directions change the chain); pass `false` for edits to a toolpath
+    /// that is and stays disabled (only its `DerivedRestRegions` consumers
+    /// are invalidated).
+    pub(crate) fn invalidate_result_chain(&mut self, index: usize, stock_chain_changed: bool) {
+        self.results.remove(&index);
+        self.invalidate_output_dependents(index, stock_chain_changed);
+    }
+
+    /// Propagation half of [`Self::invalidate_result_chain`]: invalidate
+    /// consumers of `index`'s outputs WITHOUT touching `index`'s own cached
+    /// result. Used by the enable toggle — the toggled op's own result stays
+    /// valid for a future re-enable; only what was built on top of its
+    /// stock/regions is stale.
+    pub(crate) fn invalidate_output_dependents(&mut self, index: usize, stock_chain_changed: bool) {
+        use std::collections::BTreeSet;
+
+        self.simulation = None;
+
+        // Indices whose cached result is now invalid.
+        let mut dirty: BTreeSet<usize> = BTreeSet::new();
+        dirty.insert(index);
+        // Subset of `dirty` whose stock contribution changed (drives the
+        // same-setup downstream rule). A dirtied enabled op joins this set:
+        // its regenerated output may cut differently.
+        let mut chain_dirty: BTreeSet<usize> = BTreeSet::new();
+        if stock_chain_changed {
+            chain_dirty.insert(index);
+        }
+
+        loop {
+            let mut newly: Vec<usize> = Vec::new();
+
+            // (a) same-setup plan-order downstream FromRemainingStock ops.
+            for setup in &self.setups {
+                let mut upstream_changed = false;
+                for &tp_idx in &setup.toolpath_indices {
+                    if chain_dirty.contains(&tp_idx) {
+                        upstream_changed = true;
+                        continue;
+                    }
+                    if upstream_changed
+                        && !dirty.contains(&tp_idx)
+                        && self.toolpath_configs.get(tp_idx).is_some_and(|tc| {
+                            tc.enabled
+                                && matches!(
+                                    tc.stock_source,
+                                    crate::session::StockSource::FromRemainingStock
+                                )
+                        })
+                    {
+                        newly.push(tp_idx);
+                    }
+                }
+            }
+
+            // (b) DerivedRestRegions consumers of any dirty toolpath.
+            let dirty_ids: BTreeSet<crate::ids::ToolpathId> = dirty
+                .iter()
+                .filter_map(|&i| self.toolpath_configs.get(i).map(|tc| tc.id))
+                .collect();
+            for (tp_idx, tc) in self.toolpath_configs.iter().enumerate() {
+                if dirty.contains(&tp_idx) || !tc.boundary.enabled {
+                    continue;
+                }
+                if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                    &tc.boundary.source
+                    && dirty_ids.contains(source_toolpath_id)
+                {
+                    newly.push(tp_idx);
+                }
+            }
+
+            if newly.is_empty() {
+                break;
+            }
+            for tp_idx in newly {
+                self.results.remove(&tp_idx);
+                dirty.insert(tp_idx);
+                if self
+                    .toolpath_configs
+                    .get(tp_idx)
+                    .is_some_and(|tc| tc.enabled)
+                {
+                    chain_dirty.insert(tp_idx);
+                }
+            }
+        }
+    }
+
+    /// Enable or disable a toolpath. Flipping the flag in EITHER direction
+    /// changes the setup's material-removal chain, so downstream
+    /// rest-machining results are invalidated (see
+    /// [`Self::invalidate_result_chain`]).
     #[instrument(skip(self))]
     pub fn set_toolpath_enabled(
         &mut self,
@@ -171,7 +304,11 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        let changed = tc.enabled != enabled;
         tc.enabled = enabled;
+        if changed {
+            self.invalidate_output_dependents(index, true);
+        }
         self.simulation = None;
         Ok(())
     }
@@ -191,8 +328,36 @@ impl ProjectSession {
         // combinations can't be introduced via this API.
         dressups.normalize_for_op(tc.operation.op_type());
         tc.dressups = dressups;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
+        Ok(())
+    }
+
+    /// Replace a toolpath's operation config wholesale — including switching
+    /// the operation KIND — while keeping its tool, heights, boundary,
+    /// dressups, and position in the machining order. This is the supported
+    /// way to A/B one operation against another in an existing chain
+    /// (chain order matters: rest-referencing ops downstream see the stock
+    /// this toolpath leaves). Re-normalizes the dressups for the new op kind
+    /// and drops the cached result + simulation.
+    #[instrument(skip(self, operation))]
+    pub fn set_toolpath_operation(
+        &mut self,
+        index: usize,
+        operation: OperationConfig,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.operation = operation;
+        // Same invariant set_dressup_config enforces: the surviving dressups
+        // must be legal for the NEW operation kind.
+        let mut dressups = tc.dressups.clone();
+        dressups.normalize_for_op(tc.operation.op_type());
+        tc.dressups = dressups;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
@@ -270,8 +435,8 @@ impl ProjectSession {
         // Enforce the per-operation dressup invariant on every patch.
         new_cfg.normalize_for_op(tc.operation.op_type());
         tc.dressups = new_cfg;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
@@ -288,8 +453,8 @@ impl ProjectSession {
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         tc.stock_source = source;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
@@ -305,12 +470,16 @@ impl ProjectSession {
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         tc.heights = heights;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
-    /// Replace the boundary config for a toolpath, invalidating its cached result.
+    /// Replace the boundary config for a toolpath, invalidating its cached
+    /// result. Also runs the demand-driven rest-analysis producer hook (see
+    /// [`Self::auto_enable_rest_analysis_for_source`]): wiring this toolpath
+    /// to an enabled `DerivedRestRegions` source means that source must
+    /// actually produce rest regions.
     #[instrument(skip(self, boundary))]
     pub fn set_boundary_config(
         &mut self,
@@ -321,9 +490,78 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        let auto_enable_source = match (boundary.enabled, &boundary.source) {
+            (true, BoundarySource::DerivedRestRegions { source_toolpath_id }) => {
+                Some(*source_toolpath_id)
+            }
+            _ => None,
+        };
         tc.boundary = boundary;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
+        if let Some(source_id) = auto_enable_source {
+            self.auto_enable_rest_analysis_for_source(source_id);
+        }
+        Ok(())
+    }
+
+    /// Demand-driven rest-analysis producer hook (P2 pencil-panel
+    /// consolidation): call when a toolpath's boundary becomes an *enabled*
+    /// `BoundarySource::DerivedRestRegions { source_toolpath_id }` — the
+    /// newly-wired consumer needs `source_toolpath_id`'s toolpath to actually
+    /// produce rest regions. Flips that toolpath's `rest_analysis.enabled` on
+    /// and invalidates its cached result so the next generation attaches
+    /// `rest_grid` / `rest_regions` via
+    /// `compute::execute::attach_generic_rest_analysis`.
+    ///
+    /// A no-op (returns `false`) when the source toolpath doesn't exist,
+    /// already has rest analysis enabled, or is itself a `rest_depth`
+    /// pencil — that detector attaches the same artifacts on its own, and
+    /// `attach_generic_rest_analysis` already skips itself once they're
+    /// present, so forcing the flag there would just be a redundant,
+    /// confusing UI toggle (the GUI hides it entirely for these ops).
+    #[instrument(skip(self))]
+    pub fn auto_enable_rest_analysis_for_source(
+        &mut self,
+        source_id: crate::ids::ToolpathId,
+    ) -> bool {
+        let Some((idx, tc)) = self.find_toolpath_config_by_id_mut(source_id) else {
+            return false;
+        };
+        if tc.rest_analysis.enabled {
+            return false;
+        }
+        if let OperationConfig::Pencil(cfg) = &tc.operation
+            && crate::pencil::PencilDetector::parse(&cfg.detector)
+                == crate::pencil::PencilDetector::RestDepth
+        {
+            return false;
+        }
+        tc.rest_analysis.enabled = true;
+        self.results.remove(&idx);
+        tracing::info!(
+            source_toolpath_id = source_id.0,
+            "Auto-enabled rest analysis: a toolpath now consumes this one's \
+             derived rest regions as a machining boundary"
+        );
+        true
+    }
+
+    /// Replace the rest-analysis config (P2.5) for a toolpath, invalidating
+    /// its cached result. Mirrors `set_boundary_config`.
+    #[instrument(skip(self, rest_analysis))]
+    pub fn set_rest_analysis_config(
+        &mut self,
+        index: usize,
+        rest_analysis: crate::compute::config::RestAnalysisConfig,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        tc.rest_analysis = rest_analysis;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
@@ -427,6 +665,8 @@ impl ProjectSession {
             name,
             face_up,
             z_rotation: ZRotation::default(),
+            datum: crate::session::DatumConfig::default(),
+            model_ids: Vec::new(),
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
             toolpath_indices: Vec::new(),
@@ -468,6 +708,11 @@ impl ProjectSession {
             return Err(SessionError::SetupNotFound(target_setup_index));
         }
 
+        // Propagate while the toolpath is still in its ORIGINAL setup so
+        // that setup's downstream rest ops are invalidated (see
+        // `invalidate_result_chain`); its own result dies below.
+        self.invalidate_output_dependents(tp_index, true);
+
         // Remove from whichever setup currently owns this toolpath
         for setup in &mut self.setups {
             setup.toolpath_indices.retain(|&i| i != tp_index);
@@ -498,8 +743,8 @@ impl ProjectSession {
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         tc.face_selection = face_ids;
-        self.results.remove(&index);
-        self.simulation = None;
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
         Ok(())
     }
 
@@ -523,6 +768,40 @@ impl ProjectSession {
             _ => {
                 return Err(SessionError::InvalidParam(
                     "Toolpath is not an AlignmentPinDrill operation".to_owned(),
+                ));
+            }
+        }
+        let enabled = tc.enabled;
+        self.invalidate_result_chain(index, enabled);
+        Ok(())
+    }
+
+    /// Set the explicitly-selected drill holes (DXF point / circle-centre
+    /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
+    /// cached result. `None` reverts a `Drill` op to its legacy
+    /// all-polygon-centroids behaviour.
+    ///
+    /// Errors if the toolpath's operation is not a drilling op.
+    #[instrument(skip(self, selected_holes))]
+    pub fn set_drill_selected_holes(
+        &mut self,
+        index: usize,
+        selected_holes: Option<Vec<[f64; 2]>>,
+    ) -> Result<(), SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get_mut(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        match tc.operation {
+            OperationConfig::Drill(ref mut cfg) => {
+                cfg.selected_holes = selected_holes;
+            }
+            OperationConfig::AlignmentPinDrill(ref mut cfg) => {
+                cfg.selected_holes = selected_holes;
+            }
+            _ => {
+                return Err(SessionError::InvalidParam(
+                    "Toolpath is not a drilling operation".to_owned(),
                 ));
             }
         }
@@ -864,7 +1143,7 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::ToolpathStats;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig};
+    use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
     use crate::compute::stock_config::FixtureId;
     use crate::debug_trace::ToolpathDebugOptions;
     use crate::gcode::CoolantMode;
@@ -893,6 +1172,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -1035,6 +1315,100 @@ mod tests {
         assert!(s.simulation.is_none());
     }
 
+    // ── Staleness-chain invalidation sentries ────────────────────
+    //
+    // 2026-07-09 live-v2 collision class: a FromRemainingStock finish op was
+    // generated while an upstream finish op was enabled; the user disabled
+    // the upstream op and the KEPT downstream result — whose
+    // optimize_entry_descents rapids were lowered against the old, deeper
+    // prior stock — grazed the now-taller stock at rapid feed (20 rapid
+    // collisions at z = old_ceiling + 2 mm). Chain edits must kill dependent
+    // cached results (`invalidate_result_chain`).
+
+    #[test]
+    fn toggle_enabled_invalidates_downstream_rest_results() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let mut rest = make_tc(tool_id, 0);
+        rest.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest).unwrap();
+        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        s.results.insert(0, fake_result());
+        s.results.insert(1, fake_result());
+        s.results.insert(2, fake_result());
+
+        s.set_toolpath_enabled(0, false).unwrap();
+        // The toggled op keeps its own result (still valid on re-enable)…
+        assert!(s.results.contains_key(&0));
+        // …the downstream FromRemainingStock result dies (generated against
+        // a stock chain that no longer exists)…
+        assert!(!s.results.contains_key(&1));
+        // …and a downstream Fresh-stock op is untouched.
+        assert!(s.results.contains_key(&2));
+
+        // Toggling back is ALSO a chain change (cuts reappear upstream).
+        s.results.insert(1, fake_result());
+        s.set_toolpath_enabled(0, true).unwrap();
+        assert!(!s.results.contains_key(&1));
+    }
+
+    #[test]
+    fn content_edit_invalidates_rest_dependents_transitively() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let mut rest = make_tc(tool_id, 0);
+        rest.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest).unwrap();
+        // Consumer of op1's derived rest regions (Fresh stock — reached only
+        // through the DerivedRestRegions edge, not the stock chain).
+        let mut consumer = make_tc(tool_id, 0);
+        consumer.boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: ToolpathId(1),
+            },
+            ..BoundaryConfig::default()
+        };
+        s.add_toolpath(0, consumer).unwrap();
+        s.results.insert(0, fake_result());
+        s.results.insert(1, fake_result());
+        s.results.insert(2, fake_result());
+
+        s.set_heights_config(0, HeightsConfig::default()).unwrap();
+        assert!(!s.results.contains_key(&0), "edited op invalidated");
+        assert!(
+            !s.results.contains_key(&1),
+            "downstream rest op invalidated via the stock chain"
+        );
+        assert!(
+            !s.results.contains_key(&2),
+            "rest-region consumer invalidated transitively"
+        );
+    }
+
+    #[test]
+    fn disabled_op_edit_leaves_downstream_alone() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        let mut off = make_tc(tool_id, 0);
+        off.enabled = false;
+        s.add_toolpath(0, off).unwrap();
+        let mut rest = make_tc(tool_id, 0);
+        rest.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest).unwrap();
+        s.results.insert(1, fake_result());
+
+        // Editing an op that is (and stays) disabled doesn't change the
+        // material-removal chain — downstream results survive.
+        s.set_heights_config(0, HeightsConfig::default()).unwrap();
+        assert!(s.results.contains_key(&1));
+    }
+
     #[test]
     fn set_boundary_invalidates_result_and_sim() {
         let mut s = make_session();
@@ -1045,6 +1419,98 @@ mod tests {
         s.set_boundary_config(0, BoundaryConfig::default()).unwrap();
         assert!(!s.results.contains_key(&0));
         assert!(s.simulation.is_none());
+    }
+
+    #[test]
+    fn set_boundary_derived_rest_regions_auto_enables_source_rest_analysis() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+        // Source toolpath (a plain pocket): rest analysis starts disabled.
+        let source_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        // Consumer toolpath.
+        let consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        s.results.insert(source_idx, fake_result());
+
+        let boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(consumer_idx, boundary).unwrap();
+
+        assert!(s.toolpath_configs()[source_idx].rest_analysis.enabled);
+        // The source's own cached result must be invalidated — it needs to
+        // regenerate to actually attach the rest regions.
+        assert!(!s.results.contains_key(&source_idx));
+    }
+
+    #[test]
+    fn set_boundary_derived_rest_regions_skips_rest_depth_pencil_source() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+
+        let source_tc = ToolpathConfig {
+            operation: OperationConfig::Pencil(PencilConfig {
+                detector: "rest_depth".to_owned(),
+                ..PencilConfig::default()
+            }),
+            ..make_tc(tool_id, 0)
+        };
+        let source_idx = s.add_toolpath(0, source_tc).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        let consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+
+        let boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(consumer_idx, boundary).unwrap();
+
+        // A rest_depth pencil already attaches its own rest artifacts —
+        // forcing the generic flag on would be redundant, so it stays off.
+        assert!(!s.toolpath_configs()[source_idx].rest_analysis.enabled);
+    }
+
+    #[test]
+    fn rest_region_consumers_finds_enabled_consumers_only() {
+        let mut s = make_session();
+        s.add_tool(make_tool());
+        let tool_id = s.tools()[0].id.0;
+
+        let source_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let source_id = s.toolpath_configs()[source_idx].id;
+        let enabled_consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let disabled_consumer_idx = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let enabled_consumer_id = s.toolpath_configs()[enabled_consumer_idx].id;
+
+        let enabled_boundary = BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            ..BoundaryConfig::default()
+        };
+        s.set_boundary_config(enabled_consumer_idx, enabled_boundary.clone())
+            .unwrap();
+        let disabled_boundary = BoundaryConfig {
+            enabled: false,
+            ..enabled_boundary
+        };
+        s.set_boundary_config(disabled_consumer_idx, disabled_boundary)
+            .unwrap();
+
+        assert_eq!(
+            s.rest_region_consumers(source_id),
+            vec![enabled_consumer_id]
+        );
     }
 
     // ── Tool CRUD ────────────────────────────────────────────────

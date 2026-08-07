@@ -105,6 +105,8 @@ fn build_as013_terrain_session() -> ProjectSession {
     // — the planner reads stock_top_z from the toolpath's heights,
     // which `add_toolpath` synchronises with stock).
     let adaptive3d = Adaptive3dConfig {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         stepover: 1.2,
         depth_per_pass: 3.0,
         stock_to_leave_axial: 0.5,
@@ -149,6 +151,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session
         .add_toolpath(0, tc)

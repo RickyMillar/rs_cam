@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1000" viewBox="0 0 900 1000">
+<rect width="900" height="1000" fill="#fff"/>
+<text x="24" y="30" style="font:16px monospace;font-weight:bold">W0 / test 3 — planner_sim_dexel_parity_agent_search: measured evidence</text>
+<text x="24" y="50" style="font:11px monospace;fill:#555">hemisphere r=20, flat endmill r=3.175, cell 0.5292 mm, tol = 1 cell. Bisected first bad commit: fa27b08 (drape / gouge guard).</text>
+<text x="24" y="92" style="font:13px monospace;font-weight:bold">A — directional counters reverse at the first bad commit</text>
+<text x="24" y="110" style="font:10px monospace;fill:#555">blue = planner_higher (simulator removed more) | red = sim_higher (PLANNER removed more than its own emitted path)</text>
+<text x="24" y="140" style="font:11px monospace;font-weight:bold">AgentSearch</text>
+<rect x="120.0" y="198.9" width="158.0" height="31.1" fill="#1f6fb2"/>
+<text x="200.5" y="193.9" text-anchor="middle" style="font:10px monospace">778</text>
+<rect x="281.0" y="207.5" width="158.0" height="22.5" fill="#c0392b"/>
+<text x="361.5" y="202.5" text-anchor="middle" style="font:10px monospace">562</text>
+<rect x="458.0" y="212.3" width="158.0" height="17.7" fill="#1f6fb2"/>
+<text x="538.5" y="207.3" text-anchor="middle" style="font:10px monospace">443</text>
+<rect x="619.0" y="133.8" width="158.0" height="96.2" fill="#c0392b"/>
+<text x="699.5" y="128.8" text-anchor="middle" style="font:10px monospace">2404</text>
+<line x1="120" y1="230" x2="780" y2="230" stroke="#333"/>
+<text x="285.0" y="246.0" text-anchor="middle" style="font:11px monospace">7a95614 (parent)</text>
+<text x="615.0" y="246.0" text-anchor="middle" style="font:11px monospace">fa27b08 (first bad)</text>
+<text x="24" y="290" style="font:11px monospace;font-weight:bold">ContourParallel</text>
+<rect x="120.0" y="359.9" width="158.0" height="20.1" fill="#1f6fb2"/>
+<text x="200.5" y="354.9" text-anchor="middle" style="font:10px monospace">502</text>
+<rect x="281.0" y="379.5" width="158.0" height="0.5" fill="#c0392b"/>
+<text x="361.5" y="374.5" text-anchor="middle" style="font:10px monospace">12</text>
+<rect x="458.0" y="375.5" width="158.0" height="4.5" fill="#1f6fb2"/>
+<text x="538.5" y="370.5" text-anchor="middle" style="font:10px monospace">113</text>
+<rect x="619.0" y="334.2" width="158.0" height="45.8" fill="#c0392b"/>
+<text x="699.5" y="329.2" text-anchor="middle" style="font:10px monospace">1144</text>
+<line x1="120" y1="380" x2="780" y2="380" stroke="#333"/>
+<text x="285.0" y="396.0" text-anchor="middle" style="font:11px monospace">7a95614 (parent)</text>
+<text x="615.0" y="396.0" text-anchor="middle" style="font:11px monospace">fa27b08 (first bad)</text>
+<text x="120" y="430" style="font:11px monospace;fill:#333">ContourParallel's sim_higher goes 12 -&gt; 1144 (95x). One commit; both strategies; same direction.</text>
+<text x="24" y="460" style="font:13px monospace;font-weight:bold">B — the gated number is a poor detector of that mechanism</text>
+<text x="24" y="478" style="font:10px monospace;fill:#555">interior divergent cells; the test fails above 792 (= total/10, a whole-grid tenth compared against an interior count)</text>
+<rect x="120.0" y="527.0" width="158.0" height="73.0" fill="#888"/>
+<text x="200.5" y="522.0" text-anchor="middle" style="font:10px monospace">664</text>
+<rect x="281.0" y="496.1" width="158.0" height="103.9" fill="#c0392b"/>
+<text x="361.5" y="491.1" text-anchor="middle" style="font:10px monospace">945</text>
+<rect x="458.0" y="549.5" width="158.0" height="50.5" fill="#888"/>
+<text x="538.5" y="544.5" text-anchor="middle" style="font:10px monospace">459</text>
+<rect x="619.0" y="555.3" width="158.0" height="44.7" fill="#c0392b"/>
+<text x="699.5" y="550.3" text-anchor="middle" style="font:10px monospace">406</text>
+<line x1="120" y1="600" x2="780" y2="600" stroke="#333"/>
+<text x="285.0" y="616.0" text-anchor="middle" style="font:11px monospace">AgentSearch</text>
+<text x="615.0" y="616.0" text-anchor="middle" style="font:11px monospace">ContourParallel</text>
+<line x1="120" y1="512.9" x2="780" y2="512.9" stroke="#c00" stroke-dasharray="6 4"/>
+<text x="784" y="516.9" style="font:10px monospace;fill:#c00">bar 792</text>
+<text x="120" y="640" style="font:11px monospace;fill:#333">grey = parent, red = fa27b08. ContourParallel's interior count FALLS (459 -&gt; 406) across the commit that</text>
+<text x="120" y="656" style="font:11px monospace;fill:#333">broke it 95x harder by the directional measure — so it stays green. It is not clean; it is under-detected.</text>
+<text x="24" y="720" style="font:13px monospace;font-weight:bold">C — flat fixtures are clean, curved fixtures diverge (cut-only probes, HEAD)</text>
+<text x="24" y="738" style="font:10px monospace;fill:#555">interior divergent cells, Cut segments only (entries/pecks excluded)</text>
+<text x="24" y="767" style="font:11px monospace">ContourParallel flat</text>
+<rect x="250" y="754" width="1.5" height="17" fill="#888"/>
+<text x="257.5" y="767" style="font:11px monospace">0 / 11664</text>
+<text x="24" y="801" style="font:11px monospace">AgentSearch flat</text>
+<rect x="250" y="788" width="14.4" height="17" fill="#888"/>
+<text x="270.4" y="801" style="font:11px monospace">21 / 11664</text>
+<text x="24" y="835" style="font:11px monospace">AgentSearch hemisphere</text>
+<rect x="250" y="822" width="328.5" height="17" fill="#c0392b"/>
+<text x="584.5" y="835" style="font:11px monospace">479 / 7921</text>
+<text x="24" y="869" style="font:11px monospace">ContourParallel hemisphere</text>
+<rect x="250" y="856" width="421.0" height="17" fill="#c0392b"/>
+<text x="677.0" y="869" style="font:11px monospace">614 / 7921</text>
+<text x="24" y="904" style="font:11px monospace;fill:#333">On a flat mesh the nearest-cell heightmap lift and the exact drop-cutter drape agree, so parity is near-perfect.</text>
+<text x="24" y="920" style="font:11px monospace;fill:#333">Curvature is what separates them. A broken stamping kernel would diverge on flat stock too; this does not.</text>
+</svg>

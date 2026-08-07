@@ -1,0 +1,32 @@
+W0 — bisect evidence for planner_sim_dexel_parity_agent_search
+Probe: cargo test -p rs_cam_core --lib adaptive3d::tests::planner_sim_dexel_parity_agent_search -- --exact
+Isolated git worktree (main tree never checked out; wanaka.toml untouched), shared scratch CARGO_TARGET_DIR.
+good anchor be0dcbf (interior 625) .. bad HEAD 9f52378 (interior 854); bar = total/10 = 792
+
+-- probe log (commit, verdict, interior divergent cells)
+bddf615 GOOD interior 645
+bddf82a BAD  interior 854
+84df3f1 BAD  interior 945
+dcc2573 BAD  interior 945
+843f6c6 GOOD interior 664
+6a42882 GOOD interior 664
+de8a460 GOOD interior 664
+fa27b08 BAD  interior 945
+7a95614 GOOD interior 664
+
+-- first bad commit: fa27b08  fix(adaptive3d): hold stock-to-leave over textured meshes (drape / gouge guard)
+
+-- directional signature either side of the first bad commit
+   (planner_higher = sim removed more;  sim_higher = PLANNER removed more)
+
+7a95614 (parent, PASS):
+  [AgentSearch]     interior 664  planner_higher 778  sim_higher   562
+  [ContourParallel] interior 459  planner_higher 502  sim_higher    12
+fa27b08 (FAIL):
+  [AgentSearch]     interior 945  planner_higher 443  sim_higher  2404
+  [ContourParallel] interior 406  planner_higher 113  sim_higher  1144
+
+Reading: at fa27b08 the sign REVERSES on both strategies — the planner starts
+believing it removed material its own emitted toolpath leaves behind. ContourParallel's
+sim_higher moves 12 -> 1144 (95x) while its INTERIOR count FALLS 459 -> 406, i.e. the
+gated metric misses the defect that the directional counters make obvious.

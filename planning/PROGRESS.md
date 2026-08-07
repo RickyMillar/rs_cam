@@ -1,5 +1,13 @@
 # Progress
 
+> **Finishing-strategy verdicts are SUPERSEDED (H4, 2026-08-04).** Every
+> comparison of finish strategies in `planning/` — which strategy "wins",
+> which has "nothing to do", the band-mix tables, the mm²/s efficiency
+> figures — was measured through four instrument defects that are now
+> fixed. Those verdicts are **void, not falsified**: the comparison could
+> not have come out any other way. Before citing one, check
+> `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
+
 ## Current snapshot
 
 `rs_cam` is now a desktop CAM application plus shared engine, not just an algorithm sandbox.
@@ -11,7 +19,7 @@
 - 14 direct CLI commands plus TOML job execution
 - STL, SVG, DXF, and STEP import with BREP face selection
 - 5 cutter families
-- GRBL, LinuxCNC, and Mach3 post-processors
+- GRBL, grblHAL, LinuxCNC, and Mach3 post-processors
 - feeds/speeds calculator with machine, material, and vendor-LUT inputs
 - tri-dexel stock simulation (Z/X/Y grids, all 6 cardinal faces) and holder/shank collision checks
 - typed GUI project persistence with missing-model warnings and editable-state round-trip
@@ -20,7 +28,121 @@
 - controller-first GUI architecture with canonical operation metadata and split compute/controller modules
 - shared adaptive support module used by both 2D and 3D adaptive search/control code
 - unified service layer: `ProjectSession` API in core, shared `execute_operation()` dispatch for all 23 ops
-- MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration
+- MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
+- bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
+
+## Recent work (2026-08-06)
+
+### Second technical-debt programme — closed
+
+Nine plan items (H0–H3, M1–M4, L1) and thirteen inherited ledger rows,
+across 133 commits on `experiment/adaptive-spiral`. Eight human
+checkpoints ruled and executed (A, B, C, D, E, F1, F2, F3); Checkpoint G,
+the final read-only live validation, is **planned and not yet run** — its
+checklist is `planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §6.
+
+Full per-item verdicts, the deferral ledger with owners, and the
+measurement provenance index are in that close-out; the factual record
+per wave is `planning/review_2026-08-04/ORCHESTRATION_LOG.md`. Headlines:
+
+- **The `cargo test -p rs_cam_core --lib` accepted-red allowlist is
+  empty** — three permanent adaptive3d reds since `fa27b08`, all one
+  un-mirrored stock-to-leave drape, bisected over 343 revisions. Final
+  gate: 2260 passed / 0 failed / 12 ignored. `wanaka_suggest_baseline`
+  remains the single declared environmental exception.
+- **The chipload gate observes advance per tooth.** The vendor column's
+  convention was verified from primary sources and the gate-side
+  chip-thickness normalisation deleted; scaling laws `D^0.61` /
+  `Janka^-0.5` adopted, both declared repo-derived in `CREDITS.md`;
+  Suggest's rubbing floor subordinated to the matched band, which it had
+  been over-riding by 3.47×.
+- **A cascade or library failure can no longer masquerade as success.**
+  Typed offset failure channel, boundary-clip refusal, bounded pocket
+  ring cascade, and all nine 2D families honouring cancellation.
+- **Simulation diagnostics are bounded and can say "not measurable".**
+- **Drill verdicts stopped contradicting their own evidence**, the peck
+  model is rooted where the emitter roots it, and the thresholds are now
+  declared repo-authored rather than cited to documents that do not
+  contain them.
+- **grblHAL survived on disk and nowhere else** — both project-path post
+  readers silently downgraded it to GRBL; one resolver now serves all
+  four. The setup datum now reaches the project file.
+- **An analytic reference fixture (ARP-1) qualifies the bins**, and the
+  finding that matters is that the fixture stopped being the limit —
+  tessellation error is an order of magnitude below the grid-alias
+  floor.
+
+**Top open item**: Checkpoint G live validation, un-run. Second: the
+UnifiedFinish band residual (~200 um at the rim/wall break, located to
+the shallow raster band, mechanism unproven).
+
+## Recent work (2026-07-30)
+
+### Radius-audit programme — Checkpoints A/B approved, behavioral waves landed
+
+User approved Checkpoints A and B (rulings in
+`review_2026-07-29/ORCHESTRATION_LOG.md` §"CHECKPOINT DECISIONS"). Twelve more
+commits (`cbe8503`..`81e0012`), every wave gated green:
+
+- **Wave D** (instruments before behavior): dropped-band + tip-float findings;
+  LH-1..LH-4 measurement hazards fixed (air-cut% named denominators, footprint
+  fraction); span node/ring discriminator, post-clip geometry, CLI parity,
+  ring counts, ToleranceFloor provenance.
+- **H2 routing (PR-4..7)**: canonical CLR+θ reach policy in `reach.rs` —
+  production reproduces the Checkpoint A matrix exactly (0 gouge / 0 miss /
+  100% coverage, all three tools); coverage criterion retires
+  `route_width_factor` (deprecation-compat); per-side asymmetric offset fans
+  (the 3 mm-valley 0-pass symptom now ladders); tapered-pencil SelfReferenced
+  fixed; UnifiedFinish stepover 1.5 → 0.25 mm (1 → 7 real pass positions);
+  crease threshold now a named cusp-scale param; generic rest analysis on the
+  same policy. Ball migrated per ruling.
+- **H3 (PR-8a..d)**: RampFinish on the named geo-mean intermediate cell —
+  both Checkpoint B gouges (2.39/0.16 mm) eliminated at 1.32× time; ramp
+  descents clamped by reach (4.23 mm cone gouge → 0.02 mm) with a truncation
+  finding; max_rings-from-stepover experiment → **REJECT** (real culprit is
+  ring_stepover min-across-ring, M4); SteepShallow deferral written into code;
+  0.9 µm segment floor (post-resolution-derived).
+- **Major new defect (ledgered)**: `ramp_finish` contour correspondence is
+  broken generically — the reach clamp fires on a flat 17° plane (4.71 mm
+  lift) — now the largest measured defect in the finishing stack; needs a
+  `match_contours`/`ramp_between_contours` rewrite.
+- **Top open risk**: wanaka live validation deferred by all three behavioral
+  waves — every ramp-finish toolpath in saved projects will change (clamp) and
+  routing verdicts moved; needs a GUI/MCP session per B.4 prerequisites.
+
+## Recent work (2026-07-29)
+
+### Radius-audit tech-debt programme — pre-checkpoint waves landed
+
+Executed the front half of `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`
+(9 commits `93b43e8`..`4bc8f92`, all no-behavior-change, gates green throughout;
+full trail in `review_2026-07-29/ORCHESTRATION_LOG.md`):
+
+- **Diagnostics**: UnifiedFinish now emits semantic band/strategy regions
+  (narration `Region mix:` line); standing material is user-visible on
+  ToolpathStats/GUI/MCP (Option-typed, report-only); semantic-trace move links
+  now remap through all post-generation transforms (out-of-bounds panic class
+  fixed).
+- **Measurement contract (M1)**: `MeasurementProvenance` on all major reports;
+  `ProjectedXyAreaMm2`/`SurfaceAreaMm2` newtypes make the invalid 313/482-style
+  cross-domain ratio a compile error.
+- **Tool-scale semantics (H1)**: 76-site radius() census
+  (`TOOL_SCALE_SEMANTICS.md`), named accessors, ToolDefinition delegation trap
+  fixed, arcfit/narration large-arc parity pinned.
+- **Resolution policy (H3 steps 1-2)**: explicit `FinishResolutionPolicy` per
+  consumer, cell sizes fingerprint-proven unchanged.
+- **Sentries**: end-to-end tapered UnifiedFinish sentry with reconstructed
+  historical red; 40+ new tests total.
+- **Checkpoint evidence packs ready for human review**:
+  `CHECKPOINT_A_EVIDENCE.md` (reach model: profile-clearance + local wall angle
+  wins 0-gouge/0-miss/100%; routing criterion coupled to the radius choice) and
+  `CHECKPOINT_B_EVIDENCE.md` (per-consumer resolution; RampFinish → intermediate
+  cell; scallop gated behind Checkpoint C). No behavioral change made past the
+  checkpoints.
+- Notable defect finds: `.gitignore` was eating `src/diagnostics/` (HEAD didn't
+  compile from clean clone — fixed); tapered pencil silently SelfReferenced
+  (5th instrument defect, ledgered); UnifiedFinish Auto heights drop the
+  VerySteep band; RampFinish 4.2 mm cone gouge at every resolution (ledgered).
 
 ## Recent work (2026-06-08)
 
@@ -1104,7 +1226,7 @@ Full-codebase audit across 5 domains (operations, rendering, feeds/speeds, core/
 ## Current priorities
 
 - **G16 layered scoring (in flight)** — multi-commit follow-on to the G16 reorg, softens binary gates and adds composite scoring. Design doc §11: `planning/OPTIMIZER_REFACTOR_G16.md`. **Tracker (read first): `planning/G16_LAYERED_SCORING_PROGRESS.md`**.
-- **MCP server polish** — MCP server (`rs_cam_mcp`) is shipped with 16 tools; ongoing work to integrate with running GUI session for real-time AI agent access. Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
+- **MCP server polish** — the GUI-embedded MCP server registers roughly 68 tools against the live `ProjectSession` (the "16 tools, integration ongoing" reading this line used to carry is long superseded). Design doc: `planning/SERVICE_LAYER_EXTRACTION.md`
 - **Fix 2 remaining simulation test failures** — `multi_setup_top_bottom_simulation` and `multi_setup_backward_scrub_uses_checkpoints` fail because bottom-up tri-dexel cuts produce empty stock
 - **Stock-level alignment pins** — moving pins from per-setup to the stock definition so they persist across flips. Design doc: `planning/ALIGNMENT_PINS_DESIGN.md`
 - **Tri-dexel simulation** — Phases 1–6 complete (core types, stamping, mesh extraction, viz wiring, multi-setup carry-forward, side-face grids). Design doc: `architecture/TRI_DEXEL_SIMULATION.md`, implementation plan: `planning/VOXEL_SIM_DESIGN.md`
@@ -1216,6 +1338,45 @@ revised — hole-diving during roughing is intended clear-everything
 semantics; the lever is a pinned `bottom_z`). Full audit + repro:
 `planning/HEIGHTS_SETUP_FRAME_AUDIT_2026-06-12.md`.
 
+### Adaptive clearing algorithm review + Stage 0 (2026-06-12)
+
+Full code review of the per-slice adaptive engine after wanaka200 quality
+regressed (overfit-to-wanaka100 suspicion confirmed — constants inventory
+in the doc). Headline finding F1: the engagement *target* is an
+angle fraction (`acos(1−s/R)/2π`) but the search *measured* a disk-area
+fraction — different quantities; A/B sweeps showed DiskArea converging on
+~1.5× the commanded stepover. Recommendation: constructive offset-spiral +
+trochoid clearing on the existing EDT machinery (Stage 1+), per
+`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`. Stage 0 landed on
+`experiment/adaptive-spiral`: `EngagementMeasure::LeadingArc` behind a flag
+with closed-form oracle tests + A/B sweeps; `is_clear_path_3d` three-tier
+floor predicate (was ignoring its surface/stock_to_leave params);
+feed/plunge/depth-derived air-run crossover (retired `MIN_AIR_RUN_MM=70`);
+true Euclidean boundary distances in the 2D engine — exposing and fixing a
+real `edt_1d` output-pass corruption bug that under-reported distances for
+the default ContourParallel strategy; `EndpointGrid` spatial hash for
+entry-exclusion scans.
+
+Stage 1 (2026-06-13, overnight): constructive **contour spiral** landed as
+`PathStrategy2d::ContourSpiral` (2D engine) + `ClearingStrategy3d::
+ContourSpiral` (per-slice 3D, via the AgentSearch dispatch) — inside-out
+EDT iso-contour wraps from the helical starter as one continuous stay-down
+pass per region. Property harness (`tests/adaptive_property_harness.rs`,
+independent replay oracle on generated geometry) gates the Stage 1
+contract: 1 plunge / 0 rapids per region, coverage parity with the agent,
+load never worse — and empirically confirms F1/F2 (agent p99 engagement
+≈ 2.5× target on every shape). Stage 2 (same night): **trochoidal
+inserts** — predicted-engagement-triggered loops biased toward the cleared
+side; over-1.3×target samples collapsed to 2.8–4.1% (agent: 11–37%) and
+absolute load bars are now asserted (over ≤ 5%, p99 ≤ 2×target; slot-class
+exempt pending medial-axis trochoids). wanaka200 head-to-head via CLI:
+verdict WARNING (53.7% air) → **OK** (26%), identity-rough rapids 85.3 km
+→ 7.6 km (11×), at ~2× cutting distance (trochoid trade — feed modulation
+/ Suggest re-dial reclaims it; see the review doc's honest ledger).
+Remaining stages: 3 (2-opt tour, ByArea default decision, slice-coherent
+annulus), 4 (planner-predicted engagement → feed modulation, agent
+retirement on sweep parity), plus cycloid-advance refinement.
+
 ## Known open work
 
 - **F-034 cycle-time re-bench** — the 827 s Shapeoko wall-clock anchor is stale and the calibration test now flakes near its widened floor (0.30); re-measure per `planning/cycle_time_rebench.md`
@@ -1231,7 +1392,7 @@ semantics; the lever is a pinned `bottom_z`). Full audit + repro:
 
 - `cargo run -q -p rs_cam_cli -- --help` succeeds
 - `cargo fmt --check` passes
-- `cargo test -q` passes on the workspace
+- per-crate `cargo test -q -p rs_cam_core` (and `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) pass. Do **not** run `cargo test` at workspace scope on this repo — see `CLAUDE.md`
 - `cargo clippy --workspace --all-targets -- -D warnings` passes
 
 Update this file when the shipped surface or verification status changes materially.

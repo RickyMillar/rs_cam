@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use crate::debug_trace::ToolpathDebugTrace;
 use crate::geo::P3;
-use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticTrace};
+use crate::semantic_trace::{SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace};
 use crate::simulation_cut::SimulationCutTrace;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{Move, MoveType, Toolpath};
@@ -22,10 +22,24 @@ const Z_EPSILON_MM: f64 = 0.05;
 /// relative to the tool radius. Also used by `arcfit::try_fit_arc` to
 /// reject implausible Kåsa-bias fits before they reach narration — see
 /// Roadmap F.10 RCA at `planning/F10_RCA.md`.
+///
+/// **ENVELOPE-relative, deliberately** (H2.6, resolved in
+/// `planning/review_2026-07-29/TOOL_SCALE_SEMANTICS.md` §5). This is a
+/// post-condition on `arcfit::try_fit_arc`'s OWN radius cap — a detector
+/// for a defect in our arc fitter — not a feature-scale machining
+/// judgement. Both sides MUST resolve to the same radius: the fitter's
+/// bound arrives as `tool_diameter / 2.0` (`compute/execute.rs`) and
+/// narration reads `envelope_radius_mm()` off the same `ToolDefinition`.
+/// Moving either side to `cusp_radius_mm()` would drop that side's
+/// threshold 6× on a tapered tool and make narration fire on every arc
+/// the fitter legitimately accepted. Pinned by
+/// `tests/tool_scale_semantics_pr2.rs`.
 pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 const AIR_CUT_WARNING_PERCENT: f64 = 50.0;
 const DEEP_DOC_MULTIPLIER: f64 = 1.5;
 const MAX_LEVEL_LINES: usize = 8;
+/// Distinct region LABELS listed by `append_region_mix` before it elides.
+const MAX_REGION_MIX_GROUPS: usize = 8;
 const MAX_ANOMALY_LINES: usize = 8;
 
 /// Optional metadata that lets narration tie raw traces back to the project.
@@ -53,10 +67,207 @@ pub struct ToolpathNarrationContext<'a> {
     /// suppresses the air-cut anomaly in narration. F4 of
     /// `planning/OPTIMIZER_UX_DIALIN_FIXES.md`.
     pub is_drill_cycle: bool,
+    /// Measurability of this toolpath's metrics — the SAME
+    /// [`crate::sim_measurability::MeasurabilityReport`] the gates and the
+    /// triage read (Checkpoint D Q2). `None` when the caller has not built
+    /// one; narration then says nothing about measurability rather than
+    /// implying everything was measured.
+    ///
+    /// When a metric here is `NotMeasurable`, narration must not print its
+    /// percentage as a number — the ruling's rule, applied at the surface
+    /// most likely to be quoted back as evidence.
+    pub measurability: Option<&'a crate::sim_measurability::MeasurabilityReport>,
     /// Stock material — used by the drill-cycle narration block to
     /// evaluate the plunge-feed envelope (material-aware mm/min per mm
     /// of cutter diameter). `None` falls back to envelope-free reporting.
     pub material: Option<&'a crate::material::Material>,
+    /// A/M9: the generation-time standing-material finding for this
+    /// toolpath, straight off
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].
+    ///
+    /// `None` = not measured (no ring cascade ran, or the caller has no
+    /// stats), `Some(0.0)` = a cascade measured zero. Narration states
+    /// which — an agent reading this report must never have to guess
+    /// whether a silent zero means "clean" or "unknown".
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`],
+    /// straight off
+    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// Same `None`/`Some(0.0)` contract.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
+    /// [`Self::truncated_core_mm2`], straight off
+    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// Same `None`/`Some(0.0)` contract.
+    pub reached_uncut_estimate_mm2: Option<f64>,
+    /// Wave D1: a planned finish band whose cutting was entirely erased by
+    /// height resolution, straight off
+    /// [`crate::compute::config::ToolpathStats::dropped_band`]. `None` =
+    /// nothing dropped or nothing measured; narration says which, using
+    /// [`Self::operation_kind`] to tell those two apart.
+    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// C8: a planned finish band whose Z ladder height resolution SHORTENED
+    /// while it still cut, straight off
+    /// [`crate::compute::config::ToolpathStats::clipped_band`]. `None` =
+    /// nothing clipped or nothing measured; narration says which, using
+    /// [`Self::operation_kind`] to tell those two apart — the same contract
+    /// [`Self::dropped_band`] carries.
+    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
+    /// C8: what the ramp-finish reach clamp did, off
+    /// [`crate::compute::config::ToolpathStats::ramp_reach_clamp`]. `None` =
+    /// no ramp descent ran, so nothing was measured — NOT "the tool reached
+    /// everywhere". A/M9's contract, applied to a third measure.
+    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
+    /// Wave D1: the centreline TIP-FLOAT tally, off
+    /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
+    /// operation emits no valley centrelines, so nothing was measured — NOT
+    /// "the tool reached everywhere".
+    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    /// A/M7 gate 1: the retract round-trip count, off
+    /// [`crate::compute::config::ToolpathStats::retract_trips`]. `None` =
+    /// this stats struct never walked a move list (a placeholder, never a
+    /// real generation) — narration says so rather than staying silent.
+    pub retract_trips: Option<crate::compute::config::RetractTripCount>,
+    /// A4: this rest pass will remove nothing, off
+    /// [`crate::compute::config::ToolpathStats::zero_removal`]. `None` = the
+    /// measurement did not run, or it ran and found real engagement — and
+    /// unlike the A/M9 channels those two are not distinguished, because the
+    /// number supports no ratio. Narration therefore prints this line ONLY
+    /// when the finding is present.
+    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    /// Checkpoint C: contained 2D-offset failures, off
+    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    /// `None` = this operation made no offset call through the reporting
+    /// name, so nothing was measured — NOT "no offset failed". Narration
+    /// prints the line only when the count is non-zero: a "0 contained
+    /// failures" line on every 2D toolpath would be a notice nobody reads,
+    /// and the measured-clean case is already readable from the absence of
+    /// a warning.
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C: the machining-boundary containment that collapsed, off
+    /// [`crate::compute::config::ToolpathStats::boundary_clip_dropped`].
+    /// `None` = nothing was dropped. Narration prints this whenever it is
+    /// present — an unclipped path where a containment was requested is not
+    /// a routine event.
+    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+}
+
+/// Is this toolpath a drill cycle, for the purposes of
+/// [`ToolpathNarrationContext::is_drill_cycle`]?
+///
+/// The flag exists to suppress engagement/air-cut narration on **Z-only
+/// kinematics**: the engagement model is XY-only, so a plunge reads 0 %
+/// engagement and 100 % air, and narrating that as an anomaly is noise.
+/// So the question this answers is not "does this path contain a drill" but
+/// "is this path's cutting entirely vertical".
+///
+/// **B7 divergence 1, resolved 2026-08-06.** The two narrations disagreed
+/// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.D.5):
+///
+/// - core asked `op_type().is_drill_kinematics()` — blind to any generator
+///   that emits `MoveIntent::Drilling` without declaring a drill op type;
+/// - the GUI asked op-type **OR any** `Drilling` move — which reports a drill
+///   cycle for a v-carve that merely *entered* with a drilled hole, and so
+///   suppresses that op's air-cut anomaly. W8 named that as the consequence.
+///
+/// This is neither: a drill op type still qualifies outright, and otherwise
+/// the path qualifies only when it drills and does **no** non-vertical
+/// cutting. That keeps the GUI's intent signal (a legacy generator's
+/// Z-only path is recognised) while removing the false positive it bought.
+pub fn is_drill_cycle_for_narration(
+    op_type: crate::compute::catalog::OperationType,
+    moves: &[crate::toolpath::Move],
+) -> bool {
+    use crate::toolpath::MoveIntent;
+    if op_type.is_drill_kinematics() {
+        return true;
+    }
+    let mut drilled = false;
+    for m in moves {
+        match m.intent {
+            MoveIntent::Drilling => drilled = true,
+            // Cutting that is NOT a plunge — the engagement model applies,
+            // so this toolpath is not a Z-only cycle whatever else it does.
+            MoveIntent::ClearingCut
+            | MoveIntent::FinishingCut
+            | MoveIntent::EntryHelix
+            | MoveIntent::EntryRamp
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut => return false,
+            // Plunges, links, retracts and unlabelled moves say nothing
+            // either way.
+            _ => {}
+        }
+    }
+    drilled
+}
+
+impl<'a> ToolpathNarrationContext<'a> {
+    /// The ONE join from [`crate::compute::config::ToolpathStats`] into
+    /// narration.
+    ///
+    /// **Exhaustive by construction.** The destructuring below names every
+    /// field of `ToolpathStats` with no `..` rest pattern, so adding an
+    /// eighteenth finding fails to compile *here* until somebody decides, in
+    /// writing, whether narration carries it. A channel narration
+    /// deliberately does not carry is bound to `_` with a comment saying
+    /// why — never elided.
+    ///
+    /// **Why it exists (B7).** Two hand-written literals populated these
+    /// fields independently — `session/compute.rs`'s and
+    /// `crates/rs_cam_viz/src/app/mcp.rs`'s — and a new `ToolpathStats`
+    /// channel needed three coordinated edits with the compiler enforcing
+    /// only that the *context* be complete, never that it be **fed**. Both
+    /// were exhaustive when W8 audited them
+    /// (`planning/review_2026-08-04/FINISHING_OPEN_DEFECTS_EVIDENCE.md`
+    /// §3.D.5), so this closes a latent hazard rather than a live divergence
+    /// — but the struct derives `Default`, so either literal could have been
+    /// "tidied" with `..Default::default()` and started silently defaulting.
+    ///
+    /// Callers set the identity/tool/material fields themselves and then
+    /// call this; it touches nothing but the stats-derived channels.
+    pub fn absorb_stats(&mut self, stats: &crate::compute::config::ToolpathStats) {
+        let crate::compute::config::ToolpathStats {
+            // Narration walks the move list itself, so these three are
+            // recomputed rather than carried — they are not findings.
+            move_count: _,
+            cutting_distance: _,
+            rapid_distance: _,
+
+            truncated_core_mm2,
+            untouched_material_mm2,
+            reached_uncut_estimate_mm2,
+            dropped_band,
+            tip_float,
+            clipped_band,
+            ramp_reach_clamp,
+            retract_trips,
+            zero_removal,
+            offset_library_failures,
+            boundary_clip_dropped,
+
+            // NOT rendered by narration. Deliberate, and listed so the
+            // omission is a decision on the record rather than an oversight:
+            //  - deprecated_dial:   surfaced as a load/diagnostic notice
+            //  - derived_stepovers: an audit trail, not a part measurement
+            //  - claims_reference:  surfaced by `get_toolpath_params.runtime`
+            deprecated_dial: _,
+            derived_stepovers: _,
+            claims_reference: _,
+        } = stats;
+
+        self.truncated_core_mm2 = *truncated_core_mm2;
+        self.untouched_material_mm2 = *untouched_material_mm2;
+        self.reached_uncut_estimate_mm2 = *reached_uncut_estimate_mm2;
+        self.dropped_band = dropped_band.as_deref().copied();
+        self.clipped_band = clipped_band.as_deref().copied();
+        self.ramp_reach_clamp = ramp_reach_clamp.as_deref().copied();
+        self.tip_float = *tip_float;
+        self.retract_trips = *retract_trips;
+        self.zero_removal = *zero_removal;
+        self.offset_library_failures = *offset_library_failures;
+        self.boundary_clip_dropped = *boundary_clip_dropped;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -232,17 +443,44 @@ pub fn narrate_toolpath_with_context(
             .iter()
             .filter(|item| item.kind == ToolpathSemanticKind::Ring)
             .count();
+        // C8: `chains` joins the line. Trace and Pencil express their whole
+        // structure as `Chain` items, which the previous three counters did
+        // not mention at all — so an operation with 40 engraved contours
+        // read as `depth levels 3, regions 0, rings 0`, i.e. as no structure
+        // whatsoever.
+        let chain_items = trace
+            .items
+            .iter()
+            .filter(|item| item.kind == ToolpathSemanticKind::Chain)
+            .count();
         output.push_str(&format!(
-            "Semantic trace: {} items ({} move-linked); depth levels {}, regions {}, rings {}.\n",
+            "Semantic trace: {} items ({} move-linked); depth levels {}, \
+             regions {}, rings {}, chains {}.\n",
             trace.summary.item_count,
             trace.summary.move_linked_item_count,
             depth_items,
             region_items,
-            ring_items
+            ring_items,
+            chain_items
         ));
+        append_region_mix(&mut output, trace);
     } else {
         output.push_str("Semantic trace: not available.\n");
     }
+    append_truncated_core(&mut output, context.truncated_core_mm2);
+    append_untouched_standing_split(
+        &mut output,
+        context.untouched_material_mm2,
+        context.reached_uncut_estimate_mm2,
+    );
+    append_dropped_band(&mut output, context);
+    append_clipped_band(&mut output, context);
+    append_ramp_reach_clamp(&mut output, context);
+    append_tip_float(&mut output, context.tip_float);
+    append_zero_removal(&mut output, context.zero_removal);
+    append_offset_library_failures(&mut output, context.offset_library_failures);
+    append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
+    append_retract_trips(&mut output, context.retract_trips);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -331,7 +569,28 @@ fn append_operation_context(output: &mut String, context: &ToolpathNarrationCont
         && flutes > 0
     {
         let chipload = feed / f64::from(rpm) / f64::from(flutes);
-        parts.push(format!("nominal chipload {:.4}mm/tooth", chipload));
+        // T1.2 — say which quantity this is. It is the COMMANDED linear
+        // advance per tooth, the axis vendor tables are published on.
+        //
+        // Until 2026-08-06 this line also carried a disclaimer that it
+        // was "not the chipload gate's chip-thickness reading". That
+        // disclaimer is now FALSE and has been removed: the gate observes
+        // the same quantity, at the kinematically-achieved feed rather
+        // than the commanded one (`tool_load::chipload`'s header, and
+        // `CHIPLOAD_LITERATURE_VERDICT.md` for why). The two still differ
+        // — routinely by a large factor on a corner-heavy 3D path — but
+        // they differ by a *feed ratio*, not by a change of quantity,
+        // which is a difference an operator can act on.
+        //
+        // The comparison of this value against the matched vendor band
+        // (census T1.5) is a diagnostic, `load.chipload.commanded_above_band`
+        // — narration does not do LUT lookups, so it names the quantity
+        // and leaves the comparison to the channel that has the band.
+        parts.push(format!(
+            "commanded feed-per-tooth {:.4}mm/tooth (linear advance; \
+             the chipload gate reports the same quantity at the achieved feed)",
+            chipload
+        ));
     }
 
     if !parts.is_empty() {
@@ -577,6 +836,473 @@ fn find_or_create_level_accumulator(
     &mut levels[last_index]
 }
 
+/// One line naming the semantic `Region` items by label, grouped, in
+/// first-appearance (cut) order.
+///
+/// Plan A/M8: the region COUNT alone cannot say which strategy earned its
+/// time. `UnifiedFinish` labels its regions with band and strategy
+/// (`"MidSteep band (scallop)"`), so this line is the mix table H4 needs;
+/// for operations whose regions are plain ordinals it degrades to a short
+/// enumeration and is capped at [`MAX_REGION_MIX_GROUPS`].
+fn append_region_mix(output: &mut String, trace: &ToolpathSemanticTrace) {
+    let mut groups: Vec<(&str, usize, usize)> = Vec::new();
+    for item in trace
+        .items
+        .iter()
+        .filter(|item| item.kind == ToolpathSemanticKind::Region)
+    {
+        let moves = match (item.move_start, item.move_end) {
+            (Some(start), Some(end)) if end >= start => end - start + 1,
+            _ => 0,
+        };
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|(label, _, _)| *label == item.label.as_str())
+        {
+            group.1 += 1;
+            group.2 += moves;
+        } else {
+            groups.push((item.label.as_str(), 1, moves));
+        }
+    }
+    if groups.is_empty() {
+        return;
+    }
+
+    let hidden = groups.len().saturating_sub(MAX_REGION_MIX_GROUPS);
+    let shown: Vec<String> = groups
+        .iter()
+        .take(MAX_REGION_MIX_GROUPS)
+        .map(|(label, count, moves)| format!("{label} x{count} ({moves} moves)"))
+        .collect();
+    output.push_str("Region mix: ");
+    output.push_str(&shown.join(", "));
+    if hidden > 0 {
+        output.push_str(&format!(", and {hidden} more label(s)"));
+    }
+    output.push_str(".\n");
+}
+
+/// Area (mm²) below which standing material is worth reporting as a
+/// number but not as a defect. Mirrors the diagnostics adapter's floor
+/// (`diagnostics::adapters::from_generation`) so the two surfaces cannot
+/// disagree about what counts as an island.
+const STANDING_MATERIAL_NARRATION_FLOOR_MM2: f64 = 1.0;
+
+/// A/M9: one line, always, saying whether material was left standing —
+/// **including when the answer is "nobody measured"**.
+///
+/// The channel exists because the figure previously lived only in a
+/// `tracing::warn!`: a 28 mm block of unmachined material shipped for weeks
+/// because no harness installed a subscriber. Narration is the agent-facing
+/// surface, so silence here is the same failure mode. Every phrasing states
+/// the measurement's domain, stage and resolution (M1) — an unlabelled mm²
+/// invites exactly the cross-domain comparison the audit found.
+fn append_truncated_core(output: &mut String, measured: Option<f64>) {
+    use crate::compute::config::{
+        TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
+    };
+    match measured {
+        // NaN falls in here too: an unmeasured cascade is not a claim.
+        Some(area) if area > STANDING_MATERIAL_NARRATION_FLOOR_MM2 => {
+            output.push_str(&format!(
+                "Standing material: {area:.0} mm² left UNCUT inside the machining region — \
+                 the ring cascade hit its ring cap before the offsets collapsed, so the \
+                 part will carry a raised island. {TRUNCATED_CORE_DOMAIN}; \
+                 {TRUNCATED_CORE_STAGE}; {TRUNCATED_CORE_RESOLUTION}. \
+                 Report-only — no gate consumes this.\n"
+            ));
+        }
+        Some(area) if area.is_finite() => {
+            output.push_str(&format!(
+                "Standing material: none — {area:.0} mm² measured, the ring cascade collapsed \
+                 normally. {TRUNCATED_CORE_DOMAIN}; {TRUNCATED_CORE_STAGE}.\n"
+            ));
+        }
+        _ => {
+            output.push_str(
+                "Standing material: not measured — no ring cascade ran for this toolpath \
+                 (or the caller supplied no generation stats), so no XY-projected \
+                 generation-time residual exists. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// M4 §5b: one extra line, ONLY when the split was measured and at least one
+/// half clears the same floor `append_truncated_core` uses — the line
+/// above already covers "not measured" and "measured clean", so this stays
+/// silent rather than repeating those states.
+///
+/// Two different figures, two different measurement contracts (M1): the
+/// "never reached" half is an exact hole-aware polygon area
+/// ([`crate::compute::config::UNTOUCHED_MATERIAL_PROVENANCE`]); the
+/// "reached but dropped" half is an ESTIMATOR
+/// ([`crate::compute::config::REACHED_UNCUT_ESTIMATE_PROVENANCE`]), so
+/// its number is prefixed `~` and its own domain/stage/resolution are stated
+/// separately rather than shared with the first.
+fn append_untouched_standing_split(
+    output: &mut String,
+    untouched_mm2: Option<f64>,
+    standing_estimate_mm2: Option<f64>,
+) {
+    use crate::compute::config::{
+        REACHED_UNCUT_ESTIMATE_DOMAIN, REACHED_UNCUT_ESTIMATE_RESOLUTION,
+        REACHED_UNCUT_ESTIMATE_STAGE, UNTOUCHED_MATERIAL_DOMAIN, UNTOUCHED_MATERIAL_RESOLUTION,
+        UNTOUCHED_MATERIAL_STAGE,
+    };
+    let (Some(untouched), Some(standing)) = (untouched_mm2, standing_estimate_mm2) else {
+        return;
+    };
+    if untouched <= STANDING_MATERIAL_NARRATION_FLOOR_MM2
+        && standing <= STANDING_MATERIAL_NARRATION_FLOOR_MM2
+    {
+        return;
+    }
+    output.push_str(&format!(
+        "  split: {untouched:.0} mm² never reached by any cutter position \
+         ({UNTOUCHED_MATERIAL_DOMAIN}; {UNTOUCHED_MATERIAL_STAGE}; \
+         {UNTOUCHED_MATERIAL_RESOLUTION}); ~{standing:.0} mm² estimated reached-but-dropped \
+         ({REACHED_UNCUT_ESTIMATE_DOMAIN}; {REACHED_UNCUT_ESTIMATE_STAGE}; \
+         {REACHED_UNCUT_ESTIMATE_RESOLUTION}).\n"
+    ));
+}
+
+/// Wave D1: one line, always, about bands that height resolution erased.
+///
+/// The three states are deliberately distinct. `Some` is a defect report.
+/// `None` on a banded operation is a measured-clean statement. `None` on
+/// anything else is "this question does not apply here" — and saying so is
+/// the point: a reader must never infer "clean" from a line that is absent
+/// because nothing looked.
+fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    match context.dropped_band {
+        Some(f) => {
+            output.push_str(&format!(
+                "Unmachined band: {area:.1} mm² across {count} planned \
+                 region(s) — the {band} band emitted NO cutting because the \
+                 resolved {clip} = {clip_z:.3} mm clipped its Z range away. \
+                 That feature will be left standing at full stock. Pin \
+                 {clip} to the real depth of the feature. [{provenance}. \
+                 Report-only — no gate consumes this.]\n",
+                area = f.area_mm2,
+                count = f.region_count,
+                band = f.band_label,
+                clip = f.clip_label,
+                clip_z = f.clip_z_mm,
+                provenance = f.provenance.describe(),
+            ));
+        }
+        None if plans_bands => {
+            output.push_str(
+                "Unmachined band: none — every planned finish band still cut \
+                 after height resolution.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Unmachined band: not measured — this operation plans no \
+                 finish bands, so no band could be dropped by height \
+                 resolution. Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// A4: one line when a rest pass will remove nothing, and silence otherwise.
+///
+/// Silence is right here, and it is a departure from the A/M9 lines above.
+/// Those distinguish *not measured* from *measured clean* because a reader
+/// might build a ratio on them. This one cannot be built on: an operation
+/// that engages material is the overwhelming default, and a "zero removal:
+/// none" line on every finishing toolpath would be a notice nobody reads.
+///
+/// The line leads with the COST, not the depth. "Removed nothing" is only
+/// interesting because the pass was paid for anyway.
+fn append_zero_removal(
+    output: &mut String,
+    finding: Option<crate::compute::config::ZeroRemovalFinding>,
+) {
+    let Some(f) = finding else { return };
+    output.push_str(&format!(
+        "Zero removal: this rest pass costs {cutting:.0} mm of cutting and \
+         removes NOTHING — over {samples} sampled positions its deepest \
+         reach below the prior operation's stock is {deepest:+.4} mm, \
+         against a {floor:.4} mm floor derived from the reference's own \
+         sampling (positive would be into material). Check the reference: \
+         the prior \
+         op may have left nothing here, or this pass's stock-to-leave may \
+         not be below what it left. Keeping the pass is a legitimate choice. \
+         [Material standing above the CUTTER's own surface, mm; generation \
+         stage; sampled along the swept path at the stock grid cell. \
+         Report-only — no gate consumes this.]\n",
+        cutting = f.cutting_distance_mm,
+        samples = f.sampled_positions,
+        deepest = f.deepest_engagement_mm,
+        floor = f.floor_mm,
+    ));
+}
+
+/// Checkpoint C: one line when a 2D offset failed rather than collapsed.
+///
+/// Silent on `None` (nothing measured) and on `Some(0)` (measured clean) —
+/// the same rule `append_zero_removal` follows, and for the same reason: a
+/// line on every 2D toolpath saying nothing happened is a line nobody reads.
+///
+/// The line has to carry the debug/release caveat, because the count is not
+/// build-invariant: most of what it counts are `debug_assert!`s inside
+/// `cavalier_contours` and its spatial-index dependency, which do not fire
+/// in release. A reader comparing a release run against this number needs to
+/// know that a lower count there is not an improvement.
+fn append_offset_library_failures(output: &mut String, failures: Option<usize>) {
+    let Some(n) = failures.filter(|n| *n > 0) else {
+        return;
+    };
+    output.push_str(&format!(
+        "Offset failures: {n} 2D offset call(s) in this generation did not \
+         collapse — they FAILED, and the failure was contained and mapped to \
+         an empty result. Whatever those offsets were bounding (a pocket \
+         ring, a compensated contour, an inset) is missing from this \
+         toolpath, so it may leave material where it looks finished. Check \
+         the geometry that fed this operation for self-intersection, repeated \
+         vertices or non-finite coordinates. NOTE: this count is not \
+         build-invariant — most of the assertions behind it are \
+         `debug_assert!`s in a dependency and do not fire in a release build, \
+         where the library proceeds on the unvalidated input instead. \
+         [Count of offset CALLS, not of distinct rings; generation stage. \
+         Report-only — no gate consumes this.]\n"
+    ));
+}
+
+/// Checkpoint C: one line when a requested boundary containment collapsed
+/// and the toolpath was therefore emitted unclipped.
+///
+/// Always printed when present, unlike its offset-failure neighbour: this is
+/// not a report about geometry quality, it is a report that a SAFETY setting
+/// the operator turned on is not in force on this path.
+fn append_boundary_clip_dropped(
+    output: &mut String,
+    finding: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+) {
+    let Some(f) = finding else { return };
+    output.push_str(&format!(
+        "Boundary containment DROPPED: `{containment:?}` was requested and \
+         its offset collapsed to nothing across all {regions} source \
+         region(s) at a {dia:.3} mm tool, so this toolpath was emitted with \
+         NO boundary clip — not with a smaller one. The usual cause is \
+         benign (the tool is wider than the region it was asked to stay \
+         inside, so nothing there is machinable anyway) and the path is left \
+         unclipped rather than silently deleted. But nothing is containing \
+         this path: check it against the boundary you meant before running \
+         it. [Generation stage; report-only — no gate consumes this.]\n",
+        containment = f.containment,
+        regions = f.source_region_count,
+        dia = f.tool_diameter_mm,
+    ));
+}
+
+/// C8: one line, always, about material a ramp descent knowingly left.
+///
+/// PR-8b gave the clamp a typed finding and a diagnostic but no narration
+/// line, so the agent-facing report — the surface an MCP session actually
+/// reads — never mentioned it. The line leads with the AREA, because a
+/// worst-case lift DEPTH with no extent could mean one stray point or half
+/// the part and nothing said which.
+fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let ramps = matches!(context.operation_kind, Some(OperationType::RampFinish));
+    match context.ramp_reach_clamp {
+        Some(f) if !f.is_inert() => {
+            let area = match f.lifted_area() {
+                Some((area, provenance)) => format!(
+                    "{:.1} mm² of ramp swath ({})",
+                    area.mm2(),
+                    provenance.describe()
+                ),
+                None => "an unmeasured extent".to_owned(),
+            };
+            output.push_str(&format!(
+                "Ramp reach clamp: {area} left standing — {clamped} of \
+                 {total} ramp points raised by up to {lift:.3} mm, and the \
+                 descent bottom lifted from {requested:.3} to {holdable:.3} \
+                 mm. The emitted pass is SAFE; the material is simply left, \
+                 and no simulation can see it. [Report-only — no gate \
+                 consumes this.]\n",
+                clamped = f.clamped_points,
+                total = f.ramp_points,
+                lift = f.max_lift_mm,
+                requested = f.requested_bottom_z_mm,
+                holdable = f.holdable_bottom_z_mm,
+            ));
+        }
+        Some(_) => {
+            output.push_str(
+                "Ramp reach clamp: none — a ramp descent ran and every \
+                 commanded depth was holdable.\n",
+            );
+        }
+        None if ramps => {
+            output.push_str(
+                "Ramp reach clamp: not measured — this ramp-finish run built \
+                 no ramp path. Absence of a number is not a zero.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Ramp reach clamp: not measured — this operation runs no ramp \
+                 descent, so nothing could be clamped. Absence of a number is \
+                 not a zero.\n",
+            );
+        }
+    }
+}
+
+/// C8: one line, always, about a finish band that was only PARTLY machined.
+///
+/// The quiet sibling of [`append_dropped_band`], and it follows exactly the
+/// same three-branch contract: a finding, a measured-clean statement on an
+/// operation that plans bands, and an explicit "not measured" on one that
+/// does not. Absence of a number is never a zero.
+fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
+    use crate::compute::catalog::OperationType;
+    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    match context.clipped_band {
+        Some(f) => {
+            output.push_str(&format!(
+                "Partly machined band: {area:.1} mm² across {count} planned \
+                 region(s) — the {band} band cut only part of its depth. The \
+                 resolved {clip} = {clip_z:.3} mm shortened its ladder from \
+                 {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
+                 ({planned} levels planned, {resolved} laddered), leaving up \
+                 to {lost:.3} mm of the feature unfinished. [{provenance}. \
+                 Report-only — no gate consumes this.]\n",
+                area = f.area_mm2,
+                count = f.region_count,
+                band = f.band_label,
+                clip = f.clip_label,
+                clip_z = f.clip_z_mm,
+                req_lo = f.requested_bottom_z_mm,
+                req_hi = f.requested_top_z_mm,
+                del_lo = f.delivered_bottom_z_mm,
+                del_hi = f.delivered_top_z_mm,
+                planned = f.planned_levels,
+                resolved = f.resolved_levels,
+                lost = f.max_lost_height_mm,
+                provenance = f.provenance.describe(),
+            ));
+        }
+        None if plans_bands => {
+            output.push_str(
+                "Partly machined band: none — every planned finish band \
+                 laddered its whole Z range.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Partly machined band: not measured — this operation plans no \
+                 finish bands, so no band Z ladder could be shortened. \
+                 Absence of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// Wave D1: one line, always, about material the cutter physically could not
+/// reach on a valley centreline.
+fn append_tip_float(
+    output: &mut String,
+    measured: Option<crate::compute::config::TipFloatFinding>,
+) {
+    use crate::compute::config::{
+        TIP_FLOAT_DOMAIN, TIP_FLOAT_RESOLUTION, TIP_FLOAT_STAGE, TIP_FLOAT_THRESHOLD_MM,
+    };
+    match measured {
+        Some(f) if f.floating_points > 0 => {
+            let pct = 100.0 * f.floating_fraction().unwrap_or(0.0);
+            output.push_str(&format!(
+                "Tip float: {floating} of {total} centreline points ({pct:.0}%) \
+                 sit over material the tool CANNOT reach — it wedges on the \
+                 valley walls and rides above the floor. Worst residual \
+                 {max:.3} mm left uncut beneath the emitted line (float > \
+                 {threshold} mm counts). A smaller tip, or handing these \
+                 valleys to a finer tool, is the only fix — the pass as \
+                 emitted cannot remove it. {TIP_FLOAT_DOMAIN}; \
+                 {TIP_FLOAT_STAGE}; {TIP_FLOAT_RESOLUTION}. Report-only — no \
+                 gate consumes this.\n",
+                floating = f.floating_points,
+                total = f.centreline_points,
+                max = f.max_float_mm,
+                threshold = TIP_FLOAT_THRESHOLD_MM,
+            ));
+        }
+        Some(f) if f.centreline_points > 0 => {
+            output.push_str(&format!(
+                "Tip float: none — {total} centreline points measured and the \
+                 tool reached the traced valley floor on every one. \
+                 {TIP_FLOAT_DOMAIN}; {TIP_FLOAT_STAGE}.\n",
+                total = f.centreline_points,
+            ));
+        }
+        Some(_) => {
+            output.push_str(
+                "Tip float: nothing to measure — the detector emitted no \
+                 centreline points at all.\n",
+            );
+        }
+        None => {
+            output.push_str(
+                "Tip float: not measured — this operation emits no valley \
+                 centrelines, so no reach residual exists to report. Absence \
+                 of a number is not a zero.\n",
+            );
+        }
+    }
+}
+
+/// A/M7 gate 1: one line, always, about retract round trips — the number
+/// that actually costs finishing air. §8's lesson: air is COUNT-bound (a
+/// hop pays two ~`safe_z` Z legs whatever its XY length), not
+/// distance-bound, so this is the figure a reader must reach for, not the
+/// `rapid_distance`(mm) total printed in the header line above.
+fn append_retract_trips(
+    output: &mut String,
+    measured: Option<crate::compute::config::RetractTripCount>,
+) {
+    use crate::compute::config::{
+        RETRACT_TRIP_DOMAIN, RETRACT_TRIP_RESOLUTION, RETRACT_TRIP_STAGE,
+    };
+    match measured {
+        Some(f) => match f.in_node.zip(f.between_nodes) {
+            Some((in_n, out_n)) => {
+                output.push_str(&format!(
+                    "Retract trips: {total} round trip(s) — {in_n} inside a \
+                     routing node, {out_n} between nodes. {RETRACT_TRIP_DOMAIN}; \
+                     {RETRACT_TRIP_STAGE}; {RETRACT_TRIP_RESOLUTION}. \
+                     Report-only — no gate consumes this.\n",
+                    total = f.total,
+                ));
+            }
+            None => {
+                output.push_str(&format!(
+                    "Retract trips: {total} round trip(s) — in-node/between-nodes \
+                     split not available (no trustworthy routing-node spans on \
+                     this toolpath). {RETRACT_TRIP_DOMAIN}; {RETRACT_TRIP_STAGE}.\n",
+                    total = f.total,
+                ));
+            }
+        },
+        None => {
+            output.push_str(
+                "Retract trips: not measured — this toolpath's stats were \
+                 never computed from its move list. Absence of a number is \
+                 not a zero.\n",
+            );
+        }
+    }
+}
+
 fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
     if let Some(item) = trace
         .items
@@ -586,8 +1312,7 @@ fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSeman
     {
         if let Some(count) = item
             .params
-            .values
-            .get("marching_squares_regions")
+            .get(SemanticKey::MarchingSquaresRegions)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok())
         {
@@ -595,32 +1320,27 @@ fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSeman
         }
         if let Some(areas) = item
             .params
-            .values
-            .get("region_areas_mm2")
+            .get(SemanticKey::RegionAreasMm2)
             .and_then(|value| value.as_array())
         {
             level.region_areas_mm2 = areas.iter().filter_map(|value| value.as_f64()).collect();
         }
         level.dropped_micro_regions = item
             .params
-            .values
-            .get("dropped_micro_region_count")
+            .get(SemanticKey::DroppedMicroRegionCount)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok());
         level.perimeter_sweep_length_mm = item
             .params
-            .values
-            .get("perimeter_sweep_length_mm")
+            .get(SemanticKey::PerimeterSweepLengthMm)
             .and_then(|value| value.as_f64());
         level.agent_walk_cut_length_mm = item
             .params
-            .values
-            .get("agent_walk_cut_length_mm")
+            .get(SemanticKey::AgentWalkCutLengthMm)
             .and_then(|value| value.as_f64());
         level.residual_cleanup_cell_count = item
             .params
-            .values
-            .get("residual_cleanup_cell_count")
+            .get(SemanticKey::ResidualCleanupCellCount)
             .and_then(|value| value.as_u64())
             .and_then(|value| usize::try_from(value).ok());
     }
@@ -659,8 +1379,7 @@ fn fallback_semantic_region_count_at_z(trace: &ToolpathSemanticTrace, z: f64) ->
 fn semantic_item_matches_z(item: &crate::semantic_trace::ToolpathSemanticItem, z: f64) -> bool {
     if let Some(z_level) = item
         .params
-        .values
-        .get("z_level")
+        .get(SemanticKey::ZLevel)
         .and_then(|value| value.as_f64())
     {
         return (z - z_level).abs() <= Z_EPSILON_MM;
@@ -837,7 +1556,8 @@ fn append_large_arc_anomalies(
     toolpath: &Toolpath,
     tool: &ToolDefinition,
 ) {
-    let threshold = (tool.radius() * LARGE_ARC_RADIUS_MULTIPLIER).max(0.001);
+    // ENVELOPE, matching `arcfit`'s cap exactly — see the multiplier's doc.
+    let threshold = (tool.envelope_radius_mm() * LARGE_ARC_RADIUS_MULTIPLIER).max(0.001);
     let large_arcs: Vec<_> = arc_observations(toolpath)
         .into_iter()
         .filter(|arc| arc.radius_mm > threshold)
@@ -857,7 +1577,7 @@ fn append_large_arc_anomalies(
     if let Some(first) = large_arcs.first() {
         let direction = if first.clockwise { "CW" } else { "CCW" };
         anomalies.push(format!(
-            "⚠ {} perimeter sweep arc(s) with R > tool_radius × {:.0} (smallest {:.1}mm, largest {:.1}mm). First: move {}, {direction}, z={:.3}, center=({:.1}, {:.1}), target=({:.1}, {:.1}). Suspiciously large arcs can indicate circumscribing-circle arc-fit after path simplification.",
+            "⚠ {} perimeter sweep arc(s) with R > envelope_radius × {:.0} (smallest {:.1}mm, largest {:.1}mm). First: move {}, {direction}, z={:.3}, center=({:.1}, {:.1}), target=({:.1}, {:.1}). Suspiciously large arcs can indicate circumscribing-circle arc-fit after path simplification.",
             large_arcs.len(),
             LARGE_ARC_RADIUS_MULTIPLIER,
             min_radius,
@@ -949,9 +1669,27 @@ fn append_peak_doc_anomaly(
         || {
             use crate::compute::catalog::OperationType;
             match context.operation_kind {
-                Some(OperationType::DropCutter) => {
-                    "this op follows surface heights — no commanded DOC".to_owned()
-                }
+                // H4 wave 15 — every op in this arm follows the MODEL
+                // SURFACE, so it has no depth-per-pass to compare against.
+                // Only `DropCutter` was listed, which is why the live
+                // validation of 2026-07-30 read a `UnifiedFinish`'s
+                // 1.86 mm peak against a 0.3 mm `z_step` and filed it as a
+                // "~6x" anomaly (CONCERN 3). `z_step` is the waterline
+                // band's Z stepping, not a commanded DOC for the raster
+                // and scallop bands that produced the sample; the ratio
+                // had no denominator.
+                Some(
+                    OperationType::DropCutter
+                    | OperationType::Waterline
+                    | OperationType::Pencil
+                    | OperationType::Scallop
+                    | OperationType::UnifiedFinish
+                    | OperationType::SteepShallow
+                    | OperationType::RampFinish
+                    | OperationType::SpiralFinish
+                    | OperationType::RadialFinish
+                    | OperationType::HorizontalFinish,
+                ) => "this op follows surface heights — no commanded DOC".to_owned(),
                 Some(OperationType::ProjectCurve) => {
                     "this op follows the curve at a fixed surface offset — no commanded DOC"
                         .to_owned()
@@ -976,8 +1714,33 @@ fn append_peak_doc_anomaly(
             "ℹ"
         }
     });
+    // R-13 (census §8.2, §6.5): the advice below used to end with "an exact
+    // multiple of the step means that many steps of stock were standing
+    // there" on EVERY op — including the ones that have no step. Naming the
+    // absence of a denominator and then handing the reader a ratio to form
+    // is the same category error the line's own `threshold_text` just
+    // avoided, and it is how the Rivers B4 spike came to be reported as
+    // "20.4x commanded" against a surface OFFSET. Ops with no commanded
+    // axial step now get the measurement and the first cause, and no
+    // multiple to compute.
+    let advice = if context.depth_per_pass_mm.is_some() {
+        "an exact multiple of the step means that many steps of stock were standing there \
+         — check upstream coverage first, then lift-function bridging, then arc-fit overshoot"
+    } else {
+        "this op commands no axial step, so there is no multiple to read it against \
+         — a large value means the pass crossed material an upstream op left standing; \
+         check upstream coverage first, then lift-function bridging, then arc-fit overshoot"
+    };
     anomalies.push(format!(
-        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. Large DOC spikes often point to arc-fit overshoot, lift-function bridging, or an uncleared-stock edge case.",
+        // H4 wave 15 — the advice used to lead with arc-fit overshoot and
+        // lift bridging. Arc-fit has now been exonerated twice on live
+        // spikes, and the probe in `tests/axial_doc_step_multiple_h4.rs`
+        // shows what the number actually is: the height of material this
+        // stamp removed. A pass over ground an earlier pass never visited
+        // reads an exact multiple of the step, at any depth and any pass
+        // index. Standing stock is therefore named FIRST, and the reader
+        // is told what is being measured before being offered a cause.
+        "{severity} peak axial DOC {:.2}mm at sample {} (move {}, {move_kind}, z={:.3}, position ({:.1}, {:.1})). {threshold_text}. This is the height of material removed at one column, not a commanded step: {advice}.",
         sample.axial_doc_mm,
         sample.sample_index,
         sample.move_index,
@@ -1019,15 +1782,51 @@ fn append_air_cut_anomaly(
                 crate::drill_metrics::ChipWeldingRisk::High => "high",
             };
             let cycle_time_s = d.feed_time_s + d.dwell_time_s;
+            // R-6 / audit §7 "wording gaps": narrate used to print the
+            // risk WORD with no threshold and the peck-pattern BOOLEAN
+            // with neither ratio nor threshold, so the reader had no way
+            // to check the work — `chip-welding risk elevated` gave no
+            // hint whether the bar was 5, 6 or 8. Both bars are
+            // material-derived and cheap to state, so state them.
+            let (welding_bar, peck_bar) = context
+                .material
+                .map(|m| {
+                    (
+                        m.drill_chip_welding_threshold_dtd(),
+                        m.drill_per_peck_max_dtd(),
+                    )
+                })
+                .unwrap_or((f64::NAN, f64::NAN));
+            let bars = if welding_bar.is_finite() {
+                format!(" [material bars: chip welding {welding_bar:.1}×, per-peck {peck_bar:.1}×]")
+            } else {
+                String::new()
+            };
+            // The peck-adequacy remedy is cycle-dependent (R-4): a
+            // Simple/Dwell hole has no peck depth to reduce.
+            let peck_verdict = if d.peck_pattern_adequate {
+                format!("adequate ({:.1}× per peck)", d.per_peck_max_dtd)
+            } else if d.cycle.is_pecking() {
+                format!(
+                    "INADEQUATE at {:.1}× per peck — reduce peck depth",
+                    d.per_peck_max_dtd
+                )
+            } else {
+                format!(
+                    "INADEQUATE at {:.1}× in one descent — switch to a peck cycle",
+                    d.per_peck_max_dtd
+                )
+            };
             anomalies.push(format!(
-                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× total / {:.1}× evacuation-credited (chip-welding risk {}), peck pattern {}.",
+                "ℹ drill cycle — engagement / air-cut% are not modeled. {} hole(s), {} peck(s), deepest hole {:.2} mm, depth-to-diameter {:.1}× total / {:.1}× evacuation-credited (chip-welding risk {}), peck pattern {}.{}",
                 d.hole_count,
                 d.peck_count,
                 d.deepest_hole_mm,
                 d.max_depth_to_diameter,
                 d.chip_welding_dtd,
                 risk,
-                if d.peck_pattern_adequate { "adequate" } else { "INADEQUATE — reduce peck depth" },
+                peck_verdict,
+                bars,
             ));
             // Cycle-time + chip-evacuation breakdown (one line, all
             // drill-natural metrics — no engagement or air-cut here).
@@ -1075,7 +1874,13 @@ fn append_air_cut_anomaly(
     }
     // Milling-side path: pull the per-toolpath cutting / air-cut / engagement
     // numbers; bail out cleanly if no summary exists (e.g. zero cutting time).
-    let Some((air_cut_time_s, cutting_time_s, average_engagement)) =
+    //
+    // LH-1: air cut has two denominators and both ship. This line reports the
+    // CUTTING-time reading (what it has always reported, and what CLAUDE.md's
+    // metric caveats describe) and now prints the TOTAL-runtime reading beside
+    // it - the one the GUI banner and every `air_cut_high_threshold_pct` band
+    // are tuned against. Naming them is the whole fix: neither number moved.
+    let Some((air_pct_of_cutting, air_pct_of_total, cutting_time_s, average_engagement)) =
         cut_summary_metrics(trace, context)
     else {
         return;
@@ -1083,8 +1888,34 @@ fn append_air_cut_anomaly(
     if cutting_time_s <= 0.0 {
         return;
     }
-    let air_pct = air_cut_time_s / cutting_time_s * 100.0;
-    let marker = if air_pct > AIR_CUT_WARNING_PERCENT {
+    // D7 (census §3.5), ruled at Checkpoint D D-5: the marker follows the
+    // TOTAL-RUNTIME reading, like every other air-cut threshold in the
+    // workspace — the GUI's 20%, the CLI's 40%, and every per-operation band
+    // in `OperationType::air_cut_high_threshold_pct`. This line prints both
+    // numbers and used to set its ⚠ from the un-thresholded one, so a
+    // retract-heavy op could carry a warning marker that no shipped gate
+    // agreed with. The line still REPORTS the cutting-time reading, which is
+    // what it has always reported and what CLAUDE.md documents; only the
+    // marker moved, and no number changed.
+    // Checkpoint D Q2: when the engagement channel could not measure this
+    // pass, the percentage is not a reading and must not be printed as one.
+    // Narration is where these numbers get quoted back as evidence, so it is
+    // the last place that should publish a precise-looking figure the gates
+    // have already declined to act on.
+    if let (Some(report), Some(tp_id)) = (context.measurability, context.toolpath_id)
+        && let Some(reason) = {
+            let verdict = report.for_metric(tp_id, crate::sim_measurability::SimMetric::AirCut);
+            verdict.abstains().then(|| verdict.reason()).flatten()
+        }
+    {
+        anomalies.push(format!(
+            "ℹ air cut: NOT MEASURED — {} Collision detection, material removal \
+             and axial DOC are unaffected.",
+            reason.describe()
+        ));
+        return;
+    }
+    let marker = if air_pct_of_total > AIR_CUT_WARNING_PERCENT {
         "⚠"
     } else {
         "ℹ"
@@ -1104,7 +1935,12 @@ fn append_air_cut_anomaly(
                 | OperationType::RampFinish
                 | OperationType::SpiralFinish
                 | OperationType::RadialFinish
-                | OperationType::HorizontalFinish,
+                | OperationType::HorizontalFinish
+                // R-5 (census §3.5 D8): `UnifiedFinish` is in the 3D-finish
+                // air-cut band in `catalog.rs` but was missing here, so the
+                // one op most likely to post a high reading got the empty
+                // hint.
+                | OperationType::UnifiedFinish,
             ) => {
                 " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
             }
@@ -1118,15 +1954,22 @@ fn append_air_cut_anomaly(
         }
     };
     anomalies.push(format!(
-        "{marker} {:.1}% of cutting time is air-cut; average engagement {:.3}.{}",
-        air_pct, average_engagement, hint
+        "{marker} {:.1}% of CUTTING time is air-cut ({:.1}% of TOTAL runtime, the measure \
+         the GUI banner and the per-operation thresholds use); average engagement {:.3}.{}",
+        air_pct_of_cutting, air_pct_of_total, average_engagement, hint
     ));
 }
 
+/// `(air-cut % of CUTTING time, air-cut % of TOTAL runtime, cutting seconds,
+/// average engagement)` for the narrated toolpath, or the whole trace when no
+/// toolpath is pinned. Both percentages are returned because both ship under
+/// the name "air cut %" (`MEASUREMENT_DOMAINS.md` LH-1); a caller that takes
+/// only one must say which in its output.
 fn cut_summary_metrics(
     trace: &SimulationCutTrace,
     context: &ToolpathNarrationContext<'_>,
-) -> Option<(f64, f64, f64)> {
+) -> Option<(f64, f64, f64, f64)> {
+    use crate::simulation_cut::AirCutRatios;
     if let Some(id) = context.toolpath_id {
         return trace
             .toolpath_summaries
@@ -1134,14 +1977,16 @@ fn cut_summary_metrics(
             .find(|summary| summary.toolpath_id == id)
             .map(|summary| {
                 (
-                    summary.air_cut_time_s,
+                    summary.air_cut_pct_of_cutting_time(),
+                    summary.air_cut_pct_of_total_runtime(),
                     summary.cutting_runtime_s,
                     summary.average_engagement,
                 )
             });
     }
     Some((
-        trace.summary.air_cut_time_s,
+        trace.summary.air_cut_pct_of_cutting_time(),
+        trace.summary.air_cut_pct_of_total_runtime(),
         trace.summary.cutting_runtime_s,
         trace.summary.average_engagement,
     ))
@@ -1219,6 +2064,7 @@ mod tests {
         let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
         let trace = SimulationCutTrace::from_samples(1.0, vec![sample(ToolpathId(7), 1, 8.0, 0.0)]);
         let context = ToolpathNarrationContext {
+            measurability: None,
             toolpath_id: Some(ToolpathId(7)),
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),
@@ -1231,6 +2077,19 @@ mod tests {
             flute_count: Some(2),
             is_drill_cycle: false,
             material: None,
+            // Adaptive3d runs no ring cascade: not measured.
+            truncated_core_mm2: None,
+            untouched_material_mm2: None,
+            reached_uncut_estimate_mm2: None,
+            // Nor bands, nor centrelines (Wave D1): not measured either.
+            dropped_band: None,
+            clipped_band: None,
+            ramp_reach_clamp: None,
+            tip_float: None,
+            zero_removal: None,
+            offset_library_failures: None,
+            boundary_clip_dropped: None,
+            retract_trips: None,
         };
 
         let report = narrate_toolpath_with_context(
@@ -1245,9 +2104,53 @@ mod tests {
         assert!(report.contains("perimeter sweep"));
         assert!(report.contains("axial DOC"));
         assert!(report.contains("Anomalies"));
-        assert!(report.contains("tool_radius"));
+        // PR-2 (H1) renamed the printed label: "tool_radius" was ambiguous
+        // between the envelope and the cutting-tip scale. The threshold is
+        // and stays ENVELOPE-relative (§5 / H2.6).
+        assert!(report.contains("envelope_radius"));
         assert!(report.contains("Operation context"));
         assert!(report.contains("Engagement distribution"));
+        // A/M9: an op with no cascade still gets a line — silence would be
+        // indistinguishable from a measured zero.
+        assert!(report.contains("Standing material: not measured"));
+    }
+
+    /// A/M9: the three standing-material states must READ differently.
+    /// A number, a measured none, and an absent measurement are three
+    /// different facts, and the one that used to be missing entirely
+    /// (`Some(a)`) is the one that shipped a raised island.
+    #[test]
+    fn truncated_core_line_distinguishes_all_three_states() {
+        let mut standing = String::new();
+        append_truncated_core(&mut standing, Some(837.0));
+        assert!(standing.contains("837 mm² left UNCUT"), "{standing}");
+        assert!(standing.contains("Report-only"), "{standing}");
+        assert!(
+            standing.contains(crate::compute::config::TRUNCATED_CORE_DOMAIN),
+            "the number must declare its domain: {standing}"
+        );
+
+        let mut clean = String::new();
+        append_truncated_core(&mut clean, Some(0.0));
+        assert!(clean.contains("Standing material: none"), "{clean}");
+        assert!(clean.contains("measured"), "{clean}");
+
+        let mut unknown = String::new();
+        append_truncated_core(&mut unknown, None);
+        assert!(
+            unknown.contains("Standing material: not measured"),
+            "{unknown}"
+        );
+        assert!(
+            unknown.contains("Absence of a number is not a zero"),
+            "the silent-zero trap must be named where a reader will hit it: {unknown}"
+        );
+
+        // A sliver below the floor is not an island — same floor as the
+        // diagnostics adapter, so the two surfaces cannot disagree.
+        let mut sliver = String::new();
+        append_truncated_core(&mut sliver, Some(0.5));
+        assert!(sliver.contains("Standing material: none"), "{sliver}");
     }
 
     #[test]
@@ -1365,12 +2268,12 @@ mod tests {
 
     fn one_region_semantic_trace(z_level: f64) -> ToolpathSemanticTrace {
         let mut params = ToolpathSemanticParams::default();
-        params.insert("z_level", z_level);
-        params.insert("marching_squares_regions", 1usize);
-        params.insert("region_areas_mm2", vec![42.0_f64]);
-        params.insert("perimeter_sweep_length_mm", 123.0_f64);
-        params.insert("agent_walk_cut_length_mm", 456.0_f64);
-        params.insert("residual_cleanup_cell_count", 0usize);
+        params.insert(SemanticKey::ZLevel, z_level);
+        params.insert(SemanticKey::MarchingSquaresRegions, 1usize);
+        params.insert(SemanticKey::RegionAreasMm2, vec![42.0_f64]);
+        params.insert(SemanticKey::PerimeterSweepLengthMm, 123.0_f64);
+        params.insert(SemanticKey::AgentWalkCutLengthMm, 456.0_f64);
+        params.insert(SemanticKey::ResidualCleanupCellCount, 0usize);
         ToolpathSemanticTrace {
             schema_version: crate::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION,
             toolpath_name: "Back Rough".to_owned(),

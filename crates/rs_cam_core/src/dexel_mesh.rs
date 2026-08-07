@@ -1194,7 +1194,7 @@ mod tests {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 110.0, 110.0, 0.0, stock_h, 1.0);
 
         let tool = FlatEndmill::new(6.35, 25.0);
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
 
         // Top cut: ray_top → 7.
         stock.stamp_tool_at(
@@ -1254,7 +1254,10 @@ mod tests {
         let z_only_mesh = dexel_stock_to_mesh(&stock);
 
         let tool = FlatEndmill::new(4.0, 20.0);
-        let lut = crate::radial_profile::RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = crate::radial_profile::RadialProfileLUT::from_cutter(
+            &tool,
+            crate::radial_profile::LUT_SAMPLES,
+        );
         stock.stamp_tool_at(
             &lut,
             tool.radius(),

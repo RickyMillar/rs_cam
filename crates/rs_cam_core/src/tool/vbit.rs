@@ -119,6 +119,17 @@ impl MillingCutter for VBitEndmill {
         }
     }
 
+    /// Engaged diameter at `axial_doc_mm`, used by the vendor-LUT
+    /// chipload gate/lookup path.
+    ///
+    /// This is the trait-level twin of
+    /// [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]'s
+    /// `VBit` branch (feeds/mod.rs) — same cone-width geometry,
+    /// hand-maintained separately because Suggest's call site only
+    /// carries a `ToolGeometryHint`, not a cutter instance. Kept honest
+    /// by the parity sentry
+    /// `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+    /// (planning/finishing_stack_review_2026-07.md S.3).
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
         (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
     }

@@ -13,9 +13,15 @@
 //! - Correct loop count (nested contours, multiple disconnected loops)
 //! - Deterministic (no proximity heuristic)
 //! - O(N) contour extraction (vs O(N²) nearest-neighbor)
+//!
+//! Cell classification, saddle resolution, and segment chaining are shared
+//! with `boundary::model_silhouette` via the `marching_squares` module —
+//! see that module's doc for the corner/edge convention and the saddle
+//! tie-break used by both marching-squares variants in this file.
 
 use crate::fiber::Fiber;
 use crate::geo::{P2, P3};
+use crate::marching_squares::{self, cell_case, cell_segments};
 
 /// Build a boolean grid from fiber intervals and extract contour loops
 /// using marching squares.
@@ -44,11 +50,16 @@ pub fn weave_contours(x_fibers: &[Fiber], y_fibers: &[Fiber], z: f64) -> Vec<Vec
     // grid[row][col] = true means "inside" (cutter blocked here)
     let grid = build_boolean_grid(x_fibers, y_fibers);
 
-    // Run marching squares to extract contour segments
-    let segments = marching_squares(&grid, n_rows, n_cols, x_fibers, y_fibers, z);
+    // Run marching squares to extract contour segments (2D — Z is constant
+    // for a single weave_contours call, so it's carried separately rather
+    // than through the shared chainer).
+    let segments = fiber_marching_squares(&grid, n_rows, n_cols, x_fibers, y_fibers);
 
-    // Chain segments into closed loops
-    chain_segments(&segments)
+    // Chain segments into closed 2D loops, then attach the constant Z.
+    marching_squares::chain_segments(&segments)
+        .into_iter()
+        .map(|loop2d| loop2d.into_iter().map(|p| P3::new(p.x, p.y, z)).collect())
+        .collect()
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -80,29 +91,29 @@ fn build_boolean_grid(x_fibers: &[Fiber], y_fibers: &[Fiber]) -> Vec<Vec<bool>> 
     grid
 }
 
-/// A contour segment — a line between two points on the grid boundary.
-#[derive(Debug, Clone)]
-struct Segment {
-    p1: P3,
-    p2: P3,
-}
-
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Run marching squares on the boolean grid.
-/// Returns line segments at boundaries between inside/outside cells.
-fn marching_squares(
+/// Returns 2D line segments at boundaries between inside/outside cells (Z is
+/// constant across a single weave and is reattached by the caller).
+///
+/// Grid orientation: cell `(r, c)` has corners `bl = grid[r][c]`,
+/// `br = grid[r][c+1]`, `tr = grid[r+1][c+1]`, `tl = grid[r+1][c]` — i.e.
+/// increasing row index moves away from the grid origin ("up"). This is the
+/// same local frame `marching_squares::cell_case` expects, so no adapter is
+/// needed here (see that module's doc for why the *other* marching-squares
+/// entry point in this file, `ms_bool_segments`, indexes rows the opposite
+/// way and still agrees).
+fn fiber_marching_squares(
     grid: &[Vec<bool>],
     n_rows: usize,
     n_cols: usize,
     x_fibers: &[Fiber],
     y_fibers: &[Fiber],
-    z: f64,
-) -> Vec<Segment> {
+) -> Vec<(P2, P2)> {
     let mut segments = Vec::new();
 
     // Marching squares operates on cells between grid vertices.
     // Grid vertex (row, col) maps to the intersection of x_fiber[row] and y_fiber[col].
-    // Cell (r, c) has corners at (r,c), (r,c+1), (r+1,c+1), (r+1,c).
     for r in 0..n_rows.saturating_sub(1) {
         for c in 0..n_cols.saturating_sub(1) {
             // The 4 corners of this cell (in CCW order from bottom-left)
@@ -111,79 +122,22 @@ fn marching_squares(
             let tr = grid[r + 1][c + 1]; // top-right
             let tl = grid[r + 1][c]; // top-left
 
-            // Marching squares case index (4-bit)
-            let case = (bl as u8) | ((br as u8) << 1) | ((tr as u8) << 2) | ((tl as u8) << 3);
-
-            if case == 0 || case == 15 {
-                continue; // All inside or all outside — no contour
+            let case = cell_case(bl, br, tr, tl);
+            let edges = cell_segments(case);
+            if edges.is_empty() {
+                continue;
             }
 
-            // Edge midpoints (exact positions from fiber geometry)
-            // Bottom edge: between (r,c) and (r,c+1)
-            let bottom = edge_point_x(x_fibers, y_fibers, r, c, c + 1, z);
-            // Right edge: between (r,c+1) and (r+1,c+1)
-            let right = edge_point_y(x_fibers, y_fibers, c + 1, r, r + 1, z);
-            // Top edge: between (r+1,c) and (r+1,c+1)
-            let top = edge_point_x(x_fibers, y_fibers, r + 1, c, c + 1, z);
-            // Left edge: between (r,c) and (r+1,c)
-            let left = edge_point_y(x_fibers, y_fibers, c, r, r + 1, z);
+            // Edge midpoints (exact positions from fiber geometry).
+            // Left = bl-tl, Bottom = bl-br, Right = br-tr, Top = tl-tr.
+            let bottom = edge_point_x(x_fibers, y_fibers, r, c, c + 1);
+            let right = edge_point_y(x_fibers, y_fibers, c + 1, r, r + 1);
+            let top = edge_point_x(x_fibers, y_fibers, r + 1, c, c + 1);
+            let left = edge_point_y(x_fibers, y_fibers, c, r, r + 1);
+            let pts = [left, bottom, right, top];
 
-            // Generate segments based on the case
-            match case {
-                1 => segments.push(Segment {
-                    p1: bottom,
-                    p2: left,
-                }),
-                2 => segments.push(Segment {
-                    p1: right,
-                    p2: bottom,
-                }),
-                3 => segments.push(Segment {
-                    p1: right,
-                    p2: left,
-                }),
-                4 => segments.push(Segment { p1: top, p2: right }),
-                5 => {
-                    // Saddle case — disambiguate by center value
-                    // Use average of corners as center test
-                    segments.push(Segment {
-                        p1: bottom,
-                        p2: right,
-                    });
-                    segments.push(Segment { p1: top, p2: left });
-                }
-                6 => segments.push(Segment {
-                    p1: top,
-                    p2: bottom,
-                }),
-                7 => segments.push(Segment { p1: top, p2: left }),
-                8 => segments.push(Segment { p1: left, p2: top }),
-                9 => segments.push(Segment {
-                    p1: bottom,
-                    p2: top,
-                }),
-                10 => {
-                    // Saddle case — disambiguate
-                    segments.push(Segment {
-                        p1: left,
-                        p2: bottom,
-                    });
-                    segments.push(Segment { p1: right, p2: top });
-                }
-                11 => segments.push(Segment { p1: right, p2: top }),
-                12 => segments.push(Segment {
-                    p1: left,
-                    p2: right,
-                }),
-                13 => segments.push(Segment {
-                    p1: bottom,
-                    p2: right,
-                }),
-                14 => segments.push(Segment {
-                    p1: left,
-                    p2: bottom,
-                }),
-                _ => {} // 0 and 15 already handled
+            for &(a, b) in edges {
+                segments.push((pts[a as usize], pts[b as usize]));
             }
         }
     }
@@ -200,8 +154,7 @@ fn edge_point_x(
     row: usize,
     col_a: usize,
     col_b: usize,
-    z: f64,
-) -> P3 {
+) -> P2 {
     let x_fiber = &x_fibers[row];
     let xa = y_fibers[col_a].p1.x;
     let xb = y_fibers[col_b].p1.x;
@@ -211,7 +164,7 @@ fn edge_point_x(
     let y = x_fiber.p1.y;
     let boundary_x = find_interval_boundary_x(x_fiber, xa, xb);
 
-    P3::new(boundary_x, y, z)
+    P2::new(boundary_x, y)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -222,8 +175,7 @@ fn edge_point_y(
     col: usize,
     row_a: usize,
     row_b: usize,
-    z: f64,
-) -> P3 {
+) -> P2 {
     let y_fiber = &y_fibers[col];
     let ya = x_fibers[row_a].p1.y;
     let yb = x_fibers[row_b].p1.y;
@@ -231,7 +183,7 @@ fn edge_point_y(
     let x = y_fiber.p1.x;
     let boundary_y = find_interval_boundary_y(y_fiber, ya, yb);
 
-    P3::new(x, boundary_y, z)
+    P2::new(x, boundary_y)
 }
 
 /// Find the exact X-coordinate where an interval boundary lies between xa and xb.
@@ -274,142 +226,9 @@ fn find_interval_boundary_y(fiber: &Fiber, ya: f64, yb: f64) -> f64 {
     (ya + yb) * 0.5
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Chain segments into closed loops by matching endpoints.
-///
-/// Uses a spatial hash map on quantized endpoints for O(1) neighbor lookup
-/// instead of O(n) linear scan per chain link.
-fn chain_segments(segments: &[Segment]) -> Vec<Vec<P3>> {
-    use std::collections::HashMap;
-
-    if segments.is_empty() {
-        return Vec::new();
-    }
-
-    let eps = 1e-6;
-    let n = segments.len();
-
-    // Quantize a coordinate to an integer grid at epsilon scale.
-    // Use 1e-5 grid (10× epsilon) so nearby points land in same or adjacent cells.
-    let quantize = |v: f64| -> i64 { (v * 1e5).round() as i64 };
-    type GridKey = (i64, i64);
-
-    // Build spatial index: map from quantized (x,y) → list of (segment_index, endpoint_id).
-    // endpoint_id: 0 = p1, 1 = p2.
-    let mut index: HashMap<GridKey, Vec<(usize, u8)>> = HashMap::with_capacity(n * 2);
-    for (i, seg) in segments.iter().enumerate() {
-        let k1 = (quantize(seg.p1.x), quantize(seg.p1.y));
-        let k2 = (quantize(seg.p2.x), quantize(seg.p2.y));
-        index.entry(k1).or_default().push((i, 0));
-        index.entry(k2).or_default().push((i, 1));
-    }
-
-    let mut used = vec![false; n];
-    let mut loops = Vec::new();
-
-    for start_idx in 0..n {
-        if used[start_idx] {
-            continue;
-        }
-        used[start_idx] = true;
-        let mut chain = vec![segments[start_idx].p1, segments[start_idx].p2];
-
-        let max_iterations = n + 1;
-        for _ in 0..max_iterations {
-            let tail = chain[chain.len() - 1];
-
-            // Check if we've closed the loop.
-            let head = chain[0];
-            let dx = tail.x - head.x;
-            let dy = tail.y - head.y;
-            if chain.len() >= 3 && dx * dx + dy * dy < eps * eps {
-                chain.pop();
-                break;
-            }
-
-            // Lookup neighbors in the spatial index (check 3×3 grid cells).
-            let qx = quantize(tail.x);
-            let qy = quantize(tail.y);
-            let mut found = false;
-
-            'search: for dx_cell in -1i64..=1 {
-                for dy_cell in -1i64..=1 {
-                    let key = (qx + dx_cell, qy + dy_cell);
-                    if let Some(entries) = index.get(&key) {
-                        for &(seg_idx, endpoint) in entries {
-                            if used[seg_idx] {
-                                continue;
-                            }
-                            let seg = &segments[seg_idx];
-                            let (match_pt, other_pt) = if endpoint == 0 {
-                                (seg.p1, seg.p2)
-                            } else {
-                                (seg.p2, seg.p1)
-                            };
-                            let d = (match_pt.x - tail.x).powi(2) + (match_pt.y - tail.y).powi(2);
-                            if d < eps * eps {
-                                chain.push(other_pt);
-                                used[seg_idx] = true;
-                                found = true;
-                                break 'search;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !found {
-                break;
-            }
-        }
-
-        if chain.len() >= 3 {
-            loops.push(chain);
-        }
-    }
-
-    loops
-}
-
 // ---------------------------------------------------------------------------
 // Standalone marching squares for boolean grids (2D, no fiber dependency)
 // ---------------------------------------------------------------------------
-
-/// A 2D contour segment between two points on the grid boundary.
-#[derive(Debug, Clone)]
-struct Segment2D {
-    p1: P2,
-    p2: P2,
-}
-
-/// The 16 marching squares cases encoded as edge pairs.
-///
-/// Each 2x2 cell block has four edges:
-/// - Left (0):   between (row, col) and (row+1, col)
-/// - Bottom (1): between (row+1, col) and (row+1, col+1)
-/// - Right (2):  between (row, col+1) and (row+1, col+1)
-/// - Top (3):    between (row, col) and (row, col+1)
-///
-/// Each case maps to 0, 1, or 2 segments expressed as pairs of edge indices.
-/// Saddle cases (5, 10) emit two segments each.
-const MS_CASES: [&[(u8, u8)]; 16] = [
-    &[],               // 0:  0000
-    &[(0, 1)],         // 1:  0001 — left-bottom
-    &[(1, 2)],         // 2:  0010 — bottom-right
-    &[(0, 2)],         // 3:  0011 — left-right
-    &[(2, 3)],         // 4:  0100 — right-top
-    &[(0, 3), (1, 2)], // 5:  0101 — saddle: left-top + bottom-right
-    &[(1, 3)],         // 6:  0110 — bottom-top
-    &[(0, 3)],         // 7:  0111 — left-top
-    &[(3, 0)],         // 8:  1000 — top-left
-    &[(1, 3)],         // 9:  1001 — top-bottom (equivalent: bottom-top)
-    &[(0, 1), (2, 3)], // 10: 1010 — saddle: left-bottom + right-top
-    &[(2, 3)],         // 11: 1011 — right-top (== top-right)
-    &[(2, 0)],         // 12: 1100 — right-left
-    &[(1, 2)],         // 13: 1101 — bottom-right (== right-bottom)
-    &[(0, 1)],         // 14: 1110 — left-bottom (== bottom-left)
-    &[],               // 15: 1111
-];
 
 /// Extract 2D contour loops from a boolean grid using marching squares.
 ///
@@ -432,10 +251,20 @@ pub fn marching_squares_bool_grid(
     }
 
     let segments = ms_bool_segments(grid, rows, cols, origin_x, origin_y, cell_size);
-    chain_segments_2d(&segments)
+    marching_squares::chain_segments(&segments)
 }
 
 /// Build marching-squares segments from a flat boolean grid.
+///
+/// Grid orientation: cell `(r, c)` has corners `tl = grid[r*cols+c]`,
+/// `tr = grid[r*cols+c+1]`, `br = grid[(r+1)*cols+c+1]`, `bl = grid[(r+1)*cols+c]`
+/// — i.e. increasing row index moves the OPPOSITE way from `fiber_marching_squares`
+/// above (image/raster convention rather than "row increases up"). That's
+/// just a labeling choice at this call site: the corners are still fed into
+/// `cell_case`/`cell_segments` as `(bl, br, tr, tl)`, and the edge-midpoint
+/// array below (`[left, bottom, right, top]`) already lines up with those
+/// local labels (Left = bl-tl, Bottom = bl-br, Right = br-tr, Top = tl-tr),
+/// so no further adapter is needed. See `marching_squares`'s module doc.
 #[allow(clippy::indexing_slicing)] // SAFETY: row/col bounded by loop ranges checked above
 fn ms_bool_segments(
     grid: &[bool],
@@ -444,7 +273,7 @@ fn ms_bool_segments(
     origin_x: f64,
     origin_y: f64,
     cell_size: f64,
-) -> Vec<Segment2D> {
+) -> Vec<(P2, P2)> {
     let mut segments = Vec::new();
 
     // Marching squares iterates over (rows-1) x (cols-1) cells.
@@ -459,12 +288,8 @@ fn ms_bool_segments(
             let br = grid[(r + 1) * cols + (c + 1)];
             let bl = grid[(r + 1) * cols + c];
 
-            // Case index: bit0=BL, bit1=BR, bit2=TR, bit3=TL
-            let case_idx =
-                (bl as usize) | ((br as usize) << 1) | ((tr as usize) << 2) | ((tl as usize) << 3);
-
-            // SAFETY: case_idx is 0..15, MS_CASES has exactly 16 entries
-            let edges = MS_CASES[case_idx];
+            let case = cell_case(bl, br, tr, tl);
+            let edges = cell_segments(case);
             if edges.is_empty() {
                 continue;
             }
@@ -505,302 +330,12 @@ fn ms_bool_segments(
 
             for &(a, b) in edges {
                 // SAFETY: a, b are 0..3 from the lookup table
-                segments.push(Segment2D {
-                    p1: edge_pts[a as usize],
-                    p2: edge_pts[b as usize],
-                });
+                segments.push((edge_pts[a as usize], edge_pts[b as usize]));
             }
         }
     }
 
     segments
-}
-
-/// Chain a set of unordered 2D line segments into closed loops.
-///
-/// Uses a spatial hash map on quantized endpoints for O(1) neighbor lookup.
-/// Returns `Vec<Vec<P2>>` where each inner vec is a closed contour loop.
-#[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by segment count
-fn chain_segments_2d(segments: &[Segment2D]) -> Vec<Vec<P2>> {
-    use std::collections::HashMap;
-
-    if segments.is_empty() {
-        return Vec::new();
-    }
-
-    let eps = 1e-6;
-    let n = segments.len();
-
-    // Quantize a coordinate to an integer grid at epsilon scale.
-    let quantize = |v: f64| -> i64 { (v * 1e5).round() as i64 };
-    type GridKey = (i64, i64);
-
-    // Build spatial index: quantized (x, y) -> list of (segment_index, endpoint_id).
-    let mut index: HashMap<GridKey, Vec<(usize, u8)>> = HashMap::with_capacity(n * 2);
-    for (i, seg) in segments.iter().enumerate() {
-        let k1 = (quantize(seg.p1.x), quantize(seg.p1.y));
-        let k2 = (quantize(seg.p2.x), quantize(seg.p2.y));
-        index.entry(k1).or_default().push((i, 0));
-        index.entry(k2).or_default().push((i, 1));
-    }
-
-    let mut used = vec![false; n];
-    let mut loops: Vec<Vec<P2>> = Vec::new();
-
-    for start_idx in 0..n {
-        if used[start_idx] {
-            continue;
-        }
-        used[start_idx] = true;
-        let mut chain = vec![segments[start_idx].p1, segments[start_idx].p2];
-
-        let max_iterations = n + 1;
-        for _ in 0..max_iterations {
-            let tail = chain[chain.len() - 1];
-
-            // Check if loop is closed.
-            let head = chain[0];
-            let dx = tail.x - head.x;
-            let dy = tail.y - head.y;
-            if chain.len() >= 3 && dx * dx + dy * dy < eps * eps {
-                chain.pop();
-                break;
-            }
-
-            // Look up neighbors in the spatial index (3x3 grid cells).
-            let qx = quantize(tail.x);
-            let qy = quantize(tail.y);
-            let mut found = false;
-
-            'search: for dx_cell in -1i64..=1 {
-                for dy_cell in -1i64..=1 {
-                    let key = (qx + dx_cell, qy + dy_cell);
-                    if let Some(entries) = index.get(&key) {
-                        for &(seg_idx, endpoint) in entries {
-                            if used[seg_idx] {
-                                continue;
-                            }
-                            let seg = &segments[seg_idx];
-                            let (match_pt, other_pt) = if endpoint == 0 {
-                                (seg.p1, seg.p2)
-                            } else {
-                                (seg.p2, seg.p1)
-                            };
-                            let d = (match_pt.x - tail.x).powi(2) + (match_pt.y - tail.y).powi(2);
-                            if d < eps * eps {
-                                chain.push(other_pt);
-                                used[seg_idx] = true;
-                                found = true;
-                                break 'search;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !found {
-                break;
-            }
-        }
-
-        if chain.len() >= 3 {
-            loops.push(chain);
-        }
-    }
-
-    loops
-}
-
-// ---------------------------------------------------------------------------
-// Euclidean Distance Transform (Felzenszwalb & Huttenlocher 2004)
-// ---------------------------------------------------------------------------
-
-/// 1D parabola-envelope distance transform.
-///
-/// Input: `f[i] = 0.0` for source cells, `f[i] = very_large` for others.
-/// Output: `f[i] = squared_distance_to_nearest_source`.
-///
-/// Reference: Felzenszwalb & Huttenlocher, "Distance Transforms of Sampled
-/// Functions", Theory of Computing 2012.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by loop variables and n
-fn edt_1d(f: &mut [f64]) {
-    let n = f.len();
-    if n == 0 {
-        return;
-    }
-    let mut v = vec![0usize; n];
-    let mut z = vec![0.0f64; n + 1];
-    let mut k = 0usize;
-    z[0] = f64::NEG_INFINITY;
-    z[1] = f64::INFINITY;
-
-    for q in 1..n {
-        loop {
-            let vk = v[k];
-            let s = ((f[q] + (q * q) as f64) - (f[vk] + (vk * vk) as f64))
-                / (2.0 * (q as f64 - vk as f64));
-            if s > z[k] {
-                k += 1;
-                v[k] = q;
-                z[k] = s;
-                z[k + 1] = f64::INFINITY;
-                break;
-            }
-            if k == 0 {
-                v[0] = q;
-                z[1] = f64::INFINITY;
-                break;
-            }
-            k -= 1;
-        }
-    }
-
-    k = 0;
-    for q in 0..n {
-        while z[k + 1] < q as f64 {
-            k += 1;
-        }
-        let vk = v[k];
-        f[q] = (q as f64 - vk as f64).powi(2) + f[vk];
-    }
-}
-
-/// 2D Euclidean Distance Transform on a boolean grid.
-///
-/// Returns the Euclidean distance (in cell units) from each cell to the
-/// nearest `true` cell. Uses two-pass separable 1D EDT
-/// (Felzenszwalb & Huttenlocher 2004) — O(rows * cols) total.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by rows/cols loop variables
-pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64> {
-    let total = rows * cols;
-    let big = (rows * rows + cols * cols) as f64; // larger than any possible distance^2
-    let mut dist = vec![0.0f64; total];
-
-    // Initialize: source cells (true) = 0, others = big
-    for (d, g) in dist.iter_mut().zip(grid.iter()) {
-        *d = if *g { 0.0 } else { big };
-    }
-
-    // Horizontal pass
-    for r in 0..rows {
-        let start = r * cols;
-        edt_1d(&mut dist[start..start + cols]);
-    }
-
-    // Vertical pass (column by column with temp buffer)
-    let mut col_buf = vec![0.0f64; rows];
-    for c in 0..cols {
-        for r in 0..rows {
-            col_buf[r] = dist[r * cols + c];
-        }
-        edt_1d(&mut col_buf);
-        for r in 0..rows {
-            dist[r * cols + c] = col_buf[r];
-        }
-    }
-
-    // Convert squared distances to actual distances
-    for d in &mut dist {
-        *d = d.sqrt();
-    }
-
-    dist
-}
-
-/// Compute the curvature of EDT level-set curves at each grid cell.
-///
-/// Uses the standard level-set curvature formula:
-///   κ = (d_xx·d_y² − 2·d_xy·d_x·d_y + d_yy·d_x²) / (d_x² + d_y²)^(3/2)
-///
-/// where d_x, d_y are first partial derivatives and d_xx, d_yy, d_xy are
-/// second partial derivatives of the distance field, computed via finite
-/// differences.
-///
-/// Returns curvature in cell⁻¹ units (positive = convex, negative = concave).
-/// Cells where the gradient magnitude is near zero (flat regions, medial axis)
-/// are set to κ = 0.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
-pub fn edt_curvature_field(edt: &[f64], rows: usize, cols: usize) -> Vec<f64> {
-    let total = rows * cols;
-    let mut curvature = vec![0.0f64; total];
-
-    if rows < 3 || cols < 3 {
-        return curvature;
-    }
-
-    // Interior cells: central differences (rows 1..rows-1, cols 1..cols-1)
-    for r in 1..rows - 1 {
-        for c in 1..cols - 1 {
-            let idx = r * cols + c;
-            let zc = edt[idx];
-            let zl = edt[idx - 1];
-            let zr = edt[idx + 1];
-            let zu = edt[(r - 1) * cols + c];
-            let zd = edt[(r + 1) * cols + c];
-            let zul = edt[(r - 1) * cols + c - 1];
-            let zur = edt[(r - 1) * cols + c + 1];
-            let zdl = edt[(r + 1) * cols + c - 1];
-            let zdr = edt[(r + 1) * cols + c + 1];
-
-            // First derivatives (central differences, cell_size = 1)
-            let dx = (zr - zl) * 0.5;
-            let dy = (zd - zu) * 0.5;
-
-            // Second derivatives
-            let dxx = zr - 2.0 * zc + zl;
-            let dyy = zd - 2.0 * zc + zu;
-            let dxy = (zdr - zdl - zur + zul) * 0.25;
-
-            // Gradient magnitude squared
-            let grad_sq = dx * dx + dy * dy;
-            if grad_sq < 1e-12 {
-                // Near medial axis or flat region — curvature undefined
-                continue;
-            }
-
-            // Level-set curvature
-            let numer = dxx * dy * dy - 2.0 * dxy * dx * dy + dyy * dx * dx;
-            let denom = grad_sq * grad_sq.sqrt(); // (grad_sq)^(3/2)
-            curvature[idx] = numer / denom;
-        }
-    }
-
-    curvature
-}
-
-/// Box-blur smooth a 2D grid in place.
-///
-/// `radius` is the half-width of the kernel (e.g. radius=2 → 5×5 kernel).
-/// Boundary cells within `radius` of the edge are left unchanged.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
-pub fn smooth_grid(grid: &mut [f64], rows: usize, cols: usize, radius: usize) {
-    if radius == 0 || rows <= 2 * radius || cols <= 2 * radius {
-        return;
-    }
-    let total = rows * cols;
-    let mut tmp = vec![0.0f64; total];
-    let side = 2 * radius + 1;
-    let inv_area = 1.0 / (side * side) as f64;
-
-    for r in radius..rows - radius {
-        for c in radius..cols - radius {
-            let mut sum = 0.0;
-            for dr in 0..side {
-                let row_off = (r + dr - radius) * cols;
-                for dc in 0..side {
-                    sum += grid[row_off + c + dc - radius];
-                }
-            }
-            tmp[r * cols + c] = sum * inv_area;
-        }
-    }
-
-    // Copy smoothed interior back; boundary retains original values
-    for r in radius..rows - radius {
-        let start = r * cols + radius;
-        let end = r * cols + cols - radius;
-        grid[start..end].copy_from_slice(&tmp[start..end]);
-    }
 }
 
 #[cfg(test)]
@@ -895,25 +430,13 @@ mod tests {
     fn test_chain_segments_closed_loop() {
         // Create a simple square of segments that should form one closed loop
         let segments = vec![
-            Segment {
-                p1: P3::new(0.0, 0.0, 0.0),
-                p2: P3::new(1.0, 0.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(1.0, 0.0, 0.0),
-                p2: P3::new(1.0, 1.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(1.0, 1.0, 0.0),
-                p2: P3::new(0.0, 1.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(0.0, 1.0, 0.0),
-                p2: P3::new(0.0, 0.0, 0.0),
-            },
+            (P2::new(0.0, 0.0), P2::new(1.0, 0.0)),
+            (P2::new(1.0, 0.0), P2::new(1.0, 1.0)),
+            (P2::new(1.0, 1.0), P2::new(0.0, 1.0)),
+            (P2::new(0.0, 1.0), P2::new(0.0, 0.0)),
         ];
 
-        let loops = chain_segments(&segments);
+        let loops = marching_squares::chain_segments(&segments);
         assert_eq!(loops.len(), 1, "Should form one closed loop");
         assert_eq!(loops[0].len(), 4, "Loop should have 4 points");
     }
@@ -923,42 +446,18 @@ mod tests {
         // Two separate squares
         let segments = vec![
             // Square 1
-            Segment {
-                p1: P3::new(0.0, 0.0, 0.0),
-                p2: P3::new(1.0, 0.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(1.0, 0.0, 0.0),
-                p2: P3::new(1.0, 1.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(1.0, 1.0, 0.0),
-                p2: P3::new(0.0, 1.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(0.0, 1.0, 0.0),
-                p2: P3::new(0.0, 0.0, 0.0),
-            },
+            (P2::new(0.0, 0.0), P2::new(1.0, 0.0)),
+            (P2::new(1.0, 0.0), P2::new(1.0, 1.0)),
+            (P2::new(1.0, 1.0), P2::new(0.0, 1.0)),
+            (P2::new(0.0, 1.0), P2::new(0.0, 0.0)),
             // Square 2 (far away)
-            Segment {
-                p1: P3::new(10.0, 10.0, 0.0),
-                p2: P3::new(11.0, 10.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(11.0, 10.0, 0.0),
-                p2: P3::new(11.0, 11.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(11.0, 11.0, 0.0),
-                p2: P3::new(10.0, 11.0, 0.0),
-            },
-            Segment {
-                p1: P3::new(10.0, 11.0, 0.0),
-                p2: P3::new(10.0, 10.0, 0.0),
-            },
+            (P2::new(10.0, 10.0), P2::new(11.0, 10.0)),
+            (P2::new(11.0, 10.0), P2::new(11.0, 11.0)),
+            (P2::new(11.0, 11.0), P2::new(10.0, 11.0)),
+            (P2::new(10.0, 11.0), P2::new(10.0, 10.0)),
         ];
 
-        let loops = chain_segments(&segments);
+        let loops = marching_squares::chain_segments(&segments);
         assert_eq!(loops.len(), 2, "Should form two separate loops");
     }
 
@@ -1103,124 +602,6 @@ mod tests {
         assert_ne!(
             len0, len1,
             "Outer and inner contours should have different point counts"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Tests for Euclidean Distance Transform
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_edt_1d_simple() {
-        // Source at center (index 5 of 11), all others large
-        let n = 11;
-        let big = (n * n) as f64;
-        let mut f = vec![big; n];
-        f[5] = 0.0;
-        edt_1d(&mut f);
-        // After EDT, f[i] should be squared distance to index 5
-        for (i, val) in f.iter().enumerate() {
-            let expected = ((i as f64) - 5.0).powi(2);
-            assert!(
-                (val - expected).abs() < 1e-9,
-                "edt_1d: f[{}] = {}, expected {}",
-                i,
-                val,
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_distance_transform_single_point() {
-        // 11x11 grid, single true cell at (5,5)
-        let rows = 11;
-        let cols = 11;
-        let mut grid = vec![false; rows * cols];
-        grid[5 * cols + 5] = true;
-
-        let dist = distance_transform_2d(&grid, rows, cols);
-
-        // Distance at (5,5) should be 0
-        assert!(
-            dist[5 * cols + 5].abs() < 1e-9,
-            "Distance at source should be 0"
-        );
-
-        // Distance at (5,6) should be 1.0
-        assert!(
-            (dist[5 * cols + 6] - 1.0).abs() < 1e-9,
-            "Distance one cell away should be 1.0, got {}",
-            dist[5 * cols + 6]
-        );
-
-        // Distance at (6,6) should be sqrt(2)
-        let expected_diag = std::f64::consts::SQRT_2;
-        assert!(
-            (dist[6 * cols + 6] - expected_diag).abs() < 1e-9,
-            "Distance diagonally should be sqrt(2), got {}",
-            dist[6 * cols + 6]
-        );
-
-        // Distance at (0,0) should be sqrt(50) = 5*sqrt(2)
-        let expected_corner = (50.0f64).sqrt();
-        assert!(
-            (dist[0] - expected_corner).abs() < 1e-9,
-            "Distance at corner (0,0) should be {}, got {}",
-            expected_corner,
-            dist[0]
-        );
-    }
-
-    #[test]
-    fn test_distance_transform_rectangle() {
-        // 10x10 grid, 6x6 true rectangle at rows 2..8, cols 2..8
-        let rows = 10;
-        let cols = 10;
-        let mut grid = vec![false; rows * cols];
-        for r in 2..8 {
-            for c in 2..8 {
-                grid[r * cols + c] = true;
-            }
-        }
-
-        let dist = distance_transform_2d(&grid, rows, cols);
-
-        // All true cells should have distance 0
-        for r in 2..8 {
-            for c in 2..8 {
-                assert!(
-                    dist[r * cols + c].abs() < 1e-9,
-                    "True cell ({},{}) should have distance 0, got {}",
-                    r,
-                    c,
-                    dist[r * cols + c]
-                );
-            }
-        }
-
-        // Cell at (1,5) is 1 row above the rectangle — distance = 1.0
-        let idx_1_5 = cols + 5;
-        assert!(
-            (dist[idx_1_5] - 1.0).abs() < 1e-9,
-            "Cell one row above rect should have distance 1.0, got {}",
-            dist[idx_1_5]
-        );
-
-        // Cell at (0,5) is 2 rows above — distance = 2.0
-        assert!(
-            (dist[5] - 2.0).abs() < 1e-9,
-            "Cell two rows above rect should have distance 2.0, got {}",
-            dist[5]
-        );
-
-        // Cell at (0,0) should be sqrt((2-0)^2 + (2-0)^2) = sqrt(8) = 2*sqrt(2)
-        let expected = (8.0f64).sqrt();
-        assert!(
-            (dist[0] - expected).abs() < 1e-9,
-            "Corner cell should have distance {}, got {}",
-            expected,
-            dist[0]
         );
     }
 }

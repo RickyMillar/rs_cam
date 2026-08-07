@@ -1,8 +1,33 @@
+# Anchoring policy (C10). An unanchored entry like `foo/` matches at EVERY
+# depth, so a build/scratch directory name silently swallows any source
+# directory that happens to share it. Every entry below that names a
+# specific ROOT artifact carries a leading slash; only genuinely global
+# patterns (build output, local tool state) are left unanchored.
+
 /target
-.claude/
-profile.json.gz
-demos/
-reference/
-fixtures/debug_adaptive/wanaka_diag.json
-EEPROM.DAT
-diagnostics/
+
+# Local Claude Code state. The project's CHECKED-IN customizations live
+# under `.claude/agents/` and `.claude/skills/` (see CLAUDE.md's "Agent
+# skills" table), so ignore the CONTENTS and re-include those two subtrees.
+# A blanket `.claude/` cannot be negated — git will not re-include a file
+# whose parent directory is excluded — and it had already eaten
+# `agents/sim-diagnostics.md` and `skills/sim-analysis/`: both documented in
+# CLAUDE.md, neither in the repo. Same failure as `/diagnostics/` below.
+**/.claude/*
+!**/.claude/agents/
+!**/.claude/skills/
+
+# Root-level artifacts, not name patterns. Anchored so a future
+# `crates/*/demos/` or `.../src/reference/` is not swallowed.
+/profile.json.gz
+/demos/
+/reference/
+/EEPROM.DAT
+/fixtures/debug_adaptive/wanaka_diag.json
+
+# Root-level diagnostics DUMP dir only (`rs_cam_cli`'s JSON export).
+# Unanchored, this also swallowed `crates/rs_cam_core/src/diagnostics/`,
+# which is how `adapters/from_generation.rs` was written, committed
+# against (mod.rs declares it) and yet never landed in the repo — HEAD
+# did not compile from a clean clone. Keep the leading slash.
+/diagnostics/

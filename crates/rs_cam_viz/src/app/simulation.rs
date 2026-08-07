@@ -525,7 +525,20 @@ fn peak_deflection_for_move(
         .iter()
         .filter(|sample| sample.toolpath_id == toolpath_id && sample.move_index == local_move)
         .filter_map(|sample| {
-            rs_cam_core::tool_load::deflection::sample_tip_deflection_mm(tool, material, sample)
+            // Effective feed per tooth (after kinematic prediction / F-039
+            // modulation), mirroring the deflection gate so the live colour
+            // matches the post-sim verdict.
+            let eff_feed =
+                rs_cam_core::tool_load::effective_feed_for_sample(sample, &trace.predicted_feeds);
+            let flutes = sample.flute_count.max(1) as f64;
+            let eff_fz = if sample.spindle_rpm > 0 {
+                eff_feed / (sample.spindle_rpm as f64 * flutes)
+            } else {
+                sample.chipload_mm_per_tooth
+            };
+            rs_cam_core::tool_load::deflection::sample_tip_deflection_mm(
+                tool, material, sample, eff_fz,
+            )
         })
         .max_by(f64::total_cmp)
 }

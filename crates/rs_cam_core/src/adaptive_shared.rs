@@ -3,10 +3,39 @@ use std::f64::consts::{PI, TAU};
 use crate::geo::P2;
 
 /// Compute the target engagement fraction from stepover and tool radius.
-pub(crate) fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
+///
+/// `pub` (not `pub(crate)`): the viz crate's "Optimal load" slider uses
+/// this and its inverse [`radial_woc_fraction_from_leading_arc`] to map
+/// between operator-facing leading-arc load and raw stepover.
+pub fn target_engagement_fraction(stepover: f64, tool_radius: f64) -> f64 {
     let woc = stepover.min(2.0 * tool_radius);
     let alpha = (1.0 - woc / tool_radius).clamp(-1.0, 1.0).acos();
     alpha / TAU
+}
+
+/// Convert a leading-arc engagement fraction (`α / 2π`, the quantity the
+/// adaptive planner predicts and [`target_engagement_fraction`] emits)
+/// into the radial width-of-cut fraction (`a_e / D`) the feed
+/// modulator's chip-thinning model consumes.
+///
+/// Inverse of [`target_engagement_fraction`]: that maps stepover → `α/2π`
+/// via `α = acos(1 − a_e/R)`; this maps the fraction back to
+/// `a_e/D = a_e/(2R) = (1 − cos(2π·f)) / 2`. The result is exactly the
+/// `radial_woc_fraction` field of
+/// [`crate::feed_modulation::PerMoveEngagement`] — `0.0` = air,
+/// `0.5` = half-immersion, `1.0` = full slot.
+///
+/// `f_arc` is clamped to `[0, 0.5]` (0.5 = full-slot leading arc, π
+/// radians of contact); values outside that band are non-physical for a
+/// leading-semicircle measure.
+///
+/// Stage 4 (planner-predicted engagement → feed modulation) wires this
+/// into `session::compute::apply_adaptive_feed_modulation`; see
+/// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4
+/// implementation spec".
+pub fn radial_woc_fraction_from_leading_arc(f_arc: f64) -> f64 {
+    let f = f_arc.clamp(0.0, 0.5);
+    (1.0 - (TAU * f).cos()) / 2.0
 }
 
 /// Average a buffer of angles, handling wraparound correctly.
@@ -256,4 +285,47 @@ pub(crate) fn blend_corners(path: &[P2], min_radius: f64) -> Vec<P2> {
 
     result.push(*path.last().expect("path has at least 3 elements"));
     result
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// The leading-arc → radial-WOC bridge must invert
+    /// `target_engagement_fraction` across the physical stepover range,
+    /// recovering the originating `a_e / D` fraction exactly.
+    #[test]
+    fn leading_arc_round_trips_target_engagement_fraction() {
+        let radius = 3.0_f64;
+        for &woc in &[0.3_f64, 0.6, 1.5, 3.0, 4.5, 6.0] {
+            let f_arc = target_engagement_fraction(woc, radius);
+            let recovered = radial_woc_fraction_from_leading_arc(f_arc);
+            let expected = woc.min(2.0 * radius) / (2.0 * radius);
+            assert!(
+                (recovered - expected).abs() < 1e-9,
+                "woc={woc}: f_arc={f_arc} recovered={recovered} expected={expected}"
+            );
+        }
+    }
+
+    /// Closed-form anchors: air, half-immersion, full slot.
+    #[test]
+    fn leading_arc_known_points() {
+        assert!(radial_woc_fraction_from_leading_arc(0.0).abs() < 1e-12);
+        assert!((radial_woc_fraction_from_leading_arc(0.25) - 0.5).abs() < 1e-12);
+        assert!((radial_woc_fraction_from_leading_arc(0.5) - 1.0).abs() < 1e-12);
+    }
+
+    /// Out-of-band inputs clamp to the physical [0, 1] WOC range.
+    #[test]
+    fn leading_arc_clamps_out_of_range() {
+        assert!((radial_woc_fraction_from_leading_arc(0.9) - 1.0).abs() < 1e-12);
+        assert!(radial_woc_fraction_from_leading_arc(-0.2).abs() < 1e-12);
+    }
 }

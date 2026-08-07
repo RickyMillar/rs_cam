@@ -44,6 +44,8 @@ pub fn load_model_file(
                 name,
                 mesh: Some(Arc::new(mesh)),
                 polygons: None,
+                drill_targets: Arc::new(Vec::new()),
+                layers: Arc::new(Vec::new()),
                 path: path.to_path_buf(),
                 kind: Some(kind),
                 units: Some(units),
@@ -61,6 +63,8 @@ pub fn load_model_file(
                 name,
                 mesh: None,
                 polygons: Some(Arc::new(polygons)),
+                drill_targets: Arc::new(Vec::new()),
+                layers: Arc::new(Vec::new()),
                 path: path.to_path_buf(),
                 kind: Some(kind),
                 units: Some(units),
@@ -70,14 +74,19 @@ pub fn load_model_file(
             })
         }
         ModelKind::Dxf => {
-            let mut polygons = crate::dxf_input::load_dxf(path, 5.0)
+            let import = crate::dxf_input::load_dxf_full(path, 5.0)
                 .map_err(|e| SessionError::Io(std::io::Error::other(e.to_string())))?;
+            let mut polygons = import.polygons;
+            let mut drill_targets = import.drill_targets;
             apply_uniform_scale_2d(&mut polygons, scale);
+            apply_uniform_scale_targets(&mut drill_targets, scale);
             Ok(LoadedModel {
                 id,
                 name,
                 mesh: None,
                 polygons: Some(Arc::new(polygons)),
+                drill_targets: Arc::new(drill_targets),
+                layers: Arc::new(import.layers),
                 path: path.to_path_buf(),
                 kind: Some(kind),
                 units: Some(units),
@@ -99,6 +108,8 @@ pub fn load_model_file(
                 name,
                 mesh: Some(mesh_arc),
                 polygons: None,
+                drill_targets: Arc::new(Vec::new()),
+                layers: Arc::new(Vec::new()),
                 path: path.to_path_buf(),
                 kind: Some(kind),
                 units: Some(ModelUnits::Millimeters),
@@ -142,6 +153,19 @@ fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64)
                 pt.x *= scale;
                 pt.y *= scale;
             }
+        }
+    }
+}
+
+fn apply_uniform_scale_targets(targets: &mut [crate::dxf_input::DrillTarget], scale: f64) {
+    if (scale - 1.0).abs() < 1e-9 {
+        return;
+    }
+    for t in targets {
+        t.x *= scale;
+        t.y *= scale;
+        if let crate::dxf_input::DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
+            *diameter *= scale;
         }
     }
 }

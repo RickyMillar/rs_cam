@@ -67,7 +67,7 @@ fn test_terrain_stl_to_gcode() {
     }
 
     // Generate toolpath
-    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None);
+    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 10.0, None, None);
     assert!(toolpath.moves.len() > 100);
     assert!(toolpath.total_cutting_distance() > 0.0);
 
@@ -101,7 +101,7 @@ fn test_programmatic_hemisphere_to_gcode() {
         center_cl.z
     );
 
-    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 25.0, None);
+    let toolpath = raster_toolpath_from_grid(&grid, 1000.0, 500.0, 25.0, None, None);
     let gcode = emit_gcode(&toolpath, post::grbl(), 18000);
     assert!(gcode.len() > 500);
 }
@@ -516,6 +516,8 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     // Match the Phase 2 probe: 6.35mm flat, stepover=2, z_blend=true,
     // ContourParallel. Use stock_top_z just above the mesh top.
     let params = Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: tool.radius(),
         envelope_radius: tool.radius(),
         stepover: 2.0,

@@ -579,9 +579,38 @@ fn janka_to_drill_chip_welding_dtd(janka_lbf: f64) -> f64 {
 /// readily and tolerate deep individual pecks; dense exotics trap
 /// shorter, harder chips and require shallow pecks even within a
 /// pecking cycle. Pre-2026-06-03 this accessor returned a flat 2.0
-/// for every wood species, collapsing softwood pecks (literature
-/// 3–8×D — Onsrud Drill Chart, FPL Wood Handbook §3.7, Vectric drill
-/// defaults) to the same 1.0×D Suggest default as dense hardwood.
+/// for every wood species, collapsing softwood pecks to the same
+/// 1.0×D Suggest default as dense hardwood.
+///
+/// **Provenance: REPO-AUTHORED. No primary source states a per-peck
+/// depth-to-diameter limit for wood** (W6 audit, 2026-08-04 —
+/// `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md` §6.1–6.3
+/// and its NOT VERIFIED ledger entry W6-N5). Three corrections to the
+/// citation this comment used to carry:
+/// - The "3–8×D" figure is a **total-hole** regime statement (the
+///   depth at which pecking becomes necessary), not a per-peck
+///   ceiling. Its closest retrievable match in this repo is the CNC
+///   Cookbook deep-hole reference already listed in `CREDITS.md`
+///   ("5 diameters deep without issue; 5 to 7 diameters use peck
+///   drilling"), which is written for metal twist drills and carries
+///   no material banding. It was transcribed into a per-peck role it
+///   never claimed.
+/// - The Onsrud drill chart (retrieved 2026-08-04,
+///   `https://www.onsrud.com/images/Drill.pdf`) contains chip load per
+///   tooth by cutting diameter and nothing else: a case-insensitive
+///   search for `peck` / `hole depth` returns zero hits, on it and on
+///   the four other retrieved Onsrud wood/plywood/plastic charts.
+/// - The FPL Wood Handbook has no drilling chapter in either edition;
+///   GTR-190 Ch.19 is *Specialty Treatments* and every occurrence of
+///   "peck" in it is *pecky cypress* or *bird peck*. There is no §3.7
+///   on drilling.
+///
+/// The values below are therefore repo heuristics, held (not moved) at
+/// Checkpoint D 2026-08-04 with the citation corrected instead. The
+/// general machining convention for per-peck depth (0.5–1.0×D full
+/// peck) is 6–12× shallower and is recorded as secondary evidence
+/// only; it is not grounds to move these numbers without a bench
+/// trial. See audit item R-9.
 ///
 /// Three bands, mirroring `janka_to_drill_chip_welding_dtd`:
 /// - softwood (Janka ≤ 700 lbf) → 6.0  → Suggest default 3.0×D
@@ -770,7 +799,28 @@ impl Material {
         }
     }
 
-    /// Specific cutting force in N/mm². Used for power calculation.
+    /// Shear→milling size-effect multiplier for **solid wood**. The FPL
+    /// Table 5-3a literals in `kc_n_per_mm2` are shear-parallel-to-grain
+    /// strength (~6–16 N/mm² hardwood); measured peripheral-milling Kc is
+    /// ~2.5–4× higher (Sydor et al. particleboard 32–38 N/mm² vs ~9–13
+    /// shear, PMC8123317). This lifts the shear base into the milling
+    /// regime — exactly what Phase 2B did for sheet goods, which dropped
+    /// raw shear for measured milling Kc and kept
+    /// `tool_load::power::GRAIN_ANISOTROPY_FACTOR = 2.0`. 2.7 lands
+    /// GenericHardwood at ~35 N/mm² (particleboard parity); sentry-pinned
+    /// and tunable. Sheet goods + plastics are already milling-calibrated
+    /// and do NOT use this factor; plywood stays on shear pending its own
+    /// Phase 3 derivation. See planning/KC_MILLING_CALIBRATION_2026-06-17.md.
+    pub(crate) const MILLING_KC_FACTOR: f64 = 2.7;
+
+    /// Specific cutting force in N/mm² (**peripheral-milling regime**).
+    /// Used for power and deflection force predictions.
+    ///
+    /// Solid-wood values are the FPL Table 5-3a shear-parallel rows lifted
+    /// to milling by [`Material::MILLING_KC_FACTOR`]; sheet goods already
+    /// carry measured milling Kc (Phase 2B). Both arms therefore hand the
+    /// gates the same physical force base, so deflection and power cannot
+    /// diverge on which regime they model.
     ///
     /// `None` for materials whose Kc has no primary measurement — the
     /// tool-load gates refuse via `UnmodeledReason::MaterialUnvalidated`
@@ -787,56 +837,54 @@ impl Material {
             // table at planning/data_ingest_2026-05-30/
             // wood_kc_derivation.md.
             //
-            // SCOPE NOTE: values stay in the shear-parallel regime
-            // (~6–16 N/mm² for North American species, ~28 for Ipe).
-            // The literature delta between shear-block testing and
-            // peripheral milling Kc (a 3–5× size-effect multiplier)
-            // is NOT applied here — that requires a coordinated
-            // anisotropy-factor retune (analog to Phase 2B for sheet
-            // goods) and bench validation, both of which are Phase
-            // 6+ scope. What this step buys: every value now ties
-            // back to a specific FPL Table 5-3a row with a verbatim
-            // citation, closing the folklore TODO that had carried
-            // since Phase 2B.
-            //
-            // TODO Phase 6+: absolute-Kc calibration via
-            // shear × edge-radius size-effect factor + coordinated
-            // anisotropy retune. Will shift smoke baselines; needs
-            // operator field validation.
-            Material::SolidWood { species } => Some(match species {
-                // Mid-band of common low-density softwoods (Pondersa
-                // pine 7.8, white spruce 6.7, western redcedar 6.8).
-                WoodSpecies::GenericSoftwood => 6.5,
-                // NZ/AU species, not in FPL Ch.5 — folklore retained.
-                // TODO: source from CSIRO or FRI publications.
-                WoodSpecies::RadiataPine => 6.0,
-                // FPL: "Longleaf 12% ... 10,400" (kPa shear ∥).
-                WoodSpecies::LongleafPine => 10.4,
-                // Mid-band of common North American hardwoods (Beech
-                // American 13.9, Red Maple 12.8, Northern Red Oak
-                // 12.3).
-                WoodSpecies::GenericHardwood => 13.0,
-                // FPL: "Sugar 12% ... 16,100" (kPa shear ∥).
-                WoodSpecies::HardMaple => 16.0,
-                // FPL: "Walnut, black 12% ... 9,400" (kPa shear ∥).
-                WoodSpecies::Walnut => 9.5,
-                // FPL: "Yellow 12% ... 13,000" (kPa shear ∥).
-                WoodSpecies::Birch => 13.0,
-                // FPL: "White 12% 0.68 ... 13,800" (kPa shear ∥;
-                // Quercus alba primary row in the white-oak group).
-                WoodSpecies::WhiteOak => 13.8,
-                // AU species, not in FPL Ch.5 — folklore retained.
-                // TODO: source from CSIRO publications.
-                WoodSpecies::Jarrah => 19.0,
-                // Brazilian species, not in FPL Ch.5 — folklore
-                // retained. TODO: source from EMBRAPA / IPT.
-                WoodSpecies::Ipe => 28.0,
-            }),
+            // The per-species literals below are the FPL Table 5-3a
+            // shear-parallel-to-grain rows (~6–16 N/mm² N.American, 28
+            // Ipe). `MILLING_KC_FACTOR` lifts them to the peripheral-
+            // milling regime (the "3–5× size-effect" the old Phase-6
+            // TODO deferred), paralleling Phase 2B for sheet goods, which
+            // swapped raw shear for measured milling Kc and kept
+            // GRAIN_ANISOTROPY_FACTOR = 2.0. Literature-anchored (Sydor
+            // particleboard 32–38 N/mm²), sentry-pinned, not bench-
+            // validated. See planning/KC_MILLING_CALIBRATION_2026-06-17.md.
+            Material::SolidWood { species } => Some(
+                Self::MILLING_KC_FACTOR
+                    * match species {
+                        // Mid-band of common low-density softwoods (Pondersa
+                        // pine 7.8, white spruce 6.7, western redcedar 6.8).
+                        WoodSpecies::GenericSoftwood => 6.5,
+                        // NZ/AU species, not in FPL Ch.5 — folklore retained.
+                        // TODO: source from CSIRO or FRI publications.
+                        WoodSpecies::RadiataPine => 6.0,
+                        // FPL: "Longleaf 12% ... 10,400" (kPa shear ∥).
+                        WoodSpecies::LongleafPine => 10.4,
+                        // Mid-band of common North American hardwoods (Beech
+                        // American 13.9, Red Maple 12.8, Northern Red Oak
+                        // 12.3).
+                        WoodSpecies::GenericHardwood => 13.0,
+                        // FPL: "Sugar 12% ... 16,100" (kPa shear ∥).
+                        WoodSpecies::HardMaple => 16.0,
+                        // FPL: "Walnut, black 12% ... 9,400" (kPa shear ∥).
+                        WoodSpecies::Walnut => 9.5,
+                        // FPL: "Yellow 12% ... 13,000" (kPa shear ∥).
+                        WoodSpecies::Birch => 13.0,
+                        // FPL: "White 12% 0.68 ... 13,800" (kPa shear ∥;
+                        // Quercus alba primary row in the white-oak group).
+                        WoodSpecies::WhiteOak => 13.8,
+                        // AU species, not in FPL Ch.5 — folklore retained.
+                        // TODO: source from CSIRO publications.
+                        WoodSpecies::Jarrah => 19.0,
+                        // Brazilian species, not in FPL Ch.5 — folklore
+                        // retained. TODO: source from EMBRAPA / IPT.
+                        WoodSpecies::Ipe => 28.0,
+                    },
+            ),
             // Parametric variant — `janka_to_kc_n_per_mm2` returns
             // `None` outside the calibrated band, propagating to the
             // gate which refuses via `MaterialUnvalidated` (right
             // behavior: out-of-band Janka has no citation backing).
-            Material::SolidWoodByJanka { janka_lbf, .. } => janka_to_kc_n_per_mm2(*janka_lbf),
+            Material::SolidWoodByJanka { janka_lbf, .. } => {
+                janka_to_kc_n_per_mm2(*janka_lbf).map(|k| Self::MILLING_KC_FACTOR * k)
+            }
             // TODO Phase 3 — per-grade plywood Kc has no fetched
             // primary measurement; current values track shear-parallel
             // shear strength of the dominant veneer rather than peripheral
@@ -1059,9 +1107,10 @@ impl Material {
         match self {
             // Wood species — Janka-banded per-peck max. Pre-2026-06-03
             // this returned a flat 2.0 for every wood, which collapsed
-            // softwood Suggest pecks to 1.0×D (matrix band 3–8×D) and
-            // matched dense hardwood. See `janka_to_drill_per_peck_max_dtd`
-            // for the band rationale and sources.
+            // softwood Suggest pecks to 1.0×D and matched dense
+            // hardwood. The bands are REPO-AUTHORED — see
+            // `janka_to_drill_per_peck_max_dtd` for why the sources
+            // this used to cite do not contain per-peck guidance.
             Material::SolidWood { species } => janka_to_drill_per_peck_max_dtd(species.janka_lbf()),
             Material::SolidWoodByJanka { janka_lbf, .. } => {
                 janka_to_drill_per_peck_max_dtd(*janka_lbf)
@@ -1101,15 +1150,28 @@ impl Material {
     /// min the cutter rubs / burns; above the max it breaks or
     /// stalls. Same dispatch pattern as the chip-welding methods.
     ///
-    /// Provenance (F1, 2026-06-10): the wood band brackets the
-    /// literature drill chipload range — Onsrud wood-drilling bulletin
-    /// and Vectric drill defaults give 0.08–0.18 mm/tooth × 2 flutes
-    /// at the 8–14 kRPM small-drill band ≈ 210–430 mm/min per mm Ø at
-    /// the top of the range; the 50 floor is the rubbing onset below
-    /// which dwell-burning dominates (FPL Wood Handbook Ch.19). See
-    /// `tests/literature_matrix/cells.toml` drill cells for the bound
-    /// sources. Non-wood rows remain engineering placeholders pending
-    /// vendor data (esp. Aluminum / Fiberglass — noted inline).
+    /// Provenance, corrected 2026-08-04 (W6 audit §6.2/§6.4, item
+    /// R-10 — the numbers are held, the citation is not). The claim
+    /// this comment used to carry was **circular**: it derived the
+    /// wood band from "0.08–0.18 mm/tooth" attributed to an Onsrud
+    /// wood-drilling bulletin, but that band is the literature
+    /// matrix's own `feed_per_tooth` cell, and the cell was fitted to
+    /// this code's output (it brackets the shipped formula to three
+    /// decimals at both ends). No Onsrud wood-drilling bulletin
+    /// stating it was located; the retrieved Onsrud drill chart
+    /// (`https://www.onsrud.com/images/Drill.pdf`, 2026-08-04) prints
+    /// 0.229–0.432 mm/tooth for series 72-000 Wood, which does not
+    /// overlap that band at any diameter. The 50 floor was attributed
+    /// to "FPL Wood Handbook Ch.19"; Ch.19 is *Specialty Treatments*
+    /// and the handbook has no drilling content in either edition.
+    ///
+    /// So: the envelope is **repo-authored**, defensible in order of
+    /// magnitude and consistent across the four sites that use it
+    /// (this accessor, `feeds::calculate` Step 9c, `drill_gates`,
+    /// `narrate`) — see the audit's unit-consistency PASS in §2.3 —
+    /// but it is not sourced. Non-wood rows remain engineering
+    /// placeholders pending vendor data (esp. Aluminum / Fiberglass —
+    /// noted inline).
     ///
     /// Consumed by `tool_load::drill_gates` (gate + narrate via
     /// `classify_plunge_feed`) and `feeds::calculate` Step 9c (suggest
@@ -2034,6 +2096,31 @@ mod tests {
             kc: 15.0,
         };
         assert_eq!(good.kc_n_per_mm2(), Some(15.0));
+    }
+
+    /// Sentry (KC_MILLING_CALIBRATION_2026-06-17): solid-wood Kc must sit
+    /// in the peripheral-MILLING regime (Sydor particleboard 32–38 N/mm²),
+    /// not the FPL shear-parallel base (~13). Guards against
+    /// `MILLING_KC_FACTOR` silently reverting and the deflection gate
+    /// quietly going 2.7× too soft again.
+    #[test]
+    fn solid_wood_kc_is_milling_calibrated_not_shear() {
+        let hardwood = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let kc = hardwood
+            .kc_n_per_mm2()
+            .expect("GenericHardwood has a validated Kc");
+        assert!(
+            (30.0..=45.0).contains(&kc),
+            "GenericHardwood milling Kc should land in the measured band (~35 N/mm²), \
+             got {kc} — has the milling calibration reverted to shear?"
+        );
+        // Derives from the raw FPL shear value (13.0) × MILLING_KC_FACTOR.
+        assert!(
+            (kc - Material::MILLING_KC_FACTOR * 13.0).abs() < 1e-9,
+            "expected MILLING_KC_FACTOR × 13.0, got {kc}"
+        );
     }
 
     #[test]

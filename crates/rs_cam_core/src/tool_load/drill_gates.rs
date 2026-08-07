@@ -9,6 +9,7 @@
 //!
 //! See `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.E / Step 3 PR2.
 
+pub use crate::drill::DrillCycleKind;
 use crate::drill_metrics::{
     ChipWeldingRisk, DrillToolpathSummary, chip_welding_threshold, per_peck_max_depth_to_diameter,
 };
@@ -25,15 +26,29 @@ pub enum DrillGateOutcome {
         /// The measurement being gated (units depend on the gate — see
         /// [`DrillGatesVerdict`]).
         observed: f64,
-        /// Material-aware threshold the observation was compared against.
-        /// For two-sided gates (plunge feed) this is the *nearer*
-        /// envelope bound — consult `envelope_lo` / `envelope_hi` for
-        /// the actual band; pre-F1 this overload made an at-the-floor
+        /// **The bound that decided this verdict**, which is not always
+        /// the material threshold.
+        ///
+        /// For two-sided gates (plunge feed) it is the *nearer*
+        /// envelope bound; pre-F1 this overload made an at-the-floor
         /// reading (`threshold == observed == envelope_lo`) look like a
         /// healthy headroom number.
+        ///
+        /// For chip welding it is the **advisory boundary `0.75 × t`**,
+        /// not `t` (R-3, 2026-08-04). `Low` is decided at `0.75t`, and
+        /// displaying `t` beside a `Within` verdict overstated headroom
+        /// by the width of the whole Elevated band: a Ø4 × 23.6 mm
+        /// softwood hole read `within (5.90)` against `8.00` — 26 %
+        /// implied headroom on a reading with 1.7 % real headroom. The
+        /// hard ceiling rides alongside in `envelope_hi`.
         threshold: f64,
-        /// Full envelope for two-sided gates; `None` for one-sided
-        /// gates (chip welding, peck adequacy).
+        /// The band this verdict sits in. `None` on a side means the
+        /// band is unbounded there (chip welding `Low` has no
+        /// meaningful floor; the `High` band has no ceiling).
+        ///
+        /// Carried by every gate since R-3, not just the two-sided
+        /// one — a consumer can always ask "what band am I in, and what
+        /// is next?" without knowing which gate it is looking at.
         #[serde(skip_serializing_if = "Option::is_none", default)]
         envelope_lo: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -41,7 +56,13 @@ pub enum DrillGateOutcome {
     },
     Exceeds {
         observed: f64,
-        /// The violated bound.
+        /// The bound this outcome is measured against. **Read
+        /// `severity` before wording it**: at `Elevated` on a
+        /// one-sided-up gate the observation is *below* this bound
+        /// (the advisory band is `[0.75t, t)`), and at `Elevated` on
+        /// the plunge gate it is below the envelope FLOOR. Only
+        /// `Critical` on an upward gate means the bound was crossed
+        /// upward. Wording this as "exceeds: 7.33 vs 8.00" was R-1.
         threshold: f64,
         /// Coarse severity flag for UI styling. `Elevated` is a warning;
         /// `Critical` is a hard exceedance the operator should act on.
@@ -82,6 +103,27 @@ pub struct DrillGatesVerdict {
     /// burning) and "feed too fast" (cutter breakage) without needing
     /// vendor-LUT data.
     pub plunge_feed: DrillGateOutcome,
+    /// Index into `DrillOp::holes` of the hole the two depth-derived
+    /// verdicts (chip welding, peck adequacy) are about — both key off
+    /// the deepest hole. `None` when no hole has positive depth.
+    ///
+    /// R-7: carried so a diagnostic can name the offending hole instead
+    /// of fabricating a sample range. The plunge-feed verdict is
+    /// hole-independent (`feed / diameter`) and is deliberately not
+    /// attributed to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worst_hole_id: Option<usize>,
+    /// The cycle these verdicts are about. Consumed only by remedy
+    /// wording (R-4) — no gate reads it.
+    #[serde(default = "default_cycle_kind")]
+    pub cycle: DrillCycleKind,
+}
+
+/// Pre-R-4 wire payloads carry no cycle. `Peck` is the safe default for
+/// a *remedy*: it suppresses "switch to a peck cycle" rather than
+/// asserting a cycle the payload never named.
+fn default_cycle_kind() -> DrillCycleKind {
+    DrillCycleKind::Peck
 }
 
 /// Thin convenience wrapper around
@@ -99,11 +141,18 @@ pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGate
         chip_welding: evaluate_chip_welding(summary, &drill_op.material),
         peck_adequacy: evaluate_peck_adequacy(drill_op, summary),
         plunge_feed: evaluate_plunge_feed(drill_op),
+        worst_hole_id: summary.deepest_hole_index,
+        cycle: DrillCycleKind::of(drill_op.cycle),
     }
 }
 
 fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) -> DrillGateOutcome {
     let threshold = chip_welding_threshold(material);
+    // R-3: the classifier's bands are Low [0, 0.75t), Elevated
+    // [0.75t, t), High [t, ∞). Every outcome now carries the band it
+    // sits in, so no consumer has to re-derive `0.75 ×` to know what
+    // decided the verdict or what comes next.
+    let advisory = threshold * 0.75;
     // Evacuation-credited ratio (F1): for peck cycles the deepest single
     // peck governs chip packing, not the total hole — `observed` must be
     // the value the risk was actually classified from.
@@ -111,22 +160,24 @@ fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) ->
     match summary.chip_welding_risk {
         ChipWeldingRisk::Low => DrillGateOutcome::Within {
             observed,
-            threshold,
+            // The boundary that decided `Low` — NOT the material
+            // threshold, which is a band further away (R-3).
+            threshold: advisory,
             envelope_lo: None,
-            envelope_hi: None,
+            envelope_hi: Some(advisory),
         },
         ChipWeldingRisk::Elevated => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Elevated,
-            envelope_lo: None,
-            envelope_hi: None,
+            envelope_lo: Some(advisory),
+            envelope_hi: Some(threshold),
         },
         ChipWeldingRisk::High => DrillGateOutcome::Exceeds {
             observed,
             threshold,
             severity: DrillGateSeverity::Critical,
-            envelope_lo: None,
+            envelope_lo: Some(threshold),
             envelope_hi: None,
         },
     }
@@ -134,33 +185,32 @@ fn evaluate_chip_welding(summary: &DrillToolpathSummary, material: &Material) ->
 
 fn evaluate_peck_adequacy(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGateOutcome {
     let threshold = per_peck_max_depth_to_diameter(&drill_op.material);
-    let diameter = drill_op.tool_diameter_mm.max(f64::MIN_POSITIVE);
-    // Reconstruct the worst single-peck D/d from cycle + total depth. For
-    // Simple / Dwell that's the whole hole; for Peck / ChipBreak it's the
-    // nominal peck depth (or the clamped final peck if smaller).
-    let peak_peck_dtd = match drill_op.cycle {
-        crate::drill::DrillCycle::Simple | crate::drill::DrillCycle::Dwell(_) => {
-            summary.deepest_hole_mm / diameter
-        }
-        crate::drill::DrillCycle::Peck(peck) | crate::drill::DrillCycle::ChipBreak(peck, _) => {
-            // Nominal peck depth wins unless every hole is shallower than peck —
-            // in which case the deepest single peck equals the full hole.
-            peck.min(summary.deepest_hole_mm) / diameter
-        }
-    };
+    // R-6: read the number the summary published rather than
+    // re-deriving it here. Pre-fix this gate recomputed the worst
+    // single-peck D/d from `cycle` + `deepest_hole_mm` while
+    // `build_drill_toolpath_summary` computed the same quantity from
+    // the sample stream and stored only a boolean — two
+    // implementations of one number, neither visible to a consumer.
+    // `drill_metrics::per_peck_max_depth_to_diameter_of` is now the
+    // single implementation and this reads its result.
+    let peak_peck_dtd = summary.per_peck_max_dtd;
+    // One-sided gate: `t` really is the bound that decides both arms,
+    // so `threshold` needs no correction here. It carries its band for
+    // uniformity (R-3) — this gate has no advisory tier at all, which
+    // is itself worth being able to see from the outside.
     if peak_peck_dtd <= threshold {
         DrillGateOutcome::Within {
             observed: peak_peck_dtd,
             threshold,
             envelope_lo: None,
-            envelope_hi: None,
+            envelope_hi: Some(threshold),
         }
     } else {
         DrillGateOutcome::Exceeds {
             observed: peak_peck_dtd,
             threshold,
             severity: DrillGateSeverity::Critical,
-            envelope_lo: None,
+            envelope_lo: Some(threshold),
             envelope_hi: None,
         }
     }
@@ -244,6 +294,7 @@ impl DrillGateOutcome {
     pub fn as_criterion_status(
         &self,
         kind: crate::tool_load::verdict::CriterionKind,
+        cycle: DrillCycleKind,
     ) -> crate::tool_load::verdict::CriterionStatus<'_> {
         use crate::tool_load::verdict::{
             CriterionKind, CriterionStatus, ExceededCriterion, LoadState,
@@ -260,8 +311,10 @@ impl DrillGateOutcome {
             } => (
                 LoadState::Exceeds,
                 Some(match kind {
-                    CriterionKind::DrillChipWelding => ExceededCriterion::drill_chip_welding(),
-                    CriterionKind::DrillPeckAdequacy => ExceededCriterion::drill_peck_adequacy(),
+                    CriterionKind::DrillChipWelding => ExceededCriterion::drill_chip_welding(cycle),
+                    CriterionKind::DrillPeckAdequacy => {
+                        ExceededCriterion::drill_peck_adequacy(cycle)
+                    }
                     // The plunge-feed arm — and the fallback for any
                     // milling kind passed in error.
                     _ => ExceededCriterion::drill_plunge_feed(),
@@ -318,6 +371,13 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             material: Material::default(),
+            // R-2: no R-plane air in this fixture — it models the cycle
+            // from the material surface, which is what this test's numbers
+            // were written against. Production sets
+            // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
+            // 5 mm by default); `drill_evidence_wording_d3.rs` is the
+            // sentry that pins the emitter-matching case.
+            retract_z_mm: 0.0,
         }
     }
 
@@ -423,7 +483,7 @@ mod tests {
         let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
         let status = critical
             .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
         assert_eq!(status.state, LoadState::Exceeds);
         assert!(status.exceeded.is_some());
 
@@ -431,7 +491,7 @@ mod tests {
         let elevated = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 12.0, 100.0));
         let status = elevated
             .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed);
+            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
         assert_eq!(status.state, LoadState::Within);
         assert!(status.exceeded.is_none());
     }

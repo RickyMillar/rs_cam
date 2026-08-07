@@ -4,6 +4,7 @@ use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::transform_provenance::ReconcileSet;
 
 #[allow(
     clippy::unwrap_used,
@@ -82,6 +83,7 @@ mod tests {
             OperationType::Adaptive3d.transform_capabilities(),
             None,
             None,
+            &mut ReconcileSet::empty(),
         );
 
         let cutting_z = cutting_z_values(&optimized.toolpath);
@@ -126,6 +128,7 @@ mod tests {
             OperationType::Adaptive3d.transform_capabilities(),
             None,
             None,
+            &mut ReconcileSet::empty(),
         );
 
         assert_eq!(cutting_z_values(&optimized.toolpath), raw_cutting_z);

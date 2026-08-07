@@ -4,7 +4,7 @@
 //! functions) and by `mod.rs` tests.
 
 use super::material_grid::CELL_MATERIAL;
-use super::{MaterialGrid, angle_diff, refine_angle_bracket};
+use super::{EngagementMeasure, MaterialGrid, angle_diff, refine_angle_bracket};
 use crate::debug_trace::ToolpathDebugBounds2;
 use crate::geo::P2;
 use crate::polygon::Polygon2;
@@ -64,6 +64,160 @@ pub(crate) fn compute_engagement(grid: &MaterialGrid, cx: f64, cy: f64, radius: 
     material_cells as f64 / total_cells as f64
 }
 
+/// Leading-arc engagement: the fraction of the full cutter circle whose
+/// **leading semicircle** (relative to the move direction `dir_angle`)
+/// lies in uncut material.
+///
+/// This is the same physical quantity as `target_engagement_fraction`
+/// (contact angle α / 2π): in steady state cutting alongside a cleared
+/// swath at radial stepover `s`, the reading is `acos(1 − s/R) / 2π`
+/// exactly. `compute_engagement` above measures disk-*area* fraction,
+/// which is a different quantity and only coincides with the angle
+/// fraction at full slot — comparing it against the α/2π target makes
+/// the effective stepover deviate from the commanded one (see
+/// planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md, finding F1).
+///
+/// Sampling is on the flute circle itself (radius R): the trailing
+/// semicircle is excluded because it only ever passes through material
+/// already counted as the leading edge swept it. Points are taken at
+/// arc midpoints so the estimate is unbiased w.r.t. quantisation.
+pub(crate) fn compute_engagement_arc(
+    grid: &MaterialGrid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    dir_angle: f64,
+) -> f64 {
+    // ~2 samples per grid cell along the leading arc, bounded for cost.
+    let n = ((2.0 * PI * radius / grid.cell_size).ceil() as usize).clamp(32, 128);
+    let mut hits = 0usize;
+    for i in 0..n {
+        let t = (i as f64 + 0.5) / n as f64;
+        let theta = dir_angle - std::f64::consts::FRAC_PI_2 + t * PI;
+        let x = cx + radius * theta.cos();
+        let y = cy + radius * theta.sin();
+        if grid.is_material(x, y) {
+            hits += 1;
+        }
+    }
+    // The leading semicircle is half the circle: scale the in-material
+    // fraction of the semicircle to a fraction of the full circle so the
+    // value compares directly against α/2π.
+    0.5 * (hits as f64 / n as f64)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod engagement_measure_tests {
+    //! Closed-form oracle for the engagement measures (adaptive algorithm
+    //! review 2026-06-12, finding F1).
+    //!
+    //! Steady-state scene, built exactly on the cell lattice so the
+    //! oracle carries no fixture-rasterisation slack: the cutter at
+    //! `(cx, cy)` moves in +x alongside a previous parallel pass whose
+    //! swath cleared everything at `y ≥ y_edge`, with its own swath
+    //! (`|y − cy| ≤ R, x ≤ cx`) cleared behind it. The radial stepover
+    //! is `s = y_edge − (cy − R)` (chord height of the material cap),
+    //! the contact angle is `α = acos(1 − s/R)` analytically, and a
+    //! measure in the same units as `target_engagement_fraction` must
+    //! read `α/2π` at the next position.
+
+    use super::super::material_grid::{CELL_CLEARED, MaterialGrid};
+    use super::{compute_engagement, compute_engagement_arc};
+    use crate::adaptive_shared::target_engagement_fraction;
+    use crate::geo::P2;
+    use crate::polygon::Polygon2;
+
+    const R: f64 = 3.0;
+    const CELL: f64 = R / 6.0; // production floor: max(R/6, tolerance)
+    const STEP: f64 = CELL * 3.0; // production step length (path.rs)
+
+    /// Build the exact steady-state scene for radial stepover `s`
+    /// (must be a multiple of CELL so `y_edge` lands on the lattice).
+    /// Returns the grid and the *next* candidate position — the search
+    /// evaluates candidates there, against the pre-move grid.
+    fn steady_state_grid(stepover: f64) -> (MaterialGrid, f64, f64) {
+        let size = 60.0;
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(size, 0.0),
+            P2::new(size, size),
+            P2::new(0.0, size),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, CELL);
+
+        let (cx, cy) = (size / 2.0, size / 2.0);
+        let y_edge = cy - R + stepover;
+
+        // MaterialGrid samples cell (row, col) at the lattice point
+        // (origin + col·cell, origin + row·cell) — mark cells by that
+        // same convention so the material boundary is exact.
+        for row in 0..grid.rows {
+            let cell_y = grid.origin_y + row as f64 * grid.cell_size;
+            for col in 0..grid.cols {
+                let cell_x = grid.origin_x + col as f64 * grid.cell_size;
+                let prev_swath = cell_y >= y_edge - 1e-9;
+                let own_swath = cell_x <= cx + 1e-9 && (cell_y - cy).abs() <= R + 1e-9;
+                if prev_swath || own_swath {
+                    let idx = row * grid.cols + col;
+                    if grid.cells[idx] != CELL_CLEARED {
+                        grid.cells[idx] = CELL_CLEARED;
+                    }
+                }
+            }
+        }
+        (grid, cx + STEP, cy)
+    }
+
+    #[test]
+    fn leading_arc_matches_contact_angle_oracle() {
+        // s = CELL multiples: 0.5 (s/R ≈ 0.17), 1.5 (0.5R), 3.0 (R),
+        // 6.0 (2R, full slot).
+        for stepover in [0.5, 1.5, 3.0, 6.0] {
+            let expected = target_engagement_fraction(stepover, R);
+            let (grid, nx, ny) = steady_state_grid(stepover);
+            let got = compute_engagement_arc(&grid, nx, ny, R, 0.0);
+            assert!(
+                (got - expected).abs() < 0.02,
+                "leading-arc measure must read the contact-angle fraction: \
+                 stepover {stepover:.2} expected {expected:.4}, got {got:.4}"
+            );
+        }
+    }
+
+    #[test]
+    fn disk_area_measure_deviates_from_contact_angle_target() {
+        // Documents finding F1: the area measure is a different physical
+        // quantity from the α/2π target it is compared against. At a
+        // commanded ~0.17R stepover the controller's target is ~0.094
+        // but the area reading sits far below it — so the search steers
+        // toward a much wider radial cut than commanded.
+        let stepover = 0.5;
+        let target = target_engagement_fraction(stepover, R);
+        let (grid, nx, ny) = steady_state_grid(stepover);
+        let area = compute_engagement(&grid, nx, ny, R);
+        assert!(
+            area < target * 0.7,
+            "expected the disk-area reading ({area:.4}) to sit well below the \
+             contact-angle target ({target:.4}); if this starts passing, the \
+             area measure changed and F1 should be re-evaluated"
+        );
+
+        // And the arc measure does hit the target on the identical scene.
+        let arc = compute_engagement_arc(&grid, nx, ny, R, 0.0);
+        assert!(
+            (arc - target).abs() < 0.02,
+            "arc measure should hit the target on the same scene: \
+             target {target:.4}, got {arc:.4}"
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SearchDirectionResult {
     pub(super) angle: f64,
@@ -116,6 +270,7 @@ pub(crate) fn search_direction(
         target_frac,
         prev_angle,
         boundary_distances,
+        EngagementMeasure::DiskArea,
     )
     .map(|result| result.angle)
 }
@@ -179,6 +334,7 @@ pub(super) fn search_direction_with_metrics(
     target_frac: f64,
     prev_angle: f64,
     boundary_distances: &[f64],
+    measure: EngagementMeasure,
 ) -> Option<SearchDirectionResult> {
     let tolerance = 0.05; // allow ±5% of target (matches libactp reference)
     let min_frac = (target_frac * (1.0 - tolerance)).max(0.005);
@@ -197,7 +353,12 @@ pub(super) fn search_direction_with_metrics(
             return None;
         }
 
-        let engagement = compute_engagement(grid, nx, ny, tool_radius);
+        let engagement = match measure {
+            EngagementMeasure::DiskArea => compute_engagement(grid, nx, ny, tool_radius),
+            EngagementMeasure::LeadingArc => {
+                compute_engagement_arc(grid, nx, ny, tool_radius, angle)
+            }
+        };
         if engagement < 0.005 {
             return None;
         }
@@ -328,6 +489,66 @@ pub(super) fn search_direction_with_metrics(
 
 // ── Entry point finding ────────────────────────────────────────────────
 
+/// Spatial hash over pass endpoints for the exclusion-radius test.
+///
+/// The endpoint list is append-only over a run; the old `&[P2]` linear
+/// scan made every probed cell / boundary sample O(endpoints), i.e.
+/// O(passes × cells) over a job (algorithm review 2026-06-12, F5).
+/// Bin size = exclusion radius, so a query only inspects the 3×3
+/// neighbourhood of bins. Same membership decisions, bounded cost.
+pub(crate) struct EndpointGrid {
+    bin: f64,
+    min_dist_sq: f64,
+    bins: std::collections::HashMap<(i64, i64), Vec<P2>>,
+    len: usize,
+}
+
+impl EndpointGrid {
+    /// `min_dist` is the exclusion radius (callers use 3 × tool radius).
+    pub(crate) fn new(min_dist: f64) -> Self {
+        let bin = min_dist.max(1e-6);
+        Self {
+            bin,
+            min_dist_sq: min_dist * min_dist,
+            bins: std::collections::HashMap::new(),
+            len: 0,
+        }
+    }
+
+    fn key(&self, x: f64, y: f64) -> (i64, i64) {
+        ((x / self.bin).floor() as i64, (y / self.bin).floor() as i64)
+    }
+
+    pub(crate) fn insert(&mut self, p: P2) {
+        let key = self.key(p.x, p.y);
+        self.bins.entry(key).or_default().push(p);
+        self.len += 1;
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// True when any recorded endpoint lies within the exclusion radius.
+    fn any_within(&self, x: f64, y: f64) -> bool {
+        let (bx, by) = self.key(x, y);
+        for dx in -1..=1i64 {
+            for dy in -1..=1i64 {
+                if let Some(points) = self.bins.get(&(bx + dx, by + dy))
+                    && points.iter().any(|ep| {
+                        let ex = x - ep.x;
+                        let ey = y - ep.y;
+                        ex * ex + ey * ey < self.min_dist_sq
+                    })
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 /// Find the nearest material cell that is not near any of the given endpoints.
 /// Uses growing-radius search. Falls back to plain nearest material if
 /// everything is near an endpoint.
@@ -335,8 +556,7 @@ fn find_nearest_material_spread(
     grid: &MaterialGrid,
     x: f64,
     y: f64,
-    pass_endpoints: &[P2],
-    min_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
 ) -> Option<(f64, f64)> {
     let initial_radius = grid.cell_size * 8.0;
     let max_radius =
@@ -345,13 +565,13 @@ fn find_nearest_material_spread(
     let mut radius = initial_radius;
     while radius <= max_radius {
         if let Some(result) =
-            find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, radius)
+            find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, radius)
         {
             return Some(result);
         }
         radius *= 2.0;
     }
-    find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, min_dist_sq, max_radius)
+    find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, max_radius)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -359,8 +579,7 @@ fn find_nearest_material_spread_in_radius(
     grid: &MaterialGrid,
     x: f64,
     y: f64,
-    pass_endpoints: &[P2],
-    min_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
     radius: f64,
 ) -> Option<(f64, f64)> {
     let col_min = ((x - radius - grid.origin_x) / grid.cell_size)
@@ -387,12 +606,7 @@ fn find_nearest_material_spread_in_radius(
             }
             let cx = grid.origin_x + col as f64 * grid.cell_size;
 
-            let near = pass_endpoints.iter().any(|ep| {
-                let dx = cx - ep.x;
-                let dy = cy - ep.y;
-                dx * dx + dy * dy < min_dist_sq
-            });
-            if near {
+            if pass_endpoints.any_within(cx, cy) {
                 continue;
             }
 
@@ -421,8 +635,7 @@ fn walk_boundary_for_entry(
     grid: &MaterialGrid,
     tool_radius: f64,
     step: f64,
-    pass_endpoints: &[P2],
-    min_endpoint_dist_sq: f64,
+    pass_endpoints: &EndpointGrid,
 ) -> Option<(P2, f64)> {
     let mut best: Option<(P2, f64)> = None; // (position, engagement)
     let engage_threshold = 0.005;
@@ -444,12 +657,7 @@ fn walk_boundary_for_entry(
             let y = a.y + t * dy;
 
             // Skip if near a previous endpoint
-            let near = pass_endpoints.iter().any(|ep| {
-                let ex = x - ep.x;
-                let ey = y - ep.y;
-                ex * ex + ey * ey < min_endpoint_dist_sq
-            });
-            if near {
+            if pass_endpoints.any_within(x, y) {
                 continue;
             }
 
@@ -546,9 +754,8 @@ pub(crate) fn find_entry_point(
     machinable: &Polygon2,
     tool_radius: f64,
     last_pos: Option<P2>,
-    pass_endpoints: &[P2],
+    pass_endpoints: &EndpointGrid,
 ) -> Option<P2> {
-    let min_endpoint_dist_sq = (tool_radius * 3.0) * (tool_radius * 3.0);
     let walk_step = grid.cell_size * 2.0;
 
     // Phase 1: Walk the machinable boundary contours
@@ -559,19 +766,13 @@ pub(crate) fn find_entry_point(
         tool_radius,
         walk_step,
         pass_endpoints,
-        min_endpoint_dist_sq,
     );
 
     // Check hole boundaries
     for hole in &machinable.holes {
-        if let Some((p, eng)) = walk_boundary_for_entry(
-            hole,
-            grid,
-            tool_radius,
-            walk_step,
-            pass_endpoints,
-            min_endpoint_dist_sq,
-        ) && best_boundary.is_none_or(|b| eng > b.1)
+        if let Some((p, eng)) =
+            walk_boundary_for_entry(hole, grid, tool_radius, walk_step, pass_endpoints)
+            && best_boundary.is_none_or(|b| eng > b.1)
         {
             best_boundary = Some((p, eng));
         }
@@ -589,14 +790,8 @@ pub(crate) fn find_entry_point(
     });
 
     let (mx, my) = if !pass_endpoints.is_empty() {
-        find_nearest_material_spread(
-            grid,
-            search_from.x,
-            search_from.y,
-            pass_endpoints,
-            min_endpoint_dist_sq,
-        )
-        .or_else(|| grid.find_nearest_material(search_from.x, search_from.y))
+        find_nearest_material_spread(grid, search_from.x, search_from.y, pass_endpoints)
+            .or_else(|| grid.find_nearest_material(search_from.x, search_from.y))
     } else {
         grid.find_nearest_material(search_from.x, search_from.y)
     }?;

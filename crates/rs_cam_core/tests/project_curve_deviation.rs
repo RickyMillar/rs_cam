@@ -38,6 +38,7 @@ use rs_cam_core::project_curve::{ProjectCurveParams, ProjectDirection, project_c
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
+use rs_cam_core::transform_provenance::ReconcileSet;
 
 /// A flat square mesh covering xy in [x0, x1] × [y0, y1] at z = 0.
 fn flat_mesh(x0: f64, x1: f64, y0: f64, y1: f64) -> TriangleMesh {
@@ -407,6 +408,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         OperationType::ProjectCurve.transform_capabilities(),
         None,
         None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath;
     report("project_curve + link_moves", &tp_with_links, &polygons);
@@ -425,6 +427,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         OperationType::ProjectCurve.transform_capabilities(),
         None,
         None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath;
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
@@ -450,6 +453,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         OperationType::ProjectCurve.transform_capabilities(),
         None,
         None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath;
     report("+ finish defaults", &tp_finish, &polygons);
@@ -471,6 +475,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         OperationType::ProjectCurve.transform_capabilities(),
         None,
         None,
+        &mut ReconcileSet::empty(),
     )
     .toolpath;
     report("+ ramp entry only", &tp_ramp, &polygons);

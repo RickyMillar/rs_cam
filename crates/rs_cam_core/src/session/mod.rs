@@ -36,13 +36,16 @@ use std::sync::Arc;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
+    BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
 };
 use crate::compute::simulate::SimulationResult;
-use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
+use crate::compute::stock_config::{
+    FixtureId, KeepOutId, ModelId, ModelKind, ModelUnits, StockConfig,
+};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
+use crate::dxf_input::DrillTarget;
 use crate::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
@@ -149,7 +152,9 @@ impl From<CollisionCheckError> for SessionError {
 /// Geometry loaded from a model file.
 pub(crate) enum LoadedGeometry {
     Mesh(TriangleMesh),
-    Polygons(Vec<Polygon2>),
+    /// 2D polygons plus pickable drill targets and their layer names
+    /// (DXF imports; SVG passes empty target/layer lists).
+    Polygons(Vec<Polygon2>, Vec<DrillTarget>, Vec<String>),
     /// Mesh + BREP face groups (STEP / CAD models). The enriched form
     /// is required for face-selective operations; downgrading to a
     /// flat `Mesh` silently strips topology and breaks face pickers.
@@ -166,6 +171,12 @@ pub struct LoadedModel {
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
+    /// Pickable drill targets extracted from the source (DXF POINT entities
+    /// and circle/arc centres). Empty for meshes and SVG.
+    pub drill_targets: Arc<Vec<DrillTarget>>,
+    /// Distinct layer names that contain drill targets (sorted). Empty for
+    /// formats without layers.
+    pub layers: Arc<Vec<String>>,
     /// Original file path (for save round-trip).
     pub path: std::path::PathBuf,
     /// File kind (stl, svg, dxf, step).
@@ -207,9 +218,15 @@ impl LoadedModel {
         };
         let resolved_kind = kind.or_else(|| project_file::infer_model_kind(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
+        let mut drill_targets: Arc<Vec<DrillTarget>> = Arc::new(Vec::new());
+        let mut layers: Arc<Vec<String>> = Arc::new(Vec::new());
         let (mesh, polygons, enriched_mesh) = match geometry {
             LoadedGeometry::Mesh(mesh) => (Some(Arc::new(mesh)), None, None),
-            LoadedGeometry::Polygons(polys) => (None, Some(Arc::new(polys)), None),
+            LoadedGeometry::Polygons(polys, targets, layer_names) => {
+                drill_targets = Arc::new(targets);
+                layers = Arc::new(layer_names);
+                (None, Some(Arc::new(polys)), None)
+            }
             LoadedGeometry::Enriched(enriched) => {
                 let mesh_arc = Arc::clone(&enriched.mesh);
                 (Some(mesh_arc), None, Some(Arc::new(enriched)))
@@ -220,6 +237,8 @@ impl LoadedModel {
             name: name.to_owned(),
             mesh,
             polygons,
+            drill_targets,
+            layers,
             path: path.to_path_buf(),
             kind: resolved_kind,
             units,
@@ -246,6 +265,8 @@ impl LoadedModel {
             name,
             mesh: None,
             polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
             path,
             kind: Some(kind),
             units: Some(units),
@@ -403,6 +424,174 @@ impl KeepOutZone {
     }
 }
 
+// ── Setup datum (W9 / P-2) ─────────────────────────────────────────────
+//
+// The datum is how the operator ties the model's origin to the physical
+// machine before pressing start. It lived only in the GUI overlay
+// (`rs_cam_viz`'s `SetupRuntime`) and had no home on the wire, so every
+// save dropped it: set "Z Datum = Machine Table", reload, and the panel
+// read "Stock Top" again with nothing in the file to say otherwise. It
+// is operator-set and safety-relevant, so it belongs to the project, not
+// to a window. `to_key`/`from_key` follow `FixtureKind`'s convention and
+// use the same spellings the viz fallback schema already wrote.
+
+/// Which corner of the stock the operator probes for the XY datum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Corner {
+    #[default]
+    FrontLeft,
+    FrontRight,
+    BackLeft,
+    BackRight,
+}
+
+impl Corner {
+    pub const ALL: &[Corner] = &[
+        Corner::FrontLeft,
+        Corner::FrontRight,
+        Corner::BackLeft,
+        Corner::BackRight,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Corner::FrontLeft => "Front-Left",
+            Corner::FrontRight => "Front-Right",
+            Corner::BackLeft => "Back-Left",
+            Corner::BackRight => "Back-Right",
+        }
+    }
+
+    pub fn to_key(&self) -> &'static str {
+        match self {
+            Corner::FrontLeft => "fl",
+            Corner::FrontRight => "fr",
+            Corner::BackLeft => "bl",
+            Corner::BackRight => "br",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        match s {
+            "fr" => Corner::FrontRight,
+            "bl" => Corner::BackLeft,
+            "br" => Corner::BackRight,
+            _ => Corner::FrontLeft,
+        }
+    }
+}
+
+/// How the operator establishes XY zero for this setup.
+#[derive(Debug, Clone, PartialEq)]
+pub enum XYDatum {
+    CornerProbe(Corner),
+    CenterOfStock,
+    AlignmentPins,
+    Manual,
+}
+
+impl Default for XYDatum {
+    fn default() -> Self {
+        XYDatum::CornerProbe(Corner::FrontLeft)
+    }
+}
+
+impl XYDatum {
+    pub fn label(&self) -> &str {
+        match self {
+            XYDatum::CornerProbe(c) => match c {
+                Corner::FrontLeft => "Corner Probe (Front-Left)",
+                Corner::FrontRight => "Corner Probe (Front-Right)",
+                Corner::BackLeft => "Corner Probe (Back-Left)",
+                Corner::BackRight => "Corner Probe (Back-Right)",
+            },
+            XYDatum::CenterOfStock => "Center of Stock",
+            XYDatum::AlignmentPins => "Alignment Pins",
+            XYDatum::Manual => "Manual",
+        }
+    }
+
+    pub fn to_key(&self) -> String {
+        match self {
+            XYDatum::CornerProbe(c) => format!("corner_{}", c.to_key()),
+            XYDatum::CenterOfStock => "center".into(),
+            XYDatum::AlignmentPins => "pins".into(),
+            XYDatum::Manual => "manual".into(),
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        if let Some(corner) = s.strip_prefix("corner_") {
+            XYDatum::CornerProbe(Corner::from_key(corner))
+        } else {
+            match s {
+                "center" => XYDatum::CenterOfStock,
+                "pins" => XYDatum::AlignmentPins,
+                "manual" => XYDatum::Manual,
+                _ => XYDatum::default(),
+            }
+        }
+    }
+}
+
+/// How the operator establishes Z zero for this setup.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ZDatum {
+    #[default]
+    StockTop,
+    MachineTable,
+    FixedOffset(f64),
+    Manual,
+}
+
+impl ZDatum {
+    pub fn label(&self) -> String {
+        match self {
+            ZDatum::StockTop => "Stock Top".into(),
+            ZDatum::MachineTable => "Machine Table".into(),
+            ZDatum::FixedOffset(z) => format!("Fixed Offset ({z:.1} mm)"),
+            ZDatum::Manual => "Manual".into(),
+        }
+    }
+
+    pub fn to_key(&self) -> String {
+        match self {
+            ZDatum::StockTop => "stock_top".into(),
+            ZDatum::MachineTable => "table".into(),
+            ZDatum::FixedOffset(z) => format!("offset:{z}"),
+            ZDatum::Manual => "manual".into(),
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        if let Some(val) = s.strip_prefix("offset:") {
+            ZDatum::FixedOffset(val.parse().unwrap_or(0.0))
+        } else {
+            match s {
+                "table" => ZDatum::MachineTable,
+                "manual" => ZDatum::Manual,
+                _ => ZDatum::StockTop,
+            }
+        }
+    }
+}
+
+/// How to establish the work coordinate system for a setup.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DatumConfig {
+    pub xy_method: XYDatum,
+    pub z_method: ZDatum,
+    pub notes: String,
+}
+
+impl DatumConfig {
+    /// True when this is the untouched default — the writer skips the
+    /// keys entirely in that case, so old files stay byte-identical.
+    pub fn is_default(&self) -> bool {
+        *self == DatumConfig::default()
+    }
+}
+
 /// A setup's orientation and toolpath indices.
 pub struct SetupData {
     pub id: usize,
@@ -410,6 +599,16 @@ pub struct SetupData {
     pub face_up: FaceUp,
     /// Rotation of the stock about the vertical (Z) axis.
     pub z_rotation: ZRotation,
+    /// How the operator zeroes the machine for this setup. Persisted
+    /// since W9 / P-2; before that it was GUI-only overlay state and
+    /// was lost on every save.
+    pub datum: DatumConfig,
+    /// Models in scope for this setup. **Empty means "all models"** —
+    /// it is not the same as an explicit list naming every model, and
+    /// it is not derivable from the setup's toolpaths (a toolpath names
+    /// exactly one model; the scope is what the operator allowed, not
+    /// what got used). Persisted for that reason.
+    pub model_ids: Vec<ModelId>,
     /// Workholding fixtures in this setup.
     pub fixtures: Vec<Fixture>,
     /// Keep-out zones in this setup.
@@ -441,6 +640,12 @@ pub struct ToolpathConfig {
     pub boundary: BoundaryConfig,
     /// When true, inherit boundary from stock default.
     pub boundary_inherit: bool,
+    /// Op-agnostic rest analysis (P2.5): when enabled, runs the rest-depth
+    /// detector against this toolpath's own tool as the fine cutter after
+    /// generation, attaching `rest_grid` / `rest_regions` to the result —
+    /// available to every operation family, not just pencil's `RestDepth`
+    /// detector arm. See `compute::config::RestAnalysisConfig`.
+    pub rest_analysis: crate::compute::config::RestAnalysisConfig,
     /// Where this toolpath's stock material comes from.
     pub stock_source: StockSource,
     /// Coolant mode for G-code output.
@@ -513,9 +718,11 @@ pub struct ToolpathSummary {
 ///
 /// UX dial-in A8 — `diameter` is the cutter's named (tip) diameter. The
 /// LUT chipload lookup uses an *effective* diameter that depends on
-/// engagement depth (`feeds::geometry::ball_effective_diameter` /
-/// `tapered_ball_effective_diameter`), which can differ substantially
-/// for tapered / ball / bullnose tools. Geometry context is included so
+/// engagement depth ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]
+/// for the LUT row, `feeds::geometry::ball_effective_diameter` and friends
+/// for the contact circle chip thinning uses), which can differ
+/// substantially for tapered / ball / bullnose tools. Geometry context is
+/// included so
 /// consumers can correlate the named diameter with the effective
 /// LUT-lookup diameter rather than reading a single number that doesn't
 /// tell the whole story.
@@ -662,6 +869,45 @@ pub struct ToolpathDiagnostic {
     pub rapid_distance_mm: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
+    /// A/M9: generation-time truncated cascade core, XY-projected mm².
+    /// `None` serialises as `null` and means **not measured** (this operation
+    /// runs no ring cascade) — never "nothing left uncut". See
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`], which
+    /// carries the wave-16 rename (A6) and the vocabulary it fixes.
+    ///
+    /// The wire emits this under BOTH `truncated_core_mm2` and the legacy
+    /// key `standing_material_mm2`, same value — see the `Serialize` impl.
+    /// Report-only: no verdict reads it.
+    pub truncated_core_mm2: Option<f64>,
+    /// B8 (Checkpoint E): the hole-aware sibling of
+    /// [`Self::truncated_core_mm2`], off
+    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// `None` = not measured; `Some(0.0)` = a cascade ran and left no
+    /// unreached core. Narration has carried this split since wave 15; this
+    /// is the MCP per-toolpath summary catching up. Report-only.
+    pub untouched_material_mm2: Option<f64>,
+    /// B8 (Checkpoint E): area the cascade DID ring but where every point was
+    /// dropped — the oracle's *standing* (reached, left high), off
+    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// An ESTIMATOR, not an exact area, and a different quantity from
+    /// [`Self::truncated_core_mm2`]; the two must never be summed or
+    /// compared. Report-only.
+    pub reached_uncut_estimate_mm2: Option<f64>,
+    /// Wave D1: XY-projected mm² of finish band that emitted no cutting
+    /// because height resolution clipped its Z range away. `None`
+    /// serialises as `null` and means **nothing dropped or nothing that
+    /// plans bands ran** — never 0.0. The band name and the clipping height
+    /// travel with the `geom.unmachined_band` diagnostic message.
+    /// Report-only: no verdict reads it.
+    pub unmachined_band_area_mm2: Option<f64>,
+    /// Wave D1: emitted centreline points over material the tool cannot
+    /// physically reach. `None` = the operation emits no centrelines
+    /// (**not measured**); `Some(0)` = measured and clean.
+    pub tip_float_points: Option<usize>,
+    /// Wave D1: worst tip-float residual (mm) left beneath the emitted
+    /// centreline. `None` under exactly the same condition as
+    /// [`Self::tip_float_points`]. Report-only.
+    pub max_tip_float_mm: Option<f64>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
@@ -687,6 +933,12 @@ pub enum VerdictKind {
     PlungeStress,
     AirCut,
     GeneratedEmpty,
+    /// A gate declined to produce a verdict because the metric it reads is
+    /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
+    /// [`crate::sim_measurability`]. This is **not** a warning about the
+    /// toolpath; it is a statement about the simulation, and it carries the
+    /// reason plus what remains valid (collision detection always does).
+    MeasurabilityAbstained,
 }
 
 impl VerdictKind {
@@ -697,6 +949,7 @@ impl VerdictKind {
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
+            Self::MeasurabilityAbstained => "measurability_abstained",
         }
     }
 }
@@ -743,6 +996,13 @@ pub struct ProjectEvidence<'a> {
     /// frame rate (the 2026-06-11 setup-tab lag). Batch callers that
     /// want the sweep use [`ProjectSession::holder_collision_counts`].
     pub holder_collisions: Vec<(ToolpathId, usize)>,
+    /// Simulation cell size (mm) the trace was captured at, when known.
+    ///
+    /// Read only by [`crate::sim_measurability`], and only to enrich the
+    /// reason payload of a `CellTooCoarseForTipContact` abstention with the
+    /// number the operator would have to change. It never decides a verdict,
+    /// so `None` costs nothing but a vaguer message.
+    pub resolution_mm: Option<f64>,
 }
 
 impl<'a> ProjectEvidence<'a> {
@@ -759,6 +1019,7 @@ impl<'a> ProjectEvidence<'a> {
             rapid_collision_move_indices: &sim.rapid_collision_move_indices,
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
+            resolution_mm: Some(sim.column_grid_cell_mm),
         }
     }
 
@@ -798,7 +1059,22 @@ pub struct Verdict {
 #[derive(Debug, Clone)]
 pub struct ProjectDiagnostics {
     pub total_runtime_s: f64,
+    /// Legacy name, unchanged value: identical to
+    /// [`Self::air_cut_pct_of_total_runtime`]. Kept so the MCP wire key
+    /// `air_cut_percentage` and its consumers keep working; new code should
+    /// read one of the two named fields below so the denominator is visible
+    /// at the call site (`MEASUREMENT_DOMAINS.md` LH-1).
     pub air_cut_percentage: f64,
+    /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
+    /// The measure every shipped threshold is tuned against — the GUI's 20%
+    /// banner, the CLI's 40% verdict, and
+    /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`].
+    pub air_cut_pct_of_total_runtime: f64,
+    /// Air-cut time ÷ **cutting runtime (rapids excluded)** × 100 — always
+    /// ≥ [`Self::air_cut_pct_of_total_runtime`]. This is what the MCP
+    /// `narrate_toolpath` air-cut line reports and what `CLAUDE.md`'s metric
+    /// caveats describe. No threshold is applied to it.
+    pub air_cut_pct_of_cutting_time: f64,
     pub average_engagement: f64,
     pub collision_count: usize,
     pub rapid_collision_count: usize,
@@ -867,6 +1143,8 @@ impl ProjectSession {
                 name: "Setup 1".to_owned(),
                 face_up: FaceUp::default(),
                 z_rotation: ZRotation::default(),
+                datum: DatumConfig::default(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpath_indices: Vec::new(),
@@ -1181,6 +1459,28 @@ impl ProjectSession {
             .find(|(_, tc)| tc.id == id)
     }
 
+    /// Toolpaths that currently consume `source_id`'s rest-depth analysis as
+    /// their machining boundary — every toolpath with an *enabled*
+    /// `BoundarySource::DerivedRestRegions { source_toolpath_id }` pointing at
+    /// `source_id`. Used both to label the producer's UI ("Producing rest
+    /// regions for: ...") and to decide whether the producer must run its
+    /// rest-depth pass at all (demand-driven rest analysis — see
+    /// `mutation::auto_enable_rest_analysis_for_source`).
+    pub fn rest_region_consumers(&self, source_id: ToolpathId) -> Vec<ToolpathId> {
+        self.toolpath_configs
+            .iter()
+            .filter(|tc| {
+                tc.boundary.enabled
+                    && matches!(
+                        tc.boundary.source,
+                        BoundarySource::DerivedRestRegions { source_toolpath_id }
+                            if source_toolpath_id == source_id
+                    )
+            })
+            .map(|tc| tc.id)
+            .collect()
+    }
+
     /// Find which setup (by index) owns a toolpath with the given semantic ID.
     pub fn setup_of_toolpath_id(&self, tp_id: ToolpathId) -> Option<usize> {
         let tp_index = self.toolpath_configs.iter().position(|tc| tc.id == tp_id)?;
@@ -1243,6 +1543,14 @@ impl ProjectSession {
         self.setups
             .iter()
             .find(|s| s.toolpath_indices.contains(&tp_index))
+    }
+
+    /// Find the setup that owns a toolpath with the given semantic ID.
+    /// Companion to [`Self::find_setup_for_toolpath_index`] for call sites
+    /// that only have the [`ToolpathId`], not its vec index.
+    pub(crate) fn find_setup_for_toolpath_id(&self, tp_id: ToolpathId) -> Option<&SetupData> {
+        let tp_index = self.toolpath_configs.iter().position(|tc| tc.id == tp_id)?;
+        self.find_setup_for_toolpath_index(tp_index)
     }
 
     // ── Geometry transforms for setup-local frame ────────────────
@@ -1318,7 +1626,7 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 10)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 17)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
@@ -1329,6 +1637,31 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("rapid_distance_mm", &self.rapid_distance_mm)?;
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
+        // `null` = not measured (A/M9). Consumers must not coerce it to 0.
+        s.serialize_field("truncated_core_mm2", &self.truncated_core_mm2)?;
+        // Wave 16 / A6 compatibility: the SAME value under the pre-rename
+        // key. This wire is Serialize-only, so `serde(alias)` — the read-side
+        // mechanism the ruling names — has nothing to attach to here; the
+        // emit-side equivalent is to keep publishing the old key until
+        // consumers move. New readers must take `truncated_core_mm2`; the
+        // duplicate is deprecated and carries no independent meaning.
+        // A reader must NOT put a `serde(alias)` over both — the field would
+        // arrive twice and serde rejects it (pinned in
+        // `tests/standing_material_channel_am9.rs`).
+        s.serialize_field("standing_material_mm2", &self.truncated_core_mm2)?;
+        // B8: the untouched/standing split narration has carried since wave
+        // 15. `null` = not measured on both. `reached_uncut_estimate_mm2` is
+        // an ESTIMATOR of a DIFFERENT quantity — never sum it with the core.
+        s.serialize_field("untouched_material_mm2", &self.untouched_material_mm2)?;
+        s.serialize_field(
+            "reached_uncut_estimate_mm2",
+            &self.reached_uncut_estimate_mm2,
+        )?;
+        // Wave D1. Same contract: `null` = not measured / nothing found.
+        // Consumers must not coerce any of these three to 0.
+        s.serialize_field("unmachined_band_area_mm2", &self.unmachined_band_area_mm2)?;
+        s.serialize_field("tip_float_points", &self.tip_float_points)?;
+        s.serialize_field("max_tip_float_mm", &self.max_tip_float_mm)?;
         s.end()
     }
 }
@@ -1378,9 +1711,20 @@ impl serde::Serialize for Verdict {
 impl serde::Serialize for ProjectDiagnostics {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 8)?;
+        let mut s = serializer.serialize_struct("ProjectDiagnostics", 10)?;
         s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
+        // LH-1: the legacy key keeps its (total-runtime) value for wire
+        // compatibility; the two named keys beside it say which denominator
+        // each number used, so an agent never has to guess.
         s.serialize_field("air_cut_percentage", &self.air_cut_percentage)?;
+        s.serialize_field(
+            "air_cut_pct_of_total_runtime",
+            &self.air_cut_pct_of_total_runtime,
+        )?;
+        s.serialize_field(
+            "air_cut_pct_of_cutting_time",
+            &self.air_cut_pct_of_cutting_time,
+        )?;
         s.serialize_field("average_engagement", &self.average_engagement)?;
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
@@ -1477,6 +1821,10 @@ mod tests {
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
                 pause_message: None,
+                xy_datum: String::new(),
+                z_datum: String::new(),
+                datum_notes: String::new(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
@@ -1499,6 +1847,7 @@ mod tests {
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
+                    rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1513,8 +1862,12 @@ mod tests {
         assert_eq!(tp.operation.op_type(), expected.op_type());
     }
 
+    /// Snapshot model: the `machine_ref` field is retained on the file
+    /// struct only so legacy projects still PARSE — it is no longer a
+    /// live link (the session loader drops it; see
+    /// `legacy_machine_ref_dropped_on_session_load`).
     #[test]
-    fn machine_ref_round_trips_through_project_file() {
+    fn legacy_machine_ref_field_still_parses_for_backcompat() {
         use super::project_file::{ProjectFile, ProjectJobSection};
         let make = |job: ProjectJobSection| ProjectFile {
             format_version: 3,
@@ -1524,28 +1877,66 @@ mod tests {
             setups: Vec::new(),
             toolpaths: Vec::new(),
         };
-        // machine_ref set → persists and round-trips.
+        // An old file with machine_ref must still deserialize (we read the
+        // field, then drop it on load).
         let project = make(ProjectJobSection {
             name: "Ref Job".to_owned(),
             machine_ref: Some("shapeoko_pro_xxl".to_owned()),
             ..ProjectJobSection::default()
         });
         let toml_str = toml::to_string_pretty(&project).unwrap();
-        assert!(
-            toml_str.contains("machine_ref = \"shapeoko_pro_xxl\""),
-            "machine_ref should serialize: {toml_str}"
-        );
         let back: ProjectFile = toml::from_str(&toml_str).unwrap();
         assert_eq!(back.job.machine_ref.as_deref(), Some("shapeoko_pro_xxl"));
 
-        // No machine_ref → key omitted (skip_serializing_if), so old
-        // projects stay byte-compatible.
+        // No machine_ref → key omitted (skip_serializing_if), so files
+        // written under the snapshot model never carry it.
         let plain = make(ProjectJobSection::default());
         let plain_toml = toml::to_string_pretty(&plain).unwrap();
         assert!(
             !plain_toml.contains("machine_ref"),
             "absent machine_ref should be omitted: {plain_toml}"
         );
+    }
+
+    /// Snapshot migration: loading a project that carries a legacy
+    /// `machine_ref` drops the ref (session reports `None`) and keeps the
+    /// inline `[job.machine]` as authoritative.
+    #[test]
+    fn legacy_machine_ref_dropped_on_session_load() {
+        use super::project_file::{ProjectFile, ProjectJobSection};
+        let mut inline = crate::machine::MachineProfile::generic_wood_router();
+        inline.name = "Inline Wins".to_owned();
+        let project = ProjectFile {
+            format_version: 3,
+            job: ProjectJobSection {
+                name: "Legacy Ref".to_owned(),
+                machine: inline,
+                machine_ref: Some("some_library_machine".to_owned()),
+                ..ProjectJobSection::default()
+            },
+            tools: Vec::new(),
+            models: Vec::new(),
+            setups: Vec::new(),
+            toolpaths: Vec::new(),
+        };
+        let toml_str = toml::to_string_pretty(&project).unwrap();
+        let dir = std::env::temp_dir().join(format!("rscam_snap_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("legacy_ref.toml");
+        std::fs::write(&path, toml_str).unwrap();
+
+        let session = ProjectSession::load(&path).unwrap();
+        assert_eq!(
+            session.machine_ref(),
+            None,
+            "legacy machine_ref must be dropped on load (snapshot model)"
+        );
+        assert_eq!(
+            session.machine().name,
+            "Inline Wins",
+            "inline machine must remain authoritative"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1625,6 +2016,10 @@ mod tests {
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
                 pause_message: None,
+                xy_datum: String::new(),
+                z_datum: String::new(),
+                datum_notes: String::new(),
+                model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
@@ -1649,6 +2044,7 @@ mod tests {
                     _legacy_feeds_auto: None,
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
+                    rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                 }],
             }],
             toolpaths: Vec::new(),
@@ -1777,6 +2173,7 @@ mod tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         };
 
         let idx = session.add_toolpath(0, new_tp).unwrap();
@@ -1856,12 +2253,14 @@ mod tests {
             },
             total_moves: 0,
             deviations: None,
+            column_deviations: None,
             boundaries: Vec::new(),
             checkpoints: Vec::new(),
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
         assert!(

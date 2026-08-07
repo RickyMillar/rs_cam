@@ -2,17 +2,21 @@
 //! under cutting load.
 //!
 //! For each cutting sample of the toolpath, computes the transverse
-//! cutting force from material specific cutting energy:
+//! cutting force from the canonical feed-aware affine model
+//! ([`crate::feeds::force::lateral_cutting_force`]):
 //!
 //! ```text
-//! F = Kc(material) × axial_engagement_mm × radial_width_mm    [N]
+//! F = axial_engagement_mm × (Ks · fz·sin θ_peak + F_edge)    [N]
 //! ```
 //!
-//! using the same arc-equivalent slab as `power::evaluate`. Then
-//! [`ToolDefinition::tip_deflection_mm`] integrates the stepped
+//! where the immersion angle ψ (→ θ_peak) is the sample's swept
+//! `arc_engagement_radians` and `fz` is its commanded chipload per tooth.
+//! Then [`ToolDefinition::tip_deflection_mm`] integrates the stepped
 //! cantilever (shank + cutting region) using the per-cutter
 //! `lookup_diameter_at` profile, and returns the predicted tip
-//! displacement.
+//! displacement. The Suggest predictor and the pre-sim axial envelope
+//! route through the same [`crate::feeds::predict::tip_deflection_from_engagement`]
+//! so the three cannot drift apart.
 //!
 //! Verdict from the **peak `δ` across all cutting samples** of the
 //! toolpath:
@@ -77,6 +81,7 @@ pub fn sample_tip_deflection_mm(
     tool: &ToolDefinition,
     material: &Material,
     sample: &SimulationCutSample,
+    feed_per_tooth_mm: f64,
 ) -> Option<f64> {
     if !sample.is_cutting
         || sample.engagement.radial_woc_fraction < 0.02
@@ -84,21 +89,26 @@ pub fn sample_tip_deflection_mm(
     {
         return None;
     }
-    let arc = sample.arc_engagement_radians?;
-    let engagement_radius =
-        crate::tool::MillingCutter::engagement_radius(tool, sample.axial_engagement_mm).max(0.0);
-    let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
-    if radial_width <= 0.0 {
+    // The swept engagement arc IS the immersion angle ψ — hand it to the
+    // canonical force model directly (no lossy arc→slab-width conversion).
+    let immersion_rad = sample.arc_engagement_radians?;
+    if immersion_rad <= 0.0 {
         return None;
     }
-    // Canonical force + cantilever model lives in `feeds::predict` so
-    // the pre-sim cutter-axial-constraints envelope and this post-sim
-    // gate cannot drift apart.
+    // Canonical feed-aware force + cantilever model lives in
+    // `feeds::force`/`feeds::predict` so the pre-sim cutter-axial-
+    // constraints envelope, the Suggest predictor, and this post-sim gate
+    // cannot drift apart. `feed_per_tooth_mm` is the *effective* chipload
+    // (after kinematic prediction / F-039 modulation) the caller resolves
+    // via `effective_feed_for_sample`, so a path the optimizer feeds down
+    // for deflection reads safe here too. A sample with no chipload signal
+    // yields `None` and is skipped (no deflection-relevant cutting load).
     crate::feeds::predict::tip_deflection_from_engagement(
         tool,
         material,
         sample.axial_engagement_mm,
-        radial_width,
+        immersion_rad,
+        feed_per_tooth_mm,
     )
 }
 
@@ -205,7 +215,19 @@ pub fn evaluate(
         };
         any_arc_captured = true;
 
-        let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s) else {
+        // Effective feed per tooth (after kinematic prediction / F-039
+        // modulation), mirroring the power + chipload gates so all three
+        // evaluate the cut that will actually run. With no predicted-feed
+        // map this is the sample's commanded chipload (unchanged).
+        let eff_feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
+        let flutes = s.flute_count.max(1) as f64;
+        let eff_fz = if s.spindle_rpm > 0 {
+            eff_feed / (s.spindle_rpm as f64 * flutes)
+        } else {
+            s.chipload_mm_per_tooth
+        };
+
+        let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s, eff_fz) else {
             continue;
         };
 
@@ -457,9 +479,136 @@ mod tests {
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),
+                runtime_by_intent: None,
             },
             samples,
             ..SimulationCutTrace::test_fixture()
+        }
+    }
+
+    /// Feed-sensitivity sentry (gate level): a sample with higher feed
+    /// per tooth produces a strictly higher tip deflection — but **less
+    /// than proportional**, because the affine `F_edge` floor means feed
+    /// cannot starve the bending force to zero. This is the behaviour
+    /// that would have been flat under the old feed-blind model, and is
+    /// the whole reason the per-move feed optimizer and this gate can now
+    /// agree on the same cut.
+    #[test]
+    fn higher_feed_raises_deflection_but_edge_floor_holds() {
+        let tool = carbide_flat(6.0, 45.0);
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let arc = std::f64::consts::FRAC_PI_2;
+        let slow = cutting_sample(0, 0, 3.0, arc, 900.0, 0.5);
+        let fast = cutting_sample(0, 0, 3.0, arc, 1800.0, 0.5); // 2× feed
+        let d_slow = sample_tip_deflection_mm(&tool, &mat, &slow, slow.chipload_mm_per_tooth)
+            .expect("slow δ");
+        let d_fast = sample_tip_deflection_mm(&tool, &mat, &fast, fast.chipload_mm_per_tooth)
+            .expect("fast δ");
+        assert!(d_fast > d_slow, "2× feed must raise δ: {d_slow} → {d_fast}");
+        assert!(
+            d_fast < 2.0 * d_slow,
+            "edge floor must keep δ sub-proportional: {d_fast} vs 2×{d_slow}"
+        );
+    }
+
+    /// Agreement sentry (gate wiring): the gate feeds the sample's swept
+    /// `arc_engagement_radians` as the immersion angle and its commanded
+    /// `chipload_mm_per_tooth` as feed per tooth — i.e. it routes through
+    /// the same canonical model the predictor and envelope use. Pins the
+    /// wiring so the gate cannot silently start passing a different
+    /// quantity (the latent arc-slab vs raw-WOC divergence this fixed).
+    #[test]
+    fn gate_routes_through_canonical_force_model() {
+        let tool = carbide_flat(6.0, 45.0);
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let arc = 1.2_f64;
+        let s = cutting_sample(0, 0, 2.5, arc, 1200.0, 0.5);
+        let via_gate =
+            sample_tip_deflection_mm(&tool, &mat, &s, s.chipload_mm_per_tooth).expect("gate δ");
+        let via_canonical = crate::feeds::predict::tip_deflection_from_engagement(
+            &tool,
+            &mat,
+            s.axial_engagement_mm,
+            s.arc_engagement_radians.expect("arc"),
+            s.chipload_mm_per_tooth,
+        )
+        .expect("canonical δ");
+        assert!((via_gate - via_canonical).abs() < 1e-12);
+    }
+
+    /// Step-4 optimizer↔gate consistency: a long/thin tool full-slotting
+    /// at the commanded feed Exceeds, but stamping the deflection-safe feed
+    /// the F-039 optimizer would produce (computed here from the SAME
+    /// affine-inverse formula the optimizer uses) into the trace's
+    /// `predicted_feeds` flips the gate to `Within`. This is the dead-end
+    /// the unified model closes: before, the gate ignored the optimizer's
+    /// feed-down (feed-blind) and kept reading Exceeds.
+    #[test]
+    fn gate_honors_optimizer_feed_down_into_within() {
+        let tool = carbide_flat(3.0, 45.0); // L/D 15, uniform 3 mm beam
+        let mat = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let ap = 1.5_f64;
+        // Full-slot sample (arc = π) at a high commanded feed.
+        let commanded_feed = 5000.0_f64;
+        let sample = cutting_sample(0, 0, ap, std::f64::consts::PI, commanded_feed, 1.0);
+
+        // Commanded (no predicted-feed map): the gate Exceeds.
+        let trace_cmd = trace_with(vec![sample.clone()]);
+        let v_cmd = evaluate_args(
+            0,
+            &tool,
+            &mat,
+            Some(&trace_cmd),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(v_cmd, DeflectionVerdict::Exceeds { .. }),
+            "long/thin tool at full commanded feed must Exceed; got {v_cmd:?}"
+        );
+
+        // The optimizer's deflection-safe feed (affine inverse, full slot
+        // ⇒ sinθ_peak = 1), with a small margin so we land clearly Within.
+        let (ks, f_edge) = crate::feeds::force::affine_coefficients(&mat).expect("coeffs");
+        let e = tool.tool_material.youngs_modulus_n_per_mm2();
+        let compliance = tool.tip_deflection_mm(1.0, ap, e);
+        let budget_force = EXCEEDS_BOUND_MM / compliance;
+        let safe_fz = (budget_force / ap - f_edge) / ks;
+        let safe_feed = safe_fz * sample.spindle_rpm as f64 * sample.flute_count as f64 * 0.98;
+        assert!(
+            safe_feed > 0.0 && safe_feed < commanded_feed,
+            "safe feed should be a real feed-down: {safe_feed}"
+        );
+
+        // Stamp it as the predicted (modulated) feed for the cutting move.
+        let mut trace_safe = trace_with(vec![sample.clone()]);
+        trace_safe
+            .predicted_feeds
+            .insert((ToolpathId(0), sample.move_index), safe_feed);
+        let v_safe = evaluate_args(
+            0,
+            &tool,
+            &mat,
+            Some(&trace_safe),
+            None,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        match v_safe {
+            DeflectionVerdict::Within { peak_mm, .. } => {
+                assert!(
+                    peak_mm <= EXCEEDS_BOUND_MM,
+                    "optimizer feed-down must read Within: {peak_mm} mm"
+                );
+            }
+            other => panic!("expected Within after optimizer feed-down, got {other:?}"),
         }
     }
 
@@ -536,16 +685,19 @@ mod tests {
     }
 
     #[test]
-    fn wanaka_endmill_back_rough_lands_in_approximate_band() {
-        // Wanaka TP 4: 6 mm carbide flat, 45 mm stickout, hardwood,
-        // slot at 3 mm peak DOC. Live MCP report (2026-05-08) measured
-        // 158 µm — a slot-engaged sample at peak DOC. Pin the test in
-        // the 100–200 µm Approximate band so threshold tweaks have
-        // headroom without breaking this regression.
-        // 2.5 mm slot DOC — a half-step below the operator's peak,
-        // representative of the average-engagement samples that drive
-        // the wanaka 158 µm live measurement (peak DOC samples are
-        // typically not full-slot in the real sim).
+    fn wanaka_endmill_back_rough_deflection_is_within() {
+        // A stubby roughing endmill (6 mm carbide flat, 45 mm stickout)
+        // full-slotting hardwood at 2.5 mm DOC. Under the feed-aware
+        // literature-absolute force model the instantaneous bending force
+        // is modest (~18 N: ap 2.5 · (Ks·fz + F_edge) at full immersion),
+        // so peak tip deflection is ~17 µm — comfortably Within. Deflection
+        // is NOT the binding constraint for a stubby 6 mm flat at L/D 7.5;
+        // the real limiter for full-slotting hardwood is chipload / power /
+        // chip evacuation. (The old `Kc·ap·ae` aggregate read ~494 µm here
+        // — ~4× the honest instantaneous force, which made the deflection
+        // gate cry tool-limited on a cut that isn't.) The slot annotation
+        // still rides on the verdict so downstream surfaces can name the
+        // engagement.
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
@@ -567,21 +719,20 @@ mod tests {
         );
         match v {
             DeflectionVerdict::Within {
-                peak_mm,
-                confidence: Confidence::Approximate(detail),
-                ..
+                peak_mm, evidence, ..
             } => {
                 let um = peak_mm * 1000.0;
                 assert!(
-                    (100.0..=200.0).contains(&um),
-                    "wanaka-like End-Mill slot at hardwood should land 100-200 µm; got {um:.1} µm"
+                    (8.0..=40.0).contains(&um),
+                    "stubby roughing endmill full-slot is deflection-safe (~17 µm) under the feed-aware force model; got {um:.1} µm"
                 );
-                assert!(
-                    detail.contains("slot"),
-                    "slot annotation expected, got: {detail}"
+                assert_eq!(
+                    evidence.locality.as_deref(),
+                    Some("slot section"),
+                    "slot annotation expected, got: {evidence:?}"
                 );
             }
-            other => panic!("expected Within(Approximate), got {other:?}"),
+            other => panic!("expected Within (deflection not the limiter), got {other:?}"),
         }
     }
 
@@ -623,17 +774,15 @@ mod tests {
 
     #[test]
     fn small_engraver_low_feed_in_hardwood_passes() {
-        // 1 mm carbide flat at 25 mm stickout (geometric L/D = 25, the
-        // gap doc's "should still pass" workflow). Tiny chip cross-
-        // section keeps force low; predicted δ stays under threshold.
-        // Phase 5 Step 5.4 (2026-06-01): axial reduced 0.3 → 0.2 mm
-        // after HardMaple Kc shifted from folklore 15.0 → FPL-cited
-        // 16.0 N/mm². The previous 0.3 mm axial sat at ~197 µm with
-        // the old Kc (just under the 200 µm bound by design); the new
-        // Kc pushes it to ~210 µm. A genuinely-light engraver cut at
-        // the new Kc is ~0.2 mm axial — same test intent, honest
-        // margin.
-        let tool = carbide_flat(1.0, 25.0);
+        // 1 mm carbide flat engraver, light cut in hardwood — the gap
+        // doc's "should still pass" workflow. Tiny chip cross-section
+        // keeps the instantaneous force low; under the feed-aware
+        // literature-absolute force model a light 1 mm engraver cut at
+        // 15 mm stickout reads ~50 µm — Within. (Note: deflection DOES
+        // gate genuinely long/thin tools and aggressive small-tool cuts —
+        // a 3 mm tool crosses 200 µm Exceeds by L/D ~14, or sooner under a
+        // deep/over-fed cut — so the gate is appropriately scoped, not dead.)
+        let tool = carbide_flat(1.0, 15.0);
         let trace = trace_with(vec![cutting_sample(
             0,
             0,
@@ -797,7 +946,14 @@ mod tests {
         use crate::toolpath_spans::Span;
         use std::borrow::Cow;
 
-        let tool = carbide_flat(6.0, 45.0);
+        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7)
+        // lifts the deflection force ~2.7×; the original 45 mm-stickout
+        // steady sample now reads ~399 µm and Exceeds. This test is about
+        // phantom-sample FILTERING (entry_spike must stay None), not the
+        // deflection magnitude — so shorten stickout 45 → 30 mm (δ ∝
+        // stickout³ → ~0.30×) to keep the steady sample Within and keep
+        // the phantom-filter assertion the thing under test.
+        let tool = carbide_flat(6.0, 30.0);
         // Steady-state sample: in DepthPass, healthy 2 mm axial DOC.
         let mut steady = cutting_sample(0, 0, 2.0, std::f64::consts::PI, 1500.0, 1.0);
         steady.span_path = vec![
@@ -864,9 +1020,10 @@ mod tests {
                 // the 20 mm phantom. Tip deflection scales linearly
                 // with axial engagement → if the phantom leaked into
                 // the steady-state track, peak would be ~10× the
-                // steady-only value (roughly 1.5 mm for these inputs).
+                // steady-only value for these inputs).
                 // The realistic 2 mm-axial slot peak for a 6 mm carbide
-                // flat at 1500 mm/min in HardMaple lands around 148 µm.
+                // flat at 30 mm stickout, 1500 mm/min in HardMaple lands
+                // around ~120 µm under the milling-Kc calibration.
                 assert!(
                     peak_mm < 0.5,
                     "steady-state peak should reflect the 2 mm steady sample (~150 µm), \

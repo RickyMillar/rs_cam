@@ -99,10 +99,21 @@ fn draw_verdict_hud(
     events: &mut Vec<AppEvent>,
 ) {
     // Curated count only (density pass V1): the raw issues() length is
-    // dominated by per-sample air-cut / low-engagement emission noise
-    // (tens of thousands on a real job) — a headline "issues 46751" pill
-    // reads as catastrophe. Hotspots are the one issue kind that is both
-    // curated and not already pilled (collisions have their own pill).
+    // dominated by air-cut / low-engagement runs (tens of thousands on a
+    // real job) — a headline "issues 46751" pill reads as catastrophe.
+    // Hotspots are the one issue kind that is both curated and not already
+    // pilled (collisions have their own pill).
+    //
+    // D10 (census §3.5): this comment used to say "per-sample emission
+    // noise". It is not per-sample — `cut_trace.issues` has been run-length
+    // coalesced since April 2026, and on the census fixture the two
+    // populations differ by 43x (35,287 flagged samples became 821
+    // segments). Sizing a fix off the wrong population is exactly what the
+    // census set out to prevent. What actually drives the count is
+    // TRANSITION DENSITY in ordinary cutting: every time the cutter leaves
+    // and re-enters material a run breaks and a new segment opens. An
+    // all-air toolpath is the CHEAP case (one long run); a normal pocket is
+    // the expensive one.
     let hotspot_count = sim
         .issues(gui, max_feed)
         .iter()
@@ -1545,7 +1556,7 @@ fn paint_span_subband(
         let x_end = global_x(span.end_move);
         let primary_idx = match &span.payload {
             Some(SpanPayload::DepthPass { pass_index, .. }) => *pass_index,
-            Some(SpanPayload::Region { region_id }) if !has_depth_passes => *region_id,
+            Some(SpanPayload::Region { region_id, .. }) if !has_depth_passes => *region_id,
             _ => {
                 let n = primary_index_seq;
                 primary_index_seq += 1;
@@ -1638,7 +1649,7 @@ fn paint_span_subband(
                 })
             {
                 let region_id = match &span.payload {
-                    Some(SpanPayload::Region { region_id }) => *region_id,
+                    Some(SpanPayload::Region { region_id, .. }) => *region_id,
                     _ => sid_u32,
                 };
                 hover_label = Some(format!(
@@ -1694,7 +1705,7 @@ fn ribbon_span_label(span: &rs_cam_core::toolpath_spans::Span, fallback_index: u
                 pass_index,
             }),
         ) => format!("DepthPass {pass_index} · z={z_level:.2}"),
-        (SpanKind::Region, Some(SpanPayload::Region { region_id })) => {
+        (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
             format!("Region {region_id}")
         }
         (SpanKind::DepthPass, _) => format!("DepthPass {fallback_index}"),

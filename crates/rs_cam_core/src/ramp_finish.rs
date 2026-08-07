@@ -16,9 +16,13 @@
 //! 5. Apply slope confinement to restrict to steep regions
 
 use crate::debug_trace::ToolpathDebugContext;
-use crate::geo::P3;
+use crate::finish_setup::FinishResolutionPolicy;
+use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::slope::{SlopeMap, SurfaceHeightmap};
+#[cfg(test)]
+use crate::polygon::Polygon2;
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Toolpath, simplify_path_3d};
 use crate::waterline::waterline_contours;
@@ -93,6 +97,109 @@ impl RampFinishRuntimeEvent {
                 ..
             } => format!("Terrace {terrace_index} ramp {ramp_index}"),
         }
+    }
+}
+
+/// What the reach clamp did to one ramp-finish run (PR-8b).
+///
+/// Report-only. It is the channel `CHECKPOINT_B_EVIDENCE.md` §8.2 says did
+/// not exist: "a genuine reach failure with **no diagnostic channel**; a user
+/// would ship it."
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RampReachClamp {
+    /// Ramp points whose Z was raised because the cutter could not hold the
+    /// commanded depth at that XY.
+    pub clamped_points: usize,
+    /// Ramp points examined. `clamped_points == 0` with a non-zero total is a
+    /// measured-clean run; both zero means no ramp path was built at all.
+    pub ramp_points: usize,
+    /// Largest single lift (mm). This is material the ramp intended to remove
+    /// and did not.
+    pub max_lift_mm: f64,
+    /// The Z ladder's bottom before the clamp — `SurfaceHeightmap::min_z`,
+    /// which on a padded finish grid is the MESH bbox floor.
+    pub requested_bottom_z_mm: f64,
+    /// The Z ladder's bottom after the clamp — the deepest tool-centre Z the
+    /// surface says this cutter can hold anywhere on this model.
+    pub holdable_bottom_z_mm: f64,
+    /// C8: XY-projected area (mm²) of ramp path the clamp LIFTED — the
+    /// footprint of the standing material this operation knowingly leaves.
+    ///
+    /// `None` = **not measured**: no ramp path was built, so there was
+    /// nothing to clamp. `Some(0.0)` = a ramp ran and nothing was lifted.
+    /// The A/M9 three-valued contract (`MEASUREMENT_DOMAINS.md` X-19),
+    /// applied to a third measure — before C8 the only magnitude here was
+    /// [`Self::max_lift_mm`], a single worst-case DEPTH with no extent, so
+    /// "5 mm deep" could mean one stray point or half the part and nothing
+    /// said which.
+    ///
+    /// **Read [`Self::AREA_PROVENANCE`] before comparing this to anything.**
+    /// It is a PATH-SWATH area, not a ring-cascade residual and not a
+    /// dexel-top area: it must never be summed with, or divided by,
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].
+    pub lifted_area_mm2: Option<f64>,
+}
+
+impl RampReachClamp {
+    /// What [`Self::lifted_area_mm2`] means (M1). Fixed for this measure, so
+    /// it is a constant rather than a settable field — a field could drift
+    /// from the code that fills it, and this number's whole failure mode is
+    /// being read as something it is not.
+    ///
+    /// Follows [`crate::scallop::ScallopReport::PROVENANCE`]'s shape and
+    /// deliberately NOT its content: that one is a ring-cascade residual
+    /// measured from polygons, this one is the swath a PATH sweeps.
+    pub const AREA_PROVENANCE: crate::measurement::MeasurementProvenance =
+        crate::measurement::MeasurementProvenance::new(
+            crate::measurement::MeasurementDomain::ProjectedXyArea,
+            crate::measurement::MeasurementStage::RampReachClampSwath,
+        )
+        .with_resolution_note(
+            "ramp-path swath: XY segment length x the cutter's CUSP diameter, \
+             summed over segments with a lifted endpoint (exact path \
+             geometry, no grid; overlapping ramp passes are NOT deduplicated, \
+             so treat it as an upper bound)",
+        );
+
+    /// True when the clamp changed nothing: the ladder bottom was already
+    /// holdable and no ramp point was lifted.
+    #[must_use]
+    pub fn is_inert(&self) -> bool {
+        self.clamped_points == 0
+            && (self.requested_bottom_z_mm - self.holdable_bottom_z_mm).abs() <= 1e-9
+    }
+
+    /// [`Self::lifted_area_mm2`] in the newtype that refuses cross-domain
+    /// division (M1 slice 2), with its contract attached. `None` when
+    /// nothing measured it — the value and its provenance travel together
+    /// or not at all.
+    #[must_use]
+    pub fn lifted_area(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.lifted_area_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                Self::AREA_PROVENANCE,
+            )
+        })
+    }
+
+    fn record_lift(&mut self, lift_mm: f64) {
+        self.clamped_points += 1;
+        if lift_mm > self.max_lift_mm {
+            self.max_lift_mm = lift_mm;
+        }
+    }
+
+    /// Turn "not measured" into "measured", then accumulate. Called once per
+    /// ramp path, including when that path was lifted nowhere — which is what
+    /// keeps a measured zero distinct from an absent measurement.
+    fn record_lifted_area(&mut self, area_mm2: f64) {
+        self.lifted_area_mm2 = Some(self.lifted_area_mm2.unwrap_or(0.0) + area_mm2);
     }
 }
 
@@ -288,37 +395,45 @@ fn ramp_between_contours(
     path
 }
 
-/// Filter a path by slope confinement.
+/// The resolution policy ramp-finish generates on (H3 step 2; moved by PR-8a).
 ///
-/// Returns segments of the path that fall within the slope angle range.
-/// Each segment is a contiguous run of points within the range.
-fn slope_confined_segments(
-    path: &[P3],
-    slope_map: &SlopeMap,
-    slope_from_rad: f64,
-    slope_to_rad: f64,
-) -> Vec<Vec<P3>> {
-    let mut segments = Vec::new();
-    let mut current: Vec<P3> = Vec::new();
-
-    for pt in path {
-        let in_range = slope_map
-            .angle_at_world(pt.x, pt.y)
-            .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
-
-        if in_range {
-            current.push(*pt);
-        } else if current.len() >= 2 {
-            segments.push(std::mem::take(&mut current));
-        } else {
-            current.clear();
-        }
-    }
-    if current.len() >= 2 {
-        segments.push(current);
-    }
-
-    segments
+/// RampFinish selects [`crate::finish_setup::FinishResolutionMode::GeoMeanEnvelopeCusp`] — the
+/// geometric mean of `envelope/4` and `cusp/4`. It selected
+/// `LegacyEnvelopeQuarter` until PR-8a, under the approved Checkpoint B.
+///
+/// # Why this op moved and its two siblings did not
+///
+/// The generation cell reaches ramp-finish's emitted geometry through
+/// `step_len = cell_size * 2`, the spacing at which
+/// [`ramp_between_contours`] samples the descent. A ramp point is a straight
+/// chord between two contour samples, so a coarse cell means long chords
+/// across curved walls, and the chord cuts inside the surface it spans.
+/// `CHECKPOINT_B_EVIDENCE.md` §3.2 measured that directly: at
+/// `envelope/4` (0.750 mm on the shipped Ø1-tip / Ø6-shank taper, i.e. the
+/// SHANK) the narrow-valley fixture gouged **2.39 mm** and the narrow ridge
+/// **0.16 mm**, and every arm finer than it eliminated both outright —
+/// deepest gouge exactly 0.0000 mm, zero samples past 50 µm.
+///
+/// The win arrives HERE and not deeper. At this cell the two fixtures are
+/// already gouge-free for 1.3–2.6× generation time and +11–43% moves;
+/// `CuspQuarter` buys nothing further and costs 3.1–11.7×. That is the whole
+/// case for a named intermediate mode rather than following the
+/// classification grid.
+///
+/// Scallop and steep/shallow select independently and were NOT moved:
+/// scallop's cusp-scaled arm creates 19–33 mm² of standing material the
+/// legacy cell does not (gated behind Checkpoint C), and steep/shallow's
+/// output is bit-identical across every arm (deferred pending a
+/// discriminating fixture — see `steep_shallow_generation_resolution`).
+///
+/// On a plain ball the geometric mean of two equal cells is that cell, so
+/// ball output is byte-identical to pre-PR-8a; only tapered tools move.
+#[must_use]
+pub fn ramp_finish_generation_resolution(
+    cutter: &dyn MillingCutter,
+    tolerance: f64,
+) -> FinishResolutionPolicy {
+    FinishResolutionPolicy::geo_mean_envelope_cusp(cutter, tolerance)
 }
 
 /// Generate a ramp finishing toolpath.
@@ -332,8 +447,24 @@ pub fn ramp_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
 ) -> Toolpath {
-    let (tp, _) = ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None);
+    let (tp, _, _) =
+        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
+}
+
+/// Cancellable variant of [`ramp_finish_toolpath`].
+#[allow(clippy::expect_used)]
+pub fn ramp_finish_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    let (tp, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+        mesh, index, cutter, params, None, None, cancel,
+    )?;
+    Ok(tp)
 }
 
 fn runtime_annotations_to_labels(
@@ -345,48 +476,136 @@ fn runtime_annotations_to_labels(
         .collect()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::indexing_slicing, clippy::expect_used)]
 pub fn ramp_finish_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>) {
-    let tool_radius = cutter.radius();
+    boundary_regions: Option<&RegionSet<'_>>,
+) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp) {
+    let never_cancel = || false;
+    ramp_finish_toolpath_structured_annotated_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        &never_cancel,
+    )
+    .expect("non-cancellable ramp finish toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`ramp_finish_toolpath_structured_annotated`].
+/// Polls `cancel` once per Z level while building waterline contours, once
+/// per terrace (adjacent Z-level pair) while ramping between them, and once
+/// per ramp segment during toolpath emission.
+///
+/// `boundary_regions` (P2.3): folded into the ramp-path keep predicate
+/// alongside the slope filter — a point survives only when it's in the
+/// slope band (when active) AND inside a machining-boundary region (when
+/// given). The split always runs when either filter is active; `None`
+/// reproduces today's slope-only (or unfiltered) output byte-for-byte.
+#[allow(clippy::too_many_arguments)]
+pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp), Cancelled> {
+    ramp_finish_toolpath_structured_annotated_with_resolution(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        ramp_finish_generation_resolution(cutter, params.tolerance),
+        cancel,
+    )
+}
+
+/// [`ramp_finish_toolpath_structured_annotated_with_cancel`] with the
+/// generation grid resolution supplied by the caller.
+///
+/// **Research seam, not a production entry point** — see
+/// [`crate::scallop::scallop_toolpath_structured_annotated_with_resolution`]
+/// for why H3's Checkpoint B harness needs one. Passing
+/// `ramp_finish_generation_resolution(cutter, params.tolerance)` reproduces
+/// the shipped path exactly.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    resolution: FinishResolutionPolicy,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp), Cancelled> {
+    check_cancel(cancel)?;
     let bbox = &mesh.bbox;
 
-    // Build surface heightmap and slope map
-    let cell_size = (tool_radius / 4.0).max(params.tolerance);
-    let origin_x = bbox.min.x - tool_radius;
-    let origin_y = bbox.min.y - tool_radius;
-    let extent_x = bbox.max.x + tool_radius;
-    let extent_y = bbox.max.y + tool_radius;
-    let cols = ((extent_x - origin_x) / cell_size).ceil() as usize + 1;
-    let rows = ((extent_y - origin_y) / cell_size).ceil() as usize + 1;
+    // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
+    // The RESOLUTION is ramp_finish's own choice (H3 step 2) — see
+    // `ramp_finish_generation_resolution`, which the shipped wrapper above
+    // passes in.
+    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
+        mesh, index, cutter, resolution, cancel,
+    )?;
+    let surface_hm = surface.heightmap;
+    let slope_map = surface.slope_map;
+    let cell_size = surface_hm.cell_size;
 
-    let surface_hm = SurfaceHeightmap::from_mesh(
-        mesh, index, cutter, origin_x, origin_y, rows, cols, cell_size, bbox.min.z,
-    );
-    let slope_map = surface_hm.slope_map();
-
-    // Compute Z range
+    // ── Compute Z range, reach-clamped (PR-8b) ───────────────────────────
+    //
+    // `CHECKPOINT_B_EVIDENCE.md` §8.2: this op gouged 4.2 mm on the
+    // `patches + hole` fixture at EVERY resolution, with no diagnostic. Two
+    // separate commanded-below-reach errors produce it, and the policy below
+    // is ONE rule stated at two scales: **the cutter is never commanded below
+    // the depth it can hold there.**
+    //
+    // GLOBAL form — the ladder bottom. `min_z()` is the minimum over ALL
+    // cells, and a finish grid is padded by one envelope radius per side, so
+    // uncovered cells carrying the `min_z` clamp are always present: the
+    // ladder bottom was therefore the MESH BBOX FLOOR on essentially every
+    // ramp-finish run. Measured on that fixture: −3.000 requested against
+    // −2.407 holdable, i.e. two whole terraces below anything the profile can
+    // reach. `min_covered_z()` is the deepest the tool's reference point can
+    // descend anywhere on this surface.
+    //
+    // LOCAL form — the per-point clamp further down, which is what actually
+    // removes the 4.2 mm gouge; see the comment at that site for the measured
+    // reason the global form alone does not.
     let z_top = bbox.max.z + params.stock_to_leave;
-    let z_bottom = surface_hm.min_z() + params.stock_to_leave;
+    let requested_bottom = surface_hm.min_z_or_bbox_floor() + params.stock_to_leave;
+    let holdable_bottom = surface_hm
+        .min_covered_z()
+        .map_or(requested_bottom, |z| z + params.stock_to_leave);
+    let z_bottom = requested_bottom.max(holdable_bottom);
+    let mut reach_clamp = RampReachClamp {
+        requested_bottom_z_mm: requested_bottom,
+        holdable_bottom_z_mm: z_bottom,
+        ..RampReachClamp::default()
+    };
     let z_step = params.max_stepdown;
 
-    // Generate Z levels
-    let mut z_levels = Vec::new();
-    let mut z = z_top;
-    while z > z_bottom + z_step * 0.5 {
-        z_levels.push(z);
-        z -= z_step;
-    }
-    z_levels.push(z_bottom);
+    // Generate Z levels. `snap_to_bottom = true` guarantees the ladder ends
+    // exactly at `z_bottom` (needed so the final terrace's lower contour is
+    // the true bottom, not an arbitrary short-of-bottom level); epsilon is
+    // half a step, matching the original inline arithmetic exactly.
+    let z_levels = crate::finish_setup::z_ladder(z_top, z_bottom, z_step, z_step * 0.5, true);
 
     if z_levels.len() < 2 {
         info!("Ramp finish: insufficient Z range for ramping");
-        return (Toolpath::new(), Vec::new());
+        return Ok((Toolpath::new(), Vec::new(), reach_clamp));
     }
 
     info!(
@@ -397,21 +616,23 @@ pub fn ramp_finish_toolpath_structured_annotated(
     );
 
     // Generate waterline contours at each Z level
-    let level_contours: Vec<Vec<ParamContour>> = z_levels
-        .iter()
-        .map(|&z| {
-            let raw = waterline_contours(mesh, index, cutter, z, params.sampling);
+    let mut level_contours: Vec<Vec<ParamContour>> = Vec::with_capacity(z_levels.len());
+    for &z in &z_levels {
+        check_cancel(cancel)?;
+        let raw = waterline_contours(mesh, index, cutter, z, params.sampling);
+        level_contours.push(
             raw.iter()
                 .filter(|c| c.len() >= 3)
                 .map(|c| ParamContour::from_contour(c))
-                .collect()
-        })
-        .collect();
+                .collect(),
+        );
+    }
 
     // Slope confinement bounds
     let slope_from_rad = params.slope_from.to_radians();
     let slope_to_rad = params.slope_to.to_radians();
-    let use_slope_filter = params.slope_from > 0.01 || params.slope_to < 89.99;
+    let use_slope_filter =
+        crate::finish_setup::slope_filter_active(params.slope_from, params.slope_to);
 
     // Step length for ramp point generation (controls output resolution)
     let step_len = cell_size * 2.0;
@@ -429,6 +650,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     };
 
     for (terrace_pos, &(upper_idx, lower_idx)) in level_pairs.iter().enumerate() {
+        check_cancel(cancel)?;
         let upper_contours = &level_contours[upper_idx];
         let lower_contours = &level_contours[lower_idx];
 
@@ -445,7 +667,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
         let mut terrace_segments = Vec::new();
 
         for &(ui, li) in &matches {
-            let ramp_path = ramp_between_contours(
+            let mut ramp_path = ramp_between_contours(
                 &upper_contours[ui],
                 &lower_contours[li],
                 params.max_stepdown,
@@ -455,14 +677,106 @@ pub fn ramp_finish_toolpath_structured_annotated(
                 continue;
             }
 
-            // Apply slope confinement if configured
-            if use_slope_filter {
-                let segments =
-                    slope_confined_segments(&ramp_path, &slope_map, slope_from_rad, slope_to_rad);
-                for seg in segments {
-                    if seg.len() >= 2 {
-                        terrace_segments.push(seg);
+            // ── The LOCAL form of the reach clamp (PR-8b) ────────────────
+            //
+            // Every point on this path is a BLEND: `ramp_between_contours`
+            // pairs the upper and lower contours by arc-length parameter and
+            // interpolates XY between them, after `match_contours` paired the
+            // two loops by nearest centroid. Neither correspondence is
+            // geometric, so a blended point can land anywhere between the two
+            // loops — including on ground that has nothing to do with either.
+            //
+            // MEASURED, and it refuted the §8.2 hypothesis: on the
+            // `patches + hole` fixture the deepest gouge (−4.229 mm) is NOT
+            // in the 62° pit at all. It sits at (3.981, 4.113) — the flank of
+            // a convex 50° DOME — with the path at z = −1.757 and the
+            // reachable tool-centre surface at z = +2.472. Clamping only the
+            // ladder bottom leaves it unchanged at −4.229 (probed, then
+            // reverted); it is a blend artefact, not a ladder-depth artefact,
+            // and no valley-reach model has anything to say about a point on
+            // a dome. So the clamp has to be per point.
+            //
+            // The floor is the drop-cutter contact answer AT THIS POINT —
+            // `point_drop_cutter`, the same query that builds the generation
+            // surface, but asked at the ramp point's own XY instead of read
+            // off a grid node. Deliberately NOT a grid lookup: the defect is
+            // RESOLUTION-INDEPENDENT (§8.2 measured it identical at all four
+            // arms), so a resolution-dependent clamp would leave a
+            // resolution-dependent residue. Measured on `patches + hole` with
+            // the shipped 0.306 mm cell: the nearest-cell grid lookup lands
+            // the worst gouge at −0.225 mm (half a cell across a 50° flank —
+            // pure discretisation), the exact query at −0.000. Cost is one
+            // drop-cutter query per ramp point against the ~5 000 the surface
+            // build already runs.
+            //
+            // Off the model footprint the query contacts nothing and reads
+            // the same `bbox.min.z` floor the heightmap uses, so it declines
+            // to clamp — which is right: there is nothing there to gouge.
+            //
+            // Raise, never drop: a lifted point is a real cut of the surface
+            // it now rides, and dropping it would replace a conservative pass
+            // with a retract/replunge the operator never asked for. What is
+            // NOT removed is the material below it — that is the finding.
+            // C8: which points were lifted, so the AREA the clamp leaves can
+            // be summed below. A worst-case lift DEPTH with no extent could
+            // mean one stray point or half the part, and nothing said which.
+            let mut lifted: Vec<bool> = vec![false; ramp_path.len()];
+            for (i, pt) in ramp_path.iter_mut().enumerate() {
+                let contact =
+                    crate::dropcutter::point_drop_cutter(pt.x, pt.y, mesh, index, cutter).z;
+                let floor = contact.max(bbox.min.z) + params.stock_to_leave;
+                if pt.z < floor {
+                    reach_clamp.record_lift(floor - pt.z);
+                    pt.z = floor;
+                    if let Some(flag) = lifted.get_mut(i) {
+                        *flag = true;
                     }
+                }
+            }
+            // Swath area: a segment counts when EITHER endpoint was lifted —
+            // the material under a segment between a held point and a lifted
+            // one is left standing too, and attributing it to neither would
+            // under-report by construction. Width is the cutter's CUSP
+            // diameter, the tool scale this stack sizes finishing passes by;
+            // the envelope would be the SHANK on a tapered tool and three
+            // times too wide (C3). Recorded even when nothing was lifted, so
+            // a measured zero stays distinct from "not measured".
+            let swath_width = 2.0 * cutter.cusp_radius_mm();
+            let mut lifted_area = 0.0_f64;
+            for (w, flags) in ramp_path.windows(2).zip(lifted.windows(2)) {
+                let touches_lift = flags.first().copied().unwrap_or(false)
+                    || flags.get(1).copied().unwrap_or(false);
+                if !touches_lift {
+                    continue;
+                }
+                let (Some(a), Some(b)) = (w.first(), w.get(1)) else {
+                    continue;
+                };
+                lifted_area += ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt() * swath_width;
+            }
+            reach_clamp.record_lifted_area(lifted_area);
+            reach_clamp.ramp_points += ramp_path.len();
+
+            // Apply slope confinement and/or the machining-boundary regions
+            // if either is configured; a plain unfiltered push otherwise
+            // (byte-identical to pre-P2.3 behavior when neither is active).
+            if use_slope_filter || boundary_regions.is_some() {
+                let segments = crate::point_runs::split_runs(
+                    &ramp_path,
+                    |_, pt: &P3| {
+                        let slope_ok = !use_slope_filter
+                            || slope_map
+                                .angle_at_world(pt.x, pt.y)
+                                .is_some_and(|a| a >= slope_from_rad && a <= slope_to_rad);
+                        let region_ok = boundary_regions
+                            .is_none_or(|regions| regions.contains(&P2::new(pt.x, pt.y)));
+                        slope_ok && region_ok
+                    },
+                    crate::point_runs::RunTopology::Open,
+                    2,
+                );
+                for seg in segments {
+                    terrace_segments.push(seg);
                 }
             } else {
                 terrace_segments.push(ramp_path);
@@ -498,6 +812,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
     let should_reverse = matches!(params.direction, CutDirection::Conventional);
 
     for (i, segment) in all_ramp_segments.iter().enumerate() {
+        check_cancel(cancel)?;
         let simplified = simplify_path_3d(&segment.path, params.tolerance);
         if simplified.len() < 2 {
             continue;
@@ -551,7 +866,7 @@ pub fn ramp_finish_toolpath_structured_annotated(
         }
     }
 
-    (tp, annotations)
+    Ok((tp, annotations, reach_clamp))
 }
 
 pub fn ramp_finish_toolpath_annotated(
@@ -561,8 +876,8 @@ pub fn ramp_finish_toolpath_annotated(
     params: &RampFinishParams,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<(usize, String)>) {
-    let (tp, annotations) =
-        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug);
+    let (tp, annotations, _clamp) =
+        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, debug, None);
     (tp, runtime_annotations_to_labels(&annotations))
 }
 
@@ -576,6 +891,7 @@ pub fn ramp_finish_toolpath_annotated(
 mod tests {
     use super::*;
     use crate::mesh::SpatialIndex;
+    use crate::slope::SlopeMap;
     use crate::tool::BallEndmill;
 
     fn make_hemisphere() -> (TriangleMesh, SpatialIndex) {
@@ -800,22 +1116,25 @@ mod tests {
             .map(|i| P3::new(i as f64, 5.0, 10.0 - i as f64))
             .collect();
 
+        let confined_segments = |from_rad: f64, to_rad: f64| -> Vec<Vec<P3>> {
+            crate::point_runs::split_runs(
+                &path,
+                |_, pt: &P3| {
+                    slope_map
+                        .angle_at_world(pt.x, pt.y)
+                        .is_some_and(|a| a >= from_rad && a <= to_rad)
+                },
+                crate::point_runs::RunTopology::Open,
+                2,
+            )
+        };
+
         // slope_from=30, slope_to=90: surface is 45°, should pass
-        let segs = slope_confined_segments(
-            &path,
-            &slope_map,
-            30.0_f64.to_radians(),
-            90.0_f64.to_radians(),
-        );
+        let segs = confined_segments(30.0_f64.to_radians(), 90.0_f64.to_radians());
         assert!(!segs.is_empty(), "45° surface should pass 30-90° filter");
 
         // slope_from=50, slope_to=90: surface is 45°, should fail
-        let segs = slope_confined_segments(
-            &path,
-            &slope_map,
-            50.0_f64.to_radians(),
-            90.0_f64.to_radians(),
-        );
+        let segs = confined_segments(50.0_f64.to_radians(), 90.0_f64.to_radians());
         assert!(segs.is_empty(), "45° surface should fail 50-90° filter");
     }
 
@@ -922,5 +1241,89 @@ mod tests {
         ];
         let simplified = simplify_path_3d(&path, 0.01);
         assert_eq!(simplified.len(), 3, "Corner should be preserved");
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn ramp_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = RampFinishParams {
+            max_stepdown: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..default_params()
+        };
+        let never_cancel = || false;
+
+        let tp_default = ramp_finish_toolpath(&mesh, &si, &cutter, &params);
+        let (tp_none, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn ramp_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = RampFinishParams {
+            max_stepdown: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..default_params()
+        };
+        let never_cancel = || false;
+
+        let bbox = &mesh.bbox;
+        let left_half = Polygon2::new(vec![
+            P2::new(bbox.min.x, bbox.min.y),
+            P2::new(0.0, bbox.min.y),
+            P2::new(0.0, bbox.max.y),
+            P2::new(bbox.min.x, bbox.max.y),
+        ]);
+
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
+        let (tp, _, _) = ramp_finish_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            None,
+            Some(&region_set),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            let is_cut = matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                && m.intent == crate::toolpath::MoveIntent::FinishingCut;
+            if is_cut {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "cutting move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one cutting move");
     }
 }

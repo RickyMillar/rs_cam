@@ -337,17 +337,15 @@ fn draw_alignment_pins(
 
             // Buttons row
             ui.add_space(4.0);
-            if ui.small_button("+ Add Pin").clicked() {
-                let default_diameter = stock
-                    .alignment_pins
-                    .first()
-                    .map(|p| p.diameter)
-                    .unwrap_or(6.0);
-                stock.alignment_pins.push(AlignmentPin::new(
-                    stock.x / 2.0,
-                    stock.y / 2.0,
-                    default_diameter,
-                ));
+            if ui
+                .small_button("+ Add Pin")
+                .on_hover_text("Adds one pin and re-spreads them evenly (drag to fine-tune)")
+                .clicked()
+            {
+                // Re-distribute to (n+1) pins via the shared placer instead
+                // of stacking every new pin at the stock centre, which is
+                // what made multiple "+ Add Pin" clicks pile up.
+                auto_place_pins(stock, stock.alignment_pins.len() + 1);
                 changed = true;
             }
 

@@ -3,9 +3,17 @@
 //! Cell: `flat_12mm_drill_oak_big`. Pre-fix, the drill RPM clamp in
 //! `feeds/mod.rs` was diameter-independent at 8-14k RPM, letting a
 //! 12 mm hardwood drill emit 12000 RPM — well above the 3-8k band
-//! that Onsrud, Vectric, FPL Wood Handbook Ch.19, and Sandvik all
-//! cite for big drills. Chip evacuation per revolution scales with
-//! D²; big drills need fewer revolutions per second to clear chips.
+//! this repo holds for big drills. Chip evacuation per revolution
+//! scales with D²; big drills need fewer revolutions per second to
+//! clear chips.
+//!
+//! **Citation corrected 2026-08-04 (W6 audit §6.1/§6.2, item R-14).**
+//! This docstring used to attribute the 3-8k band to "Onsrud, Vectric,
+//! FPL Wood Handbook Ch.19, and Sandvik". The Onsrud drill chart
+//! (retrieved 2026-08-04) publishes one wood-drill RPM — the 4,500
+//! gang-drill footnote — and no band; the FPL Wood Handbook has no
+//! drilling chapter in either edition. The band is REPO-AUTHORED. The
+//! numbers below are unchanged; only the attribution is.
 //!
 //! The fix replaced the two const-pair clamps with a single
 //! `drill_rpm_envelope_for_diameter(d_mm) -> (floor, ceil)` helper:

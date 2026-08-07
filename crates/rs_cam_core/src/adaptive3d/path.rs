@@ -140,6 +140,10 @@ fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTa
 /// `tests/adaptive3d_planner_sim_dexel_parity.rs`.
 pub(super) struct Adaptive3dSegmentsResult {
     pub segments: Vec<Adaptive3dSegment>,
+    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
+    /// α/2π)` collected across all ContourSpiral slices. Empty for other
+    /// strategies. Consumed by the feed modulator via positional lookup.
+    pub planner_engagement: Vec<(P3, f64)>,
     /// Test-only: planner's internal dexel state at the end of the run.
     #[allow(dead_code)]
     pub final_material_stock: TriDexelStock,
@@ -295,7 +299,7 @@ pub(super) fn adaptive_3d_segments(
 
     // Pre-compute the shallow-area mask once (it only depends on the
     // surface geometry, not on the running stock). Indexed row-major,
-    // same layout as surface_hm.z_values / slope_map.angles. Cell is
+    // same layout as the surface heightmap / slope_map.angles. Cell is
     // `true` when its surface slope < shallow_angle_rad. We toggle
     // ctx.shallow_mask between this and None at the per-Z-level loop
     // boundary: None for the main DPP clear, Some(mask) for shallow
@@ -373,11 +377,10 @@ pub(super) fn adaptive_3d_segments(
             // floor, which made this a full-ray clear — preserve that by
             // clearing from the grid bottom for uncovered cells.
             let i = row * material_stock.z_grid.cols + col;
-            let clear_z = if surface_hm.covered[i] {
-                surface_hm.z_values[i] as f32
-            } else {
-                material_stock.stock_bbox.min.z as f32
-            };
+            let clear_z = surface_hm
+                .z_at_index(i)
+                .covered()
+                .map_or(material_stock.stock_bbox.min.z as f32, |z| z as f32);
             ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
             border_cleared += 1;
         }
@@ -415,11 +418,10 @@ pub(super) fn adaptive_3d_segments(
                     // uncovered cells outside the boundary must stay fully
                     // cleared or O5b's unstamped-cell deep bite returns.
                     let i = row * material_stock.z_grid.cols + col;
-                    let clear_z = if surface_hm.covered[i] {
-                        surface_hm.z_values[i] as f32
-                    } else {
-                        material_stock.stock_bbox.min.z as f32
-                    };
+                    let clear_z = surface_hm
+                        .z_at_index(i)
+                        .covered()
+                        .map_or(material_stock.stock_bbox.min.z as f32, |z| z as f32);
                     ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
                     boundary_cleared += 1;
                 }
@@ -439,7 +441,7 @@ pub(super) fn adaptive_3d_segments(
     // open meshes, and pre-clamp there was no lever to stop the final
     // level diving there (heights audit 2026-06-12, findings 2 + 3).
     let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
-    let surface_bottom = surface_hm.min_z();
+    let surface_bottom = surface_hm.min_z_or_bbox_floor();
     let z_bottom =
         (surface_bottom + params.stock_to_leave).max(params.z_floor.unwrap_or(f64::NEG_INFINITY));
     let mut z_levels = Vec::new();
@@ -454,7 +456,15 @@ pub(super) fn adaptive_3d_segments(
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
     if params.detect_flat_areas {
-        let total_cells = surface_hm.z_values.len();
+        // Uncovered padding counts in the denominator (see `GridZ`): the
+        // grid runs one envelope radius past the mesh bbox, so `total_cells`
+        // over-counts and the 2% flat-shelf threshold is correspondingly
+        // harder to clear on small models. C2 audit 2026-07-30: LEFT AS IS —
+        // every adaptive3d Z-level plan in the repo's history is calibrated
+        // against this denominator, and re-basing it on covered cells only
+        // changes flat-level insertion on every existing job. Recorded, not
+        // silently changed.
+        let total_cells = surface_hm.z_or_bbox_floor_values().len();
         if total_cells > 0 {
             // Build histogram of surface Z values binned at tolerance resolution
             let bin_size = params.tolerance.max(0.05);
@@ -462,7 +472,7 @@ pub(super) fn adaptive_3d_segments(
             let z_max_surf = params.stock_top_z;
             let n_bins = ((z_max_surf - z_min_surf) / bin_size).ceil() as usize + 1;
             let mut histogram = vec![0u32; n_bins];
-            for &sz in &surface_hm.z_values {
+            for &sz in surface_hm.z_or_bbox_floor_values() {
                 let bin = ((sz - z_min_surf) / bin_size).floor() as usize;
                 if bin < n_bins {
                     histogram[bin] += 1;
@@ -565,7 +575,7 @@ pub(super) fn adaptive_3d_segments(
     let bbox_y_min = origin_y + envelope_radius;
     let bbox_y_max = extent_y - envelope_radius;
 
-    let lut = RadialProfileLUT::from_cutter(cutter, 256);
+    let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
     let mut ctx = ClearZLevelContext {
         mesh,
         index,
@@ -578,6 +588,8 @@ pub(super) fn adaptive_3d_segments(
         stock_to_leave: params.stock_to_leave,
         depth_per_pass: params.depth_per_pass,
         tolerance: params.tolerance,
+        feed_rate: params.feed_rate,
+        plunge_rate: params.plunge_rate,
         target_frac,
         step_len,
         max_link_dist,
@@ -586,6 +598,8 @@ pub(super) fn adaptive_3d_segments(
         bbox_y_min,
         bbox_y_max,
         clearing_strategy: params.clearing_strategy,
+        trochoid_cap_mult: params.trochoid_cap_mult,
+        engagement_measure: params.engagement_measure,
         z_blend: params.z_blend,
         safe_z: params.safe_z,
         min_cutting_radius: params.min_cutting_radius,
@@ -596,6 +610,10 @@ pub(super) fn adaptive_3d_segments(
     };
 
     let mut segments = Vec::new();
+    // Stage 4 — planner-predicted leading-arc engagement samples
+    // `(cut_point, α/2π)`, accumulated across all spiral slices and
+    // returned for the feed modulator's positional lookup.
+    let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut last_pos: Option<P3> = None;
 
     match params.region_ordering {
@@ -713,7 +731,7 @@ pub(super) fn adaptive_3d_segments(
                                 cancel,
                             )?;
                         }
-                        ClearingStrategy3d::AgentSearch => {
+                        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
                             clear_z_level_agent_2d_slice(
                                 &ctx,
                                 &mut material_stock,
@@ -721,6 +739,7 @@ pub(super) fn adaptive_3d_segments(
                                 z_level,
                                 &mut segments,
                                 &mut last_pos,
+                                &mut planner_eng,
                                 Some(region),
                                 Some(level_event),
                                 cancel,
@@ -746,6 +765,7 @@ pub(super) fn adaptive_3d_segments(
                                 sub_z,
                                 &mut segments,
                                 &mut last_pos,
+                                &mut planner_eng,
                                 Some(region),
                                 cancel,
                             )?;
@@ -794,6 +814,7 @@ pub(super) fn adaptive_3d_segments(
                     params.safe_z,
                     params.tolerance,
                     params.min_cutting_radius,
+                    params.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -857,7 +878,7 @@ pub(super) fn adaptive_3d_segments(
                             cancel,
                         )?;
                     }
-                    ClearingStrategy3d::AgentSearch => {
+                    ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
                         clear_z_level_agent_2d_slice(
                             &ctx,
                             &mut material_stock,
@@ -865,6 +886,7 @@ pub(super) fn adaptive_3d_segments(
                             z_level,
                             &mut segments,
                             &mut last_pos,
+                            &mut planner_eng,
                             None,
                             Some(level_event),
                             cancel,
@@ -887,6 +909,7 @@ pub(super) fn adaptive_3d_segments(
                             sub_z,
                             &mut segments,
                             &mut last_pos,
+                            &mut planner_eng,
                             None,
                             cancel,
                         )?;
@@ -936,6 +959,7 @@ pub(super) fn adaptive_3d_segments(
                     params.safe_z,
                     params.tolerance,
                     params.min_cutting_radius,
+                    params.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -947,6 +971,7 @@ pub(super) fn adaptive_3d_segments(
 
     Ok(Adaptive3dSegmentsResult {
         segments,
+        planner_engagement: planner_eng,
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })
@@ -1019,6 +1044,7 @@ fn try_emit_stay_down_link(
     cutter: &dyn crate::tool::MillingCutter,
     max_stay_down_distance_mm: f64,
     clearance_mm: f64,
+    stock_to_leave: f64,
     safe_z: f64,
     feed_rate: f64,
 ) -> bool {
@@ -1037,7 +1063,12 @@ fn try_emit_stay_down_link(
     // If the line is entirely off-mesh, the terrain doesn't constrain
     // us; fall back to from.z/to.z as the height ceiling.
     let terrain_max = max_mesh.unwrap_or(f64::NEG_INFINITY);
-    let link_z = terrain_max.max(from.z).max(to.z) + clearance_mm;
+    // Hold the stock-to-leave under the link, not just a bare clearance: the
+    // link must clear `terrain + stock_to_leave` so it doesn't shave the leave
+    // off material it passes over. Still at least `clearance_mm` above terrain.
+    let link_z = (terrain_max + stock_to_leave.max(clearance_mm))
+        .max(from.z)
+        .max(to.z);
 
     // Safety guard 1: link Z above safe_z means the terrain peak is
     // above the safe height. Retract is the right answer.
@@ -1080,6 +1111,87 @@ fn try_emit_stay_down_link(
 /// — the F-038b probe is a no-op when `params.max_stay_down_distance_mm`
 /// resolves to 0.0, so the cutter/mesh values don't affect behaviour in
 /// that case.
+/// Hold the stock-to-leave along a cut path ("drape" / gouge guard).
+///
+/// The per-Z-level lift sets each cut point's Z from a SINGLE grid-cell
+/// surface lookup (`SurfaceHeightmap::z_or_bbox_floor_at_world` rounds to one cell),
+/// and straight segments are emitted between possibly-sparse points. Over a
+/// textured / high-frequency surface this leaks two ways: (1) a point that
+/// rounds to a lower neighbouring cell, and (2) a segment whose interior
+/// crosses a surface peak that neither endpoint sampled — both let the flat
+/// tool's footprint cut below `surface + stock_to_leave`, eating the leave or
+/// gouging the part. (Measured on wanaka: scattered cells cut to/below the
+/// keep surface vs a held ~4 mm leave elsewhere.)
+///
+/// This resamples the path to `<= max_step` XY spacing and lifts every point
+/// (original and inserted) to at least the radius-aware tool rest height
+/// (`point_drop_cutter`, the true footprint maximum) plus `stock_to_leave`.
+/// It only ever RAISES Z (`max` with the planned cut Z), so a legitimately
+/// deep cut into a genuinely deep, tool-reachable region is preserved while a
+/// dip into adjacent higher material is lifted back to the leave. With
+/// `max_step <= tool_radius`, no surface peak can hide between samples: any
+/// point between two samples is within a tool radius of one of them, whose
+/// drop-cutter footprint already accounts for it, so both lifted endpoints sit
+/// at/above that peak + leave and the straight segment between them cannot dip
+/// under it.
+/// Single-point counterpart of [`drape_path_to_leave`]: lift one point to at
+/// least the radius-aware rest height + `stock_to_leave`. Used to protect
+/// entry destinations (peck-plunge / helix / ramp descend to this Z) so an
+/// entry whose footprint laps higher neighbouring material can't plunge below
+/// the leave. Only ever raises Z.
+pub(super) fn drape_point(
+    p: &P3,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    stock_to_leave: f64,
+) -> P3 {
+    let cl = crate::dropcutter::point_drop_cutter(p.x, p.y, mesh, index, cutter);
+    if cl.contacted && cl.z.is_finite() {
+        P3::new(p.x, p.y, p.z.max(cl.z + stock_to_leave))
+    } else {
+        *p
+    }
+}
+
+pub(super) fn drape_path_to_leave(
+    path: &[P3],
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    stock_to_leave: f64,
+    max_step: f64,
+) -> Vec<P3> {
+    if path.len() < 2 {
+        return path.to_vec();
+    }
+    let step = max_step.max(0.1);
+    let drape_pt = |x: f64, y: f64, z: f64| -> P3 {
+        let cl = crate::dropcutter::point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.contacted && cl.z.is_finite() {
+            P3::new(x, y, z.max(cl.z + stock_to_leave))
+        } else {
+            P3::new(x, y, z)
+        }
+    };
+    let mut out: Vec<P3> = Vec::with_capacity(path.len() * 2);
+    if let Some(p0) = path.first() {
+        out.push(drape_pt(p0.x, p0.y, p0.z));
+    }
+    for w in path.windows(2) {
+        if let [a, b] = w {
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let dist = (dx * dx + dy * dy).sqrt();
+            let n = (dist / step).ceil().max(1.0) as usize;
+            for i in 1..=n {
+                let t = i as f64 / n as f64;
+                out.push(drape_pt(a.x + t * dx, a.y + t * dy, a.z + t * (b.z - a.z)));
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
@@ -1143,6 +1255,13 @@ pub(super) fn segments_to_toolpath(
                 });
             }
             Adaptive3dSegment::Rapid(entry) => {
+                // Gouge guard: lift the entry destination to hold the leave, so
+                // a peck-plunge / helix / ramp whose footprint laps higher
+                // neighbouring material can't descend below `surface + leave`.
+                // Shadows the matched ref so every downstream use (stay-down
+                // link, plunge, annotations) sees the protected Z.
+                let entry_owned = drape_point(entry, mesh, index, cutter, params.stock_to_leave);
+                let entry = &entry_owned;
                 let entry_start = tp.moves.len();
                 // F-038b: try a keep-tool-down feed link from the previous
                 // tool position to `entry` before falling back to retract.
@@ -1162,6 +1281,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
+                            params.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1268,6 +1388,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
+                            params.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1422,7 +1543,22 @@ pub(super) fn segments_to_toolpath(
                 if path.len() < 2 {
                     continue;
                 }
-                let simplified = simplify_path_3d(path, params.tolerance);
+                // Gouge guard: drape the cut to hold `stock_to_leave` against
+                // the radius-aware surface BEFORE simplification, so neither a
+                // grid-rounded point nor a straight segment interior can cut
+                // below the leave on textured / high-frequency meshes. Sample
+                // at <= tool radius so no peak hides between points. Drape
+                // first (densify + lift), then RDP-simplify away the points the
+                // drape didn't need to move.
+                let draped = drape_path_to_leave(
+                    path,
+                    mesh,
+                    index,
+                    cutter,
+                    params.stock_to_leave,
+                    cutter.radius(),
+                );
+                let simplified = simplify_path_3d(&draped, params.tolerance);
                 let blended = blend_corners_3d(&simplified, params.min_cutting_radius);
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
@@ -1463,24 +1599,74 @@ pub(super) fn runtime_annotations_to_labels(
 )]
 mod tests {
     use super::*;
-    use crate::toolpath::{MoveIntent, MoveType};
+    use crate::toolpath::{Move, MoveIntent, MoveType};
 
     // F-038b: legacy `segments_to_toolpath` tests need a mesh + index +
-    // cutter trio to call the new signature. Since they explicitly
-    // disable the keep-tool-down feature (`max_stay_down_distance_mm:
-    // Some(0.0)` in `minimal_params`), the heightfield never gets
-    // queried — a trivial flat mesh and an arbitrary endmill are fine.
+    // cutter trio to call the new signature.
+    //
+    // 2026-08-04: this helper's doc comment used to claim "the
+    // heightfield never gets queried" because `minimal_params` disables
+    // keep-tool-down (`max_stay_down_distance_mm: Some(0.0)`). That
+    // stopped being true at `fa27b08`, which made `segments_to_toolpath`
+    // drape every Cut point (`drape_path_to_leave`) and every plain-Rapid
+    // entry (`drape_point`) up to `drop_cutter(x, y) + stock_to_leave`
+    // unconditionally. On a flat mesh at z = 0 with `stock_to_leave` 0.5
+    // that lifts EVERY fixture point below +0.5 up to +0.5 — which is
+    // exactly how two of the tests below went red and vacuous. Use
+    // `flat_mesh_at` to place the surface out of the way when a fixture
+    // wants the drape inert.
     fn legacy_test_mesh() -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
-        let m = crate::mesh::make_test_flat(100.0);
+        flat_mesh_at(100.0, 0.0)
+    }
+
+    /// A `size`×`size` flat quad at height `z`. Fixtures that want the
+    /// `fa27b08` drape to be provably inert put the surface far BELOW
+    /// every commanded Z; fixtures that want it active put it above.
+    /// The drape is never disabled — it is a production gouge guard.
+    fn flat_mesh_at(size: f64, z: f64) -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
+        let h = size / 2.0;
+        let m = crate::mesh::TriangleMesh::from_raw(
+            vec![
+                P3::new(-h, -h, z),
+                P3::new(h, -h, z),
+                P3::new(h, h, z),
+                P3::new(-h, h, z),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+        );
         let si = crate::mesh::SpatialIndex::build(&m, 10.0);
         (m, si)
     }
+
     fn legacy_test_cutter() -> crate::tool::FlatEndmill {
         crate::tool::FlatEndmill::new(6.35, 25.0)
     }
 
+    /// Mirrors the private constant in [`emit_peck_plunge`]. Kept as a
+    /// separate literal on purpose: if the production clearance moves,
+    /// the peck sentries below must be re-pinned deliberately, not
+    /// silently retuned.
+    const PECK_CLEARANCE_MM: f64 = 0.5;
+
+    /// Does `m` end at `p` (all three axes, exact-ish)?
+    fn at_point(m: &Move, p: P3) -> bool {
+        (m.target.x - p.x).abs() < 1e-9
+            && (m.target.y - p.y).abs() < 1e-9
+            && (m.target.z - p.z).abs() < 1e-9
+    }
+
+    /// Z of every `EntryPlunge` feed in `tp`, in emission order.
+    fn entry_plunge_zs(tp: &Toolpath) -> Vec<f64> {
+        tp.moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .map(|m| m.target.z)
+            .collect()
+    }
+
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
+            trochoid_cap_mult: 1.6,
             tool_radius: 3.175,
             envelope_radius: 3.175,
             stepover: 2.0,
@@ -1501,6 +1687,7 @@ mod tests {
             initial_stock: None,
             boundary: None,
             clearing_strategy: ClearingStrategy3d::ContourParallel,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
             mill_shallow_areas: false,
             shallow_angle_rad: None,
@@ -1516,105 +1703,329 @@ mod tests {
         }
     }
 
+    /// Livelock guard, introduced with the F-001/F-002/F-003 batch
+    /// (`072c11a`): when the operator sets the peck depth equal to the
+    /// peck retract clearance, the entry plunge must still walk the hole
+    /// down. `emit_peck_plunge` advances `current_z` to the **committed
+    /// cut floor** (`next_z`); advancing it to the retract height instead
+    /// makes the loop non-progressing and the emitter never returns.
+    ///
+    /// Fixture history (2026-08-04): this test used to enter at z = 0 on
+    /// the flat mesh at z = 0 with `stock_to_leave = 0.5` and
+    /// `safe_z = 1.0`. From `fa27b08` the drape lifted that entry to
+    /// z = +0.5, so `safe_z - entry.z` collapsed to exactly
+    /// `depth_per_pass` and the peck loop stopped iterating at all. The
+    /// test failed `left: 1, right: 2` — and was simultaneously VACUOUS:
+    /// with zero iterations, reverting the progression fix could not
+    /// change its output. The surface now sits 50 mm below the entry so
+    /// the drape is provably inert (asserted) and the ladder runs.
+    ///
+    /// Note that under a reverted `current_z = retract_z` this fixture
+    /// livelocks rather than failing an assertion — that IS the defect it
+    /// guards. The bounded detector for the same production line is
+    /// `peck_plunge_commits_the_cut_floor_not_the_retract_height` below.
     #[test]
     fn peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance() {
         let mut params = minimal_params();
-        params.safe_z = 1.0;
-        params.depth_per_pass = 0.5;
+        params.safe_z = 5.0;
+        params.depth_per_pass = PECK_CLEARANCE_MM;
 
-        let rapid = Adaptive3dSegment::Rapid(P3::new(0.0, 0.0, 0.0));
-        let (mesh, si) = legacy_test_mesh();
+        // Surface 50 mm below the entry: the drape target is
+        // -50 + 0.5 leave, far under z = 0, so `drape_point` cannot lift
+        // the entry and the peck ladder is the only thing under test.
+        let (mesh, si) = flat_mesh_at(100.0, -50.0);
         let cutter = legacy_test_cutter();
-        let (tp, _) = segments_to_toolpath(&[rapid], &params, &mesh, &si, &cutter);
+        let entry = P3::new(0.0, 0.0, 0.0);
 
+        // Non-vacuity precondition: prove the drape is inert HERE rather
+        // than assuming it. This is the assertion whose absence let the
+        // old fixture rot silently for seven weeks.
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
         assert!(
-            tp.moves.len() <= 6,
+            (draped.z - entry.z).abs() < 1e-12,
+            "fixture broken: drape moved the entry from {} to {} — the peck loop \
+             below is no longer the thing under test",
+            entry.z,
+            draped.z
+        );
+
+        let (tp, _) = segments_to_toolpath(
+            &[Adaptive3dSegment::Rapid(entry)],
+            &params,
+            &mesh,
+            &si,
+            &cutter,
+        );
+
+        // Pre-registered ladder: the loop starts at safe_z = 5.0 and
+        // commits floors 4.5, 4.0, … 0.5 (9 iterations, since the guard
+        // is `current_z - entry.z > dpp`), then the terminal feed lands
+        // on entry.z = 0.0. Ten EntryPlunge feeds, each 0.5 mm deeper
+        // than the last.
+        const EXPECTED_PLUNGES: usize = 10;
+        let plunges = entry_plunge_zs(&tp);
+
+        // Runaway cap sized from the pre-registered count: a
+        // non-progressing loop that somehow terminates trips a bound
+        // instead of quietly emitting a long ladder.
+        assert!(
+            tp.moves.len() <= 4 * EXPECTED_PLUNGES,
             "DPP equal to peck clearance should not create a runaway plunge loop; got {} moves",
             tp.moves.len()
         );
-        let entry_plunges = tp
-            .moves
-            .iter()
-            .filter(|m| m.intent == MoveIntent::EntryPlunge)
-            .count();
-        assert_eq!(entry_plunges, 2);
+        assert_eq!(
+            plunges.len(),
+            EXPECTED_PLUNGES,
+            "peck ladder from safe_z {} to entry {} at {} mm/peck should emit {} \
+             EntryPlunge feeds; got {:?}",
+            params.safe_z,
+            entry.z,
+            params.depth_per_pass,
+            EXPECTED_PLUNGES,
+            plunges
+        );
+        // Every peck must commit a strictly deeper floor. This is the
+        // property `current_z = next_z` exists to hold: the retract
+        // between pecks must not become the next peck's starting height.
+        for w in plunges.windows(2) {
+            assert!(
+                w[1] < w[0] - 1e-9,
+                "peck ladder failed to progress: {:?}",
+                plunges
+            );
+        }
+        assert!(
+            (plunges[EXPECTED_PLUNGES - 1] - entry.z).abs() < 1e-9,
+            "final plunge must land exactly on the entry Z; got {:?}",
+            plunges
+        );
     }
 
-    /// Closes the F-5/F-6 regression found during the April 2026 Phase 2
-    /// empirical probes: a Rapid segment emitted after a Cut must lift
-    /// to safe_z FIRST (at the current XY), THEN traverse XY at safe_z,
-    /// THEN plunge. Before this fix, `segments_to_toolpath` only emitted
-    /// the traverse — a single diagonal rapid from the cut depth to
-    /// (entry.xy, safe_z) — which can cut through material as a rapid.
+    /// Bounded sibling of the livelock guard above, and the red-first
+    /// detector for the same production line (`current_z = next_z` in
+    /// `emit_peck_plunge`).
+    ///
+    /// With `depth_per_pass` at twice the peck clearance the reverted
+    /// code still terminates — it just descends by
+    /// `dpp - PECK_CLEARANCE_MM` per iteration instead of `dpp` — so the
+    /// defect shows up as a countable ladder instead of a hang: 9 plunges
+    /// (0.5 mm steps) under `current_z = retract_z` against 5 (1.0 mm
+    /// steps) under the shipped code.
+    #[test]
+    fn peck_plunge_commits_the_cut_floor_not_the_retract_height() {
+        let mut params = minimal_params();
+        params.safe_z = 5.0;
+        params.depth_per_pass = 2.0 * PECK_CLEARANCE_MM;
+
+        let (mesh, si) = flat_mesh_at(100.0, -50.0);
+        let cutter = legacy_test_cutter();
+        let entry = P3::new(0.0, 0.0, 0.0);
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
+        assert!(
+            (draped.z - entry.z).abs() < 1e-12,
+            "fixture broken: drape moved the entry from {} to {}",
+            entry.z,
+            draped.z
+        );
+
+        let (tp, _) = segments_to_toolpath(
+            &[Adaptive3dSegment::Rapid(entry)],
+            &params,
+            &mesh,
+            &si,
+            &cutter,
+        );
+
+        // Pre-registered: floors 4.0, 3.0, 2.0, 1.0 then the terminal
+        // feed to 0.0 — 5 plunges, each a full `depth_per_pass` apart.
+        let plunges = entry_plunge_zs(&tp);
+        assert_eq!(
+            plunges.len(),
+            5,
+            "each peck must step down by the full depth_per_pass; got {:?}",
+            plunges
+        );
+        for w in plunges.windows(2) {
+            assert!(
+                (w[0] - w[1] - params.depth_per_pass).abs() < 1e-9,
+                "peck step should equal depth_per_pass {}, got ladder {:?}",
+                params.depth_per_pass,
+                plunges
+            );
+        }
+    }
+
+    /// Body of the F-5/F-6 crash-class guard, run against a flat surface
+    /// at `surface_z`.
+    ///
+    /// Contract, in operator language: when the toolpath finishes a cut
+    /// deep in material and the next thing it does is a rapid to a new
+    /// entry point, the tool must come STRAIGHT UP to safe height first,
+    /// then traverse across at safe height, then descend. A single
+    /// diagonal rapid from the bottom of the cut to the next entry
+    /// ploughs through material at rapid feed.
+    ///
+    /// Assertions cover geometry AND intent. Every intent asserted here
+    /// is the one `segments_to_toolpath` sets at the emitter — this runs
+    /// on the pre-dressup emission, so no downstream rewriter (arcfit's
+    /// intent inheritance, R7-H2/W2) can be what makes it pass or fail.
+    /// Never re-key these assertions off post-dressup labels.
     ///
     /// See planning/adaptive_remediation_phase2_probes_2026-04-12.md.
-    #[test]
-    fn rapid_segment_lifts_to_safe_z_before_traverse() {
+    fn check_rapid_lifts_to_safe_z_before_traverse(surface_z: f64, expect_drape_lift: bool) {
         let params = minimal_params();
         // Cut path: end at (5, 5, -3) — tool is deep in material.
-        let cut1 = Adaptive3dSegment::Cut(vec![P3::new(0.0, 0.0, -3.0), P3::new(5.0, 5.0, -3.0)]);
+        let cut1_end_raw = P3::new(5.0, 5.0, -3.0);
         // Rapid to a new entry point at (20, 20, -2). This is what
         // Package F emits when is_clear_path_3d rejects a would-be Link.
-        let rapid = Adaptive3dSegment::Rapid(P3::new(20.0, 20.0, -2.0));
-        let cut2 =
-            Adaptive3dSegment::Cut(vec![P3::new(20.0, 20.0, -2.0), P3::new(25.0, 25.0, -2.0)]);
+        let entry_raw = P3::new(20.0, 20.0, -2.0);
+        let cut1 = Adaptive3dSegment::Cut(vec![P3::new(0.0, 0.0, -3.0), cut1_end_raw]);
+        let rapid = Adaptive3dSegment::Rapid(entry_raw);
+        let cut2 = Adaptive3dSegment::Cut(vec![entry_raw, P3::new(25.0, 25.0, -2.0)]);
 
-        let (mesh, si) = legacy_test_mesh();
+        let (mesh, si) = flat_mesh_at(100.0, surface_z);
         let cutter = legacy_test_cutter();
         let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params, &mesh, &si, &cutter);
 
-        // Sanity: there should be moves.
+        // Where fa27b08's drape puts the two landmarks on THIS surface.
+        // Derived from the production helper rather than hard-coded, so a
+        // drape-semantics change relocates the landmarks instead of
+        // silently deleting them (which is how this test went red).
+        let cut1_end = drape_point(&cut1_end_raw, &mesh, &si, &cutter, params.stock_to_leave);
+        let entry = drape_point(&entry_raw, &mesh, &si, &cutter, params.stock_to_leave);
+
+        // Non-vacuity: each caller declares whether its surface is meant
+        // to engage the drape, and we prove it did (or did not).
+        if expect_drape_lift {
+            assert!(
+                entry.z > entry_raw.z + 1e-9 && cut1_end.z > cut1_end_raw.z + 1e-9,
+                "fixture broken: the drape-ACTIVE case did not lift anything \
+                 (entry {} -> {}, cut1 end {} -> {})",
+                entry_raw.z,
+                entry.z,
+                cut1_end_raw.z,
+                cut1_end.z
+            );
+            assert!(
+                !tp.moves.iter().any(|m| at_point(m, cut1_end_raw)),
+                "fixture broken: the raw un-draped cut endpoint {:?} still appears \
+                 in the emitted path, so the drape never touched the emission",
+                cut1_end_raw
+            );
+        } else {
+            assert!(
+                (entry.z - entry_raw.z).abs() < 1e-12
+                    && (cut1_end.z - cut1_end_raw.z).abs() < 1e-12,
+                "fixture broken: the drape-INERT case moved a landmark \
+                 (entry {} -> {}, cut1 end {} -> {})",
+                entry_raw.z,
+                entry.z,
+                cut1_end_raw.z,
+                cut1_end.z
+            );
+        }
+
         assert!(!tp.moves.is_empty());
 
-        // After cut1 ends at (5,5,-3), expect:
-        //   - Rapid to (5,5,safe_z)        — lift in place
-        //   - Rapid to (20,20,safe_z)      — traverse at safe_z
-        //   - One or more peck feeds at (20,20,...) descending toward
-        //     entry.z = -2 (peck behaviour added 2026-05-02 to avoid
-        //     punched-hole plunges; see segments_to_toolpath).
-        //   - Feed to (20,20,-2)            — final plunge
-        let cut1_end = tp.moves.iter().position(|m| {
-            (m.target.x - 5.0).abs() < 1e-9
-                && (m.target.y - 5.0).abs() < 1e-9
-                && (m.target.z - (-3.0)).abs() < 1e-9
-        });
-        let i = cut1_end.expect("cut1 endpoint not found");
+        // After cut1 ends at its draped endpoint, expect:
+        //   - Rapid to (cut1_end.xy, safe_z)  — lift IN PLACE, Retract
+        //   - Rapid to (entry.xy, safe_z)     — traverse at safe_z, Linking
+        //   - One or more peck feeds at entry.xy descending toward entry.z
+        //     (peck behaviour added 2026-05-02 to avoid punched-hole
+        //     plunges; see segments_to_toolpath).
+        //   - Feed to entry                    — final plunge, EntryPlunge
+        let Some(i) = tp.moves.iter().position(|m| at_point(m, cut1_end)) else {
+            panic!(
+                "cut1's draped endpoint {cut1_end:?} is not in the emitted path — the \
+                 fixture no longer reaches the lift/traverse contract at all. Moves: {:#?}",
+                tp.moves
+            )
+        };
+        assert_eq!(
+            tp.moves[i].intent,
+            MoveIntent::ClearingCut,
+            "landmark should be cut1's own cutting feed, got {:?}",
+            tp.moves[i]
+        );
         assert!(
             matches!(tp.moves[i + 1].move_type, MoveType::Rapid)
-                && (tp.moves[i + 1].target.x - 5.0).abs() < 1e-9
-                && (tp.moves[i + 1].target.y - 5.0).abs() < 1e-9
+                && (tp.moves[i + 1].target.x - cut1_end.x).abs() < 1e-9
+                && (tp.moves[i + 1].target.y - cut1_end.y).abs() < 1e-9
                 && (tp.moves[i + 1].target.z - params.safe_z).abs() < 1e-9,
             "expected lift in place to safe_z, got {:?}",
             tp.moves[i + 1]
         );
+        assert_eq!(
+            tp.moves[i + 1].intent,
+            MoveIntent::Retract,
+            "the in-place lift is a retract, got {:?}",
+            tp.moves[i + 1]
+        );
         assert!(
             matches!(tp.moves[i + 2].move_type, MoveType::Rapid)
-                && (tp.moves[i + 2].target.x - 20.0).abs() < 1e-9
-                && (tp.moves[i + 2].target.y - 20.0).abs() < 1e-9
+                && (tp.moves[i + 2].target.x - entry.x).abs() < 1e-9
+                && (tp.moves[i + 2].target.y - entry.y).abs() < 1e-9
                 && (tp.moves[i + 2].target.z - params.safe_z).abs() < 1e-9,
-            "expected traverse to (20,20,safe_z), got {:?}",
+            "expected traverse to (entry.xy, safe_z), got {:?}",
             tp.moves[i + 2]
         );
-        // Walk past peck moves (all at XY = 20,20) until we land at z = -2.
+        assert_eq!(
+            tp.moves[i + 2].intent,
+            MoveIntent::Linking,
+            "the safe-Z traverse is a link, got {:?}",
+            tp.moves[i + 2]
+        );
+        // Walk past peck moves (all at entry XY) until we land at entry.z.
         let final_plunge_idx = tp.moves[i + 3..]
             .iter()
-            .position(|m| {
-                matches!(m.move_type, MoveType::Linear { .. })
-                    && (m.target.x - 20.0).abs() < 1e-9
-                    && (m.target.y - 20.0).abs() < 1e-9
-                    && (m.target.z - (-2.0)).abs() < 1e-9
-            })
+            .position(|m| matches!(m.move_type, MoveType::Linear { .. }) && at_point(m, entry))
             .map(|p| p + i + 3)
-            .expect("final plunge to entry.z = -2 not found after lift+traverse");
+            .unwrap_or_else(|| {
+                panic!("final plunge to the draped entry {entry:?} not found after lift+traverse")
+            });
+        assert_eq!(
+            tp.moves[final_plunge_idx].intent,
+            MoveIntent::EntryPlunge,
+            "the descent to entry.z is an entry plunge, got {:?}",
+            tp.moves[final_plunge_idx]
+        );
         // All moves between traverse and final plunge must be at the
-        // entry XY (peck phase doesn't drift in XY).
+        // entry XY (peck phase doesn't drift in XY). This is the
+        // structural half of "no diagonal rapid through material".
         for m in &tp.moves[i + 3..final_plunge_idx] {
             assert!(
-                (m.target.x - 20.0).abs() < 1e-9 && (m.target.y - 20.0).abs() < 1e-9,
+                (m.target.x - entry.x).abs() < 1e-9 && (m.target.y - entry.y).abs() < 1e-9,
                 "peck move drifted off entry XY: {:?}",
                 m
             );
         }
+    }
+
+    /// Drape-INERT fixture: the surface sits 50 mm below every commanded
+    /// Z, so `drape_path_to_leave` / `drape_point` are provably no-ops and
+    /// the lift/traverse/descend ordering is measured on the raw geometry.
+    ///
+    /// History (2026-08-04): this test used `make_test_flat(100.0)` — a
+    /// quad AT z = 0 — with `stock_to_leave = 0.5`. From fa27b08 the drape
+    /// lifted every fixture point from -3 / -2 up to +0.5, the landmark
+    /// search for (5, 5, -3) found nothing, and the test panicked at
+    /// `.expect("cut1 endpoint not found")` BEFORE evaluating any of its
+    /// three real assertions. The crash-class contract had zero live
+    /// coverage for seven weeks.
+    #[test]
+    fn rapid_segment_lifts_to_safe_z_before_traverse() {
+        check_rapid_lifts_to_safe_z_before_traverse(-50.0, false);
+    }
+
+    /// Drape-ACTIVE fixture: the surface sits ABOVE the commanded cut Z,
+    /// so fa27b08's drape lifts both the cut and the entry. The
+    /// lift-then-traverse-then-descend ordering must survive that. This
+    /// is the case that had no coverage at all before 2026-08-04 — it is
+    /// the case that silently broke the test above, and it is what a
+    /// future drape change would break next.
+    #[test]
+    fn rapid_lift_ordering_holds_when_the_drape_raises_the_entry() {
+        check_rapid_lifts_to_safe_z_before_traverse(0.0, true);
     }
 
     /// The lift-to-safe-z move should only be emitted when the tool is

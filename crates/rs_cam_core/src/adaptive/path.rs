@@ -103,8 +103,11 @@ pub(super) fn adaptive_segments(
         min_cutting_radius: 0.0,
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
+        engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+        path_strategy: crate::adaptive::PathStrategy2d::Agent,
+        trochoid_cap_mult: 1.2,
     };
-    adaptive_segments_with_debug(polygon, &params, cancel, None)
+    adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -114,6 +117,11 @@ pub(crate) fn adaptive_segments_with_debug(
     params: &AdaptiveParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
+    // Stage 4 — optional sink for the contour-spiral's per-point predicted
+    // leading-arc engagement (α/2π), collected 1:1 with the emitted Cut
+    // path. `None` for every caller except the adaptive3d slice assembly,
+    // which feeds it into the planner-engagement sampler.
+    engagement_sink: Option<&mut Vec<(P2, f64)>>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
     let tool_radius = params.tool_radius;
     let stepover = params.stepover;
@@ -180,7 +188,7 @@ pub(crate) fn adaptive_segments_with_debug(
     let step_len = cell_size * 3.0;
     let mut segments = Vec::new();
     let mut last_pos: Option<P2> = None;
-    let mut pass_endpoints: Vec<P2> = Vec::new();
+    let mut pass_endpoints = super::search::EndpointGrid::new(tool_radius * 3.0);
 
     // ── Slot clearing (Fusion-style first pass) ───────────────────────
     // Generate sparse zigzag lines at wide spacing to open pockets across
@@ -255,6 +263,38 @@ pub(crate) fn adaptive_segments_with_debug(
         } else {
             None
         };
+
+    // ── Contour-spiral passes (Stage 1, constructive) ─────────────────
+    // Replaces only the agent loop below; the narrow gate, starter
+    // pocket, residue cleanup and emission stay shared. Requires the
+    // starter pocket (the first wrap rides flush with its cleared rim);
+    // when it isn't available — or the spiral degenerates — fall through
+    // to the agent loop.
+    if matches!(
+        params.path_strategy,
+        crate::adaptive::PathStrategy2d::ContourSpiral
+    ) && let Some(starter_end) = helical_entry_pos
+    {
+        let spiral_scope = debug.map(|ctx| ctx.start_span("contour_spiral", "Contour spiral"));
+        let applied = super::spiral::spiral_passes(
+            &mut grid,
+            &machinable_mask,
+            tool_radius,
+            stepover,
+            starter_end,
+            params.trochoid_cap_mult,
+            &mut segments,
+            &mut last_pos,
+            engagement_sink,
+            cancel,
+        )?;
+        if let Some(scope) = spiral_scope.as_ref() {
+            scope.set_counter("applied", if applied { 1.0 } else { 0.0 });
+        }
+        if applied {
+            return Ok(segments);
+        }
+    }
 
     // ── Adaptive passes ───────────────────────────────────────────────
     let max_passes = 500; // safety limit
@@ -459,6 +499,7 @@ pub(crate) fn adaptive_segments_with_debug(
                     target_frac,
                     smoothed_angle,
                     &boundary_distances,
+                    params.engagement_measure,
                 )
             };
             let Some(search_result) = search_result_opt else {
@@ -506,11 +547,11 @@ pub(crate) fn adaptive_segments_with_debug(
             #[allow(clippy::expect_used)]
             let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
-            pass_endpoints.push(endpoint);
+            pass_endpoints.insert(endpoint);
             segments.push(AdaptiveSegment::Cut(path));
         } else {
             last_pos = Some(entry);
-            pass_endpoints.push(entry);
+            pass_endpoints.insert(entry);
         }
 
         // If the pass ended due to idle detection, the remaining material
@@ -1436,12 +1477,33 @@ pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     }
 }
 
+/// Phase 3: default contour-spiral corner-blend radius as a fraction of the
+/// tool radius when the user leaves `min_cutting_radius` at 0. Kept well below
+/// 1.0 so the rounded centerline stays inside the tool's own corner fillet.
+const SPIRAL_DEFAULT_MIN_CUTTING_RADIUS_FACTOR: f64 = 0.3;
+
 pub(super) fn segments_to_toolpath(
     segments: &[AdaptiveSegment],
     params: &AdaptiveParams,
 ) -> (Toolpath, Vec<AdaptiveRuntimeAnnotation>) {
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
+
+    // Phase 3 (accel-friendly): the contour spiral's tight inner-wrap reversals
+    // otherwise force the controller to a near-stop (junction velocity √(A·R)→0
+    // as the corner radius → 0). When the user hasn't pinned a corner radius,
+    // default the spiral to rounding centerline corners at 0.3× the tool radius
+    // — well inside the tool's own fillet, so it removes no extra material — and
+    // emit them as native G2/G3 (`blend_corners_to_moves`). Other strategies and
+    // an explicit user value are untouched.
+    let effective_min_cutting_radius = if params.path_strategy
+        == crate::adaptive::PathStrategy2d::ContourSpiral
+        && params.min_cutting_radius <= 0.0
+    {
+        SPIRAL_DEFAULT_MIN_CUTTING_RADIUS_FACTOR * params.tool_radius
+    } else {
+        params.min_cutting_radius
+    };
 
     for segment in segments {
         match segment {
@@ -1471,8 +1533,8 @@ pub(super) fn segments_to_toolpath(
             }
             AdaptiveSegment::Cut(path) => {
                 let simplified = simplify_path(path, params.tolerance);
-                if params.min_cutting_radius > 0.0 {
-                    let moves = blend_corners_to_moves(&simplified, params.min_cutting_radius);
+                if effective_min_cutting_radius > 0.0 {
+                    let moves = blend_corners_to_moves(&simplified, effective_min_cutting_radius);
                     for m in moves.iter().skip(1) {
                         match m {
                             BlendedMove::Linear(p) => {

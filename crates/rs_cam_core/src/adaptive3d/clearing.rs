@@ -2,10 +2,11 @@
 //! per-level contour-parallel and curvature-adaptive clearing,
 //! stamping, and waterline cleanup.
 
-use crate::contour_extract::{edt_curvature_field, marching_squares_bool_grid, smooth_grid};
+use crate::contour_extract::marching_squares_bool_grid;
 use crate::debug_trace::ToolpathDebugContext;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
+use crate::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
@@ -17,7 +18,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::debug;
 
-use super::path::Adaptive3dSegment;
+use super::path::{Adaptive3dSegment, drape_path_to_leave, drape_point};
 use super::search::{
     blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
 };
@@ -39,6 +40,29 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
+/// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
+/// Loops fire when predicted leading-arc engagement exceeds
+/// `target × this`: 1.2 is flattest-possible load but high travel; 1.6 is
+/// the balanced knee — load still flat (p99 well under the spiky
+/// strategies) while cutting ~25-30% less distance. See the trochoid-cap
+/// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+///
+/// As of the "Optimal load + Nibble" UI reframe this is operator-tunable
+/// via `Adaptive3dConfig::trochoid_cap_mult` (GUI "Nibble" dial); the
+/// const remains the default and a sanity fallback for any context built
+/// with a non-finite or non-positive cap.
+const TROCHOID_CAP_MULT_3D: f64 = 1.6;
+
+/// Stage 4 — quantise a world coordinate to a fixed-point key (0.001 mm)
+/// for the planner-engagement position lookup. Distinct spiral sample
+/// points are spaced far wider than this, so the key is collision-free
+/// while tolerating any benign float round-trip between the 2D emit and
+/// the 3D lift.
+#[inline]
+fn quantize_coord(v: f64) -> i64 {
+    (v * 1000.0).round() as i64
+}
+
 // ── Strategy-agnostic dispatch ────────────────────────────────────────
 
 /// Run a single Z-level clear pass via the strategy on `ctx`, with no
@@ -57,6 +81,9 @@ pub(super) fn clear_z_level_dispatch_no_marker(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
+    // Stage 4 — forwarded to the spiral arm only (the other strategies
+    // produce no planner engagement).
+    planner_eng: &mut Vec<(P3, f64)>,
     region: Option<&MaterialRegion>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -81,17 +108,20 @@ pub(super) fn clear_z_level_dispatch_no_marker(
             region,
             cancel,
         ),
-        ClearingStrategy3d::AgentSearch => clear_z_level_agent_2d_slice(
-            ctx,
-            material_stock,
-            surface_hm,
-            z_level,
-            segments,
-            last_pos,
-            region,
-            None,
-            cancel,
-        ),
+        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
+            clear_z_level_agent_2d_slice(
+                ctx,
+                material_stock,
+                surface_hm,
+                z_level,
+                segments,
+                last_pos,
+                planner_eng,
+                region,
+                None,
+                cancel,
+            )
+        }
     }
 }
 
@@ -137,7 +167,7 @@ pub(super) fn detect_material_regions(
     // Mark cells that have no material
     for row in 0..rows {
         for col in 0..cols {
-            let surf_z = surface_hm.surface_z_at(row, col);
+            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
             let floor = surf_z + stock_to_leave + 0.01;
             if !stock_has_material_above(material_stock, row, col, floor) {
                 labels[row * cols + col] = usize::MAX;
@@ -174,7 +204,7 @@ pub(super) fn detect_material_regions(
                 rmax = rmax.max(r);
                 cmin = cmin.min(c);
                 cmax = cmax.max(c);
-                let sz = surface_hm.surface_z_at(r, c);
+                let sz = surface_hm.z_or_bbox_floor_at(r, c);
                 sz_min = sz_min.min(sz);
                 sz_max = sz_max.max(sz);
 
@@ -243,6 +273,11 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) stock_to_leave: f64,
     pub(super) depth_per_pass: f64,
     pub(super) tolerance: f64,
+    /// Op cutting feed (mm/min) — used for the feed-vs-rapid air-run
+    /// crossover, not for emission (segments carry no feeds here).
+    pub(super) feed_rate: f64,
+    /// Op plunge feed (mm/min) — same crossover use.
+    pub(super) plunge_rate: f64,
     pub(super) target_frac: f64,
     pub(super) step_len: f64,
     pub(super) max_link_dist: f64,
@@ -256,6 +291,12 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) bbox_y_min: f64,
     pub(super) bbox_y_max: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
+    /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
+    /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value
+    /// is operator-tunable; the const survives as the in-engine fallback.
+    pub(super) trochoid_cap_mult: f64,
+    /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
+    pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
     pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
     /// `stamp_emitted_segment` so the planner stamps the SAME path the
@@ -329,7 +370,7 @@ fn build_material_bool_grid(
                 }
             }
 
-            let surf_z = surface_hm.surface_z_at(row, col);
+            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
 
             if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
@@ -390,6 +431,32 @@ fn stamp_along_path(
     }
 }
 
+/// The mesh geometry `segments_to_toolpath` needs in order to drape an
+/// emitted move up to `surface + stock_to_leave` (the `fa27b08` gouge
+/// guard). Carried into the planner's mirror stamp so both sides see the
+/// same path.
+///
+/// Every field is already on [`ClearZLevelContext`]; the struct exists
+/// only so the mirror can be handed the same four values from
+/// `waterline_cleanup`, which has no context.
+pub(super) struct StampDrape<'a> {
+    pub(super) mesh: &'a TriangleMesh,
+    pub(super) index: &'a SpatialIndex,
+    pub(super) cutter: &'a dyn MillingCutter,
+    pub(super) stock_to_leave: f64,
+}
+
+impl<'a> ClearZLevelContext<'a> {
+    pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
+        StampDrape {
+            mesh: self.mesh,
+            index: self.index,
+            cutter: self.cutter,
+            stock_to_leave: self.stock_to_leave,
+        }
+    }
+}
+
 /// Mirror in the planner's `material_stock` the swept-tube stamps that
 /// the simulator will produce when it replays the toolpath emitted by
 /// `segments_to_toolpath` for `segment`.
@@ -399,11 +466,22 @@ fn stamp_along_path(
 /// know where a `Link` feed starts from).
 ///
 /// `safe_z` / `tolerance` / `min_cutting_radius` match
-/// `Adaptive3dParams`; tolerance and min_cutting_radius are needed
-/// because `segments_to_toolpath` runs `simplify_path_3d` and
-/// `blend_corners_3d` on `Cut` paths before emitting feeds, so the
-/// simulator stamps the SIMPLIFIED+BLENDED path. To stay in lockstep
-/// the planner must do the same transformation here.
+/// `Adaptive3dParams`. The invariant this function exists to hold is
+/// that it applies **every** transformation `segments_to_toolpath`
+/// applies, so the planner stamps the SAME path the simulator will
+/// replay. Today that is three transformations, in the emitter's order:
+///
+/// 1. `drape_path_to_leave` / `drape_point` — the `fa27b08` gouge guard,
+///    which densifies to `<= cutter.radius()` and raises every point to
+///    `drop_cutter(x, y) + stock_to_leave`;
+/// 2. `simplify_path_3d` (RDP at `tolerance`);
+/// 3. `blend_corners_3d` (at `min_cutting_radius`).
+///
+/// If a fourth is ever added to the emitter it must be added here in the
+/// same commit. `fa27b08` added (1) to the emitter and not here, and the
+/// planner spent seven weeks believing it had removed material its own
+/// emitted toolpath leaves standing — see
+/// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
 #[allow(clippy::too_many_arguments)]
 fn stamp_emitted_segment(
     material_stock: &mut TriDexelStock,
@@ -414,15 +492,26 @@ fn stamp_emitted_segment(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
 ) {
     match segment {
         Adaptive3dSegment::Cut(path) => {
             // Mirror segments_to_toolpath's path transformation —
-            // simplify_path_3d (RDP) and blend_corners_3d — so the
-            // planner's swept stamps cover the SAME tubes the
-            // simulator will stamp from the emitted feeds.
+            // drape_path_to_leave, then simplify_path_3d (RDP), then
+            // blend_corners_3d — so the planner's swept stamps cover
+            // the SAME tubes the simulator will stamp from the emitted
+            // feeds. Order matters: the emitter drapes BEFORE
+            // simplifying, so the RDP sees the densified, lifted path.
             if path.len() >= 2 {
-                let simplified = simplify_path_3d(path, tolerance);
+                let draped = drape_path_to_leave(
+                    path,
+                    drape.mesh,
+                    drape.index,
+                    drape.cutter,
+                    drape.stock_to_leave,
+                    drape.cutter.radius(),
+                );
+                let simplified = simplify_path_3d(&draped, tolerance);
                 let blended = blend_corners_3d(&simplified, min_cutting_radius);
                 stamp_along_path(material_stock, lut, tool_radius, &blended);
             } else {
@@ -435,12 +524,25 @@ fn stamp_emitted_segment(
             // peck-plunge feeds get stamped — and the net swept-tube
             // of the interleaved peck/retract feeds is just the full
             // vertical descent from safe_z to entry.
+            //
+            // The emitter shadow-rebinds `entry` through `drape_point`
+            // on this arm before it plunges, so the descent stops at the
+            // draped Z, not the raw one. Mirror that. (The
+            // `RapidWithFloor` arm below has no such rebind in the
+            // emitter, so it must not get one here either.)
+            let entry = drape_point(
+                entry,
+                drape.mesh,
+                drape.index,
+                drape.cutter,
+                drape.stock_to_leave,
+            );
             let start = P3::new(entry.x, entry.y, safe_z);
             material_stock.stamp_linear_segment(
                 lut,
                 tool_radius,
                 start,
-                *entry,
+                entry,
                 StockCutDirection::FromTop,
             );
         }
@@ -497,6 +599,7 @@ fn push_segment_with_stamp(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
 ) {
     stamp_emitted_segment(
         material_stock,
@@ -507,6 +610,7 @@ fn push_segment_with_stamp(
         safe_z,
         tolerance,
         min_cutting_radius,
+        drape,
     );
     // Update last_pos based on segment's terminal XYZ before pushing.
     match &segment {
@@ -588,7 +692,7 @@ pub(super) fn clear_z_level_contour_parallel(
     //    Material cells near the boundary have small distance.
     //    Interior material cells have large distance.
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
 
     // 3. Find max distance (determines number of offset levels)
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
@@ -648,7 +752,7 @@ pub(super) fn clear_z_level_contour_parallel(
             // plunge on the innermost pass.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
-                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
                 let target_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
@@ -714,8 +818,8 @@ pub(super) fn clear_z_level_contour_parallel(
                             surface_hm,
                             lp,
                             *first,
-                            z_level,
                             ctx.stock_to_leave,
+                            ctx.depth_per_pass,
                         )
                 });
                 let entry_seg = if should_link {
@@ -733,6 +837,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 push_segment_with_stamp(
                     segments,
@@ -744,6 +849,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
             }
         }
@@ -783,7 +889,7 @@ pub(super) fn clear_z_level_contour_parallel(
         let z_for_cell = |row: usize, col: usize| -> f64 {
             let wx = co_x + col as f64 * c_cs;
             let wy = co_y + row as f64 * c_cs;
-            let surf_z = surface_hm.surface_z_at_world(wx, wy);
+            let surf_z = surface_hm.z_or_bbox_floor_at_world(wx, wy);
             // Lower bound (the "leave stock above the surface" rule).
             let lower = if surf_z == f64::NEG_INFINITY {
                 z_level
@@ -864,6 +970,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 if path.len() >= 2 {
                     push_segment_with_stamp(
@@ -876,6 +983,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 } else {
                     // Single-point run: emit as a tiny cut segment.
@@ -890,6 +998,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
             }
@@ -943,7 +1052,7 @@ pub(super) fn clear_z_level_adaptive(
 
     // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
     let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::contour_extract::distance_transform_2d(&air_grid, rows, cols);
+    let edt = crate::grid_field::distance_transform_2d(&air_grid, rows, cols);
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
 
     // ── 3. Curvature field from EDT level sets ─────────────────────────
@@ -1016,7 +1125,7 @@ pub(super) fn clear_z_level_adaptive(
             // Z-blended surface drape (identical to contour-parallel)
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
-                let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
                 let target_z = if surf_z == f64::NEG_INFINITY {
                     z_level
                 } else {
@@ -1039,8 +1148,8 @@ pub(super) fn clear_z_level_adaptive(
                             surface_hm,
                             lp,
                             *first,
-                            z_level,
                             ctx.stock_to_leave,
+                            ctx.depth_per_pass,
                         )
                 });
                 let entry_seg = if should_link {
@@ -1058,6 +1167,7 @@ pub(super) fn clear_z_level_adaptive(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
                 push_segment_with_stamp(
                     segments,
@@ -1069,6 +1179,7 @@ pub(super) fn clear_z_level_adaptive(
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
                 );
             }
         }
@@ -1099,11 +1210,20 @@ pub(super) fn waterline_cleanup(
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    stock_to_leave: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
+    // Same drape the emitter applies to these segments; see
+    // `stamp_emitted_segment`.
+    let drape = StampDrape {
+        mesh,
+        index,
+        cutter,
+        stock_to_leave,
+    };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
     let waterline_scope = debug_ctx.map(|ctx| {
@@ -1154,6 +1274,7 @@ pub(super) fn waterline_cleanup(
             safe_z,
             tolerance,
             min_cutting_radius,
+            &drape,
         );
 
         let mut cleanup_path = vec![contour[0]];
@@ -1183,6 +1304,7 @@ pub(super) fn waterline_cleanup(
             safe_z,
             tolerance,
             min_cutting_radius,
+            &drape,
         );
         traced += 1;
     }
@@ -1294,6 +1416,45 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
 /// is that the tool stays at a fixed Z within each slab (no per-step
 /// terrain follow) — acceptable for roughing; finish passes handle
 /// the staircase.
+/// Machine rapid rate (mm/min) assumed for the feed-vs-rapid crossover.
+/// The planner has no machine context at this layer; 5000 mm/min matches
+/// the Shapeoko-class grbl default the retired 70 mm constant was tuned
+/// against. Worst case of a wrong guess is a suboptimal link/retract
+/// choice, never an unsafe move.
+const ASSUMED_RAPID_MM_MIN: f64 = 5000.0;
+
+/// Final-approach distance descended at plunge rate after the rapid
+/// descent (mirrors `RAPID_DESCENT_BUFFER_MM` in `path.rs`).
+const CROSSOVER_PLUNGE_BUFFER_MM: f64 = 0.5;
+
+/// XY length above which demoting an in-slice air run to a
+/// retract + rapid + re-plunge cycle is faster than feeding through it.
+///
+/// Solves `len/feed = len/rapid + overhead(retract_depth)` for `len`,
+/// where the overhead is the retract cycle: climb `retract_depth` at
+/// rapid, rapid back down to the cleared floor + buffer, final buffer at
+/// plunge rate. Replaces the hardcoded `MIN_AIR_RUN_MM = 70.0` (tuned to
+/// a 6 mm tool at 3150 mm/min feed — Stage 0, algorithm review
+/// 2026-06-12 F3).
+pub(super) fn air_run_crossover_mm(
+    feed_mm_min: f64,
+    plunge_mm_min: f64,
+    retract_depth_mm: f64,
+) -> f64 {
+    let feed = feed_mm_min.max(1.0) / 60.0;
+    let rapid = ASSUMED_RAPID_MM_MIN / 60.0;
+    let plunge = plunge_mm_min.max(1.0) / 60.0;
+    if feed >= rapid {
+        // Feeding is at least as fast as rapiding: a demotion never pays.
+        return f64::INFINITY;
+    }
+    let depth = retract_depth_mm.max(0.0);
+    let overhead_s = depth / rapid
+        + (depth - CROSSOVER_PLUNGE_BUFFER_MM).max(0.0) / rapid
+        + CROSSOVER_PLUNGE_BUFFER_MM.min(depth) / plunge;
+    overhead_s / (1.0 / feed - 1.0 / rapid)
+}
+
 #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
 pub(super) fn clear_z_level_agent_2d_slice(
     ctx: &ClearZLevelContext<'_>,
@@ -1302,6 +1463,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
+    // Stage 4 — per-toolpath planner-engagement sampler accumulator. The
+    // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
+    // every emitted cut point; other strategies leave it untouched.
+    planner_eng: &mut Vec<(P3, f64)>,
     region: Option<&MaterialRegion>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
@@ -1487,11 +1652,27 @@ pub(super) fn clear_z_level_agent_2d_slice(
         min_cutting_radius: 0.0,
         initial_stock: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
+        engagement_measure: ctx.engagement_measure,
+        // ContourSpiral (3D) routes through this same dispatch with the
+        // spiral as the per-slice generator; AgentSearch keeps the agent.
+        path_strategy: if matches!(ctx.clearing_strategy, ClearingStrategy3d::ContourSpiral) {
+            crate::adaptive::PathStrategy2d::ContourSpiral
+        } else {
+            crate::adaptive::PathStrategy2d::Agent
+        },
+        // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
+        // tuned const for any non-finite / non-positive value so a bad
+        // config can never disable load capping outright.
+        trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
+            ctx.trochoid_cap_mult
+        } else {
+            TROCHOID_CAP_MULT_3D
+        },
     };
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
     let lift = |p: P2| -> P3 {
-        let surf_z = surface_hm.surface_z_at_world(p.x, p.y);
+        let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
         let z = if surf_z == f64::NEG_INFINITY {
             z_level
         } else {
@@ -1577,6 +1758,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     region_polygon,
                     &params_2d,
                     cancel,
+                    None,
                     None,
                 )?;
                 for seg in &segs_forecast {
@@ -1676,6 +1858,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 if path_3d.len() >= 2 {
@@ -1690,6 +1873,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                     cut_count += 1;
                 }
@@ -1729,6 +1913,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 if path_3d.len() >= 2 {
@@ -1743,6 +1928,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                     cut_count += 1;
                 }
@@ -1791,12 +1977,26 @@ pub(super) fn clear_z_level_agent_2d_slice(
             &smoothed_polygons[0]
         };
 
+        // Stage 4 — collect the contour-spiral's per-point predicted
+        // leading-arc engagement for this slice (empty for non-spiral
+        // strategies). Keyed by 2D position below so it survives the
+        // residue-cleanup segment reshuffling, then lifted to 3D and
+        // appended to the per-toolpath planner-engagement sampler.
+        let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
         let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
             polygon_for_adaptive,
             &params_2d,
             cancel,
             region_scope.as_ref().map(|s| s.context()).as_ref(),
+            Some(&mut slice_eng_2d),
         )?;
+        // Spatial lookup: quantised 2D position → predicted engagement.
+        // Positions are exact f64 from the spiral's own emit, so a
+        // fixed-point key reproduces them without float-equality hazard.
+        let eng_lookup: std::collections::HashMap<(i64, i64), f64> = slice_eng_2d
+            .iter()
+            .map(|(p, e)| ((quantize_coord(p.x), quantize_coord(p.y)), *e))
+            .collect();
 
         // For non-Legacy cleanup strategies, run the same cleanup
         // post-process the 2D top-level entry point runs. adaptive3d
@@ -1911,6 +2111,19 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         continue;
                     }
                     let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                    // Stage 4 — record the planner's predicted leading-arc
+                    // engagement at each lifted cut point (looked up by 2D
+                    // position; misses, e.g. residue-mop cleanup cuts, are
+                    // simply absent and the modulator falls back there).
+                    if !eng_lookup.is_empty() {
+                        for (&p2, &p3) in path_2d.iter().zip(path_3d.iter()) {
+                            if let Some(&e) =
+                                eng_lookup.get(&(quantize_coord(p2.x), quantize_coord(p2.y)))
+                            {
+                                planner_eng.push((p3, e));
+                            }
+                        }
+                    }
                     level_metrics.agent_walk_cut_length_mm += polyline_length_3d(&path_3d);
                     // Per-point classification (BEFORE any stamping):
                     // cutter is "engaged" if the current dexel ray top at
@@ -1931,15 +2144,20 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         })
                         .collect();
                     // Re-promote short air runs back to engaged: rapid-mode
-                    // is only faster than feed-mode for transit > ~70mm
-                    // because each rapid carries retract+plunge overhead
-                    // (~0.5s). For a 6mm tool at 3150mm/min feed and
-                    // 5000mm/min rapid, the crossover is around 70mm.
-                    // Below that, feeding through air is cheaper than
-                    // demoting to rapid. Threshold is XY toolpath
-                    // distance, so we walk forward summing segment
-                    // lengths until we exceed it or change classification.
-                    const MIN_AIR_RUN_MM: f64 = 70.0;
+                    // is only faster than feed-mode above a crossover
+                    // length, because each demotion carries a full
+                    // retract + rapid-reposition + re-plunge overhead.
+                    // Computed from the op's actual feed/plunge rates and
+                    // this level's retract depth (replaces a 70 mm
+                    // constant tuned to one 6 mm/3150/5000 combo).
+                    // Threshold is XY toolpath distance, so we walk
+                    // forward summing segment lengths until we exceed it
+                    // or change classification.
+                    let min_air_run_mm = air_run_crossover_mm(
+                        ctx.feed_rate,
+                        ctx.plunge_rate,
+                        (ctx.safe_z - z_level).max(0.0),
+                    );
                     if !engaged.is_empty() {
                         let mut i = 0;
                         while i < engaged.len() {
@@ -1966,7 +2184,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                 let dy = path_3d[run_start].y - path_3d[run_start - 1].y;
                                 run_len_mm += (dx * dx + dy * dy).sqrt();
                             }
-                            if run_len_mm < MIN_AIR_RUN_MM {
+                            if run_len_mm < min_air_run_mm {
                                 for is_engaged in
                                     engaged.iter_mut().take(run_end + 1).skip(run_start)
                                 {
@@ -1985,7 +2203,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                     // threshold the cut is roughing-irrelevant — finishing
                     // passes clean the residual.
                     //
-                    // Asymmetric with MIN_AIR_RUN_MM on purpose: the air-run
+                    // Asymmetric with min_air_run_mm on purpose: the air-run
                     // smoother promotes air → engaged to avoid retract
                     // overhead on short bridges; this engaged-run filter
                     // demotes engaged → air to merge the bordering air runs
@@ -2046,6 +2264,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                             ctx.safe_z,
                                             ctx.tolerance,
                                             ctx.min_cutting_radius,
+                                            &ctx.stamp_drape(),
                                         );
                                         cut_count += 1;
                                     }
@@ -2074,6 +2293,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                         ctx.safe_z,
                                         ctx.tolerance,
                                         ctx.min_cutting_radius,
+                                        &ctx.stamp_drape(),
                                     );
                                 }
                             }
@@ -2100,6 +2320,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                     ctx.safe_z,
                                     ctx.tolerance,
                                     ctx.min_cutting_radius,
+                                    &ctx.stamp_drape(),
                                 );
                             }
                             sub_start = i;
@@ -2121,6 +2342,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                     ctx.safe_z,
                                     ctx.tolerance,
                                     ctx.min_cutting_radius,
+                                    &ctx.stamp_drape(),
                                 );
                                 cut_count += 1;
                             }
@@ -2144,6 +2366,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                                 ctx.safe_z,
                                 ctx.tolerance,
                                 ctx.min_cutting_radius,
+                                &ctx.stamp_drape(),
                             );
                         }
                     }
@@ -2174,6 +2397,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 crate::adaptive::AdaptiveSegment::Link(p) => {
@@ -2203,6 +2427,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         ctx.safe_z,
                         ctx.tolerance,
                         ctx.min_cutting_radius,
+                        &ctx.stamp_drape(),
                     );
                 }
                 crate::adaptive::AdaptiveSegment::Marker(_) => {
@@ -2373,7 +2598,43 @@ fn polyline_length_3d(path: &[P3]) -> f64 {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod region_order_tests {
-    use super::nearest_neighbor_order;
+    use super::{air_run_crossover_mm, nearest_neighbor_order};
+
+    #[test]
+    fn crossover_reproduces_the_retired_70mm_anchor() {
+        // The old constant assumed ~0.5 s of retract overhead at
+        // 3150 mm/min feed / 5000 mm/min rapid → ~71 mm crossover.
+        // overhead(d) = 2d/rapid − buf/rapid + buf/plunge = 0.5 s at
+        // d ≈ 18.7 mm (plunge 500).
+        let got = air_run_crossover_mm(3150.0, 500.0, 18.7);
+        assert!(
+            (got - 71.0).abs() < 3.0,
+            "expected ≈71 mm at the old constant's operating point, got {got:.1}"
+        );
+    }
+
+    #[test]
+    fn crossover_scales_with_retract_depth_and_feed() {
+        // Deeper retract ⇒ more overhead ⇒ longer crossover.
+        let shallow = air_run_crossover_mm(3150.0, 500.0, 5.0);
+        let deep = air_run_crossover_mm(3150.0, 500.0, 30.0);
+        assert!(shallow < deep, "shallow {shallow:.1} !< deep {deep:.1}");
+
+        // Faster feed narrows the feed-vs-rapid gap ⇒ longer crossover.
+        let slow_feed = air_run_crossover_mm(1000.0, 500.0, 10.0);
+        let fast_feed = air_run_crossover_mm(4500.0, 500.0, 10.0);
+        assert!(
+            slow_feed < fast_feed,
+            "slow {slow_feed:.1} !< fast {fast_feed:.1}"
+        );
+    }
+
+    #[test]
+    fn crossover_is_infinite_when_feed_beats_rapid() {
+        // Feed ≥ assumed rapid: demoting to a rapid never pays.
+        assert!(air_run_crossover_mm(5000.0, 500.0, 10.0).is_infinite());
+        assert!(air_run_crossover_mm(8000.0, 500.0, 10.0).is_infinite());
+    }
 
     #[test]
     fn nn_visits_nearest_first_from_start() {

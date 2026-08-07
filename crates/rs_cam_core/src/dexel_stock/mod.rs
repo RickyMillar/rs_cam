@@ -9,7 +9,13 @@ mod simulation;
 mod stamping;
 
 pub use cut_direction::StockCutDirection;
-pub use simulation::effective_chip_thickness_mm;
+pub use simulation::{
+    ChipThicknessStats, chip_thickness_stats, effective_chip_thickness_mm, peak_chip_thickness_mm,
+};
+/// The dexel engagement channel's two measurement floors. Re-exported from
+/// the (private) stamping kernel because [`crate::sim_measurability`] and its
+/// consumers need to cite the numbers they abstain on.
+pub use stamping::FRESH_MATERIAL_THRESHOLD_MM;
 
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 
@@ -180,6 +186,120 @@ impl TriDexelStock {
         sum
     }
 
+    /// Highest material top over all Z-grid cells intersecting the disc of
+    /// `radius` around `(cx, cy)` (world frame). Mirrors the collision
+    /// checker's view: a tool descending at this XY can touch material in
+    /// any column within its radius. `None` when no intersecting column
+    /// holds material.
+    ///
+    /// Same cell-walk and distance convention as [`Self::local_material_sum`]
+    /// (max instead of sum) — see that method's comment for the shared
+    /// tri-dexel-vs-heightmap correspondence.
+    pub fn max_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        let r_cells = (radius / cs).ceil() as isize;
+
+        // Convert world (cx, cy) to grid cell
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        let col_min = (center_col - r_cells).max(0) as usize;
+        let col_max = ((center_col + r_cells) as usize).min(grid.cols.saturating_sub(1));
+        let row_min = (center_row - r_cells).max(0) as usize;
+        let row_max = ((center_row + r_cells) as usize).min(grid.rows.saturating_sub(1));
+
+        let r_sq = radius * radius;
+        let mut max_top: Option<f64> = None;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > r_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                let dist_sq = dx * dx + dy_sq;
+                if dist_sq > r_sq {
+                    continue;
+                }
+                if let Some(top) = grid.top_z_at(row, col) {
+                    let top = top as f64;
+                    max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+                }
+            }
+        }
+        max_top
+    }
+
+    /// **The reading a clearance ceiling must use.** Highest Z at which
+    /// material may stand anywhere under a disc of `radius` around
+    /// `(cx, cy)` — see [`crate::dexel::DexelGrid::conservative_top`].
+    ///
+    /// Differs from [`Self::max_top_z_in_disc`] in both of the ways that
+    /// made descent planning resolution-dependent (A/M10):
+    ///
+    /// 1. it reads the sliver-safe bound rather than the cell-centre column,
+    ///    so a rib narrower than one cell cannot be blended out of sight;
+    /// 2. it visits every cell whose SQUARE overlaps the disc, not every
+    ///    cell whose CENTRE lies inside it — a cell half under the tool
+    ///    still holds material under the tool.
+    ///
+    /// Returns `None` only when the disc lies entirely outside the grid, in
+    /// which case the caller has no stock information here and should fall
+    /// back to the analytic fresh-stock top.
+    pub fn max_conservative_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        // Half a cell of dilation turns "centre inside the disc" into
+        // "square overlaps the disc"; the `ceil` then rounds out to whole
+        // cells. Both are deliberate over-reach — this query may only ever
+        // err high.
+        let reach = radius + cs * 0.5;
+        let r_cells = (reach / cs).ceil() as isize;
+
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        if center_col + r_cells < 0
+            || center_row + r_cells < 0
+            || center_col - r_cells >= grid.cols as isize
+            || center_row - r_cells >= grid.rows as isize
+        {
+            return None;
+        }
+
+        let col_min = (center_col - r_cells).max(0) as usize;
+        let col_max = ((center_col + r_cells).max(0) as usize).min(grid.cols.saturating_sub(1));
+        let row_min = (center_row - r_cells).max(0) as usize;
+        let row_max = ((center_row + r_cells).max(0) as usize).min(grid.rows.saturating_sub(1));
+
+        let reach_sq = reach * reach;
+        let mut max_top: Option<f64> = None;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > reach_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                if dx * dx + dy_sq > reach_sq {
+                    continue;
+                }
+                let top = f64::from(grid.conservative_top_at(row, col));
+                max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+            }
+        }
+        max_top
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///
@@ -187,8 +307,12 @@ impl TriDexelStock {
     /// Used for border clearing in adaptive3d where cells outside the mesh
     /// footprint are set to the surface height.
     pub fn clear_above_at(&mut self, row: usize, col: usize, z: f32) {
-        let ray = &mut self.z_grid.rays[row * self.z_grid.cols + col];
+        let idx = row * self.z_grid.cols + col;
+        let ray = &mut self.z_grid.rays[idx];
         crate::dexel::ray_subtract_above(ray, z);
+        // A/M10: a whole-cell clear is exactly the case the sliver-safe
+        // bound trusts — no partial coverage, no sub-cell remainder.
+        self.z_grid.lower_conservative_top(idx, z);
     }
 
     /// Analytical drill removal — DEXEL roadmap §6.E Step 3.
@@ -309,7 +433,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0); // radius 5
         let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -335,7 +459,7 @@ mod tests {
         let tool = BallEndmill::new(6.0, 25.0); // radius 3
         let mut stock = make_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 5.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -372,7 +496,7 @@ mod tests {
         let start = P3::new(0.0, 0.0, 2.0);
         let end = P3::new(10.0, 0.0, 2.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
 
         // Along the path center (y=0): z should be at tip_z = 2.0.
@@ -396,7 +520,7 @@ mod tests {
         let start = P3::new(5.0, 5.0, -1.0);
         let end = P3::new(25.0, 25.0, -1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_linear_segment(&lut, tool.radius(), start, end, StockCutDirection::FromTop);
 
         // Midpoint of the diagonal (15,15): ball tip at z=-1, so center z = -1.0.
@@ -444,7 +568,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 10.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // Tip at z=3 from below: flat endmill surface at z=3, remove below.
         stock.stamp_tool_at(
             &lut,
@@ -469,7 +593,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(-10.0, -10.0, 10.0, 10.0, 0.0, 10.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // Top cut: remove above z=7
         stock.stamp_tool_at(
             &lut,
@@ -550,7 +674,7 @@ mod tests {
         let saved = stock.checkpoint();
 
         // Cut the original.
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -574,7 +698,7 @@ mod tests {
 
         assert!(stock.y_grid.is_none(), "Y-grid should not exist yet");
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // Stamp from back (+Y side): tool center at global (10, ?, 10)
         // decompose for Y-grid: u=x=10, v=z=10, depth=y
         // FromBack = subtract_above (high-Y side), tip_y = 15
@@ -611,7 +735,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // FromFront: tool enters from -Y (low Y). subtract_below.
         // Tool tip at global y=5, center at (10, 5, 10).
         stock.stamp_tool_at(
@@ -638,7 +762,7 @@ mod tests {
 
         assert!(stock.x_grid.is_none());
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // FromLeft: tool enters from -X. subtract_below on X-grid.
         // decompose: u=Y, v=Z, depth=X. Tool at global (5, 10, 10).
         stock.stamp_tool_at(
@@ -666,7 +790,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // FromRight: tool enters from +X. subtract_above on X-grid.
         stock.stamp_tool_at(
             &lut,
@@ -690,7 +814,7 @@ mod tests {
         let tool = FlatEndmill::new(4.0, 20.0); // radius 2
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 0.5);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // Sweep along X at global (x, y=15, z=10) from x=2 to x=18.
         // FromBack stamps on Y-grid. decompose: u=x, v=z, depth=y
         let start = P3::new(2.0, 15.0, 10.0);
@@ -714,7 +838,7 @@ mod tests {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 30.0, 30.0, 0.0, 20.0, 1.0);
 
         // Setup 1: Top cut — stamp at center.
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -756,7 +880,7 @@ mod tests {
         let tool = FlatEndmill::new(10.0, 25.0);
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 20.0, 1.0);
 
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         // Create Y-grid via stamp.
         stock.stamp_tool_at(
             &lut,
@@ -831,7 +955,7 @@ mod tests {
         let sum_before = stock.local_material_sum(5.0, 5.0, 3.0);
 
         // Stamp tool at center, cutting to z=2.
-        let lut = RadialProfileLUT::from_cutter(&tool, 256);
+        let lut = RadialProfileLUT::from_cutter(&tool, crate::radial_profile::LUT_SAMPLES);
         stock.stamp_tool_at(
             &lut,
             tool.radius(),
@@ -847,6 +971,51 @@ mod tests {
         assert!(
             sum_after < sum_before,
             "Sum should decrease after stamp: before={sum_before}, after={sum_after}"
+        );
+    }
+
+    #[test]
+    fn test_max_top_z_in_disc_stepped_stock() {
+        // 10x10 stock, z 0..10, cell_size=1. Step: the right half
+        // (col >= cols/2) is lowered to top=3; the left half stays at
+        // top=10 (fresh, unstamped).
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 10.0, 1.0);
+        let rows = stock.z_grid.rows;
+        let cols = stock.z_grid.cols;
+        for row in 0..rows {
+            for col in (cols / 2)..cols {
+                stock.clear_above_at(row, col, 3.0);
+            }
+        }
+
+        // Querying at the midpoint between the last tall column and the
+        // first lowered column, with a disc wide enough to reach both,
+        // must report the TALL side's top, not the local (lowered)
+        // column's top — mirroring the collision checker's view that a
+        // tool can touch material anywhere within its footprint, not just
+        // at its center.
+        let cs = stock.z_grid.cell_size;
+        let last_tall_col = cols / 2 - 1;
+        let midpoint_x = stock.z_grid.origin_u + (last_tall_col as f64 + 0.5) * cs;
+        let at_boundary = stock.max_top_z_in_disc(midpoint_x, 5.0, 0.6);
+        assert!(
+            (at_boundary.unwrap_or(0.0) - 10.0).abs() < 1e-6,
+            "expected the disc straddling the step to see the tall side's top (10.0), got {at_boundary:?}"
+        );
+
+        // Deep inside the lowered side (disc doesn't reach the step),
+        // the query should report the lowered top.
+        let deep_low = stock.max_top_z_in_disc(9.0, 5.0, 0.4);
+        assert!(
+            (deep_low.unwrap_or(0.0) - 3.0).abs() < 1e-6,
+            "expected the lowered side's top (3.0), got {deep_low:?}"
+        );
+
+        // Deep inside the tall side, the query should report the tall top.
+        let deep_tall = stock.max_top_z_in_disc(1.0, 5.0, 0.4);
+        assert!(
+            (deep_tall.unwrap_or(0.0) - 10.0).abs() < 1e-6,
+            "expected the tall side's top (10.0), got {deep_tall:?}"
         );
     }
 

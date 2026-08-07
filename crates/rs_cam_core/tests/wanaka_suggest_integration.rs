@@ -10,9 +10,18 @@
 //! What this sentry catches:
 //!
 //! - **Back Rough / 3D Rough 6** (Adaptive3D, 6 mm carbide endmill on
-//!   HardMaple): `DppCappedByDeflection` must fire (9 mm DPP → ~3.69 mm),
-//!   and `FeedRaisedForChipload` must follow (feed ~911 → ~3700 mm/min
-//!   so the predicted observed chipload clears the LUT min).
+//!   HardMaple): re-baselined 2026-07-06 for the unified load model
+//!   (2026-06-20 recalibration, Ks=49.95/F_edge=5.30 anchored to
+//!   GenericHardwood). That recalibration made the closed-form
+//!   deflection back-off fire only for long/thin tools; this 6 mm
+//!   carbide stub is chipload/power-bound, not deflection-bound, so
+//!   `DppCappedByDeflection` must NOT fire. Instead the axial-DOC
+//!   envelope (`binding: "vendor_ap"`) clamps the calculator's 9 mm
+//!   DPP straight to ~5.4 mm via `AxialDocClampedByEnvelope`, and the
+//!   deflection solve never runs. `FeedRaisedForChipload` must still
+//!   fire (feed ~911 mm/min → the derived cutting ceiling) — the
+//!   recalibration remains chipload-bound regardless of which axial
+//!   constraint wins.
 //! - **3D Finish 6** (DropCutter, 2 mm-tip tapered ball): scallop-height
 //!   target resolves to ~0.03 mm stepover (~4.6 M moves on the Wanaka
 //!   stock envelope) — `StepoverRaisedForRuntime` must fire raising
@@ -52,7 +61,7 @@
 //!    (`DEFAULT_CUTTING_FEED_CAP_MM_MIN`) instead of literals.
 //! 3. **Determinism sentries** (rare): a raw numeric pin is allowed
 //!    only with a comment naming what legitimately re-baselines it
-//!    (see the 3.69 mm DPP pin below).
+//!    (see the 5.4 mm envelope-clamped DPP pin below).
 
 #![allow(
     clippy::unwrap_used,
@@ -150,20 +159,6 @@ fn find_case(
     })
 }
 
-fn assert_has_dpp_capped(warnings: &[SuggestWarning], context: &str) -> (f64, f64) {
-    let hit = warnings.iter().find_map(|w| match w {
-        SuggestWarning::DppCappedByDeflection {
-            requested_mm,
-            capped_mm,
-            ..
-        } => Some((*requested_mm, *capped_mm)),
-        _ => None,
-    });
-    hit.unwrap_or_else(|| {
-        panic!("{context}: DppCappedByDeflection must fire, got warnings: {warnings:?}")
-    })
-}
-
 fn assert_has_feed_raised(
     warnings: &[SuggestWarning],
     context: &str,
@@ -249,17 +244,16 @@ fn wanaka_suggest_baseline() {
         let (_id, name, suggested) = find_case(&cases, ToolpathId(4));
         let ctx = format!("Back Rough (tp {_id} / {name})");
 
-        // Phase 3 (`planning/cutter_axial_constraints_2026-06-06.md`):
-        // the axial-DOC envelope pass runs FIRST in enforce_invariants. On
-        // Wanaka's Back Rough the matched LUT row (Amana 1×D rule, ap_max_factor=1.0)
-        // clamps the calculator's 9 mm initial DPP down to 6 mm before the
-        // existing closed-form deflection back-off runs. The back-off then
-        // takes that 6 mm to ~3-3.7 mm via the 200 µm gate. Verify both
-        // halves of the chain are present:
-        //   1. AxialDocClampedByEnvelope reads commanded=9.0 (the calculator's
-        //      pre-envelope target) — confirms the calculator emitted 9 mm.
-        //   2. The post-back-off DPP still lands in the 3.0–4.0 mm regression
-        //      band (close to the pre-Phase-3 3.69 mm baseline).
+        // Unified-load-model re-baseline (2026-07-06): the axial-DOC
+        // envelope pass runs FIRST in enforce_invariants. On Wanaka's
+        // Back Rough the vendor `ap_max` row binds and clamps the
+        // calculator's 9 mm initial DPP straight to ~5.4 mm via
+        // `AxialDocClampedByEnvelope { binding: "vendor_ap" }`. Since the
+        // 2026-06-20 unified-load-model recalibration (Ks=49.95/F_edge=
+        // 5.30 anchored to GenericHardwood), the closed-form deflection
+        // back-off only fires for long/thin tools — this 6 mm carbide
+        // stub is chipload/power-bound, so the back-off never runs and
+        // `DppCappedByDeflection` must NOT fire.
         let envelope_clamp = suggested
             .warnings
             .iter()
@@ -268,39 +262,54 @@ fn wanaka_suggest_baseline() {
                     op_kind: "adaptive3d",
                     commanded_mm,
                     clamped_mm,
+                    binding,
                     ..
-                } => Some((*commanded_mm, *clamped_mm)),
+                } => Some((*commanded_mm, *clamped_mm, *binding)),
                 _ => None,
             })
             .unwrap_or_else(|| {
                 panic!(
                     "{ctx}: AxialDocClampedByEnvelope must fire — calculator's 9 mm DPP \
-                     should hit the LUT ap bound, got warnings {:?}",
+                     should hit the vendor ap bound, got warnings {:?}",
                     suggested.warnings
                 )
             });
-        let (envelope_commanded, envelope_clamped) = envelope_clamp;
+        let (envelope_commanded, envelope_clamped, envelope_binding) = envelope_clamp;
         assert!(
             (envelope_commanded - 9.0).abs() < 1e-6,
             "{ctx}: calculator pre-envelope DPP must be 9.0 mm, got {envelope_commanded}"
         );
+        assert_eq!(
+            envelope_binding, "vendor_ap",
+            "{ctx}: the vendor ap_max row must bind (not deflection/scallop), got {envelope_binding}"
+        );
         assert!(
-            envelope_clamped > 0.0 && envelope_clamped < 9.0,
+            envelope_clamped > 0.0 && envelope_clamped < envelope_commanded,
             "{ctx}: envelope-clamped DPP must drop below the calculator's initial 9.0 mm, got {envelope_clamped}"
         );
-
-        let (_requested_dpp, capped_dpp) = assert_has_dpp_capped(&suggested.warnings, &ctx);
+        // R4 convention: DETERMINISM SENTRY (rule 3) — 5.4 mm is the
+        // vendor_ap envelope's output on this exact geometry/tool/LUT
+        // row, not a literature value or a named constant. Re-baseline
+        // it only when the unified-load-model recalibration
+        // (2026-06-20, Ks=49.95/F_edge=5.30) or the vendor LUT's ap_max
+        // for this tool/material row changes deliberately.
         assert!(
-            capped_dpp > 0.0 && capped_dpp < 6.0,
-            "{ctx}: capped DPP must drop below tool diameter (6 mm), got {capped_dpp}"
+            (envelope_clamped - 5.4).abs() < 0.5,
+            "{ctx}: envelope-clamped DPP must land near 5.4 mm (regression baseline), got {envelope_clamped}"
         );
-        // R4 convention: DETERMINISM SENTRY (rule 3) — 3.69 mm is the
-        // deflection solve's output on this exact geometry, not a
-        // literature value or a named constant. Re-baseline it only when
-        // the deflection model or wanaka.toml changes deliberately.
+        // This assertion catches the deflection back-off leaking back
+        // into stub-tool roughing — a regression that would silently
+        // reintroduce the old ~3.69 mm DppCappedByDeflection chain the
+        // unified load model retired.
         assert!(
-            (capped_dpp - 3.69).abs() < 0.5,
-            "{ctx}: capped DPP must land near 3.69 mm (regression baseline), got {capped_dpp}"
+            !suggested
+                .warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
+            "{ctx}: DppCappedByDeflection must NOT fire — the vendor_ap envelope binds first \
+             and this chipload/power-bound stub tool never reaches the deflection back-off, \
+             got {:?}",
+            suggested.warnings
         );
 
         let (feed_before, feed_after, obs_before, obs_after, lut_target, cap_hit) =
@@ -357,9 +366,12 @@ fn wanaka_suggest_baseline() {
         );
 
         // v3.3c (StrategyAndFeeds default): the strategy-aware
-        // orchestrator rewrites entry_style Plunge → Ramp on this
-        // case, replacing the v1.3 PlungeEntryUnstableAtDpp warning
-        // with a positive StrategyRewrote rewrite.
+        // orchestrator rewrites entry_style plunge → helix on this
+        // case (reason "deflection_predict_at_dpp_with_helix_headroom"),
+        // replacing the v1.3 PlungeEntryUnstableAtDpp warning with a
+        // positive StrategyRewrote rewrite. This is deterministic on
+        // Wanaka's geometry regardless of which axial constraint binds
+        // the DPP.
         let rewrote = suggested.warnings.iter().any(|w| {
             matches!(
                 w,
@@ -408,17 +420,21 @@ fn wanaka_suggest_baseline() {
         let (_id, name, suggested) = find_case(&cases, ToolpathId(10));
         let ctx = format!("3D Rough 6 (tp {_id} / {name})");
 
-        // Phase 3 envelope clamps DPP first; back-off then runs on the
-        // clamped value. See the Back Rough test above for the rationale.
-        let envelope_commanded = suggested
+        // Same unified-load-model re-baseline as Back Rough above: the
+        // vendor_ap envelope clamps DPP first (~9.0 mm → ~5.4 mm) and
+        // the deflection back-off never runs for this chipload/power-
+        // bound stub tool. See the Back Rough block for the full
+        // rationale.
+        let (envelope_commanded, envelope_clamped) = suggested
             .warnings
             .iter()
             .find_map(|w| match w {
                 SuggestWarning::AxialDocClampedByEnvelope {
                     op_kind: "adaptive3d",
                     commanded_mm,
+                    clamped_mm,
                     ..
-                } => Some(*commanded_mm),
+                } => Some((*commanded_mm, *clamped_mm)),
                 _ => None,
             })
             .unwrap_or_else(|| {
@@ -431,10 +447,18 @@ fn wanaka_suggest_baseline() {
             (envelope_commanded - 9.0).abs() < 1e-6,
             "{ctx}: calculator pre-envelope DPP must be 9.0 mm, got {envelope_commanded}"
         );
-        let (_requested_dpp, capped_dpp) = assert_has_dpp_capped(&suggested.warnings, &ctx);
         assert!(
-            capped_dpp > 0.0 && capped_dpp < 6.0,
-            "{ctx}: capped DPP must drop below tool diameter, got {capped_dpp}"
+            envelope_clamped > 0.0 && envelope_clamped < envelope_commanded,
+            "{ctx}: envelope-clamped DPP must drop below the calculator's initial 9.0 mm, got {envelope_clamped}"
+        );
+        assert!(
+            !suggested
+                .warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
+            "{ctx}: DppCappedByDeflection must NOT fire — same chipload/power-bound stub tool \
+             as Back Rough, got {:?}",
+            suggested.warnings
         );
 
         let (_, feed_after, obs_before, obs_after, lut_target, _) =

@@ -11,7 +11,9 @@
 //!    asset at `test_data/cavalier_panic_polygon_r1.json`. Contained by
 //!    the `catch_unwind` chokepoint in `offset_polygon`.
 //! 2. Repeat-position vertexes fed back into `parallel_offset` by
-//!    chained offsets (`pocket_offsets` at the 0.05 mm search floor) —
+//!    chained offsets (`pocket_offsets` at the 0.05 mm search floor;
+//!    that function was retired at Checkpoint D and the case is now
+//!    driven through its replacement, `OffsetRingSet`) —
 //!    "input assumed to not have repeat position vertexes" in
 //!    `pline_offset.rs`. Root-fixed by `remove_repeat_pos` dedupe
 //!    before every cavalier offset call.
@@ -27,7 +29,7 @@ mod common;
 use common::repo_root;
 
 use rs_cam_core::geo::P2;
-use rs_cam_core::polygon::{Polygon2, offset_polygon, pocket_offsets};
+use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
 
 fn load_captured_polygon() -> (Polygon2, f64) {
     let raw = std::fs::read_to_string(repo_root().join("test_data/cavalier_panic_polygon_r1.json"))
@@ -88,7 +90,28 @@ fn repeat_position_vertexes_are_deduped_before_offsetting() {
 
     // Same contract through the chained-offset path that originally
     // crashed: tiny-stepover pocket rings re-offset cavalier output.
-    let layers = pocket_offsets(&poly, 0.05);
+    //
+    // Wave 14: that path was `polygon::pocket_offsets`, retired at
+    // Checkpoint D (no production caller; it duplicated
+    // `pocket_contours_with_cancel`'s loop without its cancel hook, and it is
+    // the function that ran 13 minutes to 386 MB in the M5 study). The
+    // cascade it is replaced by is `OffsetRingSet`, and the R1 contract is
+    // unchanged and re-asserted verbatim below: chained tiny-stepover offsets
+    // of a repeat-vertex square must neither panic nor collapse early.
+    //
+    // The dedupe R1 root-fixed still runs — `OffsetRingSet::from_polygon`
+    // enters through the same `remove_repeat_pos` as `offset_polygon` — so
+    // this exercises the fix rather than merely re-testing that a square is
+    // offsettable.
+    let mut rings = OffsetRingSet::from_polygon(&poly);
+    let mut layers: Vec<Vec<Polygon2>> = Vec::new();
+    for _ in 0..40 {
+        rings = rings.offset(0.05);
+        if rings.is_empty() {
+            break;
+        }
+        layers.push(rings.to_polygons(FlattenPolicy::untoleranced()));
+    }
     assert!(
         layers.len() > 10,
         "expected many 0.05 mm rings from a 20 mm square, got {}",

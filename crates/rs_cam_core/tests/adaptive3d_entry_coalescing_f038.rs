@@ -143,6 +143,8 @@ fn micro_peak_terrain() -> TriangleMesh {
 
 fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dParams {
     Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius,
         envelope_radius: tool_radius,
         stepover: tool_radius * 0.5,

@@ -9,7 +9,7 @@ pub mod helpers;
 )]
 mod tests;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,7 +27,10 @@ use rs_cam_core::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
-use super::{ComputeBackend, ComputeError, ComputeLane, ComputeMessage, LaneSnapshot, LaneState};
+use super::{
+    CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
+    LaneControl, LaneSnapshot, LaneState,
+};
 use crate::state::job::ToolConfig;
 #[cfg(test)]
 use crate::state::job::ToolType;
@@ -37,6 +40,11 @@ use crate::state::toolpath::{
 
 pub struct ComputeRequest {
     pub toolpath_id: ToolpathId,
+    /// A/M12: 0-based position in `ProjectSession::toolpath_configs()` at
+    /// submit time. The lane republishes it on [`LaneSnapshot`] so
+    /// `generation_status` can name the in-flight op by the same index every
+    /// other MCP call uses. The lane itself has no session access.
+    pub toolpath_index: usize,
     pub toolpath_name: String,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
@@ -49,6 +57,10 @@ pub struct ComputeRequest {
     pub tool: ToolConfig,
     pub safe_z: f64,
     pub prev_tool_radius: Option<f64>,
+    /// R1 (pencil): resolved real reference tool config when the Pencil op names
+    /// one via `reference_tool_id`. Resolved in the controller (which has the
+    /// tool list), threaded to `execute_operation_annotated`. `None` = nominal.
+    pub reference_tool_cfg: Option<ToolConfig>,
     pub stock_bbox: Option<BoundingBox3>,
     pub boundary: crate::state::toolpath::BoundaryConfig,
     /// Fixture and keep-out footprints to subtract from the machining boundary.
@@ -63,6 +75,34 @@ pub struct ComputeRequest {
     /// `chip_welding` / `peck_adequacy` / `plunge_feed` gates evaluate
     /// against the actual stock, not `Material::default()`.
     pub material: rs_cam_core::material::Material,
+    /// P2.2/P2.3 (rest-region boundary): the full, un-unioned set of rest
+    /// region polygons for `BoundarySource::DerivedRestRegions`, resolved
+    /// from the source toolpath's cached result. Resolved by the
+    /// controller (which has cross-toolpath access via `gui.toolpath_rt`)
+    /// — this worker's `ComputeRequest` is scoped to a single toolpath and
+    /// has no way to look up another toolpath's result itself.
+    ///
+    /// The controller fails the toolpath hard (see
+    /// `submit_toolpath_compute`) rather than submitting a request when
+    /// the source is missing, self-referential, ungenerated, or has no
+    /// rest regions — so a worker that receives `Some` here can assume
+    /// the `Vec` is non-empty. `None` only when the boundary source isn't
+    /// `DerivedRestRegions`.
+    ///
+    /// The real enforcement clip (further down in `run_compute_with_phase_tracker`)
+    /// uses every region in this set via `ProjectSession::apply_boundary_clip_multi`
+    /// — the adaptive3d pre-clip optimization in `generate_via_core` unions
+    /// them down to one polygon only when that union collapses cleanly.
+    pub derived_rest_regions: Option<Vec<Polygon2>>,
+    /// Op-agnostic rest analysis (P2.5). Mirrors `boundary` — resolved by
+    /// the controller from the toolpath's `ToolpathEntry::rest_analysis`
+    /// and threaded to `execute_operation_annotated_with_regions`.
+    pub rest_analysis: crate::state::toolpath::RestAnalysisConfig,
+    /// P1 quantitative linker — the machine envelope generators use to
+    /// cost link candidates (pencil hookup). Snapshot taken when the
+    /// request is built; `None` disables cost-based link decisions
+    /// (legacy always-link behavior).
+    pub link_kinematics: Option<rs_cam_core::machine_kinematics::LinkKinematics>,
 }
 
 pub struct ComputeResult {
@@ -115,6 +155,13 @@ pub struct SetupSimGroup {
     /// Transform info to convert local coordinates back to global stock frame.
     /// `None` when the setup is identity (FaceUp::Top, ZRotation::None).
     pub local_to_global: Option<SetupTransformInfo>,
+    /// F.4 — phantom `prior_stocks` snapshot for a not-yet-generated
+    /// toolpath. Forwarded verbatim onto the core
+    /// `rs_cam_core::compute::simulate::SimGroupEntry::phantom_prior_stock`
+    /// of the same name — see that field's doc comment for the full
+    /// validity rule and `PhantomPriorStockScan` for how the controller
+    /// computes it.
+    pub phantom_prior_stock: Option<(usize, ToolpathId)>,
 }
 
 // Re-export from core — the struct and all methods now live in rs_cam_core.
@@ -183,6 +230,12 @@ pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
+    /// Pointwise per-dexel-column deviations, forwarded verbatim from
+    /// `rs_cam_core::compute::simulate::SimulationResult::column_deviations`.
+    /// The honest instrument for quality metrics — the per-vertex
+    /// `deviations` above are corner-averaged mesh samples suitable for
+    /// display, not histograms (P2.g Task 1).
+    pub column_deviations: Option<Vec<rs_cam_core::compute::simulate::ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
     /// Pre-transformed toolpath data for incremental playback.
@@ -196,6 +249,25 @@ pub struct SimulationResult {
     pub cut_trace_path: Option<PathBuf>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// The dexel COLUMN grid cell this simulation actually used (mm),
+    /// forwarded verbatim from
+    /// `rs_cam_core::compute::simulate::SimulationResult::column_grid_cell_mm`.
+    ///
+    /// B7 divergence 2 (2026-08-06): this is a property of the TRACE, and it
+    /// is not the same quantity as `SimulationState::resolution`, which is
+    /// the dial the NEXT simulation will use. The measurability floors are
+    /// cell-size dependent, so a reader that consults the dial can return a
+    /// different `NotMeasurable` verdict from core's on identical evidence.
+    /// Carried so the GUI's narration can ask the same question core's does.
+    pub column_grid_cell_mm: f64,
+    /// Per-toolpath snapshots of the material stock *before* that toolpath
+    /// carves — forwarded verbatim from the core
+    /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks`.
+    /// Retained on `SimulationResults` (F.4) so the submit-time
+    /// `FromRemainingStock` gate can look a toolpath's snapshot up by id
+    /// directly, instead of re-deriving it from `boundaries()` /
+    /// `checkpoints()` position arithmetic.
+    pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 pub struct CollisionRequest {
@@ -271,6 +343,9 @@ struct LaneInner<Request> {
     current_phase: Option<String>,
     started_at: Option<Instant>,
     active_toolpath_id: Option<ToolpathId>,
+    /// A/M12 — see [`ComputeRequest::toolpath_index`]. Only the toolpath lane
+    /// ever sets it.
+    active_toolpath_index: Option<usize>,
 }
 
 impl<Request> LaneInner<Request> {
@@ -282,6 +357,7 @@ impl<Request> LaneInner<Request> {
             current_phase: None,
             started_at: None,
             active_toolpath_id: None,
+            active_toolpath_index: None,
         }
     }
 }
@@ -314,7 +390,39 @@ impl<Request> LaneQueue<Request> {
             current_job: inner.current_job.clone(),
             current_phase: inner.current_phase.clone(),
             started_at: inner.started_at,
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_index: inner.active_toolpath_index,
         }
+    }
+}
+
+/// A/M12: the toolpath lane answers cancel + status requests on the *caller's*
+/// thread. Both operations take only `inner`, whose critical sections are a
+/// handful of instructions (queue push/pop, phase-string swap) held by the
+/// worker thread — never for the duration of a generation.
+impl LaneControl for LaneQueue<ComputeRequest> {
+    fn snapshot(&self) -> LaneSnapshot {
+        LaneQueue::snapshot(self)
+    }
+
+    fn request_cancel(&self) -> CancelOutcome {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let was_busy = inner.started_at.is_some();
+        if was_busy {
+            self.cancel.store(true, Ordering::SeqCst);
+            inner.state = LaneState::Cancelling;
+        }
+        let snapshot = LaneSnapshot {
+            lane: self.lane,
+            state: inner.state,
+            queue_depth: inner.queue.len(),
+            current_job: inner.current_job.clone(),
+            current_phase: inner.current_phase.clone(),
+            started_at: inner.started_at,
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_index: inner.active_toolpath_index,
+        };
+        CancelOutcome { was_busy, snapshot }
     }
 }
 
@@ -544,6 +652,10 @@ impl ComputeBackend for ThreadedComputeBackend {
             ComputeLane::Optimize => self.optimize_lane.snapshot(),
         }
     }
+
+    fn generation_control(&self) -> GenerationControl {
+        GenerationControl::new(Arc::clone(&self.toolpath_lane) as Arc<dyn LaneControl>)
+    }
 }
 
 impl ThreadedComputeBackend {
@@ -621,6 +733,7 @@ fn spawn_toolpath_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -635,6 +748,7 @@ fn spawn_toolpath_lane(
                 inner.current_phase = None;
                 inner.started_at = Some(Instant::now());
                 inner.active_toolpath_id = Some(request.toolpath_id);
+                inner.active_toolpath_index = Some(request.toolpath_index);
                 request
             };
 
@@ -670,13 +784,13 @@ fn spawn_toolpath_lane(
                     }
                 }
 
-                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
                     toolpath_id: request.toolpath_id,
                     result: outcome.result,
                     debug_trace: outcome.debug_trace,
                     semantic_trace: outcome.semantic_trace,
                     debug_trace_path: outcome.debug_trace_path,
-                }));
+                })));
             }));
 
             if let Err(panic_payload) = caught {
@@ -697,7 +811,7 @@ fn spawn_toolpath_lane(
                 }
                 drop(inner);
 
-                let _ = result_tx.send(ComputeMessage::Toolpath(ComputeResult {
+                let _ = result_tx.send(ComputeMessage::Toolpath(Box::new(ComputeResult {
                     toolpath_id,
                     result: Err(ComputeError::Message(format!(
                         "Crashed due to internal error: {msg}"
@@ -705,7 +819,7 @@ fn spawn_toolpath_lane(
                     debug_trace: None,
                     semantic_trace: None,
                     debug_trace_path: None,
-                }));
+                })));
             }
         }
     })
@@ -728,6 +842,7 @@ fn spawn_analysis_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {
@@ -765,7 +880,7 @@ fn spawn_analysis_lane(
                         } else {
                             result
                         };
-                        ComputeMessage::Simulation(result)
+                        ComputeMessage::Simulation(result.map(Box::new))
                     }
                     AnalysisRequest::Collision(request) => {
                         let set_phase = |phase: &str| {
@@ -845,6 +960,7 @@ fn spawn_optimize_lane(
                     inner.current_phase = None;
                     inner.started_at = None;
                     inner.active_toolpath_id = None;
+                    inner.active_toolpath_index = None;
                     inner = lane.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
                 }
                 if lane.shutdown.load(Ordering::SeqCst) {

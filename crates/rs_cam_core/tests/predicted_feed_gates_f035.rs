@@ -75,10 +75,17 @@ use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict, ToleranceBands,
 // ----- Shared fixtures: 6 mm carbide flat tool + LUT-nominal-arc -----
 
 /// Engagement arc the LUT row (HardMaple Pocket Roughing 6 mm flat)
-/// is calibrated against. Picked to match
-/// `tool_load::chipload::tests::TEST_LUT_NOMINAL_ARC_RAD` so the gate's
-/// per-sample LUT-arc normalisation is a no-op for these fixtures.
+/// publishes. Until 2026-08-06 it was load-bearing: it made the gate's
+/// per-sample LUT-arc normalisation a no-op. That normalisation is
+/// deleted (`tool_load::chipload`'s header); the constant is kept
+/// because the sample still has to carry a realistic arc.
 const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
+
+/// Spindle speed and flute count every sample in this file runs at.
+/// Named because [`sample`] now has to keep the commanded feed and the
+/// declared chipload consistent with each other.
+const RPM: u32 = 18_000;
+const FLUTES: u32 = 2;
 
 fn make_endmill_6mm_carbide() -> ToolDefinition {
     ToolDefinition::new(
@@ -104,10 +111,17 @@ fn make_endmill_6mm_tool_config() -> ToolConfig {
     tool
 }
 
-/// One synthetic cutting sample wired up for the chipload gate. Values
-/// match the in-tree `chipload::tests::sample` fixture so the gate's
-/// LUT lookup, arc-normalisation, and steady-state filters behave
-/// identically to the production tests.
+/// One synthetic cutting sample wired up for the chipload gate.
+///
+/// **Re-pinned 2026-08-06.** The commanded `feed_rate_mm_min` is now
+/// derived from `chipload_mm` rather than hard-coded to 1000, so the
+/// sample makes ONE statement about its feed instead of two. Before the
+/// unit conversion the gate read `effective_chip_thickness_mm`, so a
+/// sample could declare `feed_rate_mm_min: 1000` (= 0.0278 mm/tooth)
+/// beside `chipload_mm_per_tooth: 0.04` and nothing noticed. The gate
+/// now reports `effective_feed / (rpm · flutes)`, which makes the
+/// inconsistency load-bearing — and makes `chipload_mm` mean exactly
+/// what its name says.
 fn sample(
     toolpath_id: usize,
     move_index: usize,
@@ -121,9 +135,9 @@ fn sample(
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
-        feed_rate_mm_min: 1000.0,
-        spindle_rpm: 18_000,
-        flute_count: 2,
+        feed_rate_mm_min: chipload_mm * f64::from(RPM) * f64::from(FLUTES),
+        spindle_rpm: RPM,
+        flute_count: FLUTES,
         axial_doc_mm: 1.0,
         axial_engagement_mm: 1.0,
         arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
@@ -156,13 +170,16 @@ fn empty_trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
             total_removed_volume_est_mm3: 1.0,
             average_mrr_mm3_s: 1.0,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         },
         samples,
         ..SimulationCutTrace::test_fixture()
     }
 }
 
-fn evaluate_chipload(trace: &SimulationCutTrace) -> ChiploadVerdict {
+/// `commanded_fpt` must equal the `chipload_mm` the trace's samples were
+/// built with, or the steady-state filter will reject them.
+fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> ChiploadVerdict {
     let tool = make_endmill_6mm_carbide();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
@@ -175,7 +192,7 @@ fn evaluate_chipload(trace: &SimulationCutTrace) -> ChiploadVerdict {
             material: &material,
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1000.0,
+            operation_feed_rate_mm_min: commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,
@@ -196,19 +213,27 @@ fn evaluate_chipload(trace: &SimulationCutTrace) -> ChiploadVerdict {
 /// OFF behaviour) and once with a populated map that drops each move's
 /// predicted feed to 30% of commanded. The flag-ON pass must surface
 /// `Exceeds(Low)` because predicted chipload = 0.3 × commanded = 0.012
-/// mm/tooth which is below the hard-maple LUT's min (~0.015 mm/tooth
-/// for a 6 mm flat at the pocket-roughing row).
+/// mm/tooth which is below the hard-maple LUT's min.
+///
+/// **Unchanged in verdict across the 2026-08-06 unit conversion**
+/// (`Within` → `Exceeds(Low)` on the flag, both before and after), and
+/// that is why it is in the flip table as a control. What changed is the
+/// mechanism the ON arm exercises: it used to scale the sample's chip
+/// thickness by `predicted/commanded`; it now IS `predicted/(rpm·flutes)`.
+/// The 0.3 factor and the 0.012 mm/tooth it lands on are identical.
 #[test]
 fn flag_on_corner_decel_drops_chipload_below_band() {
-    // Five samples at chipload = 0.04 mm/tooth (commanded 1000 mm/min,
-    // 18 k rpm, 2 flutes → 0.0278 mm/tooth nominal; 0.04 chosen
-    // to sit comfortably above the HardMaple/Pocket/Roughing LUT min).
+    // Five samples at chipload = 0.04 mm/tooth — commanded 1440 mm/min
+    // at 18 k rpm × 2 flutes, which IS 0.04 mm/tooth. (Pre-conversion
+    // this fixture said 1000 mm/min beside 0.04 mm/tooth, two figures
+    // 1.44× apart; the gate read the second and ignored the first.)
+    // 0.04 sits comfortably above the HardMaple/Pocket/Roughing LUT min.
     let samples: Vec<SimulationCutSample> = (0..5).map(|i| sample(0, i + 1, 0.04, 0.5)).collect();
     let mut trace = empty_trace(samples);
 
     // Flag OFF: empty predicted_feeds → gate uses commanded; should
     // land `Within`.
-    let off_verdict = evaluate_chipload(&trace);
+    let off_verdict = evaluate_chipload_at(&trace, 0.04);
     assert!(
         matches!(off_verdict, ChiploadVerdict::Within { .. }),
         "F-035 AB2 baseline: chipload at commanded feed should be Within (0.04 mm/tooth is \
@@ -216,16 +241,15 @@ fn flag_on_corner_decel_drops_chipload_below_band() {
     );
 
     // Flag ON: populate predicted_feeds with 30% of commanded for
-    // every move. The chipload gate's scaling step (chipload.rs ~line
-    // 425) multiplies `effective_chip_thickness_mm` by
-    // `predicted/commanded` = 0.3, so each sample now reads 0.012
-    // mm/tooth which is below the LUT's min.
+    // every move. The gate observes `effective_feed / (rpm · flutes)`,
+    // so each sample now reads 0.3 × 0.04 = 0.012 mm/tooth, below the
+    // LUT's min.
     for s in &trace.samples {
         trace
             .predicted_feeds
             .insert((s.toolpath_id, s.move_index), s.feed_rate_mm_min * 0.30);
     }
-    let on_verdict = evaluate_chipload(&trace);
+    let on_verdict = evaluate_chipload_at(&trace, 0.04);
     let on_exceeds_low = matches!(
         on_verdict,
         ChiploadVerdict::Exceeds {
@@ -259,8 +283,8 @@ fn flag_on_straight_line_chipload_unchanged() {
             .insert((s.toolpath_id, s.move_index), s.feed_rate_mm_min);
     }
 
-    let off_verdict = evaluate_chipload(&trace_off);
-    let on_verdict = evaluate_chipload(&trace_on);
+    let off_verdict = evaluate_chipload_at(&trace_off, 0.04);
+    let on_verdict = evaluate_chipload_at(&trace_on, 0.04);
 
     // Both arms should produce the same Within verdict. We pin
     // structural equality on the discriminant — the bounds + sample
@@ -326,6 +350,8 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         name: "as001_pocket".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(vec![polygon])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://as001_pocket.svg"),
         kind: None,
         units: None,
@@ -365,6 +391,7 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session.add_toolpath(0, tc).expect("add pocket toolpath");
 

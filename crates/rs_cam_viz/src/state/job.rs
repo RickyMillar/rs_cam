@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use rs_cam_core::geo::BoundingBox3;
-// Serialize/Deserialize not directly needed in this file any more
-// (GUI-local types like Corner don't derive Serialize)
+// Serialize/Deserialize not directly needed in this file any more — every
+// persisted type it names is defined (and derived) in core.
 
 // ── Re-exports from rs_cam_core::compute (Phase 1 service layer extraction) ──
 pub use rs_cam_core::compute::stock_config::{
@@ -23,153 +23,11 @@ pub use rs_cam_core::session::LoadedModel;
 
 // FaceUp and ZRotation are now re-exported from core::compute::transform above.
 
-/// Which corner of the stock to probe for XY datum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Corner {
-    FrontLeft,
-    FrontRight,
-    BackLeft,
-    BackRight,
-}
-
-impl Corner {
-    pub const ALL: &[Corner] = &[
-        Corner::FrontLeft,
-        Corner::FrontRight,
-        Corner::BackLeft,
-        Corner::BackRight,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Corner::FrontLeft => "Front-Left",
-            Corner::FrontRight => "Front-Right",
-            Corner::BackLeft => "Back-Left",
-            Corner::BackRight => "Back-Right",
-        }
-    }
-
-    pub fn to_key(&self) -> &'static str {
-        match self {
-            Corner::FrontLeft => "fl",
-            Corner::FrontRight => "fr",
-            Corner::BackLeft => "bl",
-            Corner::BackRight => "br",
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        match s {
-            "fr" => Corner::FrontRight,
-            "bl" => Corner::BackLeft,
-            "br" => Corner::BackRight,
-            _ => Corner::FrontLeft,
-        }
-    }
-}
-
-/// How the operator establishes XY zero for this setup.
-#[derive(Debug, Clone, PartialEq)]
-pub enum XYDatum {
-    CornerProbe(Corner),
-    CenterOfStock,
-    AlignmentPins,
-    Manual,
-}
-
-impl Default for XYDatum {
-    fn default() -> Self {
-        XYDatum::CornerProbe(Corner::FrontLeft)
-    }
-}
-
-impl XYDatum {
-    pub fn label(&self) -> &str {
-        match self {
-            XYDatum::CornerProbe(c) => match c {
-                Corner::FrontLeft => "Corner Probe (Front-Left)",
-                Corner::FrontRight => "Corner Probe (Front-Right)",
-                Corner::BackLeft => "Corner Probe (Back-Left)",
-                Corner::BackRight => "Corner Probe (Back-Right)",
-            },
-            XYDatum::CenterOfStock => "Center of Stock",
-            XYDatum::AlignmentPins => "Alignment Pins",
-            XYDatum::Manual => "Manual",
-        }
-    }
-
-    pub fn to_key(&self) -> String {
-        match self {
-            XYDatum::CornerProbe(c) => format!("corner_{}", c.to_key()),
-            XYDatum::CenterOfStock => "center".into(),
-            XYDatum::AlignmentPins => "pins".into(),
-            XYDatum::Manual => "manual".into(),
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        if let Some(corner) = s.strip_prefix("corner_") {
-            XYDatum::CornerProbe(Corner::from_key(corner))
-        } else {
-            match s {
-                "center" => XYDatum::CenterOfStock,
-                "pins" => XYDatum::AlignmentPins,
-                "manual" => XYDatum::Manual,
-                _ => XYDatum::default(),
-            }
-        }
-    }
-}
-
-/// How the operator establishes Z zero for this setup.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum ZDatum {
-    #[default]
-    StockTop,
-    MachineTable,
-    FixedOffset(f64),
-    Manual,
-}
-
-impl ZDatum {
-    pub fn label(&self) -> String {
-        match self {
-            ZDatum::StockTop => "Stock Top".into(),
-            ZDatum::MachineTable => "Machine Table".into(),
-            ZDatum::FixedOffset(z) => format!("Fixed Offset ({z:.1} mm)"),
-            ZDatum::Manual => "Manual".into(),
-        }
-    }
-
-    pub fn to_key(&self) -> String {
-        match self {
-            ZDatum::StockTop => "stock_top".into(),
-            ZDatum::MachineTable => "table".into(),
-            ZDatum::FixedOffset(z) => format!("offset:{z}"),
-            ZDatum::Manual => "manual".into(),
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        if let Some(val) = s.strip_prefix("offset:") {
-            ZDatum::FixedOffset(val.parse().unwrap_or(0.0))
-        } else {
-            match s {
-                "table" => ZDatum::MachineTable,
-                "manual" => ZDatum::Manual,
-                _ => ZDatum::StockTop,
-            }
-        }
-    }
-}
-
-/// How to establish the work coordinate system for a setup.
-#[derive(Debug, Clone, Default)]
-pub struct DatumConfig {
-    pub xy_method: XYDatum,
-    pub z_method: ZDatum,
-    pub notes: String,
-}
+// Setup datum types (`Corner`, `XYDatum`, `ZDatum`, `DatumConfig`) moved to
+// `rs_cam_core::session` in W9 / P-2 so the datum could join the project
+// schema. This file and `state::runtime` each carried a byte-identical
+// private copy; both are now re-exports of the one core definition.
+pub use rs_cam_core::session::{Corner, DatumConfig, XYDatum, ZDatum};
 
 // FlipAxis and AlignmentPin are now re-exported from core::compute::stock_config above.
 

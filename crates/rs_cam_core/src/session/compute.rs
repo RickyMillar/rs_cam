@@ -9,8 +9,9 @@ use tracing::instrument;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
-use crate::compute::config::{HeightContext, ToolpathStats};
+use crate::compute::config::HeightContext;
 use crate::compute::cutter::build_cutter;
+use crate::compute::operation_configs::ClearingStrategy;
 use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
 };
@@ -21,7 +22,9 @@ use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
-use crate::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
+use crate::semantic_trace::{
+    SemanticKey, ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces,
+};
 use crate::simulation_cut::SimulationMetricOptions;
 use crate::tool::MillingCutter;
 
@@ -33,12 +36,6 @@ use super::{
     VerdictSeverity,
 };
 
-/// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
-/// Strip a single layer of surrounding ASCII double-quotes from a string
-/// if present. Used by the MCP coercion path to tolerate clients that
-/// double-encode scalar values (e.g. `"7"` arriving as the literal
-/// 3-char string `"7"`). Returns the input unchanged when there are no
-/// surrounding quotes or when the string isn't long enough to have any.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StaleSet {
     pub toolpath_indices: Vec<usize>,
@@ -85,6 +82,11 @@ pub fn compute_stale_set(session: &ProjectSession, mutation: MutationKind) -> St
     StaleSet { toolpath_indices }
 }
 
+/// Strip a single layer of surrounding ASCII double-quotes from a string
+/// if present. Used by the MCP coercion path to tolerate clients that
+/// double-encode scalar values (e.g. `"7"` arriving as the literal
+/// 3-char string `"7"`). Returns the input unchanged when there are no
+/// surrounding quotes or when the string isn't long enough to have any.
 pub(crate) fn strip_outer_quotes(s: &str) -> &str {
     if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
         &s[1..s.len() - 1]
@@ -125,6 +127,7 @@ fn transform_bbox_world_to_local(
     crate::geo::BoundingBox3 { min, max }
 }
 
+/// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
     let verts: Vec<P3> = mesh
         .vertices
@@ -132,6 +135,112 @@ fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMes
         .map(|v| P3::new(v.x + dx, v.y + dy, v.z + dz))
         .collect();
     TriangleMesh::from_raw(verts, mesh.triangles.clone())
+}
+
+/// Fully-owned, per-generation inputs resolved from session state by
+/// [`ProjectSession::resolve_generation_inputs`]. Owning everything (mesh /
+/// polygons via `Arc`, an owned [`SpatialIndex`](crate::mesh::SpatialIndex))
+/// lets a caller generate one *or many* toolpaths off a single resolution
+/// without re-deriving any frame-sensitive value: `generate_toolpath`
+/// consumes it once; the strategy advisor reuses it across candidate
+/// strategies (only the `operation`'s clearing strategy varies per candidate).
+struct ResolvedGenInputs {
+    tool: ToolConfig,
+    mesh: Option<Arc<TriangleMesh>>,
+    polygons: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+    keep_out_footprints: Vec<crate::polygon::Polygon2>,
+    boundary_config: crate::compute::config::BoundaryConfig,
+    emission_stock_bbox: BoundingBox3,
+    heights: crate::compute::config::ResolvedHeights,
+    tool_def: crate::tool::ToolDefinition,
+    spatial_index: Option<crate::mesh::SpatialIndex>,
+    cutting_levels: Vec<f64>,
+    prev_tool_radius: Option<f64>,
+    /// R1 (pencil): the resolved real reference tool config when the Pencil op's
+    /// `reference_tool_id` names a library tool. Resolved here (the context has
+    /// no tool list) exactly like `prev_tool_radius`.
+    reference_tool_cfg: Option<ToolConfig>,
+    operation: crate::compute::OperationConfig,
+    pre_boundary: Option<crate::polygon::Polygon2>,
+    /// P2.3: the per-region processed polygon set for a `DerivedRestRegions`
+    /// boundary — the same set [`ProjectSession::apply_boundary_clip_multi`]
+    /// re-derives for its post-generation clip (keep-outs subtracted, user
+    /// offset applied, but NOT yet tool-radius inset). Resolved once here
+    /// alongside `pre_boundary`'s union attempt and shared with the
+    /// mesh-finish family's pre-clip via `ExecutionContext::boundary_regions`
+    /// — never re-derived just for this field. `None` for every other
+    /// boundary source (or when the boundary is disabled).
+    pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
+}
+
+/// Clearing strategies the advisor compares for a 3D roughing op — the two
+/// endpoints of the speed/load trade-off: conventional offset clearing
+/// ([`ContourParallel`](ClearingStrategy::ContourParallel)) vs
+/// constant-engagement trochoidal ([`ContourSpiral`](ClearingStrategy::ContourSpiral)).
+/// `recommend_clearing_strategy` times both at their load-limited params and
+/// lets machine acceleration decide. Extend by adding variants here.
+const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
+    ClearingStrategy::ContourParallel,
+    ClearingStrategy::ContourSpiral,
+];
+
+/// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the
+/// advisor's *why* string. Deflection-binding warnings mean the tool is the
+/// limit (tool-limited); everything else reads as unconstrained here.
+///
+/// Machine-limited (power-binding) detection is deliberately not inferred
+/// from Suggest warnings — Suggest does not emit a power-cap warning, and the
+/// regime label only colours the explanation (the *choice* is always the
+/// measured wall-clock minimum), so a conservative "unconstrained" default is
+/// honest until a power-gate signal is threaded in.
+///
+/// [`LoadRegime`]: crate::strategy_advisor::LoadRegime
+fn regime_from_suggest_warnings(
+    warnings: &[crate::feeds::suggest::SuggestWarning],
+) -> crate::strategy_advisor::LoadRegime {
+    use crate::feeds::suggest::SuggestWarning;
+    let deflection_bound = warnings.iter().any(|w| match w {
+        SuggestWarning::DppCappedByDeflection { .. } => true,
+        SuggestWarning::AxialDocClampedByEnvelope { binding, .. } => *binding == "deflection",
+        _ => false,
+    });
+    if deflection_bound {
+        crate::strategy_advisor::LoadRegime::ToolLimited
+    } else {
+        crate::strategy_advisor::LoadRegime::Unconstrained
+    }
+}
+
+/// Map a modulated path's per-move binding-constraint distribution to the
+/// advisor's [`LoadRegime`]. The dominant (most-frequent) binding constraint
+/// decides: deflection → tool-limited; power / machine-max-feed /
+/// kinematic-reach → machine-limited; the chipload band (max or min) →
+/// unconstrained (the comfortable regime, neither the tool nor the machine
+/// stressed). This is the unified-load-model upgrade over
+/// [`regime_from_suggest_warnings`]: the label now comes from the actual
+/// per-move binding signal of the *optimized* path, not a Suggest-warning
+/// heuristic (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5.4).
+fn regime_from_binding(
+    summary: &crate::tool_load::ModulationSummary,
+) -> crate::strategy_advisor::LoadRegime {
+    use crate::strategy_advisor::LoadRegime;
+    use crate::tool_load::BindingConstraint;
+    let dominant = summary
+        .binding_constraint_distribution
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(binding, _)| *binding);
+    match dominant {
+        Some(BindingConstraint::DeflectionMax) => LoadRegime::ToolLimited,
+        Some(
+            BindingConstraint::PowerMax
+            | BindingConstraint::MachineMaxFeed
+            | BindingConstraint::KinematicReach,
+        ) => LoadRegime::MachineLimited,
+        Some(BindingConstraint::ChiploadMax | BindingConstraint::ChiploadMin) | None => {
+            LoadRegime::Unconstrained
+        }
+    }
 }
 
 impl ProjectSession {
@@ -404,9 +513,16 @@ impl ProjectSession {
             }
         }
 
-        // Invalidate cached result for this toolpath
-        self.results.remove(&index);
-        self.simulation = None;
+        // Invalidate cached result for this toolpath — and, when it
+        // participates in the setup's material-removal chain, everything
+        // downstream that was generated against the stock it leaves
+        // (2026-07-09 staleness collision class; see
+        // `invalidate_result_chain`).
+        let enabled = self
+            .toolpath_configs
+            .get(index)
+            .is_some_and(|tc| tc.enabled);
+        self.invalidate_result_chain(index, enabled);
 
         Ok(())
     }
@@ -518,25 +634,355 @@ impl ProjectSession {
 
         // Invalidate cached results for all toolpaths that use this tool
         let tool_raw_id = tool.id.0;
-        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
-            if tc.tool_id == tool_raw_id {
-                self.results.remove(&idx);
-            }
-        }
-        self.simulation = None;
+        self.invalidate_tool(tool_raw_id);
 
         Ok(())
     }
 
     // ── Compute ────────────────────────────────────────────────────
 
-    /// Generate a single toolpath by index.
-    #[instrument(skip(self, cancel))]
-    pub fn generate_toolpath(
-        &mut self,
+    /// Compare clearing strategies for an `Adaptive3d` toolpath and recommend
+    /// the one that minimises wall-clock at the load limit on this machine
+    /// (`planning/STRATEGY_ADVISOR_2026-06-17.md`).
+    ///
+    /// For each candidate [`ClearingStrategy`] it (1) runs Suggest to
+    /// back the params off to the deflection / power limits, (2) plans the
+    /// clearing toolpath off a *single shared* [`resolve_generation_inputs`]
+    /// resolution (only the strategy varies — geometry / heights / stock
+    /// frame are resolved once), and (3) ranks them via
+    /// [`crate::strategy_advisor::recommend_strategy`], which times each path
+    /// through the accel-aware integrator at this machine's
+    /// [`effective_kinematics`](crate::machine::MachineProfile::effective_kinematics).
+    ///
+    /// Raw clearing paths (no dressups / recorders / persistence) are the
+    /// wall-clock comparison unit. Returns `Ok(None)` when the op is not an
+    /// `Adaptive3d` op or no candidate plans a usable path. The candidate set
+    /// is intentionally the two endpoints of the speed/load trade-off
+    /// (conventional vs constant-engagement); it extends by adding to
+    /// [`ADVISOR_CANDIDATE_STRATEGIES`].
+    ///
+    /// [`resolve_generation_inputs`]: Self::resolve_generation_inputs
+    pub fn recommend_clearing_strategy(
+        &self,
         index: usize,
         cancel: &AtomicBool,
-    ) -> Result<&ToolpathComputeResult, SessionError> {
+    ) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
+        use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
+
+        let resolved = self.resolve_generation_inputs(index)?;
+        // Only Adaptive3d carries a clearing strategy.
+        if !matches!(
+            resolved.operation,
+            crate::compute::OperationConfig::Adaptive3d(_)
+        ) {
+            return Ok(None);
+        }
+
+        let machine = self.machine();
+        let material = &self.stock_config().material;
+        let workholding = self.stock_config().workholding_rigidity;
+
+        // Plan each candidate at its load-limited params. Collect OWNED
+        // toolpaths so the `StrategyCandidate` borrows outlive the ranking.
+        let mut planned: Vec<(
+            ClearingStrategy,
+            crate::toolpath::Toolpath,
+            crate::strategy_advisor::LoadRegime,
+        )> = Vec::new();
+        for &strategy in ADVISOR_CANDIDATE_STRATEGIES.iter() {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            // Override the clearing strategy on a clone of the resolved op.
+            let mut op = resolved.operation.clone();
+            if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
+                cfg.clearing_strategy = strategy;
+            }
+            // Back the params off to the load limit via Suggest.
+            let suggested = crate::feeds::suggest::suggest_for_operation(
+                crate::feeds::suggest::SuggestForOperationInput {
+                    operation: &op,
+                    tool: &resolved.tool,
+                    machine,
+                    material,
+                    workholding,
+                    lut: crate::feeds::embedded_vendor_lut(),
+                    spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                    context: crate::feeds::suggest::SuggestContext::default(),
+                },
+            );
+            let (op_loadlimited, regime) = match suggested {
+                Ok(s) => {
+                    let regime = regime_from_suggest_warnings(&s.warnings);
+                    (s.operation, regime)
+                }
+                // Suggest refused (e.g. a material without primary-source Kc).
+                // Still worth timing at the raw params; regime is unknown.
+                Err(_) => (op, crate::strategy_advisor::LoadRegime::Unconstrained),
+            };
+            // Plan the clearing toolpath — no recorders / dressups / persist;
+            // the raw path is what we time.
+            let result = crate::compute::execute::execute_operation_annotated(
+                &op_loadlimited,
+                resolved.mesh.as_deref(),
+                resolved.spatial_index.as_ref(),
+                resolved.polygons.as_deref().map(|v| v.as_slice()),
+                &resolved.tool_def,
+                &resolved.tool,
+                &resolved.heights,
+                &resolved.cutting_levels,
+                &resolved.emission_stock_bbox,
+                resolved.prev_tool_radius,
+                // Strategy-timing path plans clearing ops only, never pencil.
+                None,
+                None,
+                cancel,
+                None,
+                None,
+                resolved.pre_boundary.as_ref(),
+            );
+            if let Ok(annotated) = result {
+                let annotated_arc = Arc::new(annotated);
+                // Compare OPTIMIZED candidates: simulate the path, run F-039
+                // modulation, and time the MODULATED toolpath so the spiral's
+                // flatter, lighter engagement (which modulation can exploit
+                // harder than the parallel path's corner spikes) shows up in
+                // wall-clock. The regime label falls out of the per-move
+                // binding constraint of the optimized path. Falls back to the
+                // raw path + Suggest-warning regime when the machine carries
+                // no kinematics or the candidate can't be simulated/modulated.
+                let (toolpath, regime) = match self.optimized_candidate(
+                    index,
+                    &annotated_arc,
+                    &resolved.tool,
+                    &op_loadlimited,
+                    cancel,
+                ) {
+                    Some(opt) => opt,
+                    None => (annotated_arc.toolpath.clone(), regime),
+                };
+                planned.push((strategy, toolpath, regime));
+            }
+        }
+
+        let candidates: Vec<StrategyCandidate<'_>> = planned
+            .iter()
+            .map(|(strategy, toolpath, regime)| StrategyCandidate {
+                strategy: *strategy,
+                toolpath,
+                regime: *regime,
+                geometry_forced: false,
+            })
+            .collect();
+
+        Ok(recommend_strategy(&candidates, machine))
+    }
+
+    /// Strategy-advisor companion to
+    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy):
+    /// turn a raw candidate path into the *optimized* path the user would
+    /// actually run, plus its binding [`LoadRegime`]. Simulates the candidate
+    /// in isolation to capture per-move engagement, then routes it through the
+    /// shared F-039 core
+    /// ([`modulate_annotated_against_trace`](Self::modulate_annotated_against_trace))
+    /// so the timed path carries modulated feeds. Returns `None` (caller times
+    /// the raw path with the Suggest-warning regime) when the machine has no
+    /// kinematics block, the candidate can't be simulated, no chipload band is
+    /// available, or modulation refuses.
+    fn optimized_candidate(
+        &self,
+        index: usize,
+        annotated: &Arc<crate::toolpath_spans::AnnotatedToolpath>,
+        tool_cfg: &ToolConfig,
+        operation: &crate::compute::OperationConfig,
+        cancel: &AtomicBool,
+    ) -> Option<(
+        crate::toolpath::Toolpath,
+        crate::strategy_advisor::LoadRegime,
+    )> {
+        // Modulate against the SAME kinematics + feed envelope
+        // [`recommend_strategy`](crate::strategy_advisor::recommend_strategy)
+        // times the candidate with, so the optimized feeds are clamped to the
+        // exact ceilings they're then timed against. `effective_kinematics`
+        // (never `None` — falls back to the generic-wood-router profile) is
+        // also why the advisor can optimize machines that carry no explicit
+        // kinematics block, unlike the production post-sim pass.
+        let kinematics = self.machine.effective_kinematics();
+        let max_feed = self.machine.max_feed_mm_min.max(1.0);
+        let rapid_feed = max_feed;
+
+        let cut_trace = self.simulate_candidate_isolated(
+            index,
+            Arc::clone(annotated),
+            tool_cfg,
+            operation,
+            cancel,
+        )?;
+        let toolpath_id = self.toolpath_configs.get(index)?.id;
+        let band_range = crate::tool_load::chipload_envelopes_for_session(self, Some(&cut_trace))
+            .get(&toolpath_id)
+            .cloned()?;
+        let band = crate::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
+        // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
+        // point and the `SimulationOptions` default, so the advisor times the
+        // same path the user gets after a default sim.
+        let strategy = crate::feed_modulation::ModulationStrategy::ConstrainedMax;
+        let aggressiveness = 1.0;
+
+        let (modulated, outcome) = self.modulate_annotated_against_trace(
+            annotated.as_ref(),
+            operation,
+            tool_cfg,
+            toolpath_id,
+            &cut_trace,
+            band,
+            kinematics,
+            max_feed,
+            rapid_feed,
+            strategy,
+            aggressiveness,
+        )?;
+        let regime = outcome
+            .build_summary(operation.feed_rate(), aggressiveness, strategy)
+            .map(|s| regime_from_binding(&s))
+            .unwrap_or(crate::strategy_advisor::LoadRegime::Unconstrained);
+        Some((modulated, regime))
+    }
+
+    /// Shared `SimulationRequest` assembly for [`run_simulation`](Self::run_simulation)
+    /// and [`simulate_candidate_isolated`](Self::simulate_candidate_isolated) (S.12
+    /// dedup). Both build the request off an already-assembled `groups` +
+    /// `resolution` pair through the identical stock-frame / rapid-feed-ternary /
+    /// kinematics-map shape; only these knobs differ between the two callers:
+    ///
+    /// - `metrics_enabled` / `capture_arc_engagement`: `run_simulation` mirrors
+    ///   `SimulationOptions::metrics_enabled` into both fields (a single toggle
+    ///   the production path exposes). `simulate_candidate_isolated` force-enables
+    ///   both unconditionally — the strategy advisor's modulator needs per-move
+    ///   engagement on every candidate regardless of the session's default sim
+    ///   options.
+    /// - `model_mesh`: `run_simulation` supplies the translated model mesh so the
+    ///   simulator can compute sim-vs-model deviation; `simulate_candidate_isolated`
+    ///   passes `None` — a throwaway candidate path is scored on engagement/feed,
+    ///   not surface deviation.
+    /// - `use_predicted_feed_in_gates`: `run_simulation` mirrors
+    ///   `SimulationOptions::use_predicted_feed_in_gates`; the isolated path
+    ///   force-disables it, since it evaluates candidates *before* any
+    ///   feed-modulation pass exists to populate a predicted-feed map.
+    fn build_sim_request(
+        &self,
+        groups: Vec<SimGroupEntry>,
+        stock_bbox: BoundingBox3,
+        resolution: f64,
+        metric_options: SimulationMetricOptions,
+        model_mesh: Option<Arc<TriangleMesh>>,
+        use_predicted_feed_in_gates: bool,
+    ) -> SimulationRequest {
+        SimulationRequest {
+            groups,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution,
+            metric_options,
+            spindle_rpm: self.post.spindle_speed,
+            rapid_feed_mm_min: if self.post.high_feedrate_mode {
+                self.post.high_feedrate
+            } else {
+                self.machine.max_feed_mm_min.max(1.0)
+            },
+            model_mesh,
+            kinematics: self.machine.kinematics.map(|kin| {
+                crate::compute::simulate::KinematicsContext {
+                    kinematics: kin,
+                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+                    use_predicted_feed_in_gates,
+                }
+            }),
+        }
+    }
+
+    /// Simulate a single throwaway toolpath in isolation (one setup group,
+    /// one entry) and return its cut trace, with arc-engagement capture on so
+    /// the per-move engagement the modulator needs is present. Used by the
+    /// strategy advisor to evaluate candidate strategies that are not (yet)
+    /// persisted in `self.results`; shares its `SimulationRequest` assembly
+    /// with [`run_simulation`](Self::run_simulation) via
+    /// [`build_sim_request`](Self::build_sim_request) for the single-path case.
+    fn simulate_candidate_isolated(
+        &self,
+        index: usize,
+        annotated: Arc<crate::toolpath_spans::AnnotatedToolpath>,
+        tool_cfg: &ToolConfig,
+        operation: &crate::compute::OperationConfig,
+        cancel: &AtomicBool,
+    ) -> Option<Arc<crate::simulation_cut::SimulationCutTrace>> {
+        let tc = self.toolpath_configs.get(index)?;
+        if annotated.toolpath.moves.len() < 2 {
+            return None;
+        }
+        let stock_bbox = self.stock_bbox();
+        let setup = self.find_setup_for_toolpath_index(index);
+        let setup_ctx = super::SetupEvalContext::build_for_setup(self, setup);
+        let direction = match setup_ctx.face_up {
+            FaceUp::Bottom => StockCutDirection::FromBottom,
+            _ => StockCutDirection::FromTop,
+        };
+
+        let entry = SimToolpathEntry {
+            id: tc.id,
+            name: tc.name.clone(),
+            annotated,
+            tool: build_cutter(tool_cfg),
+            flute_count: tool_cfg.flute_count,
+            tool_summary: tool_cfg.summary(),
+            semantic_trace: None,
+            spindle_rpm: operation.spindle_rpm(),
+            metrics_not_applicable: false,
+            drill_op: None,
+            operation_config_hash: crate::compute::simulate::hash_operation_config(operation),
+        };
+        let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
+        let groups = vec![SimGroupEntry {
+            toolpaths: vec![entry],
+            direction,
+            local_stock_bbox,
+            local_to_global: setup_ctx.local_to_global,
+            phantom_prior_stock: None,
+        }];
+        let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
+        // Deviation (model_mesh) is not needed for engagement capture; both
+        // metrics flags force-on (modulator needs arc engagement regardless
+        // of session defaults); predicted-feed gates force-off (no modulation
+        // pass has run yet to populate a predicted-feed map). See
+        // `build_sim_request`'s doc comment for the full rationale.
+        let request = self.build_sim_request(
+            groups,
+            stock_bbox,
+            resolution,
+            SimulationMetricOptions {
+                enabled: true,
+                capture_arc_engagement: true,
+            },
+            None,
+            false,
+        );
+        run_simulation(&request, cancel).ok()?.cut_trace
+    }
+
+    /// Resolve every per-generation input from session state for toolpath
+    /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
+    /// spatial index, resolved heights, cutting levels, emission-frame stock
+    /// bbox, keep-outs, boundary + pre-clip polygon, rest-machining prev-tool
+    /// radius, and the compute-time-patched operation. A pure read of `self`
+    /// returning a fully-owned [`ResolvedGenInputs`] so callers can generate
+    /// one or many toolpaths off a single resolution (the strategy advisor's
+    /// per-strategy candidates) without re-deriving frame-sensitive values.
+    ///
+    /// [`generate_toolpath`](Self::generate_toolpath) destructures this and
+    /// then owns the per-generation recorders + dressup/persist tail; the
+    /// extraction keeps that pipeline byte-identical (the recorders simply
+    /// move after the resolution, which never depended on them).
+    fn resolve_generation_inputs(&self, index: usize) -> Result<ResolvedGenInputs, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -675,18 +1121,6 @@ impl ProjectSession {
             .as_ref()
             .map(|m| crate::mesh::SpatialIndex::build_auto(m));
 
-        // Create recorders
-        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
-        let semantic_recorder =
-            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
-        let debug_root = debug_recorder.root_context();
-        let semantic_root = semantic_recorder.root_context();
-
-        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
-        let core_ctx = core_scope.context();
-
-        let op_label = tc.operation.label().to_owned();
-
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
         let cutting_levels = tc.operation.cutting_levels(heights.top_z);
@@ -705,6 +1139,44 @@ impl ProjectSession {
             None
         };
 
+        // R1 (pencil): resolve the real reference tool config from the Pencil
+        // op's `reference_tool_id`, mirroring the prev_tool_radius resolution
+        // above. `None` (unset id, or id not found) falls back to the nominal
+        // `reference_tool_diameter` ball downstream — never an error.
+        //
+        // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
+        // reference tool the same way, from `RestAnalysisConfig::reference_tool_id`
+        // — same slot, same fallback semantics (`None` = self-referenced probe
+        // downstream in `attach_generic_rest_analysis`, never an error).
+        let reference_tool_cfg =
+            if let crate::compute::OperationConfig::Pencil(ref cfg) = tc.operation {
+                cfg.reference_tool_id.and_then(|ref_id| {
+                    let found = self.tools.iter().find(|t| t.id == ref_id).cloned();
+                    if found.is_none() {
+                        tracing::warn!(
+                            ?ref_id,
+                            "Pencil reference_tool_id not found in tool list; \
+                             falling back to nominal reference diameter"
+                        );
+                    }
+                    found
+                })
+            } else if tc.rest_analysis.enabled {
+                tc.rest_analysis.reference_tool_id.and_then(|ref_id| {
+                    let found = self.tools.iter().find(|t| t.id == ref_id).cloned();
+                    if found.is_none() {
+                        tracing::warn!(
+                            ?ref_id,
+                            "RestAnalysis reference_tool_id not found in tool list; \
+                             falling back to self-referenced probe"
+                        );
+                    }
+                    found
+                })
+            } else {
+                None
+            };
+
         // Clone operation so we can patch `setup_z_flipped` on ProjectCurve.
         // This flag is #[serde(skip)] and set at compute time — single source of
         // truth is the setup transform's `is_z_flipped()`.
@@ -717,25 +1189,229 @@ impl ProjectSession {
         }
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
-        // pre-clip its internal stock (mirrors apply_boundary_clip's
-        // computation at line ~570). Doing this before generation rather
-        // than after avoids the "cut moves outside boundary become rapids"
-        // failure mode that left dexel cells unstamped in deep passes.
+        // pre-clip its internal stock. `apply_boundary_clip` (below) resolves
+        // its source polygon through this same `resolve_containment_polygon`
+        // call (S.9 dedup — the two used to carry independent copies of this
+        // computation, which is why they could drift). Doing this before
+        // generation rather than after avoids the "cut moves outside
+        // boundary become rapids" failure mode that left dexel cells
+        // unstamped in deep passes.
+        // `DerivedRestRegions` resolves to a *set* of disjoint polygons, but
+        // adaptive3d's internal-stock pre-clip wants a single containment
+        // polygon. v1 limitation: union the per-region polygons (keep-outs +
+        // offset already applied) and use the result only if it collapses to
+        // exactly one polygon; otherwise skip the pre-clip entirely and rely
+        // on `apply_boundary_clip_multi`'s post-generation clip to enforce
+        // the real boundary (this only costs adaptive3d some discarded
+        // pre-clearing, not correctness).
+        let mut pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>> = None;
         let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
-            Self::resolve_containment_polygon(
-                &boundary_config,
-                &emission_stock_bbox,
-                mesh.as_deref(),
-                &keep_out_footprints,
-            )
+            if let crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id,
+            } = &boundary_config.source
+            {
+                match self.resolve_derived_rest_region_polys(index, *source_toolpath_id) {
+                    Ok(regions) => {
+                        let processed_set = crate::region_set::RegionSet::from_slice(&regions)
+                            .processed(&keep_out_footprints, boundary_config.offset);
+                        let single = processed_set.single_union();
+                        let region_count = processed_set.len();
+                        // P2.3: share this exact `processed` set with the
+                        // mesh-finish family's pre-clip — it's the same set
+                        // `apply_boundary_clip_multi` re-derives for the
+                        // post-generation clip, resolved here once rather
+                        // than a third time just for this field.
+                        pre_boundary_regions = Some(processed_set.as_slice().to_vec());
+                        if single.is_some() {
+                            single
+                        } else {
+                            tracing::debug!(
+                                region_count = region_count,
+                                "DerivedRestRegions pre-boundary union did not collapse to a \
+                                 single polygon; skipping adaptive3d pre-clip (the \
+                                 post-generation boundary clip still enforces the real \
+                                 boundary)"
+                            );
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            error = %e,
+                            "DerivedRestRegions source unavailable while resolving \
+                             pre-boundary; skipping adaptive3d pre-clip"
+                        );
+                        None
+                    }
+                }
+            } else {
+                // D-3b: a containment whose user offset FAILED refuses here
+                // too. The adaptive3d pre-clip is an optimisation, but it
+                // shares its source polygon with the real clip below (see
+                // this function's doc), so letting the two disagree about
+                // whether the boundary is computable is how a pre-clip and
+                // an enforcement clip end up bounding different regions.
+                Self::resolve_containment_polygon(
+                    &boundary_config,
+                    &emission_stock_bbox,
+                    mesh.as_deref(),
+                    &keep_out_footprints,
+                )
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+            }
         } else {
             None
         };
 
+        Ok(ResolvedGenInputs {
+            tool,
+            mesh,
+            polygons,
+            keep_out_footprints,
+            boundary_config,
+            emission_stock_bbox,
+            heights,
+            tool_def,
+            spatial_index,
+            cutting_levels,
+            prev_tool_radius,
+            reference_tool_cfg,
+            operation,
+            pre_boundary,
+            pre_boundary_regions,
+        })
+    }
+
+    /// Generate a single toolpath by index.
+    #[instrument(skip(self, cancel))]
+    pub fn generate_toolpath(
+        &mut self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<&ToolpathComputeResult, SessionError> {
+        // Rest-machining precondition, checked BEFORE any geometry work so we fail
+        // fast and NEVER fall back to fresh stock: a `FromRemainingStock` op must
+        // have a simulated remaining-stock snapshot. Absent it (no prior simulation,
+        // or the predecessor changed since the last sim), error out — a fine rest
+        // tool seeded with fresh stock clears the whole part instead of the leftover
+        // (unbounded compute + wrong result; the 6mm→1mm runaway that motivated this).
+        {
+            let tc = self
+                .toolpath_configs
+                .get(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.stock_source == crate::session::StockSource::FromRemainingStock
+                && self
+                    .simulation
+                    .as_ref()
+                    .and_then(|sim| sim.prior_stocks.get(&tc.id))
+                    .is_none()
+            {
+                return Err(SessionError::OperationFailed(format!(
+                    "'{}' is set to use remaining stock (rest machining) but no simulated \
+                     remaining-stock snapshot is available. Run a simulation of the preceding \
+                     operations first, then regenerate — or set the stock source to Fresh if \
+                     this is the first operation. (Refusing to fall back to fresh stock: a \
+                     fine tool would clear the whole part instead of the leftover.)",
+                    tc.name
+                )));
+            }
+        }
+
+        // DerivedRestRegions boundary precondition (P2.2), same shape and
+        // same reasoning as the FromRemainingStock check above: checked
+        // BEFORE any geometry work so we fail fast with a message naming
+        // exactly what's missing, rather than silently clipping against
+        // stale/absent regions (or against nothing at all).
+        {
+            let tc = self
+                .toolpath_configs
+                .get(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.boundary.enabled
+                && let crate::compute::config::BoundarySource::DerivedRestRegions {
+                    source_toolpath_id,
+                } = &tc.boundary.source
+            {
+                self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
+            }
+        }
+
+        let ResolvedGenInputs {
+            tool,
+            mesh,
+            polygons,
+            keep_out_footprints,
+            boundary_config,
+            emission_stock_bbox,
+            heights,
+            tool_def,
+            spatial_index,
+            cutting_levels,
+            prev_tool_radius,
+            reference_tool_cfg,
+            operation,
+            pre_boundary,
+            pre_boundary_regions,
+        } = self.resolve_generation_inputs(index)?;
+
+        // Re-borrow the config for the per-generation recorder labels and the
+        // dressup/persist tail below. The resolved bundle owns everything
+        // else; this borrow touches only `self.toolpath_configs`, leaving the
+        // `self.results` write that ends the method field-disjoint — the same
+        // borrow shape as before `resolve_generation_inputs` was extracted.
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+
+        // Create recorders
+        let debug_recorder = ToolpathDebugRecorder::new(tc.name.clone(), tc.operation.label());
+        let semantic_recorder =
+            ToolpathSemanticRecorder::new(tc.name.clone(), tc.operation.label());
+        let debug_root = debug_recorder.root_context();
+        let semantic_root = semantic_recorder.root_context();
+
+        let core_scope = debug_root.start_span("core_generate", tc.operation.label());
+        let core_ctx = core_scope.context();
+
+        let op_label = tc.operation.label().to_owned();
+
         // Execute the operation via the shared compute::execute module (annotated variant)
+        // Rest machining: when this toolpath cuts the stock previous ops left
+        // (`StockSource::FromRemainingStock`), seed generation with the per-op
+        // simulated snapshot so adaptive3d clears only the leftover. The same
+        // snapshot is reused for dressup air-cut filtering below. The
+        // "snapshot present" precondition was enforced at function entry (a
+        // FromRemainingStock op with no snapshot already returned an error), so
+        // here `as_deref()` is guaranteed `Some` — never a fresh-stock fallback.
+        let prior_stock_arc = self
+            .simulation
+            .as_ref()
+            .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+        let gen_initial_stock = match tc.stock_source {
+            crate::session::StockSource::FromRemainingStock => prior_stock_arc.as_deref(),
+            crate::session::StockSource::Fresh => None,
+        };
+
         let op_scope = semantic_root.start_item(ToolpathSemanticKind::Operation, &op_label);
         let child_ctx = op_scope.context();
-        let tp_result = crate::compute::execute::execute_operation_annotated(
+        // P1 W4a: the pencil family's emit-time surface-link-vs-retract
+        // decision costs candidates against the real machine envelope —
+        // same accessor pattern `apply_adaptive_feed_modulation` uses
+        // (`effective_kinematics` never `None`; `cutting_feed_ceiling_mm_min`
+        // for the cutting-feed cap, `max_feed_mm_min` for the travel rate).
+        let link_kinematics = Some(crate::machine_kinematics::LinkKinematics {
+            kinematics: self.machine.effective_kinematics(),
+            max_feed_mm_min: self.machine.cutting_feed_ceiling_mm_min().max(1.0),
+            rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
+        });
+        // P2.3: `_with_regions` threads `pre_boundary_regions` (resolved once,
+        // above, alongside `pre_boundary`) into the mesh-finish family's
+        // pre-clip via `ExecutionContext::boundary_regions`. Every other
+        // caller of the plain `execute_operation_annotated` still gets `None`
+        // through its unchanged signature.
+        let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
             &operation,
             mesh.as_deref(),
             spatial_index.as_ref(),
@@ -746,16 +1422,24 @@ impl ProjectSession {
             &cutting_levels,
             &emission_stock_bbox,
             prev_tool_radius,
+            reference_tool_cfg,
             Some(&core_ctx),
             cancel,
-            None, // no initial_stock for session path
+            gen_initial_stock,
             Some(&child_ctx),
             pre_boundary.as_ref(),
+            pre_boundary_regions.as_deref(),
+            Some(&tc.rest_analysis),
+            link_kinematics,
         );
 
         match tp_result {
-            Ok(annotated) => {
+            Ok((annotated, findings)) => {
                 let mut annotated = annotated;
+                // Checkpoint C (Q2): the boundary clip below can add a
+                // finding of its own, so the findings stay mutable until the
+                // join rather than being moved straight into it.
+                let mut findings = findings;
 
                 if !annotated.toolpath.moves.is_empty() {
                     core_scope.set_move_range(0, annotated.toolpath.moves.len().saturating_sub(1));
@@ -767,14 +1451,16 @@ impl ProjectSession {
                 }
                 drop(core_scope);
 
-                // Apply dressups. Pass `prior_stock` if a simulation has
-                // already produced a snapshot for this toolpath id (enables
-                // air-cut filter + rest-machining-aware dressups).
-                let prior_stock_arc = self
-                    .simulation
-                    .as_ref()
-                    .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+                // Apply dressups. Reuse the `prior_stock` snapshot hoisted above
+                // (enables air-cut filter + rest-machining-aware dressups).
                 let prior_stock_ref = prior_stock_arc.as_deref();
+                // C1: the index-carrying channels this call site owns. The
+                // session produces a semantic trace, so its recorder is
+                // registered here once and every transform below reconciles
+                // against it — dressups, the boundary clip and the
+                // entry-descent split alike.
+                let mut channels =
+                    crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
                     &tc.dressups,
@@ -794,6 +1480,10 @@ impl ProjectSession {
                     tc.operation.transform_capabilities(),
                     None,
                     None,
+                    // No per-dressup ITEMS on this path (that is the GUI
+                    // worker's trace), but the items recorded at generation
+                    // time must still follow the moves through every step.
+                    &mut channels,
                 );
                 annotated = dressed;
 
@@ -803,24 +1493,92 @@ impl ProjectSession {
                 // remapped through the clip via the input→output provenance
                 // map (S83) so spans_valid stays true.
                 if boundary_config.enabled {
-                    let clipped = Self::apply_boundary_clip(
-                        annotated,
-                        &boundary_config,
-                        &emission_stock_bbox,
-                        mesh.as_deref(),
-                        &keep_out_footprints,
-                        tool_def.diameter(),
-                        heights.retract_z,
-                        &semantic_root,
-                    );
-                    annotated = clipped;
+                    annotated =
+                        if let crate::compute::config::BoundarySource::DerivedRestRegions {
+                            source_toolpath_id,
+                        } = &boundary_config.source
+                        {
+                            // Precondition already validated at function entry —
+                            // this can only fail here if the source toolpath's
+                            // result was invalidated mid-generation, which can't
+                            // happen under `&mut self`. Propagate defensively
+                            // rather than `#[allow(clippy::unwrap_used)]`.
+                            let regions =
+                                self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
+                            Self::apply_boundary_clip_multi(
+                                annotated,
+                                &boundary_config,
+                                &regions,
+                                &keep_out_footprints,
+                                tool_def.diameter(),
+                                heights.retract_z,
+                                &semantic_root,
+                                &mut channels,
+                                &mut findings,
+                            )
+                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                        } else {
+                            Self::apply_boundary_clip(
+                                annotated,
+                                &boundary_config,
+                                &emission_stock_bbox,
+                                mesh.as_deref(),
+                                &keep_out_footprints,
+                                tool_def.diameter(),
+                                heights.retract_z,
+                                &semantic_root,
+                                &mut channels,
+                                &mut findings,
+                            )
+                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                        };
                 }
 
-                let stats = ToolpathStats {
-                    move_count: annotated.toolpath.moves.len(),
-                    cutting_distance: annotated.toolpath.total_cutting_distance(),
-                    rapid_distance: annotated.toolpath.total_rapid_distance(),
-                };
+                // ── Entry-descent optimization ────────────────────────
+                // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
+                // by rapiding down to just above the INPUT STOCK's material
+                // ceiling first — using the actual stock (the same snapshot
+                // generation was seeded with for FromRemainingStock ops, or
+                // the fresh-stock top otherwise), never a mesh height. This
+                // runs on every generation (not just finish passes) since
+                // the stock-derived ceiling is safe by construction — unlike
+                // the mesh-derived height it replaces, which understates
+                // remaining stock on rest-machining ops (the 151-collision
+                // Rivers lesson — see `optimize_entry_descents`'s doc).
+                //
+                // Inserts moves after span construction, so the spans are
+                // remapped through the same provenance-map contract the
+                // boundary clip uses (`Span::remap`), rather than
+                // invalidating them.
+                {
+                    let (transformed, _split_count) =
+                        crate::dressup::optimize_entry_descents_annotated(
+                            annotated,
+                            gen_initial_stock,
+                            heights.top_z,
+                            tool_def.radius(),
+                        );
+                    annotated = transformed.reconcile(&mut channels).into_inner();
+                }
+
+                // H2.1: ONE join, shared with the GUI compute worker. This
+                // used to be a struct literal that read `findings.<field>`
+                // eleven times — exhaustive on `ToolpathStats` but not on
+                // `GenerationFindings`, so a new finding was dropped here in
+                // silence. `stats_with_findings` destructures both sides, so
+                // it cannot be.
+                //
+                // Byte-equivalent to the literal it replaces:
+                // `Toolpath::total_cutting_distance` counts
+                // `Linear | ArcCW | ArcCCW` and the helper counts everything
+                // that is not `Rapid` — the same three variants, `MoveType`
+                // having exactly four. The rapid distance and the
+                // `compute_retract_trips` arguments were already identical.
+                let stats = crate::compute::stats::stats_with_findings(
+                    &annotated.toolpath,
+                    annotated.spans_valid.then_some(annotated.spans.as_slice()),
+                    findings,
+                );
 
                 let mut debug_trace = debug_recorder.finish();
                 let mut semantic_trace = semantic_recorder.finish();
@@ -866,6 +1624,69 @@ impl ProjectSession {
         }
     }
 
+    /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
+    /// or a `SessionError::OperationFailed` naming exactly what's missing.
+    ///
+    /// Shared by the fail-hard precondition in [`Self::generate_toolpath`]
+    /// (checked before any geometry work) and the boundary resolution in
+    /// [`Self::resolve_generation_inputs`] / the post-dressup clip — all
+    /// three call sites must agree on what "the derived regions" are, so
+    /// this is the only place that reads `self.results` for it.
+    ///
+    /// `this_index` is the index of the toolpath *being generated* (whose
+    /// boundary references `source_toolpath_id`); it is only used to reject
+    /// a toolpath referencing its own regions as its boundary.
+    pub(crate) fn resolve_derived_rest_region_polys(
+        &self,
+        this_index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
+        let Some(source_index) = self
+            .toolpath_configs
+            .iter()
+            .position(|tc| tc.id == source_toolpath_id)
+        else {
+            return Err(SessionError::OperationFailed(format!(
+                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
+                 but no toolpath with that id exists anymore. Pick a different source toolpath \
+                 for the boundary, or disable the boundary.",
+            )));
+        };
+
+        if source_index == this_index {
+            return Err(SessionError::OperationFailed(
+                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
+                 itself as the source for a derived-rest-regions boundary. Pick a different \
+                 source toolpath."
+                    .to_owned(),
+            ));
+        }
+
+        let Some(source_tc) = self.toolpath_configs.get(source_index) else {
+            // Unreachable in practice: `source_index` came from `position()`
+            // on this same Vec a few lines above.
+            return Err(SessionError::ToolpathNotFound(source_index));
+        };
+        let source_name = &source_tc.name;
+
+        let Some(result) = self.results.get(&source_index) else {
+            return Err(SessionError::OperationFailed(format!(
+                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
+                 its rest analysis produces the regions this boundary needs.",
+            )));
+        };
+
+        match result.annotated().rest_regions.as_ref() {
+            Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
+            _ => Err(SessionError::OperationFailed(format!(
+                "'{source_name}' produced no rest regions — it must be a pencil operation with \
+                 the rest-depth detector enabled, and its rest analysis must have found \
+                 material above the threshold. Check the pencil rest-depth settings on \
+                 '{source_name}' and regenerate it.",
+            ))),
+        }
+    }
+
     /// Resolve the boundary "containment polygon" — the polygon the cutter's
     /// footprint must stay inside (Containment=Inside) or outside (Outside).
     /// For ModelSilhouette source this returns the silhouette itself
@@ -875,26 +1696,30 @@ impl ProjectSession {
     /// pre-clip we want the silhouette itself, since the cutter footprint
     /// (when its center is at silhouette - tool_radius) reaches the
     /// silhouette boundary and validly stamps cells in that band.
+    ///
+    /// Not used for `BoundarySource::DerivedRestRegions` — that source can
+    /// resolve to multiple disjoint polygons, which this single-polygon
+    /// signature can't represent. See
+    /// [`Self::resolve_derived_rest_region_polys`] +
+    /// [`crate::region_set::RegionSet::processed`] for that source's path,
+    /// wired in by the two call sites below (`resolve_generation_inputs`'s
+    /// `pre_boundary` and `generate_toolpath`'s post-dressup clip).
     pub(crate) fn resolve_containment_polygon(
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
         mesh: Option<&crate::mesh::TriangleMesh>,
         keep_out_footprints: &[crate::polygon::Polygon2],
-    ) -> Option<crate::polygon::Polygon2> {
-        use crate::boundary::subtract_keepouts;
+    ) -> Result<Option<crate::polygon::Polygon2>, crate::compute::execute::OperationError> {
+        use crate::boundary::{UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts};
         use crate::compute::config::BoundarySource;
 
         let mut stock_poly = match &boundary_config.source {
             BoundarySource::ModelSilhouette if mesh.is_some() => {
                 #[allow(clippy::unwrap_used)]
                 let m = mesh.unwrap();
-                crate::boundary::model_silhouette(m, None)
-                    .into_iter()
-                    .max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
+                let silhouettes = crate::boundary::model_silhouette(m, None);
+                crate::polygon::largest_by_area(&silhouettes)
+                    .cloned()
                     .unwrap_or_else(|| {
                         crate::polygon::Polygon2::rectangle(
                             stock_bbox.min.x,
@@ -915,16 +1740,34 @@ impl ProjectSession {
             stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
         }
         if boundary_config.offset.abs() > 1e-9 {
-            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
-            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                stock_poly = largest;
+            // Checkpoint C, D-3b (F-8). This used to be
+            // `if let Some(largest) = ... { stock_poly = largest }` with no
+            // `else` — on an empty result the requested offset silently did
+            // not happen and `stock_poly` kept its UN-OFFSET value. For a
+            // negative offset that is an over-cut: the path ends up clipped
+            // to a larger region than the operator asked for.
+            match apply_user_boundary_offset(&stock_poly, boundary_config.offset) {
+                UserOffsetOutcome::Resolved(p) => stock_poly = p,
+                // D-3c: dropped, not un-offset — the multi-region path's
+                // semantics (`RegionSet::processed`), so the two agree.
+                UserOffsetOutcome::Collapsed => return Ok(None),
+                UserOffsetOutcome::Failed(failure) => {
+                    return Err(crate::compute::execute::OperationError::MissingGeometry(
+                        format!(
+                            "the machining boundary's {offset:+.3} mm offset could \
+                             not be computed: {reason}. Refusing rather than \
+                             continuing with the UN-OFFSET boundary, which would \
+                             clip this toolpath to a larger region than was asked \
+                             for. Repair the boundary geometry, or set the offset \
+                             to zero.",
+                            offset = boundary_config.offset,
+                            reason = failure.describe(),
+                        ),
+                    ));
+                }
             }
         }
-        Some(stock_poly)
+        Ok(Some(stock_poly))
     }
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
@@ -946,72 +1789,47 @@ impl ProjectSession {
         tool_diameter: f64,
         safe_z: f64,
         semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
-    ) -> crate::toolpath_spans::AnnotatedToolpath {
+        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
+    {
         use crate::boundary::{
-            ToolContainment, clip_toolpath_to_boundary_with_provenance, effective_boundary,
-            subtract_keepouts,
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
-        use crate::compute::config::BoundarySource;
 
-        let crate::toolpath_spans::AnnotatedToolpath {
-            toolpath,
-            spans,
-            spans_valid,
-        } = annotated;
-
-        // Resolve the source polygon for the boundary. ModelSilhouette and
+        // Resolve the source polygon for the boundary (ModelSilhouette /
         // FaceSelection fall back to the stock rectangle when the required
-        // geometry isn't available.
-        let mut stock_poly = match &boundary_config.source {
-            BoundarySource::ModelSilhouette if mesh.is_some() => {
-                // SAFETY: matched `mesh.is_some()` in the pattern guard.
-                #[allow(clippy::unwrap_used)]
-                let m = mesh.unwrap();
-                crate::boundary::model_silhouette(m, None)
-                    .into_iter()
-                    .max_by(|a, b| {
-                        a.area()
-                            .partial_cmp(&b.area())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap_or_else(|| {
-                        crate::polygon::Polygon2::rectangle(
-                            stock_bbox.min.x,
-                            stock_bbox.min.y,
-                            stock_bbox.max.x,
-                            stock_bbox.max.y,
-                        )
-                    })
-            }
-            _ => crate::polygon::Polygon2::rectangle(
-                stock_bbox.min.x,
-                stock_bbox.min.y,
-                stock_bbox.max.x,
-                stock_bbox.max.y,
-            ),
+        // geometry isn't available), subtract keep-outs, and apply the
+        // user-configured offset. Shared with the adaptive3d pre-clip path
+        // in `resolve_generation_inputs` — see that function's doc comment
+        // for why the two must agree on the source polygon. `stock_bbox` is
+        // always provided here, so the rectangle fallback inside
+        // `resolve_containment_polygon` is unreachable in practice; kept for
+        // parity with that function's `Option` signature.
+        // Checkpoint C, D-3b: `None` now means the user offset COLLAPSED the
+        // containment, and the old `.unwrap_or_else(|| stock rectangle)`
+        // would have resurrected the very un-offset boundary the collapse
+        // says is wrong. A collapsed containment is a collapsed containment
+        // wherever it happens, so it takes the same ruled decision as an
+        // empty `effective_boundary`.
+        let Some(stock_poly) = Self::resolve_containment_polygon(
+            boundary_config,
+            stock_bbox,
+            mesh,
+            keep_out_footprints,
+        )?
+        else {
+            Self::resolve_collapsed_containment(
+                None,
+                boundary_config.containment,
+                tool_diameter,
+                1,
+                findings,
+            )?;
+            return Ok(clip_annotated_to_boundary_set(annotated, &[], safe_z)
+                .reconcile(channels)
+                .into_inner());
         };
-
-        // Subtract keep-out footprints (fixtures + keep-out zones).
-        if !keep_out_footprints.is_empty() {
-            stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);
-        }
-
-        // Apply user-configured offset (positive = expand boundary outward,
-        // negative = shrink). cavalier_contours convention: positive distance
-        // is INWARD shrink, so flip the sign.
-        if boundary_config.offset.abs() > 1e-9 {
-            let offset_polys = crate::polygon::offset_polygon(&stock_poly, -boundary_config.offset);
-            if let Some(largest) = offset_polys.into_iter().max_by(|a, b| {
-                a.area()
-                    .partial_cmp(&b.area())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                stock_poly = largest;
-            }
-            // If the offset collapsed the polygon, fall through with the
-            // unmodified stock_poly — the containment offset below may still
-            // collapse it, in which case the toolpath is returned uncut.
-        }
 
         // Map BoundaryContainment -> ToolContainment.
         let containment = match boundary_config.containment {
@@ -1021,47 +1839,222 @@ impl ProjectSession {
         };
 
         let tool_radius = tool_diameter / 2.0;
-        let boundaries = effective_boundary(&stock_poly, containment, tool_radius);
-        let (clipped, mapping) = match boundaries.first() {
-            Some(boundary) => {
-                let (clipped, mapping) =
-                    clip_toolpath_to_boundary_with_provenance(&toolpath, boundary, safe_z);
+        let (boundaries, offset_failure) =
+            effective_boundary_reported(&stock_poly, containment, tool_radius);
+        // Checkpoint C, Q2 (F-1). An empty `boundaries` means the set clipper
+        // passes the toolpath through with an identity mapping — i.e. the
+        // containment the operator asked for is NOT APPLIED. That is correct
+        // for one cause and an unbounded over-cut for the other, and until
+        // Checkpoint C nothing here could tell them apart.
+        if boundaries.is_empty() {
+            Self::resolve_collapsed_containment(
+                offset_failure,
+                boundary_config.containment,
+                tool_diameter,
+                1,
+                findings,
+            )?;
+        }
+        // Checkpoint C, D-3c: the WHOLE set, not `boundaries.first()`. A
+        // containment offset that splits its source into several polygons
+        // used to keep piece 1 and clip everything outside it away — an
+        // under-cut nobody chose, and the multi-region path at
+        // `apply_boundary_clip_multi` already disagreed by keeping them all.
+        // The multi-region semantics win: membership downstream is "inside
+        // ANY", which is what a split containment means.
+        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
+            .reconcile(channels)
+            .into_inner();
 
-                // Record semantic trace for boundary clip
-                let clip_scope =
-                    semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-                clip_scope.set_param(
-                    "containment",
-                    match boundary_config.containment {
-                        crate::compute::config::BoundaryContainment::Center => "center",
-                        crate::compute::config::BoundaryContainment::Inside => "inside",
-                        crate::compute::config::BoundaryContainment::Outside => "outside",
-                    },
-                );
-                clip_scope.set_param("keep_out_count", keep_out_footprints.len());
-                if !clipped.moves.is_empty() {
-                    clip_scope.bind_to_toolpath(&clipped, 0, clipped.moves.len());
-                }
+        // Recorded AFTER the reconcile so this item's own link is bound to
+        // post-clip indices and is not then remapped a second time.
+        if !boundaries.is_empty() {
+            let clip_scope =
+                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+            clip_scope.set_param(
+                SemanticKey::Containment,
+                match boundary_config.containment {
+                    crate::compute::config::BoundaryContainment::Center => "center",
+                    crate::compute::config::BoundaryContainment::Inside => "inside",
+                    crate::compute::config::BoundaryContainment::Outside => "outside",
+                },
+            );
+            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
+            if !clipped.toolpath.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
+            }
+        }
 
-                (clipped, mapping)
-            }
-            None => {
-                // Boundary collapsed (e.g. tool too large for stock) — return
-                // original toolpath with an identity mapping so spans pass
-                // through unchanged.
-                let n = toolpath.moves.len();
-                (toolpath, (0..=n).collect())
-            }
+        Ok(clipped)
+    }
+
+    /// The Checkpoint C (Q2) decision, in one place because both boundary
+    /// clip paths must make it identically.
+    ///
+    /// An empty effective boundary is either a **genuine collapse** — the
+    /// pass-through case `boundary::clip_annotated_to_boundary_set`'s
+    /// contract was written for, where the tool is larger than the region and
+    /// nothing there is machinable — or the residue of an offset that
+    /// **failed**. Option (b) of D-3a: pass through on the first WITH a typed
+    /// finding naming the containment that was dropped, refuse on the second.
+    ///
+    /// `Ok(())` means "pass through; the finding is recorded". `Err` stops the
+    /// generate. Deliberately not a `bool`: the refusal has to be
+    /// unignorable at the call site.
+    pub fn resolve_collapsed_containment(
+        offset_failure: Option<crate::polygon::OffsetFailure>,
+        containment: crate::compute::config::BoundaryContainment,
+        tool_diameter: f64,
+        source_region_count: usize,
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<(), crate::compute::execute::OperationError> {
+        if let Some(failure) = offset_failure {
+            // NOT a pass-through. The safety argument for emitting an
+            // unclipped path — "nothing here is machinable anyway" — rests
+            // entirely on the boundary having genuinely run out of geometry,
+            // and a failure establishes exactly nothing about that.
+            return Err(crate::compute::execute::OperationError::MissingGeometry(
+                format!(
+                    "boundary containment `{containment:?}` could not be \
+                     computed: {reason}. Refusing to emit this toolpath: an \
+                     empty containment is passed through UNCLIPPED, which is \
+                     safe only when the boundary genuinely collapsed (tool \
+                     larger than the region), and this one did not — it \
+                     failed. Repair the boundary geometry (self-intersecting \
+                     or pinched rings, repeated vertices, non-finite \
+                     coordinates) or set the containment to `Center`.",
+                    reason = failure.describe(),
+                ),
+            ));
+        }
+        crate::compute::execute::record_boundary_clip_dropped(
+            findings,
+            crate::compute::config::BoundaryClipDroppedFinding {
+                containment,
+                tool_diameter_mm: tool_diameter,
+                source_region_count,
+            },
+        );
+        tracing::warn!(
+            ?containment,
+            tool_diameter,
+            source_region_count,
+            "boundary containment collapsed — toolpath emitted with NO \
+             boundary clip (genuine collapse, recorded as a finding)"
+        );
+        Ok(())
+    }
+
+    /// Multi-region variant of [`Self::apply_boundary_clip`] for
+    /// `BoundarySource::DerivedRestRegions`, whose source resolves to a *set*
+    /// of disjoint polygons rather than one containment polygon.
+    ///
+    /// `regions` are the raw rest regions from
+    /// [`Self::resolve_derived_rest_region_polys`]; keep-out subtraction and
+    /// the user offset are applied per-region here (via
+    /// [`crate::region_set::RegionSet::processed`]), then each region runs
+    /// through `effective_boundary` independently for the containment /
+    /// tool-radius handling — a region that collapses under the inset is
+    /// dropped from the set. If EVERY region collapses the boundary is
+    /// treated as collapsed, same as the single-polygon path's empty
+    /// `effective_boundary` case: the original toolpath is returned
+    /// unchanged (identity span mapping) with a `tracing::warn!`.
+    ///
+    /// Span remapping contract is identical to [`Self::apply_boundary_clip`]
+    /// — the set clipper never drops input moves, so `spans_valid` stays
+    /// `true`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_boundary_clip_multi(
+        annotated: crate::toolpath_spans::AnnotatedToolpath,
+        boundary_config: &crate::compute::config::BoundaryConfig,
+        regions: &[crate::polygon::Polygon2],
+        keep_out_footprints: &[crate::polygon::Polygon2],
+        tool_diameter: f64,
+        safe_z: f64,
+        semantic_ctx: &crate::semantic_trace::ToolpathSemanticContext,
+        channels: &mut crate::transform_provenance::ReconcileSet<'_>,
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) -> Result<crate::toolpath_spans::AnnotatedToolpath, crate::compute::execute::OperationError>
+    {
+        use crate::boundary::{
+            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
         };
 
-        let remapped: Vec<crate::toolpath_spans::Span> =
-            spans.iter().map(|s| s.remap(&mapping)).collect();
+        // Per-region keep-out subtraction + user offset (regions that
+        // collapse under the offset are dropped), mirroring what
+        // `resolve_containment_polygon` does to its single polygon.
+        let processed = crate::region_set::RegionSet::from_slice(regions)
+            .processed(keep_out_footprints, boundary_config.offset);
 
-        crate::toolpath_spans::AnnotatedToolpath {
-            toolpath: clipped,
-            spans: remapped,
-            spans_valid,
+        // Map BoundaryContainment -> ToolContainment.
+        let containment = match boundary_config.containment {
+            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
+            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
+            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
+        };
+
+        // Containment / tool-radius handling per region. `effective_boundary`
+        // may split one region into several (or collapse it to none) — flatten
+        // everything into one set; membership downstream is "inside ANY".
+        let tool_radius = tool_diameter / 2.0;
+        let mut boundaries: Vec<crate::polygon::Polygon2> = Vec::new();
+        // Checkpoint C, Q2: the failure channel is aggregated across regions
+        // the same way `offset_polygon_reported` aggregates across repaired
+        // pieces — a library failure outranks a rejected input — so one bad
+        // region cannot be hidden by a dozen clean ones.
+        let mut offset_failure: Option<crate::polygon::OffsetFailure> = None;
+        for region in processed.as_slice() {
+            let (out, failure) = effective_boundary_reported(region, containment, tool_radius);
+            boundaries.extend(out);
+            if failure.is_some()
+                && (offset_failure.is_none()
+                    || failure
+                        .as_ref()
+                        .is_some_and(crate::polygon::OffsetFailure::is_library_failure))
+            {
+                offset_failure = failure;
+            }
         }
+
+        if boundaries.is_empty() {
+            // Every region collapsed (offset/inset ate them all) — same
+            // "boundary collapsed" semantics as the single-polygon path, and
+            // now the same Checkpoint C decision: pass through with a typed
+            // finding on a genuine collapse, refuse when an offset failed.
+            Self::resolve_collapsed_containment(
+                offset_failure,
+                boundary_config.containment,
+                tool_diameter,
+                regions.len(),
+                findings,
+            )?;
+        }
+
+        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z)
+            .reconcile(channels)
+            .into_inner();
+
+        // Recorded AFTER the reconcile so this item's own link is bound to
+        // post-clip indices and is not then remapped a second time.
+        if !boundaries.is_empty() {
+            let clip_scope =
+                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+            clip_scope.set_param(
+                SemanticKey::Containment,
+                match boundary_config.containment {
+                    crate::compute::config::BoundaryContainment::Center => "center",
+                    crate::compute::config::BoundaryContainment::Inside => "inside",
+                    crate::compute::config::BoundaryContainment::Outside => "outside",
+                },
+            );
+            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
+            clip_scope.set_param(SemanticKey::RegionCount, boundaries.len());
+            if !clipped.toolpath.moves.is_empty() {
+                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
+            }
+        }
+
+        Ok(clipped)
     }
 
     /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
@@ -1120,11 +2113,26 @@ impl ProjectSession {
             };
 
             let mut entries = Vec::new();
+            // F.4: track whether this group's first pending (enabled,
+            // ungenerated) `FromRemainingStock` toolpath needs a phantom
+            // `prior_stocks` snapshot. Visited for every toolpath config in
+            // plan order — not just the ones that make it into `entries` —
+            // so the scan sees the true "generated yet?" state regardless
+            // of `skip_ids` / short-toolpath filtering below.
+            let mut phantom_scan = crate::compute::simulate::PhantomPriorStockScan::default();
             for &tp_idx in &setup.toolpath_indices {
-                if let Some(result) = self.results.get(&tp_idx) {
-                    let Some(tc) = self.toolpath_configs.get(tp_idx) else {
-                        continue;
-                    };
+                let Some(tc) = self.toolpath_configs.get(tp_idx) else {
+                    continue;
+                };
+                let result = self.results.get(&tp_idx);
+                phantom_scan.visit(
+                    entries.len(),
+                    tc.enabled,
+                    result.is_some(),
+                    tc.id,
+                    tc.stock_source,
+                );
+                if let Some(result) = result {
                     if opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
@@ -1181,7 +2189,15 @@ impl ProjectSession {
                 }
             }
 
-            if !entries.is_empty() {
+            let phantom_prior_stock = phantom_scan.finish();
+            // F.4: a setup whose every toolpath is still ungenerated builds
+            // an empty `entries` vec — but if the FIRST enabled config in
+            // plan order is a pending `FromRemainingStock` op, the "stock
+            // before it" is simply the setup's untouched initial stock
+            // (there are zero predecessors to distrust), so the phantom is
+            // still valid and the group must still be emitted (with an
+            // empty `toolpaths` vec) to carry it.
+            if !entries.is_empty() || phantom_prior_stock.is_some() {
                 // Per-setup local stock bbox and transform info derived from
                 // the shared SetupTransformInfo helper (Phase E/D dedup).
                 //
@@ -1220,6 +2236,7 @@ impl ProjectSession {
                     direction,
                     local_stock_bbox,
                     local_to_global,
+                    phantom_prior_stock,
                 });
             }
         }
@@ -1233,55 +2250,40 @@ impl ProjectSession {
             opts.resolution
         };
 
-        let request = SimulationRequest {
+        // Deviation comparison happens in the simulation's stock-relative
+        // global frame (0..stock_size); `SimulationRequest::model_mesh`'s
+        // contract is that frame, so translate the world-space model by
+        // -stock_origin here. NON-identity groups' `local_to_global`
+        // outputs land in that frame directly (face/rotation transforms
+        // cancel and origin is never re-added). IDENTITY groups' grids
+        // are WORLD-framed (F-024) — the deviation passes frame-map their
+        // query points by -stock_bbox.min themselves (see
+        // `collect_column_deviations`; the first scaled-wanaka cascade
+        // A/B mis-read a uniform ~−4 mm "overcut" when this half of the
+        // contract was missing, 2026-07-13).
+        let model_mesh = self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
+            Arc::new(translate_mesh(
+                &m,
+                -self.stock.origin_x,
+                -self.stock.origin_y,
+                -self.stock.origin_z,
+            ))
+        });
+        // F-034: opt-in kinematics-aware cycle time / F-035 predicted-feed
+        // gates are threaded through as `opts.use_predicted_feed_in_gates`;
+        // see `build_sim_request`'s doc comment for how this path's knobs
+        // differ from `simulate_candidate_isolated`'s.
+        let request = self.build_sim_request(
             groups,
             stock_bbox,
-            stock_top_z: stock_bbox.max.z,
             resolution,
-            metric_options: SimulationMetricOptions {
+            SimulationMetricOptions {
                 enabled: opts.metrics_enabled,
                 capture_arc_engagement: opts.metrics_enabled,
             },
-            spindle_rpm: self.post.spindle_speed,
-            rapid_feed_mm_min: if self.post.high_feedrate_mode {
-                self.post.high_feedrate
-            } else {
-                self.machine.max_feed_mm_min.max(1.0)
-            },
-            model_mesh: self.models.iter().find_map(|m| m.mesh.clone()).map(|m| {
-                // Deviation comparison happens in the simulation's
-                // stock-relative global frame (0..stock_size). Translate the
-                // world-space model mesh by -stock_origin so the two sides of
-                // the comparison live in the same frame. For any setup,
-                // local_to_global ∘ world_to_local collapses to this
-                // translation because face/rotation transforms cancel — so
-                // this single shift is correct for all setups.
-                Arc::new(translate_mesh(
-                    &m,
-                    -self.stock.origin_x,
-                    -self.stock.origin_y,
-                    -self.stock.origin_z,
-                ))
-            }),
-            // F-034: opt-in kinematics-aware cycle time. Active iff
-            // the machine profile carries a kinematics block; absence
-            // is the flag and every built-in preset defaults to
-            // `None`, so behavior is byte-identical to pre-F-034 for
-            // every default-profile session.
-            kinematics: self.machine.kinematics.map(|kin| {
-                crate::compute::simulate::KinematicsContext {
-                    kinematics: kin,
-                    max_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
-                    // F-035: opt-in predicted-feed plumbing for gates.
-                    // Effective only when the active `MachineProfile`
-                    // also carries `kinematics` (the outer `.map`
-                    // already guarantees that). When `false`, the
-                    // gates see an empty `predicted_feeds` map and
-                    // fall back to commanded feed.
-                    use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
-                }
-            }),
-        };
+            model_mesh,
+            opts.use_predicted_feed_in_gates,
+        );
 
         let mut result = run_simulation(&request, cancel)?;
 
@@ -1303,20 +2305,327 @@ impl ProjectSession {
         //  - `opts.adaptive_feed_modulation == false` (the default; the
         //    smoke baseline and every legacy test pass with this
         //    branch skipped, byte-identical).
-        //  - `machine.kinematics.is_none()` (every shipped preset).
         //  - The vendor LUT has no `chip_load_min_mm` /
         //    `chip_load_max_mm` row for the active
         //    `(tool family, material, op family, pass role, diameter)`
         //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
         //    call is skipped, the IR is untouched.
-        if opts.adaptive_feed_modulation && self.machine.kinematics.is_some() {
-            self.apply_adaptive_feed_modulation(&mut result, opts);
-        }
+        //
+        // Modulation no longer requires an explicit machine `kinematics`
+        // block — it falls back to `effective_kinematics` (the generic
+        // wood-router profile), matching the strategy advisor. The GUI/MCP
+        // sim path applies the same pass via [`modulate_simulation_trace`].
+        self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
         self.simulation = Some(result);
         // SAFETY: we just assigned Some
         #[allow(clippy::unwrap_used)]
         Ok(self.simulation.as_ref().unwrap())
+    }
+
+    /// Modulate ONE toolpath's per-move feeds against a simulation cut
+    /// trace, returning the modulated [`Toolpath`] and the raw
+    /// [`ModulationOutcome`] (per-move binding map + summary inputs).
+    ///
+    /// This is the shared F-039 core consumed by two callers:
+    /// [`apply_adaptive_feed_modulation`](Self::apply_adaptive_feed_modulation)
+    /// (the production post-sim pass, which stamps the result back onto
+    /// `self.results`) and
+    /// [`recommend_clearing_strategy`](Self::recommend_clearing_strategy)
+    /// (the strategy advisor, which times the *modulated* path so it
+    /// compares optimized candidates rather than raw Suggest-feed ones).
+    /// Keeping the engagement aggregation + `ModulationContext` build in
+    /// one place is the anti-drift discipline of the unified load model
+    /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5) — the deflection
+    /// cap, power cap, and chipload band are derived here once.
+    ///
+    /// Returns `None` when the op carries no usable RPM, has no moves, or
+    /// the modulator refuses (e.g. an empty engagement vector).
+    #[allow(clippy::too_many_arguments)]
+    fn modulate_annotated_against_trace(
+        &self,
+        annotated: &crate::toolpath_spans::AnnotatedToolpath,
+        operation: &crate::compute::OperationConfig,
+        tool_cfg: &ToolConfig,
+        toolpath_id: ToolpathId,
+        cut_trace: &crate::simulation_cut::SimulationCutTrace,
+        band: crate::feed_modulation::ChiploadBand,
+        kinematics: crate::machine_kinematics::MachineKinematics,
+        max_feed: f64,
+        rapid_feed: f64,
+        strategy: crate::feed_modulation::ModulationStrategy,
+        aggressiveness: f64,
+    ) -> Option<(
+        crate::toolpath::Toolpath,
+        crate::feed_modulation::ModulationOutcome,
+    )> {
+        use crate::feed_modulation::{
+            DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
+            adaptive_feed_modulate,
+        };
+
+        let flute_count = tool_cfg.flute_count.max(1);
+        let spindle_rpm = operation.spindle_rpm().unwrap_or(self.post.spindle_speed);
+        if spindle_rpm == 0 {
+            return None;
+        }
+        let move_count = annotated.toolpath.moves.len();
+        if move_count == 0 {
+            return None;
+        }
+
+        // Stage 4 — planner-predicted engagement for the constructive
+        // contour-spiral, in two layers:
+        //
+        //  (a) Per-move: the spiral's own leading-arc engagement (α/2π)
+        //      computed on its clean 2D material grid, carried
+        //      positionally on the AnnotatedToolpath and looked up by
+        //      cut-move target. RDP simplification keeps a subset of the
+        //      emitted points verbatim, so kept cut moves hit exactly.
+        //  (b) Uniform fallback: the op's target engagement
+        //      (stepover/diameter via the F1 leading-arc → radial-WOC
+        //      bridge), used for cut moves whose position isn't in the
+        //      sampler (arc-fit / lead-in points) and for the 2D
+        //      Adaptive spiral op, which carries no 3D sampler.
+        //
+        // The dexel simulator's cylinder-side `radial_woc_fraction`
+        // reads ~10× low for adaptive ops (CLAUDE.md), so modulation on
+        // the sim scalar alone never lets the flat-load spiral run
+        // faster. Per move we take `max(sim, planner)` so any genuine
+        // spike the simulator *does* resolve still wins — never feeding
+        // above the higher of the two estimates. Gated strictly to the
+        // ContourSpiral strategy: the Agent / AgentSearch path has real
+        // ~2.5× target engagement spikes that a planner floor would
+        // dangerously over-feed. See
+        // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
+        let is_contour_spiral = matches!(
+            operation,
+            crate::compute::OperationConfig::Adaptive3d(c)
+                if matches!(
+                    c.clearing_strategy,
+                    crate::compute::operation_configs::ClearingStrategy::ContourSpiral
+                )
+        ) || matches!(
+            operation,
+            crate::compute::OperationConfig::Adaptive(c)
+                if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
+        );
+        let planner_uniform_woc: Option<f64> = if is_contour_spiral {
+            let stepover = match operation {
+                crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
+                crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
+                _ => None,
+            };
+            stepover.and_then(|s| {
+                let r = tool_cfg.diameter * 0.5;
+                (r > 0.0 && s > 0.0).then(|| {
+                    let f = crate::adaptive_shared::target_engagement_fraction(s, r);
+                    crate::adaptive_shared::radial_woc_fraction_from_leading_arc(f)
+                })
+            })
+        } else {
+            None
+        };
+        // Position key for the per-move planner-engagement lookup
+        // (0.001 mm grid — far finer than the cut-point spacing).
+        let pos_key = |p: &crate::geo::P3| -> (i64, i64, i64) {
+            (
+                (p.x * 1000.0).round() as i64,
+                (p.y * 1000.0).round() as i64,
+                (p.z * 1000.0).round() as i64,
+            )
+        };
+        let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
+            if is_contour_spiral && !annotated.planner_engagement.is_empty() {
+                annotated
+                    .planner_engagement
+                    .iter()
+                    .map(|(p, f)| (pos_key(p), *f))
+                    .collect()
+            } else {
+                std::collections::HashMap::new()
+            };
+
+        // Aggregate per-move engagement (time-weighted mean over the
+        // move's samples). Samples filter on `is_cutting` so air-cut
+        // and rapid moves stay at default `(0.0, 0.0)` engagement —
+        // the modulator skips them via its own `should_skip` /
+        // zero-engagement short-circuits.
+        let mut radial_num = vec![0.0_f64; move_count];
+        let mut axial_num = vec![0.0_f64; move_count];
+        let mut weight_sum = vec![0.0_f64; move_count];
+        for sample in &cut_trace.samples {
+            if sample.toolpath_id != toolpath_id {
+                continue;
+            }
+            if !sample.is_cutting {
+                continue;
+            }
+            if sample.move_index >= move_count {
+                continue;
+            }
+            let w = sample.segment_time_s.max(0.0);
+            if w <= 0.0 {
+                continue;
+            }
+            #[allow(clippy::indexing_slicing)]
+            // SAFETY: move_index < move_count checked above.
+            {
+                radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
+                // C2: an unmeasured axial fraction contributes nothing but
+                // still carries its time weight — byte-identical to the
+                // pre-C2 `0.0` sentinel, and now visibly a choice. The
+                // modulator's own `PerMoveEngagement` keeps a plain f64:
+                // there, `0.0` legitimately means "air" (see its doc).
+                axial_num[sample.move_index] +=
+                    sample.engagement.axial_doc_fraction.unwrap_or(0.0).max(0.0) * w;
+                weight_sum[sample.move_index] += w;
+            }
+        }
+        let engagements: Vec<PerMoveEngagement> = (0..move_count)
+            .map(|i| {
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let w = weight_sum[i];
+                if w <= 0.0 {
+                    return PerMoveEngagement::default();
+                }
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let sim_radial = radial_num[i] / w;
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: i < move_count by construction.
+                let axial = axial_num[i] / w;
+                // Apply the planner engagement on lateral clearing /
+                // finishing cuts only — entry helix, ramp, and linking
+                // moves are not the spiral's flat-load wraps, so they
+                // keep the sim-measured reading. Per-move sampler first,
+                // uniform target floor as fallback; `max` with sim keeps
+                // any genuine spike the simulator resolves.
+                let m = annotated.toolpath.moves.get(i);
+                let radial = if matches!(
+                    m.map(|m| m.intent),
+                    Some(crate::toolpath::MoveIntent::ClearingCut)
+                        | Some(crate::toolpath::MoveIntent::FinishingCut)
+                ) {
+                    let planner_woc = m
+                        .and_then(|m| planner_map.get(&pos_key(&m.target)).copied())
+                        .map(crate::adaptive_shared::radial_woc_fraction_from_leading_arc)
+                        .or(planner_uniform_woc);
+                    match planner_woc {
+                        Some(pw) => sim_radial.max(pw),
+                        None => sim_radial,
+                    }
+                } else {
+                    sim_radial
+                };
+                PerMoveEngagement {
+                    radial_woc_fraction: radial,
+                    axial_doc_fraction: axial,
+                }
+            })
+            .collect();
+
+        // F-039 — wire optional deflection + power constraint
+        // inputs. Material + tool data is enough to recover Kc,
+        // stickout, engagement diameter, and Young's modulus; the
+        // machine's `power_at_rpm × safety_factor` gives the
+        // available power.
+        let material = &self.stock.material;
+        // Materials without a primary-source Kc disable both the
+        // deflection and power constraints in the constrained-max
+        // solver; the solver falls through to chipload + machine +
+        // kinematics caps. See `Material::kc_n_per_mm2`.
+        let kc_opt = material.kc_n_per_mm2();
+        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        // Use the per-toolpath max axial DOC from the cut trace
+        // as the deflection / power reference; falls back to
+        // diameter when unavailable (no cutting samples → no
+        // constraint active).
+        let max_axial = cut_trace
+            .samples
+            .iter()
+            .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+            .map(|s| s.axial_engagement_mm.max(0.0))
+            .fold(0.0_f64, f64::max);
+        let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
+        let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
+        let stickout = tool_def.stickout.max(0.0);
+        let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
+        // Feed-aware deflection cap: the optimizer solves its feed cap
+        // from the SAME affine force model (Ks/F_edge) and integrated
+        // beam compliance the post-sim deflection gate uses, so the two
+        // agree on a cut. Compliance is δ-per-newton at the toolpath's
+        // peak axial DOC; deflection is linear in force so one scalar
+        // suffices.
+        let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
+            Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
+                let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
+                if compliance.is_finite() && compliance > 0.0 {
+                    Some(DeflectionLimitInputs {
+                        ks_n_per_mm2: ks,
+                        f_edge_n_per_mm: f_edge,
+                        compliance_mm_per_n: compliance,
+                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let machine_profile = &self.machine;
+        let available_kw =
+            machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
+        let power_inputs = match kc_opt {
+            Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
+                // S2-9 (2026-05-31): pass raw Kc; the solver applies
+                // GRAIN_ANISOTROPY_FACTOR internally so this site
+                // doesn't re-encode the multiplier literal.
+                kc_n_per_mm2: kc,
+                engagement_diameter_mm: engagement_dia,
+                available_kw,
+            }),
+            _ => None,
+        };
+
+        let ctx = ModulationContext {
+            spindle_rpm: spindle_rpm as f64,
+            flute_count,
+            max_feed_mm_min: max_feed,
+            rapid_feed_mm_min: rapid_feed,
+            chipload_band: band,
+            kinematics: &kinematics,
+            strategy,
+            aggressiveness,
+            deflection_inputs,
+            power_inputs,
+            nominal_axial_doc_mm: nominal_axial,
+        };
+
+        let mut modulated_toolpath = annotated.toolpath.clone();
+        let outcome = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx).ok()?;
+        Some((modulated_toolpath, outcome))
+    }
+
+    /// F-039 — apply the adaptive feed-modulation post-pass to an
+    /// already-computed simulation cut trace. The public entry point for the
+    /// GUI/MCP sim path (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6):
+    /// the in-process worker produces the trace, this applies modulation on
+    /// the main thread where the session lives. Mutates the modulated
+    /// toolpaths into `self.results` (so G-code export carries the optimized
+    /// per-move feeds) and stamps `modulation_summaries` + re-timed runtimes
+    /// onto the trace in place. Gated on `opts.adaptive_feed_modulation`;
+    /// otherwise a no-op (the byte-identical baseline).
+    pub fn modulate_simulation_trace(
+        &mut self,
+        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
+        opts: &super::SimulationOptions,
+    ) {
+        if !opts.adaptive_feed_modulation {
+            return;
+        }
+        self.apply_adaptive_feed_modulation(cut_trace, opts);
     }
 
     /// F-036b — apply the per-move adaptive feed modulator to every
@@ -1352,21 +2661,22 @@ impl ProjectSession {
     /// surface.
     fn apply_adaptive_feed_modulation(
         &mut self,
-        sim_result: &mut crate::compute::simulate::SimulationResult,
+        cut_trace: &mut Option<Arc<crate::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
     ) {
-        use crate::feed_modulation::{
-            ChiploadBand, DeflectionLimitInputs, ModulationContext, PerMoveEngagement,
-            PowerLimitInputs, adaptive_feed_modulate,
-        };
+        // Engagement aggregation + `ModulationContext` build now live in the
+        // shared `modulate_annotated_against_trace`; this pass only needs the
+        // chipload band to gate which toolpaths are eligible.
+        use crate::feed_modulation::ChiploadBand;
 
-        let Some(cut_trace) = sim_result.cut_trace.as_deref() else {
+        let Some(cut_trace_ref) = cut_trace.as_deref() else {
             return;
         };
-        let Some(kinematics) = self.machine.kinematics else {
-            return;
-        };
-        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace));
+        // Modulation runs against the machine's effective kinematics — the
+        // generic-wood-router fallback when no explicit block is set — so it
+        // applies on every machine, matching the strategy advisor (step 5).
+        let kinematics = self.machine.effective_kinematics();
+        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace_ref));
         if envelopes.is_empty() {
             return;
         }
@@ -1415,150 +2725,27 @@ impl ProjectSession {
             let Some(tool_cfg) = self.find_tool_by_raw_id(tc.tool_id) else {
                 continue;
             };
-            let flute_count = tool_cfg.flute_count.max(1);
-            let spindle_rpm = tc
-                .operation
-                .spindle_rpm()
-                .unwrap_or(self.post.spindle_speed);
-            if spindle_rpm == 0 {
-                continue;
-            }
-
             let Some(result) = self.results.get(&idx) else {
                 continue;
             };
             let annotated_arc = result.annotated();
-            let move_count = annotated_arc.toolpath.moves.len();
-            if move_count == 0 {
-                continue;
-            }
-
-            // Aggregate per-move engagement (time-weighted mean over the
-            // move's samples). Samples filter on `is_cutting` so air-cut
-            // and rapid moves stay at default `(0.0, 0.0)` engagement —
-            // the modulator skips them via its own `should_skip` /
-            // zero-engagement short-circuits.
-            let mut radial_num = vec![0.0_f64; move_count];
-            let mut axial_num = vec![0.0_f64; move_count];
-            let mut weight_sum = vec![0.0_f64; move_count];
-            for sample in &cut_trace.samples {
-                if sample.toolpath_id != toolpath_id {
-                    continue;
-                }
-                if !sample.is_cutting {
-                    continue;
-                }
-                if sample.move_index >= move_count {
-                    continue;
-                }
-                let w = sample.segment_time_s.max(0.0);
-                if w <= 0.0 {
-                    continue;
-                }
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: move_index < move_count checked above.
-                {
-                    radial_num[sample.move_index] +=
-                        sample.engagement.radial_woc_fraction.max(0.0) * w;
-                    axial_num[sample.move_index] +=
-                        sample.engagement.axial_doc_fraction.max(0.0) * w;
-                    weight_sum[sample.move_index] += w;
-                }
-            }
-            let engagements: Vec<PerMoveEngagement> = (0..move_count)
-                .map(|i| {
-                    #[allow(clippy::indexing_slicing)]
-                    // SAFETY: i < move_count by construction.
-                    let w = weight_sum[i];
-                    if w <= 0.0 {
-                        PerMoveEngagement::default()
-                    } else {
-                        #[allow(clippy::indexing_slicing)]
-                        // SAFETY: i < move_count by construction.
-                        PerMoveEngagement {
-                            radial_woc_fraction: radial_num[i] / w,
-                            axial_doc_fraction: axial_num[i] / w,
-                        }
-                    }
-                })
-                .collect();
-
-            // F-039 — wire optional deflection + power constraint
-            // inputs. Material + tool data is enough to recover Kc,
-            // stickout, engagement diameter, and Young's modulus; the
-            // machine's `power_at_rpm × safety_factor` gives the
-            // available power.
-            let material = &self.stock.material;
-            // Materials without a primary-source Kc disable both the
-            // deflection and power constraints in the constrained-max
-            // solver; the solver falls through to chipload + machine +
-            // kinematics caps. See `Material::kc_n_per_mm2`.
-            let kc_opt = material.kc_n_per_mm2();
-            let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
-            // Use the per-toolpath max axial DOC from the cut trace
-            // as the deflection / power reference; falls back to
-            // diameter when unavailable (no cutting samples → no
-            // constraint active).
-            let max_axial = cut_trace
-                .samples
-                .iter()
-                .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
-                .map(|s| s.axial_engagement_mm.max(0.0))
-                .fold(0.0_f64, f64::max);
-            let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
-            let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
-            let stickout = tool_def.stickout.max(0.0);
-            let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-            let deflection_inputs = match kc_opt {
-                Some(kc) if stickout > 0.0 && engagement_dia > 0.0 && youngs > 0.0 => {
-                    Some(DeflectionLimitInputs {
-                        kc_n_per_mm2: kc,
-                        stickout_mm: stickout,
-                        engagement_diameter_mm: engagement_dia,
-                        youngs_modulus_n_per_mm2: youngs,
-                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                    })
-                }
-                _ => None,
-            };
-            let machine_profile = &self.machine;
-            let available_kw =
-                machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
-            let power_inputs = match kc_opt {
-                Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
-                    // S2-9 (2026-05-31): pass raw Kc; the solver applies
-                    // GRAIN_ANISOTROPY_FACTOR internally so this site
-                    // doesn't re-encode the multiplier literal.
-                    kc_n_per_mm2: kc,
-                    engagement_diameter_mm: engagement_dia,
-                    available_kw,
-                }),
-                _ => None,
-            };
-
-            let ctx = ModulationContext {
-                spindle_rpm: spindle_rpm as f64,
-                flute_count,
-                max_feed_mm_min: max_feed,
-                rapid_feed_mm_min: rapid_feed,
-                chipload_band: band,
-                kinematics: &kinematics,
-                strategy: opts.modulation_strategy,
-                aggressiveness: opts.modulation_aggressiveness,
-                deflection_inputs,
-                power_inputs,
-                nominal_axial_doc_mm: nominal_axial,
-            };
-
-            // Clone the toolpath out of its Arc<AnnotatedToolpath> so we
-            // don't mutate the trace's view of the pre-modulation IR.
-            // Swap the result's Arc atomically with a freshly-built
-            // AnnotatedToolpath that carries the modulated Toolpath
-            // (spans + spans_valid preserved from the source).
-            let mut modulated_toolpath = annotated_arc.toolpath.clone();
             let commanded_feed_for_summary = tc.operation.feed_rate();
-            let Ok(outcome) = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx)
-            else {
+            // F-039 core (shared with the strategy advisor): aggregate
+            // engagement + build the deflection / power / chipload context
+            // and modulate this toolpath's per-move feeds in one place.
+            let Some((modulated_toolpath, outcome)) = self.modulate_annotated_against_trace(
+                annotated_arc.as_ref(),
+                &tc.operation,
+                tool_cfg,
+                toolpath_id,
+                cut_trace_ref,
+                band,
+                kinematics,
+                max_feed,
+                rapid_feed,
+                opts.modulation_strategy,
+                opts.modulation_aggressiveness,
+            ) else {
                 continue;
             };
             // Stamp per-move map onto the trace-wide accumulator
@@ -1568,9 +2755,11 @@ impl ProjectSession {
             for (move_idx, value) in &outcome.per_move {
                 modulated_feeds.insert((toolpath_id, *move_idx), *value);
             }
-            if let Some(summary) =
-                outcome.build_summary(commanded_feed_for_summary, ctx.aggressiveness, ctx.strategy)
-            {
+            if let Some(summary) = outcome.build_summary(
+                commanded_feed_for_summary,
+                opts.modulation_aggressiveness,
+                opts.modulation_strategy,
+            ) {
                 modulation_summaries.insert(toolpath_id, summary);
             }
             if outcome.changed == 0 {
@@ -1580,6 +2769,14 @@ impl ProjectSession {
                 toolpath: modulated_toolpath,
                 spans: annotated_arc.spans.clone(),
                 spans_valid: annotated_arc.spans_valid,
+                // Modulation rewrites feeds, not geometry — the planner
+                // engagement samples stay valid by position.
+                planner_engagement: annotated_arc.planner_engagement.clone(),
+                // Rest-field overlay grid is toolpath-wide metadata, unaffected
+                // by feed modulation — carry it through unchanged.
+                rest_grid: annotated_arc.rest_grid.clone(),
+                // Same for the derived machining-region polygons.
+                rest_regions: annotated_arc.rest_regions.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.
@@ -1602,11 +2799,12 @@ impl ProjectSession {
         // the trace's per-toolpath + project-total runtime so callers
         // (F-036c regression test, GUI panel, diagnostics summary) see
         // the modulated cycle time.
-        let Some(trace_arc) = sim_result.cut_trace.as_mut() else {
+        let Some(trace_arc) = cut_trace.as_mut() else {
             return;
         };
         let trace = Arc::make_mut(trace_arc);
         let mut project_total = 0.0;
+        let mut project_breakdown = crate::machine_kinematics::CycleTimeBreakdown::default();
         for tp_summary in &mut trace.toolpath_summaries {
             let Some((idx, _)) = self
                 .toolpath_configs
@@ -1622,22 +2820,62 @@ impl ProjectSession {
                 continue;
             };
             let toolpath = &result_slot.annotated().toolpath;
-            let t = crate::machine_kinematics::compute_cycle_time(
+            // Recompute the MoveIntent breakdown alongside the total —
+            // leaving F-034's pre-modulation breakdown in place would
+            // desynchronize `runtime_by_intent.total_s` from the
+            // modulated `total_runtime_s` written below.
+            let b = crate::machine_kinematics::compute_cycle_time_breakdown(
                 toolpath,
                 &kinematics,
                 max_feed,
                 rapid_feed,
             );
-            tp_summary.total_runtime_s = t;
-            project_total += t;
+            tp_summary.total_runtime_s = b.total_s;
+            tp_summary.runtime_by_intent = Some(b);
+            project_total += b.total_s;
+            project_breakdown += b;
         }
         trace.summary.total_runtime_s = project_total;
+        trace.summary.runtime_by_intent = Some(project_breakdown);
         // F-039 — stamp the per-move binding map + per-toolpath
         // modulation summaries onto the trace. Both fields are
         // `#[serde(skip)]` so artifact round-tripping is unaffected;
         // the maps are re-derivable when modulation re-runs.
         trace.modulated_feeds = modulated_feeds;
         trace.modulation_summaries = modulation_summaries;
+        // Make the load gates grade the MODULATED feed, not the pre-modulation
+        // sample feed. The cut-trace samples carry the feed the sim ran at
+        // (modulation is a post-pass), so without this the chipload / power /
+        // deflection gates — which read `effective_feed_for_sample`, backed by
+        // `predicted_feeds` — would report the *un-modulated* load: an under-fed
+        // path reads chipload-low even though modulation raised it into band.
+        // Stamping the per-move modulated feed into `predicted_feeds` closes
+        // that gap, the gate↔modulation agreement the unified load model targets
+        // (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §7).
+        for (&key, &(feed, _binding)) in &trace.modulated_feeds {
+            trace.predicted_feeds.insert(key, feed);
+        }
+        // Modulation rewrote per-move feeds, so each modulated toolpath now
+        // hashes differently than the pre-modulation value captured in the
+        // trace's provenance — which would make `sim_trace_is_fresh` (and the
+        // load report) read `StaleSimulation`, dropping the very
+        // `modulation_summary` this pass just stamped. Refresh the provenance
+        // toolpath hashes against the modulated IR so the trace stays FRESH
+        // relative to the toolpaths it now describes. Only toolpaths the
+        // trace already covers are touched (others aren't part of this sim).
+        if let Some(provenance) = trace.provenance.as_mut() {
+            for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+                if !provenance.toolpath_hashes.contains_key(&tc.id) {
+                    continue;
+                }
+                if let Some(slot) = self.results.get(&idx) {
+                    provenance.toolpath_hashes.insert(
+                        tc.id,
+                        crate::compute::simulate::hash_toolpath(&slot.annotated().toolpath),
+                    );
+                }
+            }
+        }
     }
 
     /// Run a collision check for a specific toolpath by index.
@@ -1730,7 +2968,17 @@ impl ProjectSession {
             .simulation
             .as_ref()
             .and_then(|sim| sim.cut_trace.as_deref());
-        let context = crate::narrate::ToolpathNarrationContext {
+        // Checkpoint D Q2: narration reads the SAME measurability report the
+        // gates and the triage do, so it cannot publish a percentage the
+        // gates have already declined to act on.
+        let measurability = cut_trace.map(|trace| {
+            crate::sim_measurability::MeasurabilityReport::from_trace(
+                trace,
+                self.simulation.as_ref().map(|sim| sim.column_grid_cell_mm),
+            )
+        });
+        let mut context = crate::narrate::ToolpathNarrationContext {
+            measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
@@ -1745,9 +2993,21 @@ impl ProjectSession {
                     .unwrap_or(self.post.spindle_speed),
             ),
             flute_count: Some(tool.flute_count),
-            is_drill_cycle: tc.operation.op_type().is_drill_kinematics(),
+            // B7 divergence 1, resolved 2026-08-06: the intent-aware
+            // expression is now shared with the GUI's narration via
+            // `is_drill_cycle_for_narration`, so the two readers can no
+            // longer disagree about whether a toolpath is a drill cycle.
+            is_drill_cycle: crate::narrate::is_drill_cycle_for_narration(
+                tc.operation.op_type(),
+                &result.annotated().toolpath.moves,
+            ),
             material: Some(&self.stock.material),
+            // Every ToolpathStats-derived channel is filled by
+            // `absorb_stats` below — one exhaustive join, so a new finding
+            // cannot reach one narration and miss the other (B7).
+            ..Default::default()
         };
+        context.absorb_stats(&result.stats);
 
         Ok(crate::narrate::narrate_toolpath_with_context(
             result.annotated(),
@@ -1768,6 +3028,20 @@ impl ProjectSession {
     /// (one `collision_check` per computed toolpath) to build full
     /// evidence — appropriate for CLI/export, NOT for per-frame UI.
     #[instrument(skip(self))]
+    /// [`Self::simulation_triage`] against this session's own simulation —
+    /// the convenience path for batch callers that do not assemble their own
+    /// [`ProjectEvidence`].
+    pub fn triage(&self) -> crate::sim_triage::SimulationTriage {
+        let no_cancel = AtomicBool::new(false);
+        let holder_collisions = self.holder_collision_counts(&no_cancel);
+        let Some(sim) = self.simulation.as_ref() else {
+            return crate::sim_triage::SimulationTriage::default();
+        };
+        let evidence =
+            ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions);
+        self.simulation_triage(&evidence)
+    }
+
     pub fn diagnostics(&self) -> ProjectDiagnostics {
         let no_cancel = AtomicBool::new(false);
         let holder_collisions = self.holder_collision_counts(&no_cancel);
@@ -1819,6 +3093,52 @@ impl ProjectSession {
     /// supplied, rapid collision counts are 0 — we don't fall back to the
     /// inaccurate original-bbox check.
     #[instrument(skip_all)]
+    /// The page-one answer: one [`crate::sim_triage::SimulationTriage`] for
+    /// every consumer — GUI panel, MCP JSON, CLI report, narration.
+    ///
+    /// This is the single construction site on purpose. The census found
+    /// five surfaces each assembling, ranking and truncating the issue
+    /// channel their own way, which is how the GUI came to rank collisions
+    /// last while `sim_op_list.rs` ranked them first. Anything that wants to
+    /// answer "what should I act on?" calls this; nothing re-derives it.
+    pub fn simulation_triage(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+    ) -> crate::sim_triage::SimulationTriage {
+        use crate::sim_triage::{SimulationTriage, TriageInputs};
+
+        let Some(trace) = evidence.cut_trace else {
+            return SimulationTriage::default();
+        };
+        let diagnostics =
+            crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
+                &self.diagnostics_with_evidence(evidence),
+            );
+        let measurability = crate::sim_measurability::MeasurabilityReport::from_trace(
+            trace,
+            evidence.resolution_mm,
+        );
+        let tool_diameters_mm = self
+            .toolpath_configs
+            .iter()
+            .filter_map(|tc| {
+                let tool_cfg = self.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
+                let cutter = crate::compute::cutter::build_cutter(tool_cfg);
+                Some((tc.id, crate::tool::MillingCutter::diameter(&cutter)))
+            })
+            .collect();
+
+        SimulationTriage::build(&TriageInputs {
+            trace,
+            measurability: &measurability,
+            diagnostics: &diagnostics,
+            rapid_collisions: evidence.rapid_collisions,
+            holder_collisions: &evidence.holder_collisions,
+            tool_diameters_mm: &tool_diameters_mm,
+            region_of: None,
+        })
+    }
+
     pub fn diagnostics_with_evidence(&self, evidence: &ProjectEvidence<'_>) -> ProjectDiagnostics {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
@@ -1957,23 +3277,47 @@ impl ProjectSession {
                     rapid_distance_mm: result.stats.rapid_distance,
                     collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
+                    truncated_core_mm2: result.stats.truncated_core_mm2,
+                    // B8 — the untouched/standing split, on the same wire as
+                    // the core it must not be confused with.
+                    untouched_material_mm2: result.stats.untouched_material_mm2,
+                    reached_uncut_estimate_mm2: result.stats.reached_uncut_estimate_mm2,
+                    // Wave D1 — the MCP wire. `None` serialises null.
+                    unmachined_band_area_mm2: result
+                        .stats
+                        .dropped_band
+                        .as_deref()
+                        .map(|f| f.area_mm2),
+                    tip_float_points: result.stats.tip_float.map(|f| f.floating_points),
+                    max_tip_float_mm: result.stats.tip_float.map(|f| f.max_float_mm),
                 });
             }
         }
 
-        // Extract simulation metrics if available
-        let (total_runtime_s, air_cut_percentage, average_engagement) =
-            if let Some(trace) = evidence.cut_trace {
-                let summary = &trace.summary;
-                let air_pct = if summary.total_runtime_s > 0.0 {
-                    summary.air_cut_time_s / summary.total_runtime_s * 100.0
-                } else {
-                    0.0
-                };
-                (summary.total_runtime_s, air_pct, summary.average_engagement)
-            } else {
-                (0.0, 0.0, 0.0)
-            };
+        // Extract simulation metrics if available.
+        //
+        // LH-1: air cut is published under BOTH denominators, each named.
+        // The legacy `air_cut_percentage` keeps its total-runtime value —
+        // every threshold in this file and in the GUI was tuned against it —
+        // and the cutting-time reading (what the MCP narration reports)
+        // travels beside it instead of contradicting it under the same name.
+        let (
+            total_runtime_s,
+            air_cut_pct_of_total_runtime,
+            air_cut_pct_of_cutting_time,
+            average_engagement,
+        ) = if let Some(trace) = evidence.cut_trace {
+            use crate::simulation_cut::AirCutRatios;
+            let summary = &trace.summary;
+            (
+                summary.total_runtime_s,
+                summary.air_cut_pct_of_total_runtime(),
+                summary.air_cut_pct_of_cutting_time(),
+                summary.average_engagement,
+            )
+        } else {
+            (0.0, 0.0, 0.0, 0.0)
+        };
 
         // Per-TP op-kind-aware air-cut warnings. A blanket project-wide
         // threshold (the old `>40%`) fires falsely on projects that contain
@@ -1981,12 +3325,34 @@ impl ProjectSession {
         // is intrinsic. Per-TP thresholds live on `OperationType`
         // (see `OperationType::air_cut_high_threshold_pct`).
         // P1 — see planning/P1_AIR_CUT_THRESHOLDS_RCA.md.
-        let air_cut_offenders: Vec<(String, f64)> = evidence
+        //
+        // Checkpoint D Q2 (2026-08-04): before comparing anything against a
+        // threshold, ask whether the number is a measurement. A pass under
+        // the dexel's 0.05 mm fresh-material floor removes material fine and
+        // reports engagement of exactly zero, i.e. ~96% air cut — which
+        // trips every shipped band. Those toolpaths ABSTAIN, with the reason
+        // published beside the verdicts rather than silently dropped.
+        let measurability = evidence
             .cut_trace
             .map(|trace| {
-                air_cut_offenders_for_toolpaths(&trace.toolpath_summaries, &self.toolpath_configs)
+                crate::sim_measurability::MeasurabilityReport::from_trace(
+                    trace,
+                    evidence.resolution_mm,
+                )
             })
             .unwrap_or_default();
+        let air_cut_scan = evidence
+            .cut_trace
+            .map(|trace| {
+                air_cut_offenders_for_toolpaths(
+                    &trace.toolpath_summaries,
+                    &self.toolpath_configs,
+                    &measurability,
+                )
+            })
+            .unwrap_or_default();
+        let air_cut_offenders = air_cut_scan.offenders;
+        let air_cut_abstentions = air_cut_scan.abstentions;
 
         // P2: plunge-stress warnings for small ball / tapered-ball tools.
         // Fix 2 caps fresh LUT recommendations, but pre-Fix-2 projects carry
@@ -2100,17 +3466,18 @@ impl ProjectSession {
         if !air_cut_offenders.is_empty() {
             let names: Vec<String> = air_cut_offenders
                 .iter()
-                .map(|(n, pct)| format!("'{n}' is {pct:.0}% air-cut"))
-                .collect();
-            let offender_ids: Vec<ToolpathId> = air_cut_offenders
-                .iter()
-                .filter_map(|(n, _)| {
-                    self.toolpath_configs
-                        .iter()
-                        .find(|tc| tc.name == *n)
-                        .map(|tc| tc.id)
+                // LH-1: the threshold is on the TOTAL-RUNTIME measure; the
+                // headline says so rather than leaving "air-cut" ambiguous.
+                .map(|o| {
+                    format!(
+                        "'{}' is {:.0}% air-cut of total runtime",
+                        o.name, o.air_cut_pct
+                    )
                 })
                 .collect();
+            // R-7: the id came with the finding. No name round-trip, so
+            // duplicate names cannot collapse two toolpaths into one.
+            let offender_ids: Vec<ToolpathId> = air_cut_offenders.iter().map(|o| o.id).collect();
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Polish,
                 kind: VerdictKind::AirCut,
@@ -2128,6 +3495,41 @@ impl ProjectSession {
             });
         }
 
+        // Checkpoint D Q2: state every abstention. A gate that silently
+        // declines is indistinguishable from a gate that passed, which is
+        // the whole failure this ruling addresses — so the abstention gets a
+        // verdict of its own, naming the toolpath, the reason, and what is
+        // still trustworthy.
+        if !air_cut_abstentions.is_empty() {
+            let names: Vec<String> = air_cut_abstentions
+                .iter()
+                .map(|a| format!("'{}': {}", a.name, a.reason.describe()))
+                .collect();
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Polish,
+                kind: VerdictKind::MeasurabilityAbstained,
+                headline: format!(
+                    "NOT MEASURED: air-cut % withheld for {} toolpath(s) — {}",
+                    air_cut_abstentions.len(),
+                    names.join("; ")
+                ),
+                offender_toolpath_ids: air_cut_abstentions.iter().map(|a| a.id).collect(),
+                fix_hint: "This is a statement about the SIMULATION, not the toolpath. \
+                           Collision detection, material removal and axial DOC are \
+                           unaffected and remain valid. Where the reason is a coarse \
+                           cell, re-simulate below the tool's TIP radius; where it is \
+                           the fixed 0.05 mm fresh-material floor, the engagement \
+                           channel cannot see a pass this shallow at any resolution — \
+                           judge it on removed material and surface quality instead."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: Some(air_cut_abstentions.len()),
+                },
+            });
+        }
+
         // Sort by severity (Critical → Important → Polish). Within a
         // severity the insertion order above is the intended display order.
         verdicts.sort_by_key(|v| v.severity);
@@ -2141,7 +3543,9 @@ impl ProjectSession {
 
         ProjectDiagnostics {
             total_runtime_s,
-            air_cut_percentage,
+            air_cut_percentage: air_cut_pct_of_total_runtime,
+            air_cut_pct_of_total_runtime,
+            air_cut_pct_of_cutting_time,
             average_engagement,
             collision_count: total_collision_count,
             rapid_collision_count: total_rapid_collision_count,
@@ -2157,12 +3561,8 @@ impl ProjectSession {
     /// policy (refuse on Exceeds or Unmodeled). For an override-capable
     /// variant see [`export_gcode_with_policy`].
     #[instrument(skip(self))]
-    pub fn export_gcode(&self, path: &Path, _setup_id: Option<usize>) -> Result<(), SessionError> {
-        self.export_gcode_with_policy(
-            path,
-            _setup_id,
-            crate::gcode::ToolLoadExportPolicy::default(),
-        )
+    pub fn export_gcode(&self, path: &Path) -> Result<(), SessionError> {
+        self.export_gcode_with_policy(path, crate::gcode::ToolLoadExportPolicy::default())
     }
 
     /// Export G-code with an explicit tool-load policy. Used by callers that
@@ -2172,7 +3572,6 @@ impl ProjectSession {
     pub fn export_gcode_with_policy(
         &self,
         path: &Path,
-        _setup_id: Option<usize>,
         policy: crate::gcode::ToolLoadExportPolicy,
     ) -> Result<(), SessionError> {
         let gcode = crate::gcode::export_gcode_checked(
@@ -2263,6 +3662,15 @@ impl ProjectSession {
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
         let preconditions = self.precondition_context_for_toolpath(tc);
         let model_refs = self.model_ref_context_for_toolpath(tc);
+        // Generation-time findings ride on the stats of this toolpath's own
+        // generated result. Absent until it has been generated, which is
+        // exactly when there is nothing to report.
+        let stats = self
+            .toolpath_configs
+            .iter()
+            .position(|t| t.id == tc.id)
+            .and_then(|idx| self.results.get(&idx))
+            .map(|r| &r.stats);
 
         let inputs = crate::diagnostics::ToolpathDiagnoseInputs {
             toolpath_id: tc.id,
@@ -2274,6 +3682,7 @@ impl ProjectSession {
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
             model_refs: Some(&model_refs),
+            stats,
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
     }
@@ -2314,11 +3723,7 @@ impl ProjectSession {
         // Find the setup that owns this toolpath and collect prior
         // toolpaths in that setup (lower display index than `tc`).
         let mut prior_toolpaths_in_setup = Vec::new();
-        if let Some(setup) = self.setups.iter().find(|s| {
-            s.toolpath_indices
-                .iter()
-                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
-        }) {
+        if let Some(setup) = self.find_setup_for_toolpath_id(tc.id) {
             for &idx in &setup.toolpath_indices {
                 if let Some(other) = self.toolpath_configs.get(idx) {
                     if other.id == tc.id {
@@ -2373,11 +3778,7 @@ impl ProjectSession {
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::compute::config::HeightContext {
-        let setup = self.setups.iter().find(|s| {
-            s.toolpath_indices
-                .iter()
-                .any(|&i| self.toolpath_configs.get(i).is_some_and(|t| t.id == tc.id))
-        });
+        let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = super::SetupEvalContext::build_for_setup(self, setup);
         let raw_mb = self
             .models
@@ -2472,17 +3873,65 @@ impl ProjectSession {
     }
 }
 
+/// Outcome of scanning every toolpath's air-cut percentage against its
+/// op-kind's high-water threshold.
+///
+/// Two lists, because a gate now has three possible answers, not two: it
+/// fired, it stayed silent, or **it declined to answer**. Collapsing the
+/// third into the second is exactly the failure the census measured — a
+/// finishing pass under the measurement floor reads 95.9% air cut and trips
+/// a 30% band while removing material perfectly well.
+#[derive(Debug, Default)]
+struct AirCutScan {
+    /// Toolpaths over their threshold.
+    offenders: Vec<AirCutOffender>,
+    /// Toolpaths where the air-cut metric is `NotMeasurable`, so no verdict
+    /// was formed either way.
+    abstentions: Vec<AirCutAbstention>,
+}
+
+/// One toolpath over its op-kind's air-cut threshold.
+///
+/// R-7 / census D6: carries the `ToolpathId` alongside the display name.
+/// The verdict used to publish names only and re-resolve them to ids by
+/// string match against `toolpath_configs`, so two toolpaths sharing a name
+/// collapsed to whichever came first — the verdict then pointed the operator
+/// at the innocent one. The identity now travels with the finding; the name
+/// is for display.
+#[derive(Debug, Clone)]
+struct AirCutOffender {
+    id: ToolpathId,
+    name: String,
+    air_cut_pct: f64,
+}
+
+/// One toolpath whose air-cut metric is not measurable. Same identity rule
+/// as [`AirCutOffender`].
+#[derive(Debug, Clone)]
+struct AirCutAbstention {
+    id: ToolpathId,
+    name: String,
+    reason: crate::sim_measurability::MeasurabilityReason,
+}
+
 /// Identify toolpaths whose air-cut percentage exceeds their op-kind's
-/// high-water threshold. Returns `(toolpath_name, air_cut_pct)` pairs.
+/// high-water threshold — **abstaining** where the metric is not measurable.
 ///
 /// Pure helper; takes only the data it needs so it can be unit-tested
 /// without constructing a full `SimulationResult`. See
-/// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale.
+/// `planning/P1_AIR_CUT_THRESHOLDS_RCA.md` for the threshold rationale and
+/// [`crate::sim_measurability`] for the abstention rule (Checkpoint D Q2,
+/// 2026-08-04). No threshold moved; a `NotMeasurable` metric simply stops
+/// feeding this gate.
 fn air_cut_offenders_for_toolpaths(
     toolpath_summaries: &[crate::simulation_cut::SimulationToolpathCutSummary],
     toolpath_configs: &[super::ToolpathConfig],
-) -> Vec<(String, f64)> {
-    let mut offenders = Vec::new();
+    measurability: &crate::sim_measurability::MeasurabilityReport,
+) -> AirCutScan {
+    use crate::sim_measurability::SimMetric;
+    use crate::simulation_cut::AirCutRatios;
+
+    let mut scan = AirCutScan::default();
     for tp_summary in toolpath_summaries {
         if tp_summary.total_runtime_s <= 0.0 {
             continue;
@@ -2493,15 +3942,46 @@ fn air_cut_offenders_for_toolpaths(
         else {
             continue;
         };
+        // Census D5: a disabled toolpath is not part of the job. Its summary
+        // can outlive the disable (traces are not cleared on toggle), so
+        // without this the operator gets a warning about an op that will not
+        // run, and no way to make it go away. The sibling
+        // `plunge_stress_offenders_for_session` has always checked this.
+        if !tc.enabled {
+            continue;
+        }
         let Some(threshold) = tc.operation.op_type().air_cut_high_threshold_pct() else {
             continue;
         };
-        let air_pct = tp_summary.air_cut_time_s / tp_summary.total_runtime_s * 100.0;
+        // Checkpoint D Q2: the metric this gate reads may not be a
+        // measurement at all. Abstain with the reason rather than compare a
+        // non-number against a threshold. Note the abstention is recorded,
+        // not swallowed — the caller publishes it.
+        let verdict = measurability.for_metric(tp_summary.toolpath_id, SimMetric::AirCut);
+        if verdict.abstains() {
+            if let Some(reason) = verdict.reason() {
+                scan.abstentions.push(AirCutAbstention {
+                    id: tc.id,
+                    name: tc.name.clone(),
+                    reason,
+                });
+            }
+            continue;
+        }
+        // LH-1: `air_cut_high_threshold_pct` is defined against TOTAL runtime
+        // (cutting + rapids). Named accessor, not a bare division, so the
+        // choice is visible here and cannot silently drift to the
+        // cutting-time reading the MCP narration prints.
+        let air_pct = tp_summary.air_cut_pct_of_total_runtime();
         if air_pct > threshold {
-            offenders.push((tc.name.clone(), air_pct));
+            scan.offenders.push(AirCutOffender {
+                id: tc.id,
+                name: tc.name.clone(),
+                air_cut_pct: air_pct,
+            });
         }
     }
-    offenders
+    scan
 }
 
 /// Identify toolpaths whose configured plunge rate exceeds the safe cap
@@ -2572,7 +4052,7 @@ fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
-    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
+    use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, ToolpathStats};
     use crate::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::debug_trace::ToolpathDebugOptions;
@@ -2606,6 +4086,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -3134,6 +4615,147 @@ mod tests {
         assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
     }
 
+    /// Rest machining FAILS HARD instead of silently clearing fresh stock.
+    /// A `FromRemainingStock` op with no simulated remaining-stock snapshot must
+    /// error at generate time — regression net for the fresh-fallback runaway
+    /// where a fine rest tool, seeded with fresh stock, cleared the whole part
+    /// (unbounded compute). The precondition is checked at `generate_toolpath`
+    /// entry, before any geometry work.
+    #[test]
+    fn generate_from_remaining_stock_without_sim_errors_hard() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, tc).unwrap();
+        let cancel = AtomicBool::new(false);
+        match s.generate_toolpath(0, &cancel) {
+            Err(SessionError::OperationFailed(msg)) => assert!(
+                msg.contains("remaining stock"),
+                "error should name the missing rest-stock snapshot: {msg}"
+            ),
+            Err(other) => panic!("expected OperationFailed, got: {other}"),
+            Ok(_) => panic!("rest op without a prior sim must error, not clear fresh stock"),
+        }
+    }
+
+    /// Fixture for the F.4 phantom-prior-stock tests below: one tool plus a
+    /// small square-polygon model at `model_id == 0` (matching `make_tc`'s
+    /// default), so a `Pocket` op generates a real, multi-move toolpath.
+    /// `run_simulation`'s request builder skips any toolpath with fewer
+    /// than 2 moves, so an empty/geometry-less fixture would never
+    /// populate `prior_stocks` at all.
+    fn make_session_with_pocket_model() -> ProjectSession {
+        let mut s = make_session();
+        let polygon = crate::polygon::Polygon2 {
+            exterior: vec![
+                crate::geo::P2::new(0.0, 0.0),
+                crate::geo::P2::new(30.0, 0.0),
+                crate::geo::P2::new(30.0, 30.0),
+                crate::geo::P2::new(0.0, 30.0),
+            ],
+            holes: vec![],
+            closed: true,
+        };
+        let model = crate::session::LoadedModel {
+            id: 0,
+            name: "phantom_prior_stock_fixture".to_owned(),
+            mesh: None,
+            polygons: Some(Arc::new(vec![polygon])),
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("synthetic://phantom_prior_stock_fixture.svg"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        };
+        s.add_model(model);
+        s
+    }
+
+    /// F.4 — the core half of the regression net for the
+    /// `FromRemainingStock` regeneration catch-22. TP1 is preceded by a
+    /// generated TP0 in the same setup: before any simulation, TP1 must
+    /// still fail hard (unchanged precondition); after `run_simulation`
+    /// populates the phantom `prior_stocks` snapshot for TP1 (the first
+    /// pending toolpath in its group), TP1 must regenerate successfully —
+    /// closing the catch-22 where an ungenerated toolpath, never present
+    /// in a `SimGroupEntry`, could never receive a snapshot at all.
+    #[test]
+    fn phantom_prior_stock_unlocks_regeneration_after_sim() {
+        let mut s = make_session_with_pocket_model();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        let mut rest_tc = make_tc(tool_id);
+        rest_tc.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        s.generate_toolpath(0, &cancel)
+            .expect("TP0 (Fresh) should generate against real polygon geometry");
+
+        // Before any simulation: TP1 still fails hard (unchanged
+        // precondition — generating never falls back to fresh stock).
+        match s.generate_toolpath(1, &cancel) {
+            Err(SessionError::OperationFailed(_)) => {}
+            Err(other) => panic!("expected OperationFailed before any sim, got error: {other:?}"),
+            Ok(_) => panic!("expected OperationFailed before any sim, got a generated toolpath"),
+        }
+
+        s.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("simulation over TP0 should succeed and populate prior_stocks");
+
+        // F.4: TP1 is the first (and only) pending toolpath in its group,
+        // so `run_simulation` recorded a phantom snapshot for it — it must
+        // now regenerate.
+        s.generate_toolpath(1, &cancel)
+            .expect("TP1 should regenerate once the phantom prior-stock snapshot exists");
+    }
+
+    /// F.4 ladder rule: with TWO consecutive pending `FromRemainingStock`
+    /// toolpaths after a generated TP0, one simulation run unlocks only
+    /// the FIRST pending toolpath (TP1). TP2 stays gated — its snapshot
+    /// would be missing TP1's cuts (TP1 hasn't itself been generated and
+    /// re-simulated yet), which for a rest-machining op means real
+    /// overcut risk, not just a stale preview.
+    #[test]
+    fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
+        let mut s = make_session_with_pocket_model();
+        let tool_id = s.tools()[0].id.0;
+        s.add_toolpath(0, make_tc(tool_id)).unwrap();
+        let mut rest_tc_1 = make_tc(tool_id);
+        rest_tc_1.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc_1).unwrap();
+        let mut rest_tc_2 = make_tc(tool_id);
+        rest_tc_2.stock_source = crate::session::StockSource::FromRemainingStock;
+        s.add_toolpath(0, rest_tc_2).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        s.generate_toolpath(0, &cancel)
+            .expect("TP0 (Fresh) should generate against real polygon geometry");
+
+        s.run_simulation(&SimulationOptions::default(), &cancel)
+            .expect("simulation over TP0 should succeed");
+
+        // TP1 is the first pending op in the group — unlocked.
+        s.generate_toolpath(1, &cancel)
+            .expect("TP1 should regenerate: first pending op in its group");
+
+        // TP2 is still pending behind TP1, which hasn't itself been
+        // generated + re-simulated — the ladder rule keeps it gated.
+        match s.generate_toolpath(2, &cancel) {
+            Err(SessionError::OperationFailed(_)) => {}
+            Err(other) => panic!(
+                "TP2 must stay gated until TP1 is regenerated and re-simulated, got error: \
+                 {other:?}"
+            ),
+            Ok(_) => panic!(
+                "TP2 must stay gated until TP1 is regenerated and re-simulated, but it generated"
+            ),
+        }
+    }
+
     // ── diagnostics ──────────────────────────────────────────────
 
     #[test]
@@ -3306,6 +4928,7 @@ mod tests {
             },
             total_moves: 5,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![SimBoundary {
                 id: pocket_tp_id,
                 name: "test".to_owned(),
@@ -3323,6 +4946,7 @@ mod tests {
             rapid_collision_move_indices: vec![2],
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
 
@@ -3374,6 +4998,7 @@ mod tests {
             },
             total_moves: 10,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![SimBoundary {
                 id: tp_id,
                 name: "test".to_owned(),
@@ -3399,6 +5024,7 @@ mod tests {
             rapid_collision_move_indices: vec![1, 7],
             cut_trace: None,
             resolution_clamped: false,
+            column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
         });
 
@@ -3468,6 +5094,7 @@ mod tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -3489,6 +5116,7 @@ mod tests {
             average_mrr_mm3_s: 0.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         }
     }
 
@@ -3501,7 +5129,7 @@ mod tests {
             OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         )];
         let sums = vec![summary(0, 92.1)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "ProjectCurve at baseline air-cut should not warn; got {offenders:?}"
@@ -3517,7 +5145,7 @@ mod tests {
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         )];
         let sums = vec![summary(0, 28.5)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "Adaptive3d below 40% threshold should be silent; got {offenders:?}"
@@ -3533,8 +5161,154 @@ mod tests {
             OperationConfig::DropCutter(DropCutterConfig::default()),
         )];
         let sums = vec![summary(0, 11.5)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(offenders.is_empty(), "DropCutter at 11.5% should be silent");
+    }
+
+    #[test]
+    fn air_cut_gate_ignores_disabled_toolpaths() {
+        // Census D5. A disabled toolpath is not part of the job, but its
+        // summary survives the toggle, so the verdict used to keep warning
+        // about an op that will never run — with no way to silence it. The
+        // sibling plunge-stress scan has always checked `enabled`.
+        let mut tps = vec![make_tp(
+            0,
+            "Switched Off",
+            OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+        )];
+        let sums = vec![summary(0, 60.0)];
+        assert_eq!(
+            air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default())
+                .offenders
+                .len(),
+            1,
+            "enabled toolpath over the band must warn"
+        );
+
+        tps[0].enabled = false;
+        assert!(
+            air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default())
+                .offenders
+                .is_empty(),
+            "a disabled toolpath must not raise a verdict"
+        );
+    }
+
+    #[test]
+    fn air_cut_offenders_carry_their_own_id_not_a_name_lookup() {
+        // Census D6 / R-7. Two toolpaths, same name, only the SECOND over
+        // the band. Resolving the offender by name found the first match and
+        // pointed the operator at the innocent toolpath.
+        let tps = vec![
+            make_tp(
+                0,
+                "Rough",
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+            make_tp(
+                1,
+                "Rough",
+                OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
+            ),
+        ];
+        let sums = vec![summary(0, 5.0), summary(1, 60.0)];
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default());
+        assert_eq!(scan.offenders.len(), 1);
+        assert_eq!(
+            scan.offenders[0].id,
+            ToolpathId(1),
+            "the offender must be the toolpath that actually breached, not the \
+             first one sharing its name"
+        );
+    }
+
+    #[test]
+    fn air_cut_gate_abstains_instead_of_warning_when_engagement_is_unmeasurable() {
+        // Checkpoint D Q2. The census's shallow arm: a pass under the 0.05 mm
+        // fresh-material floor reads ~96% air cut while removing material
+        // perfectly well. RED-FIRST: with an empty (all-measurable) report
+        // the gate fires, which is the shipped behaviour and the defect.
+        use crate::sim_measurability::{
+            Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
+        };
+
+        let tps = vec![make_tp(
+            0,
+            "Spring Pass",
+            OperationConfig::Pocket(PocketConfig::default()),
+        )];
+        let sums = vec![summary(0, 95.9)];
+
+        let fired = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default());
+        assert_eq!(
+            fired.offenders.len(),
+            1,
+            "without a measurability report the gate compares the unmeasurable \
+             number against the band and warns — this is the behaviour being fixed"
+        );
+        assert!(fired.abstentions.is_empty());
+
+        // GREEN: told the metric is not a measurement, the gate declines.
+        let reason = MeasurabilityReason::BelowFreshMaterialFloor {
+            peak_removed_mm: 0.02,
+            floor_mm: 0.05,
+            blind_fraction: 0.98,
+        };
+        let report = MeasurabilityReport {
+            entries: vec![MetricMeasurability {
+                toolpath_id: ToolpathId(0),
+                metric: SimMetric::AirCut,
+                measurability: Measurability::NotMeasurable(reason),
+            }],
+            cell_mm: Some(0.25),
+        };
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &report);
+        assert!(
+            scan.offenders.is_empty(),
+            "a NotMeasurable metric must stop feeding its gate; got {:?}",
+            scan.offenders
+        );
+        assert_eq!(
+            scan.abstentions.len(),
+            1,
+            "the abstention must be RECORDED, not swallowed — a silent decline \
+             is indistinguishable from a pass"
+        );
+        assert_eq!(scan.abstentions[0].name, "Spring Pass");
+    }
+
+    #[test]
+    fn air_cut_gate_still_warns_when_the_metric_is_only_degraded() {
+        // `Degraded` is not an abstention: the reading still describes the
+        // measurable majority of the pass, and declining there would hide
+        // more than it protects.
+        use crate::sim_measurability::{
+            Measurability, MeasurabilityReason, MeasurabilityReport, MetricMeasurability, SimMetric,
+        };
+
+        let tps = vec![make_tp(
+            0,
+            "Mostly Measured",
+            OperationConfig::Pocket(PocketConfig::default()),
+        )];
+        let sums = vec![summary(0, 95.9)];
+        let report = MeasurabilityReport {
+            entries: vec![MetricMeasurability {
+                toolpath_id: ToolpathId(0),
+                metric: SimMetric::AirCut,
+                measurability: Measurability::Degraded(
+                    MeasurabilityReason::BelowFreshMaterialFloor {
+                        peak_removed_mm: 0.02,
+                        floor_mm: 0.05,
+                        blind_fraction: 0.2,
+                    },
+                ),
+            }],
+            cell_mm: Some(0.25),
+        };
+        let scan = air_cut_offenders_for_toolpaths(&sums, &tps, &report);
+        assert_eq!(scan.offenders.len(), 1, "Degraded must NOT abstain");
+        assert!(scan.abstentions.is_empty());
     }
 
     #[test]
@@ -3546,10 +5320,10 @@ mod tests {
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         )];
         let sums = vec![summary(0, 60.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "Adaptive3d at 60% should warn");
-        assert_eq!(offenders[0].0, "Bad Rough");
-        assert!((offenders[0].1 - 60.0).abs() < 1e-6);
+        assert_eq!(offenders[0].name, "Bad Rough");
+        assert!((offenders[0].air_cut_pct - 60.0).abs() < 1e-6);
     }
 
     #[test]
@@ -3561,7 +5335,7 @@ mod tests {
             OperationConfig::DropCutter(DropCutterConfig::default()),
         )];
         let sums = vec![summary(0, 40.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "DropCutter at 40% should warn");
     }
 
@@ -3574,7 +5348,7 @@ mod tests {
             OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         )];
         let sums = vec![summary(0, 99.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1, "ProjectCurve at 99% should warn");
     }
 
@@ -3587,7 +5361,7 @@ mod tests {
             OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
         )];
         let sums = vec![summary(0, 100.0)]; // dexel reports 100% always
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
             "AlignmentPinDrill must never trigger air-cut warning (P4 suppression)"
@@ -3701,8 +5475,490 @@ mod tests {
             ),
         ];
         let sums = vec![summary(0, 92.0), summary(1, 60.0)];
-        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps);
+        let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1);
-        assert_eq!(offenders[0].0, "Bad Rough");
+        assert_eq!(offenders[0].name, "Bad Rough");
+    }
+
+    // ── strategy advisor: optimized-candidate modulation (step 5) ────
+
+    /// Load `ux_3d_terrain.toml` and add an AS013-shape adaptive3d op with the
+    /// given clearing strategy — mirrors the `strategy_advisor_smoke` fixture
+    /// so the advisor's per-candidate optimization can be exercised in-crate
+    /// (the private `optimized_candidate` is not reachable from the integration
+    /// test).
+    fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
+        use crate::compute::operation_configs::{
+            Adaptive3dConfig, Adaptive3dEntryStyle, RegionOrdering,
+        };
+        let toml_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test_data/ux_3d_terrain.toml");
+        let mut session = ProjectSession::load(&toml_path).expect("load ux_3d_terrain");
+        let tool_id = session
+            .tools()
+            .iter()
+            .find(|t| (t.diameter - 6.0).abs() < 1e-6)
+            .map(|t| t.id.0)
+            .expect("ux_3d_terrain.toml defines a 6 mm end mill");
+        let model_id = session
+            .models()
+            .iter()
+            .find(|m| m.mesh.is_some())
+            .map(|m| m.id)
+            .expect("ux_3d_terrain.toml loads terrain_small.stl");
+        let adaptive3d = Adaptive3dConfig {
+            trochoid_cap_mult: 1.6,
+            engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+            stepover: 1.2,
+            depth_per_pass: 3.0,
+            stock_to_leave_axial: 0.5,
+            stock_to_leave_radial: 0.5,
+            feed_rate: 2500.0,
+            plunge_rate: 500.0,
+            tolerance: 0.25,
+            min_cutting_radius: 0.0,
+            entry_style: Adaptive3dEntryStyle::Plunge,
+            ramp_angle_deg: 3.0,
+            helix_radius_factor: 0.4,
+            helix_pitch: 1.0,
+            fine_stepdown: 0.0,
+            detect_flat_areas: false,
+            region_ordering: RegionOrdering::Global,
+            clearing_strategy: strategy,
+            z_blend: false,
+            mill_shallow_areas: false,
+            shallow_angle_deg: None,
+            shallow_stepdown: None,
+            spindle_rpm: Some(18_000),
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        };
+        let tc = ToolpathConfig {
+            id: ToolpathId(0),
+            name: "AS013 adaptive3d".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Adaptive3d(adaptive3d),
+            dressups: DressupConfig::for_op(crate::compute::catalog::OperationType::Adaptive3d),
+            heights: HeightsConfig::default(),
+            tool_id,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            stock_source: crate::compute::config::StockSource::default(),
+            coolant: CoolantMode::Off,
+            face_selection: None,
+            debug_options: ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+        };
+        session
+            .add_toolpath(0, tc)
+            .expect("add adaptive3d toolpath");
+        session
+    }
+
+    fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
+        match m.move_type {
+            crate::toolpath::MoveType::Linear { feed_rate }
+            | crate::toolpath::MoveType::ArcCW { feed_rate, .. }
+            | crate::toolpath::MoveType::ArcCCW { feed_rate, .. } => Some(feed_rate),
+            crate::toolpath::MoveType::Rapid => None,
+        }
+    }
+
+    /// Step-5 sentry: the advisor times the *modulated* path, not the raw
+    /// Suggest-feed path. Proves `optimized_candidate` rewrites at least one
+    /// cut-move feed (so the wall-clock the advisor compares reflects F-039
+    /// optimization) and returns a modelled binding regime. If step 5 were
+    /// reverted to timing raw paths this test fails: feeds would be untouched.
+    #[test]
+    fn advisor_modulates_candidate_feeds_before_timing() {
+        let session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
+        let cancel = AtomicBool::new(false);
+        let resolved = session
+            .resolve_generation_inputs(0)
+            .expect("resolve generation inputs for the adaptive3d op");
+
+        // Build the raw candidate path exactly as `recommend_clearing_strategy`
+        // does (minus the Suggest load-limit — modulation rewrites whatever
+        // feeds the planned path carries, so the commanded 2500 mm/min is a
+        // fair starting point for the "did feeds change?" check).
+        let annotated = crate::compute::execute::execute_operation_annotated(
+            &resolved.operation,
+            resolved.mesh.as_deref(),
+            resolved.spatial_index.as_ref(),
+            resolved.polygons.as_deref().map(|v| v.as_slice()),
+            &resolved.tool_def,
+            &resolved.tool,
+            &resolved.heights,
+            &resolved.cutting_levels,
+            &resolved.emission_stock_bbox,
+            resolved.prev_tool_radius,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            resolved.pre_boundary.as_ref(),
+        )
+        .expect("plan the spiral candidate");
+        let annotated_arc = Arc::new(annotated);
+        let raw_feeds: Vec<Option<f64>> = annotated_arc
+            .toolpath
+            .moves
+            .iter()
+            .map(cut_move_feed)
+            .collect();
+
+        let (modulated, regime) = session
+            .optimized_candidate(
+                0,
+                &annotated_arc,
+                &resolved.tool,
+                &resolved.operation,
+                &cancel,
+            )
+            .expect("advisor optimizes the candidate (effective_kinematics is always Some)");
+
+        // Geometry is untouched; only feeds change.
+        assert_eq!(
+            modulated.moves.len(),
+            annotated_arc.toolpath.moves.len(),
+            "modulation rewrites feeds, not geometry"
+        );
+        let changed = modulated
+            .moves
+            .iter()
+            .zip(&raw_feeds)
+            .filter(|(m, raw)| match (cut_move_feed(m), raw) {
+                (Some(a), Some(b)) => (a - b).abs() > 0.5,
+                _ => false,
+            })
+            .count();
+        assert!(
+            changed > 0,
+            "ConstrainedMax modulation must rewrite at least one cut-move feed \
+             before the advisor times the path (else it's timing the raw path)"
+        );
+        assert!(
+            matches!(
+                regime,
+                crate::strategy_advisor::LoadRegime::ToolLimited
+                    | crate::strategy_advisor::LoadRegime::MachineLimited
+                    | crate::strategy_advisor::LoadRegime::Unconstrained
+            ),
+            "regime must be a modelled binding value derived from the optimized path"
+        );
+    }
+
+    // ── DerivedRestRegions boundary (P2.2) ───────────────────────
+
+    fn derived_boundary(source_id: usize) -> BoundaryConfig {
+        BoundaryConfig {
+            enabled: true,
+            source: crate::compute::config::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: ToolpathId(source_id),
+            },
+            ..BoundaryConfig::default()
+        }
+    }
+
+    /// A minimal cached generation result whose annotated toolpath carries
+    /// (or lacks) `rest_regions`, for staleness-precondition tests.
+    fn fake_result_with_regions(
+        regions: Option<Vec<crate::polygon::Polygon2>>,
+    ) -> ToolpathComputeResult {
+        let mut at =
+            crate::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
+        at.rest_regions = regions.map(Arc::new);
+        ToolpathComputeResult {
+            op_data: crate::drill_op::OpData::Toolpath(Arc::new(at)),
+            stats: ToolpathStats {
+                move_count: 0,
+                cutting_distance: 0.0,
+                rapid_distance: 0.0,
+                // Not measured: this fake never ran a cascade, planned no
+                // bands and emitted no centrelines.
+                truncated_core_mm2: None,
+                untouched_material_mm2: None,
+                reached_uncut_estimate_mm2: None,
+                dropped_band: None,
+                tip_float: None,
+                deprecated_dial: None,
+                derived_stepovers: Vec::new(),
+                clipped_band: None,
+                ramp_reach_clamp: None,
+                claims_reference: None,
+                zero_removal: None,
+                offset_library_failures: None,
+                boundary_clip_dropped: None,
+                retract_trips: None,
+            },
+            debug_trace: None,
+            semantic_trace: None,
+        }
+    }
+
+    fn expect_operation_failed(result: Result<&ToolpathComputeResult, SessionError>) -> String {
+        match result {
+            Err(SessionError::OperationFailed(msg)) => msg,
+            Err(other) => panic!("expected OperationFailed, got {other:?}"),
+            Ok(_) => panic!("expected OperationFailed, got Ok"),
+        }
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_missing_source_errors() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(999);
+        s.add_toolpath(0, tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(0, &cancel));
+        assert!(
+            msg.contains("999"),
+            "error should name the missing source id: {msg}"
+        );
+        assert!(
+            msg.contains("no longer") || msg.contains("no toolpath with that id"),
+            "error should say the referenced toolpath doesn't exist: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_self_reference_errors() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        // First add_toolpath assigns id 0, so referencing id 0 is a
+        // self-reference.
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(0, &cancel));
+        assert!(
+            msg.contains("itself") || msg.contains("own rest regions"),
+            "error should reject the self-reference: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_ungenerated_source_errors() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // gets id 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // gets id 1, index 1
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(
+            msg.contains("Pencil Rest"),
+            "error should name the source toolpath: {msg}"
+        );
+        assert!(
+            msg.contains("generate"),
+            "error should tell the user to generate the source first: {msg}"
+        );
+    }
+
+    #[test]
+    fn derived_rest_regions_boundary_source_without_regions_errors() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+
+        // Source has a cached result, but its rest_regions is None (e.g. a
+        // pencil op without the rest-depth detector, or any other op kind).
+        s.results.insert(0, fake_result_with_regions(None));
+
+        let cancel = AtomicBool::new(false);
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(
+            msg.contains("Pencil Rest"),
+            "error should name the source toolpath: {msg}"
+        );
+        assert!(
+            msg.contains("no rest regions"),
+            "error should explain the source produced no regions: {msg}"
+        );
+
+        // Empty (rather than absent) regions fail the same way.
+        s.results
+            .insert(0, fake_result_with_regions(Some(Vec::new())));
+        let msg = expect_operation_failed(s.generate_toolpath(1, &cancel));
+        assert!(msg.contains("no rest regions"), "empty regions: {msg}");
+    }
+
+    #[test]
+    fn derived_rest_regions_resolve_happy_path_returns_regions() {
+        let mut s = make_session();
+        let mut source_tc = make_tc(s.tools()[0].id.0);
+        source_tc.name = "Pencil Rest".to_owned();
+        s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.boundary = derived_boundary(0);
+        s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+
+        let regions = vec![
+            crate::polygon::Polygon2::rectangle(0.0, 0.0, 10.0, 10.0),
+            crate::polygon::Polygon2::rectangle(30.0, 30.0, 40.0, 40.0),
+        ];
+        s.results.insert(0, fake_result_with_regions(Some(regions)));
+
+        let resolved = s
+            .resolve_derived_rest_region_polys(1, ToolpathId(0))
+            .expect("regions present on the source result");
+        assert_eq!(resolved.len(), 2, "both disjoint regions come through");
+    }
+
+    #[test]
+    fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
+        use crate::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+
+        // Two disjoint regions; a 3-move path visiting region A, the gap,
+        // then region B. The gap move must become a rapid at safe_z, the two
+        // region moves must survive, and spans must stay valid.
+        let regions = vec![
+            crate::polygon::Polygon2::rectangle(0.0, 0.0, 10.0, 10.0),
+            crate::polygon::Polygon2::rectangle(30.0, 30.0, 40.0, 40.0),
+        ];
+
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.feed_to(P3::new(5.0, 5.0, -1.0), 1000.0); // region A
+        tp.feed_to(P3::new(20.0, 20.0, -1.0), 1000.0); // gap
+        tp.feed_to(P3::new(35.0, 35.0, -1.0), 1000.0); // region B
+        let n_moves = tp.moves.len();
+        let annotated =
+            AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n_moves, SpanKind::Operation)]);
+
+        let boundary = derived_boundary(0);
+        let safe_z = 20.0;
+        let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
+        let semantic_ctx = recorder.root_context();
+
+        let clipped = ProjectSession::apply_boundary_clip_multi(
+            annotated,
+            &boundary,
+            &regions,
+            &[],
+            2.0,
+            safe_z,
+            &semantic_ctx,
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+            &mut crate::compute::execute::GenerationFindings::default(),
+        )
+        .expect("a boundary that resolves cannot refuse");
+
+        assert!(clipped.spans_valid, "spans stay valid through the set clip");
+        assert_eq!(clipped.spans.len(), 1);
+        assert_eq!(
+            clipped.spans[0].end_move,
+            clipped.toolpath.moves.len(),
+            "operation span covers the whole clipped path"
+        );
+
+        // Gap move became a rapid at safe_z.
+        let gap = clipped
+            .toolpath
+            .moves
+            .iter()
+            .find(|m| (m.target.x - 20.0).abs() < 1e-10)
+            .expect("gap move present");
+        assert_eq!(gap.move_type, crate::toolpath::MoveType::Rapid);
+        assert!((gap.target.z - safe_z).abs() < 1e-10);
+
+        // Both region moves survive as cuts.
+        for (x, y) in [(5.0, 5.0), (35.0, 35.0)] {
+            assert!(
+                clipped.toolpath.moves.iter().any(|m| {
+                    m.move_type != crate::toolpath::MoveType::Rapid
+                        && (m.target.x - x).abs() < 1e-10
+                        && (m.target.y - y).abs() < 1e-10
+                }),
+                "cut at ({x}, {y}) should survive the set clip"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
+        use crate::toolpath_spans::AnnotatedToolpath;
+
+        // A tiny region with a large negative user offset collapses; with
+        // every region gone the toolpath must pass through unchanged (the
+        // single-polygon path's "boundary collapsed" semantics).
+        let regions = vec![crate::polygon::Polygon2::rectangle(0.0, 0.0, 2.0, 2.0)];
+
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.feed_to(P3::new(50.0, 50.0, -1.0), 1000.0);
+        tp.feed_to(P3::new(60.0, 50.0, -1.0), 1000.0);
+        let move_count = tp.moves.len();
+        let annotated = AnnotatedToolpath::new(tp);
+
+        let mut boundary = derived_boundary(0);
+        boundary.offset = -10.0; // shrink by 10mm — eats the 2mm square
+
+        let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
+        let semantic_ctx = recorder.root_context();
+        let mut findings = crate::compute::execute::GenerationFindings::default();
+
+        let clipped = ProjectSession::apply_boundary_clip_multi(
+            annotated,
+            &boundary,
+            &regions,
+            &[],
+            2.0,
+            20.0,
+            &semantic_ctx,
+            &mut crate::transform_provenance::ReconcileSet::new(Some(&recorder), None),
+            &mut findings,
+        )
+        .expect(
+            "a GENUINE collapse still passes through — Checkpoint C only \
+                 refuses when the offset FAILED",
+        );
+
+        assert_eq!(
+            clipped.toolpath.moves.len(),
+            move_count,
+            "collapsed boundary set must leave the toolpath unchanged"
+        );
+        assert!(
+            clipped
+                .toolpath
+                .moves
+                .iter()
+                .all(|m| m.move_type != crate::toolpath::MoveType::Rapid),
+            "no retracts inserted when the boundary collapses"
+        );
+        // Checkpoint C, Q2: the pass-through is kept, and it is no longer
+        // silent. Before this the operator got an unclipped path and a
+        // `tracing::warn!` in a process with no subscriber.
+        let dropped = findings
+            .boundary_clip_dropped
+            .expect("a dropped containment must be recorded as a finding");
+        assert_eq!(
+            dropped.containment,
+            crate::compute::config::BoundaryContainment::default(),
+            "the finding names the containment that was requested"
+        );
+        assert_eq!(
+            dropped.source_region_count, 1,
+            "the finding names how many source regions all collapsed"
+        );
     }
 }

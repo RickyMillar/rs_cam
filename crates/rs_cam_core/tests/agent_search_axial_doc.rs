@@ -86,6 +86,8 @@ fn agent_search_axial_doc_diag() {
     // Setup-local stock_top = effective_stock_bbox.max.z = stock_z = 25.
     let stock_top = stock_z;
     let params = Adaptive3dParams {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         tool_radius: 3.0,
         envelope_radius: 3.0,
         stepover: 0.84,

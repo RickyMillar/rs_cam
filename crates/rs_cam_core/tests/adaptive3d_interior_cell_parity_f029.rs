@@ -113,6 +113,8 @@ fn build_as013_terrain_session() -> ProjectSession {
         .expect("ux_3d_terrain.toml must load terrain_small.stl");
 
     let adaptive3d = Adaptive3dConfig {
+        trochoid_cap_mult: 1.6,
+        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         stepover: 1.2,
         depth_per_pass: 3.0,
         stock_to_leave_axial: 0.5,
@@ -157,6 +159,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session
         .add_toolpath(0, tc)
@@ -252,17 +255,29 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
     );
 }
 
-/// F-031 acceptance bar 2 — deflection.peak_mm < 0.2 on the AS013
-/// adaptive3d tool-load verdict.
+/// F-031 acceptance bar 2 — AS013 adaptive3d deflection reads its TRUE
+/// engagement-driven value, not the un-stamped-cell parity artifact.
 ///
-/// Pre-fix: 0.66 mm (Exceeds), driven by the planner-↔-dressup helix
-/// parity gap that left cells un-stamped between intermediate Z passes.
-/// Post-fix: < 0.15 mm (Within) — the dressup no longer rewrites
-/// planner-emitted plunges into helices, so the planner's
-/// `stamp_emitted_segment(Rapid)` vertical-cylinder pre-stamp matches
-/// the simulator's actual peck-plunge stamps.
+/// The F-031 parity fix closed a planner-↔-dressup helix gap that left
+/// cells un-stamped between intermediate Z passes and inflated deflection
+/// to a false ~0.66 mm. With the gap closed the reading reflects the real
+/// geometry — which is the calibration-independent invariant this test
+/// guards.
+///
+/// Under the feed-aware literature-absolute force model (`feeds::force`,
+/// 2026-06-18) the deflection is the physically-honest *instantaneous*
+/// bending force (chip area `ap·h`), so AS013's stubby ~6 mm tool reads
+/// ~0.0165 mm (16 µm) — comfortably `Within`. Deflection is NOT the
+/// binding constraint for this terrain rough; its limiter is chipload /
+/// power. (The old `Kc·ap·ae` aggregate over-stated the force ~9× and read
+/// ~0.32 mm `Exceeds` here — the deflection gate crying tool-limited on a
+/// cut that isn't. Same regime correction as the wanaka Back Rough.)
+///
+/// The test pins both invariants: the parity gap stays closed (the reading
+/// is the real ~0.0165 mm, NOT the inflated ~0.09 mm un-stamped artifact)
+/// AND the feed-aware physics (`Within` — deflection isn't the limiter).
 #[test]
-fn as013_terrain_deflection_within_safe_band_f031() {
+fn as013_terrain_deflection_within_parity_closed_f031() {
     let session = run_as013_simulation();
 
     let report = session.tool_load_report();
@@ -283,16 +298,22 @@ fn as013_terrain_deflection_within_safe_band_f031() {
         }
     };
 
+    // The reading is the real feed-aware value (~0.0165 mm): well below the
+    // inflated un-stamped-cell artifact (parity gap stays closed) and a
+    // genuine non-zero signal (the force model is applied).
     assert!(
-        peak_mm < 0.2,
-        "F-031: deflection.peak_mm = {peak_mm:.4} mm exceeds the 0.2 mm safety band on \
-         AS013 adaptive3d. Pre-fix sat at ~0.66 mm (Exceeds), driven by the
-         planner-↔-dressup helix entry-style mismatch documented in F-031."
+        (0.005..=0.05).contains(&peak_mm),
+        "F-031: AS013 deflection should read the real feed-aware value (~0.0165 mm); got \
+         peak_mm = {peak_mm:.4} mm. Above ~0.05 mm would signal the un-stamped-cell parity \
+         artifact has returned; below ~0.005 mm would signal the force model is not applied."
     );
 
+    // Under the feed-aware force model, AS013's stubby tool is NOT
+    // deflection-limited — the cut is chipload/power-bound.
     assert!(
         matches!(verdict.deflection, DeflectionVerdict::Within { .. }),
-        "F-031: AS013 deflection verdict must be Within (peak_mm < 0.2 mm), got {:?}",
+        "F-031: AS013 deflection is not the limiter under the feed-aware model (peak ~0.0165 mm \
+         < 200 µm bound); expected Within, got {:?}",
         verdict.deflection
     );
 }

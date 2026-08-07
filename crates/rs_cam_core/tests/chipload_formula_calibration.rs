@@ -20,10 +20,39 @@
 //! Fix direction (per planning/AGENTSEARCH_NEXT_SESSION.md, option A):
 //! switch the simulator to expose the AVERAGE chip thickness across
 //! the engagement arc (`geometry.mean_chip_thickness_mm`). The mean
-//! formula is the integral-average of `feed × sin(φ)` over the arc and
-//! is what vendor LUT chip-load bounds are calibrated against.
+//! formula is the integral-average of `feed × sin(φ)` over the arc.
+//!
+//! ## Re-pinned 2026-08-06 — O6's premise was wrong, and the gate no
+//! ## longer reads a chip thickness at all
+//!
+//! O6 assumed the vendor LUT chipload column was a chip thickness, and
+//! chose the arc-average as the convention that matched it.
+//! `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` retrieved
+//! the vendor documents and found the column is a linear **advance per
+//! tooth** — `feed ÷ (rpm × cutting edges)` — in every source family in
+//! the shipped LUT, printed as a defining identity by Onsrud, Freud,
+//! Amana and Garr and numerically self-verifying on the Amana charts.
+//! Neither convention O6 chose between was the right one.
+//!
+//! So the chipload gate stopped normalising and stopped reading
+//! `effective_chip_thickness_mm`; it observes
+//! `effective_feed / (rpm · flutes)` (`tool_load::chipload`'s header).
+//! Consequences for this file:
+//!
+//! - The formula check survives unchanged and is still worth having —
+//!   `effective_chip_thickness_mm` is still consumed by
+//!   `is_bipolar_engagement`, the MCP per-sample peak and the narration
+//!   histogram. Only its *rationale sentence* was wrong and is corrected.
+//! - **Both gate-verdict tests carried a fixture whose commanded feed
+//!   and declared chipload disagreed by 6.5×** (`feed_rate_mm_min: 1000`
+//!   at 18 000 rpm × 2 flutes is 0.0278 mm/tooth, not the 0.18 the
+//!   fixture declared). The old observation came from the chip model, so
+//!   the inconsistency was invisible. It is fixed here, and the
+//!   difference it makes is pinned as an exhibit rather than quietly
+//!   corrected — see
+//!   [`the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum`].
 
-#![allow(clippy::expect_used, clippy::panic)]
+#![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 use rs_cam_core::ids::ToolpathId;
 use std::f64::consts::FRAC_PI_2;
@@ -118,6 +147,7 @@ fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
             total_removed_volume_est_mm3: 1.0,
             average_mrr_mm3_s: 1.0,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         },
         samples,
         ..SimulationCutTrace::test_fixture()
@@ -154,8 +184,11 @@ fn exposed_chip_thickness_at_half_engagement_uses_arc_average_convention() {
         (exposed - expected_mean).abs() < 1e-6,
         "exposed chip thickness must equal arc-average mean ({expected_mean:.5}); \
          got {exposed:.5}. The peak-instantaneous convention \
-         (feed × sin(arc) = {peak:.5}) overstates the chipload by ~2.6× \
-         and is not what vendor LUT caps are calibrated against.",
+         (feed × sin(arc) = {peak:.5}) overstates the mean chip by ~2.6×. \
+         (Neither convention is what the vendor LUT column publishes — that \
+         is a linear advance per tooth; see this file's header. This check \
+         is about the simulator's own exposed quantity, which other \
+         consumers still read.)",
         peak = WANAKA_FEED_PER_TOOTH_MM,
     );
 
@@ -181,86 +214,32 @@ fn exposed_chip_thickness_at_half_engagement_uses_arc_average_convention() {
     );
 }
 
-/// Gate-verdict check: a sample whose feed-per-tooth lands in the
-/// LUT's published per-flute envelope should pass the chipload gate
-/// when sampled at the LUT row's nominal engagement.
+/// Gate-verdict check, on the axis the vendor actually publishes: a
+/// sample whose **advance per tooth** lands inside the LUT's published
+/// band must pass the chipload gate.
 ///
-/// History: pre-G17 this test exercised a wanaka-feed sample (0.0875
-/// mm/tooth) at half engagement — incidentally close enough to the
-/// LUT row's nominal arc that the arc-average mean (~0.0326) just
-/// cleared the LUT min (0.032), so the test passed without ever
-/// modeling the engagement explicitly. Post-D9 (engagement-aware LUT
-/// comparison), the half-engagement reading gets normalized to the
-/// LUT row's nominal engagement (`acos(1 − 2·1.6/6) ≈ 1.084 rad`,
-/// ~27 % radial), which surfaces a real semantic gap: at any
-/// engagement, wanaka's commanded 0.0875 mm/tooth is below the
-/// Amana-published per-flute minimum for HardMaple roughing
-/// (`min_mean / M(arc_lut) ≈ 0.032 / 0.233 ≈ 0.137 mm/tooth`). That
-/// is its own optimization conversation; the convention check below
-/// just verifies that with a feed inside the published envelope, the
-/// gate accepts.
+/// Re-pinned 2026-08-06. What changed, exactly:
+///
+/// | | before | after |
+/// |---|---|---|
+/// | fixture `feed_rate_mm_min` | 1000 (= 0.0278 mm/tooth) | 1620 (= 0.045 mm/tooth) |
+/// | fixture `chipload_mm_per_tooth` | 0.18 — **inconsistent with the feed** | 0.045 — consistent |
+/// | what the gate observed | arc-mean chip 0.0419 mm | advance 0.045 mm/tooth |
+/// | band (HardMaple / Pocket / Roughing / Ø6) | 0.032 – 0.055 | unchanged |
+/// | verdict | `Within(Validated)` | `Within(Validated)` |
+///
+/// The verdict does not move, and that is the point of keeping this
+/// test: it is the wave's `VendorLut`-source control. What moved is that
+/// the fixture now says one thing instead of two, and the number the
+/// gate quotes is the number an operator can dial.
+///
+/// The old docstring computed the "published envelope" in feed terms as
+/// `min_mean / M(arc_lut) ≈ 0.032 / 0.233 ≈ 0.137 mm/tooth`. That
+/// division is exactly the invalid conversion the literature verdict
+/// removed; the envelope in feed terms is simply 0.032 – 0.055.
 #[test]
 fn lut_nominal_engagement_sample_within_published_envelope_passes() {
-    let tool = wanaka_tool();
-    let cutter = FlatEndmill::new(6.0, 20.0);
-
-    // Feed per tooth chosen to land safely inside the LUT envelope
-    // (0.032..=0.055 mean / 0.233 factor → 0.137..=0.236 mm/tooth).
-    let feed_per_tooth = 0.18;
-    // Sample at the LUT row's nominal engagement so D9's per-sample
-    // normalization is a no-op.
-    let arc_lut_nominal = (1.0_f64 - 2.0 * 1.6 / 6.0).acos();
-    let exposed = effective_chip_thickness_mm(
-        &cutter,
-        WANAKA_AXIAL_DOC_MM,
-        Some(arc_lut_nominal),
-        feed_per_tooth,
-        2,
-    )
-    .expect("flat endmill chip geometry supported at LUT-nominal engagement");
-
-    let sample = SimulationCutSample {
-        segment_time_s: 0.1,
-        is_cutting: true,
-        cut_kinematics: CutKinematics::Linear,
-        feed_rate_mm_min: 1000.0,
-        spindle_rpm: 18000,
-        flute_count: 2,
-        axial_doc_mm: WANAKA_AXIAL_DOC_MM,
-        axial_engagement_mm: WANAKA_AXIAL_DOC_MM,
-        arc_engagement_radians: Some(arc_lut_nominal),
-        chipload_mm_per_tooth: feed_per_tooth,
-        effective_chip_thickness_mm: Some(exposed),
-        engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(0.27),
-        removed_volume_est_mm3: 0.1,
-        mrr_mm3_s: 1.0,
-        ..SimulationCutSample::test_fixture()
-    };
-    let trace = trace(vec![sample]);
-
-    let material = Material::SolidWood {
-        species: WoodSpecies::HardMaple,
-    };
-    let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
-    let verdict = chipload::evaluate(
-        &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1000.0,
-            operation_kind: OperationType::Pocket,
-            spans: None,
-            drill_op: None,
-        },
-        &rs_cam_core::tool_load::GateEnv {
-            sim_trace: Some(&trace),
-            machine: None,
-            tolerance: &tolerance,
-        },
-    );
-
+    let verdict = gate_verdict_at(0.045, (1.0_f64 - 2.0 * 1.6 / 6.0).acos(), 0.27);
     match verdict {
         rs_cam_core::tool_load::ChiploadVerdict::Within {
             confidence: Confidence::Validated,
@@ -270,71 +249,165 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     }
 }
 
-/// D9 — slot-engagement transient sample (the wanaka TP 1 surface
-/// pattern: terrain-following XY+Z move that briefly slot-engages on
-/// a vertical face) at a feed-per-tooth that's well inside the LUT
-/// envelope must NOT trip the gate post-D9. Pre-D9 this read as
-/// `mean ≈ 0.637 × feed_per_tooth` and got compared raw against the
-/// LUT cap calibrated at narrow engagement, over-penalizing slot
-/// transients on terrain.
+/// **The exhibit.** The pre-conversion fixture called 0.18 mm/tooth "a
+/// feed that lands safely inside the LUT envelope", having derived that
+/// claim by dividing the vendor band by an arc factor. Measured on the
+/// axis the vendor publishes, 0.18 mm/tooth is **3.3× the band
+/// maximum** — a hardwood pocket rough commanded at more than three
+/// times the published limit, which the pre-fix gate reported as
+/// `Within`.
+///
+/// This is the breakage-side twin of the B3 finding (which ran the other
+/// way: an operation at 99.9 % of its ceiling reported as 16 % of its
+/// floor). Both are the same defect; only the direction differs, and the
+/// direction depends on the row's `ae` window, which verdict §2.3 shows
+/// is repo-authored.
+///
+/// Kept permanently rather than deleted once green, per
+/// `boundary_clip_escape_f1`'s precedent: the claim a future reader will
+/// doubt is not "the fix works" but "the defect was real".
 #[test]
-fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
+fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
+    let verdict = gate_verdict_at(0.18, (1.0_f64 - 2.0 * 1.6 / 6.0).acos(), 0.27);
+    let rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
+        side: rs_cam_core::tool_load::verdict::ChipSide::High,
+        triggering,
+        ..
+    } = verdict
+    else {
+        panic!(
+            "0.18 mm/tooth of advance against a 0.032-0.055 band must now trip \
+             Exceeds(High); got {verdict:?}"
+        )
+    };
+    let max = triggering.bounds.max_mm_per_tooth;
+    let over = triggering.observed_mm_per_tooth / max;
+    eprintln!(
+        "  EXHIBIT: the pre-conversion 'safe' feed 0.18 mm/tooth is {over:.2}x the \
+         band maximum {max:.4} mm/tooth. The pre-fix gate reported Within."
+    );
+    assert!(
+        over > 3.0,
+        "the exhibit is only worth keeping if the overshoot is large; got {over:.2}x"
+    );
+}
+
+/// Restatement of `slot_engagement_sample_at_safe_feed_passes_after_d9_normalization`.
+///
+/// D9 existed so a slot-engagement transient on terrain would not be
+/// over-penalised: its raw arc-mean chip is `0.637 × feed`, far above a
+/// band the row published at ~27 % radial, so the comparison had to be
+/// renormalised. With the gate observing an advance per tooth the
+/// problem does not arise — the observation carries **no engagement term
+/// at all**, which the census proved algebraically (§4.3: the sample's
+/// own arc cancelled even before the deletion) and which this test now
+/// asserts directly.
+///
+/// Two samples at the same feed and wildly different arcs (slot π vs
+/// 27 % radial) must produce the *identical* verdict and the *identical*
+/// observed value. That is a stronger claim than the D9 test made, and
+/// it is the honest one: the gate is no longer engagement-aware, and a
+/// reader should be able to see that from a test rather than infer it.
+#[test]
+fn slot_engagement_no_longer_needs_normalisation_because_the_arc_is_gone() {
     use std::f64::consts::PI;
 
-    let tool = wanaka_tool();
-    let cutter = FlatEndmill::new(6.0, 20.0);
+    let slot = gate_verdict_at(0.045, PI, 1.0);
+    let narrow = gate_verdict_at(0.045, (1.0_f64 - 2.0 * 1.6 / 6.0).acos(), 0.27);
 
-    // Feed at the middle of the LUT envelope, expressed as feed/tooth.
-    // Mean chip at slot = 0.18 × 0.637 ≈ 0.115 mm — far above LUT max
-    // 0.055 mm if compared raw. Post-D9 normalization scales to the
-    // LUT-nominal arc (~1.084 rad, factor ≈ 0.233), giving
-    // `0.115 × 0.233 / 0.637 ≈ 0.042 mm` — within bounds.
-    let feed_per_tooth = 0.18;
-    let arc_slot = PI;
+    // Non-vacuity: the two arcs really do present different raw chips.
+    let cutter = FlatEndmill::new(6.0, 20.0);
+    let chip_slot = effective_chip_thickness_mm(&cutter, WANAKA_AXIAL_DOC_MM, Some(PI), 0.045, 2)
+        .expect("slot chip geometry supported");
+    let chip_narrow = effective_chip_thickness_mm(
+        &cutter,
+        WANAKA_AXIAL_DOC_MM,
+        Some((1.0_f64 - 2.0 * 1.6 / 6.0).acos()),
+        0.045,
+        2,
+    )
+    .expect("narrow chip geometry supported");
+    assert!(
+        chip_slot / chip_narrow > 2.0,
+        "the two arcs must produce materially different raw chips or this proves \
+         nothing (got {chip_slot:.5} vs {chip_narrow:.5})"
+    );
+
+    let observed = |v: &rs_cam_core::tool_load::ChiploadVerdict| match v {
+        rs_cam_core::tool_load::ChiploadVerdict::Within {
+            approach_to_max, ..
+        } => approach_to_max.observed_mm_per_tooth,
+        other => panic!("both arms must land Within; got {other:?}"),
+    };
+    let (o_slot, o_narrow) = (observed(&slot), observed(&narrow));
+    assert!(
+        (o_slot - o_narrow).abs() < 1e-12,
+        "the observation must not depend on engagement at all: slot {o_slot:.12} \
+         vs narrow {o_narrow:.12}, from raw chips differing by {:.2}x",
+        chip_slot / chip_narrow
+    );
+    eprintln!(
+        "  CONFIRMED: raw chip differs {:.2}x between slot and 27 % radial; the gate's \
+         observation is identical to 1e-12. The gate reports advance per tooth.",
+        chip_slot / chip_narrow
+    );
+}
+
+/// Run the shipped gate on a one-sample trace whose commanded feed,
+/// declared chipload and observed advance per tooth all agree.
+///
+/// The pre-conversion fixtures set `feed_rate_mm_min: 1000` beside
+/// `chipload_mm_per_tooth: 0.18` — two statements about the same
+/// operation that differ by 6.5×. This helper makes that impossible to
+/// write.
+fn gate_verdict_at(
+    feed_per_tooth: f64,
+    arc_rad: f64,
+    radial_woc: f64,
+) -> rs_cam_core::tool_load::ChiploadVerdict {
+    const RPM: u32 = 18_000;
+    const FLUTES: u32 = 2;
+    let feed_rate_mm_min = feed_per_tooth * f64::from(RPM) * f64::from(FLUTES);
+    let cutter = FlatEndmill::new(6.0, 20.0);
     let exposed = effective_chip_thickness_mm(
         &cutter,
         WANAKA_AXIAL_DOC_MM,
-        Some(arc_slot),
+        Some(arc_rad),
         feed_per_tooth,
-        2,
+        FLUTES,
     )
-    .expect("flat endmill chip geometry supported at slot");
-    assert!(
-        exposed > 0.10,
-        "raw mean at slot should be ≥ 0.10 mm to exercise normalization meaningfully (got {exposed:.4})"
-    );
+    .expect("flat endmill chip geometry supported at this arc");
 
     let sample = SimulationCutSample {
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
-        feed_rate_mm_min: 1000.0,
-        spindle_rpm: 18000,
-        flute_count: 2,
+        feed_rate_mm_min,
+        spindle_rpm: RPM,
+        flute_count: FLUTES,
         axial_doc_mm: WANAKA_AXIAL_DOC_MM,
         axial_engagement_mm: WANAKA_AXIAL_DOC_MM,
-        arc_engagement_radians: Some(arc_slot),
+        arc_engagement_radians: Some(arc_rad),
         chipload_mm_per_tooth: feed_per_tooth,
         effective_chip_thickness_mm: Some(exposed),
-        engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(1.0),
+        engagement: rs_cam_core::simulation_cut::Engagement::with_radial_woc(radial_woc),
         removed_volume_est_mm3: 0.1,
         mrr_mm3_s: 1.0,
         ..SimulationCutSample::test_fixture()
     };
     let trace = trace(vec![sample]);
-
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
     let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
-    let verdict = chipload::evaluate(
+    chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
             toolpath_id: ToolpathId(0),
-            tool: &tool,
+            tool: &wanaka_tool(),
             material: &material,
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1000.0,
+            operation_feed_rate_mm_min: feed_rate_mm_min,
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,
@@ -344,20 +417,5 @@ fn slot_engagement_sample_at_safe_feed_passes_after_d9_normalization() {
             machine: None,
             tolerance: &tolerance,
         },
-    );
-
-    match verdict {
-        rs_cam_core::tool_load::ChiploadVerdict::Within { .. } => {}
-        rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
-            side: rs_cam_core::tool_load::verdict::ChipSide::High,
-            triggering,
-            ..
-        } => panic!(
-            "slot-engagement sample at safe feed-per-tooth (= {feed_per_tooth} mm/tooth) trips the chipload gate (observed = {:.4}). \
-             D9 normalization should scale the slot-engagement raw mean back to LUT-nominal-engagement equivalent before comparing. \
-             See planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md D2.",
-            triggering.observed_mm_per_tooth
-        ),
-        other => panic!("unexpected verdict: {other:?}"),
-    }
+    )
 }

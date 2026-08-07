@@ -7,8 +7,8 @@ use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
     ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig, RestConfig,
-    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, VCarveConfig,
-    WaterlineConfig, ZigzagConfig,
+    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, UnifiedFinishConfig,
+    VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +72,32 @@ pub struct OperationTransformCapabilities {
     /// The operation encodes a continuous trace/finish path where reordering
     /// or stay-down linking can change the intended cut.
     pub continuous_path_required: bool,
+    /// Whether `apply_link_moves` may bridge two consecutive fragment
+    /// endpoints with a straight feed move.
+    ///
+    /// This is a GEOMETRIC question — is a straight feed between two
+    /// consecutive fragment endpoints clear of material? — not a structural
+    /// one, which is why it cannot be derived from `requires_depth_order` /
+    /// `continuous_path_required` the way the reorder predicates can. Those
+    /// two fields describe move-ORDER safety (can segments be visited in a
+    /// different sequence); this field describes move-PATH safety (can two
+    /// endpoints be bridged with a straight cutting move). The two can and
+    /// do diverge: discrete-ring Scallop (`ScallopConfig::continuous ==
+    /// false`) can be safely globally reordered — holding link_moves
+    /// constant and varying only `optimize_rapid_order`, measured cutting
+    /// distance was byte-identical (2437.8mm → 2437.8mm, only rapids
+    /// changed) while rapid travel dropped 27% — but it cannot safely take
+    /// link moves: `apply_link_moves` collapses a retract→rapid→plunge
+    /// triple into a straight feed bridge, which on a 3D surface plows
+    /// laterally through material — measured 9.7mm of over-cut. See
+    /// `crates/rs_cam_core/tests/capability_link_moves_safety.rs`.
+    ///
+    /// Forward pointer: the principled long-term fix is for
+    /// `apply_link_moves` to gouge-check candidate bridges the way
+    /// `surface_link::build_surface_link` already does for
+    /// pencil/unified_finish, rather than trusting a static per-op boolean.
+    /// This field is the interim guard, not the end state.
+    pub allows_link_moves: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -79,11 +105,13 @@ impl OperationTransformCapabilities {
         allows_global_rapid_reorder: bool,
         requires_depth_order: bool,
         continuous_path_required: bool,
+        allows_link_moves: bool,
     ) -> Self {
         Self {
             allows_global_rapid_reorder,
             requires_depth_order,
             continuous_path_required,
+            allows_link_moves,
         }
     }
 
@@ -98,7 +126,7 @@ impl OperationTransformCapabilities {
     }
 
     pub fn allows_link_moves(self) -> bool {
-        !self.requires_depth_order && !self.continuous_path_required
+        self.allows_link_moves
     }
 }
 
@@ -138,6 +166,7 @@ macro_rules! for_each_op {
             (Waterline,          WaterlineConfig,           Menu3d),
             (Pencil,             PencilConfig,              Menu3d),
             (Scallop,            ScallopConfig,             Menu3d),
+            (UnifiedFinish,      UnifiedFinishConfig,       Menu3d),
             (SteepShallow,       SteepShallowConfig,        Menu3d),
             (RampFinish,         RampFinishConfig,          Menu3d),
             (SpiralFinish,       SpiralFinishConfig,        Menu3d),
@@ -247,6 +276,7 @@ impl OperationType {
         OperationType::Waterline,
         OperationType::Pencil,
         OperationType::Scallop,
+        OperationType::UnifiedFinish,
         OperationType::SteepShallow,
         OperationType::RampFinish,
         OperationType::SpiralFinish,
@@ -284,6 +314,7 @@ impl OperationType {
             OperationType::Waterline => &REG_WATERLINE,
             OperationType::Pencil => &REG_PENCIL,
             OperationType::Scallop => &REG_SCALLOP,
+            OperationType::UnifiedFinish => &REG_UNIFIED_FINISH,
             OperationType::SteepShallow => &REG_STEEP_SHALLOW,
             OperationType::RampFinish => &REG_RAMP_FINISH,
             OperationType::SpiralFinish => &REG_SPIRAL_FINISH,
@@ -320,6 +351,7 @@ impl OperationType {
             Self::Waterline => "waterline",
             Self::Pencil => "pencil",
             Self::Scallop => "scallop",
+            Self::UnifiedFinish => "unified_finish",
             Self::SteepShallow => "steep_shallow",
             Self::RampFinish => "ramp_finish",
             Self::SpiralFinish => "spiral_finish",
@@ -347,32 +379,72 @@ impl OperationType {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
             HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
-            Zigzag,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
         };
 
         match self {
             // XY-independent ops: TSP can reorder by proximity safely.
             // Drill/AlignmentPinDrill: each hole is fully completed (peck cycle is intra-hole) before
             // moving to the next, so XY visit order has no material-state effect.
-            DropCutter | Drill | AlignmentPinDrill => {
-                OperationTransformCapabilities::new(true, false, false)
+            // ProjectCurve: the generator (project_curve.rs) emits each contiguous
+            // mesh-contact chain as its own independent rapid→plunge→cut→retract
+            // unit — a chain flushes on any gap over air or a mesh hole, with no
+            // depth-order or safety-order dependency between chains — so TSP can
+            // freely reorder them by proximity too (audited fix-family Phase 1).
+            DropCutter | Drill | AlignmentPinDrill | ProjectCurve => {
+                OperationTransformCapabilities::new(true, false, false, true)
             }
             // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
             // (horizontal_finish.rs:170 "machine top shelves first to avoid collisions"); TSP
             // would override that safety ordering.
             // Face/Chamfer/Inlay/VCarve/Pencil/RadialFinish: no cross-segment material dependency,
             // segments are retract-separated, so link moves and (eventually) barriered TSP are safe.
-            HorizontalFinish | Face | Chamfer | Inlay | VCarve | Pencil | RadialFinish => {
-                OperationTransformCapabilities::new(false, false, false)
+            // Measured gouging under link moves even WITH the swept-corridor
+            // check in `dressup::apply_link_moves` (2026-08-03): Face 9.21mm,
+            // Inlay 8.21mm, VCarve 5.78mm — all strictly DEEPER (25/110/103
+            // columns, zero columns left proud), pinned by the
+            // `*_link_moves_*` sentries. The corridor check is necessary but
+            // not sufficient here: VCarve and Inlay's female pass are V-bit
+            // paths whose cut WIDTH depends on depth, so "the tip passed
+            // within tool_radius at this Z" does not imply the corridor was
+            // cleared to the width the bridge needs. Until the check models
+            // depth-dependent width (or link decisions move into the
+            // generators, where geometry is in scope — the route pencil and
+            // unified_finish already took via surface_link::build_surface_link),
+            // these three forbid links. They keep every other transform.
+            Face | Inlay | VCarve => {
+                OperationTransformCapabilities::new(false, false, false, false)
+            }
+            HorizontalFinish | Chamfer | Pencil | RadialFinish => {
+                OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
             Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
-                OperationTransformCapabilities::new(false, true, false)
+                OperationTransformCapabilities::new(false, true, false, false)
             }
-            // Genuinely continuous traces: helical/spiral/projected paths.
-            Scallop | SteepShallow | RampFinish | SpiralFinish | ProjectCurve => {
-                OperationTransformCapabilities::new(false, false, true)
+            // UnifiedFinish is stitched from independently generated region
+            // nodes, not one continuous trace. `generate_unified_finish`
+            // emits a `RapidOrderBarrier` at every node start (plus per-Z
+            // barriers inside waterline nodes), so the barriered TSP can
+            // reorder runs WITHIN a node while the router's cross-node
+            // sequence — costed against the machine envelope, and carrying
+            // the surface links — stays exactly as routed. Links stay
+            // forbidden: `apply_link_moves` has no view of the 3D surface
+            // between two fragment endpoints, which is why the op builds its
+            // own via `surface_link::build_surface_link`.
+            // SteepShallow is the same shape one level simpler: a Z-laddered
+            // waterline pass over steep territory concatenated with a raster
+            // over shallow territory. `generate_steep_shallow` barriers the
+            // two halves and the steep half's Z levels, so the TSP reorders
+            // within a half and never across one.
+            UnifiedFinish | SteepShallow => {
+                OperationTransformCapabilities::new(false, false, false, false)
+            }
+            // Genuinely continuous traces: helical/spiral paths whose passes
+            // are not retract-separated, single-tool-down runs.
+            Scallop | RampFinish | SpiralFinish => {
+                OperationTransformCapabilities::new(false, false, true, false)
             }
         }
     }
@@ -382,14 +454,20 @@ impl OperationType {
     /// — dexel can't measure Z-only moves; see `planning/P1_AIR_CUT_THRESHOLDS_RCA.md`).
     ///
     /// Calibrated from `WANAKA_ASSESSMENT_2026-05-19.md` expectation bands.
-    /// Returning `Some(threshold)` means: a TP whose `air_cut_time_s /
-    /// total_runtime_s` exceeds `threshold/100` is a real signal.
+    /// Returning `Some(threshold)` means: a TP whose
+    /// [`crate::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
+    /// exceeds `threshold` is a real signal.
+    ///
+    /// **The denominator is TOTAL runtime (cutting + rapids)** — these bands
+    /// were tuned against that measure and must not be compared against
+    /// `air_cut_pct_of_cutting_time`, which is always larger and would fire
+    /// these thresholds spuriously (`MEASUREMENT_DOMAINS.md` LH-1).
     pub fn air_cut_high_threshold_pct(self) -> Option<f64> {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
             HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, VCarve, Waterline,
-            Zigzag,
+            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
+            Waterline, Zigzag,
         };
         match self {
             // Drill kinematics: dexel polygon-to-material init can't see Z-only
@@ -401,8 +479,8 @@ impl OperationType {
             ProjectCurve => Some(97.0),
             // 3D finish ops: close-contact passes expected; >30% indicates poor
             // boundary or excess retraction.
-            DropCutter | Scallop | Waterline | Pencil | HorizontalFinish | SteepShallow
-            | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
+            DropCutter | Scallop | UnifiedFinish | Waterline | Pencil | HorizontalFinish
+            | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
             // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
             // make 40% the high-water mark.
             Pocket | Face | Adaptive | Rest | Zigzag | Adaptive3d => Some(40.0),
@@ -474,6 +552,7 @@ pub enum OperationConfig {
     Waterline(WaterlineConfig),
     Pencil(PencilConfig),
     Scallop(ScallopConfig),
+    UnifiedFinish(UnifiedFinishConfig),
     SteepShallow(SteepShallowConfig),
     RampFinish(RampFinishConfig),
     SpiralFinish(SpiralFinishConfig),
@@ -557,6 +636,9 @@ impl OperationConfig {
             OperationConfig::Waterline(_) => optimizable!(FEED_RPM_DOC, OperationType::Waterline),
             OperationConfig::Pencil(_) => optimizable!(FEED_RPM_STEPOVER, OperationType::Pencil),
             OperationConfig::Scallop(_) => optimizable!(FEED_RPM_SCALLOP, OperationType::Scallop),
+            OperationConfig::UnifiedFinish(_) => {
+                optimizable!(FEED_RPM_SCALLOP, OperationType::UnifiedFinish)
+            }
             OperationConfig::SteepShallow(_) => {
                 optimizable!(FEED_RPM_STEPOVER, OperationType::SteepShallow)
             }
@@ -613,8 +695,88 @@ impl OperationConfig {
         (spec.feeds_family, spec.feeds_pass_role)
     }
 
+    /// CONFIG-aware transform capabilities — **the entry point production
+    /// code should call** (both current call sites already do:
+    /// `session/compute.rs`'s `tc.operation.transform_capabilities()` and
+    /// `rs_cam_viz`'s `worker/helpers.rs`'s `req.operation.transform_capabilities()`
+    /// go through this method, not [`OperationType::transform_capabilities`]).
+    ///
+    /// [`OperationType::transform_capabilities`] is a *static per-op-type*
+    /// table: it has no way to see per-instance config, so it must answer
+    /// for the worst case a given op type can produce. That conservatism is
+    /// correct as a fallback for callers with no `OperationConfig` in hand,
+    /// but it is provably too strict for ops whose safe-transform
+    /// classification depends on a config field.
+    ///
+    /// Scallop is the first such op (fix-family Phase 1b). Its op-type
+    /// table entry stays pinned at the conservative
+    /// `(false, false, true, false)` — continuous-path-required — because
+    /// `ScallopConfig::continuous` (`operation_configs.rs:820`, default
+    /// `false` at `operation_configs.rs:836`) controls which of two
+    /// structurally different emitters `scallop.rs` runs:
+    ///
+    /// - `continuous: false` (**the default**) takes the discrete-ring
+    ///   branch (`scallop.rs:913-975`): every ring is split into
+    ///   `keep_point`-contiguous runs and each run gets its own
+    ///   rapid→plunge→cut→retract (`scallop.rs:953-975`). Rings are radial
+    ///   offsets of ONE finishing pass down to the same final surface — no
+    ///   ring depends on another ring's material state, there is no depth
+    ///   order, and no generator-imposed safety order (contrast
+    ///   `HorizontalFinish`, which sorts high-to-low for collision
+    ///   avoidance). That is structurally identical to the "XY-independent,
+    ///   TSP can reorder by proximity safely" bucket `DropCutter` /
+    ///   `Drill` / `ProjectCurve` already sit in above.
+    ///
+    ///   **RE-ENABLED (fix-family Phase 1c).** The earlier revert reasoning
+    ///   was sound about ring INDEPENDENCE but attributed the measured
+    ///   GOUGE to the wrong knob. The sentry
+    ///   `scallop_discrete_capability_currently_blocked_reorder_gouges`
+    ///   measured a real over-cut when reorder was enabled: 146 dexel
+    ///   columns cut DEEPER vs 20 shallower, net −128.9 mm of extra
+    ///   material removed, worst column 9.33 mm over-cut — while rapid
+    ///   travel fell 33.5 % (3263 → 2169 mm). That gouge was produced by
+    ///   `apply_link_moves` bridging retract→rapid→plunge triples with a
+    ///   straight feed that plows laterally through material, NOT by the
+    ///   reorder itself: holding link moves off and varying only
+    ///   `optimize_rapid_order`, cutting distance is byte-identical
+    ///   (2437.8mm → 2437.8mm, only rapids change) while rapid travel still
+    ///   drops ~27%. `OperationTransformCapabilities` used to have no way
+    ///   to express "reorder yes, link moves no" — `allows_link_moves()`,
+    ///   `allows_barriered_rapid_reorder()`, and
+    ///   `allows_unbarriered_rapid_reorder()` all hung off the same two
+    ///   booleans. Now that `allows_link_moves` is its own field (fix-family
+    ///   Phase 1c), discrete Scallop can state the true, narrower
+    ///   capability below: global rapid reorder allowed, link moves
+    ///   forbidden. See
+    ///   `crates/rs_cam_core/tests/capability_link_moves_safety.rs` for the
+    ///   measurement backing both halves of that split.
+    /// - `continuous: true` takes the spiral branch (`scallop.rs:812-912`):
+    ///   rings are stitched into one helical stay-down path with
+    ///   ring-to-ring cutting-feed connectors (`scallop.rs:874-903`).
+    ///   Reordering or link-inserting into that sequence would corrupt the
+    ///   single continuous cut, so this falls through to the op-type
+    ///   default, which stays `(false, false, true, false)`.
+    ///
+    /// This method is the intended extension point for any future
+    /// config-dependent op: add a match arm here rather than trying to
+    /// force more nuance into the static [`OperationType`] table (which by
+    /// design only sees the op kind, not its parameters).
     pub fn transform_capabilities(&self) -> OperationTransformCapabilities {
-        self.op_type().transform_capabilities()
+        match self {
+            // Discrete-ring Scallop: rings are radial offsets of one
+            // finishing pass to the same final surface, independent of each
+            // other, so global reorder-by-proximity is safe (measured
+            // cutting-distance-preserving above). Link moves stay forbidden
+            // — `apply_link_moves` bridges with a straight feed that can
+            // plow through material on a 3D surface (measured 9.7mm
+            // over-cut); see the doc comment above.
+            OperationConfig::Scallop(cfg) if !cfg.continuous => {
+                OperationTransformCapabilities::new(true, false, false, false)
+            }
+            // Everything else (including continuous Scallop) falls through
+            // to the conservative op-type default.
+            _ => self.op_type().transform_capabilities(),
+        }
     }
 
     pub fn is_3d(&self) -> bool {
@@ -858,6 +1020,24 @@ impl ParamDef {
             description: Some(description),
         }
     }
+
+    /// A required parameter that carries an agent-facing description.
+    ///
+    /// The sibling of [`Self::optional_desc`] for the required case, added
+    /// so a dial whose SEMANTICS an agent cannot guess from its name can say
+    /// what it does. First used by F3 / D-16.2.
+    const fn required_desc(
+        name: &'static str,
+        type_name: &'static str,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: false,
+            description: Some(description),
+        }
+    }
 }
 
 // ── Phase 1 operation registry (architectural refactor 2026-06-06) ────
@@ -1047,6 +1227,11 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
         "cleanup_strategy",
         "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
     ),
+    // F1 (algorithm review 2026-06-12): which engagement quantity the
+    // direction search compares against the α/2π target.
+    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
+    // Stage 1: reactive agent vs constructive contour spiral.
+    ParamDef::required("path_strategy", "enum:Agent|ContourSpiral"),
 ];
 
 const VCARVE_PARAMS: &[ParamDef] = &[
@@ -1152,8 +1337,15 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("region_ordering", "enum:global|by_area"),
     ParamDef::required(
         "clearing_strategy",
-        "enum:contour_parallel|adaptive|agent_search",
+        "enum:contour_parallel|adaptive|agent_search|contour_spiral",
     ),
+    // "Nibble" dial — trochoid trigger cap for the ContourSpiral strategy
+    // (low = flat load/more travel, high = relaxed/less travel). Default
+    // 1.6. Ignored by the other strategies.
+    ParamDef::required("trochoid_cap_mult", "f64"),
+    // F1 (algorithm review 2026-06-12): engagement quantity for the
+    // AgentSearch 2D sub-pass.
+    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
     ParamDef::required("z_blend", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     ParamDef::required("mill_shallow_areas", "bool"),
@@ -1184,6 +1376,19 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::required("min_valley_depth", "f64"),
+    ParamDef::required("bisector_strength", "f64"),
+    ParamDef::required("reference_tool_diameter", "f64"),
+    ParamDef::required("detector", "string"),
+    ParamDef::required("valley_saliency", "f64"),
+    ParamDef::required("curvature_smoothing", "usize"),
+    ParamDef::required("rest_cell_mm", "f64"),
+    ParamDef::required("route_width_factor", "f64"),
+    ParamDef::optional_desc(
+        "reference_tool_id",
+        "option<usize>",
+        "Library tool id whose real geometry defines the pencil rest reference (else nominal diameter)",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -1197,6 +1402,55 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::required("stock_to_leave", "f64"),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+    // A/M7: the ring-to-ring stay-down relink cap. Ships ON at 3.0 mm since
+    // wave 12 — see `default_scallop_intra_pass_hookup_mm` for the A/B and
+    // for what wave 11's blocking gate was actually measuring.
+    ParamDef::required("intra_pass_hookup_mm", "f64"),
+];
+
+const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
+    ParamDef::required("steep_threshold_deg", "f64"),
+    ParamDef::required("waterline_threshold_deg", "f64"),
+    ParamDef::required("overlap_mm", "f64"),
+    ParamDef::required("scallop_height", "f64"),
+    ParamDef::required("tolerance", "f64"),
+    ParamDef::required("raster_stepover", "f64"),
+    ParamDef::required("z_step", "f64"),
+    ParamDef::required("sampling", "f64"),
+    ParamDef::required_desc(
+        "stock_to_leave",
+        "f64",
+        "Material left on the finished surface (mm), applied as a VERTICAL +Z offset on \
+         the cut. Honoured by all three bands (shallow raster, mid-steep scallop, \
+         very-steep waterline) since 2026-08-06 — before that only the scallop band \
+         applied it. Vertical, not surface-normal: on a wall at angle theta from \
+         horizontal what remains measured normal to the surface is stock_to_leave * \
+         cos(theta).",
+    ),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    // v3 S1/S2 claims pipeline: serde-defaulted for project-file back-compat
+    // (older files omit them), always serialized.
+    ParamDef::required("pencil_claims", "bool"),
+    ParamDef::required("min_rest_depth_mm", "f64"),
+    // Which reference the crease/rest detector runs against
+    // (`unified_finish::ClaimsReference` doc). A/M6 widened it to three
+    // values: `auto` DERIVES the answer from whether a machined prior stock
+    // is in scope; the other two pin it and keep their exact pre-A/M6
+    // meanings. What `auto` resolved to is not a param — read it from the
+    // toolpath's `runtime.claims_reference` in `get_toolpath_params`, or
+    // from the `config.claims_reference` diagnostic.
+    ParamDef::required("claims_reference", "enum:auto|self_probe|machined_stock"),
+    // S4 region-level territory clip (`unified_finish::ClaimsConfig::
+    // territory_clip` doc) — same serde-defaulted back-compat treatment.
+    ParamDef::required("territory_clip", "bool"),
+    // §9/§11 link caps, both serde-defaulted for back-compat:
+    // `intra_region_hookup_mm` is the per-region stay-down relink cap,
+    // `crease_hookup_mm` the crease node's (see `unified_finish::
+    // ClaimsConfig::crease_hookup_mm`).
+    ParamDef::required("intra_region_hookup_mm", "f64"),
+    ParamDef::required("crease_hookup_mm", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -1609,6 +1863,43 @@ static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     generate: Some(crate::compute::execute::generate_scallop),
 };
 
+/// P2.c orchestrator (`planning/unified_finish_planner_design.md`): bands
+/// the surface by true-surface slope and runs waterline/scallop/raster per
+/// band. No standard depth-stepping applies — `cutting_levels()`'s wildcard
+/// arm correctly falls through for this op (each band's Z range is derived
+/// internally per-band, not from a single top/bottom depth-per-pass ladder).
+static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::UnifiedFinish,
+    spec: OperationSpec {
+        label: "Unified Finish",
+        description: "Bands the surface by true-surface slope and runs waterline/scallop/raster per band",
+        family: OperationFamily::ThreeD,
+        geometry: GeometryRequirement::Mesh,
+        default_auto_regen: false,
+        ui_family: UiOperationFamily::Scallop,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Scallop,
+        feeds_pass_role: PassRole::Finish,
+    },
+    param_defs: UNIFIED_FINISH_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
+        supports_v_bit: false,
+    },
+    // P2.f Task 2 (2026-07-09): mirrors DropCutter — the op emits raster
+    // rows, scallop rings, and waterline contours directly on the mesh
+    // surface, plus its OWN router-costed links, so a role-default Ramp
+    // entry carves ~20 mm diagonal trenches across the terrain at every
+    // plunge (live wanaka: entry_s 6× the headless chain + rapid
+    // descents below terrain knobs from `emit_ramp`'s target-relative
+    // rapid floor). Lead-in/out and dressup-level link moves are wrong
+    // for the same reason.
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with Unified Finish: ramp/lead/link dressups would carve diagonal trenches across the mesh surface; the op emits its own surface-safe entries and links.",
+    ),
+    generate: Some(crate::compute::execute::generate_unified_finish),
+};
+
 static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::SteepShallow,
     spec: OperationSpec {
@@ -1791,6 +2082,10 @@ impl OperationConfig {
     pub fn feeds_hints(&self) -> FeedsHints {
         match self {
             OperationConfig::Scallop(cfg) => FeedsHints {
+                target_scallop_mm: Some(cfg.scallop_height),
+                ..FeedsHints::NONE
+            },
+            OperationConfig::UnifiedFinish(cfg) => FeedsHints {
                 target_scallop_mm: Some(cfg.scallop_height),
                 ..FeedsHints::NONE
             },
@@ -1992,7 +2287,7 @@ mod tests {
 
     #[test]
     fn operation_catalog_is_exhaustive_and_consistent() {
-        assert_eq!(OperationType::ALL.len(), 23);
+        assert_eq!(OperationType::ALL.len(), 24);
         for &op_type in OperationType::ALL {
             let config = OperationConfig::new_default(op_type);
             assert_eq!(config.op_type(), op_type);
@@ -2035,7 +2330,8 @@ mod tests {
     /// Phase 1 wildcard kill (architectural refactor T3, re-baselined
     /// typed in T7): tool constraints are an explicit per-entry
     /// registry field, now a `&[CutterKind]` list. This pins (a) the
-    /// four restricted ops exactly, (b) that the 19 previously-
+    /// five restricted ops exactly (VCarve/Inlay/Chamfer on V-bit;
+    /// Scallop/UnifiedFinish on ball-tip), (b) that the 19 previously-
     /// wildcard-defaulted ops still resolve to the named `ANY_TOOL`
     /// policy, and (c) that `to_schema()` materializes the EXACT
     /// pre-Phase-3 snake_case strings — proving the typed conversion
@@ -2054,7 +2350,7 @@ mod tests {
                     assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                     assert!(tc.supports_v_bit, "{op_type:?}");
                 }
-                OperationType::Scallop => {
+                OperationType::Scallop | OperationType::UnifiedFinish => {
                     assert_eq!(
                         tc.required_kinds,
                         [CutterKind::Ball, CutterKind::TaperedBall]
@@ -2103,6 +2399,17 @@ mod tests {
                     .allows(kind),
                 tool_type.has_ball_tip(),
                 "{tool_type:?} vs Scallop"
+            );
+            // UnifiedFinish: same ball-tip refusal as Scallop (registration
+            // checklist decision — mirrors Scallop's runtime refusal in
+            // `generate_unified_finish`).
+            assert_eq!(
+                OperationType::UnifiedFinish
+                    .registry_entry()
+                    .tool_constraints
+                    .allows(kind),
+                tool_type.has_ball_tip(),
+                "{tool_type:?} vs UnifiedFinish"
             );
             // V-bit-required ops accept exactly the V-bit.
             for op in [
@@ -2279,6 +2586,7 @@ mod tests {
             ("waterline", OperationType::Waterline),
             ("pencil", OperationType::Pencil),
             ("scallop", OperationType::Scallop),
+            ("unified_finish", OperationType::UnifiedFinish),
             ("steep_shallow", OperationType::SteepShallow),
             ("ramp_finish", OperationType::RampFinish),
             ("spiral_finish", OperationType::SpiralFinish),
@@ -2333,8 +2641,58 @@ mod tests {
         assert!(
             OperationType::ProjectCurve
                 .transform_capabilities()
-                .continuous_path_required
+                .allows_global_rapid_reorder
         );
+    }
+
+    #[test]
+    fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
+        // The config-aware dispatch EXISTS and is the extension point for
+        // per-config classification. Fix-family Phase 1b reclassified
+        // discrete-ring Scallop as reorderable, then the sentry
+        // `scallop_discrete_capability_currently_blocked_reorder_gouges`
+        // measured a gouge (146 columns deeper, worst 9.33mm) — but the
+        // gouge came from `apply_link_moves` bridging segments with a
+        // straight feed, not from the reorder itself (holding link moves
+        // off, cutting distance is byte-identical under reorder). Phase 1c
+        // decoupled `allows_link_moves` from the reorder predicates, so
+        // discrete Scallop can now state the true, narrower capability:
+        // reorder allowed, link moves forbidden. Continuous Scallop (one
+        // stitched stay-down helix) still forbids both.
+        let discrete = OperationConfig::Scallop(ScallopConfig {
+            continuous: false,
+            ..ScallopConfig::default()
+        });
+        let discrete_caps = discrete.transform_capabilities();
+        assert!(
+            discrete_caps.allows_global_rapid_reorder,
+            "discrete-ring Scallop should allow global rapid reorder \
+             (ring order has no material-state dependency)"
+        );
+        assert!(
+            !discrete_caps.allows_link_moves,
+            "discrete-ring Scallop must still forbid link moves \
+             (apply_link_moves bridges with a straight feed that can gouge)"
+        );
+
+        let continuous = OperationConfig::Scallop(ScallopConfig {
+            continuous: true,
+            ..ScallopConfig::default()
+        });
+        let continuous_caps = continuous.transform_capabilities();
+        assert!(
+            !continuous_caps.allows_global_rapid_reorder,
+            "continuous (spiral) Scallop must stay reorder-blocked — it's \
+             one stitched stay-down path"
+        );
+        assert!(!continuous_caps.allows_link_moves);
+
+        // The op-type-only fallback (no config in hand) must stay the
+        // conservative answer — it is what continuous Scallop falls
+        // through to, and the worst case for callers with no config.
+        let fallback = OperationType::Scallop.transform_capabilities();
+        assert!(!fallback.allows_global_rapid_reorder);
+        assert!(!fallback.allows_link_moves);
     }
 
     #[test]
@@ -2367,6 +2725,7 @@ mod tests {
         for op in [
             OperationType::DropCutter,
             OperationType::Scallop,
+            OperationType::UnifiedFinish,
             OperationType::Waterline,
             OperationType::Pencil,
             OperationType::HorizontalFinish,

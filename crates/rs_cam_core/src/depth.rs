@@ -8,6 +8,7 @@
 //! constant stepping (max step + shallower final pass). Optional finish
 //! allowance leaves material for a separate finish pass at exact depth.
 
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::toolpath::Toolpath;
 
 /// How to distribute depth across passes.
@@ -177,8 +178,30 @@ pub fn depth_stepped_toolpath<F>(depth: &DepthStepping, safe_z: f64, operation: 
 where
     F: Fn(f64) -> Toolpath,
 {
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    depth_stepped_toolpath_with_cancel(depth, safe_z, |z| Ok(operation(z)), &never_cancel)
+        .expect("non-cancellable depth-stepped toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`depth_stepped_toolpath`]. Polls `cancel` once per
+/// Z level via the shared [`toolpath_at_levels_with_cancel`] choke point
+/// (planning/finishing_stack_review_2026-07.md S.5) — this is the same
+/// primitive `toolpath_at_levels_with_cancel` uses, so every depth-stepped
+/// 2D operation (face, trace, pocket, profile, zigzag) shares one
+/// cancellation cadence.
+pub fn depth_stepped_toolpath_with_cancel<F>(
+    depth: &DepthStepping,
+    safe_z: f64,
+    operation: F,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled>
+where
+    F: Fn(f64) -> Result<Toolpath, Cancelled>,
+{
     let levels = depth.all_levels();
-    combine_level_toolpaths(&levels, safe_z, &operation)
+    toolpath_at_levels_with_cancel(&levels, safe_z, operation, cancel)
 }
 
 /// Like `depth_stepped_toolpath` but uses a different operation for the
@@ -200,7 +223,7 @@ where
 
     // Roughing passes
     let roughing = depth.roughing_levels();
-    let rough_tp = combine_level_toolpaths(&roughing, safe_z, &rough_op);
+    let rough_tp = toolpath_at_levels(&roughing, safe_z, &rough_op);
     tp.moves.extend(rough_tp.moves);
 
     // Finish pass
@@ -224,17 +247,41 @@ pub fn toolpath_at_levels<F>(levels: &[f64], safe_z: f64, operation: F) -> Toolp
 where
     F: Fn(f64) -> Toolpath,
 {
-    combine_level_toolpaths(levels, safe_z, &operation)
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    toolpath_at_levels_with_cancel(levels, safe_z, |z| Ok(operation(z)), &never_cancel)
+        .expect("non-cancellable depth-stepped toolpath should never be cancelled")
 }
 
-fn combine_level_toolpaths<F>(levels: &[f64], safe_z: f64, operation: &F) -> Toolpath
+/// Cancellable variant of [`toolpath_at_levels`] — the single choke point for
+/// flat-2D depth-stepping cancellation (planning/finishing_stack_review_2026-07.md
+/// S.5: "Zero of 10 flat 2D ops can be cancelled"). Checks `cancel` as its
+/// very first statement — matching the mesh-finish `*_with_cancel`
+/// convention (`slope.rs::from_mesh_with_cancel`, `scallop.rs`) — and again
+/// before each subsequent Z level, so a pre-set flag short-circuits
+/// regardless of whether `levels` is empty (e.g. a zero-depth pass).
+///
+/// `operation` itself may fail with [`Cancelled`] (e.g. pocket's own
+/// per-offset-ring poll deep inside `pocket_toolpath_with_cancel`) — that
+/// error propagates through this loop exactly like the level-boundary
+/// check does, so callers get ONE failure mode regardless of which
+/// granularity detected the cancellation.
+pub fn toolpath_at_levels_with_cancel<F>(
+    levels: &[f64],
+    safe_z: f64,
+    operation: F,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled>
 where
-    F: Fn(f64) -> Toolpath,
+    F: Fn(f64) -> Result<Toolpath, Cancelled>,
 {
+    check_cancel(cancel)?;
     let mut tp = Toolpath::new();
 
     for (i, &z) in levels.iter().enumerate() {
-        let level_tp = operation(z);
+        check_cancel(cancel)?;
+        let level_tp = operation(z)?;
         if level_tp.moves.is_empty() {
             continue;
         }
@@ -247,7 +294,7 @@ where
         tp.moves.extend(level_tp.moves);
     }
 
-    tp
+    Ok(tp)
 }
 
 #[cfg(test)]

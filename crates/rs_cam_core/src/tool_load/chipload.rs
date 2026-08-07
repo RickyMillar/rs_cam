@@ -1,20 +1,64 @@
-//! Chipload guardrail — per-sample mm-per-tooth vs vendor-LUT bounds.
+//! Chipload guardrail — per-sample advance-per-tooth vs vendor-LUT bounds.
 //!
-//! Vendor LUT entries (Amana data, currently) report a chipload range
+//! Vendor LUT entries report a chipload range
 //! [`chipload_min_mm_tooth`, `chipload_max_mm_tooth`] for a given
 //! (tool family, material family, operation, pass role) tuple. Below the
 //! min, the cutter is rubbing the wood instead of slicing — burns the
 //! cutting edge and the workpiece. Above the max, the chip is too thick
 //! for the flute geometry to clear and the tooth breaks.
 //!
-//! This criterion samples the live simulation: each sample's
-//! `effective_chip_thickness_mm` (the per-sample chip thickness exposed
-//! by `dexel_stock::effective_chip_thickness_mm`, calibrated as the
-//! arc-AVERAGE chip thickness across the engagement arc) is checked
-//! against the LUT bounds. The peak deviation drives the verdict.
-//! Both sides of the comparison must use the arc-average convention;
-//! exposing peak instantaneous chip thickness overstates by ~2.6× at
-//! half immersion and trips the breakage-risk gate on healthy cuts.
+//! ## The unit — settled 2026-08-06, and what it deleted
+//!
+//! `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` answered
+//! Checkpoint B item T4.1 from primary sources: **every source family in
+//! the shipped LUT publishes its chipload column as a linear ADVANCE PER
+//! TOOTH** — `feed_rate ÷ (rpm × cutting edges)`. Onsrud, Freud, Amana
+//! and Garr print that identity on the same page as the column, and the
+//! Amana chart behind the live B3 row publishes IPM and chip load side
+//! by side at a fixed 18,000 RPM, so the identity is self-verifying to
+//! the chart's own printed precision (verdict §2.2).
+//!
+//! Until that date this gate observed something else: each sample's
+//! `effective_chip_thickness_mm` — an arc-AVERAGE chip thickness —
+//! renormalised (D9) to an engagement arc derived from the matched row's
+//! `ae_min_mm`/`ae_max_mm` window. Two things were wrong with it, and
+//! only the second is obvious:
+//!
+//! 1. It compared a chip thickness against a band of advance. That is
+//!    census F-1, and on the live B3 op it read the operation as sitting
+//!    at **16 % of the band minimum** when it was in fact at **99.9 % of
+//!    the band maximum**.
+//! 2. The `ae` window it renormalised *to* is not a vendor measurement
+//!    condition. Verdict §2.3: no wood chart in the LUT publishes a
+//!    radial-engagement condition for its chipload column at all — all
+//!    three that state a condition state an axial one — and every
+//!    `ae`-bearing wood row's `ae_rule` is a repo-authored application
+//!    window (`"scallop driven"`, `"10% to 30%D"`, `"width-at-depth"`).
+//!    On the B3 row the midpoint was 8.3 % of the tool because the rule
+//!    is a *finish-pass stepover*.
+//!
+//! The census had already proved (§4.3, pinned by
+//! `tests/feed_explanation_snapshot_b3.rs`) that the sample's own arc
+//! cancels out of the normalisation — `cl_norm = fz · f(arc_sample) ·
+//! f_lut / f(arc_sample) = fz · f_lut` — so the whole chip-geometry
+//! chain was a constant factor on the commanded advance. The correction
+//! is therefore a **deletion, not an inversion**, and this gate now
+//! observes exactly what the band publishes:
+//!
+//! ```text
+//! observed = effective_feed_for_sample(s) / (rpm · flutes)
+//! ```
+//!
+//! `effective_feed_for_sample` is the F-035 kinematics substitution, so
+//! the number is what the machine will *achieve*, not what the operator
+//! typed. The commanded value is the same expression at commanded feed
+//! and is reported beside it on `feeds::FeedExplanation`; their ratio is
+//! the kinematic throttle, which the verdict document names as the
+//! operator-actionable fact.
+//!
+//! **The sim remains the operational arbiter.** This change makes
+//! Suggest, the narration and this gate speak one unit; it does not
+//! promote a static band over a measured cut.
 //!
 //! **Steady-state filter (Item C).** Vendor LUT bounds are calibrated
 //! against steady-state cutting at the operation's commanded feed.
@@ -97,42 +141,27 @@ pub(crate) fn matched_chip_envelope(
     find_best_chip_envelope_row(embedded_lut(), &query, &geometry_hint)
 }
 
-/// D9 — `mean_chip / feed_per_tooth` for a flat endmill at the given
-/// engagement arc. Mirrors `flat_chip_geometry_for_radius`'s mean-chip
-/// formula in `crate::tool::flat_chip_geometry_for_radius`. Used to
-/// renormalize the per-sample chip-thickness reading to the LUT row's
-/// calibrated engagement before comparison.
+/// The gate's observed quantity: the **advance per tooth this sample
+/// actually achieves**, `effective_feed / (rpm · flutes)`.
 ///
-/// At slot (`arc = π`): factor ≈ 0.637.
-/// At half engagement (`arc = π/2`): factor ≈ 0.373.
-/// At ~27 % radial (`arc ≈ 1.085`, the wanaka LUT row's nominal): ≈ 0.233.
-fn mean_chip_factor(arc_rad: f64) -> f64 {
-    let arc = arc_rad.clamp(1e-9, std::f64::consts::PI);
-    let h_max = if arc >= std::f64::consts::PI {
-        1.0
-    } else {
-        arc.sin().abs()
-    };
-    (2.0 * h_max / arc) * (1.0 - (arc * 0.5).cos())
-}
-
-/// D9 — derive the engagement arc (radians) the LUT row was authored
-/// against, from its calibrated radial-engagement window
-/// (`ae_min_mm`/`ae_max_mm`) and calibrated diameter. Returns `None`
-/// when either field is missing — caller falls back to direct
-/// (un-normalized) comparison.
+/// This is the whole of the conversion the B-lit verdict authorises.
+/// What it replaced — `mean_chip_factor(arc)` and `lut_nominal_arc_rad`,
+/// the D9 chip-geometry pair — is deleted rather than inverted, for the
+/// reasons in this module's header. `git show` at the parent of this
+/// commit is the record of what they were; nothing in the crate needs
+/// them any more.
 ///
-/// For a flat endmill of diameter `D` with radial engagement `ae`,
-/// `engagement_arc = acos(1 − 2·ae/D)`, bounded by `[0, π]`.
-fn lut_nominal_arc_rad(row: &LookupResult) -> Option<f64> {
-    let ae_min = row.ae_min_mm?;
-    let ae_max = row.ae_max_mm?;
-    if row.row_diameter_mm <= 0.0 {
+/// Returns `None` when the sample carries no usable `rpm × flutes`
+/// divisor, which is a broken sample rather than a modelling limit.
+fn achieved_feed_per_tooth_mm(
+    sample: &crate::simulation_cut::SimulationCutSample,
+    predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
+) -> Option<f64> {
+    let divisor = f64::from(sample.spindle_rpm) * f64::from(sample.flute_count);
+    if divisor <= 0.0 {
         return None;
     }
-    let ae_mid = (ae_min + ae_max) * 0.5;
-    let ratio = (1.0 - 2.0 * ae_mid / row.row_diameter_mm).clamp(-1.0, 1.0);
-    Some(ratio.acos())
+    Some(super::effective_feed_for_sample(sample, predicted_feeds) / divisor)
 }
 
 pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
@@ -143,6 +172,11 @@ pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
 // feeds calculator can apply it to the LUT chipload bounds at the same
 // scale this gate uses. The single canonical home prevents the two
 // paths from drifting (see `feeds::geometry::doc_derating_scale`).
+// Only exercised directly by this module's own tests today (production
+// callers reach it via `feeds::geometry::doc_derating_scale` directly),
+// so the re-export is `#[cfg(test)]`-gated to avoid an unused-import
+// warning in the non-test build.
+#[cfg(test)]
 pub(super) use crate::feeds::geometry::doc_derating_scale;
 
 use super::verdict::{
@@ -183,6 +217,29 @@ pub(crate) const BIPOLAR_SIDE_FRACTION: f64 = 0.05;
 
 /// Detect bipolar engagement: steady-state samples for one toolpath
 /// straddle both the LUT row's chipload-min and chipload-max bounds.
+///
+/// **Unit caveat, recorded 2026-08-06 and deliberately NOT fixed here.**
+/// This predicate compares each sample's raw `effective_chip_thickness_mm`
+/// — an arc-mean chip, uncorrected for achieved feed — against a band the
+/// B-lit verdict established is a linear **advance** per tooth. That is
+/// the same mismatch the gate above just deleted, in a sibling consumer.
+///
+/// It is left standing on purpose, because the deletion does not
+/// transfer. The gate's observation could become an advance per tooth
+/// because the census proved the sample's own arc cancels out of it. This
+/// predicate is *about* that arc: it asks whether engagement varies enough
+/// across one toolpath that no single feed/RPM scaling fixes both ends.
+/// Re-expressing it in advance per tooth would make it read only the
+/// kinematic feed map and go near-vacuous — a worse answer, not a
+/// better-unit one.
+///
+/// So the honest position is: the samples are the right quantity and the
+/// **bounds** are the wrong yardstick for them. Fixing it needs a
+/// chip-thickness envelope, which no vendor in the shipped LUT publishes
+/// (verdict §2.3), or a different predicate. Owner: the optimizer
+/// pre-flight lane. Re-open condition: a source for a chip-thickness
+/// band, or a ruling that an engagement-variance refusal may be scaled
+/// from an advance band by an explicit, disclosed factor.
 /// When true, no single feed/RPM scaling fixes both extremes —
 /// raising feed clears burn but pushes more samples above breakage;
 /// lowering feed clears breakage but pushes more samples below burn.
@@ -288,8 +345,88 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// — Item D of the tool-load fidelity plan) and `Adaptive3d`
 /// (Adaptive → Pocket so the LUT envelope reflects pocket-style
 /// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
+/// Every stage of [`crate::feeds::FeedExplanation`] except the gate
+/// observation, which cannot be filled until the verdict has chosen
+/// between its median and peak statistics.
+struct PartialFeedStages {
+    commanded: crate::feeds::CommandedStage,
+    band: crate::feeds::LutBandStage,
+    achieved_feed: crate::feeds::AchievedFeedStage,
+    sample_count: usize,
+}
+
+/// The chipload verdict, plus the stage-labelled record explaining how
+/// its number relates to the commanded one (census T1.1).
+///
+/// `None` for the explanation whenever the gate refused before matching
+/// a row — an `Unmodeled` verdict has no stages to label.
+pub(crate) fn evaluate_with_explanation(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+) -> (ChiploadVerdict, Option<Box<crate::feeds::FeedExplanation>>) {
+    let mut partial = None;
+    let verdict = evaluate_inner(ctx, env, &mut partial);
+    let explanation = partial.map(|p| {
+        // Stage 5 must name the statistic the VERDICT quotes, not a
+        // statistic of this function's choosing — the two arms report
+        // different ones and conflating them is the labelling defect
+        // this record exists to end.
+        let (statistic, value_mm) = match &verdict {
+            ChiploadVerdict::Within {
+                approach_to_min,
+                approach_to_max,
+                burn_advisory,
+                ..
+            } => burn_advisory
+                .as_deref()
+                .or(approach_to_min.as_ref())
+                .map(|m| {
+                    (
+                        crate::feeds::ObservedStatistic::Median,
+                        m.observed_mm_per_tooth,
+                    )
+                })
+                .unwrap_or((
+                    crate::feeds::ObservedStatistic::Peak,
+                    approach_to_max.observed_mm_per_tooth,
+                )),
+            ChiploadVerdict::Exceeds {
+                side, triggering, ..
+            } => (
+                match side {
+                    ChipSide::Low => crate::feeds::ObservedStatistic::Median,
+                    ChipSide::High => crate::feeds::ObservedStatistic::Peak,
+                },
+                triggering.observed_mm_per_tooth,
+            ),
+            ChiploadVerdict::Unmodeled { .. } => {
+                (crate::feeds::ObservedStatistic::Median, f64::NAN)
+            }
+        };
+        Box::new(crate::feeds::FeedExplanation {
+            commanded: p.commanded,
+            band: p.band,
+            achieved_feed: p.achieved_feed,
+            gate: crate::feeds::GateObservationStage {
+                statistic,
+                value_mm,
+                sample_count: p.sample_count,
+            },
+        })
+    });
+    (verdict, explanation)
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
+    evaluate_inner(ctx, env, &mut None)
+}
+
+fn evaluate_inner(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+    partial_stages: &mut Option<PartialFeedStages>,
+) -> ChiploadVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
         tool,
@@ -410,37 +547,54 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     };
 
     // 5. Bounds: upper bound is required. A missing lower bound means
-    // burn/rubbing cannot be modeled for this row, not that we invent one.
-    let (min, max) = match (result.chip_load_min_mm, result.chip_load_max_mm) {
-        (Some(lo), Some(hi)) if lo > 0.0 && hi >= lo => (Some(lo), hi),
-        (None, Some(hi)) if hi > 0.0 => (None, hi),
-        _ => {
-            tracing::debug!(
-                reason = "NoVendorData",
-                observation_id = %result.observation_id,
-                "chipload gate refuses: matched row has unusable chipload bounds (max missing or invalid)"
-            );
-            return ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::NoVendorData,
-            };
-        }
-    };
-    // DOC-derating (cross-vendor-confirmed rule). Vendor LUT chipload
-    // bounds are authored at 1×D axial DOC; deeper passes must reduce
-    // chipload to keep chip-evacuation viable. Apply the piecewise
-    // scale once per toolpath using the peak axial DOC, so the
-    // reported bounds match what the trip actually used.
+    // burn/rubbing cannot be modeled for this row, not that we invent
+    // one — `AllowHalfBand` lets a present-max/absent-min row through.
+    //
+    // DOC-derating (cross-vendor-confirmed rule) folds in here too:
+    // vendor LUT chipload bounds are authored at 1×D axial DOC; deeper
+    // passes must reduce chipload to keep chip-evacuation viable.
+    // Apply the piecewise scale once per toolpath using the peak axial
+    // DOC, so the reported bounds match what the trip actually used.
+    // Validation + scale now live in the shared
+    // `geometry::derate_chipload_bounds` (S.8 — see
+    // `planning/finishing_stack_review_2026-07.md`), the single home
+    // for this wrapper across Suggest and both `tool_load` gate sites.
     let lookup_diameter_at_peak = tool.lookup_diameter_at(lookup_axial_doc_mm).max(1e-9);
     let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
-    let doc_scale = doc_derating_scale(doc_ratio);
-    let (min, max) = (min.map(|m| m * doc_scale), max * doc_scale);
+    let Some(band) = crate::feeds::geometry::derate_chipload_bounds(
+        result.chip_load_min_mm,
+        result.chip_load_max_mm,
+        doc_ratio,
+        crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
+    ) else {
+        tracing::debug!(
+            reason = "NoVendorData",
+            observation_id = %result.observation_id,
+            "chipload gate refuses: matched row has unusable chipload bounds (max missing or invalid)"
+        );
+        return ChiploadVerdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        };
+    };
+    let (min, max) = (band.min_mm_per_tooth, band.max_mm_per_tooth);
     // F3.3 — provenance classification, worst-first. A single-point
     // "range" (raw min == max — scaling preserves equality) is a
     // nominal preset, not a calibrated envelope; extrapolation past
-    // ±40 % stretches whatever the row published; a row with no ae
-    // calibration skipped the engagement-arc normalization. All three
-    // make the LOW side advisory-only (`low_side_is_advisory`); the
-    // HIGH side stays hard everywhere.
+    // ±40 % stretches whatever the row published; a row with no `ae`
+    // window is the crate's weakest-annotated class. All three make the
+    // LOW side advisory-only (`low_side_is_advisory`); the HIGH side
+    // stays hard everywhere.
+    //
+    // `VendorLutMissingAe`'s ORIGINAL justification — "this row skipped
+    // the engagement-arc normalisation" — no longer exists, because no
+    // row is normalised any more. Its behaviour is kept unchanged
+    // deliberately: demoting a burn trip to an advisory is the
+    // conservative direction, and promoting 176 of the LUT's 252 rows
+    // back to hard `Exceeds(Low)` trips is a behaviour change with no
+    // ruling behind it. What the label now means is "the weakest-
+    // annotated row class in the LUT", which is a defensible reason to
+    // soften a burn floor and an indefensible one to keep calling it an
+    // arc problem. Re-open: Checkpoint item, owner unassigned.
     let source = if result
         .chip_load_min_mm
         .zip(result.chip_load_max_mm)
@@ -476,11 +630,61 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         Confidence::Validated
     };
 
+    // T1.1 — capture the commanded stage and the achieved-feed stage
+    // BEFORE the sample loop consumes `steady_samples`. Both are already
+    // computed by this gate; pre-T1.1 they were used and dropped, which
+    // is why an operator could see the gate's number and the commanded
+    // number and have nothing relating them.
+    let commanded_stage = steady_samples.first().map(|(_, s)| {
+        let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
+        crate::feeds::CommandedStage {
+            feed_rate_mm_min: operation_feed_rate_mm_min,
+            spindle_rpm: s.spindle_rpm,
+            flute_count: s.flute_count,
+            feed_per_tooth_mm: if divisor > 0.0 {
+                operation_feed_rate_mm_min / divisor
+            } else {
+                0.0
+            },
+        }
+    });
+    let achieved_feed_stage = {
+        let predicted_feeds_present = !trace.predicted_feeds.is_empty();
+        let median_ratio = if predicted_feeds_present {
+            let mut ratios: Vec<f64> = steady_samples
+                .iter()
+                .map(|(_, s)| {
+                    super::effective_feed_for_sample(s, &trace.predicted_feeds)
+                        / s.feed_rate_mm_min.max(1e-9)
+                })
+                .collect();
+            if ratios.is_empty() {
+                None
+            } else {
+                ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                #[allow(clippy::indexing_slicing)] // SAFETY: non-empty checked above
+                Some(ratios[ratios.len() / 2])
+            }
+        } else {
+            None
+        };
+        crate::feeds::AchievedFeedStage {
+            predicted_feeds_present,
+            median_ratio,
+        }
+    };
+
     let mut peak_above: Option<(f64, usize)> = None;
     let mut peak_in_range: (f64, usize) = (0.0, 0);
     let mut valid_count: usize = 0;
     let mut missing_arc_count: usize = 0;
     let mut chip_geometry_unsupported_count: usize = 0;
+    // Samples whose `rpm × flutes` divisor is not positive, so no
+    // advance per tooth can be formed. Distinct from the two counters
+    // above: those describe the chip model declining, this describes a
+    // sample that cannot state its own spindle. Tracked separately so
+    // the refusal reason names the right cause.
+    let mut no_divisor_count: usize = 0;
     // Per-sample chip thicknesses for the per-toolpath median used by
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
@@ -491,75 +695,65 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // on the `Within` arm. Replaces the C1 kinematics filter reverted
     // in D3 (commit `8e2a7fc`). `span_lookup` was constructed alongside
     // `lookup_axial_doc_mm` above.
-    // Worst Entry-ancestry over-max sample (largest cl_normalized > max).
+    // Worst Entry-ancestry over-max sample (largest observed_fpt > max).
     let mut entry_high: Option<(f64, usize)> = None;
-    // Worst Entry-ancestry under-min sample (smallest cl_normalized < min).
+    // Worst Entry-ancestry under-min sample (smallest observed_fpt < min).
     let mut entry_low: Option<(f64, usize)> = None;
 
-    // D9 — engagement-aware normalization. Vendor LUT chip-load bounds
-    // are authored at a specific engagement arc (Amana flat-endmill
-    // roughing rows: ~17–37 % radial, arc ≈ 1.0–1.5 rad). Each sample's
-    // `effective_chip_thickness_mm` is the arc-average mean chip the
-    // dexel saw at *its* engagement arc, which can differ wildly (slot
-    // engagement on terrain produces mean ≈ 0.637 × feed; LUT-nominal
-    // ≈ 0.233 × feed). To compare on a common basis, scale each sample
-    // to the LUT-nominal-arc-equivalent mean before comparing the cap.
-    // When the LUT row lacks `ae_min_mm`/`ae_max_mm` (or a sample lacks
-    // arc data), the normalization is skipped — the comparison falls
-    // back to the raw mean. See planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md
-    // D2 for the calibration audit that motivated this.
-    let arc_lut_nominal = lut_nominal_arc_rad(&result);
-    let lut_factor = arc_lut_nominal.map(mean_chip_factor);
-
     for (i, s) in steady_samples {
-        // Samples whose chip-thickness model didn't produce a value (e.g.
-        // axial_doc = 0 transients on a 3D toolpath, or arc not captured)
-        // are skipped, not fatal. Refuse only if zero steady samples
-        // produced a usable chip thickness — that's a real "we can't
-        // model this op" rather than a single noisy sample.
-        let Some(cl_raw) = s.effective_chip_thickness_mm else {
+        // **The sample-validity predicate is deliberately unchanged, and
+        // is now vestigial.** Before 2026-08-06 the observation WAS
+        // `effective_chip_thickness_mm`, so a sample without one had
+        // nothing to report. The observation is now purely kinematic and
+        // needs no chip model — but keeping the filter keeps the gate's
+        // POPULATION byte-identical across the unit conversion, so the
+        // verdict-flip table this change ships with is attributable to
+        // exactly one cause. Widening it would move verdicts for a
+        // second reason at the same time.
+        //
+        // Recorded as NOT FIXED in the wave's log entry with its own
+        // owner: the two `Unmodeled` reasons below (`ArcEngagementNotCaptured`,
+        // `CutterModeUnsupported`) now refuse to report an advance per
+        // tooth because a chip model did not resolve, which is no longer
+        // a reason. Changing it is a population change and needs its own
+        // before/after.
+        if s.effective_chip_thickness_mm.is_none() {
             if s.arc_engagement_radians.is_none() {
                 missing_arc_count += 1;
             } else {
                 chip_geometry_unsupported_count += 1;
             }
             continue;
+        }
+        // The observation. `effective_feed_for_sample` is the F-035
+        // kinematics substitution: when the trace carries a populated
+        // predicted-feed map and this `(toolpath_id, move_index)` lookup
+        // hits, it returns the feed the machine will actually reach;
+        // otherwise it returns the commanded feed and this is the
+        // commanded advance per tooth.
+        let Some(observed_fpt) = achieved_feed_per_tooth_mm(s, &trace.predicted_feeds) else {
+            no_divisor_count += 1;
+            continue;
         };
-        // F-035 — when the trace carries a populated predicted-feed
-        // map and this `(toolpath_id, move_index)` lookup hits, scale
-        // the sample's commanded `effective_chip_thickness_mm` by
-        // `predicted_feed / commanded_feed`. Chip thickness is
-        // arc-mean `(2·feed_per_tooth/arc)·(1 − cos(arc/2))` for flat
-        // endmills (`dexel_stock::effective_chip_thickness_mm`); it
-        // is *linear* in feed_per_tooth and therefore linear in feed.
-        // The scalar correction therefore exactly reproduces what
-        // re-deriving via `MillingCutter::chip_geometry` would
-        // produce, without the gates needing access to a cutter
-        // reference at every sample. When the map is empty or the
-        // sample's move has no predicted entry,
-        // `effective_feed_for_sample` returns commanded feed and the
-        // scale factor is 1.0 — byte-identical to pre-F-035.
-        let cl = if trace.predicted_feeds.is_empty() {
-            cl_raw
-        } else {
-            let predicted = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-            let commanded = s.feed_rate_mm_min.max(1e-9);
-            cl_raw * (predicted / commanded)
-        };
-        // Normalize this sample to the LUT row's nominal engagement
-        // arc. If either side lacks the data, fall back to the raw
-        // mean (preserves prior behaviour for rows missing ae bounds).
-        let cl_normalized = match (s.arc_engagement_radians, lut_factor) {
-            (Some(arc_sample), Some(lut_f)) if lut_f > 0.0 => {
-                let sample_factor = mean_chip_factor(arc_sample);
-                if sample_factor > 0.0 {
-                    cl * (lut_f / sample_factor)
-                } else {
-                    cl
-                }
-            }
-            _ => cl,
-        };
+        // R-10 (census §7.5, report-only). NOTE THE ORDER: this increments
+        // BEFORE the `is_phantom_transit` skip immediately below, so
+        // `valid_count` counts samples the loop then discards. It is
+        // published as `sample_count` on the verdict, where it reads as "the
+        // population that drove this gate" — and it OVERSTATES that
+        // population by however many transit samples the trip set rejected.
+        //
+        // The gap used to be enormous on curve-heavy finishing paths: arc-fit
+        // tagged every fitted arc `SpanKind::DressupArtifact`, which is on
+        // the transit list, so MORE arc-fitting meant FEWER samples actually
+        // gating — one committed fixture carries 630 such spans on a single
+        // op. Checkpoint D Q3 (2026-08-04) moved fitted arcs to
+        // `SpanKind::GeometryRefit`, which is not a transit kind, so that
+        // term is gone. What remains is the genuine transit population
+        // (entries, link bridges, lead-outs, dogbones, waterline cleanup).
+        //
+        // Left as-is deliberately: `sample_count` is a shipped wire field
+        // and moving it is a separate, gated change. Documented here so the
+        // next reader does not take it for the gate's true denominator.
         valid_count += 1;
         // Finding 3 split (2026-06-04): phantom-transit samples
         // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
@@ -572,33 +766,58 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             continue;
         }
         if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
-            if cl_normalized > max && entry_high.is_none_or(|(prev, _)| cl_normalized > prev) {
-                entry_high = Some((cl_normalized, i));
+            if observed_fpt > max && entry_high.is_none_or(|(prev, _)| observed_fpt > prev) {
+                entry_high = Some((observed_fpt, i));
             }
             if let Some(min_value) = min
-                && cl_normalized < min_value
-                && entry_low.is_none_or(|(prev, _)| cl_normalized < prev)
+                && observed_fpt < min_value
+                && entry_low.is_none_or(|(prev, _)| observed_fpt < prev)
             {
-                entry_low = Some((cl_normalized, i));
+                entry_low = Some((observed_fpt, i));
             }
             continue;
         }
-        burn_samples.push((cl_normalized, i));
+        burn_samples.push((observed_fpt, i));
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
         // verdict to `Exceeds(High)`. The widened trigger is purely a
         // gate-trip decision; the underlying `peak_above` deviation is
         // still recorded so downstream displays surface the value.
         let max_trigger = max * (1.0 + tolerance.breakage);
-        if cl_normalized > max_trigger {
-            let dev = cl_normalized - max;
+        if observed_fpt > max_trigger {
+            let dev = observed_fpt - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
             }
-        } else if cl_normalized > peak_in_range.0 {
-            peak_in_range = (cl_normalized, i);
+        } else if observed_fpt > peak_in_range.0 {
+            peak_in_range = (observed_fpt, i);
         }
     }
+
+    // T1.1 — assemble everything except stage 5, which needs the verdict
+    // arm (median for the burn side, peak for the breakage side) and is
+    // filled in by `evaluate_with_explanation`. Nothing here is
+    // recomputed: every field is a value this gate already derived.
+    *partial_stages = commanded_stage.map(|commanded| PartialFeedStages {
+        commanded,
+        band: crate::feeds::LutBandStage {
+            observation_id: result.observation_id.clone(),
+            bounds_source: source,
+            row_diameter_mm: result.row_diameter_mm,
+            queried_diameter_mm: lookup_diameter_at_peak,
+            diameter_scale: result.chipload_diameter_scale,
+            hardness_scale: result.chipload_hardness_scale,
+            is_extrapolated: result.is_extrapolated,
+            queried_pass_role: pass_role,
+            row_pass_role: result.row_pass_role,
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
+            // Report-only since 2026-08-06: nothing computes with this.
+            ae_window_mm: result.ae_min_mm.zip(result.ae_max_mm),
+        },
+        achieved_feed: achieved_feed_stage,
+        sample_count: valid_count,
+    });
 
     // Burn-risk: median of per-sample chip thickness vs LUT min.
     // Sort once and re-use both for the median chip thickness and for
@@ -628,9 +847,20 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     };
 
     if valid_count == 0 {
-        // All steady-state samples failed the chip-thickness model. Pick
-        // the dominant failure reason for the verdict.
-        let reason = if missing_arc_count >= chip_geometry_unsupported_count {
+        // Every steady-state sample was discarded. Pick the dominant
+        // cause. The first two are the vestigial chip-model predicate
+        // (see the loop's note); the third is a sample that could not
+        // state its own `rpm × flutes`, which the advance-per-tooth
+        // observation genuinely cannot work around.
+        let reason = if no_divisor_count > missing_arc_count
+            && no_divisor_count > chip_geometry_unsupported_count
+        {
+            UnmodeledReason::CutterModeUnsupported(
+                "samples carry no positive spindle-rpm x flute-count divisor, so no \
+                 advance per tooth can be formed"
+                    .to_owned(),
+            )
+        } else if missing_arc_count >= chip_geometry_unsupported_count {
             UnmodeledReason::ArcEngagementNotCaptured
         } else {
             UnmodeledReason::CutterModeUnsupported(
@@ -886,15 +1116,22 @@ mod tests {
     }
 
     /// Engagement arc the test LUT row (HardMaple Pocket Roughing 6 mm
-    /// flat) is calibrated against, so D9's per-sample normalization is
-    /// a no-op for these fixtures and tests preserve their pre-D9
-    /// semantics. Derived as `acos(1 − 2·ae_mid/D)` with `ae_min=1.0`,
-    /// `ae_max=2.2`, `D=6.0` from
+    /// flat) publishes, derived as `acos(1 − 2·ae_mid/D)` with
+    /// `ae_min=1.0`, `ae_max=2.2`, `D=6.0` from
     /// `data/vendor_lut/observations/amana_flat_end.json` → ≈ 1.0844 rad.
-    /// Tests that want to exercise normalization itself live in the
-    /// dedicated `engagement_aware_normalization` module below.
+    ///
+    /// Until 2026-08-06 this value was load-bearing: it made D9's
+    /// per-sample renormalisation an exact no-op, so `observed ==
+    /// effective_chip_thickness_mm`. D9 is gone (module header) and this
+    /// constant is now only a realistic arc for the sample to carry. It
+    /// is kept because `arc_engagement_radians.is_none()` still selects
+    /// which `Unmodeled` reason the all-invalid path reports.
     const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
 
+    /// The `chipload` argument is the advance per tooth the sample is to
+    /// be **observed** at. [`trace`] realises it through the F-035
+    /// predicted-feed map — see its doc for why, and for the property
+    /// that makes every verdict below unchanged across the conversion.
     fn sample(tp_id: usize, idx: usize, chipload: f64, engagement: f64) -> SimulationCutSample {
         SimulationCutSample {
             toolpath_id: ToolpathId(tp_id),
@@ -918,8 +1155,37 @@ mod tests {
         }
     }
 
+    /// **How the fixtures steer the observation after the 2026-08-06 unit
+    /// conversion, and why no verdict in this module moved.**
+    ///
+    /// Before: the gate observed `effective_chip_thickness_mm`
+    /// renormalised from the sample's arc to the row's. Every sample here
+    /// carries [`TEST_LUT_NOMINAL_ARC_RAD`], so the renormalisation was an
+    /// exact no-op and `observed == sample()`'s `chipload` argument.
+    ///
+    /// After: the gate observes `effective_feed / (rpm · flutes)`. Giving
+    /// each sample an F-035 predicted-feed entry of
+    /// `chipload × rpm × flutes` makes `observed == chipload` again —
+    /// **the same number, reached through the pipeline the conversion
+    /// installed.** So every trip / no-trip expectation below is
+    /// unchanged, and none of them went vacuous: the `chipload` argument
+    /// still steers the verdict, exactly as loudly as it did.
+    ///
+    /// The commanded `feed_rate_mm_min` is deliberately left where each
+    /// test set it, so `steady_state_samples_for_toolpath`'s population —
+    /// the 95 %-of-commanded-feed filter and the tests that exercise it —
+    /// is byte-identical.
     fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
+        let mut predicted_feeds = crate::machine_kinematics::PredictedFeedMap::new();
+        for s in &samples {
+            let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
+            predicted_feeds.insert(
+                (s.toolpath_id, s.move_index),
+                s.chipload_mm_per_tooth * divisor,
+            );
+        }
         SimulationCutTrace {
+            predicted_feeds,
             sample_step_mm: 1.0,
             summary: SimulationCutSummary {
                 sample_count: samples.len(),
@@ -938,6 +1204,7 @@ mod tests {
                 total_removed_volume_est_mm3: 1.0,
                 average_mrr_mm3_s: 1.0,
                 per_kinematics: std::collections::BTreeMap::new(),
+                runtime_by_intent: None,
             },
             samples,
             ..SimulationCutTrace::test_fixture()
@@ -986,7 +1253,7 @@ mod tests {
         //
         // 2026-06-03 family-default Janka anchor (151c7b5): the Onsrud
         // 6.35 mm hardwood row carries no per-row `hardness_value`, so
-        // `hardness_scale_factor` previously degraded to identity for
+        // `hardness_ratio_raw` (then named `hardness_scale_factor`) previously degraded to identity for
         // any hardwood query. After 151c7b5 it scales against the
         // hardwood family anchor (Janka 1290, red oak). HardMaple's
         // Janka is 1450, so the matched band derates by 1290/1450 ≈

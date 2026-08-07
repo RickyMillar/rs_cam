@@ -34,6 +34,37 @@ pub enum DxfError {
     NoEntities,
 }
 
+/// What kind of DXF feature a [`DrillTarget`] was derived from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DrillTargetKind {
+    /// A bare DXF `POINT` entity.
+    Point,
+    /// The centre of a circle (or full-circle arc), with its diameter in mm.
+    CircleCenter { diameter: f64 },
+}
+
+/// A pickable drill location extracted from imported DXF geometry, with the
+/// source layer so the GUI can offer "select all in layer".
+///
+/// Coordinates are in millimetres (the `$INSUNITS` scale is already applied).
+#[derive(Debug, Clone)]
+pub struct DrillTarget {
+    pub x: f64,
+    pub y: f64,
+    pub layer: String,
+    pub kind: DrillTargetKind,
+}
+
+/// The full result of importing a DXF: closed/open polygons (as before) plus
+/// pickable drill targets and the distinct layer names that contain targets.
+#[derive(Debug, Clone, Default)]
+pub struct DxfImport {
+    pub polygons: Vec<Polygon2>,
+    pub drill_targets: Vec<DrillTarget>,
+    /// Distinct layer names that contain at least one drill target, sorted.
+    pub layers: Vec<String>,
+}
+
 /// Return a scale factor to convert from `$INSUNITS` to millimeters.
 ///
 /// Falls back to 1.0 (assume mm) for unrecognized or unitless drawings.
@@ -65,14 +96,26 @@ fn insunits_to_mm_scale(units: dxf::enums::Units) -> f64 {
 /// tessellated to line segments with the given angular tolerance in degrees.
 /// Coordinates are scaled from `$INSUNITS` to millimeters automatically.
 pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, DxfError> {
+    Ok(load_dxf_full(path, arc_tolerance_deg)?.polygons)
+}
+
+/// Load a DXF file as a full [`DxfImport`]: polygons plus pickable drill
+/// targets (POINT entities, circle/arc centres) and their layer names.
+pub fn load_dxf_full(path: &Path, arc_tolerance_deg: f64) -> Result<DxfImport, DxfError> {
     let drawing = dxf::Drawing::load_file(path.to_str().unwrap_or(""))?;
-    Ok(extract_polygons(&drawing, arc_tolerance_deg))
+    Ok(extract_dxf(&drawing, arc_tolerance_deg))
 }
 
 /// Load closed polygon entities from a DXF Drawing.
 pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
+    extract_dxf(drawing, arc_tolerance_deg).polygons
+}
+
+/// Extract polygons and drill targets from a DXF Drawing, scaling to mm and
+/// detecting polygon containment.
+pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport {
     let scale = insunits_to_mm_scale(drawing.header.default_drawing_units);
-    let mut raw = extract_polygons_flat(drawing, arc_tolerance_deg);
+    let (mut raw, mut drill_targets) = extract_polygons_flat(drawing, arc_tolerance_deg);
     if (scale - 1.0).abs() > 1e-12 {
         for poly in &mut raw {
             for pt in &mut poly.exterior {
@@ -86,20 +129,41 @@ pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<P
                 }
             }
         }
+        for t in &mut drill_targets {
+            t.x *= scale;
+            t.y *= scale;
+            if let DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
+                *diameter *= scale;
+            }
+        }
     }
+    // Distinct layer names that carry targets, sorted for stable UI ordering.
+    let mut layers: Vec<String> = drill_targets.iter().map(|t| t.layer.clone()).collect();
+    layers.sort();
+    layers.dedup();
     // Detect containment: inner shapes become holes of outer shapes
-    crate::polygon::detect_containment(raw)
+    let polygons = crate::polygon::detect_containment(raw);
+    DxfImport {
+        polygons,
+        drill_targets,
+        layers,
+    }
 }
 
-/// Extract polygons without containment detection (flat list).
-fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
+/// Extract polygons (without containment detection) and drill targets as flat lists.
+fn extract_polygons_flat(
+    drawing: &dxf::Drawing,
+    arc_tolerance_deg: f64,
+) -> (Vec<Polygon2>, Vec<DrillTarget>) {
     let mut polygons = Vec::new();
+    let mut drill_targets: Vec<DrillTarget> = Vec::new();
     let arc_step_rad = arc_tolerance_deg.to_radians();
 
     // Collect Line segments for chain-linking after the main loop.
     let mut line_segments: Vec<(P2, P2)> = Vec::new();
 
     for entity in drawing.entities() {
+        let layer = entity.common.layer.clone();
         match &entity.specific {
             dxf::entities::EntityType::LwPolyline(lwp) => {
                 if lwp.vertices.len() >= 2 {
@@ -129,6 +193,16 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                 }
             }
             dxf::entities::EntityType::Circle(circle) => {
+                // A circle is both a closed region (for pocket/profile) and a
+                // drillable hole — record its centre + diameter as a target.
+                drill_targets.push(DrillTarget {
+                    x: circle.center.x,
+                    y: circle.center.y,
+                    layer: layer.clone(),
+                    kind: DrillTargetKind::CircleCenter {
+                        diameter: 2.0 * circle.radius,
+                    },
+                });
                 let pts = circle_to_points(
                     circle.center.x,
                     circle.center.y,
@@ -141,6 +215,15 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                     polygons.push(poly);
                 }
             }
+            dxf::entities::EntityType::ModelPoint(mp) => {
+                // A bare DXF POINT entity marks a location — a drill target.
+                drill_targets.push(DrillTarget {
+                    x: mp.location.x,
+                    y: mp.location.y,
+                    layer: layer.clone(),
+                    kind: DrillTargetKind::Point,
+                });
+            }
             dxf::entities::EntityType::Ellipse(ell) => {
                 let pts = ellipse_to_points(ell, arc_step_rad);
                 if pts.len() >= 3 {
@@ -150,6 +233,17 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
                 }
             }
             dxf::entities::EntityType::Arc(arc) => {
+                // Only full-circle arcs are drillable holes; record the centre.
+                if arc_is_full_circle(arc) {
+                    drill_targets.push(DrillTarget {
+                        x: arc.center.x,
+                        y: arc.center.y,
+                        layer: layer.clone(),
+                        kind: DrillTargetKind::CircleCenter {
+                            diameter: 2.0 * arc.radius,
+                        },
+                    });
+                }
                 let pts = arc_entity_to_points(arc, arc_step_rad);
                 if pts.len() >= 3 {
                     let mut poly = Polygon2::new(pts);
@@ -190,7 +284,17 @@ fn extract_polygons_flat(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<
         }
     }
 
-    polygons
+    (polygons, drill_targets)
+}
+
+/// True if a DXF Arc spans a full circle (sweep ~360°), in which case its
+/// centre is a drillable hole just like a Circle entity.
+fn arc_is_full_circle(arc: &dxf::entities::Arc) -> bool {
+    let mut sweep_deg = arc.end_angle - arc.start_angle;
+    if sweep_deg <= 0.0 {
+        sweep_deg += 360.0;
+    }
+    (sweep_deg - 360.0).abs() < 0.01
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -673,6 +777,82 @@ mod tests {
             area,
             expected
         );
+    }
+
+    // ----- Drill target extraction tests -----
+
+    #[test]
+    fn test_circle_emits_drill_target() {
+        let drawing = make_circle_drawing(50.0, 60.0, 4.0);
+        let import = extract_dxf(&drawing, 5.0);
+        assert_eq!(import.drill_targets.len(), 1, "circle should emit 1 target");
+        let t = &import.drill_targets[0];
+        assert!((t.x - 50.0).abs() < 1e-9 && (t.y - 60.0).abs() < 1e-9);
+        match t.kind {
+            DrillTargetKind::CircleCenter { diameter } => {
+                assert!((diameter - 8.0).abs() < 1e-9, "diameter should be 2*radius");
+            }
+            _ => panic!("circle should emit a CircleCenter target"),
+        }
+    }
+
+    #[test]
+    fn test_point_entity_emits_drill_target() {
+        let mut drawing = dxf::Drawing::new();
+        let mut ent = dxf::entities::Entity::new(dxf::entities::EntityType::ModelPoint(
+            dxf::entities::ModelPoint::new(dxf::Point::new(12.0, 34.0, 0.0)),
+        ));
+        ent.common.layer = "holes".to_owned();
+        drawing.add_entity(ent);
+        let import = extract_dxf(&drawing, 5.0);
+        assert_eq!(import.drill_targets.len(), 1, "POINT should emit 1 target");
+        let t = &import.drill_targets[0];
+        assert_eq!(t.kind, DrillTargetKind::Point);
+        assert!((t.x - 12.0).abs() < 1e-9 && (t.y - 34.0).abs() < 1e-9);
+        assert_eq!(t.layer, "holes");
+        assert_eq!(import.layers, vec!["holes".to_owned()]);
+        // A bare POINT is not a closed region, so no polygon is produced.
+        assert!(import.polygons.is_empty());
+    }
+
+    #[test]
+    fn test_drill_target_layers_collected_and_scaled() {
+        let mut drawing = dxf::Drawing::new();
+        drawing.header.default_drawing_units = dxf::enums::Units::Inches;
+        // Two circles on layer "a", one POINT on layer "b".
+        for (cx, cy, layer) in [(1.0, 0.0, "a"), (2.0, 0.0, "a")] {
+            let mut ent = dxf::entities::Entity::new(dxf::entities::EntityType::Circle(
+                dxf::entities::Circle {
+                    center: dxf::Point::new(cx, cy, 0.0),
+                    radius: 0.5,
+                    ..Default::default()
+                },
+            ));
+            ent.common.layer = layer.to_owned();
+            drawing.add_entity(ent);
+        }
+        let mut pt = dxf::entities::Entity::new(dxf::entities::EntityType::ModelPoint(
+            dxf::entities::ModelPoint::new(dxf::Point::new(3.0, 0.0, 0.0)),
+        ));
+        pt.common.layer = "b".to_owned();
+        drawing.add_entity(pt);
+
+        let import = extract_dxf(&drawing, 5.0);
+        assert_eq!(import.drill_targets.len(), 3);
+        assert_eq!(import.layers, vec!["a".to_owned(), "b".to_owned()]);
+        // Inches → mm: x of first circle 1.0in = 25.4mm; diameter 1.0in = 25.4mm.
+        let first = import
+            .drill_targets
+            .iter()
+            .find(|t| matches!(t.kind, DrillTargetKind::CircleCenter { .. }))
+            .unwrap();
+        assert!((first.x - 25.4).abs() < 1e-6, "x should scale to mm");
+        if let DrillTargetKind::CircleCenter { diameter } = first.kind {
+            assert!(
+                (diameter - 25.4).abs() < 1e-6,
+                "diameter should scale to mm"
+            );
+        }
     }
 
     #[test]

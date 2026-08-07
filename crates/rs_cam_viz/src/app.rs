@@ -4,7 +4,7 @@ mod export;
 mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
-mod mcp;
+pub(crate) mod mcp;
 mod simulation;
 mod viewport;
 
@@ -29,9 +29,22 @@ pub struct RsCamApp {
     /// Track toolpath color mode changes to trigger re-upload.
     last_tp_color_mode: crate::state::viewport::ToolpathColorMode,
     last_span_kind_filter: crate::state::viewport::SpanKindFilter,
+    /// Track the active drill op's target selection (toolpath id + picked
+    /// holes) so the viewport markers re-upload when it changes from any
+    /// source (viewport pick, panel buttons, selection change).
+    last_drill_marker_key: Option<(usize, Vec<[f64; 2]>)>,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
+    /// A/M12 — read payloads this thread republishes each frame so the MCP
+    /// server can answer status calls while the frame loop is stalled behind
+    /// a generation. Shared with the server thread.
+    #[cfg(feature = "mcp")]
+    mcp_reads: crate::mcp_bridge::McpReadCache,
+    /// Last time [`Self::mcp_reads`] was refreshed — the publish is rate
+    /// limited so it stays off the per-frame hot path.
+    #[cfg(feature = "mcp")]
+    mcp_reads_published_at: Option<std::time::Instant>,
 }
 
 impl RsCamApp {
@@ -54,11 +67,18 @@ impl RsCamApp {
 
         // Set up MCP channel and spawn server thread if requested.
         #[cfg(feature = "mcp")]
+        let mcp_reads = crate::mcp_bridge::McpReadCache::new();
+        #[cfg(feature = "mcp")]
         let mcp_receiver = if mcp_mode {
             controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
 
             let (tx, rx) = std::sync::mpsc::channel();
             let egui_ctx = cc.egui_ctx.clone();
+            // A/M12: the server's second door onto the compute lane. Taken
+            // here, on the GUI thread, because the backend lives on the
+            // controller — but usable from any thread thereafter.
+            let generation = controller.generation_control();
+            let reads = mcp_reads.clone();
 
             std::thread::Builder::new()
                 .name("mcp-server".into())
@@ -71,7 +91,9 @@ impl RsCamApp {
                         }
                     };
                     rt.block_on(async move {
-                        let server = crate::mcp_server::EmbeddedCamServer::new(tx, egui_ctx);
+                        let server = crate::mcp_server::EmbeddedCamServer::new(
+                            tx, egui_ctx, generation, reads,
+                        );
                         let tool_router = crate::mcp_server::EmbeddedCamServer::into_tool_router();
 
                         use rmcp::ServiceExt as _;
@@ -142,8 +164,13 @@ impl RsCamApp {
             show_quit_dialog: false,
             last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
             last_span_kind_filter: crate::state::viewport::SpanKindFilter::default(),
+            last_drill_marker_key: None,
             #[cfg(feature = "mcp")]
             mcp_receiver,
+            #[cfg(feature = "mcp")]
+            mcp_reads,
+            #[cfg(feature = "mcp")]
+            mcp_reads_published_at: None,
         }
     }
 
@@ -495,6 +522,20 @@ impl RsCamApp {
             ctx.request_repaint();
         }
 
+        // MCP heartbeat: while the MCP server is wired, keep a low-frequency
+        // repaint scheduled so the request channel is drained within ~100 ms.
+        // `drain_mcp_requests` only runs inside `update()`, and `update()` only
+        // runs on a repaint — but the cross-thread `request_repaint()` from the
+        // server thread (`McpServer::send_request`) does not reliably wake a
+        // sleeping winit loop. Without this heartbeat, a request issued while
+        // the GUI is idle (notably the one right after a long `run_simulation`,
+        // once highlights/notifications have faded) stalls in the channel until
+        // an OS event or an operator `/mcp` reconnect wakes the loop.
+        #[cfg(feature = "mcp")]
+        if self.mcp_receiver.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+
         // Re-upload toolpath GPU data when color mode changes
         let current_tp_mode = self.controller.state().viewport.toolpath_color_mode;
         if current_tp_mode != self.last_tp_color_mode {
@@ -507,6 +548,14 @@ impl RsCamApp {
         let current_filter = self.controller.state().viewport.span_kind_filter;
         if current_filter != self.last_span_kind_filter {
             self.last_span_kind_filter = current_filter;
+            self.controller.set_pending_upload();
+        }
+        // Re-upload drill target markers when the active drill op's selection
+        // changes (panel buttons, layer select, viewport pick, or selecting a
+        // different drill toolpath).
+        let current_drill_key = self.current_drill_marker_key();
+        if current_drill_key != self.last_drill_marker_key {
+            self.last_drill_marker_key = current_drill_key;
             self.controller.set_pending_upload();
         }
 
@@ -612,6 +661,12 @@ impl RsCamApp {
         if self.controller.state().tool_library_modal.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::tool_library_modal::draw(ctx, state, events);
+        }
+
+        // Machine Library management modal
+        if self.controller.state().machine_library_open {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::machine_library_modal::draw(ctx, state, events);
         }
 
         // Keyboard shortcuts reference window
@@ -728,6 +783,28 @@ impl RsCamApp {
 
         self.controller.process_auto_regen();
 
+        // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
+        // frame to reach it — the compute drain, `generate_all`'s fixpoint
+        // round handoff (`settle_generate_all_round` ->
+        // `resume_generate_all_after_simulation`, both reached from
+        // `drain_compute_results`), and the screenshot pump all live in this
+        // function. The lane-activity check below covers the window where a
+        // job is running; this covers the gap it cannot see — the round
+        // boundary, where the lane has gone idle, the result is still in the
+        // channel, and nothing has yet asked for the frame that would pick it
+        // up. Stated once here rather than at each handoff site: a per-site
+        // request is one refactor away from being forgotten, and this
+        // condition is exactly "an MCP caller is still owed something".
+        #[cfg(feature = "mcp")]
+        if self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .is_some_and(|pending| pending.awaiting_gui() > 0)
+        {
+            ctx.request_repaint();
+        }
+
         let active_lanes = self
             .controller
             .lane_snapshots()
@@ -749,6 +826,15 @@ impl RsCamApp {
             }
             ctx.request_repaint();
         }
+
+        // G-LV.1: last statement in the frame. Closes the bracket
+        // `drain_mcp_requests` opened, so `frame_loop.in_frame` covers the
+        // whole body — a frame that spends 30 s inside a narration or a mesh
+        // upload reports as BUSY, not as the parked window G-LV.1 is about.
+        // Keep this last: anything after it runs outside the bracket and
+        // would be misattributed.
+        #[cfg(feature = "mcp")]
+        self.end_mcp_frame();
     }
 }
 

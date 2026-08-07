@@ -6,7 +6,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::Polygon2;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for zigzag/raster clearing.
 pub struct ZigzagParams {
@@ -39,8 +39,20 @@ pub struct ZigzagParams {
     angle = params.angle,
 ))]
 pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
-    let lines = zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
-    lines_to_toolpath(&lines, params)
+    zigzag_toolpath_reported(polygon, params).0
+}
+
+/// [`zigzag_toolpath`] with Checkpoint C's offset failure channel attached:
+/// `1` when the wall inset failed rather than collapsed, `0` otherwise.
+///
+/// An empty result here is silent in a way the others are not: zigzag returns
+/// no passes at all, which reads exactly like "the pocket is narrower than
+/// the tool".
+#[must_use]
+pub fn zigzag_toolpath_reported(polygon: &Polygon2, params: &ZigzagParams) -> (Toolpath, usize) {
+    let (lines, failures) =
+        zigzag_lines_reported(polygon, params.tool_radius, params.stepover, params.angle);
+    (lines_to_toolpath(&lines, params), failures)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -53,8 +65,21 @@ pub fn zigzag_lines(
     stepover: f64,
     angle_deg: f64,
 ) -> Vec<[P2; 2]> {
+    zigzag_lines_reported(polygon, tool_radius, stepover, angle_deg).0
+}
+
+/// [`zigzag_lines`] with Checkpoint C's offset failure channel attached.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[must_use]
+pub fn zigzag_lines_reported(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    angle_deg: f64,
+) -> (Vec<[P2; 2]>, usize) {
     if polygon.exterior.len() < 3 || stepover <= 0.0 {
-        return Vec::new();
+        // Refused before any offset was attempted, so nothing was observed.
+        return (Vec::new(), 0);
     }
 
     let angle_rad = angle_deg.to_radians();
@@ -62,9 +87,10 @@ pub fn zigzag_lines(
     let sin_a = angle_rad.sin();
 
     // Inset the polygon by tool radius to avoid wall contact
-    let inset = crate::polygon::offset_polygon(polygon, tool_radius);
+    let (inset, failure) = crate::polygon::offset_polygon_reported(polygon, tool_radius);
+    let failures = usize::from(failure.is_some());
     if inset.is_empty() {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Collect all inset polygon edges (exterior + holes from all result polygons)
@@ -84,7 +110,7 @@ pub fn zigzag_lines(
     }
 
     if all_edges.is_empty() {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Project all vertices onto the scan direction to find range
@@ -105,7 +131,7 @@ pub fn zigzag_lines(
     }
 
     if perp_max - perp_min < 1e-10 {
-        return Vec::new();
+        return (Vec::new(), failures);
     }
 
     // Generate scan lines at stepover intervals
@@ -148,7 +174,7 @@ pub fn zigzag_lines(
         }
     }
 
-    lines
+    (lines, failures)
 }
 
 /// Find intersection parameters along the scan direction for a scan line.
@@ -189,6 +215,11 @@ fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a:
     intersections
 }
 
+/// S.7 (planning/finishing_stack_review_2026-07.md): each line is emitted
+/// via the shared `emit_path_segment_with_intent` rapid→plunge→feed→retract
+/// envelope instead of open-coding it — byte-identical to the previous
+/// hand-rolled sequence (a 2-point path yields exactly rapid, plunge, one
+/// feed, retract).
 pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
@@ -199,27 +230,18 @@ pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
     for line in lines {
         let start = &line[0];
         let end = &line[1];
-
-        use crate::toolpath::MoveIntent;
-        // Rapid to start of line at safe Z
-        tp.rapid_to_with_intent(
-            P3::new(start.x, start.y, params.safe_z),
-            MoveIntent::Linking,
-        );
-        // Plunge
-        tp.feed_to_with_intent(
+        let path = [
             P3::new(start.x, start.y, params.cut_depth),
-            params.plunge_rate,
-            MoveIntent::EntryPlunge,
-        );
-        // Cut across
-        tp.feed_to_with_intent(
             P3::new(end.x, end.y, params.cut_depth),
+        ];
+
+        tp.emit_path_segment_with_intent(
+            &path,
+            params.safe_z,
             params.feed_rate,
+            params.plunge_rate,
             MoveIntent::ClearingCut,
         );
-        // Retract
-        tp.rapid_to_with_intent(P3::new(end.x, end.y, params.safe_z), MoveIntent::Retract);
     }
 
     tp

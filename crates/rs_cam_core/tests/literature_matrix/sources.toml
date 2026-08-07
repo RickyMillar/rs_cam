@@ -5,9 +5,10 @@
 
 [onsrud_hwood]
 name = "Onsrud Cutter Hardwood Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "vbit"]
 ops = ["pocket", "profile", "adaptive2d", "vcarve"]
 materials = ["hardwood", "softwood", "plywood"]
@@ -28,6 +29,7 @@ name = "GWizard Wood Cutting Speed / Chipload Tables"
 citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "vbit"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hardwood", "softwood", "plywood"]
@@ -38,6 +40,7 @@ name = "ShopBot Recommended Cutting Parameters"
 citation_url = "https://www.shopbottools.com/ShopBotDocs/files/CuttingParameters.pdf"
 authority_tier = "community"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball"]
 ops = ["pocket", "profile"]
 materials = ["hardwood", "softwood", "plywood"]
@@ -65,9 +68,10 @@ notes = "Hobby-oriented online calculator."
 
 [onsrud_doc_rule]
 name = "Onsrud DOC Rule (1.5-4.5x tool diameter pre-derate)"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_85.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat"]
 ops = ["pocket", "adaptive2d"]
 materials = ["hardwood", "softwood"]
@@ -88,6 +92,7 @@ name = "Vectric VCarve/Aspire Default Feeds"
 citation_url = "https://docs.vectric.com/"
 authority_tier = "community"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "vbit"]
 ops = ["pocket", "profile", "vcarve"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
@@ -98,6 +103,7 @@ name = "Shaw, Metal Cutting Principles, 2nd ed., ch. 20"
 citation_url = "https://global.oup.com/academic/product/metal-cutting-principles-9780195142068"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "vbit"]
 ops = ["all"]
 materials = ["all"]
@@ -115,6 +121,7 @@ name = "Shaw, Metal Cutting Principles — rubbing-floor (alias of shaw_metal_cu
 citation_url = "https://global.oup.com/academic/product/metal-cutting-principles-9780195142068"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "vbit"]
 ops = ["all"]
 materials = ["all"]
@@ -122,9 +129,10 @@ notes = "Convenience alias used in Phase 1 cells that want a literal `shaw_chipl
 
 [onsrud_swood]
 name = "Onsrud Cutter — Series 60/85 Softwood Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_60_softwood.pdf"
+citation_url = "https://www.onsrud.com/images/Soft%20Wood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["softwood"]
@@ -132,9 +140,10 @@ notes = "Onsrud softwood chart — chipload/SFM by tool series + diameter. Indus
 
 [onsrud_plywood]
 name = "Onsrud Cutter — Plywood / Composite Feed Chart"
-citation_url = "https://www.onsrud.com/files/pdf/series_70_plywood.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Plywood.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "compression"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["plywood", "mdf"]
@@ -142,9 +151,10 @@ notes = "Onsrud plywood chart — covers cabinet-grade & birch plywood. Compress
 
 [onsrud_plastic]
 name = "Onsrud Cutter — Plastics Feed Chart (HDPE / acrylic / phenolic)"
-citation_url = "https://www.onsrud.com/files/pdf/plastic_chart.pdf"
+citation_url = "https://www.onsrud.com/images/Hard%20Plastic.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "o-flute"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hdpe", "acrylic", "abs", "polycarbonate"]
@@ -152,13 +162,14 @@ notes = "Plastics class — feed/RPM windows are *narrow* (chip welding above, r
 
 [onsrud_drill]
 name = "Onsrud Drill / Spur-Point Feed Defaults"
-citation_url = "https://www.onsrud.com/files/pdf/drill_chart.pdf"
+citation_url = "https://www.onsrud.com/images/Drill.pdf"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["drill", "brad-point"]
 ops = ["drill"]
 materials = ["hardwood", "softwood", "plywood"]
-notes = "Drill IPR / peck guidance. Plunge feed is the same as drill feed (vertical-only kinematics)."
+notes = "Drill Cutting Data Recommendations (page 124 of the PCT-19 catalogue). Contains chip load per tooth by cutting diameter for series 72-000 Wood (0.009-0.017 in/tooth, D3-8 mm), 70-500 Plastic and four composite series; gang drills footnoted at 4,500 RPM / 150 IPM; RPM and feedrate formulas. It contains NO peck guidance, NO hole-depth guidance and NO depth-to-diameter guidance — a case-insensitive search for `peck` / `hole depth` returns zero hits (W6 audit 2026-08-04, item R-13). The previous note claimed 'drill IPR / peck guidance' and the previous URL was a hard 404. Plunge feed is the same as drill feed (vertical-only kinematics)."
 
 [amana_vbit]
 name = "Amana Tool — V-Bit / Engraving Feed Chart"
@@ -175,6 +186,7 @@ name = "GWizard Softwood Feeds & Speeds"
 citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["softwood"]
@@ -185,6 +197,7 @@ name = "GWizard Plywood Feeds & Speeds"
 citation_url = "https://www.cnccookbook.com/feeds-speeds-wood/"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["flat", "ball", "compression"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["plywood", "mdf"]
@@ -202,29 +215,32 @@ notes = "Closed-form chip-thinning correction RCTF = D / (2 × sqrt(ae × (D - a
 
 [fpl_wood_handbook]
 name = "USDA Forest Products Lab — Wood Handbook, FPL-GTR-282 (2021)"
-citation_url = "https://www.fpl.fs.fed.us/documnts/fplgtr/fpl_gtr282.pdf"
+citation_url = "https://research.fs.usda.gov/treesearch/62200"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["all"]
 ops = ["all"]
 materials = ["hardwood", "softwood", "tropical"]
-notes = "Janka, specific gravity, MOE, Kc (specific cutting energy) by species. Source of truth for material-edge cells (Janka 3680 ipe vs 1290 oak scaling)."
+notes = "Janka, specific gravity, MOE, Kc (specific cutting energy) by species. Source of truth for material-edge cells (Janka 3680 ipe vs 1290 oak scaling). URL corrected 2026-08-04: the `fs.fed.us` host was retired by the USDA FS and no longer resolves; this is the publication's live TreeSearch record. NOT a drilling source — the handbook has no machining or drilling chapter in either the 2021 (GTR-282) or 2010 (GTR-190) edition, and citations of a '§3.7' or a 'Ch.19 drilling' section were unsupported (GTR-190 Ch.19 is *Specialty Treatments*). Dropped from every drill cell's sources, W6 audit item R-14."
 
 [vectric_drill_default]
 name = "Vectric VCarve / Aspire — Drill Toolpath Defaults"
 citation_url = "https://docs.vectric.com/"
 authority_tier = "community"
 last_verified = "2026-06-03"
+url_verified = "2026-08-04"
 covers = ["drill"]
 ops = ["drill"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
-notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database."
+notes = "Drill peck and plunge defaults representative of community CAM practice. Plunge-feed defaults track Vectric tool database. NOT VERIFIED as a document (W6 audit 2026-08-04, ledger W6-N6): the URL is Vectric's live documentation portal root, HTTP 200, but no published drill-defaults table was located behind it. Community tier; treat as a statement of community practice, not a cited chart."
 
 [amana_plastic_oflute]
 name = "Amana Solid Carbide Plastic Cutting Spiral Single O-Flute Speed Chart v2"
 citation_url = "https://www.amanatool.com/pub/media/productattachments/Plastic-O-Flute-Speed-Chart-v2.pdf"
 authority_tier = "gold"
 last_verified = "2026-05-29"
+url_verified = "2026-08-04"
 covers = ["flat", "o-flute"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hdpe", "acrylic", "abs", "polycarbonate", "polypropylene", "uhmw"]
@@ -235,6 +251,7 @@ name = "LMT Onsrud Soft Plastic Cutting Data Recommendations (SP class)"
 citation_url = "https://www.onsrud.com/images/Soft%20Plastic.pdf"
 authority_tier = "gold"
 last_verified = "2026-05-29"
+url_verified = "2026-08-04"
 covers = ["flat", "o-flute"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hdpe", "uhmw", "polypropylene", "polyethylene"]
@@ -247,24 +264,26 @@ notes = "Onsrud SP series soft-plastic chart. 65-200B 2F 1/4in HDPE finish row: 
 ## scope should pick a different source.
 
 [whiteside_wood]
-name = "Whiteside Machine Co. — Router Bit Feed & Speed Recommendations"
-citation_url = "(pending)"
+name = "Whiteside Machine Co. — router-bit downloads index"
+citation_url = "https://www.whitesiderouterbits.com/pages/downloads-1"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-05"
 covers = ["flat", "ball", "vbit", "bull"]
 ops = ["pocket", "profile", "adaptive2d", "vcarve"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
-notes = "US router-bit manufacturer (Claremont NC). Hand-ground carbide; recommendations skew to single-pass hobby/pro woodshop use. Vendor chart authority tier."
+notes = "US router-bit manufacturer (Claremont NC). Hand-ground carbide; recommendations skew to single-pass hobby/pro woodshop use. URL was the literal placeholder `(pending)` until 2026-08-05; this is the publisher's live downloads index (HTTP 200, lists the Master Catalog and CNC brochure PDFs). PARTIAL: the index publishes NO feed/speed or chipload chart — individual product pages carry a recommended RPM range only (e.g. `Recommended RPM 16,000-18,000`). The `authority_tier = gold` on this row is therefore not backed by a retrievable chart; flagged for the /refresh-lit-matrix run rather than re-tiered here. Prefer this HTML index over the Shopify CDN asset links, which carry `?v=` cache-busting query strings that rot."
 
 [whiteside_chipload]
-name = "Whiteside Machine Co. — Chipload reference card"
-citation_url = "(pending)"
+name = "Whiteside Machine Co. — chipload guidance (no published card located)"
+citation_url = "https://www.whitesiderouterbits.com/pages/downloads-1"
 authority_tier = "gold"
 last_verified = "2026-06-03"
+url_verified = "2026-08-05"
 covers = ["flat", "ball"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["hardwood", "softwood", "plywood"]
-notes = "Companion chipload table to whiteside_wood. Per-diameter chipload windows in inch-units; convert to mm/tooth in cell notes."
+notes = "NOT VERIFIED as a document (2026-08-05). Searched the publisher's site and the open web: Whiteside publishes NO chipload reference card. The only chipload-bearing artefact is a Vectric `.tool` library served from a Dropbox share link off `/pages/vectric-tool-files` — an unstable share, not a document — and its own page disclaims it as `a recommended starting point ... speeds and feeds may need to be adjusted`. URL here is the publisher's live downloads index so the row points at something real. This row and `whiteside_wood` describe the same (absent) chart and are candidates for merging; `authority_tier = gold` is unsupported by any retrievable document. Flagged for the /refresh-lit-matrix run."
 
 [kennametal_metals]
 name = "Kennametal — Metal Machining Speeds & Feeds Calculator"
@@ -296,42 +315,46 @@ ops = ["pocket", "profile", "adaptive2d", "vcarve", "drill"]
 materials = ["hardwood", "softwood", "plywood", "mdf"]
 notes = "Practitioner forum aggregating shop-floor recommendations. Variance is high — treat individual posts as community-tier anchors, not gold."
 
-[fanuc_kc_table]
-name = "Fanuc — Specific Cutting Force (Kc) Tables"
-citation_url = "(pending)"
+[sumitomo_kc_table]
+name = "Sumitomo Electric Hardmetal — General Catalogue, technical section (specific cutting force kc)"
+citation_url = "https://www.sumitool.com/en/downloads/cutting-tools/general-catalog/assets/pdf/n2.pdf"
 authority_tier = "engineering"
 last_verified = "2026-06-03"
 covers = ["flat", "ball", "bull"]
 ops = ["all"]
 materials = ["aluminum_6061_t6", "aluminum_7075_t6", "steel", "stainless", "plastic"]
-notes = "Kienzle-form Kc1.1 + mc pairs in the Fanuc machining-data appendix. Engineering-tier source for power gates; cross-check against `dapra_rctf` / VDI 3323. Aluminum group sits at Kc1.1 ≈ 800, mc ≈ 0.25 — same anchor `Material::kc_n_per_mm2` uses for the Aluminum arm."
+url_verified = "2026-08-05"
+notes = "KEY RENAMED 2026-08-05 from `fanuc_kc_table`, which was a misattribution: no public Fanuc machining-data appendix exists, and the URL was the literal placeholder `(pending)`. The retrieved substitute is Sumitomo's general-catalogue technical section (HTTP 200), page N18 of which prints `Rough value of kc — Aluminum: 800 MPa, General steel: 2,500 to 3,000 MPa, Cast iron: 1,500 MPa` alongside the Kienzle-form power equation Pc = vc·f·ap·kc/(60×10^3·η) and a specific-cutting-force-vs-feed curve family. The aluminum anchor Kc1.1 ≈ 800 that `Material::kc_n_per_mm2` uses is confirmed verbatim by this document. Cross-check against `dapra_rctf` / VDI 3323."
 
-[ineos_hdpe_machining]
-name = "INEOS — HDPE Machining Guide"
-citation_url = "(pending)"
+[simona_hdpe_machining]
+name = "SIMONA America — Fabrication Guidelines for HDPE and Polypropylene Sheet"
+citation_url = "https://www.simona-america.com/fileadmin/user_upload/USA/Downloads/4p_SAI_Fabrication_Guide_HDPE_and_PP_final_no_bleed.pdf"
 authority_tier = "engineering"
 last_verified = "2026-06-03"
 covers = ["flat", "o-flute", "drill"]
 ops = ["pocket", "profile", "adaptive2d", "drill"]
 materials = ["hdpe"]
-notes = "Polymer producer machining guide. Thermal-window guidance (chip welding above feed-rate ceiling, melting / gumming below) — anchors HDPE narrow-window invariants."
+url_verified = "2026-08-05"
+notes = "KEY RENAMED 2026-08-05 from `ineos_hdpe_machining`, which was a misattribution: INEOS publishes injection-moulding, extrusion and chemical-resistance guides but no HDPE machining guide, and its technical-information index 404s. The retrieved substitute is SIMONA America's 4-page fabrication guide (HTTP 200): sections for Cutting/Sawing, Milling and Routing, Drilling, Turning and Planing. Milling table gives HDPE 180-250 ft/min at 0.004-0.02 in/rev with 5-15° clearance and rake, naming a tested condition (Onsrud #52-709 3/8 double-flute upcut spiral O, 18,000 RPM, 180-250 in/min); drilling table gives 165-330 ft/min and peck at 5× drill diameter. Thermal-window language is explicit (`prevent build-up, binding and scorching`, `without chipping, scorching or melting`) — this is what anchors the HDPE narrow-window invariants. No cell cited the old key."
 
 [plastic_machining_guide]
 name = "Generic Plastic Machining Guide (consolidated polymer-producer literature)"
-citation_url = "(pending)"
+citation_url = "https://www.curbellplastics.com/services-capabilities/fabrication-machined-parts/plastic-machining-guidelines/"
 authority_tier = "engineering"
 last_verified = "2026-06-03"
 covers = ["flat", "o-flute", "drill", "ball"]
 ops = ["pocket", "profile", "adaptive2d", "drill", "vcarve"]
 materials = ["hdpe", "acrylic", "polycarbonate", "delrin", "uhmw", "polypropylene", "abs", "petg", "rigid_pvc", "nylon66"]
-notes = "Composite reference (INEOS + Curbell + Boedeker datasheet style). Use when a cell's recommendation can't be pinned to a single vendor. Engineering-tier because the guidance is consolidated polymer-producer technical bulletins, not a single primary chart."
+url_verified = "2026-08-05"
+notes = "Composite reference — by construction NOT a single primary chart, which is why its URL was the placeholder `(pending)` until 2026-08-05. The URL now points at Curbell's plastic-machining-guidelines index, the closest live single page for this material set. NOT VERIFIED for content: Curbell returns HTTP 403 to automated fetchers (the offline URL-shape check never performs a GET, so this does not affect CI). The alternative candidate, Boedeker's machining guidelines, was retrieved (HTTP 200) and rejected — it is prose with zero numeric tables and covers PBI/PAI/PEI/Ertalyte/Radel while omitting this row's HDPE/UHMW/PP/ABS/PETG/PVC. Treat this row as consolidated practice, not a cited table."
 
 [aluminum_machining_guide]
 name = "Generic Aluminum Machining Guide (consolidated SECO / Sandvik / Kennametal)"
-citation_url = "(pending)"
+citation_url = "https://www.sandvik.coromant.com/en-gb/knowledge/materials/specific-cutting-force"
 authority_tier = "engineering"
 last_verified = "2026-06-03"
 covers = ["flat", "ball", "bull", "drill"]
 ops = ["pocket", "profile", "adaptive2d", "drill"]
 materials = ["aluminum_6061_t6", "aluminum_7075_t6", "aluminum_2024_t3"]
-notes = "Composite reference. Industrial baseline; substantial hobby-wood-router derate required. Pair with `dapra_rctf` for chip-thinning corrections on small WOC."
+url_verified = "2026-08-05"
+notes = "Composite reference — by construction NOT a single primary chart, which is why its URL was the placeholder `(pending)` until 2026-08-05. The URL now points at Sandvik Coromant's specific-cutting-force knowledge page (HTTP 200), which states that kc1 differs by material group but PUBLISHES NO TABLE; the Sandvik/Seco catalogue downloads are portal roots. Deliberately NOT pointed at the Kennametal calculators URL used by `kennametal_metals` / `kennametal_chipload` — that URL is a known hard 404 (W6 audit §8.1) awaiting the same refresh run. Industrial baseline; substantial hobby-wood-router derate required. Pair with `dapra_rctf` for chip-thinning corrections on small WOC."

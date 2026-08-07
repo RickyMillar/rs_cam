@@ -17,6 +17,7 @@
 mod material_grid;
 pub(crate) mod path;
 mod search;
+mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
@@ -72,6 +73,40 @@ pub enum CleanupStrategy {
     ContourParallelHybrid,
 }
 
+/// Which engagement quantity the direction search measures and compares
+/// against `target_engagement_fraction` (contact angle α / 2π).
+///
+/// `DiskArea` is the historical measure: the fraction of the cutter
+/// *disk area* lying in material. That is a different physical quantity
+/// from the angle-fraction target — the two only coincide at full slot —
+/// so the effective stepover the controller converges on deviates from
+/// the commanded one (algorithm review 2026-06-12, finding F1).
+/// `LeadingArc` samples the leading half of the flute circle and reads
+/// α/2π directly, matching the target's units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum EngagementMeasure {
+    #[default]
+    DiskArea,
+    LeadingArc,
+}
+
+/// How the main clearing passes are generated (Stage 1 of the adaptive
+/// algorithm review).
+///
+/// `Agent` is the historical reactive per-step engagement search.
+/// `ContourSpiral` is constructive: iso-contours of the machinable-region
+/// EDT at stepover increments, traced inside-out from the helical starter
+/// pocket as one continuous stay-down pass — engagement bounded by wrap
+/// spacing, one plunge per region. Shares the narrow gate, starter
+/// pocket, residue cleanup and toolpath emission with the agent path;
+/// falls back to the agent when no starter-pocket position exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum PathStrategy2d {
+    #[default]
+    Agent,
+    ContourSpiral,
+}
+
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
     pub tool_radius: f64,
@@ -93,6 +128,18 @@ pub struct AdaptiveParams {
     pub initial_stock: Option<TriDexelStock>,
     /// How residue is mopped up after the main spiral. See `CleanupStrategy`.
     pub cleanup_strategy: CleanupStrategy,
+    /// Which engagement quantity the direction search measures. See
+    /// `EngagementMeasure`.
+    pub engagement_measure: EngagementMeasure,
+    /// How the main clearing passes are generated. See `PathStrategy2d`.
+    pub path_strategy: PathStrategy2d,
+    /// ContourSpiral trochoid trigger: a wrap point switches to looping
+    /// when its predicted leading-arc engagement exceeds
+    /// `target_engagement × this` (clamped to 0.45). The default 1.2 holds
+    /// load tightest; raising it fires fewer loops → less cutting distance
+    /// (faster) at the cost of higher peak load. Stage 4 lever for trading
+    /// load-constancy against wall-clock. Ignored by the agent path.
+    pub trochoid_cap_mult: f64,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -212,7 +259,7 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<AdaptiveRuntimeAnnotation>), Cancelled> {
-    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug)?;
+    let segments = adaptive_segments_with_debug(polygon, params, cancel, debug, None)?;
     let segments = match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
@@ -278,7 +325,55 @@ mod tests {
             min_cutting_radius: 0.0,
             initial_stock: None,
             cleanup_strategy: CleanupStrategy::Legacy,
+            engagement_measure: EngagementMeasure::DiskArea,
+            path_strategy: PathStrategy2d::Agent,
+            trochoid_cap_mult: 1.2,
         }
+    }
+
+    /// Stage 4 — the ContourSpiral path records a planner-engagement
+    /// sample for every emitted cut point, the values are valid
+    /// leading-arc fractions in `[0, 0.5]`, and the median sits near the
+    /// commanded target. This is the per-move signal the feed modulator
+    /// looks up positionally; if the sink ever comes back empty the
+    /// modulator silently falls back to the uniform floor, so this test
+    /// guards the wiring end-to-end through the 2D engine.
+    #[test]
+    fn contour_spiral_populates_planner_engagement_sink() {
+        let poly = square_polygon(60.0);
+        let params = AdaptiveParams {
+            path_strategy: PathStrategy2d::ContourSpiral,
+            cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
+            engagement_measure: EngagementMeasure::LeadingArc,
+            ..default_params(3.0, 1.2)
+        };
+        let never_cancel = || false;
+        let mut sink: Vec<(P2, f64)> = Vec::new();
+        let segs =
+            adaptive_segments_with_debug(&poly, &params, &never_cancel, None, Some(&mut sink))
+                .expect("spiral should not cancel");
+        assert!(
+            segs.iter().any(|s| matches!(s, AdaptiveSegment::Cut(_))),
+            "spiral should emit a Cut segment"
+        );
+        assert!(
+            !sink.is_empty(),
+            "spiral must record planner engagement samples"
+        );
+        for (_, f) in &sink {
+            assert!(
+                (0.0..=0.5 + 1e-9).contains(f),
+                "leading-arc fraction {f} outside [0, 0.5]"
+            );
+        }
+        let mut vals: Vec<f64> = sink.iter().map(|(_, f)| *f).collect();
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = vals[vals.len() / 2];
+        let target = crate::adaptive_shared::target_engagement_fraction(1.2, 3.0);
+        assert!(
+            median > 0.3 * target && median < 2.5 * target,
+            "median engagement {median} far from target {target}"
+        );
     }
 
     // ── MaterialGrid tests ─────────────────────────────────────────────
@@ -293,6 +388,47 @@ mod tests {
         // Outside should be air
         assert!(!grid.is_material(15.0, 0.0));
         assert!(!grid.is_material(0.0, 15.0));
+    }
+
+    #[test]
+    fn boundary_distances_are_euclidean_not_manhattan() {
+        // F4 (algorithm review 2026-06-12): the boundary-distance field
+        // is consumed by the wall bias, the gradient-mode switch and the
+        // strip-centerline follower. A diamond's edges are all at 45° to
+        // the grid, so its center reads h/√2 ≈ 7.07 under the Euclidean
+        // metric but ≈ h = 10 under the old 4-connected BFS (Manhattan).
+        let h = 10.0;
+        let diamond = Polygon2::new(vec![
+            P2::new(0.0, -h),
+            P2::new(h, 0.0),
+            P2::new(0.0, h),
+            P2::new(-h, 0.0),
+        ]);
+        let grid = MaterialGrid::from_polygon(&diamond, 0.5);
+        for (x, y) in [
+            (3.0, 5.0),
+            (-3.0, 5.0),
+            (3.0, -5.0),
+            (-3.0, -5.0),
+            (5.0, 3.0),
+            (-5.0, 3.0),
+            (5.0, -3.0),
+            (-5.0, -3.0),
+            (0.0, 9.5),
+        ] {
+            assert!(
+                grid.is_material(x, y),
+                "interior lattice point ({x},{y}) rasterised as air"
+            );
+        }
+        let dist = grid.compute_boundary_distances();
+        let center = grid.boundary_distance_at(&dist, 0.0, 0.0);
+        let expected = h / std::f64::consts::SQRT_2;
+        assert!(
+            (center - expected).abs() < 0.8,
+            "diamond-center boundary distance must be Euclidean \
+             (expected ≈{expected:.2}, Manhattan would read ≈{h:.1}); got {center:.2}"
+        );
     }
 
     #[test]
@@ -666,12 +802,22 @@ mod tests {
         );
 
         // First entry: no previous endpoints
-        let e1 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, None, &[]);
+        let empty = super::search::EndpointGrid::new(tool_radius * 3.0);
+        let e1 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, None, &empty);
         assert!(e1.is_some());
         let e1 = e1.unwrap();
 
         // Second entry: should avoid being close to the first
-        let e2 = find_entry_point(&grid, &mask, &machinable[0], tool_radius, Some(e1), &[e1]);
+        let mut visited = super::search::EndpointGrid::new(tool_radius * 3.0);
+        visited.insert(e1);
+        let e2 = find_entry_point(
+            &grid,
+            &mask,
+            &machinable[0],
+            tool_radius,
+            Some(e1),
+            &visited,
+        );
         assert!(e2.is_some());
         let e2 = e2.unwrap();
 
@@ -1363,7 +1509,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let mut cut_count = 0usize;
@@ -1526,7 +1672,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
         write_segments_svg(
             &segments,
@@ -1894,7 +2040,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
@@ -1964,7 +2110,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let baseline = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         let machinable = crate::polygon::offset_polygon(&polygon, tool_radius)
@@ -2111,8 +2257,9 @@ mod tests {
                 continue;
             }
             let _machinable = machinable_vec[0].clone();
-            let baseline = adaptive_segments_with_debug(polygon, &params, &never_cancel, None)
-                .expect("adaptive should not cancel");
+            let baseline =
+                adaptive_segments_with_debug(polygon, &params, &never_cancel, None, None)
+                    .expect("adaptive should not cancel");
             let mop_params = AdaptiveParams {
                 cleanup_strategy: CleanupStrategy::ResidueMop,
                 ..default_params(tool_radius, stepover)
@@ -2129,7 +2276,7 @@ mod tests {
                 ..default_params(tool_radius, stepover)
             };
             let narrow_segs =
-                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None)
+                adaptive_segments_with_debug(polygon, &narrow_params, &never_cancel, None, None)
                     .expect("adaptive should not cancel");
             let narrow = path::apply_residue_mop_cleanup(polygon, &narrow_params, &narrow_segs);
             // ContourParallelHybrid: spiral runs on whole machinable
@@ -2143,7 +2290,7 @@ mod tests {
                 ..default_params(tool_radius, stepover)
             };
             let hybrid_segs =
-                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None)
+                adaptive_segments_with_debug(polygon, &hybrid_params, &never_cancel, None, None)
                     .expect("adaptive should not cancel");
             let hybrid =
                 path::apply_contour_parallel_residue_cleanup(polygon, &hybrid_params, &hybrid_segs);
@@ -2207,7 +2354,7 @@ mod tests {
             ..default_params(tool_radius, stepover)
         };
         let never_cancel = || false;
-        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None)
+        let segments = adaptive_segments_with_debug(&polygon, &params, &never_cancel, None, None)
             .expect("adaptive should not cancel");
 
         // Find the first Cut group; take its first N points.

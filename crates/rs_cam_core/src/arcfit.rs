@@ -10,11 +10,22 @@
 //! adaptive3d occasionally emits arcs of R = 257mm on parts whose largest
 //! feature is ~72mm. Pass `f64::INFINITY` to disable the cap (e.g. in tests
 //! that don't model a specific tool).
+//!
+//! The cap is **ENVELOPE-relative**: production supplies `tool_diameter / 2.0`
+//! (`compute/execute.rs`), i.e. `MillingCutter::envelope_radius_mm()`. It must
+//! track `narrate::append_large_arc_anomalies`, which applies the same
+//! multiplier to the same radius so narration stays a post-condition on this
+//! cap rather than an independent quality hint. Do not switch either side to
+//! `cusp_radius_mm()` — on a tapered tool that drops one side 6× and floods
+//! narration with false positives (H2.6, `TOOL_SCALE_SEMANTICS.md` §5;
+//! pinned by `tests/tool_scale_semantics_pr2.rs`).
 
+use crate::condition::FEED_EPS;
 use crate::geo::P3;
 use crate::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
@@ -24,48 +35,98 @@ use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 /// Only fits arcs in the XY plane (constant Z within tolerance).
 ///
 /// Span-aware (Phase 3e / #54):
-/// - Honors `RapidOrderBarrier` and `DepthPass` boundaries: a candidate arc run
-///   that would span across such a barrier is truncated at the barrier.
-/// - Each inserted arc is tagged with a `DressupArtifact` span labeled "arc-fit".
+/// - Honors `RapidOrderBarrier`, `DepthPass` and (H2.2 / Checkpoint F1 Q2)
+///   `Region` boundaries: a candidate arc run that would span across such a
+///   barrier is truncated at the barrier. `Region` joined the set so a fitted
+///   arc can never straddle two region nodes — both regions' `move_range`s
+///   would otherwise land on the same index and stop tiling, which is the
+///   invariant `region_node_ranges_tile_the_stitched_toolpath` exists to guard.
+/// - Each inserted arc is tagged with a [`SpanKind::GeometryRefit`] span
+///   labeled "arc-fit". It was `SpanKind::DressupArtifact` until Checkpoint D
+///   Q3 (2026-08-04); that kind is on the transit list, so every arc-fitted
+///   cutting sample was dropped from the chipload / power / deflection gate
+///   populations and from both peak accumulators. A fitted arc is the same
+///   cut re-represented within `tolerance`, not a bridge over neighbouring
+///   stock, so it now carries its own kind and stays in those populations.
+///   See `planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md` §7.
 /// - Input spans are remapped through the N-to-1 collapse via `MoveRemap`.
 /// - When `spans_valid` is `false`, the legacy unconditional collapse runs and
 ///   spans pass through untouched.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+///
+/// Intent-aware (H2.2 / Checkpoint F1 Q1+Q3): the run key carries
+/// `Move::intent` as an equality term, so a candidate run is homogeneous in
+/// intent by construction and the collapsed arc's own intent is exact rather
+/// than inherited from whichever move happened to come first. `MoveIntent`
+/// equality is STRICT — `Unknown` is not a wildcard and breaks against every
+/// tagged intent (ruled at Checkpoint F1 Q3).
 pub fn fit_arcs(
     annotated: AnnotatedToolpath,
     tolerance: f64,
     tool_radius: f64,
 ) -> AnnotatedToolpath {
-    let AnnotatedToolpath {
-        toolpath,
-        spans,
-        spans_valid,
-    } = annotated;
-    let moves = &toolpath.moves;
+    fit_arcs_with_provenance(annotated, tolerance, tool_radius)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+}
 
-    if moves.is_empty() {
-        return AnnotatedToolpath {
-            toolpath: Toolpath::new(),
-            spans,
-            spans_valid,
-        };
-    }
-
+/// [`fit_arcs`] under the C1 provenance contract — hands back the N-to-1
+/// collapse so channels other than the spans can follow it.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn fit_arcs_with_provenance(
+    annotated: AnnotatedToolpath,
+    tolerance: f64,
+    tool_radius: f64,
+) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; we treat it as cutting the arc-eligible run so any candidate
     // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
     // barrier at index `b` with start < b < end blocks that window.
-    let barriers: std::collections::BTreeSet<usize> = if spans_valid {
-        spans
-            .iter()
-            .filter_map(|s| match s.kind {
-                SpanKind::RapidOrderBarrier | SpanKind::DepthPass => Some(s.start_move),
-                _ => None,
-            })
+    //
+    // `rapid_order_barriers()` supplies the `RapidOrderBarrier` / `DepthPass`
+    // set. H2.2 (Checkpoint F1 Q2) adds BOTH edges of every `SpanKind::Region`
+    // span on top of it, locally to arc-fit: a region's first move must not be
+    // glued to the previous region's last one in a single arc, or the two
+    // regions' `move_range`s collapse onto one index and the region-node
+    // tiling invariant breaks. This is deliberately NOT folded into
+    // `rapid_order_barriers()` — that set is also read by TSP reordering and
+    // by `execute`'s barrier-count branch, and widening it there would be a
+    // second, unruled output move.
+    let barriers: std::collections::BTreeSet<usize> = if annotated.spans_valid {
+        annotated
+            .rapid_order_barriers()
+            .into_iter()
+            .chain(
+                annotated
+                    .spans
+                    .iter()
+                    .filter(|s| s.kind == SpanKind::Region)
+                    .flat_map(|s| [s.start_move, s.end_move]),
+            )
             .collect()
     } else {
         std::collections::BTreeSet::new()
     };
+
+    let AnnotatedToolpath {
+        toolpath,
+        spans,
+        spans_valid,
+        planner_engagement,
+        rest_grid,
+        rest_regions,
+    } = annotated;
+    let moves = &toolpath.moves;
+
+    if moves.is_empty() {
+        return Transformed::index_preserving(AnnotatedToolpath {
+            toolpath: Toolpath::new(),
+            spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        });
+    }
 
     let mut result = Toolpath::new();
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
@@ -95,15 +156,26 @@ pub fn fit_arcs(
 
         let start = &moves[i - 1].target;
 
-        // Collect consecutive linear moves at same feed rate and approximately same Z
+        // Collect consecutive linear moves at the same feed rate AND the same
+        // intent. Z may vary: `try_fit_arc` accepts a run only if it forms a
+        // valid planar arc (constant Z) OR a helix (Z linear with swept angle),
+        // so runs no longer split on every Z change — helical entries and
+        // spiral descents now arc-fit into G2/G3 with a Z endpoint instead of
+        // dozens of tiny G1s.
+        //
+        // H2.2: `intent` is an equality term of the run key. Without it a
+        // homogeneous `FinishingCut` run continuing at the same feed into the
+        // `LeadOut` arc `apply_lead_in_out` appended was collapsed into one arc
+        // labelled `FinishingCut` whose target is a lead-out position the
+        // finishing pass never cut. Equality is strict: `Unknown` breaks
+        // against every tagged intent (Checkpoint F1 Q3).
+        let run_intent = m.intent;
         let mut end_idx = i;
         while end_idx < moves.len() {
             match moves[end_idx].move_type {
-                MoveType::Linear { feed_rate: f } if (f - feed_rate).abs() < 1e-6 => {
-                    // Check Z is approximately constant
-                    if (moves[end_idx].target.z - start.z).abs() > tolerance {
-                        break;
-                    }
+                MoveType::Linear { feed_rate: f }
+                    if (f - feed_rate).abs() < FEED_EPS && moves[end_idx].intent == run_intent =>
+                {
                     end_idx += 1;
                 }
                 _ => break,
@@ -154,15 +226,21 @@ pub fn fit_arcs(
 
         if let Some(arc) = best_arc {
             let end_pt = &moves[best_arc_end - 1].target;
-            let z = start.z; // Use start Z (constant within tolerance)
+            // Helical-aware: emit the run's END Z. GRBL interpolates Z linearly
+            // from the current position (start.z) to this commanded Z over the
+            // swept angle — and try_fit_arc only accepted the run if its Z is
+            // linear with swept angle, so the helix matches the source path.
+            // For a constant-Z run end_pt.z == start.z (unchanged behaviour).
+            let z = end_pt.z;
 
             // I, J = offset from start point to center
             let ij_i = arc.cx - start.x;
             let ij_j = arc.cy - start.y;
 
-            // Collapsed-arc intent inherits from the source feed segments.
-            // All collapsed segments share `feed_rate` already; intent
-            // taken from the first collapsed source move.
+            // Collapsed-arc intent comes from the source feed segments. The
+            // run key holds `intent` equal across `moves[i..end_idx]`, so
+            // every collapsed source move carries this same intent — reading
+            // the first one is exact, not an inheritance guess (H2.2).
             let arc_intent = moves[i].intent;
 
             let arc_idx = result.moves.len();
@@ -204,40 +282,28 @@ pub fn fit_arcs(
     }
 
     let new_n_moves = result.moves.len();
+    let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {
-        let remap = MoveRemap { old_to_new };
-        let mut remapped: Vec<Span> = spans
-            .into_iter()
-            .filter_map(|s| {
-                let payload = s.payload.clone();
-                let label = s.label.clone();
-                let mut new_span = if s.is_boundary() {
-                    let new_pos = remap.remap_boundary(s.start_move, new_n_moves);
-                    Span::new(new_pos, new_pos, s.kind)
-                } else {
-                    let r = remap.remap_range(s.start_move, s.end_move)?;
-                    Span::new(r.start, r.end, s.kind)
-                }
-                .with_label(label);
-                if let Some(p) = payload {
-                    new_span = new_span.with_payload(p);
-                }
-                Some(new_span)
-            })
-            .collect();
+        let mut remapped = remap.remap_spans(&spans, new_n_moves);
         for pos in arc_positions {
-            remapped.push(Span::new(pos, pos + 1, SpanKind::DressupArtifact).with_label("arc-fit"));
+            remapped.push(Span::new(pos, pos + 1, SpanKind::GeometryRefit).with_label("arc-fit"));
         }
         remapped
     } else {
         spans
     };
 
-    AnnotatedToolpath {
-        toolpath: result,
-        spans: new_spans,
-        spans_valid,
-    }
+    Transformed::from_remap(
+        AnnotatedToolpath {
+            toolpath: result,
+            spans: new_spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        },
+        remap,
+    )
 }
 
 struct ArcParams {
@@ -252,7 +318,8 @@ struct ArcParams {
 ///
 /// `tool_radius` caps the fitted radius at
 /// `tool_radius * LARGE_ARC_RADIUS_MULTIPLIER` (Roadmap F.10). Pass
-/// `f64::INFINITY` to disable the cap.
+/// `f64::INFINITY` to disable the cap. The bound is the ENVELOPE radius and
+/// must stay in lockstep with narration's threshold — see the module doc.
 fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcParams> {
     if points.len() < 3 {
         return None;
@@ -327,11 +394,12 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     }
 
     // Roadmap F.10: cap fitted radius at LARGE_ARC_RADIUS_MULTIPLIER × tool
-    // radius. Kåsa's algebraic least-squares is biased toward huge circles on
-    // barely-curving inputs; without this cap, adaptive3d output occasionally
-    // collapses a slightly-bowed polyline into an arc whose radius dwarfs any
-    // feature on the part. The narration warns on these via the same
-    // multiplier — keeping the fitter and narrator in sync.
+    // ENVELOPE radius. Kåsa's algebraic least-squares is biased toward huge
+    // circles on barely-curving inputs; without this cap, adaptive3d output
+    // occasionally collapses a slightly-bowed polyline into an arc whose
+    // radius dwarfs any feature on the part. The narration warns on these via
+    // the same multiplier applied to the same radius — keeping the fitter and
+    // narrator in sync is the contract, not a coincidence (§5 / H2.6).
     if radius > tool_radius * LARGE_ARC_RADIUS_MULTIPLIER {
         return None;
     }
@@ -388,7 +456,93 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     let cross = dx1 * dy2 - dy1 * dx2;
 
     // Negative cross product = CW (G2), positive = CCW (G3)
-    let clockwise = cross < 0.0;
+    let mut clockwise = cross < 0.0;
+
+    // …and then CHECK it, because the cross product is only a hint. On a
+    // shallow run the three sample points are nearly collinear, `cross`
+    // is dominated by rounding, and its sign flips at random. Getting it
+    // wrong is not a small error: the arc through the same two endpoints
+    // on the same circle is then the REFLEX one, so a 3.6° sweep becomes
+    // 356° and the machine drives a full circle through the part.
+    //
+    // Measured in the field (wanaka ×2, Op B, 2026-07-28): an `ArcCW`
+    // with endpoints 3.55 mm apart on a 57.04 mm circle, swept angle
+    // 356.4°, arc length 354 mm for a ~3.5 mm polyline. 421 of Op B's
+    // 11 346 arcs were reflex like this, worst 359.12°. The simulator cut
+    // along them — 5.5 mm off a column 97 mm from the move.
+    //
+    // The invariant the fitter was missing: a fitted arc must be about as
+    // LONG as the polyline it replaces. Both directions pass through both
+    // endpoints, so length is what distinguishes them. Pick the direction
+    // whose arc length is closer to the polyline's, then reject outright
+    // if even that one is implausible — a genuine reflex arc cannot be
+    // fit from points whose own path is far shorter than its sweep.
+    {
+        let mut poly_len = 0.0_f64;
+        for w in points.windows(2) {
+            // SAFETY: `windows(2)` always yields exactly two elements.
+            #[allow(clippy::indexing_slicing)]
+            let (p, q) = (w[0], w[1]);
+            poly_len += ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
+        }
+        let a0 = (p_first.y - cy).atan2(p_first.x - cx);
+        let a1 = (p_last.y - cy).atan2(p_last.x - cx);
+        let sweep_for = |cw: bool| -> f64 {
+            let mut s = if cw { a0 - a1 } else { a1 - a0 };
+            while s <= 0.0 {
+                s += std::f64::consts::TAU;
+            }
+            s
+        };
+        let err = |cw: bool| (radius * sweep_for(cw) - poly_len).abs();
+        if err(!clockwise) < err(clockwise) {
+            clockwise = !clockwise;
+        }
+        // A correct fit tracks the polyline closely; the sagitta test above
+        // already bounds how far the arc may stray from it. Half the
+        // polyline length of slack is far beyond any legitimate fit and
+        // still rejects every reflex mis-direction (354 mm vs 3.5 mm).
+        if (radius * sweep_for(clockwise) - poly_len).abs() > 0.5 * poly_len + tolerance {
+            return None;
+        }
+    }
+
+    // Helical / planar Z validity. GRBL interpolates Z linearly with the swept
+    // angle along a G2/G3 arc, so a Z-varying run is a valid arc only if it is a
+    // true helix (Z linear with cumulative swept angle). A constant-Z run
+    // (|z_end - z_start| <= tolerance) trivially passes. Reject everything else
+    // so terrain/ramp paths whose Z wanders fall back to linear segments.
+    let z_start = p_first.z;
+    let z_end = p_last.z;
+    if (z_end - z_start).abs() > tolerance {
+        // Cumulative swept angle per point, in the arc's travel direction.
+        let mut swept = Vec::with_capacity(points.len());
+        let mut cum = 0.0_f64;
+        let mut prev_ang = (points[0].y - cy).atan2(points[0].x - cx);
+        swept.push(0.0);
+        for pt in &points[1..] {
+            let a = (pt.y - cy).atan2(pt.x - cx);
+            let step = if clockwise {
+                prev_ang - a
+            } else {
+                a - prev_ang
+            };
+            cum += step.rem_euclid(std::f64::consts::TAU);
+            swept.push(cum);
+            prev_ang = a;
+        }
+        if cum < 1e-9 {
+            // No net sweep but Z changed → a vertical/degenerate move, not a helix.
+            return None;
+        }
+        for (pt, &s) in points.iter().zip(swept.iter()) {
+            let frac = s / cum;
+            let expected_z = z_start + (z_end - z_start) * frac;
+            if (pt.z - expected_z).abs() > tolerance {
+                return None;
+            }
+        }
+    }
 
     Some(ArcParams { cx, cy, clockwise })
 }
@@ -555,6 +709,59 @@ mod tests {
 
         let arc = try_fit_arc(&refs[0..5], 0.05, f64::INFINITY).unwrap();
         assert!(arc.clockwise);
+    }
+
+    /// Regression, wanaka ×2 Op B 2026-07-28: a shallow run whose three
+    /// direction-sample points are nearly collinear got the cross-product
+    /// hint backwards, and the arc through the same endpoints on the same
+    /// circle in the WRONG direction is the reflex one. Field case: an
+    /// `ArcCW` with endpoints 3.55 mm apart on a 57.04 mm circle sweeping
+    /// 356.4° — 354 mm of arc for a 3.5 mm path — which the simulator cut
+    /// along, taking 5.5 mm off a column 97 mm away, and which a machine
+    /// would have driven as a 114 mm circle through the workpiece. 421 of
+    /// Op B's 11 346 arcs were reflex like this.
+    ///
+    /// A fitted arc must be about as long as the polyline it replaces;
+    /// both directions share the endpoints, so length is what tells them
+    /// apart. Either the fitter picks the short way or it declines.
+    #[test]
+    fn fit_arc_never_emits_the_reflex_direction() {
+        // The field arc's own circle: centre (158.544, 93.391), r 57.04.
+        let (cx, cy, r) = (158.5441, 93.3912, 57.0421);
+        let a0: f64 = 71.34_f64.to_radians();
+        let a1: f64 = 74.90_f64.to_radians();
+        // A short CCW run along that circle, sampled densely enough that
+        // the direction hint is numerically marginal — which is exactly
+        // the regime that produced the bug.
+        let pts: Vec<P3> = (0..=8)
+            .map(|i| {
+                let t = f64::from(i) / 8.0;
+                let a = a0 + (a1 - a0) * t;
+                P3::new(cx + r * a.cos(), cy + r * a.sin(), 1.218 + 1.636 * t)
+            })
+            .collect();
+        let refs: Vec<&P3> = pts.iter().collect();
+        let poly_len: f64 = pts
+            .windows(2)
+            .map(|w| ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt())
+            .sum();
+
+        if let Some(arc) = try_fit_arc(&refs, 0.05, f64::INFINITY) {
+            let s0 = (pts[0].y - arc.cy).atan2(pts[0].x - arc.cx);
+            let s1 = (pts[8].y - arc.cy).atan2(pts[8].x - arc.cx);
+            let mut sweep = if arc.clockwise { s0 - s1 } else { s1 - s0 };
+            while sweep <= 0.0 {
+                sweep += std::f64::consts::TAU;
+            }
+            let arc_len = r * sweep;
+            assert!(
+                arc_len < 2.0 * poly_len,
+                "fitted arc sweeps {:.1}° ({arc_len:.2}mm) for a {poly_len:.2}mm polyline — \
+                 the reflex direction was emitted",
+                sweep.to_degrees()
+            );
+        }
+        // Declining to fit is also correct; emitting the reflex arc is not.
     }
 
     /// Regression: arc-fit must not fit a circumscribing-circle arc to
@@ -836,7 +1043,7 @@ mod tests {
         // barrier in the middle. Arc-fit must not collapse a single arc
         // across the barrier — both halves should be arc-fit (or each smaller
         // run preserved) but the barrier index itself must NOT fall inside
-        // any DressupArtifact arc span.
+        // any GeometryRefit arc span.
         let tp = circle_linear_toolpath(64);
         let n_in = tp.moves.len();
         // Place barrier at the midpoint of the linear run.
@@ -853,7 +1060,7 @@ mod tests {
         // With the barrier, no arc may span the boundary.
         let result = fit_arcs(annotated, 0.1, f64::INFINITY);
 
-        // Build a remap from old indices to the new arc/move via DressupArtifact
+        // Build a remap from old indices to the new arc/move via GeometryRefit
         // span coverage in the new toolpath. Any arc that COVERS a barrier in
         // OLD indices would have collapsed across — we instead check the
         // structural invariant: the total number of moves is reduced (arcs
@@ -873,13 +1080,13 @@ mod tests {
         assert_eq!(barriers.len(), 1, "barrier preserved exactly once");
         assert!(barriers[0].is_boundary(), "barrier stays zero-width");
 
-        // No DressupArtifact (arc-fit) span may contain the barrier index in
+        // No GeometryRefit (arc-fit) span may contain the barrier index in
         // the new toolpath — that would mean we collapsed across it.
         let barrier_new_idx = barriers[0].start_move;
         for s in result
             .spans
             .iter()
-            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .filter(|s| s.kind == SpanKind::GeometryRefit)
         {
             assert!(
                 !(s.start_move < barrier_new_idx && s.end_move > barrier_new_idx),
@@ -899,7 +1106,7 @@ mod tests {
     #[test]
     fn fit_arcs_remaps_spans_and_tags_artifact() {
         // No barriers — a clean arc-eligible run. Operation span should shrink
-        // to match new move count, and DressupArtifact spans should tag the
+        // to match new move count, and GeometryRefit spans should tag the
         // arcs.
         let tp = circle_linear_toolpath(64);
         let n_in = tp.moves.len();
@@ -921,11 +1128,11 @@ mod tests {
         let artifacts: Vec<&Span> = result
             .spans
             .iter()
-            .filter(|s| s.kind == SpanKind::DressupArtifact)
+            .filter(|s| s.kind == SpanKind::GeometryRefit)
             .collect();
         assert!(
             !artifacts.is_empty(),
-            "at least one DressupArtifact (arc-fit) span"
+            "at least one GeometryRefit (arc-fit) span"
         );
         for a in &artifacts {
             assert_eq!(a.label, "arc-fit");
@@ -936,7 +1143,7 @@ mod tests {
                     result.toolpath.moves[a.start_move].move_type,
                     MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
                 ),
-                "DressupArtifact span must tag an arc move"
+                "GeometryRefit span must tag an arc move"
             );
         }
 
@@ -992,5 +1199,142 @@ mod tests {
 
         let gcode = emit_gcode(&tp, post::grbl(), 18000);
         assert!(gcode.contains("G2"), "Should contain G2 for CW arc");
+    }
+
+    /// Phase 2: a clean helix (circle in XY, Z linear with swept angle) arc-fits
+    /// into G2/G3 with a Z endpoint — the case that lets helical descents and
+    /// (lead-separated) helix entries collapse from dozens of G1s to a few arcs.
+    #[test]
+    fn test_fit_arcs_helix_descent() {
+        let r = 10.0;
+        let n = 27; // 10° steps over 270°
+        let pt = |k: usize| {
+            let frac = k as f64 / n as f64;
+            let ang = frac * 0.75 * std::f64::consts::TAU; // 270°
+            P3::new(r * ang.cos(), r * ang.sin(), -3.0 * frac)
+        };
+        let mut tp = Toolpath::new();
+        // Anchor ON the circle at the run's start Z (no vertical lead in the run).
+        tp.rapid_to(pt(0));
+        for k in 1..=n {
+            tp.feed_to(pt(k), 500.0);
+        }
+        let result = fit_arcs(AnnotatedToolpath::new(tp.clone()), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert!(
+            arc_count >= 1,
+            "clean helix must arc-fit; got {} moves, 0 arcs",
+            result.moves.len()
+        );
+        assert!(
+            result.moves.len() < tp.moves.len(),
+            "helix should reduce moves"
+        );
+        // The fitted arc carries the descended Z (GRBL helically interpolates).
+        let last_arc_z = result
+            .moves
+            .iter()
+            .rev()
+            .find_map(|m| match m.move_type {
+                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => Some(m.target.z),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            last_arc_z < -2.0,
+            "helix arc must descend in Z, end z={last_arc_z}"
+        );
+    }
+
+    /// Phase 2 (real-impact): replicate `dressup::emit_helix`'s exact structure
+    /// — rapid to the center, then orbit the center at `radius` descending in Z
+    /// (36 steps/rev), then a final return to center. The orbit anchor (center)
+    /// and the return move are OFF the circle, so this verifies the greedy fitter
+    /// recovers and still collapses the bulk of the helix into arcs (a roughing
+    /// plunge goes from dozens of G1s to a couple of G2/G3s).
+    #[test]
+    fn test_fit_arcs_helix_entry_structure() {
+        let (cx, cy, radius) = (0.0, 0.0, 2.0);
+        let steps_per_rev = 36usize;
+        let revs = 2.0;
+        let total_steps = (revs * steps_per_rev as f64) as usize;
+        let z_top = 1.0;
+        let dz = 2.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(cx, cy, z_top)); // anchor AT center (off-circle)
+        for i in 1..=total_steps {
+            let t = i as f64 / total_steps as f64;
+            let ang = revs * std::f64::consts::TAU * t;
+            let z = z_top - dz * t;
+            tp.feed_to(
+                P3::new(cx + radius * ang.cos(), cy + radius * ang.sin(), z),
+                300.0,
+            );
+        }
+        tp.feed_to(P3::new(cx, cy, z_top - dz), 300.0); // return to center
+        let n_in = tp.moves.len();
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert!(
+            arc_count >= 1,
+            "helix entry must arc-fit despite the center anchor; {n_in} in -> {} out, {arc_count} arcs",
+            result.moves.len()
+        );
+        // 73 input moves (rapid + 72 helix + return) must collapse substantially.
+        assert!(
+            result.moves.len() < n_in / 2,
+            "helix entry should at least halve the move count: {n_in} -> {}",
+            result.moves.len()
+        );
+    }
+
+    /// Phase 2: a run that is circular in XY but whose Z does NOT vary linearly
+    /// with swept angle is not a helix — it must fall back to linear segments,
+    /// not emit a G2/G3 that GRBL would interpolate into the wrong Z path.
+    #[test]
+    fn test_fit_arc_rejects_nonlinear_z() {
+        let r = 10.0;
+        let n = 12;
+        let mut tp = Toolpath::new();
+        let pt = |k: usize, z: f64| {
+            let ang = (k as f64 / n as f64) * 0.5 * std::f64::consts::TAU; // 180°
+            P3::new(r * ang.cos(), r * ang.sin(), z)
+        };
+        tp.rapid_to(pt(0, 0.0));
+        for k in 1..=n {
+            // Z oscillates between 0 and -2 — circular in XY, non-linear in Z.
+            let z = if k % 2 == 0 { -2.0 } else { 0.0 };
+            tp.feed_to(pt(k, z), 500.0);
+        }
+        let result = fit_arcs(AnnotatedToolpath::new(tp), 0.05, f64::INFINITY).toolpath;
+        let arc_count = result
+            .moves
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.move_type,
+                    MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+                )
+            })
+            .count();
+        assert_eq!(arc_count, 0, "non-helical Z variation must not arc-fit");
     }
 }

@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::compute::stock_config::ModelId;
 use rs_cam_core::feeds::FeedsResult;
 use rs_cam_core::session::ToolpathConfig;
 
@@ -65,163 +64,16 @@ impl ToolpathRuntime {
     }
 }
 
-// ── Per-setup runtime state ───────────────────────────────────────────
-
-/// Which corner of the stock to probe for XY datum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Corner {
-    FrontLeft,
-    FrontRight,
-    BackLeft,
-    BackRight,
-}
-
-impl Corner {
-    pub const ALL: &[Corner] = &[
-        Corner::FrontLeft,
-        Corner::FrontRight,
-        Corner::BackLeft,
-        Corner::BackRight,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Corner::FrontLeft => "Front-Left",
-            Corner::FrontRight => "Front-Right",
-            Corner::BackLeft => "Back-Left",
-            Corner::BackRight => "Back-Right",
-        }
-    }
-
-    pub fn to_key(&self) -> &'static str {
-        match self {
-            Corner::FrontLeft => "fl",
-            Corner::FrontRight => "fr",
-            Corner::BackLeft => "bl",
-            Corner::BackRight => "br",
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        match s {
-            "fr" => Corner::FrontRight,
-            "bl" => Corner::BackLeft,
-            "br" => Corner::BackRight,
-            _ => Corner::FrontLeft,
-        }
-    }
-}
-
-/// How the operator establishes XY zero for this setup.
-#[derive(Debug, Clone, PartialEq)]
-pub enum XYDatum {
-    CornerProbe(Corner),
-    CenterOfStock,
-    AlignmentPins,
-    Manual,
-}
-
-impl Default for XYDatum {
-    fn default() -> Self {
-        XYDatum::CornerProbe(Corner::FrontLeft)
-    }
-}
-
-impl XYDatum {
-    pub fn label(&self) -> &str {
-        match self {
-            XYDatum::CornerProbe(c) => match c {
-                Corner::FrontLeft => "Corner Probe (Front-Left)",
-                Corner::FrontRight => "Corner Probe (Front-Right)",
-                Corner::BackLeft => "Corner Probe (Back-Left)",
-                Corner::BackRight => "Corner Probe (Back-Right)",
-            },
-            XYDatum::CenterOfStock => "Center of Stock",
-            XYDatum::AlignmentPins => "Alignment Pins",
-            XYDatum::Manual => "Manual",
-        }
-    }
-
-    pub fn to_key(&self) -> String {
-        match self {
-            XYDatum::CornerProbe(c) => format!("corner_{}", c.to_key()),
-            XYDatum::CenterOfStock => "center".into(),
-            XYDatum::AlignmentPins => "pins".into(),
-            XYDatum::Manual => "manual".into(),
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        if let Some(corner) = s.strip_prefix("corner_") {
-            XYDatum::CornerProbe(Corner::from_key(corner))
-        } else {
-            match s {
-                "center" => XYDatum::CenterOfStock,
-                "pins" => XYDatum::AlignmentPins,
-                "manual" => XYDatum::Manual,
-                _ => XYDatum::default(),
-            }
-        }
-    }
-}
-
-/// How the operator establishes Z zero for this setup.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum ZDatum {
-    #[default]
-    StockTop,
-    MachineTable,
-    FixedOffset(f64),
-    Manual,
-}
-
-impl ZDatum {
-    pub fn label(&self) -> String {
-        match self {
-            ZDatum::StockTop => "Stock Top".into(),
-            ZDatum::MachineTable => "Machine Table".into(),
-            ZDatum::FixedOffset(z) => format!("Fixed Offset ({z:.1} mm)"),
-            ZDatum::Manual => "Manual".into(),
-        }
-    }
-
-    pub fn to_key(&self) -> String {
-        match self {
-            ZDatum::StockTop => "stock_top".into(),
-            ZDatum::MachineTable => "table".into(),
-            ZDatum::FixedOffset(z) => format!("offset:{z}"),
-            ZDatum::Manual => "manual".into(),
-        }
-    }
-
-    pub fn from_key(s: &str) -> Self {
-        if let Some(val) = s.strip_prefix("offset:") {
-            ZDatum::FixedOffset(val.parse().unwrap_or(0.0))
-        } else {
-            match s {
-                "table" => ZDatum::MachineTable,
-                "manual" => ZDatum::Manual,
-                _ => ZDatum::StockTop,
-            }
-        }
-    }
-}
-
-/// How to establish the work coordinate system for a setup.
-#[derive(Debug, Clone, Default)]
-pub struct DatumConfig {
-    pub xy_method: XYDatum,
-    pub z_method: ZDatum,
-    pub notes: String,
-}
-
-/// GUI-only state for a single setup — datum config and model filtering.
-#[derive(Default)]
-pub struct SetupRuntime {
-    pub datum: DatumConfig,
-    /// Models relevant to this setup. Empty means all models are available.
-    pub model_ids: Vec<ModelId>,
-}
+// ── Per-setup state (W9 / P-2) ────────────────────────────────────────
+//
+// `SetupRuntime { datum, model_ids }` used to live here as GUI-only
+// overlay state, alongside a byte-identical private copy of the datum
+// enums. Both fields are operator intent — how the machine is zeroed and
+// which models the setup is allowed to use — and neither had a home on
+// the wire, so every save dropped them. They now live on core's
+// `SetupData` and are persisted; the Setup properties panel already had
+// `&mut SetupData` in hand, so it writes straight through to the session
+// and there is no overlay left to keep in sync.
 
 // ── Combined view for UI code ─────────────────────────────────────────
 
@@ -268,8 +120,6 @@ pub struct GuiState {
     pub post: PostConfig,
     /// Per-toolpath GUI runtime state, keyed by toolpath semantic ID.
     pub toolpath_rt: HashMap<rs_cam_core::ToolpathId, ToolpathRuntime>,
-    /// Per-setup GUI runtime state, keyed by setup semantic ID.
-    pub setup_rt: HashMap<usize, SetupRuntime>,
     /// User-toggled overrides for the tool-load export gate. Reset on project load.
     pub tool_load_overrides: ToolLoadOverrides,
     /// Recently changed parameters from MCP, with timestamp for fade-out.
@@ -297,7 +147,6 @@ impl GuiState {
             edit_counter: 0,
             post: PostConfig::default(),
             toolpath_rt: HashMap::new(),
-            setup_rt: HashMap::new(),
             tool_load_overrides: ToolLoadOverrides::default(),
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
@@ -308,11 +157,12 @@ impl GuiState {
     /// Build a `PostConfig` (viz enum format) from the session's string-based config.
     pub fn post_from_session(session_post: &rs_cam_core::session::ProjectPostConfig) -> PostConfig {
         PostConfig {
-            format: match session_post.format.to_ascii_lowercase().as_str() {
-                "linuxcnc" => PostFormat::LinuxCnc,
-                "mach3" => PostFormat::Mach3,
-                _ => PostFormat::Grbl,
-            },
+            // W9 / P-1: the open-coded match this replaces had no
+            // `"grblhal"` arm, so reloading a grblHAL project silently
+            // reset the Post panel's dropdown to GRBL. `from_token` is
+            // the tested resolver; an unknown token still falls back to
+            // GRBL rather than failing the load.
+            format: PostFormat::from_token(&session_post.format).unwrap_or(PostFormat::Grbl),
             spindle_speed: session_post.spindle_speed,
             safe_z: session_post.safe_z,
             high_feedrate_mode: session_post.high_feedrate_mode,
@@ -324,13 +174,10 @@ impl GuiState {
     /// Sync session post config from the viz-friendly PostConfig.
     pub fn post_to_session(post: &PostConfig) -> rs_cam_core::session::ProjectPostConfig {
         rs_cam_core::session::ProjectPostConfig {
-            format: match post.format {
-                PostFormat::Grbl => "grbl",
-                PostFormat::GrblHal => "grblhal",
-                PostFormat::LinuxCnc => "linuxcnc",
-                PostFormat::Mach3 => "mach3",
-            }
-            .to_owned(),
+            // Same tokens as before, now from the single writer half of
+            // the resolver pair (`PostFormat::to_token`) so the spelling
+            // cannot drift from what `from_token` accepts.
+            format: post.format.to_token().to_owned(),
             spindle_speed: post.spindle_speed,
             safe_z: post.safe_z,
             high_feedrate_mode: post.high_feedrate_mode,
@@ -351,15 +198,61 @@ impl GuiState {
             .entry(id)
             .or_insert_with(|| ToolpathRuntime::new(true))
     }
-
-    /// Get or create a setup runtime entry.
-    pub fn setup_rt_or_default(&mut self, id: usize) -> &mut SetupRuntime {
-        self.setup_rt.entry(id).or_default()
-    }
 }
 
 impl Default for GuiState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    /// W9 / P-1. `post_from_session` used to open-code a token match
+    /// with no `"grblhal"` arm, so every project reload silently reset
+    /// the Post panel's dropdown from grblHAL to GRBL. Driven off
+    /// `PostFormat::ALL` so a fifth dialect cannot be added with a
+    /// writer arm and no reader arm.
+    #[test]
+    fn every_post_format_survives_the_session_round_trip() {
+        for &format in PostFormat::ALL {
+            let post = PostConfig {
+                format,
+                ..PostConfig::default()
+            };
+            let session_post = GuiState::post_to_session(&post);
+            assert_eq!(
+                GuiState::post_from_session(&session_post).format,
+                format,
+                "{format:?} did not survive post_to_session -> post_from_session \
+                 (token was {:?})",
+                session_post.format
+            );
+        }
+    }
+
+    /// The serialized spelling is part of the file format — pin it so
+    /// the P-1 fix cannot be "rename the token".
+    #[test]
+    fn the_written_post_tokens_are_the_shipped_spellings() {
+        let tokens: Vec<&str> = PostFormat::ALL.iter().map(|f| f.to_token()).collect();
+        assert_eq!(tokens, vec!["grbl", "grblhal", "linuxcnc", "mach3"]);
+    }
+
+    /// An unrecognised token still loads as GRBL rather than failing
+    /// the project load.
+    #[test]
+    fn an_unknown_post_token_reads_back_as_grbl() {
+        let session_post = rs_cam_core::session::ProjectPostConfig {
+            format: "cobalt-cnc".to_owned(),
+            ..Default::default()
+        };
+        assert_eq!(
+            GuiState::post_from_session(&session_post).format,
+            PostFormat::Grbl
+        );
     }
 }

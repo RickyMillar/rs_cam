@@ -82,6 +82,8 @@ fn build_adaptive3d_session() -> ProjectSession {
         name: "hemisphere".to_owned(),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://hemisphere.stl"),
         kind: None,
         units: None,
@@ -123,6 +125,7 @@ fn build_adaptive3d_session() -> ProjectSession {
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session
         .add_toolpath(0, tc)

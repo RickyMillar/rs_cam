@@ -43,7 +43,7 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_cancel(toolpath, &lut, cutter.radius(), direction, cancel)
     }
 
@@ -111,7 +111,7 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_metrics_cancel(
             toolpath,
             &lut,
@@ -207,6 +207,7 @@ impl TriDexelStock {
                             semantic_item_id,
                             span_path,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -229,6 +230,7 @@ impl TriDexelStock {
                             semantic_item_id,
                             span_path,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         &mut cumulative_time_s,
                         &mut next_sample_index,
@@ -255,6 +257,7 @@ impl TriDexelStock {
                             cut_kinematics: classify_cut_kinematics(start, end, false),
                             capture_arc_engagement,
                             in_transit_span,
+                            source_intent: Some(intent),
                         },
                         cancel,
                         &mut cumulative_time_s,
@@ -285,6 +288,7 @@ impl TriDexelStock {
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
                                 in_transit_span,
+                                source_intent: Some(intent),
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -324,6 +328,7 @@ impl TriDexelStock {
                                 cut_kinematics: CutKinematics::Arc,
                                 capture_arc_engagement,
                                 in_transit_span,
+                                source_intent: Some(intent),
                             },
                             cancel,
                             &mut cumulative_time_s,
@@ -347,7 +352,7 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        let lut = RadialProfileLUT::from_cutter(cutter, 256);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_range_with_lut(
             toolpath,
             &lut,
@@ -423,7 +428,22 @@ impl TriDexelStock {
             return Ok(());
         }
 
-        let subsegments = ((segment_length / params.sample_step_mm).ceil() as usize).max(1);
+        // Subdivision must be Z-AWARE, not just length-based: the per-cell
+        // stamp surface is `z(t_closest_approach) + h(d)`, which ignores Z
+        // variation along the subsegment, so a subsegment descending (or
+        // crossing a slope) under-removes by up to its own Z-drop. Capping
+        // per-subsegment Z-drop at 0.02 mm bounds that error below the
+        // finish-cusp scale (P2.g stamper probe, 2026-07-09: 0.25 mm
+        // subsegments left 5–35 µm above the true envelope on ~25 % of
+        // steep-finish columns, and biased move streams with longer
+        // descending segments — the false fine-tier matrix verdict). Flat
+        // segments (dz ≈ 0) keep the pure length-based count, so roughing
+        // cost is unchanged where it dominates.
+        const MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
+        let z_drop = (end.z - start.z).abs();
+        let by_length = (segment_length / params.sample_step_mm).ceil() as usize;
+        let by_z = (z_drop / MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
+        let subsegments = by_length.max(by_z).max(1);
         for subsegment in 0..subsegments {
             check_cancel(cancel)?;
             let t0 = subsegment as f64 / subsegments as f64;
@@ -463,20 +483,37 @@ impl TriDexelStock {
                 params.spindle_rpm,
                 params.flute_count,
             );
-            let effective_chip_thickness_mm = effective_chip_thickness_mm(
+            // F-4: one chip-model evaluation, both statistics off it. The
+            // arc-MEAN is what the chipload gate reads as
+            // `effective_chip_thickness_mm`; the arc-PEAK is what the
+            // `Engagement` vector's `peak_chip_thickness_mm` is documented
+            // to carry. Pre-fix the peak slot held the mean and the mean
+            // slot held the commanded advance per tooth.
+            let chip_stats = chip_thickness_stats(
                 cutter,
                 axial_engagement_mm,
                 arc_engagement_radians,
                 chipload_mm_per_tooth,
                 params.flute_count,
             );
+            let effective_chip_thickness_mm = chip_stats.map(|stats| stats.mean_mm);
             let flute_length = cutter.length().max(1e-9);
             let engagement = crate::simulation_cut::Engagement {
                 radial_woc_fraction: radial_engagement,
-                axial_doc_fraction: (axial_engagement_mm / flute_length).clamp(0.0, 1.0),
+                // Always measured on this path: the cutter has a flute
+                // length, so the fraction is defined (C2 — `None` is reserved
+                // for emitters that have nothing to divide by).
+                axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
                 arc_radians: arc_engagement_radians,
-                mean_chip_thickness_mm: Some(chipload_mm_per_tooth),
-                peak_chip_thickness_mm: effective_chip_thickness_mm,
+                // F-4 (census T1.3, Checkpoint B Q2): these two carried
+                // each other's values — `mean_` held the commanded
+                // advance per tooth (already published as
+                // `chipload_mm_per_tooth` on the sample) and `peak_` held
+                // the arc-MEAN chip, so the "peak" read *below* the
+                // "mean" on every partial-immersion cut. Both now come
+                // off the shipped chip model under their own names.
+                mean_chip_thickness_mm: chip_stats.map(|stats| stats.mean_mm),
+                peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
                 leading_edge_speed_mm_min: params.feed_rate_mm_min,
                 // Step 2 carries direction as a substrate; climb/conventional
                 // discrimination needs perp-axis side info from stamping
@@ -512,6 +549,7 @@ impl TriDexelStock {
                 semantic_item_id: params.semantic_item_id,
                 span_path: params.span_path.to_vec(),
                 in_transit_span: params.in_transit_span,
+                source_intent: params.source_intent,
             });
             *next_sample_index += 1;
         }
@@ -548,17 +586,27 @@ impl TriDexelStock {
     }
 }
 
-/// Per-sample chip thickness exposed to the chipload gate as
-/// `SimulationCutSample::effective_chip_thickness_mm`. The gate
-/// compares this value against the vendor LUT's `chip_load_max_mm`.
+/// Per-sample chip thickness, published as
+/// `SimulationCutSample::effective_chip_thickness_mm`.
+///
+/// **The chipload gate no longer compares this against the vendor LUT
+/// band** (2026-08-06). The vendor column was verified from primary
+/// sources to be an *advance per tooth*, not a chip thickness, so the
+/// gate's observation became `effective_feed ÷ (rpm · flutes)` and the
+/// chip-geometry step was deleted rather than inverted. What survives
+/// here: this value still feeds the gate's *sample-validity* predicate
+/// (a sample with no resolvable chip model is still refused), and it is
+/// still the honest per-sample chip figure for anyone who wants one.
+/// The vestigial predicate is recorded in `tool_load::chipload`'s own
+/// docs, with its own re-open condition; widening it moves the gate's
+/// population, so it was deliberately left byte-identical across the
+/// conversion.
 ///
 /// Convention: AVERAGE chip thickness across the engagement arc
-/// (`geometry.mean_chip_thickness_mm`). Vendor LUT chip-load bounds
-/// are authored against the average chip a flute sees over its
-/// engagement arc, not the peak instantaneous value at the most
-/// favorable angle. Returning the peak (`geometry.max_chip_thickness_mm`)
-/// overstates by ~2.6× at half immersion (`arc = π/2`) and trips the
-/// breakage-risk gate on otherwise-healthy cuts. See
+/// (`geometry.mean_chip_thickness_mm`), not the peak instantaneous
+/// value at the most favorable angle. Returning the peak
+/// (`geometry.max_chip_thickness_mm`) overstates by ~2.6× at half
+/// immersion (`arc = π/2`). See
 /// `tests/chipload_formula_calibration.rs`.
 pub fn effective_chip_thickness_mm(
     cutter: &dyn MillingCutter,
@@ -567,6 +615,67 @@ pub fn effective_chip_thickness_mm(
     feed_per_tooth_mm: f64,
     flute_count: u32,
 ) -> Option<f64> {
+    chip_thickness_stats(
+        cutter,
+        axial_doc_mm,
+        arc_engagement_radians,
+        feed_per_tooth_mm,
+        flute_count,
+    )
+    .map(|stats| stats.mean_mm)
+}
+
+/// PEAK (maximum instantaneous) chip thickness across the engagement
+/// arc — `ChipGeometry::max_chip_thickness_mm`, the thickness the flute
+/// sees at its most-engaged angular position.
+///
+/// The sibling of [`effective_chip_thickness_mm`], added by F-4 (census
+/// T1.3). It is **not** the value any gate compares against: the
+/// chipload gate is deliberately calibrated on the arc-average (see the
+/// note on [`effective_chip_thickness_mm`], and
+/// `tests/chipload_formula_calibration.rs`). Its consumer is the
+/// report-only `Engagement::peak_chip_thickness_mm`, whose doc comment
+/// has always described this quantity while the field carried the mean.
+///
+/// Below full slotting `peak > mean` always, by the closed form
+/// `mean/peak = (2/arc)·(1 − cos(arc/2))`.
+pub fn peak_chip_thickness_mm(
+    cutter: &dyn MillingCutter,
+    axial_doc_mm: f64,
+    arc_engagement_radians: Option<f64>,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Option<f64> {
+    chip_thickness_stats(
+        cutter,
+        axial_doc_mm,
+        arc_engagement_radians,
+        feed_per_tooth_mm,
+        flute_count,
+    )
+    .map(|stats| stats.peak_mm)
+}
+
+/// The two chip-thickness statistics the simulator publishes, from one
+/// [`MillingCutter::chip_geometry`] evaluation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChipThicknessStats {
+    /// Arc-AVERAGE chip thickness (mm) — `ChipGeometry::mean_chip_thickness_mm`.
+    pub mean_mm: f64,
+    /// Arc-PEAK chip thickness (mm) — `ChipGeometry::max_chip_thickness_mm`.
+    pub peak_mm: f64,
+}
+
+/// Evaluate the shipped chip model once and return both statistics.
+/// `None` when there is no engagement arc (Z-only moves) or the cutter
+/// declines the geometry.
+pub fn chip_thickness_stats(
+    cutter: &dyn MillingCutter,
+    axial_doc_mm: f64,
+    arc_engagement_radians: Option<f64>,
+    feed_per_tooth_mm: f64,
+    flute_count: u32,
+) -> Option<ChipThicknessStats> {
     let arc = arc_engagement_radians?;
     cutter
         .chip_geometry(
@@ -577,7 +686,10 @@ pub fn effective_chip_thickness_mm(
             EngagementMode::Slot,
         )
         .ok()
-        .map(|geometry| geometry.mean_chip_thickness_mm)
+        .map(|geometry| ChipThicknessStats {
+            mean_mm: geometry.mean_chip_thickness_mm,
+            peak_mm: geometry.max_chip_thickness_mm,
+        })
 }
 
 fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {

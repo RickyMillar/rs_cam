@@ -61,6 +61,52 @@ pub struct IndexParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GenerateToolpathParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Optional wait budget in seconds. If generation hasn't finished by
+    /// then, the call returns a `status: "running"` response instead of
+    /// blocking — the generate is NOT cancelled, it keeps running in the
+    /// background. Omit (or pass `None`) to wait indefinitely, matching
+    /// prior behavior. While it runs, `generation_status` reports the
+    /// in-flight index / stage / elapsed live, `list_toolpaths` answers from
+    /// a snapshot, and `cancel_generation` aborts it — all three are served
+    /// off the GUI frame loop and answer within a second (A/M12).
+    pub timeout_s: Option<u64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct GenerateAllParam {
+    /// Optional wait budget in seconds — see
+    /// `GenerateToolpathParam::timeout_s`.
+    pub timeout_s: Option<u64>,
+    /// A/M11 — iterate to a fixpoint over the rest-machining chain: generate,
+    /// simulate, regenerate whatever was blocked only on missing upstream
+    /// stock, repeat until nothing new generates. Defaults to `true`.
+    ///
+    /// An operation whose stock source is "remaining stock" needs the
+    /// *simulated* stock of the operations before it, and that snapshot only
+    /// exists after a simulation — so it can never see stock produced earlier
+    /// in the same pass. Without the loop, a chain of `k` such operations
+    /// needs `k` manual sim/generate rounds and nothing tells you `k`. The
+    /// reply reports how many rounds it actually took.
+    ///
+    /// Pass `false` for the old single-pass behaviour.
+    pub fixpoint: Option<bool>,
+    /// Cell size in mm for the simulations the fixpoint loop runs on your
+    /// behalf.
+    ///
+    /// **Required** when the loop is on and the project contains any enabled
+    /// rest-machining operation; the call refuses rather than guessing. A
+    /// resolution is never a neutral default: collision counts and engagement
+    /// both move with cell size, so a silently chosen one produces verdicts
+    /// nobody asked for. Use the same value you intend for your verification
+    /// simulation — well below the finishing tool's TIP radius (e.g. 0.1 for
+    /// a 1 mm ball).
+    pub simulation_resolution_mm: Option<f64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct OperationSchemaParam {
     /// Operation type (e.g. "pocket", "adaptive3d", "rest")
     pub operation_type: String,
@@ -87,6 +133,26 @@ pub struct ExportParam {
     /// `accept_unmodeled_tool_load`.
     #[serde(default)]
     pub accept_exceeded_tool_load: bool,
+    /// Tool-change handling for this export. One of: `"pause"` (manual
+    /// `M5` + operator message + `M0` — the GRBL-family default),
+    /// `"m6"` (native `M5` + `M6 T{n}` — what Fusion emits and what a
+    /// gSender/BitSetter setup needs so each tool is probed), or
+    /// `"suppress"` (replace each change with a bare `M0` pause).
+    /// Omit to keep the project's current setting. This is the MCP
+    /// equivalent of the export wizard's Tool Change dropdown. Note:
+    /// for `"m6"` each tool must have a distinct tool number or the
+    /// controller won't re-trigger the change.
+    #[serde(default)]
+    pub tool_change_mode: Option<String>,
+    /// When true and the project has more than one setup, write one
+    /// G-code file per setup instead of a single combined program. Each
+    /// file is self-contained and carries a header comment naming the
+    /// setup (with a FLIP + RE-ZERO reminder on setups after the first),
+    /// so a two-sided job is run as `setup1` → flip & re-zero → `setup2`.
+    /// Output files are named `<stem>_<n>_<setup name>.<ext>` next to
+    /// `path`. Ignored for single-setup projects.
+    #[serde(default)]
+    pub split_setups: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -146,9 +212,32 @@ pub struct SetUiViewParam {
     /// "linking", "heights", or "dressup". Takes effect the next time the
     /// properties panel renders a selected toolpath.
     pub properties_tab: Option<String>,
+    /// Non-toolpath properties panel to select: "machine" (machine setup +
+    /// kinematics + GRBL $$ import) or "stock". Switches to the Setup
+    /// workspace so the panel is visible on the right.
+    pub select: Option<String>,
     /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
     /// "tool_library", or "none" to close all modals.
     pub modal: Option<String>,
+}
+
+/// GRBL `$$` settings dump to import onto the live machine profile.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ImportMachineSettingsParam {
+    /// The full `$$` settings dump text (`$N=value` lines). Tolerates
+    /// grblHAL `(description)` comments, CRLF, and unrelated `$N` lines.
+    /// Maps `$11`→junction deviation, `$120/$121/$122`→per-axis accel,
+    /// `$110/$111`→max feed (travel). Applying breaks any machine-library
+    /// link since the values are now inline.
+    pub dump: String,
+}
+
+/// Name of a machine in the per-user library to snapshot-import.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct LoadMachineFromLibraryParam {
+    /// Library machine name (file stem) from `list_machine_library`. The
+    /// machine is COPIED into the project (snapshot, no live link).
+    pub name: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -215,7 +304,7 @@ pub struct CutTraceParam {
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// a span of this kind. Accepted values match `SpanKind`:
     /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
-    /// "dressup_artifact", "rapid_order_barrier".
+    /// "dressup_artifact", "geometry_refit", "rapid_order_barrier".
     #[allow(dead_code)]
     pub span_kind: Option<String>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
@@ -241,7 +330,8 @@ pub struct InspectSpansParam {
     pub index: usize,
     /// Optional `SpanKind` filter (snake_case). Accepted values:
     /// "operation", "depth_pass", "region", "entry", "lead_out",
-    /// "link_bridge", "dressup_artifact", "rapid_order_barrier".
+    /// "link_bridge", "dressup_artifact", "geometry_refit",
+    /// "rapid_order_barrier".
     pub kind: Option<String>,
     /// Optional parent span id (vec index). Restricts results to spans whose
     /// move range is contained within the parent's range. Pair with `kind` to
@@ -351,12 +441,45 @@ pub struct SetBoundaryConfigParam {
     pub index: usize,
     /// Enable or disable boundary
     pub enabled: bool,
-    /// Boundary source: "stock" or "model_silhouette"
+    /// Boundary source: "stock", "model_silhouette", or "derived_rest_regions"
     pub source: Option<String>,
     /// Containment mode: "center", "inside", or "outside"
     pub containment: Option<String>,
     /// Additional offset in mm (positive = expand, negative = shrink)
     pub offset: Option<f64>,
+    /// Required when `source` is "derived_rest_regions": the stable id
+    /// (from `get_toolpath_params`'s `id` field, not an index) of the
+    /// toolpath whose pencil rest-depth result supplies the boundary.
+    pub source_toolpath_id: Option<usize>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetRestAnalysisConfigParam {
+    /// Toolpath index (0-based)
+    pub index: usize,
+    /// Enable or disable rest analysis
+    pub enabled: bool,
+    /// Real library tool id whose geometry defines the rest reference.
+    /// `None` = prefer the machined stock (when available), else a
+    /// self-referenced bare-surface probe.
+    pub reference_tool_id: Option<usize>,
+    /// XY grid cell size (mm) for the rest field. Smaller = finer regions.
+    pub cell_mm: Option<f64>,
+    /// Rest-depth threshold (mm): a cell counts as REST material once the
+    /// reference floats more than this above the true surface.
+    pub min_valley_depth: Option<f64>,
+    /// Extra clearance (mm) added around detected rest regions beyond this
+    /// toolpath's own tool radius.
+    pub region_margin_mm: Option<f64>,
+    /// PR-7: offset stepover (mm) the ROUTING criterion assumes a downstream
+    /// pencil fan would emit (`pencil` iff `reach <= cap * stepover`). Leave
+    /// unset to size it from the canonical reach policy for this toolpath's
+    /// own cutter — the correct choice unless you are modelling a specific
+    /// downstream operation whose stepover is pinned.
+    pub offset_stepover_mm: Option<f64>,
+    /// PR-7: offset passes per side that fan is permitted (the `cap`).
+    /// Unset = the detector's own default (0, centreline only).
+    pub num_offset_passes: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -475,7 +598,7 @@ pub struct SimJumpToToolpathBoundaryParam {
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
+        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
 }
 
 /// Parse a string into a `ToolType`.

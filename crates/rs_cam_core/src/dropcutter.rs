@@ -34,15 +34,32 @@ pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
 }
 
 /// Result of a batch drop-cutter operation: a grid of CL points.
+///
+/// `u_start`/`v_start` are the grid origin **in the rotated sampling
+/// frame** (aligned with `direction_deg`), not necessarily world X/Y.
+/// For `direction_deg == 0.0` (the only value any production call site
+/// passes today — see `steep_shallow.rs`/`compute/execute.rs`) the rotated
+/// frame coincides with world frame, so `u_start`/`v_start` read as world
+/// mins. For any other angle they are rotated-frame minima and must be
+/// inverse-rotated by `direction_deg` (as `batch_drop_cutter_with_cancel`
+/// does internally) to recover world coordinates — do not reconstruct
+/// world (x,y) from `row`/`col`/`u_start`/`v_start`/`x_step`/`y_step`
+/// directly; read `points[i].x`/`.y` instead, which are always world-frame.
 #[derive(Debug)]
 pub struct DropCutterGrid {
     pub points: Vec<CLPoint>,
     pub rows: usize,
     pub cols: usize,
-    pub x_start: f64,
-    pub y_start: f64,
+    /// Rotated-frame column origin (see struct docs — world X only when
+    /// `direction_deg == 0.0`).
+    pub u_start: f64,
+    /// Rotated-frame row origin (see struct docs — world Y only when
+    /// `direction_deg == 0.0`).
+    pub v_start: f64,
     pub x_step: f64,
     pub y_step: f64,
+    /// Raster scan direction, in degrees, that this grid was sampled at.
+    pub direction_deg: f64,
 }
 
 impl DropCutterGrid {
@@ -97,10 +114,15 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
     let cos_a = angle_rad.cos();
     let sin_a = angle_rad.sin();
 
-    // For near-zero angles, skip rotation overhead
+    // For angles that coincide exactly with the identity rotation (0°, or
+    // 360° which is the same angle), and for 90°/180° (kept for backward
+    // compatibility — see the struct-level doc caveat: those two do not
+    // actually re-derive a rotated grid, they reuse the axis-aligned
+    // rectangle), skip rotation overhead.
     let use_rotation = direction_deg.abs() > 0.01
         && (direction_deg - 90.0).abs() > 0.01
-        && (direction_deg - 180.0).abs() > 0.01;
+        && (direction_deg - 180.0).abs() > 0.01
+        && (direction_deg - 360.0).abs() > 0.01;
 
     if !use_rotation {
         // Axis-aligned fast path (original behavior)
@@ -112,22 +134,24 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
         let cols = ((x_end - x_start) / step_over).ceil() as usize + 1;
         let rows = ((y_end - y_start) / step_over).ceil() as usize + 1;
 
-        let points = batch_compute_points(rows, cols, cancel, mesh, index, cutter, min_z, |i| {
-            let row = i / cols;
-            let col = i % cols;
-            let x = x_start + col as f64 * step_over;
-            let y = y_start + row as f64 * step_over;
-            (x, y)
-        })?;
+        let (points, _covered) =
+            batch_sample_grid(rows, cols, cancel, mesh, index, cutter, min_z, false, |i| {
+                let row = i / cols;
+                let col = i % cols;
+                let x = x_start + col as f64 * step_over;
+                let y = y_start + row as f64 * step_over;
+                (x, y)
+            })?;
 
         return Ok(DropCutterGrid {
             points,
             rows,
             cols,
-            x_start,
-            y_start,
+            u_start: x_start,
+            v_start: y_start,
             x_step: step_over,
             y_step: step_over,
+            direction_deg,
         });
     }
 
@@ -157,36 +181,96 @@ pub fn batch_drop_cutter_with_cancel<C: MillingCutter + ?Sized>(
     let cols = ((u_max - u_min) / step_over).ceil() as usize + 1;
     let rows = ((v_max - v_min) / step_over).ceil() as usize + 1;
 
-    let points = batch_compute_points(rows, cols, cancel, mesh, index, cutter, min_z, |i| {
-        let row = i / cols;
-        let col = i % cols;
-        let u = u_min + col as f64 * step_over;
-        let v = v_min + row as f64 * step_over;
-        // Inverse rotation: (u,v) -> (x,y)
-        let x = u * cos_a - v * sin_a;
-        let y = u * sin_a + v * cos_a;
-        (x, y)
-    })?;
+    let (points, _covered) =
+        batch_sample_grid(rows, cols, cancel, mesh, index, cutter, min_z, false, |i| {
+            let row = i / cols;
+            let col = i % cols;
+            let u = u_min + col as f64 * step_over;
+            let v = v_min + row as f64 * step_over;
+            // Inverse rotation: (u,v) -> (x,y)
+            let x = u * cos_a - v * sin_a;
+            let y = u * sin_a + v * cos_a;
+            (x, y)
+        })?;
 
     Ok(DropCutterGrid {
         points,
         rows,
         cols,
-        x_start: u_min,
-        y_start: v_min,
+        u_start: u_min,
+        v_start: v_min,
         x_step: step_over,
         y_step: step_over,
+        direction_deg,
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Shared helper: compute CL points for a grid, using rayon parallelism when available.
+/// Does the vertical ray at `(x, y)` pass through the mesh footprint?
 ///
-/// `coord_fn` maps a flat index to (x, y) world coordinates.
-/// With the `parallel` feature, rows are processed in parallel via `par_chunks`.
-/// Cancellation is checked per-chunk in the parallel path, and every 64 points
-/// in the sequential fallback.
-fn batch_compute_points<C: MillingCutter + ?Sized>(
+/// The **exact** coverage predicate: a zero-radius spatial-index query plus
+/// `Triangle::contains_point_xy`, with no grid, no cell and no rounding. It
+/// is the one thing `point_drop_cutter` cannot tell you — the cutter has a
+/// radius, so it reports a contact whenever it touches ANY nearby triangle,
+/// including the *rim* of a mesh that does not cover that XY. A CL taken
+/// there rests on the mesh's end edge and its tip sits `r − √(r² − d²)`
+/// **below** the surface: a rim-riding overcut, or (over a hole) a trench
+/// carved right around the part.
+///
+/// Every consumer that needs "is this point over real surface" should call
+/// this rather than consulting a sampled coverage mask. A mask answers for
+/// the nearest CELL, so it admits points up to half a cell outside the true
+/// footprint — which is D-16.1 (`planning/review_2026-08-04/`
+/// `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2): scallop's ring lift read a
+/// 0.75 mm generation heightmap and cut 0.375 mm past the part edge.
+///
+/// Cost is one extra `index.query` at radius 0 — the single-cell fast path,
+/// and cheap next to the `point_drop_cutter` call it accompanies.
+pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
+    index.query(x, y, 0.0).iter().any(|&idx| {
+        // SAFETY: idx comes from SpatialIndex which only stores valid face indices
+        #[allow(clippy::indexing_slicing)]
+        mesh.faces[idx].contains_point_xy(x, y)
+    })
+}
+
+/// One grid cell's CL point (clamped to `min_z`) and, when requested,
+/// whether its vertical ray passes through a mesh triangle footprint —
+/// the `covered` predicate `SurfaceHeightmap` needs and `DropCutterGrid`
+/// does not. Computing it is an extra `index.query` per cell, so callers
+/// that don't need it (the drop-cutter grid path) pass `with_coverage =
+/// false` and pay nothing beyond the branch check.
+#[inline]
+pub(crate) fn sample_grid_cell<C: MillingCutter + ?Sized>(
+    x: f64,
+    y: f64,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &C,
+    min_z: f64,
+    with_coverage: bool,
+) -> (CLPoint, bool) {
+    let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
+    if cl.z < min_z {
+        cl.z = min_z;
+    }
+    let covered = with_coverage && point_is_over_mesh_xy(x, y, mesh, index);
+    (cl, covered)
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Shared helper: compute CL points (and, optionally, per-cell mesh-coverage
+/// flags) for a grid, using rayon parallelism when available.
+///
+/// `coord_fn` maps a flat index to (x, y) world coordinates. `with_coverage`
+/// controls whether the "does the vertical ray pass through a triangle"
+/// check (`SurfaceHeightmap::covered`) also runs per cell; `DropCutterGrid`
+/// doesn't need it and passes `false`.
+///
+/// With the `parallel` feature, rows are processed in parallel via rayon;
+/// cancellation is checked once per row (short-circuiting further rows once
+/// cancelled) and again after the whole batch completes. In the sequential
+/// fallback, cancellation is checked every 64 points.
+pub(crate) fn batch_sample_grid<C: MillingCutter + ?Sized>(
     rows: usize,
     cols: usize,
     cancel: &(dyn CancelCheck + Sync),
@@ -194,8 +278,9 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
     index: &SpatialIndex,
     cutter: &C,
     min_z: f64,
+    with_coverage: bool,
     coord_fn: impl Fn(usize) -> (f64, f64) + Sync,
-) -> Result<Vec<CLPoint>, Cancelled> {
+) -> Result<(Vec<CLPoint>, Vec<bool>), Cancelled> {
     let total = rows * cols;
 
     #[cfg(feature = "parallel")]
@@ -204,7 +289,7 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
         let cancelled = AtomicBool::new(false);
 
         // Process by rows: each row is `cols` points and is independent.
-        let points: Vec<CLPoint> = (0..rows)
+        let (points, covered): (Vec<CLPoint>, Vec<bool>) = (0..rows)
             .into_par_iter()
             .flat_map(|row| {
                 // Check cancellation once per row
@@ -216,84 +301,34 @@ fn batch_compute_points<C: MillingCutter + ?Sized>(
                 (start..start + cols)
                     .map(|i| {
                         let (x, y) = coord_fn(i);
-                        let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-                        if cl.z < min_z {
-                            cl.z = min_z;
-                        }
-                        cl
+                        sample_grid_cell(x, y, mesh, index, cutter, min_z, with_coverage)
                     })
                     .collect::<Vec<_>>()
             })
-            .collect();
+            .unzip();
 
         if cancelled.load(Ordering::Relaxed) {
             return Err(Cancelled);
         }
         debug_assert_eq!(points.len(), total);
-        Ok(points)
+        Ok((points, covered))
     }
 
     #[cfg(not(feature = "parallel"))]
     {
         let mut points = Vec::with_capacity(total);
+        let mut covered = Vec::with_capacity(total);
         for i in 0..total {
             if i % 64 == 0 {
                 check_cancel(cancel)?;
             }
             let (x, y) = coord_fn(i);
-            let mut cl = point_drop_cutter(x, y, mesh, index, cutter);
-            if cl.z < min_z {
-                cl.z = min_z;
-            }
+            let (cl, cov) = sample_grid_cell(x, y, mesh, index, cutter, min_z, with_coverage);
             points.push(cl);
+            covered.push(cov);
         }
-        Ok(points)
+        Ok((points, covered))
     }
-}
-
-/// Compute per-cell slope angle (degrees from horizontal) from a drop-cutter grid.
-///
-/// Uses finite differences of adjacent Z values to estimate the surface normal
-/// at each cell, then converts to an angle from horizontal (0 deg = flat, 90 deg = vertical).
-#[allow(clippy::indexing_slicing)] // bounded by grid dimensions
-pub fn compute_grid_slopes(grid: &DropCutterGrid) -> Vec<f64> {
-    let rows = grid.rows;
-    let cols = grid.cols;
-    let mut slopes = vec![0.0f64; rows * cols];
-
-    for row in 0..rows {
-        for col in 0..cols {
-            let z = grid.get(row, col).z;
-
-            // Finite difference: dz/dx and dz/dy from neighbors
-            let dz_dx = if col > 0 && col + 1 < cols {
-                (grid.get(row, col + 1).z - grid.get(row, col.saturating_sub(1)).z)
-                    / (2.0 * grid.x_step)
-            } else if col + 1 < cols {
-                (grid.get(row, col + 1).z - z) / grid.x_step
-            } else if col > 0 {
-                (z - grid.get(row, col - 1).z) / grid.x_step
-            } else {
-                0.0
-            };
-
-            let dz_dy = if row > 0 && row + 1 < rows {
-                (grid.get(row + 1, col).z - grid.get(row.saturating_sub(1), col).z)
-                    / (2.0 * grid.y_step)
-            } else if row + 1 < rows {
-                (grid.get(row + 1, col).z - z) / grid.y_step
-            } else if row > 0 {
-                (z - grid.get(row - 1, col).z) / grid.y_step
-            } else {
-                0.0
-            };
-
-            // Slope angle from horizontal: atan(sqrt(dz_dx^2 + dz_dy^2))
-            let gradient = (dz_dx * dz_dx + dz_dy * dz_dy).sqrt();
-            slopes[row * cols + col] = gradient.atan().to_degrees();
-        }
-    }
-    slopes
 }
 
 #[cfg(test)]

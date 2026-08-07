@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use rs_cam_core::compute::config::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
+    BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::session::MutationKind;
@@ -13,14 +13,28 @@ use rs_cam_core::session::MutationKind;
 use crate::controller::Severity;
 use crate::mcp_bridge::{
     GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
-    PendingGenerateAll, ProgressUpdate,
+    ProgressUpdate,
 };
 use crate::state::Workspace;
 use crate::state::selection::Selection;
-use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 
 use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
+
+/// The optional numeric dials `set_rest_analysis_config` accepts, grouped so
+/// the handler stays under the argument-count lint after PR-7 added the two
+/// routing-fan fields. Every one is `Option` with the SAME meaning: `None` =
+/// "I did not say", not "zero".
+pub(crate) struct RestAnalysisDials {
+    pub cell_mm: Option<f64>,
+    pub min_valley_depth: Option<f64>,
+    pub region_margin_mm: Option<f64>,
+    /// PR-7 (H2.5): `None` here reaches the config as `None` and means "size
+    /// it from the canonical reach policy", which is a real instruction, not
+    /// an absent value — see `RestAnalysisConfig::offset_stepover_mm`.
+    pub offset_stepover_mm: Option<f64>,
+    pub num_offset_passes: Option<usize>,
+}
 
 impl super::RsCamApp {
     /// Non-blocking drain of MCP requests from the channel.
@@ -37,6 +51,14 @@ impl super::RsCamApp {
             return;
         };
 
+        // G-LV.1: open the frame bracket. It closes in `end_mcp_frame` at
+        // the very bottom of `update`, so "in a frame" spans the whole frame
+        // body — dispatch, event handling and render alike. That is what
+        // lets the MCP server thread tell a loop that is *inside* something
+        // long from one that is not running at all: both look like "no
+        // recent frame" from outside, and only the first ends on its own.
+        self.mcp_reads.frame_loop().frame_begin();
+
         // Drain all pending requests (non-blocking).
         let mut requests = Vec::new();
         loop {
@@ -49,7 +71,63 @@ impl super::RsCamApp {
 
         for request in requests {
             self.handle_mcp_request(ctx, request);
+            self.mcp_reads.frame_loop().record_handled();
         }
+
+        self.publish_mcp_read_snapshot();
+    }
+
+    /// G-LV.1: close the frame bracket opened in [`Self::drain_mcp_requests`]
+    /// and publish what the frame left undone. Called last in `update`.
+    ///
+    /// The outstanding count has to come from `PendingMcpCompute`, not from
+    /// the request channel: a `generate_all` is dispatched once and then
+    /// spends its whole life waiting on *future* frames it never queued a
+    /// request for, so a channel counter reads zero for exactly the call
+    /// whose stall started this.
+    pub(crate) fn end_mcp_frame(&mut self) {
+        if self.mcp_receiver.is_none() {
+            return;
+        }
+        let (awaiting, awaiting_generate_all) = self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .map_or((0, false), |pending| {
+                (pending.awaiting_gui(), pending.awaiting_generate_all())
+            });
+        self.mcp_reads
+            .frame_loop()
+            .beat(awaiting, awaiting_generate_all);
+    }
+
+    /// A/M12: republish the cheap, no-argument reads so the MCP server thread
+    /// can answer them while this thread is stalled behind a generation.
+    ///
+    /// Rate limited to [`MCP_READ_PUBLISH_INTERVAL`] so it cannot become a
+    /// per-frame cost: at the MCP heartbeat's 100 ms cadence that is at most
+    /// ~2 publishes/second of small-JSON rendering, on the GUI thread, and
+    /// **nothing at all on the compute lane** — no synchronisation was added
+    /// to the generation path.
+    fn publish_mcp_read_snapshot(&mut self) {
+        const MCP_READ_PUBLISH_INTERVAL: std::time::Duration =
+            std::time::Duration::from_millis(500);
+
+        if self
+            .mcp_reads_published_at
+            .is_some_and(|at| at.elapsed() < MCP_READ_PUBLISH_INTERVAL)
+        {
+            return;
+        }
+        self.mcp_reads_published_at = Some(std::time::Instant::now());
+        self.mcp_reads.publish(crate::mcp_bridge::McpReadSnapshot {
+            list_toolpaths: self.mcp_list_toolpaths(),
+            project_summary: self.mcp_project_summary(),
+            inspect_model: self.mcp_inspect_model(),
+            inspect_stock: self.mcp_inspect_stock(),
+            inspect_machine: self.mcp_inspect_machine(),
+            published_at: None,
+        });
     }
 
     fn handle_mcp_request(&mut self, ctx: &egui::Context, request: McpRequest) {
@@ -135,6 +213,10 @@ impl super::RsCamApp {
             }
             McpRequestKind::NarrateToolpath { index } => {
                 let resp = self.mcp_narrate_toolpath(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::RecommendClearingStrategy { index } => {
+                let resp = self.mcp_recommend_clearing_strategy(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetSuggestRationale { index } => {
@@ -257,11 +339,15 @@ impl super::RsCamApp {
                 path,
                 accept_unmodeled_tool_load,
                 accept_exceeded_tool_load,
+                tool_change_mode,
+                split_setups,
             } => {
                 let resp = self.mcp_export_gcode(
                     &path,
                     accept_unmodeled_tool_load,
                     accept_exceeded_tool_load,
+                    tool_change_mode.as_deref(),
+                    split_setups,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -450,6 +536,7 @@ impl super::RsCamApp {
                 source,
                 containment,
                 offset,
+                source_toolpath_id,
             } => {
                 let resp = self.mcp_set_boundary_config(
                     index,
@@ -457,6 +544,31 @@ impl super::RsCamApp {
                     source.as_deref(),
                     containment.as_deref(),
                     offset,
+                    source_toolpath_id,
+                );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetRestAnalysisConfig {
+                index,
+                enabled,
+                reference_tool_id,
+                cell_mm,
+                min_valley_depth,
+                region_margin_mm,
+                offset_stepover_mm,
+                num_offset_passes,
+            } => {
+                let resp = self.mcp_set_rest_analysis_config(
+                    index,
+                    enabled,
+                    reference_tool_id,
+                    &RestAnalysisDials {
+                        cell_mm,
+                        min_valley_depth,
+                        region_margin_mm,
+                        offset_stepover_mm,
+                        num_offset_passes,
+                    },
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -501,12 +613,15 @@ impl super::RsCamApp {
                 self.mcp_send_progress(&progress_tx, "Generating toolpath...", 0.0, Some(1.0));
                 self.mcp_generate_toolpath(index, response_tx);
             }
-            McpRequestKind::GenerateAll => {
+            McpRequestKind::GenerateAll {
+                fixpoint,
+                simulation_resolution_mm,
+            } => {
                 self.controller.push_notification(
                     "MCP: Generating all toolpaths...".to_owned(),
                     Severity::Info,
                 );
-                self.mcp_generate_all(response_tx, progress_tx);
+                self.mcp_generate_all(fixpoint, simulation_resolution_mm, response_tx, progress_tx);
             }
             McpRequestKind::RunSimulation { resolution } => {
                 self.controller
@@ -616,14 +731,34 @@ impl super::RsCamApp {
                 workspace,
                 toolpath_index,
                 properties_tab,
+                select,
                 modal,
             } => {
                 let resp = self.mcp_set_ui_view(
                     workspace.as_deref(),
                     toolpath_index,
                     properties_tab.as_deref(),
+                    select.as_deref(),
                     modal.as_deref(),
                 );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ImportMachineSettings { dump } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                let resp = self.mcp_import_machine_settings(&dump);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ListMachineLibrary => {
+                let resp = self.mcp_list_machine_library();
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::LoadMachineFromLibrary { name } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                let resp = self.mcp_load_machine_from_library(&name);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
         }
@@ -684,17 +819,11 @@ impl super::RsCamApp {
             .map(|s| {
                 let rt = state.gui.toolpath_rt.get(&s.id);
                 let stale = rt.is_some_and(|r| r.stale_since.is_some());
-                let (status, error) = match rt.map(|r| &r.status) {
-                    Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
-                    Some(rs_cam_core::compute::config::ComputeStatus::Computing) => {
-                        ("Computing", None)
-                    }
-                    Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
-                    Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
-                        ("Error", Some(e.clone()))
-                    }
-                    None => ("Pending", None),
-                };
+                // A/M11: `enabled: false` wins over whatever the op last
+                // recorded, so a switched-off toolpath can never present the
+                // rest-stock error it had while it was on.
+                let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+                let status = ComputeStatus::effective(s.enabled, raw);
                 serde_json::json!({
                     "index": s.index,
                     "id": s.id,
@@ -703,8 +832,13 @@ impl super::RsCamApp {
                     "enabled": s.enabled,
                     "tool_name": s.tool_name,
                     "stale": stale,
-                    "status": status,
-                    "error": error,
+                    "status": status.label(),
+                    "error": status.error_text(),
+                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                        "blocking_toolpath_id": b.blocking_toolpath_id,
+                        "blocking_toolpath_index": b.blocking_toolpath_index,
+                        "message": b.message,
+                    })),
                 })
             })
             .collect();
@@ -890,6 +1024,14 @@ impl super::RsCamApp {
                     "tool_id": tc.tool_id,
                     "model_id": tc.model_id,
                     "operation": op_value,
+                    // P2.2: reports the machining boundary, including
+                    // `derived_rest_regions`'s `source_toolpath_id` — there
+                    // is no dedicated get_boundary_config tool, so this is
+                    // the only MCP surface for reading it back.
+                    "boundary": tc.boundary,
+                    // P2.5: op-agnostic rest analysis config — mirrors `boundary`'s
+                    // presence here; set via `set_rest_analysis_config`.
+                    "rest_analysis": tc.rest_analysis,
                     "runtime": self.mcp_runtime_status_for_toolpath_id(tc.id),
                 }))
             }
@@ -903,19 +1045,42 @@ impl super::RsCamApp {
         &self,
         toolpath_id: rs_cam_core::ToolpathId,
     ) -> serde_json::Value {
-        let rt = self.controller.state().gui.toolpath_rt.get(&toolpath_id);
-        let (status, error) = match rt.map(|r| &r.status) {
-            Some(rs_cam_core::compute::config::ComputeStatus::Pending) => ("Pending", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Computing) => ("Computing", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Done) => ("Done", None),
-            Some(rs_cam_core::compute::config::ComputeStatus::Error(e)) => {
-                ("Error", Some(e.clone()))
-            }
-            None => ("Pending", None),
-        };
+        let state = self.controller.state();
+        let rt = state.gui.toolpath_rt.get(&toolpath_id);
+        let enabled = state
+            .session
+            .find_toolpath_config_by_id(toolpath_id)
+            .is_none_or(|(_, tc)| tc.enabled);
+        let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
+        let status = ComputeStatus::effective(enabled, raw);
         serde_json::json!({
-            "status": status,
-            "error": error,
+            "status": status.label(),
+            "error": status.error_text(),
+            "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                "blocking_toolpath_id": b.blocking_toolpath_id,
+                "blocking_toolpath_index": b.blocking_toolpath_index,
+                "message": b.message,
+            })),
+            // A/M6: what the three-valued `claims_reference` param actually
+            // RESOLVED to, and why. It belongs here and not under `params`
+            // because it is not a param: `auto` resolves against whether a
+            // machined prior stock was in scope at generation time, which no
+            // config field records. `null` until the operation has generated,
+            // and on any operation that runs no claims pipeline.
+            "claims_reference": rt
+                .and_then(|r| r.result.as_ref())
+                .and_then(|res| res.stats.claims_reference)
+                .map(|f| serde_json::json!({
+                    "setting": f.resolution.setting(),
+                    "resolved": f.resolution.reference(),
+                    "resolution": f.resolution.label(),
+                    "derived": f.resolution.is_derived(),
+                    "prior_stock_in_scope": f.resolution.prior_stock_in_scope(),
+                    "needs_attention": f.resolution.needs_attention(),
+                    "territory_clip_requested": f.territory_clip_requested,
+                    "territory_clip_skipped": f.territory_clip_skipped(),
+                    "why": f.resolution.why(),
+                })),
             "stale": rt.is_some_and(|r| r.stale_since.is_some()),
         })
     }
@@ -931,6 +1096,28 @@ impl super::RsCamApp {
         json_str(self.controller.build_mcp_diagnostics())
     }
 
+    /// The tool a narration describes: the toolpath's OWN tool, or nothing.
+    ///
+    /// **B7 divergence 3 — a defect, fixed 2026-08-06.** The GUI narration
+    /// used to append `.or_else(|| tools().first())` to this lookup, so when
+    /// `tool_id` did not resolve it narrated with **another tool's
+    /// geometry**: the diameter behind the large-arc threshold, the flute
+    /// count behind every chipload sentence, and the cutter handed to
+    /// `narrate_toolpath_with_context` itself. Nothing in the emitted text
+    /// said so. Core's sibling narration has always errored instead
+    /// (`session/compute.rs`, `SessionError::ToolNotFound`).
+    ///
+    /// A tool id that does not resolve is a broken project, not a routine
+    /// state, so the honest answer is a refusal naming the id — which is
+    /// what the caller emits. Exhibit:
+    /// `narration_tool_lookup_refuses_where_the_parent_took_another_tool`.
+    fn narration_tool_for(
+        tools: &[rs_cam_core::compute::tool_config::ToolConfig],
+        tool_id: usize,
+    ) -> Option<&rs_cam_core::compute::tool_config::ToolConfig> {
+        tools.iter().find(|tool| tool.id.0 == tool_id)
+    }
+
     fn mcp_narrate_toolpath(&self, index: usize) -> String {
         let state = self.controller.state();
         let Some(tc) = state.session.get_toolpath_config(index) else {
@@ -942,14 +1129,11 @@ impl super::RsCamApp {
         let Some(result) = rt.result.as_ref() else {
             return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
         };
-        let Some(tool_config) = state
-            .session
-            .tools()
-            .iter()
-            .find(|tool| tool.id.0 == tc.tool_id)
-            .or_else(|| state.session.tools().first())
-        else {
-            return "Error: no tools are configured for this project".to_owned();
+        let Some(tool_config) = Self::narration_tool_for(state.session.tools(), tc.tool_id) else {
+            return format!(
+                "Error: toolpath {index} references tool id {} but no such tool is configured.                  Narration refuses rather than describing this toolpath with another tool's                  geometry.",
+                tc.tool_id,
+            );
         };
 
         let tool = rs_cam_core::compute::build_cutter(tool_config);
@@ -958,12 +1142,40 @@ impl super::RsCamApp {
             .results
             .as_ref()
             .and_then(|sim| sim.cut_trace.as_deref());
-        let semantic_trace = rt
+        // B7 divergence 4: prefer the traces carried by the RESULT being
+        // narrated, and only then the runtime's. The old order preferred
+        // `rt.*`, so a narration could describe `result`'s move list using a
+        // trace produced by a later generation. Core has no `rt` overlay and
+        // has always read `result.*`; this makes the GUI agree, while still
+        // falling back to `rt.*` for the paths that only populate there.
+        let semantic_trace = result
             .semantic_trace
             .as_deref()
-            .or(result.semantic_trace.as_deref());
-        let debug_trace = rt.debug_trace.as_deref().or(result.debug_trace.as_deref());
-        let context = rs_cam_core::narrate::ToolpathNarrationContext {
+            .or(rt.semantic_trace.as_deref());
+        let debug_trace = result.debug_trace.as_deref().or(rt.debug_trace.as_deref());
+        // Checkpoint D Q2: narration reads the same measurability report the
+        // gates and the triage do, so the MCP narration cannot publish an
+        // air-cut percentage the gates have already declined to act on.
+        //
+        // B7 divergence 2: the cell size is the one the TRACE was measured
+        // at (`SimulationResult::column_grid_cell_mm`), not the resolution
+        // dial's current value — those are two different quantities, and the
+        // measurability floors are cell-size dependent, so reading the dial
+        // could return a different `NotMeasurable` verdict from core's on
+        // identical evidence. `state.simulation.resolution` is what the next
+        // simulation WILL use; it is not a property of this trace.
+        let measurability = cut_trace.map(|trace| {
+            rs_cam_core::sim_measurability::MeasurabilityReport::from_trace(
+                trace,
+                state
+                    .simulation
+                    .results
+                    .as_ref()
+                    .map(|sim| sim.column_grid_cell_mm),
+            )
+        });
+        let mut context = rs_cam_core::narrate::ToolpathNarrationContext {
+            measurability: measurability.as_ref(),
             toolpath_id: Some(tc.id),
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
@@ -978,21 +1190,26 @@ impl super::RsCamApp {
                     .unwrap_or(state.session.post_config().spindle_speed),
             ),
             flute_count: Some(tool_config.flute_count),
-            // §6.C / §6.I revision: prefer the MoveIntent::Drilling signal
-            // from the toolpath; fall back to op-kind for legacy generators.
-            is_drill_cycle: result
-                .annotated
-                .toolpath
-                .moves
-                .iter()
-                .any(|m| matches!(m.intent, rs_cam_core::toolpath::MoveIntent::Drilling))
-                || matches!(
-                    tc.operation.op_type(),
-                    rs_cam_core::compute::catalog::OperationType::Drill
-                        | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
-                ),
+            // B7 divergence 1: the shared expression. Core used op-type
+            // alone (blind to a generator that emits Drilling moves without
+            // declaring a drill op type); this side used op-type OR ANY
+            // Drilling move (which called a v-carve with a drilled entry a
+            // drill cycle and suppressed its air-cut anomaly). The shared
+            // helper is neither — see its doc.
+            is_drill_cycle: rs_cam_core::narrate::is_drill_cycle_for_narration(
+                tc.operation.op_type(),
+                &result.annotated.toolpath.moves,
+            ),
             material: Some(&state.session.stock_config().material),
+            // Every ToolpathStats-derived channel is filled by
+            // `absorb_stats` below — the SAME join core's narration uses, so
+            // a new finding cannot reach one narration and miss the other
+            // (B7). The GUI worker fills `result.stats` from the core
+            // generation findings; carrying them here is what puts those
+            // figures in front of an agent narrating a live GUI toolpath.
+            ..Default::default()
         };
+        context.absorb_stats(&result.stats);
 
         rs_cam_core::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
@@ -1042,6 +1259,46 @@ impl super::RsCamApp {
                 "toolpath_id": tc.id,
                 "toolpath_name": tc.name,
                 "error": format!("Suggest refused: {e}"),
+            })),
+        }
+    }
+
+    /// Strategy advisor (`STRATEGY_ADVISOR_2026-06-17`): plan each candidate
+    /// clearing strategy for the Adaptive3d toolpath at `index` at its
+    /// load-limited params and recommend the one with the minimum
+    /// acceleration-aware wall-clock. Returns chosen strategy, the binding
+    /// regime as the *why*, every candidate ranked by wall-clock, and the
+    /// speed margin. Heavy (plans one toolpath per candidate) and runs
+    /// synchronously, so the GUI is unresponsive while it computes. Does not
+    /// mutate the project.
+    fn mcp_recommend_clearing_strategy(&self, index: usize) -> String {
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let state = self.controller.state();
+        match state.session.recommend_clearing_strategy(index, &cancel) {
+            Ok(Some(rec)) => json_str(serde_json::json!({
+                "chosen": format!("{:?}", rec.chosen),
+                "regime": format!("{:?}", rec.regime),
+                "reason": rec.reason,
+                "time_ratio_vs_runner_up": rec.time_ratio_vs_runner_up,
+                "ranked": rec
+                    .ranked
+                    .iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "strategy": format!("{:?}", r.strategy),
+                            "wall_clock_s": r.wall_clock_s,
+                            "regime": format!("{:?}", r.regime),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })),
+            Ok(None) => json_str(serde_json::json!({
+                "error": format!(
+                    "Toolpath {index} is not an Adaptive3d op (or no candidate planned a usable path); the strategy advisor only applies to 3D adaptive roughing"
+                ),
+            })),
+            Err(e) => json_str(serde_json::json!({
+                "error": format!("{e}"),
             })),
         }
     }
@@ -1173,6 +1430,12 @@ impl super::RsCamApp {
 
         let hotspot_count = hotspots.len();
         let issue_count = issues.len();
+        // R-1 (census §8.2): both arrays are capped and, until now, nothing
+        // in the response said so. An agent that read `issues` and compared
+        // its length against `issue_count` saw a silent disagreement and had
+        // no way to tell truncation from a filter.
+        let issues_truncated = issue_count > max_i;
+        let hotspots_truncated = hotspot_count > max_h;
 
         let summaries_val =
             serde_json::to_value(&summaries).unwrap_or_else(|_| serde_json::json!([]));
@@ -1207,16 +1470,68 @@ impl super::RsCamApp {
             serde_json::Value::Null
         };
 
+        // P0 unified-finishing probe — compact per-toolpath runtime block.
+        // `runtime_by_intent` is the F-034 integrator time bucketed by
+        // MoveIntent class (None when the sim ran without kinematics).
+        use rs_cam_core::simulation_cut::AirCutRatios;
+        let toolpath_summaries_val: Vec<serde_json::Value> = ct
+            .toolpath_summaries
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .map(|s| {
+                serde_json::json!({
+                    "toolpath_id": s.toolpath_id,
+                    "total_runtime_s": s.total_runtime_s,
+                    "cutting_runtime_s": s.cutting_runtime_s,
+                    "rapid_runtime_s": s.rapid_runtime_s,
+                    "air_cut_time_s": s.air_cut_time_s,
+                    // LH-1: both denominators, both named. Thresholds follow
+                    // the total-runtime reading; the MCP narration line
+                    // reports the cutting-time one.
+                    "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
+                    "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
+                    "low_engagement_time_s": s.low_engagement_time_s,
+                    "metrics_not_applicable": s.metrics_not_applicable,
+                    "runtime_by_intent": s.runtime_by_intent,
+                })
+            })
+            .collect();
+
+        // R-2 (census §3.5 D4): this response carried TWO fields named
+        // `issue_count` measuring different populations — the top-level one
+        // (this request's filters applied) and `summary.issue_count` nested
+        // inside `summary` (the whole trace, filters ignored). An agent
+        // reading a filtered response could pick either and both looked
+        // authoritative. The legacy keys keep their exact values for wire
+        // compatibility; the disambiguating names sit beside them and say
+        // which population each counts.
         json_str(serde_json::json!({
             "summary": summary_val,
             "semantic_summaries": summaries_val,
             "span_summaries": span_summaries,
             "hotspots": hotspots_val,
             "hotspot_count": hotspot_count,
+            "hotspots_truncated": hotspots_truncated,
+            "hotspots_total_matching": hotspot_count,
+            "hotspots_returned": hotspots_val.as_array().map_or(0, |a| a.len()),
             "issue_count": issue_count,
             "issues": issues_val,
+            "issues_truncated": issues_truncated,
+            "issues_total_matching": issue_count,
+            "issues_returned": issues_val.as_array().map_or(0, |a| a.len()),
+            // Explicit aliases for the two same-named counts, so neither has
+            // to be inferred from where it sits in the object.
+            "issue_count_matching_filter": issue_count,
+            "issue_count_project_wide": ct.summary.issue_count,
+            // And what the number actually IS: coalesced contiguous
+            // air/low-engagement RUNS, not per-sample tallies. The per-sample
+            // tallies are `air_cut_issue_count` / `low_engagement_issue_count`
+            // on the semantic summaries, and on the census fixture they were
+            // 43x larger under a near-identical name.
+            "issue_count_population": "coalesced_segments",
             "drill_summaries": drill_summaries_val,
             "drill_samples": drill_samples_val,
+            "toolpath_summaries": toolpath_summaries_val,
         }))
     }
 
@@ -1817,14 +2132,40 @@ impl super::RsCamApp {
             }
         };
 
+        // Acceleration-aware kinematics ($11 + per-axis $120-122). `None`
+        // means the cycle-time model falls back to the naive distance/feed
+        // sum (the F-034 feature flag).
+        let kinematics = match &machine.kinematics {
+            Some(k) => {
+                let per_axis = match k.acceleration_xyz_mm_s2 {
+                    Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+                    None => serde_json::Value::Null,
+                };
+                serde_json::json!({
+                    "configured": true,
+                    "acceleration_mm_s2": k.acceleration_mm_s2,
+                    "acceleration_xyz_mm_s2": per_axis,
+                    "junction_deviation_mm": k.junction_deviation_mm,
+                    "jerk_mm_s3": k.jerk_mm_s3,
+                    "max_junction_velocity_mm_min": k.max_junction_velocity_mm_min,
+                })
+            }
+            None => serde_json::json!({
+                "configured": false,
+                "note": "no kinematics set — cycle time uses the naive distance/feed sum",
+            }),
+        };
+
         let r = &machine.rigidity;
         json_str(serde_json::json!({
             "name": machine.name,
             "max_feed_mm_min": machine.max_feed_mm_min,
+            "cutting_feed_ceiling_mm_min": machine.cutting_feed_ceiling_mm_min(),
             "max_shank_mm": machine.max_shank_mm,
             "safety_factor": machine.safety_factor,
             "spindle": spindle,
             "power": power,
+            "kinematics": kinematics,
             "rigidity": {
                 "doc_roughing_factor": r.doc_roughing_factor,
                 "doc_finishing_factor": r.doc_finishing_factor,
@@ -1834,6 +2175,119 @@ impl super::RsCamApp {
                 "adaptive_doc_factor": r.adaptive_doc_factor,
                 "adaptive_woc_factor": r.adaptive_woc_factor,
             },
+        }))
+    }
+
+    /// Import a GRBL `$$` dump onto the live machine: sets kinematics +
+    /// max feed, breaks any library link. Headless twin of the GUI Machine
+    /// panel's `$$` import.
+    fn mcp_import_machine_settings(&mut self, dump: &str) -> String {
+        use rs_cam_core::machine_kinematics::{MachineKinematics, default_junction_deviation_mm};
+        let imp = MachineKinematics::from_grbl_settings(dump);
+        let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
+            || imp.max_feed_mm_min.is_some()
+            || imp.arc_tolerance_mm.is_some()
+            || imp.max_spindle_rpm.is_some()
+            || (imp.kinematics.junction_deviation_mm - default_junction_deviation_mm()).abs()
+                > 1e-12;
+        if !recognized {
+            return json_str(serde_json::json!({
+                "ok": false,
+                "error": "No GRBL settings recognised in the dump (expected $N=value lines, \
+                          e.g. $11=…, $120=…).",
+            }));
+        }
+
+        let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        {
+            let session = &mut self.controller.state_mut().session;
+            let machine = session.machine_mut();
+            machine.kinematics = Some(imp.kinematics);
+            if let Some(mf) = imp.max_feed_mm_min {
+                machine.max_feed_mm_min = mf;
+            }
+            // Inline values now — drop any machine-library link.
+            session.set_machine_ref(None);
+        }
+        self.controller.events_mut().push(AppEvent::MachineChanged);
+
+        let per_axis = match imp.kinematics.acceleration_xyz_mm_s2 {
+            Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+            None => serde_json::Value::Null,
+        };
+        let new_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        json_str(serde_json::json!({
+            "ok": true,
+            "applied": {
+                "acceleration_xyz_mm_s2": per_axis,
+                "acceleration_mm_s2": imp.kinematics.acceleration_mm_s2,
+                "junction_deviation_mm": imp.kinematics.junction_deviation_mm,
+                "max_feed_mm_min": { "from": prev_max_feed, "to": new_max_feed },
+                "arc_tolerance_mm": imp.arc_tolerance_mm,
+                "max_spindle_rpm": imp.max_spindle_rpm,
+                "ignored_settings": imp.ignored_count,
+            },
+            "note": "kinematics applied; machine-library link cleared. Verify with inspect_machine.",
+        }))
+    }
+
+    /// List the per-user machine library with a compact spec summary per
+    /// entry (snapshot model — these are import sources, not live links).
+    fn mcp_list_machine_library(&self) -> String {
+        let names = rs_cam_core::machine_library::list();
+        let machines: Vec<serde_json::Value> = names
+            .iter()
+            .map(|name| match rs_cam_core::machine_library::load(name) {
+                Ok(p) => {
+                    let kinematics = match &p.kinematics {
+                        Some(k) => {
+                            let per_axis = match k.acceleration_xyz_mm_s2 {
+                                Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+                                None => serde_json::Value::Null,
+                            };
+                            serde_json::json!({
+                                "acceleration_xyz_mm_s2": per_axis,
+                                "acceleration_mm_s2": k.acceleration_mm_s2,
+                                "junction_deviation_mm": k.junction_deviation_mm,
+                            })
+                        }
+                        None => serde_json::Value::Null,
+                    };
+                    serde_json::json!({
+                        "name": name,
+                        "profile_name": p.name,
+                        "max_feed_mm_min": p.max_feed_mm_min,
+                        "kinematics": kinematics,
+                    })
+                }
+                Err(e) => serde_json::json!({ "name": name, "error": e.to_string() }),
+            })
+            .collect();
+        let count = machines.len();
+        json_str(serde_json::json!({ "count": count, "machines": machines }))
+    }
+
+    /// Snapshot-import the named library machine into the project's inline
+    /// machine (a COPY; no live link), then invalidate machine-dependent
+    /// state via `MachineChanged`.
+    fn mcp_load_machine_from_library(&mut self, name: &str) -> String {
+        let profile = match rs_cam_core::machine_library::load(name) {
+            Ok(p) => p,
+            Err(e) => {
+                return json_str(serde_json::json!({
+                    "ok": false,
+                    "error": format!("could not load machine '{name}' from the library: {e}"),
+                }));
+            }
+        };
+        let profile_name = profile.name.clone();
+        *self.controller.state_mut().session.machine_mut() = profile;
+        self.controller.events_mut().push(AppEvent::MachineChanged);
+        json_str(serde_json::json!({
+            "ok": true,
+            "imported": name,
+            "profile_name": profile_name,
+            "note": "snapshot copy applied to the project's inline machine; verify with inspect_machine",
         }))
     }
 
@@ -2055,9 +2509,11 @@ impl super::RsCamApp {
             .enumerate()
             .filter_map(|(index, tc)| {
                 let rt = state.gui.toolpath_rt.get(&tc.id)?;
-                let rs_cam_core::compute::config::ComputeStatus::Error(error) = &rt.status else {
-                    return None;
-                };
+                // A/M11: only genuine failures. A disabled op reports
+                // `Disabled` (no error text) and a sequencing block reports
+                // `AwaitingPriorStock` — neither belongs in an error list an
+                // agent has to triage.
+                let error = ComputeStatus::effective(tc.enabled, &rt.status).error_text()?;
                 Some(serde_json::json!({
                     "id": format!("runtime.generate_error.{}", tc.id),
                     "scope": { "kind": "toolpath", "id": tc.id },
@@ -2410,11 +2866,36 @@ impl super::RsCamApp {
     }
 
     fn mcp_export_gcode(
-        &self,
+        &mut self,
         path: &str,
         accept_unmodeled_tool_load: bool,
         accept_exceeded_tool_load: bool,
+        tool_change_mode: Option<&str>,
+        split_setups: bool,
     ) -> String {
+        // Apply the requested tool-change handling to the session wizard
+        // before export so `overlay_for` picks it up — the MCP equivalent
+        // of the export wizard's Tool Change dropdown. Without this, MCP
+        // exports always used the post default (M0 manual pause), which is
+        // wrong for gSender/BitSetter setups that need M6 to trigger the
+        // tool-length probe on every change.
+        if let Some(mode_str) = tool_change_mode {
+            let mode = match mode_str.to_ascii_lowercase().as_str() {
+                "pause" | "m0" | "manual" => rs_cam_core::gcode::ToolChangeMode::Pause,
+                "m6" | "atc" => rs_cam_core::gcode::ToolChangeMode::M6,
+                "suppress" | "none" => rs_cam_core::gcode::ToolChangeMode::Suppress,
+                other => {
+                    return text(format!(
+                        "Export failed: unknown tool_change_mode '{other}' (expected 'pause', 'm6', or 'suppress')"
+                    ));
+                }
+            };
+            self.controller
+                .state_mut()
+                .session
+                .wizard_mut()
+                .tool_change_override = Some(mode);
+        }
         // Route through the viz-side exporter so the gate sees viz worker
         // results (`gui.toolpath_rt[id].result`) and the viz cut trace
         // (`state.simulation.results.cut_trace`). The core-side
@@ -2427,6 +2908,79 @@ impl super::RsCamApp {
             accept_unmodeled: accept_unmodeled_tool_load,
             accept_exceeded: accept_exceeded_tool_load,
         };
+
+        // Two-sided / multi-setup split: one self-contained file per setup,
+        // each with a header naming the setup (+ a flip/re-zero reminder on
+        // setups after the first), so the operator runs setup 1 → flip &
+        // re-zero → setup 2. Separate program runs are safer than an in-stream
+        // M0 because the Z re-zero after a flip is a fresh job, not a
+        // mid-program jog. tool_change_mode (set on the wizard above) still
+        // applies within each file.
+        if split_setups {
+            let setups: Vec<(usize, String)> = state
+                .session
+                .list_setups()
+                .iter()
+                .map(|s| (s.id, s.name.clone()))
+                .collect();
+            if setups.len() > 1 {
+                let path_buf = Path::new(path);
+                let stem = path_buf
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("export");
+                let ext = path_buf
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("nc");
+                let parent = path_buf.parent();
+                let post = state.gui.post.format.definition();
+                let total = setups.len();
+                let mut written: Vec<String> = Vec::new();
+                for (i, (id, name)) in setups.iter().enumerate() {
+                    let gcode = match crate::io::export::export_setup_gcode_from_session_with_policy(
+                        &state.session,
+                        &state.gui,
+                        &state.simulation,
+                        crate::state::job::SetupId(*id),
+                        rs_cam_core::gcode::ToolLoadExportPolicy {
+                            accept_unmodeled: accept_unmodeled_tool_load,
+                            accept_exceeded: accept_exceeded_tool_load,
+                        },
+                    ) {
+                        Ok(g) => g,
+                        Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
+                    };
+                    let reminder = if i > 0 {
+                        " -- FLIP PART + RE-ZERO Z BEFORE RUNNING"
+                    } else {
+                        ""
+                    };
+                    let header = post.render_comment(&format!(
+                        "rs_cam setup {}/{total}: \"{name}\"{reminder}",
+                        i + 1
+                    ));
+                    let safe_name: String = name
+                        .chars()
+                        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                        .collect();
+                    let file_name = format!("{stem}_{}_{safe_name}.{ext}", i + 1);
+                    let out_path = match parent {
+                        Some(p) => p.join(file_name),
+                        None => std::path::PathBuf::from(file_name),
+                    };
+                    if let Err(e) = std::fs::write(&out_path, format!("{header}{gcode}")) {
+                        return text(format!("Export failed writing {}: {e}", out_path.display()));
+                    }
+                    written.push(out_path.display().to_string());
+                }
+                return text(format!(
+                    "Exported {total} per-setup G-code files:\n{}",
+                    written.join("\n")
+                ));
+            }
+        }
+
         let gcode = match crate::io::export::export_gcode_from_session_with_policy(
             &state.session,
             &state.gui,
@@ -2788,6 +3342,7 @@ impl super::RsCamApp {
             post_gcode: None,
             boundary,
             boundary_inherit: true,
+            rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
             face_selection: None,
@@ -2929,14 +3484,48 @@ impl super::RsCamApp {
         source: Option<&str>,
         containment: Option<&str>,
         offset: Option<f64>,
+        source_toolpath_id: Option<usize>,
     ) -> String {
         let before = self.mcp_diagnostic_snapshot();
         let boundary_source = match source {
             Some("stock") | None => BoundarySource::Stock,
             Some("model_silhouette") => BoundarySource::ModelSilhouette,
+            Some("derived_rest_regions") => {
+                let Some(raw_id) = source_toolpath_id else {
+                    return self.mcp_mutation_error(
+                        "Error: 'derived_rest_regions' requires source_toolpath_id — the id \
+                         of the toolpath whose pencil rest-depth result supplies the \
+                         boundary (see get_toolpath_params's 'id' field)."
+                            .to_owned(),
+                        Some("source_toolpath_id".to_owned()),
+                    );
+                };
+                let source_id = rs_cam_core::ToolpathId(raw_id);
+                if self
+                    .controller
+                    .state()
+                    .session
+                    .find_toolpath_config_by_id(source_id)
+                    .is_none()
+                {
+                    return self.mcp_mutation_error(
+                        format!(
+                            "Error: source_toolpath_id {raw_id} does not match any \
+                             toolpath in this project."
+                        ),
+                        Some("source_toolpath_id".to_owned()),
+                    );
+                }
+                BoundarySource::DerivedRestRegions {
+                    source_toolpath_id: source_id,
+                }
+            }
             Some(other) => {
                 return self.mcp_mutation_error(
-                    format!("Error: Unknown boundary source '{other}'. Use 'stock' or 'model_silhouette'."),
+                    format!(
+                        "Error: Unknown boundary source '{other}'. Use 'stock', \
+                         'model_silhouette', or 'derived_rest_regions'."
+                    ),
                     Some("source".to_owned()),
                 );
             }
@@ -2969,12 +3558,132 @@ impl super::RsCamApp {
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
+                let mut stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+                    toolpath_index: index,
+                });
+                // P2 pencil-panel consolidation: `set_boundary_config` may
+                // have just auto-enabled rest analysis on the SOURCE
+                // toolpath (`ProjectSession::auto_enable_rest_analysis_for_source`,
+                // the demand-driven producer hook — see its doc comment).
+                // Surface that toolpath as stale too so a live GUI session
+                // watching this MCP-driven change sees it needs
+                // regeneration, mirroring the GUI boundary picker's own
+                // handling in `properties/mod.rs`. Slightly conservative:
+                // fires whenever the boundary points at an already-enabled
+                // source too (harmless — just an extra "needs regen" nudge).
+                // Resolved to owned values in its own block so the
+                // immutable `state()` borrow ends before `state_mut()`
+                // below.
+                let source_rest_lookup =
+                    if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &boundary.source
+                    {
+                        let state = self.controller.state();
+                        state
+                            .session
+                            .find_toolpath_config_by_id(*source_toolpath_id)
+                            .map(|(idx, tc)| {
+                                let is_rest_depth_pencil = matches!(
+                                    &tc.operation,
+                                    rs_cam_core::compute::catalog::OperationConfig::Pencil(cfg)
+                                        if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
+                                            == rs_cam_core::pencil::PencilDetector::RestDepth
+                                );
+                                (idx, is_rest_depth_pencil)
+                            })
+                    } else {
+                        None
+                    };
+                if boundary.enabled
+                    && let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &boundary.source
+                    && let Some((source_index, false)) = source_rest_lookup
+                {
+                    if let Some(rt) = self
+                        .controller
+                        .state_mut()
+                        .gui
+                        .toolpath_rt
+                        .get_mut(source_toolpath_id)
+                    {
+                        rt.stale_since = Some(std::time::Instant::now());
+                    }
+                    if !stale.contains(&source_index) {
+                        stale.push(source_index);
+                    }
+                }
+                self.mcp_mutation_result(
+                    format!("Boundary set on toolpath {index}. Regenerate to apply."),
+                    serde_json::to_value(boundary).unwrap_or(serde_json::Value::Null),
+                    stale,
+                    &before,
+                )
+            }
+            Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
+        }
+    }
+
+    fn mcp_set_rest_analysis_config(
+        &mut self,
+        index: usize,
+        enabled: bool,
+        reference_tool_id: Option<usize>,
+        dials: &RestAnalysisDials,
+    ) -> String {
+        let before = self.mcp_diagnostic_snapshot();
+        let resolved_reference_tool_id = match reference_tool_id {
+            Some(raw_id) => {
+                let tool_id = rs_cam_core::compute::tool_config::ToolId(raw_id);
+                if !self
+                    .controller
+                    .state()
+                    .session
+                    .tools()
+                    .iter()
+                    .any(|t| t.id == tool_id)
+                {
+                    return self.mcp_mutation_error(
+                        format!(
+                            "Error: reference_tool_id {raw_id} does not match any tool in \
+                             this project."
+                        ),
+                        Some("reference_tool_id".to_owned()),
+                    );
+                }
+                Some(tool_id)
+            }
+            None => None,
+        };
+
+        let defaults = rs_cam_core::compute::config::RestAnalysisConfig::default();
+        let rest_analysis = rs_cam_core::compute::config::RestAnalysisConfig {
+            enabled,
+            reference_tool_id: resolved_reference_tool_id,
+            cell_mm: dials.cell_mm.unwrap_or(defaults.cell_mm),
+            min_valley_depth: dials.min_valley_depth.unwrap_or(defaults.min_valley_depth),
+            region_margin_mm: dials.region_margin_mm.unwrap_or(defaults.region_margin_mm),
+            // PR-7 (H2.5): pass the `Option`s STRAIGHT through. Unset is not
+            // a missing value to be filled in with a default here — it is
+            // the instruction "size this from the reach policy", and only
+            // the generation path knows the cutter to size it against.
+            offset_stepover_mm: dials.offset_stepover_mm,
+            num_offset_passes: dials.num_offset_passes,
+        };
+
+        match self
+            .controller
+            .state_mut()
+            .session
+            .set_rest_analysis_config(index, rest_analysis.clone())
+        {
+            Ok(()) => {
+                self.controller.state_mut().gui.mark_edited();
                 let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
                     toolpath_index: index,
                 });
                 self.mcp_mutation_result(
-                    format!("Boundary set on toolpath {index}. Regenerate to apply."),
-                    serde_json::to_value(boundary).unwrap_or(serde_json::Value::Null),
+                    format!("Rest analysis set on toolpath {index}. Regenerate to apply."),
+                    serde_json::to_value(rest_analysis).unwrap_or(serde_json::Value::Null),
                     stale,
                     &before,
                 )
@@ -3224,61 +3933,20 @@ impl super::RsCamApp {
 
     fn mcp_generate_all(
         &mut self,
+        fixpoint: Option<bool>,
+        simulation_resolution_mm: Option<f64>,
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
         progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
     ) {
-        let ids: Vec<ToolpathId> = self
-            .controller
-            .state()
-            .session
-            .toolpath_configs()
-            .iter()
-            .filter(|tc| tc.enabled)
-            .map(|tc| tc.id)
-            .collect();
-        for tc in self.controller.state_mut().session.toolpath_configs_mut() {
-            if tc.enabled {
-                tc.debug_options.enabled = true;
-            }
-        }
-
-        if ids.is_empty() {
-            let _ = response_tx.send(McpResponse {
-                result: Ok(text("No enabled toolpaths to generate")),
-            });
-            return;
-        }
-
-        let total = ids.len();
-        self.mcp_send_progress(
-            &progress_tx,
-            &format!("Generating {total} toolpaths..."),
-            0.0,
-            Some(total as f64),
+        // A/M11: the whole ladder lives on the controller, which owns the
+        // compute lane, the simulation state and `pending_mcp` — the three
+        // things a fixpoint loop has to coordinate. This is a thin adapter.
+        self.controller.mcp_start_generate_all(
+            fixpoint.unwrap_or(true),
+            simulation_resolution_mm,
+            response_tx,
+            progress_tx,
         );
-
-        // Push generate events for each
-        for &id in &ids {
-            self.controller
-                .events_mut()
-                .push(crate::ui::AppEvent::GenerateToolpath(id));
-        }
-
-        // Store pending generate_all tracker
-        if let Some(ref mut pending) = self.controller.pending_mcp {
-            pending.generate_all = Some(PendingGenerateAll {
-                remaining: ids,
-                completed: 0,
-                failed: 0,
-                errors: Vec::new(),
-                response_tx,
-                progress_tx,
-            });
-        } else {
-            let _ = response_tx.send(McpResponse {
-                result: Err("MCP compute tracking not initialized".to_owned()),
-            });
-        }
     }
 
     fn mcp_run_simulation(
@@ -3620,6 +4288,7 @@ impl super::RsCamApp {
         workspace: Option<&str>,
         toolpath_index: Option<usize>,
         properties_tab: Option<&str>,
+        select: Option<&str>,
         modal: Option<&str>,
     ) -> String {
         // 1. Workspace.
@@ -3692,6 +4361,30 @@ impl super::RsCamApp {
             tab_applied = Some(tab);
         }
 
+        // 3b. Non-toolpath properties selection (machine / stock). These
+        //     panels render in the Setup workspace's properties pane, so
+        //     switch there if the caller didn't pick a workspace.
+        let mut select_applied: Option<&str> = None;
+        if let Some(sel) = select {
+            let target = match sel {
+                "machine" => Selection::Machine,
+                "stock" => Selection::Stock,
+                other => {
+                    return json_str(serde_json::json!({
+                        "error": format!("Unknown select '{other}'. Valid: machine, stock")
+                    }));
+                }
+            };
+            if workspace.is_none() {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                workspace_applied = Some(workspace_key(Workspace::Setup));
+            }
+            self.controller.state_mut().selection = target;
+            select_applied = Some(sel);
+        }
+
         // 4. Modal.
         if let Some(m) = modal {
             match m {
@@ -3761,10 +4454,19 @@ impl super::RsCamApp {
                 }),
             _ => None,
         };
+        let selection_kind = match state.selection {
+            Selection::Machine => "machine",
+            Selection::Stock => "stock",
+            Selection::Toolpath(_) => "toolpath",
+            Selection::Tool(_) => "tool",
+            _ => "other",
+        };
         json_str(serde_json::json!({
             "ok": true,
             "workspace": workspace_applied.unwrap_or_else(|| workspace_key(state.workspace)),
             "selected_toolpath": selected,
+            "selection": selection_kind,
+            "select": select_applied,
             "properties_tab": tab_applied,
             "modal": modal,
             "note": "view changes render on the next frame; call screenshot_gui to capture",
@@ -3888,6 +4590,17 @@ impl super::RsCamApp {
 ///
 /// Returns summaries for every structural span that has samples in the current
 /// trace. When a span filter is active, only accepted span ids are summarized.
+///
+/// **C1 (2026-08-06).** This used to nest a full scan of the project's entire
+/// sample vector inside a loop over every span, so a bare `get_cut_trace()`
+/// cost `Σ_toolpaths (spans × total_samples)` — on the egui frame-loop
+/// thread, with every other queued MCP request waiting behind it. The
+/// accumulation now happens in one pass in
+/// [`rs_cam_core::simulation_cut::accumulate_by_span`], which owns the
+/// nesting rule (a sample belongs to EVERY span in its `span_path`) and is
+/// pinned against a verbatim transcription of the old walk by
+/// `crates/rs_cam_core/tests/span_summary_single_pass_c1.rs`. This function
+/// keeps only the JSON shaping; no wire key changed.
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
@@ -3898,8 +4611,6 @@ fn build_span_cut_summaries(
         Option<std::collections::HashSet<u32>>,
     >,
 ) -> serde_json::Value {
-    use rs_cam_core::toolpath_spans::SpanId;
-
     let mut out = Vec::new();
     let n = state.session.toolpath_count();
     for idx in 0..n {
@@ -3919,27 +4630,33 @@ fn build_span_cut_summaries(
             continue;
         }
         let spans = result.spans();
+        // C1: ONE pass over the trace for this toolpath, scattering each
+        // sample into every span of its path. An always-reject filter (a
+        // span filter that matched nothing for this toolpath) short-circuits
+        // to an empty accept set rather than scanning at all.
+        let accepted: Option<std::collections::HashSet<u32>> = if span_filter_active {
+            Some(
+                accepted_by_toolpath
+                    .get(&tc.id)
+                    .and_then(|set| set.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            None
+        };
+        let accs = rs_cam_core::simulation_cut::accumulate_by_span(
+            &trace.samples,
+            tc.id,
+            spans.len(),
+            accepted.as_ref(),
+        );
         for (span_index, span) in spans.iter().enumerate() {
             let span_id = span_index as u32;
-            if span_filter_active {
-                let accepted = accepted_by_toolpath
-                    .get(&tc.id)
-                    .and_then(|set| set.as_ref());
-                if !accepted.is_some_and(|set| set.contains(&span_id)) {
-                    continue;
-                }
-            }
 
-            let mut acc = rs_cam_core::simulation_cut::SummaryAccumulator::default();
-            for sample in trace
-                .samples
-                .iter()
-                .filter(|sample| sample.toolpath_id == tc.id)
-            {
-                if sample.span_path.iter().any(|SpanId(id)| *id == span_id) {
-                    acc.observe(sample);
-                }
-            }
+            use rs_cam_core::simulation_cut::AirCutRatios;
+            let Some(acc) = accs.get(span_index) else {
+                continue;
+            };
             if acc.sample_count == 0 {
                 continue;
             }
@@ -3965,6 +4682,9 @@ fn build_span_cut_summaries(
                 "cutting_runtime_s": acc.cutting_runtime_s,
                 "rapid_runtime_s": acc.rapid_runtime_s,
                 "air_cut_time_s": acc.air_cut_time_s,
+                // LH-1: span-scope air cut, both denominators named.
+                "air_cut_pct_of_total_runtime": acc.air_cut_pct_of_total_runtime(),
+                "air_cut_pct_of_cutting_time": acc.air_cut_pct_of_cutting_time(),
                 "low_engagement_time_s": acc.low_engagement_time_s,
                 "wasted_runtime_s": acc.air_cut_time_s + acc.low_engagement_time_s,
                 "average_engagement": acc.average_engagement(),
@@ -3977,7 +4697,7 @@ fn build_span_cut_summaries(
                 // axial-DOC for plunge-heavy passes and arc-WOC for lateral
                 // ones without parsing a separate summary. See
                 // planning/DEXEL_Z_ONLY_INVESTIGATION.md §6.D.
-                "per_kinematics": render_per_kinematics_json(&acc),
+                "per_kinematics": render_per_kinematics_json(acc),
             }));
         }
     }
@@ -3989,32 +4709,10 @@ fn build_span_cut_summaries(
 /// Pulls boundaries from `state.simulation.results`, rapid collisions
 /// from `state.simulation.checks`, and the cut trace from the results
 /// arc.
-fn viz_project_evidence(
+pub(crate) fn viz_project_evidence(
     state: &crate::state::AppState,
 ) -> rs_cam_core::session::ProjectEvidence<'_> {
-    let boundaries = state
-        .simulation
-        .results
-        .as_ref()
-        .map(|r| {
-            r.boundaries
-                .iter()
-                .map(|b| (b.id, b.start_move, b.end_move))
-                .collect()
-        })
-        .unwrap_or_default();
-    let cut_trace = state
-        .simulation
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_deref());
-    rs_cam_core::session::ProjectEvidence {
-        boundaries,
-        rapid_collisions: &state.simulation.checks.rapid_collisions,
-        rapid_collision_move_indices: &state.simulation.checks.rapid_collision_move_indices,
-        cut_trace,
-        holder_collisions: state.simulation.holder_collision_counts_by_tp(),
-    }
+    state.simulation.project_evidence()
 }
 
 /// Build the per-DepthPass histogram for [`mcp_get_tool_load_report`].
@@ -4178,26 +4876,40 @@ fn render_per_kinematics_json(
 /// structural `SpanKind`. When the input is itself a generation-debug kind
 /// (e.g. "adaptive_pass"), the synonym set is just `{input}` so the filter
 /// keeps backward compatibility with the existing string vocabulary.
+///
+/// Wave D3: the structural half of this used to be a list of string
+/// literals with a catch-all fallback, so a NEW `SpanKind` variant silently
+/// fell through to "treat as a literal debug-trace kind" and matched
+/// nothing, with no compile error and no runtime complaint. It now parses
+/// the input into the enum first and matches that EXHAUSTIVELY — adding a
+/// variant to `SpanKind` breaks this build until someone says what it
+/// expands to. Only genuinely unparseable input (a real debug-trace kind)
+/// takes the literal path.
 fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
-    match span_kind {
+    use rs_cam_core::toolpath_spans::SpanKind;
+    let Ok(kind) = parse_span_kind_filter(span_kind) else {
+        // Not a structural kind at all — a literal debug-trace kind.
+        return vec![span_kind.to_owned()];
+    };
+    match kind {
         // Structural SpanKind synonyms expand to the matching debug kinds.
-        "depth_pass" => vec![
+        SpanKind::DepthPass => vec![
             "z_level_clear".to_owned(),
             "adaptive_pass".to_owned(),
             "z_level".to_owned(),
         ],
-        "entry" => vec!["entry_search".to_owned()],
-        // Other SpanKind names have no debug-trace generators yet — return
-        // an empty set so the filter matches nothing rather than falsely
+        SpanKind::Entry => vec!["entry_search".to_owned()],
+        // These structural kinds have no debug-trace generators yet — an
+        // empty set so the filter matches nothing rather than falsely
         // matching by string.
-        "operation"
-        | "region"
-        | "lead_out"
-        | "link_bridge"
-        | "dressup_artifact"
-        | "rapid_order_barrier" => Vec::new(),
-        // Fallback: treat as a literal debug-trace kind.
-        other => vec![other.to_owned()],
+        SpanKind::Operation
+        | SpanKind::Region
+        | SpanKind::LeadOut
+        | SpanKind::LinkBridge
+        | SpanKind::DressupArtifact
+        | SpanKind::GeometryRefit
+        | SpanKind::WaterlineCleanup
+        | SpanKind::RapidOrderBarrier => Vec::new(),
     }
 }
 
@@ -4236,20 +4948,20 @@ fn map_debug_kind_to_span_kind(debug_kind: &str) -> Option<&'static str> {
 }
 
 /// Map an MCP `span_kind` string (snake_case) to the `SpanKind` enum.
+///
+/// Wave D3: the string table lives in core
+/// ([`rs_cam_core::toolpath_spans::SpanKind::as_key`], exhaustive) rather
+/// than being transcribed here, so a new variant cannot be silently absent
+/// from the agent vocabulary.
 fn parse_span_kind_filter(s: &str) -> Result<rs_cam_core::toolpath_spans::SpanKind, String> {
     use rs_cam_core::toolpath_spans::SpanKind;
-    match s {
-        "operation" => Ok(SpanKind::Operation),
-        "depth_pass" => Ok(SpanKind::DepthPass),
-        "region" => Ok(SpanKind::Region),
-        "entry" => Ok(SpanKind::Entry),
-        "lead_out" => Ok(SpanKind::LeadOut),
-        "link_bridge" => Ok(SpanKind::LinkBridge),
-        "dressup_artifact" => Ok(SpanKind::DressupArtifact),
-        "waterline_cleanup" => Ok(SpanKind::WaterlineCleanup),
-        "rapid_order_barrier" => Ok(SpanKind::RapidOrderBarrier),
-        other => Err(format!("unknown span_kind {other:?}")),
-    }
+    SpanKind::from_key(s).ok_or_else(|| {
+        let known: Vec<&str> = SpanKind::ALL.iter().map(|k| k.as_key()).collect();
+        format!(
+            "unknown span_kind {s:?} — known kinds: {}",
+            known.join(", ")
+        )
+    })
 }
 
 fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
@@ -4262,8 +4974,11 @@ fn span_kind_label(k: rs_cam_core::toolpath_spans::SpanKind) -> &'static str {
         SpanKind::LeadOut => "LeadOut",
         SpanKind::LinkBridge => "LinkBridge",
         SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::GeometryRefit => "GeometryRefit",
         SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+        // Transport-only carrier (task #14) — stripped before a toolpath
+        // is stored, so this name only ever surfaces if one leaked.
     }
 }
 
@@ -4276,6 +4991,12 @@ fn span_to_json(id: usize, s: &rs_cam_core::toolpath_spans::Span) -> serde_json:
         "is_boundary": s.is_boundary(),
         "label": &*s.label,
         "payload": s.payload.as_ref().map(|p| format!("{p:?}")),
+        // Wave D3: a `region` span is either a planner territory NODE or one
+        // GENERATOR pass, and their `region_id`s index different tables.
+        // Published as its own key so an agent never has to parse the label
+        // (or the Debug-formatted payload) to tell them apart. `null` on
+        // every non-region span.
+        "region_role": s.region_role().map(|role| role.label()),
     })
 }
 
@@ -4405,7 +5126,7 @@ fn build_inspect_spans_response(
             }
             if let Some(want_rid) = region_id {
                 match &s.payload {
-                    Some(SpanPayload::Region { region_id: rid }) if *rid == want_rid => {}
+                    Some(SpanPayload::Region { region_id: rid, .. }) if *rid == want_rid => {}
                     _ => return false,
                 }
             }
@@ -4440,7 +5161,81 @@ fn build_inspect_spans_response(
 )]
 mod tests {
     use super::*;
-    use rs_cam_core::toolpath_spans::{Span, SpanKind, SpanPayload};
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
+
+    // ── B7 divergence 3: the wrong-tool fallback ────────────────────────
+    //
+    // Two tools with visibly different geometry, and a toolpath pointing at
+    // a THIRD id that does not exist. The parent revision's lookup is
+    // transcribed verbatim so the defect stays executable: checking out the
+    // parent was not available to this wave (the working tree is shared with
+    // another live lane), and a transcription keeps failing if anyone
+    // reintroduces the fallback, which a one-off checkout would not.
+
+    fn two_tool_fixture() -> Vec<ToolConfig> {
+        let mut a = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        a.name = "Ø6 flat".to_owned();
+        a.diameter = 6.0;
+        a.flute_count = 2;
+        let mut b = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
+        b.name = "Ø1 ball".to_owned();
+        b.diameter = 1.0;
+        b.flute_count = 4;
+        vec![a, b]
+    }
+
+    /// The parent revision's lookup, transcribed from
+    /// `mcp_narrate_toolpath` at parent `88ce23a`.
+    fn parent_revision_tool_lookup(tools: &[ToolConfig], tool_id: usize) -> Option<&ToolConfig> {
+        tools
+            .iter()
+            .find(|tool| tool.id.0 == tool_id)
+            .or_else(|| tools.first())
+    }
+
+    /// **The exhibit.** On an unresolvable tool id the parent silently
+    /// returned the FIRST tool — a Ø6 2-flute end mill standing in for a Ø1
+    /// 4-flute ball nose. That diameter sets narration's large-arc threshold
+    /// and every tool-scaled hint; the flute count sits under every chipload
+    /// sentence; and the same `ToolConfig` builds the cutter handed to
+    /// `narrate_toolpath_with_context`. Nothing in the emitted text said the
+    /// numbers were about another tool.
+    #[test]
+    fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
+        let tools = two_tool_fixture();
+        const MISSING_ID: usize = 99;
+
+        let parent = parent_revision_tool_lookup(&tools, MISSING_ID)
+            .expect("the parent revision always found *a* tool — that is the defect");
+        assert_eq!(
+            parent.name, "Ø6 flat",
+            "the transcribed parent must reproduce the fallback, or this exhibit proves \
+             nothing",
+        );
+        assert!(
+            (parent.diameter - 1.0).abs() > 4.0 && parent.flute_count != 4,
+            "the fixture must make the substitution VISIBLE — a fallback to a tool with the \
+             same geometry would be harmless and would not demonstrate the defect",
+        );
+
+        assert!(
+            crate::app::RsCamApp::narration_tool_for(&tools, MISSING_ID).is_none(),
+            "the shipped lookup must refuse an unresolvable tool id rather than narrate \
+             with another tool's geometry",
+        );
+    }
+
+    /// Non-vacuity: the refusal is not a blanket one. A resolvable id still
+    /// returns its OWN tool, and not the first one.
+    #[test]
+    fn narration_tool_lookup_still_finds_the_toolpaths_own_tool() {
+        let tools = two_tool_fixture();
+        let found =
+            crate::app::RsCamApp::narration_tool_for(&tools, 2).expect("tool id 2 is configured");
+        assert_eq!(found.name, "Ø1 ball");
+        assert!((found.diameter - 1.0).abs() < 1e-9);
+    }
 
     /// Build a representative span tree:
     /// - Operation 0..30
@@ -4457,14 +5252,26 @@ mod tests {
                 z_level: -2.0,
                 pass_index: 0,
             }),
-            Span::new(0, 7, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 0 }),
-            Span::new(7, 15, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 1 }),
+            Span::new(0, 7, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::GeneratorPass,
+            }),
+            Span::new(7, 15, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 1,
+                role: RegionSpanRole::GeneratorPass,
+            }),
             Span::new(15, 30, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
                 z_level: -4.0,
                 pass_index: 1,
             }),
-            Span::new(15, 22, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 2 }),
-            Span::new(22, 30, SpanKind::Region).with_payload(SpanPayload::Region { region_id: 3 }),
+            Span::new(15, 22, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 2,
+                role: RegionSpanRole::GeneratorPass,
+            }),
+            Span::new(22, 30, SpanKind::Region).with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            }),
         ]
     }
 
@@ -4600,6 +5407,7 @@ mod tests {
             spans.push(
                 Span::new(i, i + 1, SpanKind::Region).with_payload(SpanPayload::Region {
                     region_id: i as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
             );
         }

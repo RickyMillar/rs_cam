@@ -256,6 +256,34 @@ impl RsCamApp {
             resources.polygon_data.clear();
             let color = crate::render::colors::POLYGON_OUTLINE;
 
+            // When a drill op is selected, draw its model's drill targets
+            // (DXF points / circle centres) as pickable markers — bright when
+            // selected, dim otherwise — so the user can see and click them.
+            let active_drill: Option<(usize, Vec<[f64; 2]>)> = {
+                use crate::state::selection::Selection;
+                use rs_cam_core::compute::catalog::OperationConfig;
+                let st = self.controller.state();
+                if st.workspace == Workspace::Toolpaths
+                    && let Selection::Toolpath(id) = st.selection
+                {
+                    st.session
+                        .toolpath_configs()
+                        .iter()
+                        .find(|tc| tc.id == id)
+                        .and_then(|tc| match &tc.operation {
+                            OperationConfig::Drill(c) => {
+                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
+                            }
+                            OperationConfig::AlignmentPinDrill(c) => {
+                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
+                            }
+                            _ => None,
+                        })
+                } else {
+                    None
+                }
+            };
+
             let setup_for_model = |model_id: usize| -> Option<Setup> {
                 let state = self.controller.state();
                 let tc = state
@@ -346,6 +374,45 @@ impl RsCamApp {
                         ring_to_lines(hole, true, setup_ref, poly_z, &mut verts);
                     }
                 }
+
+                // Drill target markers for the active drill op's model.
+                if let Some((mid, selected)) = active_drill.as_ref()
+                    && model.id == *mid
+                {
+                    use rs_cam_core::dxf_input::DrillTargetKind;
+                    for t in model.drill_targets.iter() {
+                        let (tx, ty) = if let Some(setup) = setup_ref {
+                            let tp = setup
+                                .transform_point(rs_cam_core::geo::P3::new(t.x, t.y, 0.0), &stock);
+                            (tp.x, tp.y)
+                        } else {
+                            (t.x, t.y)
+                        };
+                        let is_sel = selected
+                            .iter()
+                            .any(|h| (h[0] - t.x).abs() < 1e-6 && (h[1] - t.y).abs() < 1e-6);
+                        let marker_color = if is_sel {
+                            [0.2_f32, 0.95, 0.4] // bright green = selected
+                        } else {
+                            [0.95_f32, 0.55, 0.15] // orange = available
+                        };
+                        let radius = match t.kind {
+                            DrillTargetKind::CircleCenter { diameter } => (diameter / 2.0) as f32,
+                            DrillTargetKind::Point => 1.5,
+                        }
+                        .max(1.0);
+                        super::push_circle_vertices(
+                            &mut verts,
+                            tx as f32,
+                            ty as f32,
+                            poly_z,
+                            radius,
+                            marker_color,
+                            16,
+                        );
+                    }
+                }
+
                 if !verts.is_empty() {
                     let buffer = render_state.device.create_buffer_init(
                         &egui_wgpu::wgpu::util::BufferInitDescriptor {
@@ -529,16 +596,17 @@ impl RsCamApp {
                 && let Some(setup) = active_setup_ref.as_ref()
                 && let Some(sd) = active_session_setup
             {
-                use crate::state::runtime::{Corner, XYDatum};
+                use rs_cam_core::session::{Corner, XYDatum};
 
                 let (eff_w, eff_d, eff_h) = setup.effective_stock(&stock);
                 let color = [0.9_f32, 0.2, 0.9]; // magenta
 
-                // Read datum from SetupRuntime
-                let datum = state.gui.setup_rt.get(&sd.id).map(|sr| &sr.datum);
+                // The datum is persisted project state (W9 / P-2), read
+                // straight off the setup instead of a GUI-side overlay.
+                let datum = &sd.datum;
 
                 // Datum in setup-local frame: XY at corner/center, Z at top surface
-                let local_datum: Option<P3> = datum.and_then(|d| match &d.xy_method {
+                let local_datum: Option<P3> = match &datum.xy_method {
                     XYDatum::CornerProbe(corner) => {
                         let x = match corner {
                             Corner::FrontLeft | Corner::BackLeft => 0.0,
@@ -552,7 +620,7 @@ impl RsCamApp {
                     }
                     XYDatum::CenterOfStock => Some(P3::new(eff_w / 2.0, eff_d / 2.0, eff_h)),
                     _ => None,
-                });
+                };
 
                 if let Some(local) = local_datum {
                     // Always in local frame — use local coords directly.
@@ -920,24 +988,60 @@ impl RsCamApp {
         } else {
             resources.height_planes_data = None;
         }
+
+        // Upload rest-depth heatmap overlay (pencil detector #4) whenever the
+        // selected toolpath carries a populated `rest_grid`. Mirrors the
+        // height-plane upload gate directly above — rebuilt on the same
+        // pending-upload cycle, not every frame (`upload_gpu_data` only runs
+        // when `take_pending_upload()` fires, so this isn't a per-frame cost).
+        {
+            let rest_grid = if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                let state = self.controller.state();
+                state
+                    .gui
+                    .toolpath_rt
+                    .get(&tp_id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .and_then(|result| {
+                        // Rest grids arrive in the emission frame alongside
+                        // the toolpath they came from; re-frame in lockstep
+                        // with the same display shift applied to toolpath
+                        // lines above (identity-setup world→local shift).
+                        if has_display_shift {
+                            translate_annotated(&result.annotated, display_shift).rest_grid
+                        } else {
+                            result.annotated.rest_grid.clone()
+                        }
+                    })
+            } else {
+                None
+            };
+            resources.rest_heatmap_data = rest_grid.and_then(|grid| {
+                rs_cam_core::rest_heatmap_mesh::rest_grid_to_heatmap_mesh(&grid).and_then(|hm| {
+                    SimMeshGpuData::from_heightmap_mesh(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        &hm,
+                    )
+                })
+            });
+        }
     }
 }
 
 /// Translate an annotated toolpath by `shift` — the display-frame adapter
 /// for identity setups, whose toolpaths emit in world coordinates while the
-/// viewport draws zero-rooted local. Arc center offsets (`i`/`j` on the
-/// `MoveType`) are relative and survive translation unchanged.
+/// viewport draws zero-rooted local. Delegates to
+/// [`rs_cam_core::toolpath_spans::AnnotatedToolpath::translated`], which
+/// re-frames every coordinate-bearing field (move targets, planner
+/// engagement samples, rest-grid heatmap) in lockstep — arc center offsets
+/// (`i`/`j` on the `MoveType`) are relative and survive translation
+/// unchanged.
 fn translate_annotated(
     annotated: &rs_cam_core::toolpath_spans::AnnotatedToolpath,
     shift: rs_cam_core::geo::P3,
 ) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
-    let mut out = annotated.clone();
-    for m in &mut out.toolpath.moves {
-        m.target.x += shift.x;
-        m.target.y += shift.y;
-        m.target.z += shift.z;
-    }
-    out
+    annotated.translated(shift)
 }
 
 /// Build a `toolpath_id -> [cl_min, cl_max]` map from the suggest module's
@@ -1011,6 +1115,9 @@ mod tests {
             toolpath: tp,
             spans: Vec::new(),
             spans_valid: true,
+            planner_engagement: Vec::new(),
+            rest_grid: None,
+            rest_regions: None,
         };
 
         let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));

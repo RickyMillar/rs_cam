@@ -11,29 +11,31 @@
 //!
 //! ## Physics
 //!
-//! The tool is modeled as a cantilever clamped at the collet face and
-//! free at the tip, length `L = stickout`. A transverse point load `F`
-//! is applied at the midpoint of axial engagement
-//! (`a = L − axial_doc / 2`):
+//! `F = Kc · axial_doc · radial_woc` (N) — same form as the canonical
+//! sample-level force in
+//! [`crate::tool_load::deflection::sample_tip_deflection_mm`]. No
+//! grain-anisotropy factor: deflection responds to sustained mean force,
+//! not transient grain spikes (the 2.0× factor in
+//! [`crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR`] is power-scoped).
 //!
-//! ```text
-//! δ_tip = F · a² · (3·L − a) / (6 · E · I_eff)
-//! ```
+//! The cantilever displacement under that force is **delegated to the
+//! shared integrated model** [`tip_deflection_from_engagement`] →
+//! [`crate::tool::ToolDefinition::tip_deflection_mm`] — the *same*
+//! two-section (stiff shank above the flutes + cutter section below)
+//! numerically-integrated beam the post-sim deflection gate and the
+//! axial-DOC envelope ([`crate::feeds::cutter_constraints`]) already use.
+//! The predictor exists to forecast what the post-sim gate will measure,
+//! so it must use the gate's physics. (Before 2026-06-17 it used a bespoke
+//! single-section `δ = F·a²·(3L−a)/(6·E·I)` with `I = π·(0.7·D)⁴/64`,
+//! which applied the end-mill flute-relief factor to the *entire* stickout
+//! — including the stiff shank — and read ~3× hotter than the gate. That
+//! divergence made the Suggest back-off loop chase a phantom target and
+//! exhaust its iteration cap; delegating fixes both.)
 //!
-//! - `F = Kc · axial_doc · radial_woc` (N) — same form as the canonical
-//!   sample-level force in [`crate::tool_load::deflection::sample_tip_deflection_mm`].
-//!   No grain-anisotropy factor: deflection responds to sustained mean
-//!   force, not transient grain spikes (the 2.0× factor in
-//!   [`crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR`] is power-scoped).
-//! - `E` is the tool material's Young's modulus from
-//!   [`crate::compute::tool_config::ToolMaterial::youngs_modulus_n_per_mm2`]
-//!   (600 GPa for Carbide, 200 GPa for HSS).
-//! - `I_eff = π · d_core⁴ / 64`. For an end mill `d_core ≈ 0.7 · D` —
-//!   the flute relief reduces the effective bending section well below
-//!   the nominal outer diameter. Ball / bull / tapered-ball nose tools
-//!   use a geometry-appropriate core (see [`core_diameter_mm`]). V-bit
-//!   geometry has no defensible closed-form core, so the predictor
-//!   returns zero (the post-sim integrator handles those).
+//! `core_diameter_mm` / `I_eff` are still computed and surfaced in the
+//! [`DeflectionBreakdown`] as a representative-section *diagnostic*, but
+//! no longer drive the deflection magnitude. V-bit geometry still returns
+//! zero (the post-sim integrator handles those).
 //!
 //! ## Refusal cases (return `predicted_um == 0.0`)
 //!
@@ -169,8 +171,10 @@ pub fn predict_peak_deflection_um(
     // Material: only primary-source Kc materials get a numeric
     // prediction. Custom / out-of-band SolidWoodByJanka return None
     // and we route to 0 — matches the `MaterialUnvalidated` refusal in
-    // the post-sim gate.
-    let Some(kc) = material.kc_n_per_mm2() else {
+    // the post-sim gate. The force magnitude itself is recomputed inside
+    // `feeds::force::lateral_cutting_force`; here we only need the
+    // existence check for the early refusal.
+    if material.kc_n_per_mm2().is_none() {
         tracing::debug!(
             reason = "material_unvalidated",
             material = %material.label(),
@@ -180,7 +184,7 @@ pub fn predict_peak_deflection_um(
             predicted_um: 0.0,
             breakdown: breakdown_zero,
         };
-    };
+    }
 
     // --- Engagement geometry ---
     let diameter_mm = tool.diameter;
@@ -280,53 +284,57 @@ pub fn predict_peak_deflection_um(
         };
     }
 
+    // Effective core section — retained as a *breakdown diagnostic only*.
+    // The deflection magnitude no longer comes from a bespoke single-
+    // section formula here; it is delegated to the shared two-section
+    // integrated cantilever (`tip_deflection_from_engagement`), the SAME
+    // model the post-sim deflection gate (`sample_tip_deflection_mm`) and
+    // the axial envelope (`invert_deflection`) use. The predictor's job
+    // is to forecast what the gate will measure, so it must use the gate's
+    // physics — the old uniform `I = π(0.7·D)⁴/64` applied the flute-relief
+    // factor to the *whole* stickout (including the stiff shank) and read
+    // ~3× hotter than the gate, which is why the back-off loop chased a
+    // phantom target and exhausted its iteration cap.
     let d_core = core_diameter_mm(tool);
-    if !(d_core.is_finite() && d_core > 0.0) {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
-    }
-    let i_eff_mm4 = std::f64::consts::PI * d_core.powi(4) / 64.0;
+    let i_eff_mm4 = if d_core.is_finite() && d_core > 0.0 {
+        std::f64::consts::PI * d_core.powi(4) / 64.0
+    } else {
+        0.0
+    };
 
     // --- Cutting force (N) ---
-    // F = Kc · axial_doc · radial_woc. Raw Kc — same as
-    // `sample_tip_deflection_mm`. No grain anisotropy factor here:
-    // static deflection responds to mean force, not transient spikes.
-    let f_lateral_n = kc * axial_doc_mm * radial_woc_mm;
+    // Feed-aware affine model: F = ap · (Ks · fz·sin θ_peak + F_edge),
+    // with θ_peak from the engagement arc ψ = immersion_angle(ae, r).
+    // The radial WOC enters through ψ (arc, not a linear width), and feed
+    // enters through the chip thickness — so the predictor forecasts the
+    // same force the post-sim gate measures. Surfaced in the breakdown
+    // for the rationale tree; the integrated model recomputes it from the
+    // same inputs, so the reported force can't drift from the one the
+    // deflection used. No grain anisotropy factor here: static deflection
+    // responds to mean force, not transient spikes.
+    let immersion_rad = crate::feeds::force::immersion_angle(radial_woc_mm, diameter_mm / 2.0);
+    let f_lateral_n = crate::feeds::force::lateral_cutting_force(
+        material,
+        axial_doc_mm,
+        immersion_rad,
+        chipload_per_tooth_mm,
+    )
+    .unwrap_or(0.0);
 
-    let e_n_per_mm2 = tool.tool_material.youngs_modulus_n_per_mm2();
-    if !(e_n_per_mm2.is_finite() && e_n_per_mm2 > 0.0) {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
-    }
-
-    // Load applied at midpoint of axial engagement, measured from the
-    // collet face (clamped end). a = L − DOC/2.
-    let load_pos = stickout_mm - axial_doc_mm * 0.5;
-    if load_pos <= 0.0 {
-        // Engagement deeper than stickout — geometry is degenerate.
-        // The pre-Suggest geometry guards normally prevent this from
-        // reaching here; return 0 rather than a nonsensical extrapolation.
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: DeflectionBreakdown {
-                f_lateral_n,
-                stickout_mm,
-                i_eff_mm4,
-                chipload_per_tooth_mm,
-                axial_doc_mm,
-                radial_woc_mm,
-            },
-        };
-    }
-
-    // δ = F · a² · (3·L − a) / (6·E·I)
-    let delta_mm = f_lateral_n * load_pos * load_pos * (3.0 * stickout_mm - load_pos)
-        / (6.0 * e_n_per_mm2 * i_eff_mm4);
-    let predicted_um = delta_mm * 1000.0;
+    // Delegate the cantilever to the canonical integrated model. Returns
+    // None only for refusal cases the guards above already excluded
+    // (Custom material / non-positive stickout / inputs) or a degenerate
+    // engagement-deeper-than-stickout geometry — treat any None as "no
+    // constraint signal" (0 µm), matching the DeflectionPrediction contract.
+    let tool_def = crate::compute::cutter::build_cutter(tool);
+    let predicted_um = tip_deflection_from_engagement(
+        &tool_def,
+        material,
+        axial_doc_mm,
+        immersion_rad,
+        chipload_per_tooth_mm,
+    )
+    .map_or(0.0, |delta_mm| delta_mm * 1000.0);
 
     tracing::debug!(
         predicted_um,
@@ -335,7 +343,7 @@ pub fn predict_peak_deflection_um(
         i_eff_mm4,
         axial_doc_mm,
         radial_woc_mm,
-        "closed-form deflection prediction"
+        "deflection prediction (delegated to integrated two-section cantilever)"
     );
 
     DeflectionPrediction {
@@ -393,11 +401,14 @@ pub fn core_diameter_mm(tool: &ToolConfig) -> f64 {
 /// ([`crate::feeds::cutter_constraints`]) route through here so they
 /// can't drift out of phase.
 ///
-/// `axial_mm` is the axial DOC; `radial_width_mm` is the arc-equivalent
-/// slab width — the post-sim gate derives this from
-/// `(arc / π) · 2 · engagement_radius`, the envelope plugs the radial
-/// WOC directly. Force is the same `F = Kc · axial · radial_width`
-/// formula both paths used independently before this extraction.
+/// `axial_mm` is the axial DOC; `immersion_rad` is the engagement arc
+/// angle ψ (the post-sim gate hands in the sample's
+/// `arc_engagement_radians` directly; the predictor / envelope derive it
+/// from `ae/r` via [`crate::feeds::force::immersion_angle`]); `fz_mm` is
+/// feed per tooth. The force is the canonical feed-aware affine model in
+/// [`crate::feeds::force::lateral_cutting_force`] — `F_lat = ap · (Ks ·
+/// fz·sin θ_peak + F_edge)` — so every consumer reads the same physics
+/// and feed genuinely moves deflection.
 ///
 /// Returns `None` on the cases the gate would refuse:
 /// - `material.kc_n_per_mm2()` is `None` (Custom, unvalidated species).
@@ -407,16 +418,17 @@ pub fn tip_deflection_from_engagement(
     tool: &crate::tool::ToolDefinition,
     material: &Material,
     axial_mm: f64,
-    radial_width_mm: f64,
+    immersion_rad: f64,
+    fz_mm: f64,
 ) -> Option<f64> {
-    if axial_mm <= 0.0 || radial_width_mm <= 0.0 || tool.stickout <= 0.0 {
+    if axial_mm <= 0.0 || immersion_rad <= 0.0 || fz_mm <= 0.0 || tool.stickout <= 0.0 {
         return None;
     }
     if matches!(material, Material::Custom { .. }) {
         return None;
     }
-    let kc = material.kc_n_per_mm2()?;
-    let force_n = kc * axial_mm * radial_width_mm;
+    let force_n =
+        crate::feeds::force::lateral_cutting_force(material, axial_mm, immersion_rad, fz_mm)?;
     let e = tool.tool_material.youngs_modulus_n_per_mm2();
     Some(tool.tip_deflection_mm(force_n, axial_mm, e))
 }
@@ -720,6 +732,36 @@ enum ArcFitDispatch {
 /// | Profile | 0.80 | Default | side-step, mostly full-flute height |
 /// | Trace, Chamfer, Pencil, Inlay, Face | 0.50 | Default | conservative middle |
 /// | Drill, AlignmentPinDrill, VCarve, ProjectCurve | — | NotApplicable | feature-driven or Z-only |
+/// # ⚠ STALE SINCE 2026-08-06 — this table predicts a quantity the gate
+/// # no longer reports. NOT fixed here, on purpose.
+///
+/// Every ratio below was fitted against the post-sim chipload gate's
+/// **arc-mean chip thickness** observation. That observation was deleted
+/// on 2026-08-06: the gate now reports `effective_feed / (rpm · flutes)`,
+/// a linear advance per tooth (`tool_load::chipload`'s header, and
+/// `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for the
+/// primary sources). Against that observation the correct arc-fit ratio
+/// is the **achieved/commanded feed ratio**, which this pre-sim
+/// predictor cannot know — not a per-operation-family constant, because
+/// the quantity the constants approximate no longer exists.
+///
+/// B-lit §3.3 and §6.1 (C-13 / F-5) rule the disposition explicitly:
+/// **retire this table, do not re-key it.** The census's earlier advice
+/// — "replace with `f_lut × expected_feed_ratio`" — is superseded.
+///
+/// It is left standing here because retiring it is a *number-moving*
+/// change to Suggest, not to the gate: `feeds::suggest::recalibrate_feed_for_chipload`
+/// solves `target_nominal = target / arc_fit_ratio` and is gated on
+/// `ArcFitRatioSource::Calibrated`, so today only Adaptive3d (0.25) and
+/// DropCutter (0.15) get a feed lift at all. Setting every ratio to 1.0
+/// would (a) change the solved feed on those two families by 4× and
+/// 6.7×, and (b) extend the lift to every other family for the first
+/// time. That is a separate approval with its own before/after, and
+/// folding it into the unit conversion would make the conversion's
+/// verdict-flip table unattributable.
+///
+/// Owner: census T3.5. Re-open condition: none needed — it is the next
+/// item in the same chain.
 fn arc_fit_ratio_for_op(op_type: OperationType) -> ArcFitDispatch {
     use ArcFitRatioSource::{Calibrated, Default as DefSrc};
     match op_type {
@@ -738,10 +780,17 @@ fn arc_fit_ratio_for_op(op_type: OperationType) -> ArcFitDispatch {
             value: 0.30,
             source: DefSrc,
         },
-        OperationType::Scallop | OperationType::SpiralFinish => ArcFitDispatch::Ratio {
-            value: 0.15,
-            source: DefSrc,
-        },
+        // UnifiedFinish: no calibration cell yet (new op) — mirrors
+        // Scallop's ratio per the registration decision (its mid-steep
+        // band literally IS a scallop pass; the waterline/raster bands
+        // don't have their own calibration either). Revisit once Wanaka
+        // post-sim data exists for this op.
+        OperationType::Scallop | OperationType::UnifiedFinish | OperationType::SpiralFinish => {
+            ArcFitDispatch::Ratio {
+                value: 0.15,
+                source: DefSrc,
+            }
+        }
         OperationType::Waterline => ArcFitDispatch::Ratio {
             value: 0.40,
             source: DefSrc,
@@ -803,6 +852,11 @@ pub struct ObservedChiploadPrediction {
     pub arc_fit_ratio: f64,
     /// Forward-predicted median chipload the gate will report (mm/tooth):
     /// `nominal_mm_per_tooth × arc_fit_ratio`.
+    ///
+    /// ⚠ **Stale since 2026-08-06** — see [`arc_fit_ratio_for_op`]. The
+    /// gate now reports a linear advance per tooth, so the honest
+    /// prediction is `nominal_mm_per_tooth × achieved_feed_ratio`, which
+    /// this pre-sim predictor cannot measure. Owner: census T3.5.
     pub observed_median_mm_per_tooth: f64,
     /// Provenance of the arc-fit ratio — calibrated against a Wanaka
     /// cell, conservative default, or refusal.
@@ -921,10 +975,21 @@ mod tests {
 
     #[test]
     fn wanaka_back_rough_predicts_within_post_sim_band() {
-        // Wanaka Back Rough live measurement: 358 µm post-sim.
-        // Task spec: prediction should land in ~250-400 µm, asserted
-        // within ±50% (i.e. 125-600 µm) for v1.1 step 1. The exact
-        // calibration is left to v1.1 step 2.
+        // A roughing endmill (6 mm flat, 45 mm stickout, hardwood, 9 mm DPP,
+        // 1.2 mm radial). The predictor delegates its cantilever to the same
+        // integrated two-section model the post-sim gate uses, so it
+        // forecasts what the gate will measure.
+        //
+        // Under the feed-aware literature-absolute force model
+        // (`feeds::force`, woodresearch.sk affine fit), the instantaneous
+        // bending force here is ~58 N (ap 9 · (Ks·h_eff + F_edge), h_eff ≈
+        // 0.023 mm at this chipload/immersion), and the stiff-shank
+        // two-section beam puts the predicted peak at ~48 µm — comfortably
+        // Within. A stubby 6 mm flat at L/D 7.5 is NOT deflection-limited;
+        // its limiter is chipload/power, not tip wander. (The old
+        // `Kc·ap·ae` aggregate read ~316 µm here — ~4× the honest
+        // instantaneous force, which is why the deflection gate used to
+        // cry wolf on routine roughing.)
         let tool = carbide_endmill(6.0, 45.0, 25.0);
         let op = wanaka_adaptive_op(9.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
@@ -932,8 +997,8 @@ mod tests {
         let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
         let um = pred.predicted_um;
         assert!(
-            (125.0..=600.0).contains(&um),
-            "Wanaka Back Rough should land within ±50% of the 250-400 µm window; got {um:.1} µm"
+            (30.0..=70.0).contains(&um),
+            "stubby roughing endmill is deflection-safe (~48 µm Within) under the feed-aware force model; got {um:.1} µm"
         );
         // Sanity: the breakdown should record the inputs we passed.
         assert!((pred.breakdown.axial_doc_mm - 9.0).abs() < 1e-9);
@@ -946,12 +1011,14 @@ mod tests {
 
     #[test]
     fn shallow_dpp_predicts_well_below_threshold() {
-        // Same Wanaka tool but DPP=3 mm: deflection roughly linear in
-        // axial DOC (force scales linearly; load_pos shifts by only
-        // ~5%), so a 3× DPP reduction should drop δ to ~1/3 of the
-        // 9 mm-DPP case. Expected: 30-100 µm, well clear of the 200 µm
-        // critical threshold.
-        let tool = carbide_endmill(6.0, 45.0, 25.0);
+        // A genuinely-shallow cut: DPP=3 mm on a 30 mm-reach tool.
+        // Deflection is roughly linear in axial DOC (force scales
+        // linearly; load_pos shifts only ~5%). Under the feed-aware
+        // literature-absolute force model the instantaneous force is
+        // modest, so a shallow 3 mm cut on a short-reach tool reads ~5 µm
+        // — deeply Within. Test intent: a shallow cut clears the bound by
+        // a wide margin.
+        let tool = carbide_endmill(6.0, 30.0, 25.0);
         let op = wanaka_adaptive_op(3.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
         let machine = shapeoko();
@@ -962,8 +1029,8 @@ mod tests {
             "Shallow-DPP prediction should clear the 200 µm critical threshold; got {um:.1} µm"
         );
         assert!(
-            (10.0..=200.0).contains(&um),
-            "Shallow-DPP prediction should land in the 10-200 µm 'Within' / 'Approximate' band; got {um:.1} µm"
+            (1.0..=50.0).contains(&um),
+            "Shallow-DPP prediction should land in a low Within band (real signal, not zero); got {um:.1} µm"
         );
     }
 

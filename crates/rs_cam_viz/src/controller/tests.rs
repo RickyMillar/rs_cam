@@ -61,6 +61,10 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Optimize => self.optimize_lane.clone(),
         }
     }
+
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
 }
 
 fn temp_path(name: &str, extension: &str) -> std::path::PathBuf {
@@ -103,6 +107,8 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         },
         cut_trace: None,
         cut_trace_path: None,
+        column_grid_cell_mm: 0.5,
+        prior_stocks: std::collections::HashMap::new(),
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::InspectToolpathInSimulation(
@@ -159,7 +165,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+        .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             mesh: rs_cam_core::simulation::StockMesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
@@ -167,6 +173,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             },
             total_moves: 8,
             deviations: None,
+            column_deviations: None,
             boundaries: vec![crate::compute::worker::SimBoundary {
                 id: ToolpathId(0),
                 name: "Adaptive 3D".to_owned(),
@@ -181,8 +188,10 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
             resolution_clamped: false,
-        })));
+            prior_stocks: std::collections::HashMap::new(),
+        }))));
 
     controller.drain_compute_results();
 
@@ -206,6 +215,13 @@ fn fixture_path(name: &str) -> std::path::PathBuf {
 
 fn sample_controller() -> AppController<ScriptedBackend> {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
+    sample_project_into(&mut controller);
+    controller
+}
+
+/// The shared fixture body, generic over the backend so tests that need a
+/// result-echoing double (A/M11's fixpoint chain) get the same project.
+fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     controller.state.session.tools_mut().push(tool);
 
@@ -217,6 +233,8 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         kind: Some(ModelKind::Stl),
         mesh: Some(Arc::clone(&mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
@@ -241,6 +259,7 @@ fn sample_controller() -> AppController<ScriptedBackend> {
         face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id = controller.state.session.toolpath_configs()[0].id;
@@ -258,7 +277,41 @@ fn sample_controller() -> AppController<ScriptedBackend> {
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
     controller.state.selection = Selection::Toolpath(tp_id);
-    controller
+}
+
+/// Append another toolpath to setup 0 of a `sample_controller()` project,
+/// sharing its tool and model. Returns the new toolpath's id.
+fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &str) -> ToolpathId {
+    let next = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id.0 + 1)
+        .max()
+        .unwrap_or(0);
+    let cfg = ToolpathConfig {
+        id: ToolpathId(next),
+        name: name.to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    controller.state.session.add_toolpath(0, cfg).unwrap();
+    ToolpathId(next)
 }
 
 fn render_snapshot(
@@ -292,6 +345,7 @@ fn render_snapshot(
                 &mut controller.state.viewport,
                 &lanes,
                 events,
+                None,
             );
         });
 
@@ -324,6 +378,8 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         current_job: Some("Adaptive 3D".to_owned()),
         current_phase: Some("Pass 12".to_owned()),
         started_at: Some(std::time::Instant::now()),
+        active_toolpath_id: None,
+        active_toolpath_index: None,
     };
     controller.compute.analysis_lane = LaneSnapshot {
         lane: ComputeLane::Analysis,
@@ -332,6 +388,8 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         current_job: Some("Simulation".to_owned()),
         current_phase: None,
         started_at: None,
+        active_toolpath_id: None,
+        active_toolpath_index: None,
     };
 
     let snapshot = render_snapshot(&mut controller);
@@ -458,6 +516,7 @@ fn simulation_results_capture_setup_boundaries() {
         face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
     };
     controller
         .state
@@ -469,7 +528,7 @@ fn simulation_results_capture_setup_boundaries() {
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(
+        .push(ComputeMessage::Simulation(Ok(Box::new(
             crate::compute::SimulationResult {
                 mesh: rs_cam_core::simulation::StockMesh {
                     vertices: Vec::new(),
@@ -478,6 +537,7 @@ fn simulation_results_capture_setup_boundaries() {
                 },
                 total_moves: 20,
                 deviations: None,
+                column_deviations: None,
                 boundaries: vec![
                     crate::compute::worker::SimBoundary {
                         id: ToolpathId(0),
@@ -502,9 +562,11 @@ fn simulation_results_capture_setup_boundaries() {
                 rapid_collision_move_indices: Vec::new(),
                 cut_trace: None,
                 cut_trace_path: None,
+                column_grid_cell_mm: 0.5,
                 resolution_clamped: false,
+                prior_stocks: std::collections::HashMap::new(),
             },
-        )));
+        ))));
 
     controller.drain_compute_results();
 
@@ -665,10 +727,11 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
     controller
         .compute
         .drained
-        .push(ComputeMessage::Simulation(Ok(SimulationResult {
+        .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             mesh,
             total_moves,
             deviations: None,
+            column_deviations: None,
             boundaries,
             checkpoints: Vec::new(),
             playback_data: Vec::new(),
@@ -676,8 +739,10 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
             rapid_collision_move_indices: Vec::new(),
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
             resolution_clamped: false,
-        })));
+            prior_stocks: std::collections::HashMap::new(),
+        }))));
 
     controller.drain_compute_results();
 }
@@ -704,22 +769,25 @@ fn toolpath_results_persist_debug_trace_metadata() {
     let semantic_trace = Arc::new(semantic_recorder.finish());
     let debug_path = temp_path("toolpath_trace_metadata", "json");
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated: Arc::clone(&annotated),
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated: Arc::clone(&annotated),
+                    stats: Default::default(),
+                    debug_trace: Some(Arc::clone(&trace)),
+                    semantic_trace: Some(Arc::clone(&semantic_trace)),
+                    debug_trace_path: Some(debug_path.clone()),
+                    drill_op: None,
+                }),
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),
                 debug_trace_path: Some(debug_path.clone()),
-                drill_op: None,
-            }),
-            debug_trace: Some(Arc::clone(&trace)),
-            semantic_trace: Some(Arc::clone(&semantic_trace)),
-            debug_trace_path: Some(debug_path.clone()),
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -778,15 +846,18 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
     let semantic_trace = Arc::new(semantic_recorder.finish());
     let debug_path = temp_path("cancelled_toolpath_trace_metadata", "json");
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Err(crate::compute::ComputeError::Cancelled),
-            debug_trace: Some(Arc::clone(&trace)),
-            semantic_trace: Some(Arc::clone(&semantic_trace)),
-            debug_trace_path: Some(debug_path.clone()),
-        },
-    ));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Err(crate::compute::ComputeError::Cancelled),
+                debug_trace: Some(Arc::clone(&trace)),
+                semantic_trace: Some(Arc::clone(&semantic_trace)),
+                debug_trace_path: Some(debug_path.clone()),
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -817,6 +888,116 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
 }
 
 // ---------------------------------------------------------------------------
+// MCP `cancel_generation`: cancel must target only the toolpath lane
+// (leaving Analysis/Optimize untouched, unlike the GUI's "cancel
+// everything" `AppEvent::CancelCompute`), and a cancelled generation must
+// resolve any pending MCP `generate_toolpath` waiter instead of leaving it
+// hanging — mirroring the fail-hard-at-submit fix immediately above, but
+// for the cancel-in-flight path instead of the reject-before-submit path.
+// ---------------------------------------------------------------------------
+
+/// `AppEvent::CancelToolpathGeneration` (issued by MCP's `cancel_generation`
+/// tool) must cancel only `ComputeLane::Toolpath`. Reusing the GUI's
+/// existing `AppEvent::CancelCompute` (which cancels Toolpath + Analysis +
+/// Optimize) would abort an unrelated in-flight simulation or optimize run
+/// just because an agent wanted to abort a runaway generate.
+#[test]
+fn cancel_toolpath_generation_event_only_cancels_toolpath_lane() {
+    let mut controller = sample_controller();
+    controller.compute.toolpath_lane.state = LaneState::Running;
+    controller.compute.analysis_lane.state = LaneState::Running;
+    controller.compute.optimize_lane.state = LaneState::Running;
+
+    controller.handle_internal_event(crate::ui::AppEvent::CancelToolpathGeneration);
+
+    assert_eq!(
+        controller.compute.toolpath_lane.state,
+        LaneState::Cancelling,
+        "toolpath lane must be cancelled"
+    );
+    assert_eq!(
+        controller.compute.analysis_lane.state,
+        LaneState::Running,
+        "analysis lane must be left alone by the targeted cancel"
+    );
+    assert_eq!(
+        controller.compute.optimize_lane.state,
+        LaneState::Running,
+        "optimize lane must be left alone by the targeted cancel"
+    );
+}
+
+/// A `Cancelled` outcome draining through `drain_compute_results` must
+/// resolve a pending MCP `generate_toolpath` waiter, the same way a
+/// submit-time fail-hard already does (see the pair of tests above this
+/// section). Without this, cancelling a runaway generate over MCP would
+/// stop the compute but still leave the original `generate_toolpath` call
+/// hanging forever — trading a hang-on-completion for a hang-on-cancel.
+#[cfg(feature = "mcp")]
+#[test]
+fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
+    let mut controller = sample_controller();
+    let tp_id = ToolpathId(0);
+
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(tp_id, tx);
+
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: tp_id,
+                result: Err(crate::compute::ComputeError::Cancelled),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+
+    controller.drain_compute_results();
+
+    let response = rx
+        .try_recv()
+        .expect("a cancelled drain must resolve the pending MCP oneshot, not strand it");
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the cancellation");
+    assert!(
+        payload.to_lowercase().contains("cancel"),
+        "mcp payload for a cancelled generate should say so plainly, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("toolpath runtime should exist after cancel");
+    assert!(
+        matches!(rt.status, crate::state::toolpath::ComputeStatus::Pending),
+        "cancelled toolpath status should revert to Pending (not Done), got {:?}",
+        rt.status
+    );
+
+    assert!(
+        !controller
+            .pending_mcp
+            .as_ref()
+            .expect("pending_mcp still set")
+            .toolpath
+            .contains_key(&tp_id),
+        "resolved MCP waiter should be removed from the pending map"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Roadmap F.1 — session.results cache must repopulate when the threaded
 // compute backend returns a fresh result. Before the fix, the callback
 // only wrote to gui.toolpath_rt and session.results stayed empty after
@@ -838,22 +1019,25 @@ fn drain_compute_results_repopulates_session_results() {
         Toolpath::new(),
     ));
 
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated: Arc::clone(&annotated),
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated: Arc::clone(&annotated),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -880,22 +1064,25 @@ fn drain_compute_results_clears_pending_apply_resim_on_success() {
     let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated,
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated,
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -915,22 +1102,25 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
     let annotated = Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
         Toolpath::new(),
     ));
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Ok(ToolpathResult {
-                annotated,
-                stats: Default::default(),
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Ok(ToolpathResult {
+                    annotated,
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
                 debug_trace: None,
                 semantic_trace: None,
                 debug_trace_path: None,
-                drill_op: None,
-            }),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+            },
+        )));
 
     controller.drain_compute_results();
 
@@ -944,21 +1134,236 @@ fn drain_compute_results_keeps_pending_apply_resim_for_other_toolpath() {
 #[test]
 fn drain_compute_results_skips_session_write_on_error() {
     let mut controller = sample_controller();
-    controller.compute.drained.push(ComputeMessage::Toolpath(
-        crate::compute::worker::ComputeResult {
-            toolpath_id: ToolpathId(0),
-            result: Err(crate::compute::ComputeError::Message("boom".into())),
-            debug_trace: None,
-            semantic_trace: None,
-            debug_trace_path: None,
-        },
-    ));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: ToolpathId(0),
+                result: Err(crate::compute::ComputeError::Message("boom".into())),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
 
     controller.drain_compute_results();
 
     assert!(
         controller.state.session.get_result(0).is_none(),
         "session.results must not be written on compute error"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P2.2/P2.3 — DerivedRestRegions boundary dependent staleness (Fix 2).
+// A toolpath whose enabled boundary is `DerivedRestRegions` referencing
+// another toolpath's cached `rest_regions` must be marked stale whenever
+// that source regenerates or is removed — otherwise its cached clip keeps
+// reflecting regions that no longer match the source's latest state.
+// ---------------------------------------------------------------------------
+
+fn add_derived_rest_dependent(
+    controller: &mut AppController<ScriptedBackend>,
+    source_id: ToolpathId,
+) -> ToolpathId {
+    let dependent_config = ToolpathConfig {
+        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        name: "Rest scallop".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: crate::state::toolpath::BoundaryConfig {
+            enabled: true,
+            source: crate::state::toolpath::BoundarySource::DerivedRestRegions {
+                source_toolpath_id: source_id,
+            },
+            containment: crate::state::toolpath::BoundaryContainment::Center,
+            offset: 0.0,
+        },
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    controller
+        .state
+        .session
+        .add_toolpath(0, dependent_config)
+        .expect("dependent toolpath should be added to setup 0");
+    let dependent_id = controller.state.session.toolpath_configs()[1].id;
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .insert(dependent_id, ToolpathRuntime::new(true));
+    dependent_id
+}
+
+#[test]
+fn drain_compute_results_marks_derived_rest_dependents_stale() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_none(),
+        "dependent should start non-stale"
+    );
+
+    let mut annotated = rs_cam_core::toolpath_spans::AnnotatedToolpath::new(Toolpath::new());
+    annotated.rest_regions = Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
+        -5.0, -5.0, 5.0, 5.0,
+    )]));
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: source_id,
+                result: Ok(ToolpathResult {
+                    annotated: Arc::new(annotated),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+
+    controller.drain_compute_results();
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_some(),
+        "dependent toolpath should be marked stale after its rest-regions source regenerates"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P2 pencil-panel consolidation — demand-driven rest analysis producer hook.
+// Wiring a toolpath's boundary to `DerivedRestRegions { source_toolpath_id }`
+// via `ProjectSession::set_boundary_config` (the setter both MCP's
+// `set_boundary_config` tool and the GUI's Machining Boundary picker's
+// write-back call into) must auto-enable the SOURCE toolpath's own rest
+// analysis so it actually produces the regions the new consumer expects —
+// see `session::mutation::auto_enable_rest_analysis_for_source`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn set_boundary_config_auto_enables_source_rest_analysis() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    assert!(
+        !controller
+            .state
+            .session
+            .find_toolpath_config_by_id(source_id)
+            .expect("source toolpath should exist")
+            .1
+            .rest_analysis
+            .enabled,
+        "fixture source should start with rest analysis disabled"
+    );
+
+    // A plain second toolpath whose boundary we'll wire to the source via
+    // `set_boundary_config` (not by embedding it at construction time, the
+    // way `add_derived_rest_dependent` does above — this test exercises the
+    // setter itself).
+    let consumer_config = ToolpathConfig {
+        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        name: "Consumer".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    let consumer_index = controller
+        .state
+        .session
+        .add_toolpath(0, consumer_config)
+        .expect("consumer toolpath should be added to setup 0");
+
+    let boundary = crate::state::toolpath::BoundaryConfig {
+        enabled: true,
+        source: crate::state::toolpath::BoundarySource::DerivedRestRegions {
+            source_toolpath_id: source_id,
+        },
+        containment: crate::state::toolpath::BoundaryContainment::Center,
+        offset: 0.0,
+    };
+    controller
+        .state
+        .session
+        .set_boundary_config(consumer_index, boundary)
+        .expect("boundary set should succeed");
+
+    let (_, source_tc) = controller
+        .state
+        .session
+        .find_toolpath_config_by_id(source_id)
+        .expect("source toolpath should still exist");
+    assert!(
+        source_tc.rest_analysis.enabled,
+        "wiring a DerivedRestRegions boundary must auto-enable the source's rest analysis"
+    );
+}
+
+#[test]
+fn handle_remove_toolpath_marks_derived_rest_dependents_stale() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(source_id));
+
+    assert!(
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get(&dependent_id)
+            .expect("dependent runtime should exist")
+            .stale_since
+            .is_some(),
+        "dependent should be marked stale after its rest-regions source toolpath is removed"
     );
 }
 
@@ -1169,6 +1574,8 @@ fn reset_simulation_cancels_analysis_lane() {
         },
         cut_trace: None,
         cut_trace_path: None,
+        column_grid_cell_mm: 0.5,
+        prior_stocks: std::collections::HashMap::new(),
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::ResetSimulation);
@@ -1527,6 +1934,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             }],
             local_stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox: world_stock_bbox,
         stock_top_z: world_stock_bbox.max.z,
@@ -1640,6 +2048,9 @@ impl crate::compute::ComputeBackend for CapturingBackend {
     fn lane_snapshot(&self, lane: crate::compute::ComputeLane) -> crate::compute::LaneSnapshot {
         crate::compute::LaneSnapshot::idle(lane)
     }
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
 }
 
 /// F-028 viz-path follow-up regression test.
@@ -1702,6 +2113,8 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         kind: Some(ModelKind::Svg),
         mesh: None,
         polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
@@ -1740,6 +2153,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
     };
     let tp_idx = controller
         .state
@@ -1822,5 +2236,682 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
          ({:.6}, {:.6}).",
         captured_stock_bbox.min.x,
         captured_stock_bbox.min.y
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Submit-time fail-hard must resolve a pending MCP `generate_toolpath`
+// waiter, not strand it. Confirmed live: an MCP `generate_toolpath` call
+// hung ~9 hours because `submit_toolpath_compute` returned early on a
+// precondition rejection (e.g. the `DerivedRestRegions` self-reference
+// check, or the `FromRemainingStock` no-prior-sim check) without ever
+// invoking `notify_mcp_toolpath_complete` — that notify only fired from
+// `drain_compute_results`, which never runs for a request that never
+// reached the compute worker.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mcp")]
+#[test]
+fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
+    let mut controller = sample_controller();
+    let source_id = ToolpathId(0);
+    let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
+
+    // Rewrite the dependent's boundary to reference itself — the
+    // self-referential fail-hard precondition in `submit_toolpath_compute`.
+    let tc = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == dependent_id)
+        .expect("dependent toolpath config must exist");
+    tc.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: dependent_id,
+    };
+
+    // Register a pending MCP `generate_toolpath` waiter for this toolpath,
+    // mirroring what `app/mcp.rs::mcp_generate_toolpath` does before pushing
+    // the `GenerateToolpath` event.
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(dependent_id, tx);
+
+    // Drive the production submit path directly (mirrors how
+    // `AppEvent::GenerateToolpath` is dispatched in `controller/events/mod.rs`).
+    controller.submit_toolpath_compute(dependent_id);
+
+    // The MCP oneshot must already be resolved — no drain step should be
+    // required, because this request never reached the compute worker.
+    let response = rx.try_recv().expect(
+        "submit-time fail-hard must resolve the pending MCP oneshot immediately, \
+         not leave the caller waiting on a compute result that will never arrive",
+    );
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the error");
+    assert!(
+        payload.contains("own rest regions"),
+        "mcp error payload should describe the self-referential boundary rejection, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&dependent_id)
+        .expect("dependent runtime should exist after fail-hard");
+    assert!(
+        matches!(
+            &rt.status,
+            crate::state::toolpath::ComputeStatus::Error(e) if e.contains("own rest regions")
+        ),
+        "toolpath runtime status should be Error mentioning the self-reference, got {:?}",
+        rt.status
+    );
+
+    // The pending_mcp map must no longer hold this toolpath's sender —
+    // `notify_mcp_toolpath_complete` removes it on resolution.
+    assert!(
+        !controller
+            .pending_mcp
+            .as_ref()
+            .expect("pending_mcp still set")
+            .toolpath
+            .contains_key(&dependent_id),
+        "resolved MCP waiter should be removed from the pending map"
+    );
+}
+
+/// Same waiter-resolution family, different precondition:
+/// `FromRemainingStock` (rest machining) with no prior simulated stock.
+///
+/// A/M11 reclassified this from `Error` to `AwaitingPriorStock` — it is a
+/// sequencing state, not a failure — but the MCP waiter must still be
+/// resolved immediately, which is what this test was written for.
+#[cfg(feature = "mcp")]
+#[test]
+fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
+    let mut controller = sample_controller();
+    let tp_id = ToolpathId(0);
+
+    // No prior simulation has run, so `self.state.simulation` has no
+    // boundaries/checkpoints — `FromRemainingStock` must fail hard.
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == tp_id)
+    {
+        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    }
+
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .toolpath
+        .insert(tp_id, tx);
+
+    controller.submit_toolpath_compute(tp_id);
+
+    let response = rx
+        .try_recv()
+        .expect("submit-time fail-hard must resolve the pending MCP oneshot immediately");
+    let payload = response
+        .result
+        .expect("mcp response should carry an Ok(json) payload describing the error");
+    assert!(
+        payload.contains("waiting on simulated stock") || payload.contains("remaining stock"),
+        "mcp payload should describe the missing-prior-stock block, got: {payload}"
+    );
+
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("runtime should exist after the block");
+    assert!(
+        matches!(
+            &rt.status,
+            crate::state::toolpath::ComputeStatus::AwaitingPriorStock(_)
+        ),
+        "A/M11: a missing upstream snapshot is a sequencing state, not an Error —          conflating them is what made 'cannot yet' indistinguishable from          'cannot ever'. Got {:?}",
+        rt.status
+    );
+}
+
+/// A/M11 sentry — the message shape. The pre-A/M11 text ("run a simulation of
+/// the preceding operations first, then regenerate") was true and useless: it
+/// named no operation, so the operator could not tell a one-round wait from a
+/// four-round one. Both message variants must name the blocking op AND its
+/// index, and the not-yet-generated variant must warn that the cycle repeats.
+#[test]
+fn blocked_rest_op_names_its_blocking_upstream_operation() {
+    let mut controller = sample_controller();
+    // Build a two-op setup: index 0 is the blocker, index 1 is the rest op.
+    push_toolpath(&mut controller, "Rest Finish");
+    let blocker_id = controller.state.session.toolpath_configs()[0].id;
+    let blocker_name = controller.state.session.toolpath_configs()[0].name.clone();
+    let rest_id = controller.state.session.toolpath_configs()[1].id;
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == rest_id)
+    {
+        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    }
+
+    // Blocker not generated: the wait is at least two rounds.
+    controller.submit_toolpath_compute(rest_id);
+    let block = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&rest_id)
+        .and_then(|rt| rt.status.blocked_on().cloned())
+        .expect("rest op with no prior stock must record AwaitingPriorStock");
+    assert_eq!(block.blocking_toolpath_id, Some(blocker_id));
+    assert_eq!(block.blocking_toolpath_index, Some(0));
+    assert!(
+        block.message.contains(&blocker_name),
+        "the message must NAME the blocking operation, got: {}",
+        block.message
+    );
+    assert!(
+        block.message.contains("index 0"),
+        "the message must give the blocker's index, got: {}",
+        block.message
+    );
+    assert!(
+        block.message.contains("may need repeating"),
+        "when the blocker has not generated, the message must say the cycle may          repeat — that is the number the operator cannot otherwise know. Got: {}",
+        block.message
+    );
+
+    // Blocker generated: exactly one simulation is enough, and the message
+    // must say so rather than repeating the vague ladder warning.
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(blocker_id)
+        .status = crate::state::toolpath::ComputeStatus::Done;
+    controller.submit_toolpath_compute(rest_id);
+    let block = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&rest_id)
+        .and_then(|rt| rt.status.blocked_on().cloned())
+        .expect("still blocked — no simulation has run");
+    assert!(
+        block.message.contains("ONE simulation"),
+        "with the blocker generated the wait is a single round and the message must          say so, got: {}",
+        block.message
+    );
+}
+
+/// A/M11 defect 2 — a disabled op must report `Disabled`, never the error it
+/// was carrying when it was switched off. Two ops read `3D Finish 6` and
+/// `Rivers (back) (copy)` as broken in the live run when they were merely off.
+#[test]
+fn a_disabled_op_reports_disabled_not_its_last_error() {
+    use crate::state::toolpath::ComputeStatus;
+    let stale = ComputeStatus::Error("uses remaining stock but none is available".to_owned());
+
+    let enabled = ComputeStatus::effective(true, &stale);
+    assert_eq!(enabled.label(), "Error");
+    assert!(enabled.error_text().is_some());
+
+    let disabled = ComputeStatus::effective(false, &stale);
+    assert_eq!(disabled.label(), "Disabled");
+    assert!(
+        disabled.error_text().is_none(),
+        "a disabled op must contribute nothing to any error list"
+    );
+    assert!(disabled.detail().is_none());
+    assert!(
+        !disabled.needs_generation(),
+        "a disabled op is not waiting to be generated"
+    );
+}
+
+/// A blocked op is not an error and must not appear in `runtime_errors`; a
+/// disabled one must appear in neither list. This is the channel an agent
+/// triages, so the separation has to hold at the JSON boundary, not just in
+/// the enum.
+#[cfg(feature = "mcp")]
+#[test]
+fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
+    let mut controller = sample_controller();
+    push_toolpath(&mut controller, "Rest Finish");
+    push_toolpath(&mut controller, "Broken");
+    push_toolpath(&mut controller, "Switched Off");
+    let ids: Vec<_> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+
+    controller.state.gui.toolpath_rt_or_default(ids[1]).status =
+        crate::state::toolpath::ComputeStatus::AwaitingPriorStock(
+            rs_cam_core::compute::AwaitingPriorStock {
+                blocking_toolpath_id: Some(ids[0]),
+                blocking_toolpath_index: Some(0),
+                message: "waiting on simulated stock after 'Rough' (index 0)".to_owned(),
+            },
+        );
+    controller.state.gui.toolpath_rt_or_default(ids[2]).status =
+        crate::state::toolpath::ComputeStatus::Error("no 3D mesh".to_owned());
+    controller.state.gui.toolpath_rt_or_default(ids[3]).status =
+        crate::state::toolpath::ComputeStatus::Error("stale text from when it was on".to_owned());
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == ids[3])
+    {
+        tc.enabled = false;
+    }
+
+    let diag = controller.build_mcp_diagnostics();
+    let errors = diag["runtime_errors"].as_array().expect("runtime_errors");
+    let blocked = diag["awaiting_prior_stock"]
+        .as_array()
+        .expect("awaiting_prior_stock");
+
+    assert_eq!(
+        errors.len(),
+        1,
+        "only the genuinely-failing op belongs in runtime_errors, got: {errors:?}"
+    );
+    assert_eq!(errors[0]["error"], "no 3D mesh");
+    assert_eq!(blocked.len(), 1, "got: {blocked:?}");
+    assert_eq!(blocked[0]["blocking_toolpath_index"], 0);
+
+    let rows = diag["per_toolpath"].as_array().expect("per_toolpath");
+    let off = rows
+        .iter()
+        .find(|r| r["toolpath_id"] == serde_json::json!(ids[3]))
+        .expect("disabled op should still be listed");
+    assert_eq!(off["status"], "Disabled");
+    assert!(
+        off["error"].is_null(),
+        "a disabled op must not present a live-looking error, got: {off}"
+    );
+}
+
+// ── A/M11: generate_all as a fixpoint over the rest-stock chain ──────────
+
+/// A backend that models the one rule that makes the ladder necessary:
+/// prior stock for an operation appears only when a **simulation** runs
+/// AFTER its predecessor has generated. Toolpath submits succeed
+/// immediately; each simulation publishes a prior-stock snapshot for every
+/// op whose immediate predecessor in `chain` has generated by then.
+#[cfg(feature = "mcp")]
+struct RestChainBackend {
+    /// Toolpath ids in index order — the stock chain.
+    chain: Vec<ToolpathId>,
+    generated: std::collections::HashSet<ToolpathId>,
+    drained: Vec<ComputeMessage>,
+    pub simulations: usize,
+    /// When set, this toolpath always fails to generate.
+    poison: Option<ToolpathId>,
+}
+
+#[cfg(feature = "mcp")]
+impl RestChainBackend {
+    fn new() -> Self {
+        Self {
+            chain: Vec::new(),
+            generated: std::collections::HashSet::new(),
+            drained: Vec::new(),
+            simulations: 0,
+            poison: None,
+        }
+    }
+}
+
+#[cfg(feature = "mcp")]
+impl ComputeBackend for RestChainBackend {
+    fn submit_toolpath(&mut self, request: ComputeRequest) {
+        let id = request.toolpath_id;
+        let result = if self.poison == Some(id) {
+            Err(crate::compute::ComputeError::Message(
+                "synthetic hard failure".to_owned(),
+            ))
+        } else {
+            self.generated.insert(id);
+            Ok(ToolpathResult {
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                    Toolpath::new(),
+                )),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+                drill_op: None,
+            })
+        };
+        self.drained.push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::ComputeResult {
+                toolpath_id: id,
+                result,
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+    }
+
+    fn submit_simulation(&mut self, _request: SimulationRequest) {
+        self.simulations += 1;
+        let bbox = rs_cam_core::geo::BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 10.0),
+        };
+        let mut prior_stocks = std::collections::HashMap::new();
+        for window in self.chain.windows(2) {
+            let (prev, next) = (window[0], window[1]);
+            if self.generated.contains(&prev) {
+                prior_stocks.insert(
+                    next,
+                    Arc::new(rs_cam_core::dexel_stock::TriDexelStock::from_bounds(
+                        &bbox, 2.0,
+                    )),
+                );
+            }
+        }
+        self.drained
+            .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
+                mesh: rs_cam_core::simulation::StockMesh {
+                    vertices: Vec::new(),
+                    indices: Vec::new(),
+                    colors: Vec::new(),
+                },
+                total_moves: 0,
+                deviations: None,
+                column_deviations: None,
+                boundaries: Vec::new(),
+                checkpoints: Vec::new(),
+                playback_data: Vec::new(),
+                rapid_collisions: Vec::new(),
+                rapid_collision_move_indices: Vec::new(),
+                cut_trace: None,
+                cut_trace_path: None,
+                column_grid_cell_mm: 0.5,
+                resolution_clamped: false,
+                prior_stocks,
+            }))));
+    }
+
+    fn submit_collision(&mut self, _request: CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+    fn cancel_lane(&mut self, _lane: ComputeLane) {}
+    fn drain_results(&mut self) -> Vec<ComputeMessage> {
+        std::mem::take(&mut self.drained)
+    }
+    fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {
+        LaneSnapshot::idle(lane)
+    }
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
+}
+
+/// Build a project whose toolpaths form a `depth`-deep rest chain: index 0
+/// cuts fresh stock, every later op takes the remaining stock of the one
+/// before it.
+#[cfg(feature = "mcp")]
+fn rest_chain_controller(depth: usize) -> AppController<RestChainBackend> {
+    let mut controller = AppController::with_backend(RestChainBackend::new());
+    sample_project_into(&mut controller);
+    for i in 1..=depth {
+        push_toolpath(&mut controller, &format!("Rest {i}"));
+    }
+    let ids: Vec<ToolpathId> = controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+    for tc in controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .skip(1)
+    {
+        tc.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
+    }
+    // The fixture op at index 0 starts with a cached result; clear it so the
+    // run really is "from cold".
+    for id in &ids {
+        let rt = controller.state.gui.toolpath_rt_or_default(*id);
+        rt.result = None;
+        rt.status = crate::state::toolpath::ComputeStatus::Pending;
+    }
+    controller.compute.chain = ids;
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    controller
+}
+
+/// Drive the controller until the generate_all oneshot resolves, or give up.
+/// Returns the parsed response and the number of pump iterations.
+#[cfg(feature = "mcp")]
+fn pump_until_resolved(
+    controller: &mut AppController<RestChainBackend>,
+    rx: &mut tokio::sync::oneshot::Receiver<crate::mcp_bridge::McpResponse>,
+) -> serde_json::Value {
+    for _ in 0..200 {
+        let events = controller.drain_events();
+        for event in events {
+            controller.handle_internal_event(event);
+        }
+        controller.drain_compute_results();
+        if let Ok(resp) = rx.try_recv() {
+            let payload = resp.result.expect("generate_all replies Ok(json)");
+            return serde_json::from_str(&payload)
+                .unwrap_or_else(|e| panic!("generate_all reply is not JSON ({e}): {payload}"));
+        }
+    }
+    panic!("generate_all never resolved — the fixpoint loop is not terminating");
+}
+
+/// THE A/M11 acceptance gate. A 3-deep rest chain reaches fully generated
+/// from cold in ONE `generate_all`, and the call reports how many internal
+/// rounds it took.
+///
+/// Before this, the same project needed three manual sim -> generate rounds
+/// and nothing told the operator that `k` was three.
+#[cfg(feature = "mcp")]
+#[test]
+fn generate_all_drives_a_three_deep_rest_chain_to_fixpoint_in_one_call() {
+    let mut controller = rest_chain_controller(3);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+
+    assert_eq!(reply["ok"], true, "reply: {reply}");
+    assert_eq!(
+        reply["generated"], 4,
+        "every op in the chain must end up generated, reply: {reply}"
+    );
+    assert_eq!(reply["failed"], 0);
+    assert!(
+        reply["awaiting_prior_stock"]
+            .as_array()
+            .expect("array")
+            .is_empty(),
+        "nothing may still be blocked at the fixpoint, reply: {reply}"
+    );
+    // One round per link plus the initial pass — and the caller is TOLD.
+    assert_eq!(reply["rounds"], 4, "reply: {reply}");
+    assert_eq!(reply["simulations"], 3, "reply: {reply}");
+    assert_eq!(controller.compute.simulations, 3);
+
+    for tc in controller.state.session.toolpath_configs() {
+        let rt = controller.state.gui.toolpath_rt.get(&tc.id);
+        assert!(
+            rt.is_some_and(|rt| matches!(rt.status, crate::state::toolpath::ComputeStatus::Done)),
+            "'{}' should be Done at the fixpoint, got {:?}",
+            tc.name,
+            rt.map(|rt| rt.status.label())
+        );
+    }
+}
+
+/// The loop must stop on a genuinely-failing op instead of spinning: a hard
+/// failure is never retried, so condition (a) — "something is blocked purely
+/// on sequencing" — goes false and the round count stays bounded.
+#[cfg(feature = "mcp")]
+#[test]
+fn the_fixpoint_loop_terminates_on_a_genuinely_failing_op() {
+    let mut controller = rest_chain_controller(3);
+    // Poison the middle link. Everything downstream can then never see stock.
+    let poisoned = controller.state.session.toolpath_configs()[1].id;
+    controller.compute.poison = Some(poisoned);
+
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+
+    assert_eq!(reply["ok"], false, "a hard failure must not report ok");
+    assert_eq!(reply["failed"], 1, "reply: {reply}");
+    assert!(
+        reply["errors"][0]["message"]
+            .as_str()
+            .expect("error message")
+            .contains("synthetic hard failure"),
+        "the final error must be clear about what failed, reply: {reply}"
+    );
+    let rounds = reply["rounds"].as_u64().expect("rounds");
+    assert!(
+        (1..=4).contains(&rounds),
+        "rounds must stay inside the hard bound (rest ops + 1 = 4), got {rounds}"
+    );
+    // The ops downstream of the failure are reported as still waiting, each
+    // naming what it waits for — not as failures of their own.
+    let blocked = reply["awaiting_prior_stock"].as_array().expect("array");
+    assert!(
+        !blocked.is_empty(),
+        "downstream ops are blocked, not broken, reply: {reply}"
+    );
+}
+
+/// A/M10's rule, enforced: the loop never picks a simulation resolution for
+/// you. Omitting it on a project with rest ops is refused, with instructions.
+#[cfg(feature = "mcp")]
+#[test]
+fn generate_all_refuses_to_guess_a_simulation_resolution() {
+    let mut controller = rest_chain_controller(3);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, None, tx, None);
+
+    let resp = rx
+        .try_recv()
+        .expect("the refusal is immediate — nothing is submitted");
+    let payload = resp.result.expect("Ok(json)");
+    let reply: serde_json::Value = serde_json::from_str(&payload).expect("json");
+    assert_eq!(reply["ok"], false);
+    let err = reply["error"].as_str().expect("error text");
+    assert!(err.contains("simulation_resolution_mm"), "got: {err}");
+    assert!(
+        err.contains("fixpoint: false"),
+        "the refusal must say how to opt out, got: {err}"
+    );
+    assert!(
+        err.contains("NOT guessed"),
+        "the refusal must say why, got: {err}"
+    );
+    assert!(
+        controller.drain_events().is_empty(),
+        "nothing was submitted"
+    );
+}
+
+/// `fixpoint: false` is the pre-A/M11 single pass: no simulation, no
+/// resolution needed, blocked ops reported rather than retried.
+#[cfg(feature = "mcp")]
+#[test]
+fn fixpoint_false_keeps_the_old_single_pass_behaviour() {
+    let mut controller = rest_chain_controller(3);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(false, None, tx, None);
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+
+    assert_eq!(reply["rounds"], 1);
+    assert_eq!(reply["simulations"], 0);
+    assert_eq!(controller.compute.simulations, 0);
+    assert_eq!(
+        reply["generated"], 1,
+        "only the fresh-stock op, reply: {reply}"
+    );
+    assert_eq!(
+        reply["awaiting_prior_stock"]
+            .as_array()
+            .expect("array")
+            .len(),
+        3,
+        "reply: {reply}"
+    );
+}
+
+/// A disabled rest op is skipped entirely: not generated, not blocked, not an
+/// error — and it does not extend the ladder.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
+    let mut controller = rest_chain_controller(3);
+    let off = controller.state.session.toolpath_configs()[3].id;
+    if let Some(tc) = controller
+        .state
+        .session
+        .toolpath_configs_mut()
+        .iter_mut()
+        .find(|tc| tc.id == off)
+    {
+        tc.enabled = false;
+    }
+
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+
+    assert_eq!(reply["generated"], 3, "reply: {reply}");
+    assert_eq!(reply["failed"], 0);
+    let mentions_off = format!("{reply}").contains(&format!("\"toolpath_id\":{}", off.0));
+    assert!(
+        !mentions_off,
+        "a disabled op must appear in neither the error nor the blocked list, reply: {reply}"
+    );
+    // And it reports Disabled rather than whatever it last recorded.
+    let raw = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&off)
+        .map_or(&crate::state::toolpath::ComputeStatus::Pending, |rt| {
+            &rt.status
+        });
+    assert_eq!(
+        crate::state::toolpath::ComputeStatus::effective(false, raw).label(),
+        "Disabled"
     );
 }

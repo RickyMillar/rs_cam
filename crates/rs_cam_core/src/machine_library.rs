@@ -1,15 +1,12 @@
-//! Reusable machine-profile library.
+//! Reusable machine-profile library — a catalog you import *from*.
 //!
 //! Machines live as standalone TOML files in a per-user library
-//! directory; projects reference one by name (`machine_ref`) instead of
-//! embedding the full definition. The library is the single source of
-//! truth — editing `shapeoko_pro_xxl.toml` updates every project that
-//! references it on next load.
-//!
-//! A project keeps an inline `[job.machine]` copy as an offline fallback:
-//! [`resolve`] prefers the library file when present and falls back to
-//! the inline copy (with a warning) when the referenced file is missing,
-//! so a project never fails to open just because the library moved.
+//! directory. Like the tool library ([`crate::tool_library`]), this uses
+//! **snapshot** semantics: importing a machine COPIES it into the
+//! project's inline `[job.machine]`, which is then authoritative. Later
+//! edits to a library file never reach existing projects — re-import to
+//! pick up a change. There is no live `machine_ref` link (a legacy one is
+//! dropped on load and migrated into the inline copy).
 //!
 //! Directory resolution (first that is set wins):
 //! 1. `$RS_CAM_MACHINE_DIR` — explicit override (used by tests / CI).
@@ -31,6 +28,8 @@ pub enum MachineLibraryError {
     InvalidName(String),
     #[error("machine {0:?} not found in the library")]
     NotFound(String),
+    #[error("a machine named {0:?} already exists in the library")]
+    AlreadyExists(String),
     #[error("i/o error for machine {name:?}: {source}")]
     Io {
         name: String,
@@ -161,74 +160,49 @@ pub fn save(name: &str, profile: &MachineProfile) -> Result<PathBuf, MachineLibr
     save_to(&dir, name, profile)
 }
 
-/// Outcome of resolving a project's machine: the profile to use plus an
-/// optional human-readable warning (e.g. the referenced file was
-/// missing and the inline fallback was used).
-pub struct Resolved {
-    pub profile: MachineProfile,
-    pub warning: Option<String>,
+/// Delete the machine file `name` in `dir`.
+pub fn delete_from(dir: &Path, name: &str) -> Result<(), MachineLibraryError> {
+    let path = path_in(dir, name)?;
+    std::fs::remove_file(&path).map_err(|source| MachineLibraryError::Io {
+        name: name.to_owned(),
+        source,
+    })?;
+    Ok(())
 }
 
-/// Resolve the active machine for a project given its `machine_ref` and
-/// the inline `[job.machine]` copy, against `dir`.
-///
-/// - `machine_ref == None` → use the inline profile (no warning).
-/// - `machine_ref == Some(name)` and the library file loads → use it.
-/// - `machine_ref == Some(name)` but the file is missing/unparseable →
-///   fall back to the inline profile and return a warning.
-pub fn resolve_in(dir: &Path, machine_ref: Option<&str>, inline: MachineProfile) -> Resolved {
-    let Some(name) = machine_ref else {
-        return Resolved {
-            profile: inline,
-            warning: None,
-        };
-    };
-    match load_from(dir, name) {
-        // F4.4 — the library file is the source of truth, but when it
-        // DIFFERS from the project's inline copy the override used to
-        // be silent: the user saw inline numbers in the file while the
-        // session ran different caps. Surface it.
-        Ok(profile) => {
-            let differs =
-                serde_json::to_string(&profile).ok() != serde_json::to_string(&inline).ok();
-            Resolved {
-                warning: differs.then(|| {
-                    format!(
-                        "machine reference {name:?}: library profile overrides the \
-                         project's inline machine copy (they differ; the library file \
-                         is the source of truth)"
-                    )
-                }),
-                profile,
-            }
-        }
-        Err(e) => Resolved {
-            profile: inline,
-            warning: Some(format!(
-                "machine reference {name:?} could not be loaded ({e}); using the project's inline machine copy"
-            )),
-        },
-    }
+/// Delete the machine file `name` in the resolved library dir.
+pub fn delete(name: &str) -> Result<(), MachineLibraryError> {
+    let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
+    delete_from(&dir, name)
 }
 
-/// Resolve the active machine using the resolved library dir. If no
-/// library dir can be determined, the inline profile is used and a
-/// warning is returned when a `machine_ref` was set.
-pub fn resolve(machine_ref: Option<&str>, inline: MachineProfile) -> Resolved {
-    match (machine_ref, library_dir()) {
-        (Some(_), Some(dir)) => resolve_in(&dir, machine_ref, inline),
-        (None, _) => Resolved {
-            profile: inline,
-            warning: None,
-        },
-        (Some(name), None) => Resolved {
-            profile: inline,
-            warning: Some(format!(
-                "machine reference {name:?} set but no library directory is available; using the project's inline machine copy"
-            )),
-        },
+/// Rename machine `old` to `new` in `dir`. Errors if `new` already exists.
+pub fn rename_in(dir: &Path, old: &str, new: &str) -> Result<(), MachineLibraryError> {
+    let old_path = path_in(dir, old)?;
+    let new_path = path_in(dir, new)?;
+    if new_path.exists() {
+        return Err(MachineLibraryError::AlreadyExists(new.to_owned()));
     }
+    std::fs::rename(&old_path, &new_path).map_err(|source| MachineLibraryError::Io {
+        name: old.to_owned(),
+        source,
+    })?;
+    Ok(())
 }
+
+/// Rename a machine in the resolved library dir.
+pub fn rename(old: &str, new: &str) -> Result<(), MachineLibraryError> {
+    let dir = library_dir().ok_or(MachineLibraryError::NoLibraryDir)?;
+    rename_in(&dir, old, new)
+}
+
+// NOTE: machines use SNAPSHOT semantics (like `[[tools]]`) — the project's
+// inline `[job.machine]` is authoritative. There is intentionally no
+// `resolve()` override: importing a machine from this library COPIES it into
+// the project (see the GUI Machine panel / MCP `load_machine_from_library`),
+// and later edits to a library file never reach existing projects. The old
+// live-reference `resolve`/`resolve_in` were removed when the model switched
+// to snapshot (legacy `machine_ref` is now dropped on load).
 
 #[cfg(test)]
 #[allow(
@@ -283,62 +257,5 @@ mod tests {
             path_in(&dir, ""),
             Err(MachineLibraryError::InvalidName(_))
         ));
-    }
-
-    #[test]
-    fn resolve_prefers_library_over_inline() {
-        let dir = temp_dir("resolve_prefer");
-        let mut lib = MachineProfile::generic_wood_router();
-        lib.name = "From Library".to_owned();
-        save_to(&dir, "shapeoko", &lib).unwrap();
-
-        let mut inline = MachineProfile::generic_wood_router();
-        inline.name = "Inline Stale".to_owned();
-
-        let r = resolve_in(&dir, Some("shapeoko"), inline);
-        assert_eq!(r.profile.name, "From Library");
-        // F4.4 — the override is no longer silent: library != inline
-        // must surface a warning naming the source of truth.
-        let warning = r.warning.expect("differing override must warn");
-        assert!(warning.contains("overrides"), "got: {warning}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// F4.4 — when the library file and the inline copy agree, the
-    /// resolve stays quiet (no warning noise on every load).
-    #[test]
-    fn resolve_identical_library_and_inline_is_silent() {
-        let dir = temp_dir("resolve_identical");
-        let lib = MachineProfile::generic_wood_router();
-        save_to(&dir, "shapeoko", &lib).unwrap();
-
-        let r = resolve_in(
-            &dir,
-            Some("shapeoko"),
-            MachineProfile::generic_wood_router(),
-        );
-        assert!(r.warning.is_none(), "got: {:?}", r.warning);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn resolve_falls_back_to_inline_when_missing() {
-        let dir = temp_dir("resolve_missing");
-        let mut inline = MachineProfile::generic_wood_router();
-        inline.name = "Inline Fallback".to_owned();
-
-        let r = resolve_in(&dir, Some("does_not_exist"), inline);
-        assert_eq!(r.profile.name, "Inline Fallback");
-        assert!(r.warning.is_some());
-    }
-
-    #[test]
-    fn resolve_none_uses_inline_without_warning() {
-        let dir = temp_dir("resolve_none");
-        let mut inline = MachineProfile::generic_wood_router();
-        inline.name = "Inline Only".to_owned();
-        let r = resolve_in(&dir, None, inline);
-        assert_eq!(r.profile.name, "Inline Only");
-        assert!(r.warning.is_none());
     }
 }
