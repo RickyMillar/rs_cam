@@ -1,0 +1,23 @@
+[
+  {
+    "probe": "A stdin EOF",
+    "init_bytes": 144,
+    "alive_10s_after_stdin_close": true,
+    "returncode": null,
+    "pid": 4181097
+  },
+  {
+    "probe": "B stdout reader closes mid-write",
+    "init_bytes": 144,
+    "alive_15s_after_stdout_close": true,
+    "returncode": null,
+    "pid": 4182566
+  },
+  {
+    "probe": "C both fds closed",
+    "init_bytes": 144,
+    "alive_15s_after_both_closed": true,
+    "returncode": null,
+    "pid": 4184663
+  }
+]
