@@ -485,7 +485,18 @@ impl SpatialIndex {
         let extent_x = bbox.max.x - bbox.min.x;
         let extent_y = bbox.max.y - bbox.min.y;
         let max_extent = extent_x.max(extent_y);
-        let cell_size = (max_extent / 50.0).max(1.0);
+        // Density-aware cell size: target a handful of triangles per cell so
+        // per-query work stays small on dense meshes. The old `extent/50` rule
+        // ignored triangle count and gave very coarse cells — e.g. ~4mm / ~400
+        // triangles per cell on a 661k-triangle terrain — which dominated
+        // drop-cutter time (pencil, scallop, waterline, simulate, collision).
+        let tri_count = (mesh.triangles.len().max(1)) as f64;
+        let area = (extent_x * extent_y).max(1e-6);
+        let density_cell = (8.0 * area / tri_count).sqrt();
+        let coarse_cell = (max_extent / 50.0).max(1.0);
+        // Memory guard: keep the grid under ~1M cells.
+        let min_cell = (area / 1_000_000.0).sqrt();
+        let cell_size = density_cell.min(coarse_cell).max(min_cell).max(0.1);
         Self::build(mesh, cell_size)
     }
 
@@ -580,6 +591,130 @@ impl SpatialIndex {
         }
 
         result
+    }
+
+    /// Allocation-free twin of [`Self::query`]: same triangle indices, same
+    /// order, written into `out` using a caller-owned dedup `scratch`.
+    ///
+    /// [`Self::query`] allocates **two** buffers per call: the result `Vec`
+    /// and a `vec![0u64; total_triangles / 64]` dedup bitset sized by the
+    /// whole mesh. On a 661 k-triangle terrain that second one is a 82 KB
+    /// zeroed allocation *per query* — and the classification grid issues two
+    /// queries per cell, 1.44 M of them on the 849² production row (M3,
+    /// `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`). Hoisting
+    /// both buffers out of the loop is a pure-plumbing change: the returned
+    /// indices are identical, index for index, so any consumer that reduces
+    /// over them with an order-independent operation (drop-cutter's
+    /// `max`-of-Z) is bit-identical.
+    ///
+    /// Two fast paths, neither of which changes the output:
+    /// - when the query rectangle lands in a **single** index cell, the cell's
+    ///   own list is already duplicate-free, so the bitset is skipped
+    ///   entirely and `scratch` never allocates;
+    /// - otherwise the bitset is cleared afterwards by walking `out`, i.e. in
+    ///   time proportional to the hits rather than to the mesh.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub fn query_into(
+        &self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        scratch: &mut QueryScratch,
+        out: &mut Vec<usize>,
+    ) {
+        out.clear();
+        // Bounds arithmetic reproduced verbatim from `query` — including the
+        // `x1 as usize` wrap on a negative index, which clamps a fully
+        // off-grid query up to the last column rather than to nothing. That
+        // is pre-existing behaviour and this twin must not "fix" it, or the
+        // two would disagree on off-grid cells.
+        let x0 = ((cx - radius - self.origin_x) / self.cell_size).floor() as isize;
+        let x1 = ((cx + radius - self.origin_x) / self.cell_size).floor() as isize;
+        let y0 = ((cy - radius - self.origin_y) / self.cell_size).floor() as isize;
+        let y1 = ((cy + radius - self.origin_y) / self.cell_size).floor() as isize;
+
+        let x0 = x0.max(0) as usize;
+        let x1 = (x1 as usize).min(self.cell_count_x.saturating_sub(1));
+        let y0 = y0.max(0) as usize;
+        let y1 = (y1 as usize).min(self.cell_count_y.saturating_sub(1));
+
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+
+        if x0 == x1 && y0 == y1 {
+            let cell_idx = y0 * self.cell_count_x + x0;
+            out.extend_from_slice(&self.cells[cell_idx]);
+            return;
+        }
+
+        scratch.ensure_capacity(self.total_triangles);
+        let seen = &mut scratch.seen;
+        for cy_idx in y0..=y1 {
+            for cx_idx in x0..=x1 {
+                let cell_idx = cy_idx * self.cell_count_x + cx_idx;
+                for &tri_idx in &self.cells[cell_idx] {
+                    let word = tri_idx / 64;
+                    let bit = 1u64 << (tri_idx % 64);
+                    if seen[word] & bit == 0 {
+                        seen[word] |= bit;
+                        out.push(tri_idx);
+                    }
+                }
+            }
+        }
+        for &tri_idx in out.iter() {
+            seen[tri_idx / 64] = 0;
+        }
+    }
+
+    /// The triangle list of the single index cell containing `(x, y)`, or an
+    /// empty slice when the point is outside the index grid.
+    ///
+    /// A **vertical ray** at `(x, y)` can only pierce triangles whose XY
+    /// bounding box contains `(x, y)`, and `build` registers every such
+    /// triangle in that cell — so this slice is a sound (super)set for
+    /// topmost-surface sampling, with no dedup and no allocation. Not a
+    /// substitute for [`Self::query`] with a non-zero radius: a cutter of
+    /// radius `r` reaches triangles this slice does not contain.
+    #[allow(clippy::indexing_slicing)] // bounds checked immediately above
+    #[must_use]
+    pub fn cell_triangles_at(&self, x: f64, y: f64) -> &[usize] {
+        let cx = ((x - self.origin_x) / self.cell_size).floor();
+        let cy = ((y - self.origin_y) / self.cell_size).floor();
+        if cx < 0.0 || cy < 0.0 {
+            return &[];
+        }
+        let (cx, cy) = (cx as usize, cy as usize);
+        if cx >= self.cell_count_x || cy >= self.cell_count_y {
+            return &[];
+        }
+        &self.cells[cy * self.cell_count_x + cx]
+    }
+}
+
+/// Reusable dedup buffer for [`SpatialIndex::query_into`].
+///
+/// Constructing one is free — the bitset is allocated on first use and only
+/// by queries that actually span more than one index cell — so a worker can
+/// hold one per thread without paying for it on the single-cell fast path.
+#[derive(Debug, Default)]
+pub struct QueryScratch {
+    /// Zero everywhere between calls: `query_into` clears the bits it set.
+    seen: Vec<u64>,
+}
+
+impl QueryScratch {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { seen: Vec::new() }
+    }
+
+    fn ensure_capacity(&mut self, total_triangles: usize) {
+        let n_words = total_triangles.div_ceil(64);
+        if self.seen.len() < n_words {
+            self.seen.resize(n_words, 0);
+        }
     }
 }
 

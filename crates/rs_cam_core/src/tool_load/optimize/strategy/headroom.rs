@@ -304,6 +304,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
 
         let candidates = strategy.candidates(&view, &verdict);
@@ -355,6 +356,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -382,6 +384,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
@@ -410,6 +413,7 @@ mod tests {
             deflection: within_deflection(0.020),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -600,7 +604,10 @@ mod stage0_solve_tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         };
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -648,7 +655,10 @@ mod stage0_solve_tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         };
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,

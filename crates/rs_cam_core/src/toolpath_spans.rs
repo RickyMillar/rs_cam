@@ -6,9 +6,13 @@
 
 use std::borrow::Cow;
 use std::ops::Range;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::geo::P3;
+use crate::polygon::Polygon2;
+use crate::rest_field::RestGrid;
 use crate::toolpath::Toolpath;
 
 // ── SpanId ──────────────────────────────────────────────────────────────
@@ -67,6 +71,33 @@ impl Span {
     pub fn with_payload(mut self, payload: SpanPayload) -> Self {
         self.payload = Some(payload);
         self
+    }
+
+    /// This span's [`RegionSpanRole`], or `None` when it is not a
+    /// region span (or carries no payload).
+    ///
+    /// The supported way to tell a planner region NODE from a generator
+    /// pass — never parse the label (Wave D3).
+    pub fn region_role(&self) -> Option<RegionSpanRole> {
+        match self.payload {
+            Some(SpanPayload::Region { role, .. }) => Some(role),
+            _ => None,
+        }
+    }
+
+    /// True when this is a planner territory node span
+    /// ([`RegionSpanRole::Node`]).
+    pub fn is_region_node(&self) -> bool {
+        self.region_role() == Some(RegionSpanRole::Node)
+    }
+
+    /// True when this span carries `role` and is not a zero-width boundary
+    /// marker — the shape every role query in the codebase wants.
+    ///
+    /// C4: the supported replacement for `label.starts_with("Hole ") &&
+    /// !label.contains("plunge")` and friends.
+    pub fn has_region_role(&self, role: RegionSpanRole) -> bool {
+        !self.is_boundary() && self.kind == SpanKind::Region && self.region_role() == Some(role)
     }
 
     /// Number of moves covered. 0 for boundary spans.
@@ -136,8 +167,40 @@ pub enum SpanKind {
     LeadOut,
     /// A linker bridge inserted by `apply_link_moves`.
     LinkBridge,
-    /// A dressup-introduced segment (dogbone, arc-fit replacement).
+    /// A dressup-introduced **bridge** segment: a motion the dressup added
+    /// that is not part of the commanded cut. Today that is the dogbone
+    /// overcut/return pair (`dressup::apply_dogbones`).
+    ///
+    /// This kind is on the transit list
+    /// ([`AnnotatedToolpath::transit_moves_bitmap`]) and in
+    /// `tool_load::locality::is_phantom_transit`'s phantom set, because at
+    /// such a bridge the dexel reads `stock_top − cutter_z` over
+    /// *neighbouring* uncleared stock rather than steady-state engagement
+    /// (`planning/archive/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    ///
+    /// Arc-fit replacements used to land here too. They do not any more —
+    /// see [`Self::GeometryRefit`]. Checkpoint D Q3, ruled 2026-08-04.
     DressupArtifact,
+    /// A transform re-represented the **same cut** in different geometry:
+    /// today, the arc `arcfit::fit_arcs` fitted through a run of linear
+    /// moves, within `arc_tolerance`.
+    ///
+    /// Deliberately NOT on the transit list and NOT in
+    /// `is_phantom_transit`'s phantom set. A fitted arc engages the same
+    /// material along the same path as the moves it replaced; its dexel
+    /// readings are steady-state cutting readings and belong in the
+    /// chipload / power / deflection gate populations and in the peak
+    /// accumulators.
+    ///
+    /// Why this is its own kind rather than a label on
+    /// [`Self::DressupArtifact`]: that kind carried two incompatible
+    /// meanings, and because arc-fit is default-on for all three process
+    /// roles, the transit classification silently removed nearly every
+    /// cutting sample of a curve-heavy op from every gate
+    /// (`planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md`
+    /// §7). Splitting the kind makes every consumer's match arm a
+    /// compile-time decision instead of an inherited default.
+    GeometryRefit,
     /// Hard barrier *before* `start_move`. TSP must not reorder across this
     /// move boundary. Always zero-width: `start_move == end_move`.
     RapidOrderBarrier,
@@ -154,6 +217,90 @@ pub enum SpanKind {
     WaterlineCleanup,
 }
 
+impl SpanKind {
+    /// Every variant, in declaration order.
+    ///
+    /// A new variant MUST be added here as well as to [`Self::as_key`] —
+    /// `as_key`'s match is exhaustive, so the compiler will stop you there
+    /// first, and [`Self::from_key`] is derived from this list so that the
+    /// agent-facing vocabulary cannot drift from the enum.
+    pub const ALL: [Self; 10] = [
+        Self::Operation,
+        Self::DepthPass,
+        Self::Region,
+        Self::Entry,
+        Self::LeadOut,
+        Self::LinkBridge,
+        Self::DressupArtifact,
+        Self::GeometryRefit,
+        Self::RapidOrderBarrier,
+        Self::WaterlineCleanup,
+    ];
+
+    /// The stable snake_case key for this kind — the agent-facing vocabulary
+    /// (MCP `span_kind` filters) and the single source that vocabulary is
+    /// derived from.
+    ///
+    /// Wave D3: this used to be a string table transcribed by hand in
+    /// `rs_cam_viz::app::mcp` (three times), so a new variant was invisible
+    /// to the MCP surface with no compile error. The match here is
+    /// exhaustive: adding a variant now breaks the build until it is named.
+    #[must_use]
+    pub const fn as_key(self) -> &'static str {
+        match self {
+            Self::Operation => "operation",
+            Self::DepthPass => "depth_pass",
+            Self::Region => "region",
+            Self::Entry => "entry",
+            Self::LeadOut => "lead_out",
+            Self::LinkBridge => "link_bridge",
+            Self::DressupArtifact => "dressup_artifact",
+            Self::GeometryRefit => "geometry_refit",
+            Self::RapidOrderBarrier => "rapid_order_barrier",
+            Self::WaterlineCleanup => "waterline_cleanup",
+        }
+    }
+
+    /// Inverse of [`Self::as_key`]. `None` for anything that is not a
+    /// structural span kind — callers should treat that as a loud error, not
+    /// as a silent no-match.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_key() == key)
+    }
+}
+
+// ── SpanClass ───────────────────────────────────────────────────────────
+
+/// How one cutting move should be *presented*, derived from its span path by
+/// [`AnnotatedToolpath::classify_span_path`].
+///
+/// This is a rendering decision, not a machining one: it says which visual
+/// taxonomy bucket a move falls into, and nothing about how it cuts. It exists
+/// so the interactive viewport and the PNG exporter cannot drift apart again —
+/// see [`AnnotatedToolpath::classify_span_path`] for the rules and for the
+/// divergence (X-1 / D-LV.1) it closed.
+///
+/// Rapids never reach this type; both renderers split them off by
+/// [`crate::toolpath::MoveType`] before classifying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanClass {
+    /// Inside a [`SpanKind::Entry`] span — a lead-in / plunge / ramp / helix.
+    Entry,
+    /// Inside a [`SpanKind::LeadOut`] span.
+    LeadOut,
+    /// Inside a [`SpanKind::LinkBridge`] span — a linker-inserted bridge.
+    LinkBridge,
+    /// Inside a [`SpanKind::DressupArtifact`] span and inside none of the
+    /// three kinds above — a dressup-added bridge (today: dogbones).
+    Dressup,
+    /// Ordinary cutting geometry. `pass_index` carries the enclosing
+    /// [`SpanKind::DepthPass`]'s index when there is one, for a per-pass
+    /// lightness shift; `None` means "no depth-pass span on this move's
+    /// path", which is the common case for single-pass and 3D surface ops.
+    Cut { pass_index: Option<u32> },
+}
+
 // ── SpanPayload ─────────────────────────────────────────────────────────
 
 /// Optional structured payload for span-specific data.
@@ -162,8 +309,117 @@ pub enum SpanKind {
 /// require them — keep this set minimal until phase-3 dressups demand more.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpanPayload {
-    DepthPass { z_level: f64, pass_index: u32 },
-    Region { region_id: u32 },
+    DepthPass {
+        z_level: f64,
+        pass_index: u32,
+    },
+    /// A [`SpanKind::Region`] span. `role` says what kind of region it is —
+    /// see [`RegionSpanRole`], which exists because `region_id` alone is
+    /// ambiguous: a planner NODE and a generator RING both land here with
+    /// their own independent id spaces.
+    Region {
+        region_id: u32,
+        role: RegionSpanRole,
+    },
+}
+
+/// What a [`SpanKind::Region`] span is a region OF.
+///
+/// Wave D3. [`SpanKind::Region`] is emitted by two structurally different
+/// systems that share the kind AND the payload:
+///
+/// * the PLANNER, which partitions the part into territory nodes
+///   (`UnifiedFinishReport::region_table` — one node per band / crease
+///   group, each with its own strategy), and
+/// * the GENERATOR, which reports the passes it laid down inside whatever
+///   territory it was given (scallop rings, drill holes and their pecks,
+///   adaptive regions, contiguous cutting runs).
+///
+/// Their `region_id`s index different tables, they nest (a node contains
+/// many passes), and only the node set is a partition. Before this role
+/// existed the only discriminator was the LABEL STRING — consumers filtered
+/// on `label.ends_with(" band")`, which is a contract no producer was
+/// obliged to keep. Read this instead.
+///
+/// C4 (2026-08-02) closed the second instance of the same class. Drill spans
+/// nest one more level — a hole contains its pecks — and BOTH levels were
+/// `GeneratorPass`, so the only discriminator was again the label:
+/// `label.starts_with("Hole ") && !label.contains("plunge")` for the parent,
+/// `label.contains("plunge")` for the child. Two variants were added rather
+/// than the one the backlog asked for, because the parent side was exactly
+/// as label-bound as the child side and naming only the child would have
+/// left "a hole is a `GeneratorPass` in a drill operation" as an unwritten
+/// rule a generic consumer cannot apply.
+///
+/// **Any future mix table, routing decision or report grouping must be built
+/// on this role (or on a [`SpanKind`]), never on `label`.** `label` is
+/// free text for humans; nothing downstream may depend on its shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegionSpanRole {
+    /// A planner territory node. `region_id` indexes the planner's own
+    /// region table (e.g. `UnifiedFinishReport::region_table`). The node set
+    /// tiles the operation's moves; a semantic `Region` item exists per node
+    /// and their ranges must agree (A/M8).
+    Node,
+    /// One pass the generator emitted — a scallop ring, an adaptive region,
+    /// a contiguous cutting run. `region_id` is the generator's own sequence
+    /// number, NOT a node id. These nest inside nodes and are not a
+    /// partition of anything.
+    GeneratorPass,
+    /// One drilled hole, spanning every peck in its cycle. `region_id` is
+    /// the hole index. Its [`Self::DrillPeck`] children are nested inside its
+    /// move range.
+    DrillHole,
+    /// One peck of one drilled hole. `region_id` continues the hole id space
+    /// past the last hole (`region_id >= hole_count`), so hole and peck ids
+    /// never collide even though they index different sequences.
+    DrillPeck,
+}
+
+impl RegionSpanRole {
+    /// Every variant, in declaration order. Same contract as
+    /// [`SpanKind::ALL`]: [`Self::label`]'s match is exhaustive so the
+    /// compiler stops a new variant here first, and [`Self::from_key`] is
+    /// derived from this list so the agent-facing vocabulary cannot drift
+    /// from the enum.
+    pub const ALL: [Self; 4] = [
+        Self::Node,
+        Self::GeneratorPass,
+        Self::DrillHole,
+        Self::DrillPeck,
+    ];
+
+    /// The stable snake_case key for this role — what MCP `region_role`
+    /// carries, and the single source that vocabulary is derived from.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::GeneratorPass => "generator_pass",
+            Self::DrillHole => "drill_hole",
+            Self::DrillPeck => "drill_peck",
+        }
+    }
+
+    /// Inverse of [`Self::label`]. `None` for anything that is not a region
+    /// role — callers should treat that as a loud error, not a silent
+    /// no-match.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.label() == key)
+    }
+
+    /// True for the roles a GENERATOR emits, as opposed to the planner's
+    /// territory [`Self::Node`]s. Drill holes and pecks are generator output
+    /// too; this is the predicate that used to be `== GeneratorPass`.
+    #[must_use]
+    pub const fn is_generator_pass(self) -> bool {
+        matches!(
+            self,
+            Self::GeneratorPass | Self::DrillHole | Self::DrillPeck
+        )
+    }
 }
 
 // ── AnnotatedToolpath ───────────────────────────────────────────────────
@@ -178,6 +434,35 @@ pub struct AnnotatedToolpath {
     pub toolpath: Toolpath,
     pub spans: Vec<Span>,
     pub spans_valid: bool,
+    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
+    /// α/2π)` for adaptive ContourSpiral toolpaths; empty otherwise. The
+    /// feed modulator looks these up by `Move.target` position (the
+    /// samples are positional, so they survive simplify / arcfit / dressup
+    /// / TSP-reorder reshaping without per-move re-indexing). See
+    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4".
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub planner_engagement: Vec<(P3, f64)>,
+    /// Rest-depth heatmap grid for the GUI overlay — populated by the
+    /// pencil RestDepth detector, the generic post-generation rest
+    /// analysis, and UnifiedFinish's claims detector (v3 S1 §2.4
+    /// carry-through); `None` otherwise. `Arc` so cloning the annotated
+    /// toolpath (sim / result caching) stays cheap.
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub rest_grid: Option<Arc<RestGrid>>,
+    /// Machining-region polygons derived from the rest-depth field
+    /// ([`crate::rest_field::RestFieldResult::region_polygons`]) — same
+    /// producers as [`Self::rest_grid`]; `None` otherwise. World-frame XY
+    /// polygons; `Arc` so cloning the annotated toolpath (sim / result
+    /// caching) stays cheap. This is the derived-boundary source for
+    /// selective finishing (P2.2 `BoundarySource::DerivedRestRegions`).
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub rest_regions: Option<Arc<Vec<Polygon2>>>,
 }
 
 impl AnnotatedToolpath {
@@ -188,6 +473,9 @@ impl AnnotatedToolpath {
             toolpath,
             spans: Vec::new(),
             spans_valid: true,
+            planner_engagement: Vec::new(),
+            rest_grid: None,
+            rest_regions: None,
         }
     }
 
@@ -196,6 +484,93 @@ impl AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid: true,
+            planner_engagement: Vec::new(),
+            rest_grid: None,
+            rest_regions: None,
+        }
+    }
+
+    /// Re-frame every coordinate-bearing field by `shift` — the single place
+    /// that knows how to move an `AnnotatedToolpath` between the emission
+    /// frame and a display frame (or any other frame shift).
+    ///
+    /// Destructures `self` field-by-field on purpose: adding a new
+    /// coordinate-bearing field to `AnnotatedToolpath` makes this match
+    /// fail to compile until the author decides how that field transforms,
+    /// rather than silently leaving it stale (the bug this method fixes —
+    /// `planner_engagement` and `rest_grid` used to be left in the old
+    /// frame by callers that only shifted `toolpath.moves`).
+    ///
+    /// - `toolpath.moves` targets are shifted; arc center offsets (`i`/`j`
+    ///   on `MoveType::ArcCW`/`ArcCCW`) are relative-to-start and are left
+    ///   untouched.
+    /// - `planner_engagement` cut points are shifted; the stored angle
+    ///   fraction is untouched.
+    /// - `rest_grid` (if present) has `origin_x`/`origin_y` shifted and
+    ///   every `surface_z` cell shifted by `shift.z`; `NaN` cells stay
+    ///   `NaN` since `NaN + x == NaN`. `rest` values are untouched — rest
+    ///   depth is a scalar, not a coordinate.
+    /// - `rest_regions` (if present): every exterior/hole point of every
+    ///   polygon is shifted by `shift.x`/`shift.y` (XY-only — polygons carry
+    ///   no Z).
+    /// - `spans` / `spans_valid` are move-index-based, not coordinate-based,
+    ///   and are copied unchanged.
+    pub fn translated(&self, shift: P3) -> Self {
+        let Self {
+            toolpath,
+            spans,
+            spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+        } = self;
+
+        let mut toolpath = toolpath.clone();
+        for m in &mut toolpath.moves {
+            m.target.x += shift.x;
+            m.target.y += shift.y;
+            m.target.z += shift.z;
+        }
+
+        let planner_engagement = planner_engagement
+            .iter()
+            .map(|(p, alpha)| (P3::new(p.x + shift.x, p.y + shift.y, p.z + shift.z), *alpha))
+            .collect();
+
+        let rest_grid = rest_grid.clone().map(|mut grid| {
+            let g = Arc::make_mut(&mut grid);
+            g.origin_x += shift.x;
+            g.origin_y += shift.y;
+            for z in &mut g.surface_z {
+                *z += shift.z as f32;
+            }
+            grid
+        });
+
+        let rest_regions = rest_regions.clone().map(|mut regions| {
+            let polys = Arc::make_mut(&mut regions);
+            for poly in polys.iter_mut() {
+                for p in &mut poly.exterior {
+                    p.x += shift.x;
+                    p.y += shift.y;
+                }
+                for hole in &mut poly.holes {
+                    for p in hole.iter_mut() {
+                        p.x += shift.x;
+                        p.y += shift.y;
+                    }
+                }
+            }
+            regions
+        });
+
+        Self {
+            toolpath,
+            spans: spans.clone(),
+            spans_valid: *spans_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
         }
     }
 
@@ -245,6 +620,10 @@ impl AnnotatedToolpath {
     /// reading reflects "stock height we're flying over" rather than
     /// engagement (the lift-bridge artifact pattern documented in
     /// `planning/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    ///
+    /// [`SpanKind::GeometryRefit`] is deliberately absent: an arc-fitted
+    /// move is the same cut re-represented, not a motion flying over
+    /// neighbouring stock (Checkpoint D Q3, 2026-08-04).
     pub fn transit_moves_bitmap(&self) -> Vec<bool> {
         let n = self.toolpath.moves.len();
         let mut out = vec![false; n];
@@ -281,6 +660,13 @@ impl AnnotatedToolpath {
     /// spans. Coverage caveat: dressup-inserted moves
     /// (`DressupArtifact` spans) usually carry `Unknown` intent and
     /// are NOT marked transit by this fallback.
+    ///
+    /// Arc-fitted moves used to be a second, larger divergence here: the
+    /// span bitmap marked them transit and this fallback did not, so the
+    /// same toolpath's arcs were in or out of the gate population depending
+    /// on whether an earlier transform had invalidated spans
+    /// (census §7.4). Since arcs carry [`SpanKind::GeometryRefit`], which
+    /// is not a transit kind, the two paths agree about them.
     pub fn transit_moves_bitmap_from_intents(&self) -> Vec<bool> {
         use crate::toolpath::MoveIntent as I;
         self.toolpath
@@ -298,6 +684,88 @@ impl AnnotatedToolpath {
                 )
             })
             .collect()
+    }
+
+    /// Classify one move's span path into a single presentation decision.
+    ///
+    /// **This is the one classifier.** Both renderers of a toolpath consume
+    /// it and nothing else:
+    ///
+    /// * the interactive GUI viewport
+    ///   (`rs_cam_viz::render::toolpath_render::ToolpathGpuData::from_toolpath`), and
+    /// * the PNG/6-view exporter
+    ///   ([`crate::stock_mesh::toolpath_to_tube_mesh_with_spans`], reached from
+    ///   `screenshot_toolpath`).
+    ///
+    /// Before this existed the two walked the span path in **opposite
+    /// directions** and disagreed about `DressupArtifact` precedence, so a
+    /// move nested inside two interesting spans was coloured by the outermost
+    /// kind live and the innermost kind in the PNG, and the exporter had no
+    /// equivalent of the viewport's [`SpanKind::DepthPass`] `pass_index`
+    /// gradient at all (X-1 / D-LV.1, `planning/review_2026-08-04/`).
+    ///
+    /// The rules below are the **viewport's**, verbatim — that renderer is the
+    /// one an operator validated, so it is the reference and the exporter is
+    /// the side that moves:
+    ///
+    /// 1. Walk the path **forward**, i.e. outermost span first (the order
+    ///    [`Self::span_paths_by_move`] and [`Self::span_path_at`] produce).
+    /// 2. The first [`SpanKind::Entry`] / [`SpanKind::LeadOut`] /
+    ///    [`SpanKind::LinkBridge`] encountered wins outright — an outer
+    ///    link bridge beats a lead-in nested inside it.
+    /// 3. [`SpanKind::DressupArtifact`] does **not** win outright: it is
+    ///    remembered and the walk continues, so one of the three kinds above
+    ///    nested inside a dressup still takes precedence.
+    /// 4. [`SpanKind::DepthPass`] contributes its `pass_index` (last one on
+    ///    the path wins) for the per-pass lightness shift. It never decides
+    ///    the class by itself.
+    /// 5. [`SpanKind::GeometryRefit`] is deliberately transparent — an
+    ///    arc-fitted move is the same cut re-represented, not a dressup
+    ///    bridge, so it renders as ordinary cutting geometry (Checkpoint D
+    ///    Q3, ruled 2026-08-04).
+    /// 6. Everything else ([`SpanKind::Operation`], [`SpanKind::Region`], …)
+    ///    is transparent.
+    ///
+    /// Returns [`SpanClass::Cut`] with no `pass_index` when
+    /// [`Self::spans_valid`] is false — an invalidated span table may not be
+    /// read for presentation.
+    ///
+    /// Note the ordering caveat inherited from [`Self::span_paths_by_move`]:
+    /// "outermost first" is really "in `spans` array order", which generators
+    /// emit outermost-first. A generator that emitted a child before its
+    /// parent would change rule 2's answer. That is a pre-existing property
+    /// of the span table, not of this function, and it is now at least
+    /// *consistently* pre-existing across both renderers.
+    pub fn classify_span_path(&self, path: &[SpanId]) -> SpanClass {
+        if !self.spans_valid {
+            return SpanClass::Cut { pass_index: None };
+        }
+        let mut pass_index: Option<u32> = None;
+        let mut dressup = false;
+        for sid in path {
+            let Some(span) = self.spans.get(sid.0 as usize) else {
+                continue;
+            };
+            match span.kind {
+                SpanKind::Entry => return SpanClass::Entry,
+                SpanKind::LeadOut => return SpanClass::LeadOut,
+                SpanKind::LinkBridge => return SpanClass::LinkBridge,
+                SpanKind::DressupArtifact => dressup = true,
+                SpanKind::DepthPass => {
+                    if let Some(SpanPayload::DepthPass { pass_index: p, .. }) = span.payload {
+                        pass_index = Some(p);
+                    }
+                }
+                // Transparent: GeometryRefit (rule 5), Operation, Region,
+                // and every other kind (rule 6).
+                _ => {}
+            }
+        }
+        if dressup {
+            SpanClass::Dressup
+        } else {
+            SpanClass::Cut { pass_index }
+        }
     }
 
     /// Precompute [`Self::span_path_at`] for every move index in the toolpath.
@@ -478,6 +946,552 @@ impl MoveRemap {
             .map(|r| r.start)
             .unwrap_or(total_new_moves)
     }
+
+    /// Remap one span through this move-index mapping.
+    ///
+    /// - Boundary (zero-width) spans remap through [`Self::remap_boundary`]
+    ///   and always come back zero-width.
+    /// - Non-boundary spans remap through [`Self::remap_range`], producing
+    ///   the bounding new range — the min start and max end among all
+    ///   surviving old moves in `[span.start_move, span.end_move)`.
+    ///
+    /// Returns `None` if every old move in the span's range was dropped by
+    /// the transform (the span fully collapsed). `kind` is preserved
+    /// unchanged; `label` and `payload` are cloned onto the output span.
+    /// Did a move from OUTSIDE the old range `[old_start, old_end)` land
+    /// inside `bounds` (that range's new bounding range)?
+    ///
+    /// `Some((old_index, new_range))` names the intruder — which move it is
+    /// is the whole diagnosis, so the caller can log it rather than reporting
+    /// "scattered" for a range that came back near-exact.
+    ///
+    /// A bounding remap cannot see this on its own: only a REORDER can
+    /// interleave strangers into a contiguous claim, so this is the extra
+    /// rule [`crate::tsp`] applies to spans and
+    /// [`crate::transform_provenance::MoveProvenance::Permutation`] applies
+    /// to every other index-carrying channel. One predicate, so the two can
+    /// never disagree about what "scattered" means.
+    pub fn foreign_intrusion(
+        &self,
+        old_start: usize,
+        old_end: usize,
+        bounds: &Range<usize>,
+    ) -> Option<(usize, Range<usize>)> {
+        self.old_to_new
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i < old_start || *i >= old_end)
+            .find_map(|(i, slot)| {
+                let r = slot.as_ref()?;
+                // Non-trivial overlap: the slot covers an actual new-move
+                // index (start < end) AND that index is inside `bounds`.
+                (r.start < r.end && r.start < bounds.end && r.end > bounds.start)
+                    .then(|| (i, r.clone()))
+            })
+    }
+
+    pub fn remap_span(&self, span: &Span, new_n_moves: usize) -> Option<Span> {
+        let mut new_span = if span.is_boundary() {
+            let new_pos = self.remap_boundary(span.start_move, new_n_moves);
+            Span::new(new_pos, new_pos, span.kind)
+        } else {
+            let r = self.remap_range(span.start_move, span.end_move)?;
+            Span::new(r.start, r.end, span.kind)
+        }
+        .with_label(span.label.clone());
+        if let Some(p) = span.payload.clone() {
+            new_span = new_span.with_payload(p);
+        }
+        Some(new_span)
+    }
+
+    /// Same contract as [`Self::remap_span`], but answers the non-boundary
+    /// range query through a pre-built [`RemapIndex`] instead of rescanning
+    /// `old_to_new`. Byte-for-byte identical output to `remap_span` — see
+    /// [`RemapIndex::remap_range`] for why the answers agree exactly.
+    ///
+    /// Boundary spans still go through [`Self::remap_boundary`] unindexed:
+    /// C9 only targeted the two hot scans (`remap_range`,
+    /// `foreign_intrusion`); `remap_boundary`'s fallback walk is triggered
+    /// only for a dropped/out-of-range boundary move and was not the
+    /// O(spans × moves) hot path this index retires.
+    pub fn remap_span_with_index(
+        &self,
+        span: &Span,
+        new_n_moves: usize,
+        index: &RemapIndex,
+    ) -> Option<Span> {
+        let mut new_span = if span.is_boundary() {
+            let new_pos = self.remap_boundary(span.start_move, new_n_moves);
+            Span::new(new_pos, new_pos, span.kind)
+        } else {
+            let r = index.remap_range(span.start_move, span.end_move)?;
+            Span::new(r.start, r.end, span.kind)
+        }
+        .with_label(span.label.clone());
+        if let Some(p) = span.payload.clone() {
+            new_span = new_span.with_payload(p);
+        }
+        Some(new_span)
+    }
+
+    /// Remap a whole span list through this mapping, in order, dropping any
+    /// span that fully collapsed (see [`Self::remap_span`]).
+    ///
+    /// This is the canonical "walk spans through a `MoveRemap`, drop
+    /// collapsed spans" contract shared by every span-preserving toolpath
+    /// transform that only *narrows or merges* moves in place — dressups
+    /// ([`crate::dressup`]), arc-fitting ([`crate::arcfit`]), and path
+    /// simplification ([`crate::condition`]). Callers append their own
+    /// transform-introduced spans (e.g. `Entry`, `DressupArtifact`,
+    /// `GeometryRefit`, `LinkBridge`) to the returned vec afterward.
+    ///
+    /// TSP's reordering pass ([`crate::tsp`]) additionally has to detect
+    /// *foreign-move intrusion* — a permutation can interleave moves from
+    /// other spans into a span's new bounding range, which a plain bounding
+    /// remap can't see. `tsp::remap_spans` delegates its per-span core to
+    /// [`Self::remap_span_with_index`] and layers that check on top as a
+    /// distinct post-filter (via [`RemapIndex::foreign_intrusion`]) rather
+    /// than reimplementing this method.
+    ///
+    /// C9: builds one [`RemapIndex`] up front and answers every span's
+    /// range query against it in O(log n) rather than rescanning the whole
+    /// `old_to_new` vector per span — the O(spans × moves) scan this whole
+    /// index exists to retire. On a wanaka-class job (~200k moves, dozens to
+    /// hundreds of spans) that was the dominant cost of every span-preserving
+    /// transform that calls this method.
+    pub fn remap_spans(&self, spans: &[Span], new_n_moves: usize) -> Vec<Span> {
+        let index = RemapIndex::build(self);
+        spans
+            .iter()
+            .filter_map(|s| self.remap_span_with_index(s, new_n_moves, &index))
+            .collect()
+    }
+}
+
+// ── RemapIndex ──────────────────────────────────────────────────────────
+
+/// Outcome of one [`AggregateTree::leftmost_overlap`] descent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TreeOutcome {
+    /// Leftmost matching leaf index (always `< n`; padding leaves carry
+    /// identity values that can never pass the overlap test).
+    Found(usize),
+    /// No leaf in the queried range overlaps `bounds`.
+    NotFound,
+    /// The node-visit budget ran out before the descent could prove either
+    /// answer. Caller falls back to [`AggregateTree::linear_leftmost_overlap`].
+    BudgetExceeded,
+}
+
+/// ONE tree implementation, shared by both [`RemapIndex::remap_range`] and
+/// [`RemapIndex::foreign_intrusion`] — they were computing the SAME kind of
+/// aggregate (`min_start`/`max_end` over a set of slots) through two
+/// unrelated structures before this rewrite (a sparse table for one, this
+/// tree's ancestor for the other); that duplication is gone. Only the slot
+/// set fed into [`Self::build`] differs between the two call sites — ALL
+/// slots (degenerate included) for `remap_range`, non-degenerate slots only
+/// for `foreign_intrusion` — plus whether the caller needs top-down descent
+/// (see `pad_for_descent` below).
+///
+/// Complete-or-not binary tree, 1-indexed (`node` 1 is the root; children of
+/// `node` are `2*node`/`2*node + 1`; leaf `i` lives at array index `size +
+/// i`). Each node stores `(min_start, max_end)` — the min/max over its
+/// subtree's slots (identity `(usize::MAX, 0)` for padding/absent slots, so
+/// they can never win a `min`/`max` reduction).
+///
+/// `size` — and therefore whether the tree is safe for
+/// [`Self::leftmost_overlap`] — is chosen at build time:
+///
+/// - [`Self::range_query`] (an iterative bottom-up min/max reduction) is
+///   correct for ANY `size`, padded to a power of two or not — verified by
+///   hand-tracing a 3-leaf (non-power-of-two) tree before writing this: the
+///   `l/r` parity walk only ever accumulates a node once its FULL subtree is
+///   proven to sit inside `[l, r)`, which the walk's index arithmetic
+///   guarantees regardless of how lopsided that subtree's shape is. So
+///   `remap_range`'s tree (`pad_for_descent: false`) uses `size = n` exactly
+///   — no padding waste.
+/// - [`Self::leftmost_overlap`] (top-down descent, used by
+///   `foreign_intrusion`) is NOT safe on an unpadded tree: it computes each
+///   node's `[node_lo, node_hi)` span purely from arithmetic
+///   (`mid = node_lo + (node_hi - node_lo) / 2`) assuming `node`'s two
+///   children cleanly bisect that span — true only for a COMPLETE binary
+///   tree. Hand-checked for `n = 3` (unpadded) before writing this: node 1's
+///   children are indices 2 and 3, but index 3 is already a LEAF while index
+///   2 is still internal — the tree is lopsided, so descent's arithmetic
+///   would silently read the wrong leaf. `foreign_intrusion`'s tree
+///   (`pad_for_descent: true`) therefore pads to `next_power_of_two(n)`.
+struct AggregateTree {
+    size: usize,
+    depth: u32,
+    min_start: Vec<usize>,
+    max_end: Vec<usize>,
+}
+
+impl AggregateTree {
+    fn build(starts: &[usize], ends: &[usize], pad_for_descent: bool) -> Self {
+        let n = starts.len();
+        let size = if pad_for_descent {
+            n.max(1).next_power_of_two()
+        } else {
+            n.max(1)
+        };
+        let mut min_start = vec![usize::MAX; 2 * size];
+        let mut max_end = vec![0usize; 2 * size];
+
+        for (i, (&s, &e)) in starts.iter().zip(ends.iter()).enumerate() {
+            if let Some(slot) = min_start.get_mut(size + i) {
+                *slot = s;
+            }
+            if let Some(slot) = max_end.get_mut(size + i) {
+                *slot = e;
+            }
+        }
+
+        // Children always have a larger array index than their parent (for
+        // ANY size, padded or not — this is pure index arithmetic, not a
+        // property of a complete tree), so combining nodes in decreasing
+        // index order guarantees both children are final before their
+        // parent reads them.
+        for node in (1..size).rev() {
+            let left = 2 * node;
+            let right = 2 * node + 1;
+            let lms = min_start.get(left).copied().unwrap_or(usize::MAX);
+            let rms = min_start.get(right).copied().unwrap_or(usize::MAX);
+            let lme = max_end.get(left).copied().unwrap_or(0);
+            let rme = max_end.get(right).copied().unwrap_or(0);
+            if let Some(slot) = min_start.get_mut(node) {
+                *slot = lms.min(rms);
+            }
+            if let Some(slot) = max_end.get_mut(node) {
+                *slot = lme.max(rme);
+            }
+        }
+
+        let depth = size.next_power_of_two().trailing_zeros();
+        Self {
+            size,
+            depth,
+            min_start,
+            max_end,
+        }
+    }
+
+    /// This slot's raw `(start, end)` as stored at the leaf — identity
+    /// `(usize::MAX, 0)` for a padding/absent slot. Used both to answer
+    /// [`RemapIndex::foreign_intrusion`]'s final `(index, range)` and by
+    /// [`Self::linear_leftmost_overlap`]'s fallback scan, so there is no
+    /// separate raw-slot array duplicating what the tree already holds.
+    fn leaf(&self, i: usize) -> (usize, usize) {
+        let s = self
+            .min_start
+            .get(self.size + i)
+            .copied()
+            .unwrap_or(usize::MAX);
+        let e = self.max_end.get(self.size + i).copied().unwrap_or(0);
+        (s, e)
+    }
+
+    /// Combined min(`min_start`)/max(`max_end`) over `[l, r)`, `l < r`
+    /// assumed. Standard iterative bottom-up segment-tree range query,
+    /// O(log n) — correct for any `size` (see this struct's doc comment).
+    fn range_query(&self, l: usize, r: usize) -> (usize, usize) {
+        let mut lo = l + self.size;
+        let mut hi = r + self.size;
+        let mut min_start = usize::MAX;
+        let mut max_end = 0usize;
+        while lo < hi {
+            if lo % 2 == 1 {
+                min_start = min_start.min(self.min_start.get(lo).copied().unwrap_or(usize::MAX));
+                max_end = max_end.max(self.max_end.get(lo).copied().unwrap_or(0));
+                lo += 1;
+            }
+            if hi % 2 == 1 {
+                hi -= 1;
+                min_start = min_start.min(self.min_start.get(hi).copied().unwrap_or(usize::MAX));
+                max_end = max_end.max(self.max_end.get(hi).copied().unwrap_or(0));
+            }
+            lo /= 2;
+            hi /= 2;
+        }
+        (min_start, max_end)
+    }
+
+    /// Heuristic node-visit cap for one [`Self::leftmost_overlap`] call.
+    ///
+    /// NOT a proven worst-case bound — see [`RemapIndex`]'s doc comment.
+    /// It exists purely so a pathological `old_to_new` (one that defeats the
+    /// necessary-condition pruning at every level) can't make a single query
+    /// visit more than this many nodes before the caller falls back to the
+    /// linear scan; `4096` is a floor so small trees don't fall back
+    /// needlessly early, `64 * depth^2` scales the cap with tree height.
+    fn query_budget(&self) -> usize {
+        let d = self.depth as usize;
+        4096usize.max(64 * d * d)
+    }
+
+    /// Leftmost leaf index in `range` whose stored interval overlaps
+    /// `bounds`, or the reason the descent didn't reach an answer. Only
+    /// valid on a tree built with `pad_for_descent: true` — see this
+    /// struct's doc comment for why an unpadded tree can't support this.
+    fn leftmost_overlap(
+        &self,
+        range: Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> TreeOutcome {
+        if range.start >= range.end {
+            return TreeOutcome::NotFound;
+        }
+        self.descend(1, 0, self.size, &range, bounds, budget)
+    }
+
+    fn descend(
+        &self,
+        node: usize,
+        node_lo: usize,
+        node_hi: usize,
+        range: &Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> TreeOutcome {
+        if *budget == 0 {
+            return TreeOutcome::BudgetExceeded;
+        }
+        *budget -= 1;
+
+        if node_hi <= range.start || range.end <= node_lo {
+            return TreeOutcome::NotFound;
+        }
+        let node_min = self.min_start.get(node).copied().unwrap_or(usize::MAX);
+        let node_max = self.max_end.get(node).copied().unwrap_or(0);
+        if !(node_min < bounds.end && node_max > bounds.start) {
+            return TreeOutcome::NotFound;
+        }
+        if node_hi - node_lo == 1 {
+            // Necessary condition held AND this is a genuine leaf (not a
+            // collapsed subtree summary), so it's sufficient too.
+            return TreeOutcome::Found(node_lo);
+        }
+
+        let mid = node_lo + (node_hi - node_lo) / 2;
+        match self.descend(2 * node, node_lo, mid, range, bounds, budget) {
+            TreeOutcome::Found(i) => TreeOutcome::Found(i),
+            TreeOutcome::BudgetExceeded => TreeOutcome::BudgetExceeded,
+            TreeOutcome::NotFound => {
+                self.descend(2 * node + 1, mid, node_hi, range, bounds, budget)
+            }
+        }
+    }
+
+    /// Exact leftmost-index linear scan of `[range.start, range.end)`, used
+    /// as the un-indexed fallback when [`Self::leftmost_overlap`]'s budget
+    /// is exhausted. Reads through [`Self::leaf`], so it sees the same
+    /// identity-folded values `leftmost_overlap` does — no separate raw
+    /// array to keep in sync.
+    fn linear_leftmost_overlap(&self, range: Range<usize>, bounds: &Range<usize>) -> Option<usize> {
+        (range.start..range.end).find(|&i| {
+            let (s, e) = self.leaf(i);
+            s < bounds.end && e > bounds.start
+        })
+    }
+}
+
+/// Interval index built once from a [`MoveRemap`], answering the two hot
+/// per-span queries — [`MoveRemap::remap_range`] and
+/// [`MoveRemap::foreign_intrusion`] — without rescanning `old_to_new` for
+/// every span (C9: the O(spans × moves) scan on a wanaka-class job, ~200k
+/// moves × dozens-to-hundreds of spans, was the dominant cost of every
+/// span-preserving toolpath transform).
+///
+/// Built from exactly two [`AggregateTree`]s (see that struct's doc comment
+/// for why there are two, and why only one of them pays for descent
+/// support) plus a prefix count of surviving slots. An earlier revision of
+/// this index answered `remap_range` with a *second*, independent
+/// structure — an O(n log n) sparse table — even though the intrusion tree
+/// already stored the exact same `(min_start, max_end)` aggregate; that
+/// duplication measured ~67 MB of transient allocation on a 200k-move
+/// fixture and was cut in favor of the second `AggregateTree` below.
+///
+/// # Complexity and memory
+///
+/// - [`Self::remap_range`]: `range_tree` (built over ALL slots, degenerate
+///   included — `remap_range`'s oracle never distinguishes `r.start ==
+///   r.end` from a normal slot) answers the min/max reduction via
+///   [`AggregateTree::range_query`] in O(log n) after an O(n) build. A
+///   prefix-count of surviving (`Some`) slots answers "did anything survive
+///   this range" in O(1) so an all-dropped sub-range still returns `None`
+///   exactly like the two-pass scan; a plain prefix-sum could not answer
+///   the *range* query itself (it only ever gives prefix-from-zero), which
+///   is why the aggregate still needs the tree.
+/// - [`Self::foreign_intrusion`]: `intrusion_tree` (built over the
+///   NON-degenerate slots only) gives an exact leftmost-hit answer (never a
+///   weaker "any intruder") via necessary-condition pruning
+///   ([`AggregateTree::leftmost_overlap`]). This is NOT a proven O(log n) or
+///   O(log² n) bound — an adversarial `old_to_new` can make every node's
+///   summary pass the necessary condition without any leaf in it actually
+///   overlapping `bounds`, forcing a wide descent. A merge-sort tree
+///   (sorted-by-start intervals + running prefix-max end per node) would
+///   fix that at a proven O(log² n) worst case, at the cost of another O(n
+///   log n) memory structure — not worth it here. This index instead caps
+///   descent at a node-visit budget ([`AggregateTree::query_budget`]) and
+///   falls back to an exact linear scan
+///   ([`AggregateTree::linear_leftmost_overlap`]) the moment the budget is
+///   spent, so the worst case is bounded by `O(budget + n)` — never worse
+///   than the original `O(n)` scan — while the common case (TSP's
+///   block-structured permutations, which is what this index exists to
+///   serve) finishes in a handful of node visits.
+/// - Memory is O(n) total: `range_tree` is `2 * n` words per array (no
+///   padding — [`AggregateTree::range_query`] doesn't need it),
+///   `intrusion_tree` is `2 * next_power_of_two(n)` words per array (padded
+///   — [`AggregateTree::leftmost_overlap`] does need it), and the prefix
+///   count is `n + 1` `u32`s. [`Self::heap_bytes`] reports the real,
+///   measured figure rather than a claim this doc comment could drift from;
+///   `remap_interval_index_c9.rs`'s wanaka-scale test asserts it stays
+///   under 16 MB at n = 200_000 so this regression can't come back silently.
+pub struct RemapIndex {
+    n: usize,
+    survivor_prefix: Vec<u32>,
+    range_tree: AggregateTree,
+    intrusion_tree: AggregateTree,
+}
+
+impl RemapIndex {
+    /// Build the index once from a `MoveRemap`. Reuse it for every span in
+    /// the same remap rather than rebuilding per span.
+    pub fn build(remap: &MoveRemap) -> Self {
+        let n = remap.old_to_new.len();
+
+        // ---- remap_range: tree over ALL slots, degenerate included
+        // (remap_range's oracle never distinguishes r.start == r.end from a
+        // normal slot — see MoveRemap::remap_range). Unpadded: range_query
+        // doesn't need descent, so there's no reason to pay for padding.
+        let all_starts: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| slot.as_ref().map_or(usize::MAX, |r| r.start))
+            .collect();
+        let all_ends: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| slot.as_ref().map_or(0, |r| r.end))
+            .collect();
+        let range_tree = AggregateTree::build(&all_starts, &all_ends, false);
+
+        let mut survivor_prefix = Vec::with_capacity(n + 1);
+        survivor_prefix.push(0u32);
+        let mut running = 0u32;
+        for slot in &remap.old_to_new {
+            running += u32::from(slot.is_some());
+            survivor_prefix.push(running);
+        }
+
+        // ---- foreign_intrusion: NON-degenerate slots only (r.start < r.end)
+        // — a degenerate or dropped slot can never be an intruder, see
+        // MoveRemap::foreign_intrusion's predicate. Padded: leftmost_overlap
+        // needs the descent to be well-defined.
+        let nd_starts: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| match slot {
+                Some(r) if r.start < r.end => r.start,
+                _ => usize::MAX,
+            })
+            .collect();
+        let nd_ends: Vec<usize> = remap
+            .old_to_new
+            .iter()
+            .map(|slot| match slot {
+                Some(r) if r.start < r.end => r.end,
+                _ => 0,
+            })
+            .collect();
+        let intrusion_tree = AggregateTree::build(&nd_starts, &nd_ends, true);
+
+        Self {
+            n,
+            survivor_prefix,
+            range_tree,
+            intrusion_tree,
+        }
+    }
+
+    fn survivor_count(&self, l: usize, r: usize) -> u32 {
+        let hi = self.survivor_prefix.get(r).copied().unwrap_or(0);
+        let lo = self.survivor_prefix.get(l).copied().unwrap_or(0);
+        hi.saturating_sub(lo)
+    }
+
+    /// Indexed equivalent of [`MoveRemap::remap_range`] — same signature,
+    /// same answer for every input, O(log n) instead of two O(n) scans.
+    pub fn remap_range(&self, start: usize, end: usize) -> Option<Range<usize>> {
+        if start > end {
+            return None;
+        }
+        let l = start.min(self.n);
+        let r = end.min(self.n);
+        if l >= r || self.survivor_count(l, r) == 0 {
+            return None;
+        }
+        let (min_start, max_end) = self.range_tree.range_query(l, r);
+        Some(min_start..max_end)
+    }
+
+    fn query_range(
+        &self,
+        range: Range<usize>,
+        bounds: &Range<usize>,
+        budget: &mut usize,
+    ) -> Option<usize> {
+        if range.start >= range.end {
+            return None;
+        }
+        match self
+            .intrusion_tree
+            .leftmost_overlap(range.clone(), bounds, budget)
+        {
+            TreeOutcome::Found(i) => Some(i),
+            TreeOutcome::NotFound => None,
+            TreeOutcome::BudgetExceeded => {
+                self.intrusion_tree.linear_leftmost_overlap(range, bounds)
+            }
+        }
+    }
+
+    /// Indexed equivalent of [`MoveRemap::foreign_intrusion`] — same
+    /// signature, same chosen `(index, range)` for every input (never just
+    /// "any intruder"), sub-linear in the common case instead of one O(n)
+    /// scan per call.
+    pub fn foreign_intrusion(
+        &self,
+        old_start: usize,
+        old_end: usize,
+        bounds: &Range<usize>,
+    ) -> Option<(usize, Range<usize>)> {
+        let n = self.n;
+        let mut budget = self.intrusion_tree.query_budget();
+        let r1 = 0..old_start.min(n);
+        let hit = self.query_range(r1, bounds, &mut budget).or_else(|| {
+            let r2 = old_end.min(n)..n;
+            self.query_range(r2, bounds, &mut budget)
+        });
+        hit.map(|i| {
+            let (start, end) = self.intrusion_tree.leaf(i);
+            (i, start..end)
+        })
+    }
+
+    /// Actual heap footprint of this index in bytes — sums the real
+    /// (allocated, not just occupied) capacity of every backing `Vec`
+    /// rather than re-deriving an estimate from `n`, so a formula/reality
+    /// drift in this struct's doc comment would show up as a test assertion
+    /// failing, not as a stale comment nobody re-checks.
+    pub fn heap_bytes(&self) -> usize {
+        let word = std::mem::size_of::<usize>();
+        let tree_bytes = |t: &AggregateTree| (t.min_start.capacity() + t.max_end.capacity()) * word;
+        let prefix_bytes = self.survivor_prefix.capacity() * std::mem::size_of::<u32>();
+        tree_bytes(&self.range_tree) + tree_bytes(&self.intrusion_tree) + prefix_bytes
+    }
 }
 
 // ── tests ───────────────────────────────────────────────────────────────
@@ -557,9 +1571,116 @@ mod tests {
     fn span_with_label_and_payload_round_trip() {
         let s = Span::new(10, 20, SpanKind::Region)
             .with_label("region-3")
-            .with_payload(SpanPayload::Region { region_id: 3 });
+            .with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            });
         assert_eq!(s.label, "region-3");
-        assert_eq!(s.payload, Some(SpanPayload::Region { region_id: 3 }));
+        assert_eq!(
+            s.payload,
+            Some(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::GeneratorPass,
+            })
+        );
+    }
+
+    /// Wave D3: the node/pass discriminator is a payload field, readable
+    /// without touching the label — the label is free text and nothing keeps
+    /// it stable.
+    #[test]
+    fn region_role_discriminates_node_from_generator_pass() {
+        let node = Span::new(0, 10, SpanKind::Region)
+            .with_label("MidSteep band")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::Node,
+            });
+        // Same kind, same region_id, DIFFERENT id space.
+        let ring = Span::new(0, 4, SpanKind::Region)
+            .with_label("Ring 1/9")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::GeneratorPass,
+            });
+        assert!(node.is_region_node());
+        assert!(!ring.is_region_node());
+        assert_eq!(node.region_role(), Some(RegionSpanRole::Node));
+        assert_eq!(ring.region_role(), Some(RegionSpanRole::GeneratorPass));
+        // A non-region span has no role at all.
+        assert_eq!(Span::new(0, 3, SpanKind::Entry).region_role(), None);
+        // And the roles survive a remap (payload is cloned through).
+        let mapping: Vec<usize> = (0..=10).map(|i| i * 2).collect();
+        assert_eq!(
+            node.remap(&mapping).region_role(),
+            Some(RegionSpanRole::Node)
+        );
+    }
+
+    /// C4: the drill nesting is a role pair, and the whole vocabulary
+    /// round-trips through its key. `ALL` is the single list `from_key`
+    /// derives from, so a variant that is added but not listed cannot be
+    /// looked up by name — the same contract `SpanKind::ALL` carries.
+    #[test]
+    fn every_region_role_round_trips_through_its_key() {
+        assert_eq!(RegionSpanRole::ALL.len(), 4);
+        for role in RegionSpanRole::ALL {
+            assert_eq!(
+                RegionSpanRole::from_key(role.label()),
+                Some(role),
+                "{} did not round-trip",
+                role.label()
+            );
+        }
+        assert_eq!(RegionSpanRole::from_key("generator-pass"), None);
+        assert_eq!(RegionSpanRole::from_key(""), None);
+
+        // The keys are distinct — a copy-pasted arm in `label` would
+        // otherwise make one role unreachable through `from_key`.
+        let mut keys: Vec<&str> = RegionSpanRole::ALL.iter().map(|r| r.label()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), RegionSpanRole::ALL.len());
+    }
+
+    /// `has_region_role` is the supported replacement for the drill label
+    /// parsing (`label.starts_with("Hole ") && !label.contains("plunge")`).
+    /// It must reject boundary markers and non-region spans, which the label
+    /// predicate did by accident rather than by contract.
+    #[test]
+    fn has_region_role_answers_the_drill_nesting_question() {
+        let hole = Span::new(0, 20, SpanKind::Region)
+            .with_label("Hole 1")
+            .with_payload(SpanPayload::Region {
+                region_id: 0,
+                role: RegionSpanRole::DrillHole,
+            });
+        let peck = Span::new(2, 6, SpanKind::Region)
+            .with_label("Hole 1 plunge 1")
+            .with_payload(SpanPayload::Region {
+                region_id: 3,
+                role: RegionSpanRole::DrillPeck,
+            });
+        assert!(hole.has_region_role(RegionSpanRole::DrillHole));
+        assert!(!hole.has_region_role(RegionSpanRole::DrillPeck));
+        assert!(peck.has_region_role(RegionSpanRole::DrillPeck));
+        assert!(!peck.has_region_role(RegionSpanRole::DrillHole));
+        // Neither is a planner node, and neither is the plain generator pass
+        // they both used to be.
+        assert!(!hole.is_region_node() && !peck.is_region_node());
+        assert!(!hole.has_region_role(RegionSpanRole::GeneratorPass));
+        // …but both ARE generator output.
+        assert!(RegionSpanRole::DrillHole.is_generator_pass());
+        assert!(RegionSpanRole::DrillPeck.is_generator_pass());
+        assert!(!RegionSpanRole::Node.is_generator_pass());
+
+        // A zero-width boundary marker carrying the role is still not a hole.
+        let boundary = Span::new(20, 20, SpanKind::Region).with_payload(SpanPayload::Region {
+            region_id: 9,
+            role: RegionSpanRole::DrillHole,
+        });
+        assert!(boundary.is_boundary());
+        assert!(!boundary.has_region_role(RegionSpanRole::DrillHole));
     }
 
     #[test]
@@ -616,6 +1737,89 @@ mod tests {
         let at = AnnotatedToolpath::with_spans(toolpath_with_n_moves(5), spans.clone());
         assert_eq!(at.spans, spans);
         assert!(at.spans_valid);
+    }
+
+    // ── translated ──────────────────────────────────────────────────────
+
+    /// `translated` must re-frame every coordinate-bearing field in lockstep:
+    /// move targets, `planner_engagement` cut points, `rest_grid`
+    /// origin/surface_z, and `rest_regions` polygon points — while leaving
+    /// move-index-based fields (`spans`) and scalar fields (`rest_grid.rest`)
+    /// untouched, and preserving NaN (untrusted) cells.
+    #[test]
+    fn translated_shifts_moves_engagement_and_rest_grid_in_lockstep() {
+        let mut tp = Toolpath::new();
+        tp.feed_to(P3::new(1.0, 2.0, 3.0), 1000.0);
+
+        let rest_grid = RestGrid {
+            nx: 2,
+            ny: 2,
+            origin_x: 10.0,
+            origin_y: 20.0,
+            cell_mm: 1.0,
+            rest: vec![0.1, 0.2, 0.3, 0.4],
+            surface_z: vec![5.0, f32::NAN, 7.0, 8.0],
+            threshold: 0.05,
+        };
+
+        let region = Polygon2::with_holes(
+            vec![
+                crate::geo::P2::new(0.0, 0.0),
+                crate::geo::P2::new(5.0, 0.0),
+                crate::geo::P2::new(5.0, 5.0),
+                crate::geo::P2::new(0.0, 5.0),
+            ],
+            vec![vec![
+                crate::geo::P2::new(1.0, 1.0),
+                crate::geo::P2::new(2.0, 1.0),
+                crate::geo::P2::new(2.0, 2.0),
+            ]],
+        );
+
+        let mut at = AnnotatedToolpath::new(tp);
+        at.planner_engagement = vec![(P3::new(1.0, 2.0, 3.0), 0.25)];
+        at.rest_grid = Some(Arc::new(rest_grid));
+        at.rest_regions = Some(Arc::new(vec![region]));
+
+        let shift = P3::new(100.0, 200.0, 10.0);
+        let shifted = at.translated(shift);
+
+        assert_eq!(
+            shifted.toolpath.moves[0].target,
+            P3::new(101.0, 202.0, 13.0)
+        );
+
+        assert_eq!(shifted.planner_engagement.len(), 1);
+        assert_eq!(shifted.planner_engagement[0].0, P3::new(101.0, 202.0, 13.0));
+        assert_eq!(shifted.planner_engagement[0].1, 0.25);
+
+        let grid = shifted
+            .rest_grid
+            .expect("rest_grid should survive translation");
+        assert_eq!(grid.origin_x, 110.0);
+        assert_eq!(grid.origin_y, 220.0);
+        assert_eq!(grid.surface_z[0], 15.0);
+        assert!(grid.surface_z[1].is_nan(), "NaN cell must stay NaN");
+        assert_eq!(grid.surface_z[2], 17.0);
+        assert_eq!(grid.surface_z[3], 18.0);
+        // rest depth is a scalar, not a coordinate — unchanged.
+        assert_eq!(grid.rest, vec![0.1, 0.2, 0.3, 0.4]);
+
+        let regions = shifted
+            .rest_regions
+            .expect("rest_regions should survive translation");
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].exterior[0], crate::geo::P2::new(100.0, 200.0));
+        assert_eq!(regions[0].exterior[2], crate::geo::P2::new(105.0, 205.0));
+        assert_eq!(regions[0].holes[0][0], crate::geo::P2::new(101.0, 201.0));
+
+        // Original untouched.
+        assert_eq!(at.toolpath.moves[0].target, P3::new(1.0, 2.0, 3.0));
+        assert_eq!(at.rest_grid.as_ref().map(|g| g.origin_x), Some(10.0));
+        assert_eq!(
+            at.rest_regions.as_ref().map(|r| r[0].exterior[0]),
+            Some(crate::geo::P2::new(0.0, 0.0))
+        );
     }
 
     // ── spans_at / spans_of_kind / boundaries_at ───────────────────────
@@ -1012,5 +2216,105 @@ mod tests {
         let m = MoveRemap::identity(3);
         // Boundary past the end of the old list lands at total_new_moves.
         assert_eq!(m.remap_boundary(5, 3), 3);
+    }
+
+    // ── MoveRemap::remap_span / remap_spans ────────────────────────────
+
+    #[test]
+    fn remap_span_fully_inside_kept_range_shifts_bounds() {
+        // Old moves 2..3 dropped; everything else 1:1. Span 1..4 should
+        // shrink to the surviving bounds.
+        let m = MoveRemap {
+            old_to_new: vec![
+                Some(0..1),
+                Some(1..2),
+                None,
+                Some(2..3),
+                Some(3..4),
+                Some(4..5),
+            ],
+        };
+        let span = Span::new(1, 4, SpanKind::Region).with_label("r");
+        let out = m.remap_span(&span, 5).expect("span partially survives");
+        assert_eq!(out.start_move, 1);
+        assert_eq!(out.end_move, 3);
+        assert_eq!(out.kind, SpanKind::Region);
+        assert_eq!(out.label, "r");
+    }
+
+    #[test]
+    fn remap_span_partially_collapsed_bounds_to_survivors() {
+        // Span 0..5 where moves 1..4 are dropped: only moves 0 and 4 survive,
+        // so the remapped span covers just their new positions.
+        let m = MoveRemap {
+            old_to_new: vec![Some(0..1), None, None, None, Some(1..2)],
+        };
+        let span = Span::new(0, 5, SpanKind::DepthPass);
+        let out = m.remap_span(&span, 2).expect("span partially survives");
+        assert_eq!(out.start_move, 0);
+        assert_eq!(out.end_move, 2);
+    }
+
+    #[test]
+    fn remap_span_fully_collapsed_is_dropped() {
+        let m = MoveRemap {
+            old_to_new: vec![None, None, None],
+        };
+        let span = Span::new(0, 3, SpanKind::Region);
+        assert_eq!(m.remap_span(&span, 0), None);
+    }
+
+    #[test]
+    fn remap_span_boundary_stays_zero_width() {
+        let m = MoveRemap {
+            old_to_new: vec![Some(0..1), None, Some(1..2)],
+        };
+        let span = Span::boundary(1, SpanKind::RapidOrderBarrier);
+        let out = m
+            .remap_span(&span, 2)
+            .expect("boundary spans never collapse");
+        assert!(out.is_boundary());
+        assert_eq!(out.start_move, 1);
+    }
+
+    #[test]
+    fn remap_span_preserves_payload() {
+        let m = MoveRemap::identity(3);
+        let span = Span::new(0, 3, SpanKind::DepthPass).with_payload(SpanPayload::DepthPass {
+            z_level: -2.0,
+            pass_index: 1,
+        });
+        let out = m.remap_span(&span, 3).expect("identity keeps span");
+        assert_eq!(out.payload, span.payload);
+    }
+
+    #[test]
+    fn remap_spans_drops_fully_collapsed_and_preserves_order() {
+        // Three spans: first fully inside kept moves, second fully
+        // collapsed (should be dropped), third fully inside kept moves —
+        // ordering of the survivors must match input order.
+        let m = MoveRemap {
+            old_to_new: vec![
+                Some(0..1),
+                Some(1..2),
+                None, // moves 2..4 dropped entirely
+                None,
+                Some(2..3),
+                Some(3..4),
+            ],
+        };
+        let spans = vec![
+            Span::new(0, 2, SpanKind::DepthPass).with_label("first"),
+            Span::new(2, 4, SpanKind::Region).with_label("collapsed"),
+            Span::new(4, 6, SpanKind::DepthPass).with_label("third"),
+        ];
+        let out = m.remap_spans(&spans, 4);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].label, "first");
+        assert_eq!(out[0].start_move, 0);
+        assert_eq!(out[0].end_move, 2);
+        assert_eq!(out[1].label, "third");
+        assert_eq!(out[1].start_move, 2);
+        assert_eq!(out[1].end_move, 4);
     }
 }

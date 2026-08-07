@@ -117,9 +117,14 @@ fn tool_op_compat_checks(
         });
     }
 
-    // End mill on Scallop/Pencil → required ball geometry.
+    // End mill on Scallop/UnifiedFinish/Pencil → required ball geometry.
     if matches!(tool_type, ToolType::EndMill)
-        && matches!(op, OperationConfig::Scallop(_) | OperationConfig::Pencil(_))
+        && matches!(
+            op,
+            OperationConfig::Scallop(_)
+                | OperationConfig::UnifiedFinish(_)
+                | OperationConfig::Pencil(_)
+        )
     {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::COMPAT_END_MILL_SCALLOP_PENCIL),
@@ -130,7 +135,7 @@ fn tool_op_compat_checks(
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
             message:
-                "Scallop and Pencil operations require a ball nose tool for correct surface contact."
+                "Scallop, Unified Finish, and Pencil operations require a ball nose tool for correct surface contact."
                     .to_owned(),
             evidence: None,
             fix: None,

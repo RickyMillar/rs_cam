@@ -416,8 +416,12 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
                 envelope_lo: Some(50.0),
                 envelope_hi: Some(400.0),
             },
+            // R-7: no hole attribution in a hand-built verdict.
+            worst_hole_id: None,
+            cycle: crate::tool_load::drill_gates::DrillCycleKind::Peck,
         }),
         modulation_summary: None,
+        feed_explanation: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert_eq!(diags.len(), 3, "drill gates only, no milling N/A noise");
@@ -463,6 +467,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
         },
         drill_gates: None,
         modulation_summary: None,
+        feed_explanation: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     let chip = diags
@@ -499,6 +504,7 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
         },
         drill_gates: None,
         modulation_summary: None,
+        feed_explanation: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
@@ -533,6 +539,7 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
         },
         drill_gates: None,
         modulation_summary: None,
+        feed_explanation: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());

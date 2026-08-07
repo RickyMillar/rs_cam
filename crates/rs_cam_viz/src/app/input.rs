@@ -251,13 +251,7 @@ impl RsCamApp {
                     s.gui.post.format = format;
                     s.gui.mark_edited();
                     let mut session_post = s.session.post_config().clone();
-                    session_post.format = match format {
-                        crate::state::job::PostFormat::Grbl => "grbl",
-                        crate::state::job::PostFormat::GrblHal => "grblhal",
-                        crate::state::job::PostFormat::LinuxCnc => "linuxcnc",
-                        crate::state::job::PostFormat::Mach3 => "mach3",
-                    }
-                    .to_owned();
+                    session_post.format = format.to_token().to_owned();
                     s.session.set_post_config(session_post);
                 }
                 AppEvent::SetToolLoadOverride {

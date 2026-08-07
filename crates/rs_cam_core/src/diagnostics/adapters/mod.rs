@@ -19,6 +19,7 @@
 //!   `evidence`.
 
 pub mod from_feeds;
+pub mod from_generation;
 pub mod from_model_refs;
 pub mod from_preconditions;
 pub mod from_project_diagnostics;

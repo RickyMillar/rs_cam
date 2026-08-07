@@ -419,12 +419,18 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.08
 max = 0.18
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -444,11 +450,15 @@ mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
 [[cell.invariants]]
+# Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
+# to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
+# invariant would fail its own cited source, at critical. The floor is
+# REPO-AUTHORED hobby-router spindle practice. Value held.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
 unit = "rpm"
-sources = ["onsrud_drill", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -460,19 +470,27 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_hardwood_max"
 expr = "peck_depth"
 ceiling = 15.0
 unit = "mm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_hardwood"
 expr = "peck_over_d"
 ceiling = 5.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
@@ -481,6 +499,10 @@ expr = "rpm > 14500"
 severity = "critical"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "major"
@@ -495,7 +517,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -1626,12 +1648,18 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.10
 max = 0.22
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -1651,11 +1679,15 @@ mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
 [[cell.invariants]]
+# Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
+# to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
+# invariant would fail its own cited source, at critical. The floor is
+# REPO-AUTHORED hobby-router spindle practice. Value held.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
 unit = "rpm"
-sources = ["onsrud_drill", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -1667,19 +1699,27 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_hardwood_max"
 expr = "peck_depth"
 ceiling = 30.0
 unit = "mm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_hardwood"
 expr = "peck_over_d"
 ceiling = 5.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
@@ -1688,6 +1728,10 @@ expr = "rpm > 14500"
 severity = "critical"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "drill_no_peck_cycle"
 expr = "peck_depth >= 20.0"
 severity = "major"
@@ -1705,7 +1749,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -2159,12 +2203,18 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.10
 max = 0.22
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -2184,11 +2234,15 @@ mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
 [[cell.invariants]]
+# Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
+# to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
+# invariant would fail its own cited source, at critical. The floor is
+# REPO-AUTHORED hobby-router spindle practice. Value held.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
 unit = "rpm"
-sources = ["onsrud_drill", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -2200,19 +2254,27 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_softwood_max"
 expr = "peck_depth"
 ceiling = 24.0
 unit = "mm"
-sources = ["onsrud_drill", "fpl_wood_handbook", "vectric_drill_default"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_softwood"
 expr = "peck_over_d"
 ceiling = 8.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
@@ -2221,11 +2283,19 @@ expr = "rpm > 14500"
 severity = "critical"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "major"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "softwood_drill_matches_hardwood_peck"
 expr = "peck_over_d < 3.0"
 severity = "moderate"
@@ -2240,7 +2310,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3243,12 +3313,18 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.05
 max = 0.12
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -3268,11 +3344,15 @@ mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
 [[cell.invariants]]
+# Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
+# to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
+# invariant would fail its own cited source, at critical. The floor is
+# REPO-AUTHORED hobby-router spindle practice. Value held.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
 unit = "rpm"
-sources = ["onsrud_drill", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3284,19 +3364,27 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_microdrill_max"
 expr = "peck_depth"
 ceiling = 6.0
 unit = "mm"
-sources = ["onsrud_drill", "fpl_wood_handbook", "vectric_drill_default"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_microdrill"
 expr = "peck_over_d"
 ceiling = 3.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
@@ -3305,6 +3393,10 @@ expr = "rpm > 14500"
 severity = "critical"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "microdrill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "critical"
@@ -3319,7 +3411,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3738,14 +3830,20 @@ min = 3000
 max = 6000
 mode = "band"
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.15
 max = 0.35
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "fpl_wood_handbook", "vectric_drill_default"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -3769,23 +3867,31 @@ name = "drill_rpm_ceiling_large_d"
 expr = "rpm"
 ceiling = 8000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
+# Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
+# to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
+# invariant would fail its own cited source, at critical. The floor is
+# REPO-AUTHORED hobby-router spindle practice. Value held.
 name = "drill_rpm_floor_large_d"
 expr = "rpm"
 floor = 2000
 unit = "rpm"
-sources = ["onsrud_drill", "fpl_wood_handbook"]
+sources = ["onsrud_drill"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_hardwood"
 expr = "peck_over_d"
 ceiling = 5.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook", "amana_spektra"]
+sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.invariants]]
@@ -3793,7 +3899,7 @@ name = "depth_over_d_hardwood_within_envelope"
 expr = "depth_over_d"
 ceiling = 5.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook"]
+sources = ["onsrud_drill"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
@@ -3807,6 +3913,10 @@ expr = "rpm > 10000"
 severity = "major"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "major"
@@ -3821,7 +3931,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -4517,13 +4627,19 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.04
 max = 0.15
 mode = "band"
 unit = "mm/tooth"
 hobby_derate = 0.7
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -4547,26 +4663,38 @@ name = "drill_rpm_ceiling_endmill_used_as_drill"
 expr = "rpm"
 ceiling = 16000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "moderate"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_hardwood_endmill"
 expr = "peck_over_d"
 ceiling = 3.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook"]
+sources = []
 severity_on_fail = "moderate"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_hardwood_max_endmill"
 expr = "peck_depth"
 ceiling = 18.0
 unit = "mm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "moderate"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "endmill_used_as_drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "moderate"
@@ -4591,7 +4719,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -4716,13 +4844,19 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "gwizard_swood"]
 
+# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
+# band was fitted to the engine's own output — it brackets the shipped
+# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
+# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
+# overlap it at any diameter. Cited sources below are the ROW's subject
+# matter, not the origin of these numbers.
 [cell.expected.feed_per_tooth]
 min = 0.05
 max = 0.18
 mode = "band"
 unit = "mm/tooth"
 hobby_derate = 0.7
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -4750,22 +4884,34 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "moderate"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_over_d_softwood_ball_as_drill"
 expr = "peck_over_d"
 ceiling = 2.0
 unit = ""
-sources = ["onsrud_drill", "fpl_wood_handbook"]
+sources = []
 severity_on_fail = "moderate"
 
 [[cell.invariants]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "peck_depth_under_softwood_max_ball_as_drill"
 expr = "peck_depth"
 ceiling = 10.0
 unit = "mm"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["vectric_drill_default"]
 severity_on_fail = "moderate"
 
 [[cell.anti_patterns]]
+# REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
+# item R-14). No primary source states a per-peck depth-to-diameter limit
+# for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
+# number. The value is held, not moved.
 name = "ball_as_drill_no_peck_cycle"
 expr = "peck_depth >= drill_depth"
 severity = "moderate"
@@ -4793,7 +4939,7 @@ expr = "feed_rate / D"
 floor = 50
 ceiling = 400
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default", "fpl_wood_handbook"]
+sources = ["onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -5084,7 +5230,7 @@ expr = "doc * woc * feed_rate / 60000"
 ceiling = 0.20
 unit = "cm^3/s"
 severity_on_fail = "moderate"
-sources = ["fanuc_kc_table", "aluminum_machining_guide", "shapeoko_wiki"]
+sources = ["sumitomo_kc_table", "aluminum_machining_guide", "shapeoko_wiki"]
 
 [[cell.invariants]]
 name = "envelope_pocket_al_hobby"

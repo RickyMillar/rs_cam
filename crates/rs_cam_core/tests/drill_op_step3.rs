@@ -53,6 +53,13 @@ fn flat_drill(diameter_mm: f64, xy: [f64; 2], top_z: f64, bottom_z: f64) -> Dril
         spindle_rpm: 18_000,
         flute_count: 2,
         material: Material::default(),
+        // R-2: no R-plane air in this fixture — it models the cycle
+        // from the material surface, which is what this test's numbers
+        // were written against. Production sets
+        // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
+        // 5 mm by default); `drill_evidence_wording_d3.rs` is the
+        // sentry that pins the emitter-matching case.
+        retract_z_mm: 0.0,
     }
 }
 

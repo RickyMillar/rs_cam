@@ -69,8 +69,8 @@ pub(crate) use outcome::build_outcome;
 pub use outcome::{OptimizeOutcome, OutcomeKind, ProjectOptimizeReport};
 
 use context::{
-    BaselineRestoreGuard, EvaluationContext, air_cut_pct_from_trace, baseline_rpm_from_trace,
-    cycle_time_from_trace, find_matched_lut_row,
+    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
+    baseline_rpm_from_trace, cycle_time_from_trace, find_matched_lut_row,
 };
 use policy::SearchPolicy;
 
@@ -218,7 +218,8 @@ fn optimize_toolpath_inner(
             return OptimizeOutcome::skipped(RefuseReason::SteadyStateSamplesNotPresent);
         }
     };
-    let baseline_air_cut_pct = air_cut_pct_from_trace(baseline_trace, ctx.toolpath_id);
+    let baseline_air_cut =
+        air_cut_fraction_of_total_runtime_from_trace(baseline_trace, ctx.toolpath_id);
     let baseline_candidate = OptimizeCandidate {
         params: baseline_op.clone(),
         delta: ParamDelta::default(),
@@ -228,7 +229,7 @@ fn optimize_toolpath_inner(
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
         gate_deltas: None,
-        air_cut_pct: baseline_air_cut_pct,
+        air_cut_fraction_of_total_runtime: baseline_air_cut,
     };
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
@@ -837,6 +838,7 @@ mod orchestration_skip_tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -968,6 +970,7 @@ mod orchestration_skip_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         });
 
         let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
@@ -1008,6 +1011,7 @@ mod orchestration_skip_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         });
         // Slot at 6 mm DOC on a 6.35 mm cutter at full π arc — force
         // peaks at Kc × 6 × 6.35. With softwood Kc=6 and the default
@@ -1264,6 +1268,7 @@ mod project_rollup_tests {
             average_mrr_mm3_s: 2.0,
             metrics_not_applicable: false,
             per_kinematics: std::collections::BTreeMap::new(),
+            runtime_by_intent: None,
         }
     }
 
@@ -1291,6 +1296,7 @@ mod project_rollup_tests {
             face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 
@@ -1600,7 +1606,7 @@ mod tests {
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
             gate_deltas: None,
-            air_cut_pct: None,
+            air_cut_fraction_of_total_runtime: None,
         }
     }
 
@@ -1681,6 +1687,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1692,6 +1699,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -1833,6 +1841,7 @@ mod tests {
                 deflection: within_deflection_verdict(0.030),
                 drill_gates: None,
                 modulation_summary: None,
+                feed_explanation: None,
             }
         };
         // Faster but parked at LUT max (chipload 0.07 → distance 1.0
@@ -2236,6 +2245,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         }
     }
 
@@ -2282,6 +2292,7 @@ mod tests {
             deflection: within_deflection_verdict(0.030),
             drill_gates: None,
             modulation_summary: None,
+            feed_explanation: None,
         };
         let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
         let advisory_candidate = synthetic_candidate(2100.0, 75.0, verdict);
@@ -2572,7 +2583,10 @@ mod stage1_grid_tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         }
     }
 

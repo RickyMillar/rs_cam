@@ -89,6 +89,8 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         name: "flat_plate".to_owned(),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://flat_plate.stl"),
         kind: None,
         units: None,
@@ -122,6 +124,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session
         .add_toolpath(0, tc)

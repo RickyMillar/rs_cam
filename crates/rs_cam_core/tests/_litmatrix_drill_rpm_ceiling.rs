@@ -2,10 +2,21 @@
 //! lifts.
 //!
 //! Cell: `flat_3mm_drill_oak`. Pre-fix, the Step 1 drill clamp at
-//! `feeds/mod.rs:447-450` correctly landed RPM at 14000, but two
-//! downstream paths in `calculate()` then lifted it:
-//!   - the vendor-RPM override (Step 2),
-//!   - the `SpindleStrategy::MaxSpeed` speedup (Step 2b).
+//! `feeds/mod.rs:447-450` correctly landed RPM at 14000, and the
+//! `SpindleStrategy::MaxSpeed` speedup (Step 2b) in `calculate()` then
+//! lifted it.
+//!
+//! **Docstring corrected 2026-08-04 (W6 audit §4, item R-17).** This
+//! used to name a second path, "the vendor-RPM override (Step 2)". That
+//! path cannot fire for a drill query: 0 of the 256 bundled LUT rows
+//! carry `operation_family: "drill"`, and `passes_must_match` returns
+//! false immediately on family mismatch, so a drill lookup is a
+//! guaranteed miss and no vendor RPM is ever available to override
+//! with. The sentry still guards something real — the MaxSpeed arm is
+//! live — but half its stated mechanism was fiction. Assertions
+//! unchanged; see `queryable_families_without_rows_are_a_stated_fact`
+//! in `feeds/vendor_lut.rs` for the test that now states the emptiness
+//! rather than leaving it to be rediscovered.
 //!
 //! Result: 14000 × `MAX_SPINDLE_SPEEDUP` (1.5) = 21000 RPM, exactly the
 //! +50% overshoot the literature matrix flagged as

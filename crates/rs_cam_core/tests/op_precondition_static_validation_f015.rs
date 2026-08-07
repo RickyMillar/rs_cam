@@ -52,6 +52,8 @@ fn polygon_model(id: usize) -> LoadedModel {
         name: format!("curve_{id}"),
         mesh: None,
         polygons: Some(Arc::new(vec![unit_square()])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from(format!("synthetic://curve_{id}.svg")),
         kind: None,
         units: None,
@@ -70,6 +72,8 @@ fn mesh_model(id: usize) -> LoadedModel {
         name: format!("surface_{id}"),
         mesh: Some(Arc::new(mesh)),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from(format!("synthetic://surface_{id}.stl")),
         kind: None,
         units: None,
@@ -98,6 +102,7 @@ fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> 
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     }
 }
 

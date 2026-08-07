@@ -50,23 +50,28 @@ pub fn ball_effective_diameter(nominal_d: f64, axial_depth: f64) -> f64 {
     value.max(0.01)
 }
 
-/// Effective cutting diameter for a tapered ball nose end mill.
-///
-/// The local radius at depth `ap` is `tip_r + ap * tan(taper_angle)`.
-pub fn tapered_ball_effective_diameter(
-    nominal_d: f64,
-    tip_r: f64,
-    taper_angle_deg: f64,
-    axial_depth: f64,
-) -> f64 {
-    if nominal_d <= 0.0 || tip_r <= 0.0 {
-        return nominal_d.max(0.01);
-    }
-    let ap = axial_depth.max(0.0);
-    let side_angle_rad = taper_angle_deg.to_radians().max(0.0);
-    let local_radius = tip_r + ap * side_angle_rad.tan();
-    (2.0 * local_radius).clamp(0.01, nominal_d)
-}
+// There is deliberately NO `tapered_ball_effective_diameter` here.
+//
+// C3 (2026-08-02) retired it. It was a STRAIGHT CONE rooted at the tip
+// radius, `2*(tip_r + ap*tan(alpha))`, with no tangency blend — a third
+// implementation of a profile the crate already models exactly twice, in
+// [`crate::tool::MillingCutter::width_at_height`] on `TaperedBallEndmill`
+// and in [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`].
+//
+// It was also inert: every production call site reached it through
+// `feeds::effective_diameter`, which passes the tool's own named diameter as
+// `nominal_d` and derives `tip_r` from the same tool, so `tip_r ==
+// nominal_d / 2` and the whole expression collapsed under its own
+// `.clamp(0.01, nominal_d)` to the constant `nominal_d`. A tapered ball was
+// therefore fed as if it engaged its full tip diameter at any depth, while
+// a plain ball of the same tip got the exact contact circle — up to a 2.1x
+// feed difference for the same physical tip at 0.05 mm DOC.
+//
+// The one caller now asks `ToolGeometryHint::engaged_diameter_at_doc`, which
+// is the same geometry as the cutter trait and is kept honest against it by
+// `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`.
+// The measured cost of the retired model is pinned in
+// `tests/tapered_width_model_parity_c3.rs`.
 
 /// Effective cutting diameter for a bull nose end mill.
 ///
@@ -145,6 +150,108 @@ pub fn doc_derating_scale(ratio: f64) -> f64 {
     } else {
         0.5
     }
+}
+
+/// How strictly a chipload band's bounds must be populated before a
+/// consumer will act on it.
+///
+/// Suggest and the post-sim gates disagree here: Suggest needs a
+/// complete envelope to aim `SuggestAggressiveness` at a specific
+/// point, but the post-sim chipload trip gate can still flag a
+/// breakage risk (chipload above the max) even when a row publishes no
+/// rubbing/burn floor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChiploadBoundPolicy {
+    /// Both bounds must be present, finite, positive, and ordered
+    /// (`min <= max`); a present-but-invalid bound rejects the row
+    /// outright (matches `RequireBoth`'s pre-existing behavior at
+    /// every site that used it — see call sites for detail). Used by
+    /// Suggest's feed-up recalibration (`feeds::calculate` and
+    /// `suggest::recompute_chipload_bounds_for_dpp`) and by
+    /// `tool_load::chipload_envelopes_for_session`'s viewport-coloring
+    /// `Range<f64>`, which structurally can't express a one-sided band.
+    RequireBoth,
+    /// A genuinely absent low bound is acceptable: burn/rubbing can't
+    /// be modeled without a floor, but the high-side breakage bound
+    /// alone is still actionable. A *present-but-invalid* low bound
+    /// still rejects the row (same rule as `RequireBoth` — only
+    /// "missing" degrades to a half-band, not "malformed"). Used by
+    /// the post-sim chipload trip gate
+    /// (`tool_load::chipload::matched_chip_envelope`'s caller).
+    AllowHalfBand,
+}
+
+/// A DOC-derated chipload band (mm/tooth), after [`doc_derating_scale`]
+/// has been applied to whichever raw LUT bounds passed
+/// [`ChiploadBoundPolicy`] validation. `min_mm_per_tooth` is `None`
+/// only when `AllowHalfBand` accepted a row with no published floor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeratedChiploadBand {
+    pub min_mm_per_tooth: Option<f64>,
+    pub max_mm_per_tooth: f64,
+}
+
+impl DeratedChiploadBand {
+    /// Collapse to a both-bounds-required pair (e.g. Suggest's
+    /// `ChiploadBounds`). `None` if the low bound is absent —
+    /// unreachable for bands built with
+    /// `ChiploadBoundPolicy::RequireBoth`, but the conversion stays
+    /// total rather than assuming the invariant.
+    pub fn into_pair(self) -> Option<(f64, f64)> {
+        self.min_mm_per_tooth
+            .map(|min| (min, self.max_mm_per_tooth))
+    }
+}
+
+/// Validate and DOC-derate a vendor LUT row's published chipload
+/// bounds.
+///
+/// Single home for the wrapper around [`doc_derating_scale`] that used
+/// to be independently hand-maintained at four call sites: Suggest's
+/// in-place derivation in `feeds::calculate`, Suggest's post-mutation
+/// re-derivation in `suggest::recompute_chipload_bounds_for_dpp`, the
+/// post-sim chipload trip gate in `tool_load::chipload`, and the
+/// viewport-coloring envelope map in
+/// `tool_load::chipload_envelopes_for_session`. See
+/// `planning/finishing_stack_review_2026-07.md` S.8.
+///
+/// `doc_ratio` is the caller's `axial_doc_mm / effective_diameter_mm`.
+/// Callers guard the zero/negative-diameter case slightly differently
+/// (some floor the diameter before dividing, some short-circuit the
+/// ratio to `0.0`, some force `0.0` outright to bypass derating for an
+/// operation family it doesn't apply to, e.g. drilling) — all are
+/// equivalent inputs here, since [`doc_derating_scale`] maps every
+/// ratio `<= 1.0` to a scale of `1.0`.
+///
+/// Returns `None` when the raw bounds don't satisfy `policy`: the max
+/// bound must always be present, finite, and positive; the min bound,
+/// when present, must additionally be finite, positive, and `<= max`
+/// (a present-but-invalid min rejects the row under both policies —
+/// only an *absent* min is treated as "no floor published" and allowed
+/// through under `AllowHalfBand`).
+pub fn derate_chipload_bounds(
+    min_mm_per_tooth: Option<f64>,
+    max_mm_per_tooth: Option<f64>,
+    doc_ratio: f64,
+    policy: ChiploadBoundPolicy,
+) -> Option<DeratedChiploadBand> {
+    let max = match max_mm_per_tooth {
+        Some(max) if max.is_finite() && max > 0.0 => max,
+        _ => return None,
+    };
+    let min = match min_mm_per_tooth {
+        Some(min) if min.is_finite() && min > 0.0 && min <= max => Some(min),
+        Some(_invalid) => return None,
+        None => None,
+    };
+    if min.is_none() && matches!(policy, ChiploadBoundPolicy::RequireBoth) {
+        return None;
+    }
+    let scale = doc_derating_scale(doc_ratio);
+    Some(DeratedChiploadBand {
+        min_mm_per_tooth: min.map(|m| m * scale),
+        max_mm_per_tooth: max * scale,
+    })
 }
 
 /// Depth tier feed multiplier.
@@ -227,12 +334,13 @@ mod tests {
         assert!(d_eff > 0.0 && d_eff < 6.0, "got {d_eff}");
     }
 
-    #[test]
-    fn test_tapered_ball_effective_scales_with_depth() {
-        let shallow = tapered_ball_effective_diameter(6.0, 0.5, 2.0, 0.2);
-        let deep = tapered_ball_effective_diameter(6.0, 0.5, 2.0, 2.0);
-        assert!(shallow < deep && deep <= 6.0);
-    }
+    // `test_tapered_ball_effective_scales_with_depth` lived here until C3.
+    // It passed `nominal_d = 6.0` with `tip_r = 0.5` — a binding no call site
+    // produces — so it exercised the one branch of the retired straight-cone
+    // model that was not clamped flat, and read healthy while the reachable
+    // behaviour was a constant. Its replacement is the DOC sweep in
+    // `tests/tapered_width_model_parity_c3.rs`, which drives the tapered arm
+    // through `feeds::calculate` at the production binding.
 
     #[test]
     fn test_bull_nose_transitions_to_nominal() {
@@ -311,5 +419,105 @@ mod tests {
         assert!((depth_tier_multiplier(7.0, 6.0) - 0.75).abs() < 1e-9); // >1D
         assert!((depth_tier_multiplier(13.0, 6.0) - 0.50).abs() < 1e-9); // >2D
         assert!((depth_tier_multiplier(19.0, 6.0) - 0.45).abs() < 1e-9); // >3D
+    }
+
+    // ── derate_chipload_bounds (S.8 dedup) ─────────────────────────
+
+    #[test]
+    fn test_derate_chipload_bounds_require_both_scales_both_sides() {
+        let band = derate_chipload_bounds(
+            Some(0.05),
+            Some(0.10),
+            2.0, // doc_ratio -> scale 0.75
+            ChiploadBoundPolicy::RequireBoth,
+        )
+        .unwrap();
+        assert!((band.min_mm_per_tooth.unwrap() - 0.0375).abs() < 1e-9);
+        assert!((band.max_mm_per_tooth - 0.075).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_require_both_rejects_missing_min() {
+        assert!(
+            derate_chipload_bounds(None, Some(0.10), 1.0, ChiploadBoundPolicy::RequireBoth)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_require_both_rejects_missing_max() {
+        assert!(
+            derate_chipload_bounds(Some(0.05), None, 1.0, ChiploadBoundPolicy::RequireBoth)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_allow_half_band_keeps_missing_min() {
+        let band =
+            derate_chipload_bounds(None, Some(0.10), 1.0, ChiploadBoundPolicy::AllowHalfBand)
+                .unwrap();
+        assert!(band.min_mm_per_tooth.is_none());
+        assert!((band.max_mm_per_tooth - 0.10).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_allow_half_band_still_rejects_missing_max() {
+        assert!(
+            derate_chipload_bounds(Some(0.05), None, 1.0, ChiploadBoundPolicy::AllowHalfBand)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_present_but_invalid_min_rejects_under_both_policies() {
+        // min > max: present-but-malformed rejects the whole row, it
+        // does not silently degrade to a half-band.
+        assert!(
+            derate_chipload_bounds(
+                Some(0.20),
+                Some(0.10),
+                1.0,
+                ChiploadBoundPolicy::RequireBoth
+            )
+            .is_none()
+        );
+        assert!(
+            derate_chipload_bounds(
+                Some(0.20),
+                Some(0.10),
+                1.0,
+                ChiploadBoundPolicy::AllowHalfBand
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_derate_chipload_bounds_no_derate_at_or_below_1x_ratio() {
+        let band = derate_chipload_bounds(
+            Some(0.05),
+            Some(0.10),
+            0.4,
+            ChiploadBoundPolicy::RequireBoth,
+        )
+        .unwrap();
+        assert!((band.min_mm_per_tooth.unwrap() - 0.05).abs() < 1e-9);
+        assert!((band.max_mm_per_tooth - 0.10).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_derated_band_into_pair_round_trips() {
+        let band = DeratedChiploadBand {
+            min_mm_per_tooth: Some(0.05),
+            max_mm_per_tooth: 0.10,
+        };
+        assert_eq!(band.into_pair(), Some((0.05, 0.10)));
+
+        let half = DeratedChiploadBand {
+            min_mm_per_tooth: None,
+            max_mm_per_tooth: 0.10,
+        };
+        assert_eq!(half.into_pair(), None);
     }
 }

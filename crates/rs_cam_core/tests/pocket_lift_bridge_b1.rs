@@ -102,6 +102,8 @@ fn build_pocket_session() -> ProjectSession {
         name: "demo_pocket".to_owned(),
         mesh: None,
         polygons: Some(Arc::new(vec![polygon])),
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         path: PathBuf::from("synthetic://demo_pocket.svg"),
         kind: None,
         units: None,
@@ -145,6 +147,7 @@ fn build_pocket_session() -> ProjectSession {
         face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
     };
     session.add_toolpath(0, tc).expect("add pocket toolpath");
 

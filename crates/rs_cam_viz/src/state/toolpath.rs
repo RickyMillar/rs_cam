@@ -10,17 +10,18 @@ pub use catalog::{
 };
 pub use configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
-    ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
+    ClaimsReference, ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
     ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
     RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
-    SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig,
-    ZigzagConfig,
+    SteepShallowConfig, TraceCompensation, TraceConfig, UnifiedFinishConfig, VCarveConfig,
+    WaterlineConfig, ZigzagConfig,
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
-    DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig, ReferenceOffset,
-    ResolvedHeights, RetractStrategy, StockSource, ToolpathId, ToolpathStats,
+    AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus,
+    DressupConfig, DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
+    ReferenceOffset, ResolvedHeights, RestAnalysisConfig, RetractStrategy, StockSource, ToolpathId,
+    ToolpathStats,
 };

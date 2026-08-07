@@ -155,6 +155,51 @@ tr:nth-child(even) {{ background: #24242e; }}
         ),
     );
 
+    // Machine
+    {
+        let machine = session.machine();
+        let (min_rpm, max_rpm) = machine.rpm_range();
+        let _ = std::fmt::Write::write_fmt(
+            &mut html,
+            format_args!(
+                "<h2>Machine</h2>\n\
+                 <table>\n\
+                 <tr><th>Property</th><th>Value</th></tr>\n\
+                 <tr><td>Name</td><td>{}</td></tr>\n\
+                 <tr><td>RPM Range</td><td>{:.0} – {:.0}</td></tr>\n\
+                 <tr><td>Max Feed (travel)</td><td>{:.0} mm/min</td></tr>\n\
+                 <tr><td>Max Shank</td><td>{:.1} mm</td></tr>\n",
+                escape_html(&machine.name),
+                min_rpm,
+                max_rpm,
+                machine.max_feed_mm_min,
+                machine.max_shank_mm,
+            ),
+        );
+        // Kinematics (cycle-time model) — only listed when explicitly
+        // configured; the None default means the naive runtime estimate.
+        if let Some(kin) = machine.kinematics {
+            let accel = match kin.acceleration_xyz_mm_s2 {
+                Some(a) => format!("X {:.0} / Y {:.0} / Z {:.0} mm/s²", a[0], a[1], a[2]),
+                None => format!("{:.0} mm/s² (isotropic)", kin.acceleration_mm_s2),
+            };
+            let jerk = match kin.jerk_mm_s3 {
+                Some(j) => format!("{j:.0} mm/s³"),
+                None => "off (trapezoidal)".to_owned(),
+            };
+            let _ = std::fmt::Write::write_fmt(
+                &mut html,
+                format_args!(
+                    "<tr><td>Acceleration</td><td>{}</td></tr>\n\
+                     <tr><td>Junction deviation ($11)</td><td>{:.3} mm</td></tr>\n\
+                     <tr><td>Jerk limit</td><td>{}</td></tr>\n",
+                    accel, kin.junction_deviation_mm, jerk,
+                ),
+            );
+        }
+        let _ = std::fmt::Write::write_str(&mut html, "</table>\n");
+    }
+
     // Setups
     let setups = session.list_setups();
     if setups.len() > 1 {
@@ -172,6 +217,27 @@ tr:nth-child(even) {{ background: #24242e; }}
                     setup.z_rotation.label(),
                 ),
             );
+            // W9 / P-2: the datum is the operator's zeroing procedure
+            // and the setup sheet is the sheet they work from, so it
+            // prints here now that the value survives a save. Emitted
+            // only when it is non-default, so sheets for projects that
+            // never touched the Setup panel are unchanged.
+            if !setup.datum.is_default() {
+                let _ = std::fmt::Write::write_fmt(
+                    &mut html,
+                    format_args!(
+                        "<p>Datum — XY: {}, Z: {}</p>\n",
+                        escape_html(setup.datum.xy_method.label()),
+                        escape_html(&setup.datum.z_method.label()),
+                    ),
+                );
+                if !setup.datum.notes.is_empty() {
+                    let _ = std::fmt::Write::write_fmt(
+                        &mut html,
+                        format_args!("<p>Datum notes: {}</p>\n", escape_html(&setup.datum.notes)),
+                    );
+                }
+            }
             if i > 0 && setup.face_up != prev_face {
                 let _ = std::fmt::Write::write_fmt(
                     &mut html,

@@ -10,8 +10,8 @@ use crate::state::job::{ModelId, ToolId};
 
 use super::catalog::OperationConfig;
 use super::support::{
-    BoundaryConfig, ComputeStatus, DressupConfig, HeightsConfig, StockSource, ToolpathId,
-    ToolpathStats,
+    BoundaryConfig, ComputeStatus, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
+    ToolpathId, ToolpathStats,
 };
 
 #[derive(Debug, Clone)]
@@ -29,6 +29,8 @@ pub struct ToolpathEntryInit {
     pub boundary: BoundaryConfig,
     /// When true, this toolpath inherits its boundary from the stock default.
     pub boundary_inherit: bool,
+    /// Op-agnostic rest analysis (P2.5). Mirrors `ToolpathConfig::rest_analysis`.
+    pub rest_analysis: RestAnalysisConfig,
     pub coolant: CoolantMode,
     pub pre_gcode: String,
     pub post_gcode: String,
@@ -60,6 +62,7 @@ impl ToolpathEntryInit {
             heights: HeightsConfig::default(),
             boundary: BoundaryConfig::default(),
             boundary_inherit: true,
+            rest_analysis: RestAnalysisConfig::default(),
             coolant: CoolantMode::Off,
             pre_gcode: String::new(),
             post_gcode: String::new(),
@@ -110,6 +113,7 @@ impl ToolpathEntryInit {
             heights: source.heights.clone(),
             boundary: source.boundary.clone(),
             boundary_inherit: source.boundary_inherit,
+            rest_analysis: source.rest_analysis.clone(),
             coolant: source.coolant,
             pre_gcode: source.pre_gcode.clone(),
             post_gcode: source.post_gcode.clone(),
@@ -134,6 +138,8 @@ pub struct ToolpathEntry {
     pub heights: HeightsConfig,
     pub boundary: BoundaryConfig,
     pub boundary_inherit: bool,
+    /// Op-agnostic rest analysis (P2.5). Mirrors `ToolpathConfig::rest_analysis`.
+    pub rest_analysis: RestAnalysisConfig,
     pub coolant: CoolantMode,
     pub pre_gcode: String,
     pub post_gcode: String,
@@ -200,6 +206,7 @@ impl ToolpathEntry {
             heights: init.heights,
             boundary: init.boundary,
             boundary_inherit: init.boundary_inherit,
+            rest_analysis: init.rest_analysis,
             coolant: init.coolant,
             pre_gcode: init.pre_gcode,
             post_gcode: init.post_gcode,

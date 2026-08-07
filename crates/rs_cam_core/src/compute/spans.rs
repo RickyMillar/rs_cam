@@ -6,8 +6,10 @@
 //! module translates the subset that is structurally meaningful into [`Span`]s
 //! for the dressup pipeline.
 
+use std::ops::Range;
+
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
-use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 /// Build the default span vector for an operation's freshly-generated toolpath.
 ///
@@ -48,6 +50,7 @@ where
                 .with_label(label.clone())
                 .with_payload(SpanPayload::Region {
                     region_id: event_index as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }
@@ -132,15 +135,97 @@ pub fn spans_from_cutting_runs(toolpath: &Toolpath, label_prefix: &str) -> Vec<S
     spans
 }
 
+/// One routed node of an operation that stitches independently-generated
+/// region toolpaths together (today: `UnifiedFinish`).
+#[derive(Debug, Clone)]
+pub struct RegionNode {
+    /// The node's half-open move range in the stitched toolpath.
+    pub move_range: Range<usize>,
+    /// The node's strategy ladders down in Z (waterline-style), so its
+    /// cutting runs must keep their relative depth order.
+    pub depth_ordered: bool,
+}
+
+/// Rapid-order barriers for an operation stitched from independently routed
+/// region nodes.
+///
+/// One zero-width [`SpanKind::RapidOrderBarrier`] at each node's first move.
+/// That pins the *router's* cross-node visiting order — the router costs its
+/// junctions against the machine envelope and emits surface links across
+/// them, so its sequence is a decision, not an accident — while leaving the
+/// TSP free to reorder cutting runs *within* a node, which is where the air
+/// actually is (measured on wanaka: 100% of `UnifiedFinish`'s recoverable
+/// inter-fragment travel is intra-region, so the cross-region order was
+/// never the lever).
+///
+/// Nodes flagged `depth_ordered` additionally get a barrier at every change
+/// of nominal cutting Z inside their own range, so a within-node reorder can
+/// never lift a deeper pass above a shallower one.
+///
+/// Surface links need no special handling: they are `Linking` *feed* moves,
+/// so `tsp::optimize_rapid_order` — which only ever splits at rapids — keeps
+/// each link glued to the cuts on both sides of it inside one atomic
+/// segment. A reordered segment is re-approached with a fresh
+/// retract/rapid/plunge, so the link still runs its original surface-following
+/// geometry from its original start point.
+pub fn region_node_barriers(toolpath: &Toolpath, nodes: &[RegionNode]) -> Vec<Span> {
+    let n_moves = toolpath.moves.len();
+    let runs = cutting_runs(toolpath);
+    let mut out: Vec<Span> = Vec::new();
+
+    for node in nodes {
+        if node.move_range.start >= n_moves {
+            continue;
+        }
+        out.push(Span::boundary(
+            node.move_range.start,
+            SpanKind::RapidOrderBarrier,
+        ));
+        if !node.depth_ordered {
+            continue;
+        }
+        // `cutting_runs` back-dates a run's `start_move` by one (it includes
+        // the approach move), so a run opening exactly at the node start
+        // reads as starting just before it and is filtered out here. That is
+        // correct: the node barrier above already covers it.
+        let mut current_z: Option<f64> = None;
+        for run in runs
+            .iter()
+            .filter(|r| r.start_move >= node.move_range.start)
+            .filter(|r| r.start_move < node.move_range.end)
+        {
+            let z = run_nominal_z(toolpath, run).unwrap_or(run.z_min);
+            if current_z.is_some_and(|c| approx_eq(c, z)) {
+                continue;
+            }
+            current_z = Some(z);
+            out.push(Span::boundary(run.start_move, SpanKind::RapidOrderBarrier));
+        }
+    }
+
+    out.sort_unstable_by_key(|s| s.start_move);
+    out.dedup_by_key(|s| s.start_move);
+    out
+}
+
 /// Build structural spans for drill-like operations.
 ///
 /// Holes and individual feed plunges are represented as labeled `Region`
 /// spans rather than `DepthPass` spans. This keeps per-hole global rapid-order
 /// optimization safe: `DepthPass` spans double as TSP barriers, while drill
 /// pecks are local to a hole and should not prevent hole order optimization.
+///
+/// The two nesting levels carry [`RegionSpanRole::DrillHole`] and
+/// [`RegionSpanRole::DrillPeck`] respectively (C4). Before that both were
+/// `GeneratorPass` and the parent/child relation was recoverable only by
+/// parsing the labels — `annotate_drill_spans` did exactly that. The labels
+/// are unchanged and remain what a human reads; nothing structural depends
+/// on their shape any more.
 pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
     let mut spans = operation_spans(toolpath.moves.len());
     let holes = drill_hole_sections(toolpath);
+    // Pecks continue the hole id space rather than restarting it, so a
+    // `region_id` identifies its span uniquely across both roles.
     let mut plunge_region_id = holes.len() as u32;
 
     for (hole_index, hole) in holes.iter().enumerate() {
@@ -149,6 +234,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                 .with_label(format!("Hole {}", hole_index + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: hole_index as u32,
+                    role: RegionSpanRole::DrillHole,
                 }),
         );
 
@@ -158,6 +244,7 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
                     .with_label(format!("Hole {} plunge {}", hole_index + 1, peck_index + 1))
                     .with_payload(SpanPayload::Region {
                         region_id: plunge_region_id,
+                        role: RegionSpanRole::DrillPeck,
                     }),
             );
             plunge_region_id = plunge_region_id.saturating_add(1);
@@ -262,6 +349,7 @@ fn push_run_region_spans(spans: &mut Vec<Span>, runs: &[CutRun], label_prefix: &
                 .with_label(format!("{label_prefix} {}", run_index + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: run_index as u32,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }
@@ -273,7 +361,7 @@ fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
     let mut z_min = f64::INFINITY;
 
     for (move_index, mv) in toolpath.moves.iter().enumerate() {
-        let is_cut = is_cutting_move(&mv.move_type);
+        let is_cut = mv.move_type.is_cutting();
         if is_cut {
             if active_start.is_none() {
                 active_start = Some(move_index.saturating_sub(1));
@@ -285,7 +373,7 @@ fn cutting_runs(toolpath: &Toolpath) -> Vec<CutRun> {
         let next_is_cut = toolpath
             .moves
             .get(move_index + 1)
-            .is_some_and(|next| is_cutting_move(&next.move_type));
+            .is_some_and(|next| next.move_type.is_cutting());
         if active_start.is_some() && is_cut && !next_is_cut {
             let start = active_start.take().unwrap_or(0);
             let end = (move_index + 1).min(toolpath.moves.len());
@@ -307,7 +395,7 @@ fn run_nominal_z(toolpath: &Toolpath, run: &CutRun) -> Option<f64> {
         .enumerate()
         .skip(run.start_move)
         .take(run.end_move.saturating_sub(run.start_move))
-        .filter(|(_, mv)| is_cutting_move(&mv.move_type))
+        .filter(|(_, mv)| mv.move_type.is_cutting())
         .map(|(_, mv)| mv.target.z)
         .min_by(f64::total_cmp)
 }
@@ -317,13 +405,6 @@ fn nearest_level(z: f64, levels: &[f64]) -> Option<f64> {
         .iter()
         .copied()
         .min_by(|left, right| (z - *left).abs().total_cmp(&(z - *right).abs()))
-}
-
-fn is_cutting_move(move_type: &MoveType) -> bool {
-    matches!(
-        move_type,
-        MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
-    )
 }
 
 fn approx_eq(left: f64, right: f64) -> bool {
@@ -481,6 +562,7 @@ fn push_adaptive3d_spans(
                 .with_label(format!("Adaptive region {}", region_id + 1))
                 .with_payload(SpanPayload::Region {
                     region_id: *region_id,
+                    role: RegionSpanRole::GeneratorPass,
                 }),
         );
     }

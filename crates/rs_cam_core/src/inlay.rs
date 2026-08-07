@@ -10,10 +10,11 @@
 //! for the adhesive layer between mating surfaces.
 
 use crate::geo::{P2, P3, point_to_segment_distance};
-use crate::pocket::{PocketParams, pocket_toolpath};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::pocket::{PocketParams, pocket_toolpath_with_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
-use crate::vcarve::{VCarveParams, vcarve_toolpath};
+use crate::vcarve::{VCarveParams, vcarve_toolpath_with_cancel};
 use crate::zigzag::zigzag_lines;
 
 /// Parameters for inlay operations.
@@ -41,6 +42,11 @@ pub struct InlayParams {
     pub safe_z: f64,
     /// Tolerance for scan line sampling (mm).
     pub tolerance: f64,
+    /// Stock-top Z in the emission frame (F-028 / S.2). Both the female
+    /// pocket and male plug cut relative to `top_z - depth`, not world
+    /// Z=0. Callers should pass `heights.top_z` from the resolved height
+    /// stack.
+    pub top_z: f64,
 }
 
 /// Result of an inlay operation: female pocket + male plug toolpaths.
@@ -55,7 +61,15 @@ pub struct InlayResult {
 ///
 /// This is a standard V-carve of the design polygon, optionally followed by
 /// flat-bottom clearing where the V-carve reaches max_depth.
-fn female_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
+///
+/// Cancellable: polls via [`vcarve_toolpath_with_cancel`] (per scan line)
+/// and [`pocket_toolpath_with_cancel`] (per offset ring in the flat-clearing
+/// pass), planning/finishing_stack_review_2026-07.md S.5.
+fn female_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &InlayParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
 
     // Step 1: V-carve the design
@@ -67,8 +81,9 @@ fn female_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
         plunge_rate: params.plunge_rate,
         safe_z: params.safe_z,
         tolerance: params.tolerance,
+        top_z: params.top_z,
     };
-    let vcarve_tp = vcarve_toolpath(polygon, &vcarve_params);
+    let vcarve_tp = vcarve_toolpath_with_cancel(polygon, &vcarve_params, cancel)?;
     tp.moves.extend(vcarve_tp.moves);
 
     // Step 2: Flat area clearing where V-carve hits max_depth
@@ -84,18 +99,18 @@ fn female_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
             let pocket_params = PocketParams {
                 tool_radius: params.flat_tool_radius,
                 stepover: params.stepover,
-                cut_depth: -params.pocket_depth,
+                cut_depth: params.top_z - params.pocket_depth,
                 feed_rate: params.feed_rate,
                 plunge_rate: params.plunge_rate,
                 safe_z: params.safe_z,
                 climb: false,
             };
-            let flat_tp = pocket_toolpath(inset_poly, &pocket_params);
+            let flat_tp = pocket_toolpath_with_cancel(inset_poly, &pocket_params, cancel)?;
             tp.moves.extend(flat_tp.moves);
         }
     }
 
-    tp
+    Ok(tp)
 }
 
 /// Generate the male plug toolpath.
@@ -106,12 +121,22 @@ fn female_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
 ///
 /// An outer boundary rectangle is created around the design, and the annular
 /// region between the design and the boundary is carved with inverted depth.
-fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
+///
+/// Cancellable: checks `cancel` as its very first statement, then polls
+/// once per scan line of the distance-field sampling loop
+/// (planning/finishing_stack_review_2026-07.md S.5), mirroring
+/// `vcarve_toolpath_with_cancel`'s cadence for the same kind of loop.
+fn male_toolpath_with_cancel(
+    polygon: &Polygon2,
+    params: &InlayParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     let mut tp = Toolpath::new();
     let tan_half = params.half_angle.tan();
 
     if tan_half < 1e-10 {
-        return tp;
+        return Ok(tp);
     }
 
     // Compute the bounding box of the design with margin
@@ -141,6 +166,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
     let gap_offset = params.glue_gap / tan_half;
 
     for line in &scan_lines {
+        check_cancel(cancel)?;
         let dx = line[1].x - line[0].x;
         let dy = line[1].y - line[0].y;
         let len = (dx * dx + dy * dy).sqrt();
@@ -165,7 +191,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
             let depth = ((dist - gap_offset) / tan_half + params.flat_depth)
                 .clamp(0.0, params.pocket_depth);
 
-            points.push(P3::new(x, y, -depth));
+            points.push(P3::new(x, y, params.top_z - depth));
         }
 
         if points.is_empty() {
@@ -181,7 +207,7 @@ fn male_toolpath(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
         );
     }
 
-    tp
+    Ok(tp)
 }
 
 /// Compute the minimum distance from a point to the edges of a polygon boundary.
@@ -235,9 +261,23 @@ fn polygon_bounds(polygon: &Polygon2) -> (f64, f64, f64, f64) {
 /// a separate piece of stock. When the plug is glued into the pocket and the
 /// top sanded flush, the inlay design is revealed.
 pub fn inlay_toolpaths(polygon: &Polygon2, params: &InlayParams) -> InlayResult {
-    let female = female_toolpath(polygon, params);
-    let male = male_toolpath(polygon, params);
-    InlayResult { female, male }
+    let never_cancel = || false;
+    // infallible: cancel closure always returns false, so Cancelled is unreachable
+    #[allow(clippy::expect_used)]
+    inlay_toolpaths_with_cancel(polygon, params, &never_cancel)
+        .expect("non-cancellable inlay toolpaths should never be cancelled")
+}
+
+/// Cancellable variant of [`inlay_toolpaths`]
+/// (planning/finishing_stack_review_2026-07.md S.5).
+pub fn inlay_toolpaths_with_cancel(
+    polygon: &Polygon2,
+    params: &InlayParams,
+    cancel: &dyn CancelCheck,
+) -> Result<InlayResult, Cancelled> {
+    let female = female_toolpath_with_cancel(polygon, params, cancel)?;
+    let male = male_toolpath_with_cancel(polygon, params, cancel)?;
+    Ok(InlayResult { female, male })
 }
 
 #[cfg(test)]
@@ -274,6 +314,7 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             tolerance: 0.2,
+            top_z: 0.0,
         }
     }
 
@@ -451,6 +492,69 @@ mod tests {
 
         // With glue gap, male cuts should generally be shallower near boundary
         // (the gap pushes the depth profile outward)
+    }
+
+    #[test]
+    fn test_inlay_cuts_relative_to_stock_top_s2() {
+        // S.2 / F-028: female pocket + male plug must cut relative to
+        // `top_z`, not world Z=0.
+        let sq = square_polygon(20.0);
+        let params = InlayParams {
+            pocket_depth: 3.0,
+            top_z: 5.0,
+            ..default_params()
+        };
+        let result = inlay_toolpaths(&sq, &params);
+
+        for m in &result.female.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                assert!(
+                    m.target.z >= params.top_z - params.pocket_depth - 0.1,
+                    "Female depth {} should not exceed top_z - pocket_depth {}",
+                    m.target.z,
+                    params.top_z - params.pocket_depth
+                );
+                assert!(
+                    m.target.z <= params.top_z + 0.1,
+                    "Female depth {} should not exceed top_z {}",
+                    m.target.z,
+                    params.top_z
+                );
+            }
+        }
+
+        for m in &result.male.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                assert!(
+                    m.target.z >= params.top_z - params.pocket_depth - 0.1,
+                    "Male depth {} should not exceed top_z - pocket_depth {}",
+                    m.target.z,
+                    params.top_z - params.pocket_depth
+                );
+                assert!(
+                    m.target.z <= params.top_z + 0.1,
+                    "Male depth {} should not exceed top_z {}",
+                    m.target.z,
+                    params.top_z
+                );
+            }
+        }
+
+        // Confirm depths are NOT anchored at world Z=0 (i.e. the shift
+        // actually reached emission) by checking at least one cutting
+        // move sits above 0 (top_z=5.0, pocket_depth=3.0 -> range [2, 5]).
+        let any_above_zero = result
+            .female
+            .moves
+            .iter()
+            .chain(result.male.moves.iter())
+            .any(|m| {
+                matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }) && m.target.z > 0.0
+            });
+        assert!(
+            any_above_zero,
+            "Expected at least one cutting move above world Z=0 with top_z=5.0"
+        );
     }
 
     #[test]

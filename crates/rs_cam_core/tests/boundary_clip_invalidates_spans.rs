@@ -6,14 +6,16 @@
 //! and assert the new contract: spans pass through with `spans_valid = true`
 //! and their move ranges remapped to the post-clip output indices.
 
-#![allow(clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing, clippy::expect_used)]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::semantic_trace::ToolpathSemanticRecorder;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+use rs_cam_core::transform_provenance::ReconcileSet;
 
 #[test]
 fn boundary_clip_preserves_spans_when_all_moves_inside() {
@@ -57,7 +59,10 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         2.0,
         20.0,
         &semantic_ctx,
-    );
+        &mut ReconcileSet::new(Some(&recorder), None),
+        &mut GenerationFindings::default(),
+    )
+    .expect("apply_boundary_clip must succeed on a fully-inside toolpath");
 
     assert!(
         clipped.spans_valid,
@@ -105,7 +110,10 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         2.0,
         20.0,
         &semantic_ctx,
-    );
+        &mut ReconcileSet::new(Some(&recorder), None),
+        &mut GenerationFindings::default(),
+    )
+    .expect("apply_boundary_clip must succeed with no input spans");
 
     assert!(clipped.spans_valid);
     assert!(clipped.spans.is_empty());

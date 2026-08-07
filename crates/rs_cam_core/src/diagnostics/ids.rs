@@ -14,6 +14,14 @@
 pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high";
 pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low";
 pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within";
+/// T1.5 (census P-10) — the commanded feed-per-tooth sits above the
+/// matched vendor row's published maximum. This is the ONLY same-unit,
+/// same-stage comparison the chipload pipeline can make (both sides are
+/// a linear advance per tooth); it was computed at `narrate.rs:426` and
+/// discarded. Info-tier per the standing B6 advisory ruling — it reports
+/// a commanded value against an authored band, and does not observe the
+/// cut.
+pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band";
 pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds";
 pub const LOAD_POWER_WITHIN: &str = "load.power.within";
 pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds";
@@ -30,6 +38,16 @@ pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
+/// A gate declined to produce a verdict because the metric it reads is not
+/// measurable on this trace (Checkpoint D Q2 — [`crate::sim_measurability`]).
+/// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
+/// toolpath, it is a statement about the simulation.
+pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
+/// R-12 (census §6.4). A surface-following pass is cutting through material
+/// an upstream operation left standing. The actionable half of the "Rivers
+/// B4" investigation: the simulator's reading was correct all along, and what
+/// was missing was anyone saying what it meant.
+pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
@@ -56,6 +74,76 @@ pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
 pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
 pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
 pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
+/// A ring cascade hit its cap and left the middle of a region uncut.
+/// Sim-independent: measured during generation, not from a dexel run.
+pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
+/// A planned finish band emitted no cutting because height resolution
+/// clipped its Z range away — an unmachined feature. Sim-independent:
+/// measured at generation, and invisible to a dexel run because the
+/// toolpath never attempted the cut.
+pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band";
+/// A planned finish band's Z ladder was SHORTENED by height resolution but
+/// it still cut — the feature is PARTLY machined (C8). The quiet sibling of
+/// [`GEOM_UNMACHINED_BAND`]; the two are disjoint by construction, so a
+/// region reports as at most one of them. Sim-independent for the same
+/// reason: the levels that were never laddered leave no trace in a cut
+/// record.
+pub const GEOM_CLIPPED_BAND: &str = "geom.clipped_band";
+/// A valley centreline runs over material the cutter cannot physically
+/// reach: it wedges on the walls and floats above the floor. Also
+/// sim-independent — the emitted path is exactly what a simulation would
+/// execute; the residual is what nothing ever asked for.
+pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
+/// A loaded project still sets a RETIRED dial at a non-default value: the
+/// field is deserialized so the project loads unchanged, but nothing reads
+/// it any more, so the number the operator tuned is not steering anything.
+/// A ramp-finish descent was RAISED because the cutter could not hold the
+/// commanded depth there — material the pass intended to remove and did not.
+/// Sim-independent: the emitted path is exactly what a simulation would
+/// execute, so a dexel run sees a clean pass and nothing else records that
+/// the descent was truncated.
+pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
+/// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets
+/// under the reference stock it was planned against — it will remove nothing,
+/// at full price in motion. Sim-independent: measured at generation against
+/// the prior stock snapshot, which is the only place both halves (the
+/// reference and the territory) are in scope at once.
+///
+/// A REPORT, not a refusal. An operator may legitimately want a pass that
+/// finds nothing; what is not acceptable is nothing saying so.
+pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
+/// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
+/// `cavalier_contours` panicked and was contained, or one of the offset
+/// module's own input guards refused the ring — rather than collapsing.
+/// Sim-independent: the emitted path is exactly what a simulation would
+/// execute, and the geometry the failed offset would have produced simply
+/// is not in it, so a dexel run sees a clean, shorter pass and nothing else
+/// records that a bound went missing.
+///
+/// A REPORT, not a refusal, everywhere except the boundary-containment layer
+/// (`GEOM_BOUNDARY_CLIP_DROPPED`'s neighbour case), where the same failure
+/// stops the generate instead.
+pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure";
+/// Checkpoint C (Q2 / D-3a option b): a machining-boundary containment was
+/// requested, its offset collapsed to nothing, and the toolpath was therefore
+/// emitted with NO boundary clip at all — not with a smaller one. Usually
+/// benign (the tool is wider than the region it was told to stay inside), and
+/// deliberately still a pass-through rather than a refusal, because deleting
+/// the path instead would break the case the contract was written for. What
+/// it is not is silent any more.
+pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped";
+pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
+/// An operation sized an offset stepover from the canonical reach policy
+/// rather than from any dial, and the value differs from the envelope-scaled
+/// number that used to be used there. Report-only: it says which number is
+/// steering a fan the operator cannot otherwise see.
+pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover";
+/// A/M6: which rest reference a claims/rest pipeline resolved to, and
+/// whether that was pinned or derived from what was in scope. The dial is
+/// three-valued (`auto` derives), so the resolved answer appears in no
+/// config field; and picking the analytic reference over a real machined
+/// prior makes a rest pass re-cut the whole part while looking plausible.
+pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
@@ -113,6 +201,7 @@ pub const ALL: &[&str] = &[
     LOAD_CHIPLOAD_HIGH,
     LOAD_CHIPLOAD_LOW,
     LOAD_CHIPLOAD_WITHIN,
+    LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND,
     LOAD_POWER_EXCEEDS,
     LOAD_POWER_WITHIN,
     LOAD_DEFLECTION_EXCEEDS,
@@ -125,6 +214,8 @@ pub const ALL: &[&str] = &[
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
+    PROJECT_MEASURABILITY_ABSTAINED,
+    PROJECT_CROSSES_STANDING_MATERIAL,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
     FEEDS_SHANK_TOO_LARGE,
@@ -145,6 +236,10 @@ pub const ALL: &[&str] = &[
     GEOM_RETRACT_Z_BELOW_FEED_Z,
     GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     GEOM_PLUNGE_EXCEEDS_FEED,
+    GEOM_STANDING_MATERIAL,
+    GEOM_UNMACHINED_BAND,
+    GEOM_TIP_FLOAT,
+    GEOM_ZERO_REMOVAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     QUALITY_STEPOVER_OVER_80_PCT,

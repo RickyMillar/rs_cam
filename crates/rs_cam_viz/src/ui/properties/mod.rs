@@ -13,8 +13,8 @@ use operations::{
     draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
     draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
     draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
-    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params, draw_vcarve_params,
-    draw_waterline_params, draw_zigzag_params,
+    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
+    draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
 };
 pub use operations::{ToolpathValidationContext, validate_toolpath, validate_toolpath_config};
 
@@ -23,13 +23,41 @@ use crate::state::selection::Selection;
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, DressupEntryStyle,
     HeightContext, HeightsConfig, OperationConfig, ProfileSide, RetractStrategy, SpiralDirection,
-    StockSource, ToolpathEntry, TraceCompensation, UiProcessRole,
+    StockSource, ToolpathEntry, ToolpathId, TraceCompensation, UiProcessRole,
 };
 use crate::ui::AppEvent;
 use crate::ui::automation;
 use crate::ui::components::{
     PrecedenceField, ProvKind, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
 };
+
+/// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
+/// picker: (id, display name, whether its cached result already has
+/// non-empty rest regions ready to use, and — when ready — the regions
+/// themselves). The regions are captured here rather than re-fetched later
+/// so the Machining Boundary panel can run
+/// [`rs_cam_core::rest_field::classify_rest_regions`] against the SOURCE's
+/// regions (sliver-storm / giant-region warning, 2026-07-06 incident)
+/// without new session/runtime plumbing.
+/// The trailing `Option<f64>` is the SOURCE toolpath's covered XY footprint
+/// (mm²), read off its own rest grid — the honest denominator for the
+/// giant-region share (`MEASUREMENT_DOMAINS.md` LH-2). `None` when that
+/// toolpath carries no rest grid: **not measured**, which classifies as
+/// silence (C2 — it used to be spelled `0.0`).
+type BoundaryRestCandidate = (
+    ToolpathId,
+    String,
+    bool,
+    Option<std::sync::Arc<Vec<rs_cam_core::polygon::Polygon2>>>,
+    Option<f64>,
+);
+
+/// The part's covered XY footprint (mm²) measured on a rest grid — the
+/// denominator [`rs_cam_core::rest_field::classify_rest_regions`] requires.
+/// `None` when there is no grid to measure it on.
+fn rest_grid_footprint_area(grid: Option<&rs_cam_core::rest_field::RestGrid>) -> Option<f64> {
+    grid.map(rs_cam_core::rest_field::RestGrid::covered_footprint_area_mm2)
+}
 
 /// Paint a brief blue glow behind a UI region when an MCP parameter was recently changed.
 /// Call this right after allocating the widget/row so the highlight paints behind it.
@@ -309,12 +337,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
                 .collect();
             if let Some((_, setup_data)) = state.session.find_setup_by_id_mut(setup_id.0) {
-                let setup_rt = state.gui.setup_rt_or_default(setup_id.0);
                 setup::draw(
                     ui,
                     setup_id,
                     setup_data,
-                    setup_rt,
                     pin_count,
                     has_flip_axis,
                     &all_models,
@@ -394,9 +420,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|t| (t.id, t.summary(), t.diameter))
                 .collect();
-            // Filter models by setup's model_ids (empty = all).
-            // For now use all models — setup model scoping will be
-            // wired via SetupRuntime in a later pass.
+            // NOT filtered by the owning setup's `model_ids` (empty =
+            // all). W9 / P-2 gave that field a home on `SetupData` and
+            // on the wire, so the operator's choice now survives a save
+            // — but this dropdown still lists every model. Stated
+            // rather than silently fixed: filtering here changes which
+            // models a toolpath can be reassigned to, which is a UI
+            // behaviour change P-2 was not scoped to make.
             let models: Vec<_> = state
                 .session
                 .models()
@@ -410,6 +440,60 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .iter()
                 .map(|t| (t.id, t.clone()))
                 .collect();
+            // Candidate source toolpaths for a `DerivedRestRegions` boundary
+            // (P2.2): every other toolpath in the session, plus whether its
+            // last cached result already has non-empty rest regions ready to
+            // use. Toolpaths without a ready result are still selectable —
+            // generation fails hard with a clear message if the source turns
+            // out to have no usable rest regions.
+            let boundary_source_candidates: Vec<BoundaryRestCandidate> = state
+                .session
+                .toolpath_configs()
+                .iter()
+                .filter(|tc| tc.id != id)
+                .map(|tc| {
+                    let cached = state
+                        .gui
+                        .toolpath_rt
+                        .get(&tc.id)
+                        .and_then(|rt| rt.result.as_ref());
+                    let cached_regions = cached.and_then(|r| r.annotated.rest_regions.clone());
+                    // LH-2: the source's OWN rest-grid footprint travels with
+                    // its regions, so the pathology share has an honest
+                    // denominator without new session plumbing.
+                    let footprint_area = rest_grid_footprint_area(
+                        cached.and_then(|r| r.annotated.rest_grid.as_deref()),
+                    );
+                    let ready = cached_regions
+                        .as_ref()
+                        .is_some_and(|regions| !regions.is_empty());
+                    (
+                        tc.id,
+                        tc.name.clone(),
+                        ready,
+                        cached_regions,
+                        footprint_area,
+                    )
+                })
+                .collect();
+
+            // Names of toolpaths that consume THIS toolpath's rest-depth
+            // analysis as their machining boundary (P2 pencil-panel
+            // consolidation, §2/§3): drives the Rest Analysis section's
+            // demand-driven auto-enable + "Producing rest regions for: ..."
+            // label instead of a plain checkbox.
+            let rest_region_consumer_names: Vec<String> = state
+                .session
+                .rest_region_consumers(id)
+                .into_iter()
+                .filter_map(|consumer_id| {
+                    state
+                        .session
+                        .find_toolpath_config_by_id(consumer_id)
+                        .map(|(_, tc)| tc.name.clone())
+                })
+                .collect();
+
             let validation = ToolpathValidationContext::from_session(&state.session);
             let material = state.session.stock_config().material.clone();
             let machine = state.session.machine().clone();
@@ -433,6 +517,24 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 })
                 .unwrap_or(false);
 
+            // (Removed 2026-07-29, LH-2.) The rest-region pathology caption
+            // used to divide a rest-region area by the model's mesh XY
+            // BOUNDING RECTANGLE — a mask mismatch that under-reads every
+            // non-rectangular part by roughly its bbox fill ratio, so the
+            // "single giant region" warning fired late or never. The
+            // denominator is now each toolpath's own covered rest-grid
+            // footprint (`rest_grid_footprint_area`), measured on the same
+            // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
+
+            // Snapshot the toolpath model's drill targets + layers (DXF point /
+            // circle-centre picking) for the drill-op panels.
+            let drill_layers: Vec<String> = model_for_panel
+                .map(|m| (*m.layers).clone())
+                .unwrap_or_default();
+            let drill_targets: Vec<rs_cam_core::dxf_input::DrillTarget> = model_for_panel
+                .map(|m| (*m.drill_targets).clone())
+                .unwrap_or_default();
+
             // Snapshot height context before mutable borrow. Use the shared
             // helper so model_top/bottom_z are in the setup-local frame.
             let height_ctx = state
@@ -449,6 +551,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 .session
                 .find_toolpath_config_by_id(id)
                 .map(|(_, tc)| format!("{:?}", tc.heights));
+            // P2.2: boundary source/containment/offset changes (including
+            // picking a `DerivedRestRegions` source toolpath) also affect the
+            // generated toolpath, so they need the same stale_since marking
+            // as op/heights edits below.
+            let boundary_before = state
+                .session
+                .find_toolpath_config_by_id(id)
+                .map(|(_, tc)| format!("{:?}", tc.boundary));
 
             // Pre-compute stale-default defects for this TP so the panel
             // can render the validator banner without needing a session
@@ -517,6 +627,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &tools,
                     &models,
                     &tool_configs,
+                    &boundary_source_candidates,
+                    &rest_region_consumer_names,
                     &validation,
                     &material,
                     &machine,
@@ -529,6 +641,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
                     tab_override,
+                    &drill_layers,
+                    &drill_targets,
                     events,
                 );
 
@@ -539,6 +653,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             }
 
             // B3a: set stale_since when parameters or heights change
+            // Demand-driven rest-analysis producer hook (P2 pencil-panel
+            // consolidation): captured here (while `tc` is borrowed) and
+            // applied below, once the session borrow above is released —
+            // see the comment on the follow-up block.
+            let mut auto_enable_rest_source: Option<ToolpathId> = None;
             if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
                 let op_changed = op_before.as_ref().is_some_and(|b| {
                     *b != serde_json::to_string(&tc.operation).unwrap_or_default()
@@ -546,7 +665,10 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 let heights_changed = heights_before
                     .as_ref()
                     .is_some_and(|b| *b != format!("{:?}", tc.heights));
-                if op_changed || heights_changed {
+                let boundary_changed = boundary_before
+                    .as_ref()
+                    .is_some_and(|b| *b != format!("{:?}", tc.boundary));
+                if op_changed || heights_changed || boundary_changed {
                     if let Some(rt) = state.gui.toolpath_rt.get_mut(&id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }
@@ -556,6 +678,32 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     // Trigger GPU re-upload so height plane positions update
                     events.push(AppEvent::StockChanged);
                 }
+                if boundary_changed
+                    && tc.boundary.enabled
+                    && let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &tc.boundary.source
+                {
+                    auto_enable_rest_source = Some(*source_toolpath_id);
+                }
+            }
+            // The GUI's boundary picker (Machining Boundary section, above)
+            // writes `tc.boundary` directly via `write_entry_config_to_session`
+            // rather than going through `session::set_boundary_config` — the
+            // MCP entry point (`app/mcp.rs::mcp_set_boundary_config`) is the
+            // one caller of that setter. Run the same demand-driven producer
+            // hook here so picking "Rest Regions" in the GUI has the same
+            // effect: the source toolpath's rest analysis turns on and its
+            // cached result invalidates, so it actually produces regions on
+            // next generation.
+            if let Some(source_id) = auto_enable_rest_source
+                && state
+                    .session
+                    .auto_enable_rest_analysis_for_source(source_id)
+            {
+                if let Some(rt) = state.gui.toolpath_rt.get_mut(&source_id) {
+                    rt.stale_since = Some(std::time::Instant::now());
+                }
+                state.gui.mark_edited();
             }
         }
     }
@@ -927,52 +1075,37 @@ fn draw_simulation_panel(ui: &mut egui::Ui, state: &mut AppState, _events: &mut 
     }
 }
 
-/// Machine-library UX: reference a reusable machine file (single source
-/// of truth) or save the current machine into the library. Selecting a
-/// library machine loads its values and links the project to it
-/// (`machine_ref`); the link is persisted on save and the library file
-/// overrides the inline copy on reload.
+/// Machine-library UX (SNAPSHOT model, like the tool library): import a
+/// machine *out of* the library (copied into the project's inline machine,
+/// no live link) or save the current machine into the library as a
+/// reusable starting point. Later edits to a library file never reach
+/// existing projects — re-import to pick up a change.
 fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     let status_id = egui::Id::new("machine_lib_status");
     let name_id = egui::Id::new("machine_lib_save_name");
 
     let machines = rs_cam_core::machine_library::list();
-    let current_ref = state.session.machine_ref().map(str::to_owned);
 
     ui.horizontal(|ui| {
         ui.label("Library:");
-        let selected_text = current_ref
-            .clone()
-            .unwrap_or_else(|| "— none (inline copy) —".to_owned());
-        egui::ComboBox::from_id_salt("machine_library_ref")
-            .selected_text(selected_text)
+        egui::ComboBox::from_id_salt("machine_library_import")
+            .selected_text("Import a machine…")
             .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(current_ref.is_none(), "— none (inline copy) —")
-                    .clicked()
-                {
-                    state.session.set_machine_ref(None);
-                    state.gui.mark_edited();
-                }
                 for name in &machines {
-                    let is_sel = current_ref.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(is_sel, name).clicked() {
+                    if ui.selectable_label(false, name).clicked() {
                         match rs_cam_core::machine_library::load(name) {
                             Ok(profile) => {
+                                // Snapshot copy into the inline machine — no ref.
                                 *state.session.machine_mut() = profile;
-                                state.session.set_machine_ref(Some(name.clone()));
                                 events.push(AppEvent::MachineChanged);
                                 ui.data_mut(|d| {
-                                    d.insert_temp(
-                                        status_id,
-                                        format!("Loaded '{name}' from library"),
-                                    );
+                                    d.insert_temp(status_id, format!("Imported '{name}' (copy)"));
                                 });
                             }
                             Err(e) => {
                                 tracing::error!("machine library load failed: {e}");
                                 ui.data_mut(|d| {
-                                    d.insert_temp(status_id, format!("Load failed: {e}"));
+                                    d.insert_temp(status_id, format!("Import failed: {e}"));
                                 });
                             }
                         }
@@ -981,6 +1114,9 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
             });
         if machines.is_empty() {
             ui.label(egui::RichText::new("(library empty)").small().weak());
+        }
+        if ui.button("Manage…").clicked() {
+            events.push(AppEvent::OpenMachineLibrary);
         }
     });
 
@@ -1002,7 +1138,6 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
         {
             match rs_cam_core::machine_library::save(&trimmed, state.session.machine()) {
                 Ok(path) => {
-                    state.session.set_machine_ref(Some(trimmed.clone()));
                     state.gui.mark_edited();
                     ui.data_mut(|d| {
                         d.insert_temp(status_id, format!("Saved to {}", path.display()));
@@ -1016,15 +1151,6 @@ fn draw_machine_library_row(ui: &mut egui::Ui, state: &mut AppState, events: &mu
         }
     });
 
-    if let Some(name) = state.session.machine_ref() {
-        ui.label(
-            egui::RichText::new(format!(
-                "Linked to library '{name}' — edits to the file apply on reload"
-            ))
-            .small()
-            .color(egui::Color32::from_rgb(120, 160, 120)),
-        );
-    }
     if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
         ui.label(egui::RichText::new(msg).small().weak());
     }
@@ -1052,10 +1178,8 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
                         .selectable_label(selected_idx == Some(i), *label)
                         .clicked()
                     {
+                        // Snapshot: copy the preset into the inline machine.
                         *state.session.machine_mut() = presets[i].1.clone();
-                        // Loading a built-in preset breaks any library
-                        // link — the values no longer come from the file.
-                        state.session.set_machine_ref(None);
                         events.push(AppEvent::MachineChanged);
                     }
                 }
@@ -1066,7 +1190,11 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
 
     ui.add_space(8.0);
 
-    // Show machine specs (read-only)
+    // Machine specs — RPM/Power stay read-only (preset/spindle-driven);
+    // Max Feed (travel rate, $110-class) and Max Shank are editable.
+    let mut max_feed = state.session.machine().max_feed_mm_min;
+    let mut max_shank = state.session.machine().max_shank_mm;
+    let mut specs_changed = false;
     egui::Grid::new("machine_specs")
         .num_columns(2)
         .spacing([8.0, 4.0])
@@ -1087,16 +1215,39 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
             ui.end_row();
 
             ui.label("Max Feed:");
-            ui.label(format!(
-                "{:.0} mm/min",
-                state.session.machine().max_feed_mm_min
-            ));
+            specs_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut max_feed)
+                        .speed(50.0)
+                        .range(100.0..=30000.0)
+                        .suffix(" mm/min"),
+                )
+                .on_hover_text(
+                    "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
+                )
+                .changed();
             ui.end_row();
 
             ui.label("Max Shank:");
-            ui.label(format!("{:.1} mm", state.session.machine().max_shank_mm));
+            specs_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut max_shank)
+                        .speed(0.1)
+                        .range(1.0..=25.0)
+                        .suffix(" mm"),
+                )
+                .changed();
             ui.end_row();
         });
+    if specs_changed {
+        let m = state.session.machine_mut();
+        m.max_feed_mm_min = max_feed;
+        m.max_shank_mm = max_shank;
+        events.push(AppEvent::MachineChanged);
+    }
+
+    ui.add_space(8.0);
+    draw_machine_kinematics(ui, state, events);
 
     ui.add_space(8.0);
 
@@ -1176,6 +1327,239 @@ fn draw_machine_panel(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<
     );
 }
 
+/// Kinematics editor (per-axis accel + junction deviation + optional
+/// jerk) plus the GRBL `$$` import. Editing a value or applying an import
+/// materializes the machine's `kinematics: Some(..)`, which opts the live
+/// sim into the acceleration-aware cycle-time model (the `None` default
+/// is the F-034 feature flag that keeps runtime byte-identical).
+fn draw_machine_kinematics(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    ui.label(
+        egui::RichText::new("Kinematics (cycle-time model)")
+            .strong()
+            .color(egui::Color32::from_rgb(180, 180, 195)),
+    );
+
+    if state.session.machine().kinematics.is_none() {
+        ui.label(
+            egui::RichText::new(
+                "Not set — showing defaults. Editing a value or importing $$ enables the \
+                 acceleration-aware cycle-time model for this machine.",
+            )
+            .small()
+            .color(egui::Color32::from_rgb(200, 170, 90)),
+        );
+    }
+
+    let mut kin = state.session.machine().effective_kinematics();
+    let scalar = kin.acceleration_mm_s2.max(1.0);
+    let mut axes = kin
+        .acceleration_xyz_mm_s2
+        .unwrap_or([scalar, scalar, scalar]);
+    let mut delta = kin.junction_deviation_mm;
+    let mut jerk_enabled = kin.jerk_mm_s3.is_some();
+    let mut jerk_val = kin.jerk_mm_s3.unwrap_or(500.0);
+    let mut changed = false;
+
+    let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> bool {
+        ui.label(label);
+        let edited = ui
+            .add(
+                egui::DragValue::new(v)
+                    .speed(5.0)
+                    .range(10.0..=20000.0)
+                    .suffix(" mm/s²"),
+            )
+            .on_hover_text(hint)
+            .changed();
+        ui.end_row();
+        edited
+    };
+
+    egui::Grid::new("machine_kinematics")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            changed |= accel_row(ui, "Accel X:", &mut axes[0], "GRBL $120");
+            changed |= accel_row(ui, "Accel Y:", &mut axes[1], "GRBL $121");
+            changed |= accel_row(ui, "Accel Z:", &mut axes[2], "GRBL $122");
+
+            ui.label("Junction dev:");
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut delta)
+                        .speed(0.001)
+                        .range(0.001..=1.0)
+                        .max_decimals(4)
+                        .suffix(" mm"),
+                )
+                .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex")
+                .changed();
+            ui.end_row();
+
+            ui.label("Jerk limit:");
+            ui.horizontal(|ui| {
+                changed |= ui.checkbox(&mut jerk_enabled, "").changed();
+                if jerk_enabled {
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut jerk_val)
+                                .speed(10.0)
+                                .range(1.0..=100_000.0)
+                                .suffix(" mm/s³"),
+                        )
+                        .changed();
+                } else {
+                    ui.label(egui::RichText::new("off (trapezoidal)").small().weak());
+                }
+            });
+            ui.end_row();
+        });
+
+    if changed {
+        kin.acceleration_xyz_mm_s2 = Some(axes);
+        kin.acceleration_mm_s2 = (axes[0] + axes[1] + axes[2]) / 3.0;
+        kin.junction_deviation_mm = delta;
+        kin.jerk_mm_s3 = if jerk_enabled { Some(jerk_val) } else { None };
+        state.session.machine_mut().kinematics = Some(kin);
+        events.push(AppEvent::MachineChanged);
+    }
+
+    ui.add_space(4.0);
+    draw_grbl_import(ui, state, events);
+}
+
+/// "Import GRBL `$$`" — paste or load a settings dump, preview the mapped
+/// values, then Apply (the confirm step; reversible via the machine undo
+/// snapshot). Applying sets kinematics + Max Feed and breaks any library
+/// link, since the values are now inline.
+fn draw_grbl_import(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    let buf_id = egui::Id::new("machine_grbl_paste");
+    let status_id = egui::Id::new("machine_grbl_status");
+
+    ui.collapsing("Import GRBL $$", |ui| {
+        let mut buf: String = ui.data(|d| d.get_temp::<String>(buf_id).unwrap_or_default());
+
+        ui.horizontal(|ui| {
+            if ui.button("Load from file…").clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("GRBL settings", &["txt", "nc", "gcode", "cfg"])
+                    .pick_file()
+            {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        buf = content;
+                        ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+                    }
+                    Err(e) => {
+                        tracing::error!("read $$ file failed: {e}");
+                        ui.data_mut(|d| {
+                            d.insert_temp(status_id, format!("Read failed: {e}"));
+                        });
+                    }
+                }
+            }
+            if ui.button("Clear").clicked() {
+                buf.clear();
+                ui.data_mut(|d| {
+                    d.insert_temp(buf_id, String::new());
+                    d.insert_temp(status_id, String::new());
+                });
+            }
+        });
+
+        let resp = ui.add(
+            egui::TextEdit::multiline(&mut buf)
+                .desired_rows(4)
+                .desired_width(f32::INFINITY)
+                .hint_text("Paste $$ output here ($11=…, $120=…, …)"),
+        );
+        if resp.changed() {
+            ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+        }
+
+        if !buf.trim().is_empty() {
+            let imp = rs_cam_core::machine_kinematics::MachineKinematics::from_grbl_settings(&buf);
+            let default_delta = rs_cam_core::machine_kinematics::default_junction_deviation_mm();
+            let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
+                || imp.max_feed_mm_min.is_some()
+                || imp.arc_tolerance_mm.is_some()
+                || imp.max_spindle_rpm.is_some()
+                || (imp.kinematics.junction_deviation_mm - default_delta).abs() > 1e-12;
+
+            if !recognized {
+                ui.label(
+                    egui::RichText::new("No GRBL settings recognised in this text.")
+                        .small()
+                        .color(egui::Color32::from_rgb(220, 120, 120)),
+                );
+            } else {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("Will apply:").small().strong());
+                if let Some(a) = imp.kinematics.acceleration_xyz_mm_s2 {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "• Accel X/Y/Z = {:.0}/{:.0}/{:.0} mm/s²",
+                            a[0], a[1], a[2]
+                        ))
+                        .small(),
+                    );
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "• Junction dev ($11) = {:.3} mm",
+                        imp.kinematics.junction_deviation_mm
+                    ))
+                    .small(),
+                );
+                if let Some(mf) = imp.max_feed_mm_min {
+                    let cur = state.session.machine().max_feed_mm_min;
+                    ui.label(
+                        egui::RichText::new(format!("• Max Feed: {cur:.0} → {mf:.0} mm/min"))
+                            .small(),
+                    );
+                }
+                if let Some(at) = imp.arc_tolerance_mm {
+                    ui.label(
+                        egui::RichText::new(format!("• Arc tol ($12) = {at:.3} mm (advisory)"))
+                            .small()
+                            .weak(),
+                    );
+                }
+                if imp.ignored_count > 0 {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "({} unrelated $ settings ignored)",
+                            imp.ignored_count
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                }
+
+                if ui.button("Apply import").clicked() {
+                    let max_feed = imp.max_feed_mm_min;
+                    let m = state.session.machine_mut();
+                    m.kinematics = Some(imp.kinematics);
+                    if let Some(mf) = max_feed {
+                        m.max_feed_mm_min = mf;
+                    }
+                    events.push(AppEvent::MachineChanged);
+                    ui.data_mut(|d| {
+                        d.insert_temp(buf_id, String::new());
+                        d.insert_temp(status_id, "Imported $$ settings".to_owned());
+                    });
+                }
+            }
+        }
+
+        if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id))
+            && !msg.is_empty()
+        {
+            ui.label(egui::RichText::new(msg).small().weak());
+        }
+    });
+}
+
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
 /// Run the LUT calculator (read-only), cache the result on the entry,
 /// and draw the feeds card. The calculator never writes to the operation
@@ -1192,6 +1576,7 @@ fn calculate_and_apply_feeds(
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     project_default_rpm: u32,
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     match rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &entry.operation,
@@ -1204,7 +1589,15 @@ fn calculate_and_apply_feeds(
     ) {
         Ok(result) => {
             entry.feeds_result = Some(result);
-            draw_feeds_card(ui, entry, tool, machine, material, project_default_rpm);
+            draw_feeds_card(
+                ui,
+                entry,
+                tool,
+                machine,
+                material,
+                project_default_rpm,
+                load_verdict,
+            );
         }
         Err(e) => {
             // Engine refused — the tool × operation combination is
@@ -1253,6 +1646,81 @@ fn calculate_and_apply_feeds(
     }
 }
 
+/// F-039 — read-only "solved operating point" for this toolpath: the single
+/// constraint that bound feed across the most cuts, how far modulation moved
+/// the feed off the commanded value, and how much of the path it touched. The
+/// *measured* counterpart to the Suggest-predicted "Derived" rollup; the data
+/// is the per-toolpath modulation summary captured during simulation
+/// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6). Display-only — it is
+/// the optimizer's result, not a field to edit.
+fn draw_operating_point(ui: &mut egui::Ui, summary: &rs_cam_core::tool_load::ModulationSummary) {
+    use rs_cam_core::tool_load::ModulationStrategyTag;
+    ui.named_section("OPERATING POINT \u{2014} measured", |ui| {
+        // Hero line: the one constraint that bound feed on the most cuts —
+        // the "why" behind these feeds.
+        if let Some((binding, frac)) = summary
+            .binding_constraint_distribution
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Limited by {} ({:.0}% of cuts)",
+                    binding.label(),
+                    frac * 100.0
+                ))
+                .strong(),
+            );
+        }
+        egui::Grid::new("feeds_card_operating_point")
+            .num_columns(2)
+            .spacing([8.0, 3.0])
+            .show(ui, |ui| {
+                ui.label("Feed vs commanded:");
+                let d = summary.median_feed_delta_pct;
+                let sign = if d >= 0.0 { "+" } else { "" };
+                ui.label(format!("{sign}{d:.0}% median"));
+                ui.end_row();
+
+                ui.label("Modulated:");
+                ui.label(format!(
+                    "{} / {} cuts",
+                    summary.moves_touched, summary.moves_total
+                ));
+                ui.end_row();
+
+                ui.label("Strategy:");
+                let strat = match summary.strategy {
+                    ModulationStrategyTag::ConstrainedMax => "constrained-max",
+                    ModulationStrategyTag::BandMid => "band-mid",
+                };
+                ui.label(format!(
+                    "{strat} \u{00b7} aggr {:.1}",
+                    summary.aggressiveness
+                ));
+                ui.end_row();
+            });
+        // Full per-constraint breakdown, collapsed by default — only when more
+        // than one constraint actually bound somewhere on the path.
+        if summary.binding_constraint_distribution.len() > 1 {
+            egui::CollapsingHeader::new("Constraint breakdown")
+                .default_open(false)
+                .show(ui, |ui| {
+                    for (binding, frac) in &summary.binding_constraint_distribution {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}: {:.0}%",
+                                binding.label(),
+                                frac * 100.0
+                            ))
+                            .small(),
+                        );
+                    }
+                });
+        }
+    });
+}
+
 fn draw_feeds_card(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -1260,9 +1728,15 @@ fn draw_feeds_card(
     machine: &rs_cam_core::machine::MachineProfile,
     material: &rs_cam_core::material::Material,
     project_default_rpm: u32,
+    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) {
     ui.add_space(8.0);
-    ui.collapsing("Feeds & Speeds", |ui| {
+    // Open by default: on the Feeds & Speeds tab the operator wants the feed
+    // picture — including the read-only "operating point" the F-039 optimizer
+    // solved — visible without an extra expand.
+    egui::CollapsingHeader::new("Feeds & Speeds")
+        .default_open(true)
+        .show(ui, |ui| {
         // Read-only snapshot of the cached LUT result so we can borrow
         // `entry.operation` mutably from the recipe buttons below.
         let Some(result) = entry.feeds_result.clone() else {
@@ -1440,6 +1914,16 @@ fn draw_feeds_card(
             mrr_row(ui, result.mrr_mm3_min);
         });
 
+        // ── Operating point (read-only) — the F-039 optimizer's MEASURED
+        // result for this path, the post-sim counterpart to the Suggest-
+        // predicted "Derived" rollup above. Present only after a simulation
+        // where adaptive feed modulation actually ran (the rollup rides on
+        // the load verdict). No edit affordances: it's the solved result,
+        // not a field to tune.
+        if let Some(summary) = load_verdict.and_then(|v| v.modulation_summary.as_ref()) {
+            draw_operating_point(ui, summary);
+        }
+
         {
             // W4.1: provenance is now per field (the compact badges on the Feed
             // / Plunge rows above, read from the stored `feeds_provenance`). The
@@ -1478,9 +1962,16 @@ fn draw_feeds_card(
                     rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor {
                         requested,
                         floor,
-                    } => format!(
-                        "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
-                    ),
+                        band_capped_from,
+                    } => match band_capped_from {
+                        None => format!(
+                            "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
+                        ),
+                        Some(global) => format!(
+                            "Chipload raised to band ceiling: {requested:.3} -> {floor:.3}mm/tooth \
+                             (band is entirely below the {global:.3} rubbing floor)"
+                        ),
+                    },
                     rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                         requested,
                         actual,
@@ -2662,6 +3153,7 @@ fn build_entry_from_session_and_gui(
         heights: tc.heights.clone(),
         boundary: tc.boundary.clone(),
         boundary_inherit: tc.boundary_inherit,
+        rest_analysis: tc.rest_analysis.clone(),
         coolant: tc.coolant,
         pre_gcode: tc.pre_gcode.clone().unwrap_or_default(),
         post_gcode: tc.post_gcode.clone().unwrap_or_default(),
@@ -2700,6 +3192,7 @@ fn write_entry_config_to_session(
         tc.heights = entry.heights.clone();
         tc.boundary = entry.boundary.clone();
         tc.boundary_inherit = entry.boundary_inherit;
+        tc.rest_analysis = entry.rest_analysis.clone();
         tc.coolant = entry.coolant;
         tc.pre_gcode = if entry.pre_gcode.is_empty() {
             None
@@ -2732,6 +3225,35 @@ fn write_entry_runtime_to_gui(entry: &ToolpathEntry, gui: &mut crate::state::run
     }
 }
 
+/// Operator-facing caption text for a [`rs_cam_core::rest_field::RestRegionPathology`]
+/// — shared by the Rest Analysis section (this toolpath's own regions) and
+/// the Machining Boundary section (a `DerivedRestRegions` source's regions).
+/// See `crates/rs_cam_core/src/rest_field.rs` for the underlying
+/// classification (2026-07-06 sliver-storm incident).
+fn rest_region_pathology_caption(
+    pathology: rs_cam_core::rest_field::RestRegionPathology,
+) -> String {
+    match pathology {
+        rs_cam_core::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
+            "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
+             raise min_valley_depth."
+        ),
+        rs_cam_core::rest_field::RestRegionPathology::SingleGiantRegion {
+            part_footprint_fraction,
+        } => {
+            // LH-2: the percentage is of the part's COVERED XY FOOTPRINT (the
+            // rest grid's solved cells), not of its bounding rectangle — say
+            // so, because the two differ by ~2x on any non-rectangular part.
+            format!(
+                "⚠ Rest region covers {:.0}% of the part footprint — regions barely restrict \
+                 the fine pass; raise min_valley_depth, or use the machined-stock reference \
+                 (Use remaining stock) for an honest rest picture.",
+                part_footprint_fraction * 100.0
+            )
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -2739,6 +3261,11 @@ fn draw_toolpath_panel(
     tools: &[(crate::state::job::ToolId, String, f64)],
     models: &[(crate::state::job::ModelId, String)],
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
+    boundary_source_candidates: &[BoundaryRestCandidate],
+    // Names of toolpaths currently consuming THIS one's rest-depth analysis
+    // as a `DerivedRestRegions` machining boundary (P2 pencil-panel
+    // consolidation, §2) — empty when nothing depends on it yet.
+    rest_region_consumers: &[String],
     validation: &ToolpathValidationContext,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
@@ -2751,6 +3278,8 @@ fn draw_toolpath_panel(
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     tab_override: Option<ToolpathTab>,
+    drill_layers: &[String],
+    drill_targets: &[rs_cam_core::dxf_input::DrillTarget],
     events: &mut Vec<AppEvent>,
 ) {
     // ── Shared header (always visible above tabs) ───────────────────
@@ -2777,7 +3306,8 @@ fn draw_toolpath_panel(
         {
             events.push(AppEvent::GenerateToolpath(entry.id));
         }
-        match &entry.status {
+        // A/M11: same resolver the toolpath list and MCP use.
+        match ComputeStatus::effective(entry.enabled, &entry.status) {
             ComputeStatus::Pending => {
                 ui.label("Ready");
             }
@@ -2786,6 +3316,23 @@ fn draw_toolpath_panel(
             }
             ComputeStatus::Done => {
                 ui.label(egui::RichText::new("Done").color(egui::Color32::from_rgb(100, 180, 100)));
+            }
+            ComputeStatus::AwaitingPriorStock(block) => {
+                // Amber, not red: this operation is fine, it is waiting its
+                // turn. The hover names the operation it is waiting for.
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Waiting on upstream stock")
+                            .color(egui::Color32::from_rgb(220, 170, 70)),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(&block.message);
+            }
+            ComputeStatus::Disabled => {
+                ui.label(
+                    egui::RichText::new("Disabled").color(egui::Color32::from_rgb(140, 140, 150)),
+                );
             }
             ComputeStatus::Error(e) => {
                 ui.add(
@@ -2991,9 +3538,15 @@ fn draw_toolpath_panel(
                 }
             }
 
-            // Stock source toggle
-            ui.add_space(8.0);
-            {
+            // Stock source toggle — hidden for pencil ops. Pencil's own
+            // "Rest reference" group on the Geometry tab (see
+            // `draw_pencil_params`) now owns `stock_source` directly; showing
+            // this generic checkbox too used to give the user two controls
+            // that silently disagreed (this one won at generation time via
+            // `rest_depth_arm`'s R2 stock preference, regardless of what the
+            // reference-tool picker showed). Every other op still shows it.
+            if !matches!(entry.operation, OperationConfig::Pencil(_)) {
+                ui.add_space(8.0);
                 let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
                 let resp = ui
                     .checkbox(&mut use_remaining, "Use remaining stock")
@@ -3114,6 +3667,11 @@ fn draw_toolpath_panel(
             // pill. The Phase 1 block above already computed and cached
             // the result on entry.feeds_result, so this is just a borrow.
             let feeds_for_pills = entry.feeds_result.as_ref();
+            // A/M6: read before the mutable borrow of `entry.operation`
+            // below. Both are `Copy`, so nothing is held across it.
+            let resolved_claims_reference =
+                entry.result.as_ref().and_then(|r| r.stats.claims_reference);
+            let stock_source_for_claims = entry.stock_source;
             match &mut entry.operation {
                 OperationConfig::Face(cfg) => draw_face_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Pocket(cfg) => draw_pocket_params(ui, cfg, feeds_for_pills),
@@ -3124,19 +3682,65 @@ fn draw_toolpath_panel(
                 OperationConfig::Inlay(cfg) => draw_inlay_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Zigzag(cfg) => draw_zigzag_params(ui, cfg, feeds_for_pills),
                 OperationConfig::Trace(cfg) => draw_trace_params(ui, cfg, feeds_for_pills),
-                OperationConfig::Drill(cfg) => draw_drill_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Drill(cfg) => {
+                    draw_drill_params(ui, cfg, drill_layers, drill_targets, feeds_for_pills);
+                }
                 OperationConfig::Chamfer(cfg) => draw_chamfer_params(ui, cfg, feeds_for_pills),
                 OperationConfig::DropCutter(cfg) => {
                     draw_dropcutter_params(ui, cfg, feeds_for_pills);
                 }
                 OperationConfig::Adaptive3d(cfg) => {
-                    draw_adaptive3d_params(ui, cfg, feeds_for_pills);
+                    // The "Optimal load" knob needs the active tool's
+                    // radius to map engagement ↔ stepover.
+                    let tool_radius = tool_configs
+                        .iter()
+                        .find(|(id, _)| *id == entry.tool_id)
+                        .map(|(_, t)| t.diameter / 2.0)
+                        .unwrap_or(0.0);
+                    draw_adaptive3d_params(ui, cfg, tool_radius, feeds_for_pills);
                 }
                 OperationConfig::Waterline(cfg) => {
                     draw_waterline_params(ui, cfg, feeds_for_pills);
                 }
-                OperationConfig::Pencil(cfg) => draw_pencil_params(ui, cfg, feeds_for_pills),
+                OperationConfig::Pencil(cfg) => {
+                    // Pencil is special-cased (not part of the uniform
+                    // `draw_*_params(ui, cfg, ...)` shape above): its
+                    // "Rest reference" group needs `stock_source` and a
+                    // stale flag alongside `cfg` — see the P2 consolidation
+                    // comment on `draw_pencil_params`. `entry.stock_source`
+                    // is a field disjoint from `entry.operation` (borrowed
+                    // above as `cfg`), so both are borrowable here.
+                    let mut pencil_ref_changed = false;
+                    draw_pencil_params(
+                        ui,
+                        cfg,
+                        tools,
+                        feeds_for_pills,
+                        &mut entry.stock_source,
+                        &mut pencil_ref_changed,
+                    );
+                    if pencil_ref_changed {
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                }
                 OperationConfig::Scallop(cfg) => draw_scallop_params(ui, cfg, feeds_for_pills),
+                OperationConfig::UnifiedFinish(cfg) => {
+                    // A/M6: the claims block needs two things the config
+                    // does not carry — what the LAST generation resolved
+                    // `claims_reference` to (a `ToolpathStats` finding), and
+                    // this op's stock source, which is what `Auto` derives
+                    // against. Both are read-only here; `entry.result` and
+                    // `entry.stock_source` are disjoint from
+                    // `entry.operation`, which is borrowed mutably by the
+                    // enclosing `match`.
+                    draw_unified_finish_params(
+                        ui,
+                        cfg,
+                        feeds_for_pills,
+                        resolved_claims_reference,
+                        stock_source_for_claims,
+                    );
+                }
                 OperationConfig::SteepShallow(cfg) => {
                     draw_steep_shallow_params(ui, cfg, feeds_for_pills);
                 }
@@ -3156,7 +3760,13 @@ fn draw_toolpath_panel(
                     draw_project_curve_params(ui, cfg, models, feeds_for_pills);
                 }
                 OperationConfig::AlignmentPinDrill(cfg) => {
-                    draw_alignment_pin_drill_params(ui, cfg, feeds_for_pills);
+                    draw_alignment_pin_drill_params(
+                        ui,
+                        cfg,
+                        drill_layers,
+                        drill_targets,
+                        feeds_for_pills,
+                    );
                 }
             }
 
@@ -3289,8 +3899,124 @@ fn draw_toolpath_panel(
                                 {
                                     entry.boundary.source = BoundarySource::FaceSelection;
                                 }
+                                let has_rest_candidates = !boundary_source_candidates.is_empty();
+                                if ui
+                                    .add_enabled(
+                                        has_rest_candidates,
+                                        egui::Button::selectable(
+                                            matches!(
+                                                entry.boundary.source,
+                                                BoundarySource::DerivedRestRegions { .. }
+                                            ),
+                                            "Rest Regions",
+                                        ),
+                                    )
+                                    .on_hover_text(if has_rest_candidates {
+                                        "Boundary = rest regions computed by another \
+                                         toolpath's pencil rest-depth detector. Pick \
+                                         the source toolpath below."
+                                    } else {
+                                        "No other toolpaths in this project yet — add \
+                                         one and generate it with a pencil rest-depth \
+                                         detector to use as the source."
+                                    })
+                                    .clicked()
+                                {
+                                    let default_source = boundary_source_candidates
+                                        .first()
+                                        .map(|(candidate_id, _, _, _, _)| *candidate_id)
+                                        .unwrap_or(entry.id);
+                                    entry.boundary.source = BoundarySource::DerivedRestRegions {
+                                        source_toolpath_id: default_source,
+                                    };
+                                }
                             });
                     });
+
+                    // Rest-regions source-toolpath picker (P2.2) — only shown
+                    // when `Source` above is set to `DerivedRestRegions`.
+                    // Candidates are every other toolpath in the session;
+                    // ones with a cached result whose rest regions are
+                    // already non-empty are labelled "(regions ready)" and
+                    // sorted first, but a not-yet-generated toolpath is
+                    // still selectable — generation fails hard with a clear
+                    // message if the source turns out unusable.
+                    if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                        &mut entry.boundary.source
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label("Rest source:");
+                            let current_label = boundary_source_candidates
+                                .iter()
+                                .find(|(candidate_id, _, _, _, _)| {
+                                    candidate_id == source_toolpath_id
+                                })
+                                .map(|(_, name, ready, _, _)| {
+                                    if *ready {
+                                        format!("{name} (regions ready)")
+                                    } else {
+                                        name.clone()
+                                    }
+                                })
+                                .unwrap_or_else(|| "(toolpath not found)".to_owned());
+                            let mut sorted = boundary_source_candidates.to_vec();
+                            sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
+                            egui::ComboBox::from_id_salt("boundary_rest_source")
+                                .selected_text(current_label)
+                                .show_ui(ui, |ui| {
+                                    for (candidate_id, name, ready, _, _) in &sorted {
+                                        let label = if *ready {
+                                            format!("{name} (regions ready)")
+                                        } else {
+                                            name.clone()
+                                        };
+                                        let selected = *source_toolpath_id == *candidate_id;
+                                        if ui.selectable_label(selected, label).clicked() {
+                                            *source_toolpath_id = *candidate_id;
+                                        }
+                                    }
+                                })
+                                .response
+                                .on_hover_text(
+                                    "The toolpath whose pencil rest-depth detector \
+                                     supplies the rest regions.",
+                                );
+                        });
+
+                        // Sliver-storm / giant-region caption (2026-07-06
+                        // incident): the SOURCE toolpath is who suffers the
+                        // per-island generation explosion or the "barely
+                        // restricts anything" giant-region case, so classify
+                        // ITS cached regions (captured in
+                        // `boundary_source_candidates` alongside `ready`),
+                        // not this consumer's own (this toolpath has none —
+                        // it's the one consuming the boundary).
+                        //
+                        // LH-2: the denominator is the SOURCE toolpath's own
+                        // rest-grid footprint (captured alongside its
+                        // regions), not this model's bounding rectangle.
+                        let selected = boundary_source_candidates
+                            .iter()
+                            .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
+                        let selected_regions =
+                            selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
+                        // `None` twice over: no candidate selected, or the
+                        // selected one has no rest grid. Both are "not
+                        // measured", and `classify_rest_regions` stays silent.
+                        let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
+                        if let Some(regions) = selected_regions
+                            && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                                regions,
+                                source_footprint_area,
+                            )
+                        {
+                            ui.label(
+                                egui::RichText::new(rest_region_pathology_caption(pathology))
+                                    .small()
+                                    .color(egui::Color32::from_rgb(220, 160, 60)),
+                            );
+                        }
+                    }
 
                     // Containment mode
                     ui.horizontal(|ui| {
@@ -3340,6 +4066,178 @@ fn draw_toolpath_panel(
                     });
                 }
             }
+
+            // ── Rest Analysis (P2.5 → P2 pencil-panel consolidation) ────
+            // Sibling of Machining Boundary: any toolpath can turn on the
+            // rest-depth detector against ITS OWN tool, attaching the
+            // heatmap grid + derived regions this op leaves behind — the
+            // same analysis that used to be pencil-only. Now demand-driven
+            // rather than a manual checkbox on every op: a downstream
+            // `Rest Regions` boundary auto-enables it (see the
+            // `auto_enable_rest_source` handling below this panel's draw
+            // call, and `session::auto_enable_rest_analysis_for_source`
+            // for the MCP-path twin), and it's
+            // hidden entirely on a `rest_depth` pencil, whose own detector
+            // already attaches the same artifacts (invisibly, per
+            // `compute::execute::attach_generic_rest_analysis`'s precedence
+            // check) — showing a second, redundant control there was the
+            // third overlapping rest control this consolidation removes.
+            let is_rest_depth_pencil = matches!(
+                &entry.operation,
+                OperationConfig::Pencil(cfg)
+                    if rs_cam_core::pencil::PencilDetector::parse(&cfg.detector)
+                        == rs_cam_core::pencil::PencilDetector::RestDepth
+            );
+            ui.add_space(8.0);
+            if is_rest_depth_pencil {
+                ui.label(
+                    egui::RichText::new(
+                        "Rest heatmap & regions: produced by the Rest depth detector.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(150, 150, 130)),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new("Rest Analysis")
+                        .small()
+                        .strong()
+                        .color(egui::Color32::from_rgb(150, 155, 170)),
+                );
+                if rest_region_consumers.is_empty() {
+                    ui.checkbox(
+                        &mut entry.rest_analysis.enabled,
+                        "Compute rest heatmap (material left after this op)",
+                    )
+                    .on_hover_text(
+                        "Run the rest-depth detector against this toolpath's own tool \
+                         after generation, attaching a heatmap grid. Also makes this op \
+                         selectable as a `Rest Regions` boundary source on other \
+                         toolpaths.",
+                    );
+                } else {
+                    // Demand-driven: a consumer's boundary picker (or the
+                    // MCP `set_boundary_config` path) already flipped this
+                    // on — see `auto_enable_rest_analysis_for_source`. Force
+                    // it here too so a stale project file (or a consumer
+                    // whose boundary was set before this session started)
+                    // still reflects reality.
+                    if !entry.rest_analysis.enabled {
+                        entry.rest_analysis.enabled = true;
+                        entry.stale_since = Some(std::time::Instant::now());
+                    }
+                    ui.label(format!(
+                        "Producing rest regions for: {}",
+                        rest_region_consumers.join(", ")
+                    ))
+                    .on_hover_text(
+                        "Enabled automatically — those toolpaths use this op's rest \
+                         regions as their machining boundary.",
+                    );
+                }
+                if entry.rest_analysis.enabled {
+                    ui.horizontal(|ui| {
+                        ui.label("Reference:");
+                        let ref_label = entry
+                            .rest_analysis
+                            .reference_tool_id
+                            .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                            .map(|(_, name, _)| name.as_str())
+                            .unwrap_or("Self / machined stock");
+                        egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                            .selected_text(ref_label)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        entry.rest_analysis.reference_tool_id.is_none(),
+                                        "Self / machined stock",
+                                    )
+                                    .clicked()
+                                {
+                                    entry.rest_analysis.reference_tool_id = None;
+                                }
+                                for (id, name, _) in tools {
+                                    let selected =
+                                        entry.rest_analysis.reference_tool_id == Some(*id);
+                                    if ui.selectable_label(selected, name.as_str()).clicked() {
+                                        entry.rest_analysis.reference_tool_id = Some(*id);
+                                    }
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "The reference the rest gate measures 'deeper than'. \
+                                 Unset = prefer the actual machined stock from a prior \
+                                 simulation, else a self-referenced bare-surface probe.",
+                            );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Cell Size:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
+                                .speed(0.05)
+                                .range(0.05..=10.0)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "XY grid cell size for the rest field. Smaller = finer regions.",
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Min Valley Depth:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
+                                .speed(0.01)
+                                .range(0.0..=5.0)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "A cell counts as REST material once the reference floats \
+                             more than this above the true surface.",
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Region Margin:");
+                        ui.add(
+                            egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
+                                .speed(0.05)
+                                .range(0.0..=10.0)
+                                .suffix(" mm"),
+                        )
+                        .on_hover_text(
+                            "Extra clearance added around detected rest regions beyond \
+                             this toolpath's own tool radius.",
+                        );
+                    });
+                }
+            }
+
+            // Sliver-storm / giant-region caption (2026-07-06 incident):
+            // classify THIS toolpath's own generated rest regions, whether
+            // they came from the checkbox-driven detector above or (for a
+            // rest_depth pencil) the detector it always runs. Deliberately
+            // outside the `is_rest_depth_pencil` branch so both cases show
+            // it.
+            //
+            // LH-2: the giant-region denominator is THIS result's own rest
+            // grid — covered cells × cell², the same grid the regions were
+            // extracted from. It used to be the model's XY bounding
+            // rectangle, which overstates a non-rectangular part's footprint
+            // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
+            // No grid ⇒ 0.0 ⇒ silence, never a guess.
+            if let Some(result) = &entry.result
+                && let Some(regions) = result.annotated.rest_regions.as_ref()
+                && let Some(pathology) = rs_cam_core::rest_field::classify_rest_regions(
+                    regions,
+                    rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
+                )
+            {
+                ui.label(
+                    egui::RichText::new(rest_region_pathology_caption(pathology))
+                        .small()
+                        .color(egui::Color32::from_rgb(220, 160, 60)),
+                );
+            }
         }
 
         ToolpathTab::FeedsSpeeds => {
@@ -3381,6 +4279,7 @@ fn draw_toolpath_panel(
                     workholding,
                     spindle_strategy,
                     project_default_rpm,
+                    load_verdict,
                 );
             }
             if let Some(result) = &entry.feeds_result {
@@ -3613,11 +4512,14 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Min Cut Radius" | "Min Cutting Radius" => {
             "Blend sharp corners with arcs of at least this radius."
         }
-        "Wall Stock" => "Material left on walls (radial) for finish pass. 0.2-0.5mm typical.",
-        "Floor Stock" => "Material left on floors (axial) for finish pass. 0.2-0.5mm typical.",
         "Stock Top Z" => "Z height of the stock material top surface.",
         "Scallop Height" => "Target cusp height between passes. 0.05-0.2mm for finishing.",
         "Threshold Angle" => "Angle dividing steep (waterline) from shallow (raster) regions.",
+        "Steep Threshold" => "Slope entering the mid-steep scallop band (deg). Below this: raster.",
+        "Waterline Threshold" => {
+            "Slope entering the very-steep waterline band (deg). Above this: waterline."
+        }
+        "Raster Stepover" => "Distance between raster passes in the shallow band.",
         "Max Stepdown" => "Maximum Z step between ramp passes.",
         "Z Step" => "Vertical distance between waterline Z levels.",
         "Sampling" => "XY grid resolution for push-cutter sampling.",
@@ -3647,7 +4549,16 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
         "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
-        "Stock to Leave" => "Finishing allowance kept on the surface for a later pass.",
+        // F3 / D-16.2: one label, shared by every finish op that exposes the
+        // dial — so the caveat here is the repo-wide one (a vertical offset,
+        // not a surface-normal one), not a per-op note. The "ignored on the
+        // shallow band" caveat this dial USED to deserve is gone: since
+        // 2026-08-06 all three UnifiedFinish bands honour it.
+        "Stock to Leave" => {
+            "Finishing allowance kept on the surface for a later pass. Applied as a vertical \
+             offset: on a wall sloped at angle A, what remains measured normal to the surface \
+             is this value x cos(A)."
+        }
         "Slope From" => {
             "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped."
         }

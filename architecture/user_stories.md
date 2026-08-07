@@ -26,7 +26,7 @@ Organized by persona and priority tier.
 
 **US-1.9** As a router operator, I want to control step-over, step-down, feed rate, and spindle speed so that I get the right balance of speed and surface finish.
 
-**US-1.10** As a router operator, I want to export G-code compatible with my controller (GRBL, LinuxCNC, Mach3) so that I can run the job on my machine.
+**US-1.10** As a router operator, I want to export G-code compatible with my controller (GRBL, grblHAL, LinuxCNC, Mach3) so that I can run the job on my machine.
 
 **US-1.11** As a router operator, I want to define safe Z height and clearance plane so that rapid moves don't crash into my workpiece or clamps.
 

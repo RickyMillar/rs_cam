@@ -15,6 +15,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(1),
+        toolpath_index: 0,
         toolpath_name: "Sample".to_owned(),
         polygons: None,
         mesh: None,
@@ -26,6 +27,7 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(10.0, 20.0, -5.0),
             max: P3::new(40.0, 60.0, 12.0),
@@ -37,6 +39,9 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -93,6 +98,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: id,
         toolpath_name: format!("Pocket {id}"),
         polygons: Some(Arc::new(vec![Polygon2::rectangle(
             -20.0, -20.0, 20.0, 20.0,
@@ -106,6 +112,7 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 10.0),
@@ -117,6 +124,9 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -132,6 +142,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     cfg.min_z = -5.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: id,
         toolpath_name: format!("DropCutter {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -143,6 +154,7 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-60.0, -60.0, -5.0),
             max: P3::new(60.0, 60.0, 10.0),
@@ -154,6 +166,9 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -169,6 +184,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
     cfg.sampling = 1.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Waterline {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -180,6 +196,7 @@ fn waterline_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-30.0, -30.0, -5.0),
             max: P3::new(30.0, 30.0, 10.0),
@@ -191,6 +208,9 @@ fn waterline_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -207,6 +227,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Adaptive3d {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -218,6 +239,7 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-30.0, -30.0, -5.0),
             max: P3::new(30.0, 30.0, 10.0),
@@ -229,6 +251,9 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -262,6 +287,7 @@ fn drill_request(id: usize) -> ComputeRequest {
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Drill {id}"),
         polygons: Some(Arc::new(vec![
             Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
@@ -276,6 +302,7 @@ fn drill_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-20.0, -20.0, -15.0),
             max: P3::new(20.0, 20.0, 10.0),
@@ -287,6 +314,9 @@ fn drill_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -295,6 +325,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
     let mesh = make_test_hemisphere(20.0, 16);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("SteepShallow {id}"),
         polygons: None,
         mesh: Some(Arc::new(mesh)),
@@ -306,6 +337,7 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-20.0, -20.0, -20.0),
             max: P3::new(20.0, 20.0, 20.0),
@@ -317,6 +349,9 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -338,6 +373,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Pencil {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_v_groove_mesh(40.0, 6.0, 12.0))),
@@ -349,6 +385,7 @@ fn pencil_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 10.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(0.0, -15.0, -10.0),
             max: P3::new(40.0, 15.0, 10.0),
@@ -360,6 +397,9 @@ fn pencil_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -374,6 +414,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
     cfg.tolerance = 0.2;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Scallop {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -385,6 +426,7 @@ fn scallop_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -396,6 +438,9 @@ fn scallop_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -411,6 +456,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
     cfg.tolerance = 0.2;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Ramp finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -422,6 +468,7 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -433,6 +480,9 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -446,6 +496,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
     cfg.stepover = 2.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Spiral finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_hemisphere(20.0, 16))),
@@ -457,6 +508,7 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 20.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -468,6 +520,9 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -482,6 +537,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
     cfg.point_spacing = 2.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Radial finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_flat(80.0))),
@@ -493,6 +549,7 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-40.0, -40.0, -5.0),
             max: P3::new(40.0, 40.0, 15.0),
@@ -504,6 +561,9 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -517,6 +577,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
     cfg.stepover = 3.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Horizontal finish {id}"),
         polygons: None,
         mesh: Some(Arc::new(make_test_flat(80.0))),
@@ -528,6 +589,7 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-40.0, -40.0, -5.0),
             max: P3::new(40.0, 40.0, 15.0),
@@ -539,6 +601,9 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -553,6 +618,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     cfg.point_spacing = 1.0;
     ComputeRequest {
         toolpath_id: ToolpathId(id),
+        toolpath_index: 0,
         toolpath_name: format!("Project curve {id}"),
         polygons: Some(Arc::new(vec![
             Polygon2::rectangle(-12.0, -12.0, 12.0, 12.0),
@@ -567,6 +633,7 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         tool,
         safe_z: 15.0,
         prev_tool_radius: None,
+        reference_tool_cfg: None,
         stock_bbox: Some(BoundingBox3 {
             min: P3::new(-25.0, -25.0, -5.0),
             max: P3::new(25.0, 25.0, 25.0),
@@ -578,6 +645,9 @@ fn project_curve_request(id: usize) -> ComputeRequest {
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         prior_stock: None,
         material: rs_cam_core::material::Material::default(),
+        derived_rest_regions: None,
+        rest_analysis: Default::default(),
+        link_kinematics: None,
     }
 }
 
@@ -612,6 +682,7 @@ fn long_simulation_request() -> SimulationRequest {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -655,6 +726,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -906,11 +978,15 @@ fn cancelled_toolpath_returns_partial_debug_trace() {
     let cancelled = wait_for(&mut backend, Duration::from_secs(5), |message| {
         matches!(
             message,
-            ComputeMessage::Toolpath(ComputeResult {
-                toolpath_id: ToolpathId(88),
-                result: Err(ComputeError::Cancelled),
-                ..
-            })
+            ComputeMessage::Toolpath(result)
+                if matches!(
+                    **result,
+                    ComputeResult {
+                        toolpath_id: ToolpathId(88),
+                        result: Err(ComputeError::Cancelled),
+                        ..
+                    }
+                )
         )
     });
     let cancelled = match cancelled {
@@ -971,11 +1047,15 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         })
         .expect("helix entry item should be present");
     assert_eq!(
-        helix.params.values.get("radius"),
+        helix
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Radius),
         Some(&serde_json::json!(request.dressups.helix_radius))
     );
     assert_eq!(
-        helix.params.values.get("pitch"),
+        helix
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Pitch),
         Some(&serde_json::json!(request.dressups.helix_pitch))
     );
 
@@ -985,7 +1065,9 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         .find(|item| item.kind == rs_cam_core::semantic_trace::ToolpathSemanticKind::BoundaryClip)
         .expect("boundary clip item should be present");
     assert_eq!(
-        boundary_clip.params.values.get("containment"),
+        boundary_clip
+            .params
+            .get(rs_cam_core::semantic_trace::SemanticKey::Containment),
         Some(&serde_json::json!("center"))
     );
     assert!(
@@ -999,6 +1081,199 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
     if let Some(path) = result.debug_trace_path.as_ref() {
         std::fs::remove_file(path).ok();
     }
+}
+
+/// P2.2/P2.3 regression (rest-cascade live repro, bug (b)): a
+/// `DerivedRestRegions` boundary whose source toolpath's rest analysis
+/// produced multiple disjoint islands must clip against the FULL region
+/// set via `apply_boundary_clip_multi`/`clip_toolpath_to_boundary_set_with_provenance`,
+/// not silently degrade to the stock rectangle because the regions don't
+/// union down to a single polygon (genuine terrain rest analysis commonly
+/// yields many disjoint islands — the old worker enforcement clip only
+/// consulted a pre-unioned single-polygon field and fell back to
+/// `stock_rect()` whenever the union wasn't exactly one polygon).
+#[test]
+fn derived_rest_regions_boundary_clips_to_all_disjoint_regions() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut request = quick_pocket_request(200);
+    request.boundary.enabled = true;
+    request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: ToolpathId(999),
+    };
+    // Two small islands near opposite corners of the -20..20 pocket, with a
+    // large untouched gap between them (e.g. around the origin) that a
+    // single-polygon-union fallback to the full stock/pocket rectangle
+    // would have cut through.
+    request.derived_rest_regions = Some(vec![
+        Polygon2::rectangle(-18.0, -18.0, -8.0, -8.0),
+        Polygon2::rectangle(8.0, 8.0, 18.0, 18.0),
+    ]);
+
+    let result = super::execute::run_compute(&request, &cancel)
+        .result
+        .expect("derived-rest-regions boundary compute should succeed");
+
+    let in_region_a = |x: f64, y: f64| (-18.5..=-7.5).contains(&x) && (-18.5..=-7.5).contains(&y);
+    let in_region_b = |x: f64, y: f64| (7.5..=18.5).contains(&x) && (7.5..=18.5).contains(&y);
+    let mut saw_cut_in_gap = false;
+    let mut saw_cut_at_all = false;
+    for mv in &result.annotated.toolpath.moves {
+        if matches!(mv.move_type, rs_cam_core::toolpath::MoveType::Linear { .. }) {
+            saw_cut_at_all = true;
+            let (x, y) = (mv.target.x, mv.target.y);
+            if !in_region_a(x, y) && !in_region_b(x, y) {
+                saw_cut_in_gap = true;
+            }
+        }
+    }
+    assert!(saw_cut_at_all, "expected at least some cutting moves");
+    assert!(
+        !saw_cut_in_gap,
+        "cutting moves must stay within the two derived rest regions, not the gap between \
+         them (a single-polygon-union fallback would cut the whole pocket rectangle)"
+    );
+}
+
+/// P2.4 regression: the GUI worker's `generate_via_core` bridge must thread
+/// `derived_rest_regions` into `execute_operation_annotated_with_regions`
+/// (not just the post-generation enforcement clip), the same way
+/// `ProjectSession::generate_toolpath` does on the core session path. Before
+/// this fix, `generate_via_core` always called the plain
+/// `execute_operation_annotated` wrapper (`boundary_regions = None`), so
+/// scallop generated concentric rings over the WHOLE hemisphere and only the
+/// post-generation clip trimmed the result down to the two islands — same
+/// final containment as the sibling test above proves, but full-part
+/// generation cost. Confining generation itself to two small islands (a
+/// tiny fraction of the hemisphere's footprint) must produce a materially
+/// smaller toolpath than generating over the whole hemisphere, not just a
+/// clipped-down copy of the full-part path.
+#[test]
+fn derived_rest_regions_boundary_shrinks_generation_not_just_clips_it() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    // Baseline: no boundary at all — scallop covers the whole hemisphere
+    // footprint (~pi * 20^2 ~= 1257 sq mm).
+    let baseline_request = scallop_request(300);
+    let baseline = super::execute::run_compute(&baseline_request, &cancel)
+        .result
+        .expect("baseline scallop compute should succeed");
+    let baseline_moves = baseline.annotated.toolpath.moves.len();
+
+    // Bounded: two small 6x6 islands (72 sq mm total) in opposite quadrants,
+    // well inside the hemisphere's footprint, with a large untouched gap
+    // between them.
+    let mut bounded_request = scallop_request(301);
+    bounded_request.boundary.enabled = true;
+    bounded_request.boundary.source = crate::state::toolpath::BoundarySource::DerivedRestRegions {
+        source_toolpath_id: ToolpathId(999),
+    };
+    bounded_request.derived_rest_regions = Some(vec![
+        Polygon2::rectangle(-15.0, -15.0, -9.0, -9.0),
+        Polygon2::rectangle(9.0, 9.0, 15.0, 15.0),
+    ]);
+    let bounded = super::execute::run_compute(&bounded_request, &cancel)
+        .result
+        .expect("derived-rest-regions scallop compute should succeed");
+    let bounded_moves = bounded.annotated.toolpath.moves.len();
+
+    // Post-clip containment still holds (mirrors the sibling disjoint-region
+    // test above): every cutting move stays within the two islands.
+    let in_region_a = |x: f64, y: f64| (-15.5..=-8.5).contains(&x) && (-15.5..=-8.5).contains(&y);
+    let in_region_b = |x: f64, y: f64| (8.5..=15.5).contains(&x) && (8.5..=15.5).contains(&y);
+    let mut saw_cut_at_all = false;
+    let mut saw_cut_outside_regions = false;
+    for mv in &bounded.annotated.toolpath.moves {
+        if matches!(mv.move_type, rs_cam_core::toolpath::MoveType::Linear { .. }) {
+            saw_cut_at_all = true;
+            let (x, y) = (mv.target.x, mv.target.y);
+            if !in_region_a(x, y) && !in_region_b(x, y) {
+                saw_cut_outside_regions = true;
+            }
+        }
+    }
+    assert!(saw_cut_at_all, "expected at least some cutting moves");
+    assert!(
+        !saw_cut_outside_regions,
+        "cutting moves must stay within the two derived rest regions"
+    );
+
+    // The real regression check: generation itself must have skipped the
+    // area outside the two islands, not merely clipped a full-hemisphere
+    // toolpath down after the fact. A post-hoc-only clip keeps (or grows,
+    // via crossing rapids) the total move count relative to the unbounded
+    // baseline; a generation-level pre-clip produces a toolpath an order of
+    // magnitude smaller because scallop never rings the empty gap at all.
+    assert!(
+        bounded_moves < baseline_moves,
+        "boundary-confined generation ({bounded_moves} moves) must produce fewer moves than \
+         unbounded full-hemisphere generation ({baseline_moves} moves) — otherwise generation \
+         is scanning the whole part and only the post-generation clip is trimming it"
+    );
+    assert!(
+        bounded_moves * 4 < baseline_moves,
+        "boundary-confined generation ({bounded_moves} moves) should be a small fraction of \
+         the unbounded baseline ({baseline_moves} moves), matching the ~17x area reduction \
+         (72 sq mm of islands vs ~1257 sq mm of hemisphere footprint) — a small reduction would \
+         suggest the pre-clip isn't actually reaching the generator"
+    );
+}
+
+/// P2.5 end-to-end: a `derived_rest_regions` boundary source no longer has
+/// to come from a pencil `RestDepth` toolpath — ANY op with `rest_analysis`
+/// enabled produces the same `rest_regions` shape, and a downstream
+/// toolpath boundary-sources off it exactly the same way. Generates a
+/// Scallop toolpath with generic rest analysis enabled, takes the
+/// `rest_regions` it produced, and feeds them into a second toolpath's
+/// `DerivedRestRegions` boundary — the consumer side (`apply_boundary_clip_multi`
+/// / `clip_toolpath_to_boundary_set_with_provenance`) never even sees which
+/// op produced the regions, but this proves the *producer* side (a
+/// non-pencil op) genuinely emits a usable set, not just an empty `Some(vec![])`.
+#[test]
+fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let mut source_request = scallop_request(400);
+    source_request.rest_analysis = crate::state::toolpath::RestAnalysisConfig {
+        enabled: true,
+        reference_tool_id: None,
+        cell_mm: 1.0,
+        min_valley_depth: 0.05,
+        region_margin_mm: 0.5,
+        ..Default::default()
+    };
+    let source_result = super::execute::run_compute(&source_request, &cancel)
+        .result
+        .expect("scallop with rest_analysis enabled should succeed");
+    let source_regions = std::sync::Arc::clone(
+        source_result
+            .annotated
+            .rest_regions
+            .as_ref()
+            .expect("non-pencil op with rest_analysis enabled should produce rest_regions"),
+    );
+    assert!(
+        !source_regions.is_empty(),
+        "a hemisphere mesh should yield at least one non-trivial rest region"
+    );
+
+    // Feed those exact regions into a downstream toolpath's boundary, same
+    // shape a controller would resolve from `source_result.annotated.rest_regions`.
+    let mut downstream_request = quick_pocket_request(401);
+    downstream_request.boundary.enabled = true;
+    downstream_request.boundary.source =
+        crate::state::toolpath::BoundarySource::DerivedRestRegions {
+            source_toolpath_id: ToolpathId(400),
+        };
+    downstream_request.derived_rest_regions = Some((*source_regions).clone());
+
+    let downstream = super::execute::run_compute(&downstream_request, &cancel)
+        .result
+        .expect("downstream toolpath sourcing a non-pencil rest-regions boundary should succeed");
+    assert!(
+        !downstream.annotated.toolpath.moves.is_empty(),
+        "downstream toolpath should still produce moves when confined to the scallop-sourced \
+         rest regions"
+    );
 }
 
 #[test]
@@ -1380,11 +1655,15 @@ fn toolpath_and_analysis_lanes_run_independently() {
     let result = wait_for(&mut backend, Duration::from_secs(5), |message| {
         matches!(
             message,
-            ComputeMessage::Toolpath(ComputeResult {
-                toolpath_id: ToolpathId(7),
-                result: Ok(_),
-                ..
-            })
+            ComputeMessage::Toolpath(result)
+                if matches!(
+                    **result,
+                    ComputeResult {
+                        toolpath_id: ToolpathId(7),
+                        result: Ok(_),
+                        ..
+                    }
+                )
         )
     });
     assert!(
@@ -1434,18 +1713,28 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
     while start.elapsed() < Duration::from_secs(5) && !(saw_cancelled && saw_replacement) {
         for message in backend.drain_results() {
             match message {
-                ComputeMessage::Toolpath(ComputeResult {
-                    toolpath_id: ToolpathId(3),
-                    result: Err(ComputeError::Cancelled),
-                    ..
-                }) => {
+                ComputeMessage::Toolpath(result)
+                    if matches!(
+                        *result,
+                        ComputeResult {
+                            toolpath_id: ToolpathId(3),
+                            result: Err(ComputeError::Cancelled),
+                            ..
+                        }
+                    ) =>
+                {
                     saw_cancelled = true;
                 }
-                ComputeMessage::Toolpath(ComputeResult {
-                    toolpath_id: ToolpathId(3),
-                    result: Ok(_),
-                    ..
-                }) => {
+                ComputeMessage::Toolpath(result)
+                    if matches!(
+                        *result,
+                        ComputeResult {
+                            toolpath_id: ToolpathId(3),
+                            result: Ok(_),
+                            ..
+                        }
+                    ) =>
+                {
                     saw_replacement = true;
                 }
                 _ => {}
@@ -1579,6 +1868,7 @@ fn multi_setup_top_bottom_simulation() {
                 }],
                 local_stock_bbox: stock_bbox,
                 local_to_global: None,
+                phantom_prior_stock: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1603,6 +1893,7 @@ fn multi_setup_top_bottom_simulation() {
                     stock_z: 20.0,
                     ..Default::default()
                 }),
+                phantom_prior_stock: None,
             },
         ],
         stock_bbox,
@@ -1721,6 +2012,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 }],
                 local_stock_bbox: stock_bbox,
                 local_to_global: None,
+                phantom_prior_stock: None,
             },
             SetupSimGroup {
                 toolpaths: vec![SetupSimToolpath {
@@ -1743,6 +2035,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     stock_z: 10.0,
                     ..Default::default()
                 }),
+                phantom_prior_stock: None,
             },
         ],
         stock_bbox,
@@ -1868,6 +2161,10 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         feed_rate_mm_min: 300.0,
         spindle_rpm: 18_000,
         flute_count: 2,
+        // R-2 (8e9dc6f) added this field; these two fixtures were missed and
+        // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
+        // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
+        retract_z_mm: 15.0,
         material: Material::default(),
     });
 
@@ -1891,6 +2188,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             }],
             local_stock_bbox: stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -1957,6 +2255,10 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         feed_rate_mm_min: 300.0,
         spindle_rpm: 18_000,
         flute_count: 2,
+        // R-2 (8e9dc6f) added this field; these two fixtures were missed and
+        // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
+        // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
+        retract_z_mm: 15.0,
         material: Material::default(),
     });
 
@@ -1987,6 +2289,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                 stock_z: 10.0,
                 ..Default::default()
             }),
+            phantom_prior_stock: None,
         }],
         stock_bbox,
         stock_top_z: 10.0,
@@ -2141,6 +2444,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             // zero-rooted local bbox + `local_to_global = None`.
             local_stock_bbox,
             local_to_global: None,
+            phantom_prior_stock: None,
         }],
         stock_bbox: world_stock_bbox,
         stock_top_z: 0.0,
@@ -2193,4 +2497,112 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
          the toolpath cut at world Z=-2.",
         first_pass_axials.len()
     );
+}
+
+// ── C1 item 4b: the reconcile path runs in the DEFAULT configuration ─────
+
+/// Pre-C1 the worker's remap calls were each wrapped in
+/// `if let Some(recorder) = semantic_recorder.as_ref()`, and the recorder was
+/// only ever constructed when `debug_options.enabled`. So the code that keeps
+/// index-carrying channels in step with the transforms never ran in the
+/// product the operator uses, and every test of it ran a different branch
+/// than production does.
+///
+/// Under C1 the `ReconcileSet` is built unconditionally and every transform
+/// reconciles through it; only the RECORDER stays debug-gated (recording an
+/// item per planner decision on every generation is not free). This test
+/// drives that exact shape: a request with `debug_options.enabled == false`,
+/// but a recorder handed in, so the remap path is measured on the default
+/// configuration rather than on the debug one.
+///
+/// It also pins C1 item 4a: each per-dressup item now declares whether its
+/// move range is the moves the step actually restructured or an explicit
+/// whole-path claim, instead of every item silently binding `0..len`.
+#[test]
+fn worker_reconciles_semantic_links_with_debug_options_disabled() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut req = quick_pocket_request(77);
+    // Transforms that actually move indices: reorder, arc collapse, link
+    // bridges, ramp entries. Without these the reconcile is vacuous.
+    req.dressups.optimize_rapid_order = true;
+    req.dressups.link_moves = true;
+    req.dressups.link_max_distance = 50.0;
+    req.dressups.arc_fitting = true;
+    req.dressups.arc_tolerance = 0.05;
+    req.dressups.entry_style = crate::state::toolpath::DressupEntryStyle::Ramp;
+    assert!(
+        !req.debug_options.enabled,
+        "this test is about the DEFAULT configuration"
+    );
+
+    let recorder =
+        rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new("Pocket 77", "Pocket");
+    let outcome = super::execute::run_compute_with_phase_tracker(
+        &req,
+        &cancel,
+        None,
+        None,
+        Some(recorder.clone()),
+    );
+    let result = outcome.result.expect("compute should succeed");
+    let move_count = result.toolpath().moves.len();
+    assert!(
+        move_count > 0,
+        "non-vacuity: the fixture must cut something"
+    );
+
+    let trace = recorder.finish();
+    assert!(
+        trace.summary.move_linked_item_count > 0,
+        "non-vacuity: unlinking everything would satisfy the bounds check below trivially"
+    );
+
+    for item in &trace.items {
+        match (item.move_start, item.move_end) {
+            (Some(start), Some(end)) => {
+                assert!(end >= start, "item {} has an inverted link", item.id);
+                assert!(
+                    end < move_count,
+                    "item {} ({:?} {:?}) is linked to moves {start}..={end} but the shipped \
+                     toolpath has only {move_count} moves — slicing by this range reads out of \
+                     bounds. With debug options OFF, this is the path the product runs.",
+                    item.id,
+                    item.kind,
+                    item.label
+                );
+            }
+            // Deleted-move policy: unlinked, never half-linked.
+            (None, None) => {}
+            half => panic!("item {} is half-linked {half:?}", item.id),
+        }
+    }
+
+    // Item 4a: per-dressup items declare the scope of their claim.
+    let dressup_items: Vec<_> = trace
+        .items
+        .iter()
+        .filter(|i| {
+            i.params
+                .get(rs_cam_core::semantic_trace::SemanticKey::MoveScope)
+                .is_some()
+        })
+        .collect();
+    assert!(
+        !dressup_items.is_empty(),
+        "the dressup steps should each record a scoped item"
+    );
+    for item in dressup_items {
+        let scope = item
+            .params
+            .values
+            .get("move_scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            scope == "touched_moves" || scope == "whole_path",
+            "item {} ({}) has an unexpected move_scope {scope:?}",
+            item.id,
+            item.label
+        );
+    }
 }

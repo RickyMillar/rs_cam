@@ -146,10 +146,92 @@ pub(crate) fn flat_chip_geometry_for_radius(
     })
 }
 
+/// Tool-scale accessors answer SIX different geometric questions, and a
+/// bare `f64` cannot tell them apart. The taxonomy, the full production
+/// census, and the per-site verdicts live in
+/// `planning/review_2026-07-29/TOOL_SCALE_SEMANTICS.md`:
+///
+/// | code | question | accessor |
+/// |---|---|---|
+/// | ENV | maximum swept envelope | [`MillingCutter::envelope_radius_mm`] (= [`MillingCutter::radius`]) |
+/// | CUSP | tip-sphere feature scale | [`MillingCutter::cusp_radius_mm`] (= [`MillingCutter::cusp_radius`]) |
+/// | WIDTH(d) | cutter width at axial engagement `d` | [`MillingCutter::engagement_radius_mm`] (= [`MillingCutter::engagement_radius`]) |
+/// | CLEAR(r) | vertical clearance available at lateral radius `r` | [`MillingCutter::height_at_radius`] |
+/// | VALLEY | two-wall / profile fit in a valley | no API today (H2) |
+/// | HEURISTIC | path scale only, no physical contract | `radius()` by convention — say so at the site |
+///
+/// The `_mm`-suffixed names are documented aliases of the historical ones,
+/// added by PR-2 (H1) with **no behavior change**: they exist so a reader
+/// can see the semantic class at the call site, which is the exact defect
+/// the audit found. Both spellings must always return the same number —
+/// `tests/tool_scale_semantics_pr2.rs` pins that for every shape and for
+/// the `ToolDefinition` wrapper.
+///
+/// There is deliberately **no** `feature_radius` and **no** fourth name for
+/// `height_at_radius` (ADR, `TOOL_SCALE_SEMANTICS.md` §9).
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
     fn radius(&self) -> f64 {
         self.diameter() / 2.0
+    }
+    /// ENVELOPE radius (mm) — the maximum lateral extent any part of the
+    /// cutter sweeps, at any height. Documented alias of
+    /// [`Self::radius`]; identical value, no new math.
+    ///
+    /// This is the correct and conservative answer for collision, bounding
+    /// box padding, grid extent, spatial-query radii, swept-volume
+    /// stamping, and coverage margins — and **only** for those. For a
+    /// tapered ball it is the SHAFT radius (`diameter()` deliberately
+    /// reports the widest point), so it overstates the cutter's reach at
+    /// finishing depth by up to 14× — see [`Self::engagement_radius_mm`].
+    fn envelope_radius_mm(&self) -> f64 {
+        self.radius()
+    }
+    /// The radius that sets the FEATURE SCALE this tool can resolve — the
+    /// tip sphere, not the widest point.
+    ///
+    /// [`Self::radius`] is the swept/collision radius, and for a tapered
+    /// ball `diameter()` deliberately reports the SHAFT ("effective
+    /// cutting diameter at widest point"). That is right for clearance and
+    /// wrong for the question "how fine a feature does the CUTTING TIP
+    /// resolve" — cusp height, minimum region area, morphological close
+    /// radius, pencil claim floor, classification cell size.
+    ///
+    /// **This is not the same as "can the tool reach into that feature."**
+    /// A tapered cutter's usable width grows with depth, so reach, fit and
+    /// routing questions ("does an offset pass fit down this valley", "is
+    /// this crease clearable") belong to a THIRD class that is neither the
+    /// tip sphere nor the shaft envelope — the cone can foul a wall long
+    /// before the tip bottoms out. Use [`Self::engagement_radius`] with the
+    /// depth in hand for those; reaching for `cusp_radius()` there reports
+    /// a cutter far more capable than it is. `Adaptive3dParams` already
+    /// carries engagement and envelope radii separately for this reason.
+    /// The finishing path still uses `radius()` at several such sites; they
+    /// are inventoried in `planning/unified_v3_design.md` §14u.
+    ///
+    /// Getting this wrong is not academic: a Ø1 tip on a 6 mm shank reports
+    /// `radius() = 3.0`, so decomposition dials derived from it came out
+    /// 6× (lengths) and 36× (areas) too large, closing and absorbing every
+    /// steep ribbon on a terrain that is 25% steeper than 55°. See
+    /// `planning/unified_v3_design.md` §14q.
+    fn cusp_radius(&self) -> f64 {
+        match self.geometry_hint() {
+            crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+            _ => self.radius(),
+        }
+    }
+    /// CUSP radius (mm) — the tip-sphere radius that sets the finest
+    /// feature this cutter can form. Documented alias of
+    /// [`Self::cusp_radius`]; identical value, no new math.
+    ///
+    /// Use for cusp/scallop equations, minimum region area, morphological
+    /// close radius, claim floors and classification cell size. **Not** an
+    /// answer to "does the tool fit / reach in there" — see
+    /// [`Self::cusp_radius`]'s doc for why, and
+    /// [`Self::engagement_radius_mm`] / [`Self::height_at_radius`] for the
+    /// queries that are.
+    fn cusp_radius_mm(&self) -> f64 {
+        self.cusp_radius()
     }
     fn length(&self) -> f64;
     fn helix_deg(&self) -> f64 {
@@ -170,6 +252,25 @@ pub trait MillingCutter: Send + Sync {
 
     /// Profile height at radial distance r from tool axis.
     /// Returns the Z offset from the tool tip to the cutter surface at radius r.
+    ///
+    /// **This IS the profile-clearance query (CLEAR(r)).** It is the
+    /// one-sided inverse of [`Self::width_at_height`]: for a
+    /// vertical-walled slot of half-width `r`, the returned value is
+    /// exactly how far the tip can descend below the rim before the
+    /// profile touches a wall. `None` means `r` exceeds the whole
+    /// envelope — the feature is wider than the cutter, which is a
+    /// clearing job, not a fit question.
+    ///
+    /// Do **not** add a fourth accessor (`profile_height_mm`, …) as a
+    /// synonym: this method already answers that question and is
+    /// implemented by every shape (ADR, `TOOL_SCALE_SEMANTICS.md` §3.1/§9).
+    ///
+    /// The inverse is exact only where the profile is strictly widening.
+    /// Where it is flat (a flat endmill's whole bottom, a bullnose inside
+    /// its corner radius) many radii share height 0, so the round trip
+    /// `width_at_height(height_at_radius(r))` returns the widest radius at
+    /// that height and the guaranteed relation is `>= r`, not `== r`.
+    /// `tests/tool_scale_semantics_pr2.rs` pins both forms.
     fn height_at_radius(&self, r: f64) -> Option<f64>;
 
     /// Profile radius at height h above tool tip.
@@ -192,6 +293,20 @@ pub trait MillingCutter: Send + Sync {
     /// callers that need a non-zero floor should clamp.
     fn engagement_radius(&self, depth_of_cut: f64) -> f64 {
         self.width_at_height(depth_of_cut)
+    }
+
+    /// ENGAGED radius (mm) at axial engagement `depth_mm` — how wide the
+    /// cutter actually is where it is cutting. Documented alias of
+    /// [`Self::engagement_radius`]; identical value, no new math.
+    ///
+    /// This is the answer for stepover sizing and any "how much of the cut
+    /// does the body occupy" question. Returns 0 at `depth_mm == 0` for
+    /// every ball-tipped shape (only the tip touches), so callers that
+    /// divide by it must floor — the established floors are
+    /// `.max(0.01)` (`compute/execute.rs`), `.max(1.0e-6)`
+    /// (`feeds/cutter_constraints.rs`) and `.max(cusp_radius_mm())`.
+    fn engagement_radius_mm(&self, depth_mm: f64) -> f64 {
+        self.engagement_radius(depth_mm)
     }
 
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
@@ -481,6 +596,29 @@ impl ToolDefinition {
 impl MillingCutter for ToolDefinition {
     fn diameter(&self) -> f64 {
         self.cutter.diameter()
+    }
+    // EXPLICIT delegation for every tool-scale accessor, including the ones
+    // that used to work only by inherited default over delegated primitives
+    // (`radius` via `diameter()`, `cusp_radius` via `geometry_hint()`).
+    // That was a latent trap: the first shape to override `cusp_radius()`
+    // directly rather than through `geometry_hint()` would have seen
+    // `ToolDefinition` — the only wrapper the production path actually
+    // holds — silently revert to the trait default. `TOOL_SCALE_SEMANTICS.md`
+    // §2.1/§7.4; pinned by `tests/tool_scale_semantics_pr2.rs`.
+    fn radius(&self) -> f64 {
+        self.cutter.radius()
+    }
+    fn envelope_radius_mm(&self) -> f64 {
+        self.cutter.envelope_radius_mm()
+    }
+    fn cusp_radius(&self) -> f64 {
+        self.cutter.cusp_radius()
+    }
+    fn cusp_radius_mm(&self) -> f64 {
+        self.cutter.cusp_radius_mm()
+    }
+    fn engagement_radius_mm(&self, depth_mm: f64) -> f64 {
+        self.cutter.engagement_radius_mm(depth_mm)
     }
     fn length(&self) -> f64 {
         self.cutter.length()
@@ -807,6 +945,64 @@ mod tests {
         assert!(
             rel_err < 0.01,
             "uniform cantilever integrator within 1%: got {got}, expected {expected}, rel_err={rel_err}"
+        );
+    }
+
+    #[test]
+    fn deflection_chain_matches_hand_calc_from_published_formulas() {
+        // End-to-end external cross-check: the production deflection a user
+        // sees (`feeds::predict::tip_deflection_from_engagement`) must equal
+        // an independent hand calculation built from two published formulas
+        // and nothing from the model internals:
+        //   1. Wood force (woodresearch.sk): F = ap·(49.95·h + 5.30),
+        //      h = fz·sin(θ_peak). At full immersion θ_peak = π/2 ⇒ h = fz.
+        //   2. Textbook cantilever, point load at distance a from the clamp,
+        //      tip deflection: δ = F·a²·(3L − a)/(6·E·I), a = L − ap/2.
+        // Material/E are shared inputs (documented properties, not the thing
+        // under test); the FORMULAS are what this pins. GenericHardwood is
+        // the literature anchor wood, so its coefficients are the raw
+        // 49.95 / 5.30 published values.
+        use crate::material::{Material, WoodSpecies};
+        let d = 6.0_f64;
+        let l = 45.0_f64;
+        // Uniform cylinder (cutting_length covers stickout) ⇒ the two-section
+        // integrator reduces to the single-section textbook beam.
+        let tool = ToolDefinition::new(
+            Box::new(FlatEndmill::new(d, l)),
+            d,
+            0.0,
+            25.0,
+            l,
+            2,
+            ToolMaterial::Carbide,
+        );
+        let mat = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let e = tool.tool_material.youngs_modulus_n_per_mm2();
+        let ap = 3.0_f64;
+        let fz = 0.05_f64;
+        let immersion = std::f64::consts::PI; // full slot
+
+        // (1) hand force from the published wood equation.
+        let h = fz; // sin(π/2) = 1
+        let force_hand = ap * (49.95 * h + 5.30);
+        // (2) hand beam from the textbook cantilever formula.
+        let a = l - ap / 2.0;
+        let i = std::f64::consts::PI * d.powi(4) / 64.0;
+        let delta_hand_mm = force_hand * a * a * (3.0 * l - a) / (6.0 * e * i);
+
+        // Production path (force model + integrated beam, the real code).
+        let delta_model_mm =
+            crate::feeds::predict::tip_deflection_from_engagement(&tool, &mat, ap, immersion, fz)
+                .expect("modeled deflection");
+
+        let rel_err = (delta_model_mm - delta_hand_mm).abs() / delta_hand_mm;
+        assert!(
+            rel_err < 0.01,
+            "production deflection chain must match hand calc from published formulas within 1%: \
+             model {delta_model_mm:.6} mm, hand {delta_hand_mm:.6} mm (force {force_hand:.2} N), \
+             rel_err {rel_err:.4}"
         );
     }
 

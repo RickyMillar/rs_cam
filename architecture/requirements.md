@@ -53,7 +53,7 @@
 - FR-7.2: Support metric (G21) and imperial (G20) units
 - FR-7.3: Include safe Z retract before all rapid XY moves
 - FR-7.4: Include preamble (modal state init) and postamble (spindle off, return)
-- FR-7.5: Post-processor system supporting GRBL, LinuxCNC, Mach3 dialects
+- FR-7.5: Post-processor system supporting GRBL, grblHAL, LinuxCNC, Mach3 dialects
 - FR-7.6: Configurable decimal precision, line numbering, comment style
 
 ### FR-8: CLI Interface

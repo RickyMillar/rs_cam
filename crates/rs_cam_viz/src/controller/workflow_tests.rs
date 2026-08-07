@@ -67,6 +67,10 @@ impl ComputeBackend for ScriptedBackend {
             ComputeLane::Optimize => self.optimize_lane.clone(),
         }
     }
+
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -96,6 +100,8 @@ fn step_model() -> LoadedModel {
         kind: Some(ModelKind::Step),
         mesh: Some(mesh_arc),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         enriched_mesh: Some(enriched),
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
@@ -111,6 +117,8 @@ fn stl_model() -> LoadedModel {
         kind: Some(ModelKind::Stl),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
         polygons: None,
+        drill_targets: std::sync::Arc::new(Vec::new()),
+        layers: std::sync::Arc::new(Vec::new()),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
@@ -186,6 +194,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id_raw = controller
@@ -518,6 +527,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         face_selection: Some(vec![face_id]),
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
     };
     session.add_toolpath(0, tp_config).unwrap();
 

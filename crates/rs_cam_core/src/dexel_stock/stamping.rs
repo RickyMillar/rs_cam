@@ -155,6 +155,100 @@ fn segment_cell_coverage(
     (cov, t_center, center_d_sq)
 }
 
+/// F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
+/// sub-cell blend leaves residual material at boundary cells (any cell with
+/// coverage < 1) that subsequent passes "bite", which would otherwise inflate
+/// radial engagement on repeated passes over already-cleared territory (e.g.
+/// `radial_engagement_air_cut_reads_zero`).
+///
+/// Requiring `coverage ≥ 0.95` means only cells that this stamp covers
+/// essentially-fully contribute to the width-of-cut measurement. With 4×4
+/// sub-sampling (1/16 quantization), the gate is equivalent to "cov = 1.0" —
+/// only fast-path fully-inside cells contribute. For a full slot this still
+/// yields radial ≈ (2r − 2·cell_size_subsample) / (2r) ≈ 0.97 (above the
+/// existing `> 0.85` slot assertion), and on air cuts over previously-cleared
+/// paths it reads exactly zero (the cov=1.0 cells were cleared by the prior
+/// pass, so pre_fresh = 0).
+///
+/// This is census §5.1's **Floor 2**, and unlike
+/// [`FRESH_MATERIAL_THRESHOLD_MM`] it *is* a function of cell size: two
+/// distinct qualifying cell centres at different perpendicular offsets are
+/// needed for a width to exist at all, so a round-tip tool at cut depth `d`
+/// needs `cell ≲ √(2·R_tip·d − d²)`. A Ø1 mm ball tip at `d = 0.05 mm`
+/// has a contact radius of ≈ 0.218 mm, so a 0.25 mm grid yields at most one
+/// qualifying cell and reads zero. That is the quantitative form of the
+/// standing rule "sim cell must be well below the tool TIP radius".
+const PERP_COVERAGE_GATE: f32 = 0.95;
+
+/// Threshold for "fresh material exists above the cutter at this cell",
+/// millimetres. A cell contributes to the perpendicular-extent measurement —
+/// and therefore to `radial_engagement`, to the engagement arc derived from
+/// it, and to everything downstream (`average_engagement`, `air_cut_time_s`
+/// and both its percentages, and chip thickness) — only if it held more than
+/// this much material above the cutter surface *before* the stamp.
+///
+/// **The chipload gate is no longer on that downstream list** (2026-08-06):
+/// it observes advance per tooth, which is kinematic and does not read this
+/// floor. Chip thickness still does, and so does everything above.
+///
+/// **This is a documented measurement limit, not a tunable.** Ruled at
+/// Checkpoint D (Q2/D-7, 2026-08-04) after
+/// `SIMULATION_ISSUE_CHANNEL_CENSUS.md` §5.1 measured what it does: a pass
+/// removing 0.02 mm per stamp removes real material (63.7 mm³ on the census
+/// fixture), reports its removed *height* correctly, and reports radial
+/// engagement of **exactly zero** and ~96% air cut. Lowering the number
+/// re-admits the float-noise cells it exists to reject — near-flush dexel
+/// artifacts where a previous stamp left material fractionally above the
+/// cutter surface. Real bites are mm-scale.
+///
+/// The honest fix is therefore not a smaller constant but an **abstention**:
+/// [`crate::sim_measurability`] detects passes sitting under this floor and
+/// marks the engagement-derived metrics `NotMeasurable`, so the gates that
+/// consume them decline to produce a verdict instead of publishing a
+/// precise-looking percentage that clears every bar. Collision detection and
+/// gross material removal are unaffected and stay live.
+///
+/// Note this floor is **independent of cell size**. There is a second,
+/// separate lateral-resolution condition (`cell ≲ √(2·R_tip·d − d²)`,
+/// census §5.1 "Floor 2") governed by [`PERP_COVERAGE_GATE`]; the two fail
+/// for different reasons and `sim_measurability` reports them apart.
+pub const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
+
+/// Coverage at or above which a cell counts as **completely** swept, and the
+/// sliver-safe bound (`DexelGrid::conservative_top`) may be lowered.
+///
+/// A/M10. Not `1.0` exactly: coverage is measured by a 4×4 sub-sample fan
+/// (`SUBSAMPLE_N`), so a cell genuinely inside the cutter reports `1.0` only
+/// up to that quantisation. `1.0 - 1/32` sits half a sub-sample below full
+/// and cannot be reached by a cell that has any sub-sample outside the
+/// cutter.
+const FULL_COVERAGE: f32 = 1.0 - 1.0 / 32.0;
+
+/// Upper bound of the removal surface across a WHOLE cell, for the
+/// sliver-safe channel.
+///
+/// The stamping kernels evaluate the cutter profile at the cell CENTRE,
+/// which is the right answer for the cell's own sample and the wrong one for
+/// a bound: every cutter profile in `crate::tool` rises monotonically with
+/// radial distance, so the highest point of the cutter surface over a square
+/// cell is at the sub-sample farthest from the tool axis. `near_dist` is the
+/// centre's distance; the half-diagonal `cs·√2/2` reaches the corner.
+///
+/// `depth_max` is the highest tip position the stamp reaches over the cell —
+/// for a swept segment that is the higher of its two endpoints, not the
+/// interpolated value at the cell centre.
+#[inline]
+fn cell_upper_bound_surface(
+    lut: &RadialProfileLUT,
+    near_dist_sq: f64,
+    cs: f64,
+    depth_max: f64,
+) -> Option<f64> {
+    let far = near_dist_sq.sqrt() + cs * std::f64::consts::SQRT_2 * 0.5;
+    let far_sq = (far * far).min(lut.radius_sq());
+    lut_h_with_edge_fallback(lut, far_sq).map(|h| depth_max + h)
+}
+
 /// LUT query for an annular cell at squared distance `dist_sq` from disk
 /// center: clamp to the cutter edge if the cell center sits outside the
 /// disk (§6.F gap 3). Returns `None` only if the LUT returns `None` at the
@@ -185,6 +279,9 @@ pub(super) struct CuttingCaptureParams<'a> {
     /// WaterlineCleanup/DressupArtifact). Marks every sample emitted from
     /// this move as `in_transit_span = true`.
     pub(super) in_transit_span: bool,
+    /// R-11: the generator's own `MoveIntent` for this move, carried onto
+    /// every emitted sample. See `SimulationCutSample::source_intent`.
+    pub(super) source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
@@ -256,6 +353,14 @@ pub(super) fn stamp_point_on_grid(
             } else {
                 let surface = (tip_depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
+            }
+            // A/M10: only a cell swept end to end may lower the sliver-safe
+            // bound, and only to the cutter's highest point across that cell.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, tip_depth)
+            {
+                grid.lower_conservative_top(idx, ub as f32);
             }
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
@@ -341,6 +446,16 @@ pub(super) fn stamp_segment_on_grid(
             } else {
                 let surface = (depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
+            }
+            // A/M10 — see `stamp_point_on_grid`. The tip height is
+            // interpolated at the cell centre, so the bound takes the higher
+            // endpoint: a ramping segment must not be credited with the
+            // deeper end of its own travel.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
+            {
+                grid.lower_conservative_top(idx, ub as f32);
             }
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
@@ -453,6 +568,13 @@ pub(super) fn stamp_segment_with_metrics(
                 if coverage > grid.coverage_max[idx] {
                     grid.coverage_max[idx] = coverage;
                 }
+                // A/M10 — see `stamp_point_on_grid`.
+                if from_high
+                    && coverage >= FULL_COVERAGE
+                    && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
+                {
+                    grid.lower_conservative_top(idx, ub as f32);
+                }
             }
         }
 
@@ -490,26 +612,9 @@ pub(super) fn stamp_segment_with_metrics(
     let mut perp_max = f64::NEG_INFINITY;
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
-    // Threshold for "fresh material exists above the cutter at this cell".
-    // 0.05 mm filters out near-flush dexel artifacts where the previous stamp
-    // left material fractionally above the cutter surface due to floating
-    // point. Real bites are mm-scale.
-    const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
-    // F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
-    // sub-cell blend leaves residual material at boundary cells (any cell
-    // with coverage < 1) that subsequent passes "bite", which would
-    // otherwise inflate radial engagement on repeated passes over already-
-    // cleared territory (e.g., `radial_engagement_air_cut_reads_zero`).
-    //
-    // Requiring `coverage ≥ 0.95` means only cells that this stamp covers
-    // essentially-fully contribute to the width-of-cut measurement. With
-    // 4×4 sub-sampling (1/16 quantization), the gate is equivalent to
-    // "cov = 1.0" — only fast-path fully-inside cells contribute. For a
-    // full slot this still yields radial ≈ (2r − 2·cell_size_subsample) /
-    // (2r) ≈ 0.97 (above the existing `> 0.85` slot assertion), and on
-    // air cuts over previously-cleared paths it reads exactly zero (the
-    // cov=1.0 cells were cleared by the prior pass, so pre_fresh = 0).
-    const PERP_COVERAGE_GATE: f32 = 0.95;
+    // Both measurement floors this loop applies — the fixed material floor
+    // `FRESH_MATERIAL_THRESHOLD_MM` and the lateral-resolution gate
+    // `PERP_COVERAGE_GATE` — are module-level constants; see their docs.
 
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
@@ -559,7 +664,6 @@ pub(super) fn stamp_segment_with_metrics(
             } else {
                 ray_blend_below(ray, cell_tool_surface as f32, coverage);
             }
-
             // 3. Post-stamp material height. The pre/post diff naturally
             //    scales with coverage — no separate volume correction needed
             //    (unlike the degenerate branch, §6.F gap 1).
@@ -568,6 +672,18 @@ pub(super) fn stamp_segment_with_metrics(
 
             if coverage > grid.coverage_max[idx] {
                 grid.coverage_max[idx] = coverage;
+            }
+
+            // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
+            // simulator actually runs, so it is the one that decides whether
+            // `prior_stocks` carries a sliver-safe bound at all. Placed
+            // after the last read of `ray`: the update takes `&mut grid`,
+            // and the ray borrow is still live above it.
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
+            {
+                grid.lower_conservative_top(idx, ub as f32);
             }
 
             // 4. Engagement metrics. The midpoint disk defines the
@@ -655,6 +771,9 @@ pub(super) struct SegmentSampleParams<'a> {
     pub(super) span_path: &'a [SpanId],
     /// P3: move sits in a transit-style span. See `CuttingCaptureParams`.
     pub(super) in_transit_span: bool,
+    /// R-11: the generator's own `MoveIntent` for this move, carried onto
+    /// every emitted sample. See `SimulationCutSample::source_intent`.
+    pub(super) source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
 pub(super) fn sample_segment_runtime(
@@ -707,6 +826,7 @@ pub(super) fn sample_segment_runtime(
             semantic_item_id: params.semantic_item_id,
             span_path: params.span_path.to_vec(),
             in_transit_span: params.in_transit_span,
+            source_intent: params.source_intent,
         });
         *next_sample_index += 1;
     }

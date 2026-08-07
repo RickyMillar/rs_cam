@@ -6,8 +6,10 @@
 //! for efficient zigzag linking with rapid retracts between spokes.
 
 use crate::dropcutter::point_drop_cutter;
-use crate::geo::{BoundingBox3, P3};
+use crate::geo::{P2, P3};
+use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::region_set::RegionSet;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -23,7 +25,8 @@ pub struct RadialFinishParams {
     pub plunge_rate: f64,
     /// Safe Z height for rapid positioning (mm).
     pub safe_z: f64,
-    /// Stock to leave on the surface (mm). Subtracted from drop-cutter Z.
+    /// Stock to leave on the surface (mm). Added to drop-cutter Z so the
+    /// tool stays above the surface rather than cutting into it.
     pub stock_to_leave: f64,
 }
 
@@ -47,16 +50,47 @@ impl Default for RadialFinishParams {
 /// come from `point_drop_cutter`. Even-numbered spokes run center-to-edge;
 /// odd-numbered spokes run edge-to-center (zigzag linking). Between spokes
 /// the tool rapids to `safe_z`.
+// infallible: cancel closure always returns false, so Cancelled is unreachable
+#[allow(clippy::expect_used)]
 pub fn radial_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &RadialFinishParams,
 ) -> Toolpath {
+    let never_cancel = || false;
+    radial_finish_toolpath_with_cancel(mesh, index, cutter, params, None, &never_cancel)
+        .expect("non-cancellable radial finish toolpath should never be cancelled")
+}
+
+/// Cancellable variant of [`radial_finish_toolpath`]. Polls `cancel` once
+/// per spoke (each spoke samples `point_spacing`-spaced drop-cutter queries
+/// out to the mesh's max radius, which is the expensive part).
+///
+/// `boundary_regions` (P2.3): when `Some`, a sample point outside every
+/// region is skipped BEFORE the drop-cutter query (the region check is a
+/// cheap XY containment test; the query is the expensive step this pass
+/// pre-clips generation to avoid wasting) — the point is treated exactly
+/// like a non-contacted point (falls to the min-Z sentinel and gets
+/// excluded by the existing contiguous-run split below). Regions are
+/// already dilated by fine-tool radius + margin at derivation, and exact
+/// containment is still enforced by the post-generation boundary clip —
+/// this is a conservative superset filter for performance, not the source
+/// of truth for correctness. `None` reproduces today's full-mesh sampling
+/// byte-for-byte.
+pub fn radial_finish_toolpath_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RadialFinishParams,
+    boundary_regions: Option<&RegionSet<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
     let bbox = &mesh.bbox;
     let cx = (bbox.min.x + bbox.max.x) * 0.5;
     let cy = (bbox.min.y + bbox.max.y) * 0.5;
-    let max_radius = compute_max_radius(bbox, cx, cy);
+    let max_radius = bbox.max_corner_distance_xy(cx, cy);
 
     let min_z_fallback = bbox.min.z - 1000.0;
     let num_spokes = (360.0 / params.angular_step).ceil() as usize;
@@ -64,6 +98,7 @@ pub fn radial_finish_toolpath(
     let mut tp = Toolpath::new();
 
     for spoke_idx in 0..num_spokes {
+        check_cancel(cancel)?;
         let angle_deg = spoke_idx as f64 * params.angular_step;
         let angle_rad = angle_deg.to_radians();
         let cos_a = angle_rad.cos();
@@ -77,93 +112,107 @@ pub fn radial_finish_toolpath(
             let r = i as f64 * params.point_spacing;
             let x = cx + r * cos_a;
             let y = cy + r * sin_a;
-            let cl = point_drop_cutter(x, y, mesh, index, cutter);
-            let z = if cl.contacted {
-                cl.z - params.stock_to_leave
+            let in_region = boundary_regions.is_none_or(|regions| regions.contains(&P2::new(x, y)));
+            let z = if in_region {
+                let cl = point_drop_cutter(x, y, mesh, index, cutter);
+                if cl.contacted {
+                    cl.z + params.stock_to_leave
+                } else {
+                    // Point is outside the mesh footprint; use fallback Z clamped to min_z.
+                    min_z_fallback
+                }
             } else {
-                // Point is outside the mesh footprint; use fallback Z clamped to min_z.
+                // Outside every machining-boundary region — skip the
+                // drop-cutter query entirely and treat it as a gap, same as
+                // a non-contacted point.
                 min_z_fallback
             };
             spoke_points.push(P3::new(x, y, z));
         }
 
-        // Filter out points that fell through (no mesh contact) at the edges.
-        // Keep the longest contiguous run of contacted points.
-        let spoke_points = trim_uncontacted(&spoke_points, min_z_fallback);
+        // Split into contiguous runs of mesh-contacted points. A spoke can
+        // cross an interior gap (a hole or notch) as well as have
+        // uncontacted leading/trailing tails; each contacted run is emitted
+        // as its own path segment so the tool retracts between runs instead
+        // of feeding through the gap at the fallback Z.
+        let mut runs = crate::point_runs::split_runs(
+            &spoke_points,
+            |_, p: &P3| (p.z - min_z_fallback).abs() > 0.001,
+            crate::point_runs::RunTopology::Open,
+            2,
+        );
 
-        if spoke_points.len() < 2 {
+        if runs.is_empty() {
             continue;
         }
 
-        // Zigzag: odd spokes go edge-to-center (reverse direction).
-        let spoke_points = if spoke_idx % 2 == 1 {
-            let mut reversed = spoke_points;
-            reversed.reverse();
-            reversed
-        } else {
-            spoke_points
-        };
+        // Zigzag: odd spokes go edge-to-center. Reverse both the run order
+        // and each run's points so the overall traversal direction flips,
+        // same as reversing the whole point sequence would.
+        if spoke_idx % 2 == 1 {
+            runs.reverse();
+            for run in &mut runs {
+                run.reverse();
+            }
+        }
 
-        tp.emit_path_segment_with_intent(
-            &spoke_points,
-            params.safe_z,
-            params.feed_rate,
-            params.plunge_rate,
-            crate::toolpath::MoveIntent::FinishingCut,
-        );
+        for run in &runs {
+            tp.emit_path_segment_with_intent(
+                run,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
+            );
+        }
     }
 
     tp.final_retract(params.safe_z);
-    tp
-}
-
-/// Compute the maximum radius from center to any corner of the bounding box.
-fn compute_max_radius(bbox: &BoundingBox3, cx: f64, cy: f64) -> f64 {
-    let corners = [
-        (bbox.min.x, bbox.min.y),
-        (bbox.max.x, bbox.min.y),
-        (bbox.max.x, bbox.max.y),
-        (bbox.min.x, bbox.max.y),
-    ];
-    let mut max_r2: f64 = 0.0;
-    for (x, y) in &corners {
-        let dx = x - cx;
-        let dy = y - cy;
-        max_r2 = max_r2.max(dx * dx + dy * dy);
-    }
-    max_r2.sqrt()
-}
-
-/// Trim leading and trailing points that have no mesh contact (Z at fallback).
-///
-/// Returns the longest prefix/suffix-trimmed slice of contacted points.
-fn trim_uncontacted(points: &[P3], fallback_z: f64) -> Vec<P3> {
-    let is_contacted = |p: &P3| (p.z - fallback_z).abs() > 0.001;
-
-    let Some(start) = points.iter().position(&is_contacted) else {
-        return Vec::new();
-    };
-
-    // Safe: we know at least one point is contacted, so rposition will find it.
-    let Some(end) = points.iter().rposition(is_contacted) else {
-        return Vec::new();
-    };
-
-    // SAFETY: start and end are valid indices from position/rposition
-    #[allow(clippy::indexing_slicing)]
-    points[start..=end].to_vec()
+    Ok(tp)
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::geo::BoundingBox3;
     use crate::mesh::SpatialIndex;
     use crate::tool::BallEndmill;
 
     /// Build a flat 100x100 mm mesh at z=0, centered at origin.
     fn flat_mesh() -> (TriangleMesh, SpatialIndex) {
         let mesh = crate::mesh::make_test_flat(100.0);
+        let si = SpatialIndex::build(&mesh, 10.0);
+        (mesh, si)
+    }
+
+    /// Build a mesh made of two disjoint flat patches at z=0, separated by
+    /// an interior gap, so a spoke pointed along +X crosses:
+    /// contacted (hub, x in [-11,11]) → gap (x in (11,29)) → contacted
+    /// (outer patch, x in [29,51]) → gap (past the outer patch's edge).
+    /// Two unreferenced padding vertices at the far corners keep the mesh
+    /// bounding box (and hence the spoke center) symmetric about the origin.
+    fn gapped_spoke_mesh() -> (TriangleMesh, SpatialIndex) {
+        let z = 0.0;
+        let mut vertices = vec![
+            // Hub patch: x,y in [-11, 11].
+            P3::new(-11.0, -11.0, z),
+            P3::new(11.0, -11.0, z),
+            P3::new(11.0, 11.0, z),
+            P3::new(-11.0, 11.0, z),
+            // Outer patch: x,y in [29, 51].
+            P3::new(29.0, -11.0, z),
+            P3::new(51.0, -11.0, z),
+            P3::new(51.0, 11.0, z),
+            P3::new(29.0, 11.0, z),
+        ];
+        let triangles = vec![[0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7]];
+        // Padding-only vertices (not part of any triangle) to make the mesh
+        // bounding box symmetric about the origin.
+        vertices.push(P3::new(-51.0, -51.0, z));
+        vertices.push(P3::new(51.0, 51.0, z));
+
+        let mesh = TriangleMesh::from_raw(vertices, triangles);
         let si = SpatialIndex::build(&mesh, 10.0);
         (mesh, si)
     }
@@ -181,7 +230,7 @@ mod tests {
         }
     }
 
-    // ── compute_max_radius tests ─────────────────────────────────────
+    // ── BoundingBox3::max_corner_distance_xy tests (shared geo.rs helper) ──
 
     #[test]
     fn test_max_radius_square_centered() {
@@ -189,7 +238,7 @@ mod tests {
             min: P3::new(-50.0, -50.0, 0.0),
             max: P3::new(50.0, 50.0, 10.0),
         };
-        let r = compute_max_radius(&bbox, 0.0, 0.0);
+        let r = bbox.max_corner_distance_xy(0.0, 0.0);
         // Diagonal of 100x100 square / 2 = 50*sqrt(2) ~ 70.71
         assert!((r - 70.710).abs() < 0.1, "Expected ~70.71, got {:.2}", r);
     }
@@ -201,44 +250,8 @@ mod tests {
             max: P3::new(10.0, 10.0, 5.0),
         };
         // Center at (5, 5), farthest corner is any corner at distance 5*sqrt(2)
-        let r = compute_max_radius(&bbox, 5.0, 5.0);
+        let r = bbox.max_corner_distance_xy(5.0, 5.0);
         assert!((r - 7.071).abs() < 0.1, "Expected ~7.07, got {:.2}", r);
-    }
-
-    // ── trim_uncontacted tests ───────────────────────────────────────
-
-    #[test]
-    fn test_trim_all_contacted() {
-        let pts = vec![
-            P3::new(0.0, 0.0, 5.0),
-            P3::new(1.0, 0.0, 5.0),
-            P3::new(2.0, 0.0, 5.0),
-        ];
-        let trimmed = trim_uncontacted(&pts, -1000.0);
-        assert_eq!(trimmed.len(), 3);
-    }
-
-    #[test]
-    fn test_trim_leading_trailing() {
-        let fallback = -1000.0;
-        let pts = vec![
-            P3::new(0.0, 0.0, fallback),
-            P3::new(1.0, 0.0, 5.0),
-            P3::new(2.0, 0.0, 5.0),
-            P3::new(3.0, 0.0, fallback),
-        ];
-        let trimmed = trim_uncontacted(&pts, fallback);
-        assert_eq!(trimmed.len(), 2);
-        assert!((trimmed[0].x - 1.0).abs() < 1e-10);
-        assert!((trimmed[1].x - 2.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_trim_none_contacted() {
-        let fallback = -1000.0;
-        let pts = vec![P3::new(0.0, 0.0, fallback), P3::new(1.0, 0.0, fallback)];
-        let trimmed = trim_uncontacted(&pts, fallback);
-        assert!(trimmed.is_empty());
     }
 
     // ── Integration tests ────────────────────────────────────────────
@@ -363,15 +376,23 @@ mod tests {
         };
         let tp_stl = radial_finish_toolpath(&mesh, &si, &cutter, &params_stl);
 
-        // With stock_to_leave=1.0, Z values should be 1mm lower (further from surface).
+        // With stock_to_leave=1.0, the tool must stay 1mm ABOVE the surface
+        // (positive stock_to_leave leaves material — the cutter never dips
+        // below the s=0 baseline).
         let avg_z_no_stl = avg_feed_z(&tp_no_stl);
         let avg_z_stl = avg_feed_z(&tp_stl);
 
-        let diff = avg_z_no_stl - avg_z_stl;
+        let diff = avg_z_stl - avg_z_no_stl;
         assert!(
             (diff - 1.0).abs() < 0.1,
-            "stock_to_leave=1.0 should shift Z down by ~1mm, got diff={:.3}",
+            "stock_to_leave=1.0 should shift Z up by ~1mm, got diff={:.3}",
             diff
+        );
+        assert!(
+            avg_z_stl + 1e-6 >= avg_z_no_stl,
+            "stock_to_leave should never move the cutter below the s=0 baseline: no_stl={:.3}, stl={:.3}",
+            avg_z_no_stl,
+            avg_z_stl
         );
     }
 
@@ -412,6 +433,112 @@ mod tests {
                 dist_start_1
             );
         }
+    }
+
+    #[test]
+    fn test_radial_interior_gap_no_deep_dive() {
+        let (mesh, si) = gapped_spoke_mesh();
+        let cutter = ball_cutter();
+        let params = RadialFinishParams {
+            angular_step: 360.0, // a single spoke, along +X from center.
+            point_spacing: 2.0,
+            safe_z: 20.0,
+            ..RadialFinishParams::default()
+        };
+
+        let tp = radial_finish_toolpath(&mesh, &si, &cutter, &params);
+
+        // No move (rapid or feed) should ever approach the 1000mm fallback
+        // sentinel depth. A generous margin (50mm) is used so this catches
+        // any regression of the sentinel dive without being sensitive to
+        // legitimate cutter geometry near the surface.
+        let worst_z = tp
+            .moves
+            .iter()
+            .map(|m| m.target.z)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            worst_z > mesh.bbox.min.z - 50.0,
+            "no move should dive toward the min_z_fallback sentinel; worst Z = {:.1}",
+            worst_z
+        );
+
+        // The interior gap must split the spoke into at least two separate
+        // cutting segments (no feed move should bridge the gap directly).
+        let linking_count = tp
+            .moves
+            .iter()
+            .filter(|m| m.intent == crate::toolpath::MoveIntent::Linking)
+            .count();
+        assert!(
+            linking_count >= 2,
+            "interior gap should split the spoke into >= 2 segments, got {} Linking rapids",
+            linking_count
+        );
+    }
+
+    // ── P2.3: boundary_regions pre-clip ──────────────────────────────
+
+    #[test]
+    fn radial_boundary_regions_none_matches_call_without_param() {
+        let (mesh, si) = flat_mesh();
+        let cutter = ball_cutter();
+        let params = default_params();
+        let never_cancel = || false;
+
+        let tp_default = radial_finish_toolpath(&mesh, &si, &cutter, &params);
+        let tp_none =
+            radial_finish_toolpath_with_cancel(&mesh, &si, &cutter, &params, None, &never_cancel)
+                .unwrap();
+
+        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
+        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
+            assert!((a.target.x - b.target.x).abs() < 1e-9);
+            assert!((a.target.y - b.target.y).abs() < 1e-9);
+            assert!((a.target.z - b.target.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn radial_boundary_regions_confines_cuts_to_region() {
+        let (mesh, si) = flat_mesh();
+        let cutter = ball_cutter();
+        let params = default_params();
+        let never_cancel = || false;
+
+        // Left half of the 100mm flat mesh (bbox [-50,50]).
+        let left_half = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(-50.0, -50.0),
+            crate::geo::P2::new(0.0, -50.0),
+            crate::geo::P2::new(0.0, 50.0),
+            crate::geo::P2::new(-50.0, 50.0),
+        ]);
+
+        let left_half_regions = std::slice::from_ref(&left_half);
+        let region_set = RegionSet::from_slice(left_half_regions);
+        let tp = radial_finish_toolpath_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            Some(&region_set),
+            &never_cancel,
+        )
+        .unwrap();
+
+        let tol = 1e-6;
+        let mut saw_cut = false;
+        for m in &tp.moves {
+            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
+                saw_cut = true;
+                assert!(
+                    m.target.x <= tol,
+                    "feed move X={:.3} escaped the left-half boundary region",
+                    m.target.x
+                );
+            }
+        }
+        assert!(saw_cut, "expected at least one feed move");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

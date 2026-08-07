@@ -1,8 +1,9 @@
 //! Scallop height formulas for 3D finishing strategies.
 //!
 //! Provides the math for computing scallop height from stepover (and vice versa)
-//! on flat, curved, and inclined surfaces. Used by scallop finishing, steep & shallow,
-//! and any operation that needs to convert between scallop height and stepover.
+//! on flat, curved, and inclined surfaces. Currently consumed only by
+//! `scallop.rs` (scallop finishing); other operations that need to convert
+//! between scallop height and stepover can adopt it too.
 //!
 //! Reference: `research/02_algorithms.md` section 8, `research/raw_algorithms.md` lines 789-875.
 
@@ -10,7 +11,7 @@
 ///
 /// `h = R - sqrt(R^2 - (stepover/2)^2)`
 ///
-/// Returns 0 if stepover >= 2*R (fully engaged, no scallop defined).
+/// Returns `tool_radius` if stepover >= 2*R (fully engaged — max scallop is the radius).
 pub fn scallop_height_flat(tool_radius: f64, stepover: f64) -> f64 {
     let half_so = stepover * 0.5;
     let r_sq = tool_radius * tool_radius;
@@ -59,7 +60,8 @@ pub fn effective_radius(tool_radius: f64, curvature_radius: f64) -> f64 {
     } else {
         // Concave: R_eff = R * |Rc| / (|Rc| - R)
         if abs_rc <= tool_radius {
-            // Tool fits inside concavity — effectively flat
+            // Tool does NOT fit inside the concavity (radius of curvature is
+            // too tight for the tool) — fall back to the unadjusted radius.
             return tool_radius;
         }
         tool_radius * abs_rc / (abs_rc - tool_radius)
@@ -92,9 +94,49 @@ pub fn scallop_height_curved(tool_radius: f64, stepover: f64, curvature: f64) ->
 /// Compute variable stepover at a point given desired scallop height,
 /// tool radius, local surface slope angle, and curvature.
 ///
-/// On inclined surfaces, the effective radius perpendicular to the slope is
-/// `R / cos(slope_angle)` for a ball endmill — the projected cut profile
-/// is wider. Combined with curvature adjustment, this gives the full formula.
+/// # The slope term is INVERTED. Measured, 2026-08-02.
+///
+/// This function widens the stepover on slope. The geometry requires it to be
+/// **narrowed**, and by a different function.
+///
+/// Rings are offset in **XY**, so two adjacent passes on ground inclined at
+/// `θ` end up `d · sec θ` apart *along the surface*, and the surface-normal
+/// cusp is `R − √(R² − (d·sec θ/2)²)`. Holding the cusp therefore requires
+/// scaling the XY stepover by **`cos θ`**. This function instead computes
+/// `R_eff = R / cos θ` and feeds that to the flat formula, which scales the
+/// stepover by roughly `1/√cos θ` — it opens the stepover exactly where the
+/// geometry closes it:
+///
+/// | slope | geometry requires | this function returns | too wide by |
+/// |---|---|---|---|
+/// | 30° | 0.2425 mm | 0.3013 mm | **1.24×** |
+/// | 45° | 0.1980 mm | 0.3340 mm | **1.69×** |
+/// | 60° | 0.1400 mm | 0.3980 mm | **2.84×** |
+///
+/// Cusp goes as `d²`, so 1.69× too wide is roughly a 3× cusp overshoot at 45°.
+/// Ground truth is
+/// `scallop_oracle_validation_m4::inclined_plane_cusp_follows_the_secant_law`,
+/// which measures the law to ≤4.5% at 0–60° against an analytic tool-envelope
+/// oracle; the correct form is available as
+/// [`crate::scallop::StepoverGeometry::CosineSlope`].
+///
+/// # Why it has not simply been fixed
+///
+/// Because correcting it **alone makes the product worse**, measured. A
+/// correct law is tighter, and `scallop.rs`'s `max_rings` cap is budgeted from
+/// the flat-ground (widest) stepover — so the cascade truncates before it
+/// collapses, and the corrected arms `A6`/`A7` read 194–211× the dial with
+/// 38–102 mm² of never-touched material in the middle of the part, against
+/// shipped's 11.6–28.2×. The stepover law and the ring budget are one problem
+/// and must be fixed together. See
+/// `planning/review_2026-07-29/CHECKPOINT_C_EVIDENCE.md` §1.4, §3.4 and §4.
+///
+/// Also worth knowing before "fixing" this: the shipped error is partly
+/// masked. A finer generation grid raises the raw curvature estimate (`κ`
+/// scales as `1/cell²`), which tightens the stepover and offsets the
+/// loosening from this term. Two errors partially cancelling is not a working
+/// dial, but it does mean the observable effect of correcting one of them is
+/// not what the table above suggests.
 ///
 /// `slope_angle`: radians from horizontal (0 = flat, PI/2 = vertical).
 /// `curvature`: mean curvature (positive = convex, negative = concave, 0 = flat).
@@ -104,7 +146,8 @@ pub fn variable_stepover(
     slope_angle: f64,
     curvature: f64,
 ) -> f64 {
-    // Slope adjustment: on an incline, the cross-slope effective radius is larger.
+    // INVERTED — see this function's doc comment. Kept because correcting it
+    // without also removing `max_rings` measures far worse than the defect.
     // R_slope = R / cos(theta), but cap at reasonable values near vertical.
     let cos_theta = slope_angle.cos().max(0.05); // Cap at ~87 degrees
     let r_slope_adjusted = tool_radius / cos_theta;
@@ -241,16 +284,29 @@ mod tests {
         );
     }
 
+    /// Pins the INVERSION, not the intent.
+    ///
+    /// `variable_stepover` widens on slope. The geometry requires narrowing —
+    /// see the function's doc comment and `CHECKPOINT_C_EVIDENCE.md` §1.4.
+    /// This test asserts what the code does so the defect cannot be "fixed"
+    /// by accident without the `max_rings` half of the change (§3.4), and
+    /// names the correct value beside the wrong one.
     #[test]
-    fn test_variable_stepover_steep_wider() {
-        // Steep surface (80 degrees) → wider stepover than flat
+    fn variable_stepover_widens_on_slope_which_is_backwards() {
         let so_flat = variable_stepover(5.0, 0.1, 0.0, 0.0);
         let so_steep = variable_stepover(5.0, 0.1, 80.0_f64.to_radians(), 0.0);
         assert!(
             so_steep > so_flat,
-            "Steep slope should give wider stepover: flat={:.4} steep={:.4}",
+            "shipped behaviour is to WIDEN on slope: flat={:.4} steep={:.4}",
             so_flat,
             so_steep
+        );
+        // What the surface-normal cusp actually requires at the same angle.
+        let required = so_flat * 80.0_f64.to_radians().cos();
+        assert!(
+            required < so_flat && so_steep > required * 4.0,
+            "the geometry requires {required:.4} mm at 80°; this function \
+             returns {so_steep:.4} mm, more than 4x too wide"
         );
     }
 

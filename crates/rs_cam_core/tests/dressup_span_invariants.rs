@@ -34,6 +34,7 @@ use rs_cam_core::{
     geo::P3,
     toolpath::Toolpath,
     toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
+    transform_provenance::ReconcileSet,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -134,6 +135,7 @@ fn run_full_pipeline(
         op.transform_capabilities(),
         None,
         None,
+        &mut ReconcileSet::empty(),
     )
 }
 
@@ -177,7 +179,19 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
         let input = synthetic_three_pass();
         let n_in = input.toolpath.moves.len();
         let output = apply_dressups(
-            input, &cfg, 1000.0, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+            input,
+            &cfg,
+            1000.0,
+            6.0,
+            10.0,
+            0.0,
+            None,
+            None,
+            None,
+            cap,
+            None,
+            None,
+            &mut ReconcileSet::empty(),
         );
         assert_invariants(&output, label);
         assert_operation_span_tracks_moves(&output, label);
@@ -204,7 +218,19 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
         ..DressupConfig::default()
     };
     let output = apply_dressups(
-        input, &cfg, 1000.0, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+        input,
+        &cfg,
+        1000.0,
+        6.0,
+        10.0,
+        0.0,
+        None,
+        None,
+        None,
+        cap,
+        None,
+        None,
+        &mut ReconcileSet::empty(),
     );
     assert_invariants(&output, "link_moves_barrier_check");
     if !output.spans_valid {
@@ -248,7 +274,19 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
         ..DressupConfig::default()
     };
     let output = apply_dressups(
-        input, &cfg, 1000.0, 6.0, 10.0, 0.0, None, None, None, cap, None, None,
+        input,
+        &cfg,
+        1000.0,
+        6.0,
+        10.0,
+        0.0,
+        None,
+        None,
+        None,
+        cap,
+        None,
+        None,
+        &mut ReconcileSet::empty(),
     );
     assert_invariants(&output, "invalid_input_passthrough");
     assert!(

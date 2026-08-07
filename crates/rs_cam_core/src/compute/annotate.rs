@@ -6,9 +6,9 @@
 //! events and opens/closes semantic scopes so that the toolpath viewer can
 //! display a structured breakdown of the algorithm's behaviour.
 
-use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind};
+use crate::semantic_trace::{SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind};
 use crate::toolpath::Toolpath;
-use crate::toolpath_spans::{Span, SpanKind, SpanPayload};
+use crate::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -38,18 +38,46 @@ pub(super) fn annotate_depth_run_spans(
     );
 }
 
-/// Semantic trace for Trace engraving: depth levels with child chains.
+/// Semantic trace for Trace engraving: ONE region, depth levels inside it,
+/// chains inside those.
+///
+/// C8: `narrate_toolpath` reported `regions 0` for Trace. The cause is not a
+/// missing projection — it is a NAMING divergence. Fifteen operation
+/// families route their structural `SpanKind::Region` spans through
+/// [`annotate_depth_run_spans`] and get `Region` items; Trace calls the same
+/// helper with `ToolpathSemanticKind::Chain` instead, because an engraving
+/// run is a contour chain rather than an area, and `sim_debug` colours the
+/// two differently. Both readings are defensible, and the result was that
+/// Trace's structure appeared in narration's `depth levels D, regions R,
+/// rings G` line as no structure at all.
+///
+/// So the chains stay chains — they are chains — and the operation gains
+/// the region it genuinely has: ONE. Trace engraves the model's contour set;
+/// it does not partition anything, and claiming a per-contour partition
+/// would report a structure the generator does not have. Narration now
+/// reads `regions 1` and, with the C8 chain counter, `chains N`.
 pub(super) fn annotate_trace_spans(
     spans: &[Span],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
+    let region_scope = op_context.start_item(
+        ToolpathSemanticKind::Region,
+        "Region 1/1 (trace)".to_owned(),
+    );
+    region_scope.set_param(SemanticKey::RegionIndex, 0usize);
+    region_scope.set_param(SemanticKey::RegionTotal, 1usize);
+    region_scope.set_param(SemanticKey::Strategy, "trace");
+    if !toolpath.moves.is_empty() {
+        region_scope.bind_to_toolpath(toolpath, 0, toolpath.moves.len());
+    }
     annotate_depth_run_spans_with_region_kind(
         spans,
         toolpath,
-        op_context,
+        &region_scope.context(),
         &ToolpathSemanticKind::Chain,
     );
+    region_scope.finish();
 }
 
 fn annotate_depth_run_spans_with_region_kind(
@@ -81,8 +109,8 @@ fn annotate_depth_run_spans_with_region_kind(
             pass_index,
         }) = &depth_span.payload
         {
-            scope.set_param("z_level", *z_level);
-            scope.set_param("pass_index", *pass_index);
+            scope.set_param(SemanticKey::ZLevel, *z_level);
+            scope.set_param(SemanticKey::PassIndex, *pass_index);
         }
         bind_span_scope(&scope, toolpath, depth_span);
         let child_ctx = scope.context();
@@ -124,8 +152,8 @@ fn annotate_one_region_span(
         span.label.clone().into_owned()
     };
     let scope = context.start_item(kind.clone(), label);
-    if let Some(SpanPayload::Region { region_id }) = &span.payload {
-        scope.set_param("region_id", *region_id);
+    if let Some(SpanPayload::Region { region_id, .. }) = &span.payload {
+        scope.set_param(SemanticKey::RegionId, *region_id);
     }
     bind_span_scope(&scope, toolpath, span);
     scope.finish();
@@ -133,34 +161,39 @@ fn annotate_one_region_span(
 
 /// Semantic trace for drill-like operations: `Hole` items with child `Cycle`
 /// items for each plunge/peck feed move.
+///
+/// C4: the hole/peck split is read off [`RegionSpanRole`], not off the label.
+/// This function used to reconstruct the nesting with
+/// `label.starts_with("Hole ") && !label.contains("plunge")` for the parent
+/// and `label.contains("plunge")` for the child — a contract
+/// `spans_from_drill_holes` was never obliged to keep, one `format!` away
+/// from silently producing a flat trace with every peck promoted to a hole.
+/// The labels still travel through to the semantic items, because that is
+/// what a human reads; nothing branches on them.
 pub(super) fn annotate_drill_spans(
     spans: &[Span],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
-    for hole_span in spans.iter().filter(|span| {
-        span.kind == SpanKind::Region
-            && !span.is_boundary()
-            && span.label.starts_with("Hole ")
-            && !span.label.contains("plunge")
-    }) {
+    for hole_span in spans
+        .iter()
+        .filter(|span| span.has_region_role(RegionSpanRole::DrillHole))
+    {
         let scope = op_context.start_item(ToolpathSemanticKind::Hole, hole_span.label.clone());
-        if let Some(SpanPayload::Region { region_id }) = &hole_span.payload {
-            scope.set_param("hole_index", *region_id);
+        if let Some(SpanPayload::Region { region_id, .. }) = &hole_span.payload {
+            scope.set_param(SemanticKey::HoleIndex, *region_id);
         }
         bind_span_scope(&scope, toolpath, hole_span);
         let child_ctx = scope.context();
         for plunge_span in spans.iter().filter(|candidate| {
-            candidate.kind == SpanKind::Region
-                && !candidate.is_boundary()
-                && candidate.label.contains("plunge")
+            candidate.has_region_role(RegionSpanRole::DrillPeck)
                 && candidate.start_move >= hole_span.start_move
                 && candidate.end_move <= hole_span.end_move
         }) {
             let cycle =
                 child_ctx.start_item(ToolpathSemanticKind::Cycle, plunge_span.label.clone());
-            if let Some(SpanPayload::Region { region_id }) = &plunge_span.payload {
-                cycle.set_param("cycle_index", *region_id);
+            if let Some(SpanPayload::Region { region_id, .. }) = &plunge_span.payload {
+                cycle.set_param(SemanticKey::CycleIndex, *region_id);
             }
             bind_span_scope(&cycle, toolpath, plunge_span);
             cycle.finish();
@@ -222,9 +255,9 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Region,
                     format!("Region {}", region_index + 1),
                 );
-                scope.set_param("region_index", *region_index);
-                scope.set_param("region_total", *region_total);
-                scope.set_param("cell_count", *cell_count);
+                scope.set_param(SemanticKey::RegionIndex, *region_index);
+                scope.set_param(SemanticKey::RegionTotal, *region_total);
+                scope.set_param(SemanticKey::CellCount, *cell_count);
                 let ctx = scope.context();
                 region_ctx = Some(ctx);
                 region_scope = Some(scope);
@@ -242,9 +275,9 @@ pub(super) fn annotate_adaptive3d(
                 let parent = region_ctx.as_ref().unwrap_or(op_context);
                 let scope =
                     parent.start_item(ToolpathSemanticKind::DepthLevel, format!("Z {z_level:.2}"));
-                scope.set_param("z_level", *z_level);
-                scope.set_param("level_index", *level_index);
-                scope.set_param("level_total", *level_total);
+                scope.set_param(SemanticKey::ZLevel, *z_level);
+                scope.set_param(SemanticKey::LevelIndex, *level_index);
+                scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
@@ -270,9 +303,9 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::DepthLevel,
                     format!("Global Z {z_level:.2}"),
                 );
-                scope.set_param("z_level", *z_level);
-                scope.set_param("level_index", *level_index);
-                scope.set_param("level_total", *level_total);
+                scope.set_param(SemanticKey::ZLevel, *z_level);
+                scope.set_param(SemanticKey::LevelIndex, *level_index);
+                scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 let ctx = scope.context();
@@ -301,11 +334,11 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Entry,
                     format!("Pass {} {}", pass_index + 1, style_label),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("entry_x", *entry_x);
-                scope.set_param("entry_y", *entry_y);
-                scope.set_param("entry_z", *entry_z);
-                scope.set_param("style", *style_label);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::EntryX, *entry_x);
+                scope.set_param(SemanticKey::EntryY, *entry_y);
+                scope.set_param(SemanticKey::EntryZ, *entry_z);
+                scope.set_param(SemanticKey::Style, *style_label);
                 // D4 — entry sequence runs from the event's emit
                 // index (entry_start) to its captured end index. Use
                 // the explicit end so the semantic scope matches the
@@ -320,8 +353,8 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {} skipped (preflight)", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("skipped", true);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::Skipped, true);
                 scope.finish();
             }
             Adaptive3dRuntimeEvent::PassSummary {
@@ -336,11 +369,11 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {}", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("step_count", *step_count);
-                scope.set_param("exit_reason", exit_reason.clone());
-                scope.set_param("yield_ratio", *yield_ratio);
-                scope.set_param("short", *short);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::StepCount, *step_count);
+                scope.set_param(SemanticKey::ExitReason, exit_reason.clone());
+                scope.set_param(SemanticKey::YieldRatio, *yield_ratio);
+                scope.set_param(SemanticKey::Short, *short);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -363,19 +396,28 @@ fn set_z_level_plan_metrics(
     if !metrics.available {
         return;
     }
-    scope.set_param("marching_squares_regions", metrics.marching_squares_regions);
-    scope.set_param("region_areas_mm2", metrics.region_areas_mm2.clone());
     scope.set_param(
-        "dropped_micro_region_count",
+        SemanticKey::MarchingSquaresRegions,
+        metrics.marching_squares_regions,
+    );
+    scope.set_param(
+        SemanticKey::RegionAreasMm2,
+        metrics.region_areas_mm2.clone(),
+    );
+    scope.set_param(
+        SemanticKey::DroppedMicroRegionCount,
         metrics.dropped_micro_region_count,
     );
     scope.set_param(
-        "perimeter_sweep_length_mm",
+        SemanticKey::PerimeterSweepLengthMm,
         metrics.perimeter_sweep_length_mm,
     );
-    scope.set_param("agent_walk_cut_length_mm", metrics.agent_walk_cut_length_mm);
     scope.set_param(
-        "residual_cleanup_cell_count",
+        SemanticKey::AgentWalkCutLengthMm,
+        metrics.agent_walk_cut_length_mm,
+    );
+    scope.set_param(
+        SemanticKey::ResidualCleanupCellCount,
         metrics.residual_cleanup_cell_count,
     );
 }
@@ -408,8 +450,8 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::SlotClearing,
                     format!("Slot line {}/{line_total}", line_index + 1),
                 );
-                scope.set_param("line_index", *line_index);
-                scope.set_param("line_total", *line_total);
+                scope.set_param(SemanticKey::LineIndex, *line_index);
+                scope.set_param(SemanticKey::LineTotal, *line_total);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -422,9 +464,9 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Entry,
                     format!("Pass {} entry", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("entry_x", *entry_x);
-                scope.set_param("entry_y", *entry_y);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::EntryX, *entry_x);
+                scope.set_param(SemanticKey::EntryY, *entry_y);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -439,11 +481,11 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Pass,
                     format!("Pass {}", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("step_count", *step_count);
-                scope.set_param("idle_count", *idle_count);
-                scope.set_param("search_evaluations", *search_evaluations);
-                scope.set_param("exit_reason", exit_reason.clone());
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::StepCount, *step_count);
+                scope.set_param(SemanticKey::IdleCount, *idle_count);
+                scope.set_param(SemanticKey::SearchEvaluations, *search_evaluations);
+                scope.set_param(SemanticKey::ExitReason, exit_reason.clone());
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -457,10 +499,10 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::ForcedClear,
                     format!("Forced clear (pass {})", pass_index + 1),
                 );
-                scope.set_param("pass_index", *pass_index);
-                scope.set_param("center_x", *center_x);
-                scope.set_param("center_y", *center_y);
-                scope.set_param("radius", *radius);
+                scope.set_param(SemanticKey::PassIndex, *pass_index);
+                scope.set_param(SemanticKey::CenterX, *center_x);
+                scope.set_param(SemanticKey::CenterY, *center_y);
+                scope.set_param(SemanticKey::Radius, *radius);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -472,8 +514,8 @@ pub(super) fn annotate_adaptive2d(
                     ToolpathSemanticKind::Cleanup,
                     format!("Boundary cleanup {}/{contour_total}", contour_index + 1),
                 );
-                scope.set_param("contour_index", *contour_index);
-                scope.set_param("contour_total", *contour_total);
+                scope.set_param(SemanticKey::ContourIndex, *contour_index);
+                scope.set_param(SemanticKey::ContourTotal, *contour_total);
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
@@ -483,35 +525,215 @@ pub(super) fn annotate_adaptive2d(
 
 // ── Scallop ─────────────────────────────────────────────────────────
 
-pub(super) fn annotate_scallop(
+/// Whether [`annotate_scallop`] wraps its rings in `Region` items (C8).
+///
+/// The two `Region` populations in this crate are not the same thing, and
+/// `narrate_toolpath` counts them with one counter:
+///
+/// * the PLANNER's territory nodes, which A/M8 projects for `UnifiedFinish`
+///   and whose semantic items must reconcile 1:1 with the structural
+///   `RegionSpanRole::Node` spans;
+/// * the GENERATOR's own pass groupings, which the 15 families routed
+///   through [`annotate_depth_run_spans`] have always emitted under the same
+///   kind.
+///
+/// Scallop is BOTH, depending on who called it. Standalone, its
+/// per-boundary ring cascades are the only region structure it has, and
+/// hiding them is what produced `regions 0`. Inside `UnifiedFinish` it is a
+/// sub-generator filling ONE of the planner's mid-steep nodes, and adding a
+/// second region there both double-counts and breaks A/M8's reconciliation
+/// gate — which is exactly what it did when this was unconditional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScallopRegionGrouping {
+    /// Standalone scallop: emit one `Region` per boundary region.
+    ByBoundaryRegion,
+    /// Scallop as a sub-generator: rings only, so the caller's own region
+    /// nodes stay the single region population.
+    Flat,
+}
+
+/// Rings with no region wrapper — the pre-C8 shape, kept for sub-generator
+/// callers. See [`ScallopRegionGrouping`].
+fn annotate_scallop_rings_flat(
     events: &[crate::scallop::ScallopRuntimeAnnotation],
     toolpath: &Toolpath,
     op_context: &ToolpathSemanticContext,
 ) {
+    let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
+    let tp_len = toolpath.moves.len();
+    for (i, ann) in events.iter().enumerate() {
+        let end = move_end(&move_indices, i, tp_len);
+        let crate::scallop::ScallopRuntimeEvent::Ring {
+            ring_index,
+            ring_total,
+            continuous,
+            ..
+        } = &ann.event;
+        let scope = op_context.start_item(
+            ToolpathSemanticKind::Ring,
+            format!("Ring {}/{ring_total}", ring_index + 1),
+        );
+        scope.set_param(SemanticKey::RingIndex, *ring_index);
+        scope.set_param(SemanticKey::RingTotal, *ring_total);
+        scope.set_param(SemanticKey::Continuous, *continuous);
+        scope.bind_to_toolpath(toolpath, ann.move_index, end);
+        scope.finish();
+    }
+}
+
+/// C8: `Region` items per BOUNDARY REGION, each parenting the `Ring` items
+/// its own independent ring cascade produced.
+///
+/// `narrate_toolpath` reported `regions 0` for scallop — the same structural
+/// gap A/M8 closed for `UnifiedFinish`, in a milder form. Scallop generates
+/// "one region at a time, concatenated in region order" (P2.3: multiple
+/// disjoint machining-boundary regions each get an independent ring set),
+/// but the runtime annotation stream carried only a GLOBAL ring index, so
+/// the region structure was gone before the semantic trace was built.
+///
+/// The count is honest at both ends: with no machining boundary the whole
+/// mesh footprint is ONE region, so narration reads `regions 1` — which is
+/// the truth, and distinguishable from the `0` that used to mean "nothing
+/// looked".
+///
+/// Rings keep their global index in their label, so an operator comparing
+/// narration against the GUI span list still sees the same numbering.
+pub(super) fn annotate_scallop(
+    events: &[crate::scallop::ScallopRuntimeAnnotation],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+    group_by_region: ScallopRegionGrouping,
+) {
     if events.is_empty() {
+        return;
+    }
+    if group_by_region == ScallopRegionGrouping::Flat {
+        annotate_scallop_rings_flat(events, toolpath, op_context);
         return;
     }
 
     let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
 
-    for (i, ann) in events.iter().enumerate() {
-        let end = move_end(&move_indices, i, tp_len);
-
+    // Group CONSECUTIVE events by region. The ring list is concatenated in
+    // region order (and reversed wholesale for `InsideOut`), so consecutive
+    // grouping reproduces the generator's own partition without assuming
+    // the regions arrive in index order.
+    let region_of = |ann: &crate::scallop::ScallopRuntimeAnnotation| {
         let crate::scallop::ScallopRuntimeEvent::Ring {
-            ring_index,
-            ring_total,
-            continuous,
-        } = &ann.event;
+            region_index,
+            region_total,
+            ..
+        } = ann.event;
+        (region_index, region_total)
+    };
 
-        let scope = op_context.start_item(
-            ToolpathSemanticKind::Ring,
-            format!("Ring {}/{ring_total}", ring_index + 1),
+    let mut i = 0usize;
+    while i < events.len() {
+        let Some((region_index, region_total)) = events.get(i).map(region_of) else {
+            break;
+        };
+
+        let j = events
+            .iter()
+            .enumerate()
+            .skip(i)
+            .find(|(_, ann)| region_of(ann).0 != region_index)
+            .map_or(events.len(), |(k, _)| k);
+
+        let region_start = events.get(i).map_or(0, |ann| ann.move_index);
+        let region_end = move_end(&move_indices, j.saturating_sub(1), tp_len);
+        let region_scope = op_context.start_item(
+            ToolpathSemanticKind::Region,
+            format!("Region {}/{region_total} (scallop)", region_index + 1),
         );
-        scope.set_param("ring_index", *ring_index);
-        scope.set_param("ring_total", *ring_total);
-        scope.set_param("continuous", *continuous);
-        scope.bind_to_toolpath(toolpath, ann.move_index, end);
+        region_scope.set_param(SemanticKey::RegionIndex, region_index);
+        region_scope.set_param(SemanticKey::RegionTotal, region_total);
+        region_scope.set_param(SemanticKey::Strategy, "scallop");
+        region_scope.set_param(SemanticKey::RingTotal, j - i);
+        if region_end > region_start && region_end <= tp_len {
+            region_scope.bind_to_toolpath(toolpath, region_start, region_end);
+        }
+        let ring_ctx = region_scope.context();
+
+        for (k, ann) in events.iter().enumerate().take(j).skip(i) {
+            let end = move_end(&move_indices, k, tp_len);
+
+            let crate::scallop::ScallopRuntimeEvent::Ring {
+                ring_index,
+                ring_total,
+                continuous,
+                ..
+            } = &ann.event;
+
+            let scope = ring_ctx.start_item(
+                ToolpathSemanticKind::Ring,
+                format!("Ring {}/{ring_total}", ring_index + 1),
+            );
+            scope.set_param(SemanticKey::RingIndex, *ring_index);
+            scope.set_param(SemanticKey::RingTotal, *ring_total);
+            scope.set_param(SemanticKey::Continuous, *continuous);
+            scope.bind_to_toolpath(toolpath, ann.move_index, end);
+            scope.finish();
+        }
+
+        region_scope.finish();
+        i = j;
+    }
+}
+
+// ── UnifiedFinish ───────────────────────────────────────────────────
+
+/// Semantic trace for UnifiedFinish: one `Region` item per routed region
+/// node, labelled with its BAND and the STRATEGY that generated it.
+///
+/// Plan A/M8. UnifiedFinish already emitted STRUCTURAL region-node spans
+/// (`unified_finish::unified_finish_spans`), but the semantic trace
+/// `narrate_toolpath` reads is a separate system that the op never
+/// populated — so the agent-facing diagnostic reported `regions 0` for the
+/// one operation whose entire premise is mixing strategies.
+///
+/// Both systems are built from the same
+/// [`crate::unified_finish::RegionAnnotation`] table, and
+/// `tests/unified_finish_semantic_regions.rs` asserts they agree on count
+/// and move range. This is annotation only: no move is added, removed, or
+/// moved.
+pub(super) fn annotate_unified_finish_regions(
+    regions: &[crate::unified_finish::RegionAnnotation],
+    toolpath: &Toolpath,
+    op_context: &ToolpathSemanticContext,
+) {
+    for region in regions {
+        let scope = op_context.start_item(ToolpathSemanticKind::Region, region.semantic_label());
+        scope.set_param(SemanticKey::RegionId, region.region_id);
+        scope.set_param(SemanticKey::Band, region.kind.band_label());
+        scope.set_param(SemanticKey::Strategy, region.kind.strategy().label());
+        if let Some(area) = region.area_mm2 {
+            // M1 serde decision (PR-0): this stays a RAW JSON NUMBER. The
+            // semantic-trace wire is read by string key (narration, the MCP
+            // `narrate_toolpath` path, the GUI item list), so promoting it to
+            // a tagged `{value, domain, stage}` object would break every
+            // consumer for provenance that is CONSTANT for this key — the
+            // value is always a `ProjectedXyAreaMm2` from the band
+            // decomposition. The domain therefore lives in the key's
+            // documentation and in
+            // `UnifiedFinishReport::provenance`, which the same generation
+            // carries, rather than being restated per item.
+            //
+            // Documented loss: a consumer holding ONLY this JSON cannot tell
+            // which grid the area was measured on (X-6). If that ever matters
+            // on the wire, add a sibling `area_provenance` string param —
+            // additive, no key rename.
+            scope.set_param(SemanticKey::AreaMm2, area);
+        }
+        // Same guard `bind_span_scope` applies to structural spans: an
+        // empty or out-of-range node contributes an unlinked item rather
+        // than a bogus range.
+        if region.move_range.end > region.move_range.start
+            && region.move_range.end <= toolpath.moves.len()
+        {
+            scope.bind_to_toolpath(toolpath, region.move_range.start, region.move_range.end);
+        }
         scope.finish();
     }
 }
@@ -553,14 +775,14 @@ pub(super) fn annotate_ramp_finish(
                 ramp_total
             ),
         );
-        scope.set_param("terrace_index", *terrace_index);
-        scope.set_param("terrace_total", *terrace_total);
-        scope.set_param("upper_level_index", *upper_level_index);
-        scope.set_param("lower_level_index", *lower_level_index);
-        scope.set_param("upper_z", *upper_z);
-        scope.set_param("lower_z", *lower_z);
-        scope.set_param("ramp_index", *ramp_index);
-        scope.set_param("ramp_total", *ramp_total);
+        scope.set_param(SemanticKey::TerraceIndex, *terrace_index);
+        scope.set_param(SemanticKey::TerraceTotal, *terrace_total);
+        scope.set_param(SemanticKey::UpperLevelIndex, *upper_level_index);
+        scope.set_param(SemanticKey::LowerLevelIndex, *lower_level_index);
+        scope.set_param(SemanticKey::UpperZ, *upper_z);
+        scope.set_param(SemanticKey::LowerZ, *lower_z);
+        scope.set_param(SemanticKey::RampIndex, *ramp_index);
+        scope.set_param(SemanticKey::RampTotal, *ramp_total);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
@@ -568,6 +790,20 @@ pub(super) fn annotate_ramp_finish(
 
 // ── SpiralFinish ────────────────────────────────────────────────────
 
+/// C8: ONE `Region` item covering the whole spiral, parenting its `Ring`
+/// items.
+///
+/// `narrate_toolpath` reported `regions 0` here too, and the honest answer
+/// is `1` — NOT a per-boundary partition like scallop's. Spiral finish does
+/// not generate an independent ring set per machining-boundary region: it
+/// walks one continuous archimedean spiral over the whole footprint and
+/// SKIPS sample points that fall outside every region
+/// (`spiral_finish.rs`'s `in_region` pre-clip). One traversal, one region,
+/// however many boundaries were supplied.
+///
+/// That distinction is why this is not the same code as
+/// [`annotate_scallop`]: inventing a per-boundary partition here would
+/// report a structure the generator does not have.
 pub(super) fn annotate_spiral_finish(
     events: &[crate::spiral_finish::SpiralFinishRuntimeAnnotation],
     toolpath: &Toolpath,
@@ -580,6 +816,21 @@ pub(super) fn annotate_spiral_finish(
     let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
 
+    let region_start = events.first().map_or(0, |a| a.move_index);
+    let region_end = move_end(&move_indices, events.len().saturating_sub(1), tp_len);
+    let region_scope = op_context.start_item(
+        ToolpathSemanticKind::Region,
+        "Region 1/1 (spiral)".to_owned(),
+    );
+    region_scope.set_param(SemanticKey::RegionIndex, 0usize);
+    region_scope.set_param(SemanticKey::RegionTotal, 1usize);
+    region_scope.set_param(SemanticKey::Strategy, "spiral");
+    region_scope.set_param(SemanticKey::RingTotal, events.len());
+    if region_end > region_start && region_end <= tp_len {
+        region_scope.bind_to_toolpath(toolpath, region_start, region_end);
+    }
+    let ring_ctx = region_scope.context();
+
     for (i, ann) in events.iter().enumerate() {
         let end = move_end(&move_indices, i, tp_len);
 
@@ -589,16 +840,18 @@ pub(super) fn annotate_spiral_finish(
             radius_mm,
         } = &ann.event;
 
-        let scope = op_context.start_item(
+        let scope = ring_ctx.start_item(
             ToolpathSemanticKind::Ring,
             format!("Ring {}/{ring_total}", ring_index + 1),
         );
-        scope.set_param("ring_index", *ring_index);
-        scope.set_param("ring_total", *ring_total);
-        scope.set_param("radius_mm", *radius_mm);
+        scope.set_param(SemanticKey::RingIndex, *ring_index);
+        scope.set_param(SemanticKey::RingTotal, *ring_total);
+        scope.set_param(SemanticKey::RadiusMm, *radius_mm);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }
+
+    region_scope.finish();
 }
 
 // ── Pencil ──────────────────────────────────────────────────────────
@@ -644,12 +897,12 @@ pub(super) fn annotate_pencil(
         };
 
         let scope = op_context.start_item(kind, label);
-        scope.set_param("chain_index", *chain_index);
-        scope.set_param("chain_total", *chain_total);
-        scope.set_param("offset_index", *offset_index);
-        scope.set_param("offset_total", *offset_total);
-        scope.set_param("offset_mm", *offset_mm);
-        scope.set_param("is_centerline", *is_centerline);
+        scope.set_param(SemanticKey::ChainIndex, *chain_index);
+        scope.set_param(SemanticKey::ChainTotal, *chain_total);
+        scope.set_param(SemanticKey::OffsetIndex, *offset_index);
+        scope.set_param(SemanticKey::OffsetTotal, *offset_total);
+        scope.set_param(SemanticKey::OffsetMm, *offset_mm);
+        scope.set_param(SemanticKey::IsCenterline, *is_centerline);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
     }

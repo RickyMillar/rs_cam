@@ -177,6 +177,7 @@ impl ProjectSession {
                         _legacy_feeds_auto: None,
                         debug_options: tc.debug_options,
                         feeds_provenance: tc.feeds_provenance.clone(),
+                        rest_analysis: tc.rest_analysis.clone(),
                     })
                     .collect();
 
@@ -212,12 +213,30 @@ impl ProjectSession {
                     })
                     .collect();
 
+                // W9 / P-2. An untouched datum writes NO keys — the
+                // three `skip_serializing_if = "String::is_empty"`
+                // fields stay empty — so projects that never opened the
+                // Setup panel serialise exactly as they did before.
+                let (xy_datum, z_datum, datum_notes) = if s.datum.is_default() {
+                    (String::new(), String::new(), String::new())
+                } else {
+                    (
+                        s.datum.xy_method.to_key(),
+                        s.datum.z_method.to_key(),
+                        s.datum.notes.clone(),
+                    )
+                };
+
                 ProjectSetupSection {
                     id: Some(s.id),
                     name: s.name.clone(),
                     face_up: s.face_up.to_key().to_owned(),
                     z_rotation: s.z_rotation.to_key().to_owned(),
                     pause_message: s.pause_message.clone(),
+                    xy_datum,
+                    z_datum,
+                    datum_notes,
+                    model_ids: s.model_ids.iter().map(|id| id.0).collect(),
                     fixtures,
                     keep_out_zones,
                     toolpaths,
@@ -273,6 +292,7 @@ mod tests {
             face_selection: None,
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
         }
     }
 

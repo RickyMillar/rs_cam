@@ -79,8 +79,10 @@ pub fn classify(op_type: OperationType, model_bbox: Option<&BoundingBox3>) -> Ge
         // 2D / pocket-like: planar engagement, strategy auto-pick moot.
         Pocket | Rest | Profile | Chamfer | Face | Pencil | Adaptive => GeometryClass::PocketLike,
         // 3D ops fall through to terrain-aware classification.
-        Adaptive3d | DropCutter | Scallop | Waterline | HorizontalFinish | SteepShallow
-        | SpiralFinish | RadialFinish | Zigzag | RampFinish => classify_3d_terrain(model_bbox),
+        Adaptive3d | DropCutter | Scallop | UnifiedFinish | Waterline | HorizontalFinish
+        | SteepShallow | SpiralFinish | RadialFinish | Zigzag | RampFinish => {
+            classify_3d_terrain(model_bbox)
+        }
     }
 }
 
@@ -102,6 +104,12 @@ fn classify_3d_terrain(model_bbox: Option<&BoundingBox3>) -> GeometryClass {
     // shallow-vs-steep. Strategy passes that care about the
     // distinction (Helix promotion: prefers ShallowTerrain) will use
     // bbox-feasibility helpers in addition to this signal.
+    //
+    // `ShallowTerrain` / `SteepTerrain` are reserved variants: this fn
+    // only receives a bbox (no slope-histogram input exists yet), so
+    // there is nothing trivial to threshold on. Wiring them requires the
+    // `ModelGeometrySummary` slope/face-type signal described above, not
+    // a local change here. See tracker S.14 (planning/finishing_stack_review_2026-07.md).
     GeometryClass::MixedTerrain
 }
 

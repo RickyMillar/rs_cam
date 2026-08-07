@@ -31,9 +31,13 @@ pub fn run_nc_time(inputs: &[PathBuf], max_feed: f64, rapid_feed: f64) -> Result
         .max_junction_velocity_mm_min
         .map(|v| format!("{v:.0} mm/min"))
         .unwrap_or_else(|| "derived".to_owned());
+    let accel_str = match kinematics.acceleration_xyz_mm_s2 {
+        Some([ax, ay, az]) => format!("accel X/Y/Z {ax:.0}/{ay:.0}/{az:.0} mm/s²"),
+        None => format!("accel {:.0} mm/s²", kinematics.acceleration_mm_s2),
+    };
     println!(
-        "kinematics: shapeoko_xxl_ricky_tuned (accel {:.0} mm/s², junction {})",
-        kinematics.acceleration_mm_s2, junction_str,
+        "kinematics: shapeoko_xxl_ricky_tuned ({accel_str}, δ {:.3} mm, junction {})",
+        kinematics.junction_deviation_mm, junction_str,
     );
     println!(
         "machine caps: max_feed {:.0} mm/min, rapid_feed {:.0} mm/min",

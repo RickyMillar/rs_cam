@@ -13,10 +13,14 @@ use crate::debug_trace::ToolpathDebugContext;
 use crate::geo::BoundingBox3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
-use crate::semantic_trace::{ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope};
+use crate::region_set::RegionSet;
+use crate::semantic_trace::{
+    SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
+};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::toolpath_spans::AnnotatedToolpath;
+use crate::transform_provenance::{ReconcileSet, Transformed};
 
 // ── Error type ────────────────────────────────────────────────────────
 
@@ -36,6 +40,379 @@ pub enum OperationError {
 // ── Generated toolpath helpers ───────────────────────────────────────
 
 pub type GeneratedToolpath = AnnotatedToolpath;
+
+/// Facts an operation learned about the geometry while generating, which
+/// are NOT properties of the emitted toolpath.
+///
+/// `GeneratedToolpath` is an alias for [`AnnotatedToolpath`], so an adapter
+/// has historically had exactly one way to say anything: put it in the
+/// toolpath. A finding like "the ring cascade could not reach the middle of
+/// this region" has no home there — it is not geometry the machine will
+/// execute — so it lived and died in a `tracing::warn!`. That is why a
+/// 28 mm block of standing material shipped for weeks, and why the GUI's
+/// diagnostics list has nothing to say about it (design doc §13/§14c/§14h).
+///
+/// Carried on [`ExecutionContext::findings`] as a [`Cell`] so adapters can
+/// record without any signature change, and returned alongside the toolpath
+/// by [`execute_operation_annotated_with_regions`]. Deliberately NOT part of
+/// `AnnotatedToolpath`: a diagnostic finding must not have to survive the
+/// dressup pipeline, where every carrier is one missed field-copy away from
+/// silently vanishing.
+/// C8: no longer `Copy`, and carried in a `RefCell` rather than a `Cell`,
+/// because [`Self::derived_stepovers`] is a collection. The `Cell` was only
+/// ever a convenience for `Copy` scalars, and it is what made a
+/// first-writer-wins slot look like a design instead of a shrug.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GenerationFindings {
+    /// Region-interior area (mm², XY-projected) a scallop ring cascade left
+    /// UNCUT because it hit `max_rings` before collapsing — summed over
+    /// every region, and over the mid-steep bands of a `UnifiedFinish`.
+    ///
+    /// `None` means **no cascade ran**, so nothing was measured; `Some(0.0)`
+    /// means a cascade ran and collapsed. Only the adapters that actually
+    /// run one write here, which is what keeps the two apart all the way to
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
+    /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
+    /// [`crate::scallop::ScallopReport::uncut_core_mm2`].
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`] —
+    /// summed the same way, over the same adapters, straight off
+    /// [`crate::scallop::ScallopReport::untouched_mm2`]. Same X-19
+    /// three-valued contract: `None` = no cascade ran.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
+    /// [`Self::truncated_core_mm2`], off
+    /// [`crate::scallop::ScallopReport::standing_mm2`]. Same X-19 contract.
+    /// Remember this one is an estimator, not an exact area — see the
+    /// source field's doc for what it cannot distinguish.
+    pub reached_uncut_estimate_mm2: Option<f64>,
+    /// Wave D1: a planned finish band whose cutting was entirely erased by
+    /// height resolution — an unmachined feature. `None` = no banded
+    /// decomposition ran, or every band it planned survived.
+    /// See [`crate::compute::config::DroppedBandFinding`].
+    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// C8: a planned finish band whose Z ladder height resolution SHORTENED
+    /// while it still cut. `None` = no band was partially clipped, or no
+    /// banded decomposition ran. Disjoint from [`Self::dropped_band`].
+    /// See [`crate::compute::config::ClippedBandFinding`].
+    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
+    /// Wave D1: tip float on the emitted valley centrelines. `None` = the
+    /// operation emits no centrelines, so nothing was measured.
+    /// See [`crate::compute::config::TipFloatFinding`].
+    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    /// PR-5: a retired dial still set to a non-default value in the loaded
+    /// project. `None` = nothing retired is set.
+    /// See [`crate::compute::config::DeprecatedDialFinding`].
+    pub deprecated_dial: Option<crate::compute::config::DeprecatedDialFinding>,
+    /// PR-6a: the offset stepovers this operation derived from the canonical
+    /// reach policy. EMPTY = the operation derives none.
+    ///
+    /// C8: a `Vec`, not a slot. One toolpath can derive a stepover TWICE —
+    /// the operation's own routing/fit site during generation, then PR-7's
+    /// generic rest-analysis post-pass — and the slot resolved that by
+    /// first-writer-wins, which the code itself called "a shrug, not a
+    /// decision" (`ANTIPATTERNS_BACKLOG.md` P8). The second derivation was
+    /// dropped on the floor: a `UnifiedFinish` with claims on AND generic
+    /// rest analysis on published one of its two numbers and no hint that
+    /// the other existed. Both are recorded now, in the order they fired,
+    /// each naming its own `site`.
+    ///
+    /// See [`crate::compute::config::DerivedStepoverFinding`].
+    pub derived_stepovers: Vec<crate::compute::config::DerivedStepoverFinding>,
+    /// PR-8b: what the ramp-finish reach clamp did. `None` = no ramp descent
+    /// ran, so nothing was measured; `Some` with an inert clamp is a
+    /// measured-clean descent. See [`crate::ramp_finish::RampReachClamp`].
+    pub ramp_reach_clamp: Option<crate::ramp_finish::RampReachClamp>,
+    /// A/M6: which rest reference the crease/pencil claims pipeline resolved
+    /// to, and whether it was pinned or derived. `None` = the claims
+    /// pipeline did not run, so nothing was resolved.
+    /// See [`crate::compute::config::ClaimsReferenceFinding`].
+    pub claims_reference: Option<crate::compute::config::ClaimsReferenceFinding>,
+    /// A4: this rest pass's emitted cutting geometry never reaches under the
+    /// reference stock it was planned on, so it will remove nothing. `None` =
+    /// the measurement did not run (no resolved machined-stock reference, or
+    /// no cutting geometry) or it ran and found real engagement.
+    /// See [`crate::compute::config::ZeroRemovalFinding`].
+    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
+    /// calls came back with a [`crate::polygon::OffsetFailure`].
+    ///
+    /// `None` = the operation made no offset call through the reporting
+    /// name, so nothing was measured; `Some(0)` = it did and every one was
+    /// clean. Only the adapters that opt into
+    /// [`crate::polygon::offset_polygon_reported`] write here, which is what
+    /// keeps those two apart all the way to
+    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C (Q2 / D-3a option b): the machining-boundary containment
+    /// collapsed and the clip was therefore not applied. `None` = nothing was
+    /// dropped. See [`crate::compute::config::BoundaryClipDroppedFinding`].
+    ///
+    /// Unlike every other field here this one is recorded AFTER the operation
+    /// adapter has returned — the boundary clip is a post-dressup step in
+    /// `ProjectSession::generate_toolpath` and in the GUI worker — so it is
+    /// written through `&mut GenerationFindings` rather than through
+    /// [`ExecutionContext::findings`]. Both writers hold the findings by then;
+    /// the join has not run yet.
+    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+}
+
+/// Record one cascade's residual on the context's findings cell,
+/// accumulating over the several cascades a single operation can run (one
+/// per region; one per mid-steep band in a `UnifiedFinish`).
+///
+/// The first call is what turns "not measured" into "measured" — including
+/// when the measurement is zero, which is the distinction A/M9 exists to
+/// preserve. Only call it from an adapter that actually ran a cascade.
+///
+/// M4 §5b: takes all three `ScallopReport` area figures in one call —
+/// `uncut_core_mm2` (continuity), `untouched_mm2` (hole-aware) and
+/// `standing_mm2` (the dropped-point estimate) — because every call site
+/// already has a whole `ScallopReport`/`UnifiedFinishReport` in hand and the
+/// three always travel together; three separate `record_*` calls per site
+/// would only invite one being forgotten when a fourth cascade figure shows
+/// up later.
+fn record_truncated_core(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    uncut_core_mm2: f64,
+    untouched_mm2: f64,
+    standing_mm2: f64,
+) {
+    let mut findings = cell.borrow_mut();
+    let prev = findings.truncated_core_mm2.unwrap_or(0.0);
+    findings.truncated_core_mm2 = Some(prev + uncut_core_mm2);
+    let prev_untouched = findings.untouched_material_mm2.unwrap_or(0.0);
+    findings.untouched_material_mm2 = Some(prev_untouched + untouched_mm2);
+    let prev_standing_estimate = findings.reached_uncut_estimate_mm2.unwrap_or(0.0);
+    findings.reached_uncut_estimate_mm2 = Some(prev_standing_estimate + standing_mm2);
+}
+
+/// Record ONLY the continuity residual, for a cascade that has no hole-aware
+/// or estimator sibling to report (Checkpoint C, Q3).
+///
+/// Pocket's cascade hits this: when a bound stops it, the standing ring area
+/// is exactly what
+/// [`crate::compute::config::ToolpathStats::truncated_core_mm2`] means, but
+/// pocket computes no `untouched_mm2` and no `standing_mm2`. Going through
+/// [`record_truncated_core`] with two zeroes would publish "measured zero" for
+/// two measures nobody took — the silent-zero trap X-19 exists to prevent —
+/// so those two stay `None`.
+fn record_truncated_core_only(cell: &std::cell::RefCell<GenerationFindings>, uncut_core_mm2: f64) {
+    let mut findings = cell.borrow_mut();
+    let prev = findings.truncated_core_mm2.unwrap_or(0.0);
+    findings.truncated_core_mm2 = Some(prev + uncut_core_mm2);
+}
+
+/// Record a dropped-band finding (Wave D1). `None` is a no-op — an adapter
+/// that planned bands and dropped none must not overwrite an earlier
+/// finding with an absence.
+fn record_dropped_band(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: Option<crate::compute::config::DroppedBandFinding>,
+) {
+    let Some(finding) = finding else { return };
+    cell.borrow_mut().dropped_band = Some(finding);
+}
+
+/// Record a partial band clip (C8). `None` is a no-op, for the same reason
+/// [`record_dropped_band`]'s is: an adapter that planned bands and clipped
+/// none must not overwrite an earlier finding with an absence.
+fn record_clipped_band(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: Option<crate::compute::config::ClippedBandFinding>,
+) {
+    let Some(finding) = finding else { return };
+    cell.borrow_mut().clipped_band = Some(finding);
+}
+
+/// Record the centreline tip-float tally (Wave D1). Unlike the two above
+/// this one records a MEASUREMENT, not a defect: `Some` with zero floating
+/// points is the honest "a centreline pass ran and nothing floated", and it
+/// is exactly what stops a later reader from reading silence as clean.
+fn record_tip_float(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::compute::config::TipFloatFinding,
+) {
+    let mut findings = cell.borrow_mut();
+    let mut merged = findings.tip_float.unwrap_or_default();
+    merged.merge(finding);
+    findings.tip_float = Some(merged);
+}
+
+/// Record that a loaded project still sets a RETIRED dial (PR-5).
+///
+/// A no-op at the default: an operator who never touched the dial has
+/// nothing to be told, and a notice on every toolpath is a notice nobody
+/// reads.
+fn record_deprecated_dial(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::compute::config::DeprecatedDialFinding,
+) {
+    if (finding.value - finding.default_value).abs() <= 1e-9 {
+        return;
+    }
+    cell.borrow_mut().deprecated_dial = Some(finding);
+}
+
+/// Record what the ramp-finish reach clamp did (PR-8b).
+///
+/// Like [`record_tip_float`] and unlike [`record_deprecated_dial`], this
+/// records a MEASUREMENT, not only a defect: an inert clamp is the honest
+/// "a descent ran and every commanded depth was holdable", and it is what
+/// stops a later reader from reading silence as clean. The diagnostic
+/// adapter is what stays quiet when nothing moved.
+fn record_ramp_reach_clamp(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::ramp_finish::RampReachClamp,
+) {
+    cell.borrow_mut().ramp_reach_clamp = Some(finding);
+}
+
+/// Record which rest reference the claims pipeline resolved to (A/M6).
+///
+/// Records a DECISION, not a defect, and is deliberately never suppressed:
+/// even the uneventful outcomes say which of two fields the detector read,
+/// and that is not derivable from any config field or from the emitted
+/// moves. The diagnostic adapter is what decides how loud to be.
+fn record_claims_reference(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::compute::config::ClaimsReferenceFinding,
+) {
+    cell.borrow_mut().claims_reference = Some(finding);
+}
+
+/// Record how many 2D offset calls this generation made that came back with
+/// a [`crate::polygon::OffsetFailure`] (Checkpoint C, Q1 / D-2).
+///
+/// **Call this even when the count is zero.** That is what turns "not
+/// measured" into "measured clean", and the whole point of the slot is that
+/// those are different answers — an operation that runs no offsets at all
+/// must keep reading `None`. Only call it from an adapter that actually
+/// routed its offsets through
+/// [`crate::polygon::offset_polygon_reported`] (or a `_reported` sibling);
+/// an adapter still on the plain name has measured nothing and must not
+/// claim a zero.
+///
+/// Accumulates, like `record_cascade_residual`: an operation offsets once
+/// per polygon per Z level and each of those is a separate opportunity to
+/// fail.
+pub(crate) fn record_offset_library_failures(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    failures: usize,
+) {
+    let mut findings = cell.borrow_mut();
+    findings.offset_library_failures =
+        Some(findings.offset_library_failures.unwrap_or(0) + failures);
+}
+
+/// Record that a machining-boundary containment collapsed and the clip was
+/// not applied (Checkpoint C, Q2).
+///
+/// Takes `&mut GenerationFindings`, not the `RefCell`: the boundary clip runs
+/// after the adapter returned, at a point where both writers own the findings
+/// outright.
+pub fn record_boundary_clip_dropped(
+    findings: &mut GenerationFindings,
+    finding: crate::compute::config::BoundaryClipDroppedFinding,
+) {
+    findings.boundary_clip_dropped = Some(finding);
+}
+
+/// The engagement (mm) at or below which a pass is reported as removing
+/// nothing (A4) — derived from the REFERENCE's own resolution, not dialled.
+///
+/// A reference stock is a sampled surface, and a pass riding exactly on
+/// ground it already cut still measures a little material above the cutter:
+/// the grid snaps each lookup to the nearest ray, and the simulation that
+/// built the surface stamped the tool at a finite spacing along its path.
+/// Both artefacts have the same shape as a cusp, so the floor is one:
+/// `cell² / (2 · tip radius)` — the height of the sampling residual the
+/// reference itself can manufacture.
+///
+/// This is not a tuned number. It was found by the A4 sentry FAILING: the
+/// naive tip-vs-top comparison read +21 µm on a pass that removed nothing,
+/// and comparing against the cutter's own profile only brought it to
+/// +18 µm. A fixed 10 µm floor would have declared that pass "engaged" for
+/// the rest of time, which is the one error this report must not make.
+///
+/// Floored at 1 µm so a flat cutter (no tip sphere) cannot produce an
+/// infinite or negative threshold.
+fn zero_removal_engagement_floor_mm(
+    stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> f64 {
+    let cell = stock.z_grid.cell_size;
+    let tip_r = cutter.cusp_radius();
+    if tip_r <= 0.0 {
+        return 1.0e-3;
+    }
+    (cell * cell / (2.0 * tip_r)).max(1.0e-3)
+}
+
+/// A4: measure the emitted cutting geometry against the reference stock the
+/// pass was planned on, and record a finding when it reaches nothing.
+///
+/// Only called where a rest pass resolved a REAL machined-stock reference —
+/// under any other reference the op is not a rest pass in the sense the
+/// finding is about, and the question "what did the prior op leave" has no
+/// answer in scope.
+///
+/// Measured PRE-dressup, on the geometry the planner emitted. The air-cut
+/// filter that runs later deletes moves that are wholly in air, and a pass
+/// riding exactly on the surface it already cut is not in air by that test
+/// — it survives, which is precisely how §3.2's rest pass came to spend
+/// 1 294 mm and 48 retract trips on nothing.
+fn record_zero_removal(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    toolpath: &crate::toolpath::Toolpath,
+    stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+) {
+    let engagement = crate::dressup::reference_engagement_of_cutting_moves(toolpath, stock, cutter);
+    // Nothing sampled = nothing measured. Not a finding (X-19's rule): an
+    // absent measurement is not a defect claim.
+    if engagement.sampled_positions == 0 {
+        return;
+    }
+    let floor_mm = zero_removal_engagement_floor_mm(stock, cutter);
+    if engagement.deepest_mm > floor_mm {
+        return;
+    }
+    cell.borrow_mut().zero_removal = Some(crate::compute::config::ZeroRemovalFinding {
+        deepest_engagement_mm: engagement.deepest_mm,
+        sampled_positions: engagement.sampled_positions,
+        cutting_distance_mm: toolpath.total_cutting_distance(),
+        floor_mm,
+    });
+}
+
+/// Record an offset stepover an operation derived from the reach policy
+/// (PR-6a, H2.3).
+///
+/// Unlike [`record_deprecated_dial`] this is NOT suppressed at the
+/// no-change case here — the finding carries both numbers and the reader
+/// decides. The diagnostic adapter is what stays quiet when the policy and
+/// the retired envelope rule agree (every plain ball), so a test can still
+/// assert the derivation ran on a tool it did not move.
+///
+/// C8: APPENDS. This used to be first-writer-wins against a single slot,
+/// justified as "the op's own is the load-bearing one and it always runs
+/// first" — true, and beside the point: the post-pass derivation still
+/// happened, still steered a report, and was discarded without trace. Both
+/// are kept, in the order they fired; each carries its own `site`, and the
+/// diagnostic adapter decides which are worth showing.
+///
+/// This rationale was ORPHANED until C8: the block ran into the next `///`
+/// line with no blank between them, so the whole PR-6a justification was
+/// attached to `record_ramp_reach_clamp` and THIS function carried no doc
+/// at all. A first-writer-wins rule that nobody could find is most of how
+/// it survived.
+fn record_derived_stepover(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::compute::config::DerivedStepoverFinding,
+) {
+    cell.borrow_mut().derived_stepovers.push(finding);
+}
 
 /// F2 (defect class C3): every generation funnel appends the
 /// [`crate::toolpath::MoveIntent`]-derived transit spans
@@ -95,22 +472,14 @@ pub fn build_drill_op_for_config(
 
     match op {
         OperationConfig::Drill(cfg) => {
-            let polys = polygons?;
-            let mut hole_xys = Vec::new();
-            for poly in polys {
-                if poly.exterior.is_empty() {
-                    continue;
-                }
-                let (sx, sy) = poly
-                    .exterior
-                    .iter()
-                    .fold((0.0, 0.0), |(ax, ay), pt| (ax + pt.x, ay + pt.y));
-                let n = poly.exterior.len() as f64;
-                hole_xys.push([sx / n, sy / n]);
-            }
-            if hole_xys.is_empty() {
-                return None;
-            }
+            // Selected targets (DXF picks) drill exactly those and round-trip
+            // as a snapshot; otherwise fall back to polygon centroids.
+            let hole_xys = drill_holes_for_config(cfg, polygons).ok()?;
+            let hole_source = if cfg.selected_holes.is_some() {
+                HoleSource::Snapshot(hole_xys.clone())
+            } else {
+                HoleSource::ModelDerived
+            };
             let top_z = stock_bbox.max.z;
             let bottom_z = top_z - cfg.depth;
             let holes = hole_xys
@@ -123,7 +492,7 @@ pub fn build_drill_op_for_config(
                 .collect();
             Some(DrillOp {
                 holes,
-                hole_source: HoleSource::ModelDerived,
+                hole_source,
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle: cfg.cycle.to_core(cfg),
@@ -131,17 +500,24 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
+                // Same expression `generate_drill` passes to
+                // `DrillParams::retract_z`, so the summary models the
+                // cycle this op emits (R-2).
+                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
-            if cfg.holes.is_empty() {
+            let mut hole_xys = cfg.holes.clone();
+            if let Some(selected) = &cfg.selected_holes {
+                hole_xys.extend_from_slice(selected);
+            }
+            if hole_xys.is_empty() {
                 return None;
             }
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
             let cycle = cfg.drill_cycle();
-            let holes = cfg
-                .holes
+            let holes = hole_xys
                 .iter()
                 .map(|&xy| DrillHole {
                     xy,
@@ -151,7 +527,7 @@ pub fn build_drill_op_for_config(
                 .collect();
             Some(DrillOp {
                 holes,
-                hole_source: HoleSource::Snapshot(cfg.holes.clone()),
+                hole_source: HoleSource::Snapshot(hole_xys.clone()),
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle,
@@ -159,6 +535,7 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
+                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         _ => None,
@@ -190,10 +567,33 @@ impl From<String> for OperationError {
 /// [`execute_operation_annotated`] receives, minus the operation
 /// itself. Family adapters ([`GenerateFn`]) take this context so every
 /// migrated family shares ONE signature; in particular `cancel` is
-/// always in scope, so an adapter can't silently drop the cooperative
-/// cancellation closure (sentried by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// always in scope for every adapter to read.
+///
+/// Having `cancel` in scope does NOT by itself guarantee an adapter polls
+/// it — nothing stops a `GenerateFn` from ignoring the field entirely (that
+/// was exactly the 2026-07 incident: a fine-stepover mesh-finish generation
+/// hung the GUI for two hours because its adapter never rebuilt the
+/// `|| cancel.load(Ordering::SeqCst)` closure). The only families with a
+/// verified guarantee are the ones exercised by
+/// `cancellable_families_honour_a_preset_cancel_flag`: Adaptive, DropCutter,
+/// Adaptive3d, Waterline, Pencil, Scallop, SteepShallow, RampFinish,
+/// SpiralFinish, RadialFinish, HorizontalFinish (the 2026-07 mesh-finish
+/// fix's 11), plus Pocket, Profile, Zigzag, Trace, Face, ProjectCurve,
+/// VCarve, Inlay (the flat-2D S.5 fix,
+/// planning/finishing_stack_review_2026-07.md), plus Rest and Drill
+/// (Checkpoint C Q3, 2026-08-05 — W4's F-4 measured those two ignoring a
+/// pre-set flag entirely: `generate_rest` built no `cancel_fn` and called the
+/// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
+/// read `ctx.cancel`). 21 of 23 registered families; the remaining two are
+/// AlignmentPinDrill and Chamfer. Adding cancel support to another family
+/// means adding it to that sentry's case list too, or the coverage claim here
+/// silently goes stale.
 pub struct ExecutionContext<'a> {
+    /// Write-only sink for generation-time findings (see
+    /// [`GenerationFindings`]). A `Cell` rather than a return value so an
+    /// adapter can report one without changing the `GenerateFn` signature
+    /// every family shares.
+    pub findings: &'a std::cell::RefCell<GenerationFindings>,
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
     pub polygons: Option<&'a [Polygon2]>,
@@ -203,11 +603,42 @@ pub struct ExecutionContext<'a> {
     pub cutting_levels: &'a [f64],
     pub stock_bbox: &'a BoundingBox3,
     pub prev_tool_radius: Option<f64>,
+    /// R1 (pencil): the resolved *real* reference tool config, when the pencil
+    /// op's `reference_tool_id` names a library tool. Owned clone (small);
+    /// resolution happens upstream because the context has no tool list, exactly
+    /// like `prev_tool_radius`. `generate_pencil` turns it into a `ToolDefinition`.
+    pub reference_tool_cfg: Option<ToolConfig>,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub cancel: &'a AtomicBool,
     pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
     pub boundary: Option<&'a Polygon2>,
+    /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
+    /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
+    /// / waterline / drop_cutter) pre-clips generation to, so sampling never
+    /// wastes work outside the machining boundary and never has to be
+    /// discarded at post-clip. `boundary` remains the adaptive3d
+    /// single-polygon pre-clear path; the two carry independent semantics
+    /// today and consolidating them is deferred. Consolidated onto
+    /// `RegionSet` (region_set.rs) so containment tests share one
+    /// implementation across every family.
+    pub boundary_regions: Option<&'a RegionSet<'a>>,
+    /// P1 quantitative linker (unified-finishing-pass W4a): the machine
+    /// envelope the pencil generator (and, in future, other finishing
+    /// families with a hookup/link decision) costs surface-link vs.
+    /// retract-link candidates against with the F-034 integrator. `None`
+    /// keeps the legacy distance-only hookup decision — production
+    /// builders that have a machine profile in scope populate `Some`;
+    /// callers without one (or that never reach a linking decision) pass
+    /// `None`.
+    pub link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    /// P2.5's generic rest-analysis config, threaded through so an adapter
+    /// can run its OWN in-op rest-depth pass instead of (or in addition
+    /// to) the generic post-generation attach below — currently only
+    /// `generate_unified_finish`'s v3 S1 claims pipeline. `None` is a
+    /// byte-identical no-op for every other family, same shape as
+    /// `link_kinematics`.
+    pub rest_analysis: Option<&'a crate::compute::config::RestAnalysisConfig>,
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
@@ -220,17 +651,52 @@ pub struct ExecutionContext<'a> {
 pub type GenerateFn =
     fn(&ExecutionContext<'_>, &OperationConfig) -> Result<GeneratedToolpath, OperationError>;
 
-/// Drill family adapter (holes from polygon centroids).
-pub(crate) fn generate_drill(
-    ctx: &ExecutionContext<'_>,
-    op: &OperationConfig,
-) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Drill(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_drill received a non-Drill config".into(),
-        ));
+/// R2.3: the config-guard boilerplate duplicated 23× across every family
+/// adapter (`let OperationConfig::X(cfg) = op else { return Err(refusal) }`).
+/// Expands to the identical `let`-else guard; `$fn_name` is passed as a
+/// literal (macro hygiene has no way to recover the enclosing fn's name)
+/// so the error text stays byte-identical to what it was before the
+/// macro existed — nothing downstream matches on this string, but
+/// keeping it stable avoids surprising anyone grepping logs for it.
+macro_rules! config_guard {
+    ($op:expr, $variant:ident, $fn_name:literal) => {
+        match $op {
+            OperationConfig::$variant(cfg) => cfg,
+            _ => {
+                return Err(OperationError::Other(format!(
+                    "registry adapter mismatch: {} received a non-{} config",
+                    $fn_name,
+                    stringify!($variant)
+                )));
+            }
+        }
     };
-    let polys = require_polygons(ctx.polygons)?;
+}
+
+/// Resolve the drill hole positions for a [`DrillConfig`].
+///
+/// When `cfg.selected_holes` is set the user has explicitly picked targets
+/// (DXF points / circle centres, in the viewport or by layer) — drill exactly
+/// those. An empty selection is an error rather than "all centroids", so a
+/// stale or cleared selection doesn't silently revert to drilling everything.
+///
+/// When it is `None` (the legacy default), fall back to the centroid of every
+/// closed polygon in the model.
+fn drill_holes_for_config(
+    cfg: &crate::compute::operation_configs::DrillConfig,
+    polygons: Option<&[Polygon2]>,
+) -> Result<Vec<[f64; 2]>, OperationError> {
+    if let Some(selected) = &cfg.selected_holes {
+        if selected.is_empty() {
+            return Err(OperationError::MissingGeometry(
+                "No drill targets selected (pick points/holes in the viewport \
+                 or choose a layer)"
+                    .to_owned(),
+            ));
+        }
+        return Ok(selected.clone());
+    }
+    let polys = require_polygons(polygons)?;
     let mut holes = Vec::new();
     for poly in polys {
         if poly.exterior.is_empty() {
@@ -245,9 +711,27 @@ pub(crate) fn generate_drill(
     }
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
-            "No hole positions found (import SVG with circles)".to_owned(),
+            "No hole positions found (import SVG/DXF with circles, or pick targets)".to_owned(),
         ));
     }
+    Ok(holes)
+}
+
+/// Drill family adapter (holes from polygon centroids).
+pub(crate) fn generate_drill(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let cfg = config_guard!(op, Drill, "generate_drill");
+    // Checkpoint C, Q3: drill is cancellable now. It never touched
+    // `ctx.cancel` at all (F-4). A drill cycle is short, so the check is at
+    // the entry point rather than per hole — the point is that a pre-set flag
+    // must short-circuit before any work, which is the same contract every
+    // other cancellable family's first statement provides.
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
+    let holes = drill_holes_for_config(cfg, ctx.polygons)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
         depth: cfg.depth,
@@ -269,14 +753,13 @@ pub(crate) fn generate_alignment_pin_drill(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::AlignmentPinDrill(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_alignment_pin_drill received a \
-             non-AlignmentPinDrill config"
-                .into(),
-        ));
-    };
-    if cfg.holes.is_empty() {
+    let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
+    // Stock alignment pins plus any extra targets picked from the model.
+    let mut holes = cfg.holes.clone();
+    if let Some(selected) = &cfg.selected_holes {
+        holes.extend_from_slice(selected);
+    }
+    if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
             "No alignment pin positions defined".to_owned(),
         ));
@@ -292,7 +775,7 @@ pub(crate) fn generate_alignment_pin_drill(
         safe_z: ctx.heights.retract_z,
         retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
     };
-    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&cfg.holes, &params));
+    let generated = generated_with_drill_spans(crate::drill::drill_toolpath(&holes, &params));
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
     }
@@ -305,11 +788,14 @@ pub(crate) fn generate_rest(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Rest(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_rest received a non-Rest config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Rest, "generate_rest");
+    // Checkpoint C, Q3: checked as the very first statement, before the
+    // prev-tool precondition below. A pre-set flag must short-circuit before
+    // any work AND before any other refusal, or "cancelled" gets reported as
+    // whatever else happened to be wrong first.
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
     let polys = require_polygons(ctx.polygons)?;
     let ptr = ctx
         .prev_tool_radius
@@ -317,61 +803,60 @@ pub(crate) fn generate_rest(
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    // Checkpoint C, Q3: rest is cancellable now. It built no `cancel_fn` at
+    // all and called the non-cancellable `depth::toolpath_at_levels`, so a
+    // rest pass over many Z levels could not be interrupted — one of the two
+    // families W4 measured as ignoring a pre-set flag entirely (F-4).
+    // Granularity is per Z level, the same as profile/trace/zigzag.
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::rest::rest_machining_toolpath(
-                poly,
-                &crate::rest::RestParams {
-                    prev_tool_radius: ptr,
-                    tool_radius,
-                    cut_depth: z,
-                    stepover: cfg.stepover,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    angle: cfg.angle,
-                },
-            )
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                Ok(crate::rest::rest_machining_toolpath(
+                    poly,
+                    &crate::rest::RestParams {
+                        prev_tool_radius: ptr,
+                        tool_radius,
+                        cut_depth: z,
+                        stepover: cfg.stepover,
+                        feed_rate: op.feed_rate(),
+                        plunge_rate: op.plunge_rate(),
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                ))
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Inlay family adapter (female + male halves concatenated with a
-/// retract between; V-bit refusal preserved verbatim).
+/// retract between; V-bit refusal preserved verbatim). Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_inlay(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Inlay(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_inlay received a non-Inlay config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Inlay, "generate_inlay");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "Inlay requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "Inlay")?;
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut female_out = Toolpath::new();
     let mut male_out = Toolpath::new();
     for poly in polys {
-        let r = crate::inlay::inlay_toolpaths(
+        let r = crate::inlay::inlay_toolpaths_with_cancel(
             poly,
             &crate::inlay::InlayParams {
                 half_angle: ha,
@@ -385,8 +870,11 @@ pub(crate) fn generate_inlay(
                 plunge_rate: op.plunge_rate(),
                 safe_z,
                 tolerance: cfg.tolerance,
+                top_z: ctx.heights.top_z,
             },
-        );
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         female_out.moves.extend(r.female.moves);
         male_out.moves.extend(r.male.moves);
     }
@@ -395,41 +883,28 @@ pub(crate) fn generate_inlay(
         out.final_retract(safe_z);
         out.moves.extend(male_out.moves);
     }
-    let generated = generated_with_cut_run_spans(out, "Inlay run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(out, "Inlay run"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// VCarve family adapter. Cut-run spans labeled "V-carve run"; refusal
-/// for non-V-bit tools preserved verbatim.
+/// for non-V-bit tools preserved verbatim. Cancellable: the cooperative
+/// cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_vcarve(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::VCarve(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_vcarve received a non-VCarve config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, VCarve, "generate_vcarve");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "VCarve requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "VCarve")?;
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::vcarve::vcarve_toolpath(
+        let tp = crate::vcarve::vcarve_toolpath_with_cancel(
             poly,
             &crate::vcarve::VCarveParams {
                 half_angle: ha,
@@ -439,19 +914,17 @@ pub(crate) fn generate_vcarve(
                 plunge_rate: op.plunge_rate(),
                 safe_z,
                 tolerance: cfg.tolerance,
+                top_z: ctx.heights.top_z,
             },
-        );
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "V-carve run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "V-carve run"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Chamfer family adapter. Cut-run spans labeled "Chamfer run"; refusal
@@ -460,20 +933,9 @@ pub(crate) fn generate_chamfer(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Chamfer(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_chamfer received a non-Chamfer config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Chamfer, "generate_chamfer");
     let polys = require_polygons(ctx.polygons)?;
-    let ha = match ctx.tool_cfg.tool_type {
-        ToolType::VBit => (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        _ => {
-            return Err(OperationError::InvalidTool(
-                "Chamfer requires V-Bit tool".into(),
-            ));
-        }
-    };
+    let ha = vbit_half_angle(ctx.tool_cfg, "Chamfer")?;
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
     for poly in polys {
@@ -481,84 +943,89 @@ pub(crate) fn generate_chamfer(
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
             tool_half_angle: ha,
-            tool_radius: ctx.tool_def.radius(),
             feed_rate: op.feed_rate(),
             plunge_rate: op.plunge_rate(),
             safe_z,
+            top_z: ctx.heights.top_z,
         };
         let tp = crate::chamfer::chamfer_toolpath(poly, &params);
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "Chamfer run");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "Chamfer run"),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Zigzag family adapter.
+/// Zigzag family adapter. Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_zigzag(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Zigzag(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_zigzag received a non-Zigzag config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Zigzag, "generate_zigzag");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: a plain `Cell` accumulator, local to this generate and
+    // captured by the per-level closure. Deliberately not a thread-local
+    // collector (`CAVALIER_SHAPE_FAILURE.md` §6 D-1 option C, declined):
+    // the count is threaded, visible in the signatures it passes through,
+    // and testable without a global.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::zigzag::zigzag_toolpath(
-                poly,
-                &crate::zigzag::ZigzagParams {
-                    tool_radius,
-                    stepover: cfg.stepover,
-                    cut_depth: z,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    angle: cfg.angle,
-                },
-            )
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
+                    poly,
+                    &crate::zigzag::ZigzagParams {
+                        tool_radius,
+                        stepover: cfg.stepover,
+                        cut_depth: z,
+                        feed_rate: op.feed_rate(),
+                        plunge_rate: op.plunge_rate(),
+                        safe_z,
+                        angle: cfg.angle,
+                    },
+                );
+                offset_failures.set(offset_failures.get() + failures);
+                Ok(tp)
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    record_offset_library_failures(ctx.findings, offset_failures.get());
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Trace family adapter. NOTE: trace uses `annotate_trace_spans`, not
 /// the generic depth-run annotator — the per-family annotate fn is
-/// part of the contract (plan §Phase-5 task 1).
+/// part of the contract (plan §Phase-5 task 1). Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_trace(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Trace(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_trace received a non-Trace config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Trace, "generate_trace");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
         let params = crate::trace::TraceParams {
             tool_radius: ctx.tool_def.radius(),
@@ -570,11 +1037,20 @@ pub(crate) fn generate_trace(
             compensation: cfg.compensation,
             top_z: ctx.heights.top_z,
         };
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| {
-            crate::trace::trace_polygon_at_z(poly, z, &params)
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                let (tp, failures) = crate::trace::trace_polygon_at_z_reported(poly, z, &params);
+                offset_failures.set(offset_failures.get() + failures);
+                Ok(tp)
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    record_offset_library_failures(ctx.findings, offset_failures.get());
     let generated = generated_with_depth_run_spans(combined, &levels);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_trace_spans(&generated.spans, &generated.toolpath, sem);
@@ -583,15 +1059,21 @@ pub(crate) fn generate_trace(
 }
 
 /// Profile family adapter (per-level passes; tabs on the final level).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
+///
+/// Migrated onto the shared `toolpath_at_levels_with_cancel` choke point
+/// (planning/finishing_stack_review_2026-07.md S.5). The old manual
+/// `level_idx > 0 && !combined.moves.is_empty()` retract guard is
+/// equivalent to the helper's unconditional `i > 0` retract: every
+/// per-level pass already ends with its own retract-to-`safe_z` (via
+/// `profile_toolpath`'s emitter), so `Toolpath::final_retract` is always a
+/// no-op there regardless of which guard is used — byte-identical output.
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Profile(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_profile received a non-Profile config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Profile, "generate_profile");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let final_z = levels
@@ -600,125 +1082,159 @@ pub(crate) fn generate_profile(
         .unwrap_or(ctx.heights.top_z - cfg.depth);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
+    let feed_rate = op.feed_rate();
+    let plunge_rate = op.plunge_rate();
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
-        for (level_idx, &z) in levels.iter().enumerate() {
-            let pass_tp = crate::profile::profile_toolpath(
-                poly,
-                &crate::profile::ProfileParams {
-                    tool_radius,
-                    side: cfg.side,
-                    cut_depth: z,
-                    feed_rate: op.feed_rate(),
-                    plunge_rate: op.plunge_rate(),
-                    safe_z,
-                    climb: cfg.climb,
-                    compensate_in_controller: cfg.compensation
-                        == crate::compute::CompensationType::InControl,
-                },
-            );
-            if pass_tp.moves.is_empty() {
-                continue;
-            }
-            // Retract between levels (not before first)
-            if level_idx > 0 && !combined.moves.is_empty() {
-                combined.final_retract(safe_z);
-            }
-            let is_final = (z - final_z).abs() < 1e-9;
-            if cfg.tab_count > 0 && is_final {
-                let tabbed = crate::dressup::apply_tabs(
-                    pass_tp,
-                    &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
-                    z,
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| {
+                let (pass_tp, failures) = crate::profile::profile_toolpath_reported(
+                    poly,
+                    &crate::profile::ProfileParams {
+                        tool_radius,
+                        side: cfg.side,
+                        cut_depth: z,
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        climb: cfg.climb,
+                        compensate_in_controller: cfg.compensation
+                            == crate::compute::CompensationType::InControl,
+                    },
                 );
-                combined.moves.extend(tabbed.moves);
-            } else {
-                combined.moves.extend(pass_tp.moves);
-            }
-        }
+                offset_failures.set(offset_failures.get() + failures);
+                if pass_tp.moves.is_empty() {
+                    return Ok(pass_tp);
+                }
+                let is_final = (z - final_z).abs() < 1e-9;
+                if cfg.tab_count > 0 && is_final {
+                    Ok(crate::dressup::apply_tabs(
+                        pass_tp,
+                        &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
+                        z,
+                    ))
+                } else {
+                    Ok(pass_tp)
+                }
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+        combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    record_offset_library_failures(ctx.findings, offset_failures.get());
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Pocket family adapter (contour / zigzag pattern per config).
+/// Pocket family adapter (contour / zigzag pattern per config). Cancellable:
+/// the cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`). The Contour pattern
+/// additionally polls per offset ring via `pocket_toolpath_with_cancel`
+/// (planning/finishing_stack_review_2026-07.md S.5 — pocket's own
+/// unbounded `loop {}`).
 pub(crate) fn generate_pocket(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Pocket(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_pocket received a non-Pocket config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Pocket, "generate_pocket");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let tool_radius = ctx.tool_def.radius();
     let safe_z = ctx.heights.retract_z;
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
+    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
+    // Pocket is the family this channel was built for — F-12 — because its
+    // cascade's only exit is a collapsed ring and a contained panic looks
+    // exactly like one.
+    let offset_failures = std::cell::Cell::new(0usize);
+    // Checkpoint C, Q3: standing area left by a cascade that hit a bound.
+    // `None` = no bound fired anywhere, which is the `truncated_core_mm2`
+    // "not measured" reading and must not be coerced to a zero.
+    let truncated_by_bound: std::cell::Cell<Option<f64>> = std::cell::Cell::new(None);
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels(&levels, safe_z, |z| match cfg.pattern {
-            crate::compute::operation_configs::PocketPattern::Contour => {
-                crate::pocket::pocket_toolpath(
-                    poly,
-                    &crate::pocket::PocketParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        climb: cfg.climb,
-                    },
-                )
-            }
-            crate::compute::operation_configs::PocketPattern::Zigzag => {
-                crate::zigzag::zigzag_toolpath(
-                    poly,
-                    &crate::zigzag::ZigzagParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        angle: cfg.angle,
-                    },
-                )
-            }
-        });
+        let tp = crate::depth::toolpath_at_levels_with_cancel(
+            &levels,
+            safe_z,
+            |z| match cfg.pattern {
+                crate::compute::operation_configs::PocketPattern::Contour => {
+                    let (tp, report) = crate::pocket::pocket_toolpath_reported_with_cancel(
+                        poly,
+                        &crate::pocket::PocketParams {
+                            tool_radius,
+                            stepover: cfg.stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            climb: cfg.climb,
+                        },
+                        &cancel_fn,
+                    )?;
+                    offset_failures.set(offset_failures.get() + report.offset_failures);
+                    // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
+                    // leaves material, and that is exactly what
+                    // `truncated_core_mm2` already means — "region interior a
+                    // ring cascade left UNCUT because it hit a cap before
+                    // collapsing". Recorded on the existing channel rather
+                    // than a new one, so it reaches narrate, the diagnostics
+                    // list and MCP with no extra plumbing.
+                    if let Some(standing) = report.truncated_core_mm2 {
+                        truncated_by_bound
+                            .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
+                    }
+                    Ok(tp)
+                }
+                crate::compute::operation_configs::PocketPattern::Zigzag => {
+                    let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
+                        poly,
+                        &crate::zigzag::ZigzagParams {
+                            tool_radius,
+                            stepover: cfg.stepover,
+                            cut_depth: z,
+                            feed_rate,
+                            plunge_rate,
+                            safe_z,
+                            angle: cfg.angle,
+                        },
+                    );
+                    offset_failures.set(offset_failures.get() + failures);
+                    Ok(tp)
+                }
+            },
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
+    record_offset_library_failures(ctx.findings, offset_failures.get());
+    if let Some(standing) = truncated_by_bound.get() {
+        record_truncated_core_only(ctx.findings, standing);
     }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// Face family adapter.
+/// Face family adapter. Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Face(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_face received a non-Face config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Face, "generate_face");
     // F-028: face anchors its depth stepping at `heights.top_z`
     // (which under Auto follows `ctx.stock_top_z` after F-028 — so
     // identity setups land at world stock top and non-identity
@@ -736,16 +1252,13 @@ pub(crate) fn generate_face(
         direction: cfg.direction,
         stock_top_z: ctx.heights.top_z,
     };
-    let generated =
-        generated_with_depth_run_spans(crate::face::face_toolpath(ctx.stock_bbox, &params), &[]);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
+    let tp = crate::face::face_toolpath_with_cancel(ctx.stock_bbox, &params, &cancel_fn)
+        .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(tp, &[]),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Adaptive (2D) family adapter. Cancellable; per-level annotation
@@ -755,11 +1268,7 @@ pub(crate) fn generate_adaptive(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Adaptive(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_adaptive received a non-Adaptive config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Adaptive, "generate_adaptive");
     let polys = require_polygons(ctx.polygons)?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
@@ -780,6 +1289,9 @@ pub(crate) fn generate_adaptive(
                 min_cutting_radius: cfg.min_cutting_radius,
                 initial_stock: ctx.initial_stock.cloned(),
                 cleanup_strategy: cfg.cleanup_strategy,
+                engagement_measure: cfg.engagement_measure,
+                path_strategy: cfg.path_strategy,
+                trochoid_cap_mult: 1.2,
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(
@@ -816,15 +1328,39 @@ pub(crate) fn generate_adaptive(
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, sem);
     }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(combined, &levels),
+        ctx.semantic_ctx,
+    ))
+}
+
+/// Collapse the two user-facing leave-stock dials into the single scalar
+/// the adaptive3d planner actually consumes.
+///
+/// The planner (`crate::adaptive3d::{path,clearing,search}`) is a
+/// drop-cutter / dexel heightmap engine: every use of `stock_to_leave`
+/// raises the "protected surface" (`surf_z + stock_to_leave`) purely in
+/// the Z direction — z-level floors, waterline lift, and gouge-guard
+/// drape all key off a single vertical offset from `point_drop_cutter`.
+/// There is no wall-normal / horizontal offset path (no polygon inset,
+/// no lateral shift of the EDT-derived contours), so a true *radial*
+/// (sidewall) leave allowance cannot be honored by this geometry engine
+/// today.
+///
+/// Given that, silently taking `max(axial, radial)` (the pre-fix
+/// behaviour) is dishonest: an operator who sets `radial = 0.5` with
+/// `axial = 0.0` (protect walls only, machine flats to true height)
+/// instead got a 0.5 mm floor raised everywhere, including flats with
+/// no adjacent wall. The axial-only policy below at least means the
+/// single dial the engine *does* implement (the Z leave) reflects
+/// exactly what the operator asked for on that axis; `stock_to_leave_radial`
+/// is kept on `Adaptive3dConfig` for file/GUI round-trip and to seed a
+/// future wall-offset implementation, but is deliberately NOT consumed
+/// here until the planner grows a real radial mechanism.
+fn adaptive3d_effective_stock_to_leave(
+    cfg: &crate::compute::operation_configs::Adaptive3dConfig,
+) -> f64 {
+    cfg.stock_to_leave_axial
 }
 
 /// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`
@@ -835,16 +1371,9 @@ pub(crate) fn generate_adaptive3d(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Adaptive3d(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_adaptive3d received a non-Adaptive3d config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Adaptive3D requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Adaptive3D")?;
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -880,18 +1409,24 @@ pub(crate) fn generate_adaptive3d(
         crate::compute::operation_configs::ClearingStrategy::AgentSearch => {
             crate::adaptive3d::ClearingStrategy3d::AgentSearch
         }
+        crate::compute::operation_configs::ClearingStrategy::ContourSpiral => {
+            crate::adaptive3d::ClearingStrategy3d::ContourSpiral
+        }
     };
     // Adaptive3d spaces passes by the tool's *engagement* radius at
     // the depth-of-cut, not the envelope radius — for tapered tools
     // these differ a lot. Floor at 0.01mm to keep stepover math safe
     // for degenerate (zero-tip) geometry.
-    let engagement_radius = ctx.tool_def.engagement_radius(cfg.depth_per_pass).max(0.01);
+    let engagement_radius = ctx
+        .tool_def
+        .engagement_radius_mm(cfg.depth_per_pass)
+        .max(0.01);
     let params = crate::adaptive3d::Adaptive3dParams {
         tool_radius: engagement_radius,
-        envelope_radius: ctx.tool_def.radius(),
+        envelope_radius: ctx.tool_def.envelope_radius_mm(),
         stepover: cfg.stepover,
         depth_per_pass: cfg.depth_per_pass,
-        stock_to_leave: cfg.stock_to_leave_axial.max(cfg.stock_to_leave_radial),
+        stock_to_leave: adaptive3d_effective_stock_to_leave(cfg),
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         tolerance: cfg.tolerance,
@@ -926,6 +1461,9 @@ pub(crate) fn generate_adaptive3d(
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,
         clearing_strategy,
+        // "Nibble" dial — forwarded to the ContourSpiral slice path.
+        trochoid_cap_mult: cfg.trochoid_cap_mult,
+        engagement_measure: cfg.engagement_measure,
         z_blend: cfg.z_blend,
         boundary: ctx.boundary.cloned(),
         mill_shallow_areas: cfg.mill_shallow_areas,
@@ -967,7 +1505,7 @@ pub(crate) fn generate_adaptive3d(
         max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
         stay_down_clearance_mm: cfg.stay_down_clearance_mm,
     };
-    let (tp, annotations) =
+    let (tp, annotations, planner_engagement) =
         crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
             m,
             idx,
@@ -982,29 +1520,28 @@ pub(crate) fn generate_adaptive3d(
     }
     let spans =
         crate::compute::spans::spans_from_adaptive3d_annotations(&annotations, tp.moves.len());
-    Ok(generated_with_spans(tp, spans))
+    // Stage 4 — carry the planner-predicted engagement samples on the
+    // AnnotatedToolpath so the feed modulator can read them post-dressup.
+    let mut annotated = generated_with_spans(tp, spans);
+    annotated.planner_engagement = planner_engagement;
+    Ok(annotated)
 }
 
 /// ProjectCurve family adapter. Builds its own cutter from
 /// `tool_cfg` (generator API takes the boxed cutter); reads
 /// `cfg.setup_z_flipped`, which the session/viz drivers pre-set on the
 /// config BEFORE dispatch (caller-side mutation preserved — plan
-/// §Phase-5 task 4).
+/// §Phase-5 task 4). Cancellable: the cooperative cancel closure is
+/// rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_project_curve(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::ProjectCurve(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_project_curve received a non-ProjectCurve config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, ProjectCurve, "generate_project_curve");
     let polys = require_polygons(ctx.polygons)?;
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("ProjectCurve requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "ProjectCurve")?;
     let cutter = build_cutter(ctx.tool_cfg);
     let direction = match cfg.direction {
         crate::compute::operation_configs::ProjectCurveDirection::FromAbove => {
@@ -1036,36 +1573,31 @@ pub(crate) fn generate_project_curve(
         side,
         setup_z_flipped: cfg.setup_z_flipped,
     };
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
-        let tp = crate::project_curve::project_curve_toolpath(poly, m, idx, &cutter, &params);
+        let tp = crate::project_curve::project_curve_toolpath_with_cancel(
+            poly, m, idx, &cutter, &params, &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
-    let generated = generated_with_cut_run_spans(combined, "Projected curve");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(combined, "Projected curve"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Pencil family adapter (labeled-event spans + annotate_pencil).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_pencil(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Pencil(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_pencil received a non-Pencil config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Pencil, "generate_pencil");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Pencil requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Pencil")?;
     let params = crate::pencil::PencilParams {
         bitangency_angle: cfg.bitangency_angle,
         min_cut_length: cfg.min_cut_length,
@@ -1077,14 +1609,63 @@ pub(crate) fn generate_pencil(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
+        min_valley_depth: cfg.min_valley_depth,
+        bisector_strength: cfg.bisector_strength,
+        reference_tool_diameter: cfg.reference_tool_diameter,
+        detector: crate::pencil::PencilDetector::parse(&cfg.detector),
+        valley_saliency: cfg.valley_saliency,
+        curvature_smoothing: cfg.curvature_smoothing,
+        rest_cell_mm: cfg.rest_cell_mm,
+        route_width_factor: cfg.route_width_factor,
+        // R1: real reference tool geometry when the op names one; else None →
+        // the pencil detectors fall back to the nominal `reference_tool_diameter`.
+        reference_cutter: ctx
+            .reference_tool_cfg
+            .as_ref()
+            .map(crate::compute::cutter::build_cutter),
+        // P1 W4a: cost the surface-link-vs-retract emit decision against
+        // the real machine envelope when one is in scope.
+        link_kinematics: ctx.link_kinematics.clone(),
     };
-    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated(
+    // PR-5: `route_width_factor` is still deserialized so every saved
+    // project loads unchanged, but the pencil/clearing decision is now the
+    // coverage criterion and nothing reads it. An operator who tuned it is
+    // told once, here, rather than left with a dial that quietly does
+    // nothing.
+    record_deprecated_dial(
+        ctx.findings,
+        crate::compute::config::DeprecatedDialFinding {
+            dial: "route_width_factor",
+            value: cfg.route_width_factor,
+            default_value: crate::pencil::route_width_factor_default(),
+            replaced_by: "the coverage criterion (reachable band vs \
+                          num_offset_passes x offset_stepover)",
+        },
+    );
+    let mut rest_grid_out: Option<crate::rest_field::RestGrid> = None;
+    let mut rest_regions_out: Option<Vec<Polygon2>> = None;
+    let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
+    let (tp, annotations) = crate::pencil::pencil_toolpath_structured_annotated_with_cancel(
         m,
         idx,
         ctx.tool_def,
         &params,
+        // R2: the prior-op machined stock (FromRemainingStock + a prior sim);
+        // the RestDepth detector prefers it as the rest reference.
+        ctx.initial_stock,
         ctx.debug_ctx,
-    );
+        &mut rest_grid_out,
+        &mut rest_regions_out,
+        &mut tip_float_out,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    // Wave D1: pencil is a centreline op, so it always MEASURES float — even
+    // when the answer is zero. That is the whole point: a silent pass and a
+    // pass that proved the tool reached the floor must not look alike.
+    if let Some(float) = tip_float_out {
+        record_tip_float(ctx.findings, float);
+    }
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
     }
@@ -1094,21 +1675,25 @@ pub(crate) fn generate_pencil(
             .iter()
             .map(|ann| (ann.move_index, ann.event.label())),
     );
-    Ok(generated_with_spans(tp, spans))
+    let mut generated = generated_with_spans(tp, spans);
+    // Attach the RestDepth heatmap grid (if any) for the GUI overlay.
+    generated.rest_grid = rest_grid_out.map(std::sync::Arc::new);
+    // Attach the derived machining-region polygons (if any) — P2.2
+    // selective-finishing boundary source.
+    generated.rest_regions = rest_regions_out.map(std::sync::Arc::new);
+    Ok(generated)
 }
 
 /// Scallop family adapter (labeled-event spans + annotate_scallop).
 /// The ball-tip refusal reads the registry constraint list (T7 PR C)
-/// so refusal and published schema cannot drift.
+/// so refusal and published schema cannot drift. Cancellable: the
+/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_scallop(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Scallop(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_scallop received a non-Scallop config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Scallop, "generate_scallop");
     // Membership pinned by
     // `tool_constraints_allows_matches_runtime_refusal_semantics`.
     if !OperationType::Scallop
@@ -1121,9 +1706,7 @@ pub(crate) fn generate_scallop(
         ));
     }
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Scallop requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Scallop")?;
     let params = crate::scallop::ScallopParams {
         scallop_height: cfg.scallop_height,
         tolerance: cfg.tolerance,
@@ -1135,16 +1718,35 @@ pub(crate) fn generate_scallop(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
+        // A/M7: the standalone all-over pass is where the unconditional
+        // ring retract actually costs — nothing above it relinks.
+        intra_pass_hookup_mm: cfg.intra_pass_hookup_mm,
+        link_kinematics: ctx.link_kinematics.clone(),
     };
-    let (tp, annotations) = crate::scallop::scallop_toolpath_structured_annotated(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
+    let (tp, annotations, scallop_report) =
+        crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            ctx.boundary_regions,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+    record_truncated_core(
+        ctx.findings,
+        scallop_report.uncut_core_mm2,
+        scallop_report.untouched_mm2,
+        scallop_report.standing_mm2,
     );
     if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_scallop(&annotations, &tp, sem);
+        crate::compute::annotate::annotate_scallop(
+            &annotations,
+            &tp,
+            sem,
+            crate::compute::annotate::ScallopRegionGrouping::ByBoundaryRegion,
+        );
     }
     let spans = crate::compute::spans::spans_from_labeled_events(
         tp.moves.len(),
@@ -1155,21 +1757,270 @@ pub(crate) fn generate_scallop(
     Ok(generated_with_spans(tp, spans))
 }
 
-/// SteepShallow family adapter.
+/// UnifiedFinish family adapter (P2.c orchestrator —
+/// `planning/unified_finish_planner_design.md`). Mirrors `generate_scallop`
+/// closely: ball-tip refusal, mesh/index guards, inherited-dial params
+/// build, the P2.b `FinishPlannerParams::for_tool` base with the op's three
+/// new dials (`steep_threshold_deg` / `waterline_threshold_deg` /
+/// `overlap_mm`) overridden on top (one-new-dial rule — everything else
+/// inherits the tool-derived conditioning defaults), then the same
+/// cancellable-core-call / annotate / spans tail Scallop uses (the core
+/// call returns the same `ScallopRuntimeAnnotation` type since the
+/// mid-steep band is itself a scallop pass).
+pub(crate) fn generate_unified_finish(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let cfg = config_guard!(op, UnifiedFinish, "generate_unified_finish");
+    // Membership pinned by
+    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+    if !OperationType::UnifiedFinish
+        .registry_entry()
+        .tool_constraints
+        .allows(ctx.tool_cfg.tool_type.cutter_kind())
+    {
+        return Err(OperationError::InvalidTool(
+            "Unified Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+        ));
+    }
+    let m = require_mesh(ctx.mesh)?;
+    let idx = require_index(ctx.index, "UnifiedFinish")?;
+    let params = crate::unified_finish::UnifiedFinishParams {
+        scallop_height: cfg.scallop_height,
+        tolerance: cfg.tolerance,
+        raster_stepover: cfg.raster_stepover,
+        z_step: cfg.z_step,
+        sampling: cfg.sampling,
+        stock_to_leave: cfg.stock_to_leave,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+        intra_region_hookup_mm: cfg.intra_region_hookup_mm,
+        classification_sampler: cfg.classification_sampler,
+    };
+    // `cusp_radius()`, NOT `radius()`: on a tapered ball the latter is the
+    // SHAFT radius, and every dial `for_tool` derives is a feature scale.
+    // This previously passed `radius()` — 3.0 mm for a Ø1 tip on a 6 mm
+    // shank — making `min_region_area_mm2` 144 mm² instead of 4 and
+    // `close_radius_mm` 1.5 mm instead of 0.25, which closed and absorbed
+    // every steep ribbon on terrain measured at 25% steeper than 55°
+    // (design doc §14q). The claim-floor line below used to "correct" this
+    // with the same wrong radius — a no-op that read as a fix — and is now
+    // redundant because `for_tool` gets the right value.
+    let mut planner =
+        crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.cusp_radius_mm());
+    planner.steep_threshold_deg = cfg.steep_threshold_deg;
+    planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
+    planner.overlap_mm = cfg.overlap_mm;
+
+    let claims_cfg = cfg.pencil_claims.then(|| {
+        // The stock always feeds the TERRITORY mask; it ALSO feeds crease
+        // detection when the resolved reference is
+        // `CreaseReference::MachinedStock` (build-list item 3 —
+        // `CreaseReference` doc). The same XY frame guard
+        // `resolve_rest_reference` applies, minus its reference fallback
+        // chain.
+        let territory_stock = ctx.initial_stock.filter(|stock| {
+            let (sb, mb) = (&stock.stock_bbox, &m.bbox);
+            sb.min.x <= mb.max.x
+                && sb.max.x >= mb.min.x
+                && sb.min.y <= mb.max.y
+                && sb.max.y >= mb.min.y
+        });
+        // A/M6: resolve the three-valued DIAL into the two-valued field the
+        // detector switches on, HERE — this is the only site that can see
+        // both the operator's setting and what is actually in scope. The
+        // resolution is recorded whatever it is: `Auto`'s derivation is
+        // invisible in every config surface, and pinning `self_probe` over a
+        // real machined prior is the A/M6 footgun measured at −88.7% cutting
+        // when corrected.
+        //
+        // The "prior wanted but absent" case does NOT get a second signal
+        // invented for it here. An op that cuts `FromRemainingStock` with no
+        // snapshot never reaches this function at all — it is refused
+        // upstream as `ComputeStatus::AwaitingPriorStock` (A/M11), which is
+        // the taxonomy for blocked-on-sequencing. What reaches here with no
+        // stock in scope is an op that asked for FRESH stock, and that is a
+        // configuration statement, not a block; the finding's `why()` names
+        // both remedies.
+        let resolution = crate::unified_finish::ClaimsReferenceResolution::resolve(
+            cfg.claims_reference,
+            territory_stock.is_some(),
+        );
+        record_claims_reference(
+            ctx.findings,
+            crate::compute::config::ClaimsReferenceFinding {
+                resolution,
+                territory_clip_requested: cfg.territory_clip,
+            },
+        );
+        // Detector tuning mirrors `attach_generic_rest_analysis`: use the
+        // configured `rest_analysis` cell/depth/margin when present, else
+        // the detector's own defaults. `route_width_factor`/
+        // `min_cut_length` have no `RestAnalysisConfig` equivalent yet, so
+        // they always fall back to `RestFieldParams::default()`.
+        // `routing_radius_mm` is set by `unified_finish_toolpath_with_cancel`
+        // itself (the op's own cutter), so leaving the default here is a
+        // no-op either way.
+        let mut rest_field_params =
+            ctx.rest_analysis
+                .map_or_else(crate::rest_field::RestFieldParams::default, |ra| {
+                    crate::rest_field::RestFieldParams {
+                        cell_mm: ra.cell_mm,
+                        min_valley_depth: ra.min_valley_depth,
+                        region_margin_mm: ra.region_margin_mm,
+                        ..crate::rest_field::RestFieldParams::default()
+                    }
+                });
+        // S4 threshold coupling (`unified_finish::ClaimsConfig::
+        // territory_clip` doc): the detector's own rest field (whose
+        // valleys are gated on `rest_field_params.min_valley_depth`) feeds
+        // the S4 mask-AND, which thresholds it at a DIFFERENT value —
+        // `cfg.min_rest_depth_mm` (the S4 per-cell territory gate) —
+        // unless we floor it here. Left to disagree, the mask-AND would
+        // confine generation to islands measuring a different "rest" than
+        // the one S4's mask-AND decided was worth keeping. Only floors
+        // when no deliberate `rest_analysis` dial is
+        // in scope: the session populates `ctx.rest_analysis`
+        // UNCONDITIONALLY from the toolpath config (`session/compute.rs`),
+        // so mere presence is not intent — an untouched default block
+        // (`enabled: false`, dials == `RestFieldParams::default()`) must
+        // not shadow the coupling. `enabled` is the explicit-override
+        // signal, same as `attach_generic_rest_analysis` keys on.
+        if cfg.territory_clip && !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+            rest_field_params.min_valley_depth = cfg.min_rest_depth_mm;
+        }
+        crate::unified_finish::ClaimsConfig {
+            territory_stock,
+            // A/M6: the RESOLVED reference, never the raw dial. `ClaimsConfig`
+            // takes `CreaseReference` (two-valued, what the detector reads);
+            // `UnifiedFinishConfig::claims_reference` is `ClaimsReference`
+            // (three-valued, what the operator asked for). The resolution
+            // above is the only bridge, and it is recorded.
+            crease_reference: resolution.reference(),
+            rest_field_params,
+            min_rest_depth_mm: cfg.min_rest_depth_mm,
+            territory_clip: cfg.territory_clip,
+            crease_hookup_mm: cfg.crease_hookup_mm,
+        }
+    });
+
+    let (tp, annotations, report) = crate::unified_finish::unified_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        ctx.heights.top_z,
+        ctx.heights.bottom_z,
+        &params,
+        &planner,
+        ctx.boundary_regions,
+        // P2.d: cost the region route against the real machine envelope
+        // when one is in scope (same plumbing as pencil's P1 W4a hookup).
+        ctx.link_kinematics.as_ref(),
+        claims_cfg.as_ref(),
+        ctx.debug_ctx,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    record_truncated_core(
+        ctx.findings,
+        report.uncut_core_mm2,
+        report.untouched_mm2,
+        report.standing_mm2,
+    );
+    // A4: the pass has just been planned against a reference stock, and this
+    // is the only point where the emitted geometry and that reference are
+    // both in scope. Gated on the reference having RESOLVED to a real
+    // machined prior — under a self-probe reference `territory_clip` never
+    // ran and the op is not a rest pass in the sense this finding is about.
+    if let Some(cfg) = claims_cfg.as_ref()
+        && matches!(
+            cfg.crease_reference,
+            crate::unified_finish::CreaseReference::MachinedStock
+        )
+        && let Some(stock) = cfg.territory_stock
+    {
+        record_zero_removal(ctx.findings, &tp, stock, ctx.tool_def);
+    }
+    // Wave D1: an unmachined band is a generation-time finding with no home
+    // on the toolpath — the whole reason `GenerationFindings` exists.
+    record_dropped_band(
+        ctx.findings,
+        crate::unified_finish::dropped_band_finding(&report),
+    );
+    // C8: the quiet sibling — bands the heights SHORTENED but did not erase.
+    record_clipped_band(
+        ctx.findings,
+        crate::unified_finish::clipped_band_finding(&report),
+    );
+    // Wave D1: the crease node's centrelines are pencil centrelines and
+    // float for the same reasons. `None` when claims never ran.
+    if let Some(float) = report.tip_float {
+        record_tip_float(ctx.findings, float);
+    }
+    // PR-6a (H2.3): the crease/pencil fan's stepover is derived from the
+    // canonical reach policy, not from any dial the operator can see. `None`
+    // when the claims pipeline never ran, so "not derived" stays distinct
+    // from "derived and unchanged".
+    if let Some(claims) = report.claims {
+        record_derived_stepover(
+            ctx.findings,
+            crate::compute::config::DerivedStepoverFinding {
+                site: "UnifiedFinish crease/pencil claims",
+                stepover_mm: claims.offset_stepover_mm,
+                reference_depth_mm: claims.offset_stepover_reference_depth_mm,
+                reference_depth_basis: crate::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
+                envelope_rule_mm: claims.envelope_rule_stepover_mm,
+            },
+        );
+    }
+    if let Some(sem) = ctx.semantic_ctx {
+        // C8: FLAT. Scallop is a sub-generator here, filling one of the
+        // planner's mid-steep nodes; the region population this operation
+        // publishes is `annotate_unified_finish_regions`' below, and a
+        // second one would double-count and break A/M8's 1:1 gate.
+        crate::compute::annotate::annotate_scallop(
+            &annotations,
+            &tp,
+            sem,
+            crate::compute::annotate::ScallopRegionGrouping::Flat,
+        );
+        // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built
+        // from the same `RegionAnnotation` table `unified_finish_spans`
+        // builds the STRUCTURAL region-node spans from. Annotation only —
+        // no move is touched.
+        crate::compute::annotate::annotate_unified_finish_regions(
+            &crate::unified_finish::unified_finish_region_annotations(&report),
+            &tp,
+            sem,
+        );
+    }
+    // Spans (Region attribution + the rapid-order barriers that make this
+    // op's barriered TSP safe) are built by `unified_finish::
+    // unified_finish_spans` so the capability sentries can assert against
+    // the same definition production ships.
+    let spans = crate::unified_finish::unified_finish_spans(&tp, &annotations, &report);
+    let mut generated = generated_with_spans(tp, spans);
+    // §2.4 carry-through: the claims detector's rest field + region
+    // polygons ride the generated result exactly like the pencil
+    // RestDepth arm's (GUI heatmap, DerivedRestRegions, probes). `None`
+    // when claims didn't run — the generic post-pass fallback still
+    // applies then.
+    generated.rest_grid = report.rest_grid;
+    generated.rest_regions = report.rest_regions;
+    Ok(generated)
+}
+
+/// SteepShallow family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::SteepShallow(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_steep_shallow received a non-SteepShallow config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("SteepShallow requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "SteepShallow")?;
     let params = crate::steep_shallow::SteepShallowParams {
         threshold_angle: cfg.threshold_angle,
         overlap_distance: cfg.overlap_distance,
@@ -1184,35 +2035,36 @@ pub(crate) fn generate_steep_shallow(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::steep_shallow::steep_shallow_toolpath(m, idx, ctx.tool_def, &params),
-        "Steep/shallow run",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let (tp, split) = crate::steep_shallow::steep_shallow_toolpath_split_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.boundary_regions,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    // Two concatenated passes, not one continuous trace: barriers keep the
+    // halves in their emitted order and keep the steep half's Z ladder,
+    // which is what lets `UnifiedFinish`-style intra-node reordering apply
+    // here too (capability arm in `compute/catalog.rs`).
+    let spans = crate::steep_shallow::steep_shallow_spans(&tp, &split);
+    Ok(with_depth_run_annotation(
+        generated_with_spans(tp, spans),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// RampFinish family adapter (labeled-event spans + annotate_ramp_finish).
+/// Cancellable: the cooperative cancel closure is rebuilt from
+/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_ramp_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::RampFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_ramp_finish received a non-RampFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("RampFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "RampFinish")?;
     let params = crate::ramp_finish::RampFinishParams {
         max_stepdown: cfg.max_stepdown,
         slope_from: cfg.slope_from,
@@ -1226,13 +2078,21 @@ pub(crate) fn generate_ramp_finish(
         stock_to_leave: cfg.stock_to_leave,
         tolerance: cfg.tolerance,
     };
-    let (tp, annotations) = crate::ramp_finish::ramp_finish_toolpath_structured_annotated(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
-    );
+    let (tp, annotations, reach_clamp) =
+        crate::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            ctx.boundary_regions,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+    // PR-8b: unconditional, including when the clamp was inert — this is the
+    // only adapter that runs a ramp descent, so `None` downstream means "no
+    // descent ran" and never "a descent ran and I did not look".
+    record_ramp_reach_clamp(ctx.findings, reach_clamp);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
     }
@@ -1248,21 +2108,16 @@ pub(crate) fn generate_ramp_finish(
 /// SpiralFinish family adapter. NOTE: spans come from
 /// `spans_from_labeled_events` over the generator's annotations, and
 /// the family annotate fn is `annotate_spiral_finish` — both part of
-/// the contract.
+/// the contract. Cancellable: the cooperative cancel closure is rebuilt
+/// from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_spiral_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::SpiralFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_spiral_finish received a non-SpiralFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("SpiralFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "SpiralFinish")?;
     let params = crate::spiral_finish::SpiralFinishParams {
         stepover: cfg.stepover,
         direction: cfg.direction,
@@ -1271,13 +2126,17 @@ pub(crate) fn generate_spiral_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let (tp, annotations) = crate::spiral_finish::spiral_finish_toolpath_structured_annotated(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        ctx.debug_ctx,
-    );
+    let (tp, annotations) =
+        crate::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            ctx.boundary_regions,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, sem);
     }
@@ -1290,21 +2149,16 @@ pub(crate) fn generate_spiral_finish(
     Ok(generated_with_spans(tp, spans))
 }
 
-/// RadialFinish family adapter.
+/// RadialFinish family adapter. Cancellable: the cooperative cancel
+/// closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_radial_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::RadialFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_radial_finish received a non-RadialFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("RadialFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "RadialFinish")?;
     let params = crate::radial_finish::RadialFinishParams {
         angular_step: cfg.angular_step,
         point_spacing: cfg.point_spacing,
@@ -1313,36 +2167,31 @@ pub(crate) fn generate_radial_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::radial_finish::radial_finish_toolpath(m, idx, ctx.tool_def, &params),
-        "Radial ray",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let tp = crate::radial_finish::radial_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.boundary_regions,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Radial ray"),
+        ctx.semantic_ctx,
+    ))
 }
 
-/// HorizontalFinish family adapter.
+/// HorizontalFinish family adapter. Cancellable: the cooperative
+/// cancel closure is rebuilt from `ctx.cancel` (pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_horizontal_finish(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::HorizontalFinish(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_horizontal_finish received a \
-             non-HorizontalFinish config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("HorizontalFinish requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "HorizontalFinish")?;
     let params = crate::horizontal_finish::HorizontalFinishParams {
         angle_threshold: cfg.angle_threshold,
         stepover: cfg.stepover,
@@ -1351,18 +2200,19 @@ pub(crate) fn generate_horizontal_finish(
         safe_z: ctx.heights.retract_z,
         stock_to_leave: cfg.stock_to_leave,
     };
-    let generated = generated_with_cut_run_spans(
-        crate::horizontal_finish::horizontal_finish_toolpath(m, idx, ctx.tool_def, &params),
-        "Horizontal slice",
-    );
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    let tp = crate::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        ctx.boundary_regions,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Horizontal slice"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// DropCutter family adapter. Cancellable: the cooperative cancel
@@ -1372,16 +2222,9 @@ pub(crate) fn generate_drop_cutter(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::DropCutter(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_drop_cutter received a non-DropCutter config"
-                .into(),
-        ));
-    };
+    let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("DropCutter requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "DropCutter")?;
     // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
     // should only tip-track the mesh surface — anything lower is either
     // a non-contact clamp or the tool's taper forcing the tip below
@@ -1426,21 +2269,45 @@ pub(crate) fn generate_drop_cutter(
     // at the mesh bottom). Filter them so the finish never cuts past
     // the mesh boundary.
     let min_z_filter = Some(effective_min_z);
-    let slope_filter_active = cfg.slope_from > 0.01 || cfg.slope_to < 89.99;
+    let slope_filter_active =
+        crate::finish_setup::slope_filter_active(cfg.slope_from, cfg.slope_to);
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
     let safe_z = ctx.heights.retract_z;
     let tp = if slope_filter_active {
-        let slope_angles = crate::dropcutter::compute_grid_slopes(&grid);
+        // P1.3 (planning/finishing_stack_review_2026-07.md): derive the
+        // slope filter from `SlopeMap` (radians + normals + curvature)
+        // instead of the retired degrees-only `compute_grid_slopes`. The
+        // grid above is always sampled at `direction_deg = 0.0`, so its
+        // rotated sampling frame coincides with world frame and its
+        // u_start/v_start read as world mins with square (x_step ==
+        // y_step) cells — safe to feed straight into `SlopeMap::from_z_grid`.
+        // Convert the config's degree bounds to radians at this boundary,
+        // since `SlopeMap::angles` is radians-native.
+        debug_assert!(
+            (grid.x_step - grid.y_step).abs() < 1e-9,
+            "drop_cutter grid must have square cells for SlopeMap conversion"
+        );
+        let z_values: Vec<f64> = grid.points.iter().map(|cl| cl.z).collect();
+        let slope_map = crate::slope::SlopeMap::from_z_grid(
+            &z_values,
+            grid.rows,
+            grid.cols,
+            grid.u_start,
+            grid.v_start,
+            grid.x_step,
+        );
         crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
             &grid,
-            &slope_angles,
-            cfg.slope_from,
-            cfg.slope_to,
+            &slope_map.angles,
+            cfg.slope_from.to_radians(),
+            cfg.slope_to.to_radians(),
             feed_rate,
             plunge_rate,
             safe_z,
             min_z_filter,
+            crate::toolpath::MoveIntent::FinishingCut,
+            ctx.boundary_regions,
         )
     } else {
         crate::toolpath::raster_toolpath_from_grid(
@@ -1449,17 +2316,13 @@ pub(crate) fn generate_drop_cutter(
             plunge_rate,
             safe_z,
             min_z_filter,
+            ctx.boundary_regions,
         )
     };
-    let generated = generated_with_cut_run_spans(tp, "Raster row");
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(tp, "Raster row"),
+        ctx.semantic_ctx,
+    ))
 }
 
 /// Waterline family adapter. Cancellable: the cooperative cancel
@@ -1469,20 +2332,20 @@ pub(crate) fn generate_waterline(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let OperationConfig::Waterline(cfg) = op else {
-        return Err(OperationError::Other(
-            "registry adapter mismatch: generate_waterline received a non-Waterline config".into(),
-        ));
-    };
+    let cfg = config_guard!(op, Waterline, "generate_waterline");
     let m = require_mesh(ctx.mesh)?;
-    let idx = ctx
-        .index
-        .ok_or_else(|| OperationError::Other("Waterline requires a spatial index".into()))?;
+    let idx = require_index(ctx.index, "Waterline")?;
     let params = crate::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
+        // `WaterlineConfig` exposes no stock-to-leave dial, so the
+        // standalone op has an ABSENT capability, not a dropped one: no
+        // operator can set a value here and get nothing back. Same
+        // disposition as standalone DropCutter
+        // (`FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.C).
+        stock_to_leave: 0.0,
     };
     let tp = crate::waterline::waterline_toolpath_with_cancel(
         m,
@@ -1492,20 +2355,22 @@ pub(crate) fn generate_waterline(
         ctx.heights.bottom_z,
         cfg.z_step,
         &params,
+        ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
     )
     .map_err(|_e| OperationError::Cancelled)?;
-    let generated = generated_with_depth_run_spans(tp, &[]);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_depth_run_spans(
-            &generated.spans,
-            &generated.toolpath,
-            sem,
-        );
-    }
-    Ok(generated)
+    // R2.8: waterline has a real Z-level ladder (unlike the single-level
+    // Face op) — pass it to the span builder instead of `&[]` so
+    // `spans_from_depth_runs`'s `nearest_level` snapping has real levels
+    // to snap to, matching the exact ladder `waterline_toolpath_with_cancel`
+    // cut at (same helper, one source of truth).
+    let levels =
+        crate::waterline::waterline_z_levels(ctx.heights.top_z, ctx.heights.bottom_z, cfg.z_step);
+    Ok(with_depth_run_annotation(
+        generated_with_depth_run_spans(tp, &levels),
+        ctx.semantic_ctx,
+    ))
 }
-
 // ── Public API ────────────────────────────────────────────────────────
 
 /// Execute a single operation, producing a raw toolpath.
@@ -1525,6 +2390,7 @@ pub fn execute_operation(
     cutting_levels: &[f64],
     stock_bbox: &BoundingBox3,
     prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
@@ -1540,6 +2406,7 @@ pub fn execute_operation(
         cutting_levels,
         stock_bbox,
         prev_tool_radius,
+        reference_tool_cfg,
         debug_ctx,
         cancel,
         initial_stock,
@@ -1554,6 +2421,11 @@ pub fn execute_operation(
 ///
 /// This is the single source-of-truth dispatch; [`execute_operation`] delegates
 /// here and discards the spans for backwards compatibility.
+///
+/// Thin wrapper over [`execute_operation_annotated_with_regions`] with
+/// `boundary_regions = None` — kept as a stable, unchanged signature for the
+/// pre-existing callers (the GUI compute worker, the strategy advisor) that
+/// don't participate in the P2.3 mesh-finish pre-clip.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_operation_annotated(
     op: &OperationConfig,
@@ -1566,6 +2438,7 @@ pub fn execute_operation_annotated(
     cutting_levels: &[f64],
     stock_bbox: &BoundingBox3,
     prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &AtomicBool,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
@@ -1580,14 +2453,18 @@ pub fn execute_operation_annotated(
     // material with full-depth axial DOC.
     boundary: Option<&Polygon2>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    // Phase-5 (T11) family adapters: when the registry carries a
-    // GenerateFn for this op's family, dispatch through it. The
-    // exhaustive match below remains the fallback for unmigrated
-    // families AND the compile-time net (a new op variant fails to
-    // compile until it has an arm — migrated arms delegate to the SAME
-    // adapter fn the registry references, so the two paths cannot
-    // diverge).
-    let ctx = ExecutionContext {
+    // Thin wrapper: callers on this path have no diagnostics pipeline to
+    // feed, so the findings are dropped here rather than rippling a tuple
+    // through every test and CLI call site.
+    //
+    // A/M9: dropping them is now HONEST rather than lossy-silent. Stats
+    // built off this path leave `truncated_core_mm2` at `None` — "not
+    // measured" — instead of the `0.0` that used to read as "nothing
+    // standing". A caller that needs the finding must use
+    // `execute_operation_annotated_with_regions`, which both production
+    // drivers (the core session and the GUI worker) already do.
+    execute_operation_annotated_with_regions(
+        op,
         mesh,
         index,
         polygons,
@@ -1597,78 +2474,315 @@ pub fn execute_operation_annotated(
         cutting_levels,
         stock_bbox,
         prev_tool_radius,
+        reference_tool_cfg,
         debug_ctx,
         cancel,
         initial_stock,
         semantic_ctx,
         boundary,
+        None,
+        None,
+        None,
+    )
+    .map(|(generated, _findings)| generated)
+}
+
+/// [`execute_operation_annotated`] plus `boundary_regions` (P2.3): the
+/// multi-region machining-boundary set the mesh-finish family (scallop /
+/// radial / spiral / steep-shallow / ramp / horizontal / waterline)
+/// pre-clips generation to. Session's `generate_toolpath` is the one caller
+/// that resolves a `DerivedRestRegions` boundary and has real regions to
+/// pass; every other caller passes `None` through [`execute_operation_annotated`]'s
+/// unchanged signature, which is a byte-identical no-op for those families
+/// (see each op's own `boundary_regions` doc comment).
+///
+/// Also carries `rest_analysis` (P2.5): when `Some` and `.enabled`, and the
+/// dispatched op didn't already attach its own rest artifacts (pencil's
+/// `RestDepth` detector arm does — see the precedence check right after
+/// dispatch below), this runs the same rest-depth detector generically
+/// against THIS toolpath's own tool as the fine cutter, attaching
+/// `rest_grid` / `rest_regions` to the result. `None` is a byte-identical
+/// no-op, same shape as `boundary_regions`.
+///
+/// Also carries `link_kinematics` (P1 W4a): the machine envelope the
+/// pencil family costs its surface-link-vs-retract emit decision
+/// against. `None` is a byte-identical no-op (legacy distance-only
+/// hookup decision); production builders that have a machine profile
+/// in scope (session's `generate_toolpath`) populate `Some`.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_operation_annotated_with_regions(
+    op: &OperationConfig,
+    mesh: Option<&TriangleMesh>,
+    index: Option<&SpatialIndex>,
+    polygons: Option<&[Polygon2]>,
+    tool_def: &ToolDefinition,
+    tool_cfg: &ToolConfig,
+    heights: &ResolvedHeights,
+    cutting_levels: &[f64],
+    stock_bbox: &BoundingBox3,
+    prev_tool_radius: Option<f64>,
+    reference_tool_cfg: Option<ToolConfig>,
+    debug_ctx: Option<&ToolpathDebugContext>,
+    cancel: &AtomicBool,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
+    boundary: Option<&Polygon2>,
+    boundary_regions: Option<&[Polygon2]>,
+    rest_analysis: Option<&crate::compute::config::RestAnalysisConfig>,
+    // P1 quantitative linker (W4a): the machine envelope the pencil
+    // family's emit-time surface-link-vs-retract decision costs
+    // candidates against. `None` is a byte-identical no-op — the
+    // legacy distance-only hookup decision.
+    link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+) -> Result<(GeneratedToolpath, GenerationFindings), OperationError> {
+    // Phase-5 (T11) family adapters: when the registry carries a
+    // GenerateFn for this op's family, dispatch through it. The
+    // exhaustive match below remains the fallback for unmigrated
+    // families AND the compile-time net (a new op variant fails to
+    // compile until it has an arm — migrated arms delegate to the SAME
+    // adapter fn the registry references, so the two paths cannot
+    // diverge).
+    //
+    // This function's own signature stays slice-based (`Option<&[Polygon2]>`)
+    // — both callers (session's `generate_toolpath`, the GUI worker's
+    // `generate_via_core`) already resolve a plain `Vec<Polygon2>`/slice via
+    // `RegionSet::processed` and pass it straight through, so changing this
+    // signature to `&RegionSet` would only add a wrap/unwrap at both call
+    // sites for no benefit. The borrow into `RegionSet` happens right here,
+    // where it's used.
+    let region_set = boundary_regions.map(RegionSet::from_slice);
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let ctx = ExecutionContext {
+        findings: &findings,
+        mesh,
+        index,
+        polygons,
+        tool_def,
+        tool_cfg,
+        heights,
+        cutting_levels,
+        stock_bbox,
+        prev_tool_radius,
+        reference_tool_cfg,
+        debug_ctx,
+        cancel,
+        initial_stock,
+        semantic_ctx,
+        boundary,
+        boundary_regions: region_set.as_ref(),
+        link_kinematics,
+        rest_analysis,
     };
-    if let Some(generate) = op.op_type().registry_entry().generate {
-        return generate(&ctx, op);
+    let mut generated = if let Some(generate) = op.op_type().registry_entry().generate {
+        generate(&ctx, op)
+    } else {
+        match op {
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Face(_) => generate_face(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Profile(_) => generate_profile(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
+            OperationConfig::Trace(_) => generate_trace(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Rest(_) => generate_rest(&ctx, op),
+            OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Drill(_) => generate_drill(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
+
+            // ── 3D operations ────────────────────────────────────────────
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
+            OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
+            OperationConfig::UnifiedFinish(_) => generate_unified_finish(&ctx, op),
+            OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
+            OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arms kept for the
+            // exhaustiveness net and delegate to the same adapters.
+            OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
+            OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
+            OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
+            // Migrated to the registry GenerateFn (T11); arm kept for the
+            // exhaustiveness net and delegates to the same adapter.
+            OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
+        }
+    }?;
+
+    // P2.5: op-agnostic rest analysis. Precedence — an op that already
+    // attached its own rest artifacts (pencil's `RestDepth` detector arm,
+    // via `generate_pencil`) is left alone: one source of truth per
+    // toolpath, and pencil's detector is parameterized for centerline
+    // extraction, a richer job than the generic pass below needs to redo.
+    // Only runs when a mesh (+ its spatial index) is present — 2D ops have
+    // no terrain to rest-analyze.
+    if let Some(ra) = rest_analysis
+        && ra.enabled
+        && generated.rest_grid.is_none()
+        && generated.rest_regions.is_none()
+        && let (Some(m), Some(idx)) = (mesh, index)
+    {
+        attach_generic_rest_analysis(
+            &mut generated,
+            m,
+            idx,
+            tool_def,
+            ctx.reference_tool_cfg.as_ref(),
+            initial_stock,
+            ra,
+            &findings,
+        );
     }
 
-    // Every family is registry-dispatched (T11 cutover complete); this
-    // match is the compile-time net — a new OperationConfig variant
-    // fails to compile until it gets an arm, and each arm delegates to
-    // the SAME adapter fn its registry entry references.
-    match op {
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Face(_) => generate_face(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Profile(_) => generate_profile(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
-        OperationConfig::Trace(_) => generate_trace(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Rest(_) => generate_rest(&ctx, op),
-        OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Drill(_) => generate_drill(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
+    Ok((generated, findings.into_inner()))
+}
 
-        // ── 3D operations ────────────────────────────────────────────
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
-        OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
-        OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
-        OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arms kept for the
-        // exhaustiveness net and delegate to the same adapters.
-        OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
-        OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
-        OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
-        // Migrated to the registry GenerateFn (T11); arm kept for the
-        // exhaustiveness net and delegates to the same adapter.
-        OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
+/// P2.5: shared rest-analysis attach for any operation family. Runs the same
+/// rest-depth detector `pencil::rest_depth_arm` uses
+/// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
+/// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
+/// no centerline toolpath is emitted, only the analysis artifacts. Reference
+/// resolution order mirrors `rest_depth_arm`: prefer the actual machined
+/// stock (when its XY frame overlaps the mesh), else the configured real
+/// reference tool (`reference_tool_cfg`, resolved upstream from
+/// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
+/// `reference_tool_id` is resolved), else a self-referenced bare-surface
+/// probe.
+#[allow(clippy::too_many_arguments)] // post-generation attach point; every
+// argument is a distinct upstream source (geometry, tool, reference, stock,
+// dials, findings sink)
+fn attach_generic_rest_analysis(
+    generated: &mut GeneratedToolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    tool_def: &ToolDefinition,
+    reference_tool_cfg: Option<&ToolConfig>,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    cfg: &crate::compute::config::RestAnalysisConfig,
+    findings: &std::cell::RefCell<GenerationFindings>,
+) {
+    let reference_tool = reference_tool_cfg.map(build_cutter);
+    let probe_ball = crate::tool::BallEndmill::new(
+        crate::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
+        crate::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+    );
+    let reference = resolve_rest_reference(
+        mesh,
+        reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+        initial_stock,
+        &probe_ball,
+    );
+    let defaults = crate::rest_field::RestFieldParams::default();
+    // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
+    //
+    // Wave A left this taking `RestFieldParams::default()` — a literal
+    // 0.5 mm stepover and a 0-pass cap — with the note that it is "fine for
+    // a report-only pass, wrong the moment it emits paths". It was already
+    // wrong before that: the regions this pass attaches are consumed as a
+    // `derived_rest_regions` BOUNDARY by other operations, so a routing
+    // verdict taken against a fan nobody would emit decides where a real
+    // toolpath is allowed to cut. On the shipped Ø1-tip taper the literal
+    // 0.5 quantises the coverage threshold `ceil(own_width/stepover) ×
+    // stepover` a full third coarser than the policy value does.
+    //
+    // `None` on either dial = ask the policy / take the detector default;
+    // no parallel formula lives here.
+    let offset_stepover_mm = cfg.offset_stepover_mm.unwrap_or_else(|| {
+        crate::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
+    });
+    let rf_params = crate::rest_field::RestFieldParams {
+        cell_mm: cfg.cell_mm,
+        min_valley_depth: cfg.min_valley_depth,
+        region_margin_mm: cfg.region_margin_mm,
+        offset_stepover_mm,
+        num_offset_passes_cap: cfg
+            .num_offset_passes
+            .unwrap_or(defaults.num_offset_passes_cap),
+        min_cut_length: defaults.min_cut_length,
+    };
+    // Same audit trail as the `UnifiedFinish` claims pipeline (PR-6a): the
+    // number steers a routing decision and appears in no dial the operator
+    // set. Only when the policy sized it — an explicitly pinned stepover is
+    // the operator's own number and needs no notice.
+    if cfg.offset_stepover_mm.is_none() {
+        record_derived_stepover(
+            findings,
+            crate::compute::config::DerivedStepoverFinding {
+                site: "generic rest analysis routing",
+                stepover_mm: offset_stepover_mm,
+                reference_depth_mm: cfg.min_valley_depth,
+                reference_depth_basis: GENERIC_REST_STEPOVER_DEPTH_BASIS,
+                envelope_rule_mm: tool_def.envelope_radius_mm() * 0.5,
+            },
+        );
+    }
+    let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
+    generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
+    generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+}
+
+/// Why [`attach_generic_rest_analysis`] sizes the reach policy at
+/// `min_valley_depth`. Shipped in the operator-facing diagnostic.
+const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth — the shallowest rest this pass will \
+     report, where the cutter's engaged width is narrowest";
+
+/// Resolve the rest-depth reference (P2.5 chain): the actual machined
+/// stock (when present and its XY bbox overlaps `mesh`) → a configured
+/// real reference tool → a self-referenced bare-surface probe. Shared by
+/// the generic post-generation pass above (`attach_generic_rest_analysis`)
+/// and `generate_unified_finish`'s in-op claims pipeline (v3 S1) — same
+/// chain, same priority order, one implementation.
+fn resolve_rest_reference<'a>(
+    mesh: &TriangleMesh,
+    reference_tool: Option<&'a dyn MillingCutter>,
+    initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    probe_ball: &'a crate::tool::BallEndmill,
+) -> crate::rest_field::RestReference<'a> {
+    let stock_ref = initial_stock.filter(|stock| {
+        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
+        sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
+    });
+    if let Some(stock) = stock_ref {
+        crate::rest_field::RestReference::Stock(stock)
+    } else if let Some(tool) = reference_tool {
+        crate::rest_field::RestReference::Cutter {
+            tool,
+            is_surface_probe: false,
+        }
+    } else {
+        crate::rest_field::RestReference::Cutter {
+            tool: probe_ball,
+            is_surface_probe: true,
+        }
     }
 }
 
@@ -1684,21 +2798,33 @@ struct DressupTraceInfo<'a> {
 
 /// Run one dressup step with optional debug + semantic tracing scopes.
 ///
-/// Both contexts are optional — when both are `None` (CLI / session paths)
-/// the helper is just `transform(annotated)` with no overhead. When the
-/// GUI passes them through, each step appears as its own item in the
-/// semantic trace tree (consumed by `sim_op_list` etc.) and as a span in
-/// the debug trace.
+/// The `transform` closure must return a [`Transformed`] — that signature
+/// IS the C1 contract at this boundary. A new dressup step cannot be added
+/// to the pipeline without reporting how it moved the move indices, and
+/// this helper is the only thing that can turn that report back into a
+/// usable toolpath, which it does by reconciling `channels`.
+///
+/// `channels` is independent of `semantic_ctx`: it records nothing, it
+/// carries the move links of items recorded EARLIER (at generation time, or
+/// by a previous dressup step) through this step's move-index changes. The
+/// session path registers its generation recorder there while passing
+/// `None` for `semantic_ctx` — it wants the links kept honest without
+/// adding per-dressup items to the trace.
 fn apply_dressup_traced(
     annotated: AnnotatedToolpath,
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
+    channels: &mut ReconcileSet<'_>,
     info: DressupTraceInfo<'_>,
     set_params: impl FnOnce(&ToolpathSemanticScope),
-    transform: impl FnOnce(AnnotatedToolpath) -> AnnotatedToolpath,
+    transform: impl FnOnce(AnnotatedToolpath) -> Transformed,
 ) -> AnnotatedToolpath {
     let debug_scope = debug_ctx.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
     let debug_span_id = debug_scope.as_ref().map(|s| s.id());
+    // Started BEFORE the transform (so its params are recorded even if the
+    // transform is the last thing this scope sees) but bound to a move
+    // range only AFTER the reconcile — an item with no link yet carries no
+    // move indices, so it is never double-remapped.
     let semantic_scope = semantic_ctx.map(|ctx| {
         let scope = ctx.start_item(info.kind, info.semantic_label);
         if let Some(span_id) = debug_span_id {
@@ -1707,14 +2833,33 @@ fn apply_dressup_traced(
         set_params(&scope);
         scope
     });
-    let result = transform(annotated);
+
+    let (result, provenance) = transform(annotated).reconcile(channels).into_parts();
+    let n = result.toolpath.moves.len();
+
     if let Some(scope) = semantic_scope.as_ref() {
-        scope.bind_to_toolpath(&result.toolpath, 0, result.toolpath.moves.len());
+        // C1 item 4a: every per-dressup item used to bind `0..len`, so each
+        // one claimed the whole toolpath and per-step attribution said
+        // nothing. The provenance knows which moves the step actually
+        // restructured; where it does not (a step that rewrote move CONTENT
+        // without moving an index, i.e. feed optimisation), the whole-path
+        // claim is still made but is now LABELLED as such instead of being
+        // indistinguishable from a precise one.
+        match provenance.touched_new_range(n) {
+            Some(range) => {
+                scope.set_param(SemanticKey::MoveScope, "touched_moves");
+                scope.bind_to_toolpath(&result.toolpath, range.start, range.end);
+            }
+            None => {
+                scope.set_param(SemanticKey::MoveScope, "whole_path");
+                scope.bind_to_toolpath(&result.toolpath, 0, n);
+            }
+        }
     }
     if let Some(scope) = debug_scope.as_ref()
-        && !result.toolpath.moves.is_empty()
+        && n > 0
     {
-        scope.set_move_range(0, result.toolpath.moves.len() - 1);
+        scope.set_move_range(0, n - 1);
     }
     result
 }
@@ -1736,6 +2881,14 @@ fn apply_dressup_traced(
 ///
 /// All dressups in this pipeline are span-aware (Phase 3 sub-tasks
 /// #50–#58); spans on the input are remapped through each step.
+///
+/// `channels` (C1) is the registry of index-carrying channels the CALLER
+/// owns — today the semantic trace's move links. Every step reconciles
+/// against it, so the item ranges cannot drift away from the moves they
+/// name (and cannot end up past the end of the move list, which is a
+/// consumer-panic class). It is orthogonal to `semantic_ctx`, which only
+/// controls whether each step records an item of its own; a caller with no
+/// channels passes [`ReconcileSet::empty`] and says so.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
@@ -1750,9 +2903,11 @@ pub fn apply_dressups(
     transform_capabilities: OperationTransformCapabilities,
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
+    channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
+        EntryStyle, LinkMoveParams, apply_dogbones_with_provenance, apply_entry_with_provenance,
+        apply_link_moves_with_provenance,
     };
 
     // Capability gate: barriered TSP only fires when the input has barriers.
@@ -1771,6 +2926,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "rapid_order",
                 debug_label: "Optimize rapid order",
@@ -1778,10 +2934,10 @@ pub fn apply_dressups(
                 semantic_label: "Rapid ordering",
             },
             |scope| {
-                scope.set_param("safe_z", safe_z);
-                scope.set_param("barrier_count", barrier_count);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
+                scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
-            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
     }
 
@@ -1803,6 +2959,7 @@ pub fn apply_dressups(
                 current,
                 debug_ctx,
                 semantic_ctx,
+                channels,
                 DressupTraceInfo {
                     debug_key: "entry_style",
                     debug_label: "Ramp entry",
@@ -1810,11 +2967,11 @@ pub fn apply_dressups(
                     semantic_label: "Ramp entry",
                 },
                 |scope| {
-                    scope.set_param("kind", "ramp");
-                    scope.set_param("max_angle_deg", ramp_angle);
+                    scope.set_param(SemanticKey::Kind, "ramp");
+                    scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
                 },
                 |at| {
-                    apply_entry(
+                    apply_entry_with_provenance(
                         at,
                         EntryStyle::Ramp {
                             max_angle_deg: ramp_angle,
@@ -1832,6 +2989,7 @@ pub fn apply_dressups(
                 current,
                 debug_ctx,
                 semantic_ctx,
+                channels,
                 DressupTraceInfo {
                     debug_key: "entry_style",
                     debug_label: "Helix entry",
@@ -1839,12 +2997,12 @@ pub fn apply_dressups(
                     semantic_label: "Helix entry",
                 },
                 |scope| {
-                    scope.set_param("kind", "helix");
-                    scope.set_param("radius", helix_radius);
-                    scope.set_param("pitch", helix_pitch);
+                    scope.set_param(SemanticKey::Kind, "helix");
+                    scope.set_param(SemanticKey::Radius, helix_radius);
+                    scope.set_param(SemanticKey::Pitch, helix_pitch);
                 },
                 |at| {
-                    apply_entry(
+                    apply_entry_with_provenance(
                         at,
                         EntryStyle::Helix {
                             radius: helix_radius,
@@ -1866,6 +3024,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "dogbones",
                 debug_label: "Apply dogbones",
@@ -1873,9 +3032,9 @@ pub fn apply_dressups(
                 semantic_label: "Dogbones",
             },
             |scope| {
-                scope.set_param("angle_deg", angle);
+                scope.set_param(SemanticKey::AngleDeg, angle);
             },
-            |at| apply_dogbones(at, tool_radius, angle),
+            |at| apply_dogbones_with_provenance(at, tool_radius, angle),
         );
     }
 
@@ -1888,6 +3047,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "lead_in_out",
                 debug_label: "Apply lead in/out",
@@ -1895,15 +3055,15 @@ pub fn apply_dressups(
                 semantic_label: "Lead in/out",
             },
             |scope| {
-                scope.set_param("radius", radius);
+                scope.set_param(SemanticKey::Radius, radius);
                 if let Some(f) = li_feed {
-                    scope.set_param("lead_in_feed_rate", f);
+                    scope.set_param(SemanticKey::LeadInFeedRate, f);
                 }
                 if let Some(f) = lo_feed {
-                    scope.set_param("lead_out_feed_rate", f);
+                    scope.set_param(SemanticKey::LeadOutFeedRate, f);
                 }
             },
-            |at| crate::dressup::apply_lead_in_out_with_feeds(at, radius, li_feed, lo_feed),
+            |at| crate::dressup::apply_lead_in_out_with_provenance(at, radius, li_feed, lo_feed),
         );
     }
 
@@ -1915,6 +3075,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "link_moves",
                 debug_label: "Apply link moves",
@@ -1922,16 +3083,17 @@ pub fn apply_dressups(
                 semantic_label: "Link moves",
             },
             |scope| {
-                scope.set_param("max_link_distance", max_dist);
-                scope.set_param("link_feed_rate", link_feed);
+                scope.set_param(SemanticKey::MaxLinkDistance, max_dist);
+                scope.set_param(SemanticKey::LinkFeedRate, link_feed);
             },
             |at| {
-                apply_link_moves(
+                apply_link_moves_with_provenance(
                     at,
                     &LinkMoveParams {
                         max_link_distance: max_dist,
                         link_feed_rate: link_feed,
                         safe_z_threshold: safe_z * 0.9,
+                        tool_radius,
                     },
                 )
             },
@@ -1945,6 +3107,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "arc_fit",
                 debug_label: "Fit arcs",
@@ -1952,9 +3115,32 @@ pub fn apply_dressups(
                 semantic_label: "Arc fitting",
             },
             |scope| {
-                scope.set_param("tolerance", tolerance);
+                scope.set_param(SemanticKey::Tolerance, tolerance);
             },
-            |at| crate::arcfit::fit_arcs(at, tolerance, tool_radius),
+            |at| crate::arcfit::fit_arcs_with_provenance(at, tolerance, tool_radius),
+        );
+    }
+
+    // 5b. Segment merge (accel-friendly) — collapse dense same-feed linear cut
+    // runs so a low-acceleration controller can ramp to feed. Runs after
+    // arc-fitting (curves are already G2/G3; this cleans up residual linears).
+    if cfg.segment_merge {
+        let merge_tol = cfg.segment_merge_tolerance;
+        current = apply_dressup_traced(
+            current,
+            debug_ctx,
+            semantic_ctx,
+            channels,
+            DressupTraceInfo {
+                debug_key: "segment_merge",
+                debug_label: "Merge short segments",
+                kind: ToolpathSemanticKind::Optimization,
+                semantic_label: "Segment merge",
+            },
+            |scope| {
+                scope.set_param(SemanticKey::Tolerance, merge_tol);
+            },
+            |at| crate::condition::merge_linear_runs_with_provenance(at, merge_tol),
         );
     }
 
@@ -1967,6 +3153,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "rapid_order",
                 debug_label: "Optimize rapid order",
@@ -1974,9 +3161,9 @@ pub fn apply_dressups(
                 semantic_label: "Rapid ordering",
             },
             |scope| {
-                scope.set_param("safe_z", safe_z);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| crate::tsp::optimize_rapid_order(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
         );
     }
 
@@ -1986,6 +3173,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "air_cut_filter",
                 debug_label: "Filter air cuts",
@@ -1993,10 +3181,19 @@ pub fn apply_dressups(
                 semantic_label: "Air-cut filter",
             },
             |scope| {
-                scope.set_param("tool_radius", tool_radius);
-                scope.set_param("safe_z", safe_z);
+                scope.set_param(SemanticKey::ToolRadius, tool_radius);
+                scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| crate::dressup::filter_air_cuts(at, stock, tool_radius, safe_z, 0.1),
+            |at| {
+                crate::dressup::filter_air_cuts_with_provenance(
+                    at,
+                    stock,
+                    tool_radius,
+                    safe_z,
+                    0.1,
+                    cfg.air_bridge_policy,
+                )
+            },
         );
     }
 
@@ -2019,6 +3216,7 @@ pub fn apply_dressups(
             current,
             debug_ctx,
             semantic_ctx,
+            channels,
             DressupTraceInfo {
                 debug_key: "feed_optimization",
                 debug_label: "Optimize feeds",
@@ -2026,11 +3224,18 @@ pub fn apply_dressups(
                 semantic_label: "Feed optimization",
             },
             |scope| {
-                scope.set_param("nominal_feed_rate", nominal);
-                scope.set_param("max_feed_rate", max_rate);
-                scope.set_param("ramp_rate", ramp_rate);
+                scope.set_param(SemanticKey::NominalFeedRate, nominal);
+                scope.set_param(SemanticKey::MaxFeedRate, max_rate);
+                scope.set_param(SemanticKey::RampRate, ramp_rate);
             },
-            |at| crate::feedopt::optimize_feed_rates(at, cut, stock, &params),
+            // Feed optimisation rewrites feed rates only — move count, order and
+            // spans pass through untouched. The claim is made explicitly rather
+            // than by omission.
+            |at| {
+                Transformed::index_preserving(crate::feedopt::optimize_feed_rates(
+                    at, cut, stock, &params,
+                ))
+            },
         );
     }
 
@@ -2038,6 +3243,9 @@ pub fn apply_dressups(
         toolpath: current.toolpath,
         spans: current.spans,
         spans_valid: input_valid && current.spans_valid,
+        planner_engagement: current.planner_engagement,
+        rest_grid: current.rest_grid,
+        rest_regions: current.rest_regions,
     }
 }
 
@@ -2051,6 +3259,49 @@ fn require_polygons(polygons: Option<&[Polygon2]>) -> Result<&[Polygon2], Operat
 
 fn require_mesh(mesh: Option<&TriangleMesh>) -> Result<&TriangleMesh, OperationError> {
     mesh.ok_or_else(|| OperationError::MissingGeometry("Operation requires a 3D mesh".into()))
+}
+
+/// R2.4: the spatial-index guard duplicated identically across every
+/// mesh-driven family adapter (Adaptive3d, ProjectCurve, Pencil, Scallop,
+/// SteepShallow, RampFinish, SpiralFinish, RadialFinish, HorizontalFinish,
+/// DropCutter, Waterline) — same refusal shape as [`require_mesh`] /
+/// [`require_polygons`], parameterized on the operation name for the
+/// error message.
+fn require_index<'a>(
+    index: Option<&'a SpatialIndex>,
+    op_name: &str,
+) -> Result<&'a SpatialIndex, OperationError> {
+    index.ok_or_else(|| OperationError::Other(format!("{op_name} requires a spatial index")))
+}
+
+/// R2.5: the V-Bit-only tool-geometry guard duplicated 3× (Inlay, VCarve,
+/// Chamfer) — resolve the half-angle or refuse with the operation name.
+fn vbit_half_angle(tool_cfg: &ToolConfig, op_name: &str) -> Result<f64, OperationError> {
+    match tool_cfg.tool_type {
+        ToolType::VBit => Ok((tool_cfg.included_angle / 2.0).to_radians()),
+        _ => Err(OperationError::InvalidTool(format!(
+            "{op_name} requires V-Bit tool"
+        ))),
+    }
+}
+
+/// R2.7: the `if let Some(sem) = ctx.semantic_ctx { annotate_depth_run_spans(..) }`
+/// postscript duplicated after every family adapter's span-building call
+/// (both the `generated_with_depth_run_spans` and `generated_with_cut_run_spans`
+/// bases end up here) — apply the generic depth-run semantic annotation
+/// when a context is present, then hand the toolpath back unchanged.
+fn with_depth_run_annotation(
+    generated: GeneratedToolpath,
+    semantic_ctx: Option<&ToolpathSemanticContext>,
+) -> GeneratedToolpath {
+    if let Some(sem) = semantic_ctx {
+        crate::compute::annotate::annotate_depth_run_spans(
+            &generated.spans,
+            &generated.toolpath,
+            sem,
+        );
+    }
+    generated
 }
 
 /// Compute effective depth levels from pre-computed cutting_levels or DepthStepping.
@@ -2080,6 +3331,105 @@ fn effective_levels(
 )]
 mod tests {
     use super::*;
+
+    // ── C8: findings collections ────────────────────────────────────────
+
+    fn stepover_finding(
+        site: &'static str,
+        mm: f64,
+    ) -> crate::compute::config::DerivedStepoverFinding {
+        crate::compute::config::DerivedStepoverFinding {
+            site,
+            stepover_mm: mm,
+            reference_depth_mm: 0.5,
+            reference_depth_basis: "test",
+            envelope_rule_mm: mm * 3.0,
+        }
+    }
+
+    /// C8, red-first against the pre-wave code: `record_derived_stepover`
+    /// returned early when the slot was occupied, so the SECOND derivation
+    /// — PR-7's generic rest-analysis post-pass — was discarded with no
+    /// trace. This asserts both survive, in the order they fired, each
+    /// carrying its own `site`.
+    #[test]
+    fn two_derivations_on_one_toolpath_are_both_recorded() {
+        let cell = std::cell::RefCell::new(GenerationFindings::default());
+        assert!(
+            cell.borrow().derived_stepovers.is_empty(),
+            "empty means nothing derived — the 'not measured' state"
+        );
+
+        record_derived_stepover(
+            &cell,
+            stepover_finding("UnifiedFinish crease/pencil claims", 0.20),
+        );
+        record_derived_stepover(
+            &cell,
+            stepover_finding("generic rest analysis routing", 0.35),
+        );
+
+        let findings = cell.into_inner();
+        assert_eq!(
+            findings.derived_stepovers.len(),
+            2,
+            "first-writer-wins would have kept only one: {:?}",
+            findings.derived_stepovers
+        );
+        // Emission order is the firing order: the operation's own site runs
+        // during generation, the post-pass afterwards.
+        assert_eq!(
+            findings.derived_stepovers[0].site,
+            "UnifiedFinish crease/pencil claims"
+        );
+        assert_eq!(
+            findings.derived_stepovers[1].site,
+            "generic rest analysis routing"
+        );
+        assert!((findings.derived_stepovers[0].stepover_mm - 0.20).abs() < 1e-12);
+        assert!((findings.derived_stepovers[1].stepover_mm - 0.35).abs() < 1e-12);
+    }
+
+    /// The diagnostic adapter fans out per derivation, and still stays quiet
+    /// on the ones that agree with the retired envelope rule — the
+    /// per-derivation form of the "a notice on every toolpath is a notice
+    /// nobody reads" rule. Before C8 the whole operation's diagnostic was
+    /// decided by whichever derivation happened to be recorded first, so a
+    /// noteworthy second one could be silenced by an unremarkable first.
+    #[test]
+    fn the_diagnostic_adapter_reports_each_derivation_separately() {
+        let mut stats = crate::compute::config::ToolpathStats::default();
+        // First agrees with the envelope rule (a plain ball) — silent.
+        stats
+            .derived_stepovers
+            .push(crate::compute::config::DerivedStepoverFinding {
+                envelope_rule_mm: 0.20,
+                ..stepover_finding("quiet site", 0.20)
+            });
+        // Second does not — must be reported even though the first was not.
+        stats
+            .derived_stepovers
+            .push(stepover_finding("loud site", 0.35));
+
+        let out = crate::diagnostics::adapters::from_generation::diagnostics_from_generation(
+            crate::ids::ToolpathId(0),
+            &stats,
+        );
+        let stepover_diags: Vec<_> = out
+            .iter()
+            .filter(|d| d.id.as_str() == crate::diagnostics::ids::CONFIG_DERIVED_STEPOVER)
+            .collect();
+        assert_eq!(
+            stepover_diags.len(),
+            1,
+            "one diagnostic per NOTEWORTHY derivation: {stepover_diags:?}"
+        );
+        assert!(
+            stepover_diags[0].message.contains("loud site"),
+            "the reported one must be the second: {}",
+            stepover_diags[0].message
+        );
+    }
     use std::sync::atomic::AtomicBool;
 
     use crate::compute::catalog::{OperationConfig, OperationType};
@@ -2090,6 +3440,73 @@ mod tests {
     use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphere};
     use crate::polygon::Polygon2;
     use crate::toolpath_spans::SpanKind;
+
+    #[test]
+    fn drill_holes_selection_overrides_centroids() {
+        use crate::compute::operation_configs::DrillConfig;
+        // A 10×10 square whose centroid is (5,5).
+        let square = Polygon2::new(vec![
+            crate::geo::P2::new(0.0, 0.0),
+            crate::geo::P2::new(10.0, 0.0),
+            crate::geo::P2::new(10.0, 10.0),
+            crate::geo::P2::new(0.0, 10.0),
+        ]);
+        let polys = [square];
+
+        // None => legacy centroid behaviour.
+        let legacy = DrillConfig::default();
+        let holes = drill_holes_for_config(&legacy, Some(&polys)).unwrap();
+        assert_eq!(holes.len(), 1);
+        assert!((holes[0][0] - 5.0).abs() < 1e-9 && (holes[0][1] - 5.0).abs() < 1e-9);
+
+        // Some(picks) => drill exactly the picks, ignoring centroids.
+        let picked = DrillConfig {
+            selected_holes: Some(vec![[1.0, 2.0], [7.0, 8.0]]),
+            ..DrillConfig::default()
+        };
+        let holes = drill_holes_for_config(&picked, Some(&polys)).unwrap();
+        assert_eq!(holes, vec![[1.0, 2.0], [7.0, 8.0]]);
+
+        // Some(empty) => explicit "nothing selected" error, not all-centroids.
+        let empty = DrillConfig {
+            selected_holes: Some(Vec::new()),
+            ..DrillConfig::default()
+        };
+        assert!(drill_holes_for_config(&empty, Some(&polys)).is_err());
+    }
+
+    /// F-XXX regression: adaptive3d's planner only supports a vertical
+    /// (Z) leave — `stock_to_leave_radial` must NOT silently raise the
+    /// effective leave via `max()`. A user protecting sidewalls only
+    /// (`radial = 0.5`, `axial = 0.0`) should get the Z floor they asked
+    /// for (0.0, i.e. no floor raise on flats), not the radial value
+    /// bleeding into the axial dial.
+    #[test]
+    fn adaptive3d_stock_to_leave_is_axial_only() {
+        use crate::compute::operation_configs::Adaptive3dConfig;
+
+        let sidewall_only = Adaptive3dConfig {
+            stock_to_leave_axial: 0.0,
+            stock_to_leave_radial: 0.5,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&sidewall_only), 0.0);
+
+        let axial_only = Adaptive3dConfig {
+            stock_to_leave_axial: 0.3,
+            stock_to_leave_radial: 0.0,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&axial_only), 0.3);
+
+        // Both set: still axial, not max().
+        let both = Adaptive3dConfig {
+            stock_to_leave_axial: 0.2,
+            stock_to_leave_radial: 0.8,
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(adaptive3d_effective_stock_to_leave(&both), 0.2);
+    }
 
     /// Build a default tool definition and config for a given tool type.
     fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
@@ -2119,6 +3536,12 @@ mod tests {
         }
     }
 
+    // F.3: CCW winding so the wall facets face UP/outward (+Z normals) — a
+    // valid machinable surface, matching pencil.rs's own corrected copy of
+    // this fixture. The original winding produced downward normals, which
+    // drop_cutter rightly skips — starving the Pencil span-coverage case of
+    // any contacted geometry (the pre-existing red at HEAD, see F.3 in
+    // planning/finishing_stack_review_2026-07.md).
     fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
         TriangleMesh::from_raw(
             vec![
@@ -2129,7 +3552,7 @@ mod tests {
                 P3::new(0.0, width, 0.0),
                 P3::new(length, width, 0.0),
             ],
-            vec![[0, 2, 1], [1, 2, 3], [2, 4, 3], [3, 4, 5]],
+            vec![[0, 1, 2], [1, 3, 2], [2, 3, 4], [3, 5, 4]],
         )
     }
 
@@ -2530,6 +3953,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2560,6 +3984,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2595,6 +4020,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2628,6 +4054,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
         );
@@ -2658,6 +4085,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2695,6 +4123,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -2757,6 +4186,7 @@ mod tests {
                 &cutting_levels,
                 &bbox,
                 case.prev_tool_radius,
+                None,
                 None,
                 &cancel,
                 None,
@@ -2857,14 +4287,23 @@ mod tests {
     }
 
     /// Phase 5 (T11) cancellation net — written BEFORE the adapter
-    /// cutover per plan §Phase-5 task 6. Exactly four of the 23 arms
-    /// cooperatively poll `cancel`: Adaptive, DropCutter, Adaptive3d,
-    /// Waterline. A `GenerateFn` adapter that forgets to rebuild the
-    /// `|| cancel.load(Ordering::SeqCst)` closure silently makes the
-    /// op uncancellable — no compile error, invisible to fast unit
-    /// tests. This pins the contract: with `cancel` pre-set, each of
-    /// those families must return `Err(OperationError::Cancelled)`
-    /// rather than running to completion.
+    /// cutover per plan §Phase-5 task 6. Originally exactly four of the 23
+    /// arms cooperatively polled `cancel`: Adaptive, DropCutter, Adaptive3d,
+    /// Waterline. The 2026-07 mesh-finish incident (a fine-stepover
+    /// generation hung the GUI for two hours because none of the 3D
+    /// finishing families polled cancel) extended coverage to the seven
+    /// dense-heightmap/dense-loop finish families: Pencil, Scallop,
+    /// SteepShallow, RampFinish, SpiralFinish, RadialFinish,
+    /// HorizontalFinish — 11 of 23 arms total. The flat-2D S.5 fix
+    /// (planning/finishing_stack_review_2026-07.md — "Zero of 10 flat 2D
+    /// ops can be cancelled") extended coverage again to Pocket, Profile,
+    /// Zigzag, Trace, Face, ProjectCurve, VCarve, Inlay — 19 of 23 arms
+    /// total. A `GenerateFn` adapter that forgets to rebuild the
+    /// `|| cancel.load(Ordering::SeqCst)` closure silently makes the op
+    /// uncancellable — no compile error, invisible to fast unit tests.
+    /// This pins the contract: with `cancel` pre-set, each of those
+    /// families must return `Err(OperationError::Cancelled)` rather than
+    /// running to completion.
     #[test]
     fn cancellable_families_honour_a_preset_cancel_flag() {
         let heights = test_heights();
@@ -2906,6 +4345,138 @@ mod tests {
             ("DropCutter", drop_cutter, ToolType::BallNose, true, false),
             ("Adaptive3d", adaptive3d, ToolType::EndMill, true, false),
             ("Waterline", waterline, ToolType::BallNose, true, false),
+            // Mesh-finish families (2026-07 hang fix): cancel is checked as
+            // the very first statement of each `*_with_cancel` entry point,
+            // so a pre-set flag must short-circuit before any real work
+            // regardless of default params/mesh shape.
+            (
+                "Pencil",
+                OperationConfig::new_default(OperationType::Pencil),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "Scallop",
+                OperationConfig::new_default(OperationType::Scallop),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "SteepShallow",
+                OperationConfig::new_default(OperationType::SteepShallow),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "RampFinish",
+                OperationConfig::new_default(OperationType::RampFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "SpiralFinish",
+                OperationConfig::new_default(OperationType::SpiralFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "RadialFinish",
+                OperationConfig::new_default(OperationType::RadialFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "HorizontalFinish",
+                OperationConfig::new_default(OperationType::HorizontalFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            // Flat-2D families (S.5 fix, planning/finishing_stack_review_2026-07.md):
+            // cancel is checked as the very first statement of every
+            // `*_with_cancel` entry point (and of the shared
+            // `depth::toolpath_at_levels_with_cancel` choke point pocket/
+            // profile/zigzag/trace/face route through), so a pre-set flag
+            // short-circuits regardless of default params/polygon shape.
+            (
+                "Pocket",
+                OperationConfig::new_default(OperationType::Pocket),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Profile",
+                OperationConfig::new_default(OperationType::Profile),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Zigzag",
+                OperationConfig::new_default(OperationType::Zigzag),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Trace",
+                OperationConfig::new_default(OperationType::Trace),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Face",
+                OperationConfig::new_default(OperationType::Face),
+                ToolType::EndMill,
+                false,
+                false,
+            ),
+            (
+                "ProjectCurve",
+                OperationConfig::new_default(OperationType::ProjectCurve),
+                ToolType::EndMill,
+                true,
+                true,
+            ),
+            (
+                "VCarve",
+                OperationConfig::new_default(OperationType::VCarve),
+                ToolType::VBit,
+                false,
+                true,
+            ),
+            (
+                "Inlay",
+                OperationConfig::new_default(OperationType::Inlay),
+                ToolType::VBit,
+                false,
+                true,
+            ),
+            // Checkpoint C, Q3 (F-4). Added in the same commit that made them
+            // cancellable — the doc on `ExecutionContext` says the coverage
+            // claim goes stale otherwise, and this is what keeps it honest.
+            (
+                "Rest",
+                OperationConfig::new_default(OperationType::Rest),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
+            (
+                "Drill",
+                OperationConfig::new_default(OperationType::Drill),
+                ToolType::EndMill,
+                false,
+                true,
+            ),
         ];
 
         for (name, op, tool_type, needs_mesh, needs_polygons) in cases {
@@ -2923,6 +4494,7 @@ mod tests {
                 &heights,
                 &cutting_levels,
                 &bbox,
+                None,
                 None,
                 None,
                 &cancel,
@@ -2964,6 +4536,7 @@ mod tests {
             &heights,
             &levels,
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -3017,6 +4590,7 @@ mod tests {
             &bbox,
             None,
             None,
+            None,
             &cancel,
             None,
             None,
@@ -3025,15 +4599,19 @@ mod tests {
         .expect("drill should succeed");
 
         assert!(result.spans_valid);
+        // C4: role queries, not label parsing. A test that asserted on the
+        // label shape would have kept passing if the roles were wrong, and
+        // would break on a purely cosmetic label edit — exactly backwards.
+        use crate::toolpath_spans::RegionSpanRole;
         let hole_count = result
             .spans
             .iter()
-            .filter(|span| span.label.starts_with("Hole ") && !span.label.contains("plunge"))
+            .filter(|span| span.has_region_role(RegionSpanRole::DrillHole))
             .count();
         let plunge_count = result
             .spans
             .iter()
-            .filter(|span| span.label.contains("plunge"))
+            .filter(|span| span.has_region_role(RegionSpanRole::DrillPeck))
             .count();
         assert_eq!(hole_count, 2, "expected one hole span per input hole");
         assert!(plunge_count >= 2, "expected drill plunge child spans");
@@ -3071,6 +4649,7 @@ mod tests {
             &heights,
             &levels,
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -3118,6 +4697,7 @@ mod tests {
             &heights,
             &[],
             &bbox,
+            None,
             None,
             None,
             &cancel,
@@ -3179,13 +4759,14 @@ mod tests {
             OperationType::Pocket.transform_capabilities(),
             None,
             Some(&semantic_root),
+            &mut ReconcileSet::empty(),
         );
         let semantic = recorder.finish();
         let nominal = semantic
             .items
             .iter()
             .find(|item| item.label == "Feed optimization")
-            .and_then(|item| item.params.values.get("nominal_feed_rate"))
+            .and_then(|item| item.params.get(SemanticKey::NominalFeedRate))
             .and_then(serde_json::Value::as_f64)
             .expect("feed optimization trace should carry nominal_feed_rate");
 
@@ -3218,11 +4799,204 @@ mod tests {
             OperationType::DropCutter.transform_capabilities(),
             None,
             None,
+            &mut ReconcileSet::empty(),
         );
 
         assert!(
             !result.toolpath.moves.is_empty(),
             "apply_dressups with default config should preserve moves"
+        );
+    }
+
+    // ── P2.5: op-agnostic rest analysis ───────────────────────────────
+
+    /// A non-pencil op (Scallop) with `rest_analysis.enabled` gets
+    /// `rest_grid` / `rest_regions` attached generically, without emitting
+    /// a pencil centerline toolpath — the whole point of P2.5.
+    #[test]
+    fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let op = OperationConfig::new_default(OperationType::Scallop);
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig {
+            enabled: true,
+            reference_tool_id: None,
+            cell_mm: 1.0,
+            min_valley_depth: 0.05,
+            region_margin_mm: 0.5,
+            ..Default::default()
+        };
+
+        let (result, _findings) = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+            None,
+        )
+        .expect("scallop with rest_analysis enabled should succeed");
+
+        assert!(
+            result.rest_grid.is_some(),
+            "enabled rest_analysis should attach a rest_grid to a non-pencil op"
+        );
+        assert!(
+            result.rest_regions.is_some(),
+            "enabled rest_analysis should attach rest_regions to a non-pencil op"
+        );
+    }
+
+    /// `rest_analysis` disabled (or absent) is a byte-identical no-op:
+    /// neither `rest_grid` nor `rest_regions` gets attached.
+    #[test]
+    fn rest_analysis_disabled_leaves_artifacts_none() {
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let op = OperationConfig::new_default(OperationType::Scallop);
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
+
+        let (result, _findings) = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+            None,
+        )
+        .expect("scallop should succeed");
+
+        assert!(result.rest_grid.is_none());
+        assert!(result.rest_regions.is_none());
+
+        // `None` for the whole param is the same no-op.
+        let (result_none, _findings_none) = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("scallop should succeed");
+        assert!(result_none.rest_grid.is_none());
+        assert!(result_none.rest_regions.is_none());
+    }
+
+    /// Precedence: a Pencil op whose OWN `RestDepth` detector arm already
+    /// attached `rest_grid` / `rest_regions` must NOT have those
+    /// overwritten by the generic P2.5 pass — one source of truth per
+    /// toolpath. Proven by using deliberately different `cell_mm` values
+    /// for the pencil detector vs. the generic `rest_analysis` config and
+    /// checking the surviving grid's `cell_mm` is pencil's, not generic's.
+    #[test]
+    fn pencil_rest_depth_precedence_skips_generic_pass() {
+        use crate::compute::operation_configs::PencilConfig;
+
+        let mesh = make_test_hemisphere(25.0, 16);
+        let index = SpatialIndex::build_auto(&mesh);
+        let (tool_def, tool_cfg) = make_tool(ToolType::BallNose);
+        let heights = test_heights();
+        let bbox = test_stock_bbox();
+        let cancel = AtomicBool::new(false);
+        let pencil_cell_mm = 2.0;
+        let generic_cell_mm = 9.75; // deliberately distinct sentinel
+        let op = OperationConfig::Pencil(PencilConfig {
+            detector: "rest_depth".to_owned(),
+            rest_cell_mm: pencil_cell_mm,
+            ..PencilConfig::default()
+        });
+        let levels = op.cutting_levels(heights.top_z);
+        let rest_analysis = crate::compute::config::RestAnalysisConfig {
+            enabled: true,
+            reference_tool_id: None,
+            cell_mm: generic_cell_mm,
+            min_valley_depth: 0.05,
+            region_margin_mm: 0.5,
+            ..Default::default()
+        };
+
+        let (result, _findings) = execute_operation_annotated_with_regions(
+            &op,
+            Some(&mesh),
+            Some(&index),
+            None,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &levels,
+            &bbox,
+            None,
+            None,
+            None,
+            &cancel,
+            None,
+            None,
+            None,
+            None,
+            Some(&rest_analysis),
+            None,
+        )
+        .expect("pencil rest_depth should succeed");
+
+        let grid = result
+            .rest_grid
+            .as_ref()
+            .expect("pencil RestDepth detector should attach a rest_grid");
+        assert!(
+            (grid.cell_mm - pencil_cell_mm).abs() < 1e-9,
+            "generic rest_analysis pass must not overwrite pencil's own rest_grid \
+             (got cell_mm={}, expected pencil's {pencil_cell_mm})",
+            grid.cell_mm
         );
     }
 }

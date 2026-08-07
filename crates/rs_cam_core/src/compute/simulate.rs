@@ -82,6 +82,90 @@ pub struct SimGroupEntry {
     /// Transform from setup-local coordinates to global stock frame.
     /// Required when `local_stock_bbox` is `Some` and the setup is non-identity.
     pub local_to_global: Option<SetupTransformInfo>,
+    /// F.4 — phantom `prior_stocks` snapshot for a not-yet-generated
+    /// toolpath, breaking the `FromRemainingStock` regeneration catch-22.
+    ///
+    /// `(k, id)`: record a `prior_stocks` entry for the ungenerated
+    /// toolpath `id`, taken immediately BEFORE simulating this group's
+    /// `toolpaths[k]` (i.e. after `toolpaths[0..k]` have carved).
+    /// `k == toolpaths.len()` means the snapshot is taken after the whole
+    /// group has carved (the pending op is the group's last position).
+    ///
+    /// Validity rule — why only ONE pending op per group may get a
+    /// snapshot: the stock "before op P" is only trustworthy when every
+    /// enabled toolpath before P *in this group* has actually been
+    /// generated (and is therefore present in `toolpaths`, contributing
+    /// its cuts to this snapshot). The builder that populates this field
+    /// walks the setup's toolpath configs in plan order and stops at the
+    /// FIRST enabled config with no generated result — that's the only
+    /// position where "everything before me is real" still holds. Every
+    /// later pending op is left gated: seeding it here would silently
+    /// omit the cuts of the op ahead of it, which for a rest-machining
+    /// op means real overcut risk, not just a stale preview.
+    ///
+    /// Before this field existed, an ungenerated toolpath never appeared
+    /// in a `SimGroupEntry` at all (groups are built only from generated
+    /// results), so it could never receive a `prior_stocks` entry and
+    /// `FromRemainingStock` ops were permanently stuck in `Error` after a
+    /// fresh project load. This field turns that into a ladder: each
+    /// simulation run unlocks exactly one more pending op.
+    pub phantom_prior_stock: Option<(usize, ToolpathId)>,
+}
+
+/// Incremental scan for the single [`SimGroupEntry::phantom_prior_stock`]
+/// candidate within one simulation group.
+///
+/// Both request builders (the core session's `run_simulation` and the GUI
+/// controller's `build_simulation_groups`) walk a setup's toolpath configs
+/// in plan order to assemble one group's `toolpaths` vec, resolving "has
+/// this been generated yet" differently (core reads `self.results`, the
+/// GUI reads `gui.toolpath_rt`). This scan factors out the shared decision
+/// so the two walks can't drift: feed every toolpath config via
+/// [`Self::visit`], in plan order, passing how many entries have already
+/// been pushed into the group's `toolpaths` vec so far (`entries_so_far`).
+/// The scan locks in its answer — a phantom slot, or none — at the FIRST
+/// enabled config with no generated result, matching the validity rule
+/// documented on `phantom_prior_stock`: every later pending op is left
+/// alone, `resolved()` just keeps returning `true` for it.
+#[derive(Default)]
+pub struct PhantomPriorStockScan {
+    resolved: bool,
+    phantom: Option<(usize, ToolpathId)>,
+}
+
+impl PhantomPriorStockScan {
+    /// Consider one toolpath config in plan order. A no-op once the scan
+    /// has already resolved (found the first enabled-but-ungenerated
+    /// config, whether or not it needed a phantom).
+    pub fn visit(
+        &mut self,
+        entries_so_far: usize,
+        enabled: bool,
+        has_generated_result: bool,
+        id: ToolpathId,
+        stock_source: crate::compute::config::StockSource,
+    ) {
+        if self.resolved || !enabled || has_generated_result {
+            return;
+        }
+        self.resolved = true;
+        if stock_source == crate::compute::config::StockSource::FromRemainingStock {
+            self.phantom = Some((entries_so_far, id));
+        }
+    }
+
+    /// True once the scan has locked in its answer (found the first
+    /// enabled-but-ungenerated config). Callers can use this to skip the
+    /// bookkeeping cheaply once nothing more can change the outcome.
+    pub fn resolved(&self) -> bool {
+        self.resolved
+    }
+
+    /// Consume the scan, returning the phantom candidate (if any) to store
+    /// on the group's [`SimGroupEntry::phantom_prior_stock`].
+    pub fn finish(self) -> Option<(usize, ToolpathId)> {
+        self.phantom
+    }
 }
 
 /// Request for a full stock simulation.
@@ -95,6 +179,17 @@ pub struct SimulationRequest {
     pub spindle_rpm: u32,
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
+    ///
+    /// FRAME CONTRACT (v3 fixture RCA, 2026-07-13): this mesh must be in
+    /// the sim's STOCK-RELATIVE global frame — the world-space model
+    /// translated by `-stock_bbox.min` (what `ProjectSession::run_simulation`
+    /// supplies). Non-identity setup groups' `local_to_global` outputs
+    /// already live in that frame (`SetupTransformInfo::stock_origin_*`
+    /// doc: origin is never re-added). Identity groups' dexel grids are
+    /// WORLD-framed (F-024), so the deviation passes frame-map their
+    /// query points by `-stock_bbox.min` before touching this mesh — a
+    /// world-frame model here silently mis-registers every comparison by
+    /// exactly the stock origin.
     pub model_mesh: Option<Arc<TriangleMesh>>,
     /// F-034: when `Some`, the simulator post-processes the cut trace
     /// and replaces each toolpath's naive `distance / feed`
@@ -143,11 +238,59 @@ pub struct SimCheckpointMesh {
     pub stock: TriDexelStock,
 }
 
+/// Per-dexel-column deviation: a column's material top vs the model
+/// surface at the column's world XY. Positive = leftover material,
+/// negative = overcut.
+///
+/// This is the POINTWISE counterpart to [`SimulationResult::deviations`].
+/// The vertex path measures on the extracted mesh, whose vertex heights
+/// are corner-bilinear averages of 2×2 dexel columns
+/// (`dexel_mesh_mc::z_grid_marching_cubes`). That average is fine for
+/// display, but it filters machined micro-texture by how spatially
+/// coherent the texture is relative to the dexel grid: grid-locked ridge
+/// patterns survive the average while phase-diverse ones cancel, so two
+/// surfaces with identical real texture can histogram very differently
+/// (P2.g Task 1, 2026-07-09 — the B75-vs-D fine-tier "gap" was exactly
+/// this). Quality metrics and fidelity histograms should use these
+/// unaveraged column samples instead.
+#[derive(Debug, Clone, Copy)]
+pub struct ColumnDeviation {
+    /// World-frame x of the dexel column center.
+    pub x: f64,
+    /// World-frame y of the dexel column center.
+    pub y: f64,
+    /// `column_top_z − model_z` at (x, y) in world frame (mm).
+    pub dev: f32,
+    /// Ordinal of the setup group whose stock this column samples.
+    /// Multi-setup projects sample the same world XY once per group —
+    /// consumers comparing branches or binning quality must either
+    /// filter to the relevant group or accept per-group duplicates.
+    pub group: usize,
+    /// Column material top in the setup group's LOCAL stock frame (mm) —
+    /// the raw dexel top before `local_to_global`. This is the sim's own
+    /// final surface sample; probes compare it directly against re-stamps
+    /// or envelopes evaluated on the same (local-frame) grid without a
+    /// model query or frame round-trip (P2.g three-way probe).
+    pub top_z: f32,
+    /// Row of this column in the setup group's dexel z-grid. Together
+    /// with [`Self::col`] this identifies the exact grid cell with no
+    /// frame round-trip — `prior_stocks` snapshots share the same grid
+    /// geometry, so probes can index them directly.
+    pub row: usize,
+    /// Column (grid u-axis index) of this column in the setup group's
+    /// dexel z-grid. See [`Self::row`].
+    pub col: usize,
+}
+
 /// Full result from a stock simulation run.
 pub struct SimulationResult {
     pub mesh: StockMesh,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
+    /// Pointwise per-dexel-column deviations (see [`ColumnDeviation`]).
+    /// `Some` whenever a reference model mesh was supplied. Aggregated
+    /// across setup groups, coordinates in world frame.
+    pub column_deviations: Option<Vec<ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
     pub checkpoints: Vec<SimCheckpointMesh>,
     /// Rapid-through-stock collisions detected during simulation.
@@ -157,6 +300,21 @@ pub struct SimulationResult {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// True when the requested resolution was coarsened to fit within grid limits.
     pub resolution_clamped: bool,
+    /// The cell size (mm) the dexel columns were ACTUALLY sampled at — the
+    /// request after the minimum floor and any grid-cap coarsening.
+    ///
+    /// M1 provenance for [`Self::column_deviations`] and every count derived
+    /// from them. `resolution_clamped` says *that* the grid was coarsened;
+    /// this says *to what*, which is what a consumer needs, because a column
+    /// population scales with cell⁻² — comparing on-size percentages or
+    /// collision counts across two different effective cells compares two
+    /// different populations (`MEASUREMENT_DOMAINS.md` X-9; the live 0/15/20
+    /// collision sweep was exactly this).
+    ///
+    /// Computed from `request.stock_bbox`, the same extent
+    /// `resolution_clamped` is derived from. Per-setup grids over a smaller
+    /// local bbox can be finer; this is the whole-stock figure.
+    pub column_grid_cell_mm: f64,
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
     /// rest-machining-aware generators.
@@ -357,11 +515,18 @@ where
 {
     set_phase("Initialize stock");
 
-    // Detect whether the grid will be coarsened beyond the requested resolution.
-    let resolution_clamped = {
+    // Detect whether the grid will be coarsened beyond the requested
+    // resolution — and record what the cell size actually ends up being, so
+    // deviation populations carry their own resolution (M1 / X-9: column
+    // counts scale with cell⁻², and `resolution_clamped` alone never said
+    // what the effective cell was).
+    let (resolution_clamped, column_grid_cell_mm) = {
         let sx = request.stock_bbox.max.x - request.stock_bbox.min.x;
         let sy = request.stock_bbox.max.y - request.stock_bbox.min.y;
-        crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some()
+        (
+            crate::dexel::DexelGrid::would_exceed_grid(request.resolution, sx, sy).is_some(),
+            crate::dexel::DexelGrid::effective_cell_size(request.resolution, sx, sy),
+        )
     };
     let sample_step_mm = request.resolution.max(0.25);
 
@@ -392,6 +557,15 @@ where
     };
     let mut global_stock = TriDexelStock::from_bounds(&global_bbox, request.resolution);
 
+    // Model spatial index for per-column deviations (shared across groups;
+    // `compute_deviations` builds its own for the vertex pass).
+    let model_index = request
+        .model_mesh
+        .as_ref()
+        .map(|model| SpatialIndex::build_auto(model));
+    let mut column_deviations: Option<Vec<ColumnDeviation>> =
+        request.model_mesh.as_ref().map(|_| Vec::new());
+
     // Rapid collision accumulators — populated per-toolpath BEFORE each
     // simulation step so we compare against the stock state left by all
     // *previous* operations.
@@ -405,7 +579,7 @@ where
     // composite mesh shows holes from all setups.
     let mut global_drill_ops: Vec<crate::drill_op::DrillOp> = Vec::new();
 
-    for group in &request.groups {
+    for (group_ordinal, group) in request.groups.iter().enumerate() {
         // Per-setup stock: use local bbox if available, else fall back to global.
         let local_bbox = group
             .local_stock_bbox
@@ -425,11 +599,24 @@ where
             .as_ref()
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
-        for entry in &group.toolpaths {
+        for (k, entry) in group.toolpaths.iter().enumerate() {
             let entry_toolpath = &entry.annotated.toolpath;
             // Snapshot the stock *before* this toolpath carves so the dressup
             // air-cut filter and rest-machining-aware generators can use it.
-            prior_stocks.insert(entry.id, Arc::new(group_stock.clone()));
+            //
+            // F.4: when this position is also this group's phantom-prior-
+            // stock slot (the first pending FromRemainingStock op, recorded
+            // by the request builder), the pending op's snapshot is taken at
+            // this exact same sequence point — share the one stock clone via
+            // `Arc::clone` rather than cloning the (potentially large) dexel
+            // stock twice.
+            let pre_carve_stock = Arc::new(group_stock.clone());
+            if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
+                && phantom_k == k
+            {
+                prior_stocks.insert(phantom_id, Arc::clone(&pre_carve_stock));
+            }
+            prior_stocks.insert(entry.id, pre_carve_stock);
 
             // Check rapid collisions against the *current* stock state
             // (after all previous toolpaths, before this one carves).
@@ -443,7 +630,8 @@ where
             }
 
             set_phase(&format!("Simulate {}", entry.name));
-            let lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
+            let lut =
+                RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
             let radius = entry.tool.radius();
             let start_move = total_moves;
 
@@ -574,7 +762,8 @@ where
                 global_stock.apply_drill_op(&global_drill_op);
                 global_drill_ops.push(global_drill_op);
             } else {
-                let playback_lut = RadialProfileLUT::from_cutter(&entry.tool, 256);
+                let playback_lut =
+                    RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
                 let _ = global_stock.simulate_toolpath_with_lut_cancel(
                     &global_tp,
                     &playback_lut,
@@ -604,6 +793,34 @@ where
             });
 
             boundary_index += 1;
+        }
+
+        // F.4: phantom slot at the tail of the group — the first pending
+        // FromRemainingStock op sits after every already-generated toolpath
+        // in this group, so its snapshot is the fully-carved group stock.
+        if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
+            && phantom_k == group.toolpaths.len()
+        {
+            prior_stocks.insert(phantom_id, Arc::new(group_stock.clone()));
+        }
+
+        // Pointwise column deviations for this group's final stock (world
+        // frame), before the local stock is dropped.
+        if let (Some(model), Some(index), Some(out)) = (
+            request.model_mesh.as_ref(),
+            model_index.as_ref(),
+            column_deviations.as_mut(),
+        ) {
+            set_phase("Compute column deviations");
+            collect_column_deviations(
+                &group_stock,
+                &group.local_to_global,
+                index,
+                model,
+                group_ordinal,
+                request.stock_bbox.min,
+                out,
+            );
         }
 
         // After all toolpaths in this group, extract mesh and composite.
@@ -684,10 +901,19 @@ where
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = if request.model_mesh.is_some() {
         set_phase("Compute deviations");
+        // Frame-map for the vertex path (same hole as the columns path,
+        // see `collect_column_deviations`): the composite mesh is
+        // world-framed when every group is an identity setup (F-024),
+        // stock-relative when every group is non-identity. Mixed
+        // projects would need per-vertex group tags the composite
+        // doesn't carry — that case keeps today's (non-identity)
+        // behavior and is documented as unresolved.
+        let all_identity = request.groups.iter().all(|g| g.local_to_global.is_none());
+        let world_shift = all_identity.then_some(request.stock_bbox.min);
         request
             .model_mesh
             .as_ref()
-            .map(|model| compute_deviations(&mesh.vertices, model))
+            .map(|model| compute_deviations(&mesh.vertices, model, world_shift))
     } else {
         None
     };
@@ -696,19 +922,24 @@ where
         mesh,
         total_moves,
         deviations,
+        column_deviations,
         boundaries,
         checkpoints,
         rapid_collisions,
         rapid_collision_move_indices,
         cut_trace,
         resolution_clamped,
+        column_grid_cell_mm,
         prior_stocks,
     })
 }
 
 /// F-034: walk every toolpath in the request, recompute its runtime
-/// using [`crate::machine_kinematics::compute_cycle_time`], and rewrite
-/// the per-toolpath + project-wide `total_runtime_s` slots on `trace`.
+/// using [`crate::machine_kinematics::compute_cycle_time_breakdown`],
+/// and rewrite the per-toolpath + project-wide `total_runtime_s` slots
+/// on `trace`. Also attaches the `MoveIntent`-bucketed
+/// `runtime_by_intent` breakdown (P0 unified-finishing probe) at both
+/// levels.
 ///
 /// All other summary fields stay untouched — they're derived from the
 /// dexel-sample stream and aren't sensitive to accel modelling. The
@@ -723,27 +954,29 @@ fn apply_kinematics_cycle_time(
     request: &SimulationRequest,
     ctx: KinematicsContext,
 ) {
-    use crate::machine_kinematics::{compute_cycle_time, predicted_feeds_for_toolpath};
+    use crate::machine_kinematics::{
+        CycleTimeBreakdown, compute_cycle_time_breakdown, predicted_feeds_for_toolpath,
+    };
 
-    let mut per_toolpath_runtime: BTreeMap<ToolpathId, f64> = BTreeMap::new();
+    let mut per_toolpath_runtime: BTreeMap<ToolpathId, CycleTimeBreakdown> = BTreeMap::new();
     // F-035 — when the flag is on, also build a per-(toolpath, move)
     // predicted-feed map so the gates can read achieved feed rather
     // than commanded. The same walk that produces cycle time
-    // (`compute_cycle_time`) drives the predicted-feed integrator
-    // (`predicted_feeds_for_toolpath`) — they share `MoveDigest`
-    // construction logic but are intentionally separate functions to
-    // keep the runtime-only override (F-034) and the gate plumbing
-    // (F-035) independently flag-gated.
+    // (`compute_cycle_time_breakdown`) drives the predicted-feed
+    // integrator (`predicted_feeds_for_toolpath`) — they share
+    // `MoveDigest` construction logic but are intentionally separate
+    // functions to keep the runtime-only override (F-034) and the
+    // gate plumbing (F-035) independently flag-gated.
     let mut predicted_feeds: crate::machine_kinematics::PredictedFeedMap = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
-            let t = compute_cycle_time(
+            let b = compute_cycle_time_breakdown(
                 &entry.annotated.toolpath,
                 &ctx.kinematics,
                 ctx.max_feed_mm_min,
                 request.rapid_feed_mm_min,
             );
-            per_toolpath_runtime.insert(entry.id, t);
+            per_toolpath_runtime.insert(entry.id, b);
 
             if ctx.use_predicted_feed_in_gates {
                 let per_move = predicted_feeds_for_toolpath(
@@ -760,18 +993,119 @@ fn apply_kinematics_cycle_time(
     }
 
     let mut project_total = 0.0;
+    let mut project_breakdown = CycleTimeBreakdown::default();
     for tp_summary in &mut trace.toolpath_summaries {
-        if let Some(&t) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
-            tp_summary.total_runtime_s = t;
-            project_total += t;
+        if let Some(&b) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
+            tp_summary.total_runtime_s = b.total_s;
+            tp_summary.runtime_by_intent = Some(b);
+            project_total += b.total_s;
+            project_breakdown += b;
         } else {
             project_total += tp_summary.total_runtime_s;
         }
     }
     trace.summary.total_runtime_s = project_total;
+    trace.summary.runtime_by_intent = Some(project_breakdown);
 
     if ctx.use_predicted_feed_in_gates && !predicted_feeds.is_empty() {
         trace.predicted_feeds = predicted_feeds;
+    }
+}
+
+/// Collect pointwise per-column deviations for one setup group's final
+/// stock. Mirrors `compute_deviations`' semantics (relevance threshold,
+/// nearest of model top/bottom surface) but samples each dexel column's
+/// material top directly instead of the corner-averaged mesh vertices —
+/// see [`ColumnDeviation`] for why the distinction matters.
+///
+/// Frames (v3 fixture RCA, 2026-07-13): `model` arrives in the sim's
+/// stock-relative global frame (`SimulationRequest::model_mesh` doc).
+/// Non-identity groups' `local_to_global` outputs already live there, so
+/// their query point IS the reported point, exactly as before. Identity
+/// groups (F-024: world-framed grid, no transform) must frame-map the
+/// query by `-stock_min` or every deviation mis-registers by the stock
+/// origin — the first scaled-wanaka cascade A/B read a uniform ~−4 mm
+/// "overcut" through precisely this hole (its fixture was the first
+/// identity setup with a non-zero origin to reach the instrument). The
+/// REPORTED x/y stay in the group's own reporting frame (world for
+/// identity groups, stock-relative global for non-identity — origin
+/// never re-added, see `SetupTransformInfo::stock_origin_x`).
+#[allow(clippy::too_many_arguments)] // deviation-pass plumbing, mirrors the call site's request fields
+fn collect_column_deviations(
+    stock: &TriDexelStock,
+    local_to_global: &Option<SetupTransformInfo>,
+    index: &SpatialIndex,
+    model: &TriangleMesh,
+    group: usize,
+    stock_min: P3,
+    out: &mut Vec<ColumnDeviation>,
+) {
+    let grid = &stock.z_grid;
+    let model_thickness = model.bbox.max.z - model.bbox.min.z;
+    let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
+
+    let column_deviation = |row: usize, col: usize| -> Option<ColumnDeviation> {
+        let top = grid.top_z_at(row, col)?;
+        let (u, v) = grid.cell_to_world(row, col);
+        let p = P3::new(u, v, f64::from(top));
+        // Reported point `g` and model-query point `q` — same for
+        // non-identity groups, frame-shifted apart for identity groups
+        // (doc above).
+        let (g, q) = match local_to_global {
+            Some(info) => {
+                let g = info.local_to_global(p);
+                (g, g)
+            }
+            None => (
+                p,
+                P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
+            ),
+        };
+        let (model_min_z, model_max_z) = query_model_z_range(index, model, q.x, q.y)?;
+        let dist_to_top = (q.z - model_max_z).abs();
+        let dist_to_bottom = (q.z - model_min_z).abs();
+        if dist_to_top.min(dist_to_bottom) > relevance_threshold {
+            return None;
+        }
+        let dev = if dist_to_top <= dist_to_bottom {
+            q.z - model_max_z
+        } else {
+            q.z - model_min_z
+        };
+        Some(ColumnDeviation {
+            x: g.x,
+            y: g.y,
+            dev: dev as f32,
+            group,
+            top_z: top,
+            row,
+            col,
+        })
+    };
+
+    #[cfg(feature = "parallel")]
+    if grid.rows * grid.cols > 20_000 {
+        use rayon::prelude::*;
+        let rows: Vec<Vec<ColumnDeviation>> = (0..grid.rows)
+            .into_par_iter()
+            .map(|row| {
+                (0..grid.cols)
+                    .filter_map(|col| column_deviation(row, col))
+                    .collect()
+            })
+            .collect();
+        for mut r in rows {
+            out.append(&mut r);
+        }
+        return;
+    }
+
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            if let Some(cd) = column_deviation(row, col) {
+                out.push(cd);
+            }
+        }
     }
 }
 
@@ -779,12 +1113,23 @@ fn apply_kinematics_cycle_time(
 ///
 /// Returns one `f32` per vertex. Positive = material remaining, negative = overcut.
 /// Vertices far from any model surface or outside the model footprint get 0.0.
+///
+/// `world_shift`: `Some(stock_bbox.min)` when the vertices are WORLD-framed
+/// (all-identity-setup projects, F-024 grids) and must be frame-mapped into
+/// the stock-relative model frame before the query; `None` keeps the
+/// pre-existing behavior for stock-relative (non-identity) meshes. See
+/// `collect_column_deviations`' frame doc.
 // SAFETY: indexing with `i * 3 + {0,1,2}` where `i < num_verts` and
 // `num_verts = stock_vertices.len() / 3`, so all accesses are in bounds.
 #[allow(clippy::indexing_slicing)]
-fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<f32> {
+fn compute_deviations(
+    stock_vertices: &[f32],
+    model_mesh: &TriangleMesh,
+    world_shift: Option<P3>,
+) -> Vec<f32> {
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
+    let (sx, sy, sz) = world_shift.map_or((0.0, 0.0, 0.0), |s| (s.x, s.y, s.z));
 
     // Model thickness sets a relevance threshold. Vertices further than this
     // from any model surface have no meaningful deviation (e.g. the flat
@@ -793,9 +1138,9 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
     let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
 
     let compute_vertex_deviation = |i: usize| -> f32 {
-        let x = stock_vertices[i * 3] as f64;
-        let y = stock_vertices[i * 3 + 1] as f64;
-        let sim_z = stock_vertices[i * 3 + 2] as f64;
+        let x = stock_vertices[i * 3] as f64 - sx;
+        let y = stock_vertices[i * 3 + 1] as f64 - sy;
+        let sim_z = stock_vertices[i * 3 + 2] as f64 - sz;
         let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
             return 0.0; // outside model footprint
         };
@@ -934,6 +1279,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: None,
             local_to_global: None,
+            phantom_prior_stock: None,
         };
 
         SimulationRequest {
@@ -960,6 +1306,77 @@ mod tests {
         assert!(!result.mesh.vertices.is_empty());
         assert_eq!(result.boundaries.len(), 1);
         assert_eq!(result.checkpoints.len(), 1);
+        assert!(
+            result.column_deviations.is_none(),
+            "no model mesh -> no column deviations"
+        );
+    }
+
+    /// P2.g sentry: `column_deviations` samples each dexel column's top
+    /// POINTWISE against the model — no mesh-vertex corner averaging.
+    /// A flat model plane at the trench floor must read dev ≈ 0 on the
+    /// machined columns, and columns far from the model surface (uncut
+    /// stock top, beyond the relevance threshold) must be absent.
+    ///
+    /// The model is supplied in the STOCK-RELATIVE frame per
+    /// `SimulationRequest::model_mesh`'s contract — `simple_request`'s
+    /// stock origin is (−5,−5,−5), so the world-frame trench floor at
+    /// z = −1 sits at z = 4 here and the plane spans 0..20 × 0..10.
+    /// This doubles as the identity-frame regression sentry for the
+    /// scaled-wanaka RCA (2026-07-13): before the frame-map fix, an
+    /// identity group with a non-zero stock origin compared world column
+    /// tops against this shifted mesh and every deviation mis-registered
+    /// by the origin (here −5 mm — beyond relevance, so `cols` would
+    /// come back EMPTY and the non-empty assert below fails).
+    #[test]
+    fn column_deviations_pointwise_against_flat_model() {
+        let mut req = simple_request();
+        // Flat plane at world z = -1.0 (exactly the trench floor cut by
+        // `simple_request`'s toolpath) spanning the stock XY, translated
+        // by -stock_origin = (+5,+5,+5) into the request frame.
+        let verts = vec![
+            P3::new(0.0, 0.0, 4.0),
+            P3::new(20.0, 0.0, 4.0),
+            P3::new(20.0, 10.0, 4.0),
+            P3::new(0.0, 10.0, 4.0),
+        ];
+        let tris = vec![[0u32, 1, 2], [0, 2, 3]];
+        req.model_mesh = Some(Arc::new(TriangleMesh::from_raw(verts, tris)));
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+        let cols = result
+            .column_deviations
+            .as_ref()
+            .expect("model supplied -> column deviations present");
+        assert!(!cols.is_empty(), "trench floor columns must be sampled");
+        for cd in cols {
+            // Relevance threshold is max(thickness/2, 2.0) = 2.0 mm for a
+            // flat plane; the uncut stock top at z=5 is 6 mm away and must
+            // not appear. Machined floor columns read the dexel top at
+            // -1.0 against the plane at -1.0.
+            assert!(
+                cd.dev.abs() <= 2.0 + 1e-3,
+                "column ({}, {}) dev {} beyond relevance",
+                cd.x,
+                cd.y,
+                cd.dev
+            );
+        }
+        let floor_devs: Vec<f32> = cols
+            .iter()
+            .map(|c| c.dev)
+            .filter(|d| d.abs() < 0.5)
+            .collect();
+        assert!(
+            !floor_devs.is_empty(),
+            "some columns must read the machined floor"
+        );
+        let worst = floor_devs.iter().fold(0.0f32, |a, &d| a.max(d.abs()));
+        assert!(
+            worst < 0.05,
+            "flat-endmill floor vs flat model must be pointwise-exact within 50um, worst {worst}"
+        );
     }
 
     #[test]
@@ -1133,6 +1550,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: None,
             local_to_global: None,
+            phantom_prior_stock: None,
         };
 
         let req = SimulationRequest {
@@ -1234,6 +1652,7 @@ mod tests {
             direction: StockCutDirection::FromTop,
             local_stock_bbox: Some(stock_bbox),
             local_to_global: None, // identity setup
+            phantom_prior_stock: None,
         };
 
         let bottom_group = SimGroupEntry {
@@ -1263,6 +1682,7 @@ mod tests {
                 stock_z: 20.0,
                 ..Default::default()
             }),
+            phantom_prior_stock: None,
         };
 
         let req = SimulationRequest {
@@ -1323,6 +1743,49 @@ mod tests {
         assert!(
             pixels.len() == 600 * 400 * 4,
             "composite PNG has expected pixel count"
+        );
+    }
+
+    /// F.4 — the `FromRemainingStock` regeneration catch-22: a group with
+    /// one generated entry (A) and a phantom slot for a not-yet-generated
+    /// toolpath (B) at the tail position (`k == toolpaths.len()`) must
+    /// populate `prior_stocks` for BOTH ids — A's own pre-carve snapshot
+    /// (existing behavior, unaffected) and B's phantom snapshot taken
+    /// after A has carved. Before this feature, B — never present in a
+    /// `SimGroupEntry` because it was never generated — could never
+    /// receive a `prior_stocks` entry at all, so a `FromRemainingStock`
+    /// op could never regenerate after a fresh project load.
+    #[test]
+    fn phantom_prior_stock_populates_pending_op_snapshot() {
+        let mut req = simple_request();
+        let generated_id = req.groups[0].toolpaths[0].id;
+        let phantom_id = ToolpathId(2);
+        req.groups[0].phantom_prior_stock = Some((1, phantom_id));
+
+        let cancel = AtomicBool::new(false);
+        let result = run_simulation(&req, &cancel).unwrap();
+
+        let a_stock = result
+            .prior_stocks
+            .get(&generated_id)
+            .expect("A's own pre-carve snapshot must still be present");
+        let b_stock = result
+            .prior_stocks
+            .get(&phantom_id)
+            .expect("B's phantom post-A snapshot must be present");
+
+        // A's move (rapid to (0,0,10), feed to (10,0,-1)) carves under its
+        // path; sample a cell on that path and confirm the phantom (taken
+        // after A carved) differs from A's own pre-carve snapshot.
+        let (r, c) = a_stock
+            .z_grid
+            .world_to_cell(5.0, 0.0)
+            .expect("sample cell should exist in the stock grid");
+        let pre_a_ray = a_stock.z_grid.ray(r, c);
+        let post_a_ray = b_stock.z_grid.ray(r, c);
+        assert_ne!(
+            pre_a_ray, post_a_ray,
+            "phantom snapshot should reflect A's carve; A's own snapshot must not"
         );
     }
 }

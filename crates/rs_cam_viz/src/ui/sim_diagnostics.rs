@@ -219,17 +219,18 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
     let collision_count = sim.checks.total_collision_count();
     // Roadmap C.6 — verdict mirrors the rule the MCP `run_simulation` response
     // uses: collisions → ERROR; air cut > 20% → WARNING; otherwise SUCCESS.
+    // LH-1: this banner's 20% rule is on the TOTAL-runtime measure (cutting +
+    // rapids) and always has been - the named accessor keeps it there, and the
+    // banner text says which denominator it is showing. The cutting-time
+    // reading of the same seconds is larger and is what the MCP narration
+    // prints; see `MEASUREMENT_DOMAINS.md` LH-1.
     let air_cut_pct = sim
         .results
         .as_ref()
         .and_then(|r| r.cut_trace.as_ref())
         .map(|ct| {
-            let s = &ct.summary;
-            if s.total_runtime_s > 0.0 {
-                s.air_cut_time_s / s.total_runtime_s * 100.0
-            } else {
-                0.0
-            }
+            use rs_cam_core::simulation_cut::AirCutRatios;
+            ct.summary.air_cut_pct_of_total_runtime()
         })
         .unwrap_or(0.0);
     let (banner_text, banner_color) = if collision_count > 0 {
@@ -243,7 +244,8 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
     } else if air_cut_pct > 20.0 {
         (
             format!(
-                "⚠ High air cutting ({air_cut_pct:.0}%) — toolpath may be sweeping over uncut stock"
+                "⚠ High air cutting ({air_cut_pct:.0}% of total runtime) — toolpath may \
+                 be sweeping over uncut stock"
             ),
             theme::WARNING,
         )
@@ -571,6 +573,55 @@ fn draw_project_section(
                 }
             }
 
+            // Checkpoint D Q2 / census §4: the measurability strip, ABOVE
+            // everything else, because it qualifies everything else. Read
+            // from the shared `ProjectSession::simulation_triage` contract —
+            // the same object the MCP `get_diagnostics` response, the CLI
+            // report and narration consume, so the four surfaces cannot
+            // disagree about what was measured.
+            //
+            // Rendered only when something is NOT measurable: a strip that
+            // says "everything was measured" on every project is a strip
+            // nobody reads by the time it matters.
+            {
+                use rs_cam_core::sim_measurability::Measurability;
+                let evidence = sim.project_evidence();
+                let triage = session.simulation_triage(&evidence);
+                let unmeasured: Vec<_> = triage
+                    .measurability
+                    .entries
+                    .iter()
+                    .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
+                    .collect();
+                if !unmeasured.is_empty() {
+                    let metrics: std::collections::BTreeSet<&str> =
+                        unmeasured.iter().map(|e| e.metric.label()).collect();
+                    let toolpaths: std::collections::BTreeSet<usize> =
+                        unmeasured.iter().map(|e| e.toolpath_id.0).collect();
+                    let reason = unmeasured
+                        .first()
+                        .and_then(|e| e.measurability.reason())
+                        .map(|r| r.describe())
+                        .unwrap_or_default();
+                    ui.add_space(2.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "NOT MEASURED: {} for {} operation(s)",
+                            metrics.into_iter().collect::<Vec<_>>().join(", "),
+                            toolpaths.len()
+                        ))
+                        .small()
+                        .strong()
+                        .color(theme::TEXT_MUTED),
+                    )
+                    .on_hover_text(format!(
+                        "{reason}\n\nCollision detection, material removal and axial \
+                         DOC are unaffected and remain valid. Gates reading the \
+                         withheld metrics abstain rather than judge it."
+                    ));
+                }
+            }
+
             // Roadmap C.1 — partition the issue count by SimulationIssueKind into
             // a "must address" cluster (collisions, hotspots) and an
             // informational cluster (low engagement, air cut). The single
@@ -583,7 +634,15 @@ fn draw_project_section(
                 SimulationIssueKind::RapidCollision,
                 SimulationIssueKind::HolderCollision,
                 SimulationIssueKind::Hotspot,
+                SimulationIssueKind::Annotation,
             ];
+            // R-4 (census §3.5 D3): `Annotation` was in NEITHER list, so
+            // generation-time debug annotations reached this panel and were
+            // silently dropped — the one issue kind with no home. It is a
+            // curated, generator-authored note, so it belongs with the
+            // must-address cluster's neighbours rather than beside the
+            // per-run tallies; it is listed last there so it cannot outrank
+            // a collision.
             let kinds_info = [
                 SimulationIssueKind::LowEngagement,
                 SimulationIssueKind::AirCut,
@@ -626,22 +685,33 @@ fn draw_project_section(
             // counts ("Air cut 12031" is an expert numerator with no
             // denominator; "Air cut 12% of runtime" is a judgment a standard
             // user can act on). Raw sample counts stay reachable on hover.
+            //
+            // LH-1: "% of runtime" is ambiguous - these are shares of TOTAL
+            // runtime (cutting + rapids), the same measure the banner and the
+            // per-operation thresholds use. The air-cut row also carries the
+            // cutting-time reading on hover, because that is the number the
+            // MCP narration reports for the same seconds.
             let time_pcts = sim
                 .results
                 .as_ref()
                 .and_then(|r| r.cut_trace.as_ref())
                 .map(|trace| {
+                    use rs_cam_core::simulation_cut::AirCutRatios;
                     let s = &trace.summary;
-                    let pct = |t: f64| {
+                    let pct_of_total = |t: f64| {
                         if s.total_runtime_s > 0.0 {
                             t / s.total_runtime_s * 100.0
                         } else {
                             0.0
                         }
                     };
-                    (pct(s.air_cut_time_s), pct(s.low_engagement_time_s))
+                    (
+                        pct_of_total(s.air_cut_time_s),
+                        pct_of_total(s.low_engagement_time_s),
+                        s.air_cut_pct_of_cutting_time(),
+                    )
                 });
-            if let Some((air_pct, low_eng_pct)) = time_pcts {
+            if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
                 ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new("Informational")
@@ -659,32 +729,53 @@ fn draw_project_section(
                                 .map(|(_, c)| *c)
                                 .unwrap_or(0)
                         };
+                        let air_denominator_note = format!(
+                            "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
+                             the banner and the per-operation thresholds use. Over CUTTING \
+                             time alone the same seconds read {air_pct_of_cutting:.0}%, \
+                             which is what the MCP narration reports."
+                        );
                         let rows = [
                             (
                                 SimulationIssueKind::AirCut,
                                 air_pct,
                                 "Time the tool spends moving at cutting feed without \
                                  removing material.",
+                                air_denominator_note.as_str(),
                             ),
                             (
                                 SimulationIssueKind::LowEngagement,
                                 low_eng_pct,
-                                "Time spent cutting at very light radial engagement \
-                                 (< 2% of diameter).",
+                                // R-3 (census §3.5 D2): this said "< 2% of
+                                // diameter", which is the AIR-CUT trigger,
+                                // not this one. Low engagement is the band
+                                // ABOVE it — `0.02 <= radial_woc < 0.10`
+                                // (`simulation_cut.rs`). As written, the two
+                                // informational rows described the same
+                                // threshold and neither described this row.
+                                "Time spent cutting at light radial engagement \
+                                 (2-10% of diameter). Below 2% counts as air cut, \
+                                 on the row above.",
+                                "",
                             ),
                         ];
-                        for (kind, pct, what) in rows {
+                        for (kind, pct, what, denominator_note) in rows {
                             ui.label(
                                 egui::RichText::new(issue_kind_label(kind))
                                     .small()
                                     .color(theme::TEXT_MUTED),
                             );
-                            ui.label(egui::RichText::new(format!("{pct:.0}% of runtime")).small())
-                                .on_hover_text(format!(
-                                    "{what}\n{} flagged samples — a per-sample emission \
-                                     tally, not a defect count.",
-                                    count_for(kind)
-                                ));
+                            ui.label(
+                                egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
+                            )
+                            .on_hover_text(format!(
+                                "{what}\n{} flagged SAMPLES — a per-sample emission \
+                                 tally, not a defect count, and not the same \
+                                 population as the coalesced issue RUNS the MCP and \
+                                 CLI report (on the census fixture the two differed \
+                                 by 43x).{denominator_note}",
+                                count_for(kind)
+                            ));
                             ui.end_row();
                         }
                     });
@@ -1048,33 +1139,27 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             // hard-fail framing for tools where the LUT row is
             // significantly stretched.
             let is_extrapolated = matches!(status.confidence, Some(Confidence::Approximate(_)));
-            let reason_str = match (status.kind, burn_risk) {
-                (CriterionKind::Chipload, true) => {
-                    "chipload below vendor min — rubbing/burning risk. \
-                     At low chipload the tool edge rubs instead of cutting; \
-                     friction generates heat that glazes and burns the wood. \
-                     Increase feed rate or reduce RPM."
-                }
-                (CriterionKind::Chipload, false) => {
-                    "chipload above vendor max — breakage risk. \
-                     Reduce feed rate or increase RPM."
-                }
-                (CriterionKind::Power, _) => "predicted spindle power exceeds machine limit",
-                (CriterionKind::Deflection, _) => {
-                    "tip deflection exceeds 200 µm — finish/breakage risk"
-                }
-                (CriterionKind::DrillChipWelding, _) => {
-                    "hole depth-to-diameter exceeds the material chip-welding \
-                     threshold — switch to a peck cycle or reduce depth"
-                }
-                (CriterionKind::DrillPeckAdequacy, _) => {
-                    "single peck too deep for the material — reduce peck depth"
-                }
-                (CriterionKind::DrillPlungeFeed, _) => {
-                    "plunge feed above the material envelope — breakage risk. \
-                     Reduce feed rate."
-                }
-            };
+            // R-4 (2026-08-04): the remedy now comes from the verdict
+            // that tripped, not from a match on `kind` here. A drill
+            // remedy depends on the CYCLE — "reduce peck depth" is
+            // wrong for a `Simple` hole, "switch to a peck cycle" is
+            // wrong for an op already pecking — and the cycle is known
+            // in core and was never carried this far. The fallback is
+            // the chipload side split, which is the one distinction
+            // this site legitimately makes on its own.
+            let reason_str = status
+                .exceeded
+                .as_ref()
+                .map(|e| e.remedy)
+                .unwrap_or(match (status.kind, burn_risk) {
+                    (CriterionKind::Chipload, true) => {
+                        "chipload below vendor min — rubbing/burning risk. \
+                         At low chipload the tool edge rubs instead of cutting; \
+                         friction generates heat that glazes and burns the wood. \
+                         Increase feed rate or reduce RPM."
+                    }
+                    _ => "load criterion exceeded",
+                });
             let conf = match status.confidence {
                 Some(Confidence::Validated) | None => "validated".to_owned(),
                 Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
@@ -1169,7 +1254,7 @@ fn depth_pass_chip_label(span: &Span, sid: usize) -> String {
 
 fn region_chip_label(span: &Span, sid: usize) -> String {
     match &span.payload {
-        Some(SpanPayload::Region { region_id }) => format!("Region {region_id}"),
+        Some(SpanPayload::Region { region_id, .. }) => format!("Region {region_id}"),
         _ => format!("Region [{sid}]"),
     }
 }
@@ -1183,8 +1268,11 @@ fn span_kind_label(kind: SpanKind) -> &'static str {
         SpanKind::LeadOut => "LeadOut",
         SpanKind::LinkBridge => "LinkBridge",
         SpanKind::DressupArtifact => "DressupArtifact",
+        SpanKind::GeometryRefit => "GeometryRefit",
         SpanKind::WaterlineCleanup => "WaterlineCleanup",
         SpanKind::RapidOrderBarrier => "RapidOrderBarrier",
+        // Transport-only carrier (task #14) — never present on a stored
+        // toolpath; labelled rather than hidden so a leak is visible.
     }
 }
 

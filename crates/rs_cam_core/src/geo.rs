@@ -83,6 +83,27 @@ impl BoundingBox3 {
             && p.z <= self.max.z
     }
 
+    /// Distance from an arbitrary XY point (typically this box's own center)
+    /// to the farthest of the box's four XY corners. Shared by the radial and
+    /// spiral finishing passes to size their outward sweep so it clears every
+    /// corner of the stock footprint.
+    pub fn max_corner_distance_xy(&self, cx: f64, cy: f64) -> f64 {
+        let corners = [
+            (self.min.x, self.min.y),
+            (self.max.x, self.min.y),
+            (self.max.x, self.max.y),
+            (self.min.x, self.max.y),
+        ];
+        corners
+            .iter()
+            .map(|(x, y)| {
+                let dx = x - cx;
+                let dy = y - cy;
+                (dx * dx + dy * dy).sqrt()
+            })
+            .fold(0.0_f64, f64::max)
+    }
+
     /// Ray-AABB intersection using the slab method (Kay/Kajiya).
     /// Returns the parametric `t` of the nearest intersection (entry point),
     /// or `None` if the ray misses. A hit at `t >= 0` means the intersection
@@ -226,6 +247,20 @@ impl Triangle {
             + self.normal.z * self.v[0].z);
         Some(-(self.normal.x * x + self.normal.y * y + d) / nz)
     }
+}
+
+/// Total Euclidean (XY/Z) length of a polyline (mm): sum of consecutive
+/// vertex-to-vertex segment lengths. Shared by the finishing-stack modules
+/// that walk mesh-derived polylines (pencil, rest-depth field, crest lines).
+pub fn polyline_length(points: &[P3]) -> f64 {
+    points
+        .windows(2)
+        .map(|w| {
+            #[allow(clippy::indexing_slicing)] // windows(2) yields len-2 slices
+            let (a, b) = (w[0], w[1]);
+            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt()
+        })
+        .sum()
 }
 
 /// Compute the minimum Euclidean distance from a point to a line segment.

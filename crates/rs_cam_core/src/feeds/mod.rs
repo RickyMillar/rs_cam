@@ -17,6 +17,8 @@
 
 pub mod cutter_constraints;
 pub mod explain;
+pub mod explanation;
+pub mod force;
 pub mod geometry;
 pub mod geometry_class;
 pub mod predict;
@@ -28,6 +30,10 @@ pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
+pub use explanation::{
+    ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
+    LutBandStage, ObservedStatistic,
+};
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
 pub use vendor_lut::VendorLut;
@@ -104,6 +110,21 @@ impl ToolGeometryHint {
     /// This is the same calculation the vendor-LUT lookup uses to pick
     /// the chipload row, so the band shown in the UI applies to the
     /// returned diameter — not the tool tip.
+    ///
+    /// This is a **second, hand-maintained implementation** of the
+    /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
+    /// (see that trait method's doc comment on
+    /// `tool::vbit::VBitEndmill` / `tool::tapered_ball::TaperedBallEndmill`
+    /// for the reverse pointer). It has to be: this hint-level path is
+    /// called from `feeds::calculate` / `vendor_normalize`, which only
+    /// carry a `ToolGeometryHint` (scalar shape params), not a full
+    /// `&dyn MillingCutter` instance — there's nothing to delegate to
+    /// cheaply. The two are kept honest by the cross-shape DOC-sweep
+    /// parity sentry `tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+    /// below. If that test ever fails, do not silently prefer one side
+    /// — the divergence means Suggest's chipload-band derating and the
+    /// post-sim gate's derating have quietly split, which can produce
+    /// false chipload trips (planning/finishing_stack_review_2026-07.md S.3).
     pub fn engaged_diameter_at_doc(
         self,
         axial_doc_mm: f64,
@@ -424,12 +445,32 @@ pub struct FeedsResult {
     /// chipload-bounds re-derivation step in `enforce_invariants` can
     /// reach the row without re-querying.
     pub matched_lut_row: Option<vendor_lookup::LookupResult>,
-    /// Cutter-shape effective diameter at the calculator's commanded
-    /// axial DOC (mm). The doc-derating scale that produced
-    /// `chipload_bounds` is `geometry::doc_derating_scale(dpp /
-    /// effective_diameter_mm)`. Carried on the result so the axial-DOC
-    /// envelope pass can re-derive bounds after mutating DPP without
-    /// re-walking the chip-geometry pipeline.
+    /// **Chip-thinning** effective diameter at the calculator's
+    /// commanded axial DOC (mm) — `feeds::effective_diameter`, i.e.
+    /// "what actually touches material" (a Ø6 ball at 0.05 mm DOC
+    /// reports 0.44 mm, not 6.0).
+    ///
+    /// **This is NOT the denominator of `chipload_bounds`' DOC derate,
+    /// despite what this comment used to say.** `calculate` derives
+    /// that ratio from the **LUT-semantics** engaged diameter —
+    /// `ToolGeometryHint::engaged_diameter_at_doc`, "which vendor row
+    /// applies", `D` for flat/ball/bull — and the two live in
+    /// same-named bindings, the second shadowing the first inside one
+    /// function. Census F-3 / C-2 / C-5 (T1.4, 2026-08-04); the two
+    /// sites are commented at their definitions.
+    ///
+    /// The one consumer that *does* re-derate against this field is
+    /// `suggest::recompute_chipload_bounds_for_dpp`, which therefore
+    /// uses a different denominator from `calculate`. Measured
+    /// (`feed_explanation_snapshot_b3::the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry`):
+    /// flat, ball, bull and tapered-ball never diverge — only a
+    /// truncated-tip V-bit does, and only on Adaptive3d, the sole
+    /// operation that mutates DPP. Unifying them is census T2.4 /
+    /// T3.6, not this report-only wave.
+    ///
+    /// Carried on the result so the axial-DOC envelope pass can
+    /// re-derive bounds after mutating DPP without re-walking the
+    /// chip-geometry pipeline.
     pub effective_diameter_mm: f64,
     /// Full derate chain that turned the "target" chipload into the
     /// recommended feed. Lets the UI show *why* the recommended
@@ -561,12 +602,27 @@ pub enum FeedsWarning {
     },
     /// Vendor-LUT or formula chipload derated below the rubbing
     /// floor (typically extreme-Janka hardwoods scaling an oak-anchored
-    /// LUT row down). The engine clamps to `RUBBING_FLOOR_MM_TOOTH`
-    /// and emits this so the operator sees the honest derate instead
-    /// of a silent ploughing recipe.
+    /// LUT row down). The engine clamps up and emits this so the
+    /// operator sees the honest derate instead of a silent ploughing
+    /// recipe.
     ChiploadClampedToFloor {
         requested: f64,
+        /// The floor actually applied — [`RUBBING_FLOOR_MM_TOOTH`], or
+        /// the matched row's derated band maximum when that sits lower.
+        /// See [`effective_rubbing_floor`].
         floor: f64,
+        /// `Some(global)` when `floor` was capped by the matched band's
+        /// ceiling, carrying the global chip-formation threshold the
+        /// recipe therefore does **not** reach. This combination is a
+        /// genuine, unresolvable conflict between two shipped policies:
+        /// the vendor row says anything above `floor` breaks the tool,
+        /// the chip-formation rule says anything below `global` burns
+        /// the work. The engine picks the vendor ceiling (never command
+        /// past a band we are told is breakage-side) and surfaces the
+        /// residual rubbing risk here rather than hiding it behind a
+        /// number that silently changed meaning.
+        /// `None` when the global floor applied unmodified.
+        band_capped_from: Option<f64>,
     },
     /// Drill-cycle feed clamped into the material plunge-feed envelope
     /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
@@ -665,7 +721,62 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
 /// typically very hard species (Janka >> the matched row's anchor) or
 /// extreme diameter shrinkage — is clamped up and a
 /// `FeedsWarning::ChiploadClampedToFloor` warning is emitted.
-const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
+///
+/// **This is a *global* threshold, not the value the clamp applies.**
+/// It carries no diameter and no material, while every other chipload
+/// bound in the crate is a scaled vendor band. The clamp applies
+/// [`effective_rubbing_floor`], which subordinates this constant to the
+/// matched row's band ceiling.
+pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
+
+/// The floor the Step-9b clamp actually applies:
+/// `min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)`.
+///
+/// # Why the global constant cannot be used directly
+///
+/// `RUBBING_FLOOR_MM_TOOTH` is diameter- and material-independent;
+/// [`ChiploadBounds`] is the same vendor row's chipload window after the
+/// diameter, hardness and DOC derates. On small tools the two cross.
+/// Measured on the census's B3 reference row (Ø1 tapered ball, 2 flutes,
+/// scallop finish, hard maple — `tests/feed_explanation_snapshot_b3.rs`)
+/// the derated band is 0.003605–0.007211 mm/tooth and the global floor
+/// is **3.47× the band maximum**. Clamping *up* to 0.025 there commanded
+/// a chipload the post-sim chipload gate's own envelope
+/// (`tool_load::chipload`) reads as `Exceeds(High)` — breakage-side. A
+/// floor whose stated job is to stop the recipe *undershooting* a band
+/// was pushing it clean over the top of that band.
+///
+/// # What is preserved, and what is given up
+///
+/// The rubbing/burnishing threshold is a real phenomenon and the clamp
+/// survives unchanged wherever the band has room for it (the common
+/// case: at Ø6 in oak the band is 0.034–0.059, entirely above the
+/// floor, and `min` returns the constant). What is given up is the
+/// claim that the engine can always *reach* chip formation: when the
+/// whole band sits under 0.025 mm/tooth, no feed exists that both
+/// clears the rubbing threshold and stays inside the vendor window.
+/// The engine then commands the band maximum — the furthest from
+/// rubbing it can go without commanding a chipload it is told is
+/// breakage-side — and
+/// `FeedsWarning::ChiploadClampedToFloor::band_capped_from` discloses
+/// the global threshold that was not met, so the residual burn risk is
+/// surfaced rather than silently absorbed into a smaller number.
+///
+/// # Bands that do not exist
+///
+/// RPM-only vendor rows and the formula fallback publish no chipload
+/// window (`chipload_bounds == None`); there is nothing to subordinate
+/// to and the global constant applies unmodified. That path is pinned
+/// by `tests/_litmatrix_rpm_only_lut_chipload.rs`.
+///
+/// FEEDS_CENSUS C-12 / T3.3 / T4.2; ruled 2026-08-06.
+#[must_use]
+pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
+    match band {
+        Some(b) if b.max_mm_per_tooth > 0.0 => RUBBING_FLOOR_MM_TOOTH.min(b.max_mm_per_tooth),
+        _ => RUBBING_FLOOR_MM_TOOTH,
+    }
+}
 
 /// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM
 /// band narrows and drops as diameter grows: chip evacuation scales
@@ -763,6 +874,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // (e.g. a 5.5 mm-tip 20° V-bit at DOC=0.5 saw SFM derived from
     // 5.5 mm instead of the ~0.18 mm engaged tip) — audit finding
     // "nominal-D leakage through formula path".
+    //
+    // NAMING WARNING (census F-3, T1.4). This binding is the
+    // **LUT-semantics** engaged diameter — "which vendor row applies"
+    // — and it is what the chipload-band DOC derate below divides by.
+    // Step 5 rebinds the same name `effective_d` to the **chip-thinning**
+    // diameter (`feeds::effective_diameter`, "what actually touches
+    // material"), shadowing this one for the rest of the function, and
+    // it is *that* one which is published as
+    // `FeedsResult::effective_diameter_mm`. Two different questions,
+    // one identifier. Collapsing them is census T2.4; until then, read
+    // the shadow point before assuming which diameter a line means.
     let axial_doc_for_eff_d = input.axial_depth_mm.unwrap_or(d).max(0.0);
     let effective_d = input.tool_geometry.engaged_diameter_at_doc(
         axial_doc_for_eff_d,
@@ -783,9 +905,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // chip evacuation, not surface speed, is the limiting factor. The
     // wood-drill band tightens as diameter grows — small drills (≤6 mm)
     // tolerate 8-14k, mid drills (≤10 mm) cap around 10k, and big
-    // drills (>10 mm) cap around 6-8k (Onsrud wood-drilling bulletin,
-    // Vectric default drill cycle, FPL Wood Handbook Ch.19, Sandvik
-    // Coromant rotating-tools handbook). The milling SFM formula above
+    // drills (>10 mm) cap around 6-8k. **Citation corrected
+    // 2026-08-04 (W6 audit §6.1/§6.2): these tiers are REPO-AUTHORED.**
+    // The "Onsrud wood-drilling bulletin" cited here was not located;
+    // the retrieved Onsrud drill chart publishes exactly one wood-drill
+    // RPM, the 4,500 gang-drill footnote, and no band. The FPL Wood
+    // Handbook has no drilling chapter (Ch.19 is *Specialty
+    // Treatments*). The tiers remain defensible as hobby-router
+    // spindle practice and are held, not moved. The milling SFM formula above
     // would push small-D drills past 16k where chipload starves and
     // the cut rubs/burns. Pre-2026-06-02 drill ops routed through
     // `Pocket` family and inherited milling RPM (audit finding: "Drill
@@ -807,14 +934,44 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // fallback path matches the LUT path's band semantics. For Flat /
     // Ball / Bull this collapses to nominal D.
     //
-    // Drill ops get a multiplier on top because drill chipload bands
-    // are ~2.5× higher than milling chipload at similar D (drilling
-    // cuts at full radius and needs feed-per-rev to chip-evacuate; the
-    // milling formula was calibrated against partial-engagement cuts).
-    // Without this, a softwood drill at 12k RPM × milling-formula
-    // chipload lands at ~0.03 mm/rev, well below the 0.05-0.15 mm/rev
-    // drilling band — classic rubbing-and-burning recipe (audit
-    // finding: implied chipload 0.026 on Wanaka Pin Drill / Holes).
+    // Drill ops get a multiplier on top: drilling cuts at full radius
+    // and needs feed-per-rev to chip-evacuate, while the milling
+    // formula was calibrated against partial-engagement cuts.
+    //
+    // **The value is REPO-AUTHORED and UNSOURCED. Its former
+    // justification was arithmetically false and has been removed**
+    // (W6 audit, 2026-08-04, §5 / item R-11 —
+    // `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`).
+    // What that comment claimed, and what is actually true:
+    //   - Claimed "milling-formula chipload lands at ~0.03 mm/rev" for
+    //     a softwood drill. With the shipped `ChipLoadFormula::default`
+    //     (k0 0.024, p 0.61, q 1.26) and GenericSoftwood the
+    //     un-multiplied formula reads 0.094 mm/rev at Ø3, 0.143 at Ø6
+    //     and 0.219 at Ø12 — 3.1×–7.3× the quoted figure, and already
+    //     inside or above the "0.05–0.15 mm/rev" band the comment said
+    //     it fell below.
+    //   - Claimed the audit observation "implied chipload 0.026 on
+    //     Wanaka Pin Drill / Holes". Real, but it was the *stored* op's
+    //     feed/(rpm × flutes) AFTER the milling plunge baseline
+    //     clobbered the drill-tuned feed — the mechanism Step 9c fixed
+    //     separately (see the plunge-rate aliasing below). This factor
+    //     and that clamp were two corrections for one defect.
+    //   - Claimed drill bands are "~2.5× higher" than milling. No
+    //     retrievable source states any such ratio. Against the one
+    //     primary wood-drill chart located (Onsrud series 72-000 Wood,
+    //     `https://www.onsrud.com/images/Drill.pdf`, retrieved
+    //     2026-08-04) the factor implied is 4.76–5.41 — i.e. 2.5 is
+    //     directionally right and roughly HALF the size that chart
+    //     implies, not an over-correction.
+    //
+    // The value is deliberately HELD at Checkpoint D 2026-08-04. Two
+    // reasons, both stated: the Onsrud wood row is footnoted "gang
+    // drills run at 4,500 RPM and 150 IPM" (a rigid multi-spindle
+    // production borer, not a hobby router with collet stickout), so
+    // it cannot be used as a recalibration target on its own; and this
+    // is the one drill number that rides the formula chipload, so it
+    // sequences behind the gate-side unit conversion (T3.1) and the
+    // optimizer-target re-derivation. Do not move it before then.
     const DRILL_CHIPLOAD_MULTIPLIER: f64 = 2.5;
     let milling_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
     let formula_chipload = if input.operation == OperationFamily::Drill {
@@ -861,28 +1018,34 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 // for milling doesn't apply to drill bands (peck depth,
                 // not engagement). Mirroring the gate's exclusion here
                 // keeps the two paths aligned for the cases where the
-                // gate actually fires.
-                let chipload_doc_scale = if input.operation == OperationFamily::Drill {
-                    1.0
+                // gate actually fires. Forcing `chipload_doc_ratio` to
+                // `0.0` bypasses derating (`doc_derating_scale` maps
+                // any ratio `<= 1.0` to a scale of `1.0`), same effect
+                // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
+                //
+                // Validation + scaling both now live in
+                // `geometry::derate_chipload_bounds` — the single home
+                // for this wrapper (S.8), also used by
+                // `suggest::recompute_chipload_bounds_for_dpp` and both
+                // `tool_load` chipload sites.
+                let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
+                    0.0
+                } else if effective_d > 0.0 {
+                    axial_doc_for_eff_d / effective_d
                 } else {
-                    let doc_ratio = if effective_d > 0.0 {
-                        axial_doc_for_eff_d / effective_d
-                    } else {
-                        0.0
-                    };
-                    geometry::doc_derating_scale(doc_ratio)
+                    0.0
                 };
-                let bounds = match (result.chip_load_min_mm, result.chip_load_max_mm) {
-                    (Some(min), Some(max))
-                        if min.is_finite() && max.is_finite() && min > 0.0 && max >= min =>
-                    {
-                        Some(ChiploadBounds {
-                            min_mm_per_tooth: min * chipload_doc_scale,
-                            max_mm_per_tooth: max * chipload_doc_scale,
-                        })
-                    }
-                    _ => None,
-                };
+                let bounds = geometry::derate_chipload_bounds(
+                    result.chip_load_min_mm,
+                    result.chip_load_max_mm,
+                    chipload_doc_ratio,
+                    geometry::ChiploadBoundPolicy::RequireBoth,
+                )
+                .and_then(geometry::DeratedChiploadBand::into_pair)
+                .map(|(min, max)| ChiploadBounds {
+                    min_mm_per_tooth: min,
+                    max_mm_per_tooth: max,
+                });
                 // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
                 // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
                 // leave chipload_min/max unset — `chipload_midpoint` then
@@ -1143,7 +1306,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 5: Feed rate ---
-    let effective_d = effective_diameter(input.tool_geometry, d, ap);
+    //
+    // SHADOW POINT (census F-3, T1.4). From here on `effective_d` is the
+    // **chip-thinning** diameter, NOT the LUT-semantics one the chipload
+    // band was derated by at Step 2'. This is the value published as
+    // `FeedsResult::effective_diameter_mm`.
+    let effective_d = effective_diameter(
+        input.tool_geometry,
+        d,
+        input.shank_diameter.unwrap_or(d),
+        ap,
+    );
 
     // Radial chip thinning (all tools)
     let rctf = geometry::radial_chip_thinning_factor(ae, effective_d);
@@ -1203,7 +1376,50 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // geometry-hint's shape-correct area (V-bit triangular,
     // flat/ball/bull/tapered rectangular) — same contract as the
     // cutter trait's `mrr_cross_section_mm2` the Sim verdict reads.
+    //
+    // ── F-2: the two power axes, and which one each number lives on ──
+    //
+    // Census §2.6 (C-8) / §6.3 F-2, ruled at Checkpoint B Q3: Suggest's
+    // ceiling omitted `machine.safety_factor` while
+    // `tool_load::power::evaluate` applies it (`power.rs:214`).
+    //
+    // There are two internally-consistent axes here, and the pre-fix bug
+    // was mixing them, not the absence of a multiply:
+    //
+    //   RAW axis    — `raw_feed` (pre-Step-9) vs `power_at_rpm(rpm)`.
+    //   COMMANDED   — the final feed (Step 9 has applied `safety_factor`)
+    //                 vs `power_at_rpm(rpm) · safety_factor`.
+    //
+    // The CLAMP below lives on the RAW axis and is correct there: it
+    // enforces `required(raw_feed) <= power_at_rpm(rpm)`, and since Step
+    // 9 then scales the feed by `safety_factor` (and Steps 7/9b/9c only
+    // reduce it further), the commanded result satisfies the gate's
+    // `required(final) <= power_at_rpm · safety_factor` by construction.
+    // Multiplying this clamp's ceiling by `safety_factor` as well would
+    // apply the factor TWICE — measured: it drops a power-limited feed a
+    // further 25 % and drove the literature-matrix cell
+    // `flat_6mm_pocket_al6061_lut` to `major` by pushing chipload to
+    // 0.0269 mm/tooth, within 10 % of the 0.025 rubbing floor. That is a
+    // feed-moving recalibration, which Q3 did not authorise and §7
+    // forbids re-pinning silently.
+    //
+    // What genuinely lacked parity is the PUBLISHED pair. `power_kw`
+    // (below, at the FINAL feed) is a COMMANDED-axis number, and
+    // `available_power_kw` — its denominator in the modal's headroom bar
+    // (`rs_cam_viz/src/ui/properties/mod.rs:1911`) — was a RAW-axis one.
+    // The modal therefore showed 1/safety_factor (1.25×–1.33×) more
+    // headroom than the verdict would allow. Both published numbers now
+    // sit on the gate's axis; the `PowerLimited` warning's pair is
+    // reported there too, preserving its ratio.
+    //
+    // Measured (tests/power_ceiling_parity_f2.rs): across all three
+    // shipped presets × ten species × Ø3/Ø6/Ø12 slots the power branch
+    // never fires at all — rigidity and the machine cutting ceiling bind
+    // first, peak utilisation 23.6 % — so no shipped-profile feed moves.
     let available_power = machine.power_at_rpm(rpm);
+    // The gate's ceiling (`power.rs:214`) — what every published power
+    // number below is quoted against.
+    let gate_available_power = available_power * machine.safety_factor;
     let mut power_limited = false;
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
@@ -1217,8 +1433,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             feed = raw_feed * power_factor;
             power_limited = true;
             warnings.push(FeedsWarning::PowerLimited {
-                required_kw: required_power,
-                available_kw: available_power,
+                // Both terms moved onto the gate's COMMANDED axis so the
+                // warning compares like with like; the ratio, and hence
+                // the derate it explains, is unchanged.
+                required_kw: required_power * machine.safety_factor,
+                available_kw: gate_available_power,
             });
         }
     }
@@ -1282,7 +1501,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // push it under:
     //   1. Vendor-LUT scaling for extreme-Janka hardwoods
     //      (e.g. Ipe 3510 lbf vs an oak-anchored 1290 lbf row scales
-    //      chipload by 0.367 via `vendor_lookup::hardness_scale_factor`),
+    //      chipload by 0.367 via `vendor_lookup::hardness_ratio_raw`),
     //      producing a 0.0124 mm/tooth target before any feed derates.
     //   2. Post-clamp derates (safety factor 0.75-0.80, LD overhang,
     //      power-limit) compounding a low-but-above-floor target down
@@ -1310,16 +1529,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // bug if it ever regresses to zero feed — we don't want this
     // floor silently masking a zero-chipload regression.
     // (Literature-matrix cell flat_6mm_pocket_ipe_hardness.)
+    //
+    // The floor applied is `effective_rubbing_floor(chipload_bounds)`,
+    // NOT the bare `RUBBING_FLOOR_MM_TOOTH` constant: the global
+    // threshold is subordinated to the matched row's derated band
+    // ceiling so the clamp can never push feed past the very band it
+    // exists to keep the recipe inside. See that function for the
+    // derivation and for what is given up when a whole band sits below
+    // the global threshold (FEEDS_CENSUS C-12 / T3.3, ruled 2026-08-06).
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;
-        if commanded_fpt > 0.0 && commanded_fpt < RUBBING_FLOOR_MM_TOOTH {
+        let floor = effective_rubbing_floor(chipload_bounds);
+        if commanded_fpt > 0.0 && commanded_fpt < floor {
             warnings.push(FeedsWarning::ChiploadClampedToFloor {
                 requested: commanded_fpt,
-                floor: RUBBING_FLOOR_MM_TOOTH,
+                floor,
+                band_capped_from: (floor < RUBBING_FLOOR_MM_TOOTH)
+                    .then_some(RUBBING_FLOOR_MM_TOOTH),
             });
             let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
-            let target_feed = RUBBING_FLOOR_MM_TOOTH * fpt_divisor;
+            let target_feed = floor * fpt_divisor;
             feed = target_feed.min(machine_max_feed_after_safety);
         }
     }
@@ -1444,7 +1674,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: actual_power,
-        available_power_kw: available_power,
+        // F-2: the gate's ceiling, not the raw spindle curve — this is
+        // the denominator `power_kw` (evaluated at the FINAL feed) is
+        // rendered against. See the Step 6 axis note above.
+        available_power_kw: gate_available_power,
         power_limited,
         mrr_mm3_min: mrr,
         warnings,
@@ -1689,7 +1922,23 @@ fn default_engagement(
     (ap, ae)
 }
 
-fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
+/// CONTACT-CIRCLE diameter at axial depth `ap` — how wide the cutter
+/// actually touches material, which is the quantity both chip-thinning terms
+/// need.
+///
+/// Distinct from [`ToolGeometryHint::engaged_diameter_at_doc`] for the FLAT
+/// family only: that one answers "which vendor-LUT chipload row applies",
+/// where a ball and a bull engage at nominal D regardless of depth. Here a
+/// ball at 0.05 mm engages a 0.44 mm circle, and that is the point.
+///
+/// C3 (2026-08-02): the tapered-ball arm now DELEGATES to
+/// `engaged_diameter_at_doc` rather than carrying its own straight-cone
+/// approximation. The tapered ball's tip IS a ball, so below the tangency
+/// height this arm and the `Ball` arm agree to the last bit; above it the
+/// cone shoulder takes over, capped at the shank. See
+/// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
+/// `tests/tapered_width_model_parity_c3.rs` for what it cost.
+fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,
         ToolGeometryHint::Ball => geometry::ball_effective_diameter(nominal_d, ap),
@@ -1702,10 +1951,9 @@ fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, ap: f64) -> f64 {
         } => geometry::vbit_width_at_depth(included_angle, tip_diameter, ap)
             .unwrap_or(nominal_d)
             .min(nominal_d),
-        ToolGeometryHint::TaperedBall {
-            tip_radius,
-            taper_angle_deg,
-        } => geometry::tapered_ball_effective_diameter(nominal_d, tip_radius, taper_angle_deg, ap),
+        ToolGeometryHint::TaperedBall { .. } => {
+            geom.engaged_diameter_at_doc(ap, nominal_d, shank_d)
+        }
     }
 }
 
@@ -3428,5 +3676,103 @@ mod tests {
             assert_eq!(kind.tool_type().cutter_kind(), kind);
         }
         assert_eq!(ToolType::ALL.len(), CutterKind::ALL.len());
+    }
+
+    /// S.3 parity sentry (`planning/finishing_stack_review_2026-07.md`).
+    ///
+    /// `ToolGeometryHint::engaged_diameter_at_doc` (Suggest's path —
+    /// this module, ~line 108) and `MillingCutter::lookup_diameter_at`
+    /// (the post-sim gate's path — `tool::vbit::VBitEndmill` /
+    /// `tool::tapered_ball::TaperedBallEndmill`) are two hand-written
+    /// implementations of the same engaged-diameter geometry. They
+    /// agree today, but nothing enforces it — one edit to either side
+    /// could silently split Suggest's chipload-band targeting from the
+    /// gate's derating and produce false chipload trips.
+    ///
+    /// Sweeps DOC across 0.1×..2× nominal diameter (crossing the
+    /// ball/cone and flute/taper transitions) for every shape with
+    /// nontrivial engagement geometry (v-bit, tapered ball), plus flat
+    /// and ball as trivial always-nominal-diameter cases, and asserts
+    /// exact agreement (1e-9) at every sample. If this ever fails: DO
+    /// NOT silently pick one implementation over the other — report
+    /// the numeric disagreement and mark this `#[ignore]` with a
+    /// pointer to the report so the tree stays green while the
+    /// implementations are reconciled deliberately.
+    #[test]
+    fn engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes() {
+        use crate::tool::{
+            BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
+        };
+
+        struct Case {
+            name: &'static str,
+            diameter_mm: f64,
+            shank_mm: f64,
+            hint: ToolGeometryHint,
+            lookup: Box<dyn Fn(f64) -> f64>,
+        }
+
+        let flat = FlatEndmill::new(6.0, 20.0);
+        let ball = BallEndmill::new(6.0, 20.0);
+        let vbit = VBitEndmill::new(6.0, 90.0, 20.0);
+        // ball_diameter=6mm tip, taper_half_angle=20deg, shaft=10mm.
+        let tapered = TaperedBallEndmill::new(6.0, 20.0, 10.0, 30.0);
+
+        let cases: Vec<Case> = vec![
+            Case {
+                name: "flat (trivial: nominal diameter regardless of DOC)",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::Flat,
+                lookup: Box::new(move |doc| flat.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "ball (trivial: nominal diameter regardless of DOC)",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::Ball,
+                lookup: Box::new(move |doc| ball.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "vbit 90deg",
+                diameter_mm: 6.0,
+                shank_mm: 6.0,
+                hint: ToolGeometryHint::VBit {
+                    included_angle: 90.0,
+                    tip_diameter: 0.0,
+                },
+                lookup: Box::new(move |doc| vbit.lookup_diameter_at(doc)),
+            },
+            Case {
+                name: "tapered ball, tip r=3mm, taper=20deg, shaft=10mm",
+                diameter_mm: 10.0,
+                shank_mm: 10.0,
+                hint: ToolGeometryHint::TaperedBall {
+                    tip_radius: 3.0,
+                    taper_angle_deg: 20.0,
+                },
+                lookup: Box::new(move |doc| tapered.lookup_diameter_at(doc)),
+            },
+        ];
+
+        const STEPS: u32 = 40;
+        for case in &cases {
+            for i in 0..=STEPS {
+                let frac = 0.1 + (2.0 - 0.1) * f64::from(i) / f64::from(STEPS);
+                let doc_mm = frac * case.diameter_mm;
+                let hint_d =
+                    case.hint
+                        .engaged_diameter_at_doc(doc_mm, case.diameter_mm, case.shank_mm);
+                let trait_d = (case.lookup)(doc_mm);
+                let diff = (hint_d - trait_d).abs();
+                assert!(
+                    diff < 1e-9,
+                    "{}: at doc={doc_mm:.4}mm engaged_diameter_at_doc={hint_d:.9} \
+                     lookup_diameter_at={trait_d:.9} (diff={diff:.3e}) — S.3 divergence, \
+                     see planning/finishing_stack_review_2026-07.md",
+                    case.name,
+                );
+            }
+        }
     }
 }

@@ -31,11 +31,13 @@
 //!   radius grows linearly with ap, force is roughly quadratic.
 //!
 //! No closed form covers all four shapes. We use **monotone binary search**
-//! over `tip_deflection_from_engagement(tool, mat, ap, radial_woc)`,
+//! over `tip_deflection_from_engagement(tool, mat, ap, immersion, fz)`,
 //! bracketed by `[stickout × 1e-4, stickout × 0.95]`, converging to ±5 µm
-//! axial in ~25 iterations. The model is monotone in `ap` for fixed
-//! `radial_woc` (force grows, lever arm shortens but the moment grows
-//! faster), so a single bisect always converges.
+//! axial in ~25 iterations. The immersion angle (from `radial_woc` + the
+//! cutter radius) and `fz` are fixed across the search; the model is
+//! monotone in `ap` for fixed immersion/feed (force grows, lever arm
+//! shortens but the moment grows faster), so a single bisect always
+//! converges.
 //!
 //! ## Why not reuse [`super::predict::predict_peak_deflection_um`]
 //!
@@ -170,8 +172,11 @@ impl CutterAxialConstraints {
 /// [`DEFAULT_FINISH_DEFLECTION_LIMIT_UM`] when `target_finish_um.is_some()`
 /// and [`DEFAULT_ROUGH_DEFLECTION_LIMIT_UM`] otherwise.
 ///
-/// `feed_per_tooth_mm` is consumed only by the chipload-floor bound; pass
-/// 0 if the caller has no chipload signal (the floor becomes `None`).
+/// `feed_per_tooth_mm` drives the chipload-floor bound *and* the
+/// feed-aware deflection bound (chip thickness sets the bending force).
+/// Pass 0 only if the caller has no chipload signal — the floor becomes
+/// `None` and the deflection bound goes unbounded (no chip thickness ⇒
+/// no modelled force), so DOC is then limited by vendor/scallop alone.
 #[tracing::instrument(level = "debug", skip(tool, material, lut_row))]
 pub fn cutter_axial_constraints(
     tool: &ToolDefinition,
@@ -190,8 +195,13 @@ pub fn cutter_axial_constraints(
         }
     });
 
-    let max_doc_deflection_mm =
-        invert_deflection(tool, material, radial_woc_mm, deflection_limit_um);
+    let max_doc_deflection_mm = invert_deflection(
+        tool,
+        material,
+        radial_woc_mm,
+        feed_per_tooth_mm,
+        deflection_limit_um,
+    );
 
     let max_doc_vendor_mm = lut_row.and_then(|row| max_doc_vendor(row, tool.diameter()));
 
@@ -249,18 +259,34 @@ fn invert_deflection(
     tool: &ToolDefinition,
     material: &Material,
     radial_woc_mm: f64,
+    feed_per_tooth_mm: f64,
     limit_um: f64,
 ) -> f64 {
     let limit_mm = limit_um * 1.0e-3;
-    if radial_woc_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout <= 0.0 {
-        return 0.0;
+    if radial_woc_mm <= 0.0 || feed_per_tooth_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout <= 0.0 {
+        // No chipload signal ⇒ the feed-aware force model has no chip
+        // thickness to work from, so deflection cannot bound the axial
+        // DOC. Return the upper bracket (deflection doesn't bind).
+        return if feed_per_tooth_mm <= 0.0 && radial_woc_mm > 0.0 && tool.stickout > 0.0 {
+            tool.stickout * BINSEARCH_UPPER_FRACTION
+        } else {
+            0.0
+        };
     }
+    // Immersion arc ψ is fixed across the axial binary search (it depends
+    // only on radial WOC and cutter radius); feed per tooth is likewise
+    // constant. The search varies axial DOC alone.
+    let immersion_rad = super::force::immersion_angle(radial_woc_mm, tool.radius());
     let lower = tool.stickout * BINSEARCH_LOWER_FRACTION;
     let upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
     // Sanity: lower bracket already over limit → no axial is safe.
-    let Some(d_lo) =
-        super::predict::tip_deflection_from_engagement(tool, material, lower, radial_woc_mm)
-    else {
+    let Some(d_lo) = super::predict::tip_deflection_from_engagement(
+        tool,
+        material,
+        lower,
+        immersion_rad,
+        feed_per_tooth_mm,
+    ) else {
         // tip_deflection_from_engagement refused (material/Custom/stickout
         // edge case) — the gate would also refuse for any sample, so the
         // bound is "no signal". Return the upper bracket so deflection
@@ -270,9 +296,13 @@ fn invert_deflection(
     if d_lo > limit_mm {
         return 0.0;
     }
-    let Some(d_hi) =
-        super::predict::tip_deflection_from_engagement(tool, material, upper, radial_woc_mm)
-    else {
+    let Some(d_hi) = super::predict::tip_deflection_from_engagement(
+        tool,
+        material,
+        upper,
+        immersion_rad,
+        feed_per_tooth_mm,
+    ) else {
         return upper;
     };
     if d_hi <= limit_mm {
@@ -286,7 +316,13 @@ fn invert_deflection(
             break;
         }
         let mid = 0.5 * (lo + hi);
-        match super::predict::tip_deflection_from_engagement(tool, material, mid, radial_woc_mm) {
+        match super::predict::tip_deflection_from_engagement(
+            tool,
+            material,
+            mid,
+            immersion_rad,
+            feed_per_tooth_mm,
+        ) {
             Some(d) if d <= limit_mm => lo = mid,
             // Either over-limit or refused: shrink upper.
             _ => hi = mid,
@@ -519,7 +555,10 @@ mod tests {
             row_diameter_mm: 6.0,
             chipload_diameter_scale: 1.0,
             chipload_hardness_scale: 1.0,
+            chipload_diameter_ratio_raw: 1.0,
+            chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
+            row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         }
     }
 
@@ -530,12 +569,19 @@ mod tests {
         let tool = carbide_flat(6.0, 45.0);
         let mat = hardwood();
         let radial = 1.0_f64;
+        let fz = 0.05_f64;
+        let immersion = super::super::force::immersion_angle(radial, tool.radius());
         let probe_axial = 2.5_f64;
-        let forward =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, probe_axial, radial)
-                .expect("forward deflection");
+        let forward = super::super::predict::tip_deflection_from_engagement(
+            &tool,
+            &mat,
+            probe_axial,
+            immersion,
+            fz,
+        )
+        .expect("forward deflection");
         let limit_um = forward * 1000.0;
-        let inverted = invert_deflection(&tool, &mat, radial, limit_um);
+        let inverted = invert_deflection(&tool, &mat, radial, fz, limit_um);
         let err = (inverted - probe_axial).abs();
         assert!(
             err < 0.05,
@@ -640,11 +686,13 @@ mod tests {
         let tool = carbide_tapered_ball();
         let mat = hardwood();
         let radial = 0.3_f64;
+        let fz = 0.05_f64;
+        let immersion = super::super::force::immersion_angle(radial, tool.radius());
         let d_at_1 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.0, radial)
+            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.0, immersion, fz)
                 .expect("forward");
         let d_at_2 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 2.0, radial)
+            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 2.0, immersion, fz)
                 .expect("forward");
         assert!(
             d_at_2 > d_at_1,
@@ -653,9 +701,9 @@ mod tests {
         // Binary-search inversion at the deflection at ap=1.5 must land
         // between 1.0 and 2.0.
         let d_at_1_5 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.5, radial)
+            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.5, immersion, fz)
                 .expect("forward");
-        let ap_recovered = invert_deflection(&tool, &mat, radial, d_at_1_5 * 1000.0);
+        let ap_recovered = invert_deflection(&tool, &mat, radial, fz, d_at_1_5 * 1000.0);
         assert!(
             (1.4..=1.6).contains(&ap_recovered),
             "tapered-ball binsearch did not recover ap≈1.5: got {ap_recovered}"

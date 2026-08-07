@@ -4,13 +4,160 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
-use crate::state::toolpath::{ComputeStatus, OperationConfig, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, OperationConfig, StockSource, ToolpathId};
 
 use super::super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
+    /// Fail a toolpath generation at *submit* time — i.e. before the
+    /// request ever reaches the compute worker. Every precondition
+    /// rejection inside `submit_toolpath_compute` (missing tool, failed
+    /// validation, no 3D mesh, no prior simulated stock for rest
+    /// machining, a `DerivedRestRegions` boundary whose source is
+    /// missing/self-referential/ungenerated/regionless, ...) must funnel
+    /// through here.
+    ///
+    /// Without this, an MCP `generate_toolpath` / `generate_all` caller
+    /// hangs forever: `notify_mcp_toolpath_complete` was previously only
+    /// invoked from `drain_compute_results`, which only ever runs for
+    /// requests that actually made it to the compute worker. A submit-time
+    /// early return produced no worker result, so nothing ever drained,
+    /// and the MCP oneshot channel was never resolved (confirmed live: an
+    /// MCP `generate_toolpath` call sat unresolved for ~9 hours while the
+    /// GUI correctly showed the toolpath in `Error` state).
+    ///
+    /// Sets `rt.status = Error(msg)` (matching what `drain_compute_results`
+    /// does for a compute `Err`) and resolves any pending MCP waiter for
+    /// this toolpath with the same error. If no MCP request is pending
+    /// (GUI-initiated generate), `notify_mcp_toolpath_complete` is a no-op,
+    /// matching existing behavior.
+    fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
+        let msg = msg.into();
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
+        rt.status = ComputeStatus::Error(msg);
+        rt.result = None;
+        #[cfg(feature = "mcp")]
+        self.notify_mcp_toolpath_complete(tp_id);
+    }
+
+    /// A/M11 sibling of [`Self::fail_toolpath_submit`] for the one rejection
+    /// that is **not** a failure: a rest op whose upstream simulated stock
+    /// does not exist yet. It records `AwaitingPriorStock` rather than
+    /// `Error`, so `generate_all`'s fixpoint loop can retry it after a
+    /// simulation while genuine failures stay failed, and so it never inflates
+    /// the error list an operator or agent has to triage.
+    fn block_toolpath_submit(
+        &mut self,
+        tp_id: ToolpathId,
+        block: rs_cam_core::compute::AwaitingPriorStock,
+    ) {
+        let rt = self.state.gui.toolpath_rt_or_default(tp_id);
+        rt.status = ComputeStatus::AwaitingPriorStock(block);
+        rt.result = None;
+        #[cfg(feature = "mcp")]
+        self.notify_mcp_toolpath_complete(tp_id);
+    }
+
+    /// The operation whose simulated stock `tp_id` is waiting on: the nearest
+    /// ENABLED toolpath before it in the same setup.
+    ///
+    /// A/M11 defect 1 — the old message named no operation, so the user could
+    /// not tell a one-round wait from a four-round one. The distinction the
+    /// message must carry is whether that upstream op has itself generated: if
+    /// it has not, the wait is at least two rounds (generate it, simulate,
+    /// then come back); if it has, one simulation is enough.
+    fn prior_stock_blocker(
+        &self,
+        tp_id: ToolpathId,
+        toolpath_name: &str,
+    ) -> rs_cam_core::compute::AwaitingPriorStock {
+        use rs_cam_core::compute::AwaitingPriorStock;
+
+        let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+            return AwaitingPriorStock {
+                blocking_toolpath_id: None,
+                blocking_toolpath_index: None,
+                message: format!(
+                    "'{toolpath_name}' uses remaining stock (rest machining) but is no \
+                     longer in the project."
+                ),
+            };
+        };
+
+        // Setup membership decides the stock chain: only ops in the same
+        // setup contribute to the snapshot this op reads.
+        let same_setup: Vec<usize> = self
+            .state
+            .session
+            .list_setups()
+            .iter()
+            .find(|s| s.toolpath_indices.contains(&tp_idx))
+            .map_or_else(|| (0..tp_idx).collect(), |s| s.toolpath_indices.clone());
+
+        let upstream = same_setup
+            .iter()
+            .copied()
+            .filter(|idx| *idx < tp_idx)
+            .filter_map(|idx| {
+                self.state
+                    .session
+                    .toolpath_configs()
+                    .get(idx)
+                    .filter(|tc| tc.enabled)
+                    .map(|tc| (idx, tc))
+            })
+            .next_back();
+
+        let Some((blocker_idx, blocker)) = upstream else {
+            return AwaitingPriorStock {
+                blocking_toolpath_id: None,
+                blocking_toolpath_index: None,
+                message: format!(
+                    "'{toolpath_name}' uses remaining stock (rest machining) but is the \
+                     first enabled operation in its setup — there is no prior operation \
+                     to leave any stock behind. Set its stock source to fresh stock, or \
+                     move it after the operation it is meant to follow."
+                ),
+            };
+        };
+
+        let blocker_name = blocker.name.clone();
+        let blocker_id = blocker.id;
+        let blocker_generated = self
+            .state
+            .gui
+            .toolpath_rt
+            .get(&blocker_id)
+            .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done));
+
+        let message = if blocker_generated {
+            format!(
+                "'{toolpath_name}' is waiting on simulated stock after '{blocker_name}' \
+                 (index {blocker_idx}). That operation is generated, so ONE simulation \
+                 is enough: run a simulation, then regenerate. (Not falling back to \
+                 fresh stock.)"
+            )
+        } else {
+            format!(
+                "'{toolpath_name}' is waiting on simulated stock after '{blocker_name}' \
+                 (index {blocker_idx}), which has not generated yet. The cycle may need \
+                 repeating: generate '{blocker_name}', run a simulation, then regenerate \
+                 this operation — and if IT feeds a further rest op, again. \
+                 `generate_all` with a simulation resolution does the whole ladder in \
+                 one call. (Not falling back to fresh stock.)"
+            )
+        };
+
+        AwaitingPriorStock {
+            blocking_toolpath_id: Some(blocker_id),
+            blocking_toolpath_index: Some(blocker_idx),
+            message,
+        }
+    }
+
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
         let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+            self.fail_toolpath_submit(tp_id, "Toolpath config not found".to_owned());
             return;
         };
 
@@ -22,6 +169,7 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_source = tc.stock_source;
         let toolpath_name = tc.name.clone();
         let boundary = tc.boundary.clone();
+        let rest_analysis = tc.rest_analysis.clone();
         let debug_options = tc.debug_options;
         let face_selection_for_toolpath = tc.face_selection.clone();
 
@@ -37,6 +185,7 @@ impl<B: ComputeBackend> AppController<B> {
                 "Cannot generate: no tool assigned to this toolpath".into(),
                 super::super::Severity::Warning,
             );
+            self.fail_toolpath_submit(tp_id, "No tool assigned to this toolpath".to_owned());
             return;
         };
 
@@ -47,9 +196,7 @@ impl<B: ComputeBackend> AppController<B> {
             if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
                 let errs = crate::ui::properties::validate_toolpath_config(tc, &validation);
                 if !errs.is_empty() {
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                        rt.status = ComputeStatus::Error(errs.join("; "));
-                    }
+                    self.fail_toolpath_submit(tp_id, errs.join("; "));
                     return;
                 }
             }
@@ -196,17 +343,14 @@ impl<B: ComputeBackend> AppController<B> {
 
         let is_3d = operation.is_3d();
         if is_3d && mesh.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                rt.status = ComputeStatus::Error("No 3D mesh (import STL or STEP)".to_owned());
-            }
+            self.fail_toolpath_submit(tp_id, "No 3D mesh (import STL or STEP)".to_owned());
             return;
         }
         if !is_3d && !operation.is_stock_based() && polygons.is_none() {
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
-                rt.status = ComputeStatus::Error(
-                    "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
-                );
-            }
+            self.fail_toolpath_submit(
+                tp_id,
+                "No 2D geometry (import SVG/DXF or select STEP faces)".to_owned(),
+            );
             return;
         }
 
@@ -218,6 +362,36 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|t| t.id == prev_tool_id)
                     .map(|t| t.diameter / 2.0)
+            })
+        } else {
+            None
+        };
+
+        // R1 (pencil): resolve the real reference tool config from the Pencil
+        // op's `reference_tool_id`, mirroring prev_tool_radius above. `None`
+        // (unset or not found) falls back to the nominal reference diameter.
+        //
+        // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
+        // reference tool the same way, from `RestAnalysisConfig::reference_tool_id`
+        // — same slot core's `resolve_generation_inputs` reuses, so both
+        // paths agree on which real tool becomes the rest reference.
+        let reference_tool_cfg = if let OperationConfig::Pencil(config) = &operation {
+            config.reference_tool_id.and_then(|ref_id| {
+                self.state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id == ref_id)
+                    .cloned()
+            })
+        } else if rest_analysis.enabled {
+            rest_analysis.reference_tool_id.and_then(|ref_id| {
+                self.state
+                    .session
+                    .tools()
+                    .iter()
+                    .find(|t| t.id == ref_id)
+                    .cloned()
             })
         } else {
             None
@@ -238,6 +412,13 @@ impl<B: ComputeBackend> AppController<B> {
         // Update GUI runtime status
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::Computing;
+        // "Stale" means "needs a submit" — this submit satisfies it. Leaving
+        // the flag set let `process_auto_regen`'s 500ms sweep resubmit the
+        // same id while it was still the lane's active job, which the
+        // worker's resubmit-cancels-and-requeues rule turned into a
+        // deterministic "generation cancelled" for any slow op right after
+        // load_project (Back Rough, 2×, 2026-07-07).
+        rt.stale_since = None;
         rt.result = None;
         rt.debug_trace = None;
         rt.semantic_trace = None;
@@ -301,12 +482,178 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        let prior_stock: Option<TriDexelStock> = None;
+        // Rest machining: when this toolpath cuts the stock left by previous
+        // ops, seed generation with the simulated stock as it stood *before*
+        // this op. Requires a prior simulation to have produced a snapshot
+        // for this toolpath's id; if absent we FAIL HARD (do not fall back
+        // to fresh stock — a fine rest tool would clear the whole part
+        // instead of the leftover: unbounded compute and a wrong result).
+        //
+        // F.4: the snapshot is looked up directly by toolpath id via
+        // `SimulationState::prior_stock_for`, which is populated from the
+        // same `prior_stocks` map core's `generate_toolpath` gate checks
+        // (`sim.prior_stocks.get(&tc.id)` in `session/compute.rs`). This
+        // replaces a `boundaries()`-position / `checkpoints()`-lookup that
+        // could only ever find a snapshot for a toolpath that already had
+        // its OWN boundary — i.e. one that had already been generated —
+        // so an ungenerated `FromRemainingStock` toolpath could never
+        // regenerate after a fresh project load, even once its predecessor
+        // had been simulated. `prior_stocks` now also carries a phantom
+        // snapshot for the first pending toolpath in each group (see
+        // `rs_cam_core::compute::simulate::SimGroupEntry::
+        // phantom_prior_stock`), which is exactly the case this gate needs
+        // to unblock.
+        let prior_stock: Option<TriDexelStock> = if stock_source == StockSource::FromRemainingStock
+        {
+            let found = self
+                .state
+                .simulation
+                .prior_stock_for(tp_id)
+                .map(|stock| stock.as_ref().clone());
+            let Some(found) = found else {
+                // A/M11: this is a sequencing state, not a failure. It names
+                // the upstream op it is waiting for, says whether one
+                // simulation will do, and is retried (not re-failed) by
+                // `generate_all`'s fixpoint loop.
+                let block = self.prior_stock_blocker(tp_id, &toolpath_name);
+                let notice = block.message.clone();
+                self.block_toolpath_submit(tp_id, block);
+                self.push_notification(notice, super::super::Severity::Warning);
+                return;
+            };
+            Some(found)
+        } else {
+            None
+        };
         let cutting_levels = operation.cutting_levels(heights.top_z);
         let material = stock_snapshot.material;
 
+        // P2.2/P2.3 (rest-region boundary): resolve `DerivedRestRegions` now,
+        // while we still have full session + gui access — mirrors
+        // `prev_tool_radius` / `reference_tool_cfg` above. The worker's
+        // `ComputeRequest` is scoped to this one toolpath, so any
+        // cross-toolpath lookup has to happen here, not in the worker.
+        //
+        // Fail-hard precondition, same shape and wording as core's
+        // `ProjectSession::resolve_derived_rest_region_polys`
+        // (session/compute.rs): a toolpath whose enabled boundary
+        // references a missing / self-referential / ungenerated /
+        // regionless source toolpath refuses to generate rather than
+        // silently falling back to the stock rectangle. The previous
+        // silent fallback let a full-part toolpath through with no error
+        // before the source ever ran, and again after the source ran
+        // whenever its rest regions (genuine terrain rest analysis
+        // commonly yields many disjoint islands) didn't union down to
+        // exactly one polygon.
+        let derived_rest_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if boundary.enabled
+            && let crate::state::toolpath::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                &boundary.source
+        {
+            let source_id = *source_toolpath_id;
+            if source_id == tp_id {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    "Boundary references this toolpath's own rest regions — a toolpath \
+                     cannot use itself as the source for a derived-rest-regions \
+                     boundary. Pick a different source toolpath."
+                        .to_owned(),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': boundary references its own rest regions — pick \
+                         a different source toolpath."
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            }
+            let Some((_, source_tc)) = self.state.session.find_toolpath_config_by_id(source_id)
+            else {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    format!(
+                        "Boundary references toolpath id {} for its rest regions, but no \
+                         toolpath with that id exists anymore. Pick a different source \
+                         toolpath for the boundary, or disable the boundary.",
+                        source_id.0
+                    ),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': rest-regions boundary source (id {}) no longer \
+                         exists — pick a different source toolpath.",
+                        source_id.0
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            };
+            let source_name = source_tc.name.clone();
+            let Some(source_result) = self
+                .state
+                .gui
+                .toolpath_rt
+                .get(&source_id)
+                .and_then(|rt| rt.result.as_ref())
+            else {
+                self.fail_toolpath_submit(
+                    tp_id,
+                    format!(
+                        "'{source_name}' has no generated result yet — generate \
+                         '{source_name}' first; its rest analysis produces the regions this \
+                         boundary needs.",
+                    ),
+                );
+                self.push_notification(
+                    format!(
+                        "'{toolpath_name}': rest-regions source '{source_name}' has no \
+                         generated result yet — generate it first."
+                    ),
+                    super::super::Severity::Error,
+                );
+                return;
+            };
+            match source_result.annotated.rest_regions.as_ref() {
+                Some(regions) if !regions.is_empty() => Some((**regions).clone()),
+                _ => {
+                    self.fail_toolpath_submit(
+                        tp_id,
+                        format!(
+                            "'{source_name}' produced no rest regions — it must be a pencil \
+                             operation with the rest-depth detector enabled, and its rest \
+                             analysis must have found material above the threshold. Check \
+                             the pencil rest-depth settings on '{source_name}' and \
+                             regenerate it.",
+                        ),
+                    );
+                    self.push_notification(
+                        format!(
+                            "'{toolpath_name}': rest-regions source '{source_name}' produced \
+                             no rest regions — check its pencil rest-depth settings and \
+                             regenerate it."
+                        ),
+                        super::super::Severity::Error,
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+        // P1 quantitative linker: mirror core's `session::compute::generate_toolpath`,
+        // which builds `LinkKinematics` from `self.machine` (see the comment there
+        // for why each accessor is used).
+        let machine = self.state.session.machine();
+        let link_kinematics = Some(rs_cam_core::machine_kinematics::LinkKinematics {
+            kinematics: machine.effective_kinematics(),
+            max_feed_mm_min: machine.cutting_feed_ceiling_mm_min().max(1.0),
+            rapid_feed_mm_min: machine.max_feed_mm_min.max(1.0),
+        });
+
         self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
+            toolpath_index: tp_idx,
             toolpath_name,
             debug_options,
             polygons,
@@ -319,6 +666,7 @@ impl<B: ComputeBackend> AppController<B> {
             tool,
             safe_z,
             prev_tool_radius,
+            reference_tool_cfg,
             stock_bbox: Some(stock_bbox),
             boundary,
             keep_out_footprints,
@@ -326,7 +674,47 @@ impl<B: ComputeBackend> AppController<B> {
             cutting_levels,
             prior_stock,
             material,
+            derived_rest_regions,
+            rest_analysis,
+            link_kinematics,
         });
+    }
+
+    /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
+    /// referencing `source_id` as stale, using the same `stale_since`
+    /// mechanism `mcp_apply_stale` uses for direct config edits
+    /// (`app/mcp.rs::mcp_apply_stale`). A `DerivedRestRegions` boundary's
+    /// clip depends entirely on the source toolpath's cached
+    /// `rest_regions` — any regeneration of the source (regions changed,
+    /// vanished, or newly appeared) or its removal invalidates every
+    /// dependent's cached result just as surely as editing the dependent's
+    /// own boundary config would, so this sweep is called from both the
+    /// generation-completion handler (`drain_compute_results`, below) and
+    /// `handle_remove_toolpath` (`controller/events/toolpath.rs`).
+    pub(crate) fn mark_derived_rest_dependents_stale(&mut self, source_id: ToolpathId) {
+        let dependent_ids: Vec<ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| {
+                tc.boundary.enabled
+                    && matches!(
+                        tc.boundary.source,
+                        crate::state::toolpath::BoundarySource::DerivedRestRegions {
+                            source_toolpath_id,
+                        } if source_toolpath_id == source_id
+                    )
+            })
+            .map(|tc| tc.id)
+            .collect();
+        if dependent_ids.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        for id in dependent_ids {
+            self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
+        }
     }
 
     // SAFETY: tp_index from position() within setup.toolpaths, slice always in bounds
@@ -390,6 +778,13 @@ impl<B: ComputeBackend> AppController<B> {
                                 let _ = self.state.session.insert_result(tp_index, core_result);
                             }
                             rt.result = Some(computed);
+                            // Any toolpath whose `DerivedRestRegions` boundary
+                            // depends on this one just saw its source result
+                            // replaced (rest_regions may have appeared,
+                            // changed, or vanished) — force a regenerate so
+                            // the dependent re-resolves against the fresh
+                            // regions instead of clipping against a stale set.
+                            self.mark_derived_rest_dependents_stale(tp_id);
                         }
                         Err(ComputeError::Cancelled) => {
                             rt.status = ComputeStatus::Pending;
@@ -415,7 +810,7 @@ impl<B: ComputeBackend> AppController<B> {
                             Some(crate::state::OptimizeProjectStatus::Reconciling(_))
                         )
                     {
-                        self.run_simulation_with_all();
+                        let _submitted = self.run_simulation_with_all();
                     }
 
                     // Roadmap F.2 — auto-verify after per-TP Apply. If
@@ -425,7 +820,7 @@ impl<B: ComputeBackend> AppController<B> {
                     // without having to click Run Simulation by hand.
                     if self.state.pending_apply_resim == Some(tp_id.0) {
                         self.state.pending_apply_resim = None;
-                        self.run_simulation_with_all();
+                        let _submitted = self.run_simulation_with_all();
                     }
 
                     // Notify pending MCP request for this toolpath
@@ -500,6 +895,11 @@ impl<B: ComputeBackend> AppController<B> {
                             })
                             .collect();
 
+                        // F.4 — retain the per-toolpath (and phantom)
+                        // prior-stock snapshots so the submit-time
+                        // FromRemainingStock gate can look them up by id.
+                        let prior_stocks = simulation.prior_stocks;
+
                         if !simulation.rapid_collisions.is_empty() {
                             tracing::warn!(
                                 "{} rapid collisions detected",
@@ -535,7 +935,46 @@ impl<B: ComputeBackend> AppController<B> {
                             stock_bbox,
                             cut_trace: simulation.cut_trace,
                             cut_trace_path: simulation.cut_trace_path,
+                            column_grid_cell_mm: simulation.column_grid_cell_mm,
+                            prior_stocks,
                         });
+
+                        // F-039 — apply adaptive feed modulation to the
+                        // just-completed sim trace (unified load model §10.6,
+                        // option A). The async worker runs the dexel sim only;
+                        // modulation needs session context (material / machine
+                        // / vendor LUT) so it runs here on the main thread. The
+                        // post-pass stamps `modulation_summaries` onto the trace
+                        // — so the Feeds-tab "operating point" card + the
+                        // tool-load report populate — and swaps the modulated
+                        // toolpaths into `session.results`, which G-code export
+                        // reads, so exported feeds are the optimized per-move
+                        // schedule. Default-on in the GUI. Take the trace out
+                        // and put it back so the session (results) and the
+                        // viz-side cut_trace are borrowed disjointly.
+                        {
+                            let opts = rs_cam_core::session::SimulationOptions {
+                                adaptive_feed_modulation: true,
+                                modulation_strategy:
+                                    rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+                                modulation_aggressiveness: 1.0,
+                                ..Default::default()
+                            };
+                            let mut cut_trace = self
+                                .state
+                                .simulation
+                                .results
+                                .as_mut()
+                                .and_then(|r| r.cut_trace.take());
+                            if cut_trace.is_some() {
+                                self.state
+                                    .session
+                                    .modulate_simulation_trace(&mut cut_trace, &opts);
+                                if let Some(results) = self.state.simulation.results.as_mut() {
+                                    results.cut_trace = cut_trace;
+                                }
+                            }
+                        }
 
                         let inspect_target =
                             self.state.simulation.debug.pending_inspect_toolpath.take();
@@ -582,11 +1021,22 @@ impl<B: ComputeBackend> AppController<B> {
 
                         // Notify pending MCP simulation request
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_complete();
+                        {
+                            self.notify_mcp_simulation_complete();
+                            // A/M11: if this simulation was the fixpoint
+                            // loop's own, the blocked rest ops can now see
+                            // their upstream stock — start the next round.
+                            self.resume_generate_all_after_simulation(None);
+                        }
                     }
                     Err(ComputeError::Cancelled) => {
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error("Simulation cancelled");
+                        {
+                            self.notify_mcp_simulation_error("Simulation cancelled");
+                            self.resume_generate_all_after_simulation(Some(
+                                "the simulation was cancelled".to_owned(),
+                            ));
+                        }
                     }
                     Err(ComputeError::Message(error)) => {
                         tracing::error!("Simulation failed: {error}");
@@ -595,7 +1045,10 @@ impl<B: ComputeBackend> AppController<B> {
                             super::super::Severity::Error,
                         );
                         #[cfg(feature = "mcp")]
-                        self.notify_mcp_simulation_error(&error);
+                        {
+                            self.notify_mcp_simulation_error(&error);
+                            self.resume_generate_all_after_simulation(Some(error));
+                        }
                     }
                 },
                 ComputeMessage::Collision(result) => match result {
@@ -794,6 +1247,259 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    // ── A/M11: generate_all as a fixpoint over the rest-stock chain ──
+
+    /// Start a `generate_all`. When `fixpoint` is on this iterates
+    /// generate -> simulate -> generate until nothing new appears; see
+    /// [`crate::mcp_bridge::FixpointPlan`] for the termination argument.
+    ///
+    /// `simulation_resolution_mm` is refused rather than defaulted when the
+    /// project needs it (A/M10): a silently chosen cell size changes
+    /// collision counts and engagement, so the loop must not pick one.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn mcp_start_generate_all(
+        &mut self,
+        fixpoint: bool,
+        simulation_resolution_mm: Option<f64>,
+        response_tx: tokio::sync::oneshot::Sender<crate::mcp_bridge::McpResponse>,
+        progress_tx: Option<tokio::sync::mpsc::Sender<crate::mcp_bridge::ProgressUpdate>>,
+    ) {
+        use crate::mcp_bridge::{FixpointPlan, McpResponse, PendingGenerateAll};
+
+        let ids: Vec<ToolpathId> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .filter(|tc| tc.enabled)
+            .map(|tc| tc.id)
+            .collect();
+        // Rest-dependent ops bound the ladder: a stock chain cannot be longer
+        // than the number of links in it.
+        let rest_ops: Vec<usize> = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.enabled && tc.stock_source == StockSource::FromRemainingStock)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        if ids.is_empty() {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(rs_cam_mcp::server::text("No enabled toolpaths to generate")),
+            });
+            return;
+        }
+
+        let plan = match (fixpoint, rest_ops.is_empty(), simulation_resolution_mm) {
+            (false, _, _) => FixpointPlan::single_pass(),
+            // Nothing depends on simulated stock, so no simulation will be
+            // run and no resolution is needed.
+            (true, true, _) => FixpointPlan::single_pass(),
+            (true, false, Some(res)) if res > 0.0 => FixpointPlan::looping(res, rest_ops.len()),
+            (true, false, res) => {
+                let bad = res.map_or_else(
+                    || "it was not supplied".to_owned(),
+                    |r| format!("{r} is not a positive cell size"),
+                );
+                let _ = response_tx.send(McpResponse {
+                    result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
+                        "ok": false,
+                        "error": format!(
+                            "generate_all needs `simulation_resolution_mm`, and {bad}. This \
+                             project has {} enabled rest-machining operation(s) (indices {:?}) \
+                             whose stock comes from a simulation, so reaching a fully \
+                             generated state requires running simulations between generate \
+                             rounds. The resolution is NOT guessed: collision counts and \
+                             engagement both move with cell size, so a silently chosen one \
+                             would hand you verdicts you did not ask for. Pass the same \
+                             resolution you will use for verification — well below the \
+                             finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball). To skip \
+                             the ladder and get the old single-pass behaviour, pass \
+                             `fixpoint: false`.",
+                            rest_ops.len(),
+                            rest_ops,
+                        ),
+                    }))),
+                });
+                return;
+            }
+        };
+
+        for tc in self.state.session.toolpath_configs_mut() {
+            if tc.enabled {
+                tc.debug_options.enabled = true;
+            }
+        }
+
+        let total = ids.len();
+        if let Some(tx) = progress_tx.as_ref() {
+            let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                message: format!("Round 1: generating {total} toolpaths..."),
+                progress: 0.0,
+                total: Some(total as f64),
+            });
+        }
+        for &id in &ids {
+            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
+        }
+
+        let Some(pending) = self.pending_mcp.as_mut() else {
+            let _ = response_tx.send(McpResponse {
+                result: Err("MCP compute tracking not initialized".to_owned()),
+            });
+            return;
+        };
+        pending.generate_all = Some(PendingGenerateAll {
+            remaining: ids,
+            completed: 0,
+            failed: 0,
+            errors: Vec::new(),
+            blocked: Vec::new(),
+            fixpoint: plan,
+            loop_error: None,
+            response_tx,
+            progress_tx,
+        });
+    }
+
+    /// Called whenever a round might have finished. Either advances the
+    /// ladder (submitting the loop's own simulation) or resolves the caller.
+    #[cfg(feature = "mcp")]
+    fn settle_generate_all_round(&mut self) {
+        use crate::mcp_bridge::{GenerateAllSummary, McpResponse, build_generate_all_response};
+
+        enum Next {
+            Wait,
+            Simulate(f64),
+            Finish(Box<GenerateAllSummary>),
+        }
+
+        let next = {
+            let Some(pending) = self.pending_mcp.as_mut() else {
+                return;
+            };
+            let Some(ga) = pending.generate_all.as_mut() else {
+                return;
+            };
+            if !ga.remaining.is_empty() || ga.fixpoint.awaiting_simulation {
+                Next::Wait
+            } else {
+                // (a) something is blocked purely on sequencing, (b) the round
+                // just finished produced at least one new op, and we are
+                // inside the hard bound. All three, or we stop.
+                let advance = ga.fixpoint.enabled
+                    && !ga.blocked.is_empty()
+                    && ga.fixpoint.completed_this_round > 0
+                    && ga.fixpoint.round < ga.fixpoint.max_rounds;
+                match (advance, ga.fixpoint.resolution_mm) {
+                    (true, Some(res)) => {
+                        ga.fixpoint.awaiting_simulation = true;
+                        ga.fixpoint.simulations += 1;
+                        Next::Simulate(res)
+                    }
+                    _ => Next::Finish(Box::new(ga.completed_summary())),
+                }
+            }
+        };
+
+        match next {
+            Next::Wait => {}
+            Next::Simulate(resolution) => {
+                self.state.simulation.resolution = resolution;
+                self.state.simulation.auto_resolution = false;
+                if self.run_simulation_with_all() {
+                    self.mcp_generate_all_progress(
+                        "Simulating so the blocked rest operations can see their stock...",
+                    );
+                } else {
+                    // Nothing to simulate — the completion we just armed will
+                    // never drain. Unwind rather than hang.
+                    self.resume_generate_all_after_simulation(Some(
+                        "there was nothing to simulate, so the blocked operations can \
+                         never see upstream stock"
+                            .to_owned(),
+                    ));
+                }
+            }
+            Next::Finish(summary) => {
+                if let Some(pending) = self.pending_mcp.as_mut()
+                    && let Some(ga) = pending.generate_all.take()
+                {
+                    let _ = ga.response_tx.send(McpResponse {
+                        result: Ok(build_generate_all_response(&summary)),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Hook from the simulation drain. Advances the ladder to the next round,
+    /// or stops it when the simulation itself failed.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn resume_generate_all_after_simulation(&mut self, sim_error: Option<String>) {
+        let retry: Vec<ToolpathId> = {
+            let Some(pending) = self.pending_mcp.as_mut() else {
+                return;
+            };
+            let Some(ga) = pending.generate_all.as_mut() else {
+                return;
+            };
+            if !ga.fixpoint.awaiting_simulation {
+                return;
+            }
+            ga.fixpoint.awaiting_simulation = false;
+            if let Some(err) = sim_error {
+                // Disable the loop as well as recording the error: leaving it
+                // armed with a still-populated `blocked` list would re-arm the
+                // same simulation forever.
+                ga.fixpoint.enabled = false;
+                ga.loop_error = Some(err);
+                Vec::new()
+            } else {
+                ga.fixpoint.round += 1;
+                ga.fixpoint.completed_this_round = 0;
+                let retry: Vec<ToolpathId> = ga.blocked.drain(..).map(|(id, _)| id).collect();
+                ga.remaining.clone_from(&retry);
+                retry
+            }
+        };
+
+        if retry.is_empty() {
+            self.settle_generate_all_round();
+            return;
+        }
+        let round = self
+            .pending_mcp
+            .as_ref()
+            .and_then(|p| p.generate_all.as_ref())
+            .map_or(0, |ga| ga.fixpoint.round);
+        self.mcp_generate_all_progress(&format!(
+            "Round {round}: regenerating {} operation(s) that were waiting on upstream stock...",
+            retry.len()
+        ));
+        for id in retry {
+            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_generate_all_progress(&self, message: &str) {
+        if let Some(pending) = self.pending_mcp.as_ref()
+            && let Some(ga) = pending.generate_all.as_ref()
+            && let Some(tx) = ga.progress_tx.as_ref()
+        {
+            let done = (ga.completed + ga.failed) as f64;
+            let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                message: message.to_owned(),
+                progress: done,
+                total: None,
+            });
+        }
+    }
+
     // ── MCP notification helpers ─────────────────────────────────────
     #[cfg(feature = "mcp")]
     fn notify_mcp_toolpath_complete(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
@@ -812,99 +1518,133 @@ impl<B: ComputeBackend> AppController<B> {
                         "rapid_distance_mm": result.stats.rapid_distance,
                     })),
                     None => {
-                        let status_msg = rt
-                            .map(|rt| match &rt.status {
+                        let status = rt.map(|rt| &rt.status);
+                        let status_msg = status
+                            .map(|status| match status {
                                 ComputeStatus::Error(e) => format!("Error: {e}"),
-                                _ => "Toolpath generation produced no result".to_owned(),
+                                // A/M11: blocked is not failed, and the reply
+                                // says which operation it is waiting for.
+                                ComputeStatus::AwaitingPriorStock(b) => b.message.clone(),
+                                // The only way a drained result reaches this
+                                // arm with `Pending` is the cancel path a few
+                                // lines above (`Err(ComputeError::Cancelled)`
+                                // resets status to `Pending`) — call it out
+                                // by name instead of the generic fallback so
+                                // an MCP caller waiting on `cancel_generation`
+                                // sees an unambiguous outcome.
+                                ComputeStatus::Pending => "Generation was cancelled".to_owned(),
+                                ComputeStatus::Computing
+                                | ComputeStatus::Done
+                                | ComputeStatus::Disabled => {
+                                    "Toolpath generation produced no result".to_owned()
+                                }
                             })
                             .unwrap_or_else(|| "Toolpath not found".to_owned());
-                        json_str(serde_json::json!({"error": status_msg}))
+                        let blocked = status.and_then(ComputeStatus::blocked_on);
+                        json_str(serde_json::json!({
+                            "error": status_msg,
+                            "status": status.map_or("Pending", ComputeStatus::label),
+                            "awaiting_prior_stock": blocked.map(|b| serde_json::json!({
+                                "blocking_toolpath_id": b.blocking_toolpath_id,
+                                "blocking_toolpath_index": b.blocking_toolpath_index,
+                            })),
+                        }))
                     }
                 };
                 let _ = sender.send(McpResponse { result: Ok(resp) });
             }
 
             // Check generate_all tracking
-            if let Some(ref mut ga) = pending.generate_all {
-                if let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id) {
-                    ga.remaining.remove(pos);
-                    let rt = self.state.gui.toolpath_rt.get(&tp_id);
-                    if rt.and_then(|rt| rt.result.as_ref()).is_some() {
-                        ga.completed += 1;
-                    } else {
-                        ga.failed += 1;
-                        // Roadmap E.4 — distinguish "completed cleanly with
-                        // zero moves" (likely a config issue: depth/stock/
-                        // model) from a thrown error or an in-flight status.
-                        let tp_name = self
-                            .state
-                            .session
-                            .find_toolpath_config_by_id(tp_id)
-                            .map(|(_, tc)| tc.name.clone())
-                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
-                        let error_msg = match rt.map(|rt| &rt.status) {
-                            Some(crate::state::toolpath::ComputeStatus::Error(e)) => e.clone(),
-                            Some(crate::state::toolpath::ComputeStatus::Done) => format!(
-                                "{tp_name}: completed with no moves — check depth, stock, or model assignment"
-                            ),
-                            Some(status) => {
-                                let label = match status {
-                                    crate::state::toolpath::ComputeStatus::Pending => "Pending",
-                                    crate::state::toolpath::ComputeStatus::Computing => "Computing",
-                                    crate::state::toolpath::ComputeStatus::Done => "Done",
-                                    crate::state::toolpath::ComputeStatus::Error(_) => "Error",
-                                };
-                                format!("{tp_name}: no result, status={label}")
-                            }
-                            None => format!("{tp_name}: toolpath runtime not found"),
-                        };
-                        ga.errors.push((tp_id.0, error_msg));
-                    }
-
-                    // Send progress update via the progress channel (non-blocking).
-                    if let Some(ref progress_tx) = ga.progress_tx {
-                        let total = (ga.completed + ga.failed + ga.remaining.len()) as f64;
-                        let current = (ga.completed + ga.failed) as f64;
-                        let tp_name = self
-                            .state
-                            .session
-                            .find_toolpath_config_by_id(tp_id)
-                            .map(|(_, tc)| tc.name.clone())
-                            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
-                        let msg = format!(
-                            "Completed {}/{}: {}",
-                            current as usize, total as usize, tp_name
-                        );
-                        let _ = progress_tx.try_send(crate::mcp_bridge::ProgressUpdate {
-                            message: msg,
-                            progress: current,
-                            total: Some(total),
-                        });
+            if let Some(ref mut ga) = pending.generate_all
+                && let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id)
+            {
+                ga.remaining.remove(pos);
+                let rt = self.state.gui.toolpath_rt.get(&tp_id);
+                if rt.and_then(|rt| rt.result.as_ref()).is_some() {
+                    ga.completed += 1;
+                    ga.fixpoint.completed_this_round += 1;
+                } else {
+                    let tp_name = self
+                        .state
+                        .session
+                        .find_toolpath_config_by_id(tp_id)
+                        .map(|(_, tc)| tc.name.clone())
+                        .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                    match rt.map(|rt| &rt.status) {
+                        // A/M11: a sequencing block goes in its own bucket
+                        // and does NOT count as a failure. The fixpoint
+                        // loop retries exactly this set after a
+                        // simulation; a genuine error is never retried,
+                        // which is what makes the loop terminate.
+                        Some(ComputeStatus::AwaitingPriorStock(b)) => {
+                            ga.blocked.push((tp_id, b.message.clone()));
+                        }
+                        Some(ComputeStatus::Error(e)) => {
+                            ga.failed += 1;
+                            ga.errors.push((tp_id.0, e.clone()));
+                        }
+                        // Roadmap E.4 — "completed cleanly with zero
+                        // moves" is a config issue (depth/stock/model),
+                        // not a thrown error.
+                        Some(ComputeStatus::Done) => {
+                            ga.failed += 1;
+                            ga.errors.push((
+                                tp_id.0,
+                                format!(
+                                    "{tp_name}: completed with no moves — check depth, \
+                                     stock, or model assignment"
+                                ),
+                            ));
+                        }
+                        // Cancel resets status to `Pending` (see the
+                        // single-toolpath branch above).
+                        Some(ComputeStatus::Pending) => {
+                            ga.failed += 1;
+                            ga.errors
+                                .push((tp_id.0, format!("{tp_name}: generation cancelled")));
+                        }
+                        Some(status @ (ComputeStatus::Computing | ComputeStatus::Disabled)) => {
+                            ga.failed += 1;
+                            ga.errors.push((
+                                tp_id.0,
+                                format!("{tp_name}: no result, status={}", status.label()),
+                            ));
+                        }
+                        None => {
+                            ga.failed += 1;
+                            ga.errors
+                                .push((tp_id.0, format!("{tp_name}: toolpath runtime not found")));
+                        }
                     }
                 }
 
-                if ga.remaining.is_empty()
-                    && let Some(ga) = pending.generate_all.take()
-                {
-                    let resp = if ga.errors.is_empty() {
-                        rs_cam_mcp::server::text(format!("Generated {} toolpaths", ga.completed,))
-                    } else {
-                        let error_details: Vec<String> = ga
-                            .errors
-                            .iter()
-                            .map(|(id, msg)| format!("  toolpath {id}: {msg}"))
-                            .collect();
-                        rs_cam_mcp::server::text(format!(
-                            "Generated {} toolpaths ({} failed):\n{}",
-                            ga.completed,
-                            ga.failed,
-                            error_details.join("\n"),
-                        ))
-                    };
-                    let _ = ga.response_tx.send(McpResponse { result: Ok(resp) });
+                // Send progress update via the progress channel (non-blocking).
+                if let Some(ref progress_tx) = ga.progress_tx {
+                    let total = (ga.completed + ga.failed + ga.remaining.len()) as f64;
+                    let current = (ga.completed + ga.failed) as f64;
+                    let tp_name = self
+                        .state
+                        .session
+                        .find_toolpath_config_by_id(tp_id)
+                        .map(|(_, tc)| tc.name.clone())
+                        .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+                    let msg = format!(
+                        "Completed {}/{}: {}",
+                        current as usize, total as usize, tp_name
+                    );
+                    let _ = progress_tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                        message: msg,
+                        progress: current,
+                        total: Some(total),
+                    });
                 }
             }
         }
+
+        // A/M11: a finished round either advances the ladder or resolves the
+        // caller. Outside the `pending_mcp` borrow because advancing needs
+        // `&mut self` to submit a simulation.
+        self.settle_generate_all_round();
     }
 
     #[cfg(feature = "mcp")]
@@ -971,6 +1711,8 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mut per_toolpath = Vec::new();
         let mut runtime_errors = Vec::new();
+        // A/M11 — sequencing blocks, kept apart from failures.
+        let mut awaiting_prior_stock = Vec::new();
         for (index, tc) in session.toolpath_configs().iter().enumerate() {
             let tool_name = session
                 .tools()
@@ -979,18 +1721,28 @@ impl<B: ComputeBackend> AppController<B> {
                 .map(|t| t.name.clone())
                 .unwrap_or_default();
             if let Some(rt) = gui.toolpath_rt.get(&tc.id) {
-                let (status, error) = match &rt.status {
-                    ComputeStatus::Pending => ("Pending", None),
-                    ComputeStatus::Computing => ("Computing", None),
-                    ComputeStatus::Done => ("Done", None),
-                    ComputeStatus::Error(e) => ("Error", Some(e.clone())),
-                };
-                if let Some(error) = error.clone() {
+                // A/M11: one taxonomy, read through the canonical resolver.
+                // `runtime_errors` carries genuine failures ONLY — a disabled
+                // op reports `Disabled` and a sequencing block reports
+                // `AwaitingPriorStock` on its own channel, so an agent can
+                // tell "cannot yet" from "cannot ever" without parsing prose.
+                let status = ComputeStatus::effective(tc.enabled, &rt.status);
+                if let Some(error) = status.error_text() {
                     runtime_errors.push(serde_json::json!({
                         "toolpath_index": index,
                         "toolpath_id": tc.id,
                         "name": tc.name,
                         "error": error,
+                    }));
+                }
+                if let Some(block) = status.blocked_on() {
+                    awaiting_prior_stock.push(serde_json::json!({
+                        "toolpath_index": index,
+                        "toolpath_id": tc.id,
+                        "name": tc.name,
+                        "blocking_toolpath_id": block.blocking_toolpath_id,
+                        "blocking_toolpath_index": block.blocking_toolpath_index,
+                        "message": block.message,
                     }));
                 }
                 let mut row = serde_json::json!({
@@ -999,8 +1751,13 @@ impl<B: ComputeBackend> AppController<B> {
                     "name": tc.name,
                     "operation_type": tc.operation.label(),
                     "tool_name": tool_name,
-                    "status": status,
-                    "error": error,
+                    "status": status.label(),
+                    "error": status.error_text(),
+                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
+                        "blocking_toolpath_id": b.blocking_toolpath_id,
+                        "blocking_toolpath_index": b.blocking_toolpath_index,
+                        "message": b.message,
+                    })),
                     "stale": rt.stale_since.is_some(),
                 });
                 if let Some(ref result) = rt.result {
@@ -1017,27 +1774,35 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        let (total_runtime_s, air_cut_pct, avg_engagement) = if let Some(ref sim_results) =
-            self.state.simulation.results
-            && let Some(ref ct) = sim_results.cut_trace
-        {
-            let s = &ct.summary;
-            let air = if s.total_runtime_s > 0.0 {
-                s.air_cut_time_s / s.total_runtime_s * 100.0
+        // LH-1: publish BOTH air-cut denominators under names that say which
+        // is which. The legacy `air_cut_percentage` key keeps its
+        // total-runtime value (the verdict rule below and every
+        // `air_cut_high_threshold_pct` band are tuned against it); the
+        // cutting-time reading - what `narrate_toolpath` prints for the same
+        // seconds - ships beside it instead of contradicting it under one
+        // name. See `MEASUREMENT_DOMAINS.md` LH-1.
+        let (total_runtime_s, air_cut_pct, air_cut_pct_of_cutting, avg_engagement) =
+            if let Some(ref sim_results) = self.state.simulation.results
+                && let Some(ref ct) = sim_results.cut_trace
+            {
+                use rs_cam_core::simulation_cut::AirCutRatios;
+                let s = &ct.summary;
+                (
+                    s.total_runtime_s,
+                    s.air_cut_pct_of_total_runtime(),
+                    s.air_cut_pct_of_cutting_time(),
+                    s.average_engagement,
+                )
             } else {
-                0.0
+                (0.0, 0.0, 0.0, 0.0)
             };
-            (s.total_runtime_s, air, s.average_engagement)
-        } else {
-            (0.0, 0.0, 0.0)
-        };
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
 
         let verdict = if rapid_collision_count > 0 {
             "WARNING: rapid collisions detected"
         } else if air_cut_pct > 20.0 {
-            "WARNING: high air cutting"
+            "WARNING: high air cutting (>20% of total runtime)"
         } else {
             "OK"
         };
@@ -1045,12 +1810,15 @@ impl<B: ComputeBackend> AppController<B> {
         let mut resp = serde_json::json!({
             "total_runtime_s": total_runtime_s,
             "air_cut_percentage": air_cut_pct,
+            "air_cut_pct_of_total_runtime": air_cut_pct,
+            "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
             "average_engagement": avg_engagement,
             "collision_count": 0,
             "rapid_collision_count": rapid_collision_count,
             "verdict": verdict,
             "per_toolpath": per_toolpath,
             "runtime_errors": runtime_errors,
+            "awaiting_prior_stock": awaiting_prior_stock,
         });
 
         if let Some(ref sim_results) = self.state.simulation.results
@@ -1063,6 +1831,22 @@ impl<B: ComputeBackend> AppController<B> {
                 resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
                 resp["issue_count"] = serde_json::json!(ct.issues.len());
             }
+        }
+
+        // The page-one answer, from the SAME `ProjectSession::simulation_triage`
+        // the GUI panel, the CLI report and narration read. An agent asking
+        // "what should I act on?" reads `triage.safety` then `triage.actions`
+        // and never has to know that `issue_count` above is a different
+        // population from `air_cut_issue_count` — which is the confusion the
+        // census documented and this field exists to end.
+        let evidence = crate::app::mcp::viz_project_evidence(&self.state);
+        let triage = self.state.session.simulation_triage(&evidence);
+        // SAFETY: resp is a known JSON object we just constructed.
+        #[allow(clippy::indexing_slicing)]
+        {
+            // `Value::Null` is a constant, so the lazy form is the
+            // `unnecessary_lazy_evaluations` lint.
+            resp["triage"] = serde_json::to_value(&triage).unwrap_or(serde_json::Value::Null);
         }
 
         resp

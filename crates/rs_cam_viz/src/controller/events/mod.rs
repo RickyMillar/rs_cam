@@ -68,6 +68,20 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::DeleteToolCatalog(name) => self.delete_tool_catalog(&name),
             AppEvent::RenameToolCatalog { old, new } => self.rename_tool_catalog(&old, &new),
             AppEvent::DedupeToolCatalog(name) => self.dedupe_tool_catalog(&name),
+
+            // --- Machine Library modal (snapshot model) ---
+            AppEvent::OpenMachineLibrary => {
+                self.state.close_modals_for_exclusivity();
+                self.state.machine_library_open = true;
+            }
+            AppEvent::CloseMachineLibrary => self.state.machine_library_open = false,
+            AppEvent::ImportMachineFromLibrary(name) => self.import_machine_from_library(&name),
+            AppEvent::SaveMachineToLibrary(name) => self.save_machine_to_library(&name),
+            AppEvent::DeleteMachineFromLibrary(name) => self.delete_machine_from_library(&name),
+            AppEvent::RenameMachineInLibrary { old, new } => {
+                self.rename_machine_in_library(&old, &new);
+            }
+
             AppEvent::AddSetup => self.handle_add_setup(),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
             AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),
@@ -120,7 +134,9 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Simulation events ---
-            AppEvent::RunSimulation => self.run_simulation_with_all(),
+            AppEvent::RunSimulation => {
+                let _submitted = self.run_simulation_with_all();
+            }
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
             AppEvent::ToggleSimPlayback => {
                 self.state.simulation.playback.playing = !self.state.simulation.playback.playing;
@@ -137,6 +153,10 @@ impl<B: ComputeBackend> AppController<B> {
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
             AppEvent::CancelCompute => self.compute.cancel_all(),
+            AppEvent::CancelToolpathGeneration => {
+                self.compute
+                    .cancel_lane(crate::compute::ComputeLane::Toolpath);
+            }
 
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {
@@ -157,6 +177,43 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = self.state.session.set_face_selection(idx, new_selection);
 
                     // Mark stale in GUI runtime
+                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
+                        rt.stale_since = Some(std::time::Instant::now());
+                    }
+                    self.state.selection = Selection::Toolpath(toolpath_id);
+                    self.state.gui.mark_edited();
+                    self.pending_upload = true;
+                }
+            }
+
+            // --- Drill target selection ---
+            AppEvent::ToggleDrillTarget { toolpath_id, xy } => {
+                use rs_cam_core::compute::catalog::OperationConfig;
+                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
+                {
+                    let current = match &tc.operation {
+                        OperationConfig::Drill(c) => c.selected_holes.clone(),
+                        OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
+                        _ => None,
+                    };
+                    let mut holes = current.unwrap_or_default();
+                    // Toggle membership with a tolerance (no float == on picks).
+                    const EPS: f64 = 1e-6;
+                    if let Some(pos) = holes
+                        .iter()
+                        .position(|h| (h[0] - xy[0]).abs() < EPS && (h[1] - xy[1]).abs() < EPS)
+                    {
+                        holes.remove(pos);
+                    } else {
+                        holes.push(xy);
+                    }
+                    // Empty selection reverts to the legacy default (None) so a
+                    // viewport deselect doesn't leave a confusing "nothing" state.
+                    let new_selection = if holes.is_empty() { None } else { Some(holes) };
+                    let _ = self
+                        .state
+                        .session
+                        .set_drill_selected_holes(idx, new_selection);
                     if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
                         rt.stale_since = Some(std::time::Instant::now());
                     }

@@ -137,6 +137,113 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+### Chipload column convention and scaling laws
+
+The vendor `chipload_*_mm_tooth` columns in
+`crates/rs_cam_core/data/vendor_lut/observations/` are **linear advance per
+tooth** — `feed_rate ÷ (spindle_rpm × cutting_edges)` — not chip thickness.
+Verified 2026-08-04 against the publishers' own definitions (see
+`planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for verbatim
+quotations, access dates and the per-family confidence table):
+
+- **LMT Onsrud**, *Hard Wood* / *Soft Wood Cutting Data Recommendations* —
+  <https://www.onsrud.com/images/Hard%20Wood.pdf>,
+  <https://www.onsrud.com/images/Soft%20Wood.pdf> (accessed 2026-08-04).
+  Column: "Recommended Chip Load per Tooth by Cutting Diameter". Prints
+  "Chip Load = Feed Rate / (RPM x # of cutting edges)".
+- **Freud**, *Router Bit Feed Rates and Speeds for CNC* (2017-08-22) —
+  <https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf>
+  (accessed 2026-08-04). Prints the same identity plus a worked example.
+- **Amana Tool**, *ZrN 2D/3D Carving Feed and Chip Load Chart* and siblings —
+  column "Chip Load Per Tooth (Based on 18,000 RPM)"; prints
+  "To find Chip Load = IPM / (RPM x # of Flutes)". The charts publish IPM and
+  chip load side by side at fixed RPM, so the identity is self-verifying to the
+  chart's printed precision. Retrieved 2026-08-04 via the ToolsToday mirror
+  <https://toolstoday.com/content/ProductFile/Attachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf>
+  (amanatool.com returns HTTP 403 to automated fetch).
+- **Garr Tool**, *Chip Thinning* —
+  <https://www.garrtool.com/knowledge-base/chip-thinning/> (accessed 2026-08-04).
+  Establishes that the published chip load is the **programmed** feed per tooth
+  and equals the maximum chip thickness only at radial engagement >= 50 % of
+  diameter.
+
+The axial derate applied by `feeds::geometry::doc_derating_scale`
+(1.00 / 0.75 / 0.50 at DOC = 1 / 2 / 3 x D) is published verbatim and identically
+by all three wood vendors above.
+
+No wood source in the shipped LUT publishes a **radial** engagement condition
+for its chipload column; the `ae_min_mm` / `ae_max_mm` values on wood rows are
+repo-authored application windows (their `ae_rule` strings say so — "scallop
+driven", "10% to 30%D", "width-at-depth") and carry no vendor authority. The
+post-simulation chipload gate consumed them until 2026-08-06 and no longer does.
+
+Scaling exponents in `feeds::vendor_lookup` and `machine::ChipLoadFormula` are
+**regressions over those same vendor charts, derived by this repo**, not
+vendor-published constants. No vendor publishes an exponent, and as far as
+`CHIPLOAD_LITERATURE_VERDICT.md` §4 could establish no primary source gives a
+chipload–diameter exponent at all. Adopted 2026-08-06 (operator ruling), the LUT
+path taking the formula path's values so only one implementation moves:
+
+- diameter, `chipload ∝ D^0.61` — **derived here.** Per-family fitted exponents
+  span 0.23–1.25 (Onsrud, 50 series-fits over its own Hard Wood / Soft Wood
+  charts, median 0.37; Amana Spektra over a 16x diameter span, 0.586–0.619;
+  Freud 1.05–1.25); row-count-weighted central estimate 0.52, unweighted
+  cross-family median 0.40. 0.61 is chosen because it is already
+  `machine::ChipLoadFormula::default().p`, because it is what the widest-span
+  series measures, and because it sits inside the physical bracket `[0, 1]` set
+  by the deflection-limited and strength-limited ends. Fits are grouped by
+  (source, subfamily, material family, flute count, pass role) — an ungrouped
+  Onsrud fit returns a *negative* exponent purely because its 60-000 and 60-200
+  series differ by 3x at the same diameter.
+- hardness, `chipload ∝ Janka^-0.5` — **derived here, bracketed by a primary
+  source.** USDA Forest Service, *Wood Handbook — Wood as an Engineering
+  Material*, GTR-190 (2010) Ch. 5 Table 5–11a gives side hardness ∝ G^1.49
+  (softwoods) / G^2.09 (hardwoods) against compression- and shear-parallel ∝
+  G^0.85–1.13; constant force per tooth implies `Janka^-0.48 … -0.67`, and 0.5
+  is the conservative edge of that bracket.
+  <https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf>
+  (accessed 2026-08-04; the URL the LUT manifest already carries as
+  `fpl_ch5_2010`). The vendors' own charts derate **less** than this — 125
+  matched Onsrud hardwood/softwood cell pairs give a geometric-mean ratio of
+  0.930, implying an exponent ≈ 0.08, and four V-groove families publish the
+  same chipload for both woods (exponent 0) — so 0.5 is deliberately
+  conservative for cross-material row transfer, which is what this exponent is
+  used for.
+
+Neither exponent is a physical constant and neither should be cited as one.
+Their measured cost across the shipped LUT (11 712 query/row pairs) is in
+`planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`, and the harness that
+produced it is `crates/rs_cam_core/tests/law_magnitude_measurement.rs`.
+
+### Feed-aware lateral cutting-force model (deflection)
+
+`crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection
+gate, Suggest predictor, axial-DOC envelope, and optimize preflight consume)
+replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
+`F_lat = ap · (Ks · fz·sin θ_peak + F_edge)`, `cos ψ = 1 − ae/r`. Sources
+(deep-research verification 2026-06-18, see
+`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §11):
+
+- **Wood affine coefficients (primary anchor):** woodresearch.sk 2019, vol. 64
+  no. 5, art. 12 — quasi-orthogonal CNC wood milling, `Fc1z = 49.95·h_m + 5.30`
+  (conventional), R² ≈ 0.99; `h_m = fz·sin(ψ/2)`, `cos ψ = 1 − e/r`. These are
+  the literature-absolute `Ks`/`F_edge` values, attached to `GenericHardwood`
+  and scaled per-material by Kc.
+- **Mechanistic milling force (chip-thickness + arc):** ScienceDirect
+  `S100093611300054X` (`h = fz·sin θ`, KT/KR/KA per element integrated over the
+  engaged arc) and `S2666496825000482` (coefficients as power functions of
+  instantaneous chip thickness).
+- **MDF / feed-per-tooth dominance:** MDPI *Coatings* `2079-6412/14/9/1085`.
+- **Affine intercept = edge/fracture-toughness term:** Springer *Eur. J. Wood
+  Prod.* `s00107-021-01667-5`.
+- **Kienzle size-effect reference (not used for the final form — wood `mc`
+  unconfirmed):** Machining Doctor specific-cutting-force chart / Kc glossary;
+  ctemag "Understanding tangential cutting force when milling" (radial WOC via
+  engaged-tooth count).
+
+Magnitude is anchored to a single quasi-orthogonal study, so it is documented
+in-code as "approximate / verify on a test cut."
+
 2026-05-29 ingest added three Amana charts as bundled runtime rows
 (`amana_vgroove_engraving.json`, `amana_compression.json`): the AMS-159
 V-Groove chart, the Spektra 15/30/45/120° Engraving chart, and the
@@ -423,6 +530,61 @@ The integrated feeds/material stack also depends on direct material and formula 
 - Sandvik Coromant milling-formula guidance
 
 Those sources underpin material hardness anchors, sheet-good ordering, and conservative cutting-force assumptions used by the current integrated model.
+
+### Drill-subsystem provenance (corrected 2026-08-04)
+
+The drilling stack — the three drill gates (chip welding, peck adequacy,
+plunge feed), the drill RPM tiers, and the drill chipload multiplier — was
+audited against its own citations on 2026-08-04
+(`planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`). No drill number
+was moved; several citations did not survive. Recorded here so the lineage is
+honest rather than implied:
+
+Retrieved and verified (2026-08-04):
+
+- Onsrud drill cutting data: <https://www.onsrud.com/images/Drill.pdf> —
+  chip load per tooth by cutting diameter, series 72-000 Wood
+  (0.009–0.017 in/tooth, Ø3–8 mm) plus plastic and composite series;
+  gang drills footnoted at 4,500 RPM / 150 IPM; RPM and feedrate formulas.
+  It contains **no** peck, hole-depth or depth-to-diameter guidance.
+  (Supersedes a dead `files/pdf/drill_chart.pdf` link whose registry note
+  claimed "drill IPR / peck guidance".)
+- Onsrud hardwood / softwood / plywood / plastic cutting data:
+  <https://www.onsrud.com/images/Hard%20Wood.pdf>,
+  `Soft%20Wood.pdf`, `Hard%20Plywood.pdf`, `Hard%20Plastic.pdf`.
+- USDA FPL Wood Handbook FPL-GTR-282 (2021):
+  <https://research.fs.usda.gov/treesearch/62200> (the `fs.fed.us` host was
+  retired). Used for Janka / density / material properties only — the
+  handbook has **no drilling content** in either the 2021 (GTR-282) or 2010
+  (GTR-190) edition, and previous citations of a "§3.7" or a "Ch.19
+  drilling" section were unsupported. GTR-190 Ch.19 is *Specialty
+  Treatments*.
+- CNC Cookbook deep-hole drilling reference (already listed above under
+  acceptance benchmark seed sources) is the closest retrievable statement of
+  the **total-hole** regime at which pecking becomes necessary
+  ("5 diameters deep without issue; 5 to 7 diameters use peck drilling").
+  It is written for metal twist drills and carries no material banding.
+
+Declared repo-authored / unsourced (values held, not moved):
+
+- Per-peck maximum depth-to-diameter bands (`drill_per_peck_max_dtd`:
+  6 / 5 / 4 by Janka; plywood 1.5; plastic 1.0). No primary source stating a
+  per-peck D/d limit for wood was located. The "3–8×D" figure previously
+  cited is a total-hole regime number, not a per-peck ceiling.
+- Chip-welding thresholds (`drill_chip_welding_threshold_dtd`: 8 / 6 / 5;
+  plywood 5; plastic 4; aluminum 3; foam 12).
+- Plunge-feed envelopes (`drill_plunge_feed_envelope_per_mm`, wood
+  50–400 mm/min per mm Ø). The band previously cited to Onsrud/Vectric was
+  the literature matrix's own cell, which had been fitted to this code's
+  output; it does not overlap the retrieved Onsrud chart at any diameter.
+- Drill RPM tiers (8–14k / 6–10k / 4–8k by diameter).
+- `DRILL_CHIPLOAD_MULTIPLIER = 2.5` (`feeds/mod.rs`). Unsourced; its former
+  justification was arithmetically false and has been removed from the code.
+  Against the Onsrud chart above the implied factor is ~5, but that row is a
+  fixed-RPM gang-drill datum and is not usable as a recalibration target.
+- `vectric_drill_default` (literature-matrix registry): Vectric publishes a
+  documentation portal, not a retrievable drill-defaults table. The row is
+  community-tier and represents community CAM practice, not a cited document.
 
 ### Formula provenance
 

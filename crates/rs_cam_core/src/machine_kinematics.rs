@@ -16,11 +16,12 @@
 //! per-toolpath time estimate from the `Toolpath` IR. The integrator
 //! is deliberately conservative for v1:
 //!
-//! * Junction velocity is treated as the projection of the incoming
-//!   velocity vector onto the outgoing one, capped by the smaller
-//!   commanded feed of the two moves, and optionally clamped by
-//!   `MachineKinematics::max_junction_velocity_mm_min`. Direction
-//!   reversals therefore collapse to a full stop.
+//! * Junction velocity uses GRBL's junction-deviation cornering model
+//!   (`v = √(accel · R)`, `R = δ·sin(θ/2)/(1−sin(θ/2))`, δ = `$11`), so
+//!   the predicted feeds and cycle time match the real GRBL planner;
+//!   capped by the smaller commanded feed and optionally clamped by
+//!   `MachineKinematics::max_junction_velocity_mm_min`. Straight-through
+//!   runs at the commanded feed; direction reversals full-stop.
 //! * Arc moves are treated as straight moves of equal arc length
 //!   with the commanded feed. The cornering at the endpoints uses
 //!   the chord tangent for junction-velocity geometry.
@@ -57,24 +58,94 @@ use crate::toolpath::{MoveType, Toolpath};
 /// time arithmetic is in seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MachineKinematics {
-    /// Linear-axis acceleration limit (mm/s²).
+    /// Linear-axis acceleration limit (mm/s²) — the **isotropic scalar**.
     ///
     /// Sets the slope of the trapezoidal accel ramp. Shapeoko XXL
     /// ships with a stock value of 250 mm/s²; community-tuned builds
     /// land around 500–800 mm/s². Industrial routers run 2000+
-    /// mm/s².
+    /// mm/s². When `acceleration_xyz_mm_s2` is `Some`, this scalar is
+    /// only used as a direction-less fallback (e.g. the synthetic
+    /// [`predicted_achieved_feed`] helper).
     pub acceleration_mm_s2: f64,
+    /// Optional per-axis acceleration limits `[X, Y, Z]` (mm/s²), e.g.
+    /// from GRBL `$120/$121/$122`. When `Some`, the integrator computes
+    /// a **direction-aware** path acceleration `min_i(a_i / |dir_i|)`
+    /// per move (see [`MachineKinematics::effective_accel`]), so a
+    /// Z-dominant plunge is correctly throttled by the slow `$122`
+    /// while a planar XY move runs at the X/Y limit. When `None` the
+    /// scalar `acceleration_mm_s2` is used isotropically — the
+    /// pre-per-axis behaviour, so old project files and every built-in
+    /// preset deserialize byte-identically.
+    #[serde(default)]
+    pub acceleration_xyz_mm_s2: Option<[f64; 3]>,
+    /// GRBL junction-deviation (`$11`) in mm — sets how far the virtual
+    /// cornering arc may bow from the exact corner. GRBL's stock
+    /// default is 0.010 mm and few users change it. Old project files
+    /// without this field deserialize to that default.
+    #[serde(default = "default_junction_deviation_mm")]
+    pub junction_deviation_mm: f64,
     /// Linear-axis jerk limit (mm/s³). When `None` the integrator
     /// treats jerk as infinite (pure trapezoidal accel ramps). When
     /// `Some`, a small fixed time penalty is added per accel/decel
     /// segment to approximate the rounding the jerk limit introduces.
     pub jerk_mm_s3: Option<f64>,
-    /// Maximum junction velocity (mm/min) the planner allows through
-    /// a non-tangential corner. When `None`, the integrator derives
-    /// junction velocity from the dot product of the in/out direction
-    /// vectors capped by the smaller commanded feed. When `Some`, the
-    /// derived value is additionally clamped by this constant.
+    /// Optional hard cap (mm/min) on junction velocity through any corner.
+    /// When `None`, the integrator uses GRBL's junction-deviation model alone
+    /// (`v = √(accel · R)`, capped by the smaller commanded feed). When `Some`,
+    /// that result is additionally clamped by this constant.
     pub max_junction_velocity_mm_min: Option<f64>,
+}
+
+/// GRBL `$11` stock default (mm). Used as the serde default for
+/// `MachineKinematics::junction_deviation_mm` on legacy project files.
+pub fn default_junction_deviation_mm() -> f64 {
+    0.010
+}
+
+impl Default for MachineKinematics {
+    /// Conservative isotropic wood-router default (200 mm/s², no
+    /// per-axis limits, stock junction deviation, no jerk/clamp).
+    /// Lets new struct literals spread `..Default::default()` so a
+    /// future field add stays one-line at each call site.
+    fn default() -> Self {
+        Self {
+            acceleration_mm_s2: 200.0,
+            acceleration_xyz_mm_s2: None,
+            junction_deviation_mm: default_junction_deviation_mm(),
+            jerk_mm_s3: None,
+            max_junction_velocity_mm_min: None,
+        }
+    }
+}
+
+/// Result of parsing a GRBL / grblHAL `$$` settings dump
+/// ([`MachineKinematics::from_grbl_settings`]).
+///
+/// Fields the dump doesn't carry are left `None` / defaulted — the
+/// caller (GUI / MCP) decides which to apply onto the live
+/// `MachineProfile`. `kinematics` is always populated (absent settings
+/// fall back to [`MachineKinematics::default`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrblImport {
+    /// Kinematics built from `$11` (junction deviation) and
+    /// `$120/$121/$122` (per-axis acceleration). When all three axis
+    /// accels are present they populate `acceleration_xyz_mm_s2` and the
+    /// scalar `acceleration_mm_s2` is set to their mean.
+    pub kinematics: MachineKinematics,
+    /// Travel/max-rate cap (mm/min) for the XY plane — the larger of
+    /// `$110`/`$111` — suitable for `MachineProfile::max_feed_mm_min`.
+    pub max_feed_mm_min: Option<f64>,
+    /// Z max-rate (`$112`, mm/min), surfaced separately (the XY cap
+    /// above intentionally ignores the slow Z axis so planar cutting
+    /// isn't throttled to the plunge rate).
+    pub max_z_feed_mm_min: Option<f64>,
+    /// Arc tolerance (`$12`, mm) — feeds the post / arc-fit advice.
+    pub arc_tolerance_mm: Option<f64>,
+    /// Max spindle RPM (`$30`), if the dump carries it.
+    pub max_spindle_rpm: Option<f64>,
+    /// Count of `$N` settings seen but not consumed — lets the UI note
+    /// "imported N of M settings" without pretending it used them all.
+    pub ignored_count: usize,
 }
 
 impl MachineKinematics {
@@ -85,8 +156,7 @@ impl MachineKinematics {
     pub fn shapeoko_xxl_stock() -> Self {
         Self {
             acceleration_mm_s2: 250.0,
-            jerk_mm_s3: None,
-            max_junction_velocity_mm_min: None,
+            ..Self::default()
         }
     }
 
@@ -96,8 +166,7 @@ impl MachineKinematics {
     pub fn generic_wood_router() -> Self {
         Self {
             acceleration_mm_s2: 200.0,
-            jerk_mm_s3: None,
-            max_junction_velocity_mm_min: None,
+            ..Self::default()
         }
     }
 
@@ -120,13 +189,146 @@ impl MachineKinematics {
     /// by `MachineProfile::cutting_feed_ceiling_mm_min`, so setting
     /// travel to 10000 no longer lets the optimizer propose cutting
     /// hardwood at 10000.
+    /// Phase E (2026-06-21): superseded the calibration blend with the
+    /// machine's **actual** `$$` — per-axis accel `$120/$121/$122 =
+    /// 500/500/270` and junction deviation `$11 = 0.020` (Shapeoko XXL
+    /// community/standard values, confirmed against the user's dump).
+    /// The direction-aware integrator now reads the real per-axis limits
+    /// (XY at 500, Z at 270) instead of the hand-tuned scalar 350, so the
+    /// scalar below is only the direction-less fallback (their mean). The
+    /// doubled δ (0.020 vs the old 0.010 const) widens the cornering arc
+    /// and pulls the Phase-4 over-prediction back down toward the real
+    /// wall-clock.
     pub fn shapeoko_xxl_ricky_tuned() -> Self {
         Self {
-            acceleration_mm_s2: 350.0,
-            jerk_mm_s3: None,
-            max_junction_velocity_mm_min: None,
+            acceleration_mm_s2: (500.0 + 500.0 + 270.0) / 3.0,
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            junction_deviation_mm: 0.020,
+            ..Self::default()
         }
     }
+
+    /// Direction-aware path acceleration (mm/s²) for a **unit** move
+    /// direction `dir`.
+    ///
+    /// With per-axis limits set (`acceleration_xyz_mm_s2 = Some`),
+    /// returns the GRBL per-axis cap `min_i(a_i / |dir_i|)`: the path
+    /// may accelerate *faster* than any single axis on a diagonal
+    /// (both axes share the load) and is throttled on a Z-heavy move by
+    /// the slow Z axis. Without per-axis limits, returns the isotropic
+    /// scalar `acceleration_mm_s2`. Always ≥ 1e-3 so downstream
+    /// division is safe.
+    pub fn effective_accel(&self, dir: &[f64; 3]) -> f64 {
+        let scalar = self.acceleration_mm_s2.max(1e-3);
+        match self.acceleration_xyz_mm_s2 {
+            Some(axes) => {
+                let mut lim = f64::INFINITY;
+                for (a, d) in axes.iter().zip(dir.iter()) {
+                    let d_abs = d.abs();
+                    if d_abs > 1e-9 {
+                        lim = lim.min(a.max(1e-3) / d_abs);
+                    }
+                }
+                if lim.is_finite() {
+                    lim.max(1e-3)
+                } else {
+                    scalar
+                }
+            }
+            None => scalar,
+        }
+    }
+
+    /// Parse a GRBL / grblHAL `$$` settings dump into kinematics + rate
+    /// caps. Accepts the universal `$N=value` line format, tolerating
+    /// trailing `(description)` comments (grblHAL verbose form), CRLF,
+    /// blank lines, and any unknown `$N`. Lines that don't match
+    /// `$<int>=<number>` are skipped, so pasting a whole console session
+    /// (with `ok`, banners, etc.) is fine.
+    ///
+    /// Mapping:
+    /// * `$11`  → `junction_deviation_mm`
+    /// * `$120/$121/$122` → per-axis `acceleration_xyz_mm_s2` (all three
+    ///   required for the array; scalar fallback = their mean. A partial
+    ///   set just updates the scalar.)
+    /// * `$110/$111` → `max_feed_mm_min` (XY travel; the larger)
+    /// * `$112` → `max_z_feed_mm_min`
+    /// * `$12`  → `arc_tolerance_mm`
+    /// * `$30`  → `max_spindle_rpm`
+    ///
+    /// Non-GRBL formats (Marlin `M201`, LinuxCNC INI) won't match and
+    /// yield an all-default import — the caller should treat an import
+    /// that changed nothing as "unrecognised, fall back to manual".
+    pub fn from_grbl_settings(dump: &str) -> GrblImport {
+        let mut map: BTreeMap<u32, f64> = BTreeMap::new();
+        for line in dump.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix('$') else {
+                continue;
+            };
+            let Some((num, val)) = rest.split_once('=') else {
+                continue;
+            };
+            let Ok(n) = num.trim().parse::<u32>() else {
+                continue;
+            };
+            // Value may carry a trailing comment: "0.010 (Junction deviation)"
+            // or be directly followed by '(' with no space.
+            let val_tok = val.trim();
+            let val_tok = val_tok.split_whitespace().next().unwrap_or("");
+            let val_tok = val_tok.split('(').next().unwrap_or(val_tok);
+            if let Ok(v) = val_tok.parse::<f64>() {
+                map.insert(n, v);
+            }
+        }
+
+        const KNOWN: [u32; 9] = [11, 12, 30, 110, 111, 112, 120, 121, 122];
+        let ignored_count = map.keys().filter(|k| !KNOWN.contains(k)).count();
+
+        let mut kinematics = MachineKinematics::default();
+        if let Some(&jd) = map.get(&11) {
+            kinematics.junction_deviation_mm = jd;
+        }
+        let (ax, ay, az) = (
+            map.get(&120).copied(),
+            map.get(&121).copied(),
+            map.get(&122).copied(),
+        );
+        if let (Some(ax), Some(ay), Some(az)) = (ax, ay, az) {
+            kinematics.acceleration_xyz_mm_s2 = Some([ax, ay, az]);
+            kinematics.acceleration_mm_s2 = (ax + ay + az) / 3.0;
+        } else if let Some(a) = ax.or(ay).or(az) {
+            // Partial axis set — best effort scalar, no per-axis array.
+            kinematics.acceleration_mm_s2 = a;
+        }
+
+        let max_feed_mm_min = match (map.get(&110).copied(), map.get(&111).copied()) {
+            (Some(x), Some(y)) => Some(x.max(y)),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        };
+
+        GrblImport {
+            kinematics,
+            max_feed_mm_min,
+            max_z_feed_mm_min: map.get(&112).copied(),
+            arc_tolerance_mm: map.get(&12).copied(),
+            max_spindle_rpm: map.get(&30).copied(),
+            ignored_count,
+        }
+    }
+}
+
+/// P1 quantitative linker — the machine envelope a generator needs to
+/// cost link candidates with the F-034 integrator at emit time.
+/// Owned (`MachineKinematics` is a small copyable config) so the
+/// `ExecutionContext` doesn't grow another lifetime.
+#[derive(Debug, Clone)]
+pub struct LinkKinematics {
+    pub kinematics: MachineKinematics,
+    pub max_feed_mm_min: f64,
+    pub rapid_feed_mm_min: f64,
 }
 
 /// Compute the wall-clock cycle time (seconds) the configured machine
@@ -146,30 +348,141 @@ impl MachineKinematics {
 /// length on the accel + decel ramps, the integrator solves for the
 /// triangular profile's peak velocity.
 ///
-/// Returns 0.0 for an empty toolpath (no moves to traverse).
+/// Returns 0.0 for an empty toolpath (no moves to traverse). Delegates
+/// to [`compute_cycle_time_breakdown`] and returns its `total_s`.
 pub fn compute_cycle_time(
     toolpath: &Toolpath,
     kinematics: &MachineKinematics,
     max_feed_mm_min: f64,
     rapid_feed_mm_min: f64,
 ) -> f64 {
-    if toolpath.moves.len() < 2 {
-        return 0.0;
+    compute_cycle_time_breakdown(toolpath, kinematics, max_feed_mm_min, rapid_feed_mm_min).total_s
+}
+
+/// P1 quantitative linker — integrated time of a retract-rapid-replunge
+/// link from `from` to the next chain's first point `to`.
+///
+/// Candidate move sequence: rapid up to `safe_z` above `from`, rapid over
+/// to above `to`, then either (a) when `descend_rapid_to` is `Some(z)`
+/// with `to.z < z < safe_z`: rapid down to `z` and plunge the rest at
+/// `plunge_rate`, or (b) plunge from `safe_z` at `plunge_rate`.
+/// Integrated rest-to-rest, which is conservative for both this and
+/// [`surface_link_time`] equally — the comparison stays fair.
+#[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+pub fn retract_link_time(
+    from: P3,
+    to: P3,
+    safe_z: f64,
+    descend_rapid_to: Option<f64>,
+    plunge_rate_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> f64 {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(from); // seed — move 0 contributes no segment
+    tp.rapid_to(P3::new(from.x, from.y, safe_z));
+    tp.rapid_to(P3::new(to.x, to.y, safe_z));
+    match descend_rapid_to {
+        Some(z) if to.z < z && z < safe_z => {
+            tp.rapid_to(P3::new(to.x, to.y, z));
+            tp.feed_to(to, plunge_rate_mm_min);
+        }
+        _ => {
+            tp.feed_to(to, plunge_rate_mm_min);
+        }
     }
-    let accel = kinematics.acceleration_mm_s2.max(1e-3);
+    compute_cycle_time(&tp, kinematics, max_feed_mm_min, rapid_feed_mm_min)
+}
+
+/// P1 quantitative linker — integrated time of a surface-following feed
+/// link. `path` are the sampled link points (drop-cutter gouge-checked by
+/// the caller); `from` is the tool's current position (seed only).
+pub fn surface_link_time(
+    from: P3,
+    path: &[P3],
+    feed_rate_mm_min: f64,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> f64 {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(from); // seed — move 0 contributes no segment
+    for p in path {
+        tp.feed_to(*p, feed_rate_mm_min);
+    }
+    compute_cycle_time(&tp, kinematics, max_feed_mm_min, rapid_feed_mm_min)
+}
+
+/// P0 unified-finishing probe — kinematics-integrator cycle time
+/// decomposed by `MoveIntent` class. Buckets are disjoint and sum to
+/// `total_s` (same accumulation order as [`compute_cycle_time`], so
+/// `total_s` is bit-identical to its return value).
+///
+/// Classing: a `MoveType::Rapid` move lands in `rapid_s` regardless of
+/// its intent tag; feed moves are bucketed by intent. `unknown_s`
+/// collects feed moves from legacy generators that never tagged
+/// intents — report it honestly rather than folding it into cutting.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct CycleTimeBreakdown {
+    /// Sum of every move's integrated time (== `compute_cycle_time`).
+    pub total_s: f64,
+    /// `MoveType::Rapid` moves (any intent).
+    pub rapid_s: f64,
+    /// ClearingCut | FinishingCut | Drilling feed moves.
+    pub cutting_s: f64,
+    /// EntryPlunge | EntryHelix | EntryRamp | LeadIn feed moves.
+    pub entry_s: f64,
+    /// Linking | LeadOut feed moves (position-to-position at feed).
+    pub linking_s: f64,
+    /// Retract feed moves.
+    pub retract_s: f64,
+    /// Untagged (`MoveIntent::Unknown`) feed moves.
+    pub unknown_s: f64,
+}
+
+impl std::ops::AddAssign for CycleTimeBreakdown {
+    fn add_assign(&mut self, rhs: Self) {
+        self.total_s += rhs.total_s;
+        self.rapid_s += rhs.rapid_s;
+        self.cutting_s += rhs.cutting_s;
+        self.entry_s += rhs.entry_s;
+        self.linking_s += rhs.linking_s;
+        self.retract_s += rhs.retract_s;
+        self.unknown_s += rhs.unknown_s;
+    }
+}
+
+/// Same integrator as [`compute_cycle_time`], additionally bucketing
+/// each move's integrated time by `MoveIntent` class. See
+/// [`compute_cycle_time`] for the physical model; this function's
+/// `total_s` is bit-identical to that function's return value.
+pub fn compute_cycle_time_breakdown(
+    toolpath: &Toolpath,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> CycleTimeBreakdown {
+    if toolpath.moves.len() < 2 {
+        return CycleTimeBreakdown::default();
+    }
 
     // Convert feed rates from mm/min → mm/s once up front.
     let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
     let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
 
     // Pre-compute every move's per-move velocity cap (commanded feed
-    // capped by machine max feed) and direction vector. Skipping zero-
-    // length moves keeps the junction-velocity geometry well-defined.
+    // capped by machine max feed), direction vector, and the
+    // direction-aware path acceleration (per-axis limits when set).
+    // Skipping zero-length moves keeps the junction-velocity geometry
+    // well-defined.
     struct MoveDigest {
         length: f64,
         dir: [f64; 3],
         v_cmd_mm_s: f64,
+        accel: f64,
         is_rapid: bool,
+        intent: crate::toolpath::MoveIntent,
     }
 
     let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
@@ -192,21 +505,24 @@ pub fn compute_cycle_time(
                 (cmd, false)
             }
         };
+        let accel = kinematics.effective_accel(&dir);
         digests.push(MoveDigest {
             length,
             dir,
             v_cmd_mm_s,
+            accel,
             is_rapid,
+            intent: toolpath.moves[i].intent,
         });
     }
 
     if digests.is_empty() {
-        return 0.0;
+        return CycleTimeBreakdown::default();
     }
 
     // Junction velocity entering move i — first move starts at rest.
     let mut v_in = 0.0;
-    let mut total_time_s = 0.0;
+    let mut breakdown = CycleTimeBreakdown::default();
     let n = digests.len();
     #[allow(clippy::indexing_slicing)]
     // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
@@ -219,13 +535,15 @@ pub fn compute_cycle_time(
                 &digests[i + 1].dir,
                 v_cmd,
                 digests[i + 1].v_cmd_mm_s,
+                digests[i].accel.min(digests[i + 1].accel),
+                kinematics.junction_deviation_mm,
                 kinematics.max_junction_velocity_mm_min,
                 digests[i].is_rapid || digests[i + 1].is_rapid,
             )
         } else {
             0.0
         };
-        let t = trapezoidal_time(digests[i].length, v_in, v_out, v_cmd, accel);
+        let t = trapezoidal_time(digests[i].length, v_in, v_out, v_cmd, digests[i].accel);
         // Jerk penalty: if a jerk limit is configured, the accel and
         // decel ramps each take an additional `accel / jerk` seconds
         // to round their edges. This is a first-order approximation
@@ -233,7 +551,7 @@ pub fn compute_cycle_time(
         // or v_out != v_cmd (i.e. there's an actual ramp to round).
         let jerk_penalty = if let Some(jerk) = kinematics.jerk_mm_s3 {
             if jerk > 1e-3 {
-                let rounding = accel / jerk;
+                let rounding = digests[i].accel / jerk;
                 let in_ramp = if (v_cmd - v_in).abs() > 1e-6 {
                     rounding
                 } else {
@@ -251,11 +569,26 @@ pub fn compute_cycle_time(
         } else {
             0.0
         };
-        total_time_s += t + jerk_penalty;
+        let dt = t + jerk_penalty;
+        breakdown.total_s += dt;
+        if digests[i].is_rapid {
+            breakdown.rapid_s += dt;
+        } else {
+            use crate::toolpath::MoveIntent as MI;
+            match digests[i].intent {
+                MI::ClearingCut | MI::FinishingCut | MI::Drilling => breakdown.cutting_s += dt,
+                MI::EntryPlunge | MI::EntryHelix | MI::EntryRamp | MI::LeadIn => {
+                    breakdown.entry_s += dt;
+                }
+                MI::Linking | MI::LeadOut => breakdown.linking_s += dt,
+                MI::Retract => breakdown.retract_s += dt,
+                MI::Unknown => breakdown.unknown_s += dt,
+            }
+        }
         v_in = v_out;
     }
 
-    total_time_s
+    breakdown
 }
 
 /// F-035 — Per-move predicted achieved feed (mm/min) keyed by
@@ -310,7 +643,6 @@ pub fn predicted_feeds_for_toolpath(
     if toolpath.moves.len() < 2 {
         return out;
     }
-    let accel = kinematics.acceleration_mm_s2.max(1e-3);
 
     let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
     let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
@@ -322,6 +654,7 @@ pub fn predicted_feeds_for_toolpath(
         length: f64,
         dir: [f64; 3],
         v_cmd_mm_s: f64,
+        accel: f64,
         is_rapid: bool,
     }
 
@@ -345,11 +678,13 @@ pub fn predicted_feeds_for_toolpath(
                 (cmd, false)
             }
         };
+        let accel = kinematics.effective_accel(&dir);
         digests.push(MoveDigest {
             source_index: i,
             length,
             dir,
             v_cmd_mm_s,
+            accel,
             is_rapid,
         });
     }
@@ -369,13 +704,16 @@ pub fn predicted_feeds_for_toolpath(
                 &digests[i + 1].dir,
                 v_cmd,
                 digests[i + 1].v_cmd_mm_s,
+                digests[i].accel.min(digests[i + 1].accel),
+                kinematics.junction_deviation_mm,
                 kinematics.max_junction_velocity_mm_min,
                 digests[i].is_rapid || digests[i + 1].is_rapid,
             )
         } else {
             0.0
         };
-        let v_peak_mm_s = trapezoidal_peak_velocity(digests[i].length, v_in, v_out, v_cmd, accel);
+        let v_peak_mm_s =
+            trapezoidal_peak_velocity(digests[i].length, v_in, v_out, v_cmd, digests[i].accel);
         out.insert(digests[i].source_index, v_peak_mm_s * 60.0);
         v_in = v_out;
     }
@@ -453,41 +791,67 @@ fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
     [dx / len, dy / len, dz / len]
 }
 
-/// Estimate the junction velocity between two moves. The geometry:
+/// Estimate the junction velocity (mm/s) between two moves using GRBL's
+/// **junction-deviation** cornering model — the same one the Shapeoko's GRBL
+/// planner runs, so the predicted feeds and cycle time match what the machine
+/// actually does (replacing the old dot-product heuristic that full-stopped at
+/// every ≥90° corner).
 ///
-/// * dot < 0 → direction reversal, full stop.
-/// * dot ≥ ~1 → tangential, no decel — both moves can run at the
-///   smaller of the two commanded feeds.
-/// * intermediate → linear interpolation between full-stop and
-///   tangential.
+/// GRBL fits a virtual arc of radius `R` into the corner that deviates from the
+/// exact vertex by at most `JUNCTION_DEVIATION_MM` ($11), then limits the
+/// corner speed to the centripetal bound `v = √(accel · R)`:
 ///
-/// Rapid junctions: when either move is a rapid, the planner
-/// typically full-stops between cutting and rapid to keep the
-/// accel-decel transitions clean. We follow that conservative
-/// convention.
+/// ```text
+///   cos θ = dir_in · dir_out       (aligned = +1, 90° = 0, reversal = −1)
+///   sin(θ/2) = √((1 + cos θ) / 2)
+///   R = δ · sin(θ/2) / (1 − sin(θ/2))
+///   v_junction = √(accel · R)
+/// ```
+///
+/// * Aligned / straight-through → `R → ∞` → no slowdown (capped by the smaller
+///   commanded feed).
+/// * 90° turn → `v = √(accel · 2.414 · δ)` (≈ 2.9 mm/s at 350 mm/s², δ=0.01).
+/// * Reversal → `R = 0` → full stop.
+///
+/// `junction_deviation_mm` is the machine's `$11`; `accel` is the corner's
+/// path acceleration (the smaller of the two adjacent moves' direction-aware
+/// accels). Result is capped by the smaller of the two commanded feeds and any
+/// explicit `max_junction_velocity_mm_min`. Rapid-adjacent junctions full-stop,
+/// matching the conservative planner convention (clean accel/decel transition).
+// Private integrator helper: the corner geometry genuinely needs both
+// directions, both commanded feeds, corner accel, δ, the optional clamp,
+// and the rapid flag. Bundling them into a struct would only obscure the
+// call sites in the two pairwise integrators above.
+#[allow(clippy::too_many_arguments)]
 fn junction_velocity(
     dir_in: &[f64; 3],
     dir_out: &[f64; 3],
     v_cmd_in: f64,
     v_cmd_out: f64,
+    accel: f64,
+    junction_deviation_mm: f64,
     max_junction_velocity_mm_min: Option<f64>,
     rapid_adjacent: bool,
 ) -> f64 {
     if rapid_adjacent {
         return 0.0;
     }
-    let dot = dir_in[0] * dir_out[0] + dir_in[1] * dir_out[1] + dir_in[2] * dir_out[2];
-    let dot_clamped = dot.clamp(-1.0, 1.0);
-    if dot_clamped <= 0.0 {
-        return 0.0;
-    }
     let cap = v_cmd_in.min(v_cmd_out);
-    let mut v = cap * dot_clamped;
-    if let Some(limit_mm_min) = max_junction_velocity_mm_min {
-        let limit_mm_s = limit_mm_min / 60.0;
-        v = v.min(limit_mm_s);
+    let apply_clamp = |v: f64| match max_junction_velocity_mm_min {
+        Some(limit_mm_min) => v.min(limit_mm_min / 60.0),
+        None => v,
+    };
+    let dot =
+        (dir_in[0] * dir_out[0] + dir_in[1] * dir_out[1] + dir_in[2] * dir_out[2]).clamp(-1.0, 1.0);
+    let sin_half = (0.5 * (1.0 + dot)).max(0.0).sqrt();
+    if sin_half <= 1e-9 {
+        return 0.0; // direction reversal → full stop
     }
-    v
+    if sin_half >= 1.0 - 1e-9 {
+        return apply_clamp(cap); // straight-through → no cornering limit
+    }
+    let r = junction_deviation_mm * sin_half / (1.0 - sin_half);
+    apply_clamp((accel * r).sqrt().min(cap))
 }
 
 /// Trapezoidal-profile time for a single move of length `length`
@@ -546,6 +910,59 @@ mod tests {
 
     fn shapeoko() -> MachineKinematics {
         MachineKinematics::shapeoko_xxl_stock()
+    }
+
+    /// Phase 4: junction velocity follows GRBL's junction-deviation closed form.
+    #[test]
+    fn junction_velocity_matches_grbl_deviation_closed_form() {
+        let accel = 350.0;
+        let delta = default_junction_deviation_mm();
+        let big = 1e9; // commanded feeds high → corner geometry binds, not the cap
+        let x = [1.0, 0.0, 0.0];
+        let y = [0.0, 1.0, 0.0];
+        let neg_x = [-1.0, 0.0, 0.0];
+
+        // Straight-through: no cornering limit → capped by the commanded feed.
+        let straight = junction_velocity(&x, &x, 50.0, 50.0, accel, delta, None, false);
+        assert!(
+            (straight - 50.0).abs() < 1e-9,
+            "straight = cap, got {straight}"
+        );
+
+        // 90° turn: sin(45°)=√0.5, R = δ·s/(1−s), v = √(accel·R).
+        let s = 0.5_f64.sqrt();
+        let expected_90 = (accel * (delta * s / (1.0 - s))).sqrt();
+        let got_90 = junction_velocity(&x, &y, big, big, accel, delta, None, false);
+        assert!(
+            (got_90 - expected_90).abs() < 1e-6,
+            "90°: expected {expected_90}, got {got_90}"
+        );
+
+        // Reversal → full stop.
+        let rev = junction_velocity(&x, &neg_x, big, big, accel, delta, None, false);
+        assert!(rev.abs() < 1e-9, "reversal = 0, got {rev}");
+
+        // A shallow (10°) turn must corner faster than a 90° turn.
+        let ten = 10.0_f64.to_radians();
+        let shallow = [ten.cos(), ten.sin(), 0.0];
+        let v_shallow = junction_velocity(&x, &shallow, big, big, accel, delta, None, false);
+        assert!(
+            v_shallow > got_90,
+            "shallow turn must corner faster than 90°: {v_shallow} vs {got_90}"
+        );
+
+        // The smaller commanded feed caps the geometric limit when lower.
+        let capped = junction_velocity(&x, &y, 0.5, 0.5, accel, delta, None, false);
+        assert!(
+            (capped - 0.5).abs() < 1e-9,
+            "commanded-feed cap should bind, got {capped}"
+        );
+
+        // Rapid-adjacent junctions full-stop.
+        assert_eq!(
+            junction_velocity(&x, &x, big, big, accel, delta, None, true),
+            0.0
+        );
     }
 
     #[test]
@@ -632,6 +1049,62 @@ mod tests {
         assert!(
             (t - 0.1265).abs() < 0.01,
             "triangular profile time should be ~0.127 s, got {t}"
+        );
+    }
+
+    /// P0 unified-finishing probe — the breakdown's buckets must sum
+    /// to the same total `compute_cycle_time` returns, and each
+    /// exercised intent class must land in its expected bucket.
+    #[test]
+    fn cycle_time_breakdown_buckets_match_total_and_intent() {
+        use crate::toolpath::MoveIntent;
+
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        tp.feed_to_with_intent(P3::new(50.0, 0.0, 0.0), 3000.0, MoveIntent::FinishingCut);
+        tp.feed_to_with_intent(P3::new(50.0, 50.0, 0.0), 3000.0, MoveIntent::Linking);
+        tp.feed_to_with_intent(P3::new(50.0, 0.0, 0.0), 3000.0, MoveIntent::Retract);
+        // The integrator walks segments from move 1 onward — the seed
+        // rapid at move 0 contributes no segment, so a trailing rapid
+        // is needed to exercise the rapid bucket.
+        tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+
+        let kin = shapeoko();
+        let total = compute_cycle_time(&tp, &kin, 4000.0, 5000.0);
+        let breakdown = compute_cycle_time_breakdown(&tp, &kin, 4000.0, 5000.0);
+
+        assert_eq!(
+            breakdown.total_s, total,
+            "breakdown total must be bit-identical to compute_cycle_time"
+        );
+        let bucket_sum = breakdown.rapid_s
+            + breakdown.cutting_s
+            + breakdown.entry_s
+            + breakdown.linking_s
+            + breakdown.retract_s
+            + breakdown.unknown_s;
+        assert!(
+            (bucket_sum - breakdown.total_s).abs() < 1e-9,
+            "buckets must sum to total: {bucket_sum} vs {}",
+            breakdown.total_s
+        );
+        assert!(breakdown.rapid_s > 0.0, "rapid bucket should be non-zero");
+        assert!(
+            breakdown.cutting_s > 0.0,
+            "cutting bucket should be non-zero"
+        );
+        assert!(
+            breakdown.linking_s > 0.0,
+            "linking bucket should be non-zero"
+        );
+        assert!(
+            breakdown.retract_s > 0.0,
+            "retract bucket should be non-zero"
+        );
+        assert_eq!(breakdown.entry_s, 0.0, "entry bucket should be untouched");
+        assert_eq!(
+            breakdown.unknown_s, 0.0,
+            "unknown bucket should be untouched"
         );
     }
 
@@ -724,6 +1197,233 @@ mod tests {
         assert!(
             smooth > pure,
             "jerk penalty should increase total time ({smooth} vs {pure})"
+        );
+    }
+
+    // ---- per-axis acceleration -------------------------------------
+
+    #[test]
+    fn effective_accel_falls_back_to_scalar_without_per_axis() {
+        let kin = MachineKinematics {
+            acceleration_mm_s2: 350.0,
+            ..MachineKinematics::default()
+        };
+        // Any direction → the scalar, isotropically.
+        assert!((kin.effective_accel(&[1.0, 0.0, 0.0]) - 350.0).abs() < 1e-9);
+        assert!((kin.effective_accel(&[0.0, 0.0, 1.0]) - 350.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn effective_accel_per_axis_limits_by_governing_axis() {
+        let kin = MachineKinematics {
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            ..MachineKinematics::default()
+        };
+        // Pure-axis moves return that axis' limit exactly.
+        assert!((kin.effective_accel(&[1.0, 0.0, 0.0]) - 500.0).abs() < 1e-9);
+        assert!((kin.effective_accel(&[0.0, 0.0, 1.0]) - 270.0).abs() < 1e-9);
+        // A 45° XY diagonal accelerates *faster* than either axis alone
+        // (both axes share the load): 500 / sin45 ≈ 707.
+        let diag = kin.effective_accel(&[0.5_f64.sqrt(), 0.5_f64.sqrt(), 0.0]);
+        assert!(
+            (diag - 500.0 / 0.5_f64.sqrt()).abs() < 1e-6,
+            "diagonal accel should be 500/sin45 ≈ 707, got {diag}"
+        );
+        // A move with any Z component is throttled toward the slow Z axis.
+        let z_heavy = kin.effective_accel(&[0.1, 0.0, (1.0_f64 - 0.01).sqrt()]);
+        assert!(
+            z_heavy < 300.0,
+            "Z-dominant move should be limited near $122=270, got {z_heavy}"
+        );
+    }
+
+    #[test]
+    fn per_axis_z_plunge_slower_than_xy_cut_same_geometry() {
+        // Identical-length move, one in X (fast axis) one in Z (slow
+        // axis): the per-axis model must make the Z move take longer.
+        let kin = MachineKinematics {
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            ..MachineKinematics::default()
+        };
+        let mut xy = Toolpath::new();
+        xy.rapid_to(P3::new(0.0, 0.0, 0.0));
+        xy.feed_to(P3::new(5.0, 0.0, 0.0), 3000.0);
+        let mut z = Toolpath::new();
+        z.rapid_to(P3::new(0.0, 0.0, 0.0));
+        z.feed_to(P3::new(0.0, 0.0, -5.0), 3000.0);
+        let t_xy = compute_cycle_time(&xy, &kin, 6000.0, 6000.0);
+        let t_z = compute_cycle_time(&z, &kin, 6000.0, 6000.0);
+        assert!(
+            t_z > t_xy,
+            "Z plunge (accel 270) should be slower than equal X cut (accel 500): {t_z} vs {t_xy}"
+        );
+    }
+
+    // ---- GRBL $$ parser --------------------------------------------
+
+    #[test]
+    fn from_grbl_settings_maps_known_settings() {
+        // A realistic (trimmed) Shapeoko XXL dump, grblHAL verbose form,
+        // CRLF line endings, with a stray console line and unknown keys.
+        let dump = "ok\r\n$11=0.020 (Junction deviation, mm)\r\n$12=0.002\r\n\
+             $30=24000\r\n$110=10000.000\r\n$111=10000.000\r\n$112=1000.000\r\n\
+             $120=500.000\r\n$121=500.000\r\n$122=270.000\r\n$100=40.000\r\n";
+        let imp = MachineKinematics::from_grbl_settings(dump);
+        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
+        assert_eq!(
+            imp.kinematics.acceleration_xyz_mm_s2,
+            Some([500.0, 500.0, 270.0])
+        );
+        // Scalar fallback = mean of the three axis accels.
+        assert!((imp.kinematics.acceleration_mm_s2 - (500.0 + 500.0 + 270.0) / 3.0).abs() < 1e-9);
+        assert_eq!(imp.max_feed_mm_min, Some(10000.0));
+        assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
+        assert_eq!(imp.arc_tolerance_mm, Some(0.002));
+        assert_eq!(imp.max_spindle_rpm, Some(24000.0));
+        // $100 (steps/mm) is seen but not consumed.
+        assert_eq!(imp.ignored_count, 1);
+    }
+
+    // ---- serde IO contract (project file + machine library) --------
+
+    #[test]
+    fn kinematics_json_round_trips_with_per_axis() {
+        let kin = MachineKinematics {
+            acceleration_mm_s2: 423.3,
+            acceleration_xyz_mm_s2: Some([500.0, 500.0, 270.0]),
+            junction_deviation_mm: 0.02,
+            jerk_mm_s3: Some(1000.0),
+            max_junction_velocity_mm_min: None,
+        };
+        let json = serde_json::to_string(&kin).expect("serialize");
+        let back: MachineKinematics = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(kin, back);
+    }
+
+    #[test]
+    fn legacy_kinematics_json_defaults_new_fields() {
+        // A pre-per-axis project file / library entry carries only the
+        // three original fields. The serde defaults must fill the rest
+        // so old files load with byte-identical behaviour.
+        let legacy =
+            r#"{"acceleration_mm_s2":250.0,"jerk_mm_s3":null,"max_junction_velocity_mm_min":null}"#;
+        let kin: MachineKinematics = serde_json::from_str(legacy).expect("legacy deserialize");
+        assert_eq!(kin.acceleration_xyz_mm_s2, None);
+        assert!((kin.junction_deviation_mm - 0.010).abs() < 1e-12);
+        assert!((kin.acceleration_mm_s2 - 250.0).abs() < 1e-12);
+    }
+
+    /// Phase E fixture: the user's real Shapeoko XXL `$$` dump (community
+    /// values, 2026-06-21). Guards that the parser maps the calibration
+    /// settings the cycle-time model now depends on, and that
+    /// `shapeoko_xxl_ricky_tuned` stays in sync with it.
+    #[test]
+    fn from_grbl_settings_parses_real_shapeoko_xxl_dump() {
+        let dump = "\
+$0=10\n$1=255\n$2=0\n$3=5\n$4=0\n$5=0\n$6=0\n$10=255\n\
+$11=0.020 (junction deviation, mm)\n$12=0.010 (arc tolerance, mm)\n\
+$13=0\n$20=0\n$21=0\n$22=1\n$23=0\n$24=100.000\n$25=2000.000\n$26=25\n\
+$27=3.000\n$30=1000 (max spindle speed, RPM)\n$31=0\n$32=0\n\
+$100=40.000\n$101=40.000\n$102=200.000\n\
+$110=10000.000\n$111=10000.000\n$112=1000.000\n\
+$120=500.000\n$121=500.000\n$122=270.000\n\
+$130=845.000\n$131=850.000\n$132=95.000\n";
+        let imp = MachineKinematics::from_grbl_settings(dump);
+        assert_eq!(
+            imp.kinematics.acceleration_xyz_mm_s2,
+            Some([500.0, 500.0, 270.0])
+        );
+        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
+        assert_eq!(imp.max_feed_mm_min, Some(10000.0));
+        assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
+        assert_eq!(imp.arc_tolerance_mm, Some(0.010));
+        assert_eq!(imp.max_spindle_rpm, Some(1000.0));
+
+        // The canonical preset must equal what importing this dump produces
+        // (per-axis accel + δ) — keeps preset and parser from drifting.
+        let preset = MachineKinematics::shapeoko_xxl_ricky_tuned();
+        assert_eq!(
+            preset.acceleration_xyz_mm_s2,
+            imp.kinematics.acceleration_xyz_mm_s2
+        );
+        assert!((preset.junction_deviation_mm - imp.kinematics.junction_deviation_mm).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_grbl_settings_partial_and_garbage_are_tolerated() {
+        // Only $11 present; no axis accels → no per-axis array, default
+        // scalar retained; everything else None.
+        let imp = MachineKinematics::from_grbl_settings("garbage\n$11=0.015\nM201 X9\n");
+        assert!((imp.kinematics.junction_deviation_mm - 0.015).abs() < 1e-9);
+        assert_eq!(imp.kinematics.acceleration_xyz_mm_s2, None);
+        assert_eq!(imp.max_feed_mm_min, None);
+        assert_eq!(imp.arc_tolerance_mm, None);
+    }
+
+    #[test]
+    fn retract_link_beats_surface_link_on_long_gaps() {
+        // 60 mm gap. Surface-following at 300 mm/min ≈ 12 s naive.
+        // Retract loop: 4 mm up + 60 mm over at rapid 5000 mm/min
+        // (≈0.77 s naive) + 4 mm plunge at 300 mm/min (≈0.8 s naive) —
+        // well under 2 s even with accel overhead. Retract must win.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(60.0, 0.0, 0.0);
+        let path = [
+            P3::new(20.0, 0.0, 0.0),
+            P3::new(40.0, 0.0, 0.0),
+            P3::new(60.0, 0.0, 0.0),
+        ];
+        let kin = shapeoko();
+        let retract = retract_link_time(from, to, 4.0, None, 300.0, &kin, 4000.0, 5000.0);
+        let surface = surface_link_time(from, &path, 300.0, &kin, 4000.0, 5000.0);
+        assert!(
+            retract < surface,
+            "long gap: retract {retract} should beat surface {surface}"
+        );
+    }
+
+    #[test]
+    fn surface_link_beats_retract_on_short_gaps() {
+        // 2 mm gap at feed 2000: the surface link barely moves. The
+        // retract loop must climb to a safe_z 10 mm above both
+        // endpoints, so it covers 22 mm regardless of the gap being
+        // tiny — surface must win.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(2.0, 0.0, 0.0);
+        let path = [to];
+        let kin = shapeoko();
+        let retract = retract_link_time(from, to, 10.0, None, 300.0, &kin, 4000.0, 5000.0);
+        let surface = surface_link_time(from, &path, 2000.0, &kin, 4000.0, 5000.0);
+        assert!(
+            surface < retract,
+            "short gap: surface {surface} should beat retract {retract}"
+        );
+    }
+
+    #[test]
+    fn descend_rapid_shortens_retract_link() {
+        // safe_z is 10 mm above `to.z`; a slow 150 mm/min plunge rate
+        // makes the plunge distance the dominant cost. Descending most
+        // of the way at rapid before switching to feed should shave
+        // 8 mm of slow plunge off for ~8 mm of much-faster rapid —
+        // strictly cheaper.
+        let from = P3::new(0.0, 0.0, 0.0);
+        let to = P3::new(50.0, 0.0, 0.0);
+        let kin = shapeoko();
+        let without_descend = retract_link_time(from, to, 10.0, None, 150.0, &kin, 4000.0, 5000.0);
+        let with_descend = retract_link_time(
+            from,
+            to,
+            10.0,
+            Some(to.z + 2.0),
+            150.0,
+            &kin,
+            4000.0,
+            5000.0,
+        );
+        assert!(
+            with_descend < without_descend,
+            "descend_rapid_to should shorten the link: {with_descend} vs {without_descend}"
         );
     }
 }

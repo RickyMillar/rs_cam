@@ -48,17 +48,17 @@ use crate::simulation_cut::SimulationCutSample;
 /// replaces commanded. Otherwise the sample's own
 /// `feed_rate_mm_min` is returned — byte-identical to pre-F-035.
 ///
-/// Every per-sample gate (chipload + power) MUST call this helper
-/// rather than reading `feed_rate_mm_min` directly, so the three
-/// gates stay in lockstep. F-024's audit named site-level
+/// Every per-sample gate (chipload + power **+ deflection**) MUST call
+/// this helper rather than reading `feed_rate_mm_min` directly, so the
+/// three gates stay in lockstep. F-024's audit named site-level
 /// duplication as a recurring class of bug.
 ///
-/// Note: `deflection::evaluate` uses the
-/// `F = Kc · DOC · WOC` formulation which is feed-independent — the
-/// tip-displacement integral has no feed term — so the deflection
-/// gate doesn't call this helper. The flag's behaviour on the
-/// deflection criterion is "no change", which is asserted by
-/// `tests/predicted_feed_gates_f035.rs::flag_on_extends_existing_f024_test_invariants`.
+/// Deflection joined this set with the unified feed-aware load model
+/// (2026-06-20): the tip-displacement force is now affine in feed per
+/// tooth (`F = ap·(Ks·fz·sinθ + F_edge)`), so the deflection gate must
+/// evaluate at the same effective feed as power/chipload — that is what
+/// lets a path the F-039 optimizer feeds down for deflection read `Within`
+/// at the gate (the optimizer↔gate consistency the unified model closes).
 #[inline]
 pub fn effective_feed_for_sample(
     sample: &SimulationCutSample,
@@ -196,6 +196,31 @@ impl RefuseReason {
 /// `tool_load::suggest::project_suggestions` access pattern — this
 /// function does just the LUT match without the full feed/RPM
 /// recommendation machinery the optimizer made redundant.
+///
+/// # ⚠ Unit caveat for the viewport heatmap — reported 2026-08-06, NOT fixed
+///
+/// The band this returns is a linear **advance per tooth**
+/// (`CHIPLOAD_LITERATURE_VERDICT.md` §2, verified per source family).
+/// Its one GUI consumer colours segments by
+/// `max(effective_chip_thickness_mm)` per move
+/// (`rs_cam_viz::app::gpu_upload::build_chipload_per_move` →
+/// `render::toolpath_render::chipload_segment_color`), which is an
+/// arc-mean **chip thickness**. Those are different quantities, and the
+/// heatmap therefore paints "rubbing risk" blue over cuts that are not
+/// rubbing — the same defect the post-sim chipload gate carried until
+/// 2026-08-06 and the same direction (the chip reads low against an
+/// advance band, by `1/mean_chip_factor(arc)`, which is 1.6× at a full
+/// slot and larger at every narrower engagement).
+///
+/// Deliberately not fixed here. The band is correct; the consumer picks
+/// the wrong per-move quantity, the fix is one line in a crate this wave
+/// does not own, and it is a *visible* change to an operator-facing
+/// surface that should ship with a screenshot rather than inside a
+/// core-side unit conversion. Owner: the viz/MCP lane. Re-open
+/// condition: none needed — it is named here and in the wave's log
+/// entry. The honest per-move quantity is
+/// `effective_feed_for_sample(s) / (rpm · flutes)`, which is what the
+/// gate now reports.
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,
@@ -256,14 +281,23 @@ pub fn chipload_envelopes_for_session(
         };
         // Keep envelope rows where both bounds exist and are sane,
         // DOC-derated exactly like the gate's trip bounds so the
-        // operator-facing colors agree with the export verdict.
+        // operator-facing colors agree with the export verdict. Both
+        // bounds are required here — the `Range<f64>` this function
+        // returns can't express a one-sided band — via the shared
+        // `geometry::derate_chipload_bounds` helper (S.8, single home
+        // for this wrapper across Suggest and both `tool_load` gate
+        // sites; see `planning/finishing_stack_review_2026-07.md`).
         let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
-        let doc_scale = crate::feeds::geometry::doc_derating_scale(axial_doc / lookup_diameter);
-        if let (Some(lo), Some(hi)) = (matched.chip_load_min_mm, matched.chip_load_max_mm)
-            && lo > 0.0
-            && hi >= lo
+        let doc_ratio = axial_doc / lookup_diameter;
+        if let Some((lo, hi)) = crate::feeds::geometry::derate_chipload_bounds(
+            matched.chip_load_min_mm,
+            matched.chip_load_max_mm,
+            doc_ratio,
+            crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
+        )
+        .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
         {
-            out.insert(tc.id, (lo * doc_scale)..(hi * doc_scale));
+            out.insert(tc.id, lo..hi);
         }
     }
     out
@@ -440,9 +474,14 @@ pub fn evaluate_toolpath(
             crate::drill_metrics::build_drill_toolpath_summary(ctx.toolpath_id, drill_op, &samples);
         drill_gates::evaluate(drill_op, &summary)
     });
+    // T1.1 — the chipload gate hands back its stage-labelled record
+    // alongside the verdict. Assembled here, at the single
+    // `ToolpathLoadVerdict` assembly site, so every report path (gcode
+    // export, optimizer, GUI) sees the same one.
+    let (chipload_verdict, feed_explanation) = chipload::evaluate_with_explanation(ctx, &env);
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id,
-        chipload: chipload::evaluate(ctx, &env),
+        chipload: chipload_verdict,
         power: power::evaluate(ctx, &env),
         deflection: deflection::evaluate(ctx, &env),
         drill_gates,
@@ -452,6 +491,7 @@ pub fn evaluate_toolpath(
         // the one that diverged when gcode re-assembled verdicts inline.
         modulation_summary: sim_trace
             .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id).cloned()),
+        feed_explanation,
     }
 }
 

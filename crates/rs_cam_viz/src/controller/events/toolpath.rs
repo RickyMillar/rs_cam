@@ -153,6 +153,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             },
             boundary_inherit: true,
+            rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,
             face_selection: None,
@@ -203,6 +204,7 @@ impl<B: ComputeBackend> AppController<B> {
                     post_gcode: src.post_gcode.clone(),
                     boundary: src.boundary.clone(),
                     boundary_inherit: src.boundary_inherit,
+                    rest_analysis: src.rest_analysis.clone(),
                     stock_source: src.stock_source,
                     coolant: src.coolant,
                     face_selection: src.face_selection.clone(),
@@ -317,6 +319,12 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
             let _ = self.state.session.remove_toolpath(tp_idx);
             self.state.gui.toolpath_rt.remove(&tp_id);
+            // Any toolpath whose `DerivedRestRegions` boundary referenced
+            // this one just lost its source entirely — force a regenerate
+            // so it fails hard with the "source toolpath no longer exists"
+            // message instead of silently keeping a clip built from the
+            // now-orphaned cached regions.
+            self.mark_derived_rest_dependents_stale(tp_id);
         }
         if self.state.selection == Selection::Toolpath(tp_id) {
             self.state.selection = Selection::None;

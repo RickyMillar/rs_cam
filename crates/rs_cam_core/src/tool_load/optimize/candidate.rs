@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::feeds::vendor_lookup::MatchedRow;
+use crate::panic_message::panic_payload_message;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
@@ -24,7 +25,8 @@ use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
 use super::axes::SearchAxis;
 use super::bounds;
 use super::context::{
-    BaselineRestoreGuard, EvaluationContext, air_cut_pct_from_trace, cycle_time_from_trace,
+    BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
+    cycle_time_from_trace,
 };
 use super::delta::{GateDeltas, ParamDelta};
 use super::policy::{self, SearchPolicy};
@@ -60,15 +62,18 @@ pub struct OptimizeCandidate {
     /// `build_outcome` so consumers don't have to recompute.
     #[serde(default)]
     pub gate_deltas: Option<GateDeltas>,
-    /// Roadmap F.12 — fraction of cutting time spent in air for this
-    /// toolpath in this candidate's sim. Range 0.0..=1.0. `None` when
-    /// the trace lacked a per-toolpath summary (failed sim). The
-    /// optimizer's cost function is cycle_time (which already includes
-    /// air-cut time), so candidates reducing wasted travel naturally
-    /// win — surfacing this lets operators see *why* (less wasted
-    /// travel vs higher MRR) without re-folding the trace.
-    #[serde(default)]
-    pub air_cut_pct: Option<f64>,
+    /// Roadmap F.12 — fraction of **total runtime (cutting + rapids)** this
+    /// toolpath spent in air in this candidate's sim. Range 0.0..=1.0.
+    /// `None` when the trace lacked a per-toolpath summary (failed sim).
+    ///
+    /// LH-1: this doc used to say "fraction of cutting time" while the code
+    /// divided by total runtime — the same two-denominators-one-name defect
+    /// the rest of `MEASUREMENT_DOMAINS.md` LH-1 covers. The VALUE is
+    /// unchanged (total runtime, matching every threshold in the codebase);
+    /// the field and its producer are now named for it. The serialized key
+    /// stays `air_cut_pct` so persisted optimizer results keep loading.
+    #[serde(default, rename = "air_cut_pct")]
+    pub air_cut_fraction_of_total_runtime: Option<f64>,
 }
 
 /// True if this op exposes a meaningful `depth_per_pass` knob.
@@ -335,19 +340,6 @@ pub(crate) fn evaluate_candidate(
     }
 }
 
-/// Best-effort human-readable message from a `catch_unwind` payload.
-/// `panic!("...")` yields `&str`; `panic!("{x}")`-style formatting
-/// yields `String`; anything else gets a placeholder.
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "non-string panic payload".to_owned()
-    }
-}
-
 fn evaluate_candidate_inner(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
@@ -449,8 +441,9 @@ fn evaluate_candidate_inner(
     let cycle_time_s = trace
         .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
         .unwrap_or(f64::INFINITY);
-    // Roadmap F.12 — surface air-cut % alongside cycle_time.
-    let air_cut_pct = trace.and_then(|t| air_cut_pct_from_trace(t, ctx.toolpath_id));
+    // Roadmap F.12 — surface air-cut alongside cycle_time, denominator named.
+    let air_cut_fraction_of_total_runtime =
+        trace.and_then(|t| air_cut_fraction_of_total_runtime_from_trace(t, ctx.toolpath_id));
 
     Ok(OptimizeCandidate {
         params: candidate_op,
@@ -461,7 +454,7 @@ fn evaluate_candidate_inner(
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
         gate_deltas: None,
-        air_cut_pct,
+        air_cut_fraction_of_total_runtime,
     })
 }
 
@@ -546,7 +539,7 @@ pub(crate) fn refine_stage2(
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::panic_payload_message;
+    use crate::panic_message::panic_payload_message;
 
     // R1 isolation seam: the payload shapes catch_unwind hands back for
     // the panic styles the geometry stack actually produces.

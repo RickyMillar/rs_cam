@@ -346,6 +346,7 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 },
                 boundary: tp.boundary.clone(),
                 boundary_inherit: tp.boundary_inherit,
+                rest_analysis: tp.rest_analysis.clone(),
                 stock_source: tp.stock_source,
                 coolant: tp.coolant,
                 face_selection: tp.face_selection.clone(),
@@ -359,6 +360,11 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
             name: setup.name.clone(),
             face_up: setup.face_up,
             z_rotation: setup.z_rotation,
+            // W9 / P-2: the fallback loader always read these two off
+            // the file and then dropped them here, so even the path
+            // that DID parse the datum lost it. Carried through now.
+            datum: setup.datum.clone(),
+            model_ids: setup.model_ids.clone(),
             fixtures: setup
                 .fixtures
                 .iter()
@@ -416,6 +422,8 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 name: m.name.clone(),
                 mesh: m.mesh.clone(),
                 polygons: m.polygons.clone(),
+                drill_targets: std::sync::Arc::clone(&m.drill_targets),
+                layers: std::sync::Arc::clone(&m.layers),
                 path: m.path.clone(),
                 kind: m.kind,
                 units: m.units,

@@ -271,6 +271,39 @@ pub struct DexelGrid {
     /// Not used by any planning / mesh / collision consumer today — purely
     /// observational. Stamping kernels update via running max.
     pub coverage_max: Vec<f32>,
+
+    /// **Sliver-safe upper bound** on where material may still stand anywhere
+    /// inside each cell (parallel to `rays`), along the ray axis' high end.
+    ///
+    /// A/M10. `rays` answers *"how tall is the column AT this sample point"*,
+    /// which is the wrong question for a safety ceiling: the cutter's swept
+    /// region is stamped with fractional coverage, so a cell only PARTLY
+    /// swept is blended down toward the cut surface (`ray_blend_above`) even
+    /// though the unswept fraction still stands at its old height. On a
+    /// coarse grid an uncut rib narrower than one cell therefore reads as a
+    /// half-cut column; on a fine grid it reads at full stock height. That
+    /// difference — not any property of the toolpath — is what made the same
+    /// generated chain measure 0 / 15 / 20 rapid collisions at 0.5 / 0.25 /
+    /// 0.1 mm (TP15 RCA `4f590f3`).
+    ///
+    /// This channel answers the question a descent ceiling actually asks:
+    /// *"how high can material be ANYWHERE in this cell"*. It is lowered
+    /// only when a stamp covers the cell **completely**, and then only to an
+    /// upper bound of the cutter surface across the whole cell — never to
+    /// the cell-centre sample. Two consequences follow, and they are the
+    /// entire point:
+    ///
+    /// * it is a pointwise **over**-estimate of the true material top, so a
+    ///   clearance derived from it is safe against any verification grid;
+    /// * refining the cell can only LOWER it (a finer cell is covered
+    ///   completely more often), so it converges downward to the truth
+    ///   instead of jumping around it. Resolution stops changing the answer
+    ///   in the direction that matters.
+    ///
+    /// Maintained for high-side (top-down) removal. Low-side cutting cannot
+    /// raise a top, so it needs no mirror; where a mutation cannot be proven
+    /// to lower the bound the value is simply left high, which fails safe.
+    pub conservative_top: Vec<f32>,
 }
 
 impl Clone for DexelGrid {
@@ -284,6 +317,7 @@ impl Clone for DexelGrid {
             cell_size: self.cell_size,
             axis: self.axis,
             coverage_max: self.coverage_max.clone(),
+            conservative_top: self.conservative_top.clone(),
         }
     }
 }
@@ -312,6 +346,19 @@ impl DexelGrid {
         } else {
             None
         }
+    }
+
+    /// The cell size a grid over this extent will ACTUALLY use: the request
+    /// after the minimum-size floor and the grid-cap coarsening.
+    ///
+    /// Same arithmetic as [`Self::clamp_cell_size`] but silent, so a caller
+    /// can record the effective resolution as measurement provenance without
+    /// emitting a second coarsening warning (M1: `SimulationResult::
+    /// column_grid_cell_mm` — before it, `resolution_clamped` said *that* the
+    /// cell changed and no field said *to what*).
+    pub fn effective_cell_size(cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
+        Self::would_exceed_grid(cell_size, extent_u, extent_v)
+            .unwrap_or_else(|| cell_size.max(Self::MIN_CELL_SIZE))
     }
 
     /// Adjust cell_size upward if `rows * cols` would exceed [`Self::MAX_GRID_CELLS`].
@@ -359,6 +406,7 @@ impl DexelGrid {
             cell_size,
             axis: DexelAxis::Z,
             coverage_max,
+            conservative_top: vec![bbox.max.z as f32; rows * cols],
         }
     }
 
@@ -385,6 +433,7 @@ impl DexelGrid {
             cell_size,
             axis: DexelAxis::X,
             coverage_max,
+            conservative_top: vec![bbox.max.x as f32; rows * cols],
         }
     }
 
@@ -411,6 +460,7 @@ impl DexelGrid {
             cell_size,
             axis: DexelAxis::Y,
             coverage_max,
+            conservative_top: vec![bbox.max.y as f32; rows * cols],
         }
     }
 
@@ -484,6 +534,27 @@ impl DexelGrid {
     #[inline]
     pub fn coverage_at(&self, row: usize, col: usize) -> f32 {
         self.coverage_max[row * self.cols + col]
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Sliver-safe upper bound on material height anywhere inside this cell.
+    /// See [`DexelGrid::conservative_top`] — this is the reading a clearance
+    /// ceiling must use, not [`Self::top_z_at`].
+    #[inline]
+    pub fn conservative_top_at(&self, row: usize, col: usize) -> f32 {
+        self.conservative_top[row * self.cols + col]
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Lower the sliver-safe bound at a flat cell index — monotone, so a
+    /// caller that stamps the same ground twice cannot walk the bound back
+    /// up. `surface` must already be an upper bound of the removal surface
+    /// across the WHOLE cell, not a cell-centre sample.
+    #[inline]
+    pub fn lower_conservative_top(&mut self, idx: usize, surface: f32) {
+        if surface < self.conservative_top[idx] {
+            self.conservative_top[idx] = surface;
+        }
     }
 }
 

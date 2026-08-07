@@ -436,6 +436,23 @@ pub struct SimulationResults {
     pub cut_trace: Option<Arc<SimulationCutTrace>>,
     /// Artifact path for the simulation cutting metrics trace.
     pub cut_trace_path: Option<PathBuf>,
+    /// The dexel COLUMN grid cell this simulation used (mm). See
+    /// `crate::compute::worker::SimulationResult::column_grid_cell_mm` — it
+    /// is a property of THIS trace, not of `SimulationState::resolution`,
+    /// which is the dial the next run will use.
+    pub column_grid_cell_mm: f64,
+    /// Per-toolpath snapshots of the material stock *before* that toolpath
+    /// carves, keyed by toolpath id (F.4). Mirrors core's
+    /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks` —
+    /// includes real per-toolpath snapshots AND any phantom snapshot for
+    /// the first pending `FromRemainingStock` toolpath in each group. The
+    /// submit-time rest-machining gate in
+    /// `controller::events::compute::submit_toolpath_compute` reads this
+    /// map directly via [`SimulationState::prior_stock_for`] instead of
+    /// re-deriving a "previous checkpoint" from `boundaries()` position
+    /// arithmetic (which could never see a toolpath that had no boundary
+    /// of its own, i.e. one that had never been generated).
+    pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
 /// Transport / playback state — independent of whether results exist.
@@ -741,6 +758,20 @@ impl SimulationState {
         self.results
             .as_ref()
             .map_or(&[], |r| r.checkpoints.as_slice())
+    }
+
+    /// Simulated stock snapshot from *before* `toolpath_id` carved, if the
+    /// last simulation run produced one — either the toolpath's own
+    /// pre-carve snapshot (it was generated and included in the run) or a
+    /// phantom snapshot (F.4: it's the first pending `FromRemainingStock`
+    /// toolpath in its group). `None` when no simulation has run yet, or
+    /// when this toolpath sits behind a still-pending predecessor in its
+    /// group (the ladder rule — see
+    /// `rs_cam_core::compute::simulate::SimGroupEntry::phantom_prior_stock`).
+    pub fn prior_stock_for(&self, toolpath_id: ToolpathId) -> Option<&Arc<TriDexelStock>> {
+        self.results
+            .as_ref()
+            .and_then(|r| r.prior_stocks.get(&toolpath_id))
     }
 
     /// Selected toolpaths (None = all enabled).
@@ -1456,6 +1487,36 @@ impl SimulationState {
         )))
     }
 
+    /// Build the core [`ProjectEvidence`] borrow view from viz state.
+    ///
+    /// One builder, so the GUI panel, the MCP handlers and anything else on
+    /// the viz side hand core the same evidence. It lives here rather than in
+    /// `app::mcp` because that module is behind the `mcp` feature and the GUI
+    /// needs this with or without it.
+    pub fn project_evidence(&self) -> rs_cam_core::session::ProjectEvidence<'_> {
+        let boundaries = self
+            .results
+            .as_ref()
+            .map(|r| {
+                r.boundaries
+                    .iter()
+                    .map(|b| (b.id, b.start_move, b.end_move))
+                    .collect()
+            })
+            .unwrap_or_default();
+        rs_cam_core::session::ProjectEvidence {
+            boundaries,
+            rapid_collisions: &self.checks.rapid_collisions,
+            rapid_collision_move_indices: &self.checks.rapid_collision_move_indices,
+            cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
+            holder_collisions: self.holder_collision_counts_by_tp(),
+            // The cell the GUI last simulated at. Read only to enrich a
+            // measurability abstention's reason with the number the operator
+            // would have to change; it never decides a verdict.
+            resolution_mm: Some(self.resolution),
+        }
+    }
+
     pub fn issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Vec<SimulationIssue> {
         self.sync_debug_state(gui, max_feed_mm_min);
         let cache_key = self.issue_cache_key(gui, max_feed_mm_min);
@@ -1580,10 +1641,17 @@ impl SimulationState {
             }
         }
 
+        // D1 (census §3.5), ruled at Checkpoint D D-6. Severity was a
+        // TIEBREAK under `move_index`, so an operator stepping the list with
+        // `focus_issue_delta` reached collisions in path order — i.e. at
+        // random relative to how much they matter — and a second,
+        // contradictory rank in `sim_op_list.rs` put collisions first. One
+        // rank now, severity-major, with `move_index` as the LAST key:
+        // "what should I look at" is answered before "where is it".
         issues.sort_by(|left, right| {
-            left.move_index
-                .cmp(&right.move_index)
-                .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
+            issue_kind_rank(left.kind)
+                .cmp(&issue_kind_rank(right.kind))
+                .then_with(|| left.move_index.cmp(&right.move_index))
                 .then_with(|| left.label.cmp(&right.label))
         });
         let elapsed = start.elapsed();
@@ -2155,14 +2223,28 @@ impl Default for SavedViewportState {
     }
 }
 
+/// Display rank, **worst first**. Lower sorts earlier.
+///
+/// D1 (census §3.5), ruled D-6. This used to run the other way — collisions
+/// last, behind hotspots, annotations and per-sample air-cut noise — while
+/// `sim_op_list.rs` ranked collisions first. Two contradictory orderings
+/// over one list is how a rapid-through-stock ends up below an air-cut run
+/// in the panel the operator scans before pressing go.
+///
+/// The order mirrors the census §3.1 classes: safety, then action-required,
+/// then bounded advisories, then the diagnostic-sample tallies that are
+/// emission noise by construction.
 fn issue_kind_rank(kind: SimulationIssueKind) -> u8 {
     match kind {
-        SimulationIssueKind::Hotspot => 0,
-        SimulationIssueKind::Annotation => 1,
-        SimulationIssueKind::AirCut => 2,
-        SimulationIssueKind::LowEngagement => 3,
-        SimulationIssueKind::RapidCollision => 4,
-        SimulationIssueKind::HolderCollision => 5,
+        // Class A — physical damage if run.
+        SimulationIssueKind::RapidCollision => 0,
+        SimulationIssueKind::HolderCollision => 1,
+        // Class C — bounded advisories.
+        SimulationIssueKind::Hotspot => 2,
+        SimulationIssueKind::Annotation => 3,
+        // Class D/E — per-run tallies, not defect counts.
+        SimulationIssueKind::LowEngagement => 4,
+        SimulationIssueKind::AirCut => 5,
     }
 }
 
@@ -2324,6 +2406,8 @@ mod tests {
             },
             cut_trace: None,
             cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
+            prior_stocks: HashMap::new(),
         });
         sim
     }
@@ -2356,6 +2440,7 @@ mod tests {
                     semantic_item_id: Some(2),
                     span_path: Vec::new(),
                     in_transit_span: false,
+                    source_intent: None,
                 },
                 rs_cam_core::simulation_cut::SimulationCutSample {
                     toolpath_id: rs_cam_core::ToolpathId(1),
@@ -2381,12 +2466,50 @@ mod tests {
                     semantic_item_id: Some(3),
                     span_path: Vec::new(),
                     in_transit_span: false,
+                    source_intent: None,
                 },
             ],
         );
         if let Some(results) = sim.results.as_mut() {
             results.cut_trace = Some(Arc::new(trace));
         }
+    }
+
+    #[test]
+    fn the_issue_list_is_ordered_by_severity_not_by_move_index() {
+        // D1 (census §3.5), ruled D-6. RED-FIRST SHAPE: the collision sits at
+        // a LATER move than the air-cut run, so under the old ordering
+        // (`move_index` primary, kind only as a tiebreak) it sorted BELOW the
+        // per-run air-cut noise — and an operator stepping the list with
+        // `focus_issue_delta` reached it after the noise, if at all.
+        let gui = gui_with_traces();
+        let mut sim = simulation_for_toolpath();
+        attach_cut_trace(&mut sim);
+        sim.checks.rapid_collision_move_indices = vec![8];
+
+        let issues = sim.issues(&gui, TEST_MAX_FEED);
+        assert!(
+            issues.len() >= 2,
+            "fixture must produce a collision AND at least one air-cut run"
+        );
+        assert_eq!(
+            issues[0].kind,
+            SimulationIssueKind::RapidCollision,
+            "the collision must sort first even though it is at the LAST move; \
+             got {:?}",
+            issues
+                .iter()
+                .map(|i| (i.kind, i.move_index))
+                .collect::<Vec<_>>()
+        );
+        // And the air-cut tallies sort last, behind everything curated.
+        assert_eq!(
+            issues
+                .last()
+                .map(|i| i.kind)
+                .expect("non-empty after the length assertion above"),
+            SimulationIssueKind::AirCut
+        );
     }
 
     #[test]

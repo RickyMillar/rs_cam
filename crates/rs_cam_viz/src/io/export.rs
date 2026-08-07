@@ -306,6 +306,25 @@ pub fn export_setup_gcode_from_session(
     sim: &SimulationState,
     setup_id: crate::state::job::SetupId,
 ) -> Result<String, crate::error::VizError> {
+    export_setup_gcode_from_session_with_policy(
+        session,
+        gui,
+        sim,
+        setup_id,
+        gui.tool_load_overrides.as_policy(),
+    )
+}
+
+/// Same as [`export_setup_gcode_from_session`], but lets the caller supply
+/// an explicit tool-load policy (e.g. the MCP `accept_*` flags) instead of
+/// defaulting to the GUI's overrides.
+pub fn export_setup_gcode_from_session_with_policy(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    setup_id: crate::state::job::SetupId,
+    policy: ToolLoadExportPolicy,
+) -> Result<String, crate::error::VizError> {
     let setup = session
         .list_setups()
         .iter()
@@ -333,7 +352,7 @@ pub fn export_setup_gcode_from_session(
         &phases,
         post,
         &viz_load_report(session, sim),
-        gui.tool_load_overrides.as_policy(),
+        policy,
         &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
