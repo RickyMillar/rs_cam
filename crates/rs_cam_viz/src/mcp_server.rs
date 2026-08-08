@@ -499,7 +499,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_cut_trace",
-        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id, or to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream (can be verbose)."
+        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
     )]
     async fn get_cut_trace(
         &self,
@@ -511,6 +511,12 @@ impl EmbeddedCamServer {
             span_id,
             pass_index,
             include_drill_samples,
+            max_span_summaries,
+            max_semantic_summaries,
+            max_toolpath_summaries,
+            max_drill_summaries,
+            max_drill_samples,
+            max_response_bytes,
         }): Parameters<CutTraceParam>,
     ) -> String {
         Self::format_result(
@@ -522,6 +528,14 @@ impl EmbeddedCamServer {
                 span_id,
                 pass_index,
                 include_drill_samples: include_drill_samples.unwrap_or(false),
+                caps: rs_cam_mcp::response::CutTraceCaps::from_params(
+                    max_span_summaries,
+                    max_semantic_summaries,
+                    max_toolpath_summaries,
+                    max_drill_summaries,
+                    max_drill_samples,
+                    max_response_bytes,
+                ),
             })
             .await,
         )

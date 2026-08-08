@@ -93,6 +93,76 @@ pub const ORDERING_SPAN_SUMMARIES: &str =
 /// first N under a cap are the N worst offenders.
 pub const ORDERING_SEMANTIC_SUMMARIES: &str = "wasted_runtime_s descending";
 
+/// The per-array caps and byte backstop in force for one `get_cut_trace`
+/// request (Checkpoint L-2/L-3).
+///
+/// `usize::MAX` means uncapped. `toolpath_summaries` and `drill_summaries`
+/// ship uncapped by ruling: they are one row per toolpath and one row per
+/// drill toolpath respectively — 5 and 2 rows, 3,289 and 859 bytes, on the
+/// census fixture whose `span_summaries` was 52.9 MB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CutTraceCaps {
+    pub span_summaries: usize,
+    pub semantic_summaries: usize,
+    pub toolpath_summaries: usize,
+    pub drill_summaries: usize,
+    pub drill_samples: usize,
+    pub max_response_bytes: usize,
+}
+
+impl Default for CutTraceCaps {
+    /// The Checkpoint L-3 defaults, verbatim.
+    fn default() -> Self {
+        Self {
+            span_summaries: DEFAULT_MAX_SPAN_SUMMARIES,
+            semantic_summaries: DEFAULT_MAX_SEMANTIC_SUMMARIES,
+            toolpath_summaries: usize::MAX,
+            drill_summaries: usize::MAX,
+            drill_samples: DEFAULT_MAX_DRILL_SAMPLES,
+            max_response_bytes: MAX_RESPONSE_BYTES,
+        }
+    }
+}
+
+impl CutTraceCaps {
+    /// Resolve wire-level optional parameters against the ruled defaults.
+    #[must_use]
+    pub fn from_params(
+        span_summaries: Option<usize>,
+        semantic_summaries: Option<usize>,
+        toolpath_summaries: Option<usize>,
+        drill_summaries: Option<usize>,
+        drill_samples: Option<usize>,
+        max_response_bytes: Option<usize>,
+    ) -> Self {
+        let d = Self::default();
+        Self {
+            span_summaries: span_summaries.unwrap_or(d.span_summaries),
+            semantic_summaries: semantic_summaries.unwrap_or(d.semantic_summaries),
+            toolpath_summaries: toolpath_summaries.unwrap_or(d.toolpath_summaries),
+            drill_summaries: drill_summaries.unwrap_or(d.drill_summaries),
+            drill_samples: drill_samples.unwrap_or(d.drill_samples),
+            max_response_bytes: max_response_bytes.unwrap_or(d.max_response_bytes),
+        }
+    }
+
+    /// Every bound removed — the pre-Checkpoint-L response shape.
+    ///
+    /// For sentries that need the old behaviour to still be reachable, so
+    /// the pre-fix reproduction is executable rather than remembered.
+    #[must_use]
+    pub fn unbounded() -> Self {
+        Self {
+            span_summaries: usize::MAX,
+            semantic_summaries: usize::MAX,
+            toolpath_summaries: usize::MAX,
+            drill_summaries: usize::MAX,
+            drill_samples: usize::MAX,
+            max_response_bytes: usize::MAX,
+        }
+    }
+}
+
 /// A byte budget charged while a response is being assembled.
 ///
 /// The budget is charged with the **compact** serialised length of each
@@ -214,6 +284,23 @@ pub struct CappedArray {
 }
 
 impl CappedArray {
+    /// Assemble from entries a caller already took and charged, plus the
+    /// true **pre-cap** population size.
+    ///
+    /// For builders whose population cannot be expressed as a lazy iterator
+    /// (a nested per-toolpath accumulation, say) and which therefore have to
+    /// count and emit in one pass. `total_matching` is the caller's count of
+    /// everything that matched, `values` only what it chose to emit —
+    /// passing `values.len()` for both would silently erase the truncation.
+    #[must_use]
+    pub fn from_parts(values: Vec<Value>, total_matching: usize, cap: usize) -> Self {
+        Self {
+            values,
+            total_matching,
+            cap,
+        }
+    }
+
     /// Number of entries actually in the response.
     #[must_use]
     pub fn returned(&self) -> usize {

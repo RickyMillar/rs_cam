@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+pub use rs_cam_mcp::response::CutTraceCaps;
+
 use crate::state::toolpath::ToolpathId;
 
 /// The no-argument, cheap-to-render read payloads the GUI main thread
@@ -384,6 +386,8 @@ pub enum McpRequestKind {
         index: usize,
     },
     GetCutTrace {
+        /// Project-level toolpath **id** (not index) — the key the cut
+        /// trace itself is stored under. An unmatched id is refused.
         toolpath_id: Option<usize>,
         max_hotspots: Option<usize>,
         max_issues: Option<usize>,
@@ -396,6 +400,9 @@ pub enum McpRequestKind {
         /// When true, include the per-peck `drill_samples` array in the
         /// response (defaults to false; verbose).
         include_drill_samples: bool,
+        /// Checkpoint L per-array caps. `None` takes the ruled default
+        /// (`rs_cam_mcp::response`); an explicit `usize::MAX` is uncapped.
+        caps: CutTraceCaps,
     },
     GetGenerationDebugTrace {
         index: usize,
