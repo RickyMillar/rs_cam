@@ -13,8 +13,8 @@ checkpoint.
 
 | lane/wave | item | status |
 |---|---|---|
-| A-1 | heat-map + vocabulary census → Checkpoint H | IN PROGRESS 2026-08-08 |
-| A-2 | heat-map fix + newtypes + screenshot sentry | blocked on H |
+| A-1 | heat-map + vocabulary census → Checkpoint H | COMPLETE — Checkpoint H RULED 2026-08-08 (all four recommendations; live screenshot NOT EXERCISED, obligation transferred to A-2) |
+| A-2 | heat-map fix + newtypes + screenshot sentry | IN PROGRESS 2026-08-08 (executing H: V1–V4 + rename sweep + operating-point card + live capture) |
 | A-3 | apply-contract census → Checkpoint I | NOT STARTED |
 | A-4 | one application funnel | blocked on I |
 | A-5 | arc_fit_ratio evidence package → Checkpoint J | NOT STARTED |
@@ -22,8 +22,8 @@ checkpoint.
 | A-7 | execute K | blocked on K |
 | A-8 | optimizer assumptions + retarget fixture | after A-2 |
 | A-9 | chip-thickness policy (research-only) | after A-2 |
-| B-1 | G-LV.2 crash capture + read-size census → Checkpoint L | IN PROGRESS 2026-08-08 |
-| B-2 | bounded reads + filter fix | blocked on L |
+| B-1 | G-LV.2 crash capture + read-size census → Checkpoint L | COMPLETE — Checkpoint L RULED 2026-08-08 (Option 2 + defaults + compact JSON + keep-id/refuse-unmatched + rule-10 correction; G-LV.2 stays open, cause-not-attributed) |
+| B-2 | bounded reads + filter fix | IN PROGRESS 2026-08-08 (executing L) |
 | B-3 | dispatch decoupling design → Checkpoint M | NOT STARTED |
 | B-4 | execute M + six frame-coupled drivers | blocked on M |
 | B-5 | G-RESULTS GUI/CLI parity | NOT STARTED |
@@ -35,7 +35,20 @@ checkpoint.
 
 ## Checkpoint rulings
 
-(none yet)
+### Checkpoint H — ruled 2026-08-08 (operator, via AskUserQuestion). BINDING.
+
+- **H1: Achieved advance/tooth, fix V1–V4 together.** The heat-map (V1), timeline chipload track (V2), "load vs limit" fraction (V3) and Cut-Metrics blend row (V4) all move to `effective_feed / (rpm × flutes)` as one wave — four call sites of one wrong choice.
+- **H2: The review's three names verbatim** on every surface — "Commanded advance/tooth" / "Achieved advance/tooth" / "Arc-mean chip thickness"; the word *chipload* survives only where a vendor band is being named. Includes fixing `feeds_modal.rs:1322` "Effective chipload at recommendation" → commanded-advance wording.
+- **H3: One chip-thickness visual survives** — the sim-timeline track, relabelled "arc-mean chip thickness", **band shading removed** (no sourced band for that quantity; a shaded envelope is a comparison). V1/V3 switch to advance/tooth; V4 splits or drops the blend.
+- **H4: all four bookkeeping items accepted** — (1) correct the "its one GUI consumer" docstring; (2) A-2 owns the live before/after screenshot pair and **F-HEATMAP stays open until it exists**; (3) V5/N7/N8 fold into the H2 rename sweep; (4) the operating-point card (Commanded / Achieved / Vendor band / Gate) gets built in the properties panel's `OPERATING POINT — measured` section.
+
+### Checkpoint L — ruled 2026-08-08 (operator, via AskUserQuestion). BINDING.
+
+- **L-1/L-2: Option 2.** B-2 proceeds on "bound the read regardless of which mechanism delivered the kill"; **G-LV.2 stays open as cause-not-attributed** (OOM and transport-close falsified by B-1's measurements; leading candidate client-side reap, not instrumented). Design: per-array caps + the existing `truncated`/`total_matching`/`returned` vocabulary on the five uncapped arrays, PLUS a global `MAX_RESPONSE_BYTES` backstop checked **while building** (overflow → `complete: false` + `sections_not_computed`; "did not fit" is never rendered as a zero). Continuation token DEFERRED as unmotivated by the census.
+- **L-3: default caps approved as proposed** — `span_summaries: 200`, `semantic_summaries: 200` (ordering by `wasted_runtime_s` desc becomes documented contract), `drill_samples: 500`, `toolpath_summaries`/`drill_summaries` uncapped, `MAX_RESPONSE_BYTES: 8 MiB`. `inspect_spans` gets the same cap in the same commit for uniformity (latent, not a measured cost — B-2 must not claim it fixed one).
+- **L-4: compact JSON everywhere** — `json_str` switches from pretty to compact on all 68 tools (measured waste 23.8–46.6%).
+- **L-5: keep id semantics + fix the doc + REFUSE an unmatched id** (an unmatched id currently returns an empty skeleton indistinguishable from a real empty result; ids 4/5/6 on wanaka are simultaneously valid indices and ids of different toolpaths).
+- **L-6: accepted.** Plan §0 rule 10 corrected by the orchestrator in this commit: the remedy is **unset `WAYLAND_DISPLAY`**; `WINIT_UNIX_BACKEND=x11` is inert on winit 0.30. Orchestrator note (not editing A-1's entry, rule 7): A-1's stated screenshot resume condition names the inert variable — A-2 has been handed the corrected remedy in its brief.
 
 ---
 

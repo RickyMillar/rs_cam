@@ -44,7 +44,9 @@ master (suggested: `tech-debt-3`); the experiment branch is merged and done.
    commit trailers: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
    + the session URL.
 10. MCP/GUI sessions: on Wayland the window must be visible for dispatch
-    (or launch with `WINIT_UNIX_BACKEND=x11`); read `frame_loop` before
+    (or launch with `WAYLAND_DISPLAY` unset, forcing XWayland — note
+    `WINIT_UNIX_BACKEND=x11` is INERT on winit 0.30, removed in 0.29;
+    measured by B-1 2026-08-08, Checkpoint L-6); read `frame_loop` before
     reading an idle lane as completion; never resubmit a generate while one
     is in flight; **never call `get_cut_trace` unfiltered until B-2 lands**
     (G-LV.2 kills the GUI); record the cell beside every collision count and
