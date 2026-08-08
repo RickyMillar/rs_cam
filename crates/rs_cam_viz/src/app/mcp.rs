@@ -183,6 +183,7 @@ impl super::RsCamApp {
                 span_id,
                 pass_index,
                 include_drill_samples,
+                caps,
             } => {
                 let resp = self.mcp_get_cut_trace(
                     toolpath_id,
@@ -192,6 +193,7 @@ impl super::RsCamApp {
                     span_id,
                     pass_index,
                     include_drill_samples,
+                    caps,
                 );
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
@@ -1313,9 +1315,8 @@ impl super::RsCamApp {
         span_id: Option<u32>,
         pass_index: Option<u32>,
         include_drill_samples: bool,
+        caps: rs_cam_mcp::response::CutTraceCaps,
     ) -> String {
-        use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
-
         let state = self.controller.state();
         let sim_state = &state.simulation;
         let Some(results) = sim_state.results.as_ref() else {
@@ -1329,210 +1330,20 @@ impl super::RsCamApp {
             );
         };
 
-        let max_h = max_hotspots.unwrap_or(20);
-        let max_i = max_issues.unwrap_or(50);
-
-        // Translate the span filter args into a per-toolpath set of accepted
-        // SpanIds. A span_path matches when it contains any accepted SpanId
-        // (or the filter is unset).
-        //
-        // Filter resolution requires the AnnotatedToolpath to look up
-        // SpanKind / SpanPayload for each span index. When toolpath_id is
-        // unset and any span filter is set, we resolve per toolpath.
-        let want_kind = span_kind
-            .map(parse_span_kind_filter)
-            .transpose()
-            .unwrap_or(None);
-        let span_filter_active = span_kind.is_some() || span_id.is_some() || pass_index.is_some();
-        let resolve_accepted = |tp_index_for_id: usize| -> Option<std::collections::HashSet<u32>> {
-            if !span_filter_active {
-                return None;
-            }
-            let tc = state.session.get_toolpath_config(tp_index_for_id)?;
-            let rt = state.gui.toolpath_rt.get(&tc.id)?;
-            let result = rt.result.as_ref()?;
-            let spans = result.spans();
-            let mut set = std::collections::HashSet::<u32>::new();
-            for (i, span) in spans.iter().enumerate() {
-                let id = i as u32;
-                let mut accept = true;
-                if let Some(kind) = want_kind {
-                    accept &= span.kind == kind;
-                }
-                if let Some(want_id) = span_id {
-                    accept &= id == want_id;
-                }
-                if let Some(want_pi) = pass_index {
-                    accept &= matches!(
-                        &span.payload,
-                        Some(SpanPayload::DepthPass { pass_index, .. }) if *pass_index == want_pi
-                    );
-                }
-                if accept {
-                    set.insert(id);
-                }
-            }
-            Some(set)
-        };
-        // Build a {toolpath_id_raw → accepted SpanId set}. Toolpath_id arg is
-        // the project-level raw id (matching SimulationCutSample.toolpath_id),
-        // while accepted-set lookup needs the index — translate via session.
-        let toolpath_id = toolpath_id.map(rs_cam_core::ToolpathId);
-        let mut accepted_by_toolpath: std::collections::HashMap<
-            rs_cam_core::ToolpathId,
-            Option<std::collections::HashSet<u32>>,
-        > = std::collections::HashMap::new();
-        if span_filter_active {
-            let n = state.session.toolpath_count();
-            for idx in 0..n {
-                if let Some(tc) = state.session.get_toolpath_config(idx)
-                    && toolpath_id.is_none_or(|raw_id| tc.id == raw_id)
-                {
-                    accepted_by_toolpath.insert(tc.id, resolve_accepted(idx));
-                }
-            }
-        }
-        let span_path_matches = |tp_id: rs_cam_core::ToolpathId, path: &[SpanId]| -> bool {
-            if !span_filter_active {
-                return true;
-            }
-            match accepted_by_toolpath.get(&tp_id) {
-                Some(Some(accepted)) => path.iter().any(|sid| accepted.contains(&sid.0)),
-                _ => false,
-            }
-        };
-
-        let span_summaries = build_span_cut_summaries(
-            state,
-            ct,
+        let req = CutTraceRequest {
             toolpath_id,
-            span_filter_active,
-            &accepted_by_toolpath,
-        );
-
-        let summaries: Vec<&_> = ct
-            .semantic_summaries
-            .iter()
-            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
-            .collect();
-        let hotspots: Vec<&_> = ct
-            .hotspots
-            .iter()
-            .filter(|h| toolpath_id.is_none_or(|id| h.toolpath_id == id))
-            .filter(|h| span_path_matches(h.toolpath_id, &h.span_path))
-            .collect();
-        let issues: Vec<&_> = ct
-            .issues
-            .iter()
-            .filter(|i| toolpath_id.is_none_or(|id| i.toolpath_id == id))
-            .filter(|i| span_path_matches(i.toolpath_id, &i.span_path))
-            .collect();
-
-        let hotspot_count = hotspots.len();
-        let issue_count = issues.len();
-        // R-1 (census §8.2): both arrays are capped and, until now, nothing
-        // in the response said so. An agent that read `issues` and compared
-        // its length against `issue_count` saw a silent disagreement and had
-        // no way to tell truncation from a filter.
-        let issues_truncated = issue_count > max_i;
-        let hotspots_truncated = hotspot_count > max_h;
-
-        let summaries_val =
-            serde_json::to_value(&summaries).unwrap_or_else(|_| serde_json::json!([]));
-        let hotspots_val: Vec<&_> = hotspots.iter().take(max_h).collect();
-        let hotspots_val =
-            serde_json::to_value(&hotspots_val).unwrap_or_else(|_| serde_json::json!([]));
-        let issues_val: Vec<&_> = issues.iter().take(max_i).collect();
-        let issues_val =
-            serde_json::to_value(&issues_val).unwrap_or_else(|_| serde_json::json!([]));
-        let summary_val =
-            serde_json::to_value(&ct.summary).unwrap_or_else(|_| serde_json::json!({}));
-
-        // §6.E / Step 3 PR2 — drill-native outputs. `drill_summaries` always
-        // surfaces (per-toolpath summary block, compact). `drill_samples` is
-        // gated by `include_drill_samples` because the per-peck stream can be
-        // verbose on cycles with many holes.
-        let drill_summaries_val: Vec<&_> = ct
-            .drill_summaries
-            .iter()
-            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
-            .collect();
-        let drill_summaries_val =
-            serde_json::to_value(&drill_summaries_val).unwrap_or_else(|_| serde_json::json!([]));
-        let drill_samples_val = if include_drill_samples {
-            let filtered: Vec<&_> = ct
-                .drill_samples
-                .iter()
-                .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
-                .collect();
-            serde_json::to_value(&filtered).unwrap_or_else(|_| serde_json::json!([]))
-        } else {
-            serde_json::Value::Null
+            max_hotspots,
+            max_issues,
+            span_kind,
+            span_id,
+            pass_index,
+            include_drill_samples,
+            caps,
         };
-
-        // P0 unified-finishing probe — compact per-toolpath runtime block.
-        // `runtime_by_intent` is the F-034 integrator time bucketed by
-        // MoveIntent class (None when the sim ran without kinematics).
-        use rs_cam_core::simulation_cut::AirCutRatios;
-        let toolpath_summaries_val: Vec<serde_json::Value> = ct
-            .toolpath_summaries
-            .iter()
-            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
-            .map(|s| {
-                serde_json::json!({
-                    "toolpath_id": s.toolpath_id,
-                    "total_runtime_s": s.total_runtime_s,
-                    "cutting_runtime_s": s.cutting_runtime_s,
-                    "rapid_runtime_s": s.rapid_runtime_s,
-                    "air_cut_time_s": s.air_cut_time_s,
-                    // LH-1: both denominators, both named. Thresholds follow
-                    // the total-runtime reading; the MCP narration line
-                    // reports the cutting-time one.
-                    "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
-                    "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
-                    "low_engagement_time_s": s.low_engagement_time_s,
-                    "metrics_not_applicable": s.metrics_not_applicable,
-                    "runtime_by_intent": s.runtime_by_intent,
-                })
-            })
-            .collect();
-
-        // R-2 (census §3.5 D4): this response carried TWO fields named
-        // `issue_count` measuring different populations — the top-level one
-        // (this request's filters applied) and `summary.issue_count` nested
-        // inside `summary` (the whole trace, filters ignored). An agent
-        // reading a filtered response could pick either and both looked
-        // authoritative. The legacy keys keep their exact values for wire
-        // compatibility; the disambiguating names sit beside them and say
-        // which population each counts.
-        json_str(serde_json::json!({
-            "summary": summary_val,
-            "semantic_summaries": summaries_val,
-            "span_summaries": span_summaries,
-            "hotspots": hotspots_val,
-            "hotspot_count": hotspot_count,
-            "hotspots_truncated": hotspots_truncated,
-            "hotspots_total_matching": hotspot_count,
-            "hotspots_returned": hotspots_val.as_array().map_or(0, |a| a.len()),
-            "issue_count": issue_count,
-            "issues": issues_val,
-            "issues_truncated": issues_truncated,
-            "issues_total_matching": issue_count,
-            "issues_returned": issues_val.as_array().map_or(0, |a| a.len()),
-            // Explicit aliases for the two same-named counts, so neither has
-            // to be inferred from where it sits in the object.
-            "issue_count_matching_filter": issue_count,
-            "issue_count_project_wide": ct.summary.issue_count,
-            // And what the number actually IS: coalesced contiguous
-            // air/low-engagement RUNS, not per-sample tallies. The per-sample
-            // tallies are `air_cut_issue_count` / `low_engagement_issue_count`
-            // on the semantic summaries, and on the census fixture they were
-            // 43x larger under a near-identical name.
-            "issue_count_population": "coalesced_segments",
-            "drill_summaries": drill_summaries_val,
-            "drill_samples": drill_samples_val,
-            "toolpath_summaries": toolpath_summaries_val,
-        }))
+        match build_cut_trace_response(state, ct, &req) {
+            Ok(value) => json_str(value),
+            Err(e) => json_str(serde_json::json!({"error": e})),
+        }
     }
 
     fn mcp_get_generation_debug_trace(
@@ -4601,6 +4412,343 @@ impl super::RsCamApp {
 /// pinned against a verbatim transcription of the old walk by
 /// `crates/rs_cam_core/tests/span_summary_single_pass_c1.rs`. This function
 /// keeps only the JSON shaping; no wire key changed.
+/// One `get_cut_trace` request, resolved from the wire.
+pub(crate) struct CutTraceRequest<'a> {
+    /// Project-level toolpath **id** — see [`build_cut_trace_response`].
+    pub toolpath_id: Option<usize>,
+    pub max_hotspots: Option<usize>,
+    pub max_issues: Option<usize>,
+    pub span_kind: Option<&'a str>,
+    pub span_id: Option<u32>,
+    pub pass_index: Option<u32>,
+    pub include_drill_samples: bool,
+    pub caps: rs_cam_mcp::response::CutTraceCaps,
+}
+
+/// Build the `get_cut_trace` response under Checkpoint L's bounds.
+///
+/// # `toolpath_id` is an ID, and an unmatched one is refused
+///
+/// The trace is keyed by the project-level [`rs_cam_core::ToolpathId`]
+/// throughout — samples, hotspots, issues, drill summaries and drill samples
+/// all carry it — so filtering by id is the only filter that can be applied
+/// without a lookup, and the parameter keeps id semantics (Checkpoint L-5).
+/// Its doc string used to say *index*, which was wrong in a way that could
+/// not be noticed: measured on a real project 2026-08-08, the values 4, 5
+/// and 6 were **simultaneously valid indices and valid ids of different
+/// toolpaths**, so an agent following the documentation received another
+/// toolpath's data with no error and no warning. An id matching nothing used
+/// to return a full skeleton with every array empty and
+/// `issue_count_project_wide: 73326` sitting beside `issue_count: 0` — a
+/// caller error dressed as a measurement. It is now an `Err`.
+///
+/// # Bounds
+///
+/// Sections are offered to the budget smallest-and-most-load-bearing first
+/// and `span_summaries` **last**, because section order is priority order:
+/// on overflow it is the sections offered last that are dropped, and
+/// `span_summaries` was 94 % of the payload that motivated this work.
+pub(crate) fn build_cut_trace_response(
+    state: &crate::state::AppState,
+    ct: &rs_cam_core::simulation_cut::SimulationCutTrace,
+    req: &CutTraceRequest<'_>,
+) -> Result<serde_json::Value, String> {
+    use rs_cam_core::toolpath_spans::{SpanId, SpanPayload};
+    use rs_cam_mcp::response::{BoundedResponse, cap_json_values};
+
+    // ── L-5: refuse an id that matches no toolpath ──────────────────────
+    let valid_ids: Vec<usize> = (0..state.session.toolpath_count())
+        .filter_map(|idx| state.session.get_toolpath_config(idx).map(|tc| tc.id.0))
+        .collect();
+    if let Some(raw) = req.toolpath_id
+        && !valid_ids.contains(&raw)
+    {
+        let list = valid_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "toolpath_id {raw} matches no toolpath. This parameter takes the project-level \
+             ID (the `id` field from list_toolpaths), NOT the index — the two coincide only \
+             by accident. Valid ids: [{list}]. Returning an empty result here would be \
+             indistinguishable from a toolpath that genuinely produced no samples."
+        ));
+    }
+
+    let max_h = req.max_hotspots.unwrap_or(20);
+    let max_i = req.max_issues.unwrap_or(50);
+
+    // Translate the span filter args into a per-toolpath set of accepted
+    // SpanIds. A span_path matches when it contains any accepted SpanId
+    // (or the filter is unset).
+    //
+    // Filter resolution requires the AnnotatedToolpath to look up
+    // SpanKind / SpanPayload for each span index. When toolpath_id is
+    // unset and any span filter is set, we resolve per toolpath.
+    let want_kind = req
+        .span_kind
+        .map(parse_span_kind_filter)
+        .transpose()
+        .unwrap_or(None);
+    let span_filter_active =
+        req.span_kind.is_some() || req.span_id.is_some() || req.pass_index.is_some();
+    let resolve_accepted = |tp_index_for_id: usize| -> Option<std::collections::HashSet<u32>> {
+        if !span_filter_active {
+            return None;
+        }
+        let tc = state.session.get_toolpath_config(tp_index_for_id)?;
+        let rt = state.gui.toolpath_rt.get(&tc.id)?;
+        let result = rt.result.as_ref()?;
+        let spans = result.spans();
+        let mut set = std::collections::HashSet::<u32>::new();
+        for (i, span) in spans.iter().enumerate() {
+            let id = i as u32;
+            let mut accept = true;
+            if let Some(kind) = want_kind {
+                accept &= span.kind == kind;
+            }
+            if let Some(want_id) = req.span_id {
+                accept &= id == want_id;
+            }
+            if let Some(want_pi) = req.pass_index {
+                accept &= matches!(
+                    &span.payload,
+                    Some(SpanPayload::DepthPass { pass_index, .. }) if *pass_index == want_pi
+                );
+            }
+            if accept {
+                set.insert(id);
+            }
+        }
+        Some(set)
+    };
+    // Build a {toolpath_id_raw → accepted SpanId set}. Toolpath_id arg is
+    // the project-level raw id (matching SimulationCutSample.toolpath_id),
+    // while accepted-set lookup needs the index — translate via session.
+    let toolpath_id = req.toolpath_id.map(rs_cam_core::ToolpathId);
+    let mut accepted_by_toolpath: std::collections::HashMap<
+        rs_cam_core::ToolpathId,
+        Option<std::collections::HashSet<u32>>,
+    > = std::collections::HashMap::new();
+    if span_filter_active {
+        let n = state.session.toolpath_count();
+        for idx in 0..n {
+            if let Some(tc) = state.session.get_toolpath_config(idx)
+                && toolpath_id.is_none_or(|raw_id| tc.id == raw_id)
+            {
+                accepted_by_toolpath.insert(tc.id, resolve_accepted(idx));
+            }
+        }
+    }
+    let span_path_matches = |tp_id: rs_cam_core::ToolpathId, path: &[SpanId]| -> bool {
+        if !span_filter_active {
+            return true;
+        }
+        match accepted_by_toolpath.get(&tp_id) {
+            Some(Some(accepted)) => path.iter().any(|sid| accepted.contains(&sid.0)),
+            _ => false,
+        }
+    };
+
+    let summaries: Vec<&_> = ct
+        .semantic_summaries
+        .iter()
+        .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+        .collect();
+    let hotspots: Vec<&_> = ct
+        .hotspots
+        .iter()
+        .filter(|h| toolpath_id.is_none_or(|id| h.toolpath_id == id))
+        .filter(|h| span_path_matches(h.toolpath_id, &h.span_path))
+        .collect();
+    let issues: Vec<&_> = ct
+        .issues
+        .iter()
+        .filter(|i| toolpath_id.is_none_or(|id| i.toolpath_id == id))
+        .filter(|i| span_path_matches(i.toolpath_id, &i.span_path))
+        .collect();
+
+    let hotspot_count = hotspots.len();
+    let issue_count = issues.len();
+
+    let mut resp = BoundedResponse::new(req.caps.max_response_bytes);
+
+    // ── Always-kept scalars and vocabulary ───────────────────────────────
+    //
+    // R-2 (census §3.5 D4): this response carried TWO fields named
+    // `issue_count` measuring different populations — the top-level one
+    // (this request's filters applied) and `summary.issue_count` nested
+    // inside `summary` (the whole trace, filters ignored). An agent
+    // reading a filtered response could pick either and both looked
+    // authoritative. The legacy keys keep their exact values for wire
+    // compatibility; the disambiguating names sit beside them and say
+    // which population each counts.
+    resp.insert_always("hotspot_count", serde_json::json!(hotspot_count));
+    resp.insert_always("issue_count", serde_json::json!(issue_count));
+    // Explicit aliases for the two same-named counts, so neither has
+    // to be inferred from where it sits in the object.
+    resp.insert_always(
+        "issue_count_matching_filter",
+        serde_json::json!(issue_count),
+    );
+    resp.insert_always(
+        "issue_count_project_wide",
+        serde_json::json!(ct.summary.issue_count),
+    );
+    // And what the number actually IS: coalesced contiguous
+    // air/low-engagement RUNS, not per-sample tallies. The per-sample
+    // tallies are `air_cut_issue_count` / `low_engagement_issue_count`
+    // on the semantic summaries, and on the census fixture they were
+    // 43x larger under a near-identical name.
+    resp.insert_always(
+        "issue_count_population",
+        serde_json::json!("coalesced_segments"),
+    );
+    resp.insert_always(
+        "span_summaries_order",
+        serde_json::json!(rs_cam_mcp::response::ORDERING_SPAN_SUMMARIES),
+    );
+    resp.insert_always(
+        "semantic_summaries_order",
+        serde_json::json!(rs_cam_mcp::response::ORDERING_SEMANTIC_SUMMARIES),
+    );
+
+    // `summary` is the headline block and is never a candidate for
+    // dropping — it is 3.3 kB on the census fixture and every other number
+    // in the response is read against it.
+    resp.insert_always(
+        "summary",
+        serde_json::to_value(&ct.summary).unwrap_or_else(|_| serde_json::json!({})),
+    );
+
+    // ── Capped arrays, cheapest first ────────────────────────────────────
+    let hotspots_arr = cap_json_values(
+        hotspot_count,
+        hotspots
+            .iter()
+            .filter_map(|h| serde_json::to_value(h).ok()),
+        max_h,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("hotspots", hotspots_arr);
+
+    let issues_arr = cap_json_values(
+        issue_count,
+        issues.iter().filter_map(|i| serde_json::to_value(i).ok()),
+        max_i,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("issues", issues_arr);
+
+    // §6.E / Step 3 PR2 — drill-native outputs. `drill_summaries` always
+    // surfaces (per-toolpath summary block, compact). `drill_samples` is
+    // gated by `include_drill_samples` because the per-peck stream can be
+    // verbose on cycles with many holes.
+    let drill_summaries: Vec<&_> = ct
+        .drill_summaries
+        .iter()
+        .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+        .collect();
+    let drill_summaries_arr = cap_json_values(
+        drill_summaries.len(),
+        drill_summaries
+            .iter()
+            .filter_map(|s| serde_json::to_value(s).ok()),
+        req.caps.drill_summaries,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("drill_summaries", drill_summaries_arr);
+
+    // P0 unified-finishing probe — compact per-toolpath runtime block.
+    // `runtime_by_intent` is the F-034 integrator time bucketed by
+    // MoveIntent class (None when the sim ran without kinematics).
+    use rs_cam_core::simulation_cut::AirCutRatios;
+    let toolpath_summaries: Vec<&_> = ct
+        .toolpath_summaries
+        .iter()
+        .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+        .collect();
+    let toolpath_summaries_arr = cap_json_values(
+        toolpath_summaries.len(),
+        toolpath_summaries.iter().map(|s| {
+            serde_json::json!({
+                "toolpath_id": s.toolpath_id,
+                "total_runtime_s": s.total_runtime_s,
+                "cutting_runtime_s": s.cutting_runtime_s,
+                "rapid_runtime_s": s.rapid_runtime_s,
+                "air_cut_time_s": s.air_cut_time_s,
+                // LH-1: both denominators, both named. Thresholds follow
+                // the total-runtime reading; the MCP narration line
+                // reports the cutting-time one.
+                "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
+                "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
+                "low_engagement_time_s": s.low_engagement_time_s,
+                "metrics_not_applicable": s.metrics_not_applicable,
+                "runtime_by_intent": s.runtime_by_intent,
+            })
+        }),
+        req.caps.toolpath_summaries,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("toolpath_summaries", toolpath_summaries_arr);
+
+    let semantic_arr = cap_json_values(
+        summaries.len(),
+        summaries.iter().filter_map(|s| serde_json::to_value(s).ok()),
+        req.caps.semantic_summaries,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("semantic_summaries", semantic_arr);
+
+    if req.include_drill_samples {
+        let drill_samples: Vec<&_> = ct
+            .drill_samples
+            .iter()
+            .filter(|s| toolpath_id.is_none_or(|id| s.toolpath_id == id))
+            .collect();
+        let drill_samples_arr = cap_json_values(
+            drill_samples.len(),
+            drill_samples
+                .iter()
+                .filter_map(|s| serde_json::to_value(s).ok()),
+            req.caps.drill_samples,
+            resp.budget_mut(),
+        );
+        resp.insert_capped("drill_samples", drill_samples_arr);
+    } else {
+        // Not requested is not "did not fit": `null` says the caller
+        // declined the array, and no truncation keys are emitted for it.
+        resp.insert_always("drill_samples", serde_json::Value::Null);
+    }
+
+    // ── The big one, last ────────────────────────────────────────────────
+    let span_arr = build_span_cut_summaries(
+        state,
+        ct,
+        toolpath_id,
+        span_filter_active,
+        &accepted_by_toolpath,
+        req.caps.span_summaries,
+        resp.budget_mut(),
+    );
+    resp.insert_capped("span_summaries", span_arr);
+
+    Ok(resp.finish())
+}
+
+/// Build the `span_summaries` array under an item cap and a byte budget.
+///
+/// The accumulation pass runs over **every** matching span regardless of the
+/// cap, because `total_matching` has to be the true pre-cap population — a
+/// count inferred from what was emitted would report a truncated array as a
+/// complete one. Only the JSON construction is skipped past the cap, and
+/// that is where the bytes were: B-1 measured this array at 52,852,388 of a
+/// 56,225,225-byte response, 35,838 entries averaging 1,475 bytes.
+///
+/// Order is the documented [`rs_cam_mcp::response::ORDERING_SPAN_SUMMARIES`]:
+/// toolpath index ascending, then span id ascending.
+#[allow(clippy::too_many_arguments)]
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
     trace: &rs_cam_core::simulation_cut::SimulationCutTrace,
@@ -4610,8 +4758,15 @@ fn build_span_cut_summaries(
         rs_cam_core::ToolpathId,
         Option<std::collections::HashSet<u32>>,
     >,
-) -> serde_json::Value {
+    cap: usize,
+    budget: &mut rs_cam_mcp::response::ResponseBudget,
+) -> rs_cam_mcp::response::CappedArray {
+    use rs_cam_mcp::response::{CappedArray, ResponseBudget};
+
     let mut out = Vec::new();
+    let mut total_matching = 0usize;
+    // The enclosing `[]`, charged once — mirrors `cap_json_values`.
+    budget.charge(2);
     let n = state.session.toolpath_count();
     for idx in 0..n {
         let Some(tc) = state.session.get_toolpath_config(idx) else {
@@ -4660,6 +4815,12 @@ fn build_span_cut_summaries(
             if acc.sample_count == 0 {
                 continue;
             }
+            // Counted before the cap is consulted: `total_matching` must be
+            // the population, not the emission.
+            total_matching += 1;
+            if out.len() >= cap {
+                continue;
+            }
             // Roadmap F.9 — the chipload key carries the per-sample
             // raw peak (typically several × the chipload gate's
             // `median_low` statistic on a 2D pocket / 3D rough). The
@@ -4668,7 +4829,7 @@ fn build_span_cut_summaries(
             // exceedance. The gate's own statistic appears separately
             // on the load report's `chipload` verdict (see
             // `ChiploadMetric.statistic`).
-            out.push(serde_json::json!({
+            let row = serde_json::json!({
                 "toolpath_id": tc.id,
                 "span_id": span_id,
                 "kind": span_kind_label(span.kind),
@@ -4698,10 +4859,18 @@ fn build_span_cut_summaries(
                 // ones without parsing a separate summary. See
                 // planning/DEXEL_Z_ONLY_INVESTIGATION.md §6.D.
                 "per_kinematics": render_per_kinematics_json(acc),
-            }));
+            });
+            let cost = ResponseBudget::cost_of(&row).saturating_add(1);
+            if budget.would_fit(cost) {
+                budget.charge(cost);
+                out.push(row);
+            }
+            // A row that does not fit is simply not emitted; the shortfall
+            // shows up as `span_summaries_returned < _total_matching` with
+            // `_truncated: true`, which is the honest report either way.
         }
     }
-    serde_json::Value::Array(out)
+    CappedArray::from_parts(out, total_matching, cap)
 }
 
 /// Build a `ProjectEvidence` borrow view from viz-side state so MCP
@@ -5062,10 +5231,25 @@ fn build_inspect_spans_response(
     if !filter_active {
         // Summary mode: outermost spans only (Operation + DepthPass), with
         // child counts of contained non-boundary spans (excluding self).
+        //
+        // Checkpoint L-3 gave this array the same cap as `span_summaries`
+        // "for uniformity". **It is a latent bound, not a measured cost**:
+        // B-1 measured summary mode on a 33,195-span Unified Finish at
+        // **685 bytes** — `top_level` holds only Operation and DepthPass
+        // spans, of which that fixture has few. Nothing here fixed an
+        // observed problem. What it removes is an unbounded array whose
+        // `child_count` is additionally an O(top_level x spans) nested scan,
+        // so both the byte count and the scan are now bounded by the cap.
+        let cap = max_spans.unwrap_or(rs_cam_mcp::response::DEFAULT_MAX_TOP_LEVEL_SPANS);
+        let total_matching = spans
+            .iter()
+            .filter(|s| matches!(s.kind, SpanKind::Operation | SpanKind::DepthPass))
+            .count();
         let top_level: Vec<serde_json::Value> = spans
             .iter()
             .enumerate()
             .filter(|(_, s)| matches!(s.kind, SpanKind::Operation | SpanKind::DepthPass))
+            .take(cap)
             .map(|(id, s)| {
                 let child_count = spans
                     .iter()
@@ -5086,6 +5270,19 @@ fn build_inspect_spans_response(
             .collect();
 
         if let serde_json::Value::Object(map) = &mut response {
+            map.insert(
+                "top_level_total_matching".into(),
+                serde_json::json!(total_matching),
+            );
+            map.insert(
+                "top_level_returned".into(),
+                serde_json::json!(top_level.len()),
+            );
+            map.insert(
+                "top_level_truncated".into(),
+                serde_json::json!(top_level.len() < total_matching),
+            );
+            map.insert("top_level_cap".into(), serde_json::json!(cap));
             map.insert("top_level".into(), serde_json::Value::Array(top_level));
             map.insert(
                 "hint".into(),

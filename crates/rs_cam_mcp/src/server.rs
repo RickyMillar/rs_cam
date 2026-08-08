@@ -295,12 +295,41 @@ pub struct CollisionCheckParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct CutTraceParam {
-    /// Optional: filter results to a single toolpath by index
+    /// Optional: filter results to a single toolpath by its project-level
+    /// **id** — NOT its index. Ids come from `list_toolpaths` (`id` field);
+    /// the cut trace is keyed by id throughout. An id that matches no
+    /// toolpath is refused with the list of valid ids rather than answered
+    /// with an empty result. (Measured on a real project 2026-08-08: the
+    /// values 4/5/6 were simultaneously valid *indices* and valid *ids of
+    /// different toolpaths*, so this distinction is not academic.)
     pub toolpath_id: Option<usize>,
     /// Maximum hotspots to return (default: 20)
     pub max_hotspots: Option<usize>,
     /// Maximum issues to return (default: 50)
     pub max_issues: Option<usize>,
+    /// Maximum `span_summaries` entries to return (default: 200). Order is
+    /// toolpath index ascending, then span_id ascending, so a cap always
+    /// takes the same leading entries. Narrow with `span_kind` /
+    /// `pass_index` / `toolpath_id` rather than raising this.
+    pub max_span_summaries: Option<usize>,
+    /// Maximum `semantic_summaries` entries to return (default: 200). The
+    /// array is ordered by `wasted_runtime_s` descending, so the first N
+    /// are the N worst offenders.
+    pub max_semantic_summaries: Option<usize>,
+    /// Maximum `toolpath_summaries` entries to return (default: uncapped —
+    /// one row per toolpath that produced samples).
+    pub max_toolpath_summaries: Option<usize>,
+    /// Maximum `drill_summaries` entries to return (default: uncapped —
+    /// one row per drill toolpath).
+    pub max_drill_summaries: Option<usize>,
+    /// Maximum `drill_samples` entries to return when `include_drill_samples`
+    /// is true (default: 500).
+    pub max_drill_samples: Option<usize>,
+    /// Optional: override the global response byte backstop (default:
+    /// 8388608 = 8 MiB). Sections that do not fit are OMITTED and named in
+    /// `sections_not_computed`, and `complete` becomes false — a section
+    /// that did not fit is never rendered as an empty array or a zero.
+    pub max_response_bytes: Option<usize>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// a span of this kind. Accepted values match `SpanKind`:
     /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
