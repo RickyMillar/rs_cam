@@ -600,3 +600,52 @@ owns the ~1.0 s dispatch floor B-1 measured, and nothing here touched
 dispatch; (d) note for whoever writes the close-out live validation that
 the post-fix byte count is the one measurement this wave owes and cannot
 take without a release build.
+
+### B-2 addendum, 2026-08-12 — the core-suite result, and one PRE-EXISTING red
+
+My entry above promised the `cargo test -p rs_cam_core -q` result "under
+Verification" and then quoted no number, because the run was still going
+when the entry was written. Recording it now rather than leaving the
+promise dangling, and recording that it was **not clean**.
+
+- **Result: `cargo test -p rs_cam_core -q` — 1 test FAILED.**
+  `literature_matrix::run_literature_matrix`: *"1 cell(s) reached major+
+  severity: `flat_3mm_pocket_ipe_extreme`: critical
+  (`anti.ipe_micro_matches_oak_micro_chipload`: anti-pattern
+  `feed_rate / (rpm * flutes) > 0.030` triggered (= 1))"*. 20 passed, 1
+  failed. Deterministic — reproduced on three consecutive runs.
+- **Instrument note, because I nearly filed a false green.** My first
+  core run reported "40 binaries, 2,430 passed, 0 failed" and exited 0.
+  That was an artefact of my own command: `cargo test … | grep … | head
+  -40` truncated at 40 matches and returned **grep's** exit status, not
+  cargo's. The crate has ~160 test binaries. The re-run without `head`
+  is the one quoted above. A pipeline's exit code is not the test suite's.
+- **Attribution: NOT B-2, and NOT A-2's core change.** Two independent
+  facts. (1) None of B-2's four commits touches a single file under
+  `crates/rs_cam_core/` — verified with `git show --stat`. (2) The same
+  test fails **identically** in a clean worktree at `825524f` (my last
+  commit before A-2's core work), and `git diff 53b1c72 825524f --
+  crates/rs_cam_core/src/` is **empty** — the core source at that
+  revision is byte-identical to master. The red therefore **pre-dates
+  the whole TD3 programme** and is present on `master @ 53b1c72`.
+- **It does contradict a claim in the log.** `69ec3cf`'s commit message
+  states "Full `cargo test -p rs_cam_core` is green, 0 failures,
+  including the litmatrix suites". On this tree that is not true, and it
+  was not true before A-2's change either. I am not editing A-2's entry
+  (rule 7); flagging it here so the discrepancy is on the record and the
+  next agent does not trust the claim over the suite.
+- **NOT FIXED, and deliberately so.** The failing cell is a feeds
+  *recipe* number on a Ø3 tool in ipé — Lane A territory, sub-Ø2/small-
+  diameter scaling-law country (`D^0.61` / `Janka^-0.5`, adopted
+  2026-08-06, repo-derived and unsourced per `CREDITS.md`). Touching it
+  is a number move that needs a checkpoint, not a fix a Lane B wave may
+  make on its way past. Owner: Lane A (A-6/A-9 are nearest). Re-open
+  condition: none needed — it is red now and stays red until ruled.
+- Unaffected by all of the above: the B-2 gates quoted in my entry stand
+  — 244 viz lib / 12 `mcp_escape_hatches` / 11 `wizard_e2e` / 13
+  `rs_cam_mcp` green, `cargo clippy --workspace --all-targets -D
+  warnings` clean, `cargo fmt --check --all` clean at `afd102b`.
+- **Fingerprint statement, now properly evidenced.** No fingerprint moved
+  *because of this wave*: the wave's diff contains no `rs_cam_core` file,
+  so no generator, gate or fingerprint input is reachable from it, and
+  the one core red is reproduced at a revision whose core is master's.
