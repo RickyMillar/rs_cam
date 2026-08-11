@@ -274,7 +274,41 @@ number is now independently reproduced by a test.
 
 ## 4. Screenshots — what was captured, and what was not
 
-### 4.1 NOT EXERCISED: the live before-fix capture
+### 4.1 ~~NOT EXERCISED~~ — CLOSED by A-2, 2026-08-11
+
+> **Status update (A-2, 2026-08-11).** The live pair now exists:
+> `artifacts/a2/heatmap_{before,after}_{viewport,simulation}.png`, four
+> GUI captures of a running `rs_cam_gui --mcp`. **F-HEATMAP's screenshot
+> obligation is discharged.**
+>
+> Not from the operator's instance. It stayed unreachable for
+> GUI-dispatched calls (`served_from: "snapshot"`, `snapshot_age_s`
+> 142.6, `frame_loop.healthy: false`) — the same G-LV.1 block recorded
+> below, three days later. A-2 took the brief's sanctioned fallback and
+> built two of its own instances, `825524f` (pre-fix) and `7aa0be0`
+> (post-fix), same project / generation / resolution / camera. See
+> `artifacts/a2/README.md` for which build each PNG came from and for
+> the one identical line patched in both (the DEFAULT colour mode —
+> the heat-map has no MCP or CLI selector).
+>
+> Two corrections to the resume condition written below:
+> **`screenshot_toolpath` is not a heat-map surface** (separate
+> offscreen renderer, fixed palette, ignores `toolpath_color_mode`;
+> proof captured in `artifacts/a2/`), and `WINIT_UNIX_BACKEND=x11` is
+> inert on winit 0.30 — unset `WAYLAND_DISPLAY` instead (Checkpoint
+> L-6). The working recipe is `set_ui_view {workspace: "toolpaths"}` +
+> `screenshot_gui`.
+>
+> The magnitude on a real project, which §6 recorded as unmeasured, is
+> now measured — and its **sign is opposite** to the fixture's. On
+> wanaka's "Back Rough" (adaptive3d, near-full-slot) the retired measure
+> painted **red, above the ceiling**, over an op the gate rules
+> `Within`; the fixture's synthetic light-arc arm painted **blue, below
+> the floor**. Same defect, opposite direction. The fixture's 4.497×
+> remains a fixture figure and must not be quoted as a wanaka one.
+
+#### Original A-1 entry (2026-08-08), unedited
+
 
 **The live screenshot required by rule 3 and by F-HEATMAP's own ledger
 row was not taken.** The GUI (running `d820226-dirty`, the review's
