@@ -204,15 +204,36 @@ pub struct SpanAggregate {
     pub n_cutting: usize,
     pub sum_eng: f64,
     pub peak_eng: f64,
+    /// Running sum / peak of the **achieved advance per tooth**
+    /// (`effective_feed / (rpm · flutes)`), over the `n_advance` samples
+    /// that could state one.
+    pub sum_advance: f64,
+    pub peak_advance: f64,
+    pub n_advance: usize,
+    /// Running sum / peak of the **arc-mean chip thickness**, over the
+    /// `n_chip` samples that resolved a chip model.
+    ///
+    /// Until 2026-08-08 there was a single `sum_chip` fed by
+    /// `effective_chip_thickness_mm.unwrap_or(chipload_mm_per_tooth)` and
+    /// printed under one label with unit `mm`. On a trace where some
+    /// samples resolve a chip model and some do not, that average was a
+    /// **mean of two different physical quantities** (A-1 census row V4).
+    /// The blend is gone: each quantity now has its own accumulator, its
+    /// own denominator, and its own row.
     pub sum_chip: f64,
     pub peak_chip: f64,
+    pub n_chip: usize,
     pub peak_doc: f64,
     pub sum_mrr: f64,
     pub peak_mrr: f64,
 }
 
 impl SpanAggregate {
-    pub fn ingest(&mut self, sample: &SimulationCutSample) {
+    pub fn ingest(
+        &mut self,
+        sample: &SimulationCutSample,
+        predicted_feeds: &rs_cam_core::machine_kinematics::PredictedFeedMap,
+    ) {
         self.n_samples += 1;
         if !sample.is_cutting {
             return;
@@ -222,12 +243,21 @@ impl SpanAggregate {
         if sample.engagement.radial_woc_fraction > self.peak_eng {
             self.peak_eng = sample.engagement.radial_woc_fraction;
         }
-        let chip = sample
-            .effective_chip_thickness_mm
-            .unwrap_or(sample.chipload_mm_per_tooth);
-        self.sum_chip += chip;
-        if chip > self.peak_chip {
-            self.peak_chip = chip;
+        if let Some(advance) =
+            rs_cam_core::tool_load::display::achieved_advance_per_tooth(sample, predicted_feeds)
+        {
+            self.n_advance += 1;
+            self.sum_advance += advance.mm();
+            if advance.mm() > self.peak_advance {
+                self.peak_advance = advance.mm();
+            }
+        }
+        if let Some(chip) = rs_cam_core::tool_load::display::arc_mean_chip_thickness(sample) {
+            self.n_chip += 1;
+            self.sum_chip += chip.mm();
+            if chip.mm() > self.peak_chip {
+                self.peak_chip = chip.mm();
+            }
         }
         if sample.axial_engagement_mm > self.peak_doc {
             self.peak_doc = sample.axial_engagement_mm;
@@ -246,11 +276,24 @@ impl SpanAggregate {
         }
     }
 
-    pub fn avg_chipload(&self) -> f64 {
-        if self.n_cutting == 0 {
+    /// Mean **achieved advance per tooth**. Denominator is the number of
+    /// samples that produced one, not the cutting-sample count — a mean
+    /// must divide by its own population.
+    pub fn avg_advance_per_tooth(&self) -> f64 {
+        if self.n_advance == 0 {
             0.0
         } else {
-            self.sum_chip / self.n_cutting as f64
+            self.sum_advance / self.n_advance as f64
+        }
+    }
+
+    /// Mean **arc-mean chip thickness**, over the samples that resolved a
+    /// chip model.
+    pub fn avg_chip_thickness(&self) -> f64 {
+        if self.n_chip == 0 {
+            0.0
+        } else {
+            self.sum_chip / self.n_chip as f64
         }
     }
 
@@ -303,7 +346,7 @@ impl SpanAggregateCache {
                 self.aggregates
                     .entry((key_tp, sid.0))
                     .or_default()
-                    .ingest(sample);
+                    .ingest(sample, &trace.predicted_feeds);
             }
             if sample.is_cutting {
                 self.cutting_indices.entry(key_tp).or_default().push(idx);

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::ops::Range;
 use std::sync::Arc;
+
+use rs_cam_core::feeds::{AdvancePerToothMm, VendorChiploadBand};
 
 use crate::render::RenderResources;
 use crate::render::mesh_render::MeshGpuData;
@@ -807,28 +808,35 @@ impl RsCamApp {
             let session = &state.session;
             let gui = &state.gui;
 
-            // For Chipload color mode: build per-toolpath envelope + per-move
-            // chipload maps once before the per-toolpath loop. Both maps are
-            // keyed by toolpath_id (the simulator-side `usize`).
+            // For the advance/tooth colour mode: build per-toolpath vendor
+            // band + per-move achieved advance/tooth maps once before the
+            // per-toolpath loop. Both maps are keyed by toolpath_id (the
+            // simulator-side `usize`).
+            //
+            // Both halves are typed (`VendorChiploadBand` /
+            // `AdvancePerToothMm`) so the pairing that produced F-HEATMAP —
+            // an arc-mean chip thickness handed to a band comparison —
+            // cannot be reassembled here without a compile error.
             // SAFETY: complex tuple type used only as a local binding in
             // this function; aliasing it project-wide would obscure the
-            // (envelope, per-move) pairing.
+            // (band, per-move) pairing.
             #[allow(clippy::type_complexity)]
-            let chipload_inputs: Option<(
-                HashMap<rs_cam_core::ToolpathId, Range<f64>>,
-                HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>>,
+            let advance_inputs: Option<(
+                HashMap<rs_cam_core::ToolpathId, VendorChiploadBand>,
+                HashMap<rs_cam_core::ToolpathId, HashMap<usize, AdvancePerToothMm>>,
             )> = if matches!(
                 state.viewport.toolpath_color_mode,
-                crate::state::viewport::ToolpathColorMode::Chipload
+                crate::state::viewport::ToolpathColorMode::AdvancePerTooth
             ) {
                 let sim_trace = state
                     .simulation
                     .results
                     .as_ref()
                     .and_then(|r| r.cut_trace.as_deref());
-                let envelopes = build_chipload_envelopes(session, sim_trace);
-                let per_move = build_chipload_per_move(sim_trace);
-                Some((envelopes, per_move))
+                let bands = build_advance_bands(session, sim_trace);
+                let per_move =
+                    rs_cam_core::tool_load::display::advance_per_tooth_per_move(sim_trace);
+                Some((bands, per_move))
             } else {
                 None
             };
@@ -879,20 +887,20 @@ impl RsCamApp {
                                 tc.operation.feed_rate(),
                             )
                         }
-                        crate::state::viewport::ToolpathColorMode::Chipload => {
-                            let envelope = chipload_inputs
+                        crate::state::viewport::ToolpathColorMode::AdvancePerTooth => {
+                            let band = advance_inputs
                                 .as_ref()
-                                .and_then(|(env, _)| env.get(&tc.id).cloned());
-                            let empty: HashMap<usize, f64> = HashMap::new();
-                            let per_move = chipload_inputs
+                                .and_then(|(bands, _)| bands.get(&tc.id).copied());
+                            let empty: HashMap<usize, AdvancePerToothMm> = HashMap::new();
+                            let per_move = advance_inputs
                                 .as_ref()
                                 .and_then(|(_, m)| m.get(&tc.id))
                                 .unwrap_or(&empty);
-                            ToolpathGpuData::from_toolpath_chipload(
+                            ToolpathGpuData::from_toolpath_advance_per_tooth(
                                 &render_state.device,
                                 &resources.gpu_limits,
                                 render_tp,
-                                envelope.as_ref(),
+                                band.as_ref(),
                                 per_move,
                             )
                         }
@@ -1044,46 +1052,22 @@ fn translate_annotated(
     annotated.translated(shift)
 }
 
-/// Build a `toolpath_id -> [cl_min, cl_max]` map from the suggest module's
-/// matched LUT row per toolpath. Toolpaths with no LUT match (custom
-/// material, no vendor data for the tool/op family, etc.) are absent
-/// from the map; the renderer falls back to grey.
-fn build_chipload_envelopes(
+/// Build a `toolpath_id -> vendor chipload band` map from the matched LUT
+/// row per toolpath. Toolpaths with no LUT match (custom material, no
+/// vendor data for the tool/op family, etc.) are absent from the map; the
+/// renderer falls back to grey.
+///
+/// The core helper returns a bare `Range<f64>`; this is the display
+/// boundary where the range acquires its unit
+/// (`VendorChiploadBand` — linear advance per tooth).
+fn build_advance_bands(
     session: &rs_cam_core::session::ProjectSession,
     sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-) -> HashMap<rs_cam_core::ToolpathId, Range<f64>> {
+) -> HashMap<rs_cam_core::ToolpathId, VendorChiploadBand> {
     rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace)
-}
-
-/// Build a `toolpath_id -> { move_index -> max(effective_chip_thickness_mm) }`
-/// nested map from the simulation cut trace. Worst-case-per-move is the
-/// right signal for "did this segment violate the envelope?". Samples
-/// without an effective chip thickness (rapids, transients) are skipped.
-fn build_chipload_per_move(
-    sim_trace: Option<&rs_cam_core::simulation_cut::SimulationCutTrace>,
-) -> HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>> {
-    let mut map: HashMap<rs_cam_core::ToolpathId, HashMap<usize, f64>> = HashMap::new();
-    let Some(trace) = sim_trace else {
-        return map;
-    };
-    for s in &trace.samples {
-        if !s.is_cutting {
-            continue;
-        }
-        let Some(ct) = s.effective_chip_thickness_mm else {
-            continue;
-        };
-        let inner = map.entry(s.toolpath_id).or_default();
-        inner
-            .entry(s.move_index)
-            .and_modify(|prev| {
-                if ct > *prev {
-                    *prev = ct;
-                }
-            })
-            .or_insert(ct);
-    }
-    map
+        .iter()
+        .map(|(id, range)| (*id, VendorChiploadBand::from_advance_range(range)))
+        .collect()
 }
 
 #[cfg(test)]

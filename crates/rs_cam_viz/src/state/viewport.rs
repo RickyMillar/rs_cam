@@ -91,11 +91,18 @@ pub enum ToolpathColorMode {
     Normal,
     /// Color by feed rate: green = nominal, yellow = reduced, red = heavily loaded.
     Engagement,
-    /// Color each segment by per-sample effective chip thickness vs the
-    /// matched LUT row's chipload window. Blue = under-engaged, green =
-    /// within bounds, orange/red = approaching or exceeding cl_max,
-    /// grey = no envelope or no sample.
-    Chipload,
+    /// Color each segment by the **achieved advance per tooth**
+    /// (`effective_feed / (rpm × flutes)` — the quantity the chipload
+    /// gate observes) against the matched vendor row's band. Blue =
+    /// under-engaged, green = within band, orange/red = approaching or
+    /// above the band ceiling, grey = no band or no sample.
+    ///
+    /// Named `Chipload` until 2026-08-08, when it also *measured*
+    /// something else: an arc-mean chip thickness compared to an
+    /// advance-per-tooth band (F-HEATMAP). The variant is GUI-session
+    /// state only — it is not serialised into any project file — so the
+    /// rename carries no wire compatibility.
+    AdvancePerTooth,
 }
 
 impl ViewportState {

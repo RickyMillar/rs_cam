@@ -930,9 +930,29 @@ fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
 /// three different ways (focused card, Top-hotspots list, Span findings row);
 /// every site now leads with this identical line + units so the focused card's
 /// first line matches the list rows exactly.
-fn hotspot_summary_line(move_start: usize, wasted_runtime_s: f64, peak_chip: f64) -> String {
-    format!("m{move_start} · waste {wasted_runtime_s:.2}s · peak chip {peak_chip:.4} mm")
+fn hotspot_summary_line(move_start: usize, wasted_runtime_s: f64, peak_advance: f64) -> String {
+    // The value is `SimulationCutSummary::peak_chipload_mm_per_tooth`, a
+    // per-sample peak of the **commanded** advance per tooth — not a chip
+    // thickness, which is what "peak chip … mm" read as (A-1 census row
+    // V5). Name and unit corrected 2026-08-08; the number is unchanged.
+    format!(
+        "m{move_start} · waste {wasted_runtime_s:.2}s ·          peak commanded a/t {peak_advance:.4} mm/tooth"
+    )
 }
+
+/// Quantity caveat on the Cut-Metrics advance/tooth row — the same
+/// expression the tool-load gate observes, so the row and the badge
+/// cannot disagree (Checkpoint H1, 2026-08-08).
+const ACHIEVED_ADVANCE_HOVER: &str = "Achieved advance per tooth = effective feed \u{00f7} (RPM \u{00d7} flutes), where \
+     effective feed is the machine's predicted feed for the move (F-035). This is the \
+     quantity vendor chipload bands are published in and the quantity the tool-load gate \
+     observes.";
+
+/// Quantity caveat on the Cut-Metrics chip-thickness row. Deliberately
+/// states that there is no band for it.
+const ARC_MEAN_CHIP_HOVER: &str = "Arc-mean chip thickness measured by the dexel simulator. An engagement/force \
+     signal, NOT the unit any vendor chipload band is published in \u{2014} do not compare \
+     it to one. It falls with engagement arc even when feed, RPM and flutes are unchanged.";
 
 /// Provenance caveat shown as an `on_hover_text` on every engagement readout
 /// (INS-006) — engagement is comparative, not an absolute under-engagement bar.
@@ -991,7 +1011,7 @@ fn draw_tool_load_badges(
         );
         verdict_badge(
             ui,
-            "chipload",
+            "advance/tooth",
             &verdict.chipload.as_criterion_status(),
             chipload_bound,
             burn_risk,
@@ -1153,10 +1173,10 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
                 .map(|e| e.remedy)
                 .unwrap_or(match (status.kind, burn_risk) {
                     (CriterionKind::Chipload, true) => {
-                        "chipload below vendor min — rubbing/burning risk. \
-                         At low chipload the tool edge rubs instead of cutting; \
-                         friction generates heat that glazes and burns the wood. \
-                         Increase feed rate or reduce RPM."
+                        "achieved advance/tooth below the vendor band minimum — \
+                         rubbing/burning risk. At low advance per tooth the tool edge \
+                         rubs instead of cutting; friction generates heat that glazes \
+                         and burns the wood. Increase feed rate or reduce RPM."
                     }
                     _ => "load criterion exceeded",
                 });
@@ -1487,13 +1507,25 @@ fn draw_span_body(
                     ui.end_row();
                     row(
                         ui,
-                        "Chipload",
+                        rs_cam_core::feeds::ACHIEVED_ADVANCE_PER_TOOTH,
+                        format!(
+                            "avg {:.4} · peak {:.4} mm/tooth",
+                            agg.avg_advance_per_tooth(),
+                            agg.peak_advance
+                        ),
+                    )
+                    .on_hover_text(ACHIEVED_ADVANCE_HOVER);
+                    ui.end_row();
+                    row(
+                        ui,
+                        rs_cam_core::feeds::ARC_MEAN_CHIP_THICKNESS,
                         format!(
                             "avg {:.4} · peak {:.4} mm",
-                            agg.avg_chipload(),
+                            agg.avg_chip_thickness(),
                             agg.peak_chip
                         ),
-                    );
+                    )
+                    .on_hover_text(ARC_MEAN_CHIP_HOVER);
                     ui.end_row();
                     row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
                     ui.end_row();
