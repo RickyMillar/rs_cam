@@ -593,6 +593,15 @@ pub enum McpRequestKind {
     SetSpindleStrategy {
         strategy: String,
     },
+    /// Checkpoint I-5 (2026-08-12): apply the Feeds & Speeds recommendation
+    /// to one toolpath through the same funnel both GUI surfaces use, with
+    /// the scope stated explicitly ("speeds" / "cut_geometry" / "both").
+    /// Refuses — it does not silently no-op — when the tool × operation
+    /// pairing is one `validate_tool_for_operation` declines.
+    ApplyFeeds {
+        index: usize,
+        scope: String,
+    },
 
     // ── Compute (async — response sent when compute finishes) ────────
     GenerateToolpath {

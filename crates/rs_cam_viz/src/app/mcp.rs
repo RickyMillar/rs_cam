@@ -594,6 +594,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_set_spindle_strategy(&strategy);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::ApplyFeeds { index, scope } => {
+                let resp = self.mcp_apply_feeds(index, &scope);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
 
             // ── Compute operations (async — store oneshot) ───────────
             McpRequestKind::GenerateToolpath { index } => {
@@ -3690,6 +3694,102 @@ impl super::RsCamApp {
             ),
             serde_json::json!({ "spindle_strategy": strategy, "changed": true }),
             Vec::new(),
+            &before,
+        )
+    }
+
+    /// `apply_feeds` — the agent's entry to the one application funnel
+    /// (Checkpoint I-5, 2026-08-12).
+    ///
+    /// A-3's census §2f recorded that the MCP surface had **no** apply tool at
+    /// all: `get_suggest_rationale` is read-only and says so,
+    /// `set_spindle_strategy` states it mutates nothing, and the only agent
+    /// write was `set_toolpath_param` — a raw operator write that is neither
+    /// feeds-validated nor invariant-funnelled. An agent therefore held the
+    /// old modal's contract with none of the modal's preview. This gives it
+    /// the properties panel's contract instead, and unlike a GUI button it
+    /// must name its scope.
+    ///
+    /// A refused pairing returns a mutation **error** carrying the engine's
+    /// own refusal text. It must never read as a successful no-op: an agent
+    /// that cannot distinguish "applied" from "declined" will re-simulate and
+    /// conclude the recommendation did nothing.
+    fn mcp_apply_feeds(&mut self, index: usize, scope: &str) -> String {
+        use rs_cam_core::feeds::suggest::ApplyScope;
+        let before = self.mcp_diagnostic_snapshot();
+        let parsed = match scope {
+            "speeds" | "Speeds" => ApplyScope::Speeds,
+            "cut_geometry" | "CutGeometry" | "cut" => ApplyScope::CutGeometry,
+            "both" | "Both" => ApplyScope::Both,
+            other => {
+                return self.mcp_mutation_error(
+                    format!(
+                        "Error: unknown scope '{other}'. Expected 'speeds' (feed/plunge/RPM, \
+                         does not change the cut), 'cut_geometry' (stepover/DOC, CHANGES THE \
+                         CUT) or 'both'."
+                    ),
+                    Some("scope".to_owned()),
+                );
+            }
+        };
+        let Some(toolpath_id) = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .get(index)
+            .map(|tc| tc.id)
+        else {
+            return self.mcp_mutation_error(
+                format!("Error: toolpath index {index} not found"),
+                Some("index".to_owned()),
+            );
+        };
+        if let Err(why) = self
+            .controller
+            .apply_feeds_recommendation(toolpath_id, parsed)
+        {
+            return self.mcp_mutation_error(
+                format!(
+                    "Error: nothing applied to toolpath {index} — this tool cannot run this \
+                     operation: {why}"
+                ),
+                Some("index".to_owned()),
+            );
+        }
+        let stale = self.mcp_apply_stale(MutationKind::ToolpathParamChanged {
+            toolpath_index: index,
+        });
+        let applied = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .get(index)
+            .map(|tc| {
+                serde_json::json!({
+                    "scope": scope,
+                    "changes_the_cut": !matches!(parsed, ApplyScope::Speeds),
+                    "feed_rate": tc.operation.feed_rate(),
+                    "plunge_rate": tc.operation.plunge_rate(),
+                    "spindle_rpm": tc.operation.spindle_rpm(),
+                    "stepover": tc.operation.stepover(),
+                    "depth_per_pass": tc.operation.depth_per_pass(),
+                })
+            })
+            .unwrap_or(serde_json::Value::Null);
+        let cut_note = if matches!(parsed, ApplyScope::Speeds) {
+            "Cut geometry (DOC/WOC) unchanged."
+        } else {
+            "CHANGED THE CUT (DOC/WOC) — re-simulate before trusting any gate verdict."
+        };
+        self.mcp_mutation_result(
+            format!(
+                "Applied Feeds recommendation to toolpath {index} with scope '{scope}'. \
+                 {cut_note} Regenerate to apply."
+            ),
+            applied,
+            stale,
             &before,
         )
     }
