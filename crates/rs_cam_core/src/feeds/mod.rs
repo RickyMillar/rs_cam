@@ -24,6 +24,7 @@ pub mod geometry_class;
 pub mod predict;
 pub mod profile;
 pub mod provenance;
+pub mod quantities;
 pub mod rationale;
 pub mod suggest;
 pub mod vendor_lookup;
@@ -36,6 +37,11 @@ pub use explanation::{
 };
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
+pub use quantities::{
+    ACHIEVED_ADVANCE_PER_TOOTH, ADVANCE_PER_TOOTH_UNIT, ARC_MEAN_CHIP_THICKNESS, AchievedFeedMmMin,
+    AdvancePerToothMm, ArcMeanChipThicknessMm, COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass,
+    CommandedFeedMmMin, VendorChiploadBand,
+};
 pub use vendor_lut::VendorLut;
 
 /// Global embedded vendor LUT, loaded once on first access.
