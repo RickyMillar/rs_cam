@@ -30,6 +30,7 @@ use crate::ui::automation;
 use crate::ui::components::{
     PrecedenceField, ProvKind, Suggestion, UiExt, ValueRow, mrr_row, power_bar,
 };
+use crate::ui::theme;
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
 /// picker: (id, display name, whether its cached result already has
@@ -1653,11 +1654,24 @@ fn calculate_and_apply_feeds(
 /// is the per-toolpath modulation summary captured during simulation
 /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6). Display-only — it is
 /// the optimizer's result, not a field to edit.
-fn draw_operating_point(ui: &mut egui::Ui, summary: &rs_cam_core::tool_load::ModulationSummary) {
+fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict) {
     use rs_cam_core::tool_load::ModulationStrategyTag;
+    let summary = verdict.modulation_summary.as_ref();
     ui.named_section("OPERATING POINT \u{2014} measured", |ui| {
+        // Checkpoint H2/H4.4 — the four-line card. Before it existed, this
+        // section showed a feed RATIO and never printed an advance per
+        // tooth at all, so commanded and achieved were nowhere on screen
+        // together (A-1 census row P2, classified a gap rather than a
+        // mislabel). Every number below is read off the gate's own
+        // `FeedExplanation` stages — nothing is recomputed here, so the
+        // card cannot drift from the verdict it sits beside.
+        draw_advance_per_tooth_card(ui, verdict);
+
         // Hero line: the one constraint that bound feed on the most cuts —
         // the "why" behind these feeds.
+        let Some(summary) = summary else {
+            return;
+        };
         if let Some((binding, frac)) = summary
             .binding_constraint_distribution
             .iter()
@@ -1719,6 +1733,122 @@ fn draw_operating_point(ui: &mut egui::Ui, summary: &rs_cam_core::tool_load::Mod
                 });
         }
     });
+}
+
+/// Checkpoint H4.4 — the operating-point card: **Commanded advance/tooth
+/// / Achieved advance/tooth / Vendor band / Gate verdict**, four lines,
+/// read-only.
+///
+/// The point of putting them adjacent is that the interesting number is
+/// the *gap*: commanded is what the operator typed, achieved is what the
+/// machine reaches after the F-035 kinematics substitution, and the band
+/// is the only one of the three published by a vendor. A recommendation
+/// accepted against the commanded figure alone can be well outside the
+/// band by the time the cutter is in the wood.
+///
+/// Display-only. This is the Feeds tab, and the standing rule is that it
+/// never auto-locks a numeric field — there is no input affordance here,
+/// only labels.
+fn draw_advance_per_tooth_card(
+    ui: &mut egui::Ui,
+    verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
+) {
+    use rs_cam_core::feeds::{ACHIEVED_ADVANCE_PER_TOOTH, COMMANDED_ADVANCE_PER_TOOTH};
+    let Some(explain) = verdict.feed_explanation.as_deref() else {
+        return;
+    };
+    egui::Grid::new("feeds_card_advance_per_tooth")
+        .num_columns(2)
+        .spacing([8.0, 3.0])
+        .show(ui, |ui| {
+            ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
+            ui.label(format!(
+                "{:.4} mm/tooth",
+                explain.commanded.feed_per_tooth_mm
+            ))
+            .on_hover_text(format!(
+                "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes)",
+                explain.commanded.feed_rate_mm_min,
+                explain.commanded.spindle_rpm,
+                explain.commanded.flute_count,
+            ));
+            ui.end_row();
+
+            ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
+            let achieved = egui::RichText::new(format!("{:.4} mm/tooth", explain.gate.value_mm));
+            let ratio_note = match explain.achieved_feed.median_ratio {
+                Some(r) => format!(
+                    "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
+                     {}. The machine reaches {:.0}% of the commanded feed \
+                     (median) on this path.",
+                    explain.gate.sample_count,
+                    explain.gate.statistic.label(),
+                    r * 100.0,
+                ),
+                // No predicted-feed map: `effective_feed_for_sample` returns
+                // the commanded feed, so this row IS the commanded value and
+                // must say so rather than implying a measurement.
+                None => format!(
+                    "No kinematics prediction on this trace, so the effective \
+                     feed falls back to the commanded feed \u{2014} this row is \
+                     not independent evidence. Over the {} {}.",
+                    explain.gate.sample_count,
+                    explain.gate.statistic.label(),
+                ),
+            };
+            ui.label(achieved).on_hover_text(ratio_note);
+            ui.end_row();
+
+            ui.label("Vendor band:");
+            let band = match explain.band.min_mm_per_tooth {
+                Some(lo) => format!(
+                    "{lo:.4}\u{2013}{:.4} mm/tooth",
+                    explain.band.max_mm_per_tooth
+                ),
+                None => format!("\u{2264} {:.4} mm/tooth", explain.band.max_mm_per_tooth),
+            };
+            ui.label(band).on_hover_text(format!(
+                "Vendor chipload column from row {} (calibrated d={:.3} mm), \
+                 after DOC derate. Published as a linear advance per tooth \
+                 \u{2014} the same quantity as the two rows above.",
+                explain.band.observation_id, explain.band.row_diameter_mm,
+            ));
+            ui.end_row();
+
+            ui.label("Gate verdict:");
+            let (text, color) = advance_gate_verdict_text(&verdict.chipload);
+            ui.label(egui::RichText::new(text).color(color));
+            ui.end_row();
+        });
+    ui.add_space(4.0);
+}
+
+/// One-line rendering of the chipload gate's verdict for the card above.
+fn advance_gate_verdict_text(
+    chipload: &rs_cam_core::tool_load::ChiploadVerdict,
+) -> (String, egui::Color32) {
+    use rs_cam_core::tool_load::ChiploadVerdict;
+    use rs_cam_core::tool_load::verdict::ChipSide;
+    match chipload {
+        ChiploadVerdict::Within { burn_advisory, .. } => match burn_advisory {
+            Some(_) => (
+                "Within band (burn advisory)".to_owned(),
+                theme::WARNING_MILD,
+            ),
+            None => ("Within band".to_owned(), theme::SUCCESS),
+        },
+        ChiploadVerdict::Exceeds { side, .. } => (
+            match side {
+                ChipSide::Low => "EXCEEDS \u{2014} below band (burn/rubbing)".to_owned(),
+                ChipSide::High => "EXCEEDS \u{2014} above band (breakage)".to_owned(),
+            },
+            theme::ERROR,
+        ),
+        // A gate that could not evaluate must not render as a pass.
+        ChiploadVerdict::Unmodeled { reason } => {
+            (format!("not modelled ({reason:?})"), theme::TEXT_DIM)
+        }
+    }
 }
 
 fn draw_feeds_card(
@@ -1926,8 +2056,15 @@ fn draw_feeds_card(
         // where adaptive feed modulation actually ran (the rollup rides on
         // the load verdict). No edit affordances: it's the solved result,
         // not a field to tune.
-        if let Some(summary) = load_verdict.and_then(|v| v.modulation_summary.as_ref()) {
-            draw_operating_point(ui, summary);
+        // Rendered whenever the gate produced either a feed explanation or a
+        // modulation rollup — the card half needs only the former, and
+        // before Checkpoint H the whole section was hidden unless adaptive
+        // feed modulation had run, which is why an operator could simulate
+        // and still never see an achieved advance per tooth.
+        if let Some(v) = load_verdict
+            && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
+        {
+            draw_operating_point(ui, v);
         }
 
         {
