@@ -889,11 +889,14 @@ mod tests {
             locality: "helix entry".to_owned(),
         };
         let s = format_entry_advisory(&a);
-        // Wanaka shape: helix entry sample reading + LUT max + pct +
-        // operator-friendly suggestion.
+        // Wanaka shape: helix entry sample reading + vendor band max +
+        // pct + operator-friendly suggestion. "LUT max" became "vendor
+        // band max" at Checkpoint H2 — the word "chipload" survives only
+        // where a vendor band is named, so the band gets named.
         assert!(s.starts_with("helix entry"));
         assert!(s.contains("0.0707"));
-        assert!(s.contains("LUT max"));
+        assert!(s.contains("advance/tooth"));
+        assert!(s.contains("vendor band max"));
         assert!(s.contains("+29") || s.contains("+28"));
         assert!(s.ends_with("consider gentler entry."));
     }
