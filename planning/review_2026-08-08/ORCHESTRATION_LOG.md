@@ -697,8 +697,8 @@ tests at `crates/rs_cam_viz/tests/apply_contract_a3.rs`. The raw
 measurement dump was a scratch test, run once and deleted after capture; every
 number it produced is transcribed into the deliverable §3 **and** re-asserted
 by a permanent test, so nothing rests on a deleted artifact.
-`planning/review_2026-08-08/artifacts/a3/` was created and is empty — there is
-no screenshot to put in it (see NOT EXERCISED).
+No `artifacts/a3/` directory exists: there is no screenshot to put in it (see
+NOT EXERCISED) and every other artifact of this wave is a committed file.
 
 Result (fact), interpretation, and uncertainty:
 
