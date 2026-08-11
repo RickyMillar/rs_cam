@@ -14,7 +14,7 @@ checkpoint.
 | lane/wave | item | status |
 |---|---|---|
 | A-1 | heat-map + vocabulary census → Checkpoint H | COMPLETE — Checkpoint H RULED 2026-08-08 (all four recommendations; live screenshot NOT EXERCISED, obligation transferred to A-2) |
-| A-2 | heat-map fix + newtypes + screenshot sentry | IN PROGRESS 2026-08-08 (executing H: V1–V4 + rename sweep + operating-point card + live capture) |
+| A-2 | heat-map fix + newtypes + screenshot sentry | COMPLETE 2026-08-11 (8 commits; H executed in full; red-run genuine vs production body; fingerprints verified 0 fail; before/after pair from own builds `825524f`/`7aa0be0` — operator-instance capture still blocked by G-LV.1; riders: workspace clippy gate owed by B-2 close-out, heat-map legend un-ruled, defect sign on wanaka is HIGH not low — 4.497× is fixture-only) |
 | A-3 | apply-contract census → Checkpoint I | NOT STARTED |
 | A-4 | one application funnel | blocked on I |
 | A-5 | arc_fit_ratio evidence package → Checkpoint J | NOT STARTED |
@@ -23,7 +23,8 @@ checkpoint.
 | A-8 | optimizer assumptions + retarget fixture | after A-2 |
 | A-9 | chip-thickness policy (research-only) | after A-2 |
 | B-1 | G-LV.2 crash capture + read-size census → Checkpoint L | COMPLETE — Checkpoint L RULED 2026-08-08 (Option 2 + defaults + compact JSON + keep-id/refuse-unmatched + rule-10 correction; G-LV.2 stays open, cause-not-attributed) |
-| B-2 | bounded reads + filter fix | IN PROGRESS 2026-08-08 (executing L) |
+| B-2 | bounded reads + filter fix | COMPLETE 2026-08-12 (5 commits; L executed in full incl. L-6 rider — main.rs USED the inert var as a warning-suppression condition; red-runs pinned 60.5 MB→bounded ~181×, skeleton→refusal; own sentry caught a C25-shape defect pre-land; workspace clippy+fmt CLEAN at `afd102b`; NOT EXERCISED: live release-rig re-run, resume condition in entry; G-LV.2 stays OPEN cause-not-attributed) |
+| INTAKE | **G-LIT-IPE**: `literature_matrix::flat_3mm_pocket_ipe_extreme` trips `anti.ipe_micro_matches_oak_micro_chipload` at critical — RED and PRE-EXISTING (fails identically at `825524f`, core src byte-identical to master `53b1c72`; contradicts an earlier green claim). A feeds recipe number needing a checkpoint — owner Lane A, fold into A-6's Checkpoint K package | OPEN 2026-08-12 |
 | B-3 | dispatch decoupling design → Checkpoint M | NOT STARTED |
 | B-4 | execute M + six frame-coupled drivers | blocked on M |
 | B-5 | G-RESULTS GUI/CLI parity | NOT STARTED |
