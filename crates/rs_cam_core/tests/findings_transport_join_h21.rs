@@ -176,7 +176,7 @@ fn every_recorded_finding_survives_the_single_join() {
     let tp = traced_toolpath();
     let findings = every_finding_recorded();
 
-    let stats = stats_with_findings(&tp, None, findings.clone());
+    let stats = stats_with_findings(&tp, None, findings.clone(), None);
 
     let ToolpathStats {
         // Move-derived — pinned separately by
@@ -199,7 +199,17 @@ fn every_recorded_finding_survives_the_single_join() {
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        // NOT a finding: S-4's snapshot provenance arrives as the join's
+        // fourth PARAMETER, because only the caller knows which
+        // machined-stock snapshot the generator was handed. This arm passes
+        // `None`, so the assertion below is that the join does not
+        // manufacture one.
+        stock_snapshot,
     } = stats;
+    assert_eq!(
+        stock_snapshot, None,
+        "a join told nothing about the stock must not invent a stamp"
+    );
 
     assert_eq!(truncated_core_mm2, findings.truncated_core_mm2);
     assert_eq!(untouched_material_mm2, findings.untouched_material_mm2);
@@ -245,7 +255,7 @@ fn every_recorded_finding_survives_the_single_join() {
 fn the_join_leaves_the_move_derived_half_alone() {
     let tp = traced_toolpath();
     let moves_only = compute_stats_with_spans(&tp, None);
-    let joined = stats_with_findings(&tp, None, every_finding_recorded());
+    let joined = stats_with_findings(&tp, None, every_finding_recorded(), None);
 
     assert_eq!(joined.move_count, moves_only.move_count);
     assert_eq!(joined.move_count, 4);
@@ -268,7 +278,7 @@ fn the_join_leaves_the_move_derived_half_alone() {
 #[test]
 fn an_unrecorded_generation_still_reads_as_not_measured() {
     let tp = traced_toolpath();
-    let stats = stats_with_findings(&tp, None, GenerationFindings::default());
+    let stats = stats_with_findings(&tp, None, GenerationFindings::default(), None);
 
     assert_eq!(stats.truncated_core_mm2, None);
     assert_eq!(stats.untouched_material_mm2, None);

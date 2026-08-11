@@ -845,10 +845,18 @@ pub(super) fn run_compute_with_phase_tracker(
             // `GenerationFindings` exhaustively in core, so a new finding is
             // a compile error there until someone routes it — and the GUI
             // path inherits the routing rather than re-stating it.
+            // S-4 (G-BYTE): stamp the machined-stock snapshot this
+            // generation consumed, mirroring
+            // `session/compute.rs::generate_toolpath`. `req.prior_stock` is
+            // this path's equivalent of the session's `prior_stock_arc` —
+            // the same snapshot the entry-descent split above was handed.
             rs_cam_core::compute::stats_with_findings(
                 &current.toolpath,
                 current.spans_valid.then_some(current.spans.as_slice()),
                 generation_findings,
+                req.prior_stock
+                    .as_ref()
+                    .map(rs_cam_core::compute::config::StockSnapshotStamp::of),
             )
         };
 

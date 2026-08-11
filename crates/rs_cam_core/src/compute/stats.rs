@@ -79,6 +79,11 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
         retract_trips: Some(compute_retract_trips(tp, spans)),
+        // S-4: provenance, and this helper is not given the provenance —
+        // it is handed a finished move list and never sees the stock that
+        // produced it. `None` here means "this helper was not told", which
+        // is the same statement `ToolpathStats::stock_snapshot` documents.
+        stock_snapshot: None,
     }
 }
 
@@ -117,11 +122,28 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
 ///
 /// `spans` follows [`compute_stats_with_spans`]' contract: pass `None`, not
 /// an empty slice, when spans are absent or `spans_valid == false`.
+///
+/// ## Why `stock_snapshot` is a PARAMETER and not a finding
+///
+/// S-4 (G-BYTE). The snapshot's identity is known only to the *caller* — the
+/// session or the GUI worker looked it up in `prior_stocks` before handing
+/// it to the generator — so it cannot arrive through [`GenerationFindings`],
+/// which is written from inside `execute`. Threading it as a parameter keeps
+/// the property this function exists for: **adding it broke both production
+/// call sites at compile time**, exactly as guards 1–3 would have. The
+/// alternative — a `stats.stock_snapshot = …;` line after the join — is
+/// precisely the pattern documented above as unsafe, and one forgotten line
+/// would ship a `None` that reads as "no snapshot was consumed" on a path
+/// that consumed one.
+///
+/// Pass `Some(StockSnapshotStamp::of(stock))` when this generation was
+/// handed a machined-stock snapshot, `None` when it was not.
 #[must_use]
 pub fn stats_with_findings(
     tp: &Toolpath,
     spans: Option<&[Span]>,
     findings: GenerationFindings,
+    stock_snapshot: Option<crate::compute::config::StockSnapshotStamp>,
 ) -> ToolpathStats {
     // Guard 2: the move-derived half. Bound fields are measured from the
     // move list; `_` fields are generation-owned, and the helper's honest
@@ -144,6 +166,9 @@ pub fn stats_with_findings(
         zero_removal: _,
         offset_library_failures: _,
         boundary_clip_dropped: _,
+        // S-4: caller-owned, like the findings — the helper's honest `None`
+        // is about to be replaced by the parameter.
+        stock_snapshot: _,
     } = compute_stats_with_spans(tp, spans);
 
     // Guard 1: the generation-owned half. No `..` — a new finding stops
@@ -186,6 +211,7 @@ pub fn stats_with_findings(
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        stock_snapshot,
     }
 }
 

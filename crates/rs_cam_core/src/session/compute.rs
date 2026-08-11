@@ -1574,10 +1574,22 @@ impl ProjectSession {
                 // that is not `Rapid` — the same three variants, `MoveType`
                 // having exactly four. The rapid distance and the
                 // `compute_retract_trips` arguments were already identical.
+                // S-4 (G-BYTE): stamp the machined-stock snapshot THIS
+                // generation consumed. `prior_stock_arc` — not
+                // `gen_initial_stock` — is deliberately the subject: the
+                // source-gated `gen_initial_stock` seeds the generator and
+                // the entry-descent split, but the same `Arc` also reaches
+                // the dressup air-cut filter ungated, so it is the snapshot
+                // this generation consumed in the broadest true sense.
+                // `None` therefore means no machined stock was consumed at
+                // all, which is what the field documents.
                 let stats = crate::compute::stats::stats_with_findings(
                     &annotated.toolpath,
                     annotated.spans_valid.then_some(annotated.spans.as_slice()),
                     findings,
+                    prior_stock_arc
+                        .as_deref()
+                        .map(crate::compute::config::StockSnapshotStamp::of),
                 );
 
                 let mut debug_trace = debug_recorder.finish();
@@ -5696,6 +5708,8 @@ mod tests {
                 offset_library_failures: None,
                 boundary_clip_dropped: None,
                 retract_trips: None,
+                // Nor did it consume any machined stock.
+                stock_snapshot: None,
             },
             debug_trace: None,
             semantic_trace: None,

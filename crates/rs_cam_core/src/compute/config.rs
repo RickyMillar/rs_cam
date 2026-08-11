@@ -436,6 +436,155 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it. The toolpath is real and runnable;
     /// what it is not is contained.
     pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
+    /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
+    /// generation consumed. See [`StockSnapshotStamp`].
+    ///
+    /// **Provenance, not a measurement.** It records *which stock* the
+    /// generator was handed, so two generations can be compared on equal
+    /// terms — the thing the G-BYTE incident could not do.
+    ///
+    /// `None` = **this generation consumed no machined-stock snapshot**: a
+    /// `StockSource::Fresh` op with no prior simulation, or a stats struct
+    /// that never went through a real generation
+    /// ([`ToolpathStats::default`] placeholders). This is the two-valued
+    /// contract [`Self::zero_removal`] and [`Self::boundary_clip_dropped`]
+    /// use, and for the same reason: there is no "measured zero" for an
+    /// identity, so the three-valued X-19 split would buy a distinction with
+    /// no consumer. It is **not** the A/M9 three-valued family — do not read
+    /// an absent stamp as "the snapshot was empty".
+    ///
+    /// NOT boxed: four words, the same call [`Self::claims_reference`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, nothing branches on it, and
+    /// generation is byte-identical whether or not it is populated.
+    pub stock_snapshot: Option<StockSnapshotStamp>,
+}
+
+/// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.
+///
+/// # The incident this exists for
+///
+/// W10-LV re-exported a rest-fed finish op at the same parameter value it
+/// had at baseline and got **135 change-hunks** — ~140 `G0` approach heights
+/// moved 0.05–0.15 mm and 12 of 180 118 cutting lines were dropped. Two
+/// causes fit that signature: generator nondeterminism, or the two
+/// generations having consumed *different* machined-stock snapshots. They
+/// could not be told apart, because **nothing recorded which snapshot a
+/// generation had been handed**.
+///
+/// The frozen-snapshot A/B (`tests/frozen_snapshot_regeneration_s4.rs`,
+/// 2026-08-12) settled the verdict: against ONE frozen snapshot, two
+/// generations of the same op at the same parameters are byte-identical —
+/// move list, spans and emitted G-code alike (187 557 B / 7 208 lines, zero
+/// hunks). Re-simulating at the *same* cell also reproduces the snapshot
+/// exactly and stays byte-identical. Re-simulating at a *different* cell
+/// moves the snapshot and moves the output. So the incident was snapshot
+/// drift, and what was missing was never determinism — it was provenance.
+///
+/// This stamp is that provenance. It does not prevent drift; it makes drift
+/// **visible**, so a future comparison can see that its two arms were not
+/// handed the same stock before it concludes anything about the generator.
+///
+/// # What equality means
+///
+/// Two stamps compare equal when the snapshots were sampled on the same
+/// dexel grid AND carry the same material. Equal stamps mean a comparison
+/// between those two generations is fair. Unequal stamps mean it is not — a
+/// §6.1 rule-6 violation, and any byte difference is attributable to the
+/// stock before it is attributable to the generator.
+///
+/// The digest is content-derived, not identity-derived: re-running the same
+/// simulation produces a *new* `Arc` holding the *same* material, and that
+/// must read as the same snapshot (measured — arm B1). A pointer or a
+/// counter would have called it a difference and raised a false alarm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockSnapshotStamp {
+    /// Dexel cell size (mm) the snapshot was sampled on, as raw bits so the
+    /// type can stay `Eq`. Read it with [`Self::cell_size_mm`].
+    ///
+    /// Carried beside the digest because it is the field that moves in the
+    /// overwhelmingly common drift case (two simulation events at different
+    /// resolutions), and a reader should not have to re-derive it from a
+    /// hash to say *why* two generations differed.
+    cell_size_bits: u64,
+    /// Z-grid rows of the snapshot.
+    pub rows: usize,
+    /// Z-grid columns of the snapshot.
+    pub cols: usize,
+    /// FNV-1a over the snapshot's grid geometry and every ray's material
+    /// segments, on all three axes. Equal digests mean equal stock.
+    ///
+    /// Not a cryptographic hash and not stable across releases of the dexel
+    /// layout — it exists to answer "same or not, within one process/build",
+    /// which is exactly the question a before/after comparison asks.
+    pub digest: u64,
+}
+
+impl StockSnapshotStamp {
+    /// Cell size (mm) the snapshot was sampled on.
+    #[must_use]
+    pub fn cell_size_mm(&self) -> f64 {
+        f64::from_bits(self.cell_size_bits)
+    }
+
+    /// Stamp a snapshot.
+    ///
+    /// Cost is one pass over the dexel rays — the same data the simulation
+    /// that produced them just wrote, and orders of magnitude cheaper than
+    /// producing them. Measured 2026-08-12 on the S-4 fixture (161×161 Z-grid
+    /// at 0.25 mm): under a millisecond, against a ~1.3 s generation.
+    #[must_use]
+    pub fn of(stock: &crate::dexel_stock::TriDexelStock) -> Self {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+        const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+        let mut h: u64 = FNV_OFFSET_BASIS;
+        let mut eat = |word: u64| {
+            for byte in word.to_le_bytes() {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(FNV_PRIME);
+            }
+        };
+
+        let bb = stock.stock_bbox;
+        for v in [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z] {
+            eat(v.to_bits());
+        }
+
+        // All three axes: an X/Y grid that diverges from the Z grid is a
+        // different snapshot even when the Z grid agrees.
+        for grid in [
+            Some(&stock.z_grid),
+            stock.x_grid.as_ref(),
+            stock.y_grid.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            eat(grid.rows as u64);
+            eat(grid.cols as u64);
+            eat(grid.cell_size.to_bits());
+            eat(grid.origin_u.to_bits());
+            eat(grid.origin_v.to_bits());
+            // `DexelRay` IS the segment list (a `SmallVec<[DexelSegment; 1]>`),
+            // so the ray's own length is its segment count.
+            for ray in &grid.rays {
+                eat(ray.len() as u64);
+                for seg in ray {
+                    eat(u64::from(seg.enter.to_bits()));
+                    eat(u64::from(seg.exit.to_bits()));
+                }
+            }
+        }
+
+        Self {
+            cell_size_bits: stock.z_grid.cell_size.to_bits(),
+            rows: stock.z_grid.rows,
+            cols: stock.z_grid.cols,
+            digest: h,
+        }
+    }
 }
 
 /// Checkpoint C (Q2): a boundary containment that collapsed, and the clip
