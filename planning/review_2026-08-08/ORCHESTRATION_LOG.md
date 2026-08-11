@@ -18,7 +18,7 @@ checkpoint.
 | A-3 | apply-contract census → Checkpoint I | COMPLETE — Checkpoint I RULED 2026-08-12 (C hybrid: reroute batch+explore, delete M1–M6; refusal replaces Apply column; O2 routed, O1/O3 excluded; MCP apply tool added; tests inverted in place) |
 | A-4 | one application funnel | COMPLETE 2026-08-12 (`9026ddb`→`e66ead2`; I executed in full incl. `apply_feeds` MCP tool; bars 2/3/4 MET (recipe byte-identical, DOC gap bit-equal 1.000×, no locking); bar 1 reported honestly at 6/9 red — orchestrator disposition: intent satisfied, the 3 greens assert behaviour the ruling deliberately preserves, agent's not-met report stands unedited; modal rendered both states, own debug GUI) |
 | INTAKE | **G-SUB1MM**: `sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling` RED — pre-existing (A-4 attributed by reverting its core diff; failure identical). Sub-Ø2 scaling-law territory → fold into A-6/Checkpoint K beside G-LIT-IPE | OPEN 2026-08-12 |
-| A-5 | arc_fit_ratio evidence package → Checkpoint J | NOT STARTED |
+| A-5 | arc_fit_ratio evidence package → Checkpoint J | IN PROGRESS 2026-08-12 (unblocked by S-4 stamp + G-XFP attribution; must re-measure 4×/6.7×, stamp-equality on every A/B) |
 | A-6 | LUT delta + boundary contract + G-CHIP-ULP → Checkpoint K | NOT STARTED |
 | A-7 | execute K | blocked on K |
 | A-8 | optimizer assumptions + retarget fixture | after A-2 |
@@ -26,8 +26,8 @@ checkpoint.
 | B-1 | G-LV.2 crash capture + read-size census → Checkpoint L | COMPLETE — Checkpoint L RULED 2026-08-08 (Option 2 + defaults + compact JSON + keep-id/refuse-unmatched + rule-10 correction; G-LV.2 stays open, cause-not-attributed) |
 | B-2 | bounded reads + filter fix | COMPLETE 2026-08-12 (5 commits; L executed in full incl. L-6 rider — main.rs USED the inert var as a warning-suppression condition; red-runs pinned 60.5 MB→bounded ~181×, skeleton→refusal; own sentry caught a C25-shape defect pre-land; workspace clippy+fmt CLEAN at `afd102b`; NOT EXERCISED: live release-rig re-run, resume condition in entry; G-LV.2 stays OPEN cause-not-attributed) |
 | INTAKE | **G-LIT-IPE**: `literature_matrix::flat_3mm_pocket_ipe_extreme` trips `anti.ipe_micro_matches_oak_micro_chipload` at critical — RED and PRE-EXISTING (fails identically at `825524f`, core src byte-identical to master `53b1c72`; contradicts an earlier green claim). A feeds recipe number needing a checkpoint — owner Lane A, fold into A-6's Checkpoint K package | OPEN 2026-08-12 |
-| B-3 | dispatch decoupling design → Checkpoint M | AWAITING CHECKPOINT M (`5117694`; 69 tools mapped — 62 frame-coupled, only 1 truly needs egui ctx; EventLoopProxy feasible via `eframe::create_native` (event_loop_builder CANNOT serve); NEW fact: 2nd+ request_repaint silently skipped under park; recommends composition M-A, 7 gated steps; screenshots (sim/toolpath) are NOT frame-coupled — only screenshot_gui) |
-| B-4 | execute M + six frame-coupled drivers | blocked on M |
+| B-3 | dispatch decoupling design → Checkpoint M | COMPLETE — Checkpoint M RULED 2026-08-12 (M-A full composition; reordering accepted; screenshot_gui refuses under park; heartbeat dies only with six-driver fixes; floor re-measured sans gdb) |
+| B-4 | execute M + six frame-coupled drivers | IN PROGRESS 2026-08-12 (seven gated steps, stop-bar after step 4) |
 | B-5 | G-RESULTS GUI/CLI parity | NOT STARTED |
 | S-1 | X-VAC population census | NOT STARTED |
 | S-2 | /refresh-lit-matrix (DR-URL, DR-WS) | NOT STARTED |
