@@ -141,3 +141,244 @@ NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
 - **The ~1 s dispatch floor** is reported, not investigated. Owner: B-3.
 
 Next action / checkpoint request: **Checkpoint L requested**, six questions in `GLV2_CRASH_CAPTURE.md` §7.4 — L-1 authorise B-2 to proceed with the cause unattributed and G-LV.2 staying open; L-2 pick option 1/2/3 (recommend **2**: per-array caps + the existing `truncated`/`total_matching`/`returned` vocabulary + a global `MAX_RESPONSE_BYTES` applied while building, continuation token deferred as unmotivated by the census); L-3 approve the default caps (`span_summaries: 200`, `MAX_RESPONSE_BYTES: 8 MiB`, each justified by a census number); L-4 rule on `json_str`'s pretty-printing, which changes bytes on all 68 tools and is a separate ruling from L-2/L-3; L-5 confirm keep-id-semantics for `toolpath_id`; L-6 correct plan §0 rule 10's inert `WINIT_UNIX_BACKEND` prescription. Orchestrator actions: (a) put L to the operator; (b) note that L-6 also touches CLAUDE.md's MCP section and A-1's stated screenshot resume condition; (c) B-2 stays blocked on L.
+
+---
+
+## A-2 — heat-map fix + boundary newtypes + screenshot pair, 2026-08-08 / 2026-08-11
+
+Status: COMPLETE. Checkpoint H executed in full (H1, H2, H3, H4.1–H4.4).
+**F-HEATMAP's screenshot obligation is discharged** — the live pair exists.
+
+Work spans two dates because the network died mid-wave on 2026-08-08 and
+the session resumed on 2026-08-11. Nothing was committed before the
+outage; the whole working set sat uncommitted in-tree for three days and
+was verified against `git status` on resume before any further edit. Dates
+below are honest about which day each thing happened.
+
+Commit(s), parent `825524f`:
+
+- `69ec3cf` core — `feeds::quantities` (five boundary newtypes + the three
+  canonical names), `tool_load::display` (the measure + the per-move
+  builder), gate delegation, `chipload_envelopes_for_session` docstring
+  corrected, and the A-1 fixture inverted.
+- `6754a0b` viz — V1/V2/V3/V4 plus V5/V6/V8/P1/P3.
+- `709d6c9` viz — the operating-point card (H4.4).
+- `12de0a8` ui/cli — the H2 rename sweep across the remaining census rows.
+- `7aa0be0` test — the one assertion the sweep invalidated.
+- `d8dc41d` + `1f30fea` docs — `artifacts/a2/` (four GUI captures + driver
+  + README) and the census §4.1 status block.
+
+20 files, +1263 / −345. **No file in B-2's territory was staged**
+(`rs_cam_mcp/`, `viz/mcp_server.rs`, `app/mcp.rs`, `mcp_bridge.rs`,
+`bin/main.rs`).
+
+Question and pre-registered bars: plan §2 A-2, executing Checkpoint H
+verbatim. Bars I set before starting: (a) the red run must fail against
+**production** code, not a mirror of it, or it is not a red run; (b) no
+recipe number may move, and I verify that by running the suites rather
+than by asserting it; (c) any surface I claim, I look at — every PNG is
+Read back before it is cited; (d) a fallback capture is labelled with the
+build it came from, on the artifact's own face.
+
+Fixture/population/resolution: two of them.
+
+- **Synthetic** — A-1's two-arc fixture, unchanged in construction (Ø6
+  flat 2F, 18 000 RPM, 2 520 mm/min, DOC 1.5 mm, hard maple, arcs 0.80 rad
+  and π, F-035 fraction 0.62 on both arms).
+- **Real** — a scratch **copy** of wanaka with every toolpath disabled
+  except "Back Rough" (`adaptive3d`, 6 mm 2F flat endmill,
+  `stock_source = "fresh"`). 3355 moves, 3:09 cycle time, generated and
+  simulated at 0.4 mm. The first attempt used "3D Rough 6", which is
+  `from_remaining_stock` and returned `awaiting_prior_stock` with nothing
+  generated — recorded because it is an easy trap for the next agent
+  building a one-op fixture out of a cascade project.
+
+Render/artifact paths: `planning/review_2026-08-08/artifacts/a2/` —
+`heatmap_{before,after}_{viewport,simulation}.png`, `a2_shot.py`,
+`screenshot_toolpath_is_not_a_heatmap_surface.png`, `README.md`.
+
+Result (fact), interpretation, and uncertainty:
+
+- **Fact.** All four defective surfaces now read one expression.
+  `chipload::achieved_feed_per_tooth_mm` **delegates to**
+  `display::achieved_advance_per_tooth`, so "the colour agrees with the
+  verdict" is a property of the call graph, not of two transcriptions
+  staying in step. The fixture asserts that directly:
+  `a.displayed.mm() == a.gate_observed_mm_per_tooth`, bit-equality.
+- **Fact.** The five colour classes moved from `rs_cam_viz` into
+  `VendorChiploadBand::classify`. A-1 had to mirror those thresholds in a
+  test file because they were private to a crate it could not reach, and
+  flagged the reconciliation as mine; I did it by moving the
+  classification to where the band already lived rather than by copying
+  it again. `toolpath_render` keeps only class → RGB. **No threshold and
+  no RGB triple moved** — its six colour tests are byte-identical probes
+  (band 0.05–0.10, same five values, same triples) and are the pin on
+  that claim.
+- **Fact.** `chipload_envelopes_for_session`'s docstring claimed "its one
+  GUI consumer". Corrected, and counted **after** the change as H4.1
+  required: three GUI consumers (viewport heat-map, the normalised
+  timeline track, the diagnostics badge bound) and two core-side
+  (`session::compute`'s strategy advisor and the adaptive feed-modulation
+  pass). The fourth GUI consumer is gone deliberately — the surviving
+  chip-thickness track is unbanded.
+- **Fact (V4, and it was worse than a label).** `SpanAggregate::ingest`
+  did `effective_chip_thickness_mm.unwrap_or(chipload_mm_per_tooth)` and
+  divided by `n_cutting`. So on a mixed trace the printed average was a
+  mean of two different physical quantities **over a denominator
+  belonging to neither**. Split into two accumulators, each with its own
+  population count. That second half was not in the census and I did not
+  go looking for it; it fell out of writing the replacement.
+- **Fact (real-project magnitude, previously unmeasured).** On "Back
+  Rough" the retired measure paints the path predominantly **red — above
+  the band ceiling, "breakage risk"** — while the gate on the same screen
+  reads `✓ 1 within · ✗ 0 exceeding` and the badge reads `chipload 100%`.
+  Post-fix the same path, same camera, is predominantly **orange**
+  (approaching the ceiling), which is what `Within` with a peak near the
+  band top looks like. The timeline half is the sharper frame: `load vs
+  limit` sitting **above 1.0 across nearly the whole path** three lines
+  below an Inspector that says nothing is exceeding.
+- **Interpretation, and a correction to my own expectation.** The
+  defect's **sign is opposite** on the real fixture to the synthetic one.
+  A-1's arm A reads *low* (blue, "rubbing risk") because the chip factor
+  collapses at a light arc; wanaka's near-full-slot adaptive3d pass reads
+  *high*. Both are one defect — a quantity carrying an engagement-arc
+  term compared against a band that has none — and it is a mistake to
+  describe F-HEATMAP as "the heat-map reads low", which
+  `tool_load/mod.rs`'s old caveat came close to doing. **4.497× is a
+  fixture figure and must not be quoted as a wanaka figure.**
+- **Uncertainty, stated.** (a) The before/after pair is from **my own
+  builds**, not the operator's instance — see NOT EXERCISED below. (b)
+  Both scratch builds carry one identical uncommitted line (the default
+  colour mode) because the heat-map has no MCP or CLI selector; it cannot
+  bias a comparison in which it is on both sides, but it does mean
+  neither PNG is of an unmodified binary, and the README says so on its
+  face. (c) The real-project run is at 0.4 mm, not the 0.1 mm A-1's
+  resume condition named — chosen for wall clock; the colours are a
+  comparison between two builds at one resolution, not a resolution-
+  independent claim. (d) I did not census the optimizer's internal
+  chipload retargeting beyond its display rows (F-OPT / A-8), and did not
+  touch A-9's territory.
+
+Red-first evidence / fingerprints changed: **no fingerprint moved, and
+that is verified rather than assumed.** Full `cargo test -p rs_cam_core`
+— every `_litmatrix_*` suite, `smoke_baseline_regression_f037`,
+`wanaka_e2e_chipload_gate`, `feed_explanation_snapshot_b3`,
+`chipload_report_wording_t12_t15` — **0 failures, exit 0**.
+`cargo test -p rs_cam_viz` 239 + 12 + 11 passed, 0 failed;
+`cargo test -p rs_cam_cli` green. Exactly one test assertion changed
+(`format_entry_advisory` pinned the string "LUT max", which the H2 sweep
+renamed) and it is a string pin, not a number.
+
+The red run is real. A-1's fixture asserted `assert_ne!(displayed_a,
+displayed_b)` as a characterization; I inverted it to `assert_eq!` and
+pointed it at the production builder and the production classifier, then
+reverted `advance_per_tooth_per_move`'s body to the shipped pre-fix
+expression — `max(effective_chip_thickness_mm)` per move, verbatim from
+`build_chipload_per_move` — and ran it:
+
+```
+    DISPLAYED (heat-map)         A 0.009910  B 0.044563
+    displayed measure (achieved a/t):  A BelowBand   B Within
+thread '...the_heat_map_paints_one_colour_for_one_advance_per_tooth' panicked:
+assertion `left == right` failed: one recipe, one colour: the displayed
+measure must not carry an engagement-arc term the vendor band does not carry
+  left: BelowBand
+ right: Within
+thread '...changing_only_the_arc_moves_the_chip_thickness_and_not_the_advance_per_tooth' panicked:
+assertion `left == right` failed: the displayed measure must not move when
+only the engagement arc moves
+  left: AdvancePerToothMm(0.009909790933277257)
+ right: AdvancePerToothMm(0.044563384065730696)
+test result: FAILED. 1 passed; 2 failed; 0 ignored
+```
+
+and after restoring: `DISPLAYED (heat-map) A 0.043400 B 0.043400`, both
+`Within`, `3 passed; 0 failed`. The pre-fix numbers are **kept live**, not
+commented: `the_retired_measure_still_reproduces_the_defect` recomputes
+the retired quantity from the production chip model every run and asserts
+the recorded values still hold, so the census cannot quietly go stale.
+
+Screenshot sentry, honestly split: **automated** is
+`colour_classes_are_monotonic_across_the_band` (walks a value across the
+band and asserts the class sequence is exactly BelowBand → JustAboveFloor
+→ Within → NearCeiling → AboveBand with no class reachable from two
+disjoint regions — a colour that recurred could not identify a band
+position) plus the fixture's gate/display bit-equality assertion. What is
+**manual** is the pixels: nothing automatically compares a PNG. The pair
+in `artifacts/a2/` was Read back and inspected by eye.
+
+Verification (focused commands + exact state):
+
+- `cargo clippy -p rs_cam_core --all-targets -- -D warnings` — clean.
+- `cargo clippy -p rs_cam_viz -p rs_cam_cli --all-targets -- -D warnings`
+  — clean, run in an isolated worktree at my HEAD.
+- **A workspace-wide clippy was NOT run.** B-2's uncommitted slice was
+  mid-edit in `app/mcp.rs` for part of this wave (a literal syntax error
+  at one point, which is why the worktree exists), and at close two
+  foreign `cargo test` jobs were running with MemAvailable at 9.7 GB, so
+  §0 rule 8 forbade taking the slot. Every crate I touched is clean
+  individually; the workspace gate should be re-run once B-2's slice
+  lands. Stated rather than skipped quietly.
+- Slot discipline: `free -g` + bracketed `pgrep -af "carg[o]"` before
+  every launch; one job at a time; no release build; disk 150 G free.
+- Explicit per-file staging on all seven commits; no `--amend`. The
+  operator's `wanaka.toml`, `planning/review_2026-07-27/` and the
+  `FEEDS_SPEEDS_ARCHITECTURE_REVIEW` remain unstaged and byte-unchanged;
+  wanaka was read only, and the screenshot fixture is a scratch copy.
+
+NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
+
+- **The operator's own GUI was never captured.** PID 3837079
+  (`d820226-dirty`) answered `generation_status` and the snapshot arm of
+  `project_summary`, but `served_from: "snapshot"`, `snapshot_age_s`
+  142.6, `frame_loop.healthy: false` — every GUI-dispatched call
+  unreachable. Three days after A-1 hit it, the same block. The pair was
+  taken from my own pre-fix and post-fix builds instead, per the brief's
+  sanctioned fallback. Owner of the underlying hazard: **B-3/B-4**
+  (G-LV.1 re-open (b)). Re-open condition for a capture on the
+  operator's instance: a dispatch path that does not depend on frame
+  callbacks. Worth the orchestrator noting that Lane B has now blocked a
+  Lane A rule-3 obligation in **two consecutive waves**.
+- **`screenshot_toolpath` is not a heat-map surface** — separate
+  offscreen renderer, fixed palette, ignores `toolpath_color_mode`
+  entirely. A-1's resume condition named it as half of the required pair;
+  it cannot serve that role. Captured proof is in `artifacts/a2/`. Not
+  fixed. Owner: unassigned; it is arguably fine as a geometry render, but
+  the census/ledger should stop asking it for a colour answer.
+- **The heat-map has no MCP or CLI selector.** Both capture builds patch
+  the default colour mode instead. Owner: unassigned. Re-open condition:
+  any future wave that must screenshot a colour mode hits this again — a
+  `set_ui_view {toolpath_color_mode}` field would close it, and that file
+  is B-2's territory today.
+- **I reformatted B-2's in-flight `app/mcp.rs`.** `cargo fmt -p
+  rs_cam_viz` cascaded into it (the standing rustfmt-cascade trap, which
+  I had already been bitten by once earlier in this wave). Formatting
+  only, no logic touched, and I did **not** revert it — reverting would
+  have discarded B-2's uncommitted work, which is the worse error. Flagged
+  here so B-2 is not surprised by a whitespace diff it did not make. I
+  switched to per-file `rustfmt` in an isolated worktree afterwards.
+- **V5's underlying datum is still a per-sample commanded peak**, not the
+  gate statistic. I renamed it to say so ("peak commanded a/t") rather
+  than changing which statistic the hotspot line reports — that would be
+  a number move, and this wave is display-only. Owner: whoever owns the
+  hotspot rollup. Same note applies to N7/N8 on the CLI.
+- **The GUI's viewport heat-map still has no legend.** The census flagged
+  it ("no legend, so the operator has no numeric check on the colour").
+  Checkpoint H did not rule on it and I did not add one; the hover text
+  now names the measure and the band, which is weaker than a legend.
+  Owner: unassigned, cheap.
+- A-9's territory (F-BIPOLAR / F-VALID / F-MISSAE) deliberately untouched,
+  per the review's step-6 warning. Note for A-9: `is_bipolar_engagement`
+  still compares raw `effective_chip_thickness_mm` against the advance
+  band, and its docstring already explains why the deletion does not
+  transfer. It is now the **last** consumer of that comparison in the
+  repository.
+
+Next action / checkpoint request: **none — A-2 needs no checkpoint.**
+Orchestrator actions: (a) mark A-2 COMPLETE and F-HEATMAP CLOSED (DoD
+item 1 is met: heat-map, modal, panel and gate present band-comparable
+quantities in one vocabulary, proven by the fixture AND by the
+screenshot its ledger row demanded); (b) re-run the workspace clippy gate
+once B-2's slice lands, since I could not take the slot; (c) A-8 and A-9
+are unblocked — both were sequenced "after A-2" so they would read the
+corrected display layer, and they now can.
