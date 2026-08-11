@@ -15,8 +15,8 @@ checkpoint.
 |---|---|---|
 | A-1 | heat-map + vocabulary census → Checkpoint H | COMPLETE — Checkpoint H RULED 2026-08-08 (all four recommendations; live screenshot NOT EXERCISED, obligation transferred to A-2) |
 | A-2 | heat-map fix + newtypes + screenshot sentry | COMPLETE 2026-08-11 (8 commits; H executed in full; red-run genuine vs production body; fingerprints verified 0 fail; before/after pair from own builds `825524f`/`7aa0be0` — operator-instance capture still blocked by G-LV.1; riders: workspace clippy gate owed by B-2 close-out, heat-map legend un-ruled, defect sign on wanaka is HIGH not low — 4.497× is fixture-only) |
-| A-3 | apply-contract census → Checkpoint I | NOT STARTED |
-| A-4 | one application funnel | blocked on I |
+| A-3 | apply-contract census → Checkpoint I | COMPLETE — Checkpoint I RULED 2026-08-12 (C hybrid: reroute batch+explore, delete M1–M6; refusal replaces Apply column; O2 routed, O1/O3 excluded; MCP apply tool added; tests inverted in place) |
+| A-4 | one application funnel | IN PROGRESS 2026-08-12 (executing I; bars = census §5.4) |
 | A-5 | arc_fit_ratio evidence package → Checkpoint J | NOT STARTED |
 | A-6 | LUT delta + boundary contract + G-CHIP-ULP → Checkpoint K | NOT STARTED |
 | A-7 | execute K | blocked on K |
@@ -42,6 +42,15 @@ checkpoint.
 - **H2: The review's three names verbatim** on every surface — "Commanded advance/tooth" / "Achieved advance/tooth" / "Arc-mean chip thickness"; the word *chipload* survives only where a vendor band is being named. Includes fixing `feeds_modal.rs:1322` "Effective chipload at recommendation" → commanded-advance wording.
 - **H3: One chip-thickness visual survives** — the sim-timeline track, relabelled "arc-mean chip thickness", **band shading removed** (no sourced band for that quantity; a shaded envelope is a comparison). V1/V3 switch to advance/tooth; V4 splits or drops the blend.
 - **H4: all four bookkeeping items accepted** — (1) correct the "its one GUI consumer" docstring; (2) A-2 owns the live before/after screenshot pair and **F-HEATMAP stays open until it exists**; (3) V5/N7/N8 fold into the H2 rename sweep; (4) the operating-point card (Commanded / Achieved / Vendor band / Gate) gets built in the properties panel's `OPERATING POINT — measured` section.
+
+### Checkpoint I — ruled 2026-08-12 (operator, via AskUserQuestion). BINDING.
+
+- **I-1: Option C (hybrid).** Reroute the batch paths (M7/M9/M10/M11) and the explore apply (M8) through the funnel with the panel's guarantees; **DELETE the six per-field buttons (M1–M6)** — they carry the 3.50× funnel-bypass defect and answer no measured need. No `ApplyScope::Field` arm is needed (I-2 moot).
+- **I-3: refused pairing → modal opens, charts drawn, the whole Apply column replaced by the refusal text.** The explanatory job survives; the write becomes impossible.
+- **I-4: exclude O1/O3 with a stated reason in the funnel docs** (their candidates are sim-verified end to end); **route O2** (`reoptimize_with_axis_override`) through the funnel — it is a raw unclamped write of an un-simulated value.
+- **I-5: A-4 adds an MCP apply tool** routed through the same funnel with `ApplyScope` — agents get the panel's guarantees.
+- **I-6: A-3's nine characterization tests inverted in place**, measured pre-fix numbers preserved in doc comments.
+- Pre-registered bars for A-4 stand as written in `APPLY_CONTRACT_CENSUS.md` §5.4: all nine tests go red against the fix then invert; the Pocket fixture's `3000 / 794 / 18000 / 2.222 / 1.27` byte-identical (a moved fingerprint is a STOP); the §3.4 DOC gap closes to 1.00×; no background field locking.
 
 ### Checkpoint L — ruled 2026-08-08 (operator, via AskUserQuestion). BINDING.
 
