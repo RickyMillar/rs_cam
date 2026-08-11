@@ -35,16 +35,20 @@ use crate::state::toolpath::{OperationType, ToolpathId};
 use rs_cam_core::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
 
-/// Recommended-value field that the Feeds modal's per-row Apply
-/// buttons target. Routed via [`AppEvent::ApplyFeedsField`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeedsField {
-    Rpm,
-    Feed,
-    Plunge,
-    Doc,
-    Woc,
-}
+// NOTE (A-4, Checkpoint I-1, 2026-08-12): the `FeedsField` enum and the
+// `AppEvent::ApplyFeedsField` variant that used to live here are GONE, and
+// their absence is a safety property, not a tidy-up. They backed six per-row
+// `Apply` buttons in the Feeds & Speeds modal that wrote
+// `FeedsExplain::recommended` straight into the operation — no validation of
+// the tool × operation pairing, and no `enforce_invariants`, so none of the
+// plunge/stepover clamps, the rigidity and cutting-length DOC clamps, the
+// deflection back-off or the rounding ran. Measured on the shipped default
+// Ø6.35 2-flute flat end mill in a Pocket op, the per-field DOC `Apply` wrote
+// **4.445 mm** where the funnel writes **1.27 mm** (3.50×).
+// Every surviving apply goes through `rs_cam_core::feeds::suggest::apply` with
+// an explicit `ApplyScope`. Do not reintroduce a field-grained apply event
+// without re-reading `planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md` §3.4
+// — sentried by `apply_contract_a3::per_field_apply_affordance_no_longer_exists`.
 
 /// Events emitted by UI components, processed after the UI pass.
 #[derive(Debug)]
@@ -293,15 +297,15 @@ pub enum AppEvent {
     /// next frame. Re-emit per change since the strategy alters every
     /// toolpath's recommendation simultaneously.
     SetSpindleStrategy(rs_cam_core::feeds::SpindleStrategy),
-    /// Apply a single recommended value to a toolpath. Field-scoped so
-    /// per-row Apply buttons (RPM, feed, plunge, DOC, WOC) route here.
-    ApplyFeedsField {
-        toolpath_id: ToolpathId,
-        field: FeedsField,
-    },
     /// Apply every recommended value (RPM, feed, plunge, DOC, WOC) to a
     /// toolpath in one transactional update. The Apply-all button on
     /// the comparison card routes here.
+    ///
+    /// Goes through `feeds::suggest::apply` with `ApplyScope::Both`, so it
+    /// refuses outright on a tool × operation pairing
+    /// `validate_tool_for_operation` declines, and the values written are the
+    /// invariant-resolved ones — identical to the properties panel's two
+    /// buttons applied together (Checkpoint I-1).
     ApplyFeedsAll(ToolpathId),
     /// S1 — set (or clear) the scallop-driven-stepover target on a
     /// DropCutter toolpath. `Some(h)` switches WOC to be derived from

@@ -13,8 +13,7 @@
 
 use egui::Color32;
 
-use crate::state::toolpath::ToolpathId;
-use crate::ui::{AppEvent, FeedsField, theme};
+use crate::ui::theme;
 
 /// Format an optional value with a unit and a precision hint (`—` when absent
 /// or effectively zero). Shared by the compare grid and the project feeds table.
@@ -90,16 +89,22 @@ pub fn mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {
     });
 }
 
-/// One `label | current | recommended | Δ | [Apply]` row in a 5-column compare
-/// grid. With `apply` set, the trailing cell offers an Apply button (when the
-/// values differ) that pushes [`AppEvent::ApplyFeedsField`].
+/// One `label | current | recommended | Δ | ` row in a 5-column compare grid.
+///
+/// **Read-only** since Checkpoint I-1 (A-4, 2026-08-12). The trailing cell used
+/// to hold a per-field `Apply` button that pushed `AppEvent::ApplyFeedsField`,
+/// which wrote the raw preview value into the operation with neither the tool ×
+/// operation validation nor `enforce_invariants` — on the shipped default
+/// fixture that put **4.445 mm** of DOC where the funnel puts **1.27 mm**. The
+/// buttons were deleted rather than rerouted; the trailing cell is now blank
+/// and the row is a display primitive with no event surface at all, which is
+/// why `show` no longer takes an event sink.
 pub struct CompareRow<'a> {
     label: &'a str,
     current: Option<f64>,
     recommended: Option<f64>,
     unit: &'a str,
     precision: f64,
-    apply: Option<(FeedsField, ToolpathId)>,
 }
 
 impl<'a> CompareRow<'a> {
@@ -116,17 +121,10 @@ impl<'a> CompareRow<'a> {
             recommended,
             unit,
             precision,
-            apply: None,
         }
     }
 
-    /// Offer an Apply button targeting `field` on `toolpath_id`.
-    pub fn apply(mut self, field: FeedsField, toolpath_id: ToolpathId) -> Self {
-        self.apply = Some((field, toolpath_id));
-        self
-    }
-
-    pub fn show(self, ui: &mut egui::Ui, events: &mut Vec<AppEvent>) {
+    pub fn show(self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new(self.label)
                 .small()
@@ -135,20 +133,7 @@ impl<'a> CompareRow<'a> {
         ui.label(format_optional(self.current, self.unit, self.precision));
         ui.label(format_optional(self.recommended, self.unit, self.precision));
         ui.label(delta_tag(self.current, self.recommended));
-        match self.apply {
-            Some((field, toolpath_id)) if matches!((self.current, self.recommended), (Some(c), Some(r)) if (c - r).abs() > 1e-9) => {
-                if ui
-                    .small_button("Apply")
-                    .on_hover_text("Overwrite this field with the recommended value.")
-                    .clicked()
-                {
-                    events.push(AppEvent::ApplyFeedsField { toolpath_id, field });
-                }
-            }
-            _ => {
-                ui.label("");
-            }
-        }
+        ui.label("");
         ui.end_row();
     }
 }

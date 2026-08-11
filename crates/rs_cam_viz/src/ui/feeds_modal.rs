@@ -13,8 +13,19 @@
 //! no measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim. Checkpoint H2, 2026-08-08.
 //!
-//! The modal re-derives [`FeedsExplain`] from the live session every
-//! frame; per-row Apply buttons route through `AppEvent::ApplyFeedsField`.
+//! The modal re-derives a [`FeedsPreview`] from the live session every frame.
+//!
+//! **Apply contract (Checkpoint I, 2026-08-12).** The modal is an
+//! *explanatory* surface that happens to offer two writes; it is not a second
+//! application API. Both writes — `⚡ Apply all` and the explore-chart apply —
+//! go through `feeds::suggest::apply`, the same funnel the properties panel
+//! uses, and both are replaced by the refusal text when
+//! `validate_tool_for_operation` declines the tool × operation pairing (I-3).
+//! The six per-row `Apply` buttons that used to sit in the comparison grid are
+//! **deleted** (I-1): they wrote `FeedsExplain::recommended` raw, so on the
+//! shipped default fixture the DOC row put 4.445 mm into an operation whose
+//! clamped depth is 1.27 mm. See
+//! `planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md`.
 //!
 //! Phases (per FEEDS_AND_SPEEDS redesign plan):
 //! - Phase 1: comparison card + Chart C
@@ -24,6 +35,7 @@
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
 use rs_cam_core::feeds::rationale::{RationaleEntry, SuggestRationale};
+use rs_cam_core::feeds::suggest::FeedsPreview;
 use rs_cam_core::feeds::{
     FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
     vendor_lut::ToolFamily,
@@ -31,7 +43,7 @@ use rs_cam_core::feeds::{
 
 use super::components::compare::{self, CompareRow};
 use super::components::{ProvKind, ProvenanceBadge};
-use super::{AppEvent, FeedsField, theme};
+use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::{FeedsModalMode, ProjectFeedsSort};
 
@@ -196,7 +208,7 @@ fn draw_toolpath_view(
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
 ) {
-    let Some(explain) = compute_explain(state, toolpath_id) else {
+    let Some(preview) = compute_preview(state, toolpath_id) else {
         ui.label(
             egui::RichText::new(
                 "Could not build explanation — missing tool, material, or machine.",
@@ -206,14 +218,16 @@ fn draw_toolpath_view(
         );
         return;
     };
+    let explain = preview.explain();
+    let refusal = preview.refusal();
     let Some(current) = read_current_values(state, toolpath_id) else {
         ui.label("Toolpath disappeared.");
         return;
     };
 
-    draw_context_chip(ui, &explain);
+    draw_context_chip(ui, explain);
     // S2 — engaged-diameter-at-DOC annotation for tapered/V tools.
-    draw_engaged_diameter_row(ui, &current, &explain);
+    draw_engaged_diameter_row(ui, &current, explain);
     ui.add_space(8.0);
 
     // Two-column body: left = comparison card + provenance; right = charts.
@@ -223,13 +237,13 @@ fn draw_toolpath_view(
         .min_size(320.0)
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                draw_comparison_card(ui, &current, &explain, toolpath_id, events);
+                draw_comparison_card(ui, &current, explain, refusal, toolpath_id, events);
                 ui.add_space(8.0);
-                draw_chipload_breakdown(ui, &explain);
+                draw_chipload_breakdown(ui, explain);
                 ui.add_space(8.0);
-                draw_provenance_disclosure(ui, &explain, modal.show_provenance, events);
+                draw_provenance_disclosure(ui, explain, modal.show_provenance, events);
                 ui.add_space(8.0);
-                draw_warnings(ui, &explain);
+                draw_warnings(ui, explain);
                 ui.add_space(8.0);
                 let rationale = compute_suggest_rationale(state, toolpath_id);
                 draw_rationale(ui, &rationale);
@@ -238,15 +252,15 @@ fn draw_toolpath_view(
 
     egui::CentralPanel::default().show_inside(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            draw_chart_c(ui, &current, &explain, toolpath_id, modal, events);
+            draw_chart_c(ui, &current, explain, refusal, toolpath_id, modal, events);
             ui.add_space(12.0);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                    draw_chart_a(ui, &current, &explain);
+                    draw_chart_a(ui, &current, explain);
                 });
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
-                    draw_chart_b(ui, &current, &explain);
+                    draw_chart_b(ui, &current, explain);
                 });
             });
         });
@@ -425,7 +439,16 @@ fn read_current_values(
     })
 }
 
-fn compute_explain(state: &AppState, toolpath_id: rs_cam_core::ToolpathId) -> Option<FeedsExplain> {
+/// Build the modal's payload.
+///
+/// Returns a [`FeedsPreview`], not a bare [`FeedsExplain`]: the explain payload
+/// is infallible by design (you want the nomogram even for a pairing you would
+/// decline to run) and therefore cannot tell this surface that the pairing was
+/// refused — which is exactly how the modal came to offer eleven writes on
+/// operations the engine had already declared unrunnable (A-3 census §3.1).
+/// The preview carries the refusal alongside the numbers, and hands out
+/// something writable only when there isn't one.
+fn compute_preview(state: &AppState, toolpath_id: rs_cam_core::ToolpathId) -> Option<FeedsPreview> {
     let tc = state
         .session
         .toolpath_configs()
@@ -437,7 +460,7 @@ fn compute_explain(state: &AppState, toolpath_id: rs_cam_core::ToolpathId) -> Op
         .iter()
         .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
     let stock = state.session.stock_config();
-    Some(rs_cam_core::feeds::suggest::feeds_explain_for_operation(
+    Some(rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &tc.operation,
         tool,
         &stock.material,
@@ -483,6 +506,7 @@ fn draw_comparison_card(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    refusal: Option<&rs_cam_core::feeds::FeedsError>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -521,8 +545,7 @@ fn draw_comparison_card(
                     "",
                     1.0,
                 )
-                .apply(FeedsField::Rpm, toolpath_id)
-                .show(ui, events);
+                .show(ui);
                 CompareRow::new(
                     "Feed",
                     Some(current.feed_rate_mm_min),
@@ -530,8 +553,7 @@ fn draw_comparison_card(
                     " mm/min",
                     1.0,
                 )
-                .apply(FeedsField::Feed, toolpath_id)
-                .show(ui, events);
+                .show(ui);
                 CompareRow::new(
                     "Plunge",
                     Some(current.plunge_rate_mm_min),
@@ -539,8 +561,7 @@ fn draw_comparison_card(
                     " mm/min",
                     1.0,
                 )
-                .apply(FeedsField::Plunge, toolpath_id)
-                .show(ui, events);
+                .show(ui);
                 CompareRow::new(
                     "DOC",
                     current.depth_per_pass,
@@ -548,9 +569,8 @@ fn draw_comparison_card(
                     " mm",
                     0.01,
                 )
-                .apply(FeedsField::Doc, toolpath_id)
-                .show(ui, events);
-                woc_row(ui, current, explain, toolpath_id, events);
+                .show(ui);
+                woc_row(ui, current, explain);
                 CompareRow::new(
                     "Commanded advance/tooth",
                     Some(current.chipload_mm()),
@@ -558,7 +578,7 @@ fn draw_comparison_card(
                     " mm/tooth",
                     0.0001,
                 )
-                .show(ui, events);
+                .show(ui);
             });
 
         // S3 — chipload-min (rubbing/burning) warning, finish ops only.
@@ -581,17 +601,61 @@ fn draw_comparison_card(
         compare::mrr_row(ui, explain.recommended.mrr_mm3_min);
 
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui
-                .button("⚡ Apply all")
-                .on_hover_text(
-                    "Overwrite RPM, feed, plunge, DOC, and WOC with the recommended values.",
-                )
-                .clicked()
-            {
-                events.push(AppEvent::ApplyFeedsAll(toolpath_id));
-            }
-        });
+        draw_apply_column(ui, refusal, toolpath_id, events);
+    });
+}
+
+/// The modal's Apply column.
+///
+/// Checkpoint I-3 (2026-08-12): on a tool × operation pairing
+/// `validate_tool_for_operation` refuses, the modal still opens and still
+/// draws every chart — the explanatory job is the modal's real job — but the
+/// **whole Apply column is replaced by the refusal**. The write becomes
+/// impossible; the explanation survives. Before this, the modal previewed and
+/// applied recipes on pairings the properties panel declined to show at all.
+fn draw_apply_column(
+    ui: &mut egui::Ui,
+    refusal: Option<&rs_cam_core::feeds::FeedsError>,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    if let Some(err) = refusal {
+        ui.label(
+            egui::RichText::new("Cannot apply — this tool cannot run this operation")
+                .small()
+                .strong()
+                .color(theme::ERROR),
+        );
+        ui.label(
+            egui::RichText::new(err.to_string())
+                .small()
+                .color(theme::WARNING),
+        );
+        ui.label(
+            egui::RichText::new(
+                "The numbers above are shown so you can see what the calculator would \
+                 suggest and why the pairing is refused. Change the tool (or the \
+                 operation) to enable Apply.",
+            )
+            .small()
+            .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+    ui.horizontal(|ui| {
+        if ui
+            .button("⚡ Apply all — changes the cut")
+            .on_hover_text(
+                "Overwrite RPM, feed, and plunge (how fast) AND DOC/WOC (the cut) with \
+                 the recommended values, after the safety clamps. \
+                 CHANGES THE CUT: the applied DOC/WOC are the invariant-resolved values, \
+                 identical to the properties panel's \"Apply recommended speeds\" plus \
+                 \"Apply cut geometry\". To move only the speeds, use the panel.",
+            )
+            .clicked()
+        {
+            events.push(AppEvent::ApplyFeedsAll(toolpath_id));
+        }
     });
 }
 
@@ -611,13 +675,7 @@ fn ball_tip_radius(explain: &FeedsExplain) -> Option<f64> {
 /// the label gains an "(auto from scallop)" marker and a tooltip
 /// spelling out the chord-height math, so it's visually distinct from a
 /// manually-entered stepover.
-fn woc_row(
-    ui: &mut egui::Ui,
-    current: &CurrentValues,
-    explain: &FeedsExplain,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
+fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
         CompareRow::new(
@@ -627,8 +685,7 @@ fn woc_row(
             " mm",
             0.01,
         )
-        .apply(FeedsField::Woc, toolpath_id)
-        .show(ui, events);
+        .show(ui);
         return;
     }
 
@@ -658,22 +715,13 @@ fn woc_row(
     )
     .on_hover_text(&math);
     ui.label(compare::delta_tag(current.stepover, Some(derived)));
-    if let (Some(c), r) = (current.stepover, derived)
-        && (c - r).abs() > 1e-9
-    {
-        if ui
-            .small_button("Apply")
-            .on_hover_text("Write the scallop-derived stepover into the operation.")
-            .clicked()
-        {
-            events.push(AppEvent::ApplyFeedsField {
-                toolpath_id,
-                field: FeedsField::Woc,
-            });
-        }
-    } else {
-        ui.label("");
-    }
+    // The scallop-derived variant of the per-field WOC apply (census row M6)
+    // was deleted with the other five at Checkpoint I-1: it wrote
+    // `explain.recommended.radial_width_mm` raw, so it skipped
+    // `clamp_stepover_to_diameter` and the runtime back-off along with
+    // everything else. The derived value is still *shown* — reading it is the
+    // row's job — and `⚡ Apply all` writes the clamped form of it.
+    ui.label("");
     ui.end_row();
 }
 
@@ -1400,6 +1448,7 @@ fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    refusal: Option<&rs_cam_core::feeds::FeedsError>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
@@ -1760,7 +1809,7 @@ fn draw_chart_c(
     }
 
     // Phase 3 — Explore controls.
-    draw_explore_controls(ui, current, explain, toolpath_id, modal, events);
+    draw_explore_controls(ui, current, explain, refusal, toolpath_id, modal, events);
 }
 
 /// Band legend rendered under Chart C. Each row is `[swatch] label —
@@ -2037,6 +2086,7 @@ fn draw_explore_controls(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    refusal: Option<&rs_cam_core::feeds::FeedsError>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
@@ -2115,9 +2165,24 @@ fn draw_explore_controls(
             );
         });
         ui.horizontal(|ui| {
-            if ui
+            // I-3: the explore apply is an apply affordance like any other, so
+            // a refused pairing replaces it with the refusal rather than
+            // offering a write the panel would never offer. Exploring the
+            // nomogram stays available — reading it is not writing.
+            if let Some(err) = refusal {
+                ui.label(
+                    egui::RichText::new(format!("Cannot apply — {err}"))
+                        .small()
+                        .color(theme::ERROR),
+                );
+            } else if ui
                 .button("✓ Apply explored values")
-                .on_hover_text("Overwrite feed and RPM with the explored values.")
+                .on_hover_text(
+                    "Overwrite feed and RPM with the explored values, after the safety \
+                     clamps (plunge is pulled down to the new feed if it would exceed it). \
+                     Does not change the cut (DOC/WOC). The explored feed itself is never \
+                     re-solved.",
+                )
                 .clicked()
             {
                 events.push(AppEvent::ApplyFeedsExplore {
@@ -2688,12 +2753,14 @@ fn draw_project_view(
         .filter(|tc| tc.enabled)
         .filter_map(|tc| {
             let current = read_current_values(state, tc.id)?;
-            let explain = compute_explain(state, tc.id)?;
+            let preview = compute_preview(state, tc.id)?;
+            let refusal = preview.refusal().map(ToString::to_string);
             Some(ProjectFeedsRow {
                 id: tc.id,
                 name: tc.name.clone(),
                 current,
-                explain,
+                explain: preview.explain().clone(),
+                refusal,
             })
         })
         .collect();
@@ -2757,15 +2824,25 @@ fn draw_project_view(
             events.push(AppEvent::SetFeedsProjectSelectAll(!all_selected));
         }
         ui.separator();
-        let mut apply_btn = ui.add_enabled(any_selected, egui::Button::new("⚡ Apply selected"));
-        apply_btn =
-            apply_btn.on_hover_text("Apply Feeds recommendations to every checked toolpath.");
+        let mut apply_btn = ui.add_enabled(
+            any_selected,
+            egui::Button::new("⚡ Apply selected — changes the cut"),
+        );
+        apply_btn = apply_btn.on_hover_text(
+            "Apply Feeds recommendations to every checked toolpath. \
+             CHANGES THE CUT: DOC and WOC move as well as the speeds. \
+             Rows whose tool cannot run their operation are skipped and reported.",
+        );
         if apply_btn.clicked() {
             events.push(AppEvent::ApplyFeedsProjectSelected);
         }
         if ui
-            .button("⚡⚡ Apply all toolpaths")
-            .on_hover_text("Apply to every enabled toolpath regardless of selection.")
+            .button("⚡⚡ Apply all toolpaths — changes the cut")
+            .on_hover_text(
+                "Apply to every enabled toolpath regardless of selection. \
+                 CHANGES THE CUT: DOC and WOC move as well as the speeds. \
+                 Rows whose tool cannot run their operation are skipped and reported.",
+            )
             .clicked()
         {
             events.push(AppEvent::ApplyFeedsProject);
@@ -2816,7 +2893,22 @@ fn draw_project_view(
                     if ui.checkbox(&mut checked, "").changed() {
                         events.push(AppEvent::ToggleFeedsProjectRow(r.id));
                     }
-                    ui.label(egui::RichText::new(&r.name).small());
+                    match &r.refusal {
+                        Some(why) => {
+                            ui.label(
+                                egui::RichText::new(format!("{} ⚠", r.name))
+                                    .small()
+                                    .color(theme::WARNING),
+                            )
+                            .on_hover_text(format!(
+                                "This tool cannot run this operation, so no apply — batch or \
+                                 single — will write to it.\n{why}"
+                            ));
+                        }
+                        None => {
+                            ui.label(egui::RichText::new(&r.name).small());
+                        }
+                    }
                     ui.label(format!("{:.0}", r.current.feed_rate_mm_min));
                     ui.label(format!("{:.0}", r.explain.recommended.feed_rate_mm_min));
                     ui.label(compare::delta_tag(
@@ -2826,8 +2918,23 @@ fn draw_project_view(
                     ui.label(compare::format_optional(r.current.depth_per_pass, "", 0.01));
                     ui.label(format!("{:.2}", r.explain.recommended.axial_depth_mm));
                     ui.label(compare::format_optional(r.current.stepover, "", 0.01));
-                    if ui.small_button("Apply").clicked() {
-                        events.push(AppEvent::ApplyFeedsAll(r.id));
+                    match &r.refusal {
+                        Some(why) => {
+                            ui.label(egui::RichText::new("refused").small().color(theme::ERROR))
+                                .on_hover_text(why);
+                        }
+                        None => {
+                            if ui
+                                .small_button("Apply")
+                                .on_hover_text(
+                                    "Apply the recommendation to this toolpath. \
+                                     CHANGES THE CUT (DOC/WOC) as well as the speeds.",
+                                )
+                                .clicked()
+                            {
+                                events.push(AppEvent::ApplyFeedsAll(r.id));
+                            }
+                        }
                     }
                     ui.end_row();
                 }
@@ -3132,6 +3239,12 @@ struct ProjectFeedsRow {
     name: String,
     current: CurrentValues,
     explain: FeedsExplain,
+    /// `Some` when `validate_tool_for_operation` refuses this row's tool ×
+    /// operation pairing. Pre-fix (A-3 §3.5) the rollup had no idea: the row
+    /// rendered a recommendation and an Apply button like any other, and
+    /// `⚡⚡ Apply all toolpaths` swept the refused row up **silently**. The
+    /// batch handler now skips it and says so; the table marks it.
+    refusal: Option<String>,
 }
 
 fn speedup(current: &CurrentValues, explain: &FeedsExplain) -> f64 {
