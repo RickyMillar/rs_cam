@@ -986,3 +986,276 @@ cheap way to *prove* a before/after pair is comparable rather than assume it:
 assert both arms carry the same stamp; (d) take the `transform_provenance_
 fingerprints` intake; (e) consider carrying the unexercised `G0` class into
 whichever future wave builds a sub-stock-top-ceiling fixture.
+
+---
+
+## A-4 — one application funnel (execute Checkpoint I), 2026-08-12
+
+Status: COMPLETE. All six ruled items executed. Three of A-3's nine tests did
+**not** go red, and that is reported below as a bar deviation with a per-test
+reason rather than smoothed over.
+
+Commit(s), parent `875816c`:
+
+| commit | what |
+|---|---|
+| `9026ddb` | core: the funnel — `FeedsPreview` / `ApplicableRecommendation` / `ApplyScope` / `apply` / `resolve_operation_invariants`, + 5 sentries |
+| `2801654` | viz: delete M1–M6, reroute M7–M11 + M8 + O2, invert A-3's tests in place |
+| `0321677` | mcp: the `apply_feeds` tool (I-5) + 4 agent-surface sentries |
+| `bbd42c7` | docs: the two rendered modal states + artifacts README + two superseded-notes on frozen ui_audit surfaces |
+| this entry | |
+
+Parent/revision: `tech-debt-3 @ 875816c`. Territory as briefed —
+`rs_cam_viz` (feeds_modal, compare component, ui/mod, controller/events,
+mcp_server, app/mcp), `rs_cam_core/src/feeds/suggest.rs` (NOT
+`compute/` or `session/`, S-4's territory), `rs_cam_mcp/src/server.rs`,
+`apply_contract_a3.rs`, `artifacts/a4/`. No file S-4 touched is in this
+wave's diff.
+
+Question and pre-registered bars: execute Checkpoint I exactly; bars are
+census §5.4 verbatim, restated in the ruling. Bars I added before starting:
+(e) the three legacy apply entry points keep their signatures and behaviour,
+so the fix is provably additive on the number-producing side; (f) any bar I
+cannot meet is reported as not met, with the measurement that shows it.
+
+Fixture/population/resolution: A-3's three synthetic fixtures unchanged
+(default Ø6.35 2-flute flat end mill on Scallop / scallop-targeted DropCutter
+/ Pocket) for the test work. For the live render, a copy of
+`test_data/ux_3d_terrain.toml` with its two model paths absolutised, one
+`drop_cutter` toolpath on the Ø6 mm flat end mill, toggled between valid and
+refused by setting `scallop_height`. No simulation, no dexel grid, no
+resolution parameter — every measurement here is apply-time.
+
+Render/artifact paths: `planning/review_2026-08-08/artifacts/a4/` —
+`a4_modal_valid_pairing.png`, `a4_modal_refused_pairing.png`, `README.md`
+(provenance, the live `apply_feeds` transcripts, and the three NOT EXERCISED
+surfaces with their blockers).
+
+### Result (fact), interpretation, uncertainty
+
+- **Fact — I-1 executed.** The six per-field affordances (M1–M6) are gone,
+  along with `crate::ui::FeedsField`, `AppEvent::ApplyFeedsField`, its
+  handler, `CompareRow::apply` and the scallop-derived variant in `woc_row`.
+  `CompareRow::show` no longer takes an event sink at all — the row cannot
+  emit. M7/M9/M10/M11 and M8 route through one new controller entry,
+  `apply_feeds_through_funnel`, which calls `feeds::suggest::apply` with an
+  explicit `ApplyScope`. No `ApplyScope::Field` arm exists and the enum's
+  own docs say why.
+- **Fact — the funnel is structural, not defensive.** `FeedsPreview` holds
+  the explanation and the refusal together and carries no write method;
+  `ApplicableRecommendation` has a private field and no public constructor,
+  so `FeedsPreview::applicable()` is the only way to obtain one, and it
+  returns `None` exactly when the validator refused. `apply` is the only
+  write and always runs `enforce_invariants`.
+- **Fact — I-3 executed and rendered.** On a refused pairing the modal opens,
+  every chart draws, every number is shown, and the Apply column is replaced
+  by `Cannot apply — this tool cannot run this operation` plus the engine's
+  own text. Captured live: `a4_modal_refused_pairing.png`. The
+  `⚡ Apply all` button is absent in that image and present in the valid-pairing
+  one; the comparison grid's trailing column is blank on every row in both.
+- **Fact — I-4 executed.** `reoptimize_with_axis_override` now runs its
+  accepted axis value through `resolve_operation_invariants` (the funnel's
+  clamp stage) and **notifies when a clamp fires** — an operator who accepted
+  a number and silently got a different one is the same defect wearing new
+  clothes. O1/O3 excluded with the reason written at the funnel in
+  `suggest.rs`, not just in this log: their candidates are scored against a
+  simulated cut trace end to end, and re-clamping a sim-verified operating
+  point against a pre-simulation estimator would substitute the weaker
+  evidence for the stronger.
+- **Fact — I-5 executed, and exercised live.** `apply_feeds { index, scope }`.
+  On the refused pairing it returned `ok: false` with the engine's words —
+  `"scallop requires curved tip (need ball|bull|tapered_ball; got Flat on
+  Parallel)"` — and on the valid one `ok: true` with
+  `changes_the_cut: false`, `stepover: 0.18` (its pre-call value). `scope`
+  defaults to `"speeds"`: an omitted scope must not silently rewrite
+  geometry.
+- **Fact — a design decision inside I-1 that could have re-created the
+  defect.** Routing the drag-to-explore apply through the funnel naively
+  would let `recalibrate_feed_for_chipload` re-solve the feed the operator
+  had just dragged to. `ApplicableRecommendation::with_explored_speeds`
+  therefore drops the chipload band on that path, so the clamps run and the
+  dragged point survives. Pinned twice — core
+  `explored_speeds_survive_the_funnel_but_still_get_clamped` and controller
+  `explore_apply_takes_the_clamps_but_keeps_the_dragged_point`, the latter
+  asserting plunge 900 → 120 under a 120 mm/min dragged feed.
+- **Interpretation.** The census's own diagnosis holds up under
+  implementation: the defect was never "the modal forgot to validate", it was
+  that an infallible payload became a write source. Once the payload carries
+  its refusal, most of the fix falls out of the type system, and the
+  remaining work is honest labelling — the "changes the cut" attribution, the
+  refused-row marker, and the batch's skip report.
+- **Uncertainty, stated.** (a) The 1.00× closure is measured on ONE fixture
+  (Pocket, Ø6.35 flat, hard maple); what generalises is that both surfaces
+  now call one function, not the multiplier. (b) The controller tests drive
+  production handlers but do not render egui — the two screenshots cover the
+  rendering, but only for the two states MCP can reach (see NOT EXERCISED).
+  (c) `resolve_operation_invariants` is passed `SuggestContext::default()`
+  from O2, so its chipload recalibration short-circuits by design; whether
+  O2 should ALSO get a band is a live question I did not rule on, and it is
+  A-8's territory.
+
+### Red-first evidence, and where it fell short of the bar
+
+Run against the fix, before inverting anything. **Six of the nine moved;
+three did not.** Both facts are quoted.
+
+Compile-red (4 tests) — `cargo test -p rs_cam_viz --test apply_contract_a3`:
+
+```
+error[E0432]: unresolved import `rs_cam_viz::ui::FeedsField`
+  --> crates/rs_cam_viz/tests/apply_contract_a3.rs:42:32
+error[E0599]: no variant named `ApplyFeedsField` found for enum `AppEvent`
+   --> crates/rs_cam_viz/tests/apply_contract_a3.rs:242:52   (and :305, :415, :425, :435, :482)
+error: could not compile `rs_cam_viz` (test "apply_contract_a3") due to 7 previous errors
+```
+
+That is the strongest available form of red for `hazard_a_modal_per_field_
+apply_writes_the_refused_recipe`, `hazard_ab_refused_pairing_with_a_geometry_
+dial_takes_the_write`, `hazard_c_per_field_apply_writes_the_raw_preview_value`
+and `hazard_c_per_field_doc_is_3x_the_funnelled_doc`: the affordance they
+dispatch does not exist, so the compiler refuses them.
+
+Behavioural red (2 tests). To get a per-test verdict for the five that still
+compile, I built a **temporary** copy of the file with the four above removed
+(scratch only, run once, deleted; it is not in any commit):
+
+```
+running 5 tests
+test hazard_a_panel_refuses_the_pairing_the_modal_previews ... ok
+test panel_cut_geometry_apply_goes_through_the_invariant_funnel ... ok
+test hazard_a_modal_apply_all_writes_the_refused_recipe ... FAILED
+test hazard_b_modal_apply_all_moves_geometry_panel_speeds_apply_does_not ... ok
+test project_apply_all_reaches_a_refused_toolpath_silently ... FAILED
+
+---- hazard_a_modal_apply_all_writes_the_refused_recipe stdout ----
+assertion `left != right` failed: Apply all did not write feed on a pairing
+the panel refuses — hazard (a) may have been fixed; if so this test is the
+sentry that should now be inverted
+  left: 1000.0
+ right: 1000.0
+
+---- project_apply_all_reaches_a_refused_toolpath_silently stdout ----
+assertion `left != right` failed: project-wide apply skipped the refused
+toolpath — if it now refuses per row, invert this sentry
+  left: 1000.0
+ right: 1000.0
+
+test result: FAILED. 3 passed; 2 failed
+```
+
+**Bar 1 is therefore NOT fully met, and here is why, per test.** The bar's
+rationale is "a green run against unchanged tests would mean the fix did not
+reach production code". The fix demonstrably reached it — six of nine moved.
+The three that stayed green are the three that never asserted a hazard:
+
+| test | why it stayed green |
+|---|---|
+| `hazard_a_panel_refuses_the_pairing_the_modal_previews` | It asserts the *premise* — the panel refuses AND the preview still produces numbers. Checkpoint I-3 **deliberately preserves both**: the charts must keep drawing. Nothing here could go red without violating the ruling. Inverted by ADDING the missing half (`preview.applicable().is_none()`), which is the guarantee that did not exist before. |
+| `hazard_b_modal_apply_all_moves_geometry_panel_speeds_apply_does_not` | It asserts that `⚡ Apply all` moves the cut where the panel's speeds button does not. I-1 kept the combined apply (option C rerouted M7, it did not delete it), so this stays true by ruling. The fix here is *attribution* — a button label and tooltip — which no controller-level test can observe. Inverted by asserting the modal's write is now bit-equal to panel-speeds + panel-cut-geometry, plus a source assertion on the button string. |
+| `panel_cut_geometry_apply_goes_through_the_invariant_funnel` | Labelled "the funnelled counterpart, for contrast" in A-3's own source. It was always a statement of correct behaviour, and it is the surface the modal was made to match — so it is the one that must NOT move. Kept verbatim. |
+
+I record this as a bar not fully met rather than reinterpreting the bar. If
+the orchestrator reads it as met-in-substance, that is the orchestrator's
+call to make, not mine.
+
+**Fingerprints:** none moved, and one is now pinned that was not before.
+
+### Bar-by-bar
+
+| bar | verdict | evidence |
+|---|---|---|
+| 1. all nine red, then inverted | **PARTIAL — 6/9** | quoted above, per-test reasons in the table. All nine inverted in place per I-6 with every measured pre-fix number preserved in the doc comments; 14 tests now in the file. |
+| 2. no recipe number moves; Pocket `3000 / 794 / 18000 / 2.222 / 1.27` byte-identical | **MET** | New sentry `pocket_fixture_recipe_fingerprint_is_unmoved` asserts all five through the validated panel path — green. Independently, core `apply_scope_matches_the_legacy_entry_points_exactly` asserts `apply` with each scope is equal to the legacy entry point it replaces, on feed/plunge/RPM/WOC/DOC. The three legacy functions were not edited. |
+| 3. the §3.4 DOC gap closes to 1.00× | **MET** | `surviving_apply_paths_produce_the_funnelled_doc_exactly` compares `to_bits()` of the modal's applied DOC against the panel's `⚡ Apply cut geometry` DOC — **bit-equal**, i.e. exactly 1.000×, not "within tolerance". The 4.445 mm producer no longer exists; what is checkable is that what remains matches, and it does. |
+| 4. no background field locking or auto-population | **MET** | Diff-checked: the only `add_enabled` in the wave is the pre-existing `⚡ Apply selected` gate on "any row checked", whose label changed and whose condition did not. No `DragValue`, numeric input or `interactive(…)` call was added, removed or re-gated. The change is *what a button does when clicked*, never whether a field is editable. |
+
+### Verification (focused commands + exact state)
+
+- `cargo test -p rs_cam_viz --test apply_contract_a3` → **14 passed, 0 failed**.
+- `cargo test -p rs_cam_core --lib feeds::suggest` → **40 passed** (5 new).
+- `cargo test -p rs_cam_core --lib feeds::` → **225 passed**.
+- `cargo test -p rs_cam_viz -q` → **244 lib + 14 + 12 + 11 passed, 0 failed**
+  (the 12 are `mcp_escape_hatches`, unbroken by the new tool).
+- `cargo test -p rs_cam_mcp -q` → clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` → **zero warnings**
+  (only the pre-existing future-incompat note for transitive `nom 3.2.1` /
+  `quick-xml 0.22.0`). One real hit found and fixed en route: a
+  `redundant_clone` in my own new core test.
+- `cargo fmt --check --all` → clean, exit 0.
+- `cargo test -p rs_cam_core -q --no-fail-fast` → **2930 passed, 6 failed**,
+  and **all six are pre-existing, three of them already ledgered**. Attributed
+  rather than assumed: I reverted *only* my core diff
+  (`git checkout 875816c -- crates/rs_cam_core/src/feeds/suggest.rs`), re-ran
+  the two failures that were new to me, and got the **identical** panic on
+  both; tree restored afterwards and re-verified.
+
+  | failing test | attribution |
+  |---|---|
+  | `run_literature_matrix` (cell `flat_3mm_pocket_ipe_extreme`, `anti.ipe_micro_matches_oak_micro_chipload` critical) | **intake G-LIT-IPE**, A-6's, exactly as briefed |
+  | `three_pass_full_dressups_fingerprint`, `face_full_chain_fingerprint`, `arc_raster_full_dressups_fingerprint` | **S-4's second intake.** Byte-check: my `three_pass` reads `left (23, 14265253333427783116) / right (23, 14756822782673573601)` — **identical to the values S-4 recorded**, so this red has not moved under my wave |
+  | `sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling` (`chipload_diameter_scale` off by >1e-6) | **pre-existing at `875816c`** — reproduced with my core diff reverted. Not previously ledgered as far as I can see; it lives in the `D^0.61` diameter-law territory A-2 moved on 2026-08-06. **Suggest a new intake row.** |
+  | `wanaka_suggest_baseline` | **pre-existing at `875816c`** — and the panic names the cause: `Toolpath id 11 missing from suggest cases — wanaka.toml shape changed?`. The play-file has been operator-modified since before this wave started (it is in `git status` at session open and I never opened it). This is a test pinned to a file the operator is allowed to edit; **suggest an intake row**, because it will keep failing until either the pin or the fixture policy changes. |
+
+  Note on the first run I did: plain `cargo test -p rs_cam_core -q` **stops at
+  the first failing binary**, so it reported "1 failed" and never reached the
+  five later ones. The complete picture required `--no-fail-fast`, and the
+  earlier number would have been a false all-clear. Recording it because the
+  next agent will otherwise draw the same wrong conclusion.
+- Machine discipline: `free -g` + bracketed `pgrep -af "carg[o]"` before every
+  launch; a foreign Cargo job (a different repo) held the slot at the start of
+  the wave and I waited it out rather than racing it. **No release build** —
+  the GUI capture used `cargo build -p rs_cam_viz --bin rs_cam_gui --features
+  mcp`, a debug build, per §0.8. Disk 143 G free throughout.
+- Git: explicit staging only, five commits, no `--amend`.
+  `planning/airrun_2026-06-01/wanaka.toml`, `planning/review_2026-07-27/`, the
+  operator's `FEEDS_SPEEDS_ARCHITECTURE_REVIEW_2026-08-07.md` and the
+  `e_impl/*.pgm` strays remain untracked/unstaged and byte-unchanged by me.
+  The live GUI run used a **scratch copy** of a `test_data` fixture; wanaka was
+  never opened.
+
+### NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition
+
+- **NOT EXERCISED: the explore-chart Apply, on screen, in either state.**
+  `✓ Apply explored values` only renders after `⊕ Start exploring` is
+  clicked, and MCP cannot inject a click inside a modal (`set_ui_view` opens
+  modals, not widgets). Owner: whichever wave next has an operator at the
+  keyboard. Covered meanwhile by two controller sentries.
+- **NOT EXERCISED: the project-rollup tab on screen**, where a refused row
+  shows `⚠` and `refused` in place of its Apply. Its tab switch is
+  `AppEvent::SetFeedsModalMode`, which no MCP tool emits. Same owner; covered
+  by `project_apply_all_skips_a_refused_toolpath_and_reports_it`.
+- **NOT EXERCISED by an automated test: the scope-string parsing in
+  `mcp_apply_feeds`.** Two of its four arms (`"both"`, `"speeds"`) were hit
+  live; the unknown-scope error arm and `"cut_geometry"` were not. It is a
+  private method on the egui `App` and `rs_cam_viz` has no App-level harness.
+  Owner: Lane B if it ever builds one. The `ApplyScope` values behind the
+  strings are sentried at the controller.
+- **NOT FIXED, deliberately: O1 and O3.** Excluded by I-4 with the reason
+  recorded at the funnel. Re-open condition: evidence that an optimizer
+  candidate can reach an operation without having been simulated.
+- **NOT FIXED: the legacy triple "apply all LUT feeds" duplication**
+  (`ui_audit/DIAGNOSIS.md` §36 — feeds-card "⚡ Suggest all", Params-tab
+  "⚡ Suggest all (LUT)", modal "⚡ Apply all"). All three go through
+  `apply_feeds_result_to_op`, so all three are funnelled and none carries
+  hazard (c); but the *validation* half of Checkpoint I reached only the modal
+  and the panel. The two `properties/mod.rs` Suggest-all buttons were outside
+  the census's 13 and outside I's scope, and I did not widen it. Suggest a
+  ledger row: they are the remaining unvalidated apply affordances in the GUI.
+- **Observation for the orchestrator, not a defect:** two frozen
+  `planning/ui_audit/surfaces/*.md` files listed the deleted per-field
+  controls as current capability. I added dated superseded-notes rather than
+  rewriting the snapshots. There may be others in that directory that I did
+  not audit.
+
+Next action / checkpoint request: **none — A-4 needs no checkpoint.**
+Orchestrator actions: (a) mark A-4 COMPLETE, noting bar 1 as 6/9 with reasons
+rather than as met; (b) DoD item 2 ("one validated application funnel; the
+modal cannot apply what the panel refuses, and cannot change cut geometry
+under a speeds label, sentried") is dischargeable on this wave's evidence —
+both halves are sentried and both are rendered; (c) take the new ledger
+candidate above (the two `properties/mod.rs` Suggest-all buttons); (d) note
+for A-8 that O2 now runs a clamp pass with `SuggestContext::default()`, so
+whether it should also carry a chipload band is an open question in its
+territory; (e) the plan's §5 sequencing note that A-4 and B-4 share
+`feeds_modal.rs` still stands — B-4 will land on a file this wave changed
+substantially.
