@@ -19,7 +19,7 @@ use crate::mcp_bridge::{
 
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
-    AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
+    AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam, ApplyFeedsParam,
     CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
     GenerateToolpathParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
     ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
@@ -1168,6 +1168,24 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::SetSpindleStrategy { strategy })
                 .await,
+        )
+    }
+
+    #[tool(
+        name = "apply_feeds",
+        description = "Apply the Feeds & Speeds recommendation to one toolpath through the SAME validated funnel both GUI surfaces use, with the scope stated explicitly. This is the only agent write that carries the engine's guarantees: (1) it REFUSES a tool x operation pairing `validate_tool_for_operation` declines (e.g. a flat end mill on a scallop finish) and returns the refusal instead of writing, and (2) the values written are invariant-resolved — the plunge-to-feed and stepover-to-diameter clamps, the rigidity and cutting-length depth clamps, the deflection back-off and the chipload recalibration all run, then the result is rounded. `scope` is REQUIRED reading: \"speeds\" writes feed/plunge/RPM and does NOT change the cut; \"cut_geometry\" writes stepover/DOC and DOES change the cut (re-simulate — engagement, runtime and every gate verdict move with it); \"both\" does both. Omitting it defaults to \"speeds\", the conservative choice. Contrast `set_toolpath_param`, which writes a raw number with no validation and no clamps — use that only when you mean to override the engine. Marks the toolpath stale; regenerate to apply."
+    )]
+    async fn apply_feeds(
+        &self,
+        #[allow(clippy::needless_pass_by_value)]
+        Parameters(ApplyFeedsParam { index, scope }): Parameters<ApplyFeedsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ApplyFeeds {
+                index,
+                scope: scope.unwrap_or_else(|| "speeds".to_owned()),
+            })
+            .await,
         )
     }
 

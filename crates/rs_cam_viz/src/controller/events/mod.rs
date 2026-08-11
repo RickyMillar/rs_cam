@@ -915,6 +915,25 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
+    /// The agent-facing entry to the same funnel (Checkpoint I-5).
+    ///
+    /// Before this, the MCP surface had **no** apply tool at all: an agent's
+    /// only write was `set_toolpath_param`, a raw operator write that is
+    /// neither feeds-validated nor invariant-funnelled — i.e. the agent had
+    /// the old modal's contract with none of the modal's preview. This gives
+    /// it the panel's guarantees instead, with the scope stated explicitly
+    /// rather than implied by which button was clicked.
+    ///
+    /// `Err` carries the refusal text verbatim, so the tool can return it to
+    /// the agent instead of reporting a successful no-op.
+    pub fn apply_feeds_recommendation(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        scope: rs_cam_core::feeds::suggest::ApplyScope,
+    ) -> Result<(), String> {
+        self.apply_feeds_through_funnel(toolpath_id, scope, None)
+    }
+
     /// Apply every recommended Feeds value to the given toolpath in one
     /// transactional update — the modal's `⚡ Apply all`, and the project
     /// rollup's per-row Apply.

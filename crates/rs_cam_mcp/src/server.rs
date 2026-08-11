@@ -560,6 +560,30 @@ pub struct SetSpindleStrategyParam {
     pub strategy: String,
 }
 
+/// `apply_feeds` — the agent-facing entry to the one application funnel
+/// (Checkpoint I-5, 2026-08-12).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ApplyFeedsParam {
+    /// Toolpath index (0-based), as listed by `list_toolpaths`.
+    pub index: usize,
+    /// Which dimensions to write. **Say what you mean** — the scope is the
+    /// whole safety vocabulary of this tool:
+    ///
+    /// - `"speeds"` — feed / plunge / RPM. "How fast". Does NOT change the
+    ///   cut, so the geometry you simulated stays the geometry you cut.
+    /// - `"cut_geometry"` — stepover / DOC. **CHANGES THE CUT**: the removed
+    ///   material, the engagement, the runtime and every gate verdict move
+    ///   with it. Re-simulate afterwards.
+    /// - `"both"` — both halves in one transaction. Also changes the cut.
+    ///
+    /// Defaults to `"speeds"`, the conservative choice: an omitted scope must
+    /// not silently rewrite geometry. Mirrors
+    /// `rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no
+    /// per-field scope.
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SaveProjectParam {
     /// File path to save the project TOML to (required)

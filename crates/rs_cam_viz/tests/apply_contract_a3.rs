@@ -792,3 +792,98 @@ fn explore_apply_refuses_a_refused_pairing() {
         "the explore refusal was silent"
     );
 }
+
+// ── the agent surface joins the funnel (Checkpoint I-5) ────────────────────
+
+/// `AppController::apply_feeds_recommendation` is what the MCP `apply_feeds`
+/// tool calls. A-3 §2f recorded that no MCP tool applied a recommendation at
+/// all: the only agent write was `set_toolpath_param`, neither
+/// feeds-validated nor invariant-funnelled — an agent had the old modal's
+/// contract with none of its preview.
+///
+/// The scope is the whole point of the tool, so all three arms are exercised
+/// here: `Speeds` must not move the cut, `CutGeometry` must not move the
+/// speeds, and `Both` moves both. Same guarantees the properties panel's two
+/// buttons give a human.
+#[test]
+fn agent_apply_honours_its_declared_scope() {
+    use rs_cam_core::feeds::suggest::ApplyScope;
+
+    let baseline = {
+        let controller = controller_with(OperationType::Pocket);
+        op_of(&controller)
+    };
+
+    let mut speeds = controller_with(OperationType::Pocket);
+    let id = id_at(&speeds, 0);
+    speeds
+        .apply_feeds_recommendation(id, ApplyScope::Speeds)
+        .expect("valid pairing");
+    let speeds_op = op_of(&speeds);
+    assert_ne!(speeds_op.feed_rate(), baseline.feed_rate(), "speeds: feed");
+    assert_eq!(
+        (speeds_op.stepover(), speeds_op.depth_per_pass()),
+        (baseline.stepover(), baseline.depth_per_pass()),
+        "scope 'speeds' changed the cut — the tool's central promise"
+    );
+
+    let mut cut = controller_with(OperationType::Pocket);
+    let id = id_at(&cut, 0);
+    cut.apply_feeds_recommendation(id, ApplyScope::CutGeometry)
+        .expect("valid pairing");
+    let cut_op = op_of(&cut);
+    assert_ne!(
+        cut_op.depth_per_pass(),
+        baseline.depth_per_pass(),
+        "cut: DOC"
+    );
+    assert_eq!(
+        (
+            cut_op.feed_rate(),
+            cut_op.plunge_rate(),
+            cut_op.spindle_rpm()
+        ),
+        (
+            baseline.feed_rate(),
+            baseline.plunge_rate(),
+            baseline.spindle_rpm()
+        ),
+        "scope 'cut_geometry' changed the speeds"
+    );
+
+    let mut both = controller_with(OperationType::Pocket);
+    let id = id_at(&both, 0);
+    both.apply_feeds_recommendation(id, ApplyScope::Both)
+        .expect("valid pairing");
+    let both_op = op_of(&both);
+    assert_eq!(both_op.feed_rate(), speeds_op.feed_rate(), "both: feed");
+    assert_eq!(
+        both_op.depth_per_pass(),
+        cut_op.depth_per_pass(),
+        "both: DOC"
+    );
+}
+
+/// The agent gets the refusal as an `Err` carrying the engine's own words —
+/// never as a successful no-op. An agent that cannot tell "applied" from
+/// "declined" will re-simulate and conclude the recommendation did nothing.
+#[test]
+fn agent_apply_returns_the_refusal_rather_than_a_silent_no_op() {
+    use rs_cam_core::feeds::suggest::ApplyScope;
+
+    let mut controller = controller_with(OperationType::Scallop);
+    let id = id_at(&controller, 0);
+    let before = op_of(&controller);
+    let err = controller
+        .apply_feeds_recommendation(id, ApplyScope::Both)
+        .expect_err("a flat end mill on Scallop must be refused for an agent too");
+    assert!(
+        err.to_lowercase().contains("scallop") || err.to_lowercase().contains("tool"),
+        "the refusal text does not say what is wrong: {err}"
+    );
+    assert_eq!(
+        op_of(&controller).feed_rate(),
+        before.feed_rate(),
+        "the agent path wrote despite refusing"
+    );
+}
