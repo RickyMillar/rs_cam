@@ -655,9 +655,22 @@ pub fn text(msg: impl Into<String>) -> String {
 // value avoids forcing every caller to bind a temporary just to borrow it.
 // Switching to `&Value` would cascade across ~30 call sites in rs_cam_viz
 // without functional benefit. Tracked for a future refactor batch.
+/// Serialise a tool response.
+///
+/// **Compact, not pretty** (Checkpoint L-4, 2026-08-08). Every one of the
+/// ~68 tools goes through here, and every one of them used to ship its
+/// indentation to the agent. Measured by wave B-1 on real responses:
+/// pretty-printing cost **31.3 %** of a 56,225,225-byte `get_cut_trace`
+/// payload (13,392,073 bytes of whitespace) and **46.6 %** of a
+/// `get_diagnostics` / `run_simulation` response (79,135 B pretty vs
+/// 42,295 B compact — the ratio is *worse* on the small, deeply nested
+/// responses agents read most often).
+///
+/// Nothing consumes the formatting: every reader on the wire is a JSON
+/// parser. The indentation was pure transport cost.
 #[allow(clippy::needless_pass_by_value)]
 pub fn json_str(data: serde_json::Value) -> String {
-    serde_json::to_string_pretty(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
+    serde_json::to_string(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
 
 /// Build-identification block embedded in `project_summary`.

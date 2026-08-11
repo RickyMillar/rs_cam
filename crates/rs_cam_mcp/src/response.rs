@@ -456,12 +456,28 @@ impl BoundedResponse {
     /// A capped array section plus its truncation vocabulary.
     ///
     /// The entries were charged as they were taken by [`cap_json_values`],
-    /// so this always succeeds; what did not fit is already reported by
-    /// `<key>_truncated` / `<key>_returned` against a true
+    /// so a partial take needs no further decision: what did not fit is
+    /// reported by `<key>_truncated` / `<key>_returned` against a true
     /// `<key>_total_matching`.
+    ///
+    /// **The total-starvation case is different and is the one C25 is
+    /// about.** When the budget admitted *nothing* from a non-empty
+    /// population, emitting `[]` would render "did not fit" as "there is
+    /// none" — the two are indistinguishable on the wire and only one of
+    /// them is a measurement. So the array is **omitted** and the section is
+    /// named in `sections_not_computed`; the counts stay, because
+    /// `total_matching` is a true population figure and saying it is the
+    /// only way the caller learns what it is missing.
+    ///
+    /// A genuinely empty population (`total_matching == 0`) still emits
+    /// `[]`: that IS the measurement.
     pub fn insert_capped(&mut self, key: &str, array: CappedArray) {
         array.insert_keys(key, &mut self.map);
-        self.map.insert(key.to_owned(), array.into_value());
+        if array.returned() == 0 && array.total_matching() > 0 {
+            self.budget.record_not_computed(key);
+        } else {
+            self.map.insert(key.to_owned(), array.into_value());
+        }
     }
 
     /// Finish the object, appending the completeness vocabulary.
@@ -478,7 +494,8 @@ impl BoundedResponse {
             .iter()
             .map(|s| Value::from(s.clone()))
             .collect();
-        self.map.insert("complete".to_owned(), Value::Bool(complete));
+        self.map
+            .insert("complete".to_owned(), Value::Bool(complete));
         self.map.insert(
             "sections_not_computed".to_owned(),
             Value::Array(not_computed),
@@ -670,6 +687,48 @@ mod tests {
             Value::from(1_588_883),
             "the sections that fit must still be served",
         );
+    }
+
+    /// A capped array starved to nothing is a **dropped section**, not an
+    /// empty one — and a genuinely empty population still reports `[]`,
+    /// because that one IS a measurement. If these two collapsed onto the
+    /// same wire shape the whole vocabulary would be worthless.
+    #[test]
+    fn a_starved_array_is_named_but_a_genuinely_empty_one_is_served() {
+        let mut resp = BoundedResponse::new(300);
+        let mut budget = ResponseBudget::new(0);
+        let starved = cap_json_values(1_000, (0..1_000).map(span_summary_row), 200, &mut budget);
+        assert_eq!(starved.returned(), 0, "the fixture must starve it");
+        resp.insert_capped("span_summaries", starved);
+
+        let mut b2 = ResponseBudget::new(MAX_RESPONSE_BYTES);
+        let genuinely_empty = cap_json_values(0, std::iter::empty(), 200, &mut b2);
+        resp.insert_capped("drill_summaries", genuinely_empty);
+
+        let out = resp.finish();
+        assert!(
+            out.get("span_summaries").is_none(),
+            "a starved array must be ABSENT — `[]` would say 'there is none', \
+             which is a different claim and a false one",
+        );
+        assert_eq!(
+            out["span_summaries_total_matching"],
+            Value::from(1_000),
+            "the caller must still learn what it is missing",
+        );
+        assert_eq!(out["span_summaries_truncated"], Value::Bool(true));
+        assert_eq!(
+            out["sections_not_computed"],
+            serde_json::json!(["span_summaries"]),
+        );
+        assert_eq!(out["complete"], Value::Bool(false));
+
+        assert_eq!(
+            out["drill_summaries"],
+            serde_json::json!([]),
+            "an empty population is a measurement and must be served as one",
+        );
+        assert_eq!(out["drill_summaries_truncated"], Value::Bool(false));
     }
 
     #[test]

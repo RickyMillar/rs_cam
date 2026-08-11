@@ -769,9 +769,10 @@ fn parked_frame_loop_warning(frame_loop: &FrameLoopBeat) -> Option<String> {
          repaint. A hidden, occluded or screen-locked window gets no repaints — on \
          Wayland the compositor withholds the frame callbacks winit needs before it will \
          emit RedrawRequested, so request_repaint() cannot break the park. Make the GUI \
-         window visible and focused to resume it, or run the GUI with \
-         WINIT_UNIX_BACKEND=x11, where redraws are client-driven and never gated on the \
-         compositor."
+         window visible and focused to resume it, or relaunch the GUI with WAYLAND_DISPLAY \
+         UNSET (winit then picks X11/XWayland, where redraws are client-driven and never \
+         gated on the compositor). Do NOT set WINIT_UNIX_BACKEND — winit removed that \
+         variable in 0.29 and it does nothing on the 0.30 this build uses."
     ))
 }
 
