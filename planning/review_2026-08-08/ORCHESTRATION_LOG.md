@@ -853,3 +853,135 @@ charter and I-5 overlaps Lane B, so both may want deferring rather than ruling;
 (c) A-4 stays blocked on I; (d) the funnel design in §5.1 is mechanically
 small — `apply_feeds_subset` already *is* the funnel and `ApplySubset` already
 *is* `ApplyScope` minus `Field` — so I-1 = C is a same-day change once ruled.
+
+## S-4 — G-BYTE frozen-snapshot A/B, 2026-08-12
+
+Status: COMPLETE. The A/B ran, the identical-branch fired, and the
+provenance fix shipped with the harness as its sentry. **No promotion
+needed: G-BYTE is not a nondeterminism defect and A-5's before/after
+fixtures are not blocked.**
+
+Commit(s), parent `675a643`: `85f40a1` (harness + `ToolpathStats::
+stock_snapshot` + the join parameter + the two production call sites + the
+narration and h21 guards), plus this entry, `GBYTE_AB_REPORT.md` and
+`artifacts/s4/`.
+
+Question and pre-registered bars: plan §4 S-4. Bars set before starting:
+(a) byte-equality is asserted on **three independent renderings**, not one —
+move list, whole `AnnotatedToolpath`, and emitted G-code — and the G-code is
+exported with `sim_trace: None` under an all-accepting policy so its text
+cannot move because a *gate* moved; (b) an "identical" result is not accepted
+until a control arm has been shown to make the same harness produce a
+**different** result, otherwise the equality is a property of the harness;
+(c) non-vacuity asserted, not assumed (>500 moves, >500 lines) — a degenerate
+pass makes byte-equality trivially true; (d) the production stamp is checked
+against an **independent witness** computed outside production code, never
+against itself; (e) any diff-classification whose alignment I cannot trust is
+suppressed rather than reported.
+
+Fixture/population/resolution: two-op `UnifiedFinish` cascade, op 1 on
+`StockSource::FromRemainingStock` — the incident's shape. Ø3 ball nose,
+40 × 40 mm smooth double-bump height field in the top 2 mm of a 6 mm stock,
+heights pinned 6.0 / 4.0, finish stepover 1.5 mm vs rest 0.5 mm so the rest
+pass has ~0.19 mm cusp ridges in front of it. Frozen snapshot at **0.25 mm**
+(under the Ø3 tip radius, per `feedback_rest_measurement_prerequisites`);
+control cells 0.30 and 0.40 mm. Population 6 519 moves / 7 208 G-code lines /
+187 557 B. **The operator's `wanaka.toml` was not touched, read or copied.**
+
+Result:
+
+- **VERDICT — IDENTICAL BYTES.** Arm A (nothing between the two generations)
+  is byte-identical on all three renderings: `6519 / 04e0a63a8812b572` twice,
+  annotated hash `dd222b9016062d4b` twice, G-code 187 557 B / 7 208 lines,
+  **0 differing lines, 0 `diff` hunks**, `assert_eq!` on the whole string.
+  Against the incident's 135 hunks / ~140 moved `G0` heights / 12 dropped
+  cutting lines. G-BYTE was **snapshot drift, not generator nondeterminism**.
+- **The single strongest artifact is `artifacts/s4/SHA256SUMS.txt`.** One
+  hash, `ab49460186ba937d…`, covers **six** files — arm A gen1 and gen2, arm
+  B1 gen1 and gen2, and the gen1 of arms B2 and B3. Same configuration
+  generated six times across four independent test functions, landing on one
+  byte sequence every time. Byte-identity here survives separate sessions,
+  separate simulations and separate processes, not just two calls in a loop.
+- **Re-simulating is not by itself drift** (arm B1, new information). A
+  second `run_simulation` at the same 0.25 mm cell allocated a fresh `Arc`
+  holding bit-identical material; snapshot digest unchanged, output
+  byte-identical. So the incident's "fixpoint round sim vs later explicit
+  full sim" is only a cause if the two events actually *differed*.
+- **The harness can move the bytes** (arms B2/B3), so arm A is not vacuous:
+  0.25 → 0.30 mm gives 6 `diff` hunks / 161 changed lines / 105 fewer moves;
+  0.25 → 0.40 mm gives 5 hunks / 3 726 changed lines and 274 187 B.
+- **Fix shipped: `ToolpathStats::stock_snapshot`** — cell size, grid dims and
+  an FNV-1a digest over every ray's material on all three axes. It joins the
+  **two-valued event family** (`zero_removal`, `boundary_clip_dropped`), NOT
+  the three-valued A/M9 one, and says so at the field: there is no "measured
+  zero" for an identity. Report-only; no gate reads it. Sub-millisecond
+  against a ~1.3 s generation.
+- **Content-derived, not identity-derived — and arm B1 is the reason.** A
+  pointer stamp or a sim-event counter would have called B1's honest re-sim a
+  different snapshot and raised a false alarm. Measured before choosing.
+- **Threaded as a PARAMETER of `stats_with_findings`, not a
+  `GenerationFindings` field**, because only the caller knows which snapshot
+  it handed the generator. That preserved H2.1's property: both production
+  call sites, the narration guard and the h21 join sentry all broke at
+  compile time and were routed with a stated decision, none elided. The
+  session stamps `prior_stock_arc`, not the source-gated `gen_initial_stock`,
+  because the same `Arc` also reaches the dressup air-cut filter ungated.
+
+Fingerprints: **none moved, verified.** `ToolpathStats` has zero coupling to
+`fingerprint.rs`. Green after the change: `finish_resolution_policy_pr3`
+(three pinned `(moves, hash)` constants), `checkpoint_b_resolution_ab`,
+`crease_own_region_pr6b`, `common_fixtures_smoke_c6`,
+`findings_transport_join_h21`, `narration_denominator_and_hints_d7`,
+`standing_material_channel_am9`, `retract_trip_channel_am7` — 8/8 binaries,
+50 tests, 0 failures. Clippy `-D warnings` clean on core + viz; `cargo fmt
+--check` clean with no rustfmt cascade (before/after `git status` compared).
+
+Uncertainty, stated:
+
+- **NOT EXERCISED: the incident's own dominant class**, the ~140 `G0`
+  approach heights moving 0.05–0.15 mm. Arm B4 was written to isolate it
+  (territory clip off, leaving only the air-cut filter and
+  `optimize_entry_descents`) and **could not reproduce it**. Blocker, named:
+  this fixture emits only **7** `G0` lines and every split saturates at
+  `Z8.000` = raw stock top 6.0 + `PLUNGE_CLEARANCE_MM` 2.0, because
+  `max_conservative_top_z_in_disc` is a sliver-safe upper bound (A/M10) that
+  refining the cell cannot lower. The mechanism named in the G-BYTE ledger
+  row for that class therefore remains **inferred from the code path, not
+  measured**. It is carried in the arm's own doc comment, not implied away.
+  The verdict does not rest on it — arm A rules out nondeterminism for the
+  whole output, `G0` lines included. Re-open condition: a fixture whose entry
+  ceilings sit below the raw stock top.
+- **NOT EXERCISED: the GUI worker's stamp call site.** It compiles and
+  mirrors the session path, but no live GUI/MCP session ran. Blocker: S-4 is
+  a core-side wave. Suggest folding into the programme's close-out live
+  validation rather than opening a row.
+- **Red-first is compile-time here, not runtime, and is labelled as such.**
+  The defect was a *missing channel*, so there was no pre-existing runtime red
+  to quote; what failed before the fix were the three `stats_with_findings`
+  guards plus the narration guard, recorded in the commit message.
+- **The in-test G-code comparison is positional, not an LCS.** Exact when the
+  line counts match (the arm-A case carrying the verdict); it suppresses its
+  own classification when they differ rather than reporting a misalignment as
+  a finding. All hunk counts in the report come from GNU `diff -U0` on the
+  dumped `.nc` files.
+
+INTAKE — a **second** pre-existing red core test, unrelated to this wave:
+`transform_provenance_fingerprints` fails 3/3. Verified pre-existing by
+`git stash push` of exactly the seven changed paths, re-running the binary,
+and comparing: **identical left/right values on all three tests** (e.g.
+`three_pass: left (23, 14265253333427783116) / right (23,
+14756822782673573601)`), move counts unchanged (23, 74, 40) in every case —
+geometry hashes moved, counts did not. Stash popped, tree restored. Sits
+alongside G-LIT-IPE; suggest a row id and an owner.
+
+Next action / checkpoint request: **none — S-4 needs no checkpoint.**
+Orchestrator actions: (a) mark S-4 COMPLETE in the tracker; (b) record
+against **G-BYTE**: *RESOLVED as diagnosed — cause identified (snapshot
+drift), provenance shipped, no determinism defect*, with re-open condition
+**"a byte difference between two generations whose `stock_snapshot` stamps
+are equal"**; (c) **A-5 is unblocked** — the plan's §5 note that S-4 "should
+complete before A-5's fixtures are trusted" is discharged, and A-5 now has a
+cheap way to *prove* a before/after pair is comparable rather than assume it:
+assert both arms carry the same stamp; (d) take the `transform_provenance_
+fingerprints` intake; (e) consider carrying the unexercised `G0` class into
+whichever future wave builds a sub-stock-top-ceiling fixture.
