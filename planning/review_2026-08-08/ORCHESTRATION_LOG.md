@@ -382,3 +382,221 @@ screenshot its ledger row demanded); (b) re-run the workspace clippy gate
 once B-2's slice lands, since I could not take the slot; (c) A-8 and A-9
 are unblocked — both were sequenced "after A-2" so they would read the
 corrected display layer, and they now can.
+
+---
+
+## B-2 — bounded MCP reads + filter fix (executes Checkpoint L), 2026-08-08 / 2026-08-11
+
+Status: COMPLETE. Checkpoint L executed in full (L-2, L-3, L-4, L-5, and
+the L-6 rider). **G-LV.2 stays OPEN as cause-not-attributed** — this wave
+bounds the read; it does not claim to have fixed the crash. Wave ran
+2026-08-08, was interrupted by a multi-day network outage mid-slice, and
+resumed and closed 2026-08-11; the three commits straddle that gap.
+
+Commit(s): `3a97b8b` (bounded-response primitives + their sentries,
+`crates/rs_cam_mcp/src/response.rs`, nothing calling them yet), `825524f`
+(`get_cut_trace` bounded + unmatched-id refusal + `inspect_spans` summary
+cap), `afd102b` (compact `json_str`, the five viz-side sentries, the L-6
+rider, and the C25 gap those sentries exposed). This entry.
+
+Parent/revision measured: branch `tech-debt-3`; my slice started at
+`b70b84f` and closed on top of A-2's eight commits (`395e1a5`). B-1's
+census — the evidence every number here comes from — was taken on the
+release binary built from `d820226`, the build the incident ran on.
+
+Question and pre-registered bars: plan §3 "B-2 impl", executing the
+Checkpoint L ruling verbatim. Bars I set before starting: (a) the pre-fix
+behaviour must stay **executable**, not quoted — a sentry that only
+asserts the new number cannot fail if someone reverts the mechanism;
+(b) `total_matching` must be counted from the population and never
+inferred from the emission, or a truncated array reports itself complete;
+(c) an unmatched id must be refused, not answered, because the empty
+skeleton it used to return is indistinguishable from a real empty result;
+(d) nothing in `rs_cam_core` may be touched, so no fingerprint can move
+by construction — and I verify that rather than assert it.
+
+Fixture/population/resolution: two populations. The primitive-level
+sentries run a synthetic 35,838-entry `span_summaries` population — B-1's
+measured entry count, with a row of the shipped shape. The viz-level
+sentries build a real `AppState`: N toolpaths added through
+`ProjectSession::add_toolpath` (which assigns its own ids, so ids and
+indices diverge exactly as they do in production), each with an
+`AnnotatedToolpath` of 300 spans in `gui.toolpath_rt`, and a
+`SimulationCutTrace` with one cutting sample per span. No simulation
+resolution is involved; nothing is dexel-measured.
+
+Render/artifact paths: none — this wave changes no visible surface. The
+before/after numbers are byte counts, quoted below and pinned in the
+tests.
+
+Result (fact), interpretation, and uncertainty:
+
+- **Fact (L-2/L-3, the bound).** The five uncapped arrays
+  (`span_summaries`, `semantic_summaries`, `toolpath_summaries`,
+  `drill_summaries`, `drill_samples`) now carry the truncation triple
+  `hotspots`/`issues` have had since R-1, plus a `max_*` request parameter
+  each and a `_cap` key. Defaults are the ruled ones: span/semantic 200,
+  drill_samples 500, the two per-toolpath arrays uncapped,
+  `MAX_RESPONSE_BYTES` 8 MiB. The backstop is charged **while building**;
+  section order is priority order, with `span_summaries` offered last
+  because it was 94 % of the payload.
+- **Fact (red-first, primitive).** `ResponseBudget::unbounded()`
+  reproduces the pre-fix build. On the 35,838-entry population the
+  uncapped array serialises to **> 20 MB** (asserted; a Python
+  reconstruction of the same row shape measures **22,877,066 B** compact)
+  and the ruled default to **~126 kB** — a ratio the test pins at **> 100×**
+  and measures at ~181×. B-1's own figure for the whole response was
+  **56,225,225 B** of tool text in a **60,517,035 B** JSON-RPC line, and
+  those numbers are in the module's docs permanently.
+- **Fact (red-first, shipped path).** The exhibit
+  `an_unfiltered_read_answers_bounded_instead_of_emitting_everything`
+  runs the **production** builder twice on one fixture. Unbounded: 1,200
+  of 1,200 rows, `truncated: false`. Ruled defaults: **200** rows,
+  `span_summaries_total_matching: 1200`, `truncated: true`, response under
+  the 8 MiB backstop. The uncapped arm is an assertion, not a comment — if
+  someone removes the cap machinery the exhibit stops demonstrating
+  anything and fails.
+- **Fact (L-5, before).** B-1 measured `get_cut_trace {"toolpath_id": 0}`
+  returning **3,972 bytes** of well-formed skeleton with every array empty
+  and `issue_count: 0` printed beside `issue_count_project_wide: 73326`.
+  On that project the values **4, 5 and 6 were simultaneously valid
+  indices and valid ids of different toolpaths**, so an agent following
+  the doc string received another toolpath's data silently.
+- **Fact (L-5, after).** An unmatched id is an error naming the valid ids
+  and correcting the misreading ("the project-level ID … NOT the index").
+  The doc string on `CutTraceParam::toolpath_id` said *index*; it now says
+  *id* and says why the distinction is not academic. Sentry has a
+  non-vacuity arm: a valid id still answers **with data**, so the refusal
+  did not become a blanket one.
+- **Fact (L-4, compact JSON).** `json_str` is `to_string`, not
+  `to_string_pretty`, for all ~68 tools; `format_result`'s error arm too.
+  B-1's measured saving: **13,392,073 bytes (23.8 % of the served payload,
+  31.3 % of the compact one)** on the large `get_cut_trace`, and **46.6 %**
+  on `get_diagnostics` / `run_simulation` (79,135 B → 42,295 B). I
+  searched for tests or fixtures asserting pretty output and found
+  **none** — every consumer in the tree parses.
+- **Fact, and it is a defect I introduced and then caught.** Writing the
+  byte-starvation sentry showed `sections_not_computed` was
+  **unreachable** from `get_cut_trace`: every array went through
+  `insert_capped`, which could only truncate, so a budget-starved array
+  would have shipped as `[]`. That is precisely C25's forbidden shape —
+  "did not fit" wearing the clothes of "there is none". Fixed in
+  `afd102b`: a capped array that admitted **nothing** from a **non-empty**
+  population is a dropped section (absent, named, `complete: false`,
+  counts retained), while a genuinely empty population still ships `[]`.
+  Both halves are sentried, in one test, because they are only meaningful
+  against each other.
+- **Fact (L-6 rider).** Two production strings recommended
+  `WINIT_UNIX_BACKEND=x11`, inert since winit 0.29. `main.rs` was worse
+  than wrong: it **used** the variable as a suppression condition, so
+  setting it switched the Wayland-park warning off while changing no
+  behaviour. Both now say "unset `WAYLAND_DISPLAY`", the suppression is
+  gone, and B-1's measurement (162.6 s hang with it set vs 0.515 s with
+  `WAYLAND_DISPLAY` unset) is quoted at the site.
+- **Interpretation.** The census's design conclusion holds up in code: the
+  per-array caps do all the work and the byte backstop is insurance for
+  the *next* uncapped array rather than for the five known ones — on the
+  fixture it never binds at the defaults. The one thing implementation
+  changed about the design is the starvation case above, which the ruling
+  named as a risk ("needs care that 'did not fit' is never rendered as a
+  zero") and which turned out to need an explicit mechanism, not care.
+- **Uncertainty, stated.** (a) The after-number is measured on a
+  **synthetic** population through the production builder, **not** on a
+  live 1.6 M-sample trace — see NOT EXERCISED. (b) The claim "8 MiB is
+  never binding at the defaults" is fixture-scoped; a project with far
+  more toolpaths could plausibly starve a later section, which is what
+  the naming machinery is for. (c) `inspect_spans`' cap is **latent**:
+  B-1 measured that mode at 685 bytes on a 33,195-span operation, so I
+  removed an unbounded array and did **not** fix a measured cost. The
+  code comment says so in those words.
+
+Red-first evidence / fingerprints changed: **no fingerprint captured,
+moved or re-pinned; no gate, threshold, severity, recommendation or
+recipe number touched.** This wave changes **zero files in
+`rs_cam_core`** — the entire diff is `rs_cam_mcp` (a new module + one
+serialiser line + parameter docs) and four `rs_cam_viz` MCP-surface
+files — so no generator, gate or fingerprint input is reachable from it.
+Verified rather than assumed: `cargo test -p rs_cam_core -q` run at
+close-out, result recorded under Verification.
+
+Verification (focused commands + exact known-red state):
+
+- `cargo test -p rs_cam_viz -q` — **244 lib passed, 12
+  `mcp_escape_hatches` passed, 11 `wizard_e2e` passed, 0 failed.** The 12
+  escape-hatch sentries are green, as the plan requires.
+- `cargo test -p rs_cam_mcp -q` — **13 passed, 0 failed** (8 new).
+- Known-red states, both real and both caught by the sentries that
+  demanded them: the byte-starvation test failed twice before the C25 gap
+  was fixed (`complete` read `true` where a section had been dropped —
+  `left: Bool(true), right: Bool(false)`), and the whole viz suite was
+  briefly red on a stale test binary that reported 239 tests where 244
+  exist. Both are recorded here because "239 passed" looked like success.
+- `cargo clippy --workspace --all-targets -- -D warnings` — **clean**
+  (only the pre-existing future-incompat note for transitive `nom 3.2.1` /
+  `quick-xml 0.22.0`). This is the workspace gate A-2 could not take; the
+  branch had no verified workspace-clean state since `b70b84f` and now
+  has one **at `afd102b`, on the merged A-2 + B-2 tree**.
+- `cargo fmt --check --all` — **clean**. One file of mine needed
+  formatting; I ran `cargo fmt -p rs_cam_mcp` (crate-scoped, all three
+  files mine) and re-checked the workspace, per the rustfmt-cascade rule.
+- Slot discipline: `free -g` + bracketed `pgrep -af "carg[o]"` before
+  every launch, with polling waits whenever A-2 held the slot (it held it
+  for most of 2026-08-11). One violation, stated: an early compound
+  command ran its `pgrep` and its `cargo` in the same invocation, so it
+  launched alongside A-2's `cargo test -p rs_cam_core`. No release build.
+  Disk never below 144 G.
+- No wanaka file was written; `planning/airrun_2026-06-01/wanaka.toml`,
+  `planning/review_2026-07-27/` and the operator's feeds review remain
+  unstaged. The orchestrator's uncommitted tracker edit was left alone.
+
+NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
+
+- **NOT EXERCISED: a live post-fix rig run.** B-1's rig reproduces the
+  60,517,035-byte response deterministically, but it drives a **release**
+  binary and §0 rule 8 forbids release builds inside a wave; a debug GUI
+  cannot complete the recipe (a 401.8 s `generate_all` + 107.5 s 0.1 mm
+  simulation in release) in any usable time. The after-number is
+  therefore measured through the **production builder on a synthetic
+  population**, which is stated everywhere it is quoted and is not the
+  same as a live byte count. Owner: the programme's close-out live
+  validation. Re-open condition: a release build exists — then re-run
+  `artifacts/b1/glv2_repro.py` unchanged and record the new size of call
+  63; the expectation is low hundreds of kB.
+- **G-LV.2 stays OPEN, cause-not-attributed.** B-1 falsified both
+  ledgered hypotheses (serialisation OOM; transport close) and named
+  client-side reap as a candidate it could not instrument. This wave
+  removes the *pathology* — no read can emit 60 MB — but attributes no
+  mechanism and closes nothing. Owner: unassigned. Re-open/close
+  condition: instrument a real MCP client's frame-size behaviour, or
+  observe the crash again on a bounded build (which would falsify the
+  size hypothesis outright).
+- **The `toolpath_id` sweep found exactly one offender.**
+  `set_boundary_config`'s `source_toolpath_id` already documents itself as
+  an id **and** already refuses an unmatched one
+  (`app/mcp.rs:3324`), so it needed no change. Every other per-toolpath
+  read (`narrate_toolpath`, `inspect_spans`, `get_toolpath_diagnostics`,
+  `get_generation_debug_trace`) takes an **index** and says so.
+- **Continuation tokens: deliberately not built** (Checkpoint L deferred
+  them as unmotivated by the census). If an agent ever legitimately needs
+  all 33k span summaries of one operation, the answer today is
+  `span_kind` / `pass_index` narrowing, and the response says so.
+- **`get_toolpath_diagnostics` / `get_project_diagnostics` remain
+  uncapped** over their whole `Vec<Diagnostic>` (B-1 §5.2). Checkpoint L
+  did not rule on them and they measured 2 KB–3.6 KB, so I left them
+  alone rather than widen the ruling. Owner: unassigned; cheap, and the
+  machinery now exists.
+- **`get_generation_debug_trace`'s `max_spans: 0` still means unlimited**
+  — an uncapped escape hatch on a bounded read, untouched because it is
+  documented and was not in the ruling.
+
+Next action / checkpoint request: **none — B-2 needs no checkpoint.**
+Orchestrator actions: (a) mark B-2 COMPLETE and record that the
+workspace clippy + fmt gate now has a verified clean point at `afd102b`
+covering both lanes; (b) keep **G-LV.2 open as cause-not-attributed** —
+DoD item 5 says "the crash cause is named, not hypothesised", and it is
+still not named, so that item is **partially** met (bounded reads have
+sentries; the cause does not); (c) B-3 may proceed — it is the wave that
+owns the ~1.0 s dispatch floor B-1 measured, and nothing here touched
+dispatch; (d) note for whoever writes the close-out live validation that
+the post-fix byte count is the one measurement this wave owes and cannot
+take without a release build.
