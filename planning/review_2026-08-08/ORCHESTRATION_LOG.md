@@ -26,7 +26,7 @@ checkpoint.
 | B-1 | G-LV.2 crash capture + read-size census → Checkpoint L | COMPLETE — Checkpoint L RULED 2026-08-08 (Option 2 + defaults + compact JSON + keep-id/refuse-unmatched + rule-10 correction; G-LV.2 stays open, cause-not-attributed) |
 | B-2 | bounded reads + filter fix | COMPLETE 2026-08-12 (5 commits; L executed in full incl. L-6 rider — main.rs USED the inert var as a warning-suppression condition; red-runs pinned 60.5 MB→bounded ~181×, skeleton→refusal; own sentry caught a C25-shape defect pre-land; workspace clippy+fmt CLEAN at `afd102b`; NOT EXERCISED: live release-rig re-run, resume condition in entry; G-LV.2 stays OPEN cause-not-attributed) |
 | INTAKE | **G-LIT-IPE**: `literature_matrix::flat_3mm_pocket_ipe_extreme` trips `anti.ipe_micro_matches_oak_micro_chipload` at critical — RED and PRE-EXISTING (fails identically at `825524f`, core src byte-identical to master `53b1c72`; contradicts an earlier green claim). A feeds recipe number needing a checkpoint — owner Lane A, fold into A-6's Checkpoint K package | OPEN 2026-08-12 |
-| B-3 | dispatch decoupling design → Checkpoint M | NOT STARTED |
+| B-3 | dispatch decoupling design → Checkpoint M | AWAITING CHECKPOINT M (`5117694`; 69 tools mapped — 62 frame-coupled, only 1 truly needs egui ctx; EventLoopProxy feasible via `eframe::create_native` (event_loop_builder CANNOT serve); NEW fact: 2nd+ request_repaint silently skipped under park; recommends composition M-A, 7 gated steps; screenshots (sim/toolpath) are NOT frame-coupled — only screenshot_gui) |
 | B-4 | execute M + six frame-coupled drivers | blocked on M |
 | B-5 | G-RESULTS GUI/CLI parity | NOT STARTED |
 | S-1 | X-VAC population census | NOT STARTED |
@@ -53,6 +53,14 @@ checkpoint.
 - **I-5: A-4 adds an MCP apply tool** routed through the same funnel with `ApplyScope` — agents get the panel's guarantees.
 - **I-6: A-3's nine characterization tests inverted in place**, measured pre-fix numbers preserved in doc comments.
 - Pre-registered bars for A-4 stand as written in `APPLY_CONTRACT_CENSUS.md` §5.4: all nine tests go red against the fix then invert; the Pocket fixture's `3000 / 794 / 18000 / 2.222 / 1.27` byte-identical (a moved fingerprint is a STOP); the §3.4 DOC gap closes to 1.00×; no background field locking.
+
+### Checkpoint M — ruled 2026-08-12 (operator, via AskUserQuestion). BINDING.
+
+- **M-1/M-2: M-A, the full composition.** rs_cam owns eframe's event loop via `eframe::create_native` (the programme's one architectural change); RsCamApp shared through a main-thread Rc cell (no controller-site rewrites); off-frame pump in the host's `about_to_wait`; real `EventLoopProxy` ping in `wake_gui`; compiler-checked `AppEvent::needs_app()` class split so generation/fixpoint advances off the paint path. Migrated in §8's seven gated steps **with an explicit stop after step 4** if the hidden-window live-read bar is not met.
+- **M-3: C4's cross-class reordering ACCEPTED** — all 8 app-class MCP push sites are presentational; classification is compiler-enforced.
+- **M-4: `screenshot_gui` on a non-rendering window REFUSES with the mechanism named** (today it hangs). `screenshot_simulation`/`screenshot_toolpath` are CPU rasterisers, unaffected. `set_ui_view`/scrub apply off-frame and return `visible_on_next_frame: false` under a park.
+- **M-5: heartbeat deleted ONLY alongside the six-driver fixes** (step 6); if that step defers, the heartbeat stays.
+- **M-6: B-4 re-measures the ~1 s floor without gdb before and after**; a surviving ~900 ms is booked as a separate finding, not a failure of this row.
 
 ### Checkpoint L — ruled 2026-08-08 (operator, via AskUserQuestion). BINDING.
 
