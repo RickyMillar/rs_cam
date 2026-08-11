@@ -16,6 +16,7 @@
 
 pub mod chipload;
 pub mod deflection;
+pub mod display;
 pub mod drill_gates;
 pub mod locality;
 pub mod optimize;
@@ -197,30 +198,45 @@ impl RefuseReason {
 /// function does just the LUT match without the full feed/RPM
 /// recommendation machinery the optimizer made redundant.
 ///
-/// # ⚠ Unit caveat for the viewport heatmap — reported 2026-08-06, NOT fixed
+/// # The unit, and who consumes it — F-HEATMAP, fixed 2026-08-08
 ///
 /// The band this returns is a linear **advance per tooth**
 /// (`CHIPLOAD_LITERATURE_VERDICT.md` §2, verified per source family).
-/// Its one GUI consumer colours segments by
-/// `max(effective_chip_thickness_mm)` per move
-/// (`rs_cam_viz::app::gpu_upload::build_chipload_per_move` →
-/// `render::toolpath_render::chipload_segment_color`), which is an
-/// arc-mean **chip thickness**. Those are different quantities, and the
-/// heatmap therefore paints "rubbing risk" blue over cuts that are not
-/// rubbing — the same defect the post-sim chipload gate carried until
-/// 2026-08-06 and the same direction (the chip reads low against an
-/// advance band, by `1/mean_chip_factor(arc)`, which is 1.6× at a full
-/// slot and larger at every narrower engagement).
+/// Wrap it in [`crate::feeds::VendorChiploadBand::from_advance_range`]
+/// at any display boundary so the unit is carried by the type rather
+/// than by this sentence.
 ///
-/// Deliberately not fixed here. The band is correct; the consumer picks
-/// the wrong per-move quantity, the fix is one line in a crate this wave
-/// does not own, and it is a *visible* change to an operator-facing
-/// surface that should ship with a screenshot rather than inside a
-/// core-side unit conversion. Owner: the viz/MCP lane. Re-open
-/// condition: none needed — it is named here and in the wave's log
-/// entry. The honest per-move quantity is
-/// `effective_feed_for_sample(s) / (rpm · flutes)`, which is what the
-/// gate now reports.
+/// **What was wrong until 2026-08-08.** The viewport heat-map coloured
+/// segments by `max(effective_chip_thickness_mm)` per move — an arc-mean
+/// **chip thickness** — against this advance band, so it painted
+/// "rubbing risk" blue over cuts that were not rubbing (the chip reads
+/// low against an advance band by `1/mean_chip_factor(arc)`, which is
+/// 1.6× at a full slot and larger at every narrower engagement). Two
+/// sim-timeline surfaces carried the identical comparison and a fourth
+/// panel blended the two quantities under one label. Checkpoint H
+/// (`planning/review_2026-08-08/ORCHESTRATION_LOG.md`, binding) ruled all
+/// four onto [`display::achieved_advance_per_tooth`], which is the
+/// expression the chipload gate itself observes.
+///
+/// **This docstring previously claimed the band had "its one GUI
+/// consumer". It had four, and the claim is what let a one-surface fix
+/// look complete.** Counted at 2026-08-08, after the fix, it has
+/// **three** GUI consumers and **two** core-side ones:
+///
+/// - `rs_cam_viz::app::gpu_upload::build_advance_bands` → the viewport
+///   heat-map (`render::toolpath_render::advance_per_tooth_segment_color`)
+/// - `rs_cam_viz::ui::sim_timeline` → the `"advance/tooth vs band max"`
+///   summary track (normalised by [`Self`]'s ceiling)
+/// - `rs_cam_viz::ui::sim_diagnostics` → the `advance/tooth` verdict
+///   badge's bound readout
+/// - `crate::session::compute` → the strategy advisor's timing model and
+///   the adaptive feed-modulation pass, both via
+///   `feed_modulation::ChiploadBand`
+///
+/// The sim-timeline's fourth consumer is **gone on purpose**: the
+/// surviving arc-mean chip-thickness track is drawn **unbanded**,
+/// because a shaded envelope is a comparison and no source publishes one
+/// for that quantity.
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::simulation_cut::SimulationCutTrace>,

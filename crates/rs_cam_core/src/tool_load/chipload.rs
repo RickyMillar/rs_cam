@@ -153,15 +153,18 @@ pub(crate) fn matched_chip_envelope(
 ///
 /// Returns `None` when the sample carries no usable `rpm × flutes`
 /// divisor, which is a broken sample rather than a modelling limit.
+///
+/// Delegates to [`super::display::achieved_advance_per_tooth`], which is
+/// what every operator-facing surface now displays (Checkpoint H,
+/// 2026-08-08). The gate and the heat-map read **one function**, so
+/// "the colour agrees with the verdict" is a property of the call graph
+/// rather than of two transcriptions staying in step.
 fn achieved_feed_per_tooth_mm(
     sample: &crate::simulation_cut::SimulationCutSample,
     predicted_feeds: &crate::machine_kinematics::PredictedFeedMap,
 ) -> Option<f64> {
-    let divisor = f64::from(sample.spindle_rpm) * f64::from(sample.flute_count);
-    if divisor <= 0.0 {
-        return None;
-    }
-    Some(super::effective_feed_for_sample(sample, predicted_feeds) / divisor)
+    super::display::achieved_advance_per_tooth(sample, predicted_feeds)
+        .map(crate::feeds::AdvancePerToothMm::mm)
 }
 
 pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
