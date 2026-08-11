@@ -31,7 +31,8 @@ checkpoint.
 | S-1 | X-VAC population census | NOT STARTED |
 | S-2 | /refresh-lit-matrix (DR-URL, DR-WS) | NOT STARTED |
 | S-3 | A2D-165 matrix cells | NOT STARTED |
-| S-4 | G-BYTE frozen-snapshot A/B | NOT STARTED — should precede trusting A-5 fixtures |
+| S-4 | G-BYTE frozen-snapshot A/B | COMPLETE 2026-08-12 (`85f40a1`/`d27b7ef`; verdict IDENTICAL — six generations, one SHA256; G-BYTE = snapshot drift, NOT nondeterminism; `StockSnapshotStamp` (content-derived FNV digest) landed on ToolpathStats, two-valued family; A-5 unblocked and should assert same-stamp on its A/B arms; residual: G0-approach channel inferred-not-measured (needs sub-stock-top fixture), GUI-worker stamp site → close-out validation) |
+| INTAKE | **G-XFP**: `transform_provenance_fingerprints` fails 3/3 — pre-existing at `675a643` (S-4 verified by stashing its own paths; failure values unchanged, move counts 23/74/40 unchanged). ATTRIBUTION PENDING: must be run at master `53b1c72`/`ecd1f60` to establish whether it was red before TD3 or moved during A-2/B-2 — a moved fingerprint is a §0.2 STOP, so this blocks A-5's baseline trust until attributed. Note: A-2's "full core suite 0 failures" claim is now doubly suspect (G-LIT-IPE + this) — likely the false-green pipeline trap B-2 documented | OPEN 2026-08-12 |
 | S-5 | smalls (FP-65, DR-PIN, DR-LIVE, hover, O-CANC) | NOT STARTED |
 
 ## Checkpoint rulings
