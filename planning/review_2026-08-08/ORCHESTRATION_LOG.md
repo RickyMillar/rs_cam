@@ -650,3 +650,197 @@ promise dangling, and recording that it was **not clean**.
   *because of this wave*: the wave's diff contains no `rs_cam_core` file,
   so no generator, gate or fingerprint input is reachable from it, and
   the one core red is reproduced at a revision whose core is master's.
+
+---
+
+## A-3 — apply-contract census, 2026-08-12
+
+Status: AWAITING_CHECKPOINT (Checkpoint I). Research-only; **no production
+file touched.** Both hazards the review named reproduce, and a **third,
+more severe one** was found while censusing.
+
+Commit(s), parent `675a643`: this entry +
+`planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md` +
+`crates/rs_cam_viz/tests/apply_contract_a3.rs` (9 characterization tests, new
+file). No production code, no fixtures, no fingerprints, no core file.
+
+Parent/revision censused: `tech-debt-3 @ 675a643`. **Drift from the review's
+cited lines is recorded per-site in the deliverable §1** — A-2's rename sweep
+and operating-point card moved the panel's split apply by about **+250 lines**
+(`properties/mod.rs:1724-1930` → `:1982-2001` speeds, `:2024-2043` cut
+geometry); `feeds_result_for_operation` moved **+8** (`suggest.rs:637` →
+`:645`); `feeds_explain_for_operation` (`:671-689`), `feeds_modal.rs:381-587`
+and `controller/events/mod.rs:780-948` did **not** move materially. Every
+claim in the review's Evidence paragraph reproduces at this revision.
+
+Question and pre-registered bars: plan §2 A-3. Bars I set before starting:
+(a) a write path counts as censused only if I can name its UI label string,
+its handler, and whether it runs `enforce_invariants` — not just its file
+line; (b) the evidence class of every demonstration is **stated on its face**,
+and a class I cannot obtain is reported NOT EXERCISED with the blocker named
+rather than substituted for silently; (c) "the apply wrote nothing" is not
+accepted as "the apply was refused" until the operation is checked for the
+dial; (d) no assertion goes in that I have not seen a measured number behind.
+
+Fixture/population/resolution: three synthetic fixtures, all on the shipped
+default **Ø6.35 mm 2-flute flat end mill** (`ToolConfig::new_default`,
+`ToolType::EndMill` → `ToolGeometryHint::Flat`, stickout 45 mm), default stock
+material/machine/workholding, embedded vendor LUT.
+(1) **Scallop** — refused pairing, carries neither cut-geometry dial.
+(2) **DropCutter + `scallop_height = 0.01`** — refused pairing that *does*
+carry `stepover` (second arm of `validate_tool_for_operation`).
+(3) **Pocket** — valid pairing, carries both dials. No simulation, no dexel
+grid, no resolution parameter — this wave measures apply-time writes only.
+
+Render/artifact paths: `planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md`;
+tests at `crates/rs_cam_viz/tests/apply_contract_a3.rs`. The raw
+measurement dump was a scratch test, run once and deleted after capture; every
+number it produced is transcribed into the deliverable §3 **and** re-asserted
+by a permanent test, so nothing rests on a deleted artifact.
+`planning/review_2026-08-08/artifacts/a3/` was created and is empty — there is
+no screenshot to put in it (see NOT EXERCISED).
+
+Result (fact), interpretation, and uncertainty:
+
+- **Fact — the census is 20 write paths, 13 of them GUI apply affordances.**
+  Validated: **2** (both on the properties panel). Infallible: **11** (all on
+  the Feeds & Speeds modal). Geometry-capable: **8**. Speed-only: **5**.
+  Through the invariant funnel: **6**. **Raw writes that bypass it: 7.**
+  Full table with file:line, UI label string, scope and handler in §2.
+- **Fact — hazard (a) reproduces.** Flat end mill on Scallop: the panel gets
+  `Err(WrongToolForOperation { operation: Scallop, actual_geometry: Flat, … })`
+  and replaces the entire feeds card with `Feeds unavailable: …` — **no apply
+  affordance is rendered at all**. The modal, on the same toolpath, recommends
+  feed **2677.07**, plunge **793.75**, RPM **10025.5** and offers live Apply
+  buttons; `⚡ Apply all` writes feed **1000 → 2677**, plunge **500 → 794**,
+  RPM **None → Some(10026)**.
+- **Fact — hazard (b) reproduces, with numbers.** Pocket fixture, one
+  recommendation, two buttons. Panel `⚡⚡ Apply recommended speeds` (tooltip:
+  "Does not change the cut (DOC/WOC)") → WOC **2.0 unchanged**, DOC **1.5
+  unchanged**. Modal `⚡ Apply all` → WOC **2.0 → 2.222**, DOC **1.5 → 1.27**.
+  Speeds identical on both (3000 / 794 / 18000). The modal gives the user no
+  way to know the cut changed.
+- **Fact — hazard (a) ∩ (b) exists and is worse than either.** DropCutter with
+  a scallop target on a flat end mill is refused by the *second* arm of the
+  validator and carries a real `stepover`. On that refused pairing the modal
+  writes WOC **1.0 → 0.19 mm** — a **5.3× finer** raster — plus feed **1000 →
+  2450**. So the modal does not merely offer a refused recipe; it rewrites the
+  cut geometry of an operation the engine says cannot be run.
+- **Fact — NEW hazard (c), and it is the severe one.** Seven of the thirteen
+  affordances (the six per-field `Apply` buttons + the explore-chart apply)
+  write `explain.recommended.*` **directly** (`events/mod.rs:796-817`,
+  `:955-980`), so **none** of `enforce_invariants`' passes run —
+  `clamp_plunge_to_feed`, `clamp_stepover_to_diameter`,
+  `backoff_stepover_for_runtime`, `clamp_dpp_to_rigidity`,
+  `clamp_dpp_to_cutting_length`, `backoff_dpp_for_deflection`,
+  `recalibrate_feed_for_chipload`, nor `round_suggestion_value`. Measured on
+  the Pocket fixture the gap is rounding-only on feed/plunge/WOC and **3.50×
+  on depth of cut: the modal's per-field DOC `Apply` writes 4.445 mm where the
+  panel's `⚡ Apply cut geometry` writes 1.27 mm.** The product's
+  smallest-looking affordance — a `small_button("Apply")` in a comparison row
+  — writes 3.5× the DOC the engine's own back-off chain permits. Note
+  `⚡ Apply all` writes the correct 1.27; the defect is specific to the
+  per-field grain.
+- **Fact — a measured refinement that could easily have been reported wrong.**
+  On the Scallop fixture the per-field DOC and WOC applies write nothing. That
+  is **not** a refusal — `ScallopConfig` carries neither dial. The test asserts
+  the distinction explicitly (`op.depth_per_pass().is_none() &&
+  op.stepover().is_none()`) rather than letting an absent dial masquerade as a
+  guard, which is why fixture (2) exists at all.
+- **Fact — the agent surface has no apply path.** No MCP tool applies a feeds
+  recommendation to an existing toolpath; `get_suggest_rationale` is read-only,
+  `set_spindle_strategy` states it mutates nothing. The only agent write is
+  `set_toolpath_param`, which is neither feeds-validated nor funnelled — i.e.
+  an agent has the modal's contract with none of the modal's preview. Recorded
+  as Checkpoint I question Q5, not treated as in-scope.
+- **Interpretation.** The defect is not "the modal forgot to validate". It is
+  that `FeedsExplain` — correctly designed as an *infallible chart payload* —
+  became a write source, and the Apply buttons reached for the shortest
+  available setter instead of the `ApplySubset` API that already existed one
+  module away. So the repair must make a preview **structurally unapplicable**,
+  which is exactly the review's `FeedsPreview` / `ApplicableRecommendation`
+  split. §4 of the deliverable states the three individually-reasonable
+  decisions that composed into it, so A-4 does not recreate the shape.
+- **Uncertainty, stated.** (a) The measured numbers are one tool × one material
+  × three ops; the 3.50× DOC ratio is fixture-specific and the *existence* of
+  the bypass is what generalises, not the multiplier. The test asserts `> 3.0×`
+  rather than an exact value for that reason. (b) The button → `AppEvent`
+  mapping is read from source, not clicked — see NOT EXERCISED. (c) Optimizer
+  paths O1–O3 are censused but not exercised; O2 looks like hazard (c) in a
+  second neighbourhood and is raised as question Q4 rather than asserted.
+
+Red-first evidence / fingerprints changed: **none — research-only, no
+behavioural change, no fingerprint captured or moved.** No `rs_cam_core` file
+is in this wave's diff, so no generator, gate or fingerprint input is reachable
+from it. The pre-fix reproduction is permanent in two places: the deliverable
+§3 tables and the doc comments of the nine tests, so A-4 has pre-registered
+numbers to fail against (deliverable §5.4 states the four bars, including
+"the DOC gap closes to 1.00×" and "no recipe number moves on a valid pairing").
+
+Verification (focused commands + exact state):
+`cargo test -p rs_cam_viz --test apply_contract_a3 -q` → **9 passed, 0
+failed**, 0.01 s. `cargo fmt -p rs_cam_viz -- --check` → clean.
+`cargo clippy -p rs_cam_viz --test apply_contract_a3 -- -D warnings` → clean
+(see the shared-tree note below for why it took two attempts).
+`git branch --show-current` → `tech-debt-3`. Machine discipline: `free -g`
+(15 GiB available) + bracketed `pgrep -af "carg[o]"` before every launch, no
+concurrent Cargo job at launch, **no release build**, per-crate tests only,
+disk 144 G free. Explicit staging only; `planning/airrun_2026-06-01/wanaka.toml`,
+`planning/review_2026-07-27/`, the operator's review file and the `e_impl/*.pgm`
+strays remain untracked/unstaged and byte-unchanged by me. The known
+pre-existing core red (`literature_matrix::flat_3mm_pocket_ipe_extreme`,
+intake G-LIT-IPE) was **not encountered** — this wave ran no core test, having
+touched no core file.
+
+NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
+
+- **NOT EXERCISED: live GUI screenshots of the two hazards.** Plan §2 A-3 asks
+  for them. Blocker: the operator's GUI/MCP session was disconnected for the
+  whole wave, and §0.8 forbids the release build `.mcp.json` launches. A debug
+  GUI with `WAYLAND_DISPLAY` unset was available and deliberately not used: a
+  screenshot of a modal is evidence about **labels**, and every label is
+  already quoted verbatim from source in §2, so it would not have carried a
+  fact the tests do not. Owner: A-4, which must render its fixed modal anyway
+  under rule 3. Re-open condition: an operator session, or the moment A-4 has
+  a before/after pair to shoot.
+- **NOT EXERCISED: MCP-driven repro.** Impossible in principle — MCP cannot
+  inject a modal click and there is no MCP apply tool to stand in for one. No
+  re-open condition; recorded so nobody looks for one.
+- **NOT FIXED: everything.** This is a research wave; all 13 affordances ship
+  unchanged. Owner: A-4, blocked on Checkpoint I.
+- **Optimizer paths O1–O3 not exercised.** Censused from source only. Owner:
+  A-8 (its charter) or A-4 if the operator answers Q4 by folding O2 in.
+  Re-open condition: the Q4 ruling.
+- **Shared-tree note, resolved — recorded because the next agent will hit it.**
+  The first `cargo clippy -p rs_cam_viz --test apply_contract_a3 -- -D warnings`
+  failed to compile, and **not because of anything in this wave**: S-4's
+  in-flight edit to `crates/rs_cam_core/src/compute/{stats,config}.rs` was
+  mid-flight in the shared tree (`stats_with_findings` had grown a 4th
+  parameter its callers did not yet pass). Re-run after their edit settled:
+  **clean, zero warnings**. The lesson for parallel waves is that a red
+  build in a shared tree must be attributed before it is acted on — my own
+  test had compiled and run green against the same core minutes earlier.
+
+Next action / checkpoint request: **Checkpoint I requested**, six questions in
+`APPLY_CONTRACT_CENSUS.md` §5.2–§5.3 —
+**I-1 (the ruling the plan names)**: remove modal write affordances vs reroute
+them to the funnel. Three costed options; **recommend C** — reroute the four
+batch/`Apply all` paths + the explore apply, **delete the six per-field
+buttons**, which are the ones carrying the 3.50× funnel-bypass and are the
+clearest instance of the review's own "do not preserve a legacy all-fields
+write merely for UI muscle memory";
+**I-2** whether `ApplyScope` gains a `Field(FeedsField)` arm (needed only if
+I-1 = B);
+**I-3** what a refused pairing renders in the modal (recommend: open it, draw
+the charts, replace the whole Apply column with the refusal);
+**I-4** whether the three optimizer writes join the funnel (recommend: exclude
+O1/O3 as sim-verified, route **O2** in — it is a raw single-dial write of an
+un-simulated suggestion);
+**I-5** whether the agent/MCP surface gets an apply tool under the new funnel;
+**I-6** whether A-3's nine tests are inverted in place or superseded (recommend
+in place — §0.1 requires the pre-fix reproduction to stay).
+Orchestrator actions: (a) put I to the operator; (b) note I-4 overlaps A-8's
+charter and I-5 overlaps Lane B, so both may want deferring rather than ruling;
+(c) A-4 stays blocked on I; (d) the funnel design in §5.1 is mechanically
+small — `apply_feeds_subset` already *is* the funnel and `ApplySubset` already
+*is* `ApplyScope` minus `Field` — so I-1 = C is a same-day change once ruled.
