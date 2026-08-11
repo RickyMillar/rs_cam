@@ -1,28 +1,34 @@
-//! A-3 — characterization of the two apply contracts.
+//! A-3/A-4 — the apply contract: characterized, then fixed.
 //!
 //! The operator's 2026-08-07 feeds/speeds architecture review raised a [high]
-//! finding: the Feeds & Speeds *modal* and the properties *panel* are two
+//! finding: the Feeds & Speeds *modal* and the properties *panel* were two
 //! user-visible "apply the recommendation" surfaces with different validation
-//! and different cut-geometry effects. This file pins that difference at the
-//! **controller** level — it dispatches the same `AppEvent`s the modal's
-//! buttons push (`ui/feeds_modal.rs`) through the real production handlers in
-//! `controller/events/mod.rs`, and calls the same core entry points the panel
-//! calls (`ui/properties/mod.rs:1582`, `:1990`, `:2032`).
+//! and different cut-geometry effects. A-3 censused every write path
+//! (`planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md` — 20 paths, 13 GUI
+//! apply affordances, 2 validated, 7 bypassing the invariant funnel entirely)
+//! and pinned the behaviour with nine characterization tests. Checkpoint I
+//! ruled on 2026-08-12; A-4 executed it and **inverted these tests in place**,
+//! per I-6. The measured pre-fix numbers stay in the doc comments — they are
+//! the permanent reproduction plan §0.1 requires, and the bars A-4 was
+//! checked against.
 //!
-//! These are CHARACTERIZATION tests: they assert the behaviour that ships
-//! today, including the parts that are wrong. When A-4 lands the one-funnel
-//! design ruled at Checkpoint I, every `hazard_*` test here is expected to go
-//! red and be rewritten as the sentry for the fixed contract. That is the
-//! point — the pre-fix reproduction stays in the file permanently (plan §0.1).
+//! What the fix is, in one paragraph. `FeedsExplain` is an infallible chart
+//! payload; it was never meant to be a write source, and it has no slot in
+//! which to say "this tool cannot run this operation", so every surface
+//! holding one could write a recipe the engine had refused. It is now wrapped
+//! by `feeds::suggest::FeedsPreview`, which carries the refusal alongside the
+//! numbers and hands out an `ApplicableRecommendation` — the sole input to the
+//! sole write function, `feeds::suggest::apply` — only when validation
+//! succeeded. The six per-field modal Apply buttons were deleted outright
+//! (I-1); the batch paths and the explore apply were rerouted through the
+//! funnel with explicit `ApplyScope`s and "changes the cut" attribution.
 //!
-//! Evidence class: controller-level integration. These drive the production
-//! event handlers with a scripted compute backend; they do not render egui.
-//! The button → `AppEvent` mapping is therefore read from source (cited at
-//! each test) rather than clicked. See
-//! `planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md` §3 for why this is
-//! the strongest class available (the operator's live GUI/MCP session was
-//! disconnected for the duration of the wave, and MCP cannot inject a modal
-//! click).
+//! Evidence class: controller-level integration, plus two source-level
+//! sentries. These drive the production event handlers with a scripted compute
+//! backend; they do not render egui. The button → `AppEvent` mapping is
+//! therefore read from source (cited at each test) rather than clicked; the
+//! rendered surfaces are captured as screenshots in
+//! `planning/review_2026-08-08/artifacts/a4/`.
 
 #![allow(
     clippy::unwrap_used,
@@ -39,7 +45,7 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::ui::{AppEvent, FeedsField};
+use rs_cam_viz::ui::AppEvent;
 
 // ── harness ────────────────────────────────────────────────────────────────
 
@@ -138,12 +144,17 @@ fn panel_recipe(
     )
 }
 
-/// The modal's entry point — `ui/feeds_modal.rs:440`, and the same call the
-/// apply handlers make internally (`controller/events/mod.rs:1001`).
-fn modal_preview(controller: &AppController<SilentBackend>) -> rs_cam_core::feeds::FeedsExplain {
+/// The modal's entry point since A-4 — `ui/feeds_modal.rs::compute_preview`,
+/// and the same call the apply handlers make internally
+/// (`controller/events/mod.rs::apply_feeds_through_funnel`). Pre-fix this was
+/// `feeds_explain_for_operation`, which is infallible and therefore could not
+/// tell the modal that the pairing had been refused.
+fn modal_preview(
+    controller: &AppController<SilentBackend>,
+) -> rs_cam_core::feeds::suggest::FeedsPreview {
     let session = &controller.state.session;
     let stock = session.stock_config();
-    rs_cam_core::feeds::suggest::feeds_explain_for_operation(
+    rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &op_of(controller),
         &tool_of(controller),
         &stock.material,
@@ -154,21 +165,37 @@ fn modal_preview(controller: &AppController<SilentBackend>) -> rs_cam_core::feed
     )
 }
 
-// ── hazard (a): the modal applies a pairing the panel refuses ──────────────
+/// Production sources these tests make source-level assertions against. Read
+/// at compile time, so a reintroduction of a deleted affordance breaks the
+/// build of this file rather than sliding past a runtime check.
+const UI_MOD_SRC: &str = include_str!("../src/ui/mod.rs");
+const COMPARE_SRC: &str = include_str!("../src/ui/components/compare.rs");
+const FEEDS_MODAL_SRC: &str = include_str!("../src/ui/feeds_modal.rs");
+const EVENTS_SRC: &str = include_str!("../src/controller/events/mod.rs");
 
-/// The fixture the whole hazard rests on: a flat end mill on a Scallop op.
+// ── the two surfaces now agree on a refused pairing ────────────────────────
+
+/// The fixture the whole finding rested on: a flat end mill on a Scallop op.
 /// `validate_tool_for_operation` (`feeds/mod.rs:702`) refuses it — a zero tip
-/// radius makes the scallop-stepover formula `2·√(2·R·h − h²)` undefined —
-/// so the panel offers no recipe and no apply button at all. The modal's
-/// preview is produced by `explain`, which never calls the validator, so the
-/// modal shows a full Recommendation table with live Apply buttons.
+/// radius makes the scallop-stepover formula `2·√(2·R·h − h²)` undefined.
+///
+/// **Pre-fix (measured 2026-08-12):** the panel got
+/// `Err(WrongToolForOperation { operation: Scallop, actual_geometry: Flat, … })`
+/// and rendered no apply affordance at all, while the modal — reading the
+/// infallible `explain` payload — showed feed **2677.07 mm/min**, plunge
+/// **793.75**, RPM **10025.5** with live Apply buttons beside them.
+///
+/// **Post-fix:** the numbers are still shown (Checkpoint I-3 keeps the
+/// explanatory job: the modal opens, the charts draw), but the preview yields
+/// **nothing writable**. That last assertion is the inversion — it is the
+/// structural guarantee, and it is the one that did not exist before.
 #[test]
-fn hazard_a_panel_refuses_the_pairing_the_modal_previews() {
+fn panel_and_modal_agree_on_a_refused_pairing() {
     let controller = controller_with(OperationType::Scallop);
 
     let refusal = panel_recipe(&controller).expect_err(
         "flat end mill on Scallop must be refused by the validated panel path — if this \
-         now succeeds the validator changed and the whole A-3 fixture needs rebasing",
+         now succeeds the validator changed and the whole fixture needs rebasing",
     );
     assert!(
         matches!(
@@ -178,19 +205,42 @@ fn hazard_a_panel_refuses_the_pairing_the_modal_previews() {
         "unexpected refusal kind: {refusal:?}"
     );
 
-    // Same inputs, modal entry point: a numeric recommendation, no refusal.
     let preview = modal_preview(&controller);
+    // The explanation survives — this is I-3, not a silent suppression.
     assert!(
-        preview.recommended.feed_rate_mm_min > 0.0,
-        "the infallible preview produced no feed — fixture is not exercising the hazard"
+        preview.recommended().feed_rate_mm_min > 0.0,
+        "the preview stopped producing numbers on a refused pairing; I-3 requires the \
+         charts to keep drawing so the operator can see WHY"
+    );
+    // …but it is not applicable, and the refusal is legible.
+    assert!(
+        preview.applicable().is_none(),
+        "a refused preview handed out a writable recommendation — the funnel's only \
+         structural guarantee has been lost"
+    );
+    assert!(
+        matches!(
+            preview.refusal(),
+            Some(rs_cam_core::feeds::FeedsError::WrongToolForOperation { .. })
+        ),
+        "the preview did not carry the panel's refusal: {:?}",
+        preview.refusal()
     );
 }
 
-/// `⚡ Apply all` (`ui/feeds_modal.rs:586-593` → `AppEvent::ApplyFeedsAll`)
-/// writes the refused pairing's recipe straight into the operation. The panel
-/// cannot reach this state: on the same toolpath it renders a refusal.
+/// `⚡ Apply all` (`ui/feeds_modal.rs::draw_apply_column` →
+/// `AppEvent::ApplyFeedsAll`) on a pairing the panel refuses.
+///
+/// **Pre-fix (measured 2026-08-12):** it wrote the refused recipe straight in
+/// — feed **1000 → 2677**, plunge **500 → 794**, RPM **None → Some(10026)** —
+/// on a toolpath where the panel rendered `Feeds unavailable: …` and offered
+/// no button at all.
+///
+/// **Post-fix:** nothing moves. The modal does not draw the button on a
+/// refused pairing (I-3), and if the event arrives anyway — the project state
+/// can change under an open modal — the handler refuses and notifies.
 #[test]
-fn hazard_a_modal_apply_all_writes_the_refused_recipe() {
+fn modal_apply_all_refuses_the_pairing_the_panel_refuses() {
     let mut controller = controller_with(OperationType::Scallop);
     assert!(panel_recipe(&controller).is_err(), "fixture precondition");
 
@@ -199,86 +249,96 @@ fn hazard_a_modal_apply_all_writes_the_refused_recipe() {
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
     let after = op_of(&controller);
 
-    assert_ne!(
+    assert_eq!(
         before.feed_rate(),
         after.feed_rate(),
-        "Apply all did not write feed on a pairing the panel refuses — hazard (a) \
-         may have been fixed; if so this test is the sentry that should now be inverted"
+        "Apply all wrote feed on a pairing the panel refuses (pre-fix: 1000 → 2677)"
     );
-    assert!(
-        after.spindle_rpm().is_some(),
-        "Apply all wrote no RPM on the refused pairing"
-    );
-}
-
-/// The per-field Apply buttons (`ui/components/compare.rs:139-146`, rendered
-/// from `feeds_modal.rs:517-553`) have the same reach with a finer grain —
-/// including WOC, which changes the cut.
-///
-/// Measured 2026-08-12: three of the five fields write on THIS fixture, and
-/// the two that don't are not being refused — `ScallopConfig` carries neither
-/// a depth-per-pass nor a stepover dial (a surface-following finish op steps
-/// by scallop chord, not by Z layers or a raster pitch), so
-/// `set_depth_per_pass` / `set_stepover` land on nothing. The assertion below
-/// separates those cases explicitly, because "the apply was refused" and "the
-/// operation had nowhere to put it" are not the same fact and only the first
-/// would be a safety property. For a refused pairing that DOES carry a
-/// cut-geometry dial see
-/// `hazard_ab_refused_pairing_with_a_geometry_dial_takes_the_write` below.
-#[test]
-fn hazard_a_modal_per_field_apply_writes_the_refused_recipe() {
-    let mut wrote: Vec<FeedsField> = Vec::new();
-    for field in [
-        FeedsField::Rpm,
-        FeedsField::Feed,
-        FeedsField::Plunge,
-        FeedsField::Doc,
-        FeedsField::Woc,
-    ] {
-        let mut controller = controller_with(OperationType::Scallop);
-        assert!(panel_recipe(&controller).is_err(), "fixture precondition");
-        let before = op_of(&controller);
-        let id = id_at(&controller, 0);
-        controller.handle_internal_event(AppEvent::ApplyFeedsField {
-            toolpath_id: id,
-            field,
-        });
-        let after = op_of(&controller);
-        let moved = before.feed_rate() != after.feed_rate()
-            || before.plunge_rate() != after.plunge_rate()
-            || before.spindle_rpm() != after.spindle_rpm()
-            || before.stepover() != after.stepover()
-            || before.depth_per_pass() != after.depth_per_pass();
-        if moved {
-            wrote.push(field);
-        }
-    }
-
     assert_eq!(
-        wrote,
-        vec![FeedsField::Rpm, FeedsField::Feed, FeedsField::Plunge],
-        "the set of per-field applies that reach a REFUSED pairing changed"
+        before.plunge_rate(),
+        after.plunge_rate(),
+        "Apply all wrote plunge on a refused pairing (pre-fix: 500 → 794)"
     );
-
-    // The two that didn't write, didn't write because the dials are absent.
-    let controller = controller_with(OperationType::Scallop);
-    let op = op_of(&controller);
+    assert_eq!(
+        before.spindle_rpm(),
+        after.spindle_rpm(),
+        "Apply all wrote RPM on a refused pairing (pre-fix: None → Some(10026))"
+    );
+    // The user is told, rather than left with a button that did nothing.
     assert!(
-        op.depth_per_pass().is_none() && op.stepover().is_none(),
-        "Scallop grew a cut-geometry dial — the Doc/Woc rows above now need their own \
-         refused-pairing assertions instead of this explanation"
+        controller
+            .active_notifications()
+            .any(|n| n.message.contains("Feeds not applied")),
+        "the refusal was silent — a no-op button is its own defect"
     );
 }
 
-/// Hazard (a) and hazard (b) in one click. `DropCutter` with a scallop-height
-/// target on a flat end mill hits the *second* arm of
-/// `validate_tool_for_operation` (`feeds/mod.rs:703-704`: family `Parallel`
-/// plus `target_scallop_mm.is_some()`), so the panel refuses it outright — and
-/// unlike Scallop, DropCutter carries a real `stepover` dial. The modal
-/// therefore previews a recipe the panel will not show and writes it into the
-/// cut geometry of an operation the engine has declared unrunnable.
+/// The six per-field Apply buttons (census rows M1–M6) are **gone**, and their
+/// absence is the fix for the sharpest number in the census.
+///
+/// **Pre-fix (measured 2026-08-12):** `ui/components/compare.rs:139-146`
+/// rendered a `small_button("Apply")` in every comparison row, pushing
+/// `AppEvent::ApplyFeedsField`, whose handler
+/// (`controller/events/mod.rs:796-817`) wrote `explain.recommended.*` directly
+/// — no `validate_tool_for_operation`, and none of `enforce_invariants`'
+/// passes: not `clamp_plunge_to_feed`, `clamp_stepover_to_diameter`,
+/// `backoff_stepover_for_runtime`, `clamp_dpp_to_rigidity`,
+/// `clamp_dpp_to_cutting_length`, `backoff_dpp_for_deflection`,
+/// `recalibrate_feed_for_chipload`, nor `round_suggestion_value`. On the
+/// Scallop fixture three of five wrote (RPM, Feed, Plunge) and the other two
+/// wrote nothing only because `ScallopConfig` carries neither dial — an absent
+/// dial, not a guard.
+///
+/// This test cannot dispatch the event any more, because the event does not
+/// exist: that is the strongest form of the assertion and it is enforced by
+/// the compiler. What is checked here is that nothing grew back — the enum,
+/// the event, the builder and the handler are all absent from the production
+/// sources.
 #[test]
-fn hazard_ab_refused_pairing_with_a_geometry_dial_takes_the_write() {
+fn per_field_apply_affordance_no_longer_exists() {
+    assert!(
+        !UI_MOD_SRC.contains("ApplyFeedsField {\n        toolpath_id"),
+        "AppEvent::ApplyFeedsField was reintroduced in ui/mod.rs"
+    );
+    assert!(
+        !UI_MOD_SRC.contains("pub enum FeedsField"),
+        "the viz-side FeedsField enum was reintroduced in ui/mod.rs"
+    );
+    assert!(
+        !COMPARE_SRC.contains("small_button(\"Apply\")"),
+        "a per-row Apply button was reintroduced in the compare component — it is the \
+         affordance that wrote 4.445 mm of DOC where the funnel writes 1.27 mm"
+    );
+    assert!(
+        !FEEDS_MODAL_SRC.contains("ApplyFeedsField"),
+        "the feeds modal pushes a per-field apply event again"
+    );
+    assert!(
+        !EVENTS_SRC.contains("fn apply_feeds_field"),
+        "the per-field apply handler was reintroduced in the controller"
+    );
+    // And the surviving modal write is the funnel, not a setter.
+    assert!(
+        EVENTS_SRC.contains("fn apply_feeds_through_funnel"),
+        "the funnel entry point is gone — every apply must route through it"
+    );
+}
+
+/// A refused pairing that *does* carry a cut-geometry dial: `DropCutter` with
+/// a scallop-height target on a flat end mill trips the **second** arm of
+/// `validate_tool_for_operation` (`feeds/mod.rs:703-704`: family `Parallel`
+/// plus `target_scallop_mm.is_some()`), and unlike Scallop it has a real
+/// `stepover`.
+///
+/// **Pre-fix (measured 2026-08-12):** the per-field WOC Apply wrote
+/// **1.0 → 0.1905 mm** and `⚡ Apply all` wrote **1.0 → 0.19 mm** — a 5.3×
+/// finer raster, i.e. a runtime multiplier, written into the cut geometry of
+/// an operation the engine says cannot be run at all.
+///
+/// **Post-fix:** the per-field button is gone and `⚡ Apply all` refuses, so
+/// the cut geometry of a refused pairing is untouchable from the modal.
+#[test]
+fn refused_pairing_with_a_geometry_dial_takes_no_write() {
     let mut controller = controller_with(OperationType::DropCutter);
     {
         let tc = &mut controller.state.session.toolpath_configs_mut()[0];
@@ -295,49 +355,51 @@ fn hazard_ab_refused_pairing_with_a_geometry_dial_takes_the_write() {
         "unexpected refusal kind: {refusal:?}"
     );
 
-    let before_woc = op_of(&controller).stepover();
+    let before = op_of(&controller);
     assert!(
-        before_woc.is_some(),
+        before.stepover().is_some(),
         "fixture must carry a stepover dial for this to mean anything"
     );
-
-    let id = id_at(&controller, 0);
-    controller.handle_internal_event(AppEvent::ApplyFeedsField {
-        toolpath_id: id,
-        field: FeedsField::Woc,
-    });
-    assert_ne!(
-        op_of(&controller).stepover(),
-        before_woc,
-        "per-field WOC apply left the cut geometry alone on a refused pairing — \
-         if the modal now validates, invert this sentry"
+    assert!(
+        modal_preview(&controller).applicable().is_none(),
+        "the preview is willing to write to a refused DropCutter"
     );
 
-    // And the same reach via the single-click path.
-    let mut controller = controller_with(OperationType::DropCutter);
-    {
-        let tc = &mut controller.state.session.toolpath_configs_mut()[0];
-        tc.operation.set_scallop_height(0.01);
-    }
-    let before = op_of(&controller);
     let id = id_at(&controller, 0);
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
-    assert_ne!(
+    assert_eq!(
         op_of(&controller).stepover(),
         before.stepover(),
-        "Apply all left the cut geometry alone on a refused pairing"
+        "Apply all rewrote the cut geometry of a refused pairing (pre-fix: 1.0 → 0.19 mm)"
+    );
+    assert_eq!(
+        op_of(&controller).feed_rate(),
+        before.feed_rate(),
+        "Apply all rewrote the feed of a refused pairing (pre-fix: 1000 → 2450)"
     );
 }
 
-// ── hazard (b): the modal's Apply all changes cut geometry ─────────────────
+// ── the modal and the panel write the same numbers ─────────────────────────
 
-/// The panel splits apply in two and says so on the buttons: `⚡⚡ Apply
-/// recommended speeds` is documented "Does not change the cut (DOC/WOC)"
-/// (`properties/mod.rs:1982-2001`), and `⚡ Apply cut geometry` is separate
-/// and attributed (`:2024-2043`). The modal's single `⚡ Apply all` writes
-/// both halves. Same fixture, same recommendation, two contracts.
+/// Hazard (b) was that the modal's one button moved the cut where the panel's
+/// speeds button promised not to, with no way for the user to tell.
+///
+/// **Pre-fix (measured 2026-08-12), Pocket fixture, one recommendation:**
+///
+/// | | feed | plunge | RPM | WOC | DOC |
+/// |---|---|---|---|---|---|
+/// | before | 1000 | 500 | None | 2.0 | 1.5 |
+/// | panel `⚡⚡ Apply recommended speeds` | 3000 | 794 | 18000 | 2.0 | 1.5 |
+/// | modal `⚡ Apply all` | 3000 | 794 | 18000 | **2.222** | **1.27** |
+///
+/// **Post-fix:** the numbers are unchanged — Checkpoint I-1 kept the combined
+/// apply, it did not neuter it — but the divergence is no longer silent on two
+/// counts. The button now reads `⚡ Apply all — changes the cut` and says so
+/// again in its tooltip, and the values it writes are asserted here to be
+/// **exactly** the panel's speeds-apply plus the panel's cut-geometry apply.
+/// One recommendation, one funnel, two spellings of the same result.
 #[test]
-fn hazard_b_modal_apply_all_moves_geometry_panel_speeds_apply_does_not() {
+fn modal_apply_all_writes_what_the_panel_writes() {
     let mut controller = controller_with(OperationType::Pocket);
     let recipe = panel_recipe(&controller).expect("flat end mill on Pocket is a valid pairing");
     let before = op_of(&controller);
@@ -346,7 +408,7 @@ fn hazard_b_modal_apply_all_moves_geometry_panel_speeds_apply_does_not() {
         "fixture op must carry both cut-geometry dials"
     );
 
-    // Panel: speed-only apply on a clone of the same operation.
+    // Panel: both buttons, on a clone of the same operation.
     let mut panel_op = before.clone();
     let mut panel_prov = rs_cam_core::feeds::FeedsProvenance::default();
     let tool = tool_of(&controller);
@@ -363,99 +425,121 @@ fn hazard_b_modal_apply_all_moves_geometry_panel_speeds_apply_does_not() {
         pass_role,
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
+    let speeds_only_woc = panel_op.stepover();
+    let speeds_only_doc = panel_op.depth_per_pass();
+    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
+        &mut panel_op,
+        &mut panel_prov,
+        &recipe,
+        &tool,
+        &session_machine,
+        &session_material,
+        pass_role,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+    );
+
+    // The panel's speeds-apply still keeps its own promise.
+    assert_eq!(
+        speeds_only_woc,
+        before.stepover(),
+        "the panel's speeds-apply moved WOC — that contract is supposed to be speed-only"
+    );
+    assert_eq!(
+        speeds_only_doc,
+        before.depth_per_pass(),
+        "the panel's speeds-apply moved DOC — that contract is supposed to be speed-only"
+    );
 
     // Modal: `⚡ Apply all` through the real handler.
     let id = id_at(&controller, 0);
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
     let modal_op = op_of(&controller);
 
-    assert_eq!(
-        panel_op.stepover(),
-        before.stepover(),
-        "the panel's speeds-apply moved WOC — that contract is supposed to be speed-only"
-    );
-    assert_eq!(
-        panel_op.depth_per_pass(),
-        before.depth_per_pass(),
-        "the panel's speeds-apply moved DOC — that contract is supposed to be speed-only"
-    );
-
-    let geometry_moved = modal_op.stepover() != before.stepover()
-        || modal_op.depth_per_pass() != before.depth_per_pass();
+    for (name, a, b) in [
+        ("feed", modal_op.feed_rate(), panel_op.feed_rate()),
+        ("plunge", modal_op.plunge_rate(), panel_op.plunge_rate()),
+    ] {
+        assert_eq!(a, b, "{name}: modal {a} vs panel {b}");
+    }
+    assert_eq!(modal_op.spindle_rpm(), panel_op.spindle_rpm(), "rpm");
+    assert_eq!(modal_op.stepover(), panel_op.stepover(), "woc");
+    assert_eq!(modal_op.depth_per_pass(), panel_op.depth_per_pass(), "doc");
+    // And the attribution the divergence needed is on the button's face.
     assert!(
-        geometry_moved,
-        "Apply all left the cut geometry alone on this fixture (WOC {:?}→{:?}, DOC {:?}→{:?}); \
-         the divergence is structural (`ApplySubset::Both` vs `Speeds`) but this fixture \
-         no longer demonstrates it",
-        before.stepover(),
-        modal_op.stepover(),
-        before.depth_per_pass(),
-        modal_op.depth_per_pass()
+        FEEDS_MODAL_SRC.contains("⚡ Apply all — changes the cut"),
+        "the combined apply lost its 'changes the cut' attribution; it moves DOC/WOC and \
+         the operator has to be able to see that before clicking"
     );
 }
 
-// ── hazard (c): per-field Apply bypasses the invariant funnel ──────────────
+// ── no surviving path writes the raw preview value ─────────────────────────
 
-/// Not in the review's two named hazards, found while censusing. Every
-/// `apply_*_to_op` entry point runs the recommendation through
-/// `enforce_invariants` on a scratch clone and rounds it
-/// (`feeds/suggest.rs:727-793`) — that is where the plunge-to-feed clamp, the
-/// stepover-to-diameter clamp, the rigidity and cutting-length DOC clamps, the
-/// deflection back-off and the chipload feed recalibration live.
-/// `apply_feeds_field` (`controller/events/mod.rs:796-817`) writes
-/// `explain.recommended.*` directly, so **none** of those passes run. The
-/// assertion below is bit-exact against the raw preview value, which is the
-/// clean structural proof that no funnel stands between them.
+/// **Pre-fix (measured 2026-08-12):** `apply_feeds_field` wrote
+/// `explain.recommended.*` bit-exactly into the operation — the clean
+/// structural proof that no funnel stood between the preview and the write.
+/// The same was true of the explore-chart apply, which set feed and RPM with
+/// bare setters.
+///
+/// **Post-fix:** every surviving GUI apply goes through
+/// `apply_feeds_through_funnel`, so the written value is the
+/// *invariant-resolved, rounded* one. This test asserts the negative directly:
+/// after `⚡ Apply all` on the Pocket fixture, the operation's DOC is **not**
+/// the raw preview number, and it **is** the funnel's number.
 #[test]
-fn hazard_c_per_field_apply_writes_the_raw_preview_value() {
+fn no_apply_path_writes_the_raw_preview_value() {
     let mut controller = controller_with(OperationType::Pocket);
-    let preview = modal_preview(&controller);
+    let raw = modal_preview(&controller).recommended().clone();
 
     let id = id_at(&controller, 0);
-    controller.handle_internal_event(AppEvent::ApplyFeedsField {
-        toolpath_id: id,
-        field: FeedsField::Feed,
-    });
-    assert_eq!(
-        op_of(&controller).feed_rate(),
-        preview.recommended.feed_rate_mm_min,
-        "per-field Feed apply is expected to be a raw write of the preview value"
-    );
+    controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
+    let applied = op_of(&controller);
 
-    controller.handle_internal_event(AppEvent::ApplyFeedsField {
-        toolpath_id: id,
-        field: FeedsField::Doc,
-    });
-    assert_eq!(
-        op_of(&controller).depth_per_pass(),
-        Some(preview.recommended.axial_depth_mm),
-        "per-field DOC apply is expected to be a raw write of the preview value"
+    assert_ne!(
+        applied.depth_per_pass(),
+        Some(raw.axial_depth_mm),
+        "the raw preview DOC ({}) reached the operation — some path is still bypassing \
+         enforce_invariants",
+        raw.axial_depth_mm
     );
-
-    controller.handle_internal_event(AppEvent::ApplyFeedsField {
-        toolpath_id: id,
-        field: FeedsField::Woc,
-    });
-    assert_eq!(
-        op_of(&controller).stepover(),
-        Some(preview.recommended.radial_width_mm),
-        "per-field WOC apply is expected to be a raw write of the preview value"
+    // Feed and WOC agree with the raw value to within rounding; DOC is where
+    // the clamp chain bites. Assert the rounding grid rather than equality, so
+    // this stays a statement about the funnel and not about one number.
+    for (name, applied_v) in [
+        ("woc", applied.stepover()),
+        ("doc", applied.depth_per_pass()),
+    ] {
+        let v = applied_v.expect("pocket carries both dials");
+        let rounded = rs_cam_core::feeds::suggest::round_suggestion_value(v, 0.001);
+        assert!(
+            (v - rounded).abs() < 1e-12,
+            "applied {name} {v} is not on the funnel's 0.001 mm grid"
+        );
+    }
+    // The controller source no longer contains a direct recommendation write.
+    assert!(
+        !EVENTS_SRC.contains("set_depth_per_pass(r.axial_depth_mm)"),
+        "a direct DOC write from the recommendation was reintroduced"
+    );
+    assert!(
+        !EVENTS_SRC.contains("set_stepover(r.radial_width_mm)"),
+        "a direct WOC write from the recommendation was reintroduced"
     );
 }
 
-/// What hazard (c) costs, in millimetres. Same fixture, same recommendation,
-/// two buttons: the modal's per-field DOC Apply and the panel's `⚡ Apply cut
-/// geometry`. Measured 2026-08-12 on the default Ø6.35 2-flute flat end mill
-/// in a Pocket op — the modal writes **4.445 mm**, the panel writes **1.27
-/// mm**. The 3.5× is the DOC clamp/back-off chain inside `enforce_invariants`
-/// (`clamp_dpp_to_rigidity`, `clamp_dpp_to_cutting_length`,
-/// `backoff_dpp_for_deflection`) that the per-field path never reaches.
+/// **The bar this wave was measured against.** A-3 §3.4 measured the modal's
+/// per-field DOC Apply at **4.445 mm** against the panel's `⚡ Apply cut
+/// geometry` at **1.27 mm** on the default Ø6.35 2-flute flat end mill in a
+/// Pocket op — **3.50×**, the calculator's raw axial recommendation versus
+/// what survives `clamp_dpp_to_rigidity`, `clamp_dpp_to_cutting_length` and
+/// `backoff_dpp_for_deflection` at 45 mm stickout.
 ///
-/// This is the sharpest number in the census: the modal's finest-grained,
-/// most innocuous-looking affordance — a small `Apply` next to one row — is
-/// the one that writes the deepest unguarded cut.
+/// Checkpoint I's bar 3 is that the gap closes to **1.00×**: the surviving
+/// modal write paths produce exactly what the panel produces. The affordance
+/// that produced 4.445 no longer exists, so what is checkable — and what is
+/// checked here — is that the modal's remaining DOC write is bit-equal to the
+/// panel's.
 #[test]
-fn hazard_c_per_field_doc_is_3x_the_funnelled_doc() {
+fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
     let mut controller = controller_with(OperationType::Pocket);
     let recipe = panel_recipe(&controller).expect("valid pairing");
 
@@ -477,25 +561,25 @@ fn hazard_c_per_field_doc_is_3x_the_funnelled_doc() {
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
 
-    // Modal: the per-row `Apply` on the DOC line.
+    // Modal: the only DOC write it still has.
     let id = id_at(&controller, 0);
-    controller.handle_internal_event(AppEvent::ApplyFeedsField {
-        toolpath_id: id,
-        field: FeedsField::Doc,
-    });
+    controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
 
     let modal_doc = op_of(&controller).depth_per_pass().expect("pocket has DOC");
     let panel_doc = panel_op.depth_per_pass().expect("pocket has DOC");
-    assert!(
-        modal_doc > panel_doc * 3.0,
-        "the per-field DOC apply no longer overshoots the funnelled DOC by >3× \
-         (modal {modal_doc} mm vs panel {panel_doc} mm) — if the funnel now covers \
-         the per-field path this sentry should be inverted, not relaxed"
+    assert_eq!(
+        modal_doc.to_bits(),
+        panel_doc.to_bits(),
+        "modal DOC {modal_doc} mm vs panel DOC {panel_doc} mm — the ratio is {:.3}×, and \
+         Checkpoint I's bar 3 is exactly 1.000×",
+        modal_doc / panel_doc
     );
 }
 
-/// The funnelled counterpart, for contrast: the panel's cut-geometry apply on
-/// the same fixture writes the *rounded, invariant-resolved* value.
+/// The funnelled counterpart, unchanged from A-3: the panel's cut-geometry
+/// apply writes the rounded, invariant-resolved value. Kept as-is because it
+/// was always a statement of correct behaviour — it is the surface the modal
+/// has now been made to match, so it is the one that must not move.
 #[test]
 fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
     let controller = controller_with(OperationType::Pocket);
@@ -526,15 +610,69 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
     );
 }
 
-// ── the project-wide reach of the modal's infallible contract ──────────────
-
-/// `⚡⚡ Apply all toolpaths` (`feeds_modal.rs:2766-2772`) fans
-/// `ApplyFeedsAll` over **every enabled toolpath** (`events/mod.rs:939-951`),
-/// so one click applies the unvalidated, geometry-changing contract to a
-/// refused pairing sitting anywhere in the project — with no per-row refusal
-/// surfaced, because the loop calls the infallible path per id.
+/// **Checkpoint I bar 2 — the fingerprint that must not move.** A-3 measured
+/// the Pocket fixture's applied operating point as
+/// **3000 / 794 / 18000 / 2.222 / 1.27** (feed / plunge / RPM / WOC / DOC)
+/// through the panel's two buttons. A-4 rewrote the modal and the controller
+/// but was forbidden from moving a recipe number; a moved fingerprint is a
+/// STOP under plan §0.2, not a re-pin.
+///
+/// This pins all five through the validated panel path, which is the path
+/// whose numbers the census recorded.
 #[test]
-fn project_apply_all_reaches_a_refused_toolpath_silently() {
+fn pocket_fixture_recipe_fingerprint_is_unmoved() {
+    let controller = controller_with(OperationType::Pocket);
+    let recipe = panel_recipe(&controller).expect("valid pairing");
+    let mut op = op_of(&controller);
+    let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
+    let tool = tool_of(&controller);
+    let machine = controller.state.session.machine().clone();
+    let material = controller.state.session.stock_config().material.clone();
+    let pass_role = op.feeds_style().1;
+    let ctx = || rs_cam_core::feeds::suggest::SuggestContext::default();
+
+    rs_cam_core::feeds::suggest::apply_speeds_to_op(
+        &mut op,
+        &mut prov,
+        &recipe,
+        &tool,
+        &machine,
+        &material,
+        pass_role,
+        ctx(),
+    );
+    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
+        &mut op,
+        &mut prov,
+        &recipe,
+        &tool,
+        &machine,
+        &material,
+        pass_role,
+        ctx(),
+    );
+
+    assert_eq!(op.feed_rate(), 3000.0, "feed");
+    assert_eq!(op.plunge_rate(), 794.0, "plunge");
+    assert_eq!(op.spindle_rpm(), Some(18_000), "rpm");
+    assert_eq!(op.stepover(), Some(2.222), "woc");
+    assert_eq!(op.depth_per_pass(), Some(1.27), "doc");
+}
+
+// ── the project batch is allowed to be partial, never quiet ────────────────
+
+/// `⚡⚡ Apply all toolpaths` (`feeds_modal.rs`) fans `ApplyFeedsAll` over
+/// every enabled toolpath.
+///
+/// **Pre-fix (measured 2026-08-12):** the loop called the infallible path per
+/// id, so a refused pairing sitting anywhere in the project took the write
+/// **silently**, inside a batch the user believed they understood — the second
+/// toolpath's feed moved 1000 → 2677 with no row-level signal anywhere.
+///
+/// **Post-fix:** the refused row is skipped, and the batch says which rows it
+/// skipped and why. A partial batch is fine; a quiet one is not.
+#[test]
+fn project_apply_all_skips_a_refused_toolpath_and_reports_it() {
     let mut controller = controller_with(OperationType::Pocket);
     controller
         .state
@@ -542,18 +680,115 @@ fn project_apply_all_reaches_a_refused_toolpath_silently() {
         .add_toolpath(0, toolpath(1, OperationType::Scallop))
         .expect("add second toolpath");
 
-    let before = controller.state.session.toolpath_configs()[1]
+    let before_valid = controller.state.session.toolpath_configs()[0]
+        .operation
+        .clone();
+    let before_refused = controller.state.session.toolpath_configs()[1]
         .operation
         .clone();
     controller.handle_internal_event(AppEvent::ApplyFeedsProject);
-    let after = controller.state.session.toolpath_configs()[1]
+    let after_valid = controller.state.session.toolpath_configs()[0]
+        .operation
+        .clone();
+    let after_refused = controller.state.session.toolpath_configs()[1]
         .operation
         .clone();
 
+    assert_eq!(
+        before_refused.feed_rate(),
+        after_refused.feed_rate(),
+        "the project-wide apply wrote to the refused toolpath (pre-fix: 1000 → 2677)"
+    );
+    // The batch still does its job on the rows it can.
     assert_ne!(
-        before.feed_rate(),
-        after.feed_rate(),
-        "project-wide apply skipped the refused toolpath — if it now refuses per row, \
-         invert this sentry"
+        before_valid.feed_rate(),
+        after_valid.feed_rate(),
+        "the batch skipped the VALID row too — refusing everything is not the fix"
+    );
+    let reported = controller
+        .active_notifications()
+        .any(|n| n.message.contains("skipped") && n.message.contains("Scallop"));
+    assert!(
+        reported,
+        "the batch skipped a row without naming it; messages were {:?}",
+        controller
+            .active_notifications()
+            .map(|n| n.message.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+// ── the explore apply joins the funnel ─────────────────────────────────────
+
+/// The drag-to-explore apply (census row M8) was the seventh raw write: it set
+/// feed and RPM with bare setters, so a feed dragged below the operation's
+/// plunge rate left the machine plunging faster than it cut.
+///
+/// Checkpoint I-1 routed it through the funnel with `ApplyScope::Speeds`. Two
+/// properties have to hold together, and this test asserts both: the operator's
+/// dragged numbers survive (a funnel that silently re-solves them would be a
+/// new defect, not a fix), and the clamps run on top of them.
+#[test]
+fn explore_apply_takes_the_clamps_but_keeps_the_dragged_point() {
+    let mut controller = controller_with(OperationType::Pocket);
+    let id = id_at(&controller, 0);
+    {
+        let tc = &mut controller.state.session.toolpath_configs_mut()[0];
+        tc.operation.set_plunge_rate(900.0);
+    }
+    let before_geometry = (
+        op_of(&controller).stepover(),
+        op_of(&controller).depth_per_pass(),
+    );
+
+    controller.handle_internal_event(AppEvent::ApplyFeedsExplore {
+        toolpath_id: id,
+        feed_mm_min: 120.0,
+        rpm: 14_000.0,
+    });
+    let after = op_of(&controller);
+
+    assert_eq!(after.feed_rate(), 120.0, "the dragged feed was re-solved");
+    assert_eq!(after.spindle_rpm(), Some(14_000), "the dragged RPM moved");
+    assert_eq!(
+        after.plunge_rate(),
+        120.0,
+        "plunge was not clamped down to the dragged feed — pre-fix this left plunge at \
+         900 mm/min under a 120 mm/min cut"
+    );
+    assert_eq!(
+        (after.stepover(), after.depth_per_pass()),
+        before_geometry,
+        "a Speeds-scoped apply moved the cut geometry"
+    );
+}
+
+/// The explore apply is an apply, so it answers to the same refusal rule
+/// (I-3): on a pairing the panel refuses, the modal draws the refusal in place
+/// of the button, and the handler refuses if the event arrives anyway.
+#[test]
+fn explore_apply_refuses_a_refused_pairing() {
+    let mut controller = controller_with(OperationType::Scallop);
+    let id = id_at(&controller, 0);
+    let before = op_of(&controller);
+
+    controller.handle_internal_event(AppEvent::ApplyFeedsExplore {
+        toolpath_id: id,
+        feed_mm_min: 2500.0,
+        rpm: 20_000.0,
+    });
+    let after = op_of(&controller);
+
+    assert_eq!(before.feed_rate(), after.feed_rate(), "explore wrote feed");
+    assert_eq!(
+        before.spindle_rpm(),
+        after.spindle_rpm(),
+        "explore wrote RPM"
+    );
+    assert!(
+        controller
+            .active_notifications()
+            .any(|n| n.message.contains("Explored values not applied")),
+        "the explore refusal was silent"
     );
 }

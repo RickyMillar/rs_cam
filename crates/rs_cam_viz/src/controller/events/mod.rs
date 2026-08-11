@@ -318,9 +318,6 @@ impl<B: ComputeBackend> AppController<B> {
                     modal.show_provenance = !modal.show_provenance;
                 }
             }
-            AppEvent::ApplyFeedsField { toolpath_id, field } => {
-                self.apply_feeds_field(toolpath_id, field);
-            }
             AppEvent::ApplyFeedsAll(toolpath_id) => {
                 self.apply_feeds_all(toolpath_id);
             }
@@ -683,6 +680,37 @@ impl<B: ComputeBackend> AppController<B> {
             KnobAxis::DepthPerPass => new_op.set_depth_per_pass(value),
             KnobAxis::ScallopHeight => new_op.set_scallop_height(value),
         }
+        // Checkpoint I-4 (2026-08-12): route the accepted axis value through
+        // the apply funnel's clamp stage. This is the ONE optimizer write that
+        // joins the funnel — the candidate applies above (O1/O3 in the A-3
+        // census) stay out, deliberately, because their operating points were
+        // scored against a simulated cut trace end to end and re-clamping them
+        // against a pre-simulation estimator would replace the stronger
+        // evidence with the weaker. This path is different in kind: it writes
+        // a **suggested, never-simulated** single value, and before this it
+        // did so with no clamp at all — hazard (c) in a second neighbourhood.
+        // The accepted number is not re-solved; only the safety clamps run.
+        let clamp_warnings = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))
+            .cloned()
+            .map(|tool| {
+                let machine = self.state.session.machine().clone();
+                let material = self.state.session.stock_config().material.clone();
+                let pass_role = new_op.feeds_style().1;
+                rs_cam_core::feeds::suggest::resolve_operation_invariants(
+                    &mut new_op,
+                    &tool,
+                    &machine,
+                    &material,
+                    pass_role,
+                    rs_cam_core::feeds::suggest::SuggestContext::default(),
+                )
+            })
+            .unwrap_or_default();
         // W2.1: the override value originates from the optimizer's own
         // suggestion, so stamp Optimizer provenance on the changed dim.
         let new_provenance = tc
@@ -702,6 +730,21 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
         let _ = self.state.session.set_feeds_provenance(idx, new_provenance);
+        if !clamp_warnings.is_empty() {
+            // A clamp that fires silently is the defect, not the fix: the
+            // operator accepted a number and got a different one.
+            self.push_notification(
+                format!(
+                    "Accepted {axis:?} suggestion, then clamped it for safety: {}",
+                    clamp_warnings
+                        .iter()
+                        .map(|w| format!("{w:?}"))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+                crate::controller::Severity::Warning,
+            );
+        }
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
@@ -767,15 +810,32 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
-    /// Apply one recommended Feeds field to the given toolpath.
-    fn apply_feeds_field(
+    /// **The GUI's one apply path from a recommendation into an
+    /// `OperationConfig`** (Checkpoint I, 2026-08-12).
+    ///
+    /// Every Feeds & Speeds modal write — the comparison card's `⚡ Apply
+    /// all`, the project rollup's per-row Apply, `⚡ Apply selected`, `⚡⚡
+    /// Apply all toolpaths`, and the nomogram's explore apply — lands here,
+    /// and here calls `feeds::suggest::apply`. Two consequences are the whole
+    /// point of the wave:
+    ///
+    /// 1. A tool × operation pairing the engine refuses **cannot be written**,
+    ///    because `FeedsPreview::applicable` hands back nothing to write.
+    ///    Pre-fix the modal happily applied recipes the properties panel would
+    ///    not even display (A-3 §3.1).
+    /// 2. The values written are the invariant-resolved ones — the plunge and
+    ///    stepover clamps, the rigidity / cutting-length DOC clamps and the
+    ///    deflection back-off all run. Pre-fix the per-field buttons skipped
+    ///    the lot and wrote 4.445 mm of DOC where the funnel writes 1.27 mm.
+    ///
+    /// `Err` carries the refusal text, so batch callers can report which rows
+    /// they skipped instead of sweeping them up silently (A-3 §3.5).
+    fn apply_feeds_through_funnel(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
-        field: crate::ui::FeedsField,
-    ) {
-        let Some(explain) = self.compute_feeds_explain(toolpath_id) else {
-            return;
-        };
+        scope: rs_cam_core::feeds::suggest::ApplyScope,
+        explored_speeds: Option<(f64, f64)>,
+    ) -> Result<(), String> {
         let Some(idx) = self
             .state
             .session
@@ -783,106 +843,97 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|tc| tc.id == toolpath_id)
         else {
-            return;
+            return Err(format!("toolpath {} not found", toolpath_id.0));
         };
-        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
-            return;
+        let (operation, tool_id, pass_role) = {
+            let Some(tc) = self.state.session.toolpath_configs().get(idx) else {
+                return Err(format!("toolpath {} disappeared", toolpath_id.0));
+            };
+            (
+                tc.operation.clone(),
+                tc.tool_id,
+                tc.operation.feeds_style().1,
+            )
         };
-        use crate::ui::FeedsField as F;
-        let r = &explain.recommended;
-        // Per-field suggest provenance, derived independently from the matched
-        // LUT row (W2.1) — a vendor RPM and a formula feed get distinct labels.
-        let prov = r.provenance();
-        match field {
-            F::Rpm => {
-                tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
-                tc.feeds_provenance.spindle_rpm = prov.spindle_rpm;
-            }
-            F::Feed => {
-                tc.operation.set_feed_rate(r.feed_rate_mm_min);
-                tc.feeds_provenance.feed_rate = prov.feed_rate;
-            }
-            F::Plunge => {
-                tc.operation.set_plunge_rate(r.plunge_rate_mm_min);
-                tc.feeds_provenance.plunge_rate = prov.plunge_rate;
-            }
-            F::Doc => {
-                tc.operation.set_depth_per_pass(r.axial_depth_mm);
-                tc.feeds_provenance.depth_per_pass = prov.depth_per_pass;
-            }
-            F::Woc => {
-                tc.operation.set_stepover(r.radial_width_mm);
-                tc.feeds_provenance.stepover = prov.stepover;
-            }
-        }
-        self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
-    }
-
-    /// Apply every recommended Feeds field to the given toolpath in
-    /// one transactional update. Mirrors the historical "Suggest all"
-    /// button in the legacy feeds card.
-    fn apply_feeds_all(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        let Some(explain) = self.compute_feeds_explain(toolpath_id) else {
-            return;
-        };
-        let Some(idx) = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id)
-        else {
-            return;
-        };
-        let tool_id_opt = self
-            .state
-            .session
-            .toolpath_configs()
-            .get(idx)
-            .map(|tc| tc.tool_id);
-        let Some(tool_id) = tool_id_opt else {
-            return;
-        };
-        let tool_opt = self
+        let Some(tool) = self
             .state
             .session
             .tools()
             .iter()
             .find(|t| t.id == rs_cam_core::compute::ToolId(tool_id))
-            .cloned();
-        let Some(tool) = tool_opt else {
-            return;
+            .cloned()
+        else {
+            return Err(format!("toolpath {} has no tool", toolpath_id.0));
         };
         let machine = self.state.session.machine().clone();
-        let material = self.state.session.stock_config().material.clone();
-        let pass_role = self
-            .state
-            .session
-            .toolpath_configs()
-            .get(idx)
-            .map(|tc| tc.operation.feeds_style().1)
-            .unwrap_or(rs_cam_core::feeds::PassRole::Roughing);
-        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
-            return;
+        let (material, workholding) = {
+            let stock = self.state.session.stock_config();
+            (stock.material.clone(), stock.workholding_rigidity)
         };
-        let r = &explain.recommended;
-        tc.operation.set_spindle_rpm(Some(r.rpm.round() as u32));
-        rs_cam_core::feeds::suggest::apply_feeds_result_to_op(
+        let spindle_strategy = self.state.session.post_config().spindle_strategy;
+
+        let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
+            &operation,
+            &tool,
+            &material,
+            &machine,
+            workholding,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy,
+        );
+        let Some(rec) = preview.applicable() else {
+            return Err(preview
+                .refusal()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "recommendation is not applicable".to_owned()));
+        };
+        let rec = match explored_speeds {
+            Some((feed_mm_min, rpm)) => rec.with_explored_speeds(feed_mm_min, rpm),
+            None => rec,
+        };
+
+        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
+            return Err(format!("toolpath {} disappeared", toolpath_id.0));
+        };
+        rs_cam_core::feeds::suggest::apply(
+            &rec,
+            scope,
             &mut tc.operation,
             &mut tc.feeds_provenance,
-            r,
-            &tool,
-            &machine,
-            &material,
-            pass_role,
-            rs_cam_core::feeds::suggest::SuggestContext::default(),
+            rs_cam_core::feeds::suggest::ApplyContext {
+                tool: &tool,
+                machine: &machine,
+                material: &material,
+                pass_role,
+                suggest: rs_cam_core::feeds::suggest::SuggestContext::default(),
+            },
         );
         self.state.gui.mark_edited();
         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
             rt.stale_since = Some(std::time::Instant::now());
+        }
+        Ok(())
+    }
+
+    /// Apply every recommended Feeds value to the given toolpath in one
+    /// transactional update — the modal's `⚡ Apply all`, and the project
+    /// rollup's per-row Apply.
+    ///
+    /// This writes DOC/WOC as well as the speeds, which is why both buttons
+    /// now say "changes the cut" on their face. On a refused pairing the modal
+    /// draws the refusal instead of the button, so reaching this with an
+    /// unrunnable pairing means the state moved under an open modal — it
+    /// refuses and notifies rather than writing.
+    fn apply_feeds_all(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        if let Err(why) = self.apply_feeds_through_funnel(
+            toolpath_id,
+            rs_cam_core::feeds::suggest::ApplyScope::Both,
+            None,
+        ) {
+            self.push_notification(
+                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.0),
+                crate::controller::Severity::Warning,
+            );
         }
     }
 
@@ -929,9 +980,7 @@ impl<B: ComputeBackend> AppController<B> {
             .as_ref()
             .map(|m| m.project_selected.iter().copied().collect())
             .unwrap_or_default();
-        for id in ids {
-            self.apply_feeds_all(id);
-        }
+        self.apply_feeds_batch(&ids, "selected toolpaths");
     }
 
     /// Apply Feeds recommendations across every enabled toolpath
@@ -945,69 +994,97 @@ impl<B: ComputeBackend> AppController<B> {
             .filter(|tc| tc.enabled)
             .map(|tc| tc.id)
             .collect();
-        for id in ids {
-            self.apply_feeds_all(id);
+        self.apply_feeds_batch(&ids, "every enabled toolpath");
+    }
+
+    /// Fan the funnel across a set of toolpaths and **report what it
+    /// skipped**.
+    ///
+    /// A-3 §3.5 measured the pre-fix behaviour: the batch called the
+    /// infallible path per id, so a refused pairing sitting anywhere in the
+    /// project took the write silently, inside a sweep the user believed they
+    /// understood. Now a refused row is skipped and named — the batch is
+    /// allowed to be partial, but never quietly.
+    fn apply_feeds_batch(&mut self, ids: &[crate::state::toolpath::ToolpathId], what: &str) {
+        let mut applied = 0usize;
+        let mut skipped: Vec<String> = Vec::new();
+        for &id in ids {
+            match self.apply_feeds_through_funnel(
+                id,
+                rs_cam_core::feeds::suggest::ApplyScope::Both,
+                None,
+            ) {
+                Ok(()) => applied += 1,
+                Err(why) => {
+                    let name = self
+                        .state
+                        .session
+                        .toolpath_configs()
+                        .iter()
+                        .find(|tc| tc.id == id)
+                        .map(|tc| tc.name.clone())
+                        .unwrap_or_else(|| format!("toolpath {}", id.0));
+                    skipped.push(format!("{name} ({why})"));
+                }
+            }
+        }
+        if skipped.is_empty() {
+            self.push_notification(
+                format!("Applied Feeds recommendations to {applied} of {what}."),
+                crate::controller::Severity::Info,
+            );
+        } else {
+            self.push_notification(
+                format!(
+                    "Applied Feeds recommendations to {applied} of {what}; skipped {} \
+                     the tool cannot run: {}",
+                    skipped.len(),
+                    skipped.join("; ")
+                ),
+                crate::controller::Severity::Warning,
+            );
         }
     }
 
     /// Apply a custom (feed, RPM) pair from the Chart C drag-to-explore
     /// release. Other fields stay as-is.
+    ///
+    /// Checkpoint I-1 routed this through the funnel: it used to write the two
+    /// dragged values with a bare `set_feed_rate` / `set_spindle_rpm`, so a
+    /// feed dragged below the operation's plunge rate left the machine
+    /// plunging faster than it cut. It now goes through
+    /// `ApplyScope::Speeds`, which takes the clamps. The dragged values
+    /// themselves are **not** re-solved — see
+    /// `ApplicableRecommendation::with_explored_speeds` for why the chipload
+    /// band is dropped on this path.
     fn apply_feeds_explore(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
         feed_mm_min: f64,
         rpm: f64,
     ) {
-        let Some(idx) = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id)
-        else {
-            return;
-        };
-        let Some(tc) = self.state.session.toolpath_configs_mut().get_mut(idx) else {
-            return;
-        };
-        tc.operation.set_feed_rate(feed_mm_min.max(1.0));
-        tc.operation
-            .set_spindle_rpm(Some(rpm.round().max(1.0) as u32));
-        self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
+        if let Err(why) = self.apply_feeds_through_funnel(
+            toolpath_id,
+            rs_cam_core::feeds::suggest::ApplyScope::Speeds,
+            Some((feed_mm_min, rpm)),
+        ) {
+            self.push_notification(
+                format!(
+                    "Explored values not applied to toolpath {}: {why}",
+                    toolpath_id.0
+                ),
+                crate::controller::Severity::Warning,
+            );
         }
     }
 
-    /// Helper: build a `FeedsExplain` payload for the given toolpath
-    /// from current session state.
-    fn compute_feeds_explain(
-        &self,
-        toolpath_id: crate::state::toolpath::ToolpathId,
-    ) -> Option<rs_cam_core::feeds::FeedsExplain> {
-        let tc = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .find(|tc| tc.id == toolpath_id)?;
-        let tool = self
-            .state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
-        let stock = self.state.session.stock_config();
-        Some(rs_cam_core::feeds::suggest::feeds_explain_for_operation(
-            &tc.operation,
-            tool,
-            &stock.material,
-            self.state.session.machine(),
-            stock.workholding_rigidity,
-            rs_cam_core::feeds::embedded_vendor_lut(),
-            self.state.session.post_config().spindle_strategy,
-        ))
-    }
+    // NOTE (A-4, 2026-08-12): the `compute_feeds_explain` helper that used to
+    // sit here is gone. It handed the *infallible* explain payload to the
+    // apply handlers, which is how a refused pairing became writable in the
+    // first place — the payload has no slot to say "this tool cannot run this
+    // operation", so the handler had nothing to check. Apply paths now build a
+    // `FeedsPreview` inside `apply_feeds_through_funnel`, which carries the
+    // refusal and the numbers together.
 
     /// Open the project-level Optimize rollup. Submits an
     /// `OptimizeRequest::Project` to the worker lane, taking
