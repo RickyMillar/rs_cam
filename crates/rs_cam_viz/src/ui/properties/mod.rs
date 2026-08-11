@@ -1821,8 +1821,14 @@ fn draw_feeds_card(
                             entry.stale_since = Some(std::time::Instant::now());
                         }
                     }
-                    ui.label("Chip Load:");
-                    ui.label(format!("{:.4} mm/tooth", result.chip_load_mm));
+                    ui.label("Commanded advance/tooth:");
+                    ui.label(format!("{:.4} mm/tooth", result.chip_load_mm))
+                        .on_hover_text(
+                            "feed \u{00f7} (RPM \u{00d7} flutes) at the recommended feed \u{2014} \
+                             what the operator is asking for, before the machine's kinematics. \
+                             The measured counterpart is on the OPERATING POINT card below, \
+                             after a simulation.",
+                        );
                     ui.end_row();
                     // Spindle override vs project default. W3.1 relocated this
                     // from the per-op Params tab so the precedence renders
@@ -1965,10 +1971,12 @@ fn draw_feeds_card(
                         band_capped_from,
                     } => match band_capped_from {
                         None => format!(
-                            "Chipload below rubbing floor: {requested:.3} -> {floor:.3}mm/tooth"
+                            "Commanded advance/tooth below rubbing floor: \
+                             {requested:.3} -> {floor:.3} mm/tooth"
                         ),
                         Some(global) => format!(
-                            "Chipload raised to band ceiling: {requested:.3} -> {floor:.3}mm/tooth \
+                            "Commanded advance/tooth raised to vendor band ceiling: \
+                             {requested:.3} -> {floor:.3} mm/tooth \
                              (band is entirely below the {global:.3} rubbing floor)"
                         ),
                     },

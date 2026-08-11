@@ -1,10 +1,10 @@
 use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
+use rs_cam_core::feeds::{AdvancePerToothMm, ChiploadBandClass, VendorChiploadBand};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::toolpath_spans::{AnnotatedToolpath, SpanClass};
 use std::collections::HashMap;
-use std::ops::Range;
 
 // Re-export palette from centralized colors module for backward compatibility.
 pub use super::colors::{TOOLPATH_PALETTE, palette_color};
@@ -563,24 +563,29 @@ impl ToolpathGpuData {
         }
     }
 
-    /// Build GPU data colored by per-segment effective chip thickness vs the
-    /// matched LUT row's chipload window.
+    /// Build GPU data coloured by per-segment **achieved advance per
+    /// tooth** against the matched LUT row's vendor chipload band.
     ///
-    /// `envelope`: `[cl_min, cl_max]` from the suggest module's matched
-    /// vendor row. `None` when the toolpath has no model-able envelope
-    /// (custom material, no vendor data, etc.) — every cut segment is
-    /// then rendered grey.
+    /// `band`: the matched vendor row's window, in advance per tooth.
+    /// `None` when the toolpath has no model-able band (custom material,
+    /// no vendor data, etc.) — every cut segment is then rendered grey.
     ///
-    /// `move_chipload`: per-move effective chip thickness (worst-case
-    /// across samples sharing the same `move_index`). Moves missing from
-    /// the map (rapids, transients, all-`None` samples) render dim grey.
+    /// `move_advance`: per-move achieved advance/tooth (worst-case across
+    /// samples sharing the same `move_index`), from
+    /// `rs_cam_core::tool_load::display::advance_per_tooth_per_move`.
+    /// Moves missing from the map (rapids, samples with no usable
+    /// `rpm × flutes` divisor) render dim grey.
+    ///
+    /// Until 2026-08-08 this took an arc-mean chip thickness and compared
+    /// it to the same band — F-HEATMAP. The two arguments are now
+    /// distinct types precisely so that pairing cannot be rebuilt.
     #[allow(clippy::indexing_slicing)]
-    pub fn from_toolpath_chipload(
+    pub fn from_toolpath_advance_per_tooth(
         device: &wgpu::Device,
         limits: &GpuLimits,
         tp: &Toolpath,
-        envelope: Option<&Range<f64>>,
-        move_chipload: &HashMap<usize, f64>,
+        band: Option<&VendorChiploadBand>,
+        move_advance: &HashMap<usize, AdvancePerToothMm>,
     ) -> Self {
         use wgpu::util::DeviceExt;
 
@@ -594,8 +599,8 @@ impl ToolpathGpuData {
             1
         };
 
-        let chipload_color = |move_idx: usize| -> [f32; 3] {
-            chipload_segment_color(envelope, move_chipload.get(&move_idx).copied())
+        let advance_color = |move_idx: usize| -> [f32; 3] {
+            advance_per_tooth_segment_color(band, move_advance.get(&move_idx).copied())
         };
 
         let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
@@ -629,7 +634,7 @@ impl ToolpathGpuData {
                         });
                     }
                     _ => {
-                        let c = chipload_color(i);
+                        let c = advance_color(i);
                         cut_verts.push(LineVertex {
                             position: p0,
                             color: c,
@@ -714,35 +719,41 @@ impl ToolpathGpuData {
     }
 }
 
-/// Map a per-move effective chip thickness against an LUT envelope to a
-/// segment colour. Pure function — no GPU state — kept free-standing so
-/// it's unit-testable without a wgpu device.
-fn chipload_segment_color(envelope: Option<&Range<f64>>, ct: Option<f64>) -> [f32; 3] {
-    let Some(env) = envelope else {
+/// Map a per-move achieved advance per tooth against a vendor chipload
+/// band to a segment colour. Pure function — no GPU state — kept
+/// free-standing so it's unit-testable without a wgpu device.
+///
+/// **Where the band comparison lives.** The five classes and their
+/// thresholds moved to `rs_cam_core::feeds::VendorChiploadBand::classify`
+/// on 2026-08-08, so the same classification the A-1 two-arc fixture
+/// asserts on is the one that paints the viewport. This function is now
+/// only the class → RGB map, which is the part that is genuinely a viz
+/// concern. The RGB triples are unchanged.
+fn advance_per_tooth_segment_color(
+    band: Option<&VendorChiploadBand>,
+    observed: Option<AdvancePerToothMm>,
+) -> [f32; 3] {
+    let Some(band) = band else {
         return [0.40, 0.40, 0.40];
     };
-    let Some(ct) = ct else {
+    let Some(observed) = observed else {
         return [0.25, 0.25, 0.30];
     };
-    let cl_min = env.start;
-    let cl_max = env.end;
-    if ct < cl_min {
+    match band.classify(observed) {
         // Under-engaged — rubbing risk.
-        [0.20, 0.40, 0.90]
-    } else if ct < cl_min * 1.1 {
-        // Just above cl_min: blend blue → green.
-        let t = ((ct - cl_min) / (cl_min * 0.1).max(1e-9)).clamp(0.0, 1.0) as f32;
-        [
-            0.20 + (0.00 - 0.20) * t,
-            0.40 + (0.85 - 0.40) * t,
-            0.90 + (0.30 - 0.90) * t,
-        ]
-    } else if ct < cl_max * 0.9 {
-        [0.20, 0.85, 0.30]
-    } else if ct <= cl_max {
-        [1.00, 0.60, 0.10]
-    } else {
-        [0.95, 0.20, 0.20]
+        ChiploadBandClass::BelowBand => [0.20, 0.40, 0.90],
+        // Just above the floor: blend blue → green.
+        ChiploadBandClass::JustAboveFloor => {
+            let t = band.floor_blend_fraction(observed) as f32;
+            [
+                0.20 + (0.00 - 0.20) * t,
+                0.40 + (0.85 - 0.40) * t,
+                0.90 + (0.30 - 0.90) * t,
+            ]
+        }
+        ChiploadBandClass::Within => [0.20, 0.85, 0.30],
+        ChiploadBandClass::NearCeiling => [1.00, 0.60, 0.10],
+        ChiploadBandClass::AboveBand => [0.95, 0.20, 0.20],
     }
 }
 
@@ -1118,45 +1129,95 @@ pub fn tool_profile_preview_vertices(
 mod tests {
     use super::*;
 
+    /// The six colour cases, byte-identical to the pre-2026-08-08
+    /// assertions (band 0.05–0.10, the same five probe values). Only the
+    /// *quantity* being classified changed at Checkpoint H; **no RGB
+    /// triple and no threshold moved**, and these tests are the pin on
+    /// that claim.
+    fn probe_band() -> VendorChiploadBand {
+        VendorChiploadBand::from_advance_range(&(0.05..0.10))
+    }
+
     #[test]
-    fn chipload_color_no_envelope_is_grey() {
-        let c = chipload_segment_color(None, Some(0.05));
+    fn advance_color_no_band_is_grey() {
+        let c = advance_per_tooth_segment_color(None, Some(AdvancePerToothMm::new(0.05)));
         assert_eq!(c, [0.40, 0.40, 0.40]);
     }
 
     #[test]
-    fn chipload_color_no_sample_is_dim_grey() {
-        let env = 0.05..0.10;
-        let c = chipload_segment_color(Some(&env), None);
+    fn advance_color_no_sample_is_dim_grey() {
+        let c = advance_per_tooth_segment_color(Some(&probe_band()), None);
         assert_eq!(c, [0.25, 0.25, 0.30]);
     }
 
     #[test]
-    fn chipload_color_below_min_is_blue() {
-        let env = 0.05..0.10;
-        let c = chipload_segment_color(Some(&env), Some(0.04));
+    fn advance_color_below_min_is_blue() {
+        let c = advance_per_tooth_segment_color(
+            Some(&probe_band()),
+            Some(AdvancePerToothMm::new(0.04)),
+        );
         assert_eq!(c, [0.20, 0.40, 0.90]);
     }
 
     #[test]
-    fn chipload_color_within_band_is_green() {
-        let env = 0.05..0.10;
-        let c = chipload_segment_color(Some(&env), Some(0.075));
+    fn advance_color_within_band_is_green() {
+        let c = advance_per_tooth_segment_color(
+            Some(&probe_band()),
+            Some(AdvancePerToothMm::new(0.075)),
+        );
         assert_eq!(c, [0.20, 0.85, 0.30]);
     }
 
     #[test]
-    fn chipload_color_near_max_is_orange() {
-        let env = 0.05..0.10;
-        let c = chipload_segment_color(Some(&env), Some(0.095));
+    fn advance_color_near_max_is_orange() {
+        let c = advance_per_tooth_segment_color(
+            Some(&probe_band()),
+            Some(AdvancePerToothMm::new(0.095)),
+        );
         assert_eq!(c, [1.00, 0.60, 0.10]);
     }
 
     #[test]
-    fn chipload_color_above_max_is_red() {
-        let env = 0.05..0.10;
-        let c = chipload_segment_color(Some(&env), Some(0.12));
+    fn advance_color_above_max_is_red() {
+        let c = advance_per_tooth_segment_color(
+            Some(&probe_band()),
+            Some(AdvancePerToothMm::new(0.12)),
+        );
         assert_eq!(c, [0.95, 0.20, 0.20]);
+    }
+
+    /// A-2 screenshot sentry, automated half: **the colour and the gate
+    /// verdict cannot disagree**, because both read one classification of
+    /// one quantity. Walking a value across the band must produce the
+    /// class sequence the gate's own bounds imply, in order, with no
+    /// class reachable from two disjoint value regions.
+    #[test]
+    fn colour_classes_are_monotonic_across_the_band() {
+        let band = probe_band();
+        let mut seen: Vec<ChiploadBandClass> = Vec::new();
+        let mut v = 0.0_f64;
+        while v <= 0.15 {
+            let c = band.classify(AdvancePerToothMm::new(v));
+            if seen.last() != Some(&c) {
+                assert!(
+                    !seen.contains(&c),
+                    "class {c:?} recurs after leaving it — the colour scale is not monotonic \
+                     in the displayed quantity, so a colour would not identify a band position"
+                );
+                seen.push(c);
+            }
+            v += 0.0005;
+        }
+        assert_eq!(
+            seen,
+            vec![
+                ChiploadBandClass::BelowBand,
+                ChiploadBandClass::JustAboveFloor,
+                ChiploadBandClass::Within,
+                ChiploadBandClass::NearCeiling,
+                ChiploadBandClass::AboveBand,
+            ]
+        );
     }
 
     #[test]

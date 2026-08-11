@@ -123,7 +123,7 @@ pub fn draw(
             // SpanKind filter — hides cut segments by their innermost
             // SpanKind (Entry / LeadOut / LinkBridge / DressupArtifact).
             // Only takes effect in Palette color mode; the Engagement /
-            // Chipload modes don't read spans.
+            // Advance-per-tooth modes don't read spans.
             let f = &mut viewport.span_kind_filter;
             let any_hidden = !f.all_visible();
             ui.menu_button(
@@ -176,7 +176,7 @@ pub fn draw(
                     .selected_text(match viewport.toolpath_color_mode {
                         ToolpathColorMode::Normal => "Palette",
                         ToolpathColorMode::Engagement => "Engagement",
-                        ToolpathColorMode::Chipload => "Chipload",
+                        ToolpathColorMode::AdvancePerTooth => "Advance/tooth",
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
@@ -195,11 +195,15 @@ pub fn draw(
                         );
                         ui.selectable_value(
                             &mut viewport.toolpath_color_mode,
-                            ToolpathColorMode::Chipload,
-                            "Chipload",
+                            ToolpathColorMode::AdvancePerTooth,
+                            "Advance/tooth",
                         )
                         .on_hover_text(
-                            "Color each segment by per-sample chipload vs the matched vendor row's window",
+                            "Color each segment by the achieved advance per tooth \
+                             (effective feed \u{00f7} (RPM \u{00d7} flutes)) against the matched \
+                             vendor band \u{2014} the same quantity the tool-load gate observes. \
+                             Blue = below the band, green = within, orange/red = at or above the \
+                             ceiling, grey = no vendor band or no sample.",
                         );
                     });
             });

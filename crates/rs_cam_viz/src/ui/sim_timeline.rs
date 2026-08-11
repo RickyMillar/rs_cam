@@ -417,14 +417,22 @@ fn draw_signal_spine(
 
     let tracks: [SignalTrack; 5] = [
         (
-            "chipload",
-            // Filter air-cut samples (radial_engagement < 0.02) from the
-            // chipload track. Same threshold the gate's verdict uses
+            // Checkpoint H3 (2026-08-08): this track keeps the arc-mean
+            // chip thickness — a real engagement/force signal — but is
+            // **unbanded**, and says which quantity it is. It used to be
+            // labelled "chipload" and shaded with the vendor advance-per-
+            // tooth band, which is a comparison no source supports
+            // (`CHIPLOAD_LITERATURE_VERDICT.md` §2.3). The banded
+            // comparison now lives on the "advance/tooth vs band max"
+            // summary track above, in the band's own unit.
+            "arc-mean chip thickness",
+            // Filter air-cut samples (radial_engagement < 0.02). Same
+            // threshold the gate's verdict uses
             // (`tool_load::chipload::evaluate`). Plotting them shows a
-            // near-zero static line that reads as "static chipload during
+            // near-zero static line that reads as "static chip during
             // air" — visually misleading because air cuts have no real
             // chip. Drawing only meaningful samples lets the eye focus on
-            // the engaged-cut chipload distribution.
+            // the engaged-cut chip distribution.
             |s| {
                 if s.engagement.radial_woc_fraction < 0.02 {
                     None
@@ -433,7 +441,8 @@ fn draw_signal_spine(
                 }
             },
             egui::Color32::from_rgb(230, 200, 60),
-            envelope,
+            // No envelope, on purpose. A shaded band IS a comparison.
+            None,
         ),
         (
             "arc engagement",
@@ -497,23 +506,33 @@ fn draw_signal_spine(
     }
 
     // Summary tier (density Batch 2 — the unlanded half of W3.6): one
-    // metric-resolved track answering "where is it in trouble?" — per-sample
-    // effective chipload normalised by that toolpath's vendor-ceiling
-    // envelope, so 1.0 reads "at the limit" across toolpaths with different
-    // tools. Toolpaths without vendor data contribute nothing here (they're
-    // already pilled as unmodeled in the HUD); the raw per-metric tracks
-    // live one click below.
+    // metric-resolved track answering "where is it in trouble?" — the
+    // per-sample **achieved advance per tooth** normalised by that
+    // toolpath's vendor band ceiling, so 1.0 reads "at the limit" across
+    // toolpaths with different tools. Toolpaths without vendor data
+    // contribute nothing here (they're already pilled as unmodeled in the
+    // HUD); the raw per-metric tracks live one click below.
+    //
+    // Checkpoint H1 (2026-08-08): the numerator used to be
+    // `effective_chip_thickness_mm` — an arc-mean chip thickness over an
+    // advance-per-tooth ceiling. Because the result was *normalised*, it
+    // read as a fraction-of-limit, which is the strongest "trust me"
+    // framing of the three defective surfaces the A-1 census found.
     let has_normalizable = groups
         .iter()
         .any(|g| !g.samples.is_empty() && chipload_envelopes.contains_key(&g.toolpath_id));
     if has_normalizable {
+        let predicted_feeds = &trace_arc.predicted_feeds;
         let summary_fn = |s: &SimulationCutSample| -> Option<f64> {
             if s.engagement.radial_woc_fraction < 0.02 {
                 return None;
             }
-            let chip = s.effective_chip_thickness_mm?;
-            let env = chipload_envelopes.get(&s.toolpath_id)?;
-            (env.end > 0.0).then(|| chip / env.end)
+            let observed =
+                rs_cam_core::tool_load::display::achieved_advance_per_tooth(s, predicted_feeds)?;
+            let band = rs_cam_core::feeds::VendorChiploadBand::from_advance_range(
+                chipload_envelopes.get(&s.toolpath_id)?,
+            );
+            band.fraction_of_ceiling(observed)
         };
         // Band: vendor floor→ceiling in normalised space for the focused
         // TP. Project-wide the burn floor varies per toolpath, so the
@@ -530,7 +549,7 @@ fn draw_signal_spine(
         };
         draw_signal_track(
             ui,
-            "load vs limit",
+            "advance/tooth vs band max",
             &groups,
             summary_fn,
             summary_color,
@@ -648,10 +667,10 @@ fn draw_signal_track(
     // independently so the global cap applies fairly across toolpaths.
     let per_group_cap = (SIGNAL_MAX_POINTS / groups.len().max(1)).max(64);
     // Decimate by **max-per-bucket** rather than stride sampling. Stride
-    // sampling drops single-sample spikes (the chipload trace's full-slot
-    // peaks at every region entry), making the gate's reported peak
-    // invisible on the graph. Max-per-bucket preserves the worst-case
-    // sample per X-bucket, so a single-sample chipload spike at sample
+    // sampling drops single-sample spikes (the advance/tooth trace's
+    // full-slot peaks at every region entry), making the gate's reported
+    // peak invisible on the graph. Max-per-bucket preserves the worst-case
+    // sample per X-bucket, so a single-sample advance/tooth spike at sample
     // 86603 actually appears as a vertical bar in the rendered line.
     let group_points: GroupPoints = groups
         .iter()
@@ -770,8 +789,9 @@ fn draw_signal_track(
             // One Line per toolpath, further split into contiguous runs
             // wherever consecutive surviving samples have a sample-index
             // gap > MAX_LINE_BRIDGE_GAP. A gap means the value_fn returned
-            // None for the in-between samples (e.g. air-cut on chipload,
-            // or zero-DOC on axial DOC) — drawing one Line across the gap
+            // None for the in-between samples (e.g. air-cut on the
+            // advance/tooth track, or zero-DOC on axial DOC) — drawing one
+            // Line across the gap
             // bridges those samples with a misleading diagonal segment.
             // Splitting at the gap makes air-cut sections render as
             // explicit blanks, matching the user's mental model: "samples
@@ -819,7 +839,11 @@ fn draw_signal_track(
                 // glance which segments are breaking the envelope.
                 // Above-max → red (breakage). Below-min → amber (burn).
                 // The clear band between cl_min and cl_max is the safe
-                // chipload zone. Stroke is transparent — fill only.
+                // zone. Stroke is transparent — fill only.
+                //
+                // Only a track whose values are in the band's own unit may
+                // pass an envelope (Checkpoint H3) — today that is the
+                // normalised advance/tooth summary track alone.
                 let transparent = egui::Stroke::new(0.0, egui::Color32::TRANSPARENT);
                 if cl_max < max_y {
                     let breakage_top = max_y.max(cl_max);
@@ -1888,7 +1912,7 @@ fn nearest_marker_tooltip(
                         ChipSide::High => "BreakageRisk",
                     };
                     format!(
-                        "chipload {label} peak {:.4}",
+                        "advance/tooth {label} peak {:.4} mm/tooth",
                         triggering.observed_mm_per_tooth
                     )
                 } else if let PowerVerdict::Exceeds { peak_kw, .. } = &verdict.power {
