@@ -525,7 +525,7 @@ fn draw_candidate_row(
 
 fn draw_verdict_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
     ui.horizontal(|ui| {
-        verdict_badge_state(ui, "chipload", verdict.chipload.state());
+        verdict_badge_state(ui, "advance/tooth", verdict.chipload.state());
         verdict_badge_state(ui, "power", verdict.power.state());
         verdict_badge_state(ui, "L/D", verdict.deflection.state());
     });
@@ -704,14 +704,14 @@ fn format_entry_advisory(a: &EntryAdvisory) -> String {
     let gate_phrase = match a.gate {
         GateKind::Chipload => match a.side {
             Some(rs_cam_core::tool_load::verdict::ChipSide::High) => format!(
-                "chipload reached {:.4} ({pct:+.0}% over LUT max {:.4})",
+                "advance/tooth reached {:.4} mm/tooth ({pct:+.0}% over vendor band max {:.4})",
                 a.observed, a.bound,
             ),
             Some(rs_cam_core::tool_load::verdict::ChipSide::Low) => format!(
-                "chipload dropped to {:.4} ({pct:+.0}% under LUT min {:.4})",
+                "advance/tooth dropped to {:.4} mm/tooth ({pct:+.0}% under vendor band min {:.4})",
                 a.observed, a.bound,
             ),
-            None => format!("chipload {:.4}", a.observed),
+            None => format!("advance/tooth {:.4} mm/tooth", a.observed),
         },
         GateKind::Power => format!(
             "power reached {:.2} kW ({pct:+.0}% over available {:.2})",
@@ -735,9 +735,9 @@ fn format_limiting_gate(g: &LimitingGate) -> String {
     let pct = g.overshoot_fraction * 100.0;
     let core = match g.gate {
         GateKind::Chipload => match g.side {
-            Some(ChipSide::High) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
-            Some(ChipSide::Low) => format!("chipload {:.4} ({pct:+.0}%)", g.observed),
-            None => format!("chipload {:.4}", g.observed),
+            Some(ChipSide::High) => format!("advance/tooth {:.4} ({pct:+.0}%)", g.observed),
+            Some(ChipSide::Low) => format!("advance/tooth {:.4} ({pct:+.0}%)", g.observed),
+            None => format!("advance/tooth {:.4}", g.observed),
         },
         GateKind::Power => format!("power {:.2} kW ({pct:+.0}%)", g.observed),
         GateKind::Deflection => format!("defl {:.0} µm ({pct:+.0}%)", g.observed * 1000.0),
@@ -851,7 +851,7 @@ mod tests {
         };
         let s = format_limiting_gate(&g);
         // Wanaka TP 1 case: 0.0707 mm/tooth, 28% over LUT max.
-        assert!(s.contains("chipload"));
+        assert!(s.contains("advance/tooth"));
         assert!(s.contains("0.0707"));
         assert!(
             s.contains("+29") || s.contains("+28"),
@@ -913,7 +913,7 @@ mod tests {
             locality: Some("slot section".to_owned()),
         };
         let s = format_limiting_gate(&g);
-        assert!(s.contains("chipload"));
+        assert!(s.contains("advance/tooth"));
         assert!(
             s.ends_with("— slot section"),
             "locality suffix should append: {s}",

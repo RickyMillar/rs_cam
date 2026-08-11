@@ -53,7 +53,7 @@ pub fn draw(
                 "Capture cutting metrics",
             )
             .on_hover_text(
-                "Records per-sample chipload, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
+                "Records per-sample advance/tooth, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
             );
             if ui
                 .checkbox(&mut capture_trace_all, "Record generator trace")
@@ -1083,7 +1083,7 @@ fn issue_kind_detail(
 
 fn criterion_short_label(kind: CriterionKind) -> &'static str {
     match kind {
-        CriterionKind::Chipload => "chip",
+        CriterionKind::Chipload => "advance/t",
         CriterionKind::Power => "power",
         CriterionKind::Deflection => "defl",
         CriterionKind::DrillChipWelding => "weld",
