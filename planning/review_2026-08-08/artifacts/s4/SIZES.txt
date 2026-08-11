@@ -1,0 +1,13 @@
+ 187557 armA_frozen_gen1.nc
+ 187557 armA_frozen_gen2.nc
+ 187557 armB1_resim_same_cell_gen1.nc
+ 187557 armB1_resim_same_cell_gen2.nc
+ 187557 armB2_resim_alt_cell_gen1.nc
+ 274187 armB2_resim_alt_cell_gen2.nc
+ 187557 armB3_resim_near_cell_gen1.nc
+ 184935 armB3_resim_near_cell_gen2.nc
+ 180147 armB4_drifted_noclip_gen1.nc
+ 180147 armB4_drifted_noclip_gen2.nc
+ 180147 armB4_frozen_noclip_gen1.nc
+ 180147 armB4_frozen_noclip_gen2.nc
+2305052 total
