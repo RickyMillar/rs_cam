@@ -531,13 +531,16 @@ pub fn run_project_command(
             diag.total_runtime_s,
         );
 
-        // Print engagement + peak chipload from simulation trace
+        // Print engagement + peak COMMANDED advance/tooth from the sim trace.
+        // `peak_chipload_mm_per_tooth` is a per-sample peak of the commanded
+        // value, not the gate statistic and not a chip thickness (A-1 census
+        // row N7). Named accordingly since 2026-08-08; the number is unchanged.
         if let Some(sim_result) = session.simulation_result()
             && let Some(trace) = &sim_result.cut_trace
         {
             eprintln!(
                 "Air cutting: {:.1}% of total runtime  |  Avg engagement: {:.2}  |  \
-                 Peak chipload: {:.3} mm/tooth",
+                 Peak commanded advance/tooth: {:.3} mm/tooth",
                 diag.air_cut_pct_of_total_runtime,
                 diag.average_engagement,
                 trace.summary.peak_chipload_mm_per_tooth,

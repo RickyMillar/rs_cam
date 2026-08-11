@@ -399,11 +399,11 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
                 ChipSide::Low => "ChiploadBurnRisk",
                 ChipSide::High => "ChiploadBreakageRisk",
             };
-            parts.push(format!("chipload: EXCEEDS ({label})"));
+            parts.push(format!("advance/tooth: EXCEEDS ({label})"));
         }
         ChiploadVerdict::Unmodeled { reason } => {
             parts.push(format!(
-                "chipload: unmodeled ({})",
+                "advance/tooth: unmodeled ({})",
                 unmodeled_reason_label(reason)
             ));
         }

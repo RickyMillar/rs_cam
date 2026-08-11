@@ -4,9 +4,14 @@
 //! pairs a side-by-side current/recommended comparison with three
 //! machinist-style charts:
 //!
-//! - **Chart A** — chipload vs diameter (the "tool size" axis)
-//! - **Chart B** — chipload vs hardness (the "material" axis)
-//! - **Chart C** — feed vs RPM at constant chipload (the nomogram)
+//! - **Chart A** — advance/tooth vs diameter (the "tool size" axis)
+//! - **Chart B** — advance/tooth vs hardness (the "material" axis)
+//! - **Chart C** — feed vs RPM at constant advance/tooth (the nomogram)
+//!
+//! Every quantity these charts plot is a **commanded** advance per tooth,
+//! `feed / (rpm · flutes)` — the modal is a pre-simulation surface and has
+//! no measured value to show. The achieved figure lives on the properties
+//! panel's operating-point card, after a sim. Checkpoint H2, 2026-08-08.
 //!
 //! The modal re-derives [`FeedsExplain`] from the live session every
 //! frame; per-row Apply buttons route through `AppEvent::ApplyFeedsField`.
@@ -141,7 +146,7 @@ fn draw_spindle_strategy_row(
             .radio(current == SpindleStrategy::MatchChart, "Match chart")
             .on_hover_text(
                 "Use the LUT row's chart-published RPM verbatim. \
-                 Tightest match to the chipload envelope vendors tested at.",
+                 Tightest match to the vendor band's own test conditions.",
             )
             .clicked()
         {
@@ -150,12 +155,12 @@ fn draw_spindle_strategy_row(
         if ui
             .radio(
                 current == SpindleStrategy::MaxSpeed,
-                "Max speed (constant chipload)",
+                "Max speed (constant advance/tooth)",
             )
             .on_hover_text(format!(
                 "Push RPM up to the spindle ceiling ({:.0} RPM × \
                  {:.0}% headroom), scaling feed proportionally to \
-                 keep chipload constant. Capped by vendor rpm_max \
+                 keep the commanded advance/tooth constant. Capped by vendor rpm_max \
                  when published, and by a {:.1}× hard limit over the \
                  chart RPM. Power-limit derate still applies on top \
                  — if the higher operating point exceeds spindle \
@@ -547,7 +552,7 @@ fn draw_comparison_card(
                 .show(ui, events);
                 woc_row(ui, current, explain, toolpath_id, events);
                 CompareRow::new(
-                    "Chipload",
+                    "Commanded advance/tooth",
                     Some(current.chipload_mm()),
                     Some(explain.recommended.chip_load_mm),
                     " mm/tooth",
@@ -806,7 +811,7 @@ fn draw_engaged_diameter_row(ui: &mut egui::Ui, current: &CurrentValues, explain
             }),
         )
         .on_hover_text(
-            "The cone shoulder does most of the cutting at depth. Chipload \
+            "The cone shoulder does most of the cutting at depth. Advance/tooth \
              bounds in this modal apply to this engaged diameter, computed \
              at this DOC — not the published tool tip size.",
         );
@@ -833,8 +838,9 @@ fn draw_chipload_min_warning(ui: &mut egui::Ui, current: &CurrentValues, explain
     ui.add_space(2.0);
     ui.label(
         egui::RichText::new(
-            "⚠ Chipload below LUT minimum — risk of rubbing or burning. Feed \
-             too slow, RPM too high, or both. Raise feed or drop RPM.",
+            "⚠ Commanded advance/tooth below the vendor band minimum — risk of \
+             rubbing or burning. Feed too slow, RPM too high, or both. Raise feed \
+             or drop RPM.",
         )
         .small()
         .color(theme::WARNING_MILD),
@@ -855,7 +861,7 @@ fn draw_chipload_engaged_attestation(
     };
     ui.label(
         egui::RichText::new(format!(
-            "Chipload computed at engaged diameter ⌀ {engaged:.2} mm (DOC \
+            "Advance/tooth computed at engaged diameter ⌀ {engaged:.2} mm (DOC \
              {doc:.2} mm), not the tool tip."
         ))
         .small()
@@ -1030,10 +1036,14 @@ fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
                 band_capped_from,
             } => match band_capped_from {
                 None => {
-                    format!("Chipload below rubbing floor: {requested:.3} → {floor:.3} mm/tooth")
+                    format!(
+                        "Commanded advance/tooth below rubbing floor: \
+                         {requested:.3} → {floor:.3} mm/tooth"
+                    )
                 }
                 Some(global) => format!(
-                    "Chipload raised to band ceiling: {requested:.3} → {floor:.3} mm/tooth \
+                    "Commanded advance/tooth raised to vendor band ceiling: \
+                     {requested:.3} → {floor:.3} mm/tooth \
                      (whole band is below the {global:.3} rubbing floor — expect burnishing)"
                 ),
             },
@@ -1119,7 +1129,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
     .show(ui, |ui| {
         // ── Step 1: target chipload ──────────────────────────────────
         ui.label(
-            egui::RichText::new("Target chipload")
+            egui::RichText::new("Target advance/tooth")
                 .small()
                 .strong()
                 .color(theme::TEXT_DIM),
@@ -1177,7 +1187,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
             _ => {
                 ui.label(
                     egui::RichText::new(format!(
-                        "Starting chipload: {:.4} mm/tooth",
+                        "Starting advance/tooth: {:.4} mm/tooth",
                         d.target_chip_load_mm
                     ))
                     .small(),
@@ -1307,7 +1317,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
                         ui,
                         "spindle speedup",
                         d.spindle_speedup,
-                        "MaxSpeed policy — RPM lifted toward spindle ceiling, feed scaled to keep chipload constant",
+                        "MaxSpeed policy — RPM lifted toward spindle ceiling, feed scaled to keep the commanded advance/tooth constant",
                     );
                 }
             });
@@ -1319,7 +1329,7 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
         let derate_pct = ((1.0 - combined) * 100.0).max(0.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("Effective chipload at recommendation:")
+                egui::RichText::new("Commanded advance/tooth at recommendation:")
                     .small()
                     .strong()
                     .color(theme::TEXT_STRONG),
@@ -1473,9 +1483,11 @@ fn draw_chart_c(
                         egui_plot::Text::new(
                             "",
                             egui_plot::PlotPoint::new(end[0] * 0.55, end[1] * 0.5),
-                            egui::RichText::new(format!("VENDOR BAND\n{lo:.4}–{hi:.4} mm/tooth"))
-                                .small()
-                                .color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 220)),
+                            egui::RichText::new(format!(
+                                "VENDOR BAND\n{lo:.4}\u{2013}{hi:.4} mm advance/tooth"
+                            ))
+                            .small()
+                            .color(egui::Color32::from_rgba_unmultiplied(80, 180, 80, 220)),
                         )
                         .anchor(egui::Align2::CENTER_CENTER),
                     );
@@ -1702,7 +1714,8 @@ fn draw_chart_c(
                     String::new()
                 };
                 let label = format!(
-                    "{:.0} RPM · {:.0} mm/min\n→ chipload {cl:.4} mm/tooth · {verdict}{cap_note}",
+                    "{:.0} RPM · {:.0} mm/min\n→ commanded advance/tooth {cl:.4} mm/tooth · \
+                     {verdict}{cap_note}",
                     hover.x.max(0.0),
                     hover.y.max(0.0),
                 );
@@ -1789,19 +1802,19 @@ fn draw_chart_c_legend(ui: &mut egui::Ui, current: &CurrentValues, explain: &Fee
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
             egui::Color32::from_rgb(180, 130, 60),
-            "iso-chipload min",
+            "iso-advance min",
             format!("{lo:.4} mm/tooth"),
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
             egui::Color32::from_rgb(120, 180, 120),
-            "iso-chipload mid",
+            "iso-advance mid",
             format!("{mid:.4} mm/tooth"),
         ));
         entries.push(LegendEntry::new(
             LegendSwatch::Line,
             egui::Color32::from_rgb(200, 90, 90),
-            "iso-chipload max",
+            "iso-advance max",
             format!("{hi:.4} mm/tooth"),
         ));
     }
@@ -2081,7 +2094,7 @@ fn draw_explore_controls(
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new(format!(
-                    "→ chipload {preview_chipload:.4} mm/tooth · {verdict_text}"
+                    "→ commanded advance/tooth {preview_chipload:.4} mm/tooth · {verdict_text}"
                 ))
                 .small()
                 .color(color),
@@ -2190,12 +2203,12 @@ fn chipload_verdict(cl: f64, explain: &FeedsExplain) -> (&'static str, egui::Col
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Chart A — Chipload vs Diameter
+// Chart A — Advance/tooth vs Diameter
 // ────────────────────────────────────────────────────────────────────
 
 fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
     ui.label(
-        egui::RichText::new("Chipload vs Diameter")
+        egui::RichText::new("Advance/tooth vs Diameter")
             .strong()
             .color(theme::TEXT_STRONG),
     );
@@ -2238,7 +2251,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
         .height(180.0)
         .width(360.0)
         .x_axis_label("diameter (mm)")
-        .y_axis_label("chipload mm/tooth")
+        .y_axis_label("commanded advance/tooth (mm)")
         .show(ui, |plot_ui| {
             // Shaded band between min and max — only when both curves
             // share at least two diameters (otherwise the polygon is
@@ -2407,7 +2420,7 @@ fn draw_chart_a(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Chart B — Chipload vs Hardness
+// Chart B — Advance/tooth vs Hardness
 // ────────────────────────────────────────────────────────────────────
 
 /// Mini-legend row used under Charts A and B.
@@ -2447,7 +2460,7 @@ fn draw_mini_chart_legend(ui: &mut egui::Ui, id: &str, entries: &[MiniLegend]) {
 
 fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain) {
     ui.label(
-        egui::RichText::new("Chipload vs Hardness")
+        egui::RichText::new("Advance/tooth vs Hardness")
             .strong()
             .color(theme::TEXT_STRONG),
     );
@@ -2492,7 +2505,7 @@ fn draw_chart_b(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExpla
         .height(180.0)
         .width(360.0)
         .x_axis_label(hardness_axis_label(explain.query_hardness_kind))
-        .y_axis_label("chipload mm/tooth")
+        .y_axis_label("commanded advance/tooth (mm)")
         .show(ui, |plot_ui| {
             if min_pts.len() >= 2 && max_pts.len() >= 2 {
                 let mut band_poly: Vec<[f64; 2]> = min_pts.clone();

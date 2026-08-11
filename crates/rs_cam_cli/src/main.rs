@@ -319,7 +319,7 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
         );
         eprintln!("  Avg engagement: {:.2}", ts.average_engagement);
         eprintln!(
-            "  Peak chipload: {:.3} mm/tooth",
+            "  Peak commanded advance/tooth: {:.3} mm/tooth",
             ts.peak_chipload_mm_per_tooth
         );
         eprintln!("  Peak DOC: {:.1} mm", ts.peak_axial_doc_mm);
