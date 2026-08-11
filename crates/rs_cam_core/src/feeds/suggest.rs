@@ -689,31 +689,34 @@ pub fn feeds_explain_for_operation(
     crate::feeds::explain_feeds(&input)
 }
 
-/// Write a [`FeedsResult`] into an [`OperationConfig`] and enforce the canonical
-/// suggestion invariants. Values are rounded for UI-friendly display before
-/// clamping, matching the historical Suggest-button behaviour.
-///
-/// `context` carries project-level slots (model bbox, upstream leftover,
-/// strategy hint) used by gate-aware Suggest paths — v1.2 reads
-/// `context.model_bbox` to gate the runtime-sanity stepover back-off.
-/// Callers that don't have the context cheaply available should pass
-/// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
-/// when `model_bbox` is `None`.
 /// Which dimensions of a [`FeedsResult`] an apply writes back to the operation.
 ///
 /// W3.1 (IA cleanup) split the single apply into a SPEED path (feed / plunge /
 /// RPM — "how fast") and a CUT-geometry path (stepover / DOC — "how deep/wide,
 /// changes the cut"), so the Feeds UI can offer a speed-only "Apply recommended
 /// speeds" that never silently rewrites the cut geometry.
+///
+/// **There is deliberately no `Field` arm** (Checkpoint I-1, 2026-08-12). The
+/// Feeds & Speeds modal used to carry six per-field `Apply` buttons that wrote
+/// `FeedsExplain::recommended` straight into the operation, skipping
+/// [`enforce_invariants`] entirely; on the shipped default fixture that wrote a
+/// **4.445 mm** depth of cut where this funnel writes **1.27 mm** (3.50×). The
+/// ruling deleted those buttons rather than plumbing a per-field scope, so the
+/// scope vocabulary stays "how fast" / "changes the cut" — the two things a
+/// user can be told about — and every apply resolves the *whole* operating
+/// point before copying a subset back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ApplySubset {
+pub enum ApplyScope {
+    /// feed / plunge / RPM — "how fast". Never touches the cut geometry.
     Speeds,
+    /// stepover / DOC — "changes the cut". Never touches the speeds.
     CutGeometry,
+    /// Both halves, in one transaction.
     Both,
 }
 
 /// Apply the calculator's recommendation to `operation`, writing back only the
-/// requested [`ApplySubset`].
+/// requested [`ApplyScope`].
 ///
 /// The recommended *full* operating point is run through `enforce_invariants`
 /// on a scratch clone — so the feed ↔ chipload ↔ DPP coupling is resolved
@@ -733,7 +736,7 @@ fn apply_feeds_subset(
     material: &Material,
     pass_role: PassRole,
     context: SuggestContext<'_>,
-    subset: ApplySubset,
+    subset: ApplyScope,
 ) -> Vec<SuggestWarning> {
     let mut scratch = operation.clone();
     scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
@@ -767,8 +770,8 @@ fn apply_feeds_subset(
     };
     let warnings = enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
 
-    let write_speeds = matches!(subset, ApplySubset::Speeds | ApplySubset::Both);
-    let write_geometry = matches!(subset, ApplySubset::CutGeometry | ApplySubset::Both);
+    let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
+    let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
     if write_speeds {
         operation.set_feed_rate(scratch.feed_rate());
         operation.set_plunge_rate(scratch.plunge_rate());
@@ -794,6 +797,16 @@ fn apply_feeds_subset(
 
 /// Apply the full recommendation — both speeds and cut geometry. The canonical
 /// suggest funnel (`suggest_for_operation`, CLI, the GUI "Apply all").
+///
+/// Values are rounded for UI-friendly display before clamping, matching the
+/// historical Suggest-button behaviour.
+///
+/// `context` carries project-level slots (model bbox, upstream leftover,
+/// strategy hint) used by gate-aware Suggest paths — v1.2 reads
+/// `context.model_bbox` to gate the runtime-sanity stepover back-off.
+/// Callers that don't have the context cheaply available should pass
+/// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
+/// when `model_bbox` is `None`.
 // W2.1 added the `provenance` out-param (per-field stamping); the funnel
 // legitimately needs op + provenance + result + tool/machine/material +
 // pass_role + context together.
@@ -817,7 +830,7 @@ pub fn apply_feeds_result_to_op(
         material,
         pass_role,
         context,
-        ApplySubset::Both,
+        ApplyScope::Both,
     )
 }
 
@@ -844,7 +857,7 @@ pub fn apply_speeds_to_op(
         material,
         pass_role,
         context,
-        ApplySubset::Speeds,
+        ApplyScope::Speeds,
     )
 }
 
@@ -871,8 +884,239 @@ pub fn apply_cut_geometry_to_op(
         material,
         pass_role,
         context,
-        ApplySubset::CutGeometry,
+        ApplyScope::CutGeometry,
     )
+}
+
+// ── The one application funnel (Checkpoint I, 2026-08-12) ──────────────────
+//
+// A-3's census (`planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md`) found
+// thirteen GUI affordances writing a recommendation into an `OperationConfig`,
+// of which eleven were reachable on a tool × operation pairing the engine had
+// already declared physically unrunnable, and seven wrote the raw calculator
+// output with no clamp, back-off or rounding at all.
+//
+// The repair is structural rather than defensive: the type a *preview* surface
+// holds ([`FeedsPreview`]) carries no method that can write, and the only way
+// to obtain something that can write ([`ApplicableRecommendation`]) is
+// [`FeedsPreview::applicable`], which returns `None` when
+// [`crate::feeds::validate_tool_for_operation`] refused. There is exactly one
+// write function ([`apply`]), and it always runs `enforce_invariants`.
+//
+// EXCLUDED FROM THIS FUNNEL, DELIBERATELY (Checkpoint I-4):
+//
+// - The optimizer's candidate apply (`AppEvent::ApplyOptimizeCandidate`) and
+//   its project batch. Their candidates are whole `OperationConfig` snapshots
+//   that have been **scored against a simulated cut trace end to end** — they
+//   answer to the gate verdicts, not to the pre-simulation feeds calculator,
+//   and re-clamping a sim-verified operating point against a pre-sim estimator
+//   would substitute the weaker evidence for the stronger one.
+// - NOT excluded: the optimizer's single-axis suggestion accept
+//   (`reoptimize_with_axis_override`). That writes an **un-simulated**
+//   suggested value with no clamp, which is the same defect in a second
+//   neighbourhood, so it routes through [`resolve_operation_invariants`].
+
+/// A read-only feeds preview. Infallible by construction — buildable for any
+/// input, including a tool × operation pairing the engine refuses, because
+/// drawing the nomogram for a pairing you would decline to *run* is exactly
+/// what an explanatory surface is for.
+///
+/// It carries no method that writes to an [`OperationConfig`]. The only bridge
+/// from here to a write is [`FeedsPreview::applicable`].
+#[derive(Debug, Clone)]
+pub struct FeedsPreview {
+    explain: crate::feeds::FeedsExplain,
+    refusal: Option<FeedsError>,
+}
+
+impl FeedsPreview {
+    /// Build a preview from a calculator input. Never fails: when
+    /// [`crate::feeds::validate_tool_for_operation`] refuses, the refusal is
+    /// **recorded**, not returned, and the explanation is still computed.
+    pub fn build(input: &FeedsInput<'_>) -> Self {
+        let refusal = crate::feeds::validate_tool_for_operation(input).err();
+        Self {
+            explain: crate::feeds::explain_feeds(input),
+            refusal,
+        }
+    }
+
+    /// The full explanation payload — matched LUT row, sibling rows, machine
+    /// envelope. Display only.
+    pub fn explain(&self) -> &crate::feeds::FeedsExplain {
+        &self.explain
+    }
+
+    /// The recommended operating point. **Display only** — this is the raw
+    /// calculator output, before any clamp or back-off; writing it into an
+    /// operation is the defect this module exists to prevent.
+    pub fn recommended(&self) -> &FeedsResult {
+        &self.explain.recommended
+    }
+
+    /// The refusal, when the tool × operation pairing is physically
+    /// unrunnable. A UI holding a `Some` here must render it *in place of*
+    /// its apply affordances (Checkpoint I-3) — the explanation survives, the
+    /// write becomes impossible.
+    pub fn refusal(&self) -> Option<&FeedsError> {
+        self.refusal.as_ref()
+    }
+
+    /// The only bridge from a preview to a write. `None` exactly when the
+    /// pairing was refused.
+    ///
+    /// The recommendation handed back is `explain().recommended`, which is
+    /// `calculate(input)` — bit-identical to what
+    /// [`feeds_result_for_operation`] returns for the same input, since both
+    /// call the same calculator on the same [`FeedsInput`]. Pinned by
+    /// `preview_recommendation_is_bit_identical_to_validated_recipe`.
+    pub fn applicable(&self) -> Option<ApplicableRecommendation<'_>> {
+        if self.refusal.is_some() {
+            return None;
+        }
+        Some(ApplicableRecommendation {
+            result: std::borrow::Cow::Borrowed(&self.explain.recommended),
+        })
+    }
+}
+
+/// A recommendation that has passed [`crate::feeds::validate_tool_for_operation`].
+///
+/// Constructible **only** via [`FeedsPreview::applicable`] — the field is
+/// private and there is no public constructor — so possession of one is proof
+/// that the pairing validated. It is the sole input to [`apply`].
+#[derive(Debug, Clone)]
+pub struct ApplicableRecommendation<'a> {
+    result: std::borrow::Cow<'a, FeedsResult>,
+}
+
+impl ApplicableRecommendation<'_> {
+    /// The validated operating point.
+    pub fn result(&self) -> &FeedsResult {
+        &self.result
+    }
+
+    /// Replace the two speed axes with an operator-chosen point, keeping the
+    /// rest of the validated recommendation. Backs the modal's
+    /// drag-to-explore apply, whose values come off a chart the operator
+    /// dragged rather than off the calculator.
+    ///
+    /// The chipload band is **dropped** on the returned recommendation, and
+    /// that is load-bearing: `enforce_invariants`'
+    /// `recalibrate_feed_for_chipload` pass short-circuits without a band, so
+    /// the funnel's clamps (plunge-to-feed, machine envelope, the DOC chain)
+    /// still run while the feed the operator explicitly dialled is **not**
+    /// silently re-solved back to the band target. Applying an explored point
+    /// and then having the feed move on its own would be a new instance of
+    /// the defect this funnel closes, not a fix for it.
+    #[must_use]
+    pub fn with_explored_speeds(self, feed_mm_min: f64, rpm: f64) -> Self {
+        let mut owned = self.result.into_owned();
+        owned.feed_rate_mm_min = feed_mm_min.max(1.0);
+        owned.rpm = rpm.max(1.0);
+        owned.chipload_bounds = None;
+        Self {
+            result: std::borrow::Cow::Owned(owned),
+        }
+    }
+}
+
+/// Everything the funnel needs about the world the operation lives in.
+/// Bundled so [`apply`] takes one context parameter rather than five.
+#[derive(Debug, Clone, Copy)]
+pub struct ApplyContext<'a> {
+    pub tool: &'a ToolConfig,
+    pub machine: &'a MachineProfile,
+    pub material: &'a Material,
+    pub pass_role: PassRole,
+    /// Project-level slots (model bbox, stock, policy). Pass
+    /// [`SuggestContext::default()`] when the caller doesn't cheaply have
+    /// them; the funnel enriches it with the recommendation's own LUT band,
+    /// matched row and effective diameter regardless.
+    pub suggest: SuggestContext<'a>,
+}
+
+/// **The single write.** Every apply surface — properties panel, Feeds &
+/// Speeds modal, the modal's project batch, the MCP `apply_feeds` tool, the
+/// CLI — reaches an `OperationConfig` through here, and this always runs
+/// `enforce_invariants`.
+///
+/// Because the only `ApplicableRecommendation` in existence came out of a
+/// [`FeedsPreview`] whose validation succeeded, a refused pairing cannot reach
+/// this function at all; and because there is one function, a write cannot
+/// skip the clamps.
+pub fn apply(
+    rec: &ApplicableRecommendation<'_>,
+    scope: ApplyScope,
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    ctx: ApplyContext<'_>,
+) -> Vec<SuggestWarning> {
+    apply_feeds_subset(
+        operation,
+        provenance,
+        rec.result(),
+        ctx.tool,
+        ctx.machine,
+        ctx.material,
+        ctx.pass_role,
+        ctx.suggest,
+        scope,
+    )
+}
+
+/// Run the funnel's **clamp stage** over an operation that has just been
+/// edited by hand or by the optimizer — an edit that is not a `FeedsResult`
+/// and therefore has nothing for [`apply`] to write.
+///
+/// Checkpoint I-4 routes `reoptimize_with_axis_override` (OPT-005, "accept
+/// this axis suggestion") through here. That path sets one of feed / RPM /
+/// stepover / DOC / scallop height to a value the optimizer *suggested* but
+/// never simulated, and before this it did so with no clamp at all.
+///
+/// The value itself is left alone — no rounding, no feed re-solve. Callers
+/// that want the chipload recalibration must populate
+/// `context.chipload_bounds`; with the default context that pass
+/// short-circuits, which is what an accepted operator choice should get: the
+/// safety clamps, not a substitute number.
+pub fn resolve_operation_invariants(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    enforce_invariants(operation, tool, machine, material, pass_role, context)
+}
+
+/// Build a [`FeedsPreview`] for an operation in a project context — the
+/// preview counterpart of [`feeds_result_for_operation`] and the entry point
+/// every apply surface should use.
+///
+/// Prefer this over [`feeds_explain_for_operation`] anywhere an Apply button
+/// might live: the explain payload alone cannot tell a UI that the pairing was
+/// refused, which is precisely how the modal came to offer eleven writes on
+/// operations the engine had declined to run.
+pub fn feeds_preview_for_operation(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: &MachineProfile,
+    workholding: WorkholdingRigidity,
+    lut: &VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
+) -> FeedsPreview {
+    let input = feeds_input_for_operation(
+        operation,
+        tool,
+        material,
+        machine,
+        workholding,
+        lut,
+        spindle_strategy,
+    );
+    FeedsPreview::build(&input)
 }
 
 /// Apply drill-cycle defaults that depend on tool diameter + material —
@@ -2551,6 +2795,248 @@ mod tests {
         assert_eq!(geom.spindle_rpm(), base.spindle_rpm());
         assert!(geom_prov.feed_rate.is_none());
         assert!(geom_prov.spindle_rpm.is_none());
+    }
+
+    // ── Checkpoint I funnel (A-4, 2026-08-12) ──────────────────────────
+
+    /// Fixture pair for the funnel tests: the shipped default Ø6.35 2-flute
+    /// flat end mill on a Pocket (valid pairing) and on a Scallop (refused —
+    /// a zero tip radius makes `2·√(2·R·h − h²)` undefined).
+    fn preview_of(op: &OperationConfig, tool: &ToolConfig) -> FeedsPreview {
+        feeds_preview_for_operation(
+            op,
+            tool,
+            &Material::default(),
+            &MachineProfile::default(),
+            WorkholdingRigidity::Medium,
+            &EMBEDDED_LUT,
+            crate::feeds::SpindleStrategy::default(),
+        )
+    }
+
+    fn preview_for(op_type: OperationType) -> FeedsPreview {
+        preview_of(
+            &OperationConfig::new_default(op_type),
+            &ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        )
+    }
+
+    /// The funnel's central claim: an `ApplicableRecommendation` exists iff
+    /// the pairing validated, and it is the only way to reach [`apply`].
+    #[test]
+    fn preview_refuses_to_yield_an_applicable_recommendation_when_validation_refused() {
+        let refused = preview_for(OperationType::Scallop);
+        assert!(
+            matches!(
+                refused.refusal(),
+                Some(FeedsError::WrongToolForOperation { .. })
+            ),
+            "fixture no longer refuses: {:?}",
+            refused.refusal()
+        );
+        assert!(
+            refused.applicable().is_none(),
+            "a refused preview handed out a writable recommendation — the funnel's \
+             only structural guarantee has been lost"
+        );
+        // The explanation survives the refusal — that is the point of I-3.
+        assert!(refused.recommended().feed_rate_mm_min > 0.0);
+
+        let ok = preview_for(OperationType::Pocket);
+        assert!(ok.refusal().is_none());
+        assert!(ok.applicable().is_some());
+    }
+
+    /// [`FeedsPreview::applicable`] hands back `explain().recommended`, and
+    /// the panel's [`feeds_result_for_operation`] hands back `calculate()` of
+    /// the same input. Both surfaces must therefore be applying the identical
+    /// recipe — this pins that, so "the modal and the panel now agree" rests
+    /// on a measured equality rather than on reading two call sites.
+    #[test]
+    fn preview_recommendation_is_bit_identical_to_validated_recipe() {
+        let op = OperationConfig::new_default(OperationType::Pocket);
+        let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        let recipe = feeds_result_for_operation(
+            &op,
+            &tool,
+            &Material::default(),
+            &MachineProfile::default(),
+            WorkholdingRigidity::Medium,
+            &EMBEDDED_LUT,
+            crate::feeds::SpindleStrategy::default(),
+        )
+        .expect("pocket + flat end mill is a valid pairing");
+        let preview = preview_for(OperationType::Pocket);
+        let previewed = preview.recommended();
+        for (name, a, b) in [
+            ("feed", recipe.feed_rate_mm_min, previewed.feed_rate_mm_min),
+            (
+                "plunge",
+                recipe.plunge_rate_mm_min,
+                previewed.plunge_rate_mm_min,
+            ),
+            ("rpm", recipe.rpm, previewed.rpm),
+            ("doc", recipe.axial_depth_mm, previewed.axial_depth_mm),
+            ("woc", recipe.radial_width_mm, previewed.radial_width_mm),
+        ] {
+            assert_eq!(a.to_bits(), b.to_bits(), "{name}: {a} vs {b}");
+        }
+    }
+
+    /// [`apply`] with each scope must be indistinguishable from the three
+    /// legacy entry points it now backs — the funnel was extended, not
+    /// duplicated, and no recipe number may move (A-4 bar 2).
+    #[test]
+    fn apply_scope_matches_the_legacy_entry_points_exactly() {
+        let (base, _unused, tool, machine, material, role) = split_fixture();
+        let preview = preview_of(&base, &tool);
+        let result = preview.recommended().clone();
+        let rec = preview.applicable().expect("valid pairing");
+        let ctx = ApplyContext {
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            pass_role: role,
+            suggest: SuggestContext::default(),
+        };
+
+        for scope in [
+            ApplyScope::Both,
+            ApplyScope::Speeds,
+            ApplyScope::CutGeometry,
+        ] {
+            let mut legacy_op = base.clone();
+            let mut legacy_prov = crate::feeds::FeedsProvenance::default();
+            let legacy = match scope {
+                ApplyScope::Both => apply_feeds_result_to_op,
+                ApplyScope::Speeds => apply_speeds_to_op,
+                ApplyScope::CutGeometry => apply_cut_geometry_to_op,
+            };
+            legacy(
+                &mut legacy_op,
+                &mut legacy_prov,
+                &result,
+                &tool,
+                &machine,
+                &material,
+                role,
+                SuggestContext::default(),
+            );
+
+            let mut funnel_op = base.clone();
+            let mut funnel_prov = crate::feeds::FeedsProvenance::default();
+            apply(&rec, scope, &mut funnel_op, &mut funnel_prov, ctx);
+
+            assert_eq!(
+                funnel_op.feed_rate(),
+                legacy_op.feed_rate(),
+                "{scope:?} feed"
+            );
+            assert_eq!(
+                funnel_op.plunge_rate(),
+                legacy_op.plunge_rate(),
+                "{scope:?} plunge"
+            );
+            assert_eq!(
+                funnel_op.spindle_rpm(),
+                legacy_op.spindle_rpm(),
+                "{scope:?} rpm"
+            );
+            assert_eq!(
+                funnel_op.as_params().stepover(),
+                legacy_op.as_params().stepover(),
+                "{scope:?} woc"
+            );
+            assert_eq!(
+                funnel_op.as_params().depth_per_pass(),
+                legacy_op.as_params().depth_per_pass(),
+                "{scope:?} doc"
+            );
+        }
+    }
+
+    /// The explored-point apply keeps the operator's dragged feed/RPM (the
+    /// chipload recalibration must not re-solve them) while still taking the
+    /// clamps — here the plunge-to-feed clamp, exercised by dragging the feed
+    /// below the operation's plunge rate.
+    #[test]
+    fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
+        let (base, _result, tool, machine, material, role) = split_fixture();
+        let preview = preview_of(&base, &tool);
+        let rec = preview
+            .applicable()
+            .expect("valid pairing")
+            .with_explored_speeds(120.0, 14_000.0);
+        let mut op = base.clone();
+        op.set_plunge_rate(900.0);
+        let mut prov = crate::feeds::FeedsProvenance::default();
+        let warnings = apply(
+            &rec,
+            ApplyScope::Speeds,
+            &mut op,
+            &mut prov,
+            ApplyContext {
+                tool: &tool,
+                machine: &machine,
+                material: &material,
+                pass_role: role,
+                suggest: SuggestContext::default(),
+            },
+        );
+        assert_eq!(op.feed_rate(), 120.0, "the explored feed was re-solved");
+        assert_eq!(op.spindle_rpm(), Some(14_000), "the explored RPM moved");
+        assert_eq!(
+            op.plunge_rate(),
+            120.0,
+            "plunge was not clamped to the explored feed — the funnel's clamps did not run"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::PlungeClampedToFeed { .. })),
+            "the clamp ran silently: {warnings:?}"
+        );
+        // Cut geometry untouched by a Speeds-scoped apply.
+        assert_eq!(op.as_params().stepover(), base.as_params().stepover());
+        assert_eq!(
+            op.as_params().depth_per_pass(),
+            base.as_params().depth_per_pass()
+        );
+    }
+
+    /// [`resolve_operation_invariants`] is the funnel entry for a single-axis
+    /// operator/optimizer edit (Checkpoint I-4, OPT-005). It must clamp, and
+    /// it must NOT rewrite the accepted value.
+    #[test]
+    fn resolve_operation_invariants_clamps_an_axis_edit_without_re_solving_it() {
+        let (mut op, _result, tool, machine, material, role) = split_fixture();
+        // Optimizer suggests a stepover wider than the cutter.
+        op.set_stepover(tool.diameter * 3.0);
+        op.set_feed_rate(1234.0);
+        let warnings = resolve_operation_invariants(
+            &mut op,
+            &tool,
+            &machine,
+            &material,
+            role,
+            SuggestContext::default(),
+        );
+        assert_eq!(
+            op.as_params().stepover(),
+            Some(tool.diameter),
+            "stepover was not clamped to the cutter diameter"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::StepoverClampedToToolDiameter { .. })),
+            "clamp ran without a warning: {warnings:?}"
+        );
+        assert_eq!(
+            op.feed_rate(),
+            1234.0,
+            "the accepted feed was re-solved; the default context must leave it alone"
+        );
     }
 
     #[test]
