@@ -348,8 +348,9 @@ impl EmbeddedCamServer {
         match result {
             Ok(s) => s,
             Err(e) => {
+                // Compact, matching `json_str` — Checkpoint L-4.
                 let err_json = serde_json::json!({"error": e});
-                serde_json::to_string_pretty(&err_json)
+                serde_json::to_string(&err_json)
                     .unwrap_or_else(|_| format!("{{\"error\": \"{e}\"}}"))
             }
         }

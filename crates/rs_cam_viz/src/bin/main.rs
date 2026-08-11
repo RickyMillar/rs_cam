@@ -33,11 +33,20 @@ fn main() -> eframe::Result {
 /// escape hatches (`generation_status`, `cancel_generation`) now report the
 /// parked state when it happens; this says it before it does.
 fn warn_if_wayland_can_park_the_frame_loop() {
-    // winit picks Wayland when WAYLAND_DISPLAY is set unless WINIT_UNIX_BACKEND
-    // overrides it, so "not overridden away from wayland" is the condition.
-    let backend_forced_elsewhere =
-        std::env::var("WINIT_UNIX_BACKEND").is_ok_and(|backend| backend != "wayland");
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() || backend_forced_elsewhere {
+    // winit picks Wayland whenever WAYLAND_DISPLAY is set. That is the whole
+    // condition.
+    //
+    // This used to also suppress the warning when `WINIT_UNIX_BACKEND` was
+    // set to anything but "wayland" — which made the warning **silently
+    // wrong**: winit removed that variable in 0.29 ("in favor of standard
+    // WAYLAND_DISPLAY and DISPLAY variables", winit-0.30.13
+    // src/changelog/v0.29.md:134) and this workspace is on 0.30.13, so
+    // setting it changed nothing except whether the user was warned. Wave
+    // B-1 measured that exact trap on 2026-08-08: a run with
+    // WINIT_UNIX_BACKEND=x11 set came up on Wayland anyway (sctk_adwaita in
+    // the log) and its first MCP call never returned, killed at 162.6 s;
+    // unsetting WAYLAND_DISPLAY instead, the same call answered in 0.515 s.
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
         return;
     }
     tracing::warn!(
@@ -47,7 +56,9 @@ fn warn_if_wayland_can_park_the_frame_loop() {
          handoff is dispatched from a repaint. They will stall indefinitely with \
          the compute lane reporting idle. `generation_status` reports this as \
          `frame_loop.healthy: false`. To remove the hazard entirely, relaunch with \
-         WINIT_UNIX_BACKEND=x11, where redraws are client-driven."
+         WAYLAND_DISPLAY unset so winit picks X11/XWayland, where redraws are \
+         client-driven. Setting WINIT_UNIX_BACKEND does NOT work — winit removed \
+         that variable in 0.29 and this build is on 0.30."
     );
 }
 
