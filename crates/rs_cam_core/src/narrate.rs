@@ -254,6 +254,13 @@ impl<'a> ToolpathNarrationContext<'a> {
             deprecated_dial: _,
             derived_stepovers: _,
             claims_reference: _,
+            //  - stock_snapshot:    S-4 provenance, not a part measurement.
+            //    It answers "were these two generations handed the same
+            //    stock", which is a question about a COMPARISON, not about
+            //    the toolpath narration describes. A reader with one
+            //    narration in front of them has nothing to compare it to.
+            //    Read it off `ToolpathStats` directly.
+            stock_snapshot: _,
         } = stats;
 
         self.truncated_core_mm2 = *truncated_core_mm2;
