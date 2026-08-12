@@ -495,10 +495,11 @@ async fn every_mcp_enqueue_also_fires_the_event_loop_waker() {
 
     let pokes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let sink = Arc::clone(&pokes);
-    let server = EmbeddedCamServer::new(tx, ctx, control, published_cache())
-        .with_waker(Arc::new(move || {
+    let server = EmbeddedCamServer::new(tx, ctx, control, published_cache()).with_waker(Arc::new(
+        move || {
             sink.fetch_add(1, Ordering::SeqCst);
-        }));
+        },
+    ));
 
     assert_eq!(pokes.load(Ordering::SeqCst), 0, "nothing enqueued yet");
 

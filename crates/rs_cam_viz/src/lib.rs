@@ -131,7 +131,8 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
     //    (`eframe/src/native/run.rs:465`), so exit still asks the loop to
     //    exit rather than calling `std::process::exit(0)`. Quit semantics are
     //    unchanged.
-    let event_loop = winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event().build()?;
+    let event_loop =
+        winit::event_loop::EventLoop::<eframe::UserEvent>::with_user_event().build()?;
 
     // G-LV.1 / C5: the wakeup that survives a park. `EventLoopProxy` is `Send`
     // but NOT `Sync` — eframe wraps its own in an `Arc<Mutex<_>>` for exactly

@@ -30,6 +30,9 @@ checkpoint.
 | B-3 | dispatch decoupling design → Checkpoint M | COMPLETE — Checkpoint M RULED 2026-08-12 (M-A full composition; reordering accepted; screenshot_gui refuses under park; heartbeat dies only with six-driver fixes; floor re-measured sans gdb) |
 | B-4 | execute M + six frame-coupled drivers | STOPPED AT STEP-4 GATE 2026-08-13, AWAITING CHECKPOINT N (`834c789`→`289e0ff`; steps 1–4 landed behaviour-preserving; **the park is a PRESENT BLOCK below winit** — main thread inside FIFO buffer-acquire, no callbacks at all, off-frame pump provably wired and never runs; M-6 answered: the ~1 s floor WAS the gdb artefact, real floor 12–16 ms; steps 5–7 not built, G-LV.1 stays open, heartbeat stays per M-5) |
 | B-5 | G-RESULTS GUI/CLI parity | NOT STARTED |
+| N-2 | PresentMode park A/B → Checkpoint O | COMPLETE 2026-08-13, AWAITING CHECKPOINT O (`4789446`/`e761c00`; **Mailbox = no park at all** — fixpoint 4.4 s + screenshot 3.79 s on a minimised window vs control timeouts; FIFO is the block; **Immediate hard-crashes** (surface caps `[Mailbox, Fifo]`); Mailbox cost: unthrottled repaint 81%/core @144 fps vs 18%/core @60; XWayland exempt from the STRAND not the park — B-4's steps 1–4 answer 240/240 @0.2 ms there; rec: flip under `--mcp` only, request AutoNoVsync, observable negotiated mode) |
+| N-3 | interactive park session (operator-in-the-loop) | AGREED AT N, NOT SCHEDULED — decides whether the flip fixes the incident or only the reproduction; also owns tearing-by-eye |
+| INTAKE | cosmetic: parked screenshot shows a toolpath marked OFF reported as "generating" in the status bar (N-2 incidental, uninvestigated) → S-5 pool | OPEN 2026-08-13 |
 | S-1 | X-VAC population census | NOT STARTED |
 | S-2 | /refresh-lit-matrix (DR-URL, DR-WS) | NOT STARTED |
 | S-3 | A2D-165 matrix cells | NOT STARTED |
