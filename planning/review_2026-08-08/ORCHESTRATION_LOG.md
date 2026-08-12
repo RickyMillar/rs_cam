@@ -2277,3 +2277,222 @@ surfaced no reason to prefer a different one, and the measured 0.999×
 band-minimum landing held on both Adaptive3d fixtures after the
 retirement; (c) note F-MISSAE is now a dependency of (c)'s optimizer
 route.
+
+---
+
+## A-6 — LUT selection delta + boundary contract + G-CHIP-ULP, 2026-08-13
+
+Status: COMPLETE, research only. **Headline: F-LUT2 as written names the
+smaller of two axes, and the axis A-5's 1.273× actually lives on is the
+operation-family reroute, not the resolver entry point.**
+
+Commit(s), parent `e66962ae`:
+- `3ac55fcf` — the two instruments + `artifacts/a6/` (3 captures).
+- this entry + `LUT_BOUNDARY_EVIDENCE.md` (the Checkpoint K package).
+
+Deliverable: `planning/review_2026-08-08/LUT_BOUNDARY_EVIDENCE.md`.
+Territory held: `crates/rs_cam_core/tests/lut_resolver_census_a6.rs`
+(new), `crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs` (new),
+`planning/review_2026-08-08/LUT_BOUNDARY_EVIDENCE.md`, `artifacts/a6/`,
+this entry. **Zero `src` diff.**
+
+Question and pre-registered bars: plan §2 A-6, plus the two intake rows
+folded in by the launch prompt. Bars set before starting: (a) the census
+is number-preserving — no recipe number may move; (b) A-5's 1.273× is
+**attributed**, not re-quoted; (c) every rider is measured through the
+real gate, not a re-implementation of it; (d) each new pin states its own
+retirement condition, because they pin the *defective* state; (e) the two
+red intake tests are diagnosed and left red.
+
+Fixture/population/resolution: 252-row embedded LUT. Census sweep
+**18 144 queries** (8 op families × 6 geometry classes × 3 pass roles ×
+7 materials × 6 diameters × 3 flute counts) plus **3 024** reroute pairs.
+G-CHIP-ULP on the B3 reference row (Ø1 tapered ball, 2F, 5.26°, scallop
+finish, hard maple) — the canonical band-below-the-floor case the ledger
+calls a trivial fixture. Round-trip census 291 RPM × 4 flute counts =
+1 164 combinations. Gate populations are single-sample **by design**
+(the fixture isolates boundary arithmetic); every gate call is checked to
+return a judged verdict, never `Unmodeled`, so no verdict here is read
+off an empty population.
+
+### Result — F-LUT2, both axes
+
+**Axis 1, the entry points (F-LUT2 verbatim).** 141 / 18 144 queries
+diverge — **3 of 48** (family, geometry-class) cells, 0.78 %. Cells:
+Adaptive/Flat 9, Adaptive/Bull 6, Trace/VBit60 126. **Every divergence is
+one class**: Suggest matched an RPM-only row, so `chip_load_mm` is 0,
+`feeds/mod.rs:1068` falls back to the formula chipload and
+`chipload_bounds` is `None`. `DifferentBothBanded` = **0**.
+`GateBlind` = **0**. The envelope candidate set is a strict subset of the
+geometry one, which is now pinned as an invariant rather than assumed.
+
+**Axis 2, the reroute — and the re-attribution.** `routed_lookup_family`
+is applied gate-side only; Suggest's family comes straight off
+`op_family_to_lut`. **489 / 3 024** pairs resolve to different rows, band
+maximum ratio **×0.1602 … ×6.1658, median ×0.9798**, plus **756** gate
+refusals (ProjectCurve on bull-nose / V-bit) of which **378** leave
+Suggest holding a banded recommendation where the gate declined to judge.
+
+A-5's 1.273× is reproduced from the reroute alone and attributed two
+ways: both entry points return the **same row** for both queries, and the
+two bands differ in **shape** (max/min **1.842** vs **1.719**) — which no
+scale factor can do. `amana-flat-hardwood-adaptive-6000-2f`
+0.038–0.070 vs `amana-flat-hardwood-pocket-6000-2f` 0.032–0.055.
+
+**This changes what (a) is asking.** Unifying the resolver would touch
+0.78 % of the surface and none of A-5's finding. The question that
+matters is whether the *query* is built once.
+
+### Result — G-CHIP-ULP, four riders, all reproduced
+
+1. **Floor==ceiling.** B3 derated band 0.005762689177314920 ..
+   0.011525378354629830; global floor 0.025; `effective_rubbing_floor`
+   returns **the band maximum**; Suggest emits rpm 18500 / feed
+   426.438999 → commanded fpt **exactly** the band ceiling, with
+   `ChiploadClampedToFloor { band_capped_from: Some(0.025) }`.
+2. **The 1-ulp `Exceeds`.** Suggest multiplies, the gate divides.
+   Round-trip lands strictly ABOVE the bound in **89 / 1164 (7.6 %)** for
+   the ledger's own band max (and below in 81); **72 / 1164 (6.2 %)** for
+   the live B3 band. Through the real gate with the feed parked on the
+   gate's own ceiling: **`Exceeds(High)` at 12 of 181 RPM values**, every
+   trip `delta = 1.734723475976807e-18` (**1 ulp**), printing identically
+   to the bound at 9 dp. `ToleranceBands::default()` is all-zeros, so
+   there is no epsilon to absorb it.
+3. **No binding-constraint name.** `BindingConstraint` has six variants
+   and none denotes the rubbing-floor clamp. `ChiploadMin` is
+   `band.min × rpm × flutes` — **2.000×** away from the clamp's value on
+   this fixture, at the opposite end of the band — while its own
+   docstring calls it "the rubbing floor". Rule 5.
+4. **Cross-gate boundary semantics — the ledger is WRONG here, and the
+   correction matters.** Measured across chipload (both sides), power,
+   deflection, drill plunge feed (both sides) and peck adequacy: **every
+   shipped gate is `Within` at exact equality.** The live `Exceeds` was
+   rider 2 — 1 ulp above, not equal. The real asymmetries are that the
+   drill gates carry **no** epsilon dial while the three milling gates
+   each carry one defaulting to zero, and that **only** the chipload
+   observation reaches its bound through a multiply/divide round trip.
+   A contract phrased as "make the comparisons agree" would be a no-op.
+
+### Result — the resolution rider
+
+The gate queries the LUT at `tool.lookup_diameter_at(peak steady-state
+axial DOC)` and derates by `peak_doc ÷ that diameter`. Peak axial DOC is
+a **dexel measurement**, so the cell moves it. Measured on the reference
+cutter across a DOC sweep 0.35 → 3.0 mm: band maximum 0.011046 ..
+0.012610, a **14.16 %** span in the bound a verdict is compared against.
+W10-LV's own pair (queried Ø 1.2202 → 1.2841 here) moves the band
+**−2.58 %**, and **one identical feed of 437.4140 mm/min reads `Within`
+at the coarse DOC and `Exceeds(High)` at the fine one** — exactly the
+ledger's "coarse Within at 97.8 %, fine Exceeds". Note the two terms
+(`D^0.61` and the piecewise DOC derate) pull in **opposite** directions,
+so the net is signed and not predictable from either law alone.
+
+### Result — the two intake reds, diagnosed (not fixed)
+
+**G-SUB1MM — stale expected value, one shipped change wide.**
+`vendor_lut_sub_1mm.rs:78` expects `chipload_diameter_scale == 0.5 /
+row_d`. Measured: applied scale **0.323823250279165** =
+`(0.5/3.175)^0.61`; the test's expectation **0.157480314960630** is
+exactly `chipload_diameter_ratio_raw`, the field added in the same wave
+that moved the exponent, documented as existing "precisely so they cannot
+be conflated now that they differ". **This test is that conflation.**
+Neither the law nor the extrapolation flag is implicated — the test's
+other two assertions pass, and `is_extrapolated` reads the raw ratio,
+which the exponent move did not touch.
+
+**G-LIT-IPE — a real literature-vs-LUT conflict with an EMPTY feasible
+set.** Cell `flat_3mm_pocket_ipe_extreme` expects fpt 0.013–0.027; the
+matched row (`freud-solid-carbide-eighth-hardwood`) yields a scaled band
+**0.0297–0.0744**. The two **do not intersect** — the vendor band's floor
+is above the literature band's ceiling — and the anti-test fires above
+0.030, so the only satisfying fpt is `[0.0297, 0.030]`, a 1 % sliver.
+No tuning of either scaling law closes a gap of that shape.
+
+Two further facts the disposition needs: (i) the anti-test's **premise is
+false at HEAD** — Ipe Ø3 commands 0.0437 against oak Ø3's 0.0740, i.e.
+**0.59×**, so the `Janka^-0.5` law *is* firing and Ipe does **not** match
+oak; as an absolute bar the anti-test duplicates the `feed_per_tooth`
+band row that is already Outside at moderate, so **the cell's critical
+verdict is produced by a redundant instrument measuring the wrong
+thing**; (ii) `D^0.61` is **not** implicated — the diameter scale here is
+0.9660 (3.0 mm query against a 3.175 mm row). Also uncovered and
+unclaimed: the same cell's `plunge/feed` is **−61.1 %** below its
+expected fraction, which is not a chipload question and wants its own
+row.
+
+### Verification (focused commands + exact known-red state)
+
+- `cargo test -p rs_cam_core --test lut_resolver_census_a6` — 3 passed,
+  2 ignored (the two reporting instruments).
+- `cargo test -p rs_cam_core --test chipload_boundary_g_chip_ulp` —
+  **6 passed, 0 failed**.
+- `cargo clippy -p rs_cam_core --all-targets -- -D warnings` — clean.
+- `cargo fmt --check --all` — clean. Formatted with `cargo fmt -p
+  rs_cam_core` on the two new files only, to avoid the rustfmt cascade.
+- **The full core suite was NOT re-run, deliberately.** This wave has a
+  zero-byte `src` diff — it adds two test files and nothing else — so the
+  known-red set (`G-LIT-IPE`, `G-XFP` ×3, `G-SUB1MM`,
+  `wanaka_suggest_baseline`) cannot have moved by construction, and both
+  diagnosed reds were run individually and reproduce their documented
+  failure modes. Stated rather than claimed as a pass.
+- Slot discipline: bracketed `pgrep -af "carg[o]"` + `free -g` before
+  every launch; waited out a rust-analyzer `cargo check --workspace` at
+  the start rather than running concurrently. Disk 112 GB free
+  throughout. **No release build.** All captures unbounded (`> file`,
+  never `| tail`) — A-5i's truncation defect is on the record and was not
+  repeated.
+- `planning/airrun_2026-06-01/wanaka.toml` was never read, staged or
+  modified. `.mcp.json` shows modified in the tree and is **not mine** —
+  untouched and unstaged.
+
+### NOT EXERCISED / NOT FIXED — owner and re-open condition
+
+- **NOT EXERCISED: any rendered GUI surface** (§0 rule 3). Every number
+  is core-library. The heat-map, the modal's clamp wording, and the
+  `Exceeds` string on a floor-clamped op are owed screenshots. Owner:
+  A-7 — it changes what those surfaces print. Recorded as a gap.
+- **NOT EXERCISED: a full-pipeline G-CHIP-ULP reproduction.** The fixture
+  drives the gate with a synthetic one-sample trace, deliberately, to
+  isolate the boundary arithmetic. The live wanaka reading is therefore
+  **quoted from the ledger, not re-measured**. Owner: A-7's live
+  validation. Blocker: needs a GUI session on a wanaka-scale project.
+- **NOT EXERCISED: `routed_lookup_family` called directly** — it is
+  `pub(crate)`, so the reroute census MIRRORS its two rules. The function
+  is pinned inside the crate (`chipload.rs:1325-1374`, four unit tests).
+  If (a4) lands, delete the mirror in favour of the unified query
+  builder.
+- **NOT MEASURED: whether the reroute is *correct*.** The census measures
+  that the two sides disagree and by how much; it does not adjudicate
+  whether Adaptive3d should be judged against a Pocket envelope. The
+  reroute's justification is documented (G16 §10) and the recommendation
+  keeps it.
+- **NOT FIXED: G-LIT-IPE, G-SUB1MM.** Both left red as instructed; both
+  pre-existing, neither a TD3 regression.
+- **NOT DIAGNOSED: the Ipe cell's `plunge/feed −61.1 %`.** No owner.
+
+Next action / checkpoint request: **Checkpoint K requested**, seven
+questions in `LUT_BOUNDARY_EVIDENCE.md` §6 — (a) resolver **and** the
+newly-attributed reroute axis (recommend **a3 + a4**, a4 sequenced as its
+own red-first, number-moving change); (b) the boundary contract
+(recommend **b1**, a relative epsilon stated on `ChipBounds` as a method,
+extended to the drill gates which have no dial at all); (c) clamped ≠
+exceeds (recommend **c2**, the existing `burn_advisory` shape — and note
+**(c) is only correct with (b1)**, else it demotes genuine exceedances);
+(d) the clamp as a binding constraint (recommend **d2** — put it on
+`FeedExplanation`, not in the modulator's map, because the modulator
+never evaluated it; plus the free `ChiploadMin` docstring correction);
+(e) G-LIT-IPE (recommend **e2 now, e1 as the resolution**; reject e4);
+(f) G-SUB1MM (recommend **f1**, exponent-agnostic, no ruling really
+needed); (g) the bundled CLI `--adaptive-feed-modulation` default
+(recommend **g1 + g2's disclosure**, with g2 alone acceptable as a
+holding position if the operator does not want CLI numbers to move now).
+
+Orchestrator actions: (a) put K to the operator; (b) **amend the F-LUT2
+ledger row** — it names the entry points, and the measured consequence is
+on the reroute; the row as written would have sent A-7 at the wrong axis;
+(c) **amend the G-CHIP-ULP row's fourth rider** — "boundary semantics
+disagree across gates" is not what the code does; (d) note the Ipe cell's
+`plunge/feed` finding needs a row of its own; (e) note that the
+resolution-dependence rider means **the sim cell belongs beside every
+chipload verdict**, the same discipline already required for collision
+counts.
