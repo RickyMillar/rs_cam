@@ -5049,9 +5049,41 @@ name = "chipload_below_rubbing_floor"
 expr = "feed_rate / (rpm * flutes) < 0.012"
 severity = "critical"
 
+# Checkpoint K (e2), 2026-08-13 — RELATIVE, as its name always claimed.
+#
+# This anti-pattern is named for a relative failure ("the Ipe
+# recommendation came out the same as an oak one") and was written as an
+# ABSOLUTE bar, `fpt > 0.030`. As an absolute bar it duplicated this
+# cell's own `expected.feed_per_tooth` row — already Outside at +33.4 %,
+# already reported at moderate — so the cell's `critical` verdict was
+# produced by a redundant instrument measuring the wrong thing.
+#
+# Measured at the current revision (`LUT_BOUNDARY_EVIDENCE.md` §4.1):
+# Ipe Ø3 2F pocket lands 0.0437 mm/tooth against oak's 0.0740 — a ratio
+# of 0.59, i.e. the `Janka^-0.5` law IS firing and the premise the old
+# name asserted is false. Measured again through this harness's own two
+# runs on 2026-08-13: `fpt / ref_fpt` = **0.5898240291751307**. 0.85
+# leaves generous room: a law that fired at even a quarter of its
+# present strength would still clear.
+#
+# The reading is not printed on the report row (the expression is a
+# comparison, so the row shows the boolean). To see the ratio, evaluate
+# `fpt / ref_fpt` bare — that is how the number above was taken.
+#
+# The genuine finding this cell detects is NOT hidden by the change: the
+# fpt band row stays Outside, and it is a literature-vs-shipped-LUT
+# disagreement about Ø3 hardwood chipload with an EMPTY feasible set
+# (cell band 0.013–0.027 vs matched vendor band 0.0297–0.0744 — the
+# vendor floor is above the literature ceiling). Its resolution is
+# Checkpoint K (e1): re-verify these sources via `/refresh-lit-matrix`.
+[cell.reference]
+material = "white_oak"
+janka_lbf = 1290
+label = "oak"
+
 [[cell.anti_patterns]]
 name = "ipe_micro_matches_oak_micro_chipload"
-expr = "feed_rate / (rpm * flutes) > 0.030"
+expr = "fpt / ref_fpt > 0.85"
 severity = "critical"
 
 
