@@ -1,0 +1,20 @@
+{"call": "frames_probe", "phase": "before", "frames": 70, "healthy": true, "last_frame_age_s": 0.012570316, "wall_s": 0.0018274784088134766}
+{"call": "generation_status", "wall_s": 0.00040078163146972656, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "project_summary", "wall_s": 0.0012171268463134766, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "list_toolpaths", "wall_s": 0.002408266067504883, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "inspect_stock", "wall_s": 0.003220081329345703, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "inspect_machine", "wall_s": 0.029850244522094727, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "inspect_model", "wall_s": 0.014863729476928711, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "generation_status", "wall_s": 0.0008976459503173828, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "project_summary", "wall_s": 0.015813589096069336, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "list_toolpaths", "wall_s": 0.016357898712158203, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "inspect_stock", "wall_s": 0.01710033416748047, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "inspect_machine", "wall_s": 0.018139123916625977, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "inspect_model", "wall_s": 0.015752315521240234, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "generation_status", "wall_s": 0.0006773471832275391, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "project_summary", "wall_s": 0.015737056732177734, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "list_toolpaths", "wall_s": 0.017166852951049805, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "inspect_stock", "wall_s": 0.014837265014648438, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "inspect_machine", "wall_s": 0.01646256446838379, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "inspect_model", "wall_s": 0.017093181610107422, "repeat": 2, "phase": "census", "served_from": "live"}
+{"call": "frames_probe", "phase": "after", "frames": 84, "healthy": true, "last_frame_age_s": 0.01673945, "wall_s": 0.0006308555603027344}
