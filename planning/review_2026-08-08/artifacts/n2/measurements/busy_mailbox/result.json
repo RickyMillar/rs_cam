@@ -1,0 +1,26 @@
+{
+ "meta": {
+  "phase": "idle",
+  "mode_requested": "mailbox",
+  "platform": "wayland",
+  "minimize_after": 200000,
+  "binary": "/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/n2_head/target/debug/rs_cam_gui",
+  "when": "2026-08-13T01:32:06"
+ },
+ "rows": [
+  {
+   "phase": "idle",
+   "mode": "mailbox",
+   "window_s": 30.000478267669678,
+   "cpu_s": 24.42,
+   "cpu_pct_of_core": 81.39870232107754,
+   "frames_in_window": 4315,
+   "fps": 143.83104034211695,
+   "threads": 47,
+   "utime_stime_ticks": [
+    2334,
+    108
+   ]
+  }
+ ]
+}
