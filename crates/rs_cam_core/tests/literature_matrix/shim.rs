@@ -335,13 +335,51 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
 /// rigidity clamps (`enforce_invariants`), drill defaults, and the
 /// `apply_feeds_result_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
+    let material = resolve_material(&cell.inputs.material)?;
+    let mut snapshot = run_cell_in_material(cell, &material)?;
+
+    // Checkpoint K (e2) — the comparison arm. Same tool, same operation,
+    // same machine, one material swapped, so a `ref_*`-bearing invariant
+    // measures the material law and nothing else.
+    //
+    // A reference run that refuses binds NOTHING rather than a zero: the
+    // expression evaluator then reports `UnknownVar` and the row lands
+    // **NA**, which is the honest outcome. A relative test whose
+    // denominator could not be computed has not passed.
+    if let Some(reference) = &cell.reference {
+        let ref_material = resolve_material(&reference.material)?;
+        if let Ok(r) = run_cell_in_material(cell, &ref_material) {
+            snapshot
+                .bindings
+                .insert("ref_fpt".into(), r.effective_chip_load_mm);
+            snapshot
+                .bindings
+                .insert("ref_chipload".into(), r.effective_chip_load_mm);
+            snapshot.bindings.insert("ref_rpm".into(), r.rpm);
+            snapshot
+                .bindings
+                .insert("ref_feed_rate".into(), r.feed_rate_mm_min);
+            snapshot
+                .bindings
+                .insert("ref_plunge_rate".into(), r.plunge_rate_mm_min);
+        }
+    }
+    Ok(snapshot)
+}
+
+/// [`run_cell`] with the material supplied explicitly — the whole body
+/// of the original function, so the comparison arm cannot drift from the
+/// primary one.
+fn run_cell_in_material(
+    cell: &LiteratureCell,
+    material: &Material,
+) -> Result<ShimSnapshot, ShimError> {
     // Validate user-facing tool_class × operation pairing first, before
     // the shim flattens tool_class into ToolType (which loses the drill
     // identity). Matches the GUI / CLI / MCP tool-picker contract.
     validate_tool_class_for_operation(&cell.inputs.tool_class, &cell.inputs.operation)?;
     let tool_type = resolve_tool_type(cell)?;
     let (op_family, pass_role) = resolve_operation(&cell.inputs.operation)?;
-    let material = resolve_material(&cell.inputs.material)?;
     let machine = resolve_machine(cell.inputs.machine_class.as_deref());
     let lut = feeds::embedded_vendor_lut();
 
@@ -368,7 +406,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
         flute_length: tool.cutting_length,
         shank_diameter: Some(tool.shank_diameter),
         tool_geometry: tool_def.to_geometry_hint(),
-        material: &material,
+        material,
         machine: &machine,
         operation: op_family,
         pass_role,
@@ -405,7 +443,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
         &result,
         &tool,
         &machine,
-        &material,
+        material,
         pass_role,
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
@@ -427,7 +465,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // generic feed/RPM/DOC fields. The GUI calls this via
     // `suggest_for_operation`; the shim opts into the same step so
     // drill cells see the same peck depth a user would.
-    apply_drill_defaults(&mut op_clamped, &tool, &material);
+    apply_drill_defaults(&mut op_clamped, &tool, material);
 
     let snapshot = snapshot_from_clamped(cell, &result, &op_clamped);
     Ok(snapshot)

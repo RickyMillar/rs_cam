@@ -41,6 +41,41 @@ pub struct LiteratureCell {
 
     #[serde(default)]
     pub anti_patterns: Vec<AntiPattern>,
+
+    /// **Checkpoint K (e2), 2026-08-13 — a comparison cell.**
+    ///
+    /// When present, the shim runs the cell a SECOND time with the
+    /// material swapped for this one and binds the result under
+    /// `ref_*` (`ref_fpt`, `ref_rpm`, `ref_feed_rate`,
+    /// `ref_plunge_rate`), so an invariant or anti-pattern can state a
+    /// **relative** property.
+    ///
+    /// Why the schema needed this: `ipe_micro_matches_oak_micro_chipload`
+    /// is named for a relative failure ("the Ipe recommendation came out
+    /// the same as the oak one") and was written as an absolute bar
+    /// (`fpt > 0.030`). As an absolute bar it duplicated the cell's own
+    /// `feed_per_tooth` band row — already Outside, already reported —
+    /// and produced the cell's `critical` verdict from a redundant
+    /// instrument measuring the wrong thing. Measured, the Ipe
+    /// recommendation is **0.59×** the oak one, i.e. the `Janka^-0.5`
+    /// law IS firing and the anti-test's stated premise is false at the
+    /// current revision (`LUT_BOUNDARY_EVIDENCE.md` §4.1).
+    #[serde(default)]
+    pub reference: Option<ReferenceMaterial>,
+}
+
+/// The comparison arm of a relative cell. Everything except the
+/// material is held at the cell's own inputs — same tool, same
+/// operation, same machine — so the ratio isolates the material.
+#[derive(Debug, Deserialize)]
+pub struct ReferenceMaterial {
+    /// Material key, resolved by the shim's `resolve_material`.
+    pub material: String,
+    #[serde(default)]
+    pub janka_lbf: Option<f64>,
+    /// Human label for report output, e.g. `"oak"`.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

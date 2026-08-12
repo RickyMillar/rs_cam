@@ -74,8 +74,44 @@ fn sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
         "expected to scale up from a >=1mm row, got row diameter {}",
         result.row_diameter_mm
     );
-    let expected_scale = 0.5 / result.row_diameter_mm;
-    assert!((result.chipload_diameter_scale - expected_scale).abs() < 1e-6);
+    // **G-SUB1MM, fixed at Checkpoint K (f1), 2026-08-13.**
+    //
+    // This assertion used to read `chipload_diameter_scale` against
+    // `0.5 / row_diameter_mm` and had been red since 2026-08-06, when
+    // `CHIPLOAD_DIAMETER_EXPONENT` moved from 1.0 to 0.61 (B-lit §4.1).
+    // At an exponent of 1.0 the *raw transfer ratio* and the *applied
+    // scale* coincide, so one field could stand for both; at 0.61 they
+    // are 0.157480 and 0.323823 and the test was asserting the raw ratio
+    // against the applied one. The crate already publishes both,
+    // precisely so they cannot be conflated
+    // (`LookupResult::chipload_diameter_ratio_raw`) — this test was the
+    // conflation that field was added to prevent.
+    //
+    // Re-pointed at the raw ratio, plus a PROPERTY assertion relating
+    // the two. Asserting the relation rather than the value is what
+    // makes this survive the next exponent move; A-6's diagnosis
+    // (`LUT_BOUNDARY_EVIDENCE.md` §5) is that neither the law nor the
+    // extrapolation flag was ever implicated here.
+    let expected_ratio = 0.5 / result.row_diameter_mm;
+    assert!(
+        (result.chipload_diameter_ratio_raw - expected_ratio).abs() < 1e-6,
+        "raw diameter transfer ratio must be the bare 0.5/{:.4} = {expected_ratio:.9}; got {:.9}",
+        result.row_diameter_mm,
+        result.chipload_diameter_ratio_raw
+    );
+    let expected_scale = result
+        .chipload_diameter_ratio_raw
+        .powf(rs_cam_core::feeds::vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT);
+    assert!(
+        (result.chipload_diameter_scale - expected_scale).abs() < 1e-12,
+        "applied scale must be raw^CHIPLOAD_DIAMETER_EXPONENT ({:.9}^{} = {expected_scale:.9}); \
+         got {:.9}. If these ever coincide again the exponent went back to 1.0 — say so, \
+         because the two fields then stop being distinguishable and this test stops \
+         measuring the conflation it exists for.",
+        result.chipload_diameter_ratio_raw,
+        rs_cam_core::feeds::vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT,
+        result.chipload_diameter_scale
+    );
 }
 
 #[test]
