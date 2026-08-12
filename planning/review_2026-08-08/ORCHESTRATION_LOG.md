@@ -1583,3 +1583,237 @@ NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
 - **The DropCutter residual** (arm B `Exceeds` at 1.69×/1.62×). Owner: census F-3 / C-2 / C-5, unchanged by this wave. Re-open condition: none needed — it is a separate ledgered row and this wave only measured it.
 
 Next action / checkpoint request: **Checkpoint J requested**, five questions in `ARC_FIT_RATIO_EVIDENCE.md` §7 — J-1 the disposition (recommend **(a) now, (c) as the destination**); J-2 whether Suggest keeps *any* automatic feed-up, given the calculator already lands the commanded advance/tooth on the derated band minimum unaided (0.999× on both Adaptive3d fixtures) and the rubbing case pass 8 was built for was stated in the deleted arc-mean quantity; J-3 **the load-bearing one** — modulation is off by default, so does adopting (c) mean flipping that default or accepting that an unmodulated recommendation is only 2/4 clean; J-4 whether the two DropCutter residuals block (a); J-5 the scope of the retirement (delete the table and the two warning variants, or keep the variants for the simulation-backed path to reuse). Orchestrator actions: (a) put J to the operator; (b) note the deliverable produced **new evidence for F-LUT2** (the 1.273× band divergence) that A-6/Checkpoint K should absorb; (c) note **F-MISSAE now gates disposition (c)'s optimizer route** — if J rules (c), K's F-MISSAE question becomes a dependency, not a parallel item.
+
+---
+
+## N-2 — PresentMode A/B under the park rig (executes Checkpoint N-2), 2026-08-13
+
+Status: **MEASURED, NO DEFAULT FLIPPED — evidence package back to the operator,
+as N-2 requires.** The FIFO attribution is confirmed by measurement and the
+block is removed by `Mailbox`: both bars B-4 could not reach — the step-5
+`generate_all` fixpoint on a non-painting window, and a `screenshot_gui` — are
+**met** on a minimised window. The interactive cost is real (4.5× CPU under
+continuous repaint) and one cost, tearing, is **not measurable headlessly** and
+is not claimed. Checkpoint O requested below.
+
+Commit(s): `47894461` (the rig-only `RS_CAM_PRESENT_MODE` lever + `artifacts/n2/`
++ raw measurements), this entry + `planning/review_2026-08-08/PRESENT_MODE_AB.md`.
+**No default changed, no gate, threshold, fingerprint or recommendation number
+touched, no core file touched.**
+
+Parent/revision measured: branch `tech-debt-3` at `5c4e847c`, **debug** binary
+(release forbidden in-wave). Built in a detached worktree at that revision with
+its own target directory — see "Verification" for why, and for the disposal of
+the stale-compile-error ghost the brief asked about first.
+
+Executor: N-2 agent, over its **own** `rs_cam_gui --mcp` instances. The
+operator's live GUI was never driven; no `mcp__rs-cam__*` call was made.
+`planning/airrun_2026-06-01/wanaka.toml` was read once to make a scratch copy
+and is byte-unchanged.
+
+Question and pre-registered bars: Checkpoint N-2, binding — measure
+`Mailbox`/`Immediate` under B-4's park rig, measure the interactive cost, return
+the package **before** any flip. Bars I set before starting: (a) **record the
+mode actually negotiated, never the mode requested** — wgpu resolves `Auto*`
+against surface caps and hard-errors on an unsupported explicit mode, and those
+are different failure modes; (b) a park is **proved per measurement** (frame
+counter static across reads separated by more than `PARKED_FRAME_LOOP`, plus
+`healthy:false`) and reported `parked: false` honestly when it does not happen;
+(c) the blocked/unblocked distinction is taken from `/proc/<pid>/syscall`, with
+the counters as corroboration and not as the primary evidence; (d) anything I
+cannot measure headlessly is named as such and routed to the operator's eyes
+rather than approximated.
+
+Fixture/population/resolution: `artifacts/n2/present_mode_ab.py`, which imports
+B-1's transport and B-4's call lists so the population is identical to the wave
+it extends — 6 cheap calls (5 snapshot-backed + `generation_status`, the
+off-loop control) plus 2 **pure frame-door** calls that hang rather than
+degrade. Park lever: B-4's `RS_CAM_MINIMIZE_AFTER_FRAMES`. Six park arms
+(Wayland × {AutoVsync, Fifo, Mailbox, AutoNoVsync, Immediate}, X11 × AutoVsync),
+plus two step-5 arms, two screenshot arms, and six interactive-cost arms.
+Fixpoint fixture: a trimmed **two-op cascade** cut from a scratch copy of wanaka
+(Pin Drill fresh-stock → Rivers `from_remaining_stock`), so the fixpoint has a
+real simulate-round handoff at low cost; sim cell 0.6 mm. Machine: AMD Radeon
+890M (RADV), Mesa 25.2.8, GNOME Wayland, 60 Hz.
+
+Render/artifact paths: `planning/review_2026-08-08/PRESENT_MODE_AB.md`;
+`artifacts/n2/measurements/<arm>/{result.json,syscall.jsonl,gui_stderr.log}`;
+`artifacts/n2/measurements/SUMMARY.txt`;
+`artifacts/n2/evidence/screenshot_gui_minimised_mailbox.png`.
+
+Result (fact), interpretation, and uncertainty:
+
+- **Fact — the surface supports `[Mailbox, Fifo]`, quoted from the process that
+  died asking for a third.** `Immediate` is **not** a fallback here: it is a
+  panic inside `Surface::configure` before the first frame
+  (`wgpu-core-29.0.3/src/device/resource.rs:4963-4981`). That makes the
+  enumeration a measurement rather than an assumption, and it makes "flip the
+  default to an explicit mode" a **crash risk on unknown hardware**, which is a
+  fact the option space needs.
+- **Fact — the block travels with FIFO, not with the word "Auto".** Explicit
+  `fifo` reproduces the park with the same signature as `AutoVsync`
+  (`poll(1 fd, ∞)` in 135/135 samples, frame-door calls timing out at 15 s).
+  `AutoNoVsync` negotiates `Mailbox` here and behaves identically to explicit
+  `Mailbox`. B-4's attribution is confirmed from the outside.
+- **Fact — the A/B, one variable.** AutoVsync parked: `frames` static 263,
+  `pumps` static 276, `wakeups` **0→21 climbing**, five reads at 0.752 s
+  **served_from snapshot**, both frame-door reads **15.0 s TIMEOUT**, syscall
+  `poll(1 fd, ∞)` **405/405**. Mailbox minimised: `frames` 1371→1391, `pumps`
+  3595→3615, **every** call live at **1.6–1.9 ms** including both frame-door
+  calls, syscall `epoll_wait` **355/355**, `healthy: true` — **no park at all**.
+- **Fact — step 5's bar, which B-4 recorded as unreachable, is met.**
+  `generate_all {fixpoint, 0.6 mm}` on a minimised window under Mailbox:
+  `ok: true, generated: 2, rounds: 2, simulations: 1, errors: []`, **4.4 s**.
+  The AutoVsync control on the same fixture: the 90 s wait budget exhausted with
+  `frames`/`pumps` **static at 1525/1524** and 360/360 syscall samples in the
+  infinite poll — and a reply reading "Generation was NOT cancelled and
+  continues in the background" for work that never dispatched. That reply is the
+  2026-08-07 incident's exact signature and it is unchanged at HEAD.
+- **Fact — `screenshot_gui` served a full render from a minimised window.**
+  644,918 bytes, 1400×900, 3,108 distinct colours, **3.79 s** under Mailbox;
+  **60 s timeout, 0 bytes** under AutoVsync. This is the call B-3 §6 lists as
+  the one that genuinely needs a rendered frame, and it is what both Lane A
+  capture obligations are blocked on.
+- **Fact — the interactive cost, two workloads.** Idle (no traffic, heartbeat
+  only): **5.20% → 7.03%** of one core, frame rate unchanged at ~11.9/s.
+  Continuous repaint: AutoVsync **59.9 fps at 18.27%** of a core against Mailbox
+  **143.8 fps at 81.40%** — 4.46× the CPU for 2.4× the frames, on a 60 Hz panel.
+  Pacing: AutoVsync p50 **16.97 ms** (p95 18.01, max 34.01 — one dropped frame),
+  a textbook vsync lock; Mailbox p50 **2.01 ms** (p95 4.00) — not smoother,
+  **unthrottled**, producing ~7 frames per refresh and discarding six.
+- **Fact — X11 is not exempt from the park, only from the strand.** A minimised
+  X11 window also stops painting (`frames` static 252, `healthy:false`) but the
+  main thread returns to the event loop: **240/240** calls live at **0.2 ms**,
+  both frame-door calls included, `pumps` 255→466 climbing in lock-step with
+  `wakeups`. That is B-4's steps 1–4 working exactly as designed. It also makes
+  `bin/main.rs:29`'s "X11 has no such gate: its redraws are client-driven"
+  (echoed in the runtime warning at `:60`) **imprecise** — X11 does stop painting; what it does not do is strand
+  dispatch. Reported, **not edited**: production text belongs to whichever wave
+  acts on this package.
+- **Interpretation — B-3 §3.1's model was not merely incomplete on this
+  machine; with FIFO removed it did not park the loop at all.** A minimised
+  surface under Mailbox keeps producing frames, so the compositor frame-callback
+  gate is not independently fatal here. I deliberately do **not** resolve which
+  of two mechanisms explains that (mutter still delivering callbacks to a
+  minimised surface, versus Mesa's Mailbox path never leaving winit's
+  frame-callback state in `Requested`) — distinguishing them needs a Wayland
+  protocol trace this wave did not take. The operative fact is the one measured:
+  with FIFO gone, both the paint path and the dispatch path survive a minimise.
+- **Interpretation — the recommendation is a scoped flip, not a global one.**
+  The hazard lives in agent sessions and so does the tolerance for unthrottled
+  rendering, because nobody is watching those pixels. See "Next action" for the
+  three options and their prices.
+- **Uncertainty, stated.** (a) **Tearing is not measured and is not
+  claimable** — it is a scanout artefact and every capture path in this repo
+  reads a completed frame buffer, which by construction cannot contain one. On
+  *this* surface the non-FIFO option is Mailbox, the queued non-tearing mode
+  (the tearing one, Immediate, is unsupported and crashes on request), so the
+  expectation is no tearing here — an expectation from the mode's definition,
+  not a measurement. It needs the operator's eyes. (b) **One compositor, one
+  park state**: GNOME Wayland, *minimised*. The incident's states — occluded,
+  unfocused, explicitly "visible" — remain N-3's question, and if they do not
+  share this mechanism a flip fixes a reproduction and not the incident.
+  (c) **Compositor-side minimised state is not independently verifiable** (no
+  client-visible signal; winit returns `None`); what I have is that the
+  identical command from the identical code path blocked in **4/4**
+  FIFO-family runs (`auto_vsync` ×3, explicit `fifo` ×1) and did not in **4/4**
+  non-FIFO runs (`mailbox` ×3, `auto_no_vsync` ×1). Inference, labelled. (d) CPU figures are
+  from a **debug** binary — only the ratios transfer. (e) The pacing arms' own
+  CPU readings include the instrument's polling load and are not the cost
+  comparison; the idle-phase table is. (f) `[Mailbox, Fifo]` is *this* surface's
+  capability list and does not generalise.
+
+Red-first evidence / fingerprints changed: **none, and none was owed.** This is
+a measurement wave: no gate, threshold, severity, recommendation number,
+fingerprint or default moved, and no `rs_cam_core` file was touched. The one
+production edit is a lever whose unset value is byte-identical to the shipped
+`WgpuConfiguration::default()`, so a build with it and a build without it
+configure the same surface. The wave's "red" is the AutoVsync control arm, taken
+on the same binary as every other arm so it cannot be confused with a different
+build: 405/405 samples in the infinite poll, six frame-door timeouts, and a
+`generate_all` that reports itself as running while `frames` and `pumps` do not
+move.
+
+Verification (focused commands + exact known-red state):
+
+- **The brief's first question, settled: `rs_cam_viz` compiles clean at HEAD
+  `5c4e847c`.** Built pristine, no local edits, in an isolated worktree:
+  `Finished dev profile in 52.70s`, zero errors. The editor diagnostics claiming
+  `host::MCP_WAKE_PASS_NR` missing at `lib.rs:97` and a missing `wakeups` field
+  at `mcp_bridge.rs:163` were **stale**; both symbols resolve at HEAD. Nothing
+  of B-4's was touched.
+- **Why a worktree, and the red I did not act on.** My first build in the shared
+  tree failed with 4 errors in `rs_cam_core` — `predict_observed_chipload_mm`,
+  `ObservedChiploadPrediction` and `ArcFitRatioSource` deleted from
+  `feeds/predict.rs` while `feeds/suggest.rs` still called them. Attributed
+  before acting: both files were **uncommitted, modified in the shared tree, and
+  moved again between two consecutive `git status` calls** — the parallel A-5i
+  wave executing Checkpoint J mid-edit, not HEAD and not my territory. Nothing
+  of theirs was touched, reverted or stashed; a multi-hour measurement simply
+  needs a binary that cannot move under it.
+- `cargo clippy -p rs_cam_viz --all-targets -- -D warnings` — **clean, zero
+  diagnostics**; the only output is the pre-existing future-incompat note for
+  transitive `nom 3.2.1` / `quick-xml 0.22.0`.
+- `cargo test -p rs_cam_viz -q` — **244 lib + 14 + 14 `mcp_escape_hatches` +
+  11 `wizard_e2e`, 0 failed.** Same counts B-4 left; nothing added, nothing
+  moved.
+- `cargo fmt --check --all` — **red at HEAD, in two files that are not mine and
+  in lines I did not touch**: `rs_cam_viz/src/lib.rs` (the `event_loop` binding
+  B-4 added in `9f08ac2`) and `rs_cam_viz/tests/mcp_escape_hatches.rs:495`
+  (B-4's `with_waker` call). Verified pre-existing by running the same command
+  on a **pristine** worktree at `5c4e847c`, which reports the identical two
+  diffs. My own added lines are fmt-clean — rustfmt proposes no change inside
+  them. **Not fixed:** they are B-4's lines, the repo's standing warning is that
+  `rustfmt` cascades into siblings, and this wave's charter is not to touch
+  another wave's code. Reported here so the next `/verify` does not read it as
+  new.
+- Slot discipline: bracketed `pgrep -af "carg[o] "` + `free -g` before every
+  launch; A-5i held the slot for most of the wave and every launch waited for
+  it. **No release build.** Disk 115 G free at start and end; the worktree's
+  target directory is in session scratch, not in the repo.
+- The operator's live GUI was never driven. `planning/airrun_2026-06-01/wanaka.toml`,
+  `planning/review_2026-07-27/` and the operator's review file are unstaged and
+  unchanged. Explicit staging only; no `--amend`.
+
+NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
+
+- **No default was flipped and G-LV.1 stays OPEN.** Owner: Checkpoint O (the
+  operator). That is the wave's charter, not an omission.
+- **NOT MEASURABLE HEADLESSLY: tearing, perceived smoothness, input latency.**
+  Owner: the operator, ideally folded into the N-3 session. Re-open condition:
+  eyes on a Mailbox build during a viewport drag. No proxy was substituted.
+- **NOT EXERCISED: an occluded, unfocused, screen-locked or visible-but-frozen
+  park.** Blocker: unchanged from B-4 — the compositor decides and there is no
+  client lever. Owner: **N-3**. This is the gap that decides whether the flip
+  addresses the incident or only the reproduction.
+- **NOT EXERCISED: any second compositor, GPU or driver.** One machine, one
+  surface, one capability list. Owner: whoever rules on a *global* default flip;
+  a `--mcp`-scoped flip is much less exposed to it.
+- **NOT INVESTIGATED, incidental:** the parked-window screenshot shows a
+  toolpath marked `OFF` in the operations tree ("Back Rough") reported as
+  generating in the status bar. Noticed while reading the evidence image;
+  outside this wave's territory and claimed as nothing more than an observation.
+- **`bin/main.rs:29`/`:60`, CLAUDE.md's MCP section and plan §0 rule 10** still tell
+  agents the window must be visible. Still true under the shipped default, so
+  leaving them is correct; **`bin/main.rs:29`'s X11 sentence is imprecise
+  regardless of any flip** (see above). Owner: the wave that acts on this
+  package.
+
+Next action / checkpoint request: **Checkpoint O requested**, one question with
+three options and a rider, in `PRESENT_MODE_AB.md` §6. **O-1 — flip the default,
+flip only under `--mcp`, or keep AutoVsync and route around?** My recommendation
+is **flip only under `--mcp`**, requesting **`AutoNoVsync`** rather than an
+explicit mode so an unsupported-mode launch cannot crash, **and making the
+negotiated mode observable** (logged, and reported beside `frame_loop` in
+`generation_status`) so a silent fallback to Fifo — which restores the hazard —
+can never be a silent state. The honest price of that recommendation: the
+operator sometimes drives the GUI by hand while MCP is attached, and that
+session pays the 81%-of-a-core continuous-repaint figure. **O-1 rider —** should
+an unsupported explicit present mode remain a **startup crash**? It is one
+today, from an `.expect`-shaped path inside wgpu that this workspace's own lint
+policy would not permit. Orchestrator actions: (a) put O to the operator; (b) if
+O approves any flip, B-4's steps 5–7 unblock — with step 7 **changed in shape**,
+because `screenshot_gui`'s designed *refusal* is no longer the only option on a
+window that still paints; (c) note that the two Lane A capture obligations
+depend on the flip **and** on N-3 showing the incident's states share this
+mechanism — one without the other does not discharge them.
