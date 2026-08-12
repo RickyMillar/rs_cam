@@ -787,27 +787,55 @@ pub struct SimulationOptions {
     /// while the gate at 4000 reads `Within`. See
     /// `planning/acceptance_loop/findings/F-035-predicted-feed-in-gates.md`.
     pub use_predicted_feed_in_gates: bool,
-    /// F-036b: when `true` **and** the active `MachineProfile` carries
-    /// `kinematics`, the simulator runs a post-sim modulation pass that
-    /// rewrites per-move `feed_rate` on every cutting move so the
+    /// F-036b: when `true`, the simulator runs a post-sim modulation pass
+    /// that rewrites per-move `feed_rate` on every cutting move so the
     /// commanded chipload-per-tooth lands inside the LUT band's
     /// geometric midpoint (corrected for chip thinning) — Fusion HSM's
     /// "adaptive feed control" equivalent.
     ///
-    /// Default `false`. Behavior with the flag off (or with kinematics
-    /// absent, or with no vendor LUT row for the active
-    /// tool/material/op) is byte-identical to pre-F-036b — the
-    /// loop's acceptance tests (`_f0{24,26,27,28,31}.rs`) and the
-    /// smoke baseline at
-    /// `planning/toolpath_acceptance/baselines/2026-05-26.csv`
-    /// continue to pass unchanged.
+    /// **Default `true` since 2026-08-13 — Checkpoint J-3 (operator,
+    /// BINDING).** It was `false`. The flip is the second half of the
+    /// Checkpoint J ruling: J-1 retired Suggest's blind pre-simulation
+    /// feed lift (see the retirement note in [`crate::feeds::predict`]),
+    /// and this is where the lift now lives — a correction made from a
+    /// **measured** gate observation instead of an operation-family
+    /// constant. Measured on A-5's four fixtures: Suggest's shipped feed
+    /// is `Within` 2/4 unmodulated and **4/4 modulated**.
     ///
-    /// Modulation requires a vendor `ChiploadBand` (LUT
-    /// `chip_load_min_mm` + `chip_load_max_mm`) for the active
+    /// **Correction, same commit (rule 5 — a changed instrument makes its
+    /// own docstring a lie you then cite).** This doc used to say
+    /// modulation fires only "when the active `MachineProfile` carries
+    /// `kinematics`". That is **false**.
+    /// `ProjectSession::apply_adaptive_feed_modulation` calls
+    /// `self.machine.effective_kinematics()` — the generic-wood-router
+    /// fallback — explicitly "so it applies on every machine, matching
+    /// the strategy advisor". Every built-in `MachineProfile` preset has
+    /// `kinematics: None`, so under the old claim A-5's modulated arms
+    /// could not have fired; they did, on a default profile.
+    ///
+    /// What DOES gate it: modulation requires a vendor `ChiploadBand`
+    /// (LUT `chip_load_min_mm` + `chip_load_max_mm`) for the active
     /// `(tool family, material, op family, pass role, diameter)` tuple.
     /// Custom materials, unsupported op families, and toolpaths whose
     /// LUT row is missing either bound fall through as a no-op (the
-    /// per-toolpath feed_rate stays at the commanded value).
+    /// per-toolpath feed_rate stays at the commanded value), as does a
+    /// simulation run with `metrics_enabled: false` (no cut trace).
+    ///
+    /// **Consumer census taken at the flip** — no shipped surface changed
+    /// behaviour, because not one of them inherits this default:
+    /// * GUI **and** MCP pin `true` already, at
+    ///   `rs_cam_viz/src/controller/events/compute.rs`. Note they never
+    ///   call `ProjectSession::run_simulation` at all — the dexel sim
+    ///   runs through `compute::simulate::run_simulation_with_phase`,
+    ///   whose request type carries no modulation fields, and modulation
+    ///   arrives as a main-thread post-pass (`modulate_simulation_trace`).
+    /// * CLI `project.rs` builds a full struct literal whose field comes
+    ///   from `--adaptive-feed-modulation`, still defaulting **off**.
+    ///   That GUI/CLI divergence is deliberate and unruled: J-3 ruled the
+    ///   library default only.
+    /// * CLI `smoke.rs` and `tool_load::optimize::candidate` pin `false`
+    ///   in full struct literals, protecting the smoke baseline and
+    ///   keeping the optimizer's candidate ranking un-conflated.
     ///
     /// The algorithm itself lives in
     /// `crate::feed_modulation::adaptive_feed_modulate`; see
@@ -846,7 +874,8 @@ impl Default for SimulationOptions {
             metrics_enabled: true,
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
-            adaptive_feed_modulation: false,
+            // Checkpoint J-3, 2026-08-13 (operator, BINDING): was `false`.
+            adaptive_feed_modulation: true,
             modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
             modulation_aggressiveness: 1.0,
         }

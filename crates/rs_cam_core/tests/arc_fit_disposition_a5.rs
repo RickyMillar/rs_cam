@@ -678,6 +678,143 @@ fn print_arm(tag: &str, a: &ArmRead) {
     );
 }
 
+/// **The J-3 default-flip sentry — red-first at the retirement commit.**
+///
+/// Checkpoint J-3 (operator, BINDING, 2026-08-13) flipped
+/// `SimulationOptions::default().adaptive_feed_modulation` from `false` to
+/// `true`. This asserts the flip and, in the same test, the reason for it.
+///
+/// Three assertions, all RED before the flip:
+///
+/// 1. the default is `true` — fails outright at the retirement commit;
+/// 2. under a **default-constructed** `SimulationOptions` (the field
+///    deliberately NOT named), Suggest's shipped feed lands `Within` on
+///    **all four** fixtures — pre-flip the two DropCutter fixtures read
+///    `Exceeds` at 1.69× / 1.62× the band max;
+/// 3. the modulation actually ran — `modulation_summary` is `Some` with
+///    moves touched. Without this, assertion 2 could pass vacuously on a
+///    fixture the modulator silently skipped.
+///
+/// This is the 2/4 → 4/4 step. Retiring the lift (J-1) got Suggest's
+/// recommendation from `Exceeds` 4/4 to `Exceeds` 2/4; the residual two are
+/// the DOC-derate denominator divergence (census F-3 / C-2 / C-5), which
+/// **arc-fit was amplifying ~3× but did not cause**. Modulation is what
+/// closes them, because it corrects from a measured observation instead of
+/// an operation-family constant — which is exactly disposition (c), and the
+/// reason J-1 and J-3 are one ruling in two commits.
+///
+/// Note the population: assertion 3 guards against the vacuous-gate failure
+/// mode (X-VAC) on the *modulator* rather than the gate. A modulator that
+/// no-oped would leave the commanded feed in place, and on A3D-1/A3D-2 that
+/// still reads `Within` — the test would go green for the wrong reason.
+#[test]
+fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
+    println!("\n=== A-5i — Checkpoint J-3, the default flip (cell {SIM_CELL_MM} mm) ===");
+
+    // 1 — the flip itself.
+    assert!(
+        SimulationOptions::default().adaptive_feed_modulation,
+        "Checkpoint J-3: SimulationOptions::default() must have adaptive_feed_modulation = true"
+    );
+
+    for fx in fixtures() {
+        let mut session = build_session(&fx);
+        let r = suggest_read(&session, &fx);
+
+        let cancel = AtomicBool::new(false);
+        session
+            .generate_toolpath(0, &cancel)
+            .expect("rough generates");
+        // Seed the cascade unmodulated so the snapshot the measured op reads
+        // is the same one every other test in this file measures against.
+        simulate(&mut session, false);
+
+        // The measured arm: Suggest's shipped feed, simulated under options
+        // that DO NOT name `adaptive_feed_modulation`. That omission is the
+        // point — this arm reads the default.
+        {
+            let tc = session
+                .toolpath_configs_mut()
+                .get_mut(1)
+                .expect("measured op present");
+            tc.operation.set_feed_rate(r.shipped_feed);
+            tc.operation.set_spindle_rpm(Some(r.rpm));
+        }
+        session
+            .generate_toolpath(1, &cancel)
+            .expect("measured op generates");
+        session
+            .run_simulation(
+                &SimulationOptions {
+                    resolution: SIM_CELL_MM,
+                    auto_resolution: false,
+                    metrics_enabled: true,
+                    // `adaptive_feed_modulation` deliberately unset.
+                    ..SimulationOptions::default()
+                },
+                &cancel,
+            )
+            .expect("default-options simulation");
+
+        let tp_id = session.toolpath_configs()[1].id;
+        let report = session.tool_load_report();
+        let v = report
+            .per_toolpath
+            .iter()
+            .find(|v| v.toolpath_id == tp_id)
+            .expect("measured op has a load verdict");
+        let fe = v.feed_explanation.as_deref();
+        let verdict = format!("{:?}", v.chipload.state());
+        let observed = fe.map(|e| e.gate.value_mm);
+        let samples = fe.map_or(0, |e| e.gate.sample_count);
+
+        println!(
+            "  {:<46} feed {:>8.1}  verdict {:<10} gate {:>9} (n={})  modulation {:?}",
+            fx.label,
+            r.shipped_feed,
+            verdict,
+            observed.map_or("—".to_owned(), |v| format!("{v:.5}")),
+            samples,
+            v.modulation_summary.as_ref().map(|m| (
+                m.moves_touched,
+                m.moves_total,
+                m.median_feed_delta_pct
+            )),
+        );
+
+        // 3 — the modulator ran, and on a non-empty population. Checked
+        //     BEFORE the verdict so a vacuous pass cannot be read as a fix.
+        let summary = v.modulation_summary.as_ref().unwrap_or_else(|| {
+            panic!(
+                "{}: the default must actually modulate — no modulation_summary means the \
+                 verdict below would be the unmodulated one wearing the flip's name",
+                fx.label
+            )
+        });
+        assert!(
+            summary.moves_touched > 0,
+            "{}: modulation touched 0 of {} moves — vacuous",
+            fx.label,
+            summary.moves_total
+        );
+        assert!(
+            samples > 0,
+            "{}: chipload gate ran on an EMPTY population (X-VAC)",
+            fx.label
+        );
+
+        // 2 — and the verdict is clean on all four, including the two
+        //     DropCutter fixtures that are Exceeds without modulation.
+        assert_eq!(
+            verdict, "Within",
+            "{}: under the J-3 default, Suggest's shipped feed must land inside the \
+             chipload band. Unmodulated this fixture reads {} (the DropCutter pair \
+             are Exceeds at 1.69× / 1.62× band max — census F-3 / C-2 / C-5).",
+            fx.label, verdict
+        );
+    }
+}
+
 /// **Step 1–2: Suggest → generate → simulate, three arms, same stock.**
 ///
 /// The arms differ in commanded feed only. The stamp assertion is what makes
