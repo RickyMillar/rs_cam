@@ -74,6 +74,13 @@ checkpoint.
 - **J-4: the two DropCutter residuals (1.69×/1.62×, DOC-derate denominator divergence F-3/C-2/C-5) are a SEPARATE row** — not a blocker for (a), which reduces them ~3× and does not create them.
 - **J-5: delete `arc_fit_ratio_for_op` + `ObservedChiploadPrediction`; KEEP the two `SuggestWarning` variants** for the simulation-backed path's own measured feed changes. (The `Default` ratios gate nothing — only `Calibrated` rows reach pass 8 — so no behaviour is removed from the other fifteen families.)
 
+### Checkpoint O — ruled 2026-08-13 (operator, via AskUserQuestion). BINDING.
+
+- **O-1: flip under `--mcp` only.** A GUI launched with `--mcp` requests `AutoNoVsync` (→Mailbox on this hardware; safe silent fallback elsewhere, never a crash); plain interactive launches keep `AutoVsync`. The honest price is accepted: a hand-driven session with MCP attached pays the unthrottled-repaint cost while actively interacting.
+- **O-2: negotiated mode OBSERVABLE** — logged at startup and reported in `generation_status`'s `frame_loop` block, so a silent Fifo fallback (which silently restores the park hazard) is visible to agents. The unsupported-explicit-mode startup crash is LEFT (shipped path only requests Auto modes; documented, not guarded).
+- **N-3 scheduling: folded into programme close-out.** Consequence, recorded plainly: the flip ships with the caveat **"fixes the minimise reproduction; incident-state coverage (occluded / visible-frozen) pending N-3"** — G-LV.1 does not close until N-3 runs. N-3 also carries tearing-by-eye and the operator-instance F-HEATMAP capture.
+- B-4's steps 5–7 are hereby UNBLOCKED (step 7 in its M-4 shape: refusal for genuinely-parked windows; under Mailbox the call simply works).
+
 ### Checkpoint N — ruled 2026-08-13 (operator, via AskUserQuestion). BINDING.
 
 - **N-1: KEEP steps 1–4.** Behaviour-preserving on a rendering window, measurably no slower (12.0 vs 15.6 ms median), the precondition for any later attempt, and the `pumps`/`wakeups` instrumentation is what diagnosed the present block from outside the process. The NO-GO clause's "third state" cost is accepted with eyes open; the contract sentries stay inverted.
