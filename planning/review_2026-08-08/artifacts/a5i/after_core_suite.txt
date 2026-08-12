@@ -1,0 +1,400 @@
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/smoke_baseline_regression_f037.rs (target/debug/deps/smoke_baseline_regression_f037-e2f86168bd8630df)
+
+running 3 tests
+test diff_detects_within_to_exceeds_mutation ... ok
+test baseline_has_protected_cutting_verdicts ... ok
+test baseline_file_exists_and_parses ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/span_summary_single_pass_c1.rs (target/debug/deps/span_summary_single_pass_c1-435e3d8de2a645ce)
+
+running 3 tests
+test the_fixture_populates_spans_and_keeps_the_two_toolpaths_apart ... ok
+test the_scatter_visits_each_sample_once_per_span_it_belongs_to ... ok
+test the_single_pass_scatter_agrees_with_the_parent_revisions_quadratic_walk ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/standing_material_channel_am9.rs (target/debug/deps/standing_material_channel_am9-cd28d41ad3494d06)
+
+running 6 tests
+test operation_without_a_cascade_reports_not_measured ... ok
+test collapsing_cascade_reports_a_measured_zero ... ok
+test tapered_ball_reaches_the_same_channel ... ok
+test the_old_key_still_loads_and_the_wire_still_emits_it ... ok
+test truncated_cascade_is_visible_on_every_surface ... ok
+test the_untouched_standing_split_reaches_the_diagnostic_and_the_summary ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.31s
+
+     Running tests/steep_shallow_min_segment_pr8d.rs (target/debug/deps/steep_shallow_min_segment_pr8d-05a96ac452665bc0)
+
+running 5 tests
+test a_closed_loop_drops_a_vertex_that_would_close_degenerately ... ok
+test the_floor_measures_against_the_last_retained_point ... ok
+test the_floor_is_the_coarsest_shipped_post_quantum ... ok
+test no_cutting_segment_survives_below_the_floor_on_the_ribbon ... ok
+test the_floor_is_inert_where_nothing_was_degenerate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.46s
+
+     Running tests/step5_marching_cubes.rs (target/debug/deps/step5_marching_cubes-e92354bb50843c38)
+
+running 6 tests
+test mesh_vertices_stay_in_stock_envelope ... ok
+test mc_triangle_count_dominates_heightmap_preview ... ok
+test pocket_walls_are_steep_under_mc ... ok
+test closed_uncut_block_is_watertight ... ok
+test partial_cut_block_is_watertight ... ok
+test drill_cylinder_seam_lands_near_mc_wall ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/step_import.rs (target/debug/deps/step_import-89259da5d300deb1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/step_project_load.rs (target/debug/deps/step_project_load-146b3825af5600c4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/strategy_advisor_smoke.rs (target/debug/deps/strategy_advisor_smoke-aa86ec8bc49ccfa5)
+
+running 1 test
+test recommend_clearing_strategy_ranks_candidates_on_terrain has been running for over 60 seconds
+test recommend_clearing_strategy_ranks_candidates_on_terrain ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 137.26s
+
+     Running tests/strategy_comparison_h4.rs (target/debug/deps/strategy_comparison_h4-c56468ec422532c6)
+
+running 5 tests
+test d16_1_residual_locating_probe ... ignored, D-16.1 residual locating probe: two arms (UnifiedFinish, Scallop) on the grooved fixture, each with its own generation + 0.1 mm measurement simulation. Research only — it asserts non-vacuity and prints, it does not gate quality. Run --release, --test-threads=1.
+test d16_1_single_column_contact_probe ... ignored, D-16.1 single-column contact probe (FINISHING_OPEN_DEFECTS_EVIDENCE.md §7.6): one generation of arm B, NO simulation, then a per-triangle drop-cutter dump at the named column and the named move. Research only — non-vacuity bars, no quality gate.
+test h4_strategy_comparison_grooved_block ... ignored, H4 strategy comparison (grooved_block): the concave fixture — terrain.stl alone cannot adjudicate rest-routing behaviour on re-entrant territory. Run --release, --test-threads=1, on a quiet machine.
+test h4_strategy_comparison_terrain ... ignored, H4 strategy comparison (terrain): 3 arms (Scallop, UnifiedFinish, 2-op cascade), each with its own generation + measurement simulation. Run --release, --test-threads=1, on a quiet machine.
+test h4_harness_arithmetic_sentry ... ok
+
+test result: ok. 1 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/sub_cell_stamping_fa.rs (target/debug/deps/sub_cell_stamping_fa-de0680d01cf7d29d)
+
+running 6 tests
+test extended_scan_radius_catches_annular_cells_old_code_missed ... ok
+test point_stamp_blend_lowers_ray_top_proportionally_at_boundary ... ok
+test coverage_increases_monotonically_with_stamps ... ok
+test point_stamp_coverage_reaches_one_at_disk_interior_and_partial_at_boundary ... ok
+test point_stamp_total_volume_matches_disk_area ... ok
+test segment_stamp_total_volume_matches_stadium_area ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tapered_cusp_radius_sentry.rs (target/debug/deps/tapered_cusp_radius_sentry-33ded432a9330c2a)
+
+running 4 tests
+test ball_nose_cusp_radius_equals_radius ... ok
+test tapered_ball_reports_shaft_radius_and_tip_cusp_radius ... ok
+test classification_grid_uses_tip_cell_size_and_shaft_padding ... ok
+test steep_ribbon_survives_decomposition_under_a_tapered_tool ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/tapered_width_model_parity_c3.rs (target/debug/deps/tapered_width_model_parity_c3-95f5d776b21f7b8e)
+
+running 5 tests
+test above_tangency_the_taper_outgrows_its_ball_twin ... ok
+test the_published_effective_diameter_varies_with_depth_for_a_tapered_ball ... ok
+test the_hint_model_reproduces_the_canonical_profile_exactly ... ok
+test the_c3_feed_delta_is_pinned ... ok
+test the_tapered_ball_feed_recipe_matches_its_ball_twin_below_tangency ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/test_data_smoke_csv_alignment.rs (target/debug/deps/test_data_smoke_csv_alignment-5c87ca80e9e5e556)
+
+running 4 tests
+test all_smoke_cases_reference_existing_templates_and_fixtures ... ok
+test all_smoke_cases_load_via_project_session ... ok
+test all_smoke_cases_have_matching_material_family ... ok
+test all_smoke_cases_have_required_tool_in_template ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/tool_scale_semantics_pr2.rs (target/debug/deps/tool_scale_semantics_pr2-4c8d3caba4d00adf)
+
+running 8 tests
+test envelope_radius_bounds_every_sampled_profile_width ... ok
+test height_at_radius_inverts_width_at_height ... ok
+test engagement_radius_is_monotonic_in_depth ... ok
+test tapered_tool_keeps_the_three_classes_distinct ... ok
+test tool_definition_delegation_survives_direct_overrides ... ok
+test tool_definition_delegates_every_tool_scale_accessor ... ok
+test large_arc_threshold_is_envelope_relative_on_both_sides ... ok
+test finish_surface_cell_source_names_the_radius_that_sized_the_grid ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/transform_provenance_fingerprints.rs (target/debug/deps/transform_provenance_fingerprints-ecdd32e8a46e9528)
+
+running 3 tests
+test three_pass_full_dressups_fingerprint ... FAILED
+test face_full_chain_fingerprint ... FAILED
+test arc_raster_full_dressups_fingerprint ... FAILED
+
+failures:
+
+---- three_pass_full_dressups_fingerprint stdout ----
+
+thread 'three_pass_full_dressups_fingerprint' (2439343) panicked at crates/rs_cam_core/tests/transform_provenance_fingerprints.rs:254:5:
+assertion `left == right` failed: three_pass geometry moved; captured at HEAD 5d32150 before C1
+  left: (23, 14265253333427783116)
+ right: (23, 14756822782673573601)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- face_full_chain_fingerprint stdout ----
+
+thread 'face_full_chain_fingerprint' (2439342) panicked at crates/rs_cam_core/tests/transform_provenance_fingerprints.rs:352:5:
+assertion `left == right` failed: face stage-1 (dressups) geometry moved; captured at HEAD 5d32150 before C1
+  left: (74, 8357027825945903145)
+ right: (74, 9692869450022244402)
+
+---- arc_raster_full_dressups_fingerprint stdout ----
+
+thread 'arc_raster_full_dressups_fingerprint' (2439341) panicked at crates/rs_cam_core/tests/transform_provenance_fingerprints.rs:310:5:
+assertion `left == right` failed: arc_raster geometry moved; re-pinned by PR-6 (arcfit intent key), originally captured at HEAD 5d32150 before C1
+  left: (40, 1344905273783580007)
+ right: (40, 5428414886474768522)
+
+
+failures:
+    arc_raster_full_dressups_fingerprint
+    face_full_chain_fingerprint
+    three_pass_full_dressups_fingerprint
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p rs_cam_core --test transform_provenance_fingerprints`
+     Running tests/unified_finish_dropped_band_finding_d1.rs (target/debug/deps/unified_finish_dropped_band_finding_d1-15094cf160c60a5f)
+
+running 3 tests
+test an_operation_with_no_bands_reports_not_measured ... ok
+test auto_heights_drop_the_very_steep_band_and_every_surface_reports_it ... ok
+test pinned_heights_machine_the_band_and_report_nothing_dropped ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests/unified_finish_partial_clip_finding_c8.rs (target/debug/deps/unified_finish_partial_clip_finding_c8-e75bcf494b8105e2)
+
+running 4 tests
+test an_operation_with_no_bands_reports_not_measured ... ok
+test a_totally_collapsed_band_is_dropped_not_clipped ... ok
+test a_partly_clipped_band_is_measured_and_reported_everywhere ... ok
+test fully_pinned_heights_clip_nothing_and_say_so ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+     Running tests/unified_finish_semantic_regions.rs (target/debug/deps/unified_finish_semantic_regions-57e19b9d8935f793)
+
+running 4 tests
+test unified_finish_semantic_regions_match_structural_spans_ball ... ok
+test unified_finish_narration_reports_regions_on_a_ball_control ... ok
+test unified_finish_semantic_regions_match_structural_spans_tapered ... ok
+test unified_finish_narration_reports_regions_on_a_tapered_ball ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s
+
+     Running tests/unified_finish_tapered_end_to_end_m21.rs (target/debug/deps/unified_finish_tapered_end_to_end_m21-330ad862026bca6e)
+
+running 9 tests
+test ball_control_is_unaffected_by_both_radius_fixes ... ok
+test ball_unified_finish_cuts_non_shallow_bands_end_to_end ... ok
+test ball_unified_finish_semantic_links_survive_transforms ... ok
+test ball_unified_finish_spans_and_annotations_stay_valid ... ok
+test would_have_been_red_the_prefix_dials_erase_every_steep_region ... ok
+test tapered_unified_finish_spans_and_annotations_stay_valid ... ok
+test tapered_region_areas_prove_tip_scale_dials_end_to_end ... ok
+test tapered_unified_finish_semantic_links_survive_transforms ... ok
+test tapered_unified_finish_cuts_non_shallow_bands_end_to_end ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests/vcarve_lift_bridge_b1.rs (target/debug/deps/vcarve_lift_bridge_b1-97f2e657b5ff3f61)
+
+running 1 test
+test vcarve_default_skeleton_emits_no_rapid_collisions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.15s
+
+     Running tests/vendor_lut_sub_1mm.rs (target/debug/deps/vendor_lut_sub_1mm-e3630760050d4486)
+
+running 3 tests
+test sub_1mm_tapered_ball_softwood_finish_matches ... ok
+test sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling ... FAILED
+test embedded_count_matches_after_expansion ... ok
+
+failures:
+
+---- sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling stdout ----
+
+thread 'sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling' (2440625) panicked at crates/rs_cam_core/tests/vendor_lut_sub_1mm.rs:78:5:
+assertion failed: (result.chipload_diameter_scale - expected_scale).abs() < 1e-6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p rs_cam_core --test vendor_lut_sub_1mm`
+     Running tests/wanaka_axial_doc.rs (target/debug/deps/wanaka_axial_doc-af8e8137a7e9bedd)
+
+running 3 tests
+test wanaka_back_rough_axial_doc ... ignored, expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`
+test wanaka_deep_region_localization ... ignored, expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`
+test wanaka_final_surface_vs_mesh ... ignored, expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_boundary_diag.rs (target/debug/deps/wanaka_boundary_diag-4e55fcbce617591b)
+
+running 1 test
+test wanaka_back_rough_cuts_outside_silhouette ... ignored, wanaka boundary diagnostic — run with --ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_defaults_validation.rs (target/debug/deps/wanaka_defaults_validation-79516830e7797663)
+
+running 3 tests
+test wanaka_1mm_tapered_ball_plunge_capped ... ok
+test wanaka_adaptive3d_6mm_em_lands_stepover_at_target ... ok
+test wanaka_6mm_em_plunge_not_derated ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_e2e_chipload_gate.rs (target/debug/deps/wanaka_e2e_chipload_gate-480558e48facec51)
+
+running 1 test
+test wanaka_back_rough_chipload_gate_passes_after_auto_fix ... ignored, blocked on O3 helix-descent + O4 burn-risk edge filter
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_step4_fa_revalidation.rs (target/debug/deps/wanaka_step4_fa_revalidation-5502715f74bfe116)
+
+running 2 tests
+test wanaka_step4_back_rough_engagement_in_plausible_range ... ignored, expensive WANAKA end-to-end stamping revalidation; run with `cargo test --test wanaka_step4_fa_revalidation -- --ignored`
+test wanaka_step4_pin_drill_unaffected ... ignored, WANAKA fixture regression; run with `cargo test --test wanaka_step4_fa_revalidation -- --ignored`
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_step5_mc_revalidation.rs (target/debug/deps/wanaka_step5_mc_revalidation-0005a7dfa82bb20c)
+
+running 1 test
+test wanaka_step5_final_mesh_is_well_formed ... ignored, expensive WANAKA end-to-end mesh revalidation; run with `cargo test --test wanaka_step5_mc_revalidation -- --ignored`
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wanaka_suggest_integration.rs (target/debug/deps/wanaka_suggest_integration-e0a0eea881f9ab18)
+
+running 3 tests
+test wanaka_suggest_idempotent_on_second_run ... ok
+test session_cutter_op_profile_matches_gui_rationale_assembly ... ok
+test wanaka_suggest_baseline ... FAILED
+
+failures:
+
+---- wanaka_suggest_baseline stdout ----
+wanaka_suggest baseline:
+  tp 14 "Pin Drill": feed=2400 plunge=2400 dpp=None stepover=None
+  tp 4 "Back Rough": feed=911 plunge=527 dpp=Some(5.4) stepover=Some(1.2)
+       AxialDocClampedByEnvelope { op_kind: "adaptive3d", param_name: "depth_per_pass", commanded_mm: 9.0, clamped_mm: 5.4, binding: "vendor_ap" }
+       StrategyRewrote { param: "entry_style", from: "plunge", to: "helix", reason: "deflection_predict_at_dpp_with_helix_headroom" }
+  tp 7 "Holes": feed=2400 plunge=2400 dpp=None stepover=None
+  tp 5 "Rivers (back)": feed=1841 plunge=483 dpp=None stepover=None
+  tp 6 "Lakes (back, inside)": feed=1841 plunge=483 dpp=None stepover=None
+  tp 10 "3D Rough 6": feed=911 plunge=527 dpp=Some(5.4) stepover=Some(1.2)
+       AxialDocClampedByEnvelope { op_kind: "adaptive3d", param_name: "depth_per_pass", commanded_mm: 9.0, clamped_mm: 5.4, binding: "vendor_ap" }
+       StrategyRewrote { param: "entry_style", from: "plunge", to: "helix", reason: "deflection_predict_at_dpp_with_helix_headroom" }
+  tp 15 "Unified Finish 6 (live v2)": feed=473 plunge=132 dpp=None stepover=None
+       FinishEnvelopeAdvisory { op_kind: "unified_finish", max_safe_doc_mm: 0.3122498999199199, binding: "scallop" }
+
+thread 'wanaka_suggest_baseline' (2440638) panicked at crates/rs_cam_core/tests/wanaka_suggest_integration.rs:161:9:
+Toolpath id 11 missing from suggest cases — wanaka.toml shape changed? Got ids: [(ToolpathId(14), "Pin Drill"), (ToolpathId(4), "Back Rough"), (ToolpathId(7), "Holes"), (ToolpathId(5), "Rivers (back)"), (ToolpathId(6), "Lakes (back, inside)"), (ToolpathId(10), "3D Rough 6"), (ToolpathId(15), "Unified Finish 6 (live v2)")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    wanaka_suggest_baseline
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+error: test failed, to rerun pass `-p rs_cam_core --test wanaka_suggest_integration`
+     Running tests/wanaka_z_layer_render.rs (target/debug/deps/wanaka_z_layer_render-bce2d59d99fff615)
+
+running 1 test
+test wanaka_back_rough_first_and_last_z_layers ... ignored, wanaka diagnostic — run with --ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/waterline_shared_finish_setup_c3.rs (target/debug/deps/waterline_shared_finish_setup_c3-8d0ac40f3c1e2f44)
+
+running 5 tests
+test the_shared_ladder_reproduces_the_pinned_levels ... ok
+test the_waterline_ladder_is_the_shared_ladder ... ok
+test the_floor_is_inert_where_nothing_was_degenerate ... ok
+test no_waterline_cutting_segment_survives_below_the_floor ... ok
+test the_floor_costs_the_ribbon_no_cutting_length ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
+
+     Running tests/wood_species_library_provenance.rs (target/debug/deps/wood_species_library_provenance-e972df26b8545cc0)
+
+running 3 tests
+test find_by_display_name_is_case_insensitive ... ok
+test library_has_substantial_coverage ... ok
+test every_library_source_id_exists_in_manifest ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/zero_removal_rest_pass_a4.rs (target/debug/deps/zero_removal_rest_pass_a4-18dea6fca83b4307)
+
+running 2 tests
+test a_rest_pass_with_material_in_front_of_it_stays_silent ... ok
+test a_rest_pass_aimed_at_its_own_previous_cut_reports_zero_removal ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+   Doc-tests rs_cam_core
+
+running 5 tests
+test crates/rs_cam_core/src/boundary.rs - boundary::UserOffsetOutcome (line 86) ... ignored
+test crates/rs_cam_core/src/depth.rs - depth::depth_stepped_toolpath (line 171) ... ignored
+test crates/rs_cam_core/src/session/mod.rs - session (line 6) ... ignored
+test crates/rs_cam_core/src/measurement.rs - measurement::ProjectedXyAreaMm2 (line 444) ... ok
+test crates/rs_cam_core/src/transform_provenance.rs - transform_provenance::Transformed (line 257) ... ok
+
+test result: ok. 2 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test crates/rs_cam_core/src/transform_provenance.rs - transform_provenance::ReconcileSet (line 482) - compile fail ... ok
+test crates/rs_cam_core/src/transform_provenance.rs - transform_provenance::RemapConsumer (line 389) - compile fail ... ok
+test crates/rs_cam_core/src/transform_provenance.rs - transform_provenance::Transformed (line 282) - compile fail ... ok
+test crates/rs_cam_core/src/measurement.rs - measurement::ProjectedXyAreaMm2 (line 433) - compile fail ... ok
+test crates/rs_cam_core/src/transform_provenance.rs - transform_provenance::Transformed (line 271) - compile fail ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+all doctests ran in 0.40s; merged doctests compilation took 0.32s
+error: 4 targets failed:
+    `-p rs_cam_core --test literature_matrix`
+    `-p rs_cam_core --test transform_provenance_fingerprints`
+    `-p rs_cam_core --test vendor_lut_sub_1mm`
+    `-p rs_cam_core --test wanaka_suggest_integration`

@@ -1,0 +1,77 @@
+
+running 3 tests
+
+=== A-5 step 1/2 — simulation-backed arms (cell 0.4 mm) ===
+
+A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted [Adaptive3d]
+  A shipped              feed   6912.0  verdict Exceeds    cmd_fpt   0.21600  achieved×        —  gate   0.21600 (n=756)
+                         band Some((Some(0.032), 0.055))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  B retire               feed   1215.0  verdict Within     cmd_fpt   0.03797  achieved×        —  gate   0.03797 (n=756)
+                         band Some((Some(0.032), 0.055))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  C re-key 1.0           feed   1728.0  verdict Within     cmd_fpt   0.05400  achieved×        —  gate   0.05400 (n=756)
+                         band Some((Some(0.032), 0.055))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  A + modulation         feed   6912.0  verdict Within     cmd_fpt   0.21600  achieved×   0.2463  gate   0.05321 (n=756)
+                         band Some((Some(0.032), 0.055))  predicted_feeds true  modulation Some((261, 271, -78.88040181218186))  stamp Some((0.4, 4807225758396607230))
+  B + modulation         feed   1215.0  verdict Within     cmd_fpt   0.03797  achieved×   1.4014  gate   0.05321 (n=756)
+                         band Some((Some(0.032), 0.055))  predicted_feeds true  modulation Some((261, 271, 20.147047468476615))  stamp Some((0.4, 4807225758396607230))
+  stamp responsiveness   stamp (0.8, 8286006674947908385) (was (0.4, 4807225758396607230))
+
+A3D-2 Ø8 3F endmill / WhiteOak / stock ceiling [Adaptive3d]
+  A shipped              feed   6000.0  verdict Exceeds    cmd_fpt   0.12500  achieved×        —  gate   0.12500 (n=448)
+                         band Some((Some(0.039380130825562604), 0.06768459985643573))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  B retire               feed   2243.0  verdict Within     cmd_fpt   0.04673  achieved×        —  gate   0.04673 (n=448)
+                         band Some((Some(0.039380130825562604), 0.06768459985643573))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  C re-key 1.0           feed   3189.8  verdict Within     cmd_fpt   0.06645  achieved×        —  gate   0.06645 (n=448)
+                         band Some((Some(0.039380130825562604), 0.06768459985643573))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  A + modulation         feed   6000.0  verdict Within     cmd_fpt   0.12500  achieved×   0.3150  gate   0.03938 (n=448)
+                         band Some((Some(0.039380130825562604), 0.06768459985643573))  predicted_feeds true  modulation Some((184, 212, -68.49589533954992))  stamp Some((0.4, 4807225758396607230))
+  B + modulation         feed   2243.0  verdict Within     cmd_fpt   0.04673  achieved×   0.8427  gate   0.03938 (n=448)
+                         band Some((Some(0.039380130825562604), 0.06768459985643573))  predicted_feeds true  modulation Some((184, 212, -15.726871171332816))  stamp Some((0.4, 4807225758396607230))
+
+DC-1 Ø3 ball / HardMaple / stock ceiling [DropCutter]
+  A shipped              feed   4405.0  verdict Exceeds    cmd_fpt   0.11592  achieved×        —  gate   0.11592 (n=6729)
+                         band Some((Some(0.011592084449498944), 0.023184168898997888))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  B retire               feed   1487.0  verdict Exceeds    cmd_fpt   0.03913  achieved×        —  gate   0.03913 (n=6729)
+                         band Some((Some(0.011592084449498944), 0.023184168898997888))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  C re-key 1.0           feed    660.7  verdict Within     cmd_fpt   0.01739  achieved×        —  gate   0.01739 (n=6729)
+                         band Some((Some(0.011592084449498944), 0.023184168898997888))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  A + modulation         feed   4405.0  verdict Within     cmd_fpt   0.11592  achieved×   0.2000  gate   0.02318 (n=6729)
+                         band Some((Some(0.011592084449498944), 0.023184168898997888))  predicted_feeds true  modulation Some((7395, 7395, -80.00003591005857))  stamp Some((0.4, 4807225758396607230))
+  B + modulation         feed   1487.0  verdict Within     cmd_fpt   0.03913  achieved×   0.5925  gate   0.02318 (n=6729)
+                         band Some((Some(0.011592084449498944), 0.023184168898997888))  predicted_feeds true  modulation Some((7395, 7395, -40.75330072885543))  stamp Some((0.4, 4807225758396607230))
+
+DC-2 Ø2-tip tapered ball / WhiteOak / small router [DropCutter]
+  A shipped              feed   2500.0  verdict Exceeds    cmd_fpt   0.06579  achieved×        —  gate   0.06579 (n=10343)
+                         band Some((Some(0.008343668405459935), 0.01668733681091987))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  B retire               feed   1029.0  verdict Exceeds    cmd_fpt   0.02708  achieved×        —  gate   0.02708 (n=10343)
+                         band Some((Some(0.008343668405459935), 0.01668733681091987))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  C re-key 1.0           feed    478.4  verdict Within     cmd_fpt   0.01259  achieved×        —  gate   0.01259 (n=10343)
+                         band Some((Some(0.008343668405459935), 0.01668733681091987))  predicted_feeds false  modulation None  stamp Some((0.4, 4807225758396607230))
+  A + modulation         feed   2500.0  verdict Within     cmd_fpt   0.06579  achieved×   0.2536  gate   0.01669 (n=10343)
+                         band Some((Some(0.008343668405459935), 0.01668733681091987))  predicted_feeds true  modulation Some((14640, 14640, -74.6352480474018))  stamp Some((0.4, 4807225758396607230))
+  B + modulation         feed   1029.0  verdict Within     cmd_fpt   0.02708  achieved×   0.6162  gate   0.01669 (n=10343)
+                         band Some((Some(0.008343668405459935), 0.01668733681091987))  predicted_feeds true  modulation Some((14640, 14640, -38.37523821040281))  stamp Some((0.4, 4807225758396607230))
+.
+=== A-5i — Checkpoint J-3, the default flip (cell 0.4 mm) ===
+  A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted feed   1215.0  verdict Within     gate   0.05321 (n=756)  modulation Some((261, 271, 20.147047468476615))
+  A3D-2 Ø8 3F endmill / WhiteOak / stock ceiling feed   2243.0  verdict Within     gate   0.03938 (n=448)  modulation Some((184, 212, -15.726871171332816))
+  DC-1 Ø3 ball / HardMaple / stock ceiling       feed   1487.0  verdict Within     gate   0.02318 (n=6729)  modulation Some((7395, 7395, -40.75330072885543))
+  DC-2 Ø2-tip tapered ball / WhiteOak / small router feed   1029.0  verdict Within     gate   0.01669 (n=10343)  modulation Some((14640, 14640, -38.37523821040281))
+.
+=== A-5i — the retirement, Suggest-side (no simulation) ===
+fixture                                            legacy_A    shipped_B      arm_C       A/B       A/C
+A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted       6912.0       1215.0     1728.0     5.69×     4.00×
+      band Some((0.038, 0.07))  target 0.05400  ceiling 15000  rpm solved-against 16000 (authored 16000, feeds.rpm 16000)  flutes 2
+      commanded advance/tooth  legacy 0.21600  shipped 0.03797 mm  (band max 0.07000)
+A3D-2 Ø8 3F endmill / WhiteOak / stock ceiling       6000.0       2243.0     3189.8     2.67×     1.88×
+      band Some((0.04676390535535559, 0.0861440361809182))  target 0.06645  ceiling 6000  rpm solved-against 16000 (authored 14000, feeds.rpm 16000)  flutes 3
+      commanded advance/tooth  legacy 0.12500  shipped 0.04673 mm  (band max 0.08614)
+DC-1 Ø3 ball / HardMaple / stock ceiling             4405.0       1487.0      660.7     2.96×     6.67×
+      band Some((0.011592084449498944, 0.023184168898997888))  target 0.01739  ceiling 6000  rpm solved-against 19000 (authored 18000, feeds.rpm 19000)  flutes 2
+      commanded advance/tooth  legacy 0.11592  shipped 0.03913 mm  (band max 0.02318)
+DC-2 Ø2-tip tapered ball / WhiteOak / small router       2500.0       1029.0      478.4     2.43×     5.23×
+      band Some((0.00839317014834308, 0.01678634029668616))  target 0.01259  ceiling 2500  rpm solved-against 19000 (authored 20000, feeds.rpm 19000)  flutes 2
+      commanded advance/tooth  legacy 0.06579  shipped 0.02708 mm  (band max 0.01679)
+.
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.06s
+

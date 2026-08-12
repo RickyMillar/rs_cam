@@ -1,0 +1,40 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running tests/wanaka_suggest_integration.rs (target/debug/deps/wanaka_suggest_integration-e0a0eea881f9ab18)
+
+running 3 tests
+test wanaka_suggest_idempotent_on_second_run ... ok
+test wanaka_suggest_baseline ... FAILED
+test session_cutter_op_profile_matches_gui_rationale_assembly ... ok
+
+failures:
+
+---- wanaka_suggest_baseline stdout ----
+wanaka_suggest baseline:
+  tp 14 "Pin Drill": feed=2400 plunge=2400 dpp=None stepover=None
+  tp 4 "Back Rough": feed=6000 plunge=527 dpp=Some(5.4) stepover=Some(1.2)
+       AxialDocClampedByEnvelope { op_kind: "adaptive3d", param_name: "depth_per_pass", commanded_mm: 9.0, clamped_mm: 5.4, binding: "vendor_ap" }
+       StrategyRewrote { param: "entry_style", from: "plunge", to: "helix", reason: "deflection_predict_at_dpp_with_helix_headroom" }
+       FeedRaisedForChipload { requested_mm_per_min: 911.0, raised_mm_per_min: 6000.0, predicted_observed_chipload_before: 0.0071171875, predicted_observed_chipload_after: 0.046875, lut_target_mm_per_tooth: 0.054000000000000006, cap_hit: Some(MaxFeed) }
+       ChiploadStillLowAfterRecalibration { predicted_observed_mm_per_tooth: 0.046875, lut_target_mm_per_tooth: 0.054000000000000006, feed_at_termination_mm_per_min: 6000.0, blocking_cap: MaxFeed }
+  tp 7 "Holes": feed=2400 plunge=2400 dpp=None stepover=None
+  tp 5 "Rivers (back)": feed=1841 plunge=483 dpp=None stepover=None
+  tp 6 "Lakes (back, inside)": feed=1841 plunge=483 dpp=None stepover=None
+  tp 10 "3D Rough 6": feed=6000 plunge=527 dpp=Some(5.4) stepover=Some(1.2)
+       AxialDocClampedByEnvelope { op_kind: "adaptive3d", param_name: "depth_per_pass", commanded_mm: 9.0, clamped_mm: 5.4, binding: "vendor_ap" }
+       StrategyRewrote { param: "entry_style", from: "plunge", to: "helix", reason: "deflection_predict_at_dpp_with_helix_headroom" }
+       FeedRaisedForChipload { requested_mm_per_min: 911.0, raised_mm_per_min: 6000.0, predicted_observed_chipload_before: 0.0071171875, predicted_observed_chipload_after: 0.046875, lut_target_mm_per_tooth: 0.054000000000000006, cap_hit: Some(MaxFeed) }
+       ChiploadStillLowAfterRecalibration { predicted_observed_mm_per_tooth: 0.046875, lut_target_mm_per_tooth: 0.054000000000000006, feed_at_termination_mm_per_min: 6000.0, blocking_cap: MaxFeed }
+  tp 15 "Unified Finish 6 (live v2)": feed=473 plunge=132 dpp=None stepover=None
+       FinishEnvelopeAdvisory { op_kind: "unified_finish", max_safe_doc_mm: 0.3122498999199199, binding: "scallop" }
+
+thread 'wanaka_suggest_baseline' (2133468) panicked at crates/rs_cam_core/tests/wanaka_suggest_integration.rs:155:9:
+Toolpath id 11 missing from suggest cases — wanaka.toml shape changed? Got ids: [(ToolpathId(14), "Pin Drill"), (ToolpathId(4), "Back Rough"), (ToolpathId(7), "Holes"), (ToolpathId(5), "Rivers (back)"), (ToolpathId(6), "Lakes (back, inside)"), (ToolpathId(10), "3D Rough 6"), (ToolpathId(15), "Unified Finish 6 (live v2)")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    wanaka_suggest_baseline
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+error: test failed, to rerun pass `-p rs_cam_core --test wanaka_suggest_integration`
