@@ -1698,16 +1698,47 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Build diagnostics JSON from GUI state (toolpath_rt + simulation results).
+    /// Build the MCP `get_diagnostics` JSON.
     ///
-    /// Unlike `session.diagnostics()` which reads from the session's internal
-    /// result cache (only populated by the standalone MCP), this reads from
-    /// `gui.toolpath_rt` and `state.simulation.results` — where the GUI's
-    /// compute pipeline actually stores data.
+    /// **TD3 wave B-5 (`G-RESULTS`).** The per-toolpath rows come from the
+    /// core [`rs_cam_core::session::ToolpathDiagnostic`] — the SAME record the
+    /// CLI's `project` report publishes — with the GUI-only lane columns
+    /// (`toolpath_index`, `status`, `error`, `awaiting_prior_stock`, `stale`)
+    /// layered on top. A toolpath with no core diagnostic (not generated,
+    /// failed, or awaiting upstream stock) still gets its lane row, because
+    /// "cannot yet" is the answer an agent came for.
+    ///
+    /// The rows used to be hand-built from `gui.toolpath_rt` alone, under a
+    /// doc comment claiming `session.results` was "only populated by the
+    /// standalone MCP". That stopped being true at `d706c036`, when
+    /// `drain_compute_results` started writing the worker's result through
+    /// `ProjectSession::insert_result` — but the read was never moved, so ten
+    /// published channels (`op_kind`, `collision_count`,
+    /// `rapid_collision_count`, and the seven generation-finding areas) were
+    /// absent from the agent-facing wire while the CLI's carried them. An
+    /// absent key is strictly worse than a `null`: it cannot say "not
+    /// measured" and it cannot say "measured clean" (X-19).
+    ///
+    /// Sentried by `controller::results_parity_tests`.
     #[cfg(feature = "mcp")]
     pub fn build_mcp_diagnostics(&self) -> serde_json::Value {
         let session = &self.state.session;
         let gui = &self.state.gui;
+
+        // One evidence view and one core diagnostics build, shared by the
+        // per-toolpath rows, the project totals and the triage block below.
+        let evidence = crate::app::mcp::viz_project_evidence(&self.state);
+        let core_diagnostics = session.diagnostics_with_evidence(&evidence);
+        let core_rows: std::collections::HashMap<rs_cam_core::ToolpathId, serde_json::Value> =
+            core_diagnostics
+                .per_toolpath
+                .iter()
+                .filter_map(|d| {
+                    serde_json::to_value(d)
+                        .ok()
+                        .map(|value| (d.toolpath_id, value))
+                })
+                .collect();
 
         let mut per_toolpath = Vec::new();
         let mut runtime_errors = Vec::new();
@@ -1745,25 +1776,34 @@ impl<B: ComputeBackend> AppController<B> {
                         "message": block.message,
                     }));
                 }
-                let mut row = serde_json::json!({
-                    "toolpath_index": index,
-                    "toolpath_id": tc.id,
-                    "name": tc.name,
-                    "operation_type": tc.operation.label(),
-                    "tool_name": tool_name,
-                    "status": status.label(),
-                    "error": status.error_text(),
-                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
-                        "blocking_toolpath_id": b.blocking_toolpath_id,
-                        "blocking_toolpath_index": b.blocking_toolpath_index,
-                        "message": b.message,
-                    })),
-                    "stale": rt.stale_since.is_some(),
-                });
-                if let Some(ref result) = rt.result {
-                    // SAFETY: row is a known object constructed above.
-                    #[allow(clippy::indexing_slicing)]
-                    {
+                // Start from the core diagnostic when this toolpath has one,
+                // so every channel the CLI publishes is on the wire. The lane
+                // columns are written on top afterwards and win on the keys
+                // they share, which keeps the pre-B-5 values of those keys
+                // byte-identical.
+                let mut row = core_rows
+                    .get(&tc.id)
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                // SAFETY: row is a JSON object — either a serialised
+                // `ToolpathDiagnostic` (a struct) or the empty map above.
+                #[allow(clippy::indexing_slicing)]
+                {
+                    row["toolpath_index"] = serde_json::json!(index);
+                    row["toolpath_id"] = serde_json::json!(tc.id);
+                    row["name"] = serde_json::json!(tc.name);
+                    row["operation_type"] = serde_json::json!(tc.operation.label());
+                    row["tool_name"] = serde_json::json!(tool_name);
+                    row["status"] = serde_json::json!(status.label());
+                    row["error"] = serde_json::json!(status.error_text());
+                    row["awaiting_prior_stock"] =
+                        serde_json::json!(status.blocked_on().map(|b| serde_json::json!({
+                            "blocking_toolpath_id": b.blocking_toolpath_id,
+                            "blocking_toolpath_index": b.blocking_toolpath_index,
+                            "message": b.message,
+                        })));
+                    row["stale"] = serde_json::json!(rt.stale_since.is_some());
+                    if let Some(ref result) = rt.result {
                         row["move_count"] = serde_json::json!(result.stats.move_count);
                         row["cutting_distance_mm"] =
                             serde_json::json!(result.stats.cutting_distance);
@@ -1813,7 +1853,11 @@ impl<B: ComputeBackend> AppController<B> {
             "air_cut_pct_of_total_runtime": air_cut_pct,
             "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
             "average_engagement": avg_engagement,
-            "collision_count": 0,
+            // B-5: the holder-collision total, from the same evidence the
+            // per-toolpath rows and the triage read. It was a literal `0`
+            // here — a number that had never been measured, printed on the
+            // surface an agent reads as a safety tally (X-VAC).
+            "collision_count": core_diagnostics.collision_count,
             "rapid_collision_count": rapid_collision_count,
             "verdict": verdict,
             "per_toolpath": per_toolpath,
@@ -1839,8 +1883,13 @@ impl<B: ComputeBackend> AppController<B> {
         // and never has to know that `issue_count` above is a different
         // population from `air_cut_issue_count` — which is the confusion the
         // census documented and this field exists to end.
-        let evidence = crate::app::mcp::viz_project_evidence(&self.state);
-        let triage = self.state.session.simulation_triage(&evidence);
+        // B-5: `evidence` and `core_diagnostics` were built once at the top
+        // of this function; the triage reuses them instead of rebuilding the
+        // project diagnostics a second time.
+        let triage = self
+            .state
+            .session
+            .simulation_triage_with_diagnostics(&evidence, &core_diagnostics);
         // SAFETY: resp is a known JSON object we just constructed.
         #[allow(clippy::indexing_slicing)]
         {

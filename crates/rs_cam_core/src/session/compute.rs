@@ -3117,6 +3117,29 @@ impl ProjectSession {
         &self,
         evidence: &ProjectEvidence<'_>,
     ) -> crate::sim_triage::SimulationTriage {
+        self.simulation_triage_with_diagnostics(evidence, &self.diagnostics_with_evidence(evidence))
+    }
+
+    /// [`Self::simulation_triage`] for a caller that has ALREADY built the
+    /// [`ProjectDiagnostics`] for this same evidence and wants to publish
+    /// both — the MCP `get_diagnostics` response is exactly that shape (a
+    /// per-toolpath diagnostic array plus a triage block).
+    ///
+    /// TD3 wave B-5. Without this seam that response builds the project
+    /// diagnostics twice per call: once for its own `per_toolpath` rows and
+    /// once inside `simulation_triage`. The alternative — the GUI keeping a
+    /// hand-rolled per-toolpath row so it only pays for the triage — is what
+    /// this wave removed, and it is what dropped ten published channels off
+    /// the agent-facing wire in the first place.
+    ///
+    /// `project_diagnostics` MUST be `self.diagnostics_with_evidence(evidence)`
+    /// for the same `evidence`; passing anything else makes the triage
+    /// describe a project state that never existed.
+    pub fn simulation_triage_with_diagnostics(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+        project_diagnostics: &ProjectDiagnostics,
+    ) -> crate::sim_triage::SimulationTriage {
         use crate::sim_triage::{SimulationTriage, TriageInputs};
 
         let Some(trace) = evidence.cut_trace else {
@@ -3124,7 +3147,7 @@ impl ProjectSession {
         };
         let diagnostics =
             crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
-                &self.diagnostics_with_evidence(evidence),
+                project_diagnostics,
             );
         let measurability = crate::sim_measurability::MeasurabilityReport::from_trace(
             trace,
