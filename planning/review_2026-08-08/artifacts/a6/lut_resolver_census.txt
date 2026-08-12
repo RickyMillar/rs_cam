@@ -1,0 +1,96 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running tests/lut_resolver_census_a6.rs (target/debug/deps/lut_resolver_census_a6-75c21252d96e5df6)
+
+running 2 tests
+# F-LUT2 axis 2: the operation-family reroute
+
+| reroute | geometry | material | Ø | flutes | role | Suggest row (max) | gate row (max) | Suggest ÷ gate |
+|---|---|---|---:|---:|---|---|---|---:|
+| Adaptive3d | Flat | oak | 6 | 2 | Roughing→Roughing | amana-flat-hardwood-adaptive-6000-2f (0.07421) | amana-flat-hardwood-pocket-6000-2f (0.05831) | **×1.2727** |
+| Adaptive3d | Flat | ipe | 6 | 2 | Roughing→Roughing | amana-flat-hardwood-adaptive-6000-2f (0.04392) | amana-flat-hardwood-pocket-6000-2f (0.03451) | **×1.2727** |
+| Adaptive3d | Flat | pine | 6 | 2 | Roughing→Roughing | amana-flat-softwood-adaptive-6000-2f (0.10258) | amana-flat-softwood-pocket-6000-2f (0.07926) | **×1.2941** |
+| Adaptive3d | Flat | mdf | 6 | 2 | Roughing→Roughing | amana-flat-hardwood-adaptive-6000-2f (0.08885) | amana-flat-mdf-pocket-6000-2f (0.06080) | **×1.4612** |
+| Adaptive3d | Flat | ply-birch | 6 | 2 | Roughing→Roughing | amana-flat-hardwood-adaptive-6000-2f (0.07663) | amana-flat-plywood-hardwood-pocket-6000-2f (0.05455) | **×1.4049** |
+| Adaptive3d | Flat | acrylic | 6 | 2 | Roughing→Roughing | amana-flat-acrylic-adaptive-6000-1f (0.15000) | amana-zrn-flat-acrylic-pocket-6000-2f (0.15240) | **×0.9843** |
+| Adaptive3d | Flat | alu6061 | 6 | 2 | Roughing→Roughing | amana-flat-aluminum-adaptive-6000-3f (0.03500) | amana-zrn-flat-aluminum-pocket-6000-2f (0.15240) | **×0.2297** |
+| Adaptive3d | Bull | oak | 6 | 2 | Roughing→Roughing | onsrud-bull-hardwood-adaptive-6000-2f (0.06361) | amana-flat-hardwood-pocket-6000-2f (0.05831) | **×1.0909** |
+| Adaptive3d | Bull | ipe | 6 | 2 | Roughing→Roughing | onsrud-bull-hardwood-adaptive-6000-2f (0.03764) | amana-flat-hardwood-pocket-6000-2f (0.03451) | **×1.0909** |
+| Adaptive3d | Bull | pine | 6 | 2 | Roughing→Roughing | onsrud-bull-softwood-adaptive-6000-2f (0.08859) | amana-flat-softwood-pocket-6000-2f (0.07926) | **×1.1176** |
+| Adaptive3d | Bull | mdf | 6 | 2 | Roughing→Roughing | onsrud-bull-hardwood-adaptive-6000-2f (0.07616) | amana-flat-mdf-pocket-6000-2f (0.06080) | **×1.2525** |
+| Adaptive3d | Bull | ply-birch | 6 | 2 | Roughing→Roughing | onsrud-bull-hardwood-adaptive-6000-2f (0.06568) | onsrud-bull-plywood-hardwood-pocket-6000-2f (0.05909) | **×1.1115** |
+| Adaptive3d | Bull | acrylic | 6 | 2 | Roughing→Roughing | amana-flat-acrylic-adaptive-6000-1f (0.15000) | amana-zrn-flat-acrylic-pocket-6000-2f (0.15240) | **×0.9843** |
+| Adaptive3d | Bull | alu6061 | 6 | 2 | Roughing→Roughing | onsrud-bull-aluminum-adaptive-6000-3f (0.03000) | amana-zrn-flat-aluminum-pocket-6000-2f (0.15240) | **×0.1969** |
+
+**489 of 3024 (query, reroute) pairs resolve to DIFFERENT rows.** Suggest ÷ gate band maximum: min ×0.1602, median ×0.9798, max ×6.1658.
+
+**756 pairs are gate REFUSALS** (ProjectCurve on bull-nose / V-bit: `routed_lookup_family` returns `None` → `Unmodeled(NoVendorData)`), and in **378** of them Suggest still returns a banded recommendation. That is the sharpest form of the divergence: an operator gets a vendor-backed number on a surface where the gate has declined to judge at all.
+
+A ratio **above 1.0** means Suggest is recommending against a WIDER band than the gate will judge with — the direction that lets a pre-simulation solve aim past a ceiling it cannot see.
+test operation_family_reroute_band_delta_report ... ok
+# F-LUT2 resolver-selection census (A-6, number-preserving)
+
+LUT: 252 observations. Sweep: 8 op families × 6 geometry classes × 3 pass roles × 7 materials × 6 diameters × 3 flute counts.
+
+| op family | geometry class | queries | same | both-none | gate-blind | diff/suggest-unbanded | diff/both-banded | worst band max ratio (Suggest ÷ gate) |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| Adaptive | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Adaptive | Bull | 378 | 372 | 0 | 0 | 6 | 0 | — |
+| Adaptive | Flat | 378 | 369 | 0 | 0 | 9 | 0 | — |
+| Adaptive | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Adaptive | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Adaptive | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Contour | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Contour | Bull | 378 | 378 | 0 | 0 | 0 | 0 | — |
+| Contour | Flat | 378 | 378 | 0 | 0 | 0 | 0 | — |
+| Contour | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Contour | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Contour | VBit90 | 378 | 225 | 153 | 0 | 0 | 0 | — |
+| Drill | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Drill | Bull | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Drill | Flat | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Drill | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Drill | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Drill | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | Bull | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | Flat | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Face | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Parallel | Ball | 378 | 324 | 54 | 0 | 0 | 0 | — |
+| Parallel | Bull | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Parallel | Flat | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Parallel | TaperedBall | 378 | 324 | 54 | 0 | 0 | 0 | — |
+| Parallel | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Parallel | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Pocket | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Pocket | Bull | 378 | 378 | 0 | 0 | 0 | 0 | — |
+| Pocket | Flat | 378 | 378 | 0 | 0 | 0 | 0 | — |
+| Pocket | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Pocket | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Pocket | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Scallop | Ball | 378 | 324 | 54 | 0 | 0 | 0 | — |
+| Scallop | Bull | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Scallop | Flat | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Scallop | TaperedBall | 378 | 324 | 54 | 0 | 0 | 0 | — |
+| Scallop | VBit60 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Scallop | VBit90 | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Trace | Ball | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Trace | Bull | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Trace | Flat | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Trace | TaperedBall | 378 | 0 | 378 | 0 | 0 | 0 | — |
+| Trace | VBit60 | 378 | 252 | 0 | 0 | 126 | 0 | — |
+| Trace | VBit90 | 378 | 324 | 54 | 0 | 0 | 0 | — |
+
+## Totals
+
+- `BothNone`: 13653 / 18144 (75.25 %)
+- `Same`: 4350 / 18144 (23.97 %)
+- `DifferentSuggestUnbanded`: 141 / 18144 (0.78 %)
+
+**3 of 48 (family, geometry-class) cells diverge.**
+test lut_resolver_selection_census_report ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.13s
+

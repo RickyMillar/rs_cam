@@ -1,0 +1,48 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests/chipload_boundary_g_chip_ulp.rs (target/debug/deps/chipload_boundary_g_chip_ulp-ef26e0bbcbc306bd)
+
+running 6 tests
+| gate | side | comparison | at exact equality | epsilon dial |
+|---|---|---|---|---|
+| peak axial DOC (mm) | queried Ø (mm) | band min | band max | Δ band max vs first |
+|---:|---:|---:|---:|---:|
+B3 floor==ceiling: rpm=18500 feed=426.438999 fpt=0.01152537835462983 band=0.00576268917731492..0.01152537835462983 global_floor=0.025 effective_floor=0.01152537835462983
+gate band for the B3 scallop op: Some(0.005762689177314916) .. 0.01152537835462983
+| chipload | high | `observed > max × (1 + breakage)` | **Within** | `ToleranceBands::breakage` (default 0.0) |
+| chipload | high, +1 ulp | same | **Exceeds(High)** | — |
+| chipload | low | `median < min × (1 - burn)` | **Within** | `ToleranceBands::burn` (default 0.0), plus `low_side_is_advisory` demotion |
+| drill plunge feed | low | `observed < lo` | **Within** | none |
+| drill plunge feed | high | `observed > hi` | **Within** | none |
+| drill peck adequacy | high | `observed <= threshold` | **Within** | none |
+| drill chip welding | banded | `Low [0, 0.75t)` / `Elevated [0.75t, t)` / `High [t, ∞)` | **Elevated** — an `Exceeds` variant *below* the threshold it names | none |
+| power | high | `peak > available × (1 + power_breach)` | **Within** | `power_breach` (default 0.0) |
+| deflection | high | `peak > EXCEEDS_BOUND_MM × (1 + deflection_breach)` | **Within** | `deflection_breach` (default 0.0) |
+
+CONCLUSION: every gate is `Within` at exact equality; the ledger's 'boundary semantics disagree' reading is a mis-attribution of rider 2. The real asymmetries are (a) the drill gates carry NO epsilon dial while the milling gates carry three that all default to zero, and (b) only the chipload observation reaches its bound through a multiply/divide round trip, so only it can land 1 ulp off a value the operator set exactly.
+test rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_parks_there ... ok| 0.350 | 0.9539 | 0.005763 | 0.011525 | +0.00 % |
+
+| 0.700 | 1.0411 | 0.006078 | 0.012156 | +5.48 % |
+| 1.050 | 1.1055 | 0.006305 | 0.012610 | +9.41 % |
+| 1.673 | 1.2202 | 0.006075 | 0.012150 | +5.42 % |
+| 2.020 | 1.2841 | 0.005918 | 0.011837 | +2.70 % |
+| 3.000 | 1.4645 | 0.005523 | 0.011046 | -4.16 % |
+band maximum spans 0.011046 .. 0.012610 across the DOC sweep — a 14.16 % move in the bound a verdict is compared against, driven by a quantity the SIM CELL measures.
+W10-LV pair: Ø1.2202 band max 0.012150  →  Ø1.2841 band max 0.011837  (-2.58 %)
+one feed (437.4140 mm/min), two cells: coarse-DOC verdict Within, fine-DOC verdict Exceeds(High)
+test cross_gate_boundary_semantics_at_exact_equality ... ok
+test rider2b_the_band_moves_with_the_simulation_cell_that_measured_the_doc ... ok
+feed parked ON the gate's ceiling: Exceeds at 12 of 181 RPM values, Within at 169
+  rpm=6200: observed=0.01152537835462983 max=0.01152537835462983 delta=1.734723475976807e-18 printed-at-6dp: 0.011525 vs 0.011525
+  rpm=6600: observed=0.01152537835462983 max=0.01152537835462983 delta=1.734723475976807e-18 printed-at-6dp: 0.011525 vs 0.011525
+  rpm=7700: observed=0.01152537835462983 max=0.01152537835462983 delta=1.734723475976807e-18 printed-at-6dp: 0.011525 vs 0.011525
+  rpm=11300: observed=0.01152537835462983 max=0.01152537835462983 delta=1.734723475976807e-18 printed-at-6dp: 0.011525 vs 0.011525
+  rpm=12100: observed=0.01152537835462983 max=0.01152537835462983 delta=1.734723475976807e-18 printed-at-6dp: 0.011525 vs 0.011525
+test rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling ... ok
+rider 3: BindingConstraint::ChiploadMin denotes fpt 0.005763 (band.min); the clamp that parked the feed applied 0.011525 (= band.max). Ratio 2.000×
+test rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp ... ok
+ledger wanaka Unified Finish: max=0.01278107701207316  round-trip ABOVE 89/1164 (7.6 %)  exact 994  below 81  first trip Some((1300.0, 1))
+live B3 scallop: max=0.01152537835462983  round-trip ABOVE 72/1164 (6.2 %)  exact 1043  below 49  first trip Some((1100.0, 3))
+test rider2_the_feed_round_trip_lands_on_both_sides_of_the_bound ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
