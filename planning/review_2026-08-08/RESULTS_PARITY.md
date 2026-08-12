@@ -197,6 +197,38 @@ The collision sentry asserts its own population first
 (`core.collision_count == 1`, "or this sentry is vacuous") before asserting
 the wire — §0 rule 4.
 
+### 3.2 The same row, live, after the fix
+
+Same wanaka copy, an isolated `--mcp` instance, `get_diagnostics`, toolpath
+index 0 — the row printed complete in §2.4 before the fix:
+
+```json
+{"awaiting_prior_stock": null, "collision_count": 0,
+ "cutting_distance_mm": 74.0, "error": null, "max_tip_float_mm": null,
+ "move_count": 68, "name": "Pin Drill", "op_kind": "alignment_pin_drill",
+ "operation_type": "Pin Drill", "rapid_collision_count": 0,
+ "rapid_distance_mm": 912.1161275615895, "reached_uncut_estimate_mm2": null,
+ "stale": false, "standing_material_mm2": null, "status": "Done",
+ "tip_float_points": null, "tool_name": "End Mill", "toolpath_id": 14,
+ "toolpath_index": 0, "truncated_core_mm2": null,
+ "unmachined_band_area_mm2": null, "untouched_material_mm2": null}
+```
+
+Twelve keys → twenty-two. Every pre-fix key holds its pre-fix value
+(`cutting_distance_mm` 74.0, `rapid_distance_mm` 912.1161275615895,
+`status` `"Done"`, `stale` false); the row count is unchanged at 9, one per
+toolpath with a lane entry, generated or not. The finding areas report
+`null` — *not measured*, which for an alignment-pin drill is the correct
+answer and was previously unsayable.
+
+Cross-surface check on a value both wires now carry: `Back Rough`
+`cutting_distance_mm` reads **12602.222322634861** on the GUI row and
+**12602.222322634861** in the CLI's `tp_4_Back_Rough.json`. Same number,
+same derivation, two surfaces.
+
+Caveat on this capture: **debug binary**, 1.0 mm cell, three toolpaths —
+see residual R-7.
+
 ## 4. Residuals — honest, named, not fixed
 
 **R-1 — `ProjectSession.simulation` is never assigned in GUI mode.** This is
@@ -246,10 +278,12 @@ CLI-side dump of those two reads, which this wave did not add.
 Row 21. Parity is structural, not observed. A fixture that parks a feed on
 the band ceiling would settle it.
 
-**R-7 — the post-fix live re-run was not done.** The fix is proven by five
-sentries at unit level and by the pre-fix live capture of the defect. Re-running
-the wanaka census against a rebuilt binary needs a release rebuild, which
-§0 rule 8 forbids inside a wave. See §5 for what *was* re-run live.
+**R-7 — the post-fix live re-run was a DEBUG binary, not the release one.**
+§0 rule 8 forbids a release build inside a wave, so the post-fix wire check
+ran against `target/debug/rs_cam_gui` on the same wanaka copy at a coarser
+cell (1.0 mm), generating three toolpaths rather than seven. That is enough
+to check the row *shape* and the shared keys, which is what moved; it is not
+a second census, and the numbers in §2 remain the release run's.
 
 ## 5. Fingerprints
 
@@ -296,8 +330,12 @@ been wired since `d706c036`; live `drill_gates` prove it) and its fourth is
 REAL but on `get_diagnostics`, which the row does not name: ten published
 channels dropped plus a literal-zero collision count. Red-first sentry
 `4bfed4c` (3 of 5 red), fix `1c60f8a` routes the response through the core
-`ToolpathDiagnostic` and adds one core seam so the diagnostics build once.
-Four residuals carried, one of them (**R-4**, the CLI's missing fixpoint —
+`ToolpathDiagnostic` and adds one core seam so the diagnostics build once;
+verified live after the fix (12 keys → 22, every pre-fix value held, §3.2).
+Seven residuals carried, one of them (**R-4**, the CLI's missing fixpoint —
 3 of 7 toolpaths generated vs the GUI's 7 of 7) larger than the defect
 fixed and pointing the opposite way; recommend a ledger row. Fingerprints
-unmoved.
+verified unmoved: `param_sweep` **56/56 pass**, `transform_provenance_
+fingerprints` fails the same known G-XFP three with byte-identical
+messages. NOT RUN: the full core integration suite (§5, with the
+proportionality argument stated).
