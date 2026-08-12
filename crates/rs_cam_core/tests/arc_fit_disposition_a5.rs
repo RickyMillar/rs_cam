@@ -251,7 +251,18 @@ fn fixtures() -> Vec<Fixture> {
             max_feed_mm_min: 15_000.0,
             max_cutting_feed_mm_min: Some(15_000.0),
             legacy_shipped_feed: 6912.0,
-            expected_suggest_feed: 1215.0,
+            // **RE-PINNED 2026-08-13, A-7 / Checkpoint K-(a4): 1215.0 →
+            // 918.0** (×0.7556). Mechanism: a4 hoisted the LUT routing
+            // into one `vendor_normalize::lut_query_for` that BOTH
+            // consumers call, so Suggest now queries `Adaptive3d` under
+            // the `Pocket` family — the family the gate has always used.
+            // The matched band moves 0.038–0.070
+            // (`amana-flat-hardwood-adaptive-6000-2f`) → 0.032–0.055
+            // (`…-pocket-6000-2f`), and the recipe follows it. This is
+            // the reference case A-6 measured at ×1.2727 on the band
+            // maximum; 1/1.2727 = 0.786 against an observed 0.7556, the
+            // remainder being the DOC derate applied to the new band.
+            expected_suggest_feed: 918.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -267,7 +278,11 @@ fn fixtures() -> Vec<Fixture> {
             max_feed_mm_min: 8_000.0,
             max_cutting_feed_mm_min: None,
             legacy_shipped_feed: 6000.0,
-            expected_suggest_feed: 2243.0,
+            // **RE-PINNED 2026-08-13, A-7 / Checkpoint K-(a4): 2243.0 →
+            // 1694.0** (×0.7552) — the same mechanism and, to three
+            // figures, the same factor as A3D-1, which is what one
+            // expects from one row-pair carried by the same scale terms.
+            expected_suggest_feed: 1694.0,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -547,11 +562,34 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
         //     only where the machine cutting-feed ceiling did not truncate
         //     the legacy lift; A3D-2 and DC-2 were capped and are excluded
         //     by that condition, exactly as pre-fix.
+        //
+        // **A-7 / Checkpoint K-(a4), 2026-08-13 — the Adaptive3d arm of
+        // this identity is RETIRED, not re-pinned.** `arm_C` re-keys the
+        // feed to the matched band, and a4 changed which band an
+        // Adaptive3d query matches (Adaptive → Pocket). The identity
+        // `legacy_A / arm_C == 1/arc_fit_ratio` was a statement about the
+        // retired table's ratio *against the Adaptive band it was derived
+        // from*; with a different band underneath it, A3D-1 measures
+        // **5.297** where it measured 4.000. Re-pinning 4.0 → 5.297 would
+        // assert a coincidence rather than the closed form, so the check
+        // is scoped to the family a4 did not move (DropCutter, unchanged
+        // at 6.67), and the Adaptive3d arm is replaced below by the
+        // property that IS now true: the band it re-keys against is the
+        // Pocket row's.
         let uncapped = fx.legacy_shipped_feed < r.cutting_ceiling - 0.5;
-        let nominal = match fx.family {
-            "Adaptive3d" => 4.0,
-            _ => 1.0 / 0.15,
-        };
+        if fx.family == "Adaptive3d" {
+            let band_max = r.band.map_or(f64::NAN, |b| b.1);
+            assert!(
+                (band_max - 0.055).abs() < 0.02,
+                "{}: post-a4 an Adaptive3d Suggest query must resolve the POCKET band \
+                 (max ≈ 0.055 for the Ø6 hardwood reference), not the Adaptive band \
+                 (max ≈ 0.070). Got {band_max:.5}. If this reads 0.070 again the routing \
+                 stopped being shared and K-(a4) has regressed.",
+                fx.label
+            );
+            continue;
+        }
+        let nominal = 1.0 / 0.15;
         if uncapped {
             assert!(
                 (a_over_c - nominal).abs() < 0.02,
