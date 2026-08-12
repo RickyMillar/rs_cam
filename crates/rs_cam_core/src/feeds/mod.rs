@@ -32,8 +32,8 @@ pub mod vendor_lut;
 pub mod vendor_normalize;
 pub use explain::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use explanation::{
-    ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
-    LutBandStage, ObservedStatistic,
+    ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
+    GateObservationStage, LutBandStage, ObservedStatistic,
 };
 pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
@@ -815,6 +815,65 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
     }
 }
 
+/// Name the clamp [`effective_rubbing_floor`] would apply at this band —
+/// the [`ClampReason`] Step-9b's warning and the explanation record both
+/// describe. Checkpoint K (d2).
+///
+/// Pure naming: it applies nothing and decides nothing. Step-9b calls it
+/// so the warning and the record cannot describe the clamp differently,
+/// which is the failure mode rule 5 names.
+#[must_use]
+pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
+    let floor = effective_rubbing_floor(band);
+    if floor < RUBBING_FLOOR_MM_TOOTH {
+        ClampReason::RubbingFloorCappedToBandCeiling {
+            floor_mm_per_tooth: floor,
+            global_floor_mm_per_tooth: RUBBING_FLOOR_MM_TOOTH,
+        }
+    } else {
+        ClampReason::RubbingFloor {
+            floor_mm_per_tooth: floor,
+        }
+    }
+}
+
+/// **Post-hoc: is this commanded advance sitting exactly where the
+/// rubbing-floor clamp puts one?** Checkpoint K (c2)/(d2).
+///
+/// Asked by the post-simulation chipload gate, which sees a finished
+/// recipe and not the Suggest run that produced it. It reads the same
+/// [`effective_rubbing_floor`] the clamp applies — so it is one decision
+/// consulted twice, not a mirror of Step-9b that can drift — and the
+/// "sits on" test is [`crate::tool_load::boundary::is_at_bound`], the
+/// same epsilon the gate's own comparisons use.
+///
+/// # What it cannot tell you, stated
+///
+/// It identifies the **operating point**, not its author. A feed an
+/// operator typed by hand that happens to land on the identical value is
+/// indistinguishable from a clamped one. For the consumer this exists
+/// for — deciding whether a verdict *on the bound* should read `clamped`
+/// rather than `exceeds` — that is the right answer either way: the
+/// engine will not command past a band ceiling, so a recipe resting on
+/// one is at the operating point the engine itself would choose.
+///
+/// The faithful channel is the recipe's own
+/// [`FeedsWarning::ChiploadClampedToFloor`], which no shipped structure
+/// carries from Suggest to the gate. Recorded as NOT EXERCISED in the
+/// A-7 wave entry with that plumbing as the resume condition.
+#[must_use]
+pub fn recipe_parked_by_rubbing_floor(
+    commanded_fpt_mm: f64,
+    band: Option<ChiploadBounds>,
+) -> Option<ClampReason> {
+    if commanded_fpt_mm <= 0.0 || !commanded_fpt_mm.is_finite() {
+        return None;
+    }
+    let floor = effective_rubbing_floor(band);
+    crate::tool_load::boundary::is_at_bound(commanded_fpt_mm, floor)
+        .then(|| rubbing_floor_clamp_reason(band))
+}
+
 /// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM
 /// band narrows and drops as diameter grows: chip evacuation scales
 /// with chip volume per revolution, which grows roughly with D², so
@@ -1590,11 +1649,21 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let commanded_fpt = feed / fpt_divisor;
         let floor = effective_rubbing_floor(chipload_bounds);
         if commanded_fpt > 0.0 && commanded_fpt < floor {
+            // Checkpoint K (d2) — the warning's `band_capped_from` and
+            // the explanation record's `clamped_to` are now derived from
+            // ONE naming function, so the two surfaces cannot describe
+            // this clamp differently.
+            let reason = rubbing_floor_clamp_reason(chipload_bounds);
             warnings.push(FeedsWarning::ChiploadClampedToFloor {
                 requested: commanded_fpt,
                 floor,
-                band_capped_from: (floor < RUBBING_FLOOR_MM_TOOTH)
-                    .then_some(RUBBING_FLOOR_MM_TOOTH),
+                band_capped_from: match reason {
+                    ClampReason::RubbingFloorCappedToBandCeiling {
+                        global_floor_mm_per_tooth,
+                        ..
+                    } => Some(global_floor_mm_per_tooth),
+                    ClampReason::RubbingFloor { .. } => None,
+                },
             });
             let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
             let target_feed = floor * fpt_divisor;

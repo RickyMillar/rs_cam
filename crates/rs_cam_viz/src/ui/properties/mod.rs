@@ -1762,16 +1762,32 @@ fn draw_advance_per_tooth_card(
         .spacing([8.0, 3.0])
         .show(ui, |ui| {
             ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
-            ui.label(format!(
-                "{:.4} mm/tooth",
-                explain.commanded.feed_per_tooth_mm
-            ))
-            .on_hover_text(format!(
-                "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes)",
+            // Checkpoint K (d2) — renderer 2 of 3. When the engine placed
+            // this number rather than the operator choosing it, say so on
+            // the face of the row, not only in the hover.
+            let commanded_text = match explain.commanded.clamped_to {
+                Some(_) => egui::RichText::new(format!(
+                    "{:.4} mm/tooth (clamped)",
+                    explain.commanded.feed_per_tooth_mm
+                ))
+                .color(theme::WARNING_MILD),
+                None => egui::RichText::new(format!(
+                    "{:.4} mm/tooth",
+                    explain.commanded.feed_per_tooth_mm
+                )),
+            };
+            let commanded_hover = format!(
+                "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes){}",
                 explain.commanded.feed_rate_mm_min,
                 explain.commanded.spindle_rpm,
                 explain.commanded.flute_count,
-            ));
+                explain
+                    .commanded
+                    .clamped_to
+                    .map(|c| format!("\n\nNot freely chosen \u{2014} {}", c.label()))
+                    .unwrap_or_default(),
+            );
+            ui.label(commanded_text).on_hover_text(commanded_hover);
             ui.end_row();
 
             ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
@@ -1830,12 +1846,24 @@ fn advance_gate_verdict_text(
     use rs_cam_core::tool_load::ChiploadVerdict;
     use rs_cam_core::tool_load::verdict::ChipSide;
     match chipload {
-        ChiploadVerdict::Within { burn_advisory, .. } => match burn_advisory {
-            Some(_) => (
+        // Checkpoint K (c2) — a recipe the rubbing-floor clamp parked on
+        // the band ceiling reads CLAMPED, never EXCEEDS: the engine put
+        // it there, and the boundary comparison that used to flip it was
+        // decided by float noise (G-CHIP-ULP).
+        ChiploadVerdict::Within {
+            burn_advisory,
+            ceiling_advisory,
+            ..
+        } => match (burn_advisory, ceiling_advisory) {
+            (Some(_), _) => (
                 "Within band (burn advisory)".to_owned(),
                 theme::WARNING_MILD,
             ),
-            None => ("Within band".to_owned(), theme::SUCCESS),
+            (None, Some(_)) => (
+                "CLAMPED to band ceiling \u{2014} not exceeded".to_owned(),
+                theme::WARNING_MILD,
+            ),
+            (None, None) => ("Within band".to_owned(), theme::SUCCESS),
         },
         ChiploadVerdict::Exceeds { side, .. } => (
             match side {

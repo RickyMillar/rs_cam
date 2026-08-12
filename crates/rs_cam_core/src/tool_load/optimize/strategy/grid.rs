@@ -194,6 +194,7 @@ mod tests {
                 confidence: Confidence::Validated,
                 entry_spikes: Vec::new(),
                 burn_advisory: None,
+                ceiling_advisory: None,
             },
             power: PowerVerdict::Within {
                 peak_kw: 0.0,

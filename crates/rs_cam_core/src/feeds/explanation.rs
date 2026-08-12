@@ -89,6 +89,77 @@ impl ObservedStatistic {
     }
 }
 
+/// **Why the commanded advance is where it is, when the engine — not
+/// the operator — put it there.** Checkpoint K (d2), 2026-08-13.
+///
+/// Suggest's Step-9b raises a commanded advance that would sit below the
+/// chip-formation floor. That is a whole-recipe decision taken before any
+/// move exists, so it is **not** a
+/// [`crate::tool_load::BindingConstraint`] — that vocabulary reports
+/// per-move *modulator* outcomes, and putting this in it would mean
+/// reporting a constraint the modulator never evaluated (option d1,
+/// rejected). It belongs on the record of the recipe, which is this one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ClampReason {
+    /// Step-9b raised the advance to the global chip-formation floor
+    /// ([`crate::feeds::RUBBING_FLOOR_MM_TOOTH`]). The ordinary case:
+    /// the matched band had room above the floor.
+    RubbingFloor {
+        /// The advance actually commanded (mm/tooth) — equal to the
+        /// global floor.
+        floor_mm_per_tooth: f64,
+    },
+    /// Step-9b raised the advance to the **matched band's derated
+    /// ceiling**, because the whole band sits below the global floor.
+    ///
+    /// This is the case that makes the boundary comparison load-bearing:
+    /// the recipe is parked *exactly on the breakage-side bound*, with
+    /// zero headroom, on the exact quantity the gate compares — by
+    /// design, and correctly (clamping up to the global floor instead
+    /// was measured at **3.47×** the band maximum on the reference
+    /// cutter). The residual rubbing risk is real and unresolved; see
+    /// [`crate::feeds::FeedsWarning::ChiploadClampedToFloor`].
+    RubbingFloorCappedToBandCeiling {
+        /// The advance actually commanded (mm/tooth) — equal to the
+        /// band's derated maximum.
+        floor_mm_per_tooth: f64,
+        /// The global chip-formation threshold the recipe therefore
+        /// does **not** reach.
+        global_floor_mm_per_tooth: f64,
+    },
+}
+
+impl ClampReason {
+    /// One-line operator wording. Every renderer prints this, so the
+    /// three surfaces cannot drift into three different explanations of
+    /// one fact.
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            ClampReason::RubbingFloor { floor_mm_per_tooth } => {
+                format!("clamped up to the {floor_mm_per_tooth:.4} mm/tooth chip-formation floor")
+            }
+            ClampReason::RubbingFloorCappedToBandCeiling {
+                floor_mm_per_tooth,
+                global_floor_mm_per_tooth,
+            } => format!(
+                "clamped to the vendor band ceiling {floor_mm_per_tooth:.4} mm/tooth — the \
+                 whole derated band sits below the {global_floor_mm_per_tooth:.4} mm/tooth \
+                 chip-formation floor, so the recipe rests ON the breakage bound"
+            ),
+        }
+    }
+
+    /// True for the arm that parks the recipe on the band ceiling — the
+    /// precondition Checkpoint K (c2) requires before the gate may
+    /// report *clamped* instead of *exceeds*.
+    #[must_use]
+    pub const fn parks_on_band_ceiling(&self) -> bool {
+        matches!(self, ClampReason::RubbingFloorCappedToBandCeiling { .. })
+    }
+}
+
 /// **Stage 1 — what the operation was commanded to do.**
 ///
 /// `feed / (rpm · flutes)`. The quantity `narrate.rs` prints as "nominal
@@ -100,6 +171,17 @@ pub struct CommandedStage {
     pub flute_count: u32,
     /// `feed_rate_mm_min / (spindle_rpm · flute_count)`.
     pub feed_per_tooth_mm: f64,
+    /// Checkpoint K (d2) — set when this advance was placed by Suggest's
+    /// Step-9b clamp rather than chosen freely.
+    ///
+    /// `None` means **not clamped**, not "unknown": it is populated from
+    /// [`crate::feeds::recipe_parked_by_rubbing_floor`], which asks the
+    /// question against the same
+    /// [`crate::feeds::effective_rubbing_floor`] the clamp itself
+    /// applies. What it cannot distinguish is a hand-typed feed that
+    /// lands on the identical value — see that function's doc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clamped_to: Option<ClampReason>,
 }
 
 /// The unit stages 1 and 2 share. Named once so a consumer can assert
