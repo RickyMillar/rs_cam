@@ -1655,6 +1655,7 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
+            ceiling_advisory: None,
         }
     }
 
@@ -1833,6 +1834,7 @@ mod tests {
                 confidence: Confidence::Validated,
                 entry_spikes: Vec::new(),
                 burn_advisory: None,
+                ceiling_advisory: None,
             };
             ToolpathLoadVerdict {
                 toolpath_id: ToolpathId(0),
@@ -2232,6 +2234,7 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
+            ceiling_advisory: None,
         }
     }
 
@@ -2282,6 +2285,7 @@ mod tests {
                 confidence: Confidence::Approximate("extrapolated".to_owned()),
                 entry_spikes,
                 burn_advisory: Some(Box::new(advisory_metric)),
+                ceiling_advisory: None,
             },
             other => panic!("fixture must be Within, got {other:?}"),
         };

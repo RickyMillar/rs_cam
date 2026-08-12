@@ -643,19 +643,42 @@ fn evaluate_inner(
     // computed by this gate; pre-T1.1 they were used and dropped, which
     // is why an operator could see the gate's number and the commanded
     // number and have nothing relating them.
+    //
+    // Checkpoint K (d2): the commanded stage also records whether the
+    // advance was *placed* by Suggest's Step-9b clamp rather than chosen.
+    // The question is asked against the same
+    // `feeds::effective_rubbing_floor` the clamp applies — see
+    // `feeds::recipe_parked_by_rubbing_floor` for what it can and cannot
+    // distinguish.
+    let gate_band_for_clamp = crate::feeds::ChiploadBounds {
+        min_mm_per_tooth: min.unwrap_or(0.0),
+        max_mm_per_tooth: max,
+    };
     let commanded_stage = steady_samples.first().map(|(_, s)| {
         let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
+        let feed_per_tooth_mm = if divisor > 0.0 {
+            operation_feed_rate_mm_min / divisor
+        } else {
+            0.0
+        };
         crate::feeds::CommandedStage {
             feed_rate_mm_min: operation_feed_rate_mm_min,
             spindle_rpm: s.spindle_rpm,
             flute_count: s.flute_count,
-            feed_per_tooth_mm: if divisor > 0.0 {
-                operation_feed_rate_mm_min / divisor
-            } else {
-                0.0
-            },
+            feed_per_tooth_mm,
+            clamped_to: crate::feeds::recipe_parked_by_rubbing_floor(
+                feed_per_tooth_mm,
+                Some(gate_band_for_clamp),
+            ),
         }
     });
+    // The (c2) precondition, evaluated once: did the rubbing-floor clamp
+    // park this recipe on the band CEILING? `RubbingFloor` (the ordinary
+    // arm, where the band had room above the floor) is deliberately not
+    // enough — that recipe is nowhere near the ceiling.
+    let parked_on_band_ceiling = commanded_stage
+        .and_then(|c| c.clamped_to)
+        .is_some_and(|r| r.parks_on_band_ceiling());
     let achieved_feed_stage = {
         let predicted_feeds_present = !trace.predicted_feeds.is_empty();
         let median_ratio = if predicted_feeds_present {
@@ -1008,12 +1031,35 @@ fn evaluate_inner(
             side: Some(ChipSide::Low),
         });
     }
+    // Checkpoint K (c2) — the ceiling advisory. Both conditions, never
+    // proximity alone: the observation is ON the ceiling at the boundary
+    // epsilon, AND the commanded advance was put there by the
+    // rubbing-floor clamp capped to that same ceiling. A 5 %-over
+    // observation is `Exceeds` and never reaches this line; an
+    // unclamped recipe that happens to peak on the ceiling gets the
+    // ordinary `Within` with no advisory.
+    let ceiling_advisory = (parked_on_band_ceiling
+        && approach_to_max
+            .bounds
+            .is_at_max(approach_to_max.observed_mm_per_tooth))
+    .then(|| {
+        tracing::debug!(
+            verdict = "Within",
+            advisory = "ceiling",
+            observed_mm_per_tooth = approach_to_max.observed_mm_per_tooth,
+            bound_max_mm_per_tooth = max,
+            "chipload gate: the recipe rests on the band ceiling because Suggest's \
+             rubbing-floor clamp put it there — reporting clamped, not exceeded"
+        );
+        Box::new(approach_to_max.clone())
+    });
     ChiploadVerdict::Within {
         approach_to_min,
         approach_to_max,
         confidence: chipload_confidence,
         entry_spikes,
         burn_advisory,
+        ceiling_advisory,
     }
 }
 

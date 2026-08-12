@@ -17,7 +17,15 @@ use serde::{Deserialize, Serialize};
 /// types: the chipload band's upper edge, the deflection cap, the
 /// power cap, the machine's hard feed cap, the kinematic-reach cap
 /// from the F-034 / F-035 integrator, or the chipload band's lower
-/// edge (rubbing floor, applied last).
+/// edge (applied last).
+///
+/// **This vocabulary describes the MODULATOR only.** It reports which
+/// bound the per-move constrained-max solver hit. It deliberately does
+/// not name Suggest's Step-9b rubbing-floor clamp, which is a
+/// whole-recipe decision taken before any move exists — that lives on
+/// [`crate::feeds::CommandedStage::clamped_to`] (Checkpoint K (d2),
+/// option d2 over d1). Adding a variant for it here would mean
+/// reporting a constraint the modulator never evaluated.
 ///
 /// The variants are `Ord` so consumer code can build histograms and
 /// `BTreeMap` keyed views without extra glue.
@@ -39,9 +47,20 @@ pub enum BindingConstraint {
     /// integrator (F-034 / F-035) — the move was too short to reach
     /// the requested feed in the available distance.
     KinematicReach,
-    /// Chipload band's lower edge bound the feed (rubbing floor —
-    /// applied AFTER aggressiveness scaling so feeds never drop
-    /// below `band.min × rpm × flutes` even at low aggressiveness).
+    /// Chipload band's lower edge bound the feed: the modulator's own
+    /// per-move floor, `band.min × rpm × flutes`, applied AFTER
+    /// aggressiveness scaling so feeds never drop below the matched
+    /// row's minimum even at low aggressiveness.
+    ///
+    /// **Corrected at Checkpoint K (d2), 2026-08-13.** This doc used to
+    /// call itself "the rubbing floor". It is not: the rubbing floor is
+    /// [`crate::feeds::effective_rubbing_floor`], which is
+    /// `min(RUBBING_FLOOR_MM_TOOTH, band.max)` — a different quantity,
+    /// applied at a different stage, by a different component. On A-6's
+    /// B3 reference case the two are **2.000× apart and point at
+    /// opposite ends of the same band** (`band.min` 0.005763 vs the
+    /// clamp's 0.011525 = `band.max`). A docstring that names a
+    /// constant the code does not use is a lie a reader then cites.
     ChiploadMin,
 }
 
@@ -819,6 +838,32 @@ pub enum ChiploadVerdict {
         /// rather than auto-recommending.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         burn_advisory: Option<Box<ChiploadMetric>>,
+        /// **Checkpoint K (c2), 2026-08-13 — the recipe is sitting ON
+        /// the band ceiling because the engine's own clamp put it
+        /// there.**
+        ///
+        /// Suggest's Step-9b raises an advance below the chip-formation
+        /// floor; when the whole derated band sits under that floor,
+        /// [`crate::feeds::effective_rubbing_floor`] returns the band
+        /// **maximum**, and the recipe is parked exactly on the
+        /// breakage-side bound with zero headroom — by design, and
+        /// correctly (the alternative measured 3.47× the band maximum).
+        ///
+        /// A hard `Exceeds(High)` there is the engine failing its own
+        /// recipe, so this reports *clamped* instead. It is emitted only
+        /// when **both** hold: the observation is at the ceiling within
+        /// [`crate::tool_load::boundary::BOUNDARY_EPSILON_REL`], **and**
+        /// the commanded advance was placed by that clamp
+        /// ([`crate::feeds::recipe_parked_by_rubbing_floor`]). Proximity
+        /// alone would demote genuine exceedances on any op whose recipe
+        /// happens to sit near the ceiling, which is why (c2) is only
+        /// correct with (b1).
+        ///
+        /// Mirrors [`Self::Within::burn_advisory`]'s shape deliberately:
+        /// same pattern, same reason — a bound whose *hard* trip is
+        /// indefensible, kept visible instead of hidden.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ceiling_advisory: Option<Box<ChiploadMetric>>,
     },
     Exceeds {
         side: ChipSide,
@@ -1261,6 +1306,7 @@ mod tests {
                 confidence: Confidence::Validated,
                 entry_spikes: Vec::new(),
                 burn_advisory: None,
+                ceiling_advisory: None,
             },
             power: PowerVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
@@ -1308,6 +1354,7 @@ mod tests {
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
                     entry_spikes: Vec::new(),
                     burn_advisory: None,
+                    ceiling_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::CutterModeUnsupported("v-bit tip".to_owned()),
@@ -1355,6 +1402,7 @@ mod tests {
                         confidence: Confidence::Validated,
                         entry_spikes: Vec::new(),
                         burn_advisory: None,
+                        ceiling_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -1389,6 +1437,7 @@ mod tests {
                         confidence: Confidence::Validated,
                         entry_spikes: Vec::new(),
                         burn_advisory: None,
+                        ceiling_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
                         reason: UnmodeledReason::NotImplemented("phase 1b".to_owned()),
@@ -1676,6 +1725,7 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
+            ceiling_advisory: None,
         };
         assert_eq!(within.state(), LoadState::Within);
         assert!(!within.is_exceeded());
@@ -1716,6 +1766,7 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
+            ceiling_advisory: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: ChiploadVerdict = serde_json::from_str(&json).expect("de");
@@ -2151,6 +2202,7 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spikes: Vec::new(),
                     burn_advisory: None,
+                    ceiling_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
                     reason: UnmodeledReason::SimulationRequired,

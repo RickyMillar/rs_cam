@@ -86,11 +86,18 @@ impl ModulationStrategy {
 /// Chipload band (`mm/tooth`) sourced from the vendor LUT for a given
 /// tool / material pair.
 ///
-/// `min` is the rubbing / heat-burn floor (below this the tooth scrapes
-/// instead of slicing; in wood the workpiece scorches). `max` is the
-/// breakage / over-load ceiling. The modulator floors emitted feeds at
-/// `min × rpm × flutes` (after aggressiveness) and caps the
-/// constrained-max search at `max × rpm × flutes`.
+/// `min` is the matched vendor row's own lower edge — below it the row
+/// says the tooth scrapes instead of slicing and in wood the workpiece
+/// scorches. `max` is the breakage / over-load ceiling. The modulator
+/// floors emitted feeds at `min × rpm × flutes` (after aggressiveness)
+/// and caps the constrained-max search at `max × rpm × flutes`.
+///
+/// **Not the same thing as the rubbing floor** (Checkpoint K (d2),
+/// 2026-08-13): [`crate::feeds::RUBBING_FLOOR_MM_TOOTH`] is a global,
+/// diameter- and material-independent chip-formation threshold, and
+/// [`crate::feeds::effective_rubbing_floor`] subordinates it to
+/// `band.max`. On a sub-Ø2 tool the two land at **opposite ends of this
+/// band**. This field is `band.min` and nothing else.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChiploadBand {
     /// Minimum chipload (mm per tooth). Must be > 0 and ≤ `max`.
@@ -452,7 +459,8 @@ fn max_safe_feed_for_move(
     let aggr = ctx.aggressiveness.max(0.0);
     let after_aggr = limit * aggr;
 
-    // 6. Chipload-min floor (rubbing protection). Applied last so
+    // 6. Chipload-min floor — the matched row's own `band.min`, NOT
+    // `feeds::effective_rubbing_floor` (see `ChiploadBand`). Applied last so
     // aggressiveness can't drop feeds below the safe floor. When
     // the floor itself sits above the machine's hard cap (rare:
     // machine `max_feed` configured below `band.min × rpm × flutes`)

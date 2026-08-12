@@ -986,6 +986,7 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
+            ceiling_advisory: None,
         }
     }
 
@@ -1334,6 +1335,7 @@ mod tests {
                     side: Some(ChipSide::High),
                 }],
                 burn_advisory: None,
+                ceiling_advisory: None,
             },
             _ => panic!("within_chipload should produce Within"),
         };

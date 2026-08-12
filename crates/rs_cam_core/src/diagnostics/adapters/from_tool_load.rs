@@ -116,11 +116,17 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
 /// its old shape rather than asserting something unmeasured.
 fn observed_qualifier(explanation: Option<&crate::feeds::FeedExplanation>) -> String {
     match explanation {
+        // Checkpoint K (d2) — say when the commanded number was PLACED by
+        // the engine rather than chosen. Renderer 1 of 3.
         Some(e) => format!(
-            " [{}, {}; commanded {:.4} mm/tooth advance, {}]",
+            " [{}, {}; commanded {:.4} mm/tooth advance{}, {}]",
             e.gate.statistic.label(),
             e.gate.unit(),
             e.commanded.feed_per_tooth_mm,
+            e.commanded
+                .clamped_to
+                .map(|c| format!(" — {}", c.label()))
+                .unwrap_or_default(),
             e.multiplier_clause(),
         ),
         None => String::new(),
@@ -216,6 +222,7 @@ fn chipload_to_diagnostic(
         ChiploadVerdict::Within {
             approach_to_max,
             burn_advisory,
+            ceiling_advisory,
             ..
         } => {
             // Emit only when there's something to say — Within rows
@@ -244,15 +251,24 @@ fn chipload_to_diagnostic(
             // counts, which is a product decision and not this wave's.
             // What changes is that the message and the citation now say
             // what happened.
-            let citation_metric = burn_advisory.as_deref().unwrap_or(approach_to_max);
+            let citation_metric = burn_advisory
+                .as_deref()
+                .or(ceiling_advisory.as_deref())
+                .unwrap_or(approach_to_max);
             // T1.2 — name the statistic, name the unit, and name the two
             // multipliers that separate this number from the commanded
             // one. See `observed_qualifier` for why a bare "Chipload
             // ... mm/tooth" was actively misleading.
             let qualifier = observed_qualifier(explanation);
             let provenance = row_provenance_clause(explanation);
-            let message = match burn_advisory.as_deref() {
-                Some(advisory) => format!(
+            // Checkpoint K (c2) — a recipe the engine's own rubbing-floor
+            // clamp parked ON the band ceiling reads *clamped*, not
+            // *within* and certainly not *exceeds*. The three
+            // possibilities are mutually exclusive by construction: the
+            // burn advisory is a low-side reading, the ceiling advisory a
+            // high-side one.
+            let message = match (burn_advisory.as_deref(), ceiling_advisory.as_deref()) {
+                (Some(advisory), _) => format!(
                     "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
                      — not refused because the floor's provenance is {} (advisory only)\
                      {qualifier}{provenance}",
@@ -260,7 +276,15 @@ fn chipload_to_diagnostic(
                     advisory.bounds.min_mm_per_tooth.unwrap_or(f64::NAN),
                     advisory.bounds.source.row_id(),
                 ),
-                None => format!(
+                (None, Some(advisory)) => format!(
+                    "Observed feed-per-tooth {:.4} mm is ON the {:.4} mm/tooth band ceiling — \
+                     CLAMPED there by the engine's own rubbing-floor rule, not exceeded. The \
+                     whole derated band sits below the chip-formation floor, so no feed \
+                     clears rubbing without leaving the band; expect burnishing\
+                     {qualifier}{provenance}",
+                    advisory.observed_mm_per_tooth, advisory.bounds.max_mm_per_tooth,
+                ),
+                (None, None) => format!(
                     "Observed feed-per-tooth within band ({:.4} mm){qualifier}{provenance}",
                     approach_to_max.observed_mm_per_tooth
                 ),
