@@ -2504,3 +2504,335 @@ disagree across gates" is not what the code does; (d) note the Ipe cell's
 resolution-dependence rider means **the sim cell belongs beside every
 chipload verdict**, the same discipline already required for collision
 counts.
+
+---
+
+## A-7 — execute Checkpoint K: resolver purposes, boundary contract, one routed query, 2026-08-13
+
+Status: COMPLETE. **Headline: all seven Checkpoint K items executed;
+G-CHIP-ULP, G-SUB1MM and G-LIT-IPE are discharged, the LUT query is
+routed once instead of twice, and the end-state red set is exactly
+G-XFP×3 + `wanaka_suggest_baseline`.**
+
+Commit(s), parent `e41bdfde` (branch `tech-debt-3`):
+
+| commit | slice |
+|---|---|
+| `0dc66e02` | **a3** — declare the two resolvers' purposes; typed RPM-anchor disclosure |
+| `5b220db0` | **b1** — `tool_load::boundary`, epsilon on `ChipBounds`, swept onto every gate |
+| `a0a9840f` | **c2 + d2** — ceiling advisory; `ClampReason` on the commanded stage; `ChiploadMin` docstring corrected |
+| `6466fc99` | **e2 + f1** — relative Ipe anti-test; G-SUB1MM re-pointed at the raw ratio |
+| `0bc972c9` | **g1 + g2** — CLI modulation default flips ON, opt-out kept, state printed |
+| `b7234d2f` | **a4** — `vendor_normalize::lut_query_for`, one routing site (number-moving, last) |
+| `16786d3b` | **the a4 re-pin** — two Adaptive3d Suggest feeds, with attribution |
+| this entry | the wave record + the two ledger amendments + the new ledger row |
+
+Territory held: `crates/rs_cam_core/src/{feeds,tool_load,diagnostics,drill_metrics.rs,feed_modulation.rs}`,
+`crates/rs_cam_cli/src/{main,project}.rs`,
+`crates/rs_cam_viz/src/ui/{properties/mod,feeds_modal}.rs`,
+`crates/rs_cam_core/tests/` (2 new files, 14 touched),
+`planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §4,
+`planning/review_2026-08-08/artifacts/a7/`, this entry.
+
+Question and pre-registered bars: Checkpoint K, binding, all seven items.
+Bars set before starting: (a) slices 1–6 move **nothing** except the two
+known-red tests going green and the CLI default, and slice 7's moves are
+confined to Adaptive3d / ProjectCurve; (b) every "fixed" claim carries a
+before **and** an after quote from the same instrument, not a description
+of one; (c) no bar may be satisfied by an empty population — if a count
+goes to zero because the code path stopped existing, that is not evidence
+and must be measured a different way; (d) anything I could not reach is
+NOT EXERCISED with a named owner, never inflated.
+
+### Result (fact), per slice
+
+**a3 — no number moves.** Both resolvers' docs now state their purpose,
+the census numbers and their intended callers.
+`FeedsWarning::VendorRowPublishesNoChipload { observation_id,
+formula_chipload_mm }` fires at the fallback site and is rendered by all
+three `FeedsWarning` surfaces. `tests/lut_resolver_purposes_a7.rs` pins
+the **property** (survives LUT growth): 360-query sweep, **16 rested on
+an RPM anchor and were disclosed, 0 silent, 0 false positives**. Rendered:
+
+```text
+[Info] feeds.vendor_row_publishes_no_chipload: Vendor row
+whiteside-1540-vgroove-60deg-quarter-rpm is an RPM anchor and publishes
+no chipload column — the recommended 0.0168 mm/tooth is the empirical
+formula's, not this vendor's, and this recommendation carries no band.
+```
+
+**b1 — the boundary contract.** `tool_load::boundary`,
+`BOUNDARY_EPSILON_REL = 8.0 * f64::EPSILON`, stated on `ChipBounds` as
+`exceeds_high` / `below_low` (returns `Option`, so "no minimum" cannot
+collapse into "fine") / `contains` / `is_at_max`. Red-first, in A-6's own
+fixture, **inverted in place rather than deleted**:
+
+```text
+before:  feed parked ON the gate's ceiling: Exceeds at 12 of 181 RPM values
+         every trip delta = 1.734723475976807e-18 (1 ulp), printed 0.011525 vs 0.011525
+after:   feed parked ON the gate's ceiling: Exceeds at 0 of 181 RPM values, Within at 181
+         genuine 5 %-over feed: Exceeds at 181 of 181 RPM values
+```
+
+and the cross-gate table's "+1 ulp ⇒ Exceeds" row became "+1 ulp ⇒
+absorbed", with a "+20 ulp ⇒ still trips" row bounding the slack.
+
+**The bare-`>` sweep, grep-verified.** Every bound comparison in
+`chipload` (trip, both entry-spike advisories, burn side, the bipolar
+predicate), `power` (trip + entry spike), `deflection` (trip + entry
+spike + the *confidence tier*), the three dial-less drill gates,
+`drill_metrics::classify_chip_welding`'s two band cuts,
+`drill_metrics`'s `peck_pattern_adequate`, and `plunge_stress` now route
+through the contract. Grepping those six files for a comparison operator
+adjacent to max/min/bound/threshold/trigger/lo/hi/available/floor/ceiling/
+limit leaves exactly **three** hits, and none is a bound trip: two
+positivity guards (`peak_available_at_peak > 0.0`) and one
+nearest-bound **distance** comparison for a single-number headroom
+display (`drill_gates.rs:264`). Stated rather than claimed because
+"no bare `>` remains" is otherwise unfalsifiable.
+
+**One correction to my own commit message, recorded here.** The constant
+is *named* 8 ulp and is 8 ulp only at the bottom of a binade: a relative
+epsilon is **8–16 ulp** (`x·EPSILON ∈ [1 ulp, 2 ulp)`), ≈ 11.8 ulp on
+the G-CHIP-ULP reference bound. Found by a fixture probing "+9 ulp must
+still trip" and failing. The variation is documented at the constant and
+the probe now uses 20.
+
+**c2 + d2 — clamped, not exceeded.** `ceiling_advisory` on the `Within`
+arm, gated on epsilon-proximity **and** the clamp, never proximity alone;
+`CommandedStage::clamped_to: Option<ClampReason>` populated from
+`feeds::recipe_parked_by_rubbing_floor`, which reads the same
+`effective_rubbing_floor` Step-9b applies (one decision, two questions).
+Rendered through the core diagnostics adapter — the surface the CLI
+report and MCP `get_diagnostics` both consume:
+
+```text
+=== ON the band ceiling (rubbing-floor clamp put it there) ===
+[Info] load.chipload.within: Observed feed-per-tooth 0.0115 mm is ON the
+0.0115 mm/tooth band ceiling — CLAMPED there by the engine's own
+rubbing-floor rule, not exceeded. … [commanded 0.0115 mm/tooth advance —
+clamped to the vendor band ceiling 0.0115 mm/tooth — the whole derated
+band sits below the 0.0250 mm/tooth chip-formation floor, so the recipe
+rests ON the breakage bound, ×1.0000 achieved/commanded feed]
+
+=== 5 % over the same ceiling (genuine exceedance) ===
+[Caution] load.chipload.high: Feed-per-tooth too high — breakage risk: 0.0121 mm
+```
+
+The precondition is asserted **separately**, because a demotion that
+cannot be shown not to over-reach is not evidence: a reading at half the
+ceiling carries no advisory, and the 5 %-over case still `Exceeds`.
+Free docstring corrections landed with it —
+`BindingConstraint::ChiploadMin` and `feed_modulation::ChiploadBand` both
+called `band.min` "the rubbing floor"; on the B3 reference the two are
+**2.000× apart at opposite ends of one band**.
+
+**e2 + f1 — two known reds go GREEN (expected; cite K-(e2)/(f1)).**
+
+```text
+before:  anti.ipe_micro_matches_oak_micro_chipload  Outside
+           anti-pattern `feed_rate / (rpm * flutes) > 0.030` triggered (= 1)
+         verdict: critical            → run_literature_matrix FAILED
+after:   anti.ipe_micro_matches_oak_micro_chipload  Within
+           anti-pattern `fpt / ref_fpt > 0.85` clear
+         verdict: moderate (fpt: 0.0360 > max 0.0270 (+33.4%))
+```
+
+The ratio, measured through the harness's own two runs rather than
+quoted: **`fpt / ref_fpt` = 0.5898240291751307**, independently matching
+A-6's 0.59. New schema `[cell.reference]` runs the cell a second time
+with one material swapped; a reference run that refuses binds **nothing**,
+so the row lands NA — a relative test whose denominator could not be
+computed has not passed. G-SUB1MM is re-pointed at
+`chipload_diameter_ratio_raw` plus the property
+`scale == raw^CHIPLOAD_DIAMETER_EXPONENT`.
+
+**g1 + g2 — the one user-facing default change.** Verified rather than
+assumed: `cli smoke` still pins `false` explicitly (`smoke.rs:531`,
+untouched). Captured verbatim, both arms, in
+`artifacts/a7/cli_modulation_state.md`:
+
+```text
+Adaptive feed modulation: on (ConstrainedMax, aggressiveness 1.00)
+Verdict: OK
+```
+```text
+Adaptive feed modulation: off (--no-adaptive-feed-modulation)
+```
+
+**a4 — the re-census.** `vendor_normalize::lut_query_for` is the single
+routing site; `routed_lookup_family` is deleted; A-6's `gate_route`
+mirror is deleted as its own NOT-EXERCISED note instructed.
+
+| axis | pre-a4 | post-a4 |
+|---|---:|---:|
+| (query, reroute) pairs resolving to **different rows** | **489** of 3 024 | **0** of 3 024 |
+| refusal **asymmetry** (Suggest banded where the gate refuses) | **378** | **0** |
+| refusals (both sides) | 756 | 756 |
+
+The asymmetry figure is measured **through `feeds::calculate`**, not
+counted from `lut_query_for`: post-a4 both sides call that function, so a
+hand-count there is zero by construction and proves nothing (bar (c)).
+The pre-a4 arm is reproduced in-process by disabling the routing —
+**12 of 12 vendor-banded before, 0 after** — and every post-a4 refusal is
+asserted to carry `NoVendorRowsForRoutedOperation` rather than a silent
+formula fallback.
+
+### Red-first evidence / fingerprints changed
+
+**Full core suite, `--no-fail-fast`, unbounded capture, four times**
+(169 test binaries each): `artifacts/a7/suite_pre_a7_summary.txt`
+(parent `e41bdfde`), `suite_mid_a7_summary.txt` (after slices 1–6),
+`suite_post_a7_summary.txt` (after a4), `suite_final_a7_summary.txt`
+(after the re-pin). Each capture was taken unbounded (≈ 279 kB) and the
+committed artifact is a **reduction** — every `Running`, `test result:`
+and failure name kept, passing names and panic bodies dropped, 1.1 MB →
+~150 kB. The one panic body that carried information is quoted in full
+below. `artifacts/a7/README.md` records the reduction rather than
+leaving it as an absence.
+
+| capture | failing tests |
+|---|---|
+| **pre** (`e41bdfde`) | `arc_raster_full_dressups_fingerprint`, `face_full_chain_fingerprint`, `three_pass_full_dressups_fingerprint` (G-XFP), `sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling` (G-SUB1MM), `wanaka_suggest_baseline` |
+| **mid** (after slices 1–6, `0bc972c9`) | G-XFP ×3, `wanaka_suggest_baseline` |
+| **post** (after a4, `b7234d2f`) | G-XFP ×3, `wanaka_suggest_baseline`, **+ `retired_lift_leaves_feed_at_the_calculator_value`** |
+| **final** (after the re-pin, `16786d3b`) | G-XFP ×3, `wanaka_suggest_baseline` |
+
+**End-state red set, verified: G-XFP ×3 + `wanaka_suggest_baseline`
+ONLY** — the set the brief pre-registered, and identical to the pre
+capture minus G-SUB1MM.
+
+**Slices 1–6 moved nothing but the two attributed greens.** G-SUB1MM
+went green by K-(f1). G-LIT-IPE went green by K-(e2) — and it is
+**absent from the pre capture's failure list for a bad reason worth
+recording**: `run_literature_matrix` reads `cells.toml` at *runtime*, and
+that file was already edited when the pre suite reached it, so the pre
+capture's `literature_matrix ... ok` row is **contaminated**. Re-derived
+cleanly instead, by restoring `cells.toml` to `HEAD` and re-running that
+one binary; the quoted `critical` → `moderate` pair above is from that
+clean pair, not from the contaminated capture. Recorded rather than
+quietly fixed.
+
+**a4's re-pins — one test, four fixtures, two moved.** `commit
+16786d3b`, every row citing K-(a4). The post capture's failure, verbatim:
+
+```text
+---- retired_lift_leaves_feed_at_the_calculator_value stdout ----
+A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted   6912.0   918.0   1305.0   7.53×   5.30×
+      band Some((0.032, 0.055))  target 0.04350  ceiling 15000  rpm 15000  flutes 2
+      commanded advance/tooth  legacy 0.23040  shipped 0.03060 mm  (band max 0.05500)
+panicked at crates/rs_cam_core/tests/arc_fit_disposition_a5.rs:528:9:
+A3D-1 …: Suggest must ship the un-lifted feed 1215 ± 0.5, got 918
+```
+
+
+| fixture | old | new | ratio | why |
+|---|---:|---:|---:|---|
+| A3D-1 Ø6 2F endmill / HardMaple (`Adaptive3d`) | 1215.0 | **918.0** | ×0.7556 | Suggest now resolves the **Pocket** band 0.032–0.055 instead of the Adaptive band 0.038–0.070 |
+| A3D-2 Ø8 3F endmill / WhiteOak (`Adaptive3d`) | 2243.0 | **1694.0** | ×0.7552 | same mechanism, same row pair |
+| DC-1 Ø3 ball / HardMaple (`DropCutter`) | 1487.0 | 1487.0 | — | not a rerouted kind |
+| DC-2 Ø2-tip tapered / WhiteOak (`DropCutter`) | 1029.0 | 1029.0 | — | not a rerouted kind |
+
+The two Adaptive3d factors agreeing to three figures is the check on the
+attribution: one row pair carried by the same scale terms must produce
+one factor. A-6 predicted 1/1.2727 = 0.786 on the band maximum; observed
+0.7556, the remainder being the DOC derate re-applied to the new band.
+
+A **second** consequence on the same test was RETIRED rather than
+re-pinned: assertion 4's closed form `legacy_A / arm_C ==
+1/arc_fit_ratio` reads **5.297** on A3D-1 where it read 4.000, because
+`arm_C` re-keys to the band and the band moved. That identity was a
+statement about the retired table's ratio *against the Adaptive band it
+was derived from*; pinning 5.297 would assert a coincidence, not a
+closed form. The check is scoped to DropCutter (unchanged at 6.67) and
+the Adaptive3d arm is replaced by the property that is now true and
+falsifiable — an Adaptive3d Suggest query must resolve the **Pocket**
+band. If it reads ≈0.070 again, the routing stopped being shared.
+
+**Nothing else moved, and that is partly a coverage gap, not a clean
+bill of health.** No committed fingerprint carries a
+ProjectCurve-on-bull/V-bit Suggest case, so a4's *refusal* half — the
+378 class, the sharper one — is proven only by the census's own
+in-process before/after and not by any pre-existing pin. Stated so the
+next reader does not read four green fingerprints as coverage.
+
+### Verification (focused commands + exact state)
+
+- `cargo test -p rs_cam_core --test lut_resolver_census_a6 --test lut_resolver_purposes_a7 --test ceiling_advisory_and_clamp_record_a7 --test chipload_boundary_g_chip_ulp --test lookup_parity --test literature_matrix --test vendor_lut_sub_1mm --test feed_explanation_snapshot_b3 --test rubbing_floor_never_exceeds_band` — **50 passed, 0 failed**.
+- `cargo test -p rs_cam_core --test lut_resolver_census_a6 -- --ignored --nocapture` — the re-census quoted above.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean at every commit. `cargo fmt --check --all` — clean.
+- Machine discipline: `free -g` / bracketed `pgrep -af "carg[o]"` before launches; disk 109 G free throughout; **no release build**; the operator's live GUI was never driven. **One discipline slip, recorded:** early in slice 7 I ran `cargo check` while a background `cargo test` was still running, which contended for the target lock and, worse, left the "after slices 1–6" capture unable to be trusted. I killed it, stashed slice 7, and re-ran that capture clean from the `0bc972c9` tree — `suite_mid_a7.txt` is the clean run. The rule is one Cargo job at a time and I broke it; the cost was ~50 minutes, not a wrong number.
+- Explicit staging only. `planning/airrun_2026-06-01/wanaka.toml`, `planning/review_2026-07-27/`, `planning/review_2026-08-04/FEEDS_SPEEDS_ARCHITECTURE_REVIEW_2026-08-07.md`, `.mcp.json` and the `e_impl/*.pgm` strays remain unstaged and byte-unchanged.
+
+### Ledger bookkeeping (this wave)
+
+`TECH_DEBT_2_CLOSEOUT.md` §4, **appended, never rewritten**:
+
+- **G-CHIP-ULP** — "AMENDED 2026-08-13 per Checkpoint K": the fourth
+  rider ("boundary semantics disagree across gates") is **factually
+  wrong** — every gate is `Within` at exact equality; the defect is
+  ±1-ulp reconstruction, 6–8 % of a 1 164-point grid. Rider 3 stands and
+  was fixed on the *recipe* record, not in `modulation_summary`. Marked
+  **FIXED** with the 12/181 → 0/181 pair. Riders 1 and 2b explicitly
+  unchanged.
+- **F-LUT2** — "AMENDED 2026-08-13 per Checkpoint K": **this row named
+  the wrong axis.** The entry-point pair diverges 141/18 144 and never
+  produces two different bands; the consequential divergence is the
+  gate-side family reroute (489/3 024 + 378). A-5's 1.273× re-attributed.
+- **NEW row G-IPE-PLUNGE** — the same Ipe cell's `plunge/feed` at
+  **−61.1 %** (0.1167 vs a 0.30–0.50 expected fraction). Not a chipload
+  question, untouched by (e2), and previously masked by the redundant
+  absolute anti-test. Owner: the feeds lane; next step written as
+  "measure the ratio across the matrix's hardwood cells before touching
+  either side — one cell is not a calibration".
+
+### NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition
+
+- **NOT EXERCISED: a live GUI capture of the three moved GUI surfaces**
+  (the advance-per-tooth card's `(clamped)` + hover, the verdict line's
+  `CLAMPED to band ceiling — not exceeded`, the two new warning strings).
+  A-6 transferred rule 3 to this wave and I discharged it **as text
+  through the core renderer** (`artifacts/a7/rendered_findings.md`) and
+  **as CLI capture** (`artifacts/a7/cli_modulation_state.md`), which the
+  brief allows — but the GUI strings themselves are asserted from source,
+  not seen. Blocker: the operator's live session runs an `e66962a`-era
+  binary that does not contain this code, and the wave was forbidden to
+  rebuild the release binary. Owner: the next wave with a GUI session.
+  Re-open condition: a GUI built at or after `b7234d2f`, a sub-Ø2
+  finishing op, properties panel open.
+- **NOT PLUMBED: the clamp fact travels from Suggest to the gate by
+  re-identification, not by carriage.** `recipe_parked_by_rubbing_floor`
+  asks "is this advance sitting where the clamp puts one?" against the
+  same `effective_rubbing_floor` Step-9b applies — one decision, two
+  questions, no mirror — but it identifies the **operating point, not its
+  author**: a hand-typed feed landing on the identical value is
+  indistinguishable. For (c2)'s purpose that is the right answer either
+  way (the engine will not command past a band ceiling), and it is
+  documented at the function. The faithful channel is the recipe's own
+  `FeedsWarning::ChiploadClampedToFloor`, which no shipped structure
+  carries from Suggest to the gate. Owner: whoever next touches
+  `ToolpathLoadContext`. Re-open condition: a stored per-toolpath feeds
+  record.
+- **NOT MEASURED: what a4 does to real recommendations on a real
+  project.** The census proves the two sides now name one family and that
+  the refusal is symmetric; it does **not** show a wanaka-scale before/
+  after of the recommendations themselves, because no committed
+  fingerprint covers Adaptive3d or ProjectCurve Suggest output. Owner:
+  live validation. Re-open condition: none needed — it is a coverage gap,
+  named above.
+- **NOT RE-OPENED: whether the reroute is *right*.** a4 applies the G16
+  §10 judgement to both sides; it does not adjudicate whether Adaptive3d
+  should be judged against a Pocket envelope. Unchanged from A-6.
+- **NOT FIXED: the GUI chipload heat-map's remaining vocabulary**, the
+  `is_bipolar_engagement` yardstick mismatch (its comparison now uses the
+  boundary contract; its *quantity* is still a chip thickness against an
+  advance band, documented at the predicate), and K-(e1) — S-2's
+  `/refresh-lit-matrix` re-verification of the Ipe cell's three sources,
+  which is the actual resolution of the Ø3-hardwood band conflict (e2
+  fixed the instrument, not the disagreement).
+
+Next action / checkpoint request: **none — Checkpoint K is fully
+discharged.** Two things want the orchestrator's attention when
+sequencing: the GUI capture above is a rule-3 debt that now spans two
+waves (A-6 → A-7 → next), and **G-IPE-PLUNGE** is a new open row whose
+next step is a measurement across the matrix, not a fix.
