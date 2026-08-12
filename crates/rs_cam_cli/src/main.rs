@@ -181,12 +181,31 @@ enum Commands {
         #[arg(long)]
         emit_gcode: Option<PathBuf>,
 
-        /// Enable F-036's per-segment adaptive feed modulation during
-        /// simulation. Requires `MachineProfile.kinematics` to be set
-        /// — combine with `--inject-shapeoko-kinematics` for projects
-        /// that predate F-034.
-        #[arg(long)]
-        adaptive_feed_modulation: bool,
+        /// Disable F-036's per-segment adaptive feed modulation during
+        /// simulation.
+        ///
+        /// **Checkpoint K (g1), 2026-08-13 — the default flipped to
+        /// ON.** Checkpoint J flipped
+        /// `SimulationOptions::default().adaptive_feed_modulation` to
+        /// `true` and the GUI pins `true`, but this flag defaulted to
+        /// `false`, so the same project got a *different operating
+        /// point* — and therefore different `Within`/`Exceeds`
+        /// verdicts and different reported feeds — depending on which
+        /// front end asked. Modulation is what parks a feed on the band
+        /// ceiling (A-5 measured `ConstrainedMax` rewriting 100 % of
+        /// moves), so the divergence was not cosmetic.
+        ///
+        /// This **moves CLI numbers for every existing invocation**.
+        /// `--no-adaptive-feed-modulation` reproduces the old behaviour
+        /// exactly, which A-5's own evidence needed. `cli smoke` pins
+        /// `false` explicitly and does not inherit this default (it is a
+        /// fingerprint harness).
+        ///
+        /// Modulation still requires `MachineProfile.kinematics` — for
+        /// projects predating F-034 combine with
+        /// `--inject-shapeoko-kinematics`, or the pass is a no-op.
+        #[arg(long = "no-adaptive-feed-modulation", action = clap::ArgAction::SetTrue)]
+        no_adaptive_feed_modulation: bool,
 
         /// F-039 — modulation algorithm: `constrained-max` (default;
         /// per-move binding-constraint solver) or `band-mid` (F-036's
@@ -858,7 +877,7 @@ fn main() -> Result<()> {
             resolution,
             summary,
             emit_gcode,
-            adaptive_feed_modulation,
+            no_adaptive_feed_modulation,
             modulation_strategy,
             modulation_aggressiveness,
             inject_shapeoko_kinematics,
@@ -891,7 +910,8 @@ fn main() -> Result<()> {
                 resolution,
                 summary,
                 emit_gcode.as_deref(),
-                adaptive_feed_modulation,
+                // Checkpoint K (g1) — default ON, opt out explicitly.
+                !no_adaptive_feed_modulation,
                 strategy,
                 modulation_aggressiveness,
                 inject_shapeoko_kinematics,
