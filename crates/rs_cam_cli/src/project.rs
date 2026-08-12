@@ -185,6 +185,13 @@ struct ProjectSummary {
     rapid_collision_count: usize,
     per_toolpath: Vec<ToolpathSummaryEntry>,
     verdict: String,
+    /// Checkpoint K (g2) — the operating point `verdict` and every
+    /// per-toolpath gate reading were taken at. Default flipped to
+    /// `true` at (g1); `--no-adaptive-feed-modulation` opts out.
+    adaptive_feed_modulation: bool,
+    /// Human-readable form of the same fact, including the strategy and
+    /// aggressiveness that shaped the rewritten feeds.
+    modulation_state: String,
 }
 
 // ── Main entry point ────────────────────────────────────────────────────
@@ -453,6 +460,26 @@ pub fn run_project_command(
     // string plus an unbounded pile of runs.
     print_triage_report(&session.triage());
 
+    // **Checkpoint K (g2), 2026-08-13 — every verdict this command
+    // reports names the operating point it was taken at.**
+    //
+    // A `Within` / `Exceeds` verdict is a statement about a feed, and
+    // adaptive feed modulation rewrites feeds move by move before the
+    // gates see them — A-5 measured `ConstrainedMax` rewriting 100 % of
+    // moves on the DropCutter fixtures and landing the observation
+    // exactly on the band maximum. A verdict that does not say whether
+    // modulation ran is not reproducible, and until (g1) the CLI and the
+    // GUI silently disagreed about it for the same project.
+    //
+    // Printed on stderr beside the verdict AND carried on summary.json,
+    // so a script that only reads the JSON is not the one reader left
+    // guessing.
+    let modulation_state = if adaptive_feed_modulation {
+        format!("on ({modulation_strategy:?}, aggressiveness {modulation_aggressiveness:.2})",)
+    } else {
+        "off (--no-adaptive-feed-modulation)".to_owned()
+    };
+
     let verdict = if total_collision_count > 0 {
         format!(
             "ERROR: {} holder/shank collisions detected",
@@ -489,6 +516,8 @@ pub fn run_project_command(
         rapid_collision_count: diag.rapid_collision_count,
         per_toolpath,
         verdict: verdict.clone(),
+        adaptive_feed_modulation,
+        modulation_state: modulation_state.clone(),
     };
 
     let summary_path = output_dir.join("summary.json");
@@ -554,6 +583,7 @@ pub fn run_project_command(
                 entry.id, entry.name, entry.operation, entry.move_count, entry.collision_count,
             );
         }
+        eprintln!("Adaptive feed modulation: {modulation_state}");
         eprintln!("Verdict: {verdict}");
         eprintln!("Output: {}", output_dir.display());
     }
