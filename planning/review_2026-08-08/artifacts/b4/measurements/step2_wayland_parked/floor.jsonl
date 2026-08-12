@@ -1,0 +1,20 @@
+{"call": "frames_probe", "phase": "before", "wall_s": 0.0, "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 6.442039994}
+{"call": "generation_status", "wall_s": 0.0006155967712402344, "repeat": 0, "phase": "census", "served_from": "live", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 6.443441435}
+{"call": "project_summary", "wall_s": 0.752208948135376, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 7.196421868}
+{"call": "list_toolpaths", "wall_s": 0.7528195381164551, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 7.950412067}
+{"call": "inspect_stock", "wall_s": 0.7512650489807129, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 8.702799637}
+{"call": "inspect_machine", "wall_s": 0.7523744106292725, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 9.45606191}
+{"call": "inspect_model", "wall_s": 0.7536869049072266, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 10.210822555}
+{"call": "generation_status", "wall_s": 0.0005128383636474609, "repeat": 1, "phase": "census", "served_from": "live", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 10.211994315}
+{"call": "project_summary", "wall_s": 0.7514917850494385, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 10.964300844}
+{"call": "list_toolpaths", "wall_s": 0.7524354457855225, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 11.717824229}
+{"call": "inspect_stock", "wall_s": 0.7526276111602783, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 12.47156407}
+{"call": "inspect_machine", "wall_s": 0.7521457672119141, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 13.224733001}
+{"call": "inspect_model", "wall_s": 0.7525949478149414, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 13.978548665}
+{"call": "generation_status", "wall_s": 0.0004222393035888672, "repeat": 2, "phase": "census", "served_from": "live", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 13.979608193}
+{"call": "project_summary", "wall_s": 0.7519218921661377, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 14.73218769}
+{"call": "list_toolpaths", "wall_s": 0.7519571781158447, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 15.484843078}
+{"call": "inspect_stock", "wall_s": 0.7518377304077148, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 16.237397036}
+{"call": "inspect_machine", "wall_s": 0.7521615028381348, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 16.990342839}
+{"call": "inspect_model", "wall_s": 0.752239465713501, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 17.743351882}
+{"call": "frames_probe", "phase": "after", "wall_s": 0.0, "frames": 72, "pumps": 85, "healthy": false, "last_frame_age_s": 17.743697861}

@@ -51,14 +51,6 @@ impl super::RsCamApp {
             return;
         };
 
-        // G-LV.1: open the frame bracket. It closes in `end_mcp_frame` at
-        // the very bottom of `update`, so "in a frame" spans the whole frame
-        // body — dispatch, event handling and render alike. That is what
-        // lets the MCP server thread tell a loop that is *inside* something
-        // long from one that is not running at all: both look like "no
-        // recent frame" from outside, and only the first ends on its own.
-        self.mcp_reads.frame_loop().frame_begin();
-
         // Drain all pending requests (non-blocking).
         let mut requests = Vec::new();
         loop {
@@ -77,7 +69,28 @@ impl super::RsCamApp {
         self.publish_mcp_read_snapshot();
     }
 
-    /// G-LV.1: close the frame bracket opened in [`Self::drain_mcp_requests`]
+    /// G-LV.1: open the frame bracket. It closes in [`Self::end_mcp_frame`]
+    /// at the very bottom of `draw_frame`, so "in a frame" spans the whole
+    /// frame body — dispatch, event handling and render alike. That is what
+    /// lets the MCP server thread tell a loop that is *inside* something long
+    /// from one that is not running at all: both look like "no recent frame"
+    /// from outside, and only the first ends on its own.
+    ///
+    /// **B-4 moved this out of [`Self::drain_mcp_requests`].** The drain is
+    /// now also reachable from the off-frame pump, and a pump that opened the
+    /// bracket without a paint closing it would leave `in_frame` latched
+    /// `true` forever — which makes `is_parked()` permanently `false` and
+    /// turns the one honest report of a non-rendering window into a
+    /// guaranteed lie. The bracket belongs to the paint, so it is opened and
+    /// closed on the paint path and nowhere else.
+    pub(crate) fn begin_mcp_frame(&mut self) {
+        if self.mcp_receiver.is_none() {
+            return;
+        }
+        self.mcp_reads.frame_loop().frame_begin();
+    }
+
+    /// G-LV.1: close the frame bracket opened in [`Self::begin_mcp_frame`]
     /// and publish what the frame left undone. Called last in `update`.
     ///
     /// The outstanding count has to come from `PendingMcpCompute`, not from
@@ -99,6 +112,24 @@ impl super::RsCamApp {
         self.mcp_reads
             .frame_loop()
             .beat(awaiting, awaiting_generate_all);
+    }
+
+    /// The off-frame equivalent of [`Self::end_mcp_frame`]: refresh the
+    /// outstanding-work counters after a dispatch that ran without a paint.
+    pub(crate) fn mcp_pump_beat(&mut self) {
+        if self.mcp_receiver.is_none() {
+            return;
+        }
+        let (awaiting, awaiting_generate_all) = self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .map_or((0, false), |pending| {
+                (pending.awaiting_gui(), pending.awaiting_generate_all())
+            });
+        self.mcp_reads
+            .frame_loop()
+            .pump_beat(awaiting, awaiting_generate_all);
     }
 
     /// A/M12: republish the cheap, no-argument reads so the MCP server thread

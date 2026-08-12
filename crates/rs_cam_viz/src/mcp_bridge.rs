@@ -132,6 +132,19 @@ pub struct FrameLoopBeat {
     /// Whether a `generate_all` was among them. Named because it is the one
     /// that drives multi-round work off future frames.
     awaiting_generate_all: AtomicBool,
+    /// Off-frame pumps — dispatches that ran from the event loop's
+    /// `about_to_wait` rather than from a paint.
+    ///
+    /// **Deliberately NOT counted as frames.** Once dispatch comes off the
+    /// paint path, "the loop is answering" and "the window is rendering" stop
+    /// being the same statement, and this type's whole job is to report the
+    /// second one honestly. Folding pumps into `frames` would make
+    /// [`Self::is_parked`] read `false` on a window that is not drawing a
+    /// single pixel — which is exactly the false reassurance G-LV.1 was
+    /// about, rebuilt one layer up.
+    pumps: AtomicU64,
+    /// Milliseconds since `origin` at the last [`FrameLoopBeat::pump_beat`].
+    last_pump_ms: AtomicU64,
 }
 
 impl Default for FrameLoopBeat {
@@ -146,6 +159,8 @@ impl Default for FrameLoopBeat {
             handled: AtomicU64::new(0),
             awaiting: AtomicU64::new(0),
             awaiting_generate_all: AtomicBool::new(false),
+            pumps: AtomicU64::new(0),
+            last_pump_ms: AtomicU64::new(0),
         }
     }
 }
@@ -174,6 +189,47 @@ impl FrameLoopBeat {
         // Release-store last: a reader that sees a non-zero frame count is
         // guaranteed to see a timestamp that was written for some frame.
         self.frames.fetch_add(1, Ordering::Release);
+    }
+
+    /// Called by the GUI main thread after an **off-frame** dispatch, with
+    /// what that dispatch left outstanding.
+    ///
+    /// Refreshes the same `awaiting` counters [`Self::beat`] does — they must
+    /// not go stale just because no paint happened — but touches neither the
+    /// frame count, the frame timestamp, nor the `in_frame` flag. See
+    /// [`Self::pumps`] for why that separation is the point.
+    pub fn pump_beat(&self, awaiting: u64, awaiting_generate_all: bool) {
+        let ms = self.now_ms();
+        self.awaiting.store(awaiting, Ordering::Relaxed);
+        self.awaiting_generate_all
+            .store(awaiting_generate_all, Ordering::Relaxed);
+        self.last_pump_ms.store(ms, Ordering::Relaxed);
+        self.pumps.fetch_add(1, Ordering::Release);
+    }
+
+    /// Dispatches that ran off the paint path since startup.
+    pub fn pumps(&self) -> u64 {
+        self.pumps.load(Ordering::Acquire)
+    }
+
+    /// Time since the last off-frame dispatch, or `None` if there has never
+    /// been one.
+    ///
+    /// A large value is **not** a fault: the event loop only wakes when
+    /// something asks it to, so an idle session with nothing pending pumps
+    /// rarely and correctly. Reported as a fact, with no health verdict
+    /// attached, because there is no threshold that would separate "dispatch
+    /// is broken" from "nobody has called anything".
+    pub fn pump_age(&self) -> Option<Duration> {
+        if self.pumps.load(Ordering::Acquire) == 0 {
+            return None;
+        }
+        let ms = self.last_pump_ms.load(Ordering::Relaxed);
+        Some(
+            self.origin
+                .elapsed()
+                .saturating_sub(Duration::from_millis(ms)),
+        )
     }
 
     /// Called by the MCP server thread after a request reaches the channel.
@@ -273,6 +329,12 @@ impl FrameLoopBeat {
             "current_frame_age_s": self.current_frame_age().map(|d| d.as_secs_f64()),
             "last_frame_age_s": self.frame_age().map(|d| d.as_secs_f64()),
             "frames": self.frames(),
+            // Dispatches that ran WITHOUT a paint. `healthy` above is still
+            // about pixels: a window can be parked (healthy false) and
+            // answering (pumps climbing) at the same time, and both halves
+            // matter to a caller deciding whether to trust a screenshot.
+            "pumps": self.pumps(),
+            "last_pump_age_s": self.pump_age().map(|d| d.as_secs_f64()),
             "requests_in_channel": self.backlog(),
             "awaiting_completion": self.awaiting(),
             "awaiting_generate_all": self.awaiting_generate_all(),
