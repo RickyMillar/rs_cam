@@ -202,18 +202,48 @@ fn find_best_vbit_row_where(
     })
 }
 
-/// Canonical LUT lookup entry point — routes V-bit / chamfer queries
-/// to the angle-aware matcher, everything else to the diameter+
-/// hardness matcher. Use this from every Suggest / Explain / MCP /
-/// gate call site so a 30° V-bit query never silently matches a 90°
-/// row.
+/// **The RECIPE resolver.** Answers "which vendor row best describes
+/// this cut?" for the feeds-and-speeds calculator, and **every** row
+/// competes — including the RPM-only anchors that publish
+/// `rpm_nominal` / `rpm_max` and no chipload column at all.
 ///
-/// Pre-Phase-1E only `tool_load::chipload::evaluate` did the routing
-/// inline; the Suggest path and the GUI feeds modal called
-/// `find_best_row` directly and lost the angle constraint, so a
-/// 30° V-bit toolpath's "recommended chipload" came from whatever
-/// V-bit angle happened to win the diameter score. Centralising the
-/// dispatch here keeps that contract in one place.
+/// Routes V-bit / chamfer queries to the angle-aware matcher, everything
+/// else to the diameter+hardness matcher, so a 30° V-bit query never
+/// silently matches a 90° row. (Pre-Phase-1E only
+/// `tool_load::chipload::evaluate` did that routing inline; the Suggest
+/// path and the GUI feeds modal called `find_best_row` directly and lost
+/// the angle constraint. Centralising the dispatch here keeps that
+/// contract in one place.)
+///
+/// # Its purpose, declared — Checkpoint K (a3), 2026-08-13
+///
+/// This resolver and [`find_best_chip_envelope_row`] are **deliberately
+/// two functions with two purposes**, not a duplication awaiting a
+/// merge. A-6's census
+/// (`planning/review_2026-08-08/LUT_BOUNDARY_EVIDENCE.md` §1) swept
+/// 18 144 queries through both:
+///
+/// | outcome | count |
+/// |---|---:|
+/// | no LUT coverage at all | 13 653 |
+/// | both resolvers, same row | 4 350 |
+/// | Suggest on an RPM-only row, gate on a banded one | **141** |
+/// | two *different bands* | **0** |
+///
+/// The envelope candidate set is a strict **subset** of this one, so
+/// this resolver can never miss where that one matches, and the two can
+/// differ **only** when an RPM-only row outscores every chipload-bearing
+/// row. In those 141 cases the caller gets a row whose
+/// `chip_load_mm` is `0.0` — the RPM anchor is real and wanted (standing
+/// preference: material and hardness *dial* parameters, they do not
+/// hard-reject rows), but the caller must then fall back to the formula
+/// chipload and has **no band**. `feeds::calculate` does exactly that and
+/// discloses it as
+/// [`crate::feeds::FeedsWarning::VendorRowPublishesNoChipload`].
+///
+/// **Do not** call this where a chipload *envelope* is required; call
+/// [`find_best_chip_envelope_row`], which is the contract every gate,
+/// the optimizer and the viewport are written against.
 pub fn find_best_row_for_geometry(
     lut: &VendorLut,
     criteria: &LookupCriteria,
@@ -230,15 +260,33 @@ pub fn find_best_row_for_geometry(
     }
 }
 
-/// F3.4 (defect class C5/A1) — chipload-ENVELOPE row lookup: like
+/// **The ENVELOPE resolver.** Answers "which vendor row publishes a
+/// band I may judge this cut against?" — like
 /// [`find_best_row_for_geometry`] but only rows publishing at least one
-/// chipload bound compete. RPM-only rows (e.g.
+/// chipload bound compete.
+///
+/// F3.4 (defect class C5/A1): RPM-only rows (e.g.
 /// `whiteside_rpm_assorted.json`) are legitimate RPM anchors for the
 /// feeds calculator, but when one outranks a chipload-bearing row it
 /// forces the chipload gate to `Unmodeled(NoVendorData)` even though
 /// usable rows exist underneath (A1 blocker). Every consumer that
 /// needs a chipload envelope — the gate, the optimizer context, the
 /// viewport envelope map — must resolve rows through this entry point.
+///
+/// # Its purpose, declared — Checkpoint K (a3), 2026-08-13
+///
+/// The extra filter here is the **only** difference from the recipe
+/// resolver: same scorer, same tie-break, same angle-aware dispatch.
+/// So the two are not redundant and neither is "the right one" — a
+/// recommendation may legitimately rest on an RPM anchor, and a verdict
+/// may not. Pinned by
+/// `envelope_resolver_never_matches_where_geometry_resolver_does_not`.
+///
+/// Note that this function is **not** where the two consumers historically
+/// diverged in a way that moved numbers. That was the *query*, not the
+/// resolver: the gate side routes `Adaptive3d` / `ProjectCurve` through
+/// [`crate::feeds::vendor_normalize::lut_query_for`] and, until Checkpoint
+/// K (a4), the Suggest side did not.
 pub fn find_best_chip_envelope_row(
     lut: &VendorLut,
     criteria: &LookupCriteria,
