@@ -14,6 +14,12 @@ workspace = true
 rs_cam_core = { path = "../rs_cam_core", features = ["step"] }
 eframe = { version = "0.34", features = ["wgpu"] }
 egui = "0.34"
+# G-LV.1: rs_cam owns the winit event loop (`host.rs`), so it needs winit's
+# `ApplicationHandler` / `EventLoop` / `EventLoopProxy` types directly. Pinned
+# and featured EXACTLY as eframe 0.34.3 declares it
+# (`eframe-0.34.3/Cargo.toml:262-265`) so this adds no feature to the unified
+# build and cannot resolve to a second, incompatible winit.
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
 egui-wgpu = "0.34"
 egui_plot = "0.35"
 nalgebra = { workspace = true }

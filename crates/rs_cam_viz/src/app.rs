@@ -22,6 +22,10 @@ pub struct RsCamApp {
     pending_checkpoint_load: bool,
     /// Frame counter for auto-screenshot mode (RS_CAM_SCREENSHOT env var).
     auto_screenshot_frame: Option<u32>,
+    /// G-LV.1 repro lever (RS_CAM_MINIMIZE_AFTER_FRAMES env var): frames left
+    /// before this window minimises itself. `None` = never, which is every
+    /// normal session.
+    minimize_after_frames: Option<u32>,
     /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
     last_hover_face: Option<rs_cam_core::enriched_mesh::FaceGroupId>,
     /// Flag: show the unsaved-changes confirmation dialog before quitting.
@@ -62,6 +66,11 @@ impl RsCamApp {
 
         // Auto-screenshot mode: set RS_CAM_SCREENSHOT=1 (or workspace name) to capture and exit.
         let auto_screenshot_frame = std::env::var("RS_CAM_SCREENSHOT").ok().map(|_| 0u32);
+
+        // G-LV.1 repro lever. See `minimize_after_frames`.
+        let minimize_after_frames = std::env::var("RS_CAM_MINIMIZE_AFTER_FRAMES")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
 
         let mut controller = AppController::new();
 
@@ -160,6 +169,7 @@ impl RsCamApp {
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
             auto_screenshot_frame,
+            minimize_after_frames,
             last_hover_face: None,
             show_quit_dialog: false,
             last_tp_color_mode: crate::state::viewport::ToolpathColorMode::Normal,
@@ -812,6 +822,35 @@ impl RsCamApp {
             .any(|lane| lane.is_active() || lane.queue_depth > 0);
         if active_lanes || self.controller.state().simulation.playback.playing {
             ctx.request_repaint();
+        }
+
+        // G-LV.1 repro lever: minimise this window after N frames.
+        //
+        // This is the only way to park a Wayland surface from inside the
+        // client, and therefore the only way to reproduce the 2026-08-07
+        // incident without hiding or locking the operator's real desktop.
+        // `Window::set_visible(false)` is a documented no-op on Wayland
+        // (`winit-0.30.13 .../wayland/window/mod.rs:253-255`, and
+        // `is_visible()` returns `None` at `:258-260` — which is also why
+        // eframe's own invisible-window rescue never fires there).
+        // `set_minimized(true)` does work (`:436-444`) and is ONE-WAY: winit
+        // refuses to un-minimise on Wayland. That asymmetry is the incident,
+        // not a limitation of the lever — it is why the ~9.5 h park that
+        // blocked waves A-1 and A-2 had no observed unpark trigger.
+        //
+        // Unset in every normal session. Never wire this to a UI affordance.
+        if let Some(remaining) = self.minimize_after_frames.as_mut() {
+            if *remaining == 0 {
+                self.minimize_after_frames = None;
+                tracing::warn!(
+                    "RS_CAM_MINIMIZE_AFTER_FRAMES: minimising the window now (G-LV.1 repro). On \
+                     Wayland this is irreversible from inside the process."
+                );
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            } else {
+                *remaining = remaining.saturating_sub(1);
+                ctx.request_repaint();
+            }
         }
 
         // Auto-screenshot mode: request on frame 3, save on frame 4, exit on frame 5
