@@ -1827,3 +1827,201 @@ because `screenshot_gui`'s designed *refusal* is no longer the only option on a
 window that still paints; (c) note that the two Lane A capture obligations
 depend on the flip **and** on N-3 showing the incident's states share this
 mechanism — one without the other does not discharge them.
+
+---
+
+## B-4b — the Checkpoint O flip, and B-4's steps 5 and 7, 2026-08-13
+
+Status: **COMPLETE for O, step 5 and step 7. Step 6 DEFERRED, and the 100 ms
+heartbeat therefore STAYS** (M-5's own condition). G-LV.1 does **not** close
+here.
+
+Commit(s): `79f68734` (O-1 + O-2: the `--mcp` flip and the observable
+negotiated mode), `5a65653d` (step 7: `screenshot_gui` refuses instead of
+hanging), `6168e2d6` (the rig and three measured arms). Artifacts in
+`artifacts/b4/`.
+
+Parent/revision measured: branch `tech-debt-3`, my commits on top of `18a11742`
+with A-5i's `25449085` landing between mine (Checkpoint J, `rs_cam_core` feeds —
+not my territory and not touched). Debug binary throughout; release forbidden
+in-wave.
+
+Question and pre-registered bars: Checkpoint O (BINDING) — `--mcp`-only
+`AutoNoVsync`, negotiated mode observable, unsupported-explicit-mode crash left
+documented; plus `DISPATCH_DECOUPLING_DESIGN.md` §8 steps 5–7 under M-4/M-5.
+Bars I added before starting: (a) the flip is measured on the **shipped** path,
+not through N-2's lever, and a bar fails if the lever is what ran; (b) step 7
+gets a **bounded** red before its green, on the same park; (c) any bar that
+fails for a reason unrelated to the flip is chased to attribution before the
+rig is changed.
+
+Fixture/population/resolution: `artifacts/b4/shipped_flip_check.py`, importing
+B-1's transport, B-4's park lever and call lists, and N-2's syscall sampler and
+park proof, so the population is the one all four waves have measured. Project
+fixture: a scratch **copy** of wanaka trimmed to a two-op cascade (`adaptive3d`
+on fresh stock → `project_curve` on `from_remaining_stock`), which is the
+minimum shape that forces a **multi-round** fixpoint. `simulation_resolution_mm
+1.0`. The operator's `wanaka.toml` was read to make the copy and is unmodified;
+own GUI instances only.
+
+### Result (fact)
+
+**O-1 and O-2, on the shipped path** (`measurements/shipped_flip_wayland/`,
+Wayland, window minimised at frame 250, **no** `RS_CAM_PRESENT_MODE` set):
+
+| bar | reading |
+|---|---|
+| `O2-observable` | `negotiated='Mailbox'`, `negotiated_known_from="wgpu-core's own negotiation log"` |
+| `O1-requested` | `requested='AutoNoVsync'`, `requested_source='--mcp default (Checkpoint O-1)'` |
+| `park-state` | **no park** — `frames` 2061 and climbing, `healthy: true`, on a minimised window |
+| `step4-live` | 0 snapshot-served reads, 0 frame-door timeouts, slowest frame-door **0.0282 s** |
+| **`step5-fixpoint`** | **`ok: true, generated: 2, rounds: 2, simulations: 1, errors: [], awaiting_prior_stock: []` in 59.8 s** |
+| `step7-capture` | **788,881 bytes in 0.71 s** |
+
+`rounds: 2` is the load-bearing figure. A single-round pass would never touch
+the simulate-round handoff, and the handoff is what the 2026-08-07 incident
+actually died on. This is B-4's step-5 bar, met, on a window that is minimised.
+
+**Negotiated-mode observability — and the fact that justifies it.** The
+XWayland surface negotiates `AutoNoVsync` to **`Immediate`**; the Wayland
+surface negotiates the same request to **`Mailbox`**
+(`measurements/step7_x11_park/result.json` vs `shipped_flip_wayland/`). Two
+different answers to one request, on one machine, one hour apart. Anyone who
+had assumed "AutoNoVsync means Mailbox" would have been wrong half the time.
+Both were read off wgpu-core's own log line, and the startup log carries them
+too (`gui_stderr.log`: `present mode NEGOTIATED Mailbox.`).
+
+**Step 7, red then green, same park, one commit apart:**
+
+| | `screenshot_gui` on a parked window |
+|---|---|
+| before (`79f68734`) | **HUNG — 120.00 s**, no reply, 0 bytes on disk |
+| after (`5a65653d`) | **REFUSED in 2.01 s**, mechanism named, 0 bytes |
+
+### Interpretation
+
+- **The flip does on the shipped path what N-2 measured through the lever.**
+  That was not a foregone conclusion — it is a different code path — and the
+  `O1-requested` bar exists to prove which one ran.
+- **The refusal arm is X11 deliberately, and that is the contract's honest
+  boundary, not a convenience.** M-4's refusal is delivered from the off-frame
+  pump, which runs from `about_to_wait`; under a **present-blocked** Wayland
+  park the main thread is below winit and that callback does not run either, so
+  no refusal can be delivered there. The state the refusal is *for* is a window
+  that has stopped painting while its event loop still runs — a minimised X11
+  window, measured here at `frames` static 153, `healthy: false`, and all eight
+  census calls still answered live at 0.6 ms. The present-blocked case is
+  addressed by not being in it, which is O-1.
+- **`park_refusal` is not `is_parked()`, and the difference matters more after
+  step 6 than before it.** It requires *both* a parked loop and
+  `PARKED_FRAME_LOOP` elapsed **since the request arrived**. An idle GUI's last
+  frame is arbitrarily old by definition; once the 100 ms heartbeat goes that is
+  the normal state, and a bare `is_parked()` would refuse every idle-session
+  screenshot. Sentried on both sides.
+- **The negotiated mode is scraped from wgpu's log, and I want the reason on the
+  record because it looks like a shortcut and is not.** Nothing in this stack
+  exposes the configured surface's present mode: `RenderState` carries the
+  adapter, device, queue and format but not the surface
+  (`egui-wgpu-0.34.3/src/lib.rs:69-91`); eframe keeps the `Painter` private; and
+  `Surface::get_capabilities` needs a handle nobody hands out. The **one** hook
+  that receives a `&Surface` is `WgpuSetupCreateNew::native_adapter_selector`,
+  and installing it **replaces** eframe's adapter selection — trading an
+  observability gap for a chance of picking a different GPU on someone else's
+  machine. I rejected that trade. wgpu's own line is the number wgpu computed,
+  so it cannot drift from the truth; what it can do is vanish if wgpu rewords
+  it, and then `report()` says `NOT OBSERVED` rather than guessing.
+
+### Step 6 — DEFERRED, with the consequence stated
+
+**The 100 ms heartbeat is NOT deleted**, per M-5's own condition. The six
+frame-coupled drivers are unfixed. The blocker is not effort, it is evidence:
+the B-4 charter requires each of the six to carry its own before/after
+**reproduced in a `--mcp`-less session**, and a `--mcp`-less session has no MCP
+surface — which is to say no way for an agent to drive or observe it at all.
+All six are GUI-internal (auto-regen debounce, `pending_upload`, the lane-idle
+drain race, the `RunSimulationWith` re-push, `pending_toolpath_tab`,
+`scrub_drag_active`), and every one of them is *defined* by what a human sees
+one frame late. That is an operator-at-the-desktop wave, which is the shape N-3
+already has. **Recommend folding step 6 into N-3 rather than opening a seventh
+checkpoint.** Nothing in steps 5 or 7 depends on it.
+
+**One of the six showed itself anyway, and it is worse than "a UI toggle waits a
+frame".** `generate_all` issued while the GUI's own `process_auto_regen` still
+has an `adaptive3d` in flight re-submits the same toolpath and the in-flight job
+returns `"Back Rough: generation cancelled"`, `rounds: 1`, `generated: 0` — a
+`generate_all` that reports failure for work the GUI cancelled on itself. I hit
+it as a failing step-5 bar and chased it before touching the rig:
+**it reproduced identically on a window that was never minimised**
+(`nomin/result.json`, session scratch), which is what rules the compositor out.
+It is driver 1's site (`controller.rs:230`) meeting B-4's decision to call
+`process_auto_regen` from `off_frame_pump` as well as from the frame, and under
+Mailbox `about_to_wait` runs far more often than 60 Hz. Recorded, not fixed —
+it belongs to step 6. `wait_for_idle` in the rig measures and reports the settle
+(26.1 s on this fixture) rather than hiding it.
+
+### Verification
+
+- `cargo test -p rs_cam_viz`: **251 lib + 14 + 15 + 11, 0 failed**, three
+  consecutive runs. The escape-hatch suite went 14 → **15**: the fourteen B-4
+  left are green and unmodified, and the new one pins `frame_loop.present_mode`
+  on the wire.
+- `cargo clippy -p rs_cam_viz --all-targets -- -D warnings` — clean.
+  `cargo fmt --all --check` — clean for `rs_cam_viz` at each of my commits.
+- **Fingerprints: cannot have moved, and this is checked rather than argued.**
+  Every file in all three commits is under `crates/rs_cam_viz/` or
+  `planning/review_2026-08-08/artifacts/b4/` (verified per commit with
+  `git show --name-only`). No generation, geometry or feeds code path is
+  reachable from this diff. The core suite was **not** re-run for this purpose
+  and deliberately: `rs_cam_core` is mid-flight under A-5i's Checkpoint J, so a
+  fingerprint run now would measure their change, not the absence of mine.
+- **One unattributed test flake, reported because it happened.** A single
+  `cargo test -p rs_cam_viz -q` run reported `250 passed; 1 failed` while the
+  machine was also running A-5i's full core suite; the name was lost to the
+  output filter, and 4 subsequent full runs were green. Most likely
+  `read_cache_publish_and_get_are_cheap`, a pre-existing throughput guard, under
+  load — but that is an inference and it is labelled as one.
+- ONE Cargo job at a time; `free -g` + bracketed `pgrep` before each launch;
+  `cargo check` overlapped only above the 20 GB rule. No release build. Disk 115
+  GB free throughout. A-5i's `rs_cam_core` work was never staged, edited or
+  waited on beyond the slot.
+
+### Uncertainty / NOT EXERCISED
+
+- **THE CAVEAT ON EVERYTHING ABOVE: this fixes the minimise reproduction;
+  incident-state coverage (occluded / visible-frozen) is pending N-3 at
+  close-out.** It is carried verbatim in `present_mode.rs`'s module docs, in the
+  rewritten `--mcp` startup warning, in `park_refusal`'s docs and in all three
+  commit messages. **G-LV.1 stays OPEN.**
+- **NOT EXERCISED: the FIFO control arm on the shipped binary.** N-2 measured
+  the FIFO park exhaustively (405/405 syscall samples, 15 s frame-door
+  timeouts), and `--present-mode fifo --expect-park` is wired and documented in
+  the rig, but I did not spend a slot re-measuring a state that is no longer
+  reachable without setting the lever. Resume condition: run that arm if anyone
+  doubts the before.
+- **NOT EXERCISED: any surface that negotiates `AutoNoVsync` to `Fifo`.** That
+  is the state O-2's `park_hazard` field exists for, and I have no hardware that
+  produces it. The field is unit-sentried, not field-measured.
+- **NOT EXERCISED: the interactive cost of the flip.** N-2's 81%-of-a-core
+  continuous-repaint figure was measured through the lever and I did not re-take
+  it on the shipped path; the mechanism is identical and the arithmetic does not
+  change, but it is not re-measured. Tearing remains unmeasurable headlessly and
+  is N-3's, by eye.
+- **NOT EXERCISED: `visible_on_next_frame` on `set_ui_view` / scrub** — M-4's
+  second clause. `screenshot_gui`'s refusal was the half with a measured hang
+  behind it; the `set_ui_view` half has no reproduction and no bar, and I did
+  not want to ship a field nobody had watched fail. Owner: step 6's wave.
+- **NOT DONE: the docs owed at the end of §8's migration** — CLAUDE.md's MCP
+  section and plan §0 rule 10 still tell agents the window must be visible.
+  `bin/main.rs`'s warning **is** updated (it now says check which mode you got,
+  and drops the imprecise "X11 redraws are client-driven" sentence N-2 caught).
+  The other two are programme-level docs and belong with the close-out that
+  carries the N-3 caveat, not with a wave that cannot discharge it.
+
+Next action / checkpoint request: **no checkpoint requested.** Two things for
+the orchestrator: (a) **fold step 6 into N-3** rather than opening a seventh
+checkpoint — the six drivers need an operator at the desktop and N-3 already
+has that shape, and the heartbeat stays until then; (b) the auto-regen /
+`generate_all` mutual-cancellation above is a **new finding** worth its own
+ledger row — it makes `generate_all` report a failure for work the GUI
+cancelled on itself, it is measured on a visible window, and it is not the
+one-frame-late UI nuisance driver 1 was catalogued as.
