@@ -48,6 +48,15 @@ CHEAP_CALLS = [
     ("inspect_model", {}),
 ]
 
+# Pure FRAME-DOOR tools: no snapshot fallback, no off-loop shortcut. Under a
+# parked frame loop these do not degrade, they HANG — which makes them the
+# sharpest probe available. A `wall_s` at the timeout is the pre-fix answer;
+# a millisecond reading is the post-fix one.
+FRAME_DOOR_CALLS = [
+    ("get_operation_schema", {"operation_type": "pocket"}),
+    ("list_tools", {}),
+]
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -104,7 +113,7 @@ def main():
             rows.append(_frames_probe(proc, args.timeout, "before"))
 
         for i in range(args.repeats):
-            for name, a in CHEAP_CALLS:
+            for name, a in CHEAP_CALLS + FRAME_DOOR_CALLS:
                 r = proc.call_tool(name, a, timeout=args.timeout)
                 row = {
                     "call": name,
@@ -163,6 +172,7 @@ def _frame_loop(proc, timeout):
     return {
         "frames": fl.get("frames"),
         "pumps": fl.get("pumps"),
+        "wakeups": fl.get("wakeups"),
         "healthy": fl.get("healthy"),
         "last_frame_age_s": fl.get("last_frame_age_s"),
     }
@@ -177,7 +187,7 @@ def _frames_probe(proc, timeout, label):
 def _report(rows, out):
     census = [r for r in rows if r.get("phase") == "census"]
     print(f"wrote {out} ({len(rows)} rows)")
-    for name, _ in CHEAP_CALLS:
+    for name, _ in CHEAP_CALLS + FRAME_DOOR_CALLS:
         vals = [r["wall_s"] for r in census if r["call"] == name]
         if not vals:
             continue
@@ -198,6 +208,7 @@ def _report(rows, out):
         if r.get("call") == "frames_probe":
             print(
                 f"  frames({r['phase']}): {r['frames']} pumps={r['pumps']} "
+                f"wakeups={r['wakeups']} "
                 f"healthy={r['healthy']} last_frame_age_s={r['last_frame_age_s']}"
             )
     # The park proof: a census during which `frames` never moved is a census

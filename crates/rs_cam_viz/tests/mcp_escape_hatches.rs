@@ -475,6 +475,78 @@ async fn every_mcp_enqueue_requests_a_repaint() {
     );
 }
 
+/// B-4 / R5 — the sibling the repaint sentry above needs, because the repaint
+/// sentry asserts the **call** and this asserts the **delivery**.
+///
+/// `every_mcp_enqueue_requests_a_repaint` counts invocations of egui's repaint
+/// *callback*, and under a park that callback stops being invoked at all after
+/// the first request: egui only fires it when the new delay is strictly lower
+/// than the lowest already outstanding (`egui-0.34.3 src/context.rs:155-168`),
+/// and `repaint_delay` is only reset by a pass, which a parked loop never
+/// runs. So the repaint sentry is green on a build where every enqueue after
+/// the first vanishes silently. The `GuiWaker` has no dedup and no compositor
+/// in its path; this pins that it is invoked on every enqueue, on both doors.
+#[tokio::test]
+async fn every_mcp_enqueue_also_fires_the_event_loop_waker() {
+    let lane = StuckLane::new("preflight");
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let (ctx, repaints) = counting_ctx();
+    let control = GenerationControl::new(Arc::clone(&lane) as Arc<dyn LaneControl>);
+
+    let pokes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sink = Arc::clone(&pokes);
+    let server = EmbeddedCamServer::new(tx, ctx, control, published_cache())
+        .with_waker(Arc::new(move || {
+            sink.fetch_add(1, Ordering::SeqCst);
+        }));
+
+    assert_eq!(pokes.load(Ordering::SeqCst), 0, "nothing enqueued yet");
+
+    // The cheap-read door.
+    let _ = server.list_toolpaths().await;
+    assert_eq!(
+        pokes.load(Ordering::SeqCst),
+        1,
+        "a cheap read must poke the event loop, not only egui"
+    );
+
+    // The progress door — the one `generate_all` takes, and the one the
+    // 2026-08-07 incident died on.
+    let _ = server
+        .generate_all_without_peer(Some(1), Some(false), None)
+        .await;
+    assert_eq!(
+        pokes.load(Ordering::SeqCst),
+        2,
+        "generate_all must poke the event loop too"
+    );
+
+    // And the repaint is still made — the visible-window path is untouched.
+    assert!(
+        repaints.load(Ordering::SeqCst) >= 1,
+        "the waker is an addition, never a replacement: a visible window is \
+         still driven by request_repaint"
+    );
+}
+
+/// A server built without a waker must behave exactly as it did before B-4 —
+/// no panic, no missed enqueue. That is the shape every other sentry in this
+/// file constructs, and the shape any embedder without an event loop gets.
+#[tokio::test]
+async fn a_server_with_no_waker_still_enqueues() {
+    let lane = StuckLane::new("preflight");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (ctx, _repaints) = counting_ctx();
+    let control = GenerationControl::new(Arc::clone(&lane) as Arc<dyn LaneControl>);
+    let server = EmbeddedCamServer::new(tx, ctx, control, published_cache());
+
+    let _ = server.list_toolpaths().await;
+    assert!(
+        rx.try_recv().is_ok(),
+        "the request must reach the channel with or without a waker"
+    );
+}
+
 /// The `send_with_progress` path — the one `generate_all` takes — must wake
 /// the GUI too, and must record that something is now waiting on it.
 #[tokio::test]
@@ -560,13 +632,23 @@ async fn generation_status_flags_a_parked_frame_loop_holding_a_generate_all() {
     assert_eq!(v["frame_loop"]["in_frame"], false);
 
     let summary = v["summary"].as_str().unwrap();
+    // B-4 inverted this assertion in place. Before the decoupling the reply
+    // said "does NOT mean your call completed ... every MCP request and every
+    // generate_all round handoff is dispatched from a GUI repaint", and that
+    // second clause is now false — the round handoff is pumped from the event
+    // loop. The property worth keeping is unchanged: an idle lane with work
+    // still owed must not read as success, and must name what is owed.
     assert!(
-        summary.contains("does NOT mean your call completed"),
-        "an idle lane behind a parked loop must not read as success: {summary}"
+        summary.contains("outstanding"),
+        "an idle lane with work still owed must not read as success: {summary}"
     );
     assert!(
         summary.contains("generate_all"),
-        "and must name what is stranded: {summary}"
+        "and must name what is still owed: {summary}"
+    );
+    assert!(
+        !summary.contains("dispatched from a GUI repaint"),
+        "the reply must not still blame a mechanism that was removed: {summary}"
     );
 }
 

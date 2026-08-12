@@ -56,7 +56,14 @@ pub struct RsCamApp {
 }
 
 impl RsCamApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, mcp_mode: bool) -> Self {
+    /// `waker` is the event-loop wakeup that survives a parked frame loop
+    /// (G-LV.1). `None` means "no host owns the loop" — the MCP server then
+    /// relies on `request_repaint` alone, which is the pre-B-4 behaviour.
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        mcp_mode: bool,
+        waker: Option<crate::GuiWaker>,
+    ) -> Self {
         configure_theme(&cc.egui_ctx);
 
         if let Some(render_state) = cc.wgpu_render_state.as_ref() {
@@ -107,6 +114,12 @@ impl RsCamApp {
                         let server = crate::mcp_server::EmbeddedCamServer::new(
                             tx, egui_ctx, generation, reads,
                         );
+                        // G-LV.1: the wakeup that outlives a park. Absent
+                        // when no host owns the event loop.
+                        let server = match waker {
+                            Some(waker) => server.with_waker(waker),
+                            None => server,
+                        };
                         let tool_router = crate::mcp_server::EmbeddedCamServer::into_tool_router();
 
                         use rmcp::ServiceExt as _;
@@ -136,7 +149,7 @@ impl RsCamApp {
             None
         };
         #[cfg(not(feature = "mcp"))]
-        let _ = mcp_mode;
+        let _ = (mcp_mode, waker);
 
         // Load job file if RS_CAM_JOB is set
         if let Ok(job_path) = std::env::var("RS_CAM_JOB") {
@@ -525,6 +538,37 @@ impl RsCamApp {
         self.controller.process_auto_regen();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
+    }
+
+    /// Whether the event loop must keep waking on a timer rather than
+    /// sleeping until the next external event.
+    ///
+    /// **This is the safety net, not the mechanism.** MCP *enqueues* wake the
+    /// loop through the `GuiWaker`, so no read waits on this. What needs it is
+    /// work that completes with nobody to announce it: a compute result
+    /// arrives on an `mpsc` channel from a worker thread that requests no
+    /// repaint and holds no proxy, and the only thing that ever noticed was
+    /// the next frame's poll (`app.rs`'s `active_lanes` re-request) — which is
+    /// precisely the polling loop a park stops. `generate_all`'s fixpoint
+    /// round handoff lives on that path, and it is what the 2026-08-07
+    /// incident actually died on.
+    ///
+    /// Armed only while something is genuinely outstanding, so an idle session
+    /// still sleeps.
+    pub(crate) fn needs_pump_tick(&self) -> bool {
+        #[cfg(feature = "mcp")]
+        if self
+            .controller
+            .pending_mcp
+            .as_ref()
+            .is_some_and(|pending| pending.awaiting_gui() > 0)
+        {
+            return true;
+        }
+        self.controller
+            .lane_snapshots()
+            .into_iter()
+            .any(|lane| lane.is_active() || lane.queue_depth > 0)
     }
 }
 
