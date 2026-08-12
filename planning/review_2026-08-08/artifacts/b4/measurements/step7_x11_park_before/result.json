@@ -1,0 +1,295 @@
+{
+ "args": {
+  "binary": "/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/b4b/rs_cam_gui_before",
+  "log_dir": "planning/review_2026-08-08/artifacts/b4/measurements/step7_x11_park_before",
+  "workdir": ".",
+  "project": null,
+  "repeats": 1,
+  "timeout": 30.0,
+  "live_bar": 1.0,
+  "settle": 3.0,
+  "park_timeout": 40.0,
+  "minimize_after": 150,
+  "sim_resolution": 1.0,
+  "generate_timeout": 300.0,
+  "screenshot": "planning/review_2026-08-08/artifacts/b4/measurements/step7_x11_park_before/screenshot_gui.png",
+  "present_mode": null,
+  "x11": true,
+  "expect_refusal": true,
+  "expect_park": true
+ },
+ "bars": [
+  {
+   "bar": "O2-observable",
+   "pass": true,
+   "detail": "negotiated='Immediate' known_from=\"wgpu-core's own negotiation log\""
+  },
+  {
+   "bar": "O1-requested",
+   "pass": true,
+   "detail": "requested='AutoNoVsync' source='--mcp default (Checkpoint O-1)'"
+  },
+  {
+   "bar": "park-state",
+   "pass": true,
+   "detail": "park reached; expected park. frames=153 healthy=False"
+  },
+  {
+   "bar": "step4-live",
+   "pass": true,
+   "detail": "snapshot-served reads=0 frame-door timeouts=0 slowest frame-door=0.0006s (bar 1.0s)"
+  },
+  {
+   "bar": "step7-refusal",
+   "pass": false,
+   "detail": "answered in 120.00s, 0 bytes on disk, refused=False: None"
+  }
+ ],
+ "rows": [
+  {
+   "call": "present_mode",
+   "phase": "o2",
+   "block": {
+    "negotiated": "Immediate",
+    "negotiated_known_from": "wgpu-core's own negotiation log",
+    "requested": "AutoNoVsync",
+    "requested_source": "--mcp default (Checkpoint O-1)"
+   },
+   "wall_s": 0.0
+  },
+  {
+   "call": "park_wait",
+   "phase": "park",
+   "parked": true,
+   "trail": [
+    {
+     "awaiting_completion": 0,
+     "awaiting_generate_all": false,
+     "current_frame_age_s": null,
+     "frames": 153,
+     "healthy": false,
+     "in_frame": false,
+     "last_frame_age_s": 2.381772238,
+     "last_pump_age_s": 2.114777898,
+     "present_mode": {
+      "negotiated": "Immediate",
+      "negotiated_known_from": "wgpu-core's own negotiation log",
+      "requested": "AutoNoVsync",
+      "requested_source": "--mcp default (Checkpoint O-1)"
+     },
+     "pumps": 155,
+     "requests_in_channel": 0,
+     "wakeups": 0,
+     "_sampled_at": 1786547645.8224168,
+     "_probe_wall_s": 0.001165628433227539
+    },
+    {
+     "awaiting_completion": 0,
+     "awaiting_generate_all": false,
+     "current_frame_age_s": null,
+     "frames": 153,
+     "healthy": false,
+     "in_frame": false,
+     "last_frame_age_s": 3.384857862,
+     "last_pump_age_s": 3.117866518,
+     "present_mode": {
+      "negotiated": "Immediate",
+      "negotiated_known_from": "wgpu-core's own negotiation log",
+      "requested": "AutoNoVsync",
+      "requested_source": "--mcp default (Checkpoint O-1)"
+     },
+     "pumps": 155,
+     "requests_in_channel": 0,
+     "wakeups": 0,
+     "_sampled_at": 1786547646.8263953,
+     "_probe_wall_s": 0.0035076141357421875
+    },
+    {
+     "awaiting_completion": 0,
+     "awaiting_generate_all": false,
+     "current_frame_age_s": null,
+     "frames": 153,
+     "healthy": false,
+     "in_frame": false,
+     "last_frame_age_s": 4.38824849,
+     "last_pump_age_s": 4.121255734,
+     "present_mode": {
+      "negotiated": "Immediate",
+      "negotiated_known_from": "wgpu-core's own negotiation log",
+      "requested": "AutoNoVsync",
+      "requested_source": "--mcp default (Checkpoint O-1)"
+     },
+     "pumps": 155,
+     "requests_in_channel": 0,
+     "wakeups": 0,
+     "_sampled_at": 1786547647.8292313,
+     "_probe_wall_s": 0.0026369094848632812
+    },
+    {
+     "awaiting_completion": 0,
+     "awaiting_generate_all": false,
+     "current_frame_age_s": null,
+     "frames": 153,
+     "healthy": false,
+     "in_frame": false,
+     "last_frame_age_s": 5.390709363,
+     "last_pump_age_s": 5.123717398,
+     "present_mode": {
+      "negotiated": "Immediate",
+      "negotiated_known_from": "wgpu-core's own negotiation log",
+      "requested": "AutoNoVsync",
+      "requested_source": "--mcp default (Checkpoint O-1)"
+     },
+     "pumps": 155,
+     "requests_in_channel": 0,
+     "wakeups": 0,
+     "_sampled_at": 1786547648.8315604,
+     "_probe_wall_s": 0.0022041797637939453
+    },
+    {
+     "awaiting_completion": 0,
+     "awaiting_generate_all": false,
+     "current_frame_age_s": null,
+     "frames": 153,
+     "healthy": false,
+     "in_frame": false,
+     "last_frame_age_s": 6.39307058,
+     "last_pump_age_s": 6.126083414,
+     "present_mode": {
+      "negotiated": "Immediate",
+      "negotiated_known_from": "wgpu-core's own negotiation log",
+      "requested": "AutoNoVsync",
+      "requested_source": "--mcp default (Checkpoint O-1)"
+     },
+     "pumps": 155,
+     "requests_in_channel": 0,
+     "wakeups": 0,
+     "_sampled_at": 1786547649.834217,
+     "_probe_wall_s": 0.0025434494018554688
+    }
+   ],
+   "wall_s": 0.0
+  },
+  {
+   "call": "generation_status",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0009696483612060547,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 155,
+   "wakeups": 0,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8342755
+  },
+  {
+   "call": "project_summary",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0010068416595458984,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 156,
+   "wakeups": 1,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8360956
+  },
+  {
+   "call": "list_toolpaths",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.00036454200744628906,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 157,
+   "wakeups": 2,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8375757
+  },
+  {
+   "call": "inspect_stock",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0002644062042236328,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 158,
+   "wakeups": 3,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8383145
+  },
+  {
+   "call": "inspect_machine",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0002880096435546875,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 159,
+   "wakeups": 4,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8389056
+  },
+  {
+   "call": "inspect_model",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.00019598007202148438,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 160,
+   "wakeups": 5,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8395674
+  },
+  {
+   "call": "get_operation_schema",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0005538463592529297,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 161,
+   "wakeups": 6,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8400905
+  },
+  {
+   "call": "list_tools",
+   "repeat": 0,
+   "phase": "census",
+   "wall_s": 0.0002429485321044922,
+   "served_from": "live",
+   "timed_out": false,
+   "frames": 153,
+   "pumps": 162,
+   "wakeups": 7,
+   "healthy": false,
+   "syscall": "281 0x4 0x55daf89aad10 0x400 0xffffffffffffffff 0x0 0x0 0x7fff030c6ad0 0x55dac652461e",
+   "t": 1786547649.8410287
+  },
+  {
+   "call": "screenshot_gui",
+   "phase": "step7_bar",
+   "wall_s": 120.00029563903809,
+   "timed_out": true,
+   "reply": "None",
+   "bytes_on_disk": 0,
+   "reply_text": "None"
+  }
+ ]
+}
