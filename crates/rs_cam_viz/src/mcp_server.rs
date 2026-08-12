@@ -487,7 +487,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_diagnostics",
-        description = "Get project diagnostics: per-toolpath stats, collision counts, air cutting %, verdict"
+        description = "Project diagnostics. Read the `triage` block FIRST — it is the bounded, severity-ordered answer to 'what should I act on?' (safety, then actions, then capped advisories); `issue_count` beside it is a different, unbounded population. `per_toolpath` rows are the core ToolpathDiagnostic — move/cutting/rapid distances, `op_kind`, per-toolpath `collision_count` and `rapid_collision_count`, and the report-only generation-finding areas (`truncated_core_mm2` + its deprecated `standing_material_mm2` duplicate, `untouched_material_mm2`, `reached_uncut_estimate_mm2`, `unmachined_band_area_mm2`, `tip_float_points`, `max_tip_float_mm`) — plus the GUI lane columns `status` / `error` / `awaiting_prior_stock` / `stale`. On every finding area `null` means NOT MEASURED and 0.0 means measured and clean; never coerce one to the other. Also carries project air-cut percentages under both denominators, collision counts, and the legacy one-line `verdict`."
     )]
     async fn get_diagnostics(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::GetDiagnostics).await)
