@@ -744,6 +744,13 @@ pub fn build_info() -> serde_json::Value {
             // navigation). Probe to confirm agent-driven UI inspection.
             "gui_screenshot",
             "set_ui_view",
+            // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
+            // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
+            // collision counts, and the report-only generation-finding
+            // areas — not a GUI-local subset. Probe this before assuming a
+            // missing `truncated_core_mm2` means "not measured": on a
+            // binary without the flag it means "not published".
+            "diagnostics_row_core_parity",
         ],
     })
 }
