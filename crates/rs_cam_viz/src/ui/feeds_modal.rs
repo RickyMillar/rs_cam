@@ -1095,6 +1095,18 @@ fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
                      (whole band is below the {global:.3} rubbing floor — expect burnishing)"
                 ),
             },
+            // Checkpoint K (a3) — RPM-anchor row: the number above it in
+            // this modal is the empirical formula's, and the modal's band
+            // chart has nothing to draw for it.
+            rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
+                observation_id,
+                formula_chipload_mm,
+            } => format!(
+                "Vendor row {observation_id} publishes RPM only — the \
+                 {formula_chipload_mm:.4} mm/tooth shown is the empirical formula's, and \
+                 this recommendation carries no vendor band (the post-sim gate uses a \
+                 different, chipload-bearing row)"
+            ),
             rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,
                 actual,

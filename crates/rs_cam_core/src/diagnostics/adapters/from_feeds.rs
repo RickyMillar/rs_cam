@@ -187,6 +187,33 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        // Checkpoint K (a3). Informational, not a Caution: nothing is
+        // clamped, derated or unsafe — the recommendation simply has a
+        // provenance the operator could not see. Saying "caution" about
+        // a healthy RPM anchor would be the louder lie.
+        FeedsWarning::VendorRowPublishesNoChipload {
+            observation_id,
+            formula_chipload_mm,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: format!(
+                "Vendor row {observation_id} is an RPM anchor and publishes no chipload \
+                 column — the recommended {formula_chipload_mm:.4} mm/tooth is the \
+                 empirical formula's, not this vendor's, and this recommendation carries \
+                 no band. The post-simulation gate resolves a different, chipload-bearing \
+                 row, so its verdict is judged against bounds this recipe never saw."
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
     }
 }
 

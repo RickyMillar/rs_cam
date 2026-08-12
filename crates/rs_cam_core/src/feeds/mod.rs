@@ -633,6 +633,34 @@ pub enum FeedsWarning {
         /// `None` when the global floor applied unmodified.
         band_capped_from: Option<f64>,
     },
+    /// **Checkpoint K (a3), 2026-08-13 — the recipe resolver matched a
+    /// row that publishes no chipload column, so the recommendation is a
+    /// formula number and there is no band at all.**
+    ///
+    /// The two LUT entry points have declared, different purposes:
+    /// [`vendor_lookup::find_best_row_for_geometry`] (the recipe
+    /// resolver) lets RPM-only anchors compete, while
+    /// [`vendor_lookup::find_best_chip_envelope_row`] (the envelope
+    /// resolver the gate uses) excludes them. A-6's census measured the
+    /// consequence at **141 of 18 144** swept queries — three cells,
+    /// all `Adaptive`/Flat, `Adaptive`/Bull and `Trace`/VBit60.
+    ///
+    /// In those cases the operator sees a vendor row id beside a
+    /// chipload the vendor never published, `chipload_bounds` is `None`
+    /// (so `SuggestAggressiveness::target_chipload` has nothing to aim
+    /// at and `effective_rubbing_floor` falls back to the bare
+    /// [`RUBBING_FLOOR_MM_TOOTH`]), and the post-sim gate judges against
+    /// a *different* row's band. Nothing said so before this warning.
+    ///
+    /// Report-only: no number moves and the RPM anchor is still used —
+    /// that is the point of keeping two resolvers (option a3, not a1).
+    VendorRowPublishesNoChipload {
+        /// The RPM-anchor row the recipe resolver matched.
+        observation_id: String,
+        /// The empirical-formula advance per tooth used in place of the
+        /// absent vendor column (mm/tooth).
+        formula_chipload_mm: f64,
+    },
     /// Drill-cycle feed clamped into the material plunge-feed envelope
     /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
     /// mm/min). Below the envelope the drill rubs and burns; above it
@@ -1075,6 +1103,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                         bounds,
                     )
                 } else {
+                    // Checkpoint K (a3) — disclose the fallback. The RPM
+                    // anchor is kept (that is why the two resolvers stay
+                    // separate); what was invisible until now is that the
+                    // chipload beside that row id is the empirical
+                    // formula's, and that this recommendation therefore
+                    // carries no band while the gate will judge it
+                    // against one.
+                    warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
+                        observation_id: observation_id.clone(),
+                        formula_chipload_mm: formula_chipload,
+                    });
                     (
                         formula_chipload,
                         result.rpm_nominal,

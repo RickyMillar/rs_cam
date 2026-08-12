@@ -2117,6 +2117,16 @@ fn draw_feeds_card(
                              (band is entirely below the {global:.3} rubbing floor)"
                         ),
                     },
+                    // Checkpoint K (a3) — the recipe rests on an RPM
+                    // anchor, so the chipload beside it is the formula's
+                    // and there is no band behind the recommendation.
+                    rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
+                        observation_id,
+                        formula_chipload_mm,
+                    } => format!(
+                        "Vendor row {observation_id} publishes RPM only — \
+                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
+                    ),
                     rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                         requested,
                         actual,
