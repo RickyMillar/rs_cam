@@ -632,6 +632,12 @@ fn feeds_input_for_operation<'a>(
         material,
         machine,
         operation: family,
+        // Checkpoint K (a4) — the operation's own kind, so Suggest and
+        // the gate route the LUT query through the same
+        // `vendor_normalize::lut_query_for`. This is the single
+        // production Suggest/Explain input builder, so supplying it here
+        // is what closes the two-sided routing.
+        operation_kind: Some(operation.op_type()),
         pass_role: role,
         axial_depth_mm: axial_hint,
         radial_width_mm: radial_hint,

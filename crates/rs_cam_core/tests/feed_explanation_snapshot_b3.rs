@@ -1073,6 +1073,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 material: &mat,
                 machine: &machine,
                 operation: OperationFamily::Adaptive,
+                operation_kind: None,
                 pass_role: PassRole::Roughing,
                 axial_depth_mm: Some(commanded_ap),
                 // Well below the slotting threshold so Step 4b never

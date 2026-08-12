@@ -168,9 +168,16 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     let recommended = calculate(input);
     let machine = MachineEnvelope::from_machine(input.machine);
 
-    let (query, matched_row, sibling_rows) = match input.vendor_lut {
-        Some(lut) => {
-            let query = vendor_normalize::to_lookup_query(input);
+    // Checkpoint K (a4) — `to_lookup_query` can now REFUSE (a
+    // `ProjectCurve` on a bull-nose / V-bit / facing cutter has no vendor
+    // family). The modal then shows the formula-fallback state with the
+    // unrouted query echoed for context; `recommended.warnings` carries
+    // `NoVendorRowsForRoutedOperation`, which is what the modal prints.
+    let routed_query = input
+        .vendor_lut
+        .and(vendor_normalize::to_lookup_query(input));
+    let (query, matched_row, sibling_rows) = match (input.vendor_lut, routed_query) {
+        (Some(lut), Some(query)) => {
             // Use the geometry-aware dispatcher so V-bit "matched row"
             // honours the cutter's cone angle — the sibling-rows widening
             // below still walks the whole family for chart rendering.
@@ -185,10 +192,10 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
             let siblings = enumerate_matching_rows(lut, &family_query);
             (query, matched, siblings)
         }
-        None => {
-            // No LUT — synthesise a query record for echo, leave
-            // sibling_rows empty. The modal will show the formula-fallback
-            // state in this branch.
+        _ => {
+            // No LUT, or the routing refused — synthesise a query record
+            // for echo, leave sibling_rows empty. The modal shows the
+            // formula-fallback state in this branch.
             let query = synthetic_query(input);
             (query, None, Vec::new())
         }
@@ -217,8 +224,13 @@ fn lut_family_anchor_diameter(_lut: &VendorLut, query: &LookupQuery) -> f64 {
     query.diameter_mm
 }
 
+/// The query record echoed back when no LUT lookup happened — because
+/// there was no LUT, or because the a4 routing refused this operation ×
+/// cutter pairing. Falls back to the **unrouted** family so the modal's
+/// input chips still describe the operation the user is looking at; it
+/// is an echo, never a lookup.
 fn synthetic_query(input: &FeedsInput<'_>) -> LookupQuery {
-    vendor_normalize::to_lookup_query(input)
+    vendor_normalize::to_lookup_query_unrouted(input)
 }
 
 #[cfg(test)]
@@ -251,6 +263,7 @@ mod tests {
             material,
             machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,

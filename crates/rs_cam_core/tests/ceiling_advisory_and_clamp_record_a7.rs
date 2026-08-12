@@ -136,6 +136,77 @@ fn verdict_and_explanation(
     (full.chipload, full.feed_explanation)
 }
 
+/// The same evaluation, rendered through the **core diagnostics
+/// adapter** — the one surface the CLI report and MCP `get_diagnostics`
+/// both read. Rule 3 (render before verdict): the point of (c2)/(d2) is
+/// what an operator SEES, so the test prints it.
+fn rendered_diagnostics(feed: f64) -> Vec<String> {
+    let tool = b3_tool();
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let t = trace(feed);
+    let tolerance = ToleranceBands::default();
+    let full = rs_cam_core::tool_load::evaluate_toolpath(
+        &ToolpathLoadContext {
+            toolpath_id: ToolpathId(0),
+            tool: &tool,
+            material: &material,
+            operation_family: LutOperationFamily::Scallop,
+            pass_role: LutPassRole::Finish,
+            operation_feed_rate_mm_min: feed,
+            operation_kind: OperationType::Scallop,
+            spans: None,
+            drill_op: None,
+        },
+        Some(&t),
+        None,
+        &tolerance,
+    );
+    rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict(&full)
+        .into_iter()
+        .map(|d| format!("[{:?}] {:?}: {}", d.severity, d.id, d.message))
+        .collect()
+}
+
+/// **Rendered evidence (rule 3).** Prints what the operator reads on the
+/// clamped case and on a genuine exceedance, side by side, so the
+/// difference between *clamped* and *exceeds* is visible as text rather
+/// than asserted as a field.
+#[test]
+fn the_rendered_diagnostic_says_clamped_on_one_and_exceeds_on_the_other() {
+    let band_max = gate_band_max();
+    println!("=== ON the band ceiling (rubbing-floor clamp put it there) ===");
+    let clamped = rendered_diagnostics(band_max * divisor());
+    for line in &clamped {
+        println!("{line}");
+    }
+    println!("\n=== 5 % over the same ceiling (genuine exceedance) ===");
+    let over = rendered_diagnostics(band_max * 1.05 * divisor());
+    for line in &over {
+        println!("{line}");
+    }
+
+    let clamped_text = clamped.join("\n");
+    assert!(
+        clamped_text.contains("CLAMPED there by the engine's own rubbing-floor rule"),
+        "the clamped case must READ as clamped:\n{clamped_text}"
+    );
+    assert!(
+        clamped_text.contains("clamped to the vendor band ceiling"),
+        "and the commanded stage's clamp must be rendered too (d2):\n{clamped_text}"
+    );
+    let over_text = over.join("\n");
+    assert!(
+        over_text.contains("too high") || over_text.contains("breakage"),
+        "the genuine exceedance must still read as an exceedance:\n{over_text}"
+    );
+    assert!(
+        !over_text.contains("CLAMPED"),
+        "a real exceedance must never be worded as a clamp:\n{over_text}"
+    );
+}
+
 /// Read the gate's own band by probing it, so nothing here mirrors the
 /// query construction.
 fn gate_band_max() -> f64 {

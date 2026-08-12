@@ -170,6 +170,7 @@ fn tapered_finish_input<'a>(
         material,
         machine,
         operation: OperationFamily::Scallop,
+        operation_kind: None,
         pass_role: PassRole::Finish,
         axial_depth_mm: Some(doc),
         radial_width_mm: Some(0.1),

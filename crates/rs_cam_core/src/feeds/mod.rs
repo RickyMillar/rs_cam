@@ -368,6 +368,25 @@ pub struct FeedsInput<'a> {
     pub material: &'a Material,
     pub machine: &'a MachineProfile,
     pub operation: OperationFamily,
+    /// **The operation's own kind.** Checkpoint K (a4), 2026-08-13.
+    ///
+    /// [`OperationFamily`] above is the *vendor-LUT* family the operation
+    /// declares (eight values). It cannot distinguish `Adaptive3d` from
+    /// 2D adaptive, nor `ProjectCurve` from `Trace` — and those are
+    /// exactly the two kinds
+    /// [`vendor_normalize::lut_query_for`] reroutes. Before a4 the
+    /// Suggest side had no way to ask, so it queried the declared family
+    /// while the gate queried the routed one: 489 of 3 024 pairs resolved
+    /// to different rows and 378 more left Suggest banded where the gate
+    /// refused (A-6 census, `LUT_BOUNDARY_EVIDENCE.md` §2).
+    ///
+    /// `None` means "no operation identity available", and the routing is
+    /// then a **no-op** — the declared family is used unchanged, i.e. the
+    /// pre-a4 behaviour. Every production Suggest path supplies it via
+    /// `suggest::feeds_input_for_operation`; the `None` arm exists for
+    /// unit fixtures that construct a `FeedsInput` with no operation
+    /// behind it.
+    pub operation_kind: Option<crate::compute::catalog::OperationType>,
     pub pass_role: PassRole,
     /// Optional DOC override (None = auto-calculate).
     pub axial_depth_mm: Option<f64>,
@@ -660,6 +679,34 @@ pub enum FeedsWarning {
         /// The empirical-formula advance per tooth used in place of the
         /// absent vendor column (mm/tooth).
         formula_chipload_mm: f64,
+    },
+    /// **Checkpoint K (a4), 2026-08-13 — the vendor-LUT routing refused
+    /// this operation × cutter pairing, so there is no vendor row at all
+    /// and the recommendation is entirely formula-derived.**
+    ///
+    /// Today this is exactly one case: a `ProjectCurve` on a bull-nose,
+    /// V-bit or facing cutter. `ProjectCurve` is not a vendor family; it
+    /// is geometrically a 3D contour trace, and
+    /// [`vendor_normalize::lut_query_for`] routes it to `Parallel` /
+    /// `Contour` for ball and flat cutters and refuses for the rest,
+    /// because the LUT has no rows there.
+    ///
+    /// The gate has refused these all along
+    /// (`Unmodeled(NoVendorData)`). Until a4 **Suggest did not** — it
+    /// queried the unrouted `Trace` family and returned a confident
+    /// vendor-backed band on a surface where the gate declined to judge,
+    /// with nothing on any screen saying the two were talking about
+    /// different rows. A-6 counted **378** such pairs. Checkpoint K
+    /// ruled the refusal in: more honest and less useful, and the
+    /// alternative needs LUT rows that do not exist.
+    NoVendorRowsForRoutedOperation {
+        /// The operation kind the routing refused, as a debug string.
+        operation_kind: String,
+        /// The cutter class it refused for.
+        tool_family: String,
+        /// Which rows are missing — the refusal names them rather than
+        /// saying "no data".
+        missing_rows: String,
     },
     /// Drill-cycle feed clamped into the material plunge-feed envelope
     /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
@@ -1083,8 +1130,24 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // the row clone lives here separately.
     let mut matched_lut_row: Option<vendor_lookup::LookupResult> = None;
     let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source, chipload_bounds) =
-        if let Some(lut) = input.vendor_lut {
-            let query = vendor_normalize::to_lookup_query(input);
+        if let Some(lut) = input.vendor_lut
+            && let Some(query) = vendor_normalize::to_lookup_query(input).or_else(|| {
+                // Checkpoint K (a4) — the routing REFUSED. Ruled in on
+                // the Suggest side as well as the gate's: 378
+                // recommendations that carried a confident vendor band on
+                // a surface the gate declined to judge become honest
+                // no-vendor-data. Say which rows are missing, not just
+                // "no data".
+                let tool_family = input.tool_geometry.cutter_kind().lut_family();
+                warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
+                    operation_kind: format!("{:?}", input.operation_kind),
+                    tool_family: format!("{tool_family:?}"),
+                    missing_rows: vendor_normalize::missing_project_curve_rows(tool_family)
+                        .to_owned(),
+                });
+                None
+            })
+        {
             if let Some(result) =
                 vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
             {
@@ -2096,6 +2159,7 @@ mod tests {
             material,
             machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2189,6 +2253,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2206,6 +2271,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2256,6 +2322,7 @@ mod tests {
                 material: &material,
                 machine: &machine,
                 operation: family,
+                operation_kind: None,
                 pass_role: PassRole::Roughing,
                 axial_depth_mm: None,
                 radial_width_mm: None,
@@ -2273,6 +2340,7 @@ mod tests {
                 material: &material,
                 machine: &machine,
                 operation: family,
+                operation_kind: None,
                 pass_role: PassRole::Finish,
                 axial_depth_mm: None,
                 radial_width_mm: None,
@@ -2322,6 +2390,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Parallel,
+            operation_kind: None,
             pass_role: PassRole::Finish,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2360,6 +2429,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2401,6 +2471,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2439,6 +2510,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2529,6 +2601,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Drill,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2579,6 +2652,7 @@ mod tests {
                     material: &material,
                     machine: &machine,
                     operation: OperationFamily::Drill,
+                    operation_kind: None,
                     pass_role: PassRole::Roughing,
                     axial_depth_mm: None,
                     radial_width_mm: None,
@@ -2622,6 +2696,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Drill,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2671,6 +2746,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Drill,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2722,6 +2798,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2775,6 +2852,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Trace,
+            operation_kind: None,
             pass_role: PassRole::Finish,
             axial_depth_mm: Some(0.5),
             radial_width_mm: None,
@@ -2817,6 +2895,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: Some(3.0), // DOC doesn't matter for Flat
             radial_width_mm: None,
@@ -2861,6 +2940,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2895,6 +2975,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -2935,6 +3016,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: Some(5.0),
             radial_width_mm: Some(8.0),
@@ -2973,6 +3055,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Parallel,
+            operation_kind: None,
             pass_role: PassRole::Finish,
             axial_depth_mm: Some(0.4),
             radial_width_mm: None,
@@ -3003,6 +3086,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3036,6 +3120,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3066,6 +3151,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: Some(10.0),
             radial_width_mm: Some(5.5), // >85% of D = slotting
@@ -3107,6 +3193,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3124,6 +3211,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3186,6 +3274,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: Some(6.0), // 1×D ratio → scale 1.0
             radial_width_mm: None,
@@ -3240,6 +3329,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Drill,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: Some(6.0),
             radial_width_mm: None,
@@ -3283,6 +3373,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3316,6 +3407,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3348,6 +3440,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3369,6 +3462,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3405,6 +3499,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3426,6 +3521,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3461,6 +3557,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3482,6 +3579,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3518,6 +3616,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3535,6 +3634,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Parallel,
+            operation_kind: None,
             pass_role: PassRole::Finish,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3575,6 +3675,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Pocket,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3610,6 +3711,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -3697,6 +3799,7 @@ mod tests {
             material: &material,
             machine: &machine,
             operation: OperationFamily::Adaptive,
+            operation_kind: None,
             pass_role: PassRole::Roughing,
             axial_depth_mm: None,
             radial_width_mm: None,

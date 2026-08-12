@@ -128,6 +128,7 @@ fn calculator_and_gate_match_same_observation_id() {
             material: &material,
             machine: &machine,
             operation: case.operation,
+            operation_kind: None,
             pass_role: case.pass_role,
             axial_depth_mm: None,
             radial_width_mm: None,
@@ -136,7 +137,12 @@ fn calculator_and_gate_match_same_observation_id() {
             setup: SetupContext::default(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
         };
-        let calc_query = vendor_normalize::to_lookup_query(&input);
+        // Checkpoint K (a4) — `to_lookup_query` can refuse now. None of
+        // this file's five cases is a rerouted operation (its header says
+        // so, and that exclusion is what made it blind to the second
+        // axis), so a refusal here would be a real finding.
+        let calc_query = vendor_normalize::to_lookup_query(&input)
+            .expect("no case in this file is a rerouted operation, so the query cannot refuse");
         let calc_result = find_best_row(&lut, &calc_query);
 
         // --- Gate path ---

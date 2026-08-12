@@ -59,6 +59,8 @@ pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid";
 pub const FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR: &str = "feeds.chipload_clamped_to_floor";
 pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
 pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str = "feeds.vendor_row_publishes_no_chipload";
+pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
+    "feeds.no_vendor_rows_for_routed_operation";
 
 // ── Pre-sim heuristic hints (superseded by load gates) ───────────────
 pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high";
@@ -226,6 +228,7 @@ pub const ALL: &[&str] = &[
     FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR,
     FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
+    FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
     FEEDS_FEED_VS_LUT_HIGH,
     FEEDS_FEED_VS_LUT_LOW,
     FEEDS_STEPOVER_VS_LUT,

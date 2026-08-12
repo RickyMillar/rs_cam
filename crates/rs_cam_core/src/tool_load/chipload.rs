@@ -82,7 +82,7 @@
 
 use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
-use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
+use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::ids::ToolpathId;
 use crate::simulation_cut::SimulationCutTrace;
@@ -123,8 +123,17 @@ pub(crate) fn matched_chip_envelope(
     }
     let geometry_hint = tool.to_geometry_hint();
     let tool_family = geometry_hint.cutter_kind().lut_family();
-    let (operation_family, pass_role) =
-        routed_lookup_family(operation_kind, tool_family, operation_family, pass_role)?;
+    // Checkpoint K (a4) — ONE routing site, shared with
+    // `vendor_normalize::to_lookup_query`. This used to be a private
+    // `routed_lookup_family` that only this side called; A-6 measured
+    // the cost of that asymmetry at 489 divergent rows and 378
+    // one-sided refusals over 3 024 pairs.
+    let (operation_family, pass_role) = crate::feeds::vendor_normalize::lut_query_for(
+        operation_kind,
+        tool_family,
+        operation_family,
+        pass_role,
+    )?;
     let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
     let diameter_mm = lookup_diameter_mm;
     let query = LookupQuery {
@@ -1063,48 +1072,6 @@ fn evaluate_inner(
     }
 }
 
-/// Map a cutter geometry hint to a vendor-LUT tool family. Mirrors
-/// `feeds::vendor_normalize::to_lookup_query` so the same routing logic
-/// runs for the chipload guardrail as for the F&S calculator.
-///
-/// Two operation kinds get rerouted away from their declared
-/// `feeds_family`:
-///
-/// - `ProjectCurve` isn't a vendor LUT family in its own right; it's
-///   geometrically a 3D contour-trace, so ball/tapered-ball tools route
-///   to `(Parallel, Finish)` and flat tools to `(Contour, Finish)`.
-///   V-bit / bull-nose / facing-bit project_curve toolpaths leave the
-///   lookup unrouted (returns `None`).
-/// - `Adaptive3d` declares `feeds_family: Adaptive` to share F&S inputs
-///   with 2D adaptive HSM, but its path geometry is closer to pocket-
-///   style clearing in wood. The vendor's 2D adaptive rows narrow
-///   stepover by design (e.g. 0.95mm `ae_max` for a 6mm flat in
-///   hardwood), while operators want 2.5–3mm stepover on Adaptive3d.
-///   Route Adaptive3d to `Pocket` so the LUT envelope reflects the
-///   actual mechanical regime. (G16 §10 sign-off, design doc §1.3.)
-pub(crate) fn routed_lookup_family(
-    operation_kind: OperationType,
-    tool_family: ToolFamily,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
-) -> Option<(LutOperationFamily, LutPassRole)> {
-    if operation_kind == OperationType::Adaptive3d
-        && operation_family == LutOperationFamily::Adaptive
-    {
-        return Some((LutOperationFamily::Pocket, pass_role));
-    }
-    if operation_kind != OperationType::ProjectCurve {
-        return Some((operation_family, pass_role));
-    }
-    match tool_family {
-        ToolFamily::BallNose | ToolFamily::TaperedBallNose => {
-            Some((LutOperationFamily::Parallel, LutPassRole::Finish))
-        }
-        ToolFamily::FlatEnd => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
-        ToolFamily::BullNose | ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -1115,6 +1082,8 @@ pub(crate) fn routed_lookup_family(
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
+    use crate::feeds::vendor_lut::ToolFamily;
+    use crate::feeds::vendor_normalize::lut_query_for;
     use crate::material::Material;
     use crate::material::WoodSpecies;
     use crate::simulation_cut::{SimulationCutSample, SimulationCutSummary, SimulationCutTrace};
@@ -1384,7 +1353,7 @@ mod tests {
         // geometry is closer to pocket-style clearing in wood. The router
         // overrides Adaptive → Pocket so the LUT envelope reflects the
         // correct mechanical regime (design doc §1.3, §10 sign-off).
-        let routed = routed_lookup_family(
+        let routed = lut_query_for(
             OperationType::Adaptive3d,
             ToolFamily::FlatEnd,
             LutOperationFamily::Adaptive,
@@ -1400,7 +1369,7 @@ mod tests {
     fn adaptive3d_reroute_preserves_pass_role() {
         // SemiFinish pass-role passes through unchanged (we only swap
         // the family axis, not the role axis).
-        let routed = routed_lookup_family(
+        let routed = lut_query_for(
             OperationType::Adaptive3d,
             ToolFamily::FlatEnd,
             LutOperationFamily::Adaptive,
@@ -1417,7 +1386,7 @@ mod tests {
         // Defensive: the rule only fires when the incoming family is
         // Adaptive (the catalog default). Any other incoming family is
         // a custom override and must be respected.
-        let routed = routed_lookup_family(
+        let routed = lut_query_for(
             OperationType::Adaptive3d,
             ToolFamily::FlatEnd,
             LutOperationFamily::Pocket,
@@ -1433,7 +1402,7 @@ mod tests {
     fn pocket_op_with_adaptive_family_passes_through() {
         // The Adaptive3d reroute is gated on operation_kind too — a
         // Pocket op asking for the Adaptive family stays Adaptive.
-        let routed = routed_lookup_family(
+        let routed = lut_query_for(
             OperationType::Pocket,
             ToolFamily::FlatEnd,
             LutOperationFamily::Adaptive,
