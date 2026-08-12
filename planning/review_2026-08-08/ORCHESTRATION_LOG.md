@@ -18,7 +18,8 @@ checkpoint.
 | A-3 | apply-contract census → Checkpoint I | COMPLETE — Checkpoint I RULED 2026-08-12 (C hybrid: reroute batch+explore, delete M1–M6; refusal replaces Apply column; O2 routed, O1/O3 excluded; MCP apply tool added; tests inverted in place) |
 | A-4 | one application funnel | COMPLETE 2026-08-12 (`9026ddb`→`e66ead2`; I executed in full incl. `apply_feeds` MCP tool; bars 2/3/4 MET (recipe byte-identical, DOC gap bit-equal 1.000×, no locking); bar 1 reported honestly at 6/9 red — orchestrator disposition: intent satisfied, the 3 greens assert behaviour the ruling deliberately preserves, agent's not-met report stands unedited; modal rendered both states, own debug GUI) |
 | INTAKE | **G-SUB1MM**: `sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling` RED — pre-existing (A-4 attributed by reverting its core diff; failure identical). Sub-Ø2 scaling-law territory → fold into A-6/Checkpoint K beside G-LIT-IPE | OPEN 2026-08-12 |
-| A-5 | arc_fit_ratio evidence package → Checkpoint J | IN PROGRESS 2026-08-12 (unblocked by S-4 stamp + G-XFP attribution; must re-measure 4×/6.7×, stamp-equality on every A/B) |
+| A-5 | arc_fit_ratio evidence package → Checkpoint J | COMPLETE — Checkpoint J RULED 2026-08-13 (`3e0b247`/`206fd5c`/`11a2c43`; headline: shipped Suggest Exceeds 4/4 at 1.85–5.00× band max on the default path; (a)+(c) ruled, modulation default flips ON, J-2 defaulted-revisitable, DropCutter residuals = separate DOC-derate row, warnings kept) |
+| A-5i | execute J: retire lift + modulation default flip | IN PROGRESS 2026-08-13 (red-first per evidence §6; flip re-pins cite the J-3 ruling) |
 | A-6 | LUT delta + boundary contract + G-CHIP-ULP → Checkpoint K | NOT STARTED |
 | A-7 | execute K | blocked on K |
 | A-8 | optimizer assumptions + retarget fixture | after A-2 |
@@ -61,6 +62,21 @@ checkpoint.
 - **M-4: `screenshot_gui` on a non-rendering window REFUSES with the mechanism named** (today it hangs). `screenshot_simulation`/`screenshot_toolpath` are CPU rasterisers, unaffected. `set_ui_view`/scrub apply off-frame and return `visible_on_next_frame: false` under a park.
 - **M-5: heartbeat deleted ONLY alongside the six-driver fixes** (step 6); if that step defers, the heartbeat stays.
 - **M-6: B-4 re-measures the ~1 s floor without gdb before and after**; a surviving ~900 ms is booked as a separate finding, not a failure of this row.
+
+### Checkpoint J — ruled 2026-08-13 (operator, via AskUserQuestion). BINDING.
+
+- **J-1: disposition (a) now, (c) as the destination — one commit.** Retire the automatic feed-up (`arc_fit_ratio_for_op`'s single decision site); Suggest emits the un-lifted feed; the simulation-backed path (measured 4/4 clean) is where any lift lives.
+- **J-2: no preference expressed by the operator.** The package's recommendation stands as the default consequence of J-1: the derated band **minimum** is the un-lifted resting place (measured 0.999× unaided), lift toward the median delegated to the simulation-backed pass. Marked REVISITABLE — if the impl or later evidence gives a reason to prefer a different resting point, re-ask rather than treating this as ruled.
+- **J-3: `adaptive_feed_modulation` default flips ON.** The operator chose the direct flip (not the gated-wave option). It is still a default change that moves simulated behaviour project-wide, so the impl lands it red-first with its own before/after sentry evidence, and any moved fingerprint is a **documented re-pin citing this ruling as the mechanism** (old/new, exact build, consumer census) — not a silent move.
+- **J-4: the two DropCutter residuals (1.69×/1.62×, DOC-derate denominator divergence F-3/C-2/C-5) are a SEPARATE row** — not a blocker for (a), which reduces them ~3× and does not create them.
+- **J-5: delete `arc_fit_ratio_for_op` + `ObservedChiploadPrediction`; KEEP the two `SuggestWarning` variants** for the simulation-backed path's own measured feed changes. (The `Default` ratios gate nothing — only `Calibrated` rows reach pass 8 — so no behaviour is removed from the other fifteen families.)
+
+### Checkpoint N — ruled 2026-08-13 (operator, via AskUserQuestion). BINDING.
+
+- **N-1: KEEP steps 1–4.** Behaviour-preserving on a rendering window, measurably no slower (12.0 vs 15.6 ms median), the precondition for any later attempt, and the `pumps`/`wakeups` instrumentation is what diagnosed the present block from outside the process. The NO-GO clause's "third state" cost is accepted with eyes open; the contract sentries stay inverted.
+- **N-2: PresentMode test wave AUTHORIZED, gated.** Measure `Mailbox`/`Immediate` under the park rig (does the FIFO block vanish?) AND the interactive cost (frame pacing, idle CPU, visual artefacts, screenshots). Evidence package returns to the operator before any default flips — no quiet change.
+- **N-3: interactive park-reproduction session AGREED.** A short operator-in-the-loop wave: the operator drives window states (occlude, screen-lock, monitor arrangements) on cue while the rig samples callbacks/syscalls from outside — to turn "present block" from a one-reproduction hypothesis (minimise, one compositor) into attributed fact for the incident's actual states. Scheduled when the operator is at the desktop; combine with the N-2 wave's rig.
+- G-LV.1 stays OPEN; steps 5–7 remain unbuilt pending N-2's result; the heartbeat stays per M-5.
 
 ### Checkpoint L — ruled 2026-08-08 (operator, via AskUserQuestion). BINDING.
 
