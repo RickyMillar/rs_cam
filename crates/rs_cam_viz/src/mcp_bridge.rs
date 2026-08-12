@@ -361,6 +361,13 @@ impl FrameLoopBeat {
             "requests_in_channel": self.backlog(),
             "awaiting_completion": self.awaiting(),
             "awaiting_generate_all": self.awaiting_generate_all(),
+            // Checkpoint O-2: the negotiated present mode travels with the
+            // liveness block because it is the *cause* half of the same
+            // question. `healthy: false` says the loop is not painting;
+            // `present_mode.negotiated` says whether the mode that strands it
+            // is in force. A silent Fifo fallback under AutoNoVsync restores
+            // the G-LV.1 hazard, and without this field it is invisible.
+            "present_mode": crate::present_mode::report(),
         })
     }
 }

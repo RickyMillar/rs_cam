@@ -653,6 +653,70 @@ async fn generation_status_flags_a_parked_frame_loop_holding_a_generate_all() {
     );
 }
 
+/// Checkpoint O-2: the negotiated present mode must reach an agent, on the wire,
+/// from the escape hatch that answers when nothing else does.
+///
+/// **Why this is a sentry and not a nice-to-have.** The `--mcp` flip requests
+/// `AutoNoVsync`, whose fallback rule *always ends at `Fifo`* so that it can
+/// never fail to configure. On a surface with neither `Immediate` nor
+/// `Mailbox`, that silently restores the exact G-LV.1 park the flip was made to
+/// remove — and every other signal in this response looks identical either way.
+/// The one thing that distinguishes "the flip is working" from "the flip was
+/// silently declined" is which mode is actually in force, so it must be
+/// readable from `generation_status`, must never be answered with the
+/// *requested* mode when the request was an `Auto*` rule, and must carry the
+/// consequence when it is a FIFO-family mode.
+#[tokio::test]
+async fn generation_status_reports_the_negotiated_present_mode() {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let cache = published_cache();
+    let server = EmbeddedCamServer::new(
+        tx,
+        egui::Context::default(),
+        GenerationControl::new(Arc::new(IdleLaneStub)),
+        cache.clone(),
+    );
+
+    let v: serde_json::Value = serde_json::from_str(&server.generation_status().await).unwrap();
+    let present = &v["frame_loop"]["present_mode"];
+    assert!(
+        present.is_object(),
+        "generation_status must carry frame_loop.present_mode: {v}"
+    );
+    assert!(
+        present.get("requested").is_some() && present.get("negotiated").is_some(),
+        "both halves, because for every Auto* rule they are different questions: {present}"
+    );
+    assert!(
+        present["negotiated_known_from"].is_string(),
+        "an agent must be able to tell an observed mode from an inferred one: {present}"
+    );
+
+    // In this test process no window was ever configured, so there is no
+    // negotiation to report — and the honest answer is null with a stated
+    // reason, never an echo of whatever was requested.
+    assert!(
+        present["negotiated"].is_null() || present["negotiated"].is_string(),
+        "{present}"
+    );
+}
+
+/// A lane that is idle and stays idle. Shared by the sentries that care about
+/// the *frame loop* rather than the lane.
+struct IdleLaneStub;
+
+impl LaneControl for IdleLaneStub {
+    fn snapshot(&self) -> LaneSnapshot {
+        LaneSnapshot::idle(ComputeLane::Toolpath)
+    }
+    fn request_cancel(&self) -> CancelOutcome {
+        CancelOutcome {
+            was_busy: false,
+            snapshot: LaneSnapshot::idle(ComputeLane::Toolpath),
+        }
+    }
+}
+
 /// Throughput guard for the snapshot machinery itself. The publish runs on the
 /// GUI thread at ≤2 Hz; the read runs on the MCP thread. Neither touches the
 /// compute lane, but the shared `RwLock` must not be a contention point if

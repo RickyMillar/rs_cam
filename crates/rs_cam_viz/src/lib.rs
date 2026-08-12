@@ -11,6 +11,7 @@ pub mod io;
 pub mod mcp_bridge;
 #[cfg(feature = "mcp")]
 pub mod mcp_server;
+pub mod present_mode;
 pub mod render;
 pub mod state;
 pub mod ui;
@@ -35,63 +36,6 @@ pub mod ui;
 /// a counter instead of a real event loop.
 pub type GuiWaker = std::sync::Arc<dyn Fn() + Send + Sync>;
 
-/// Rig-only lever: which `wgpu::PresentMode` the primary surface asks for.
-///
-/// **The default is unchanged.** Unset — which is every real session — this
-/// returns `AutoVsync`, exactly the value `WgpuConfiguration::default()`
-/// carries (`egui-wgpu-0.34.3/src/lib.rs:335`), so a build with this function
-/// and a build without it configure the same surface. Nothing in the product
-/// reads the variable; it exists so a measurement wave can vary one thing.
-///
-/// **Why a lever exists at all (G-LV.1, TD3 wave B-4, Checkpoint N-2).** Under
-/// a real park — GNOME Wayland, window minimised — the main thread is blocked
-/// in `poll()` on one fd with an infinite timeout, below winit, attributed to
-/// the Wayland/Mesa WSI waiting on a FIFO buffer release that a minimised
-/// surface never gives. `AutoVsync` resolves to FIFO. Whether a non-FIFO mode
-/// removes that block is a measurement, and this is the one variable it needs.
-/// The measurement is `planning/review_2026-08-08/PRESENT_MODE_AB.md`; flipping
-/// the default is an operator decision that has **not** been taken here.
-///
-/// Accepted values (case-insensitive): `auto_vsync`, `auto_no_vsync`, `fifo`,
-/// `fifo_relaxed`, `mailbox`, `immediate`. An unrecognised value warns and
-/// falls back to the default rather than failing the launch.
-///
-/// **Requested is not negotiated.** wgpu resolves the two `Auto*` modes
-/// against the surface's capabilities and logs its choice at `info`
-/// (`wgpu-core-29.0.3/src/device/resource.rs:4963-5001`), but an **explicit**
-/// mode the surface does not support is a hard `UnsupportedPresentMode` error
-/// there, not a silent fallback. So: an explicit mode that launches is the
-/// mode in force, and an `Auto*` mode's real value is only knowable from
-/// wgpu's log (`RUST_LOG=info,wgpu_core=info`).
-fn present_mode_from_env() -> egui_wgpu::wgpu::PresentMode {
-    use egui_wgpu::wgpu::PresentMode;
-
-    let Some(raw) = std::env::var_os("RS_CAM_PRESENT_MODE") else {
-        return PresentMode::AutoVsync;
-    };
-    let requested = raw.to_string_lossy().trim().to_ascii_lowercase();
-    let mode = match requested.as_str() {
-        "" | "auto_vsync" | "autovsync" | "default" => PresentMode::AutoVsync,
-        "auto_no_vsync" | "autonovsync" => PresentMode::AutoNoVsync,
-        "fifo" => PresentMode::Fifo,
-        "fifo_relaxed" | "fiforelaxed" => PresentMode::FifoRelaxed,
-        "mailbox" => PresentMode::Mailbox,
-        "immediate" => PresentMode::Immediate,
-        other => {
-            tracing::warn!(
-                "RS_CAM_PRESENT_MODE={other:?} is not a present mode I know; using AutoVsync. \
-                 Accepted: auto_vsync, auto_no_vsync, fifo, fifo_relaxed, mailbox, immediate."
-            );
-            PresentMode::AutoVsync
-        }
-    };
-    tracing::info!(
-        "RS_CAM_PRESENT_MODE={requested:?}: requesting {mode:?} for the primary surface. \
-         This is the REQUEST — for Auto* modes wgpu logs the negotiated mode at info level."
-    );
-    mode
-}
-
 pub fn run(mcp_mode: bool) -> eframe::Result {
     // Title carries the git desc so the running build is identifiable
     // at a glance (e.g. "rs_cam — 3f9a1c2-dirty").
@@ -101,7 +45,11 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
             .with_inner_size([1400.0, 900.0])
             .with_title(&title),
         wgpu_options: egui_wgpu::WgpuConfiguration {
-            present_mode: present_mode_from_env(),
+            // Checkpoint O-1: `--mcp` asks for AutoNoVsync, a plain launch keeps
+            // AutoVsync. See `present_mode` for the ruling, the measurement it
+            // rests on, and the negotiated-vs-requested distinction that makes
+            // this observable rather than assumed.
+            present_mode: present_mode::decide_and_record(mcp_mode),
             ..Default::default()
         },
         ..Default::default()
