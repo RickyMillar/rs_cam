@@ -1,0 +1,14 @@
+{"call": "frames_probe", "phase": "before", "frames": 73, "healthy": false, "last_frame_age_s": 4.428200332, "wall_s": 0.0029175281524658203}
+{"call": "generation_status", "wall_s": 0.0008547306060791016, "repeat": 0, "phase": "census", "served_from": "live"}
+{"call": "project_summary", "wall_s": 0.7528748512268066, "repeat": 0, "phase": "census", "served_from": "snapshot"}
+{"call": "list_toolpaths", "wall_s": 0.7530078887939453, "repeat": 0, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_stock", "wall_s": 0.7517626285552979, "repeat": 0, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_machine", "wall_s": 0.7514076232910156, "repeat": 0, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_model", "wall_s": 0.7523355484008789, "repeat": 0, "phase": "census", "served_from": "snapshot"}
+{"call": "generation_status", "wall_s": 0.0006949901580810547, "repeat": 1, "phase": "census", "served_from": "live"}
+{"call": "project_summary", "wall_s": 0.7523632049560547, "repeat": 1, "phase": "census", "served_from": "snapshot"}
+{"call": "list_toolpaths", "wall_s": 0.7528035640716553, "repeat": 1, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_stock", "wall_s": 0.7527329921722412, "repeat": 1, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_machine", "wall_s": 0.7535257339477539, "repeat": 1, "phase": "census", "served_from": "snapshot"}
+{"call": "inspect_model", "wall_s": 0.751746416091919, "repeat": 1, "phase": "census", "served_from": "snapshot"}
+{"call": "frames_probe", "phase": "after", "frames": 73, "healthy": false, "last_frame_age_s": 11.958131325, "wall_s": 0.0010497570037841797}

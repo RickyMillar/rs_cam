@@ -60,17 +60,29 @@ def main():
     ap.add_argument(
         "--hidden",
         action="store_true",
-        help="park the window before measuring (Wayland: never map it; see README)",
+        help="probe frame_loop.frames either side of the census, to prove "
+        "whether frames were being produced while calls were answered",
+    )
+    ap.add_argument(
+        "--minimize-after",
+        type=int,
+        default=None,
+        help="RS_CAM_MINIMIZE_AFTER_FRAMES — park the window after N frames. "
+        "Only parks under Wayland; on X11 redraws are client-driven.",
     )
     ap.add_argument("--settle", type=float, default=3.0)
     args = ap.parse_args()
 
     os.makedirs(args.log_dir, exist_ok=True)
+    extra_env = {}
+    if args.minimize_after is not None:
+        extra_env["RS_CAM_MINIMIZE_AFTER_FRAMES"] = str(args.minimize_after)
     proc = McpProcess(
         os.path.abspath(args.binary),
         os.getcwd(),
         args.log_dir,
         mode="direct",
+        extra_env=extra_env or None,
         keep_wayland=args.wayland,
     )
     proc.start()
