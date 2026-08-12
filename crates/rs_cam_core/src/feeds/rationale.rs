@@ -19,6 +19,37 @@ use serde::{Deserialize, Serialize};
 
 use crate::feeds::suggest::{FeedRecalibrationCap, SuggestWarning};
 
+/// **The report-tier label on the two chipload-recalibration entries**
+/// (`ChiploadTarget`, `ChiploadCapBound`).
+///
+/// Both entries quote a chipload produced by
+/// [`crate::feeds::predict::predict_observed_chipload_mm`], i.e. `nominal ×
+/// arc_fit_ratio`. That ratio table was fitted against the post-sim gate's
+/// **arc-mean chip thickness** observation, and that observation was deleted
+/// on 2026-08-06 — the gate now reports `effective_feed / (rpm · flutes)`, a
+/// linear advance per tooth. The quoted number therefore predicts a quantity
+/// nothing measures any more, and the entries used to present it as
+/// gate-targeted calibration.
+///
+/// This label is the operator review's pre-ruling remedy, and it is
+/// **report-tier by construction**: it moves no recipe number, changes no
+/// verdict, and leaves the applied feed exactly where it was. The disposition
+/// of the underlying lift is Checkpoint J's to rule
+/// (`planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`, ledger row
+/// **F-T35**).
+///
+/// It lives here rather than in the GUI because every renderer — the feeds
+/// modal's "Why these values?" list, the MCP `get_suggest_rationale` payload
+/// — prints [`RationaleEntry::headline`] and [`RationaleEntry::detail`]
+/// verbatim. One string, every surface.
+pub const LEGACY_ESTIMATE_LABEL: &str = "Legacy pre-simulation estimate";
+
+/// The sentence that says *why* [`LEGACY_ESTIMATE_LABEL`] applies, so a
+/// reader who has never heard of the arc-fit table still knows what to do
+/// about it (simulate).
+pub const LEGACY_ESTIMATE_NOTE: &str = "Estimated against the arc-mean chip observation the post-sim gate retired on 2026-08-06, \
+     not the advance per tooth it reports today — simulate to get the observed value.";
+
 /// Which operation field a rationale entry describes a change (or
 /// warning) about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,9 +95,15 @@ pub enum RationaleReason {
     PlungeEntryUnstable,
     /// Feed recalibrated to land observed chipload at the policy
     /// target inside the LUT band.
+    ///
+    /// The chipload figures on this entry are a **legacy pre-simulation
+    /// estimate** — see [`LEGACY_ESTIMATE_LABEL`].
     ChiploadTarget,
     /// Feed could not reach LUT target; bound by a cap (MaxFeed or
     /// DeflectionThreshold).
+    ///
+    /// Same caveat as [`Self::ChiploadTarget`]: the quoted chipload is an
+    /// estimate, not a gate observation ([`LEGACY_ESTIMATE_LABEL`]).
     ChiploadCapBound,
     /// v3.3 placeholder: strategy classifier picked an
     /// `entry_style` / `clearing_strategy` / `stock_to_leave` value
@@ -245,7 +282,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 to_value: Some(*raised_mm_per_min),
                 headline: format!("Feed raised to {raised_mm_per_min:.0} mm/min{cap_note}"),
                 detail: Some(format!(
-                    "Chipload {predicted_observed_chipload_before:.4} → {predicted_observed_chipload_after:.4} mm/tooth (LUT target {lut_target_mm_per_tooth:.4})"
+                    "{LEGACY_ESTIMATE_LABEL}: chipload {predicted_observed_chipload_before:.4} → {predicted_observed_chipload_after:.4} mm/tooth (LUT target {lut_target_mm_per_tooth:.4}). {LEGACY_ESTIMATE_NOTE}"
                 )),
             }
         }
@@ -266,7 +303,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 to_value: Some(*feed_at_termination_mm_per_min),
                 headline: format!("Chipload still low after recal — bound by {cap_label}"),
                 detail: Some(format!(
-                    "Observed {predicted_observed_mm_per_tooth:.4} mm/tooth vs LUT target {lut_target_mm_per_tooth:.4} at feed {feed_at_termination_mm_per_min:.0} mm/min"
+                    "{LEGACY_ESTIMATE_LABEL}: {predicted_observed_mm_per_tooth:.4} mm/tooth vs LUT target {lut_target_mm_per_tooth:.4} at feed {feed_at_termination_mm_per_min:.0} mm/min. {LEGACY_ESTIMATE_NOTE}"
                 )),
             }
         }
@@ -544,6 +581,52 @@ mod tests {
         // No cap note when uncapped.
         assert!(!e.headline.contains("capped"));
         assert!(!e.headline.contains("reverted"));
+    }
+
+    /// A-5 report-tier label (ledger **F-T35**): both chipload-recalibration
+    /// entries must mark their quoted chipload as an estimate rather than a
+    /// gate observation, and must say why.
+    ///
+    /// Report-tier only — this asserts the *strings*. Nothing here constrains
+    /// `from_value` / `to_value`, which are the applied feeds and did not
+    /// move.
+    #[test]
+    fn chipload_recalibration_entries_are_labelled_a_legacy_estimate() {
+        let raised = rt(SuggestWarning::FeedRaisedForChipload {
+            requested_mm_per_min: 911.0,
+            raised_mm_per_min: 5268.0,
+            predicted_observed_chipload_before: 0.0093,
+            predicted_observed_chipload_after: 0.054,
+            lut_target_mm_per_tooth: 0.054,
+            cap_hit: None,
+        });
+        let still_low = rt(SuggestWarning::ChiploadStillLowAfterRecalibration {
+            predicted_observed_mm_per_tooth: 0.0357,
+            lut_target_mm_per_tooth: 0.0708,
+            feed_at_termination_mm_per_min: 10_000.0,
+            blocking_cap: FeedRecalibrationCap::MaxFeed,
+        });
+
+        for (tag, entry) in [("FeedRaised", &raised), ("StillLow", &still_low)] {
+            let detail = entry
+                .detail
+                .as_deref()
+                .unwrap_or_else(|| panic!("{tag}: entry must carry a detail line"));
+            assert!(
+                detail.contains(LEGACY_ESTIMATE_LABEL),
+                "{tag}: detail must carry the estimate label, got {detail:?}"
+            );
+            assert!(
+                detail.contains("2026-08-06"),
+                "{tag}: detail must date the retired observation so the label is checkable, \
+                 got {detail:?}"
+            );
+        }
+
+        // The applied numbers are untouched by the label.
+        assert_eq!(raised.from_value, Some(911.0));
+        assert_eq!(raised.to_value, Some(5268.0));
+        assert_eq!(still_low.to_value, Some(10_000.0));
     }
 
     #[test]
