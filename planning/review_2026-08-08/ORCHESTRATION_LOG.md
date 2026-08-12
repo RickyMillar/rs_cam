@@ -2025,3 +2025,253 @@ has that shape, and the heartbeat stays until then; (b) the auto-regen /
 ledger row — it makes `generate_all` report a failure for work the GUI
 cancelled on itself, it is measured on a visible window, and it is not the
 one-frame-late UI nuisance driver 1 was catalogued as.
+
+---
+
+## A-5i — execute Checkpoint J: retire the arc-fit lift, flip modulation on, 2026-08-13
+
+Status: COMPLETE. Both halves of Checkpoint J shipped as two separate
+commits with separate evidence. **Suggest's recommendation goes from
+`Exceeds` 4/4 to `Within` 4/4** on A-5's fixtures — 4/4 → 2/4 by retiring
+the lift (J-1), 2/4 → 4/4 by the modulation default (J-3).
+
+Commit(s), parent `5c4e847c`:
+- `25449085` — J-1/J-5, the retirement (7 files, −1299/+633).
+- `f6533a19` — J-3, the default flip + the rule-5 docstring correction.
+- this entry + `artifacts/a5i/`.
+
+Question and pre-registered bars: plan §2 A-5, executing the Checkpoint J
+ruling. Bars set before starting: (a) the pre-fix reproduction must SURVIVE
+the fix, not be re-baselined away — so arm A becomes a pinned constant
+rather than a value read back out of the code under test; (b) every
+after-number is checked against `ARC_FIT_RATIO_EVIDENCE.md` §4.1/§4.2's
+*prediction*, and any divergence is reported loudly rather than absorbed;
+(c) the two changes get separate commits so their fingerprint attributions
+cannot be conflated; (d) a J-3 sentry must prove the modulator RAN before
+it reads a verdict, or a no-op modulator would show green on the two
+Adaptive3d fixtures; (e) anything the ruling did not name is reported, not
+decided.
+
+Fixture/population/resolution: A-5's four synthetic fixtures unchanged
+(2 per affected family), simulation cell **0.4 mm**, gate populations
+448 / 756 / 6 729 / 10 343 — none vacuous. Plus one **live** population:
+the operator's `wanaka.toml` as read by `wanaka_suggest_baseline`, which
+was captured before and after by stashing the working tree (read-only; the
+file was never written or staged).
+
+### Result — J-1, the retirement
+
+**Before/after, quoted from the harness at `5c4e847c` and at `25449085`:**
+
+| fixture | shipped feed before | after | unmodulated verdict before → after |
+|---|---|---|---|
+| A3D-1 | 6912.0 | **1215.0** | Exceeds → **Within** |
+| A3D-2 | 6000.0 | **2243.0** | Exceeds → **Within** |
+| DC-1 | 4405.0 | **1487.0** | Exceeds → Exceeds |
+| DC-2 | 2500.0 | **1029.0** | Exceeds → Exceeds |
+
+**Zero divergence from §4.1/§4.2's prediction** — all four feeds and all
+four verdicts match the disposition-(a) row to the digit. The closed form
+also reproduces off the now-pinned constants: A3D-1 **4.00×**, DC-1
+**6.67×** (the two uncapped fixtures), exactly `1/0.25` and `1/0.15`.
+
+**The pre-fix reproduction survived.** `arc_fit_arms_gate_observation`
+still asserts arm A == `Exceeds` on all four fixtures, because arm A is now
+`Fixture::legacy_shipped_feed` — a pinned per-fixture constant measured at
+`5c4e847c` — rather than a value read out of Suggest. The finding outlives
+the code that caused it.
+
+**J-4 residuals, as expected, stated with their row ids.** DC-1 and DC-2
+remain `Exceeds` unmodulated at **1.69× / 1.62×** band max. That is the
+DOC-derate denominator divergence, census **F-3 / C-2 / C-5**, named on
+`FeedsResult::effective_diameter`. Arc-fit was amplifying it ~3×; it did
+not cause it, and (a) neither fixes nor creates it.
+
+### Result — J-3, the default flip
+
+`SimulationOptions::default().adaptive_feed_modulation`: **`false` → `true`**
+(`session/mod.rs`). New sentry
+`modulation_default_is_on_and_closes_the_two_dropcutter_residuals`,
+red-first on three counts at `25449085`:
+
+| fixture | feed | verdict under the default | gate obs | moves touched | median Δfeed |
+|---|---|---|---|---|---|
+| A3D-1 | 1215.0 | **Within** | 0.05321 | 261 / 271 | **+20.1 %** |
+| A3D-2 | 2243.0 | **Within** | 0.03938 | 184 / 212 | −15.7 % |
+| DC-1 | 1487.0 | **Within** | 0.02318 | 7 395 / 7 395 | −40.8 % |
+| DC-2 | 1029.0 | **Within** | 0.01669 | 14 640 / 14 640 | −38.4 % |
+
+Every observation reproduces §3.2's `B + modulation` row exactly. Note the
+**sign on A3D-1**: the modulator *raises* feed there — the
+simulation-backed version of the correction the retired pass was trying to
+make blind.
+
+The sentry checks `modulation_summary` is `Some` with `moves_touched > 0`
+**before** reading the verdict (bar (d)). Without it a no-op modulator
+would still read `Within` on both Adaptive3d fixtures and the test would go
+green for the wrong reason — the vacuous-population failure mode (X-VAC)
+relocated from the gate to the modulator.
+
+### Per-site `SimulationOptions` sweep — inherit vs pin
+
+**Not one shipped consumer inherits the default**, so the flip moved no
+shipped surface:
+
+| # | site | form | flag | effect of flip |
+|---|---|---|---|---|
+| 1 | `core session/mod.rs` | `impl Default` | `false` → **`true`** | THE change |
+| 2 | `viz controller/events/compute.rs` | literal + `..Default::default()` | **pins `true`** | none — already on |
+| 3 | `cli project.rs` | full literal, no `..` | `--adaptive-feed-modulation` (default off) | none |
+| 4 | `cli smoke.rs` | full literal, no `..` | pins `false` | none |
+| 5 | `core tool_load/optimize/candidate.rs` | full literal, no `..` | pins `false` | none |
+
+The mechanism, traced this wave: **the GUI and MCP never call
+`ProjectSession::run_simulation` at all.** The dexel sim runs through the
+viz worker into `compute::simulate::run_simulation_with_phase`, whose
+`SimulationRequest` carries no modulation fields; modulation reaches the
+GUI as a main-thread post-pass (`modulate_simulation_trace`) at site 2.
+MCP `run_simulation` sets resolution then pushes `AppEvent::RunSimulation`
+into the identical path.
+
+Core test files that **inherit** (use `..default()`, never name the field):
+`zero_removal_rest_pass_a4`, `scallop_intra_pass_relink_am7`,
+`frozen_snapshot_regeneration_s4`, `narration_cost_probe_h26`,
+`claims_reference_cascade_am6` (×3), `strategy_comparison_h4` (×3),
+`classification_columns_ab_m3`, `common/chain.rs` (×3). ~27 other test
+files pin the field by name and are unaffected.
+
+### Re-pins — every one, with attribution
+
+| what moved | old → new | attribution |
+|---|---|---|
+| A3D-1 / A3D-2 / DC-1 / DC-2 shipped feed | 6912/6000/4405/2500 → 1215/2243/1487/1029 | **J-1** |
+| wanaka `Back Rough` feed (live) | 6000 → **911** | **J-1** |
+| wanaka `3D Rough 6` feed (live) | 6000 → **911** | **J-1** |
+| `feed_recalibration_raises_feed_for_wanaka_back_rough_case` | pinned 3456 mm/min → feed untouched at 911; renamed `retired_lift_leaves_wanaka_back_rough_feed_untouched` | **J-1** |
+| `feed_recalibration_caps_on_deflection` + `speed_gated_by_deflection_fires` | required `cap_hit: DeflectionThreshold` + still-low → merged, both must be silent; renamed `retired_lift_fires_no_cap_on_a_deflection_bound_fixture` | **J-1** |
+| `feed_recalibration_caps_on_max_feed` | required still-low `blocking_cap: MaxFeed` → must be silent; renamed `retired_lift_reports_no_max_feed_shortfall` | **J-1** |
+| `aggressiveness_monotone_feed_progression` | Conservative pinned 3456 (spread 3456/6144/7680) → all three flat at 911 | **J-1** |
+| `predict.rs` ×5 unit tests | deleted with the code they pinned | **J-1** |
+| `wanaka_suggest_integration` helper | `assert_has_feed_raised` → `assert_no_feed_raised`, now applying to every op family | **J-1** |
+| `arc_fit_lift_before_after_by_family` | inverted → `retired_lift_leaves_feed_at_the_calculator_value` | **J-1** |
+| `SimulationOptions::default().adaptive_feed_modulation` | `false` → `true` | **J-3** |
+
+Exact build for every number above: branch `tech-debt-3`, parent
+`5c4e847c`, retirement at `25449085`, dev profile, `cargo test -p
+rs_cam_core`, simulation cell 0.4 mm.
+
+**Nothing moved outside those two attributions.**
+
+### Two things the ruling did not name
+
+1. **A FIFTH `suggest.rs` re-baseline site.** §6.1 named four; compiling
+   found `aggressiveness_monotone_feed_progression`. `SuggestAggressiveness`
+   reached the feed **only** through pass 8's `target_chipload` solve, so
+   the Conservative/Default/Speed spread collapses to flat. Monotonicity
+   still passes *trivially* — equality satisfies `<=` — which would have
+   been a vacuous green, so the test now asserts the stronger true
+   statement (all three equal the calculator's feed). **The aggressiveness
+   dial is now inert on the pre-simulation feed path.** That is a real loss
+   of operator control, named in the test's own doc, and it resolves when
+   J-1's destination (c) lands a simulation-backed target.
+
+2. **GUI/CLI modulation divergence after the flip.** GUI modulates by
+   default (pinned `true`); CLI does not unless `--adaptive-feed-modulation`
+   is passed. J-3 ruled the library default only, and flipping the clap
+   flag would be a second, unruled, user-facing default change. **Reported,
+   not taken** — orchestrator to bundle with the next checkpoint.
+
+### One instrument-integrity correction shipped with the flip
+
+`SimulationOptions::adaptive_feed_modulation`'s own doc claimed modulation
+fires only "when the active `MachineProfile` carries `kinematics`".
+**False.** `apply_adaptive_feed_modulation` calls
+`self.machine.effective_kinematics()` — the generic-wood-router fallback —
+"so it applies on every machine". Every built-in preset has
+`kinematics: None`, so under the old claim A-5's modulated arms could not
+have fired; they measurably did, on a default profile. Rule 5: a changed
+instrument makes its own docstring a lie you then cite. Corrected in the
+flip commit, citing the fallback.
+
+### Verification (focused commands + exact known-red state)
+
+- `cargo test -p rs_cam_core -q --test arc_fit_disposition_a5` — **3
+  passed, 0 failed** (44 s). Full output in
+  `artifacts/a5i/after_flip_harness.txt`; pre-change in
+  `before_harness.txt`.
+- `cargo test -p rs_cam_core --no-fail-fast` (retirement) — **6 reds
+  across 4 binaries, every one pre-existing and on the known-red list**:
+  G-LIT-IPE (`run_literature_matrix`), G-XFP ×3
+  (`transform_provenance_fingerprints`), G-SUB1MM
+  (`sub_1mm_tapered_ball_hardwood_finish_extrapolates_with_scaling`),
+  `wanaka_suggest_baseline` (environmental).
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean (only
+  the pre-existing `nom 3.2.1` / `quick-xml 0.22.0` future-incompat note).
+- `cargo fmt --check --all` — clean. Formatted with `cargo fmt -p
+  rs_cam_core` specifically to avoid the rustfmt cascade into
+  `rs_cam_viz`, which N-2 is editing concurrently.
+- **`wanaka_suggest_baseline`'s failure MODE is UNCHANGED** — byte-identical
+  panic message and case list (`Toolpath id 11 missing from suggest
+  cases`), only the line number shifted **155 → 161**, entirely accounted
+  for by a doc comment this wave added above the helper. It still dies in
+  `find_case` before reaching any Suggest assertion.
+- Slot discipline: `free -g` + bracketed `pgrep -af "carg[o]"` before every
+  launch; waited out N-2's `cargo test -p rs_cam_viz` twice rather than
+  running concurrently. Disk 112 G free throughout. No release build.
+- `planning/airrun_2026-06-01/wanaka.toml` was read (via a `git stash` of
+  my own changes only) and is **unstaged and unmodified**. N-2's
+  `rs_cam_viz` files were never staged.
+
+### A capture defect I made, and corrected
+
+My first full-suite capture used `... | tail -400 > file`. The file came
+back **exactly 400 lines and starting mid-stream** — it had silently
+dropped ~13 test binaries, including the one carrying **G-LIT-IPE**. An
+attribution built on it would have been wrong in the specific way this
+programme warns about: a clean-looking list that is clean because the
+evidence was truncated, not because the tests passed. I re-ran the full
+suite with unbounded capture before committing anything. Both files are
+kept in `artifacts/a5i/` — the truncated one is retained deliberately, as
+the record of the defect.
+
+### NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition
+
+- **NOT EXERCISED: `wanaka_suggest_integration`'s 3D Finish 6 block.** Its
+  inversion (`assert_has_feed_raised` → `assert_no_feed_raised`) is
+  **mechanical and never executed**: `wanaka_suggest_baseline` panics in
+  `find_case(ToolpathId(11))` because toolpath 11 is absent from the
+  operator's working `wanaka.toml`. Owner: whoever resolves the
+  environmental red. Re-open condition: a `wanaka.toml` carrying toolpath
+  11, or an operator decision to re-baseline the file's expected shape.
+- **NOT EXERCISED: `SuggestAggressiveness::Speed` on any simulated arm.**
+  Carried forward unchanged from A-5 §8; the retirement makes it *more*
+  interesting, not less, because Speed is now inert on feed.
+- **NOT EXERCISED: the optimizer *retargeter* route to disposition (c).**
+  (c) is delivered here through the **modulator**. The retargeter fires
+  only on `Exceeds` and `low_side_is_advisory()` suppresses the burn side
+  on 176/252 shipped rows (**F-MISSAE**). Unchanged blocker; K's F-MISSAE
+  question is now a dependency of (c)'s optimizer route, not a parallel
+  item.
+- **NOT EXERCISED: a rendered GUI surface.** §0 rule 3. The feeds modal
+  renders `RationaleEntry` strings verbatim and its numbers *do* now move
+  (the two chipload-recalibration entries no longer appear at all), so a
+  screenshot is owed. The GUI was not launched this wave — N-2 holds the
+  viz territory and the present-mode work makes the window state
+  unreliable. Owner: the next wave with a live GUI. Re-open condition:
+  none needed; recorded as a gap, not discharged.
+- **NOT FIXED: the two DropCutter DOC-derate residuals** (F-3 / C-2 /
+  C-5). Ruled a separate row by J-4. Modulation now masks them at the gate
+  — worth stating plainly, because `Within` 4/4 does **not** mean the
+  denominator divergence is gone; it means a measured correction is
+  absorbing it.
+- **NOT FIXED: `SuggestAggressiveness` is inert on feed.** See above.
+- **NOT DECIDED: the CLI `--adaptive-feed-modulation` default.** See above.
+
+Next action / checkpoint request: **none — Checkpoint J is discharged.**
+Orchestrator actions: (a) carry the CLI-default divergence and the inert
+aggressiveness dial into the next checkpoint bundle; (b) note that J-2's
+"revisitable" resting point was NOT disturbed — the implementation
+surfaced no reason to prefer a different one, and the measured 0.999×
+band-minimum landing held on both Adaptive3d fixtures after the
+retirement; (c) note F-MISSAE is now a dependency of (c)'s optimizer
+route.
