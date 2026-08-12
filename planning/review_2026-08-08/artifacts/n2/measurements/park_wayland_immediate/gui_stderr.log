@@ -1,0 +1,157 @@
+2026-08-12T13:15:23.992737Z  WARN rs_cam_gui: MCP mode on Wayland: keep this window VISIBLE. A hidden, occluded or screen-locked window receives no compositor frame callbacks, so the GUI stops repainting — and every MCP request plus every generate_all round handoff is dispatched from a repaint. They will stall indefinitely with the compute lane reporting idle. `generation_status` reports this as `frame_loop.healthy: false`. To remove the hazard entirely, relaunch with WAYLAND_DISPLAY unset so winit picks X11/XWayland, where redraws are client-driven. Setting WINIT_UNIX_BACKEND does NOT work — winit removed that variable in 0.29 and this build is on 0.30.
+2026-08-12T13:15:23.992928Z  INFO rs_cam_viz: RS_CAM_PRESENT_MODE="immediate": requesting Immediate for the primary surface. This is the REQUEST — for Auto* modes wgpu logs the negotiated mode at info level.
+2026-08-12T13:15:24.023822Z  WARN sctk_adwaita::buttons: Ignoring unknown button type: 
+2026-08-12T13:15:24.067306Z  INFO wgpu_hal::vulkan::adapter: Found 2 cooperative matrix configurations supported by wgpu
+2026-08-12T13:15:24.069469Z  INFO wgpu_hal::vulkan::adapter: Found 2 cooperative matrix configurations supported by wgpu
+2026-08-12T13:15:24.071256Z  INFO egui_wgpu: There are 3 available wgpu adapters: {backend: Vulkan, device_type: IntegratedGpu, name: "AMD Radeon 890M Graphics (RADV GFX1150)", driver: "radv", driver_info: "Mesa 25.2.8-0ubuntu0.24.04.2", vendor: AMD (0x1002), device: 0x150E, pci_bus_id: "0000:c4:00.0", subgroup_size: 32..=64, transient_saves_memory: false}, {backend: Vulkan, device_type: Cpu, name: "llvmpipe (LLVM 20.1.2, 256 bits)", driver: "llvmpipe", driver_info: "Mesa 25.2.8-0ubuntu0.24.04.2 (LLVM 20.1.2)", vendor: Mesa (0x10005), subgroup_size: 8..=8, transient_saves_memory: false}, {backend: Gl, device_type: Other, name: "AMD Radeon 890M Graphics (radeonsi, gfx1150, LLVM 20.1.2, DRM 3.64, 6.17.0-1028-oem)", driver_info: "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2", vendor: AMD (0x1002), subgroup_size: 4..=128, transient_saves_memory: false}
+2026-08-12T13:15:24.086113Z ERROR wgpu::backend::wgpu_core: Handling wgpu errors as fatal by default
+2026-08-12T13:15:24.086164Z ERROR rs_cam_gui: rs_cam crashed due to internal error: wgpu error: Validation Error
+
+Caused by:
+  In Surface::configure
+    Requested present mode Immediate is not in the list of supported present modes: [Mailbox, Fifo]
+
+ (at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:3879)
+
+thread 'main' (2146866) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:3879:18:
+wgpu error: Validation Error
+
+Caused by:
+  In Surface::configure
+    Requested present mode Immediate is not in the list of supported present modes: [Mailbox, Fifo]
+
+
+stack backtrace:
+   0:     0x5b3c5f5ee842 - std::backtrace_rs::backtrace::libunwind::trace::hd57362190422746d
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   1:     0x5b3c5f5ee842 - std::backtrace_rs::backtrace::trace_unsynchronized::he61be86f5e8dfc7b
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/../../backtrace/src/backtrace/mod.rs:66:14
+   2:     0x5b3c5f5ee842 - std::sys::backtrace::_print_fmt::hd233ea33e70c29e2
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/sys/backtrace.rs:66:9
+   3:     0x5b3c5f5ee842 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h718e2d17a1928e63
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/sys/backtrace.rs:39:26
+   4:     0x5b3c5f603a5f - core::fmt::rt::Argument::fmt::hdeda3281325c4830
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/fmt/rt.rs:173:76
+   5:     0x5b3c5f603a5f - core::fmt::write::h1d2246b072ea91eb
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/fmt/mod.rs:1469:25
+   6:     0x5b3c5f5b6523 - std::io::default_write_fmt::h4ebfe695aebd90ac
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/io/mod.rs:639:11
+   7:     0x5b3c5f5b6523 - std::io::Write::write_fmt::haf55272405c09d9b
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/io/mod.rs:1954:13
+   8:     0x5b3c5f5c4482 - std::sys::backtrace::BacktraceLock::print::h61c3bd81a9458a03
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/sys/backtrace.rs:42:9
+   9:     0x5b3c5f5ca86f - std::panicking::default_hook::{{closure}}::haf1ffb5d1e33a97f
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:301:27
+  10:     0x5b3c5f5ca6c9 - std::panicking::default_hook::hc32245deb6eaa988
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:328:9
+  11:     0x5b3c5aebcb79 - <alloc::boxed::Box<F,A> as core::ops::function::Fn<Args>>::call::h7aa9532be5a33935
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:2019:9
+  12:     0x5b3c5aeb5582 - {closure#0}
+                               at /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/n2_head/crates/rs_cam_viz/src/bin/main.rs:84:9
+  13:     0x5b3c5f5caf2f - <alloc::boxed::Box<F,A> as core::ops::function::Fn<Args>>::call::h46ff3cb4adee632e
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/alloc/src/boxed.rs:2019:9
+  14:     0x5b3c5f5caf2f - std::panicking::panic_with_hook::h43adc00fd0e494cb
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:842:13
+  15:     0x5b3c5f5cacda - std::panicking::panic_handler::{{closure}}::h44391079756da3e7
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:707:13
+  16:     0x5b3c5f5c45c9 - std::sys::backtrace::__rust_end_short_backtrace::h934e1568393e5b8f
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/sys/backtrace.rs:174:18
+  17:     0x5b3c5f5a973d - __rustc[d9b87f19e823c0ef]::rust_begin_unwind
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:698:5
+  18:     0x5b3c5f60f450 - core::panicking::panic_fmt::h62031895f6e012da
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/panicking.rs:80:14
+  19:     0x5b3c5dc9f512 - default_error_handler
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:687:5
+  20:     0x5b3c5dc9adbf - wgpu::backend::wgpu_core::ErrorSinkRaw::handle_error_or_return_handler::hcbe7bae393a45ce2
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:671:21
+  21:     0x5b3c5dc9e125 - handle_error_inner
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:299:18
+  22:     0x5b3c5dc9ef5c - handle_error_nolabel<wgpu_core::present::ConfigureSurfaceError>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:332:14
+  23:     0x5b3c5dcab33b - <wgpu::backend::wgpu_core::CoreSurface as wgpu::dispatch::SurfaceInterface>::configure::h1fc01c04c767f383
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/backend/wgpu_core.rs:3879:18
+  24:     0x5b3c5dce03e9 - wgpu::api::surface::Surface::configure::hfc6b1a2f0c65cfbd
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wgpu-29.0.3/src/api/surface.rs:96:20
+  25:     0x5b3c5d7d3d85 - egui_wgpu::winit::Painter::configure_surface::hceb60470b6792097
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-wgpu-0.34.3/src/winit.rs:133:14
+  26:     0x5b3c5d7d65ec - resize_and_generate_depth_texture_view_and_msaa_view
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-wgpu-0.34.3/src/winit.rs:352:9
+  27:     0x5b3c5d7d3403 - install_surface
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-wgpu-0.34.3/src/winit.rs:293:14
+  28:     0x5b3c5d053854 - {async_fn#0}
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-wgpu-0.34.3/src/winit.rs:224:14
+  29:     0x5b3c5d053420 - {async_fn#0}
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-wgpu-0.34.3/src/winit.rs:169:22
+  30:     0x5b3c5d03debb - block_on<egui_wgpu::winit::{impl#0}::set_window::{async_fn_env#0}>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pollster-0.4.0/src/lib.rs:126:28
+  31:     0x5b3c5d047bb6 - init_run_state
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/wgpu_integration.rs:233:13
+  32:     0x5b3c5d03f801 - resumed
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/wgpu_integration.rs:439:18
+  33:     0x5b3c5d001afe - <eframe::native::run::WinitAppWrapper<T> as winit::application::ApplicationHandler<eframe::native::winit_integration::UserEvent>>::resumed::{{closure}}::h88f26bfed1326424
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/run.rs:261:47
+  34:     0x5b3c5d06e3e2 - eframe::native::event_loop_context::with_event_loop_context::hc72d2b359114f797
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/event_loop_context.rs:53:5
+  35:     0x5b3c5d001ad0 - <eframe::native::run::WinitAppWrapper<T> as winit::application::ApplicationHandler<eframe::native::winit_integration::UserEvent>>::resumed::h6d3cc7db1e0e8847
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/run.rs:260:9
+  36:     0x5b3c5d02aa1e - <alloc::boxed::Box<A> as winit::application::ApplicationHandler<T>>::resumed::h0d9c05c5f291d3a5
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/application.rs:292:18
+  37:     0x5b3c5d000e07 - <eframe::native::run::EframeWinitApplication as winit::application::ApplicationHandler<eframe::native::winit_integration::UserEvent>>::resumed::h9f835280ad339374
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/eframe-0.34.3/src/native/run.rs:481:22
+  38:     0x5b3c5af6fe5b - <rs_cam_viz::host::RsCamHost as winit::application::ApplicationHandler<eframe::native::winit_integration::UserEvent>>::resumed::h90b8453c56a0479b
+                               at /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/n2_head/crates/rs_cam_viz/src/host.rs:191:20
+  39:     0x5b3c5b469f5c - dispatch_event_for_app<eframe::native::winit_integration::UserEvent, rs_cam_viz::host::RsCamHost>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/event_loop.rs:646:31
+  40:     0x5b3c5b469f5c - {closure#0}<eframe::native::winit_integration::UserEvent, rs_cam_viz::host::RsCamHost>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/event_loop.rs:265:49
+  41:     0x5b3c5b455456 - core::ops::function::impls::<impl core::ops::function::FnMut<A> for &mut F>::call_mut::h9cb3314e1b3c00c9
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:298:21
+  42:     0x5b3c5b19abd2 - single_iteration<eframe::native::winit_integration::UserEvent, &mut winit::event_loop::{impl#6}::run_app::{closure_env#0}<eframe::native::winit_integration::UserEvent, rs_cam_viz::host::RsCamHost>>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/wayland/event_loop/mod.rs:350:13
+  43:     0x5b3c5b19a223 - pump_events<eframe::native::winit_integration::UserEvent, &mut winit::event_loop::{impl#6}::run_app::{closure_env#0}<eframe::native::winit_integration::UserEvent, rs_cam_viz::host::RsCamHost>>
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/wayland/event_loop/mod.rs:220:18
+  44:     0x5b3c5b19a833 - winit::platform_impl::linux::wayland::event_loop::EventLoop<T>::run_on_demand::h7e92ee1830bd4c7e
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/wayland/event_loop/mod.rs:190:24
+  45:     0x5b3c5b42293c - winit::platform_impl::linux::EventLoop<T>::run_on_demand::h2106a249c88bb7b5
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/mod.rs:820:61
+  46:     0x5b3c5b42297a - winit::platform_impl::linux::EventLoop<T>::run::ha973237476cd9170
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/mod.rs:813:14
+  47:     0x5b3c5b469dca - winit::event_loop::EventLoop<T>::run_app::hf7a98030275758cb
+                               at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/event_loop.rs:265:25
+  48:     0x5b3c5af558f0 - run
+                               at /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/n2_head/crates/rs_cam_viz/src/lib.rs:195:16
+  49:     0x5b3c5aeb634d - rs_cam_gui::main::ha39178f71b525234
+                               at /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/n2_head/crates/rs_cam_viz/src/bin/main.rs:18:5
+  50:     0x5b3c5aebb73e - core::ops::function::FnOnce::call_once::h92b56f7c96e9b38d
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+  51:     0x5b3c5aebb41d - __rust_begin_short_backtrace<fn() -> core::result::Result<(), eframe::Error>, core::result::Result<(), eframe::Error>>
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/backtrace.rs:158:18
+  52:     0x5b3c5aebb3ff - {closure#0}<core::result::Result<(), eframe::Error>>
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:206:18
+  53:     0x5b3c5f5b8370 - core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once::hef272b0bbce060cb
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/ops/function.rs:287:21
+  54:     0x5b3c5f5b8370 - std::panicking::catch_unwind::do_call::hb8c4cc43eed9a08c
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:590:40
+  55:     0x5b3c5f5b8370 - std::panicking::catch_unwind::h2729a121c7344441
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:553:19
+  56:     0x5b3c5f5b8370 - std::panic::catch_unwind::h8930b2483deb2063
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panic.rs:359:14
+  57:     0x5b3c5f5b8370 - std::rt::lang_start_internal::{{closure}}::hada379c5dd834c6b
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/rt.rs:175:24
+  58:     0x5b3c5f5b8370 - std::panicking::catch_unwind::do_call::hc3ea95eb90ebfdc8
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:590:40
+  59:     0x5b3c5f5b8370 - std::panicking::catch_unwind::h0b97aa6eb277c112
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:553:19
+  60:     0x5b3c5f5b8370 - std::panic::catch_unwind::h2db34aa2a1d62ae5
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panic.rs:359:14
+  61:     0x5b3c5f5b8370 - std::rt::lang_start_internal::h00c7908c7c2f92b8
+                               at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/rt.rs:171:5
+  62:     0x5b3c5aebb3e1 - std::rt::lang_start::hda075385bdb3d3a9
+                               at /home/ricky/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/rt.rs:205:5
+  63:     0x5b3c5aebcbae - main
+  64:     0x729c4a22a1ca - __libc_start_call_main
+                               at ./csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+  65:     0x729c4a22a28b - __libc_start_main_impl
+                               at ./csu/../csu/libc-start.c:360:3
+  66:     0x5b3c5aeb4e45 - _start
+  67:                0x0 - <unknown>

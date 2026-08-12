@@ -1,0 +1,118 @@
+--- busy_auto_vsync: phase=idle mode=auto_vsync platform=wayland minimize_after=200000
+    idle 30.0s cpu=5.48s (18.27% core) frames=1797 (59.9/s)
+    syscall[start] nr=7 ×110
+    syscall[start] nr=running ×26
+--- busy_mailbox: phase=idle mode=mailbox platform=wayland minimize_after=200000
+    idle 30.0s cpu=24.42s (81.40% core) frames=4315 (143.8/s)
+    syscall[start] nr=running ×135
+    syscall[start] nr=202 ×2
+--- idle_auto_vsync: phase=idle mode=auto_vsync platform=wayland minimize_after=None
+    idle 30.0s cpu=1.56s (5.20% core) frames=358 (11.9/s)
+    syscall[start] nr=281 ×129
+    syscall[start] nr=running ×6
+    syscall[start] nr=7 ×1
+--- idle_mailbox: phase=idle mode=mailbox platform=wayland minimize_after=None
+    idle 30.0s cpu=2.11s (7.03% core) frames=355 (11.8/s)
+    syscall[start] nr=281 ×126
+    syscall[start] nr=running ×10
+--- pacing_auto_vsync: phase=pacing mode=auto_vsync platform=wayland minimize_after=200000
+    pacing frames=1199 over 20.0s (60.0/s) interval p50=16.97ms p95=18.01ms max=34.01ms cpu_ticks=[2734, 249]
+    syscall[start] nr=7 ×76
+    syscall[start] nr=running ×20
+--- pacing_mailbox: phase=pacing mode=mailbox platform=wayland minimize_after=200000
+    pacing frames=8312 over 20.0s (415.6/s) interval p50=2.01ms p95=4.00ms max=21.65ms cpu_ticks=[4076, 298]
+    syscall[start] nr=running ×96
+--- park_wayland_auto_no_vsync: phase=park mode=auto_no_vsync platform=wayland minimize_after=250
+    park_reached=False
+    off-loop          n=  3 med=0.0004s served=['live'] timeouts=0
+    snapshot-capable  n= 15 med=0.0017s served=['live'] timeouts=0
+    frame-door        n=  6 med=0.0018s served=['live'] timeouts=0
+    frames 836..857  pumps 1995..2016  wakeups 0..21  healthy=['True']
+    syscall[pre_park] nr=281 ×184
+    syscall[pre_park] nr=running ×12
+--- park_wayland_auto_vsync: phase=park mode=auto_vsync platform=wayland minimize_after=250
+    park_reached=True
+    off-loop          n=  3 med=0.0004s served=['live'] timeouts=0
+    snapshot-capable  n= 15 med=0.7521s served=['snapshot'] timeouts=0
+    frame-door        n=  6 med=15.0001s served=['timeout'] timeouts=6
+    frames 263..263  pumps 276..276  wakeups 0..21  healthy=['False']
+    syscall[parked] nr=7 ×405
+    syscall[pre_park] nr=7 ×26
+    syscall[pre_park] nr=running ×9
+    syscall[pre_park] nr=281 ×1
+--- park_wayland_fifo: phase=park mode=fifo platform=wayland minimize_after=250
+    park_reached=True
+    off-loop          n=  1 med=0.0005s served=['live'] timeouts=0
+    snapshot-capable  n=  5 med=0.7525s served=['snapshot'] timeouts=0
+    frame-door        n=  2 med=15.0002s served=['timeout'] timeouts=2
+    frames 263..263  pumps 273..273  wakeups 0..7  healthy=['False']
+    syscall[parked] nr=7 ×135
+    syscall[pre_park] nr=7 ×25
+    syscall[pre_park] nr=running ×9
+    syscall[pre_park] nr=281 ×2
+    syscall[start] nr=running ×1
+--- park_wayland_mailbox: phase=park mode=mailbox platform=wayland minimize_after=250
+    park_reached=False
+    off-loop          n=  3 med=0.0003s served=['live'] timeouts=0
+    snapshot-capable  n= 15 med=0.0016s served=['live'] timeouts=0
+    frame-door        n=  6 med=0.0018s served=['live'] timeouts=0
+    frames 1371..1391  pumps 3595..3615  wakeups 0..21  healthy=['True']
+    syscall[pre_park] nr=281 ×355
+    syscall[pre_park] nr=running ×21
+--- park_x11_auto_vsync: phase=park mode=auto_vsync platform=x11/xwayland minimize_after=250
+    park_reached=True
+    off-loop          n= 30 med=0.0002s served=['live'] timeouts=0
+    snapshot-capable  n=150 med=0.0002s served=['live'] timeouts=0
+    frame-door        n= 60 med=0.0002s served=['live'] timeouts=0
+    frames 252..252  pumps 255..466  wakeups 0..210  healthy=['False']
+    syscall[pre_park] nr=281 ×19
+    syscall[pre_park] nr=202 ×16
+    syscall[pre_park] nr=230 ×1
+    syscall[parked] nr=281 ×1
+--- shot_auto_vsync: phase=park mode=auto_vsync platform=wayland minimize_after=1500
+    park_reached=True
+    off-loop          n=  1 med=0.0008s served=['live'] timeouts=0
+    snapshot-capable  n=  5 med=0.7547s served=['snapshot'] timeouts=0
+    frame-door        n=  2 med=15.0002s served=['timeout'] timeouts=2
+    frames 1523..1523  pumps 1522..1522  wakeups 1..8  healthy=['False']
+    screenshot_gui wall=60.00s bytes=0 timed_out=True
+    syscall[screenshot] nr=7 ×239
+    syscall[pre_park] nr=running ×172
+    syscall[parked] nr=7 ×135
+    syscall[pre_park] nr=7 ×24
+    syscall[start] nr=running ×12
+--- shot_mailbox: phase=park mode=mailbox platform=wayland minimize_after=250
+    park_reached=False
+    off-loop          n=  1 med=0.0042s served=['live'] timeouts=0
+    snapshot-capable  n=  5 med=0.0401s served=['live'] timeouts=0
+    frame-door        n=  2 med=0.0204s served=['live'] timeouts=0
+    frames 1538..1543  pumps 1537..1543  wakeups 1..8  healthy=['True']
+    screenshot_gui wall=3.79s bytes=644918 timed_out=False
+    syscall[pre_park] nr=running ×175
+    syscall[start] nr=running ×18
+    syscall[screenshot] nr=running ×15
+    syscall[parked] nr=running ×2
+    syscall[pre_park] nr=202 ×1
+--- step5_auto_vsync: phase=park mode=auto_vsync platform=wayland minimize_after=1500
+    park_reached=True
+    off-loop          n=  1 med=0.0003s served=['live'] timeouts=0
+    snapshot-capable  n=  5 med=0.7531s served=['snapshot'] timeouts=0
+    frame-door        n=  2 med=15.0002s served=['timeout'] timeouts=2
+    frames 1525..1525  pumps 1524..1524  wakeups 1..8  healthy=['False']
+    generate_all wall=90.0s timed_out=False reply={"ok": true, "status": "running", "summary": "Still running after the 90s wait budget. Generation was NOT cancelled and continues in the background. Use generation_status for the in-flight toolpath index, stage and elaps
+    syscall[generate_all] nr=7 ×360
+    syscall[pre_park] nr=running ×163
+    syscall[parked] nr=7 ×135
+    syscall[pre_park] nr=7 ×24
+    syscall[start] nr=running ×9
+--- step5_mailbox: phase=park mode=mailbox platform=wayland minimize_after=1500
+    park_reached=False
+    off-loop          n=  1 med=0.0004s served=['live'] timeouts=0
+    snapshot-capable  n=  5 med=0.0027s served=['live'] timeouts=0
+    frame-door        n=  2 med=0.0027s served=['live'] timeouts=0
+    frames 10499..10505  pumps 14921..14927  wakeups 1..8  healthy=['True']
+    generate_all wall=4.4s timed_out=False reply={"awaiting_prior_stock": [], "errors": [], "failed": 0, "generated": 2, "loop_error": null, "ok": true, "rounds": 2, "simulations": 1, "summary": "Generated 2 toolpaths (in 2 generate rounds, 1 simulation)"}
+    syscall[pre_park] nr=281 ×694
+    syscall[pre_park] nr=running ×282
+    syscall[generate_all] nr=running ×18
+    syscall[start] nr=running ×5
