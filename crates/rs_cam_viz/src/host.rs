@@ -19,6 +19,28 @@
 //! `create_proxy`, and every other hook is per-frame, which is precisely what
 //! a parked loop does not have.
 //!
+//! **MEASURED CORRECTION, B-4 step 4 (2026-08-12).** The paragraph above is
+//! the design's model, read from winit's source, and on this machine it is
+//! **not what strands the process**. Instrumented under a real park (GNOME
+//! Wayland, window minimised, `wgpu` on `PresentMode::AutoVsync` = FIFO), the
+//! main thread stops calling `about_to_wait` **488 ms after the minimise** and
+//! never calls it again. `/proc/<pid>/syscall` reads `7 … 0x1 0xffffffff` —
+//! `poll()` on **one** fd with an **infinite** timeout, which is not calloop
+//! (calloop polls an epoll fd) but the Wayland/Mesa WSI waiting for a buffer
+//! release that a minimised surface never gets. Seven `EventLoopProxy::send_event`
+//! pings arrived during that window and produced zero `user_event` and zero
+//! `about_to_wait` callbacks.
+//!
+//! So the loop is not merely declining to *paint*: the main thread is blocked
+//! **inside the present**, below winit, and no `ApplicationHandler` callback
+//! can run at all. An off-frame pump that lives on the main thread cannot
+//! rescue that, because under this failure mode there is no main thread to
+//! pump on. Everything in this module is still correct and still necessary —
+//! it decouples dispatch from the *paint* — but it is not sufficient against
+//! a present-blocked park, and B-4 stopped at the design's own step-4 gate
+//! rather than build steps 5-7 on top of an unmet bar. The evidence is in
+//! `planning/review_2026-08-08/artifacts/b4/`.
+//!
 //! This module is the wrapper only. What it does with the wakeup is the
 //! subject of later steps in that design's migration order.
 
@@ -26,6 +48,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::app::RsCamApp;
+
+/// The `cumulative_pass_nr` that marks a `UserEvent::RequestRepaint` as
+/// rs_cam's own bare wakeup rather than a repaint request from egui.
+///
+/// eframe's `UserEvent` is a **closed enum** — `RequestRepaint` and a
+/// feature-gated accesskit variant — so a wakeup cannot carry an MCP payload
+/// and must borrow an existing shape. `u64::MAX` is a pass number no real
+/// egui pass will ever reach, and [`RsCamHost::user_event`] swallows it so
+/// eframe never sees it.
+pub(crate) const MCP_WAKE_PASS_NR: u64 = u64::MAX;
 
 /// The one `RsCamApp`, shared between the host (which pumps it off-frame) and
 /// the [`RsCamAppProxy`] that eframe owns and paints through.
@@ -89,6 +121,38 @@ impl eframe::App for RsCamAppProxy {
     }
 }
 
+/// How often the event loop re-wakes while MCP work or a compute lane is
+/// outstanding.
+///
+/// Deliberately slow. This is a **safety net for completions nobody
+/// announces** (see `RsCamApp::needs_pump_tick`), not the dispatch path —
+/// enqueues arrive through the `GuiWaker` in sub-millisecond time and do not
+/// wait on this. A generation that finishes 250 ms before anyone notices is
+/// invisible next to a generation that takes minutes; a general-purpose clock
+/// fast enough to matter would be the 100 ms heartbeat again, and that
+/// heartbeat is the thing masking six known bugs.
+const PUMP_TICK: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Tighten the loop's `ControlFlow` to at most one [`PUMP_TICK`] away.
+///
+/// **Only ever tightens.** eframe sets the control flow from its own redraw
+/// scheduling in the same callback, and overriding a sooner wakeup with a
+/// later one would delay a paint eframe had already asked for. `Poll` is left
+/// alone for the same reason: it is already sooner than anything this could
+/// ask for.
+fn arm_pump_tick(event_loop: &winit::event_loop::ActiveEventLoop) {
+    use winit::event_loop::ControlFlow;
+
+    let deadline = std::time::Instant::now() + PUMP_TICK;
+    match event_loop.control_flow() {
+        ControlFlow::Wait => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),
+        ControlFlow::WaitUntil(existing) if existing > deadline => {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        }
+        ControlFlow::Poll | ControlFlow::WaitUntil(_) => {}
+    }
+}
+
 /// rs_cam's `ApplicationHandler`, wrapping eframe's.
 ///
 /// Every callback forwards to eframe **first** and takes the app borrow only
@@ -149,6 +213,18 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for RsCamHost<'_>
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: eframe::UserEvent,
     ) {
+        // Swallow rs_cam's own wakeup. Its job was done the moment it woke the
+        // poll: `about_to_wait` runs at the end of this iteration and pumps.
+        // Forwarding it would have eframe set `ControlFlow::Poll` and spin.
+        if matches!(
+            event,
+            eframe::UserEvent::RequestRepaint {
+                cumulative_pass_nr: MCP_WAKE_PASS_NR,
+                ..
+            }
+        ) {
+            return;
+        }
         self.inner.user_event(event_loop, event);
     }
 
@@ -179,6 +255,9 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for RsCamHost<'_>
             && let Ok(mut app) = app.try_borrow_mut()
         {
             app.off_frame_pump();
+            if app.needs_pump_tick() {
+                arm_pump_tick(event_loop);
+            }
         }
     }
 

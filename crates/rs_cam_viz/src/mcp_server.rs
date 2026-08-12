@@ -13,7 +13,7 @@ use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
 use crate::compute::GenerationControl;
 use crate::mcp_bridge::{
-    McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
+    GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
     build_cancel_generation_response, build_generation_status_response,
 };
 
@@ -71,6 +71,10 @@ pub struct EmbeddedCamServer {
     generation: GenerationControl,
     /// Last-published read payloads, for answering during a stalled frame loop.
     reads: McpReadCache,
+    /// G-LV.1: the wakeup that survives a park. `None` in tests and in any
+    /// caller that has no event loop to wake — the server then behaves
+    /// exactly as it did before B-4.
+    waker: Option<GuiWaker>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -88,8 +92,18 @@ impl EmbeddedCamServer {
             egui_ctx,
             generation,
             reads,
+            waker: None,
             tool_router,
         }
+    }
+
+    /// Attach the event-loop wakeup (G-LV.1). Kept off [`Self::new`] so the
+    /// twelve escape-hatch sentries, which construct a server against a
+    /// deliberately stalled GUI, are untouched by this change.
+    #[must_use]
+    pub fn with_waker(mut self, waker: GuiWaker) -> Self {
+        self.waker = Some(waker);
+        self
     }
 
     pub fn into_tool_router() -> ToolRouter<Self> {
@@ -126,9 +140,22 @@ impl EmbeddedCamServer {
     /// citation). The counter is what survives that: it is how
     /// `generation_status` and `cancel_generation` can tell a caller their
     /// work is stranded rather than finished.
+    ///
+    /// **B-4 added the second wakeup, and it is the one that works.** The
+    /// `request_repaint()` below is kept exactly as it was — it is the whole
+    /// path on a visible window, and `every_mcp_enqueue_requests_a_repaint`
+    /// pins it — but under a park it is not merely ineffective, it is not
+    /// even *sent*: see [`GuiWaker`] for egui's dedup. The waker goes
+    /// straight to the event loop through a channel the compositor has no
+    /// say in, so `about_to_wait` runs and the off-frame pump drains this
+    /// request without a frame.
     fn wake_gui(&self) {
         self.reads.frame_loop().record_sent();
         self.egui_ctx.request_repaint();
+        if let Some(waker) = self.waker.as_ref() {
+            self.reads.frame_loop().record_wakeup();
+            waker();
+        }
     }
 
     /// A/M12 + C6: a cheap, no-argument read that **cannot** be trapped
@@ -183,10 +210,20 @@ impl EmbeddedCamServer {
         // out a stall that never ends on its own.
         let frame_loop = self.reads.frame_loop();
         let stall_reason = if frame_loop.is_parked() {
-            " because the GUI frame loop is not running at all — see `frame_loop` \
-             below; a hidden, occluded or screen-locked window gets no repaints, and \
-             nothing dispatched from a repaint (every other MCP call, every \
-             generate_all round handoff) will advance until it is visible again"
+            // B-4: this text used to end "...will advance until it is visible
+            // again", which stopped being true the moment dispatch came off
+            // the paint path. A parked window now costs pixels, not answers,
+            // and saying otherwise would send an agent to fix a window when
+            // its call is simply slow.
+            " because the GUI is not PAINTING — see `frame_loop` below; a hidden, \
+             occluded or screen-locked window gets no compositor frame callbacks. \
+             Dispatch no longer depends on that: MCP requests and generate_all round \
+             handoffs are pumped from the event loop (`frame_loop.pumps`), so this \
+             read should have been answered live and something else is holding the \
+             GUI thread. What a non-painting window genuinely cannot do is produce \
+             pixels — `screenshot_gui` will refuse. To restore rendering, make the \
+             window visible, or relaunch with WAYLAND_DISPLAY unset so winit picks \
+             X11/XWayland where redraws are client-driven"
         } else if lane.is_active() {
             " because a toolpath generation is in flight"
         } else {

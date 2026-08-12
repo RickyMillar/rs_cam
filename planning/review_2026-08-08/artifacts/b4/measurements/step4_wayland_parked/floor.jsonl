@@ -1,0 +1,26 @@
+{"call": "frames_probe", "phase": "before", "wall_s": 0.0, "frames": 73, "pumps": 87, "wakeups": 0, "healthy": false, "last_frame_age_s": 6.279551567}
+{"call": "generation_status", "wall_s": 0.0009534358978271484, "repeat": 0, "phase": "census", "served_from": "live", "frames": 73, "pumps": 87, "wakeups": 0, "healthy": false, "last_frame_age_s": 6.282829609}
+{"call": "project_summary", "wall_s": 0.7525904178619385, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 1, "healthy": false, "last_frame_age_s": 7.036899923}
+{"call": "list_toolpaths", "wall_s": 0.7525467872619629, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 2, "healthy": false, "last_frame_age_s": 7.791455487}
+{"call": "inspect_stock", "wall_s": 0.7536730766296387, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 3, "healthy": false, "last_frame_age_s": 8.547582371}
+{"call": "inspect_machine", "wall_s": 0.751880407333374, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 4, "healthy": false, "last_frame_age_s": 9.300604607}
+{"call": "inspect_model", "wall_s": 0.7524797916412354, "repeat": 0, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 5, "healthy": false, "last_frame_age_s": 10.05463695}
+{"call": "get_operation_schema", "wall_s": 15.0001540184021, "repeat": 0, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 6, "healthy": false, "last_frame_age_s": 25.056305634}
+{"call": "list_tools", "wall_s": 15.002574443817139, "repeat": 0, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 7, "healthy": false, "last_frame_age_s": 40.060606549}
+{"call": "generation_status", "wall_s": 0.0006260871887207031, "repeat": 1, "phase": "census", "served_from": "live", "frames": 73, "pumps": 87, "wakeups": 7, "healthy": false, "last_frame_age_s": 40.062424401}
+{"call": "project_summary", "wall_s": 0.7524299621582031, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 8, "healthy": false, "last_frame_age_s": 40.816145833}
+{"call": "list_toolpaths", "wall_s": 0.7527151107788086, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 9, "healthy": false, "last_frame_age_s": 41.570565034}
+{"call": "inspect_stock", "wall_s": 0.7528204917907715, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 10, "healthy": false, "last_frame_age_s": 42.324787286}
+{"call": "inspect_machine", "wall_s": 0.7529616355895996, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 11, "healthy": false, "last_frame_age_s": 43.079192672}
+{"call": "inspect_model", "wall_s": 0.7521708011627197, "repeat": 1, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 12, "healthy": false, "last_frame_age_s": 43.83283173}
+{"call": "get_operation_schema", "wall_s": 15.00014615058899, "repeat": 1, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 13, "healthy": false, "last_frame_age_s": 58.834433293000004}
+{"call": "list_tools", "wall_s": 15.000483274459839, "repeat": 1, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 14, "healthy": false, "last_frame_age_s": 73.836268793}
+{"call": "generation_status", "wall_s": 0.0006880760192871094, "repeat": 2, "phase": "census", "served_from": "live", "frames": 73, "pumps": 87, "wakeups": 14, "healthy": false, "last_frame_age_s": 73.838161155}
+{"call": "project_summary", "wall_s": 0.7522032260894775, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 15, "healthy": false, "last_frame_age_s": 74.591418168}
+{"call": "list_toolpaths", "wall_s": 0.7523531913757324, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 16, "healthy": false, "last_frame_age_s": 75.345229001}
+{"call": "inspect_stock", "wall_s": 0.7520670890808105, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 17, "healthy": false, "last_frame_age_s": 76.098416013}
+{"call": "inspect_machine", "wall_s": 0.7531335353851318, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 18, "healthy": false, "last_frame_age_s": 76.854537513}
+{"call": "inspect_model", "wall_s": 0.7529070377349854, "repeat": 2, "phase": "census", "served_from": "snapshot", "frames": 73, "pumps": 87, "wakeups": 19, "healthy": false, "last_frame_age_s": 77.608948813}
+{"call": "get_operation_schema", "wall_s": 15.000146865844727, "repeat": 2, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 20, "healthy": false, "last_frame_age_s": 92.614011357}
+{"call": "list_tools", "wall_s": 15.000985622406006, "repeat": 2, "phase": "census", "served_from": "timeout", "frames": 73, "pumps": 87, "wakeups": 21, "healthy": false, "last_frame_age_s": 107.616633302}
+{"call": "frames_probe", "phase": "after", "wall_s": 0.0, "frames": 73, "pumps": 87, "wakeups": 21, "healthy": false, "last_frame_age_s": 107.617802567}

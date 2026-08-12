@@ -67,6 +67,8 @@ impl McpReadKind {
     }
 }
 
+pub use crate::GuiWaker;
+
 /// How long the GUI frame loop may go without a frame before the escape
 /// hatches call it **parked** rather than merely busy.
 ///
@@ -145,6 +147,15 @@ pub struct FrameLoopBeat {
     pumps: AtomicU64,
     /// Milliseconds since `origin` at the last [`FrameLoopBeat::pump_beat`].
     last_pump_ms: AtomicU64,
+    /// Event-loop wakeups **sent** by the MCP thread through the [`GuiWaker`].
+    ///
+    /// Counted separately from `sent` so the two halves of the wakeup path can
+    /// be told apart from outside the process: `wakeups` climbing while
+    /// `pumps` does not means the ping was issued and the loop did not answer
+    /// it, which is a different bug from the ping never being issued. Without
+    /// this the two are indistinguishable, and B-4 spent a measurement round
+    /// unable to tell them apart.
+    wakeups: AtomicU64,
 }
 
 impl Default for FrameLoopBeat {
@@ -161,6 +172,7 @@ impl Default for FrameLoopBeat {
             awaiting_generate_all: AtomicBool::new(false),
             pumps: AtomicU64::new(0),
             last_pump_ms: AtomicU64::new(0),
+            wakeups: AtomicU64::new(0),
         }
     }
 }
@@ -230,6 +242,16 @@ impl FrameLoopBeat {
                 .elapsed()
                 .saturating_sub(Duration::from_millis(ms)),
         )
+    }
+
+    /// Called by the MCP server thread after it pings the event loop.
+    pub fn record_wakeup(&self) {
+        self.wakeups.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Event-loop wakeups sent since startup.
+    pub fn wakeups(&self) -> u64 {
+        self.wakeups.load(Ordering::Relaxed)
     }
 
     /// Called by the MCP server thread after a request reaches the channel.
@@ -334,6 +356,7 @@ impl FrameLoopBeat {
             // answering (pumps climbing) at the same time, and both halves
             // matter to a caller deciding whether to trust a screenshot.
             "pumps": self.pumps(),
+            "wakeups": self.wakeups(),
             "last_pump_age_s": self.pump_age().map(|d| d.as_secs_f64()),
             "requests_in_channel": self.backlog(),
             "awaiting_completion": self.awaiting(),
@@ -829,21 +852,24 @@ fn parked_frame_loop_warning(frame_loop: &FrameLoopBeat) -> Option<String> {
         |d| format!("has not run for {:.1} s", d.as_secs_f64()),
     );
     let what = if frame_loop.awaiting_generate_all() {
-        "including a generate_all, whose round handoffs are driven off future frames"
+        "including a generate_all"
     } else {
-        "and none of it can start or finish without one"
+        ""
     };
     Some(format!(
-        "WARNING — the GUI frame loop {age} and {stranded} MCP request(s) are stranded \
-         behind it, {what}. An idle lane here does NOT mean your call completed: every \
-         MCP request and every generate_all round handoff is dispatched from a GUI \
-         repaint. A hidden, occluded or screen-locked window gets no repaints — on \
-         Wayland the compositor withholds the frame callbacks winit needs before it will \
-         emit RedrawRequested, so request_repaint() cannot break the park. Make the GUI \
-         window visible and focused to resume it, or relaunch the GUI with WAYLAND_DISPLAY \
-         UNSET (winit then picks X11/XWayland, where redraws are client-driven and never \
-         gated on the compositor). Do NOT set WINIT_UNIX_BACKEND — winit removed that \
-         variable in 0.29 and it does nothing on the 0.30 this build uses."
+        "NOTE — the GUI {age} and {stranded} MCP request(s) are still outstanding {what}. \
+         Since B-4 this is NOT the G-LV.1 hang: dispatch and generate_all round handoffs \
+         are pumped from the winit event loop, which a compositor cannot park \
+         (`frame_loop.pumps` counts those, `frames` counts paints). Outstanding work here \
+         means work that is genuinely still running, so an idle lane plus a non-zero \
+         count is worth one more poll before you conclude anything. What a non-painting \
+         window really cannot do is render: `screenshot_gui` will refuse rather than \
+         return a stale image, and set_ui_view / sim-scrub calls apply but report \
+         `visible_on_next_frame: false`. To get pixels back, make the window visible, or \
+         relaunch with WAYLAND_DISPLAY UNSET (winit then picks X11/XWayland, where \
+         redraws are client-driven and never gated on the compositor). Do NOT set \
+         WINIT_UNIX_BACKEND — winit removed that variable in 0.29 and it does nothing on \
+         the 0.30 this build uses."
     ))
 }
 
@@ -1313,16 +1339,28 @@ mod tests {
 
         let summary = v["summary"].as_str().unwrap();
         assert!(
-            summary.contains("stranded"),
-            "an idle lane with stranded work must say so, got: {summary}"
+            summary.contains("outstanding"),
+            "an idle lane with work still owed must say so, got: {summary}"
         );
         assert!(
             summary.contains("generate_all"),
-            "and must name the call that is stranded, got: {summary}"
+            "and must name the call it is owed to, got: {summary}"
+        );
+        // B-4 inverted the second half of this contract in place. Before the
+        // decoupling the text asserted the *cause* — "every MCP request and
+        // every generate_all round handoff is dispatched from a GUI repaint",
+        // "does NOT mean your call completed" — and that cause is now false:
+        // dispatch is pumped from the event loop, which no compositor parks.
+        // Keeping the old sentence would have been a lie an agent then acts
+        // on, so what is pinned now is the surviving true half.
+        assert!(
+            !summary.contains("dispatched from a GUI repaint"),
+            "dispatch is no longer frame-coupled; this text must not claim it is: {summary}"
         );
         assert!(
-            summary.contains("does NOT mean your call completed"),
-            "the whole defect is that idle READS as done, got: {summary}"
+            summary.contains("screenshot_gui"),
+            "what a non-painting window actually costs is pixels, and the reply \
+             must name the call that refuses because of it, got: {summary}"
         );
     }
 
@@ -1357,9 +1395,12 @@ mod tests {
         assert_eq!(v["was_busy"], false);
         let summary = v["summary"].as_str().unwrap();
         assert!(summary.contains("nothing to cancel"), "got: {summary}");
+        // Pre-B-4 this asserted `contains("stranded")`. The word went with the
+        // claim underneath it; the property it was protecting — that a no-op
+        // cancel with work still owed must not read as all-clear — did not.
         assert!(
-            summary.contains("stranded"),
-            "a no-op cancel on a parked loop must not read as all-clear: {summary}"
+            summary.contains("outstanding"),
+            "a no-op cancel with work still owed must not read as all-clear: {summary}"
         );
     }
 
