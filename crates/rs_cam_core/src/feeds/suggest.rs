@@ -274,23 +274,31 @@ pub enum SuggestWarning {
         predicted_moves_at_raised: u64,
         iterations: u8,
     },
-    /// v2 combined-Suggest step 2: After the v1.1 deflection back-off
-    /// settled DPP, the chipload-aware feed recalibration loop raised
-    /// `feed_rate` to bring the predicted observed median chipload up
-    /// to the LUT band lower bound (see
-    /// [`crate::feeds::predict::predict_observed_chipload_mm`]). The
-    /// loop respects the deflection hard limit (200 µm) and the
-    /// `machine.max_feed_mm_min` ceiling; if either binds before the
-    /// chipload reaches the band, [`SuggestWarning::ChiploadStillLowAfterRecalibration`]
-    /// fires alongside this variant with the limiting cap.
+    /// **RESERVED, not constructed by Suggest (since 2026-08-13).**
     ///
-    /// Wanaka motivating case (2026-06-03 post-sim): three roughing /
-    /// finishing toolpaths shipped at observed median chipload
-    /// 0.0067-0.011 mm/tooth vs LUT minima 0.027-0.076 — classic
-    /// rubbing/burning recipe. With deflection back-off settling DPP
-    /// at 3.69 mm and steady-state δ ≈ 178 µm, this loop raises feed
-    /// until either the predicted observed lands in band or the
-    /// 200 µm gate (less 10 µm headroom) clamps the iteration.
+    /// This variant used to report Suggest pass 8's arc-fit chipload feed
+    /// recalibration. Checkpoint J-1/J-5 retired that pass — Suggest emits
+    /// the un-lifted feed the calculator produced — and **kept this variant
+    /// deliberately** so the *simulation-backed* path (`feed_modulation`,
+    /// `tool_load::optimize::retarget::chipload`) can report its own
+    /// **measured** feed changes through a vocabulary the rationale
+    /// renderer, the feeds modal and the MCP rationale endpoint already
+    /// speak. Nothing in `feeds::suggest` pushes it today; the renderer
+    /// arms and their round-trip tests remain live.
+    ///
+    /// The field semantics below are written for that reuse: they describe
+    /// a feed that WAS raised and the observation it was raised against.
+    /// A producer must supply a **measured** observation — the pre-sim
+    /// prediction those fields were originally fed from was itself the
+    /// defect (it estimated a quantity the gate stopped reporting on
+    /// 2026-08-06).
+    ///
+    /// Historical note, kept because it is the case the retired pass was
+    /// built for: Wanaka post-sim 2026-06-03 showed three toolpaths at
+    /// observed median chipload 0.0067–0.011 mm/tooth vs LUT minima
+    /// 0.027–0.076 — a rubbing/burning recipe. That statement is in the
+    /// **deleted arc-mean quantity**; in the unit the gate now reports,
+    /// A-5 measured the same operating points already inside the band.
     FeedRaisedForChipload {
         /// Pre-recalibration `feed_rate` (mm/min) — the value written
         /// by the calculator and any earlier invariants.
@@ -322,10 +330,14 @@ pub enum SuggestWarning {
         /// for the three modes.
         cap_hit: Option<FeedRecalibrationCap>,
     },
-    /// v2 combined-Suggest step 2: paired with
-    /// [`SuggestWarning::FeedRaisedForChipload`] when the loop hit a
-    /// binding cap before the predicted observed chipload reached the
-    /// LUT minimum. The deflection budget is too tight for the
+    /// **RESERVED, not constructed by Suggest (since 2026-08-13).**
+    /// Retired and kept alongside [`SuggestWarning::FeedRaisedForChipload`]
+    /// under Checkpoint J-5 — same reasoning, same intended reuse by the
+    /// simulation-backed path.
+    ///
+    /// Semantics for a future producer: paired with `FeedRaisedForChipload`
+    /// when a binding cap stopped the correction before the observation
+    /// reached the band. The deflection budget is too tight for the
     /// configured (tool, material, workholding) combination — the
     /// operator's options are to drop RPM (which raises chipload at
     /// constant feed) or accept the rubbing-floor recipe with the
@@ -743,20 +755,24 @@ fn apply_feeds_subset(
     scratch.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
     scratch.set_stepover(round_suggestion_value(result.radial_width_mm, 0.001));
     scratch.set_depth_per_pass(round_suggestion_value(result.axial_depth_mm, 0.001));
-    // v3.0d (2026-06-04): also write the calculator's chosen RPM so
-    // enforce_invariants's chipload recalibration pass reads a
-    // consistent operating point instead of the operation's prior
-    // spindle_rpm value. Without this, Suggest is non-idempotent — a
-    // second run on already-Suggested values reads a different RPM
-    // (the post-first-Suggest value) and lands a different target_feed.
-    // The closed-form solve is `target_feed = target × rpm × flutes /
-    // arc_fit`, so any RPM drift propagates linearly into feed.
+    // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
+    // rest of enforce_invariants reads a consistent operating point
+    // instead of the operation's prior spindle_rpm value.
+    //
+    // The idempotency argument originally named the chipload
+    // recalibration pass (retired 2026-08-13) whose closed-form solve
+    // `target × rpm × flutes / arc_fit` propagated RPM drift linearly
+    // into feed. That consumer is gone, but the write stays: A-5 measured
+    // the rewritten RPM differing from the authored value on three of four
+    // fixtures (14 000 → 16 000, 18 000 → 19 000, 20 000 → 19 000), so any
+    // downstream pass or reconstruction that reads the operation's RPM
+    // still needs this to be the calculator's choice, not a stale one.
     let rpm_written = result.rpm.is_finite() && result.rpm > 0.0;
     if rpm_written {
         scratch.set_spindle_rpm(Some(result.rpm.round() as u32));
     }
     // Enrich the caller-supplied context with the LUT chipload band
-    // derived by the calculator so v2 step 2 recalibration can read it
+    // derived by the calculator so the invariant passes can read it
     // without a separate parameter. Also thread through the matched LUT
     // row + effective diameter so the axial-DOC envelope pass
     // (`pick_axial_envelope`) can query vendor `ap_*_factor` / `ap_*_mm`
@@ -1216,18 +1232,17 @@ pub fn operation_feeds_hints(
     )
 }
 
-/// Combined deflection ceiling (µm) used by both the v1.1 DPP back-off
-/// and the v2 step 2 feed-up recalibration verify. When the closed-form
+/// Deflection ceiling (µm) for the v1.1 DPP back-off. When the closed-form
 /// predictor in [`crate::feeds::predict::predict_peak_deflection_um`]
 /// projects a tip deflection above this value, [`enforce_invariants`]
-/// either:
+/// iteratively reduces DPP by 20% per step (max 5 steps, floor
+/// [`DEFLECTION_BACKOFF_DPP_FLOOR_MM`]) until the prediction clears.
 ///
-/// * (v1.1) iteratively reduces DPP by 20% per step (max 5 steps, floor
-///   [`DEFLECTION_BACKOFF_DPP_FLOOR_MM`]) until the prediction clears,
-///   or
-/// * (v2 step 2) refuses a feed-up solve whose post-write deflection
-///   would land within [`FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM`] of
-///   this gate, reverting to the pre-recal feed.
+/// Until 2026-08-13 it had a second consumer: the retired pass 8 feed-up
+/// recalibration refused a solve whose post-write deflection landed within
+/// a 10 µm headroom of this gate. That verify was a documented no-op on the
+/// current feed-independent predictor and went with the pass (Checkpoint
+/// J-1); the headroom constant was deleted alongside it.
 ///
 /// 200 µm matches the post-sim `tool_load::deflection` critical
 /// threshold directly. The predictor over-shoots post-sim by ~36% on
@@ -1307,20 +1322,10 @@ const STEPOVER_BACKOFF_MAX_ITERATIONS: u8 = 5;
 /// gate, so we flag at-or-above 0.5×D.
 const PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D: f64 = 0.5;
 
-/// v2 step 2 refusal headroom under the deflection hard limit (µm).
-/// The recalibration refuses a target feed whose predicted deflection
-/// lands above `DEFLECTION_BACKOFF_TARGET_UM − 10 = 190 µm`. Headroom
-/// keeps the new feed from sitting exactly at the gate so any small
-/// downstream modeling error (chip thinning, hardness scaling, formula
-/// vs LUT) doesn't kick the operation just over the line.
-///
-/// Future-proofing note: today's `predict_peak_deflection_um` is
-/// feed-independent (force = Kc × axial_doc × radial_woc, no chipload
-/// term), so the post-recalibration verify in `enforce_invariants` is
-/// a defensive no-op on the current model. The headroom is retained
-/// for a future chipload-in-force deflection predictor that would
-/// couple feed to load and thus to deflection.
-const FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM: f64 = 10.0;
+// RETIRED 2026-08-13 (Checkpoint J-1): `FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM
+// = 10.0` — the refusal headroom under `DEFLECTION_BACKOFF_TARGET_UM` that the
+// retired pass 8 feed-up verify measured against. Its only consumer went with
+// the pass; the v1.1 DPP back-off uses the bare 200 µm target.
 
 /// Apply policy C of `planning/cutter_axial_constraints_2026-06-06.md`
 /// §5.4 to a single axial value against the cutter-axial-constraints
@@ -1765,9 +1770,10 @@ fn enforce_invariants(
         operation, pass_role, context,
     ));
     warnings.extend(check_plunge_entry_stability(operation, tool, pass_role));
-    warnings.extend(recalibrate_feed_for_chipload(
-        operation, tool, material, machine, context,
-    ));
+    // Pass 8 — the arc-fit chipload feed recalibration — was RETIRED here on
+    // 2026-08-13 (Checkpoint J-1, BINDING). Suggest now emits the un-lifted
+    // feed the calculator produced. See the retirement note on
+    // `feeds::predict` and `planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`.
     warnings
 }
 
@@ -2242,165 +2248,41 @@ fn check_plunge_entry_stability(
     warnings
 }
 
-/// Pass 8: v2 step 2 chipload-aware feed recalibration — single-shot
-/// closed-form solve (v2.1, 2026-06-04).
-///
-/// After the v1.1 deflection back-off settles DPP, the operating
-/// point may still sit below the LUT chipload band lower bound.
-/// Wanaka post-sim (2026-06-03) showed three roughing/finishing
-/// toolpaths shipping at observed median 0.0067-0.011 mm/tooth vs
-/// LUT minima 0.027-0.076 — classic rubbing/burning.
-///
-/// The math is closed-form:
-///
-/// ```text
-/// predict_observed_chipload_mm = nominal × arc_fit_ratio,
-/// where nominal = feed / (rpm × flutes)
-/// ```
-///
-/// Solving for the feed that lands `observed = lut_min`:
-///
-/// ```text
-/// feed = lut_min × rpm × flutes / arc_fit_ratio
-/// ```
-///
-/// The pre-v2.1 implementation iterated `feed × 1.25` up to four
-/// times before bailing; on the Wanaka Back Rough case the required
-/// lift was 3.79× (911 → 3456 mm/min) and 1.25⁴ ≈ 2.44× fell short —
-/// the loop terminated on a synthetic `MaxIterations` cap that didn't
-/// reflect a real physical limit. Since `predict_peak_deflection_um`
-/// is feed-independent today, iterating wasn't probing any feedback
-/// term that exists in the closed-form model — it was just papering
-/// over the missing chipload-in-force coupling. We solve directly
-/// instead.
-///
-/// Caps that can still bind (post-solve):
-///   * `machine.max_feed_mm_min` (hard physical limit) — clamp and
-///     emit `MaxFeed`.
-///   * Deflection refusal (defensive no-op on the current predictor;
-///     future-proofs a chipload-in-force model) — revert to pre-recal
-///     feed and emit `DeflectionThreshold`.
-///
-/// Skip conditions:
-///   * No LUT min available (no_vendor_data, partial-band rows,
-///     formula-fallback): `chipload_bounds` is None.
-///   * Op family's arc-fit ratio is conservative-Default or
-///     NotApplicable (drill/v-carve/project_curve produce
-///     NotApplicable; Pocket/Profile/Adaptive2D/Waterline produce
-///     Default). Default ratios are calibrated against the *nominal*
-///     chipload scale used by the matrix anti-patterns; solving
-///     feed = lut_min/Default would systematically push the operating
-///     point above the matrix ipe/oak anti-patterns (e.g.
-///     `ipe_micro_matches_oak_micro_chipload` at 0.030 mm/tooth on
-///     flat_3mm_pocket_ipe_extreme). Until the broader op families
-///     gain Wanaka cells, restrict feed-up to the Calibrated rows.
-///   * Predicted observed already in band: no work to do.
-///   * Spindle RPM unknown or flute count zero: the closed-form
-///     denominator is undefined.
-///
-/// PlungeClampedToFeed is not re-checked: raising feed only widens
-/// the plunge/feed margin, never narrows it.
-fn recalibrate_feed_for_chipload(
-    operation: &mut OperationConfig,
-    tool: &ToolConfig,
-    material: &Material,
-    machine: &MachineProfile,
-    context: SuggestContext<'_>,
-) -> Vec<SuggestWarning> {
-    let mut warnings = Vec::new();
-    if let Some(bounds) = context.chipload_bounds
-        && let Some(rpm) = operation.spindle_rpm()
-        && tool.flute_count > 0
-        && rpm > 0
-    {
-        let pred_before = crate::feeds::predict::predict_observed_chipload_mm(operation, tool);
-        let arc_fit_calibrated = matches!(
-            pred_before.source,
-            crate::feeds::predict::ArcFitRatioSource::Calibrated
-        );
-        let target = context.policy.aggressiveness.target_chipload(bounds);
-        let initial_feed = operation.feed_rate();
-        let initial_observed = pred_before.observed_median_mm_per_tooth;
-
-        if arc_fit_calibrated
-            && target.is_finite()
-            && target > 0.0
-            && initial_feed.is_finite()
-            && initial_feed > 0.0
-            && initial_observed < target
-            && pred_before.arc_fit_ratio > 0.0
-        {
-            let target_nominal = target / pred_before.arc_fit_ratio;
-            let target_feed = target_nominal * f64::from(rpm) * f64::from(tool.flute_count);
-            // F4: recalibration raises CUTTING feed — cap at the
-            // cutting ceiling, not the travel rate.
-            let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
-            let mut new_feed = target_feed.min(machine_cut_ceiling);
-            let mut cap_hit: Option<FeedRecalibrationCap> = None;
-
-            if target_feed > machine_cut_ceiling {
-                cap_hit = Some(FeedRecalibrationCap::MaxFeed);
-            }
-
-            // Apply the solved feed and verify the deflection budget
-            // still passes at the new operating point. Today's
-            // `predict_peak_deflection_um` is feed-independent (force
-            // = Kc × axial_doc × radial_woc), so this verify is a
-            // defensive no-op on the current closed-form model. Kept
-            // in place for a future chipload-in-force deflection
-            // predictor that would couple feed to load and thus to
-            // deflection.
-            operation.set_feed_rate(new_feed);
-            let deflection_refusal_um =
-                DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
-            let defl = crate::feeds::predict::predict_peak_deflection_um(
-                operation, tool, material, machine,
-            );
-            if defl.predicted_um > deflection_refusal_um {
-                operation.set_feed_rate(initial_feed);
-                new_feed = initial_feed;
-                cap_hit = Some(FeedRecalibrationCap::DeflectionThreshold);
-            }
-
-            let pred_after = crate::feeds::predict::predict_observed_chipload_mm(operation, tool);
-
-            let feed_moved = (new_feed - initial_feed).abs() > 0.5;
-            let reverted_on_deflection = cap_hit == Some(FeedRecalibrationCap::DeflectionThreshold);
-
-            if feed_moved || reverted_on_deflection {
-                tracing::debug!(
-                    requested_mm_per_min = initial_feed,
-                    raised_mm_per_min = new_feed,
-                    predicted_observed_chipload_before = initial_observed,
-                    predicted_observed_chipload_after = pred_after.observed_median_mm_per_tooth,
-                    lut_target_mm_per_tooth = target,
-                    ?cap_hit,
-                    "Suggest chipload-aware feed recalibration (single-shot)"
-                );
-                warnings.push(SuggestWarning::FeedRaisedForChipload {
-                    requested_mm_per_min: initial_feed,
-                    raised_mm_per_min: new_feed,
-                    predicted_observed_chipload_before: initial_observed,
-                    predicted_observed_chipload_after: pred_after.observed_median_mm_per_tooth,
-                    lut_target_mm_per_tooth: target,
-                    cap_hit,
-                });
-            }
-
-            if pred_after.observed_median_mm_per_tooth < target
-                && let Some(blocking_cap) = cap_hit
-            {
-                warnings.push(SuggestWarning::ChiploadStillLowAfterRecalibration {
-                    predicted_observed_mm_per_tooth: pred_after.observed_median_mm_per_tooth,
-                    lut_target_mm_per_tooth: target,
-                    feed_at_termination_mm_per_min: new_feed,
-                    blocking_cap,
-                });
-            }
-        }
-    }
-    warnings
-}
+// ── Pass 8 RETIRED 2026-08-13 — Checkpoint J-1/J-5 (operator, BINDING) ──
+//
+// `recalibrate_feed_for_chipload` stood here. It solved
+//
+//     feed = target / arc_fit_ratio × rpm × flutes
+//
+// gated on `ArcFitRatioSource::Calibrated`, so exactly two op families
+// (Adaptive3d 0.25, DropCutter 0.15) received an automatic feed lift sized
+// by `1 / ratio` — 4.00× and 6.67× on the solved feed, 1.88×–6.67× on the
+// shipped feed once the machine cutting-feed ceiling truncates it.
+//
+// The ratios were fitted against the post-sim chipload gate's arc-mean chip
+// thickness, an observation deleted on 2026-08-06. Against the gate's
+// current observation (`effective_feed / (rpm · flutes)`, a linear advance
+// per tooth) the lift is not merely unjustified but directionally WRONG:
+// A-5 measured the shipped recommendation, applied unmodified and
+// simulated, at **1.85×–5.00× the gate's own band maximum on 4 of 4
+// fixtures** — Suggest's recommendation failed the gate Suggest claimed to
+// target, on the default path.
+//
+// What replaces it: nothing, on the pre-simulation side. Removing the lift
+// leaves the commanded advance per tooth at the derated band **minimum**,
+// which the calculator already reaches unaided (measured 0.999× on both
+// Adaptive3d fixtures) — the rubbing case this pass was built for in
+// 2026-06 was stated in the deleted arc-mean quantity. Any lift toward the
+// band median now belongs to the **simulation-backed** path, which corrects
+// from a measured observation rather than a family constant, and which A-5
+// measured clean 4/4 on the same fixtures (`feed_modulation`, whose default
+// was flipped ON under Checkpoint J-3).
+//
+// `SuggestWarning::FeedRaisedForChipload` and
+// `SuggestWarning::ChiploadStillLowAfterRecalibration` were deliberately
+// KEPT (J-5) so the simulation-backed path can report its own measured feed
+// changes through the vocabulary the rationale renderer already speaks.
+// Nothing in Suggest constructs them today.
 
 /// Returns `Some(label)` when `operation` is an Adaptive-family op whose
 /// entry_style is `Plunge`. Used by [`enforce_invariants`] for the v1.3
@@ -4184,20 +4066,21 @@ mod tests {
         );
     }
 
-    /// v2 combined-Suggest step 2 (2026-06-04 design doc § v2 step 2):
-    /// Wanaka Back Rough motivating case. After the v1.1 deflection
-    /// back-off settled DPP at ~3.69 mm (post-sim ~178 µm steady),
-    /// observed median chipload still sat at 0.0067–0.011 mm/tooth vs
-    /// LUT minimum ~0.027 mm/tooth. The feed-up recalibration must
-    /// raise `feed_rate` and emit `FeedRaisedForChipload`.
+    /// **RE-BASELINED 2026-08-13 — Checkpoint J-1 (was
+    /// `feed_recalibration_raises_feed_for_wanaka_back_rough_case`).**
     ///
-    /// We synthesize the post-v1.1 operating point directly (DPP=3.69,
-    /// feed=911 mm/min @ 16 kRPM, HardMaple, 6 mm 2-flute endmill) and
-    /// drive `enforce_invariants` with an explicit `ChiploadBounds`
-    /// matching the LUT min so the test is hermetic w.r.t. the
-    /// embedded LUT version.
+    /// This was the pass-8 sentry: it required the arc-fit feed-up to fire
+    /// on the Wanaka Back Rough motivating case and pinned the closed-form
+    /// solve `target / arc_fit_ratio × rpm × flutes = 0.027 / 0.25 × 16000
+    /// × 2` at **3456 mm/min**, up from the calculator's 911 mm/min — a
+    /// 3.79× lift, with `FeedRaisedForChipload { cap_hit: None }`.
+    ///
+    /// Pass 8 is retired. The assertion inverts: the same input must now
+    /// leave the feed where the calculator put it and emit no lift warning.
+    /// Both pre-fix numbers are kept above so the inversion is readable as
+    /// a movement, not a rewrite.
     #[test]
-    fn feed_recalibration_raises_feed_for_wanaka_back_rough_case() {
+    fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::feeds::ChiploadBounds;
         use crate::material::WoodSpecies;
@@ -4216,21 +4099,15 @@ mod tests {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7): at
-        // the original 45 mm stickout the deflection ceiling already binds
-        // at the baseline 911 mm/min feed, so the feed-up loop has zero
-        // headroom and can't raise feed (its intended behaviour). This
-        // test verifies the chipload feed-UP recalibration, not the
-        // deflection cap — stiffen the tool (stickout 45 → 18 mm; δ ∝
-        // stickout³ → ~0.064×) so deflection leaves headroom and the
-        // feed-up loop can do its job.
+        // Stiffened (45 → 18 mm) by the pre-fix version so deflection left
+        // the feed-up loop headroom. Kept so the fixture is bit-identical
+        // to the one that produced 3456 mm/min.
         tool.stickout = 18.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         // Disable the rigidity clamp at DPP=3.69 (3.69 < 1.6 × 6 = 9.6 is OK).
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.60;
-        // Generous feed cap so we don't immediately hit MaxFeed.
         machine.max_feed_mm_min = 10_000.0;
         let material = Material::SolidWood {
             species: WoodSpecies::HardMaple,
@@ -4241,9 +4118,6 @@ mod tests {
         });
 
         let initial_feed = op.feed_rate();
-        let initial_observed = crate::feeds::predict::predict_observed_chipload_mm(&op, &tool)
-            .observed_median_mm_per_tooth;
-
         let warnings = enforce_invariants(
             &mut op,
             &tool,
@@ -4252,11 +4126,6 @@ mod tests {
             PassRole::Roughing,
             SuggestContext {
                 chipload_bounds: bounds,
-                // v3.0c (median default) flipped the implicit Suggest
-                // target from LUT min to LUT median. This test asserts
-                // the v2.1 / Conservative closed-form solve (target =
-                // LUT min = 0.027 → feed = 3456 mm/min); pin the
-                // policy so the assertions remain valid.
                 policy: SuggestPolicy {
                     aggressiveness: SuggestAggressiveness::Conservative,
                     ..SuggestPolicy::default()
@@ -4265,372 +4134,160 @@ mod tests {
             },
         );
 
-        let feed_after = op.feed_rate();
         assert!(
-            feed_after > initial_feed,
-            "feed-up loop must raise feed above {initial_feed}, got {feed_after}"
-        );
-
-        let warning = warnings.iter().find_map(|w| match w {
-            SuggestWarning::FeedRaisedForChipload {
-                requested_mm_per_min,
-                raised_mm_per_min,
-                predicted_observed_chipload_before,
-                predicted_observed_chipload_after,
-                lut_target_mm_per_tooth,
-                cap_hit,
-            } => Some((
-                *requested_mm_per_min,
-                *raised_mm_per_min,
-                *predicted_observed_chipload_before,
-                *predicted_observed_chipload_after,
-                *lut_target_mm_per_tooth,
-                *cap_hit,
-            )),
-            _ => None,
-        });
-        let (
-            requested_mm_per_min,
-            raised_mm_per_min,
-            predicted_before,
-            predicted_after,
-            lut_target,
-            cap_hit,
-        ) = warning.expect("FeedRaisedForChipload must fire on Wanaka Back Rough case");
-        assert!(
-            (requested_mm_per_min - initial_feed).abs() < 1e-6,
-            "warning.requested_mm_per_min must capture pre-recal feed, got {requested_mm_per_min}"
+            (op.feed_rate() - initial_feed).abs() < 1e-6,
+            "retired pass 8 must leave feed at the calculator value {initial_feed} \
+             (pre-fix it was lifted to 3456), got {}",
+            op.feed_rate()
         );
         assert!(
-            (raised_mm_per_min - feed_after).abs() < 1e-6,
-            "warning.raised_mm_per_min must match post-recal feed, got {raised_mm_per_min}"
+            !warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::FeedRaisedForChipload { .. })),
+            "no Suggest pass constructs FeedRaisedForChipload since 2026-08-13, got {warnings:?}"
         );
         assert!(
-            (predicted_before - initial_observed).abs() < 1e-9,
-            "warning.predicted_observed_chipload_before must equal initial prediction, got {predicted_before}"
-        );
-        assert!(
-            (lut_target - 0.027).abs() < 1e-9,
-            "warning.lut_target_mm_per_tooth must round-trip the bound (Conservative policy targets band min), got {lut_target}"
-        );
-        // Closed-form target on Wanaka: target / arc_fit_ratio × rpm × flutes
-        //   = 0.027 / 0.25 × 16000 × 2 = 3456 mm/min.
-        // machine.max_feed_mm_min = 10_000 here, so no MaxFeed cap, and
-        // deflection at 3.69 mm DPP / 45 mm stickout / 6 mm 2-flute /
-        // HardMaple sits below the 190 µm refusal, so no
-        // DeflectionThreshold cap either.
-        assert!(
-            (feed_after - 3456.0).abs() < 1.0,
-            "Wanaka closed-form target must land at 3456 ± 1 mm/min, got {feed_after}"
-        );
-        assert_eq!(
-            cap_hit, None,
-            "no cap should bind on Wanaka case at this machine.max_feed, got {cap_hit:?}"
-        );
-        // Closed-form invariant: post-recal observed must equal target
-        // (within float epsilon) when no cap binds.
-        assert!(
-            (predicted_after - lut_target).abs() < 1e-9,
-            "closed-form solve must land observed at target when uncapped, got observed={predicted_after} vs target={lut_target}"
+            !warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
+            "no Suggest pass constructs ChiploadStillLowAfterRecalibration since 2026-08-13, \
+             got {warnings:?}"
         );
     }
-
-    /// v2 step 2 cap test: when the post-v1.1 operating point already
-    /// sits at or above the 10 µm deflection refusal headroom
-    /// (predicted ≥ 190 µm), the single-shot recalibration writes the
-    /// solved feed, the deflection verify trips, the feed is reverted
-    /// to its pre-recal value, and both `FeedRaisedForChipload` (with
-    /// `cap_hit = DeflectionThreshold`, `raised == requested`) and
-    /// `ChiploadStillLowAfterRecalibration` fire.
+    /// **RE-BASELINED 2026-08-13 — Checkpoint J-1 (was
+    /// `feed_recalibration_caps_on_deflection` and
+    /// `speed_gated_by_deflection_fires`, merged).**
     ///
-    /// **Predictor caveat (2026-06-04):** the closed-form deflection
-    /// predictor computes force as `Kc × axial_doc × radial_woc` — it
-    /// is *not* a function of feed/chipload. So raising feed within
-    /// this step does not raise the predictor's output (the inputs
-    /// `axial_doc_mm` / `radial_woc_mm` come from the operation
-    /// fields, and we don't touch those). The guard is still
-    /// defensive: it refuses to *write* a feed when the operation's
-    /// current deflection profile is already at the boundary, even
-    /// though the feed change itself doesn't perturb the prediction.
-    /// To trigger `DeflectionThreshold` deterministically we set up a
-    /// stickout / DPP combination whose pre-loop predicted deflection
-    /// already exceeds 190 µm; the verify check then trips and the
-    /// recalibration reverts before any feed change lands.
+    /// Both tests exercised a *cap* of the retired pass 8. Pre-fix, a
+    /// 100 mm-stickout Ø6 2F endmill put the closed-form predictor's
+    /// deflection in the (190, 200) µm refusal window, so the pass wrote
+    /// the solved feed, the verify tripped, and it reverted 911 → 911 while
+    /// still emitting `FeedRaisedForChipload { cap_hit:
+    /// Some(DeflectionThreshold) }` **plus**
+    /// `ChiploadStillLowAfterRecalibration { blocking_cap:
+    /// DeflectionThreshold }`. Under `SuggestAggressiveness::Speed` the
+    /// same fixture pinned `lut_target_mm_per_tooth` at the band max
+    /// (0.10), proving Speed's target was what got gated; its uncapped
+    /// solve would have been `0.10 / 0.25 × 16000 × 2 = 12 800 mm/min`.
+    ///
+    /// With the pass retired there is no solve, no verify and no cap. Both
+    /// aggressiveness levels must now leave the feed untouched and emit
+    /// neither warning. The two fixtures are kept bit-identical and run as
+    /// one test because the only remaining difference between them is the
+    /// policy field.
+    ///
+    /// **Note what this test does NOT claim.** A 100 mm-stickout Ø6
+    /// endmill at 190+ µm predicted deflection is still a bad operating
+    /// point; what changed is that Suggest no longer *raises feed into* it
+    /// and then congratulates itself for refusing. The v1.1 DPP back-off
+    /// against `DEFLECTION_BACKOFF_TARGET_UM` is untouched by this commit.
     #[test]
-    fn feed_recalibration_caps_on_deflection() {
+    fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::feeds::ChiploadBounds;
         use crate::material::WoodSpecies;
 
-        let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: 911.0,
-            plunge_rate: 300.0,
-            stepover: 1.2,
-            depth_per_pass: 3.69,
-            spindle_rpm: Some(16_000),
-            entry_style: Adaptive3dEntryStyle::Helix,
-            ..Adaptive3dConfig::default()
-        });
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-        tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
-        // Deflection genuinely binds only on long/thin tools under the
-        // feed-aware literature-absolute force model, so this code-path
-        // fixture uses a long-reach 6 mm endmill: the stickout is tuned so
-        // the pre-loop predicted deflection lands in the (190, 200) µm
-        // window — above the 190 µm guard but below the 200 µm v1.1 back-off
-        // target (so v1.1 doesn't fire first and lower DPP underneath us).
-        // δ ∝ stickout³, so retune this value if the force physics shifts;
-        // the in-test setup guard below asserts the window and tells the
-        // next editor.
-        tool.stickout = 100.0;
-        tool.flute_count = 2;
-        let mut machine = MachineProfile::default();
-        machine.rigidity.doc_roughing_factor = 0.20;
-        machine.rigidity.adaptive_doc_factor = 1.60;
-        machine.max_feed_mm_min = 10_000.0;
         let material = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
+        // Band max 0.10 is what the pre-fix Speed arm pinned.
         let bounds = Some(ChiploadBounds {
             min_mm_per_tooth: 0.05,
             max_mm_per_tooth: 0.10,
         });
-
-        // Sanity: confirm the pre-loop deflection sits in the
-        // (190, 200) µm window. If this changes (e.g. Kc/HardMaple
-        // calibration shifts), retune `tool.stickout`.
-        let pre_predicted =
-            crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
-                .predicted_um;
-        let refusal_um = DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
-        assert!(
-            (refusal_um..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),
-            "test setup: pre-loop predicted deflection ({pre_predicted:.1} µm) must sit in \
-             [{refusal_um:.0}, {DEFLECTION_BACKOFF_TARGET_UM:.0}) µm — retune tool.stickout"
-        );
-
-        let warnings = enforce_invariants(
-            &mut op,
-            &tool,
-            &machine,
-            &material,
-            PassRole::Roughing,
-            SuggestContext {
-                chipload_bounds: bounds,
-                ..SuggestContext::default()
-            },
-        );
-
-        // v2.1 single-shot: on a deflection-cap revert, both the
-        // FeedRaisedForChipload (with raised == requested) AND the
-        // still-low warning fire. The cap_hit carries the diagnostic
-        // signal.
         let initial_feed = 911.0_f64;
-        let raised = warnings.iter().find_map(|w| match w {
-            SuggestWarning::FeedRaisedForChipload {
-                requested_mm_per_min,
-                raised_mm_per_min,
-                cap_hit,
-                ..
-            } => Some((*requested_mm_per_min, *raised_mm_per_min, *cap_hit)),
-            _ => None,
-        });
-        let (requested_mm_per_min, raised_mm_per_min, raised_cap) = raised.expect(
-            "FeedRaisedForChipload must fire on deflection revert (v2.1 emits on cap-hit even when reverted)",
-        );
-        assert!(
-            (requested_mm_per_min - initial_feed).abs() < 1e-6,
-            "requested feed must capture pre-recal value, got {requested_mm_per_min}"
-        );
-        assert!(
-            (raised_mm_per_min - initial_feed).abs() < 1e-6,
-            "on deflection revert, raised_mm_per_min must equal requested_mm_per_min, got {raised_mm_per_min}"
-        );
-        assert_eq!(
-            raised_cap,
-            Some(FeedRecalibrationCap::DeflectionThreshold),
-            "cap_hit on FeedRaisedForChipload must be DeflectionThreshold, got {raised_cap:?}"
-        );
 
-        let still_low = warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration {
-                predicted_observed_mm_per_tooth,
-                lut_target_mm_per_tooth,
-                feed_at_termination_mm_per_min,
-                blocking_cap,
-            } => Some((
-                *predicted_observed_mm_per_tooth,
-                *lut_target_mm_per_tooth,
-                *feed_at_termination_mm_per_min,
-                *blocking_cap,
-            )),
-            _ => None,
-        });
-        let (still_low_observed, still_low_target, still_low_feed, blocking_cap) = still_low
-            .expect("ChiploadStillLowAfterRecalibration must fire when deflection cap binds");
-        assert_eq!(
-            blocking_cap,
-            FeedRecalibrationCap::DeflectionThreshold,
-            "blocking cap must be DeflectionThreshold when feed-up trial breaches the gate, got {blocking_cap:?}"
-        );
-        assert!(
-            still_low_observed < still_low_target,
-            "observed ({still_low_observed}) must still be below target ({still_low_target}) when deflection cap binds"
-        );
-        assert!(
-            (still_low_feed - initial_feed).abs() < 1e-6,
-            "feed_at_termination must equal initial_feed after revert, got {still_low_feed}"
-        );
-        // Op feed must be reverted to the pre-recal value.
-        assert!(
-            (op.feed_rate() - initial_feed).abs() < 1e-6,
-            "op feed must be reverted to initial after deflection revert, got {}",
-            op.feed_rate()
-        );
-    }
+        for aggressiveness in [SuggestAggressiveness::Default, SuggestAggressiveness::Speed] {
+            let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
+                feed_rate: initial_feed,
+                plunge_rate: 300.0,
+                stepover: 1.2,
+                depth_per_pass: 3.69,
+                spindle_rpm: Some(16_000),
+                entry_style: Adaptive3dEntryStyle::Helix,
+                ..Adaptive3dConfig::default()
+            });
+            let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+            tool.diameter = 6.0;
+            tool.cutting_length = 25.0;
+            // δ ∝ stickout³ — this is the value that landed the pre-fix
+            // prediction in the (190, 200) µm window. Retune if the force
+            // physics shifts; the setup guard below asserts the window.
+            tool.stickout = 100.0;
+            tool.flute_count = 2;
+            let mut machine = MachineProfile::default();
+            machine.rigidity.doc_roughing_factor = 0.20;
+            machine.rigidity.adaptive_doc_factor = 1.60;
+            machine.max_feed_mm_min = 20_000.0;
 
-    /// v3 design-doc sentry (`speed_gated_by_deflection_fires`): under
-    /// `SuggestAggressiveness::Speed` the recalibration aims at the LUT
-    /// band *max*, and when the deflection guard refuses the write the
-    /// gating surfaces as `cap_hit = DeflectionThreshold` — the design
-    /// doc's planned `SpeedGatedByDeflection` variant collapsed into
-    /// this field (same structure as still-low, distinct meaning: "you
-    /// asked for max chipload, deflection said no").
-    ///
-    /// Same long-stickout window as
-    /// `feed_recalibration_caps_on_deflection` (pre-loop predicted
-    /// deflection in the (190, 200) µm refusal band), but with
-    /// `policy.aggressiveness = Speed`. Asserts the still-low warning's
-    /// `lut_target_mm_per_tooth` is the band MAX — proving Speed's
-    /// target (not Conservative's min / Default's midpoint) is what got
-    /// gated.
-    #[test]
-    fn speed_gated_by_deflection_fires() {
-        use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-        use crate::feeds::ChiploadBounds;
-        use crate::material::WoodSpecies;
+            // The fixture's premise, asserted rather than assumed: the
+            // operating point really is deflection-bound. Without this the
+            // "no cap fires" assertion below would be vacuous — a fixture
+            // that was never near the cap proves nothing about its removal.
+            let pre_predicted =
+                crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+                    .predicted_um;
+            assert!(
+                (190.0..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),
+                "test setup: predicted deflection ({pre_predicted:.1} µm) must sit in \
+                 [190, {DEFLECTION_BACKOFF_TARGET_UM:.0}) µm — retune tool.stickout"
+            );
 
-        let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: 911.0,
-            plunge_rate: 300.0,
-            stepover: 1.2,
-            depth_per_pass: 3.69,
-            spindle_rpm: Some(16_000),
-            entry_style: Adaptive3dEntryStyle::Helix,
-            ..Adaptive3dConfig::default()
-        });
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-        tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
-        // Same long-reach fixture as feed_recalibration_caps_on_deflection:
-        // under the feed-aware literature-absolute force model deflection
-        // binds only on long/thin tools, so a 100 mm-stickout 6 mm endmill
-        // lands the pre-loop prediction in the (190, 200) µm refusal window
-        // (the setup guard below asserts it). δ ∝ stickout³ — retune if the
-        // force physics shifts.
-        tool.stickout = 100.0;
-        tool.flute_count = 2;
-        let mut machine = MachineProfile::default();
-        machine.rigidity.doc_roughing_factor = 0.20;
-        machine.rigidity.adaptive_doc_factor = 1.60;
-        // Generous cap: Speed's closed-form target (0.10/0.25 × 16000 × 2
-        // = 12_800 mm/min) must stay below it so DeflectionThreshold is
-        // the *only* candidate cap.
-        machine.max_feed_mm_min = 20_000.0;
-        let material = Material::SolidWood {
-            species: WoodSpecies::HardMaple,
-        };
-        let band_max = 0.10;
-        let bounds = Some(ChiploadBounds {
-            min_mm_per_tooth: 0.05,
-            max_mm_per_tooth: band_max,
-        });
-
-        let pre_predicted =
-            crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
-                .predicted_um;
-        let refusal_um = DEFLECTION_BACKOFF_TARGET_UM - FEED_RAISE_DEFLECTION_RECAL_HEADROOM_UM;
-        assert!(
-            (refusal_um..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),
-            "test setup: pre-loop predicted deflection ({pre_predicted:.1} µm) must sit in \
-             [{refusal_um:.0}, {DEFLECTION_BACKOFF_TARGET_UM:.0}) µm — retune tool.stickout"
-        );
-
-        let initial_feed = 911.0_f64;
-        let warnings = enforce_invariants(
-            &mut op,
-            &tool,
-            &machine,
-            &material,
-            PassRole::Roughing,
-            SuggestContext {
-                chipload_bounds: bounds,
-                policy: SuggestPolicy {
-                    aggressiveness: SuggestAggressiveness::Speed,
-                    ..SuggestPolicy::default()
+            let warnings = enforce_invariants(
+                &mut op,
+                &tool,
+                &machine,
+                &material,
+                PassRole::Roughing,
+                SuggestContext {
+                    chipload_bounds: bounds,
+                    policy: SuggestPolicy {
+                        aggressiveness,
+                        ..SuggestPolicy::default()
+                    },
+                    ..SuggestContext::default()
                 },
-                ..SuggestContext::default()
-            },
-        );
+            );
 
-        let raised_cap = warnings.iter().find_map(|w| match w {
-            SuggestWarning::FeedRaisedForChipload { cap_hit, .. } => Some(*cap_hit),
-            _ => None,
-        });
-        assert_eq!(
-            raised_cap.expect("FeedRaisedForChipload must fire when Speed is deflection-gated"),
-            Some(FeedRecalibrationCap::DeflectionThreshold),
-            "Speed gating must surface as cap_hit = DeflectionThreshold"
-        );
-
-        let still_low = warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration {
-                lut_target_mm_per_tooth,
-                blocking_cap,
-                ..
-            } => Some((*lut_target_mm_per_tooth, *blocking_cap)),
-            _ => None,
-        });
-        let (lut_target, blocking_cap) =
-            still_low.expect("still-low must fire when Speed's target is deflection-gated");
-        assert_eq!(
-            blocking_cap,
-            FeedRecalibrationCap::DeflectionThreshold,
-            "blocking cap must be DeflectionThreshold, got {blocking_cap:?}"
-        );
-        assert!(
-            (lut_target - band_max).abs() < 1e-9,
-            "Speed must target the LUT band max ({band_max}), got {lut_target}"
-        );
-
-        // Refused write ⇒ feed reverted untouched.
-        assert!(
-            (op.feed_rate() - initial_feed).abs() < 1e-6,
-            "op feed must be reverted after Speed deflection gate, got {}",
-            op.feed_rate()
-        );
+            assert!(
+                (op.feed_rate() - initial_feed).abs() < 1e-6,
+                "{aggressiveness:?}: feed must stay at the calculator value {initial_feed}, got {}",
+                op.feed_rate()
+            );
+            assert!(
+                !warnings.iter().any(|w| matches!(
+                    w,
+                    SuggestWarning::FeedRaisedForChipload { .. }
+                        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                )),
+                "{aggressiveness:?}: no Suggest pass constructs the retired chipload-lift \
+                 warnings since 2026-08-13, got {warnings:?}"
+            );
+        }
     }
 
-    /// v2 step 2 cap test (v2.1 single-shot): when the closed-form
-    /// target feed exceeds `machine.max_feed_mm_min`, the recalibration
-    /// clamps to the machine cap and emits `MaxFeed`. If the clamped
-    /// feed still leaves observed below the LUT min,
-    /// `ChiploadStillLowAfterRecalibration` fires alongside.
+    /// **RE-BASELINED 2026-08-13 — Checkpoint J-1 (was
+    /// `feed_recalibration_caps_on_max_feed`).**
     ///
-    /// Setup: feed already at the cap (4000 mm/min) so no feed change
-    /// lands — `FeedRaisedForChipload` does NOT fire (feed_moved=false
-    /// and cap_hit≠DeflectionThreshold). Only the still-low warning
-    /// surfaces.
+    /// Pre-fix: feed already at the 4000 mm/min machine cap, band
+    /// 0.10–0.20, so pass 8's closed-form target `0.10 / 0.25 × 16000 × 2
+    /// = 12 800 mm/min` clamped straight back down to 4000. Feed did not
+    /// move, so `FeedRaisedForChipload` stayed silent, but
+    /// `ChiploadStillLowAfterRecalibration { blocking_cap: MaxFeed }`
+    /// fired — the pass reporting that it could not reach a target it had
+    /// no business aiming at.
+    ///
+    /// Post-retirement the still-low warning must go silent too. The
+    /// `MaxFeed` clamp itself is not what was retired: the calculator and
+    /// `machine.cutting_feed_ceiling_mm_min()` still bound feed, and this
+    /// test asserts the feed stays at 4000 for that reason.
     #[test]
-    fn feed_recalibration_caps_on_max_feed() {
+    fn retired_lift_reports_no_max_feed_shortfall() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
         use crate::feeds::ChiploadBounds;
         use crate::material::WoodSpecies;
 
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            // Already at the machine cap — closed-form target lands
-            // at 0.10/0.25 × 16000 × 2 = 12_800 mm/min, clamped to 4000.
             feed_rate: 4000.0,
             plunge_rate: 300.0,
             stepover: 1.2,
@@ -4647,15 +4304,14 @@ mod tests {
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.60;
-        // Feed cap pinned to the initial feed so the first raise hits
-        // MaxFeed immediately.
         machine.max_feed_mm_min = 4000.0;
         let material = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
-        // Bound chosen so the initial predicted observed (~0.0083 for
-        // 4000/16000/2 × 0.25 arc-fit ≈ 0.031 mm/tooth) still sits
-        // below the band — guarantees the loop enters.
+        // Band deliberately far above the operating point — pre-fix this is
+        // what guaranteed the retired pass entered and then reported a
+        // shortfall. It is kept so the inversion is measured on the fixture
+        // that produced the shortfall, not on a comfortable one.
         let bounds = Some(ChiploadBounds {
             min_mm_per_tooth: 0.10,
             max_mm_per_tooth: 0.20,
@@ -4673,31 +4329,18 @@ mod tests {
             },
         );
 
-        let still_low = warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration { blocking_cap, .. } => {
-                Some(*blocking_cap)
-            }
-            _ => None,
-        });
-        assert_eq!(
-            still_low,
-            Some(FeedRecalibrationCap::MaxFeed),
-            "blocking cap must be MaxFeed when initial feed is at the machine cap, got {still_low:?} (warnings: {warnings:?})"
-        );
-        // Op feed must equal the machine cap — solved feed clamped down.
         assert!(
             (op.feed_rate() - 4000.0).abs() < 1e-6,
-            "feed must equal the machine cap after clamp, got {}",
+            "feed must stay at the machine cap, got {}",
             op.feed_rate()
         );
-        // FeedRaisedForChipload must NOT fire: feed didn't move
-        // (target was clamped to the current value) and cap_hit is
-        // MaxFeed not DeflectionThreshold.
         assert!(
-            !warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::FeedRaisedForChipload { .. })),
-            "FeedRaisedForChipload must not fire when initial feed already equals the machine cap, got {warnings:?}"
+            !warnings.iter().any(|w| matches!(
+                w,
+                SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                    | SuggestWarning::FeedRaisedForChipload { .. }
+            )),
+            "the retired pass's shortfall report must be silent, got {warnings:?}"
         );
     }
 
@@ -4705,6 +4348,16 @@ mod tests {
     /// already sits at or above the LUT minimum, the recalibration
     /// loop must skip entirely — no feed change, no warning. Guards
     /// against accidentally firing the loop on every Suggest path.
+    ///
+    /// **2026-08-13, Checkpoint J-1: this is the only one of the five
+    /// pass-8 tests that SURVIVES UNCHANGED — it is now the general
+    /// case.** Its assertions ("feed untouched, neither warning fires")
+    /// used to describe the narrow in-band corner; with the pass retired
+    /// they describe every Suggest path. Not one character of the fixture
+    /// or the assertions moved, which makes it the cleanest single piece of
+    /// evidence that the retirement generalised rather than inverted the
+    /// contract. The comment below about arc-fit ratio 0.25 is left
+    /// standing as a record of why these particular constants were chosen.
     #[test]
     fn feed_recalibration_skipped_when_already_in_band() {
         use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
@@ -4782,10 +4435,31 @@ mod tests {
         );
     }
 
+    /// **RE-BASELINED 2026-08-13 — Checkpoint J-1.**
+    ///
+    /// **This site was NOT in the A-5 evidence package's §6.1 re-baseline
+    /// list** (which named four in-crate tests); it is a fifth, found by
+    /// compiling. Recorded here rather than quietly fixed.
+    ///
     /// v3.0b: same op × tool × material × machine with three
-    /// SuggestAggressiveness levels — feed must be monotonically
-    /// non-decreasing Conservative → Default → Speed. Validates the
-    /// `target_chipload` math wires through `recalibrate_feed_for_chipload`.
+    /// SuggestAggressiveness levels. Pre-fix it asserted feed was
+    /// *monotonically non-decreasing* Conservative → Default → Speed and
+    /// pinned Conservative at the v2.1 closed-form solve **3456 mm/min**
+    /// (`0.027 / 0.25 × 16000 × 2`), with Default and Speed above it.
+    ///
+    /// `SuggestAggressiveness` reached the feed **only** through pass 8's
+    /// `target_chipload` solve. With that pass retired, aggressiveness no
+    /// longer moves feed at all, so the progression collapses from strictly
+    /// spread to flat. Monotonicity is technically preserved (equality
+    /// satisfies `<=`), which is exactly why asserting it alone would be a
+    /// vacuous pass — the test now asserts the stronger, true statement:
+    /// **all three levels return the calculator's own feed.**
+    ///
+    /// This is a real loss of operator control and is named as such: the
+    /// aggressiveness dial is inert on the pre-simulation path until a
+    /// simulation-backed target lands (Checkpoint J-1's destination (c)).
+    /// It is not inert on the rest of `feeds` — the dial still selects the
+    /// target the rationale and the chipload envelopes report against.
     ///
     /// Scaffolded against the Wanaka Back Rough operating point used by
     /// `feed_recalibration_raises_feed_for_wanaka_back_rough_case`
@@ -4871,12 +4545,21 @@ mod tests {
             feed_default <= feed_speed,
             "Default feed ({feed_default}) must be ≤ Speed feed ({feed_speed})"
         );
-        // Sanity: Conservative should match the v2.1 baseline closed-form
-        // solve (0.027 / 0.25 × 16000 × 2 = 3456 mm/min, rounded to 1).
-        assert!(
-            (feed_conservative - 3456.0).abs() < 1.0,
-            "Conservative policy must preserve the v2.1 closed-form target (3456 mm/min ± 1), got {feed_conservative}"
-        );
+        // The assertion that actually carries weight post-retirement: all
+        // three levels land on the calculator's own 911 mm/min. Pre-fix
+        // these were 3456 / 6144 / 7680 mm/min (band min / mid / max
+        // divided by the 0.25 arc-fit ratio, times 16000 × 2).
+        for (label, feed) in [
+            ("Conservative", feed_conservative),
+            ("Default", feed_default),
+            ("Speed", feed_speed),
+        ] {
+            assert!(
+                (feed - 911.0).abs() < 1e-6,
+                "{label}: aggressiveness must not move feed off the calculator value 911 \
+                 now that pass 8 is retired, got {feed}"
+            );
+        }
     }
 
     /// v3.3b: strategy-aware orchestrator rewrites Adaptive3d

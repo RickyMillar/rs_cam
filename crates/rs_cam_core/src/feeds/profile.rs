@@ -27,10 +27,7 @@ use crate::compute::catalog::{OperationConfig, OperationSpec, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::cutter_constraints::CutterAxialConstraints;
-use crate::feeds::predict::{
-    DeflectionPrediction, ObservedChiploadPrediction, predict_move_count,
-    predict_observed_chipload_mm, predict_peak_deflection_um,
-};
+use crate::feeds::predict::{DeflectionPrediction, predict_move_count, predict_peak_deflection_um};
 use crate::feeds::suggest::{
     SuggestContext, SuggestForOperationInput, SuggestWarning, axial_envelope_for_operation,
     feeds_explain_for_operation, suggest_for_operation,
@@ -51,9 +48,12 @@ pub struct Predictions {
     /// Closed-form peak tip deflection (µm) — see
     /// [`predict_peak_deflection_um`].
     pub deflection: DeflectionPrediction,
-    /// Forward-predicted median observed chipload — see
-    /// [`predict_observed_chipload_mm`].
-    pub observed_chipload: ObservedChiploadPrediction,
+    // RETIRED 2026-08-13 (Checkpoint J-1/J-5): `observed_chipload:
+    // ObservedChiploadPrediction`. It was computed here on every profile
+    // and **never rendered** — A-5's census found no `observed_chipload`
+    // / `arc_fit_ratio` / `ArcFitRatioSource` reference in `rs_cam_viz`,
+    // `rs_cam_cli`, `rs_cam_mcp` or the MCP bridge. Its only behavioural
+    // consumer was Suggest pass 8, itself retired in the same commit.
     /// Upper-bound move-count estimate — see [`predict_move_count`].
     /// `0` when no model bbox was supplied or the op is feature-driven.
     pub move_count: u64,
@@ -201,7 +201,6 @@ impl<'a> CutterOpProfile<'a> {
                 input.material,
                 input.machine,
             ),
-            observed_chipload: predict_observed_chipload_mm(eval_op, input.tool),
             move_count: predict_move_count(eval_op, input.context.model_bbox, input.tool),
         };
         let constraints = ConstraintEnvelopes {
