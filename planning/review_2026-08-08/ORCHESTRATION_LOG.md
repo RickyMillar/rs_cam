@@ -1312,3 +1312,213 @@ NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
 - **CLAUDE.md's MCP workflow section, plan §0 rule 10, and `bin/main.rs:52-62`** all still tell agents the window must be visible. Owner: B-4's last commit, if M-A or M-B is ruled. They are not my territory to edit.
 
 Next action / checkpoint request: **Checkpoint M requested**, six questions in `DISPATCH_DECOUPLING_DESIGN.md` §10 — M-1 do we own eframe's event loop (`create_native` + `run_app`; every other piece depends on it, and there is no other route to a proxy in eframe 0.34.3); M-2 pick M-A / M-B / M-C / M-D (recommend **M-A**, migrated in the seven gated steps of §8, with an explicit stop after step 4 if the hidden-window live-read bar is not met); M-3 accept C4's cross-class `AppEvent` reordering or take M-B; M-4 rule the `screenshot_gui`-on-a-parked-loop contract (recommend **refuse with the mechanism named**, not block, not force a render); M-5 may the 100 ms heartbeat be deleted, and only alongside the six-driver fixes; M-6 confirm the ~1 s floor is re-measured without gdb and booked separately if it survives. Orchestrator actions: (a) put M to the operator; (b) note plan §5 already sequences A-4 and B-4 as file-adjacent — this design does not touch `feeds_modal.rs`, so the adjacency is unchanged; (c) B-4 stays blocked on M.
+
+---
+
+## B-4 — dispatch decoupling implementation (executes Checkpoint M-A), 2026-08-12
+
+Status: **STOPPED AT THE STEP-4 GATE, ON THE GATE'S OWN TERMS.** Steps 1-4 of
+`DISPATCH_DECOUPLING_DESIGN.md` §8 are landed, tested and lint-clean. The
+hidden-window live-read bar **is not met**, so steps 5-7 were not built and the
+100 ms heartbeat consequently stays (M-5). G-LV.1 **remains open**, and the
+reason is a mechanism the design did not have: on this machine the main thread
+is blocked *below winit, inside the Wayland present*, so there is no main
+thread left to pump on. Checkpoint N requested below.
+
+Commit(s): `834c789` (rig + pre-change floor), `9f08ac2` (C1+C2, own the loop),
+`43300eb` (C3, off-frame pump), `897d9bc` (C5 + off-frame drain + the failed
+bar). Artifacts in `planning/review_2026-08-08/artifacts/b4/`.
+
+Parent/revision measured: branch `tech-debt-3` at `2973200f`. Pre-change
+numbers were taken on `target/debug/rs_cam_gui` built 01:59 from `03216770` —
+verified as HEAD's code, since `03216770` is the last commit touching
+`crates/` and it predates the binary by five minutes. Wave resumed after a
+machine-wide crash/reboot; the pre-change floor was re-measured from scratch
+afterwards rather than carried over, and reproduced its pre-crash value.
+
+Question and pre-registered bars: Checkpoint M, binding. M-A in §8's seven
+gated steps, **explicit stop after step 4 if the hidden-window live-read bar
+is not met**; C4 cross-class reordering accepted; `screenshot_gui` refuses;
+heartbeat deleted only alongside the six-driver fixes; the ~1 s floor
+re-measured without gdb before and after, a survivor booked separately. Bars I
+added before starting: (a) verify every load-bearing API fact against the
+vendored source as I use it, and STOP rather than improvise if one is wrong;
+(b) the park must be *proved* per measurement, not inferred from two
+endpoints; (c) any inverted contract keeps its pre-fix string in a comment.
+
+Fixture/population/resolution: `artifacts/b4/floor_census.py`, which reuses
+B-1's `artifacts/b1/mcp_stdio_client.py` transport so both sides of the
+before/after differ in exactly one variable — gdb. Population: 6 cheap calls
+(5 snapshot-backed reads + `generation_status`, the off-loop control) plus, from
+step 4, 2 **pure frame-door** calls (`list_tools`, `get_operation_schema`) that
+have no fallback and therefore hang rather than degrade. No project loaded: a
+floor is a dispatch measurement and B-1 established it is payload-independent.
+Park lever: `RS_CAM_MINIMIZE_AFTER_FRAMES`, new in `9f08ac2`.
+
+Render/artifact paths: `artifacts/b4/measurements/{pre_x11, pre_wayland,
+step1_wayland_parked, step2_wayland_parked, step4_wayland_parked, post_x11}/floor.jsonl`.
+
+Result (fact), interpretation, and uncertainty:
+
+- **Fact — M-6 is answered, and the answer is "the debugger".** Without gdb,
+  at `2973200f`, X11, 8 repeats: `ALL n=48 min 0.0004 med 0.0156 max 0.0381`.
+  `generation_status` (off-loop door) 0.0007 s; the five frame-door reads
+  0.015-0.017 s, i.e. **one 60 Hz frame interval**, which is exactly what a
+  frame-coupled dispatch on a *rendering* window should cost. B-1's
+  0.94-1.08 s band does not reproduce. Post-change, same instrument: `ALL
+  n=64 min 0.0009 med 0.0120 max 0.0209`. **No ~900 ms survives**, so R8's
+  "book a survivor separately" clause never fires; what is booked separately
+  instead is that the original number was an artefact of the measurement.
+- **Fact — the park lever, and which of the two obvious ones exists.**
+  `Window::set_visible(false)` is a literal no-op on Wayland
+  (`winit-0.30.13 .../wayland/window/mod.rs:253-255`; `is_visible()` returns
+  `None` at `:258-260`, which is separately why eframe's invisible-window
+  rescue never fires there). `set_minimized(true)` works (`:436-444`) and is
+  **one-way** — winit refuses to un-minimise. That asymmetry is a partial
+  explanation of the ledger's "unpark trigger never observed".
+- **Fact — the red, captured on a build that already owns the event loop.**
+  Step 1, Wayland, minimised: `frames 73..73 STATIC`, all five cheap reads
+  0.752 s and `served_from: "snapshot"`, `generation_status` 0.0008 s. So
+  owning the loop fixes nothing by itself, which is what a no-op step should
+  measure.
+- **Fact — step 2 is a no-op under a park, and says why.** `frames 72..72`
+  **and `pumps 85..85`**: the pump exists, is wired to `about_to_wait`, and did
+  not run once. This also disposes of a live worry — that eframe's
+  `check_redraw_requests` leaves the loop spinning in `ControlFlow::Poll` under
+  a park. It does not.
+- **Fact — the wakeup is issued and not answered.** Step 4, 3 repeats:
+  `frames 73..73`, `pumps 87..87`, **`wakeups 21`**, five cheap reads at
+  0.752 s on snapshot, and both pure frame-door calls **timing out at 15 s**.
+  `wakeups` was added to `FrameLoopBeat` for precisely this discrimination —
+  "the ping was never issued" vs "the ping was issued and ignored" are
+  different bugs and were previously indistinguishable from outside the
+  process.
+- **Fact — the mechanism, measured.** Temporary tracing at both ends: the main
+  thread's last `about_to_wait` is **488 ms after the minimise** and there is
+  never another; the seven `send_event`s that follow produce **zero**
+  `user_event` and **zero** `about_to_wait`. `/proc/<pid>/syscall` reads
+  `7 <ptr> 0x1 0xffffffff` — `poll()` on **one** fd with an **infinite**
+  timeout. That is not calloop (which polls an epoll fd, and would show many);
+  it is the Wayland/Mesa WSI waiting for a buffer release. egui-wgpu defaults
+  to `PresentMode::AutoVsync` = FIFO (`egui-wgpu-0.34.3/src/lib.rs:335`), and a
+  minimised surface never releases. The process is alive, idle, and below
+  winit.
+- **Interpretation — the design's model of G-LV.1 is incomplete, not wrong.**
+  §3.1 (winit withholds `RedrawRequested` while a frame callback is pending)
+  and §3.2 (`AboutToWait` and `UserEvent` are dispatched unconditionally
+  anyway) are both true of winit's source; I re-read both at
+  `.../wayland/event_loop/mod.rs:257-322, 356, 486-489, 515` and they say what
+  B-3 says they say. They are simply not reached. **The main thread never
+  returns to winit at all**, so no `ApplicationHandler` callback can run, and
+  an off-frame pump that lives on the main thread cannot rescue a park with no
+  main thread to pump on. This is the hazard §4 (a') rejected candidate (a')
+  for — "under FIFO present that can block the main thread inside
+  `get_current_texture`, converting a stalled dispatcher into a hung process"
+  — arriving **without anyone forcing a render**. B-3 marked it NOT MEASURED
+  and said nothing in the recommendation depended on it being true. It is
+  true, and the recommendation does depend on it.
+- **Interpretation — what steps 1-4 are worth if kept.** Dispatch is genuinely
+  off the paint path and the composition works on a rendering window: the
+  post-change floor is 12.0 ms median against 15.6 ms, the frame bracket now
+  belongs to the paint alone (so `healthy` cannot be faked by a pump), and
+  `frame_loop` reports `pumps` and `wakeups` as separate facts. None of that
+  helps a present-blocked park.
+- **Uncertainty, stated.** (a) **One compositor, one lever.** Everything above
+  is GNOME/mutter 46 on Wayland with a *minimised* window. The 2026-08-07
+  incident and the ~9.5 h A-1/A-2 park were **occluded or merely unfocused,
+  and one was explicitly "visible"** — I could not reproduce those states and
+  have **not** shown they share this mechanism. A visible-but-frozen window is
+  *consistent* with a present block, and that is the strongest thing I can say.
+  (b) The blocking `poll()` is attributed to the WSI by fd arity, timeout and
+  the presence of `sync_file`/dmabuf fds, **not** by a stack trace — getting
+  one needs gdb as parent (`yama/ptrace_scope == 1`), which I did not do inside
+  a wave whose headline number is a latency. (c) **Whether `AppController` is
+  `!Send` is still NOT ESTABLISHED** — the design does not depend on it and I
+  did not add the `assert_send` probe, because the composition needs no `Send`
+  either way. (d) The two contract sentries I inverted encode the *new* text;
+  if the operator reverts steps 1-4 they must revert with it.
+
+Red-first evidence / fingerprints changed: **no fingerprint captured, moved or
+re-pinned; no gate, threshold or recommendation number touched.** This wave
+changed dispatch plumbing, not geometry, feeds or generation — §0.2's STOP was
+never approached, and the suites that would have caught it (244 viz lib + 14
+wizard + 11 e2e) are green. Red-first evidence: the step-1 parked census IS the
+red, taken on a build that already contains C1+C2 so it cannot be confused with
+"we hadn't started yet". Two new sentries
+(`every_mcp_enqueue_also_fires_the_event_loop_waker`,
+`a_server_with_no_waker_still_enqueues`) were written red against the
+pre-waker code. Three assertions were **inverted in place** with their
+pre-fix strings preserved in comments, because the parked-loop reply text
+asserted a cause ("dispatched from a GUI repaint") that dispatch decoupling
+made false.
+
+Verification (focused commands + exact known-red state):
+
+- `cargo test -p rs_cam_viz -q` — **244 lib + 14 + 14 mcp_escape_hatches + 11
+  wizard_e2e, 0 failed**. The escape hatches were green after every one of the
+  four commits; the count moved 12 -> 14 only by addition.
+- `cargo clippy -p rs_cam_viz --all-targets -- -D warnings` — clean after every
+  commit. **Workspace-wide clippy could not be run**: `cargo clippy --workspace`
+  fails in `crates/rs_cam_core/tests/arc_fit_disposition_a5.rs` and
+  (transiently) `crates/rs_cam_core/src/feeds/rationale.rs`, both uncommitted
+  work belonging to the parallel A-5 wave in this shared tree. Not my files,
+  not touched.
+- Non-MCP launch + clean quit under the new `create_native` path: exit 0,
+  screenshot written. MCP round-trip over the new host: unchanged medians.
+- Two `rs_cam_viz` lib tests — `analysis_cancel_completes_quickly` and
+  `analysis_requests_replace_stale_work` — failed once each while A-5 held
+  4 concurrent rustc processes, and pass serially (`7 passed` on
+  `--test-threads=1 analysis_`). Wall-clock assertions under load;
+  environmental, not this wave's.
+- Slot discipline: `ps -eo comm | grep -cE "^(cargo|rustc)$"` before each
+  launch. A-5 ran concurrently in the same tree and target dir throughout; jobs
+  serialised on cargo's build-directory lock. No release build. Disk 116 G free.
+- `planning/airrun_2026-06-01/wanaka.toml`, `planning/review_2026-07-27/` and
+  the operator's review file: untouched, unstaged, still untracked/modified as
+  they were at wave start. Explicit staging only; no `--amend`.
+
+NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition:
+
+- **G-LV.1 is NOT fixed and the ledger row stays open.** Owner: Checkpoint N.
+- **NOT BUILT: step 5 (C4 `AppEvent::needs_app` class split), step 6 (the six
+  frame-coupled drivers + heartbeat deletion), step 7 (`screenshot_gui`
+  refusal + `visible_on_next_frame`).** Blocker: the step-4 stop bar, which
+  Checkpoint M made explicit. **The 100 ms heartbeat therefore stays**, as M-5
+  requires when step 6 defers.
+- **NOT EXERCISED: the hidden-window `generate_all` fixpoint (step 5's bar).**
+  Blocker: the same. It cannot pass while the main thread is in the present.
+- **NOT EXERCISED: an occluded or screen-locked park, and a visible-but-frozen
+  park.** Blocker: no lever — the compositor decides, and GNOME's Eval
+  interface is closed. This is the gap that matters most, because it is the
+  incident's actual state. Re-open condition: a second machine, a nested
+  compositor, or an operator willing to reproduce the park interactively.
+- **NOT MEASURED: whether a non-FIFO present mode removes the block.**
+  `NativeOptions::wgpu_options.present_mode` is a one-line change from
+  `AutoVsync` to `Mailbox`/`Immediate`, and the evidence points straight at it
+  — but it changes how the GUI renders for **every** interactive session
+  (tearing, idle CPU, frame pacing), which is not a call to make unilaterally
+  inside a dispatch wave. Offered to Checkpoint N as N-2, not taken.
+- **CLAUDE.md's MCP section, plan §0 rule 10 and `bin/main.rs:52-62`** still
+  tell agents the window must be visible. That is **still true** on this
+  evidence, so leaving them is correct rather than merely deferred. They become
+  wrong only if N unblocks the remaining steps.
+
+Next action / checkpoint request: **Checkpoint N requested**, three questions.
+**N-1 — keep or revert steps 1-4?** §9's NO-GO says a half-decoupled dispatcher
+should be reverted rather than kept as partial progress, because "a third state
+for an agent to reason about" is the expensive kind. Against that: the four
+commits are behaviour-preserving on a rendering window, measurably no slower
+(12.0 ms vs 15.6 ms median), and they are the entire precondition for any later
+attempt. My recommendation is **keep**, precisely because the honest reporting
+went in with them — `pumps` and `wakeups` are what let this wave diagnose the
+present block from outside the process, and reverting would take that away
+along with the plumbing. **N-2 — may a follow-up wave test `PresentMode`?**
+The measured cause is a FIFO acquire that never returns; `Mailbox`/`Immediate`
+is the obvious candidate and a real rendering trade-off for every session, so
+it wants an operator ruling and its own before/after, not a quiet default flip.
+**N-3 — is an occluded/visible park reproducible on the operator's machine?**
+Everything above is one compositor and one lever (minimise). Until a visible or
+occluded park is instrumented, "G-LV.1 is a present block" is a strong
+hypothesis fitted to one reproduction, and I have not claimed more. Orchestrator
+actions: put N to the operator; note that if N-1 rules "revert", the two
+inverted contract sentries and the `pumps`/`wakeups` fields revert with the code.
