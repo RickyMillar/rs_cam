@@ -1037,6 +1037,11 @@ pub struct PendingGuiScreenshot {
     /// Set once the `ViewportCommand::Screenshot` has been sent; the
     /// next `egui::Event::Screenshot` in raw input completes this slot.
     pub capture_requested: bool,
+    /// When the request was accepted. The refusal in
+    /// [`Self::park_refusal`] is measured from here, not from the last
+    /// frame, so an idle-but-healthy window is never refused: the request
+    /// itself asks for a repaint, and a window that can paint paints.
+    pub requested_at: Instant,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
 }
 
@@ -1053,6 +1058,65 @@ impl PendingGuiScreenshot {
         }
         self.capture_requested = true;
         true
+    }
+
+    /// Checkpoint M-4: **refuse, with the mechanism named** — the one place the
+    /// architecture is deliberately less capable than a wish.
+    ///
+    /// `screenshot_gui` is the single MCP tool that genuinely needs a *rendered
+    /// frame*: it sends `ViewportCommand::Screenshot` and the pixels arrive as
+    /// an `egui::Event::Screenshot` one to two frames later. Everything else in
+    /// the tool surface — including `screenshot_simulation` and
+    /// `screenshot_toolpath`, which are CPU rasterisers — answers from the
+    /// off-frame pump. So on a window that is not rendering there are exactly
+    /// three options, and two are wrong: **blocking** is what it did (the slot
+    /// is armed and the capture never fires, so the call hangs until the
+    /// caller's timeout), and **waking to force a render** risks a hung main
+    /// thread under a present-blocked park. This returns the third.
+    ///
+    /// **`Some(reason)` only when both conditions hold**, and the second is why
+    /// this is not merely `is_parked()`:
+    ///
+    /// 1. the frame loop is parked — no frame for [`PARKED_FRAME_LOOP`]; and
+    /// 2. at least that long has passed **since this request arrived**.
+    ///
+    /// Without (2) an idle session would refuse spuriously. An idle GUI with no
+    /// repaint driver has an old last-frame by definition — that is what idle
+    /// *is* — and `mcp_screenshot_gui` calls `request_repaint()` when it stores
+    /// the slot, so a healthy window produces a frame in milliseconds. The
+    /// grace period separates "has not painted recently" from "cannot paint".
+    ///
+    /// **What this does NOT cover, stated because it is the failure mode that
+    /// started all of this.** Under a *present-blocked* park — the FIFO
+    /// mechanism of G-LV.1 — the main thread is blocked below winit and
+    /// `about_to_wait` does not run, so nothing calls this and the refusal
+    /// cannot be delivered either. It covers a window that has stopped painting
+    /// while its event loop still runs, which is what a minimised X11 window
+    /// does (N-2 measured `frames` static at 252 with `pumps` climbing
+    /// 255→466). The present-blocked case is addressed by not being in it:
+    /// Checkpoint O-1's `--mcp` flip to `AutoNoVsync`.
+    pub fn park_refusal(&self, frame_loop: &FrameLoopBeat) -> Option<String> {
+        if !frame_loop.is_parked() || self.requested_at.elapsed() < PARKED_FRAME_LOOP {
+            return None;
+        }
+        let age = frame_loop.frame_age().map_or_else(
+            || "never".to_owned(),
+            |d| format!("{:.1}s ago", d.as_secs_f64()),
+        );
+        Some(format!(
+            "screenshot_gui REFUSED: this window is not rendering, so there is no frame to \
+             capture. A GUI screenshot is the one MCP call that needs a real rendered frame — \
+             it is taken by the render backend, not by a rasteriser. Last frame {age}; \
+             frame_loop.healthy is false and has been for at least {}s. This is not a timeout \
+             and retrying will not help. Mechanism: on Wayland a hidden, occluded or \
+             screen-locked surface receives no compositor frame callbacks, and under the FIFO \
+             present family the main thread can block inside the present itself. Remedies, in \
+             order: make the window visible; or relaunch with WAYLAND_DISPLAY unset so winit \
+             picks X11/XWayland; and check frame_loop.present_mode.negotiated — if it reads \
+             Fifo or FifoRelaxed the park hazard is in force. screenshot_simulation and \
+             screenshot_toolpath are CPU rasterisers and still work.",
+            PARKED_FRAME_LOOP.as_secs()
+        ))
     }
 }
 
@@ -1516,6 +1580,7 @@ mod tests {
                 path: "/tmp/test.png".to_owned(),
                 frames_before_capture: frames,
                 capture_requested: false,
+                requested_at: Instant::now(),
                 response_tx: tx,
             },
             rx,
@@ -1561,5 +1626,74 @@ mod tests {
         let taken = pending_mcp.gui_screenshot.take();
         assert!(taken.is_some());
         assert!(pending_mcp.gui_screenshot.is_none());
+    }
+
+    /// Checkpoint M-4, the refusal — and the two states it must tell apart.
+    ///
+    /// **The pre-fix behaviour this inverts:** `pump_mcp_gui_screenshot` armed
+    /// the capture and requested a repaint whatever the frame loop was doing.
+    /// On a window that had stopped painting the `ViewportCommand::Screenshot`
+    /// either never issued or never came back, and the call hung until the
+    /// caller gave up — N-2 measured that as a 60 s timeout with 0 bytes on
+    /// disk. There was no code path that could answer.
+    #[test]
+    fn a_parked_frame_loop_refuses_a_gui_screenshot_with_the_mechanism_named() {
+        let (mut slot, _rx) = pending(0);
+        // The request arrived before the park was declared, which is the real
+        // ordering: a caller does not know the window has stopped painting.
+        slot.requested_at = Instant::now() - (PARKED_FRAME_LOOP + Duration::from_millis(500));
+
+        let refusal = slot
+            .park_refusal(&beat_last_ran(Duration::from_secs(268), 1, false))
+            .expect("a parked frame loop must refuse rather than arm a capture nobody will take");
+
+        assert!(
+            refusal.contains("REFUSED"),
+            "the caller must be able to tell this from a timeout: {refusal}"
+        );
+        for mechanism in [
+            "compositor frame callbacks",
+            "WAYLAND_DISPLAY",
+            "present_mode.negotiated",
+            "screenshot_simulation",
+        ] {
+            assert!(
+                refusal.contains(mechanism),
+                "M-4 says refuse WITH THE MECHANISM NAMED — missing {mechanism:?}: {refusal}"
+            );
+        }
+        assert!(
+            refusal.contains("retrying will not help"),
+            "a refusal an agent retries in a loop is a hang with extra steps: {refusal}"
+        );
+    }
+
+    /// The false-positive this must not have: a window that simply has not
+    /// painted lately is not a window that cannot paint.
+    ///
+    /// Both halves matter. A live loop is never refused however old the
+    /// request; and a *parked* loop is not refused until the request itself has
+    /// had [`PARKED_FRAME_LOOP`] to be served, because `mcp_screenshot_gui`
+    /// asks for a repaint when it stores the slot and a healthy window answers
+    /// that in milliseconds. Once the 100 ms MCP heartbeat is deleted (M-5),
+    /// an idle session's last frame is arbitrarily old by design, and without
+    /// this grace period every idle screenshot would be refused.
+    #[test]
+    fn a_live_or_freshly_requested_capture_is_never_refused() {
+        let (mut slot, _rx) = pending(0);
+        slot.requested_at = Instant::now() - Duration::from_secs(600);
+        assert!(
+            slot.park_refusal(&live_beat()).is_none(),
+            "a rendering window is unaffected by this contract"
+        );
+
+        let (fresh, _rx2) = pending(0);
+        assert!(
+            fresh
+                .park_refusal(&beat_last_ran(Duration::from_secs(268), 1, false))
+                .is_none(),
+            "a just-arrived request has not yet had its repaint answered — refusing it here \
+             would turn every idle-session screenshot into a false negative"
+        );
     }
 }

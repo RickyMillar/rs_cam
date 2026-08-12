@@ -4153,6 +4153,10 @@ impl super::RsCamApp {
             path: path.to_owned(),
             frames_before_capture,
             capture_requested: false,
+            // M-4's refusal clock starts here, not at the last frame — see
+            // `PendingGuiScreenshot::park_refusal` for why an idle window must
+            // not be refused.
+            requested_at: std::time::Instant::now(),
             response_tx,
         });
         // Keep frames pumping while the app is headless-idle so the
@@ -4164,6 +4168,37 @@ impl super::RsCamApp {
     /// the `ViewportCommand::Screenshot` once the resize-settle countdown
     /// drains, and keeps requesting repaints so frames pump while idle.
     pub(crate) fn pump_mcp_gui_screenshot(&mut self, ctx: &egui::Context) {
+        // Checkpoint M-4. Read the refusal BEFORE arming the capture: arming it
+        // on a loop that will never paint is exactly the hang this replaces.
+        let refusal = {
+            let Some(pending) = self
+                .controller
+                .pending_mcp
+                .as_ref()
+                .and_then(|p| p.gui_screenshot.as_ref())
+            else {
+                return;
+            };
+            pending.park_refusal(self.mcp_reads.frame_loop())
+        };
+        if let Some(reason) = refusal {
+            // `take` the slot rather than leaving it armed — a refused request
+            // is finished, and a stale slot would reject the caller's next
+            // attempt with "another capture is already in flight".
+            if let Some(slot) = self
+                .controller
+                .pending_mcp
+                .as_mut()
+                .and_then(|p| p.gui_screenshot.take())
+            {
+                tracing::warn!("{reason}");
+                let _ = slot.response_tx.send(McpResponse {
+                    result: Ok(text(reason)),
+                });
+            }
+            return;
+        }
+
         let Some(pending) = self
             .controller
             .pending_mcp
