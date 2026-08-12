@@ -1,0 +1,28 @@
+A-5 / F-T35 — Suggest-side before/after, raw harness output
+Harness: crates/rs_cam_core/tests/arc_fit_disposition_a5.rs::arc_fit_lift_before_after_by_family
+Build:   cargo test -j 4 -p rs_cam_core --test arc_fit_disposition_a5 (debug)
+Tree:    tech-debt-3 @ 2973200f + this wave's working tree
+Date:    2026-08-12
+No simulation involved — this is the pre-sim Suggest path only.
+
+=== A-5 step 2/3 — Suggest-side before/after (no simulation) ===
+fixture                                          ratio      source  feed_B(a)     feed_A     feed_C       A/B       A/C
+A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted    0.25  Calibrated     1215.0     6912.0     1728.0     5.69×     4.00×
+      band Some((0.038, 0.07))  target 0.05400  cap None  ceiling 15000  rpm solved-against 16000 (authored 16000, feeds.rpm 16000)  flutes 2
+      commanded advance/tooth  before 0.03797  after 0.21600 mm  (band max 0.07000)
+A3D-2 Ø8 3F endmill / WhiteOak / stock ceiling    0.25  Calibrated     2243.0     6000.0     3189.8     2.67×     1.88×
+      band Some((0.04676390535535559, 0.0861440361809182))  target 0.06645  cap Some(MaxFeed)  ceiling 6000  rpm solved-against 16000 (authored 14000, feeds.rpm 16000)  flutes 3
+      commanded advance/tooth  before 0.04673  after 0.12500 mm  (band max 0.08614)
+DC-1 Ø3 ball / HardMaple / stock ceiling          0.15  Calibrated     1487.0     4405.0      660.7     2.96×     6.67×
+      band Some((0.011592084449498944, 0.023184168898997888))  target 0.01739  cap None  ceiling 6000  rpm solved-against 19000 (authored 18000, feeds.rpm 19000)  flutes 2
+      commanded advance/tooth  before 0.03913  after 0.11592 mm  (band max 0.02318)
+DC-2 Ø2-tip tapered ball / WhiteOak / small router    0.15  Calibrated     1029.0     2500.0      478.4     2.43×     5.23×
+      band Some((0.00839317014834308, 0.01678634029668616))  target 0.01259  cap Some(MaxFeed)  ceiling 2500  rpm solved-against 19000 (authored 20000, feeds.rpm 19000)  flutes 2
+      commanded advance/tooth  before 0.02708  after 0.06579 mm  (band max 0.01679)
+test arc_fit_lift_before_after_by_family ... ok
+
+Legend
+  feed_B(a) = FeedRaisedForChipload::requested_mm_per_min  — disposition (a), retire
+  feed_A    = FeedRaisedForChipload::raised_mm_per_min     — shipped today
+  feed_C    = min(lut_target × rpm × flutes, cutting ceiling) — the "re-key to 1.0" reference
+  A/C       = the review's retirement blast radius, re-measured
