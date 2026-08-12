@@ -61,8 +61,35 @@
 //! table is in `cross_gate_boundary_semantics_at_exact_equality`.
 //!
 //! Measured 2026-08-13, branch `tech-debt-3`, parent `7d8a2ea0`, dev
-//! profile. Nothing here changes behaviour — A-6 is a research wave and
-//! the fix belongs to Checkpoint K / A-7.
+//! profile. Nothing in A-6 changed behaviour — A-6 was a research wave.
+//!
+//! # A-7 status, 2026-08-13 — riders 2 and 4 are DISCHARGED
+//!
+//! Checkpoint K (b1) landed [`rs_cam_core::tool_load::boundary`]: bounds
+//! are inclusive with a relative epsilon of 8 ulp, stated on
+//! `ChipBounds` as methods, and every gate comparison in the crate goes
+//! through them. The two assertions that pinned the defect are
+//! **inverted in place** rather than deleted — a fixture that once
+//! caught a defect is the thing that catches its return:
+//!
+//! - `rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling`
+//!   read **Exceeds at 12 of 181** RPM values; it now reads **0 of 181**,
+//!   and a companion sweep proves a genuine **5 %-over** feed still trips
+//!   at all 181, so the epsilon is not a tolerance in disguise.
+//! - `cross_gate_boundary_semantics_at_exact_equality`'s "+1 ulp trips"
+//!   row is now "+1 ulp absorbed", with a "+9 ulp still trips" row
+//!   beside it bounding the slack.
+//!
+//! Riders 1, 2b and 3 are **unchanged and still true**: the floor still
+//! collapses onto the ceiling (that ruling was correct and stands), the
+//! band still moves 14.16 % across a DOC sweep, and no
+//! `BindingConstraint` variant names the clamp — Checkpoint K (d2)
+//! deliberately chose the *recipe* record over the modulator's
+//! vocabulary, so rider 3's exhaustive match is expected to keep
+//! compiling. What (d2) did land is `CommandedStage::clamped_to`, and
+//! rider 1's consequence is now reported as
+//! `ChiploadVerdict::Within::ceiling_advisory` — *clamped*, not
+//! *exceeds*.
 
 #![allow(
     clippy::unwrap_used,
@@ -407,34 +434,53 @@ fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
              printed-at-6dp: {observed:.6} vs {band_max:.6}"
         );
     }
+    // **DISCHARGED at Checkpoint K (b1), A-7, 2026-08-13.**
+    //
+    // Pre-fix this assertion read `!flipped.is_empty()` and measured
+    // **Exceeds at 12 of 181 RPM values** — every trip exactly 1 ulp
+    // (delta 1.734723475976807e-18), printing `0.011525 vs 0.011525`.
+    // `ChipBounds::exceeds_high` now applies
+    // `boundary::BOUNDARY_EPSILON_REL` (8 ulp, relative), so the
+    // reconstruction noise is absorbed and the assertion is INVERTED:
+    // a feed parked exactly on the gate's own ceiling is Within at
+    // every RPM. The fixture is kept, not deleted — it is what would
+    // catch the epsilon being removed.
     assert!(
-        !flipped.is_empty(),
-        "**G-CHIP-ULP did not reproduce.** No RPM in 6 000..24 000 makes the gate call a feed \
-         parked exactly on its own band ceiling `Exceeds`. If a boundary contract has since \
-         landed (Checkpoint K (b)), this fixture is discharged — record the commit and retire \
-         it. Otherwise the reproduction lost its grip."
+        flipped.is_empty(),
+        "**G-CHIP-ULP regressed.** A feed parked exactly on the gate's own band ceiling read \
+         `Exceeds(High)` at {} of {} RPM values. The boundary contract (Checkpoint K (b1), \
+         `tool_load::boundary`) exists to absorb exactly this: first trips {:?}",
+        flipped.len(),
+        flipped.len() + held,
+        &flipped[..flipped.len().min(3)]
     );
-    // The flip is a reconstruction artefact, not a magnitude: every
-    // trip is within a couple of ulp, and prints identically to the
-    // operator at any sane precision.
-    for (rpm, observed, delta) in &flipped {
-        let ulps = delta / (band_max * f64::EPSILON);
-        assert!(
-            ulps.abs() <= 4.0,
-            "rpm {rpm}: the flip must be a rounding artefact ({ulps} ulp is not)"
-        );
-        assert_eq!(
-            format!("{observed:.9}"),
-            format!("{band_max:.9}"),
-            "rpm {rpm}: observed and bound must be indistinguishable at operator precision — \
-             that is what makes the printed verdict unexplainable"
-        );
+    assert_eq!(
+        held, 181,
+        "every RPM in 6 000..24 000 must now read Within — {held} did"
+    );
+
+    // …and the epsilon is NOT a tolerance. A genuine 5 %-over feed on
+    // the same construction still trips at every RPM. This is the half
+    // Checkpoint K (c2) depends on: without it, demoting the boundary
+    // case would demote real exceedances too.
+    let mut genuine_trips = 0usize;
+    for rpm_hundreds in 60..=240u32 {
+        let rpm = rpm_hundreds * 100;
+        let divisor = f64::from(rpm) * f64::from(flutes);
+        let feed = band_max * 1.05 * divisor;
+        match gate_verdict(feed, rpm, flutes, axial_doc) {
+            ChiploadVerdict::Exceeds {
+                side: ChipSide::High,
+                ..
+            } => genuine_trips += 1,
+            other => panic!(
+                "a 5 %-over feed must still Exceed at rpm {rpm}; got {other:?}. The boundary \
+                 epsilon has become a tolerance."
+            ),
+        }
     }
-    assert!(
-        held > 0,
-        "the same construction must ALSO produce Within at other RPMs — if every RPM tripped \
-         this would be a systematic off-by-one, not the float-noise defect the ledger names"
-    );
+    println!("genuine 5 %-over feed: Exceeds at {genuine_trips} of 181 RPM values");
+    assert_eq!(genuine_trips, 181);
 }
 
 // ---------------------------------------------------------------------
@@ -649,21 +695,46 @@ fn cross_gate_boundary_semantics_at_exact_equality() {
         "| chipload | high | `observed > max × (1 + breakage)` | **Within** | \
          `ToleranceBands::breakage` (default 0.0) |"
     );
-    // One ulp above flips it — the whole of G-CHIP-ULP in one line.
+    // One ulp above used to flip it — the whole of G-CHIP-ULP in one
+    // line. **Checkpoint K (b1), 2026-08-13: it no longer does.** The
+    // row is kept and inverted so the table still reports the live
+    // contract rather than a historical one.
     let one_ulp_above = f64::from_bits(band_max.to_bits() + 1);
     let feed_ulp = one_ulp_above * f64::from(rpm_exact) * f64::from(flutes);
     let v_ulp = gate_verdict(feed_ulp, rpm_exact, flutes, axial_doc);
     assert!(
+        matches!(v_ulp, ChiploadVerdict::Within { .. }),
+        "one ulp above the bound must be ABSORBED by the boundary epsilon — got {v_ulp:?}"
+    );
+    println!(
+        "| chipload | high, +1 ulp | same, via `ChipBounds::exceeds_high` | **Within** \
+         (absorbed) | `BOUNDARY_EPSILON_REL` = 8 ulp, relative |"
+    );
+    // Twenty ulp above is outside the contract's slack and still trips —
+    // the epsilon is bounded, not open-ended.
+    //
+    // Why 20 and not 9: `BOUNDARY_EPSILON_REL` is `8 × f64::EPSILON`
+    // **relative**, and a relative epsilon is not a fixed ulp count.
+    // For `x ∈ [2ᵉ, 2ᵉ⁺¹)`, `x × f64::EPSILON ∈ [1 ulp, 2 ulp)`, so the
+    // slack is **8–16 ulp** depending on where the bound sits in its
+    // binade — 8 at the bottom, just under 16 at the top. On this
+    // fixture's bound it is ~11.8 ulp, which is why a 9-ulp probe is
+    // absorbed and is NOT a defect. 20 clears the whole range.
+    let above = f64::from_bits(band_max.to_bits() + 20);
+    let feed_20ulp = above * f64::from(rpm_exact) * f64::from(flutes);
+    let v_20ulp = gate_verdict(feed_20ulp, rpm_exact, flutes, axial_doc);
+    assert!(
         matches!(
-            v_ulp,
+            v_20ulp,
             ChiploadVerdict::Exceeds {
                 side: ChipSide::High,
                 ..
             }
         ),
-        "one ulp above the bound must trip — got {v_ulp:?}"
+        "twenty ulp above the bound is past the 8–16 ulp slack and must still trip — got \
+         {v_20ulp:?}"
     );
-    println!("| chipload | high, +1 ulp | same | **Exceeds(High)** | — |");
+    println!("| chipload | high, +20 ulp | same | **Exceeds(High)** | slack exhausted |");
     let _ = divisor;
 
     // --- chipload low side --------------------------------------------

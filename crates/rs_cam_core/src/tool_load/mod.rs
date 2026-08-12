@@ -14,6 +14,7 @@
 //! criterion is reported independently; UI and MCP render them
 //! independently.
 
+pub mod boundary;
 pub mod chipload;
 pub mod deflection;
 pub mod display;

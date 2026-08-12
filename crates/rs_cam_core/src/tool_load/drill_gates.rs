@@ -198,7 +198,11 @@ fn evaluate_peck_adequacy(drill_op: &DrillOp, summary: &DrillToolpathSummary) ->
     // so `threshold` needs no correction here. It carries its band for
     // uniformity (R-3) — this gate has no advisory tier at all, which
     // is itself worth being able to see from the outside.
-    if peak_peck_dtd <= threshold {
+    // Checkpoint K (b1) — the drill gates carried NO epsilon dial at
+    // all. They do not exhibit the multiply→divide reconstruction defect
+    // (their observations are single divisions), but the contract is
+    // about the comparison, not about which gate has been bitten.
+    if !super::boundary::exceeds_high(peak_peck_dtd, threshold, 0.0) {
         DrillGateOutcome::Within {
             observed: peak_peck_dtd,
             threshold,
@@ -235,7 +239,9 @@ pub fn classify_plunge_feed(
     let diameter = diameter_mm.max(f64::MIN_POSITIVE);
     let observed = feed_rate_mm_min / diameter;
     let (lo, hi) = plunge_feed_envelope(material);
-    if observed < lo {
+    // Checkpoint K (b1) — same contract as every milling gate; these
+    // two comparisons previously had no epsilon of any kind.
+    if super::boundary::below_low(observed, lo, 0.0) {
         DrillGateOutcome::Exceeds {
             observed,
             threshold: lo,
@@ -243,7 +249,7 @@ pub fn classify_plunge_feed(
             envelope_lo: Some(lo),
             envelope_hi: Some(hi),
         }
-    } else if observed > hi {
+    } else if super::boundary::exceeds_high(observed, hi, 0.0) {
         DrillGateOutcome::Exceeds {
             observed,
             threshold: hi,

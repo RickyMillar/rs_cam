@@ -290,8 +290,15 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // Layer 1 tolerance band: widen the peak-vs-available trigger by
     // `power_breach`. Default is 0 (preserves the strict machine-ceiling
     // behaviour) — see `ToleranceBands::power_breach` doc.
-    let power_trigger = peak_available_at_peak * (1.0 + tolerance.power_breach);
-    if peak_available_at_peak > 0.0 && peak_power > power_trigger {
+    // Checkpoint K (b1) — through the shared boundary contract, so the
+    // trigger is `bound × (1 + dial)` widened by the boundary epsilon in
+    // exactly one place. This gate's observation is integrated rather
+    // than reconstructed, so it does not exhibit G-CHIP-ULP; it is
+    // inside the contract because "has no epsilon because nothing has
+    // bitten yet" is not a contract.
+    if peak_available_at_peak > 0.0
+        && super::boundary::exceeds_high(peak_power, peak_available_at_peak, tolerance.power_breach)
+    {
         tracing::warn!(
             verdict = "Exceeds",
             peak_kw = peak_power,
@@ -310,7 +317,12 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // power exceeded the (possibly tolerance-widened) machine ceiling,
     // even though the steady-state trip didn't fire.
     let entry_spike = match entry_peak_idx {
-        Some(idx) if entry_peak_available > 0.0 && entry_peak_power > entry_peak_available => {
+        // Checkpoint K (b1) — the entry-spike advisory reads the same
+        // boundary contract as the trip, at zero tolerance.
+        Some(idx)
+            if entry_peak_available > 0.0
+                && super::boundary::exceeds_high(entry_peak_power, entry_peak_available, 0.0) =>
+        {
             let locality = trace
                 .samples
                 .get(idx)
