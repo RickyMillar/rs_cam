@@ -7,6 +7,15 @@ mod io;
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
+    clippy::field_reassign_with_default
+)]
+mod results_parity_tests;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
     clippy::indexing_slicing
 )]
 mod tests;
