@@ -287,8 +287,10 @@ pub fn evaluate(
     };
     let bounds = standard_bounds();
 
+    // Checkpoint K (b1) — shared boundary contract; see `power.rs` for
+    // why a gate with no reconstruction defect is inside it anyway.
     let exceeds_trigger = EXCEEDS_BOUND_MM * (1.0 + tolerance.deflection_breach);
-    if peak_delta_mm > exceeds_trigger {
+    if super::boundary::exceeds_high(peak_delta_mm, EXCEEDS_BOUND_MM, tolerance.deflection_breach) {
         tracing::warn!(
             verdict = "Exceeds",
             peak_mm = peak_delta_mm,
@@ -303,7 +305,11 @@ pub fn evaluate(
             confidence: Confidence::Approximate(base_detail),
         };
     }
-    let confidence = if peak_delta_mm > WITHIN_BOUND_MM {
+    // Checkpoint K (b1) — the confidence tier is a bound comparison too,
+    // and an operator who sees "surface finish degradation expected"
+    // decided by the last bit is owed the same contract as one who sees
+    // a verdict decided by it.
+    let confidence = if super::boundary::exceeds_high(peak_delta_mm, WITHIN_BOUND_MM, 0.0) {
         Confidence::Approximate(format!(
             "{base_detail} — surface finish degradation expected"
         ))
@@ -316,7 +322,7 @@ pub fn evaluate(
     // deflection landed past the EXCEEDS bound, even though the
     // steady-state trip didn't fire.
     let entry_spike = match entry_peak_idx {
-        Some(idx) if entry_peak_delta_mm > EXCEEDS_BOUND_MM => {
+        Some(idx) if super::boundary::exceeds_high(entry_peak_delta_mm, EXCEEDS_BOUND_MM, 0.0) => {
             let locality = trace
                 .samples
                 .get(idx)

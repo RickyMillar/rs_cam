@@ -709,11 +709,64 @@ pub struct EntrySpike {
 /// some LUT rows ship only an upper bound — the chipload evaluator can
 /// still flag breakage from `PeakHigh` while burn-risk falls back to
 /// `Unmodeled` for that row.
+///
+/// # The comparison lives on the type — Checkpoint K (b1), 2026-08-13
+///
+/// Use [`Self::exceeds_high`] / [`Self::below_low`] / [`Self::contains`]
+/// rather than reading the fields and writing `>`. That is the whole
+/// point of the ruling: a bare comparison against `max_mm_per_tooth` is
+/// how G-CHIP-ULP shipped — a verdict decided by the last bit of a
+/// multiply/divide round trip. See [`crate::tool_load::boundary`] for
+/// the contract and the measurement behind the epsilon.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChipBounds {
     pub min_mm_per_tooth: Option<f64>,
     pub max_mm_per_tooth: f64,
     pub source: ChipBoundsSource,
+}
+
+impl ChipBounds {
+    /// Breakage side. `true` when `observed` is above the band maximum
+    /// widened by `breakage_tolerance`
+    /// ([`super::ToleranceBands::breakage`]) and the boundary epsilon.
+    ///
+    /// Pass `0.0` where no tolerance applies (entry-spike advisories,
+    /// display comparisons) — the epsilon still does.
+    #[must_use]
+    pub fn exceeds_high(&self, observed: f64, breakage_tolerance: f64) -> bool {
+        super::boundary::exceeds_high(observed, self.max_mm_per_tooth, breakage_tolerance)
+    }
+
+    /// Burn side. `None` when the row publishes no minimum — which is
+    /// **not** the same as `Some(false)`, and the `Option` is here so no
+    /// caller can collapse "unmodelled" into "fine".
+    #[must_use]
+    pub fn below_low(&self, observed: f64, burn_tolerance: f64) -> Option<bool> {
+        self.min_mm_per_tooth
+            .map(|min| super::boundary::below_low(observed, min, burn_tolerance))
+    }
+
+    /// `true` when `observed` trips neither side at zero tolerance. A
+    /// row with no minimum can only fail on the high side.
+    #[must_use]
+    pub fn contains(&self, observed: f64) -> bool {
+        !self.exceeds_high(observed, 0.0) && !self.below_low(observed, 0.0).unwrap_or(false)
+    }
+
+    /// `true` when `observed` sits **on** the band ceiling — within the
+    /// boundary epsilon, i.e. indistinguishable from it at float
+    /// precision.
+    ///
+    /// This is the proximity half of the Checkpoint K (c2) ceiling
+    /// advisory. It is deliberately not a "close to" test: the recipe
+    /// this fires for was placed on the ceiling *by the engine's own
+    /// rubbing-floor clamp*, so it lands there exactly, modulo the
+    /// reconstruction noise that made the verdict unstable in the first
+    /// place.
+    #[must_use]
+    pub fn is_at_max(&self, observed: f64) -> bool {
+        super::boundary::is_at_bound(observed, self.max_mm_per_tooth)
+    }
 }
 
 /// Which side of the LUT envelope a chipload exceedance landed on.

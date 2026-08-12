@@ -56,7 +56,9 @@ pub fn check_plunge_stress(
     plunge_rate_mm_min: f64,
 ) -> Option<PlungeStressWarning> {
     let cap = safe_plunge_cap_mm_min(geometry, diameter_mm)?;
-    if plunge_rate_mm_min > cap {
+    // Checkpoint K (b1) — same boundary contract as the load gates; this
+    // one has no tolerance dial and never had an epsilon.
+    if crate::tool_load::boundary::exceeds_high(plunge_rate_mm_min, cap, 0.0) {
         let tip_d = match geometry {
             ToolGeometryHint::Ball => diameter_mm,
             ToolGeometryHint::TaperedBall { tip_radius, .. } => {

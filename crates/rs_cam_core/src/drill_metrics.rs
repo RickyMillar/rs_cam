@@ -347,8 +347,14 @@ pub fn build_drill_toolpath_summary(
     } else {
         0.0
     };
-    let peck_pattern_adequate =
-        per_peck_max_dtd <= per_peck_max_depth_to_diameter(&drill_op.material);
+    // Checkpoint K (b1) — the same comparison `drill_gates::
+    // evaluate_peck_adequacy` makes, through the same contract, so the
+    // stored boolean and the gate's verdict cannot disagree at a bound.
+    let peck_pattern_adequate = !crate::tool_load::boundary::exceeds_high(
+        per_peck_max_dtd,
+        per_peck_max_depth_to_diameter(&drill_op.material),
+        0.0,
+    );
     let effective_welding_dtd =
         effective_chip_welding_dtd(max_dtd, per_peck_max_dtd, drill_op.cycle);
     let chip_welding_risk = classify_chip_welding(effective_welding_dtd, &drill_op.material);
@@ -399,11 +405,21 @@ pub fn effective_chip_welding_dtd(total_dtd: f64, per_peck_max_dtd: f64, cycle: 
 /// thresholds. Bands are half-open: Low `[0, 0.75t)`, Elevated
 /// `[0.75t, t)`, High `[t, ∞)` — an observation at exactly 0.75× the
 /// threshold reads Elevated.
+/// Checkpoint K (b1), 2026-08-13 — both cuts go through the shared
+/// boundary contract ([`crate::tool_load::boundary`]). The bands stay
+/// half-open exactly as documented; what changes is that a reading
+/// within the boundary epsilon *below* a cut is treated as being **at**
+/// that cut, i.e. in the upper band. That is the same
+/// inclusive-with-epsilon rule every other gate now follows, applied in
+/// the conservative direction, and it moves nothing an operator could
+/// observe: the epsilon is ≈ 1.8e-15 relative on a ratio printed to two
+/// decimal places.
 pub fn classify_chip_welding(max_dtd: f64, material: &Material) -> ChipWeldingRisk {
+    use crate::tool_load::boundary::below_low;
     let t = chip_welding_threshold(material);
-    if max_dtd < t * 0.75 {
+    if below_low(max_dtd, t * 0.75, 0.0) {
         ChipWeldingRisk::Low
-    } else if max_dtd < t {
+    } else if below_low(max_dtd, t, 0.0) {
         ChipWeldingRisk::Elevated
     } else {
         ChipWeldingRisk::High

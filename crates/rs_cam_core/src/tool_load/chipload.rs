@@ -266,9 +266,14 @@ pub(crate) fn is_bipolar_engagement(
             continue;
         };
         total += 1;
-        if cl < cl_min {
+        // Checkpoint K (b1) — same boundary contract as the gate, at
+        // zero tolerance. (The *yardstick* mismatch this predicate
+        // documents above is untouched: it is still a chip thickness
+        // against an advance band. The comparison's boundary semantics
+        // and its choice of quantity are separate defects.)
+        if super::boundary::below_low(cl, cl_min, 0.0) {
             below += 1;
-        } else if cl > cl_max {
+        } else if super::boundary::exceeds_high(cl, cl_max, 0.0) {
             above += 1;
         }
     }
@@ -769,11 +774,16 @@ fn evaluate_inner(
             continue;
         }
         if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
-            if observed_fpt > max && entry_high.is_none_or(|(prev, _)| observed_fpt > prev) {
+            // Checkpoint K (b1) — the advisory sides read the same
+            // boundary contract as the trip sides, at zero tolerance:
+            // an entry spike reported at 1 ulp over a bound is the same
+            // unexplainable reading as a verdict at 1 ulp over it.
+            if bounds.exceeds_high(observed_fpt, 0.0)
+                && entry_high.is_none_or(|(prev, _)| observed_fpt > prev)
+            {
                 entry_high = Some((observed_fpt, i));
             }
-            if let Some(min_value) = min
-                && observed_fpt < min_value
+            if bounds.below_low(observed_fpt, 0.0).unwrap_or(false)
                 && entry_low.is_none_or(|(prev, _)| observed_fpt < prev)
             {
                 entry_low = Some((observed_fpt, i));
@@ -786,8 +796,14 @@ fn evaluate_inner(
         // verdict to `Exceeds(High)`. The widened trigger is purely a
         // gate-trip decision; the underlying `peak_above` deviation is
         // still recorded so downstream displays surface the value.
-        let max_trigger = max * (1.0 + tolerance.breakage);
-        if observed_fpt > max_trigger {
+        //
+        // Checkpoint K (b1): the comparison itself lives on `ChipBounds`
+        // now, so the tolerance dial and the boundary epsilon compose in
+        // one place. They are different things — the dial is the
+        // optimizer's, defaults to zero, and moves every verdict; the
+        // epsilon absorbs the multiply→divide reconstruction and moves
+        // only verdicts float noise decided (G-CHIP-ULP).
+        if bounds.exceeds_high(observed_fpt, tolerance.breakage) {
             let dev = observed_fpt - max;
             if peak_above.is_none_or(|(prev, _)| dev > prev) {
                 peak_above = Some((dev, i));
@@ -842,7 +858,7 @@ fn evaluate_inner(
     // the real distance to the nominal envelope.
     let peak_below: Option<(f64, usize)> = if let Some(min_value) = min
         && let Some((median_cl, median_sample_idx)) = median_sample
-        && median_cl < min_value * (1.0 - tolerance.burn)
+        && bounds.below_low(median_cl, tolerance.burn).unwrap_or(false)
     {
         Some((min_value - median_cl, median_sample_idx))
     } else {
