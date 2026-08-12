@@ -75,6 +75,58 @@ fn sweep_inputs() -> Vec<(&'static str, OperationFamily, ToolGeometryHint)> {
     ]
 }
 
+/// **Rendered evidence (rule 3)** — what the a3 disclosure actually
+/// reads as, through the core diagnostics adapter that the CLI report
+/// and MCP `get_diagnostics` both consume.
+#[test]
+fn the_rpm_anchor_disclosure_renders_as_operator_text() {
+    let machine = MachineProfile::generic_wood_router();
+    let result = calculate(&FeedsInput {
+        tool_diameter: 3.175,
+        flute_count: 2,
+        flute_length: 20.0,
+        shank_diameter: Some(6.0),
+        tool_geometry: ToolGeometryHint::VBit {
+            included_angle: 60.0,
+            tip_diameter: 0.2,
+        },
+        material: &Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        },
+        machine: &machine,
+        operation: OperationFamily::Trace,
+        operation_kind: None,
+        pass_role: PassRole::Roughing,
+        axial_depth_mm: Some(1.0),
+        radial_width_mm: Some(1.2),
+        target_scallop_mm: Some(0.01),
+        vendor_lut: Some(embedded_vendor_lut()),
+        setup: SetupContext::default(),
+        spindle_strategy: SpindleStrategy::MatchChart,
+    });
+    let rendered: Vec<String> =
+        rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result(
+            rs_cam_core::ids::ToolpathId(0),
+            &result,
+        )
+        .into_iter()
+        .map(|d| format!("[{:?}] {:?}: {}", d.severity, d.id, d.message))
+        .collect();
+    println!("=== a3 disclosure, as the operator reads it ===");
+    for line in &rendered {
+        println!("{line}");
+    }
+    let text = rendered.join("\n");
+    assert!(
+        text.contains("is an RPM anchor and publishes no chipload column"),
+        "the disclosure must render, not merely exist as a typed variant:\n{text}"
+    );
+    assert!(
+        text.contains("this recommendation carries no band"),
+        "and it must say the consequence, not only the cause:\n{text}"
+    );
+}
+
 #[test]
 fn rpm_anchor_fallback_is_disclosed_exactly_where_it_happens() {
     let machine = MachineProfile::generic_wood_router();
@@ -104,6 +156,9 @@ fn rpm_anchor_fallback_is_disclosed_exactly_where_it_happens() {
                             material: &material,
                             machine: &machine,
                             operation,
+                            // a3's disclosure is about the resolver, not
+                            // the a4 routing; no operation kind here.
+                            operation_kind: None,
                             pass_role,
                             axial_depth_mm: Some(diameter * 0.3),
                             radial_width_mm: Some(diameter * 0.4),

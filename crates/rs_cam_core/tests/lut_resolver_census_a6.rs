@@ -46,6 +46,7 @@
 
 use std::collections::BTreeMap;
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::embedded_vendor_lut;
 use rs_cam_core::feeds::vendor_lookup::{
@@ -54,6 +55,7 @@ use rs_cam_core::feeds::vendor_lookup::{
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily,
 };
+use rs_cam_core::feeds::vendor_normalize::lut_query_for;
 
 /// Every operation family the LUT models.
 const FAMILIES: [LutOperationFamily; 8] = [
@@ -353,66 +355,40 @@ fn lut_resolver_selection_census_report() {
 //
 // The resolver sweep above holds the QUERY fixed and varies only the
 // entry point. That is F-LUT2 as the ledger words it, and it turns out
-// to be the small half of the problem. The larger half is that the two
-// consumers do not build the same query:
+// to be the small half of the problem. The larger half was that the two
+// consumers did not build the same query:
 //
-// * Suggest's query family is `vendor_normalize::op_family_to_lut(
+// * Suggest's query family was `vendor_normalize::op_family_to_lut(
 //   input.operation)` — a straight 1:1 map off the operation's
 //   `feeds_family`.
-// * The gate's query family is that value passed through
+// * The gate's query family was that value passed through
 //   `tool_load::chipload::routed_lookup_family`, which REROUTES two
 //   operation kinds: `Adaptive3d` (Adaptive → **Pocket**) and
 //   `ProjectCurve` (Trace → Parallel/Contour Finish for ball/flat,
 //   and → **refusal** for bull-nose / V-bit / facing).
 //
-// The reroute is deliberate and documented on the gate side. Nothing
-// applies it on the Suggest side, so on every Adaptive3d and
-// ProjectCurve operation Suggest recommends against one vendor row and
-// the gate judges against another.
+// **A-7 / Checkpoint K (a4), 2026-08-13 — that asymmetry is gone.** The
+// routing is now `vendor_normalize::lut_query_for`, and BOTH
+// `to_lookup_query` (Suggest / Explain) and
+// `tool_load::chipload::matched_chip_envelope` (gate / optimizer /
+// viewport) call it. `routed_lookup_family` no longer exists.
 //
-// `routed_lookup_family` is `pub(crate)`, so the table below MIRRORS its
-// two rules rather than calling it. The function's own behaviour is
-// pinned inside the crate (`tool_load/chipload.rs`, four unit tests at
-// `:1325-1374`); this mirror only has to stay in step with those.
+// Two consequences for this file, both of them the point of the wave:
+//
+// 1. A-6's hand-written `gate_route` mirror is **DELETED**. Its own
+//    NOT-EXERCISED note said to delete it in favour of the unified
+//    query builder if (a4) landed; the function is `pub` now, so the
+//    census calls the real thing and can no longer drift from it.
+// 2. The census below re-measures with BOTH sides routed. The numbers
+//    it printed pre-a4 — 489 divergent rows, 378 asymmetric refusals —
+//    are the pre-fix reproduction and are quoted in
+//    `LUT_BOUNDARY_EVIDENCE.md` §2.2. Post-a4 both must read **0**, and
+//    the asserted bar below is written that way.
 
-/// Faithful mirror of `tool_load::chipload::routed_lookup_family` for
-/// the two rerouted operation kinds. Returns what the GATE queries
-/// given what SUGGEST queries; `None` is the gate's refusal (which
-/// surfaces to the operator as `Unmodeled(NoVendorData)` while Suggest
-/// still produces a banded recommendation).
-fn gate_route(
-    op: &str,
-    geom: &ToolGeometryHint,
-    suggest_family: LutOperationFamily,
-    suggest_role: LutPassRole,
-) -> Option<(LutOperationFamily, LutPassRole)> {
-    match op {
-        // Adaptive3d: family only, role untouched, no geometry condition.
-        "Adaptive3d" => {
-            if suggest_family == LutOperationFamily::Adaptive {
-                Some((LutOperationFamily::Pocket, suggest_role))
-            } else {
-                Some((suggest_family, suggest_role))
-            }
-        }
-        // ProjectCurve: routed by cutter class, and the role is FORCED
-        // to Finish regardless of what the operation asked for.
-        "ProjectCurve" => match geom {
-            ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
-                Some((LutOperationFamily::Parallel, LutPassRole::Finish))
-            }
-            ToolGeometryHint::Flat => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
-            // Bull nose / V-bit / facing bit: the gate refuses outright.
-            ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => None,
-        },
-        _ => Some((suggest_family, suggest_role)),
-    }
-}
-
-/// The rerouted operation kinds and the family Suggest queries for each.
-const REROUTES: [(&str, LutOperationFamily); 2] = [
-    ("Adaptive3d", LutOperationFamily::Adaptive),
-    ("ProjectCurve", LutOperationFamily::Trace),
+/// The rerouted operation kinds and the family each declares.
+const REROUTES: [(OperationType, LutOperationFamily); 2] = [
+    (OperationType::Adaptive3d, LutOperationFamily::Adaptive),
+    (OperationType::ProjectCurve, LutOperationFamily::Trace),
 ];
 
 /// **The band consequence of the reroute, measured.** This is the census
@@ -432,10 +408,9 @@ fn operation_family_reroute_band_delta_report() {
     );
     println!("|---|---|---|---:|---:|---|---|---|---:|");
     let mut ratios: Vec<f64> = Vec::new();
-    let mut gate_refusals: usize = 0;
-    let mut suggest_banded_while_gate_refuses: usize = 0;
+    let mut refusals: usize = 0;
     let mut considered: usize = 0;
-    for (op, suggest_family) in REROUTES {
+    for (op, declared_family) in REROUTES {
         for (gname, geom) in geometry_classes() {
             let tool_family = geom.cutter_kind().lut_family();
             for (mname, material_family, hardness_kind, hardness_value) in materials() {
@@ -450,28 +425,26 @@ fn operation_family_reroute_band_delta_report() {
                                 material_family,
                                 hardness_kind: Some(hardness_kind),
                                 hardness_value: Some(hardness_value),
-                                operation_family: suggest_family,
+                                operation_family: declared_family,
                                 pass_role: role,
                             };
-                            // Suggest resolves through the geometry entry
-                            // point at its own (unrouted) family.
-                            let s = find_best_row_for_geometry(lut, &base, &geom);
                             considered += 1;
-                            let Some((gate_family, gate_role)) =
-                                gate_route(op, &geom, suggest_family, role)
-                            else {
-                                gate_refusals += 1;
-                                if s.as_ref().is_some_and(|r| r.chip_load_max_mm.is_some()) {
-                                    suggest_banded_while_gate_refuses += 1;
-                                }
+                            // **Post-a4: ONE routing decision, consulted
+                            // by both sides.** Pre-a4 the Suggest side
+                            // resolved at `base` (the unrouted family)
+                            // while only the gate routed.
+                            let routed = lut_query_for(op, tool_family, declared_family, role);
+                            let Some((gate_family, gate_role)) = routed else {
+                                refusals += 1;
                                 continue;
                             };
-                            let gate_query = LookupQuery {
+                            let query = LookupQuery {
                                 operation_family: gate_family,
                                 pass_role: gate_role,
                                 ..base.clone()
                             };
-                            let g = find_best_chip_envelope_row(lut, &gate_query, &geom);
+                            let s = find_best_row_for_geometry(lut, &query, &geom);
+                            let g = find_best_chip_envelope_row(lut, &query, &geom);
                             let (Some(s), Some(g)) = (s, g) else {
                                 continue;
                             };
@@ -487,7 +460,7 @@ fn operation_family_reroute_band_delta_report() {
                             // or the table drowns.
                             if d == 6.0 && flutes == 2 && role == LutPassRole::Roughing {
                                 println!(
-                                    "| {op} | {gname} | {mname} | {d} | {flutes} | \
+                                    "| {op:?} | {gname} | {mname} | {d} | {flutes} | \
                                      {role:?}→{gate_role:?} | {} ({sm:.5}) | {} ({gm:.5}) | \
                                      **×{:.4}** |",
                                     s.observation_id,
@@ -510,18 +483,130 @@ fn operation_family_reroute_band_delta_report() {
         ratios.get(n / 2).copied().unwrap_or(f64::NAN),
         ratios.last().copied().unwrap_or(f64::NAN),
     );
+    // **The refusal asymmetry, measured through the PRODUCTION path.**
+    //
+    // Counting it from `lut_query_for` alone would be vacuous — post-a4
+    // both sides call that function, so a hand-counted asymmetry is zero
+    // by construction and would prove nothing (CLAUDE.md: "a gate handed
+    // an empty population passes and looks healthy"). So this runs
+    // `feeds::calculate` on the refused surface twice: once as the
+    // production Suggest path now does it (`operation_kind: Some(..)`),
+    // and once the way it behaved BEFORE a4 (`operation_kind: None`
+    // disables the routing, which is documented on the field as exactly
+    // the pre-a4 behaviour). The pre-a4 arm is the 378 class reproduced
+    // in-process, not quoted.
+    let (before, after) = refusal_asymmetry_through_calculate();
     println!(
-        "\n**{gate_refusals} pairs are gate REFUSALS** (ProjectCurve on bull-nose / V-bit: \
-         `routed_lookup_family` returns `None` → `Unmodeled(NoVendorData)`), and in \
-         **{suggest_banded_while_gate_refuses}** of them Suggest still returns a banded \
-         recommendation. That is the sharpest form of the divergence: an operator gets a \
-         vendor-backed number on a surface where the gate has declined to judge at all."
+        "\n**{refusals} pairs are REFUSALS** (ProjectCurve on bull-nose / V-bit: \
+         `lut_query_for` returns `None`). Post-a4 BOTH sides refuse — the gate as \
+         `Unmodeled(NoVendorData)`, Suggest as \
+         `FeedsWarning::NoVendorRowsForRoutedOperation`.\n\n\
+         Through `feeds::calculate` on the refused surface: **{before} of {before} \
+         recommendations were vendor-banded pre-a4 (routing disabled), {after} are \
+         post-a4.** Pre-a4 the full census counted 378 such pairs: an operator got a \
+         vendor-backed number on a surface where the gate had declined to judge at all."
+    );
+    assert!(
+        before > 0,
+        "the pre-a4 arm must reproduce a banded recommendation, or this measurement is \
+         vacuous and proves nothing about the 378 class"
+    );
+    assert_eq!(
+        after, 0,
+        "**a4 regression** — Suggest still returns a vendor-banded recommendation on {after} \
+         refused surface(s) through the production `calculate` path"
     );
     println!(
-        "\nA ratio **above 1.0** means Suggest is recommending against a WIDER band than the \
-         gate will judge with — the direction that lets a pre-simulation solve aim past a \
-         ceiling it cannot see."
+        "\nA ratio **above 1.0** would mean Suggest recommending against a WIDER band than \
+         the gate will judge with — the direction that lets a pre-simulation solve aim past \
+         a ceiling it cannot see. Post-a4 there are no such pairs: both sides name the same \
+         family, so any surviving difference could only come from the ENTRY POINTS, and \
+         those never produce two different bands (§1)."
     );
+    // The bar, stated as the fix rather than as the defect.
+    assert_eq!(
+        n, 0,
+        "**a4 regression** — {n} of {considered} (query, reroute) pairs still resolve to \
+         different rows. Pre-a4 this read 489; a4 hoisted the routing into one \
+         `vendor_normalize::lut_query_for` both consumers call, so the only way this can be \
+         non-zero is if a consumer stopped calling it."
+    );
+}
+
+/// Run the production feeds calculator over every cutter class the a4
+/// routing refuses `ProjectCurve` on, with the routing DISABLED and then
+/// ENABLED, and count how many recommendations come back carrying a
+/// vendor band.
+///
+/// Returns `(pre_a4_banded, post_a4_banded)`.
+fn refusal_asymmetry_through_calculate() -> (usize, usize) {
+    use rs_cam_core::feeds::{
+        FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
+    };
+    use rs_cam_core::machine::MachineProfile;
+    use rs_cam_core::material::{Material, WoodSpecies};
+
+    let machine = MachineProfile::generic_wood_router();
+    let lut = embedded_vendor_lut();
+    let (mut before, mut after) = (0usize, 0usize);
+    for geom in [
+        ToolGeometryHint::Bull { corner_radius: 0.5 },
+        ToolGeometryHint::VBit {
+            included_angle: 60.0,
+            tip_diameter: 0.2,
+        },
+    ] {
+        for species in [WoodSpecies::HardMaple, WoodSpecies::WhiteOak] {
+            let material = Material::SolidWood { species };
+            for d in [3.175_f64, 6.0, 12.0] {
+                for flutes in [2u32, 3] {
+                    let make = |kind: Option<OperationType>| {
+                        calculate(&FeedsInput {
+                            tool_diameter: d,
+                            flute_count: flutes,
+                            flute_length: 20.0,
+                            shank_diameter: Some(6.0),
+                            tool_geometry: geom,
+                            material: &material,
+                            machine: &machine,
+                            // What a ProjectCurve op declares.
+                            operation: OperationFamily::Trace,
+                            operation_kind: kind,
+                            pass_role: PassRole::Finish,
+                            axial_depth_mm: Some(d * 0.25),
+                            radial_width_mm: Some(d * 0.4),
+                            target_scallop_mm: Some(0.01),
+                            vendor_lut: Some(lut),
+                            setup: SetupContext::default(),
+                            spindle_strategy: SpindleStrategy::MatchChart,
+                        })
+                    };
+                    // Pre-a4: no operation identity, so no routing, so
+                    // the query goes out at the declared `Trace` family
+                    // and can match a row.
+                    if make(None).vendor_source.is_some() {
+                        before += 1;
+                    }
+                    // Post-a4: routed, and refused.
+                    let routed = make(Some(OperationType::ProjectCurve));
+                    if routed.vendor_source.is_some() {
+                        after += 1;
+                    } else {
+                        assert!(
+                            routed.warnings.iter().any(|w| matches!(
+                                w,
+                                rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                            )),
+                            "a refusal must be TYPED, not silent — the operator has to be able \
+                             to tell 'no vendor row for this cutter class' from 'the formula \
+                             happened to agree'"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    (before, after)
 }
 
 /// **A-5's 1.273×, reproduced from first principles and attributed.**

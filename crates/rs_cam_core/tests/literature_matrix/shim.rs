@@ -409,6 +409,12 @@ fn run_cell_in_material(
         material,
         machine: &machine,
         operation: op_family,
+        // Checkpoint K (a4) — the shim's whole point is to be the
+        // production path, so it supplies the operation's own kind and
+        // gets the same LUT routing (and the same refusals) a GUI / CLI
+        // / MCP user gets. No matrix cell currently exercises a
+        // ProjectCurve on a bull-nose or V-bit, so no cell moves.
+        operation_kind: Some(operation.op_type()),
         pass_role,
         axial_depth_mm: pinned_doc.or(auto_axial),
         radial_width_mm: pinned_woc.or(auto_radial),

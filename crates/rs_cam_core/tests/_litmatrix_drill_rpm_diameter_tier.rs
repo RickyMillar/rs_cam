@@ -56,6 +56,7 @@ fn drill_input(d: f64, strategy: SpindleStrategy) -> FeedsInput<'static> {
         material,
         machine,
         operation: OperationFamily::Drill,
+        operation_kind: None,
         pass_role: PassRole::Roughing,
         axial_depth_mm: Some(d),
         radial_width_mm: None,

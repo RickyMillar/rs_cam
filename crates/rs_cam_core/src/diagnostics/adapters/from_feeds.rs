@@ -187,6 +187,32 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        // Checkpoint K (a4). A Caution, unlike (a3)'s Info: the operator
+        // is being told the recommendation has NO vendor backing at all,
+        // and that the post-simulation gate will refuse to judge it.
+        FeedsWarning::NoVendorRowsForRoutedOperation {
+            operation_kind,
+            tool_family,
+            missing_rows,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: format!(
+                "No vendor data for {operation_kind} on a {tool_family} cutter — this \
+                 recommendation is entirely formula-derived and carries no band, and the \
+                 post-simulation chipload gate will report Unmodeled(NoVendorData) for the \
+                 same reason. Missing: {missing_rows}."
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
         // Checkpoint K (a3). Informational, not a Caution: nothing is
         // clamped, derated or unsafe — the recommendation simply has a
         // provenance the operator could not see. Saying "caution" about

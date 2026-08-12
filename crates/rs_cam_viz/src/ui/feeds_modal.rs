@@ -1098,6 +1098,16 @@ fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
             // Checkpoint K (a3) — RPM-anchor row: the number above it in
             // this modal is the empirical formula's, and the modal's band
             // chart has nothing to draw for it.
+            // Checkpoint K (a4) — the routing refused; there is no vendor
+            // row behind any number on this surface.
+            rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation {
+                operation_kind,
+                tool_family,
+                missing_rows,
+            } => format!(
+                "No vendor data for {operation_kind} on a {tool_family} cutter \
+                 — formula-derived, no band ({missing_rows})"
+            ),
             rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
                 observation_id,
                 formula_chipload_mm,

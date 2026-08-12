@@ -110,6 +110,7 @@ fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> Fe
         material: &material,
         machine,
         operation: OperationFamily::Pocket,
+        operation_kind: None,
         pass_role: PassRole::Roughing,
         // Ask for a full-width slot at a deep DOC — the heaviest cut the
         // calculator will entertain for this tool. Both are clamped
@@ -139,6 +140,7 @@ fn light_finish(machine: &MachineProfile) -> FeedsResult {
         material: &material,
         machine,
         operation: OperationFamily::Contour,
+        operation_kind: None,
         pass_role: PassRole::Finish,
         axial_depth_mm: Some(1.0),
         radial_width_mm: Some(0.5),

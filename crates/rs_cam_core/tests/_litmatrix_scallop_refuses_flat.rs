@@ -53,6 +53,7 @@ fn base_input<'a>(
         material,
         machine,
         operation,
+        operation_kind: None,
         pass_role: PassRole::Finish,
         axial_depth_mm: None,
         radial_width_mm: None,

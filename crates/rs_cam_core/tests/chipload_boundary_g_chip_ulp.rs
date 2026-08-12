@@ -143,6 +143,7 @@ fn b3_scallop() -> FeedsResult {
         },
         machine: &MachineProfile::generic_wood_router(),
         operation: OperationFamily::Scallop,
+        operation_kind: None,
         pass_role: PassRole::Finish,
         axial_depth_mm: Some(0.35),
         radial_width_mm: None,

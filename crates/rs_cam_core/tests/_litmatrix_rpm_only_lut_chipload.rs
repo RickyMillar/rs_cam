@@ -53,6 +53,7 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
         material: &material,
         machine: &machine,
         operation: OperationFamily::Adaptive,
+        operation_kind: None,
         pass_role: PassRole::Roughing,
         axial_depth_mm: None,
         radial_width_mm: None,

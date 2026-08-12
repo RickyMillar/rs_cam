@@ -80,6 +80,7 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
         material,
         machine: &machine,
         operation: OperationFamily::Pocket,
+        operation_kind: None,
         pass_role: PassRole::Roughing,
         axial_depth_mm: None,
         radial_width_mm: None,

@@ -2148,6 +2148,16 @@ fn draw_feeds_card(
                     // Checkpoint K (a3) — the recipe rests on an RPM
                     // anchor, so the chipload beside it is the formula's
                     // and there is no band behind the recommendation.
+                    // Checkpoint K (a4) — the routing refused; there is no vendor
+                    // row behind any number on this surface.
+                    rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation {
+                        operation_kind,
+                        tool_family,
+                        missing_rows,
+                    } => format!(
+                        "No vendor data for {operation_kind} on a {tool_family} cutter \
+                         — formula-derived, no band ({missing_rows})"
+                    ),
                     rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
                         observation_id,
                         formula_chipload_mm,
