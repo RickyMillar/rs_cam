@@ -162,8 +162,24 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for RsCamHost<'_>
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // eframe first, always. It can paint synchronously from inside
+        // `check_redraw_requests`, which re-enters `RsCamAppProxy::ui` and
+        // takes the borrow this method is about to take.
         self.inner.about_to_wait(event_loop);
         self.adopt_app();
+
+        // The off-frame dispatch. `AboutToWait` is dispatched on every
+        // event-loop iteration regardless of frame-callback state, so this
+        // runs on a window the compositor has stopped drawing.
+        //
+        // A lost `try_borrow_mut` means a frame is running on this same
+        // thread and is about to run the identical dispatch at its top, so
+        // losing the race costs a wakeup and no work.
+        if let Some(app) = self.app.as_ref()
+            && let Ok(mut app) = app.try_borrow_mut()
+        {
+            app.off_frame_pump();
+        }
     }
 
     fn suspended(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {

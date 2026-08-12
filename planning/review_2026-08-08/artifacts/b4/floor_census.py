@@ -106,15 +106,20 @@ def main():
         for i in range(args.repeats):
             for name, a in CHEAP_CALLS:
                 r = proc.call_tool(name, a, timeout=args.timeout)
-                rows.append(
-                    {
-                        "call": name,
-                        "wall_s": r["wall_s"],
-                        "repeat": i,
-                        "phase": "census",
-                        "served_from": _served_from(r),
-                    }
-                )
+                row = {
+                    "call": name,
+                    "wall_s": r["wall_s"],
+                    "repeat": i,
+                    "phase": "census",
+                    "served_from": _served_from(r),
+                }
+                if args.hidden:
+                    # Sample the paint-frame counter beside EVERY census call,
+                    # off the frame door, so "frames were not being produced
+                    # while these answered" is a measurement and not an
+                    # inference from two endpoints.
+                    row.update(_frame_loop(proc, args.timeout))
+                rows.append(row)
 
         if args.hidden:
             rows.append(_frames_probe(proc, args.timeout, "after"))
@@ -150,18 +155,23 @@ def _served_from(r):
     return body.get("served_from", "live")
 
 
-def _frames_probe(proc, timeout, label):
+def _frame_loop(proc, timeout):
+    """`frame_loop` off the OFF-LOOP door, so the probe cannot itself unpark."""
     r = proc.call_tool("generation_status", {}, timeout=timeout)
     body = _body(r) or {}
-    frame_loop = body.get("frame_loop", {}) if isinstance(body, dict) else {}
+    fl = body.get("frame_loop", {}) if isinstance(body, dict) else {}
     return {
-        "call": "frames_probe",
-        "phase": label,
-        "frames": frame_loop.get("frames"),
-        "healthy": frame_loop.get("healthy"),
-        "last_frame_age_s": frame_loop.get("last_frame_age_s"),
-        "wall_s": r["wall_s"],
+        "frames": fl.get("frames"),
+        "pumps": fl.get("pumps"),
+        "healthy": fl.get("healthy"),
+        "last_frame_age_s": fl.get("last_frame_age_s"),
     }
+
+
+def _frames_probe(proc, timeout, label):
+    row = {"call": "frames_probe", "phase": label, "wall_s": 0.0}
+    row.update(_frame_loop(proc, timeout))
+    return row
 
 
 def _report(rows, out):
@@ -187,9 +197,20 @@ def _report(rows, out):
     for r in rows:
         if r.get("call") == "frames_probe":
             print(
-                f"  frames({r['phase']}): {r['frames']} "
+                f"  frames({r['phase']}): {r['frames']} pumps={r['pumps']} "
                 f"healthy={r['healthy']} last_frame_age_s={r['last_frame_age_s']}"
             )
+    # The park proof: a census during which `frames` never moved is a census
+    # answered without a single paint. A census where it moved is not evidence
+    # of anything and must be re-run.
+    seen = [r["frames"] for r in census if r.get("frames") is not None]
+    if seen:
+        pumps = [r["pumps"] for r in census if r.get("pumps") is not None]
+        print(
+            f"  PARK PROOF: frames {min(seen)}..{max(seen)} "
+            f"({'STATIC — no paint during the census' if min(seen) == max(seen) else 'MOVED — window was drawing, re-run'})"
+            + (f", pumps {min(pumps)}..{max(pumps)}" if pumps else "")
+        )
 
 
 if __name__ == "__main__":

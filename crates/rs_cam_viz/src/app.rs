@@ -15,6 +15,10 @@ use crate::state::Workspace;
 
 pub struct RsCamApp {
     controller: AppController,
+    /// The egui context, held so [`RsCamApp::off_frame_pump`] can dispatch
+    /// without an `eframe::Frame` or an `egui::Ui` — neither of which exists
+    /// outside a paint. Cheap `Arc` handle; `Clone + Send + Sync`.
+    egui_ctx: egui::Context,
     camera: OrbitCamera,
     /// Cached viewport rect for click detection.
     viewport_rect: egui::Rect,
@@ -165,6 +169,7 @@ impl RsCamApp {
 
         Self {
             controller,
+            egui_ctx: cc.egui_ctx.clone(),
             camera: OrbitCamera::new(),
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
@@ -471,6 +476,58 @@ impl RsCamApp {
     }
 }
 
+impl RsCamApp {
+    /// The frame-independent half of a frame: everything in [`Self::draw_frame`]
+    /// that needs neither an `eframe::Frame` nor an `egui::Ui`.
+    ///
+    /// A field census of the whole 6,146-line `app/mcp.rs` is the reason this
+    /// is a short function rather than a rewrite: MCP handlers touch
+    /// `self.controller` (169 sites), `mcp_reads`, `mcp_receiver` and
+    /// `mcp_reads_published_at`, and **nothing else** — not `camera`, not
+    /// `viewport_rect`, not `pending_checkpoint_load`. `egui::Context` reaches
+    /// exactly one handler (`ScreenshotGui`) and is `Clone + Send + Sync`. So
+    /// no handler had to move and no `McpRequestKind` arm had to change.
+    ///
+    /// Called from **two** places, in the same order both times: here, from
+    /// the host's `about_to_wait`, and from `draw_frame` at the position the
+    /// three calls it replaced already occupied. It is idempotent and near
+    /// free on an empty channel, so the non-MCP path does not regress.
+    fn pump_dispatch(&mut self) {
+        self.controller.drain_compute_results();
+
+        // `egui::Context` is a cheap `Arc` handle; the clone is to release the
+        // borrow of `self` before the `&mut self` call, not a copy of anything.
+        #[cfg(feature = "mcp")]
+        {
+            let ctx = self.egui_ctx.clone();
+            self.drain_mcp_requests(&ctx);
+            // Arms an in-flight `screenshot_gui`; issuing the capture still
+            // needs a real frame, which is the one honest boundary (§6 of
+            // `DISPATCH_DECOUPLING_DESIGN.md`).
+            self.pump_mcp_gui_screenshot(&ctx);
+        }
+    }
+
+    /// Dispatch MCP work and advance deferred compute **without a paint**.
+    ///
+    /// This is the answer to G-LV.1. On Wayland a hidden, occluded or
+    /// screen-locked surface never gets a compositor frame callback, so winit
+    /// never emits `RedrawRequested` and no frame ever runs — but
+    /// `Event::AboutToWait` is dispatched unconditionally on every event-loop
+    /// iteration (`winit-0.30.13 .../wayland/event_loop/mod.rs:515`, with no
+    /// reference to frame-callback state). Everything below was frame-coupled
+    /// by where the drain was written, not by the platform.
+    ///
+    /// Does NOT open the frame bracket and does NOT count as a frame — see
+    /// [`crate::mcp_bridge::FrameLoopBeat::pump_beat`].
+    pub(crate) fn off_frame_pump(&mut self) {
+        self.pump_dispatch();
+        self.controller.process_auto_regen();
+        #[cfg(feature = "mcp")]
+        self.mcp_pump_beat();
+    }
+}
+
 impl eframe::App for RsCamApp {
     // eframe 0.34 made `ui` the required entry point (the old `update(ctx)`
     // is deprecated). We draw everything via panels nested in this root
@@ -513,16 +570,15 @@ impl RsCamApp {
 
         crate::ui::automation::begin_frame(ctx);
 
-        self.controller.drain_compute_results();
-
+        // G-LV.1: open the frame bracket, then run the same dispatch the
+        // off-frame pump runs — `drain_compute_results`, `drain_mcp_requests`,
+        // and the `screenshot_gui` pump, in that order, at the position those
+        // three calls already occupied. In-frame ordering is unchanged;
+        // `process_auto_regen` and `end_mcp_frame` stay where they are, below,
+        // because moving them would reorder work relative to the UI pass.
         #[cfg(feature = "mcp")]
-        self.drain_mcp_requests(ctx);
-
-        // Pump an in-flight screenshot_gui capture: issues the viewport
-        // Screenshot command after any resize settles and keeps frames
-        // pumping while headless-idle.
-        #[cfg(feature = "mcp")]
-        self.pump_mcp_gui_screenshot(ctx);
+        self.begin_mcp_frame();
+        self.pump_dispatch();
 
         // Request repaint while MCP highlights are fading or notifications are active.
         #[cfg(feature = "mcp")]
