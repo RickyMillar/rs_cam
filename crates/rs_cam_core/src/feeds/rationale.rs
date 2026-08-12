@@ -22,21 +22,27 @@ use crate::feeds::suggest::{FeedRecalibrationCap, SuggestWarning};
 /// **The report-tier label on the two chipload-recalibration entries**
 /// (`ChiploadTarget`, `ChiploadCapBound`).
 ///
-/// Both entries quote a chipload produced by
-/// [`crate::feeds::predict::predict_observed_chipload_mm`], i.e. `nominal ×
-/// arc_fit_ratio`. That ratio table was fitted against the post-sim gate's
-/// **arc-mean chip thickness** observation, and that observation was deleted
-/// on 2026-08-06 — the gate now reports `effective_feed / (rpm · flutes)`, a
-/// linear advance per tooth. The quoted number therefore predicts a quantity
-/// nothing measures any more, and the entries used to present it as
-/// gate-targeted calibration.
+/// Both entries quote a chipload that was produced by the retired
+/// `predict_observed_chipload_mm` — `nominal × arc_fit_ratio`, where the
+/// ratio table had been fitted against the post-sim gate's **arc-mean chip
+/// thickness** observation. That observation was deleted on 2026-08-06 (the
+/// gate now reports `effective_feed / (rpm · flutes)`, a linear advance per
+/// tooth), so the quoted number predicted a quantity nothing measured any
+/// more, and the entries presented it as gate-targeted calibration.
 ///
-/// This label is the operator review's pre-ruling remedy, and it is
-/// **report-tier by construction**: it moves no recipe number, changes no
-/// verdict, and leaves the applied feed exactly where it was. The disposition
-/// of the underlying lift is Checkpoint J's to rule
-/// (`planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`, ledger row
-/// **F-T35**).
+/// This label was the operator review's pre-ruling remedy, shipped
+/// **report-tier by construction**: it moved no recipe number, changed no
+/// verdict, and left the applied feed exactly where it was.
+///
+/// **Status since 2026-08-13 (Checkpoint J-1/J-5, ledger row F-T35).** The
+/// lift itself is retired, so `feeds::suggest` no longer emits the two
+/// warnings these entries render and **nothing in the shipped Suggest path
+/// reaches this label today**. Both the warnings and this rendering were
+/// kept deliberately, for the simulation-backed path to reuse. When that
+/// producer lands it will be supplying a **measured** observation, at which
+/// point this label becomes wrong and must be removed in the same commit —
+/// a legacy-estimate disclaimer on a measured number is a new defect, not a
+/// leftover.
 ///
 /// It lives here rather than in the GUI because every renderer — the feeds
 /// modal's "Why these values?" list, the MCP `get_suggest_rationale` payload

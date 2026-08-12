@@ -440,10 +440,13 @@ pub struct FeedsResult {
     pub chipload_source: ChiploadSource,
     /// LUT-derived chipload band for the matched vendor row, when the
     /// match supplied one. `None` for formula-fallback / RPM-only LUT
-    /// rows / edge-radius-floor paths. Consumed by Suggest v2 step 2
-    /// (chipload-aware feed-up recalibration) — see
-    /// [`crate::feeds::predict::predict_observed_chipload_mm`] for the
-    /// other half of that loop.
+    /// rows / edge-radius-floor paths.
+    ///
+    /// Until 2026-08-13 this was also the input to Suggest's chipload-aware
+    /// feed-up recalibration (pass 8), which is retired — see the retirement
+    /// note in [`crate::feeds::predict`]. The band still drives the
+    /// rationale, the chipload envelopes and the post-sim gate; it no longer
+    /// moves a feed before simulation.
     pub chipload_bounds: Option<ChiploadBounds>,
     /// Matched vendor row (post-scaling) from the LUT lookup, when one
     /// was found. Cloned through so the Suggest orchestrator's axial-DOC

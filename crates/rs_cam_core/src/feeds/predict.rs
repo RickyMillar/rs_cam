@@ -111,10 +111,12 @@ const PREDICTOR_TAPERED_BALL_SHANK_WEIGHT: f64 = 0.6;
 const PREDICTOR_TAPERED_BALL_TIP_WEIGHT: f64 = 0.4;
 
 /// Spindle RPM fallback when `operation.spindle_rpm()` is `None`.
-/// Used by both [`predict_peak_deflection_um`] (chipload diagnostic)
-/// and [`predict_observed_chipload_mm`] (nominal-chipload solve).
+/// Used by [`predict_peak_deflection_um`] (chipload diagnostic).
 /// Matches the conservative "wood router default" the rest of the
 /// codebase falls back to when RPM is unset.
+///
+/// (Until 2026-08-13 the retired `predict_observed_chipload_mm` was its
+/// second consumer — see the retirement note further down this file.)
 const PREDICTOR_FALLBACK_RPM: f64 = 18_000.0;
 
 /// Closed-form prediction of peak tip deflection (µm) Suggest would
@@ -591,297 +593,43 @@ pub fn predict_move_count(
     moves_f.min(u64::MAX as f64) as u64
 }
 
-/// Forward-predict the median observed chipload per tooth that the
-/// post-sim chipload gate will report. Bridges the LUT nominal vs
-/// arc-fit observed gap.
-///
-/// Nominal chipload = `feed / (rpm × flutes)`. Observed median is
-/// `nominal × arc_fit_ratio`, where `arc_fit_ratio` depends on the
-/// op family (engagement geometry) and is empirically calibrated
-/// against post-sim measurements where available — conservative
-/// defaults are used for op families that don't yet have a
-/// measured Wanaka cell.
-///
-/// ## Why this exists
-///
-/// The vendor LUT publishes a nominal `chipload_per_tooth` value
-/// (what an ideal full-flute engagement would shave per tooth).
-/// Suggest writes `feed/RPM` so the geometric nominal matches the
-/// LUT. The post-sim chipload gate, however, measures the **median
-/// of per-sample chip thickness across the arc-fit kinematics path**
-/// — and on narrow-engagement strategies (Adaptive3D, DropCutter)
-/// the observed median runs 0.15–0.25× of nominal because each
-/// engagement arc only briefly sees the full chip.
-///
-/// Step 2 of the combined-Suggest plan uses this predictor to lift
-/// feed back up so the *observed* median lands inside the LUT band
-/// rather than the *nominal*. This function is the building block
-/// for that — step 1 is pure forward-prediction with calibration.
-///
-/// ## Refusal cases (`source == NotApplicable`, observed = 0.0)
-///
-/// - Drill / AlignmentPinDrill — Z-only kinematics, no continuous
-///   radial engagement; drill ops route through drill-native gates
-///   (peck adequacy, chip welding) instead of the chipload gate.
-/// - V-carve / Project Curve — feature-driven (curve segments,
-///   projected geometry); chipload doesn't apply as a continuous
-///   per-tooth measurement.
-/// - `feed_rate <= 0` or any non-finite input — produces zero
-///   observed (matches the contract for the back-off loop's
-///   "no constraint signal" pass-through).
-#[tracing::instrument(level = "debug", skip_all, fields(op = ?operation.op_type()))]
-pub fn predict_observed_chipload_mm(
-    operation: &OperationConfig,
-    tool: &ToolConfig,
-) -> ObservedChiploadPrediction {
-    let op_type = operation.op_type();
-
-    // Feature-driven and Z-only operations: no continuous per-tooth
-    // chipload to predict. Mirrors the post-sim gate's
-    // `NotApplicableForOp` refusal path.
-    let arc_fit = match arc_fit_ratio_for_op(op_type) {
-        ArcFitDispatch::Ratio { value, source } => (value, source),
-        ArcFitDispatch::NotApplicable => {
-            tracing::debug!(
-                reason = "op_not_applicable",
-                "predictor returns 0 chipload — feature-driven or Z-only kinematics"
-            );
-            return ObservedChiploadPrediction {
-                nominal_mm_per_tooth: 0.0,
-                arc_fit_ratio: 0.0,
-                observed_median_mm_per_tooth: 0.0,
-                source: ArcFitRatioSource::NotApplicable,
-            };
-        }
-    };
-    let (arc_fit_ratio, source) = arc_fit;
-
-    // Nominal chipload = feed / (rpm × flutes). Mirrors the gate's
-    // own derivation in `feeds::calculate` (and the diagnostic field
-    // in `DeflectionBreakdown::chipload_per_tooth_mm` above).
-    let rpm = operation
-        .spindle_rpm()
-        .map_or(PREDICTOR_FALLBACK_RPM, |r| r as f64);
-    let flute_count = tool.flute_count.max(1) as f64;
-    let feed_rate = operation.feed_rate();
-    let nominal = if feed_rate.is_finite() && feed_rate > 0.0 && rpm > 0.0 && flute_count > 0.0 {
-        feed_rate / (rpm * flute_count)
-    } else {
-        0.0
-    };
-
-    if nominal <= 0.0 {
-        tracing::debug!(
-            reason = "zero_nominal",
-            "predictor returns 0 chipload — feed/RPM/flutes resolved to zero nominal"
-        );
-        return ObservedChiploadPrediction {
-            nominal_mm_per_tooth: 0.0,
-            arc_fit_ratio,
-            observed_median_mm_per_tooth: 0.0,
-            source,
-        };
-    }
-
-    let observed = nominal * arc_fit_ratio;
-
-    tracing::debug!(
-        nominal,
-        arc_fit_ratio,
-        observed,
-        ?source,
-        "observed-chipload prediction"
-    );
-
-    ObservedChiploadPrediction {
-        nominal_mm_per_tooth: nominal,
-        arc_fit_ratio,
-        observed_median_mm_per_tooth: observed,
-        source,
-    }
-}
-
-/// Internal dispatch enum: either an arc-fit ratio with its source
-/// tag, or a hard refusal. Keeps the per-op-type table in one place.
-enum ArcFitDispatch {
-    Ratio {
-        value: f64,
-        source: ArcFitRatioSource,
-    },
-    NotApplicable,
-}
-
-/// Per-operation arc-fit ratio table. Calibrated where Wanaka post-sim
-/// data exists, conservative-default otherwise. Conservative meaning
-/// "biased toward predicting a lower observed median," which makes the
-/// step-2 feed-up calibration err on the side of pulling feed slightly
-/// higher than strictly necessary — same safer-side bias the v1.1
-/// deflection predictor uses.
-///
-/// | Op family | ratio | source | notes |
-/// |-----------|-------|--------|-------|
-/// | Adaptive (2D) | 0.30 | Default | narrow WOC, less than full slot |
-/// | Adaptive3D | 0.25 | Calibrated | Wanaka Back Rough / 3D Rough 6 |
-/// | DropCutter | 0.15 | Calibrated | Wanaka 3D Finish 6 |
-/// | Scallop, SpiralFinish | 0.15 | Default | DropCutter-like geometry |
-/// | Waterline | 0.40 | Default | longer cut spans |
-/// | SteepShallow | 0.30 | Default | mixed engagement |
-/// | HorizontalFinish, RadialFinish, Zigzag, RampFinish | 0.40 | Default | flat / raster scans |
-/// | Pocket | 0.60 | Default | full-slot first pass |
-/// | Rest | 0.50 | Default | mid-engagement |
-/// | Profile | 0.80 | Default | side-step, mostly full-flute height |
-/// | Trace, Chamfer, Pencil, Inlay, Face | 0.50 | Default | conservative middle |
-/// | Drill, AlignmentPinDrill, VCarve, ProjectCurve | — | NotApplicable | feature-driven or Z-only |
-/// # ⚠ STALE SINCE 2026-08-06 — this table predicts a quantity the gate
-/// # no longer reports. NOT fixed here, on purpose.
-///
-/// Every ratio below was fitted against the post-sim chipload gate's
-/// **arc-mean chip thickness** observation. That observation was deleted
-/// on 2026-08-06: the gate now reports `effective_feed / (rpm · flutes)`,
-/// a linear advance per tooth (`tool_load::chipload`'s header, and
-/// `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` for the
-/// primary sources). Against that observation the correct arc-fit ratio
-/// is the **achieved/commanded feed ratio**, which this pre-sim
-/// predictor cannot know — not a per-operation-family constant, because
-/// the quantity the constants approximate no longer exists.
-///
-/// B-lit §3.3 and §6.1 (C-13 / F-5) rule the disposition explicitly:
-/// **retire this table, do not re-key it.** The census's earlier advice
-/// — "replace with `f_lut × expected_feed_ratio`" — is superseded.
-///
-/// It is left standing here because retiring it is a *number-moving*
-/// change to Suggest, not to the gate: `feeds::suggest::recalibrate_feed_for_chipload`
-/// solves `target_nominal = target / arc_fit_ratio` and is gated on
-/// `ArcFitRatioSource::Calibrated`, so today only Adaptive3d (0.25) and
-/// DropCutter (0.15) get a feed lift at all. Setting every ratio to 1.0
-/// would (a) change the solved feed on those two families by 4× and
-/// 6.7×, and (b) extend the lift to every other family for the first
-/// time. That is a separate approval with its own before/after, and
-/// folding it into the unit conversion would make the conversion's
-/// verdict-flip table unattributable.
-///
-/// Owner: census T3.5. Re-open condition: none needed — it is the next
-/// item in the same chain.
-fn arc_fit_ratio_for_op(op_type: OperationType) -> ArcFitDispatch {
-    use ArcFitRatioSource::{Calibrated, Default as DefSrc};
-    match op_type {
-        // Calibrated against Wanaka post-sim (2026-06-03).
-        OperationType::Adaptive3d => ArcFitDispatch::Ratio {
-            value: 0.25,
-            source: Calibrated,
-        },
-        OperationType::DropCutter => ArcFitDispatch::Ratio {
-            value: 0.15,
-            source: Calibrated,
-        },
-
-        // Defaults — no calibration cell yet.
-        OperationType::Adaptive => ArcFitDispatch::Ratio {
-            value: 0.30,
-            source: DefSrc,
-        },
-        // UnifiedFinish: no calibration cell yet (new op) — mirrors
-        // Scallop's ratio per the registration decision (its mid-steep
-        // band literally IS a scallop pass; the waterline/raster bands
-        // don't have their own calibration either). Revisit once Wanaka
-        // post-sim data exists for this op.
-        OperationType::Scallop | OperationType::UnifiedFinish | OperationType::SpiralFinish => {
-            ArcFitDispatch::Ratio {
-                value: 0.15,
-                source: DefSrc,
-            }
-        }
-        OperationType::Waterline => ArcFitDispatch::Ratio {
-            value: 0.40,
-            source: DefSrc,
-        },
-        OperationType::SteepShallow => ArcFitDispatch::Ratio {
-            value: 0.30,
-            source: DefSrc,
-        },
-        OperationType::HorizontalFinish
-        | OperationType::RadialFinish
-        | OperationType::Zigzag
-        | OperationType::RampFinish => ArcFitDispatch::Ratio {
-            value: 0.40,
-            source: DefSrc,
-        },
-        OperationType::Pocket => ArcFitDispatch::Ratio {
-            value: 0.60,
-            source: DefSrc,
-        },
-        OperationType::Rest => ArcFitDispatch::Ratio {
-            value: 0.50,
-            source: DefSrc,
-        },
-        OperationType::Profile => ArcFitDispatch::Ratio {
-            value: 0.80,
-            source: DefSrc,
-        },
-        OperationType::Trace
-        | OperationType::Chamfer
-        | OperationType::Pencil
-        | OperationType::Inlay
-        | OperationType::Face => ArcFitDispatch::Ratio {
-            value: 0.50,
-            source: DefSrc,
-        },
-
-        // Feature-driven / Z-only — chipload-as-continuous-metric
-        // doesn't apply. Caller treats observed = 0.0 as "no signal".
-        OperationType::VCarve
-        | OperationType::ProjectCurve
-        | OperationType::Drill
-        | OperationType::AlignmentPinDrill => ArcFitDispatch::NotApplicable,
-    }
-}
-
-/// Forward-callable prediction of the median observed chipload per
-/// tooth the post-sim chipload gate will measure.
-///
-/// `observed_median_mm_per_tooth == 0.0` is the contract for "no
-/// constraint signal" — callers downstream of the back-off loop
-/// treat zero as a pass-through rather than a hard refusal.
-#[derive(Debug, Clone)]
-pub struct ObservedChiploadPrediction {
-    /// Geometric nominal `feed / (rpm × flutes)` (mm/tooth).
-    pub nominal_mm_per_tooth: f64,
-    /// Arc-fit multiplier in `[0.0, 1.0]`. Zero indicates the op
-    /// family doesn't have a continuous-engagement chipload (drill,
-    /// v-bit, project-curve).
-    pub arc_fit_ratio: f64,
-    /// Forward-predicted median chipload the gate will report (mm/tooth):
-    /// `nominal_mm_per_tooth × arc_fit_ratio`.
-    ///
-    /// ⚠ **Stale since 2026-08-06** — see [`arc_fit_ratio_for_op`]. The
-    /// gate now reports a linear advance per tooth, so the honest
-    /// prediction is `nominal_mm_per_tooth × achieved_feed_ratio`, which
-    /// this pre-sim predictor cannot measure. Owner: census T3.5.
-    pub observed_median_mm_per_tooth: f64,
-    /// Provenance of the arc-fit ratio — calibrated against a Wanaka
-    /// cell, conservative default, or refusal.
-    pub source: ArcFitRatioSource,
-}
-
-/// Provenance of the per-op-family arc-fit ratio. Surfaced so the
-/// rationale tree the back-off loop renders can show *why* a given
-/// observed-chipload prediction landed where it did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArcFitRatioSource {
-    /// Empirically calibrated against post-sim observation for this
-    /// op family. Currently: Adaptive3D (Wanaka Back Rough / 3D Rough
-    /// 6 → 0.25), DropCutter (Wanaka 3D Finish 6 → 0.15).
-    Calibrated,
-    /// Conservative default — used when this op family doesn't yet
-    /// have a measured Wanaka cell. The numeric value is biased to
-    /// over-predict the gap between nominal and observed, so step-2
-    /// feed-up corrections err on the safe side.
-    Default,
-    /// Operation doesn't have a continuous-engagement chipload at
-    /// all — drill / pin drill (Z-only kinematics), v-carve /
-    /// project-curve (feature-driven). Observed = 0.0.
-    NotApplicable,
-}
+// # ⚰ RETIRED 2026-08-13 — the arc-fit observed-chipload prediction
+//
+// This module used to carry `predict_observed_chipload_mm`, its
+// `ObservedChiploadPrediction` / `ArcFitRatioSource` types, and the
+// per-operation-family `arc_fit_ratio_for_op` table (Adaptive3d 0.25,
+// DropCutter 0.15 tagged `Calibrated`; fifteen other families a
+// conservative `Default`). Every ratio in that table was fitted against
+// the post-sim chipload gate's **arc-mean chip thickness** observation.
+// That observation was deleted on 2026-08-06 — the gate now reports
+// `effective_feed / (rpm · flutes)`, a linear advance per tooth. The
+// table did not follow, and `suggest::recalibrate_feed_for_chipload`
+// went on solving `feed = target / arc_fit_ratio × rpm × flutes`
+// against a quantity nothing reported any more.
+//
+// Measured cost, on the real Suggest path, four synthetic fixtures at
+// simulation cell 0.4 mm (A-5,
+// `planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`): Suggest's own
+// shipped recommendation, applied unmodified and simulated, tripped the
+// chipload gate on **4 of 4** fixtures, at **1.85×–5.00×** the gate's
+// band maximum. Removing the lift leaves the commanded advance per tooth
+// on the derated band **minimum** unaided (0.999× measured on both
+// Adaptive3d fixtures) — the calculator was already placing the
+// operating point inside the band, and pass 8 was multiplying it out.
+//
+// **Checkpoint J-1/J-5 (ruled 2026-08-13, operator, BINDING)** retired
+// the whole chain rather than re-keying the ratios to 1.0: no
+// pre-simulation solve can know the achieved/commanded feed ratio, which
+// is what the current gate observation actually depends on. Any feed
+// lift now belongs to the **simulation-backed** path
+// (`feed_modulation`, `tool_load::optimize::retarget::chipload`), which
+// corrects from a measured observation — that path is measured clean 4/4
+// on the same fixtures. The two `SuggestWarning` variants
+// (`FeedRaisedForChipload`, `ChiploadStillLowAfterRecalibration`) were
+// deliberately KEPT for that path to reuse; see their own docs.
+//
+// Do not reintroduce a pre-simulation feed lift keyed on an
+// operation-family constant.
 
 /// Components that fed the closed-form δ_tip evaluation. Each field is
 /// in its natural unit (N, mm, mm⁴) — the back-off loop's UI surface
@@ -1137,141 +885,19 @@ mod tests {
         );
     }
 
-    /// Wanaka Back Rough / 3D Rough 6 (Adaptive3D, 6 mm endmill,
-    /// feed 911 mm/min, 16 000 RPM, 2 flutes). LUT nominal chipload
-    /// = 911 / (16000 × 2) = 0.0285 mm/tooth. Post-sim observed
-    /// median = 0.0067 mm/tooth (ratio 0.23). Calibrated Adaptive3D
-    /// ratio 0.25 predicts ≈ 0.0071 — within ±20% of the empirical
-    /// 0.0067.
-    #[test]
-    fn adaptive3d_wanaka_predicts_observed_chipload_within_band() {
-        use crate::compute::operation_configs::Adaptive3dConfig;
-        let tool = carbide_endmill(6.0, 45.0, 25.0);
-        let op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            depth_per_pass: 9.0,
-            stepover: 1.2,
-            feed_rate: 911.0,
-            spindle_rpm: Some(16_000),
-            ..Adaptive3dConfig::default()
-        });
-        let pred = predict_observed_chipload_mm(&op, &tool);
-
-        // Nominal: 911 / (16000 × 2) = 0.02846875
-        let expected_nominal = 911.0 / (16_000.0 * 2.0);
-        assert!(
-            (pred.nominal_mm_per_tooth - expected_nominal).abs() < 1e-6,
-            "Adaptive3D nominal should be {expected_nominal:.6}; got {:.6}",
-            pred.nominal_mm_per_tooth
-        );
-        assert_eq!(pred.arc_fit_ratio, 0.25);
-        assert_eq!(pred.source, ArcFitRatioSource::Calibrated);
-
-        // Predicted observed ≈ 0.0285 × 0.25 = 0.0071. Empirical
-        // Wanaka measurement is 0.0067 — the ±20% band on the
-        // measurement covers 0.00536..0.00804.
-        let empirical = 0.0067;
-        let low = empirical * 0.80;
-        let high = empirical * 1.20;
-        assert!(
-            (low..=high).contains(&pred.observed_median_mm_per_tooth),
-            "Adaptive3D predicted observed should land within ±20% of \
-             Wanaka empirical {empirical}; got {:.6} (band {low:.6}..={high:.6})",
-            pred.observed_median_mm_per_tooth
-        );
-    }
-
-    /// Wanaka 3D Finish 6 (DropCutter, 4 mm tapered ball nose).
-    /// The empirical case ran at feed 3000 mm/min, 20 000 RPM, 2
-    /// flutes → nominal = 3000 / (20000 × 2) = 0.075 mm/tooth.
-    /// Post-sim observed median was 0.011 mm/tooth (ratio 0.147).
-    /// Calibrated DropCutter ratio 0.15 predicts ≈ 0.01125 — within
-    /// ±20% of empirical 0.011.
-    #[test]
-    fn drop_cutter_wanaka_predicts_observed_chipload() {
-        use crate::compute::operation_configs::DropCutterConfig;
-        let mut tool = carbide_endmill(4.0, 30.0, 20.0);
-        tool.tool_type = ToolType::TaperedBallNose;
-        tool.shaft_diameter = 6.0;
-
-        let op = OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 0.18,
-            feed_rate: 3000.0,
-            plunge_rate: 800.0,
-            spindle_rpm: Some(20_000),
-            ..DropCutterConfig::default()
-        });
-        let pred = predict_observed_chipload_mm(&op, &tool);
-
-        let expected_nominal = 3000.0 / (20_000.0 * 2.0);
-        assert!(
-            (pred.nominal_mm_per_tooth - expected_nominal).abs() < 1e-6,
-            "DropCutter nominal should be {expected_nominal:.6}; got {:.6}",
-            pred.nominal_mm_per_tooth
-        );
-        assert_eq!(pred.arc_fit_ratio, 0.15);
-        assert_eq!(pred.source, ArcFitRatioSource::Calibrated);
-
-        let empirical = 0.011;
-        let low = empirical * 0.80;
-        let high = empirical * 1.20;
-        assert!(
-            (low..=high).contains(&pred.observed_median_mm_per_tooth),
-            "DropCutter predicted observed should land within ±20% of \
-             Wanaka empirical {empirical}; got {:.6} (band {low:.6}..={high:.6})",
-            pred.observed_median_mm_per_tooth
-        );
-    }
-
-    /// Drill ops route through drill-native gates (peck adequacy,
-    /// chip welding) — the chipload gate doesn't apply. Predictor
-    /// returns source=NotApplicable with observed = 0.0.
-    #[test]
-    fn drill_returns_not_applicable() {
-        let tool = carbide_endmill(6.0, 45.0, 25.0);
-        let op = OperationConfig::new_default(OperationType::Drill);
-        let pred = predict_observed_chipload_mm(&op, &tool);
-        assert_eq!(pred.source, ArcFitRatioSource::NotApplicable);
-        assert_eq!(pred.observed_median_mm_per_tooth, 0.0);
-        assert_eq!(pred.arc_fit_ratio, 0.0);
-    }
-
-    /// V-carve is feature-driven (curve segments, projected geometry)
-    /// — the chipload gate doesn't apply. Same NotApplicable contract
-    /// as Drill.
-    #[test]
-    fn v_carve_returns_not_applicable() {
-        use crate::compute::operation_configs::VCarveConfig;
-        let mut tool = carbide_endmill(6.35, 25.0, 12.0);
-        tool.tool_type = ToolType::VBit;
-        let op = OperationConfig::VCarve(VCarveConfig::default());
-        let pred = predict_observed_chipload_mm(&op, &tool);
-        assert_eq!(pred.source, ArcFitRatioSource::NotApplicable);
-        assert_eq!(pred.observed_median_mm_per_tooth, 0.0);
-        assert_eq!(pred.arc_fit_ratio, 0.0);
-    }
-
-    /// Zero feed → zero nominal → zero observed. The back-off loop's
-    /// "no constraint signal" contract: callers should treat observed
-    /// = 0.0 as a pass-through rather than a hard refusal.
-    #[test]
-    fn zero_feed_returns_zero_observed() {
-        use crate::compute::operation_configs::Adaptive3dConfig;
-        let tool = carbide_endmill(6.0, 45.0, 25.0);
-        let op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            depth_per_pass: 9.0,
-            stepover: 1.2,
-            feed_rate: 0.0,
-            spindle_rpm: Some(16_000),
-            ..Adaptive3dConfig::default()
-        });
-        let pred = predict_observed_chipload_mm(&op, &tool);
-        assert_eq!(pred.nominal_mm_per_tooth, 0.0);
-        assert_eq!(pred.observed_median_mm_per_tooth, 0.0);
-        // Arc-fit ratio is still reported (Adaptive3d's calibrated
-        // 0.25) — the refusal is on the nominal side, not the ratio.
-        assert_eq!(pred.arc_fit_ratio, 0.25);
-        assert_eq!(pred.source, ArcFitRatioSource::Calibrated);
-    }
+    // ── RETIRED 2026-08-13 (Checkpoint J-1/J-5) ────────────────────────
+    //
+    // Five tests stood here and were deleted with the code they pinned:
+    // `adaptive3d_wanaka_predicts_observed_chipload_within_band` (pinned
+    // arc_fit_ratio 0.25 / Calibrated), `drop_cutter_wanaka_predicts_
+    // observed_chipload` (0.15 / Calibrated), `drill_returns_not_
+    // applicable`, `v_carve_returns_not_applicable` and
+    // `zero_feed_returns_zero_observed` (0.25 / Calibrated). All five
+    // asserted properties of `predict_observed_chipload_mm`, which no
+    // longer exists — see the retirement note above `DeflectionBreakdown`.
+    // The behaviour they guarded is now guarded from the other end, by
+    // `tests/arc_fit_disposition_a5.rs::retired_lift_leaves_feed_at_the_
+    // calculator_value`, which asserts Suggest ships the un-lifted feed.
 
     #[test]
     fn vbit_returns_zero() {

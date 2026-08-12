@@ -61,6 +61,29 @@
 //! * The simulation cell is a named constant and is reported beside every
 //!   measurement.
 //!
+//! # 2026-08-13 — the disposition SHIPPED (Checkpoint J-1/J-5)
+//!
+//! The operator ruled disposition **(a) now, (c) as the destination, as one
+//! change**: the automatic feed-up is retired, Suggest emits the un-lifted
+//! feed, and any lift belongs to the simulation-backed path. This file was
+//! written before that ruling and is kept as the permanent record of what
+//! was wrong, so it had to be re-pointed rather than re-baselined:
+//!
+//! * **Arm A is now a PINNED CONSTANT per fixture** (`legacy_shipped_feed`:
+//!   6912.0 / 6000.0 / 4405.0 / 2500.0 mm/min), not a value read back out of
+//!   Suggest. That is what lets the pre-fix reproduction survive the fix —
+//!   `arc_fit_arms_gate_observation` still asserts `arm A == Exceeds` on all
+//!   four fixtures, because arm A is a feed this harness applies explicitly.
+//! * **Arm B is now what Suggest returns.** Pre-fix it was
+//!   `FeedRaisedForChipload::requested_mm_per_min`, i.e. Suggest's feed with
+//!   pass 8 subtracted. Post-fix Suggest simply emits it. The new sentry
+//!   `retired_lift_leaves_feed_at_the_calculator_value` asserts the two are
+//!   the same number — which is the whole claim of disposition (a).
+//! * **Arm C's target is now computed from the band** rather than read off
+//!   the (no longer emitted) warning: `SuggestAggressiveness::Default` aims
+//!   at the band midpoint, and the pre-fix run's four `lut_target` values
+//!   reproduce as midpoints to 5 dp.
+//!
 //! # Fixture shape
 //!
 //! Every fixture is a two-op cascade on the same synthetic surface: op 0 is a
@@ -96,7 +119,7 @@ use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, DropCutterConfig,
 };
 use rs_cam_core::compute::tool_config::ToolConfig;
-use rs_cam_core::feeds::suggest::{FeedRecalibrationCap, SuggestWarning};
+use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
@@ -151,6 +174,16 @@ struct Fixture {
     /// whether the ceiling binds decides whether the arc-fit lift is
     /// *realised* or merely *solved for*, and the two differ by a lot.
     max_cutting_feed_mm_min: Option<f64>,
+    /// **Arm A — the feed Suggest SHIPPED before the retirement** (mm/min),
+    /// measured on this exact fixture at `5c4e847c` and pinned here on
+    /// 2026-08-13. Applied explicitly by `arc_fit_arms_gate_observation`
+    /// so the pre-fix reproduction outlives the code that produced it.
+    legacy_shipped_feed: f64,
+    /// **Arm B — the calculator's own feed** (mm/min): pre-fix this was
+    /// `FeedRaisedForChipload::requested_mm_per_min`; post-fix it is what
+    /// `suggested_operation.feed_rate()` returns. The retirement sentry
+    /// asserts Suggest now lands here.
+    expected_suggest_feed: f64,
 }
 
 fn rough_tool() -> ToolConfig {
@@ -217,6 +250,8 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 16_000,
             max_feed_mm_min: 15_000.0,
             max_cutting_feed_mm_min: Some(15_000.0),
+            legacy_shipped_feed: 6912.0,
+            expected_suggest_feed: 1215.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -231,6 +266,8 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 14_000,
             max_feed_mm_min: 8_000.0,
             max_cutting_feed_mm_min: None,
+            legacy_shipped_feed: 6000.0,
+            expected_suggest_feed: 2243.0,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -244,6 +281,8 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 18_000,
             max_feed_mm_min: 12_000.0,
             max_cutting_feed_mm_min: None,
+            legacy_shipped_feed: 4405.0,
+            expected_suggest_feed: 1487.0,
         },
         // A small router: the ceiling binds on a DropCutter lift too.
         Fixture {
@@ -258,6 +297,8 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 20_000,
             max_feed_mm_min: 2_500.0,
             max_cutting_feed_mm_min: None,
+            legacy_shipped_feed: 2500.0,
+            expected_suggest_feed: 1029.0,
         },
     ]
 }
@@ -306,19 +347,27 @@ fn build_session(fx: &Fixture) -> ProjectSession {
 
 /// Everything the real Suggest path says about the measured op, before any
 /// simulation. Field names use A-2's canonical vocabulary.
+///
+/// **Re-pointed 2026-08-13 (Checkpoint J-1).** Pre-fix this struct read
+/// `requested_feed` / `raised_feed` / `lut_target` / `cap_hit` out of the
+/// `FeedRaisedForChipload` warning, and `arc_fit_ratio` / `arc_fit_source`
+/// off `predictions.observed_chipload`. All six sources were retired with
+/// pass 8. What replaces them:
+///
+/// * `shipped_feed` — `suggested_operation.feed_rate()`, i.e. the number
+///   the GUI writes. Post-retirement this IS the calculator's feed.
+/// * `lut_target` — recomputed as the band **midpoint**, which is what
+///   `SuggestAggressiveness::Default` aims at. Verified against the pre-fix
+///   run: all four `lut_target` values the warning used to carry reproduce
+///   as midpoints of the same bands to 5 dp (0.05400 / 0.06645 / 0.01739 /
+///   0.01259).
+/// * arms A and B — pinned on the fixture, see `Fixture::legacy_shipped_feed`.
 #[derive(Debug, Clone)]
 struct SuggestRead {
-    /// The arc-fit ratio the predictor applied, and its provenance tag.
-    arc_fit_ratio: f64,
-    arc_fit_source: String,
-    /// `FeedRaisedForChipload::requested_mm_per_min` — Suggest's feed with
-    /// pass 8 (the arc-fit recalibration) removed. This IS disposition (a).
-    requested_feed: f64,
-    /// `FeedRaisedForChipload::raised_mm_per_min` — Suggest's shipped feed.
-    raised_feed: f64,
-    /// Which cap, if any, bound the solve.
-    cap_hit: Option<FeedRecalibrationCap>,
-    /// `lut_target_mm_per_tooth` — the band target the solve aimed at.
+    /// `suggested_operation.feed_rate()` — the number the GUI writes.
+    shipped_feed: f64,
+    /// The band target arm C aims at: the derated band midpoint under the
+    /// default aggressiveness policy.
     lut_target: f64,
     /// The derated vendor band on the matched row.
     band: Option<(f64, f64)>,
@@ -327,34 +376,33 @@ struct SuggestRead {
     /// The RPM on the operation the fixture was *authored* with, kept only
     /// so the report can show that Suggest moved it.
     authored_rpm: u32,
-    /// The feed on `suggested_operation` — the number the GUI writes.
-    final_feed: f64,
     /// The machine's cutting-feed ceiling.
     cutting_ceiling: f64,
     flutes: u32,
-    /// **The RPM the recalibration actually solved against**, read off
-    /// `suggested_operation` (falling back to `feeds_result.rpm`).
+    /// **The RPM Suggest resolved**, read off `suggested_operation` (falling
+    /// back to `feeds_result.rpm`).
     ///
-    /// This is not the RPM the fixture was authored with. An earlier Suggest
-    /// pass rewrites `spindle_rpm` on the operation before pass 8 runs, so
-    /// the closed form `feed = target / ratio × rpm × flutes` uses the
-    /// *rewritten* RPM. Deriving arm C from the authored RPM instead put
-    /// DC-1's ratio at 7.04× against a closed-form 6.67× — the harness's own
-    /// first red, and the reason this field exists.
+    /// This is not the RPM the fixture was authored with — an earlier
+    /// Suggest pass rewrites `spindle_rpm`, and it differs from the authored
+    /// value on three of the four fixtures (14 000 → 16 000, 18 000 →
+    /// 19 000, 20 000 → 19 000). Deriving arm C from the authored RPM put
+    /// DC-1's retirement ratio at 7.04× against a closed form of 6.67× —
+    /// the harness's own first red, and the reason this field exists. It
+    /// outlives pass 8 because every arm still runs at this RPM, which is
+    /// what makes the A/B/C delta attributable to the feed alone.
     rpm: u32,
+    /// Whether either retired chipload-lift warning appeared. Must be
+    /// `false` — nothing in Suggest constructs them since 2026-08-13.
+    any_retired_lift_warning: bool,
 }
 
 impl SuggestRead {
-    /// Commanded advance per tooth (mm) at the pre-recalibration feed.
-    fn commanded_fpt_before(&self) -> f64 {
-        self.requested_feed / (f64::from(self.rpm) * f64::from(self.flutes))
+    /// Commanded advance per tooth (mm) at a given feed.
+    fn commanded_fpt(&self, feed: f64) -> f64 {
+        feed / (f64::from(self.rpm) * f64::from(self.flutes))
     }
-    /// Commanded advance per tooth (mm) at the shipped feed.
-    fn commanded_fpt_after(&self) -> f64 {
-        self.raised_feed / (f64::from(self.rpm) * f64::from(self.flutes))
-    }
-    /// Arm C's feed: what the solve would produce with the table retired to
-    /// 1.0, i.e. aimed at the band target in the unit the gate now reports.
+    /// Arm C's feed: the solve aimed at the band target in the unit the gate
+    /// now reports (i.e. the excluded "re-key the ratios to 1.0" reference).
     fn arm_c_feed(&self) -> f64 {
         (self.lut_target * f64::from(self.rpm) * f64::from(self.flutes)).min(self.cutting_ceiling)
     }
@@ -372,7 +420,6 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         profile.feasibility
     );
 
-    let pred = &profile.predictions.observed_chipload;
     let feeds = profile
         .feeds
         .as_ref()
@@ -382,67 +429,67 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         .as_ref()
         .expect("feasibility Ok ⟹ suggested operation present");
 
-    let lift = profile.warnings.iter().find_map(|w| match w {
-        SuggestWarning::FeedRaisedForChipload {
-            requested_mm_per_min,
-            raised_mm_per_min,
-            lut_target_mm_per_tooth,
-            cap_hit,
-            ..
-        } => Some((
-            *requested_mm_per_min,
-            *raised_mm_per_min,
-            *lut_target_mm_per_tooth,
-            *cap_hit,
-        )),
-        _ => None,
-    });
-
-    let (requested_feed, raised_feed, lut_target, cap_hit) = lift.unwrap_or_else(|| {
-        panic!(
-            "{}: FeedRaisedForChipload must fire — this fixture exists to measure the lift. \
-             warnings: {:?}",
-            fx.label, profile.warnings
-        )
-    });
+    let band = feeds
+        .chipload_bounds
+        .map(|b| (b.min_mm_per_tooth, b.max_mm_per_tooth));
 
     SuggestRead {
-        arc_fit_ratio: pred.arc_fit_ratio,
-        arc_fit_source: format!("{:?}", pred.source),
-        requested_feed,
-        raised_feed,
-        cap_hit,
-        lut_target,
-        band: feeds
-            .chipload_bounds
-            .map(|b| (b.min_mm_per_tooth, b.max_mm_per_tooth)),
+        shipped_feed: suggested.feed_rate(),
+        // `SuggestAggressiveness::Default` (the policy `cutter_op_profile`
+        // uses) targets the band midpoint.
+        lut_target: band.map_or(f64::NAN, |(lo, hi)| (lo + hi) / 2.0),
+        band,
         feeds_rpm: feeds.rpm,
         authored_rpm: fx.rpm,
-        final_feed: suggested.feed_rate(),
         cutting_ceiling: session.machine().cutting_feed_ceiling_mm_min(),
         flutes: fx.tool.flute_count,
         rpm: suggested
             .spindle_rpm()
             .unwrap_or_else(|| feeds.rpm.round() as u32),
+        any_retired_lift_warning: profile.warnings.iter().any(|w| {
+            matches!(
+                w,
+                SuggestWarning::FeedRaisedForChipload { .. }
+                    | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            )
+        }),
     }
 }
 
 // ── Step 1–3: the Suggest-side before/after table ───────────────────────
 
-/// **The number Checkpoint J is about, re-measured.**
+/// **The disposition sentry — §6.1's `retired_lift_leaves_feed_at_the_
+/// calculator_value`, red-first at `5c4e847c`.**
 ///
-/// Prints, per fixture: the arc-fit ratio and its provenance, the feed
-/// Suggest ships, the feed each disposition would ship, and the ratio
-/// between them. The review quotes 4× (Adaptive3d) and 6.7× (DropCutter);
-/// this test measures it rather than quoting it, and reports separately
-/// whether the machine ceiling turns the nominal ratio into a smaller
-/// realised one.
+/// Pre-fix this test was `arc_fit_lift_before_after_by_family` and it
+/// *required* the lift to fire: it asserted `arc_fit_source == "Calibrated"`,
+/// `raised_feed > requested_feed`, and — where no machine cap bound — that
+/// `arm A / arm C == 1 / arc_fit_ratio` exactly. Those assertions measured
+/// the defect and were **red-first inverted here**, not deleted: the closed
+/// form they pinned (4.00× Adaptive3d, 6.67× DropCutter) is restated as the
+/// arm-A/arm-C ratio the pinned constants still produce, so the numbers
+/// remain checkable after the code that generated them is gone.
+///
+/// What it asserts now, per fixture:
+///
+/// 1. neither retired chipload-lift warning appears in `profile.warnings`;
+/// 2. `suggested_operation.feed_rate()` equals the pinned arm-B feed
+///    (1215.0 / 2243.0 / 1487.0 / 1029.0) within 0.5 mm/min — Suggest ships
+///    the calculator's own number;
+/// 3. the shipped feed is **strictly below** the pinned legacy feed, by the
+///    per-fixture ratio the retirement removes (5.69× / 2.67× / 2.96× /
+///    2.43×);
+/// 4. the closed form still reproduces off the pinned constants where no
+///    ceiling truncated the legacy lift (A3D-1 4.00×, DC-1 6.67×).
+///
+/// Point 3 is the one that would catch a *partial* retirement, and point 4
+/// is what keeps this file's headline numbers falsifiable.
 #[test]
-fn arc_fit_lift_before_after_by_family() {
-    println!("\n=== A-5 step 2/3 — Suggest-side before/after (no simulation) ===");
+fn retired_lift_leaves_feed_at_the_calculator_value() {
+    println!("\n=== A-5i — the retirement, Suggest-side (no simulation) ===");
     println!(
-        "{:<46} {:>7} {:>11} {:>10} {:>10} {:>10} {:>9} {:>9}",
-        "fixture", "ratio", "source", "feed_B(a)", "feed_A", "feed_C", "A/B", "A/C"
+        "{:<46} {:>12} {:>12} {:>10} {:>9} {:>9}",
+        "fixture", "legacy_A", "shipped_B", "arm_C", "A/B", "A/C"
     );
 
     for fx in fixtures() {
@@ -450,72 +497,71 @@ fn arc_fit_lift_before_after_by_family() {
         let r = suggest_read(&session, &fx);
 
         let arm_c = r.arm_c_feed();
-        let a_over_b = r.raised_feed / r.requested_feed;
-        let a_over_c = r.raised_feed / arm_c;
+        let a_over_b = fx.legacy_shipped_feed / r.shipped_feed;
+        let a_over_c = fx.legacy_shipped_feed / arm_c;
 
         println!(
-            "{:<46} {:>7.2} {:>11} {:>10.1} {:>10.1} {:>10.1} {:>8.2}× {:>8.2}×",
-            fx.label,
-            r.arc_fit_ratio,
-            r.arc_fit_source,
-            r.requested_feed,
-            r.raised_feed,
-            arm_c,
-            a_over_b,
-            a_over_c,
+            "{:<46} {:>12.1} {:>12.1} {:>10.1} {:>8.2}× {:>8.2}×",
+            fx.label, fx.legacy_shipped_feed, r.shipped_feed, arm_c, a_over_b, a_over_c,
         );
         println!(
-            "      band {:?}  target {:.5}  cap {:?}  ceiling {:.0}  \
+            "      band {:?}  target {:.5}  ceiling {:.0}  \
              rpm solved-against {} (authored {}, feeds.rpm {:.0})  flutes {}",
-            r.band,
-            r.lut_target,
-            r.cap_hit,
-            r.cutting_ceiling,
-            r.rpm,
-            r.authored_rpm,
-            r.feeds_rpm,
-            r.flutes
+            r.band, r.lut_target, r.cutting_ceiling, r.rpm, r.authored_rpm, r.feeds_rpm, r.flutes
         );
         println!(
-            "      commanded advance/tooth  before {:.5}  after {:.5} mm  (band max {:.5})",
-            r.commanded_fpt_before(),
-            r.commanded_fpt_after(),
+            "      commanded advance/tooth  legacy {:.5}  shipped {:.5} mm  (band max {:.5})",
+            r.commanded_fpt(fx.legacy_shipped_feed),
+            r.commanded_fpt(r.shipped_feed),
             r.band.map_or(f64::NAN, |b| b.1),
         );
 
-        // ── Structural assertions (what must not silently change) ──────
-        assert_eq!(
-            r.arc_fit_source, "Calibrated",
-            "{}: the lift only fires on Calibrated rows; this fixture must be one",
+        // 1 — the lift is gone from the warning stream.
+        assert!(
+            !r.any_retired_lift_warning,
+            "{}: no Suggest pass has constructed FeedRaisedForChipload or \
+             ChiploadStillLowAfterRecalibration since 2026-08-13 (Checkpoint J-1/J-5)",
             fx.label
         );
+
+        // 2 — Suggest ships the calculator's feed.
         assert!(
-            r.raised_feed > r.requested_feed,
-            "{}: the lift must raise feed ({} → {})",
+            (r.shipped_feed - fx.expected_suggest_feed).abs() < 0.5,
+            "{}: Suggest must ship the un-lifted feed {} ± 0.5, got {}",
             fx.label,
-            r.requested_feed,
-            r.raised_feed
+            fx.expected_suggest_feed,
+            r.shipped_feed
         );
-        // The closed form the disposition question turns on: when no cap
-        // binds, arm A is exactly 1/ratio times arm C.
-        if r.cap_hit.is_none() {
-            let nominal = 1.0 / r.arc_fit_ratio;
+
+        // 3 — and that is strictly less than what it used to ship. A
+        //     partial retirement would land between the two.
+        assert!(
+            r.shipped_feed < fx.legacy_shipped_feed - 0.5,
+            "{}: shipped feed {} must sit strictly below the retired lift's {}",
+            fx.label,
+            r.shipped_feed,
+            fx.legacy_shipped_feed
+        );
+
+        // 4 — the closed form, restated on the pinned constants. It holds
+        //     only where the machine cutting-feed ceiling did not truncate
+        //     the legacy lift; A3D-2 and DC-2 were capped and are excluded
+        //     by that condition, exactly as pre-fix.
+        let uncapped = fx.legacy_shipped_feed < r.cutting_ceiling - 0.5;
+        let nominal = match fx.family {
+            "Adaptive3d" => 4.0,
+            _ => 1.0 / 0.15,
+        };
+        if uncapped {
             assert!(
                 (a_over_c - nominal).abs() < 0.02,
-                "{}: uncapped, arm A / arm C must equal 1/ratio = {:.3}, measured {:.3}",
+                "{}: uncapped, legacy A / arm C must equal 1/arc_fit_ratio = {:.3} \
+                 (the retired table's closed form), measured {:.3}",
                 fx.label,
                 nominal,
                 a_over_c
             );
         }
-        // The shipped feed is what the GUI writes.
-        assert!(
-            (r.final_feed - r.raised_feed).abs() < 0.5,
-            "{}: suggested_operation feed {} must be the raised feed {}",
-            fx.label,
-            r.final_feed,
-            r.raised_feed
-        );
     }
 }
 
@@ -657,11 +703,17 @@ fn arc_fit_arms_gate_observation() {
 
         // Every arm runs at the RPM Suggest resolved, so the A/B/C delta is
         // attributable to the commanded feed alone.
-        let arm_a = run_arm(&mut session, r.raised_feed, r.rpm, false);
-        let arm_b = run_arm(&mut session, r.requested_feed, r.rpm, false);
+        //
+        // Arm A is the PINNED legacy feed (see `Fixture::legacy_shipped_feed`)
+        // — post-retirement Suggest no longer produces it, and the pre-fix
+        // reproduction below must survive the fix. Arm B is what Suggest
+        // ships today; `retired_lift_leaves_feed_at_the_calculator_value`
+        // asserts that is the same number arm B carried pre-fix.
+        let arm_a = run_arm(&mut session, fx.legacy_shipped_feed, r.rpm, false);
+        let arm_b = run_arm(&mut session, r.shipped_feed, r.rpm, false);
         let arm_c = run_arm(&mut session, r.arm_c_feed(), r.rpm, false);
-        let arm_a_mod = run_arm(&mut session, r.raised_feed, r.rpm, true);
-        let arm_b_mod = run_arm(&mut session, r.requested_feed, r.rpm, true);
+        let arm_a_mod = run_arm(&mut session, fx.legacy_shipped_feed, r.rpm, true);
+        let arm_b_mod = run_arm(&mut session, r.shipped_feed, r.rpm, true);
 
         print_arm("A shipped", &arm_a);
         print_arm("B retire", &arm_b);

@@ -18,23 +18,29 @@
 //!   `DppCappedByDeflection` must NOT fire. Instead the axial-DOC
 //!   envelope (`binding: "vendor_ap"`) clamps the calculator's 9 mm
 //!   DPP straight to ~5.4 mm via `AxialDocClampedByEnvelope`, and the
-//!   deflection solve never runs. `FeedRaisedForChipload` must still
-//!   fire (feed ~911 mm/min → the derived cutting ceiling) — the
-//!   recalibration remains chipload-bound regardless of which axial
-//!   constraint wins.
+//!   deflection solve never runs. **Re-baselined 2026-08-13 (Checkpoint
+//!   J-1):** `FeedRaisedForChipload` used to fire here, lifting feed
+//!   911 → 6000 mm/min (the derived cutting ceiling) with
+//!   `cap_hit == Some(MaxFeed)`. Suggest pass 8 is retired; the feed now
+//!   stays at the calculator's own value and neither chipload-lift
+//!   warning fires.
 //! - **3D Finish 6** (DropCutter, 2 mm-tip tapered ball): scallop-height
 //!   target resolves to ~0.03 mm stepover (~4.6 M moves on the Wanaka
 //!   stock envelope) — `StepoverRaisedForRuntime` must fire raising
-//!   stepover toward ~0.23 mm, and `FeedRaisedForChipload` must hit
-//!   `cap_hit == Some(MaxFeed)` (the machine ceiling clamps before the
-//!   LUT min is reached, so `ChiploadStillLowAfterRecalibration` fires
-//!   alongside with `blocking_cap == MaxFeed`).
+//!   stepover toward ~0.23 mm. The `FeedRaisedForChipload` half of this
+//!   case was re-baselined 2026-08-13 (Checkpoint J-1) to "must NOT
+//!   fire". That inversion is UNVERIFIED by execution: toolpath 11 is
+//!   absent from the operator's working `wanaka.toml`, so
+//!   `wanaka_suggest_baseline` panics in `find_case` before reaching it.
 //! - **Pin Drill / Holes** (drill family): chipload is `NotApplicable` —
 //!   neither `FeedRaisedForChipload` nor `DppCappedByDeflection` may
 //!   leak through.
-//! - **Rivers / Lakes** (V-bit `project_curve`): V-bit chipload is
-//!   `NotApplicable` and `arc_fit_ratio` is `Default` (not Calibrated)
-//!   for `project_curve` — `FeedRaisedForChipload` must NOT fire.
+//! - **Rivers / Lakes** (V-bit `project_curve`): `FeedRaisedForChipload`
+//!   must NOT fire. Pre-2026-08-13 this held because V-bit chipload was
+//!   `NotApplicable` and `project_curve`'s arc-fit ratio was `Default`
+//!   rather than `Calibrated`; since the retirement it holds for every op
+//!   family, so this case no longer distinguishes anything. Kept because
+//!   the negative catch-all below still guards the variant list.
 //!
 //! And a negative catch-all: any `SuggestWarning` variant that
 //! shouldn't appear on this project — e.g. an unexpected
@@ -78,8 +84,8 @@ use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::feeds::{
     embedded_vendor_lut,
     suggest::{
-        FeedRecalibrationCap, StockContext, SuggestContext, SuggestForOperationInput,
-        SuggestWarning, SuggestedParams, suggest_for_operation,
+        StockContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
+        suggest_for_operation,
     },
 };
 use rs_cam_core::machine::DEFAULT_CUTTING_FEED_CAP_MM_MIN;
@@ -159,39 +165,21 @@ fn find_case(
     })
 }
 
-fn assert_has_feed_raised(
-    warnings: &[SuggestWarning],
-    context: &str,
-) -> (f64, f64, f64, f64, f64, Option<FeedRecalibrationCap>) {
-    let hit = warnings.iter().find_map(|w| match w {
-        SuggestWarning::FeedRaisedForChipload {
-            requested_mm_per_min,
-            raised_mm_per_min,
-            predicted_observed_chipload_before,
-            predicted_observed_chipload_after,
-            lut_target_mm_per_tooth,
-            cap_hit,
-        } => Some((
-            *requested_mm_per_min,
-            *raised_mm_per_min,
-            *predicted_observed_chipload_before,
-            *predicted_observed_chipload_after,
-            *lut_target_mm_per_tooth,
-            *cap_hit,
-        )),
-        _ => None,
-    });
-    hit.unwrap_or_else(|| {
-        panic!("{context}: FeedRaisedForChipload must fire, got warnings: {warnings:?}")
-    })
-}
-
+/// **RE-BASELINED 2026-08-13 — Checkpoint J-1.** `assert_has_feed_raised`
+/// stood here and returned the six `FeedRaisedForChipload` fields; every
+/// Adaptive3d / DropCutter case in this file called it. Suggest pass 8 is
+/// retired, so the helper inverts and `assert_no_feed_raised` becomes the
+/// only one — it applies to **every** op family now, not just the ones
+/// whose chipload was `NotApplicable`.
 fn assert_no_feed_raised(warnings: &[SuggestWarning], context: &str) {
     assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::FeedRaisedForChipload { .. })),
-        "{context}: FeedRaisedForChipload must NOT fire (chipload NotApplicable here), got warnings: {warnings:?}"
+        !warnings.iter().any(|w| matches!(
+            w,
+            SuggestWarning::FeedRaisedForChipload { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        )),
+        "{context}: the retired chipload-lift warnings must NOT fire — no Suggest pass has \
+         constructed either since 2026-08-13 (Checkpoint J-1/J-5), got warnings: {warnings:?}"
     );
 }
 
@@ -312,12 +300,24 @@ fn wanaka_suggest_baseline() {
             suggested.warnings
         );
 
-        let (feed_before, feed_after, obs_before, obs_after, lut_target, cap_hit) =
-            assert_has_feed_raised(&suggested.warnings, &ctx);
-        assert!(
-            feed_after > feed_before,
-            "{ctx}: feed must rise from {feed_before} to satisfy chipload, got {feed_after}"
-        );
+        // ── RE-BASELINED 2026-08-13 (Checkpoint J-1) ───────────────────
+        //
+        // This block required the arc-fit feed-up to fire and pinned its
+        // outcome. Measured at `5c4e847c` on this real project, printed by
+        // this test's own baseline dump:
+        //
+        //   FeedRaisedForChipload { requested_mm_per_min: 911.0,
+        //     raised_mm_per_min: 6000.0, cap_hit: Some(MaxFeed) }
+        //   ChiploadStillLowAfterRecalibration { blocking_cap: MaxFeed }
+        //
+        // i.e. the calculator's 911 mm/min was lifted 6.59× to the derived
+        // 6000 mm/min cutting ceiling — the uncapped solve wanted 6912 —
+        // and the pass then reported that even 6000 fell short of a target
+        // stated in a quantity the gate stopped reporting on 2026-08-06.
+        //
+        // Post-retirement Suggest ships 911 mm/min and says nothing. The
+        // assertions invert to that.
+        assert_no_feed_raised(&suggested.warnings, &ctx);
         // v3.0d (RPM idempotency fix): apply_feeds_result_to_op now
         // writes the calculator's chosen RPM (16000 on this case) into
         // the operation before enforce_invariants runs, so the
@@ -335,34 +335,17 @@ fn wanaka_suggest_baseline() {
         // recalibration caps at the cutting ceiling and honestly
         // reports the shortfall. A profile that genuinely cuts faster
         // sets max_cutting_feed_mm_min explicitly.
+        // The feed Suggest now ships is the calculator's own. Pinned by
+        // direction + the retired lift's ceiling rather than by magnitude
+        // (pin convention rule 2): whatever the calculator chooses, it must
+        // sit strictly below the ceiling the lift used to slam into —
+        // otherwise the lift is still happening somewhere.
         assert!(
-            (feed_after - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-6,
-            "{ctx}: post-recal feed must cap at the derived cutting ceiling \
-             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {feed_after}"
-        );
-        assert_eq!(
-            cap_hit,
-            Some(FeedRecalibrationCap::MaxFeed),
-            "{ctx}: the cutting ceiling must bind, got {cap_hit:?}"
-        );
-        assert!(
-            obs_after < lut_target && obs_after > lut_target * 0.8,
-            "{ctx}: capped observed lands just under the target (~0.87×), got {obs_after} vs lut_target {lut_target}"
-        );
-        let still_low_cap = suggested.warnings.iter().find_map(|w| match w {
-            SuggestWarning::ChiploadStillLowAfterRecalibration { blocking_cap, .. } => {
-                Some(*blocking_cap)
-            }
-            _ => None,
-        });
-        assert_eq!(
-            still_low_cap,
-            Some(FeedRecalibrationCap::MaxFeed),
-            "{ctx}: still-low warning must name the binding cap, got {still_low_cap:?}"
-        );
-        assert!(
-            obs_before < lut_target,
-            "{ctx}: pre-recal observed must be below LUT target (otherwise loop wouldn't fire), got {obs_before} vs {lut_target}"
+            suggested.operation.feed_rate() < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+            "{ctx}: the shipped feed must sit below the derived cutting ceiling \
+             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}) the retired lift used to clamp against, \
+             got {}",
+            suggested.operation.feed_rate()
         );
 
         // v3.3c (StrategyAndFeeds default): the strategy-aware
@@ -461,23 +444,15 @@ fn wanaka_suggest_baseline() {
             suggested.warnings
         );
 
-        let (_, feed_after, obs_before, obs_after, lut_target, _) =
-            assert_has_feed_raised(&suggested.warnings, &ctx);
-        // v3.0d: same Wanaka geometry as Back Rough → same operating
-        // point. F4 (2026-06-10): the solve's 6912 mm/min target feed
-        // now caps at the cutting ceiling (see Back Rough above).
+        // RE-BASELINED 2026-08-13 (Checkpoint J-1). Same Wanaka geometry as
+        // Back Rough, and at `5c4e847c` the identical lift: 911 → 6000
+        // mm/min, `cap_hit: Some(MaxFeed)`, still-low alongside. Retired.
+        assert_no_feed_raised(&suggested.warnings, &ctx);
         assert!(
-            (feed_after - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-6,
-            "{ctx}: post-recal feed must cap at the derived cutting ceiling \
-             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {feed_after}"
-        );
-        assert!(
-            obs_before < lut_target,
-            "{ctx}: pre-recal observed must be below LUT target, got {obs_before}"
-        );
-        assert!(
-            obs_after < lut_target && obs_after > lut_target * 0.8,
-            "{ctx}: capped observed lands just under the target, got {obs_after}"
+            suggested.operation.feed_rate() < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+            "{ctx}: the shipped feed must sit below the derived cutting ceiling \
+             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {}",
+            suggested.operation.feed_rate()
         );
     }
 
@@ -525,26 +500,16 @@ fn wanaka_suggest_baseline() {
             "{ctx}: raised stepover must clear 0.10 mm for runtime, got {raised_step}"
         );
 
-        let (_, _, _, obs_after, lut_target, cap_hit) =
-            assert_has_feed_raised(&suggested.warnings, &ctx);
-        assert_eq!(
-            cap_hit, None,
-            "{ctx}: the calibrated tapered-ball target must be reachable inside the \
-             machine envelope (pre-F3.1 the fabricated preset target hit MaxFeed), \
-             got {cap_hit:?}"
-        );
-        assert!(
-            obs_after >= lut_target * 0.95,
-            "{ctx}: post-recal observed must reach the LUT target ({lut_target}), got {obs_after}"
-        );
-        assert!(
-            !suggested
-                .warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
-            "{ctx}: no still-low warning once the target is reachable, got warnings: {:?}",
-            suggested.warnings
-        );
+        // RE-BASELINED 2026-08-13 (Checkpoint J-1). Pre-fix this pinned
+        // the DropCutter lift reaching its target uncapped (`cap_hit ==
+        // None`, `obs_after >= 0.95 × lut_target`, no still-low). Retired
+        // with pass 8. NOTE: this whole block is **unreachable at
+        // `5c4e847c`** — `wanaka_suggest_baseline` panics earlier, at
+        // `find_case(ToolpathId(11))`, because the operator's working copy
+        // of `wanaka.toml` no longer carries toolpath 11. The inversion is
+        // therefore mechanical and UNVERIFIED by execution; see the A-5i
+        // log entry's NOT EXERCISED row.
+        assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
     // ── Toolpath 14: Pin Drill (drill family — chipload NotApplicable)
