@@ -1,0 +1,29 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.22s
+     Running tests/literature_matrix.rs (target/debug/deps/literature_matrix-69d8fb92d462ce2c)
+
+running 21 tests
+test freshness::tests::civil_from_days_anchors ... ok
+test freshness::tests::classify_bands ... ok
+test freshness::tests::months_between_basic ... ok
+test freshness::tests::today_is_pinned_when_asked_and_real_otherwise ... ok
+test freshness::tests::parse_ymd_ok_and_err ... ok
+test harness_tests::band_check_ceiling_floor_modes ... ok
+test harness_tests::anti_pattern_triggers_outside_when_truthy ... ok
+test harness_tests::band_check_at_clamp_is_within_not_edge ... ok
+test harness_tests::band_check_inside_band_is_within ... ok
+test harness_tests::band_check_near_edge_is_edge_tier ... ok
+test harness_tests::band_check_outside_is_outside ... ok
+test harness_tests::convex_hull_check_pocket_envelope ... ok
+test harness_tests::expr_evaluator_arithmetic_and_precedence ... ok
+test harness_tests::expr_check_floor_form ... ok
+test harness_tests::expr_evaluator_comparisons_and_logic ... ok
+test harness_tests::point_in_polygon_square_basic ... ok
+test harness_tests::expr_evaluator_identifiers_and_div_by_zero ... ok
+test harness_tests::rollup_all_within_is_cosmetic ... ok
+test harness_tests::rollup_edge_drops_one_severity_tier ... ok
+test harness_tests::rollup_promotes_outside_to_declared_severity ... ok
+test run_literature_matrix ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

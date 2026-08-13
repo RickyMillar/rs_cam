@@ -501,6 +501,26 @@ so the binary cannot be stale with respect to the change under test. The
 (`git show HEAD:…`) and restoring afterwards — never `git stash`, which
 would have mutated a tree two other agents were working in.
 
+**Caveat closed.** When A-8 released the Cargo slot the matrix was re-run
+through real `cargo test` on the committed tree, with a fresh compile:
+
+```text
+   Compiling rs_cam_core v0.1.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.22s
+     Running tests/literature_matrix.rs
+test run_literature_matrix ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+(`artifacts/s2/litmatrix_cargo_confirm.txt`.) The direct-binary arm and
+the `cargo test` arm agree.
+
+**End-state red set, verified from A-8's full core suite**, which ran to
+completion on the same tree: `arc_raster_full_dressups_fingerprint`,
+`face_full_chain_fingerprint`, `three_pass_full_dressups_fingerprint`
+(G-XFP x3) and `wanaka_suggest_baseline` — exactly the set the brief
+pre-registered as known-red, and **nothing from the literature matrix**.
+
 ---
 
 ## 9. NOT EXERCISED
