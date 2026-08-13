@@ -3570,3 +3570,189 @@ Seven items, in the deliverable §6. The load-bearing ones:
 Next action / checkpoint request: **operator ruling on Q1–Q6**
 (`CHIP_THICKNESS_POLICY.md` §5). This wave commits no production code and
 proposes none.
+
+---
+
+## S-5 — the smalls bundle: FP-65, DR-PIN, DR-LIVE, hover readout, O-CANC, 2026-08-14
+
+Status: COMPLETE, 5 of 5 FIXED, 0 OBE, 0 BLOCKED. **Headline: all five
+landed as briefed, and two of them turned out to be sitting on a wrong
+number rather than a missing one — the cancellation coverage claim was
+"21 of 23" against a registry of 24, with UnifiedFinish falling through the
+gap in both terms; and `peck_depth`'s new domain closes the ledgered hole
+but NOT a residual the ledger did not know about, which is recorded rather
+than implied away.**
+
+Commit(s), parent `e94be53a` (branch `tech-debt-3`):
+
+| commit | item | slice |
+|---|---|---|
+| `e1e4ea2e` | **FP-65** | doc-only: the waterline-threshold doc line moved to the shipped 75 |
+| `76096730` | **DR-PIN** | `apply_drill_defaults` clamps `AlignmentPinDrill` against `stock_z + spoilboard_penetration` |
+| `2da6c787` | **DR-LIVE** | `ParamDef` gains `ParamRange`; `peck_depth` declares `> 0`, the setter refuses, the schema publishes |
+| `acc8f2f9` | **hover** | feeds-modal nomogram hover no longer prints a negative advance/tooth |
+| `c40eb7da` | **O-CANC** | AlignmentPinDrill + Chamfer poll `ctx.cancel`; the coverage claim becomes an assertion |
+| this entry | — | the wave record |
+
+Territory held: `crates/rs_cam_core/src/{finish_planner.rs,
+feeds/suggest.rs, compute/catalog.rs, compute/execute.rs,
+session/compute.rs}`, `crates/rs_cam_core/tests/{literature_matrix/shim.rs,
+adversarial_2d_campaign_r2.rs}`, `crates/rs_cam_viz/src/ui/feeds_modal.rs`
+(the hover readout only), this entry. Disjoint from A-8i's `optimize/` +
+optimizer results card throughout; nothing of A-8i's was staged, edited,
+reverted or reformatted at any point.
+
+### Per-item disposition
+
+| item | status | sentry / evidence |
+|---|---|---|
+| FP-65 | **FIXED** | doc-only; the shipped number is `FinishPlannerParams::for_tool`'s `waterline_threshold_deg: 75.0` (`finish_planner.rs:202`), mirrored by `UnifiedFinishConfig::default` (`operation_configs.rs:1059`). No sentry: nothing executable moved. |
+| DR-PIN | **FIXED** | `alignment_pin_drill_peck_is_clamped_like_drill` — *"the pin family must clamp identically to Drill at the same hole depth"*, asserted as an equality between the two families, not against a literal. |
+| DR-LIVE | **FIXED** (with a stated residual) | `set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse` — *"a peck the emitter degrades to a single full-depth descent must be refused at the setter, not accepted and silently neutered"*. Companion: `a_positive_peck_still_has_no_descent_cap`. |
+| hover readout | **FIXED** (not OBE) | `hover_readout_never_prints_a_negative_chipload` — *"fixture must reproduce the reported −0.0928 mm/tooth"*, then the shipped path returns `0.0`. |
+| O-CANC | **FIXED** | `cancellable_families_honour_a_preset_cancel_flag` — *"every registered operation family must appear in this list"*, now 24 cases equal to `OperationType::ALL`. |
+
+### The A-4 OBE check, done first and negative
+
+The brief warned that A-2's renames and A-4's funnel might have deleted the
+hover site. It did not: `28016542` deleted the six per-field applies and
+rerouted the modal, and `12de0a81` renamed strings, but the RPM/feed
+nomogram and its `pointer_coordinate()` readout survive both. The site was
+located live before editing. **No item in this bundle is OBE.**
+
+### Result — DR-PIN needed a parameter, not just a call
+
+The pin family could not be clamped where `Drill` is clamped, because it
+does not carry its hole depth: `generate_alignment_pin_drill` computes
+`stock_z + cfg.spoilboard_penetration` at generation time. `apply_drill_
+defaults` therefore takes the stock context as a fourth parameter, sourced
+from the `SuggestContext::stock` the canonical GUI/MCP path
+(`ProjectSession::cutter_op_profile`) already populates. `None` is honest
+about itself: **the clamp cannot be applied**, value left unclamped exactly
+as before — not "applied and found nothing to do". The two `None` call
+sites are the strategy-advisor probe (`session/compute.rs:703`, which
+passes `SuggestContext::default()`) and the literature-matrix shim (whose
+cells describe a tool × material × operation, not a project).
+
+The pre-fix reproduction is the sentry's first assertion and stays: softwood
+Ø6 → `drill_default_peck_depth_mm` = 18.0 mm, and against the ledger's
+~13 mm hole the clamp now yields 9.75 mm, identical to `Drill`'s at the same
+depth.
+
+### Result — DR-LIVE closes the ledgered hole and opens a smaller one
+
+Closed, as ledgered: `set_toolpath_param(0, "peck_depth", 0)` and `-3` now
+refuse with `Invalid parameter: 'peck_depth' = 0 is outside the accepted
+range for Drill (finite and > 0); the value was NOT applied`, and
+`get_operation_schema("drill")` publishes `{"min":0.0,
+"min_exclusive":true,"finite":true}`. Non-finite was never the reported
+hole — JSON has no `NaN` literal and the string path fails serde — and
+`accepts` rejecting it is belt-and-braces, said so in its doc rather than
+claimed as a fix.
+
+**NOT closed, and new: `fed_descents` has no descent cap.** The row states
+the livelock is closed because the function guards a non-positive or
+non-finite peck. It does — but a positive-but-tiny peck is not guarded, and
+the loop pushes `depth / peck` entries into a `Vec` with no bound. Measured
+at safe magnitudes on a 15 mm span: peck 1.0 → 15 descents, 0.1 → 150,
+0.01 → 1500, 0.001 → 15 000, linear with no flattening. Extrapolated (NOT
+run — the run would have taken the machine down), a 1e-9 peck is ~1.5e10
+entries, i.e. an allocation-bound hang reachable through MCP exactly as the
+ledgered `0` was.
+
+This is why the declared domain is `> 0` and not something wider or
+narrower: it matches `fed_descents`' guard **exactly**, so the ParamDef
+states what the emitter states and nothing more. Widening it to the GUI's
+`0.5` floor would have made the schema stricter than the engine on a legal
+0.1 mm peck; leaving it absent was the defect. Capping the emitter is a
+behavioural change to generation and is **TD3 intake**, not taken here.
+
+### Result — O-CANC, and the count that was wrong in both terms
+
+`ExecutionContext`'s doc read *"21 of 23 registered families; the remaining
+two are AlignmentPinDrill and Chamfer"*. Both numbers were wrong.
+`for_each_op!` has **24** rows, and **UnifiedFinish** — which has routed
+through `unified_finish_toolpath_with_cancel` since it shipped, with
+`check_cancel` as that function's first statement — appeared in neither the
+numerator nor the exception list. It was cancellable and unclaimed.
+
+So the true pre-wave state was 22 of 24 cancellable, described as 21 of 23.
+Post-wave it is 24 of 24, and **the count is no longer written by hand**:
+the sentry asserts its case list equals `OperationType::ALL`, with a
+message naming both difference directions. A 25th family cannot join
+without polling the flag or turning it red — which is the property
+`ExecutionContext`'s doc always claimed to have and did not.
+
+Both new arms poll as the FIRST statement, ahead of their own
+preconditions, and that ordering is load-bearing for the sentry: the pin
+op's default config has no holes and Chamfer runs on a V-bit here, so a
+check placed after those guards would return `MissingGeometry` /
+`InvalidTool` and the case would read as ignored. Same ordering, same
+reason, as rest's.
+
+### Verification (focused commands + exact state)
+
+Run under a shared tree with A-8i's uncommitted work present; every command
+was scoped so A-8i's in-flight files could be attributed and routed around
+rather than fixed (its `optimize/delta.rs` had a transient `E0063` in its
+lib-test module partway through this wave — attributed, skipped, and later
+cleared by A-8i itself).
+
+| command | result |
+|---|---|
+| `cargo test -p rs_cam_core --lib` | **2282 passed, 0 failed, 12 ignored** (263 s) |
+| `cargo test -p rs_cam_core --test literature_matrix` | **21/21 ok** — DR-PIN moves no matrix number |
+| `cargo test -p rs_cam_core --test adversarial_2d_campaign_r2 no_2d_family_ignores_a_pre_set_cancel_flag` | ok |
+| `cargo test -p rs_cam_viz --lib feeds_modal` | ok (1 test) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo fmt --check` | clean **on every file this wave touched**; the only diffs in the tree are A-8i's five files, deliberately not reformatted (the rustfmt-cascade rule) |
+
+No release build was run. The five named sentries all pass; the two
+extended sentries (`cancellable_families_honour_a_preset_cancel_flag`,
+`no_2d_family_ignores_a_pre_set_cancel_flag`) pass with their new
+assertions.
+
+**No recipe number moved.** Every behavioural change is a clamp on a
+Suggest default that was previously out of range (DR-PIN), a refusal of a
+value that was previously accepted-and-neutered (DR-LIVE), a tooltip string
+(hover), or an early return on a flag that was already set (O-CANC). The
+full core lib suite is the census: 2282/2282.
+
+### NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition
+
+- **`fed_descents` has no descent cap** — NEW, TD3 intake. A positive
+  sub-epsilon `peck_depth` set through MCP is an allocation-bound hang; the
+  DR-LIVE range bounds sign and finiteness only. Pinned by
+  `a_positive_peck_still_has_no_descent_cap`, whose message says a cap
+  closes it. Owner: the drill lane. Re-open: immediately, it is live.
+- **Project TOML is not validated against `ParamRange`** — deliberate. A
+  file is loaded by serde with no registry in scope; `fed_descents`' guard
+  is what catches that path. Owner: whoever wants load-time validation at
+  all. Re-open: a second declared range whose emitter has no guard.
+- **Only `peck_depth` declares a range** — every other `ParamDef` still
+  carries `None`, which `ParamRange`'s doc defines as NOT STATED, not
+  unbounded. Stating them is a per-param decision, not a sweep. Owner:
+  unassigned. Re-open: per param, as each one's emitter domain is measured.
+- **`ParamRange`'s `max` and inclusive-min branches are unexercised** —
+  `greater_than` is the only constructor in use. Written because a range
+  type without an upper bound would have to be rewritten by the first
+  consumer that needs one; flagged here so the branch is not mistaken for
+  tested.
+- **DR-PIN with `None` stock** — the pin peck is still unclamped on any
+  Suggest path that has no project (advisor probe, matrix shim). Reachable
+  by construction, not a defect: those paths have no hole depth. Re-open:
+  a pin-drill Suggest surface that has stock and does not pass it.
+- **No screenshot for the hover fix** (§0 rule 3) — the change is a
+  display-only guard on a function with a unit sentry, and the modal was
+  not launched. The visible claim made here is only that the site exists
+  and is reached, which was verified by reading the live call. Owner: the
+  next wave that opens the modal on a GUI. Re-open: if the readout is ever
+  claimed to be *correct on screen* rather than *non-negative in
+  arithmetic*.
+- **`ToolProfile::Flat` / envelope-radius drill gate divergence (DR-DIV)** —
+  untouched, still ledgered to the radius programme (R-12). DR-PIN's clamp
+  changes the peck that gate reads, not the radius it divides by.
+
+Next action: none blocking. The four ledger rows FP-65, DR-PIN, DR-LIVE and
+O-CANC can be marked discharged; the hover wart from W10-LV item 10 is
+closed; one new intake row (`fed_descents` descent cap) is proposed above.
