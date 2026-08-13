@@ -676,11 +676,20 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
     // band (G16 §11.4). For A1 we surface the chipload high-side band
     // admit, which is the only producer today (power_breach_tolerance
     // and deflection_breach_tolerance default to 0).
+    //
+    // Checkpoint P (2): these two comparisons are verbatim duplicates of
+    // `delta.rs`'s `chipload_within_breaches_strict` and must stay in step
+    // with it — the tier says "verify on a scrap" and this decides which
+    // gate the modal *names* as the reason. Both now go through the
+    // `ChipBounds` methods, so neither can be decided by a 1-ulp
+    // reconstruction. Tolerance `0.0`: the strict bound is the question.
     let mut out = Vec::new();
     if let ChiploadVerdict::Within {
         approach_to_max, ..
     } = &verdict.chipload
-        && approach_to_max.observed_mm_per_tooth > approach_to_max.bounds.max_mm_per_tooth
+        && approach_to_max
+            .bounds
+            .exceeds_high(approach_to_max.observed_mm_per_tooth, 0.0)
     {
         out.push(LimitingGate {
             gate: GateKind::Chipload,
@@ -699,8 +708,8 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
         approach_to_min: Some(metric),
         ..
     } = &verdict.chipload
+        && metric.bounds.below_low(metric.observed_mm_per_tooth, 0.0) == Some(true)
         && let Some(strict_min) = metric.bounds.min_mm_per_tooth
-        && metric.observed_mm_per_tooth < strict_min
     {
         out.push(LimitingGate {
             gate: GateKind::Chipload,
@@ -1501,6 +1510,59 @@ mod tests {
             n.headline.contains("chipload") && n.headline.contains("deflection"),
             "headline should reference both gates, got: {}",
             n.headline,
+        );
+    }
+
+    /// **Checkpoint P (2) — sites 5 and 6.**
+    ///
+    /// `limiting_gates_from_band_admit` holds a verbatim duplicate of
+    /// `delta.rs`'s strict-breach pair. `delta.rs` decides the *tier*
+    /// (auto-recommend vs verify-on-scrap); this decides which gate the modal
+    /// then **names** as the reason. If the two disagree the operator is told
+    /// "verify on a scrap" with no gate named, or a gate is named on a run
+    /// that was not demoted.
+    ///
+    /// RED at the parent (`e94be53a`): both wrote bare `>` / `<`, so a 1-ulp
+    /// reconstruction produced a `LimitingGate` with `band_admitted: true` on
+    /// a candidate the epsilon-aware gate had called `Within`.
+    ///
+    /// GREEN after: both go through the `ChipBounds` methods, and a genuine
+    /// overshoot is still surfaced.
+    #[test]
+    fn a_one_ulp_reconstruction_does_not_manufacture_a_band_admit() {
+        let ceiling = 0.07_f64;
+        let one_ulp_above = f64::from_bits(ceiling.to_bits() + 1);
+        let noise = vd(within_chipload(one_ulp_above), within_deflection(0.10));
+        assert!(
+            limiting_gates_from_band_admit(&noise).is_empty(),
+            "1 ulp over the ceiling is reconstruction noise, not a band admit"
+        );
+
+        let real = vd(within_chipload(ceiling * 1.05), within_deflection(0.10));
+        let gates = limiting_gates_from_band_admit(&real);
+        assert!(
+            gates.iter().any(|g| matches!(g.gate, GateKind::Chipload)
+                && g.side == Some(ChipSide::High)
+                && g.band_admitted),
+            "a genuine 5 % overshoot must still be surfaced as a band admit, \
+             got {gates:?}"
+        );
+
+        // Low side, same shape. `within_chipload` shares one band across both
+        // metrics, so a value 1 ulp under the 0.038 floor probes the burn arm.
+        let floor = 0.038_f64;
+        let one_ulp_below = f64::from_bits(floor.to_bits() - 1);
+        let low_noise = vd(within_chipload(one_ulp_below), within_deflection(0.10));
+        assert!(
+            limiting_gates_from_band_admit(&low_noise).is_empty(),
+            "1 ulp under the floor is not a burn-side band admit"
+        );
+        let low_real = vd(within_chipload(floor * 0.9), within_deflection(0.10));
+        assert!(
+            limiting_gates_from_band_admit(&low_real)
+                .iter()
+                .any(|g| g.side == Some(ChipSide::Low) && g.band_admitted),
+            "a genuine sub-floor median must still be surfaced"
         );
     }
 }
