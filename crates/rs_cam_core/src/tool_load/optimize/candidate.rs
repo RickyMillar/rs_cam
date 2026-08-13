@@ -114,6 +114,62 @@ pub(crate) fn has_doc_knob(op_kind: OperationType) -> bool {
     )
 }
 
+/// The **one** construction site for the optimizer's candidate-scoring
+/// [`SimulationOptions`].
+///
+/// A-8 (2026-08-13) hoisted this out of `evaluate_candidate_inner` so
+/// that [`super::outcome::CandidateSimAssumptions`] — the stamp the
+/// optimizer publishes on every outcome — reads the *same* value the sim
+/// ran, rather than a second literal that can drift from it. §0 rule 5:
+/// a stamp built from a copy of the options is a docstring waiting to
+/// become a lie. Nothing here changed behaviour; the literal moved.
+///
+/// # The two pinned flags, and the state of their justifications
+///
+/// * `use_predicted_feed_in_gates: false` (F-035) — the optimizer ranks
+///   candidates against commanded-feed gates. This **still agrees** with
+///   `SimulationOptions::default()` (`session/mod.rs`), so the original
+///   "same as the production simulator" justification holds. Consequence
+///   worth stating: with this off, the machine's kinematics model cannot
+///   reach any candidate verdict, which is why the stamp records the
+///   kinematics *source* rather than claiming a kinematics-aware score.
+///
+/// * `adaptive_feed_modulation: false` (F-036b) — the optimizer scores
+///   the commanded feed in the IR, deliberately keeping the optimizer
+///   and the feed modulator from conflating two corrections over the
+///   same engagement summary. **Its stated premise is now stale.**
+///   Checkpoint J (2026-08-13) flipped the library default to `true` and
+///   Checkpoint K (g1) flipped the CLI flag to match, so this pin no
+///   longer tracks "what the production simulator does" — it is now the
+///   only shipped non-fixture site that pins `false` (`cli smoke` is the
+///   other, and that is a fingerprint harness by design). An optimizer
+///   verdict is therefore taken at a **different operating point** than
+///   the GUI/CLI verdict for the same project.
+///
+///   A-8 did **not** flip it: that is number-moving on every optimizer
+///   outcome and belongs to an operator ruling, not to the wave that
+///   discovered it. What A-8 shipped instead is the disclosure — the
+///   pin is now *visible* on the outcome instead of being an invisible
+///   literal three call levels down.
+///
+/// # Baseline asymmetry (not fixed here)
+///
+/// Candidate 0 — the baseline — is **not** simulated by this function.
+/// It is scored against the caller's `baseline_trace`, whose options are
+/// whatever the caller ran. See [`super::outcome::BaselineTraceAssumptions`].
+pub(crate) fn candidate_sim_options(sim_resolution_mm: f64) -> SimulationOptions {
+    SimulationOptions {
+        resolution: sim_resolution_mm,
+        skip_ids: Vec::new(),
+        metrics_enabled: true,
+        auto_resolution: false,
+        use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
+        modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,
+    }
+}
+
 /// Build a partial `OptimizeOutcome` after cancellation. If we have
 /// no candidates yet, surface NoSafeImprovement; otherwise dispatch
 /// the candidates we managed to evaluate. The user sees a partial
@@ -372,27 +428,7 @@ fn evaluate_candidate_inner(
     // Sim — full project sim at the requested resolution. Other
     // toolpaths' cached results from baseline still apply because
     // generate_toolpath only touched index `toolpath_index`.
-    let sim_opts = SimulationOptions {
-        resolution: sim_resolution_mm,
-        skip_ids: Vec::new(),
-        metrics_enabled: true,
-        auto_resolution: false,
-        // F-035: the optimizer's candidate-scoring sim runs with
-        // predicted-feed plumbing OFF so the optimizer ranks
-        // candidates against the same commanded-feed gates the
-        // production simulator currently uses. Flipping this on is a
-        // follow-up (F-036 territory).
-        use_predicted_feed_in_gates: false,
-        // F-036b: optimizer's candidate-scoring sim also runs with
-        // adaptive feed modulation OFF — the optimizer ranks
-        // candidates against the commanded feed in the IR. The
-        // optimizer and the feed modulator are two independent
-        // bridges over the same engagement summary; running them
-        // together would conflate their effects.
-        adaptive_feed_modulation: false,
-        modulation_strategy: crate::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
-    };
+    let sim_opts = candidate_sim_options(sim_resolution_mm);
     guard.session_mut().run_simulation(&sim_opts, cancel)?;
 
     // Pull the trace out (Arc<SimulationCutTrace>) and score via the
