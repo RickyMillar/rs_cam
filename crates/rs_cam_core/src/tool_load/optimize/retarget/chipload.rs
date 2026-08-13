@@ -139,6 +139,35 @@ impl Retargeter for ChiploadFeedRetargeter {
         if !target_chipload.is_finite() || target_chipload <= 0.0 {
             return None;
         }
+
+        // ── Checkpoint P (1b) — the same COMPARISON, not just the same band ──
+        //
+        // P-(1a) made the retargeter read the gate's band. This asks the
+        // gate's *own predicate* whether the headroom target actually lands
+        // inside it. `ChipBounds::contains` is the inclusive-with-epsilon
+        // comparison this very `Exceeds` was decided by (Checkpoint K b1), so
+        // retargeter and gate can no longer disagree about the edge either.
+        //
+        // **Report-only, deliberately — the branch is NOT taken.** Turning
+        // this into a refusal or a clamp would move a measured **86 of the 235**
+        // two-sided shipped LUT rows (36.6 %; 48 of them single-point rows
+        // where max == min). On any row narrower than the headroom factor both
+        // `min * 1.20 > max` and `max / 1.20 < min`, so BOTH headroom targets
+        // fall outside the band the gate judges by — P-(1a)'s defect class
+        // reached through the *headroom policy* instead of the DOC derate, on
+        // a third of shipped rows. The ratio is scale-invariant (vendor
+        // scaling and DOC derating each multiply both bounds by one factor),
+        // so the census answers it exactly. That population is far outside
+        // this wave's authorised movement, so A-8i measures it, says it in the
+        // rationale the operator reads, and hands the branch to a checkpoint.
+        //
+        // Evidence: `planning/review_2026-08-08/artifacts/a8i/narrow_band_census.{py,txt}`.
+        let headroom = match side {
+            Side::Burn => self.low_headroom,
+            Side::Breakage => self.high_headroom,
+        };
+        let target_in_band = bounds.contains(target_chipload);
+
         let multiplier = target_chipload / peak;
 
         // Apply the multiplier to baseline feed; clamp to the hard feed
@@ -197,7 +226,20 @@ impl Retargeter for ChiploadFeedRetargeter {
             && let Some(rpm_bounds) = space.axis(SearchAxis::SpindleRpm)
         {
             let achieved_observed = peak * (clamped_target / baseline_feed);
-            if achieved_observed > 0.0 && achieved_observed < target_chipload {
+            // Checkpoint P (1b): the contract's low-side comparison, not a
+            // bare `<`. STATED so it is not over-claimed — this one is
+            // provably a no-op on reachable inputs. `achieved / target`
+            // equals `clamped_target / raw_target` exactly (both are
+            // `peak * clamped / baseline` over `target = peak * raw /
+            // baseline`), so `achieved` sits within the 8-ulp boundary slack
+            // of `target` only when `raw_target` is within ~1e-11 of the feed
+            // cap — while `was_clamped` needs `|clamped - raw| > 1e-6` to be
+            // true at all. The two epsilons cannot both bind. Routed anyway:
+            // "nothing re-deciding a gate writes a bare bound comparison" is
+            // the contract, and an unreachable exception is still an exception.
+            if achieved_observed > 0.0
+                && crate::tool_load::boundary::below_low(achieved_observed, target_chipload, 0.0)
+            {
                 let rpm_target_raw = rpm_baseline * (achieved_observed / target_chipload);
                 let rpm_clamped = rpm_bounds.hard.clamp(rpm_target_raw);
                 // Only emit when the RPM target actually moves *down* —
@@ -217,14 +259,28 @@ impl Retargeter for ChiploadFeedRetargeter {
             }
         }
 
-        Some(RetargetSolution {
-            patches,
-            rationale: format!(
-                "{side:?}: scale feed by {multiplier:.2}× to move sample peak \
-                 from {peak:.4} to {target_chipload:.4} — the gate's own \
-                 DOC-derated band with headroom"
-            ),
-        })
+        let mut rationale = format!(
+            "{side:?}: scale feed by {multiplier:.2}× to move sample peak \
+             from {peak:.4} to {target_chipload:.4} — the gate's own \
+             DOC-derated band with headroom"
+        );
+        if !target_in_band {
+            // The gate's own predicate says this target would trip. Say so
+            // where the operator reads it, rather than emitting a candidate
+            // that cannot reconcile and letting the re-simulation discover it.
+            rationale.push_str(&format!(
+                ". WARNING: {target_chipload:.4} is OUTSIDE that band \
+                 [{min}, {max:.4}] — the band is narrower than the \
+                 {headroom:.2}× headroom, so no feed can both clear the \
+                 headroom and stay inside the band",
+                min = bounds
+                    .min_mm_per_tooth
+                    .map_or_else(|| "none".to_owned(), |m| format!("{m:.4}")),
+                max = bounds.max_mm_per_tooth,
+            ));
+        }
+
+        Some(RetargetSolution { patches, rationale })
     }
 }
 
@@ -717,6 +773,73 @@ mod tests {
             r.target(&breakage_verdict(0.20, half), &space, &view, &ctx)
                 .is_some(),
             "the ceiling is still actionable on a half band"
+        );
+    }
+
+    /// **Checkpoint P (1b) — the branch NOT taken, pinned as a report.**
+    ///
+    /// A band narrower than the headroom factor cannot host either headroom
+    /// target: at `max/min = 1.111 < 1.20`, `max / 1.20 = 0.0833` falls under
+    /// the floor and `min * 1.20 = 0.108` clears the ceiling. `ChipBounds
+    /// ::contains` — the gate's own predicate — says so, and the retargeter
+    /// now says so in the rationale.
+    ///
+    /// **It still emits the patch, unchanged.** That is the whole point of the
+    /// slice: 86 of the 235 two-sided shipped rows are this shape, so
+    /// branching here would move a third of shipped rows and is a checkpoint
+    /// question, not a fix. This test pins BOTH halves — the report appears,
+    /// and the number does not move.
+    #[test]
+    fn a_target_outside_a_narrow_band_is_reported_and_the_feed_is_unchanged() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+        let narrow = chip_bounds_of(Some(0.09), 0.10);
+        let solution = r
+            .target(&breakage_verdict(0.20, narrow), &space, &view, &ctx)
+            .expect("a narrow band still retargets — it only reports");
+        assert!(
+            solution.rationale.contains("OUTSIDE"),
+            "the gate's own predicate rejects this target; the rationale must \
+             say so. got: {}",
+            solution.rationale
+        );
+        let primary = solution
+            .patches
+            .iter()
+            .find(|p| matches!(p.source, PatchSource::Primary))
+            .expect("primary patch");
+        // target = 0.10 / 1.20 = 0.08333; multiplier = 0.08333 / 0.20;
+        // feed = 2000 * that = 833.33. Bare arithmetic, unmoved by the report.
+        assert!(
+            (primary.value - 2000.0 * (0.10 / 1.20) / 0.20).abs() < 1e-9,
+            "P-(1b) is report-only — the emitted feed must be the same number \
+             it was before the check existed; got {}",
+            primary.value
+        );
+    }
+
+    /// The control: a band wider than the headroom hosts the target, so the
+    /// rationale carries no warning. Without this, "the rationale contains
+    /// OUTSIDE" above could be true of every recipe.
+    #[test]
+    fn a_target_inside_the_band_says_nothing_extra() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+        // 0.10 / 0.05 = 2.0, comfortably wider than the 1.20 headroom.
+        let solution = r
+            .target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx)
+            .expect("solution");
+        assert!(
+            !solution.rationale.contains("OUTSIDE"),
+            "a band that hosts its own target must not be reported as narrow: \
+             {}",
+            solution.rationale
         );
     }
 }
