@@ -51,6 +51,12 @@ mod preflight;
 mod rank;
 mod refusal;
 pub mod retarget;
+/// A-8 (F-OPT) — the first fixture that measures a REAL retarget outcome
+/// end to end (sim-produced verdict → real retargeter → re-sim). In `src/`
+/// because the retarget stage is assembled from `pub(crate)` parts that a
+/// `tests/` file cannot reach without reproducing them.
+#[cfg(test)]
+mod retarget_reconciliation_a8;
 pub mod space;
 pub mod strategy;
 
