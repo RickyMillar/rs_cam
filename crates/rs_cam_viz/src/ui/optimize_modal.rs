@@ -9,12 +9,13 @@
 //! `optimize_toolpath` synchronously and stashes the outcome here.
 
 use rs_cam_core::tool_load::optimize::{
-    EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate,
-    OptimizeOutcome, OutcomeKind, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
+    BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
+    LutQueryStamp, MachineSnapshot, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
+    OutcomeKind, ParamDelta, SearchEnvelopeReached, SimAssumptionStamp, limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
-use super::components::FreshnessGate;
+use super::components::{FreshnessGate, UiExt};
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::{OptimizeModalState, OptimizeRunStatus};
@@ -110,13 +111,17 @@ fn draw_outcome(
 ) {
     let narrative = outcome.narrative.as_ref();
     let attempted = &outcome.candidates;
+    // Set by the two shapes that have nothing to tabulate; the Close button
+    // they own is drawn after the provenance drawer (see below).
+    let mut trailing_close = false;
     match outcome.kind {
         OutcomeKind::Skipped => {
             let reason = outcome
                 .reason
                 .as_ref()
                 .map_or("optimizer refused", |r| r.explanation_for_optimize());
-            draw_refusal_section(ui, "Cannot optimise this toolpath", reason, events);
+            draw_refusal_section(ui, "Cannot optimise this toolpath", reason);
+            trailing_close = true;
         }
         OutcomeKind::NoSafeImprovement => {
             // G17 A2: render the structured narrative — headline,
@@ -154,11 +159,9 @@ fn draw_outcome(
             }
             ui.add_space(8.0);
             if attempted.len() <= 1 {
-                // No non-baseline candidates ran (early refuse). Just
-                // close — there's nothing to show.
-                if ui.button("Close").clicked() {
-                    events.push(AppEvent::CloseOptimizeModal);
-                }
+                // No non-baseline candidates ran (early refuse). Nothing to
+                // tabulate; the Close button is drawn below the provenance.
+                trailing_close = true;
             } else {
                 ui.separator();
                 ui.add_space(4.0);
@@ -237,6 +240,272 @@ fn draw_outcome(
             ui.add_space(8.0);
             draw_ranked(ui, &outcome.candidates, None, toolpath_id, events);
         }
+    }
+
+    // Checkpoint P (4): every tier, refusals included. A `Skipped` outcome
+    // never simulated, but it still decided something about the world at an
+    // operating point — that is why `optimize_toolpath` stamps both blocks
+    // outside the inner search, and why they are rendered here rather than
+    // inside one of the arms above.
+    ui.add_space(10.0);
+    draw_run_provenance(ui, outcome);
+
+    if trailing_close {
+        ui.add_space(8.0);
+        if ui.button("Close").clicked() {
+            events.push(AppEvent::CloseOptimizeModal);
+        }
+    }
+}
+
+/// **Checkpoint P (4), 2026-08-14 — the run's own provenance, rendered.**
+///
+/// `OptimizeOutcome::machine_snapshot` has been written and never read since
+/// F4.3; `assumptions` (A-8's `SimAssumptionStamp`) reached MCP agents over
+/// the wire but no human surface. The operator's 2026-08-07 review asked for
+/// the candidate-model isolation to be made *"explicit in every optimizer
+/// result"*, and a JSON field an agent can read is half of that.
+///
+/// **Read-only.** Nothing here is editable and nothing locks a field
+/// (feedback: no background field locking). It is a footer disclosure in the
+/// panel's existing `CollapsingHeader` + `UiExt::param_grid` idiom, open by
+/// default — see the comment at the header for why this one differs from its
+/// siblings in `optimize_project.rs`.
+///
+/// **It renders absence as absence.** `assumptions: None` means *not
+/// stamped* — never "the defaults" — and `baseline.resolution_mm: None` means
+/// the trace does not record a dexel cell, which is a different statement
+/// from "the same cell as the candidates". Substituting a guess for either is
+/// precisely the defect the stamp exists to close.
+fn draw_run_provenance(ui: &mut egui::Ui, outcome: &OptimizeOutcome) {
+    ui.separator();
+    // `default_open(true)`, unlike the sibling drawers in
+    // `optimize_project.rs`. The review's repair was worded as "make it
+    // explicit in every optimizer result", and a drawer the operator has to
+    // find and open is not explicit. The modal is resizable and this is the
+    // last block on the card, so the cost is scroll, not obstruction.
+    egui::CollapsingHeader::new(
+        egui::RichText::new("How these numbers were taken")
+            .small()
+            .strong(),
+    )
+    .id_salt("optimize_run_provenance")
+    .default_open(true)
+    .show(ui, |ui| {
+        match outcome.machine_snapshot.as_ref() {
+            Some(m) => draw_machine_snapshot(ui, m),
+            None => draw_not_stamped(
+                ui,
+                "Machine the search was bounded by",
+                "not stamped — this result predates the machine snapshot, or \
+                 was built by a constructor that never ran a search",
+            ),
+        }
+        ui.add_space(6.0);
+        match outcome.assumptions.as_ref() {
+            Some(a) => draw_assumptions(ui, a),
+            None => draw_not_stamped(
+                ui,
+                "Simulation assumptions",
+                "not stamped — which is not the same thing as \"the defaults\". \
+                 This outcome was not passed through optimize_toolpath, or was \
+                 loaded from a record written before the stamp existed.",
+            ),
+        }
+    });
+}
+
+fn draw_not_stamped(ui: &mut egui::Ui, title: &str, why: &str) {
+    ui.named_section(title, |ui| {
+        ui.label(
+            egui::RichText::new(why)
+                .small()
+                .italics()
+                .color(theme::TEXT_MUTED),
+        );
+    });
+}
+
+fn prov_row(ui: &mut egui::Ui, label: &str, value: impl Into<String>) {
+    ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
+    ui.label(egui::RichText::new(value.into()).small());
+    ui.end_row();
+}
+
+fn draw_machine_snapshot(ui: &mut egui::Ui, m: &MachineSnapshot) {
+    ui.named_section("Machine the search was bounded by", |ui| {
+        ui.param_grid("optimize_prov_machine", |ui| {
+            prov_row(ui, "Profile", m.name.clone());
+            prov_row(
+                ui,
+                "Cutting feed ceiling",
+                format!("{:.0} mm/min", m.cutting_feed_ceiling_mm_min),
+            );
+            prov_row(
+                ui,
+                "Travel rate",
+                format!("{:.0} mm/min", m.max_feed_mm_min),
+            );
+            prov_row(
+                ui,
+                "Spindle range",
+                format!("{:.0} – {:.0} rpm", m.rpm_min, m.rpm_max),
+            );
+        });
+        ui.label(
+            egui::RichText::new(
+                "Snapshot taken when the search ran — the session's machine \
+                 may have changed since.",
+            )
+            .small()
+            .color(theme::TEXT_MUTED),
+        );
+    });
+}
+
+fn draw_assumptions(ui: &mut egui::Ui, a: &SimAssumptionStamp) {
+    let c = &a.candidates;
+    ui.named_section("Candidate scoring sims", |ui| {
+        ui.param_grid("optimize_prov_candidates", |ui| {
+            prov_row(
+                ui,
+                "Dexel cell (rank / report)",
+                format!(
+                    "{:.2} mm / {:.2} mm",
+                    c.coarse_resolution_mm, c.refined_resolution_mm
+                ),
+            );
+            prov_row(
+                ui,
+                "Feed modulation",
+                if c.adaptive_feed_modulation {
+                    format!(
+                        "on ({:?}, {:.2})",
+                        c.modulation_strategy, c.modulation_aggressiveness
+                    )
+                } else {
+                    "off".to_owned()
+                },
+            );
+            prov_row(
+                ui,
+                "Predicted feed in gates",
+                if c.use_predicted_feed_in_gates {
+                    "on"
+                } else {
+                    "off"
+                },
+            );
+        });
+    });
+
+    // The disclosure the review actually asked for — say it in words, not
+    // just as a flag the operator has to interpret.
+    if c.diverges_from_library_default_modulation() {
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new(
+                "Candidates were scored with feed modulation OFF while normal \
+                 simulation runs it ON. \"Safe\" and \"faster\" here mean safe \
+                 and faster in the unmodulated commanded-feed model.",
+            )
+            .small()
+            .color(theme::WARNING),
+        );
+    }
+
+    ui.add_space(6.0);
+    draw_baseline_assumptions(ui, &a.baseline);
+
+    ui.add_space(6.0);
+    ui.named_section("Model provenance", |ui| {
+        ui.param_grid("optimize_prov_model", |ui| {
+            prov_row(
+                ui,
+                "Kinematics",
+                match a.kinematics {
+                    KinematicsSource::ProfileDeclared => "declared by the machine profile",
+                    KinematicsSource::GenericWoodRouterFallback => {
+                        "generic wood-router fallback (profile declares none)"
+                    }
+                },
+            );
+            match a.lut_query.as_ref() {
+                Some(q) => prov_row(ui, "Vendor LUT query", format_lut_query(q)),
+                None => prov_row(
+                    ui,
+                    "Vendor LUT query",
+                    "not measured — no evaluation context could be built",
+                ),
+            }
+            prov_row(
+                ui,
+                "Boundary epsilon",
+                format!("{:.3e} relative", a.boundary_epsilon_rel),
+            );
+        });
+    });
+}
+
+fn draw_baseline_assumptions(ui: &mut egui::Ui, b: &BaselineTraceAssumptions) {
+    ui.named_section("Baseline (your on-screen sim)", |ui| {
+        ui.param_grid("optimize_prov_baseline", |ui| {
+            prov_row(
+                ui,
+                "Dexel cell",
+                match b.resolution_mm {
+                    Some(mm) => format!("{mm:.2} mm"),
+                    // Not "same as the candidates" — the trace does not
+                    // record a cell at all.
+                    None => "not recorded by the trace".to_owned(),
+                },
+            );
+            prov_row(
+                ui,
+                "Feed modulation",
+                match b.adaptive_feed_modulation {
+                    Some(true) => "on (observed in the trace)",
+                    Some(false) | None => "not measured",
+                },
+            );
+            prov_row(ui, "Sampling step", format!("{:.3} mm", b.sample_step_mm));
+        });
+        ui.label(
+            egui::RichText::new(
+                "The baseline row is scored against this trace directly — it \
+                 is not re-simulated at the candidate operating point.",
+            )
+            .small()
+            .color(theme::TEXT_MUTED),
+        );
+    });
+}
+
+fn format_lut_query(q: &LutQueryStamp) -> String {
+    match q {
+        LutQueryStamp::Routed {
+            declared_family,
+            declared_pass_role,
+            queried_family,
+            queried_pass_role,
+        } => {
+            if q.is_rerouted() {
+                format!(
+                    "{declared_family:?}/{declared_pass_role:?} → \
+                     {queried_family:?}/{queried_pass_role:?} (rerouted)"
+                )
+            } else {
+                format!("{queried_family:?}/{queried_pass_role:?}")
+            }
+        }
+        LutQueryStamp::Refused {
+            declared_family,
+            declared_pass_role,
+            tool_family,
+        } => format!(
+            "refused — no rows for {tool_family:?} on \
+             {declared_family:?}/{declared_pass_role:?}"
+        ),
     }
 }
 
@@ -347,19 +616,15 @@ fn draw_attempted_row(
     }
 }
 
-fn draw_refusal_section(
-    ui: &mut egui::Ui,
-    heading: &str,
-    explanation: &str,
-    events: &mut Vec<AppEvent>,
-) {
+/// The refusal headline + explanation. The trailing Close button used to live
+/// here; Checkpoint P (4) moved it to the end of [`draw_outcome`] so the
+/// provenance drawer sits **above** it rather than below the last control —
+/// a refusal is the case where naming the operating point matters most. The
+/// button appears for exactly the same two outcome shapes as before.
+fn draw_refusal_section(ui: &mut egui::Ui, heading: &str, explanation: &str) {
     ui.label(egui::RichText::new(heading).strong().color(theme::WARNING));
     ui.add_space(4.0);
     ui.label(egui::RichText::new(explanation).small());
-    ui.add_space(8.0);
-    if ui.button("Close").clicked() {
-        events.push(AppEvent::CloseOptimizeModal);
-    }
 }
 
 fn draw_ranked(
