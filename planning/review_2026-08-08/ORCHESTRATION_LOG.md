@@ -2990,3 +2990,300 @@ and **DR-GWIZ + DR-DOCRULE are content debt, not link debt** — 33 and 54
 citations now rest on rows whose notes say, in the file, that they cannot
 support what they are cited for. That is a matrix-content wave, and it is
 bigger than a sweep-pool slot.
+
+## A-8 — optimizer assumption stamp + the first measured retarget outcome, 2026-08-13
+
+Status: COMPLETE, with **four checkpoint requests** and one measured defect
+the charter's research-first clause put in front of a fix. Deliverable:
+`planning/review_2026-08-08/OPTIMIZER_ASSUMPTIONS.md` + `artifacts/a8/`.
+Two behavioural changes shipped, both **report-only** by the plan's own
+allowance: a new serialized field on `OptimizeOutcome` and two docstring
+corrections. **No recipe number, no gate bound and no candidate ranking
+moved.**
+
+Commit(s), parent `1c0a4acc`:
+- `f8076287` — hoist `candidate_sim_options` to one construction site.
+- `4258ffe1` — two retired-vocabulary comment corrections.
+- `05b7066e` — the stamp + five sentries.
+- `edd4dd92` — the retarget/reconciliation fixture (control + finding).
+- this entry + `OPTIMIZER_ASSUMPTIONS.md` + `artifacts/a8/`.
+
+Question and pre-registered bars: plan §2 A-8 — stamp the simulation
+assumptions onto optimizer results, and build the first fixture that
+measures a REAL retarget outcome (ledger **F-OPT**). Bars set before
+starting: (a) the stamp must be **read off the same builder the sim runs**,
+never a second copy of the literal — a stamp that can drift is rule 5's
+failure mode; (b) the stamp must be able to say *not measured* and must not
+coerce an unknown to a default; (c) the retarget fixture's verdict must come
+from a **simulation**, not a hand-built `ChiploadVerdict` — that is the
+entire content of F-OPT; (d) the fixture must prove it contains its
+mechanism (a control arm) before any conclusion is drawn from it; (e)
+anything number-moving is reported and requested, not taken.
+
+Fixture/population/resolution: simulation cell **0.5 mm** on every arm (the
+optimizer's own `refined_resolution_mm`, i.e. the cell every *reported*
+candidate verdict is measured at). Retarget fixture: Ø6.35 flat end mill /
+2 flutes, hard maple, 30×30 mm pocket in 44×44×25 stock, 18 000 rpm,
+commanded 12 000 mm/min. Matched row `amana-flat-hardwood-pocket-6000-2f`
+(d = 6.000, Ø×1.035, Janka×1.000, **not** extrapolated). Gate steady-state
+population **n = 452 / 447** — non-vacuous, read from
+`FeedExplanation::gate.sample_count` and deliberately **not** from
+`triggering.evidence.sample_range.len()`, which is 1 by construction and
+would have made the X-VAC guard vacuous in exactly the way X-VAC warns
+about. Stamp sentries ride the `Material::Custom` refusal and cost **zero**
+simulations.
+
+### Result — the stamp
+
+`OptimizeOutcome::assumptions: Option<SimAssumptionStamp>`, stamped at
+`optimize/mod.rs:159` beside F4.3's `MachineSnapshot::of` and **outside**
+`optimize_toolpath_inner`, so a `Skipped` refusal that never simulated still
+names the operating point its refusal was decided at.
+
+Contract family, chosen and justified in the field doc: the
+**`truncated_core_mm2` family** (`None` = *not stamped*, never "no
+assumptions" and never "the defaults"). Explicitly **not**
+`zero_removal`/`boundary_clip_dropped`'s weaker contract — that one's licence
+is that the two cases cannot be told apart, and here they can.
+
+Blocks: `candidates` (both cells, `auto_resolution`, both pinned flags,
+strategy tag, aggressiveness), `baseline`, `kinematics`, `lut_query`,
+`boundary_epsilon_rel`.
+
+**Instrument integrity.** The candidate `SimulationOptions` literal was
+hoisted out of `evaluate_candidate_inner` into
+`candidate::candidate_sim_options` — one construction site — and
+`CandidateSimAssumptions::observed()` calls *that function*. The literal
+moved; nothing was duplicated. A stamp assembled from a copy is a docstring
+waiting to become a lie you then cite.
+
+**What the stamp refuses to claim**, which is the half that took the design
+work:
+
+- `baseline.resolution_mm` is **always `None`**. `SimulationCutTrace` carries
+  `sample_step_mm` and a provenance of geometry hashes and **no dexel cell** —
+  the cell survives only on `SimulationCutArtifact`, which the optimizer is
+  never handed. The baseline candidate (index 0) is scored against the
+  caller's trace with no re-sim, so its cell is genuinely unrecoverable. The
+  stamp says so instead of borrowing `refined_resolution_mm`.
+- `baseline.adaptive_feed_modulation` is `Some(true)` or `None`, **never
+  `Some(false)`**. `Some(true)` is a positive observation (only
+  `apply_adaptive_feed_modulation` writes `modulation_summaries`); an empty
+  map has two causes that cannot be separated here, because the map is
+  `#[serde(skip)]`.
+
+Red-first: **every assertion is a compile error at the parent** —
+`git show 1c0a4acc:.../outcome.rs | grep -c assumptions` → **0**. The claim
+cannot be made at all before the change, which is the strongest available
+form and the same shape as the S-GAP3 probe.
+
+Five sentries, `tests/optimizer_assumption_stamp_a8.rs`, **5 passed in
+0.00 s**. The "two assumption sets → two stamps" bar is asserted on four
+axes independently, so the inequality cannot be carried by one field.
+
+### Result — the retarget fixture, and what it measured
+
+`src/tool_load/optimize/retarget_reconciliation_a8.rs` (in `src/` because
+`run_retarget_stage` assembles the retargeter from `pub(crate)` parts;
+reproducing that in `tests/` would measure the reproduction). Verdict from
+`ProjectSession::tool_load_report()`, retargeter built field-for-field as
+`run_retarget_stage` builds it, then the patched feed applied, regenerated
+and **re-simulated**.
+
+| arm | DOC/Ø | gate ceiling | row max | retarget target | retarget feed | re-sim observed | verdict |
+|---|---|---|---|---|---|---|---|
+| control | 0.47 | 0.05694 | 0.05694 | 0.04745 | **1708.1** | 0.04745 | **Within** |
+| finding | 3.15 | **0.02847** | 0.05694 | 0.04745 | **1708.1** | 0.04745 | **Exceeds** |
+
+**Read the retarget-feed column.** It is the identical 1708.1 mm/min on a
+3 mm pass and a 20 mm pass, while the gate's ceiling halves between them.
+That one number is the mechanism.
+
+**Mechanism.** `run_retarget_stage` (`optimize/mod.rs:533-534`) hands
+`ChiploadFeedRetargeter` the **raw** matched row (`chip_load_min_mm` /
+`chip_load_max_mm` — diameter- and hardness-scaled, **not** DOC-derated).
+The gate compares against `geometry::derate_chipload_bounds(...)` of that
+same row at the measured peak axial DOC (`chipload.rs:581-586`). The
+high-side target is `row_max / 1.2 = 0.8333 × row_max`, so it is reachable
+only while `doc_derating_scale(DOC/Ø) > 0.8333`, i.e. **`DOC/Ø < ~1.67`**.
+Past that the retargeter aims **above the bar it will be judged by**; the
+worst case `1/0.8333/0.5 = 1.6667×` is reached at `DOC/Ø ≥ 3` and is
+measured above to the digit.
+
+**The gate's own ceiling is already in the retargeter's hand** —
+`ChiploadMetric::bounds.max_mm_per_tooth` on the very verdict it is passed.
+It reads the injected raw row instead.
+
+Production cost: the retarget candidate goes through `evaluate_candidate`
+like any other — apply → **regenerate** → **full project simulate** → gate.
+Past the knee that is a guaranteed-rejected candidate costing a complete
+generate and simulate. How often, stated precisely rather than asserted
+because the threshold is close to shipped defaults: the generic router's
+`adaptive_doc_factor` is **1.5**, i.e. adaptive roughing sits *just inside*
+1.67 with ~5 % of margin; outside are any user-set DOC above ~1.67 × Ø,
+full-depth single-pass profile/pocket work on stock thicker than 1.67 × the
+cutter, and every deep-slotting case. **A-8 did not census a shipped-project
+population** — named as a gap. Not a safety failure (the candidate is
+correctly rejected); a capability failure that presents as "no safe
+improvement", and a plausible single reason F-OPT could record that no
+evidence had ever seen a retarget outcome move.
+
+The control arm is what makes this attributable: with the derate inactive
+the same retargeter, the same target and the same feed reconcile to
+`Within`. The only difference between the two rounds is the DOC derate.
+
+The two tests **pin the defect, in their own words**. When request 1 is
+ruled, the finding arm fails and must be inverted deliberately with old/new
+recorded — not deleted, not re-baselined.
+
+### Result — the post-K census
+
+The optimizer subtree reaches **zero** of Checkpoint K's artifacts by name
+(`lut_query_for`, `boundary::{exceeds_high,below_low,is_at_bound,slack_for}`,
+`ChipBounds::{exceeds_high,below_low,contains,is_at_max}`,
+`BOUNDARY_EPSILON_REL`, `ceiling_advisory` reads, `clamped_to`) across 22
+files / ~12.8k lines.
+
+- **LUT routing is correct by inheritance only.** One resolution site
+  (`context::find_matched_lut_row` → `chipload::matched_chip_envelope` →
+  `lut_query_for`), no `find_best_row_for_geometry` /
+  `find_best_chip_envelope_row` anywhere. A-7's unification **did** reach the
+  optimizer's row selection. Nothing said so; `SimAssumptionStamp::lut_query`
+  now does.
+- **Six gate-verdict re-decisions bypass the epsilon contract** —
+  `delta.rs:183,190,206,216` and `narrative.rs:683,703`, the two chipload
+  pairs being verbatim duplicates of each other. Consequence is G-CHIP-ULP's
+  shape relocated: a candidate parked on the ceiling gets `Within` from the
+  epsilon-aware gate and is then independently re-decided a strict breach,
+  routing it to `MarginalSafe` / `band_admitted` on float noise. Checkpoint K
+  fixed the gate; it did not reach the optimizer's tier dispatch. **Request
+  2** — it moves which tier an outcome lands in.
+- **Retired vocabulary: three hits, two fixed as docstrings.**
+  `context.rs`'s `routed_lookup_family` (now names `lut_query_for`, and says
+  the row returned is the RAW row) and `preflight.rs:168`'s "(chip
+  thickness)" gloss on an advance per tooth. The third,
+  `preflight.rs:107`'s `is_bipolar_engagement`, is **live code** and is
+  ledger row **F-BIPOLAR** — reported, not touched. A-8 adds that its
+  population is live and that it compares against the same raw un-derated
+  pair the retarget defect indicts. Also stale and **outside my territory**:
+  `chipload.rs:103` and `tool_load/mod.rs:370` still name
+  `routed_lookup_family`.
+- **`SuggestAggressiveness` appears nowhere in `optimize/**`** — zero
+  occurrences. The optimizer never had the dial. So after A-5i the operator's
+  aggressiveness control has no surviving expression on *either* the pre-sim
+  feed path or the optimizer path, and Checkpoint J-1's destination (c) has
+  no aggressiveness input to restore it through even if the retarget route
+  worked. Input to A-9, not a finding A-9 has to rediscover.
+- **`machine_snapshot` is written and never read.** No consumer in
+  `rs_cam_viz` or the MCP path reads it; F4.3's goal is met only for an agent
+  reading raw JSON. `assumptions` ships on the same wire with the same gap
+  until a renderer lands (**request 4**, and it is in B-5's territory).
+- **The optimizer takes no resolution parameter at all**, and pins
+  `auto_resolution: false` — so it ignores the cell the on-screen baseline
+  ran at while ranking candidates against that baseline's cycle time.
+
+### The modulation-pin assessment (charter item, with evidence both ways)
+
+`candidate.rs:167` pins `adaptive_feed_modulation: false`. Checkpoint J
+flipped the library default to `true` and K-(g1) flipped the CLI to match,
+so the optimizer is now the **only shipped non-fixture site pinning
+`false`** (`cli smoke` is the other and pins it *because* it is a
+fingerprint harness).
+
+*For keeping it:* the stated reason was never "match the default" — it was
+that optimizer and modulator are two independent corrections over one
+engagement summary. J and K do not touch that argument and **strengthen**
+it: A-5 measured `ConstrainedMax` rewriting **100 %** of moves and parking
+the observation exactly on the band maximum, so a search whose every sample
+is already clamped onto the ceiling has no headroom signal left to rank on.
+A-5i's medians (−40.8 % / −38.4 % on the two DropCutter fixtures, `Exceeds`
+→ `Within` with the denominator divergence going nowhere) size the
+absorption.
+
+*Against:* the user-visible consequence is now real. GUI pins `true`, CLI now
+defaults `true`, so the same project gets one verdict from the candidate card
+and another from the sim on screen, unreconciled until Apply — the review's
+`[medium]`, one notch worse than when written.
+
+**Assessment: KEEP the pin, and stop it being invisible.** The default flip
+refuted the *comment*, not the argument. A-8 corrected the comment at the
+site and made the pin legible on the wire
+(`diverges_from_library_default_modulation()`). **NOT FLIPPED** — that is
+number-moving on every optimizer outcome. **Request 3.** The sentry asserts
+*both* halves, so the day a ruling lands the test fails and is where the
+decision gets recorded. `use_predicted_feed_in_gates` is a different case
+and the stamp keeps them apart: it still agrees with the default, so F-035's
+justification holds — with the rider that while it is off, kinematics cannot
+reach any candidate verdict, which is why the stamp records the kinematics
+*source* rather than implying a kinematics-aware score.
+
+### Verification (focused commands + exact known-red state)
+
+- `cargo test -p rs_cam_core --test optimizer_assumption_stamp_a8` — **5
+  passed, 0 failed** (`artifacts/a8/stamp_sentry.txt`).
+- `cargo test -p rs_cam_core --lib retarget_reconciliation -- --nocapture
+  --test-threads=1` — **2 passed, 0 failed**, full transcript in
+  `artifacts/a8/retarget_reconciliation.txt`.
+- `cargo test -p rs_cam_core --no-fail-fast`, **unbounded capture** →
+  `artifacts/a8/core_suite_after.txt`. 170 test binaries,
+  **2957 passed / 4 failed**, and the four are **exactly the known red
+  set**: `transform_provenance_fingerprints` ×3 (G-XFP —
+  `arc_raster_full_dressups_fingerprint`, `face_full_chain_fingerprint`,
+  `three_pass_full_dressups_fingerprint`) and
+  `wanaka_suggest_integration::wanaka_suggest_baseline` (environmental).
+  **Nothing new went red.** The capture is unbounded — no `| tail`, no
+  `-q` — because A-5i's truncation defect is on the record.
+- `cargo clippy -p rs_cam_core --all-targets -- -D warnings` — clean.
+- `cargo fmt --check -p rs_cam_core` — clean. Formatted with `-p
+  rs_cam_core` specifically to avoid the rustfmt cascade into `rs_cam_viz`,
+  which B-5 is editing concurrently.
+- Slot discipline: bracketed `pgrep -af "carg[o]"` + `free -g` before every
+  launch; one launch waited out a parallel `cargo test -p rs_cam_viz` and
+  one waited out a parallel `param_sweep`, and one job of mine was **killed
+  mid-flight and re-run** rather than left to overlap a `param_sweep` that
+  started after my check. Disk ≥ 100 GB free throughout. No release build.
+- `planning/airrun_2026-06-01/wanaka.toml` untouched and unstaged. B-5's
+  `rs_cam_viz` files and their `session/compute.rs` edit were never staged —
+  verified against `git diff --cached` before each commit.
+
+### NOT FIXED / NOT EXERCISED, STATED — owner and re-open condition
+
+- **NOT FIXED: the retargeter's target band.** Owner: Checkpoint request 1.
+  Re-open condition: the ruling. The reproduction is permanent, executable
+  and carries its own control arm.
+- **NOT FIXED: the six epsilon bypasses.** Owner: request 2.
+- **NOT FIXED: the modulation pin.** Owner: request 3, with A-8's
+  recommendation (keep) and the evidence for both sides.
+- **NOT FIXED: `is_bipolar_engagement`.** Ledger **F-BIPOLAR**, owner
+  unchanged. A-8 meets none of its re-open conditions.
+- **NOT EXERCISED: a rendered GUI surface.** §0 rule 3. The stamp is a wire
+  field with no renderer, so there is nothing to screenshot yet; the moment a
+  renderer lands (request 4) a screenshot is owed. The GUI was not launched —
+  B-5 holds the viz territory.
+- **NOT EXERCISED: the retarget path through the full `optimize_toolpath`
+  orchestration.** The fixture drives the retargeter through the same
+  construction production uses, on a real sim verdict, and re-simulates — but
+  it does not observe how `build_outcome` finally presents a rejected
+  retarget candidate. Re-open condition: a wave with the budget for a full
+  `optimize_toolpath` run (`optimize_smoke` is the shape).
+- **NOT EXERCISED: the retargeter's low/burn side**, including its RPM-down
+  compensation branch (`retarget/chipload.rs:147-186`), which no fixture in
+  this repo has ever run against a real verdict. F-MISSAE's advisory
+  demotion on 176/252 rows is the blocker, unchanged. Owner: A-9 /
+  F-MISSAE's decider.
+- **NOT EXERCISED: `LutQueryStamp::Refused`.** The refusal arm is typed and
+  constructed but no sentry drives it; the four routed cases are covered.
+  Cheap to add on the same zero-sim path.
+
+Next action / checkpoint request: **four requests, in
+`OPTIMIZER_ASSUMPTIONS.md` §6.** Request 1 (the retargeter's band) is the
+load-bearing one and is the only one whose answer this wave has a
+recommendation for with a measured number behind it (**1a**, re-point at
+`ChiploadMetric::bounds`, inverting the finding arm in the same commit).
+Orchestrator actions: (a) put the four to the operator, noting 1 and 2 are
+both optimizer-internal and could be ruled together; (b) route §3.4's
+aggressiveness census and §2's measured retarget failure into **A-9**, which
+inherits both as inputs to the chip-thickness-policy question rather than as
+open discoveries; (c) note request 4 lands in **B-5's** current territory.
+
+---

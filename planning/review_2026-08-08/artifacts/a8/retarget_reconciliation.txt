@@ -1,0 +1,30 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.19s
+     Running unittests src/lib.rs (target/debug/deps/rs_cam_core-919a16a4876a4f2d)
+
+running 2 tests
+test tool_load::optimize::retarget_reconciliation_a8::a_retarget_cannot_reconcile_once_the_doc_derate_engages ... 
+=== A-8 retarget reconciliation, cell 0.5 mm, DOC 20 mm ===
+arm A (baseline)   feed   12000.0  observed 0.33333  gate ceiling 0.02847  gate population n=452  verdict Exceeds
+row amana-flat-hardwood-pocket-6000-2f (d=6.000 mm, Ø×1.035, Janka×1.000, extrapolated false)
+row max (Ø/Janka-scaled) 0.05694   gate's DOC-derated ceiling 0.02847   derate ×0.5000
+retarget target 0.04745 = row max / headroom 1.20    target / gate ceiling = 1.6667
+retarget feed      1708.1  (0.1423x baseline)   rationale: Breakage: scale feed by 0.14× to lift sample peak from 0.3333 toward LUT × headroom
+arm B (retargeted) feed    1708.1  observed 0.04745  gate ceiling 0.02847  gate population n=452  verdict Exceeds
+reconciliation: observed 0.04745 vs gate ceiling 0.02847 -> 1.6667x (STILL OVER)
+
+ok
+test tool_load::optimize::retarget_reconciliation_a8::a_retarget_reconciles_while_the_doc_derate_is_inactive ... 
+=== A-8 retarget reconciliation, cell 0.5 mm, DOC 3 mm ===
+arm A (baseline)   feed   12000.0  observed 0.33333  gate ceiling 0.05694  gate population n=447  verdict Exceeds
+row amana-flat-hardwood-pocket-6000-2f (d=6.000 mm, Ø×1.035, Janka×1.000, extrapolated false)
+row max (Ø/Janka-scaled) 0.05694   gate's DOC-derated ceiling 0.05694   derate ×1.0000
+retarget target 0.04745 = row max / headroom 1.20    target / gate ceiling = 0.8333
+retarget feed      1708.1  (0.1423x baseline)   rationale: Breakage: scale feed by 0.14× to lift sample peak from 0.3333 toward LUT × headroom
+arm B (retargeted) feed    1708.1  observed 0.04745  gate ceiling 0.05694  gate population n=447  verdict Within
+reconciliation: observed 0.04745 vs gate ceiling 0.05694 -> 0.8333x (inside)
+
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2282 filtered out; finished in 0.63s
+
