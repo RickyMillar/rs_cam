@@ -3757,3 +3757,371 @@ full core lib suite is the census: 2282/2282.
 Next action: none blocking. The four ledger rows FP-65, DR-PIN, DR-LIVE and
 O-CANC can be marked discharged; the hover wart from W10-LV item 10 is
 closed; one new intake row (`fed_descents` descent cap) is proposed above.
+
+---
+
+## A-8i — execute Checkpoint P: the retargeter's band, the epsilon sweep, the optimizer card, 2026-08-14
+
+Status: **COMPLETE on P-(1a), P-(1b), P-(2), P-(4) code; P-3 verified no-action.
+One deliverable NOT EXERCISED (the P-4 screenshot) with a named blocker, and
+one new checkpoint question raised rather than taken.**
+
+Commit(s). Briefed on parent `e94be53a`; **halted**, and S-5's six commits
+landed underneath during the halt, so the slices sit on `e7137ca9`:
+
+- `529e710f` — the HALT record, written before S-5 landed. Kept as written.
+- `98e936ec` — P-(1a): the retargeter reads the DOC-derated band off the verdict.
+- `55946eec` — P-(1b): its comparisons go through the Checkpoint K helpers.
+- `cd014c4e` — P-(2): the six epsilon bypasses swept onto those helpers.
+- `b3e0405f` — P-(4): the optimizer results card renders both stamp blocks.
+- this entry + `artifacts/a8i/`.
+
+### 0. The halt, and what it cost
+
+A-8i's brief stated "No other agent is active". It was not: **S-5 was executing
+in the same working tree, on the same branch**. A-8i detected it at 03:54 from
+eight file mtimes it had not written (03:31–03:45) plus a `DR-PIN, 2026-08-14`
+docstring in `feeds/suggest.rs`, stopped **before any code commit**, and
+recorded the evidence in `artifacts/a8i/HALT.md`.
+
+What that cost, stated plainly:
+
+- **The first before-capture was destroyed.** Launched 03:24:09 at `e94be53a`;
+  a foreign cargo rebuilt `rs_cam_core-919a16a4876a4f2d` at **03:50:27,
+  mid-run**, so binaries 13..170 no longer ran the revision under test. Kept as
+  `core_suite_before_ABORTED.txt` and **used for nothing**.
+- **Attribution itself**, which is the whole content of Checkpoint P's
+  discipline. A red could have been S-5's; a green could have depended on
+  S-5's. That, not the Cargo slot, is why A-8i stopped.
+
+On resume the tree was serialized and A-8i took a **fresh** baseline at
+post-S-5 HEAD `e7137ca9` by stashing its own seven files first, so S-5's work
+is *committed baseline*, not noise. That baseline is what §5 attributes
+against. Two waves in one tree is a scheduling hazard, not a technical one, and
+it cost this wave roughly an hour of measurement that had to be thrown away.
+
+### 1. P-(1a) — the retargeter reads the band off the verdict
+
+`ChiploadFeedRetargeter` no longer carries a band **at all**:
+`lut_chipload_min` / `lut_chipload_max` are deleted, and `target()` reads
+`ChiploadMetric::bounds` off the `ChiploadVerdict` it is handed — the
+DOC-derated band the gate decided that very verdict against. There is
+deliberately **no second band left on the struct** for the pair to drift apart
+again. `run_retarget_stage` still consults the matched row, but only to decide
+whether a chipload retarget is possible at all.
+
+**Old / new**, measured on A-8's own fixture, unchanged in every other respect
+(Ø6.35 flat 2F, hard maple, 30×30 pocket in 44×44×25, 18 000 rpm, commanded
+12 000 mm/min, cell **0.5 mm**, row `amana-flat-hardwood-pocket-6000-2f`
+d = 6.000 Ø×1.035 Janka×1.000 not extrapolated, gate steady-state population
+**n = 452 / 447**):
+
+| quantity | before P-(1a) | after P-(1a) |
+|---|---|---|
+| **FINDING arm** `DOC/Ø = 3.15`, derate ×0.5000 | | |
+| gate's DOC-derated ceiling | 0.02847 | 0.02847 (unmoved) |
+| retarget target | **0.04745** (row max / 1.2) | **0.02372** (gate ceiling / 1.2) |
+| target ÷ gate ceiling | **1.6667** — above the bar | **0.8333** — below it |
+| retargeted feed | **1708.1** mm/min | **854.0** mm/min |
+| re-simulated verdict | **`Exceeds`** | **`Within`** |
+| reconciliation | 1.6667× (STILL OVER) | 0.8333× (inside) |
+| **CONTROL arm** `DOC/Ø = 0.47`, derate ×1.0000 | | |
+| retarget target | 0.04745 | 0.04745 — **bit-unchanged** |
+| retargeted feed | 1708.1 | 1708.1 — **unchanged** |
+| re-simulated verdict | `Within` | `Within` |
+
+The feed drop is **exactly the derate** (854.0 = 0.5000 × 1708.1), which is the
+"retargeted feeds drop up to 2×" the ruling anticipated — measured, not
+asserted. **The control arm did not move at all**, and that is what makes the
+finding arm's inversion attributable to the derate and nothing else.
+
+**Red-first, freshly measured rather than inherited.** A-8's pre-fix numbers
+were recorded on `edd4dd92`; six S-5 commits have landed since. The baseline
+capture at `e7137ca9` shows
+`a_retarget_cannot_reconcile_once_the_doc_derate_engages` still **passing** —
+i.e. the defect still reproduces post-S-5 — before the slice inverted it. The
+inverted test additionally re-asserts the **pre-fix** ratio (1.6667) off the
+retained `row_max`, so the inversion stays comparable to A-8's measurement
+instead of being asserted from memory.
+
+### 2. Re-pin table, with P-attributions
+
+| fixture | before | after | attribution |
+|---|---|---|---|
+| `retarget_reconciliation_a8::a_retarget_cannot_reconcile_once_the_doc_derate_engages` | asserted `reconciled_is_exceeds` (the defect) | renamed `a_retarget_reconciles_once_it_reads_the_derated_band`; asserts `!reconciled_is_exceeds`, keeps the pre-fix 1.6667 assertion, carries the old/new table in its doc comment | **P-(1a)** |
+| `retarget_reconciliation_a8::a_retarget_reconciles_while_the_doc_derate_is_inactive` | control | unchanged verdict; **gained** two assertions that P-(1a) is a bit-exact no-op here (target == pre-P-(1a) target, feed still 1708.1) | **P-(1a)** |
+| `retarget::chipload::tests` — `burn_verdict` / `breakage_verdict` builders | band stated on the **retargeter**, a different band on the **verdict** | builders take the band; it is stated once, on the verdict | **P-(1a)** |
+| `retarget::chipload::tests::wanaka_tp4_burnrisk_raises_feed`, `f1_burnrisk_emits_rpm_down_patch_when_feed_clamps` | retargeter [0.038, 0.07] vs verdict [0.05, 0.10] | verdict carries [0.038, 0.07]; every number in the doc comments is now true | **P-(1a)** |
+| `strategy::retarget::tests::missing_lut_min_skips_burnrisk_only` | half band on the **retargeter**, full band (floor 0.05) on the **verdict** it fed in | renamed `a_half_band_verdict_skips_burnrisk_only`; the half band is stated where the gate would put it — on the verdict. Same behaviour, honest premise | **P-(1a)** |
+
+Every one of these re-pins removes a fixture's ability to express the
+two-instrument divergence. **That divergence was the defect, and it was living
+inside the fixtures that were supposed to prove the behaviour.**
+
+### 3. P-(1b) — the comparison, and the branch NOT taken
+
+Two comparison sites now go through Checkpoint K, with an honest asymmetry:
+
+- **`ChipBounds::contains`** asks the gate's own predicate whether the headroom
+  target lands inside the band it came from. **Report-only**: it speaks in the
+  rationale the operator reads; it does not branch.
+- **`boundary::below_low`** replaces the F1 RPM-down shortfall's bare `<`.
+  Stated rather than over-claimed: this one is **provably a no-op on reachable
+  inputs**. `achieved / target` equals `clamped_target / raw_target` exactly, so
+  `achieved` lands within the 8-ulp slack of `target` only when `raw_target` is
+  within ~1e-11 of the feed cap — while `was_clamped` needs
+  `|clamped − raw| > 1e-6` to be true at all. The two epsilons cannot both
+  bind. Routed anyway, because "nothing re-deciding a gate writes a bare bound
+  comparison" is the contract and an unreachable exception is still an
+  exception.
+
+Red at `98e936ec` with only the report hunk reverted, quoted verbatim:
+
+```
+the gate's own predicate rejects this target; the rationale must say so.
+got: Breakage: scale feed by 0.42× to move sample peak from 0.2000 to 0.0833
+     — the gate's own DOC-derated band with headroom
+```
+
+Green after, and the **paired** assertion pins that the emitted feed is the
+same number it was before the check existed (833.33 mm/min on the fixture), so
+the slice is provably report-only. A wide-band control asserts the warning is
+not simply always present.
+
+### 4. P-(2) — the six bypasses, swept
+
+| # | site | before | after |
+|---|---|---|---|
+| 1 | `delta.rs:183` | `approach_to_max.observed > bounds.max_mm_per_tooth` | `bounds.exceeds_high(observed, 0.0)` |
+| 2 | `delta.rs:190` | `min_metric.observed < strict_min` | `bounds.below_low(observed, 0.0) == Some(true)` |
+| 3 | `delta.rs:206` | `*peak_kw > *available_kw` | `boundary::exceeds_high(*peak_kw, *available_kw, 0.0)` |
+| 4 | `delta.rs:216` | `*peak_mm > bounds.exceeds_mm` | `boundary::exceeds_high(*peak_mm, bounds.exceeds_mm, 0.0)` |
+| 5 | `narrative.rs:683` | verbatim duplicate of #1 | `bounds.exceeds_high(observed, 0.0)` |
+| 6 | `narrative.rs:703` | verbatim duplicate of #2 | `bounds.below_low(observed, 0.0) == Some(true)` |
+
+Tolerance is `0.0` at every site **deliberately**: the un-widened bound is
+precisely what these ask about, and the boundary epsilon is not a tolerance.
+`below_low`'s `Option` is respected — an upper-bound-only row returns `None`,
+which must not collapse into "breached".
+
+`delta.rs` decides the **tier**; `narrative.rs` decides which gate the modal
+**names** as the reason. Swept in one commit because a disagreement between
+them tells the operator "verify on a scrap" with no gate named.
+
+**Red-first**, at `55946eec` with only the six production hunks reverted —
+four of the five new fixtures fail:
+
+```
+one_ulp_above_the_ceiling_does_not_demote_the_tier
+the_low_side_absorbs_one_ulp_and_still_catches_a_real_burn
+power_and_deflection_re_decisions_absorb_one_ulp_too
+a_one_ulp_reconstruction_does_not_manufacture_a_band_admit
+```
+
+with, e.g., `1 ulp over available_kw is not a power breach` and `1 ulp over the
+ceiling is reconstruction noise, not a band admit`. Green after. Each is paired
+with a **genuine-overshoot control at 1e-9 relative that still demotes**, so
+the epsilon cannot be read as a widened band, and the half-band case asserts an
+absent floor is not a breach. The probe bound is the G-CHIP-ULP reference
+value `0.011_525_378_354_629_83`, so the optimizer's tier is probed at the
+same number the gate's own contract is documented at.
+
+**Bypass sweep, grep-verified.** Searching `optimize/**` for any comparison
+operator applied to a gated quantity outside a comment:
+
+```
+crates/.../optimize/retarget/power.rs:82:      if !peak_kw.is_finite() || peak_kw <= 0.0 {
+crates/.../optimize/retarget/deflection.rs:91: if !peak_mm.is_finite() || peak_mm <= 0.0 {
+```
+
+Both are **non-positive validity guards, not bound comparisons**. *No bare
+gate-verdict re-decision remains anywhere in `optimize/`.* A-8's census
+(§3.1) counted Checkpoint K artifacts reaching the optimizer **zero times by
+name**; they now appear **8 / 11 / 5** times in `delta.rs` / `narrative.rs` /
+`retarget/chipload.rs`.
+
+Not swept, and named so the sweep is not over-read: the lower-severity ad-hoc
+epsilons A-8 listed for completeness (`rank.rs:62-72,92-94,109-111`'s `1e-9`,
+`bounds.rs:33-53`'s axis-bounds `Interval`, and the `1e-6` clamp-detection
+epsilons in the three retargeters) are **unchanged**. They are not gate-verdict
+re-decisions; the `1e-6` ones are clamp detection on feed, and §3 above depends
+on one of them staying exactly as it is.
+
+### 5. P-3 — verified, no action, as ruled
+
+The pin keeps `false` and the disclosure A-8 landed stands. The sentry
+`the_optimizer_scores_candidates_at_a_different_operating_point_than_the_library_default`
+asserts **both halves**, confirmed by reading it:
+
+1. `assert!(library_default)` — `SimulationOptions::default()
+   .adaptive_feed_modulation` is `true`, with the message "if this is false the
+   world moved and the divergence below needs re-attributing". A revert of
+   Checkpoint J fails here.
+2. `assert!(!stamp.candidates.adaptive_feed_modulation)` **and**
+   `assert!(stamp.candidates.diverges_from_library_default_modulation())` — a
+   future ruling that flips the pin fails loudly at both.
+
+It also pins that `use_predicted_feed_in_gates` still *agrees* with the library
+default, so the stamp cannot blur the two pins together.
+
+### 6. P-(4) — the card
+
+`draw_run_provenance` renders `machine_snapshot` **and** `assumptions` on the
+per-toolpath Optimize modal, for **every** tier including `Skipped` — a refusal
+never simulated but still decided something about the world at an operating
+point, which is exactly why `optimize_toolpath` stamps both outside the inner
+search. Read-only; no editable field, nothing locked.
+
+Absence is rendered as absence: `assumptions: None` prints *"not stamped —
+which is not the same thing as the defaults"*, and `baseline.resolution_mm:
+None` prints *"not recorded by the trace"*, which is a different statement from
+"the same cell as the candidates". The modulation divergence gets **words**,
+not a flag. The trailing Close button moved below the drawer for the two
+refusal shapes that own one — it appears for exactly the same shapes as before.
+
+`rs_cam_viz` suite green: **257 + 15 + 14 + 11 passed, 0 failed**; the 15
+`mcp_escape_hatches` and B-5's `results_parity_tests` are unaffected.
+
+### 7. Verification and suite attribution
+
+Baseline, at post-S-5 HEAD `e7137ca9` with A-8i's seven files stashed —
+**168 test binaries**, lib suite `2287 run, 2275 passed, 0 failed, 12 ignored`.
+Red set, exactly the brief's known set and nothing else:
+
+```
+arc_raster_full_dressups_fingerprint      (G-XFP)
+face_full_chain_fingerprint               (G-XFP)
+three_pass_full_dressups_fingerprint      (G-XFP)
+wanaka_suggest_baseline
+```
+
+After (`core_suite_after.txt`, same command at `b3e0405f`): **the two runs
+cover the identical 168 integration targets plus the lib** — `comm` on the
+target lists returns empty in both directions. Lib suite **2275 → 2284
+passed, 0 failed both times**: baseline **plus exactly the 9 tests A-8i adds**
+(4 in `retarget/chipload.rs`, 4 in `delta.rs`, 1 in `narrative.rs`).
+
+Red set, before and after, **identical and nothing else**:
+
+```
+arc_raster_full_dressups_fingerprint      (G-XFP)
+face_full_chain_fingerprint               (G-XFP)
+three_pass_full_dressups_fingerprint      (G-XFP)
+wanaka_suggest_baseline
+```
+
+**No test moved from pass to fail, and none from fail to pass.** So the only
+numbers this wave moved are the ones §1 and §4 attribute: retarget outcomes
+past `DOC/Ø ≈ 1.67` (P-(1a)) and tier decisions within the boundary epsilon of
+a bound (P-(2)).
+
+One bookkeeping difference, stated rather than glossed: the after-run prints
+**171** `test result` lines to the before-run's **168**, because the baseline
+had to be taken in two pieces (the harness reaped the first at 102/170, and the
+remainder was re-run with explicit `--test` flags, which excludes doc-tests)
+while the after-run reached `Doc-tests rs_cam_core` in one pass. The **compared
+population — 168 integration targets + the lib — is identical**; the extra
+lines are doc-tests, which were green.
+
+Per-commit: `cargo clippy -p rs_cam_core --all-targets -- -D warnings` and
+`-p rs_cam_viz` both exit 0 (only the pre-existing future-incompat note for
+transitive `nom 3.2.1` / `quick-xml 0.22.0`); `cargo fmt --check --all` clean.
+`cargo fmt --all` touched **only A-8i's own seven files** — no rustfmt cascade.
+
+Machine discipline: `free -g` and a bracketed `pgrep` before every launch,
+never below 24 GiB available, disk 98 G, **no release build**. Explicit staging
+throughout; `--amend` never used. `planning/airrun_2026-06-01/wanaka.toml`
+(mtime 2026-08-06), `planning/review_2026-07-27/` and the operator's review
+file were never opened for write and remain unstaged.
+
+### 8. NOT FIXED / NOT EXERCISED, stated
+
+- **NOT EXERCISED: the P-4 screenshot. §0 rule 3 is NOT discharged.** The rig
+  is built and committed (`artifacts/a8i/p4_screenshot.py`, plus two fixtures:
+  `a8i_pocket.toml` and `a8i_pocket_refusal.toml`, the latter using
+  `Material::Custom` so the outcome is `Skipped` — both stamp blocks populated
+  at **zero** simulation cost, which is the case worth capturing on its own).
+  It could not be run. A freshly built `target/debug/rs_cam_gui --mcp` in this
+  session **creates its X11 window and then never reaches a first frame**: the
+  startup log stops after `present mode REQUESTED AutoNoVsync`, the
+  *negotiated* mode is never logged, `load_project` timed out at 120 s and even
+  `generation_status` — which answers in ~1 s on a healthy loop — timed out at
+  60 s. `xwininfo` against the root window also hung. Three independent
+  instances, same result; all reaped.
+  **This is G-LV.1's open incident-state coverage, not a P-4 defect** —
+  Checkpoint O accepted the flip with the caveat "fixes the minimise
+  reproduction; incident-state coverage (occluded / visible-frozen) pending
+  N-3", and this session has no attached visible surface for a newly spawned
+  window. Owner: N-3 / whoever holds a desktop session. **Resume condition:**
+  run `p4_screenshot.py` against `a8i_pocket_refusal.toml` (instant) and
+  `a8i_pocket.toml` from a session with a real, visible desktop; PNGs to
+  `artifacts/a8i/`, Read back before citing. Until then P-(4) is verified by
+  test and by code review only, and **no screenshot may be claimed**.
+- **NEW, NOT FIXED — the narrow-band population. A checkpoint question, raised
+  not taken (see §9).** Measured while designing P-(1b): **86 of the 235**
+  two-sided shipped LUT rows (**36.6 %**; **48** of them single-point rows
+  where `max == min`) are narrower than the 1.20 retarget headroom. On every
+  one, both `min × 1.20 > max` and `max / 1.20 < min`, so **both** headroom
+  targets fall outside the band the gate judges by — P-(1a)'s defect class
+  reached through the *headroom policy* instead of the DOC derate. The ratio is
+  scale-invariant (vendor scaling and DOC derating each multiply both bounds by
+  a single factor), so a raw-row census answers it exactly. Distribution:
+  32 `onsrud_ocr`, 26 `amana_long_tail`, 10 `idcwoodcraft_millmage`, 6
+  `amana_compression`, 5 `freud_solid_carbide`, 3 `amana_vgroove_engraving`,
+  2 `helical_aluminum`, 1 each `garr_aluminum` / `onsrud_plastic`. Evidence:
+  `artifacts/a8i/narrow_band_census.{py,txt}`.
+- **NOT EXERCISED: the low/burn side of the retargeter, still.** A-8's blocker
+  is unchanged — F-MISSAE demotes the low side to an advisory on 176/252 rows,
+  so a burn-side `Exceeds` is hard to reach on shipped data. P-(1a)'s
+  burn-side change is covered only by unit fixtures, not by a real sim verdict.
+  Owner: A-9 / F-MISSAE's decider.
+- **NOT EXERCISED: the retarget path through `optimize_toolpath` end to end.**
+  Unchanged from A-8 §7 — §1 drives the retargeter through the same
+  construction production uses, on a real sim verdict, and re-simulates, but
+  does not run the full search orchestration. The `optimize_smoke` heavy tests
+  are `#[ignore]`d and were not run.
+- **NOT MEASURED: how many shipped operations sit past `DOC/Ø ≈ 1.67`.**
+  Unchanged from A-8 §7; P-(1a) makes the question one of *how much faster the
+  optimizer got*, not whether the defect was real.
+- **Commit-message typo, `98e936ec`:** "hard maple, hard maple". Not amended —
+  §0 forbids `--amend` and the numbers are unaffected.
+
+### 9. Checkpoint question raised by this wave
+
+**Q-NARROW — what should the retargeter do when the band is narrower than the
+headroom?** On 86/235 shipped rows (36.6 %, 48 single-point) neither headroom
+target is reachable: the retargeter emits a candidate that `ChipBounds
+::contains` — the gate's own predicate — already says will not reconcile, and
+it costs a full generate + simulate to find out. A-8i **measured it, surfaced
+it in the rationale, and did not branch on it**, because branching moves a
+third of shipped rows and that is far outside this wave's authorised movement.
+
+Options for the operator:
+
+- **(a) Leave it report-only** (today). Cheapest; the operator is told, but the
+  optimizer still burns a generate + simulate per affected row.
+- **(b) Clamp the target into the band** — aim at the nearest in-band value (or
+  the band midpoint on a single-point row). Recovers the candidate; moves
+  retarget outcomes on 86 rows; needs a fixture per side.
+- **(c) Refuse the retarget** when the band cannot host the target, with a
+  typed reason on the outcome. Honest and cheap at runtime, but converts a
+  (currently useless) candidate into a visible "no safe improvement", which is
+  a user-facing behaviour change on a third of rows.
+- **(d) Revisit the headroom policy itself** — 1.20 is a repo-authored dial;
+  on a single-point vendor row *any* headroom is unsatisfiable, which may say
+  more about applying a multiplicative headroom to a point preset than about
+  the retargeter.
+
+A-8i's recommendation: **(c) or (d), not (b)** — (b) invents a target the
+vendor row does not support, which is the failure mode this programme keeps
+finding. But the population is large enough that this is a ruling, not an
+implementation detail. Orchestrator action: put Q-NARROW to the operator with
+the census attached.
+
+### 10. Next action
+
+**Checkpoint request Q-NARROW** (§9). Otherwise: P-(1a), P-(1b), P-(2) and
+P-(4) are landed and P-3 is verified as ruled. The **only** open A-8i
+obligation is the §0 rule 3 screenshot, blocked on a visible desktop session
+and owned by N-3; it must not be marked discharged until the PNGs exist and
+have been read back.

@@ -1,5 +1,13 @@
 # A-8i — HALTED before any commit, 2026-08-14
 
+> **RESOLVED, same day.** The orchestrator serialized the tree behind S-5
+> (six commits, `e1e4ea2e`..`8b2dfb19`, none touching A-8i's seven files).
+> A-8i then took a **fresh** baseline at post-S-5 HEAD `e7137ca9` — stashing
+> its own files first — and landed P-(1a) `98e936ec`, P-(1b) `55946eec`,
+> P-(2) `cd014c4e`, P-(4) `b3e0405f`. The aborted capture below is retained
+> as the record of what contention cost; it was used for nothing. See the
+> A-8i entry in `ORCHESTRATION_LOG.md` §0 and §7.
+
 ## Why
 
 **A second agent is editing this working tree concurrently, on the same
