@@ -1,0 +1,34 @@
+rows with both bounds      : 235
+rows with max only         : 13
+rows with no chipload band : 4
+
+max/min < 1.2            : 86 (36.6 % of two-sided rows)
+  of which single-point    : 48 (max == min)
+
+On every one of those rows BOTH headroom targets fall outside the
+band the gate judges by — the P-(1a) defect class, reached through
+the headroom policy instead of the DOC derate.
+
+    6  amana_compression.json
+   26  amana_long_tail.json
+    3  amana_vgroove_engraving.json
+    5  freud_solid_carbide.json
+    1  garr_aluminum.json
+    2  helical_aluminum.json
+   10  idcwoodcraft_millmage.json
+   32  onsrud_ocr.json
+    1  onsrud_plastic.json
+
+worst 12 by ratio:
+  1.0000  amana-compression-wood-pocket-6350-2f            [0.0787, 0.0787]  amana_compression.json
+  1.0000  amana-compression-mdf-pocket-6350-2f             [0.1549, 0.1549]  amana_compression.json
+  1.0000  amana-compression-plywood-hardwood-pocket-6350-2f [0.0787, 0.0787]  amana_compression.json
+  1.0000  amana-compression-wood-pocket-12700-2f           [0.1956, 0.1956]  amana_compression.json
+  1.0000  amana-compression-mdf-pocket-12700-2f            [0.2819, 0.2819]  amana_compression.json
+  1.0000  amana-compression-acrylic-pocket-6350-2f         [0.0787, 0.0787]  amana_compression.json
+  1.0000  amana-flat-softwood-pocket-0794-2f-spektra       [0.0254, 0.0254]  amana_long_tail.json
+  1.0000  amana-flat-mdf-pocket-0794-2f-spektra            [0.0508, 0.0508]  amana_long_tail.json
+  1.0000  amana-flat-softwood-pocket-1500-2f-spektra       [0.0508, 0.0508]  amana_long_tail.json
+  1.0000  amana-flat-mdf-pocket-1500-2f-spektra            [0.0762, 0.0762]  amana_long_tail.json
+  1.0000  amana-flat-softwood-pocket-1587-2f-spektra       [0.0508, 0.0508]  amana_long_tail.json
+  1.0000  amana-flat-mdf-pocket-1587-2f-spektra            [0.0762, 0.0762]  amana_long_tail.json

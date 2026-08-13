@@ -1,0 +1,1655 @@
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/delta.rs b/crates/rs_cam_core/src/tool_load/optimize/delta.rs
+index e2983e7c..c0e5d9a8 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/delta.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/delta.rs
+@@ -170,6 +170,22 @@ fn chipload_within_carries_burn_advisory(v: &ChiploadVerdict) -> bool {
+     )
+ }
+ 
++/// # Checkpoint P (2), 2026-08-14 — these re-decisions honour the gate's
++/// boundary contract
++///
++/// The three helpers below re-decide, from scratch, a comparison a gate has
++/// already made: they take a `Within` verdict and ask whether the reading was
++/// *strictly* inside its bound or only admitted by the tolerance band. Until
++/// P-(2) each wrote that as a bare `>` / `<` and reached none of Checkpoint
++/// K's epsilon helpers, so a candidate the epsilon-aware gate called `Within`
++/// could be re-decided here as a strict breach **on float noise** — the
++/// G-CHIP-ULP shape, relocated into the optimizer's tier dispatch, where the
++/// consequence is auto-recommend (`Ranked`) vs "verify on a scrap"
++/// (`MarginalSafe`).
++///
++/// Tolerance is `0.0` at every site on purpose: the *point* of these helpers
++/// is to compare against the un-widened bound. The boundary epsilon is not a
++/// tolerance (see [`crate::tool_load::boundary`]) and applies regardless.
+ fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {
+     let ChiploadVerdict::Within {
+         approach_to_min,
+@@ -180,14 +196,21 @@ fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {
+         return false;
+     };
+     // High-side breach: per-sample peak above the strict LUT max.
+-    if approach_to_max.observed_mm_per_tooth > approach_to_max.bounds.max_mm_per_tooth {
++    if approach_to_max
++        .bounds
++        .exceeds_high(approach_to_max.observed_mm_per_tooth, 0.0)
++    {
+         return true;
+     }
+     // Low-side breach: median observed below the strict LUT min, when
+     // the matched row publishes a min (some rows are upper-bound only).
++    // `below_low` returns `None` for exactly that upper-bound-only case, and
++    // `None` must not collapse into "breached".
+     if let Some(min_metric) = approach_to_min
+-        && let Some(strict_min) = min_metric.bounds.min_mm_per_tooth
+-        && min_metric.observed_mm_per_tooth < strict_min
++        && min_metric
++            .bounds
++            .below_low(min_metric.observed_mm_per_tooth, 0.0)
++            == Some(true)
+     {
+         return true;
+     }
+@@ -203,7 +226,7 @@ fn power_within_breaches_strict(v: &PowerVerdict) -> bool {
+     else {
+         return false;
+     };
+-    *peak_kw > *available_kw
++    crate::tool_load::boundary::exceeds_high(*peak_kw, *available_kw, 0.0)
+ }
+ 
+ fn deflection_within_breaches_strict(v: &DeflectionVerdict) -> bool {
+@@ -213,7 +236,7 @@ fn deflection_within_breaches_strict(v: &DeflectionVerdict) -> bool {
+     else {
+         return false;
+     };
+-    *peak_mm > bounds.exceeds_mm
++    crate::tool_load::boundary::exceeds_high(*peak_mm, bounds.exceeds_mm, 0.0)
+ }
+ 
+ /// Compute the per-criterion delta for one candidate vs the baseline
+@@ -324,3 +347,215 @@ pub(crate) fn delta_against_baseline(
+     }
+     delta
+ }
++
++#[cfg(test)]
++#[allow(
++    clippy::unwrap_used,
++    clippy::expect_used,
++    clippy::panic,
++    clippy::indexing_slicing
++)]
++mod tests {
++    use super::*;
++    use crate::compute::operation_configs::PocketConfig;
++    use crate::ids::ToolpathId;
++    use crate::tool_load::verdict::{
++        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
++        DeflectionBounds, SampleEvidence,
++    };
++
++    /// The G-CHIP-ULP reference bound: the value A-6's census found a
++    /// multiply→divide round trip landing 1 ulp above in 6–8 % of the
++    /// (rpm, flutes) grid. Reused here so the optimizer's tier decision is
++    /// probed at the same number the gate's own contract is documented at.
++    const REF_BOUND: f64 = 0.011_525_378_354_629_83;
++
++    fn one_ulp_above(x: f64) -> f64 {
++        f64::from_bits(x.to_bits() + 1)
++    }
++
++    fn one_ulp_below(x: f64) -> f64 {
++        f64::from_bits(x.to_bits() - 1)
++    }
++
++    fn bounds(min: Option<f64>, max: f64) -> ChipBounds {
++        ChipBounds {
++            min_mm_per_tooth: min,
++            max_mm_per_tooth: max,
++            source: ChipBoundsSource::VendorLut,
++        }
++    }
++
++    fn metric(observed: f64, b: ChipBounds) -> ChiploadMetric {
++        ChiploadMetric {
++            observed_mm_per_tooth: observed,
++            statistic: ChiploadStatistic::PeakInRange,
++            evidence: SampleEvidence::empty(),
++            bounds: b,
++        }
++    }
++
++    fn within_chipload(high_observed: f64, low: Option<(f64, f64)>) -> ChiploadVerdict {
++        ChiploadVerdict::Within {
++            approach_to_min: low.map(|(observed, min)| metric(observed, bounds(Some(min), 1.0))),
++            approach_to_max: metric(high_observed, bounds(None, REF_BOUND)),
++            confidence: Confidence::Validated,
++            entry_spikes: Vec::new(),
++            burn_advisory: None,
++            ceiling_advisory: None,
++        }
++    }
++
++    fn within_power(peak_kw: f64, available_kw: f64) -> PowerVerdict {
++        PowerVerdict::Within {
++            peak_kw,
++            available_kw,
++            evidence: SampleEvidence::empty(),
++            confidence: Confidence::Validated,
++            entry_spike: None,
++        }
++    }
++
++    fn within_deflection(peak_mm: f64) -> DeflectionVerdict {
++        DeflectionVerdict::Within {
++            peak_mm,
++            bounds: DeflectionBounds {
++                validated_within_mm: 0.050,
++                exceeds_mm: 0.200,
++            },
++            evidence: SampleEvidence::at(0),
++            confidence: Confidence::Validated,
++            entry_spike: None,
++        }
++    }
++
++    fn candidate(verdict: ToolpathLoadVerdict) -> OptimizeCandidate {
++        OptimizeCandidate {
++            params: OperationConfig::Pocket(PocketConfig::default()),
++            delta: ParamDelta::default(),
++            cycle_time_s: 100.0,
++            verdict,
++            stage: super::super::SearchStage::Refined,
++            reconciled_cycle_time_s: None,
++            reconciled_verdict: None,
++            gate_deltas: None,
++            air_cut_fraction_of_total_runtime: None,
++        }
++    }
++
++    fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
++        ToolpathLoadVerdict {
++            toolpath_id: ToolpathId(0),
++            chipload,
++            power: within_power(0.4, 1.0),
++            deflection: within_deflection(0.020),
++            drill_gates: None,
++            modulation_summary: None,
++            feed_explanation: None,
++        }
++    }
++
++    /// **Checkpoint P (2) — the tier flip, at one ulp.**
++    ///
++    /// A candidate the epsilon-aware chipload gate has already called `Within`
++    /// arrives here with its observation sitting **1 ulp above** the band
++    /// ceiling — the reconstruction noise `tool_load::boundary` exists to
++    /// absorb, routine on the recipes the rubbing-floor clamp parks exactly on
++    /// the ceiling.
++    ///
++    /// RED at the parent (`e94be53a`): `chipload_within_breaches_strict` wrote
++    /// a bare `observed > bounds.max_mm_per_tooth`, so this candidate was
++    /// re-decided as a strict breach and routed to `MarginalSafe` — the modal
++    /// says **"verify on a scrap"** instead of auto-recommending, on the last
++    /// bit of a multiply/divide round trip.
++    ///
++    /// GREEN after: the comparison goes through `ChipBounds::exceeds_high`,
++    /// which carries `BOUNDARY_EPSILON_REL`, and the tier is `strictly safe`.
++    #[test]
++    fn one_ulp_above_the_ceiling_does_not_demote_the_tier() {
++        let c = candidate(verdict_with(within_chipload(one_ulp_above(REF_BOUND), None)));
++        assert!(
++            !candidate_is_marginally_safe(&c),
++            "a 1-ulp reconstruction must not route an auto-recommendable \
++             candidate to verify-on-scrap (observed {:.17e} vs bound \
++             {REF_BOUND:.17e})",
++            one_ulp_above(REF_BOUND)
++        );
++        assert!(
++            candidate_is_strictly_safe(&c),
++            "and it must land in the auto-recommend tier"
++        );
++    }
++
++    /// The other half of the same contract: the epsilon is not a tolerance in
++    /// disguise. A breach twelve orders of magnitude smaller than 5 % still
++    /// demotes the tier, so P-(2) cannot be read as widening the band.
++    #[test]
++    fn a_genuine_breach_still_demotes_the_tier() {
++        let c = candidate(verdict_with(within_chipload(REF_BOUND * (1.0 + 1e-9), None)));
++        assert!(
++            candidate_is_marginally_safe(&c),
++            "a real overshoot must still route to verify-on-scrap"
++        );
++        assert!(!candidate_is_strictly_safe(&c));
++    }
++
++    /// The low side, same shape. `below_low` returns `Option<bool>`; the
++    /// upper-bound-only case must stay `None`-safe rather than collapsing to
++    /// "breached".
++    #[test]
++    fn the_low_side_absorbs_one_ulp_and_still_catches_a_real_burn() {
++        let noise = candidate(verdict_with(within_chipload(
++            REF_BOUND * 0.5,
++            Some((one_ulp_below(0.032), 0.032)),
++        )));
++        assert!(
++            !candidate_is_marginally_safe(&noise),
++            "1 ulp below the floor is reconstruction noise, not a burn"
++        );
++
++        let real = candidate(verdict_with(within_chipload(
++            REF_BOUND * 0.5,
++            Some((0.032 * (1.0 - 1e-9), 0.032)),
++        )));
++        assert!(
++            candidate_is_marginally_safe(&real),
++            "a genuine sub-floor median must still demote"
++        );
++
++        let no_floor = candidate(verdict_with(within_chipload(REF_BOUND * 0.5, None)));
++        assert!(
++            !candidate_is_marginally_safe(&no_floor),
++            "an upper-bound-only row has no floor to breach"
++        );
++    }
++
++    /// Sites 3 and 4 of the sweep: power and deflection re-decide their own
++    /// `Within` the same way and reach `boundary::exceeds_high` now.
++    #[test]
++    fn power_and_deflection_re_decisions_absorb_one_ulp_too() {
++        let mut v = verdict_with(within_chipload(REF_BOUND * 0.5, None));
++        v.power = within_power(one_ulp_above(1.0), 1.0);
++        assert!(
++            !candidate_is_marginally_safe(&candidate(v.clone())),
++            "1 ulp over available_kw is not a power breach"
++        );
++        v.power = within_power(1.0 * (1.0 + 1e-9), 1.0);
++        assert!(
++            candidate_is_marginally_safe(&candidate(v)),
++            "a genuine power overshoot still demotes"
++        );
++
++        let mut d = verdict_with(within_chipload(REF_BOUND * 0.5, None));
++        d.deflection = within_deflection(one_ulp_above(0.200));
++        assert!(
++            !candidate_is_marginally_safe(&candidate(d.clone())),
++            "1 ulp over the deflection bound is not a breach"
++        );
++        d.deflection = within_deflection(0.200 * (1.0 + 1e-9));
++        assert!(
++            candidate_is_marginally_safe(&candidate(d)),
++            "a genuine deflection overshoot still demotes"
++        );
++    }
++}
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/mod.rs b/crates/rs_cam_core/src/tool_load/optimize/mod.rs
+index 7fbcf80d..b7ef5b19 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/mod.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/mod.rs
+@@ -525,13 +525,17 @@ fn run_retarget_strategy(
+     };
+     let space = space::SearchSpace::build(&view, &axis_ctx, matched_lut_row, policy);
+ 
++    // Checkpoint P (1a): the row is consulted only to decide whether a
++    // chipload retarget is possible at all (a row publishing neither bound
++    // cannot produce one). The *band* the retargeter aims at is no longer
++    // injected here — it is read off the verdict's `ChiploadMetric::bounds`,
++    // which is DOC-derated, so the retargeter and the gate can no longer hold
++    // two different numbers. See `retarget::chipload`'s module docs.
+     let chipload = matched_lut_row.and_then(|row| {
+         if row.chip_load_min_mm.is_none() && row.chip_load_max_mm.is_none() {
+             return None;
+         }
+         Some(retarget::chipload::ChiploadFeedRetargeter {
+-            lut_chipload_min: row.chip_load_min_mm.unwrap_or(f64::NAN),
+-            lut_chipload_max: row.chip_load_max_mm.unwrap_or(f64::NAN),
+             low_headroom: policy.retarget.chipload_low_headroom.value,
+             high_headroom: policy.retarget.chipload_high_headroom.value,
+             plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/narrative.rs b/crates/rs_cam_core/src/tool_load/optimize/narrative.rs
+index bf65da92..ade439bd 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/narrative.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/narrative.rs
+@@ -676,11 +676,20 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
+     // band (G16 §11.4). For A1 we surface the chipload high-side band
+     // admit, which is the only producer today (power_breach_tolerance
+     // and deflection_breach_tolerance default to 0).
++    //
++    // Checkpoint P (2): these two comparisons are verbatim duplicates of
++    // `delta.rs`'s `chipload_within_breaches_strict` and must stay in step
++    // with it — the tier says "verify on a scrap" and this decides which
++    // gate the modal *names* as the reason. Both now go through the
++    // `ChipBounds` methods, so neither can be decided by a 1-ulp
++    // reconstruction. Tolerance `0.0`: the strict bound is the question.
+     let mut out = Vec::new();
+     if let ChiploadVerdict::Within {
+         approach_to_max, ..
+     } = &verdict.chipload
+-        && approach_to_max.observed_mm_per_tooth > approach_to_max.bounds.max_mm_per_tooth
++        && approach_to_max
++            .bounds
++            .exceeds_high(approach_to_max.observed_mm_per_tooth, 0.0)
+     {
+         out.push(LimitingGate {
+             gate: GateKind::Chipload,
+@@ -699,8 +708,8 @@ fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<Limiting
+         approach_to_min: Some(metric),
+         ..
+     } = &verdict.chipload
++        && metric.bounds.below_low(metric.observed_mm_per_tooth, 0.0) == Some(true)
+         && let Some(strict_min) = metric.bounds.min_mm_per_tooth
+-        && metric.observed_mm_per_tooth < strict_min
+     {
+         out.push(LimitingGate {
+             gate: GateKind::Chipload,
+@@ -1503,4 +1512,57 @@ mod tests {
+             n.headline,
+         );
+     }
++
++    /// **Checkpoint P (2) — sites 5 and 6.**
++    ///
++    /// `limiting_gates_from_band_admit` holds a verbatim duplicate of
++    /// `delta.rs`'s strict-breach pair. `delta.rs` decides the *tier*
++    /// (auto-recommend vs verify-on-scrap); this decides which gate the modal
++    /// then **names** as the reason. If the two disagree the operator is told
++    /// "verify on a scrap" with no gate named, or a gate is named on a run
++    /// that was not demoted.
++    ///
++    /// RED at the parent (`e94be53a`): both wrote bare `>` / `<`, so a 1-ulp
++    /// reconstruction produced a `LimitingGate` with `band_admitted: true` on
++    /// a candidate the epsilon-aware gate had called `Within`.
++    ///
++    /// GREEN after: both go through the `ChipBounds` methods, and a genuine
++    /// overshoot is still surfaced.
++    #[test]
++    fn a_one_ulp_reconstruction_does_not_manufacture_a_band_admit() {
++        let ceiling = 0.07_f64;
++        let one_ulp_above = f64::from_bits(ceiling.to_bits() + 1);
++        let noise = vd(within_chipload(one_ulp_above), within_deflection(0.10));
++        assert!(
++            limiting_gates_from_band_admit(&noise).is_empty(),
++            "1 ulp over the ceiling is reconstruction noise, not a band admit"
++        );
++
++        let real = vd(within_chipload(ceiling * 1.05), within_deflection(0.10));
++        let gates = limiting_gates_from_band_admit(&real);
++        assert!(
++            gates.iter().any(|g| matches!(g.gate, GateKind::Chipload)
++                && g.side == Some(ChipSide::High)
++                && g.band_admitted),
++            "a genuine 5 % overshoot must still be surfaced as a band admit, \
++             got {gates:?}"
++        );
++
++        // Low side, same shape. `within_chipload` shares one band across both
++        // metrics, so a value 1 ulp under the 0.038 floor probes the burn arm.
++        let floor = 0.038_f64;
++        let one_ulp_below = f64::from_bits(floor.to_bits() - 1);
++        let low_noise = vd(within_chipload(one_ulp_below), within_deflection(0.10));
++        assert!(
++            limiting_gates_from_band_admit(&low_noise).is_empty(),
++            "1 ulp under the floor is not a burn-side band admit"
++        );
++        let low_real = vd(within_chipload(floor * 0.9), within_deflection(0.10));
++        assert!(
++            limiting_gates_from_band_admit(&low_real)
++                .iter()
++                .any(|g| g.side == Some(ChipSide::Low) && g.band_admitted),
++            "a genuine sub-floor median must still be surfaced"
++        );
++    }
+ }
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/retarget/chipload.rs b/crates/rs_cam_core/src/tool_load/optimize/retarget/chipload.rs
+index 5f62833d..b8cbf3a5 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/retarget/chipload.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/retarget/chipload.rs
+@@ -18,6 +18,27 @@
+ //!
+ //! See `planning/STEP5_PREP_RETARGETERS.md` §1 for the design rationale and
+ //! the wanaka TP 4 acceptance trace.
++//!
++//! # The band comes off the verdict — Checkpoint P (1a), 2026-08-14
++//!
++//! The retargeter used to be handed the **raw** matched LUT row at
++//! construction time (`MatchedRow::chip_load_{min,max}_mm` — diameter- and
++//! hardness-scaled, but *not* DOC-derated) while the chipload gate judges
++//! against `geometry::derate_chipload_bounds(...)` of that same row at the
++//! measured peak axial DOC. Two instruments, one comparison.
++//!
++//! A-8 measured the consequence end to end
++//! (`planning/review_2026-08-08/OPTIMIZER_ASSUMPTIONS.md` §2): the retargeter
++//! emitted the **identical** feed for a 3 mm and a 20 mm single pass while the
++//! gate's ceiling halved between them, so past `DOC/Ø ≈ 1.67` it was aiming at
++//! a number above the bar it would be judged by and the retargeted candidate
++//! came back `Exceeds(High)` — a guaranteed-rejected candidate costing a full
++//! generate + simulate.
++//!
++//! The band the gate used is already in the retargeter's hand: it is
++//! `ChiploadMetric::bounds` on the very `ChiploadVerdict` it is passed. It
++//! reads that now, and nothing else. There is deliberately **no second band**
++//! on this struct for the two to drift apart again.
+ 
+ use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
+ use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
+@@ -37,19 +58,17 @@ const DRIVING_AXES: &[SearchAxis] = &[SearchAxis::FeedRate];
+ 
+ /// Sample-driven feed retargeter for the chipload gate.
+ ///
+-/// LUT bounds are injected at construction time (the orchestrator at Step 6
+-/// will plumb them through from the matched LUT row). Headroom factors and the
+-/// plunge-tracking threshold come from `policy`.
++/// **Carries no band.** Checkpoint P (1a): the band is read off the
++/// `ChiploadVerdict` handed to [`Retargeter::target`] — `ChiploadMetric
++/// ::bounds`, the DOC-derated band the gate actually judged by. Only the
++/// policy dials live here.
+ pub struct ChiploadFeedRetargeter {
+-    /// Vendor LUT row's chipload floor (mm/tooth).
+-    pub lut_chipload_min: f64,
+-    /// Vendor LUT row's chipload ceiling (mm/tooth).
+-    pub lut_chipload_max: f64,
+-    /// Multiplier (>= 1.0) applied to LUT min for BurnRisk targets so we don't
+-    /// land exactly on the boundary. From `policy.retarget.chipload_low_headroom`.
++    /// Multiplier (>= 1.0) applied to the band's floor for BurnRisk targets so
++    /// we don't land exactly on the boundary. From
++    /// `policy.retarget.chipload_low_headroom`.
+     pub low_headroom: f64,
+-    /// Divisor (>= 1.0) applied to LUT max for BreakageRisk targets so we
+-    /// don't land exactly on the boundary. From
++    /// Divisor (>= 1.0) applied to the band's ceiling for BreakageRisk targets
++    /// so we don't land exactly on the boundary. From
+     /// `policy.retarget.chipload_high_headroom`.
+     pub high_headroom: f64,
+     /// |Δfeed/baseline| threshold above which plunge must track feed. From
+@@ -73,17 +92,29 @@ impl Retargeter for ChiploadFeedRetargeter {
+     ) -> Option<RetargetSolution> {
+         // Only fires on the chipload-Exceeds variants. Within and
+         // Unmodeled return None.
+-        let (peak, side) = match verdict {
++        //
++        // Checkpoint P (1a): `bounds` travels with the peak. It is the
++        // DOC-derated band this very verdict was decided against, so the
++        // target below is aimed at the bar the re-simulation will judge it by.
++        let (peak, side, bounds) = match verdict {
+             ChiploadVerdict::Exceeds {
+                 side: ChipSide::Low,
+                 triggering,
+                 ..
+-            } => (triggering.observed_mm_per_tooth, Side::Burn),
++            } => (
++                triggering.observed_mm_per_tooth,
++                Side::Burn,
++                &triggering.bounds,
++            ),
+             ChiploadVerdict::Exceeds {
+                 side: ChipSide::High,
+                 triggering,
+                 ..
+-            } => (triggering.observed_mm_per_tooth, Side::Breakage),
++            } => (
++                triggering.observed_mm_per_tooth,
++                Side::Breakage,
++                &triggering.bounds,
++            ),
+             _ => return None,
+         };
+ 
+@@ -95,14 +126,16 @@ impl Retargeter for ChiploadFeedRetargeter {
+         }
+ 
+         // Target chipload with headroom margin: pull the peak away from the
+-        // boundary by `low_headroom` (above LUT min) or by `high_headroom`
+-        // (below LUT max).
++        // boundary by `low_headroom` (above the band's floor) or by
++        // `high_headroom` (below the band's ceiling).
++        //
++        // The floor is `Option` because a row may publish no minimum
++        // (`ChiploadBoundPolicy::AllowHalfBand`). `None` is *unmodelled*, not
++        // zero — refuse the burn retarget rather than invent a floor.
+         let target_chipload = match side {
+-            Side::Burn => self.lut_chipload_min * self.low_headroom,
+-            Side::Breakage => self.lut_chipload_max / self.high_headroom,
++            Side::Burn => bounds.min_mm_per_tooth? * self.low_headroom,
++            Side::Breakage => bounds.max_mm_per_tooth / self.high_headroom,
+         };
+-        // The bound for the matched side may be missing (NaN sentinel from the
+-        // strategy when the LUT row only carries the opposite bound).
+         if !target_chipload.is_finite() || target_chipload <= 0.0 {
+             return None;
+         }
+@@ -187,8 +220,9 @@ impl Retargeter for ChiploadFeedRetargeter {
+         Some(RetargetSolution {
+             patches,
+             rationale: format!(
+-                "{side:?}: scale feed by {multiplier:.2}× to lift sample peak \
+-                 from {peak:.4} toward LUT × headroom"
++                "{side:?}: scale feed by {multiplier:.2}× to move sample peak \
++                 from {peak:.4} to {target_chipload:.4} — the gate's own \
++                 DOC-derated band with headroom"
+             ),
+         })
+     }
+@@ -283,40 +317,58 @@ mod tests {
+         }
+     }
+ 
+-    fn chip_bounds() -> ChipBounds {
++    fn chip_bounds_of(min: Option<f64>, max: f64) -> ChipBounds {
+         ChipBounds {
+-            min_mm_per_tooth: Some(0.05),
+-            max_mm_per_tooth: 0.10,
++            min_mm_per_tooth: min,
++            max_mm_per_tooth: max,
+             source: ChipBoundsSource::VendorLut,
+         }
+     }
+ 
+-    fn burn_verdict(peak: f64) -> ChiploadVerdict {
++    fn chip_bounds() -> ChipBounds {
++        chip_bounds_of(Some(0.05), 0.10)
++    }
++
++    /// **Checkpoint P (1a) re-pin.** These builders now take the band
++    /// explicitly. Before P-(1a) the band lived on the retargeter and the
++    /// verdict carried its own, so a fixture could — and several did — state
++    /// two different bands for one recipe. That divergence *was* the defect
++    /// (`OPTIMIZER_ASSUMPTIONS.md` §2.5); a fixture is no longer able to
++    /// express it.
++    fn burn_verdict(peak: f64, bounds: ChipBounds) -> ChiploadVerdict {
+         ChiploadVerdict::Exceeds {
+             side: ChipSide::Low,
+             triggering: ChiploadMetric {
+                 observed_mm_per_tooth: peak,
+                 statistic: ChiploadStatistic::MedianLow,
+                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
+-                bounds: chip_bounds(),
++                bounds,
+             },
+             confidence: Confidence::Validated,
+         }
+     }
+ 
+-    fn breakage_verdict(peak: f64) -> ChiploadVerdict {
++    fn breakage_verdict(peak: f64, bounds: ChipBounds) -> ChiploadVerdict {
+         ChiploadVerdict::Exceeds {
+             side: ChipSide::High,
+             triggering: ChiploadMetric {
+                 observed_mm_per_tooth: peak,
+                 statistic: ChiploadStatistic::PeakHigh,
+                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
+-                bounds: chip_bounds(),
++                bounds,
+             },
+             confidence: Confidence::Validated,
+         }
+     }
+ 
++    fn retargeter(low_headroom: f64, high_headroom: f64) -> ChiploadFeedRetargeter {
++        ChiploadFeedRetargeter {
++            low_headroom,
++            high_headroom,
++            plunge_tracking_threshold: 0.10,
++        }
++    }
++
+     #[test]
+     fn burnrisk_doubles_feed_when_peak_is_half_lut_min() {
+         // peak=0.025, lut_min=0.05, low_headroom=1.0 → target=0.05, mult=2.0
+@@ -325,15 +377,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let solution = r
+-            .target(&burn_verdict(0.025), &space, &view, &ctx)
++            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+             .expect("BurnRisk should produce a solution");
+         let primary = solution
+             .patches
+@@ -357,15 +403,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let solution = r
+-            .target(&breakage_verdict(0.20), &space, &view, &ctx)
++            .target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx)
+             .expect("BreakageRisk should produce a solution");
+         let primary = solution
+             .patches
+@@ -386,15 +426,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let solution = r
+-            .target(&burn_verdict(0.025), &space, &view, &ctx)
++            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+             .expect("solution");
+         assert_eq!(
+             solution.patches.len(),
+@@ -417,15 +451,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let solution = r
+-            .target(&burn_verdict(0.048), &space, &view, &ctx)
++            .target(&burn_verdict(0.048, chip_bounds()), &space, &view, &ctx)
+             .expect("solution");
+         assert_eq!(
+             solution.patches.len(),
+@@ -445,13 +473,7 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let within = ChiploadVerdict::Within {
+             approach_to_min: None,
+             approach_to_max: ChiploadMetric {
+@@ -481,15 +503,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let solution = r
+-            .target(&burn_verdict(0.025), &space, &view, &ctx)
++            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+             .expect("solution");
+         let primary = solution
+             .patches
+@@ -516,15 +532,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.038,
+-            lut_chipload_max: 0.07,
+-            low_headroom: 1.20,
+-            high_headroom: 1.20,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.20, 1.20);
+         let solution = r
+-            .target(&burn_verdict(0.0253), &space, &view, &ctx)
++            .target(&burn_verdict(0.0253, chip_bounds_of(Some(0.038), 0.07)), &space, &view, &ctx)
+             .expect("solution");
+         let primary = solution
+             .patches
+@@ -568,15 +578,9 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.038,
+-            lut_chipload_max: 0.07,
+-            low_headroom: 1.20,
+-            high_headroom: 1.20,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.20, 1.20);
+         let solution = r
+-            .target(&burn_verdict(0.0253), &space, &view, &ctx)
++            .target(&burn_verdict(0.0253, chip_bounds_of(Some(0.038), 0.07)), &space, &view, &ctx)
+             .expect("solution");
+         let rpm_patch = solution
+             .patches
+@@ -617,13 +621,7 @@ mod tests {
+         let space = fx.space();
+         let view = fx.view();
+         let ctx = fx.ctx();
+-        let r = ChiploadFeedRetargeter {
+-            lut_chipload_min: 0.05,
+-            lut_chipload_max: 0.10,
+-            low_headroom: 1.0,
+-            high_headroom: 1.0,
+-            plunge_tracking_threshold: 0.10,
+-        };
++        let r = retargeter(1.0, 1.0);
+         let breakage = ChiploadVerdict::Exceeds {
+             side: ChipSide::High,
+             triggering: ChiploadMetric {
+@@ -644,4 +642,71 @@ mod tests {
+             solution.patches.iter().map(|p| p.axis).collect::<Vec<_>>()
+         );
+     }
++
++    /// **Checkpoint P (1a) — the property, stated as a unit.**
++    ///
++    /// One retargeter, two verdicts whose bands differ by exactly the DOC
++    /// derate (`doc_derating_scale(3.15) = 0.50`), same observed peak. The
++    /// targets must differ by the same 0.50.
++    ///
++    /// Before P-(1a) this was impossible to express: the band lived on the
++    /// retargeter, so one retargeter had exactly one target regardless of what
++    /// the gate measured. That is the whole of A-8 §2.4's "read the retarget
++    /// feed column — it is 1708.1 on both arms".
++    #[test]
++    fn the_band_the_retargeter_aims_at_comes_from_the_verdict() {
++        let fx = Fixture::new(2000.0);
++        let space = fx.space();
++        let view = fx.view();
++        let ctx = fx.ctx();
++        let r = retargeter(1.20, 1.20);
++
++        // Raw row band, as the gate would report it at DOC/Ø <= 1.
++        let raw_band = breakage_verdict(0.20, chip_bounds_of(Some(0.032), 0.055));
++        // The same row at DOC/Ø = 3.15: `derate_chipload_bounds` scales BOTH
++        // bounds by 0.50, which is why the band's shape is preserved.
++        let derated_band = breakage_verdict(0.20, chip_bounds_of(Some(0.016), 0.0275));
++
++        let feed_of = |v: &ChiploadVerdict| {
++            r.target(v, &space, &view, &ctx)
++                .expect("breakage verdict must retarget")
++                .patches
++                .iter()
++                .find(|p| matches!(p.source, PatchSource::Primary))
++                .expect("primary patch")
++                .value
++        };
++        let shallow = feed_of(&raw_band);
++        let deep = feed_of(&derated_band);
++        assert!(
++            (deep / shallow - 0.5).abs() < 1e-9,
++            "the retargeted feed must track the band the GATE used: shallow \
++             {shallow:.4} vs deep {deep:.4} (ratio {:.6}, expected 0.5)",
++            deep / shallow
++        );
++    }
++
++    /// A row that publishes no floor gives a half-band verdict
++    /// (`ChiploadBoundPolicy::AllowHalfBand`). Burn cannot be modelled
++    /// against a band with no floor, so the retarget refuses rather than
++    /// inventing one — and the high side is unaffected.
++    #[test]
++    fn a_half_band_verdict_refuses_the_burn_retarget_only() {
++        let fx = Fixture::new(2000.0);
++        let space = fx.space();
++        let view = fx.view();
++        let ctx = fx.ctx();
++        let r = retargeter(1.20, 1.20);
++        let half = chip_bounds_of(None, 0.10);
++        assert!(
++            r.target(&burn_verdict(0.025, half.clone()), &space, &view, &ctx)
++                .is_none(),
++            "no published floor means burn is unmodelled, not zero"
++        );
++        assert!(
++            r.target(&breakage_verdict(0.20, half), &space, &view, &ctx)
++                .is_some(),
++            "the ceiling is still actionable on a half band"
++        );
++    }
+ }
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/retarget_reconciliation_a8.rs b/crates/rs_cam_core/src/tool_load/optimize/retarget_reconciliation_a8.rs
+index 7b915bb3..f541dd78 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/retarget_reconciliation_a8.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/retarget_reconciliation_a8.rs
+@@ -270,7 +270,9 @@ fn run_arm(session: &mut ProjectSession, feed: f64) -> Arm {
+ ///
+ /// The second value is the load-bearing one: it is
+ /// `ChiploadMetric::bounds.max_mm_per_tooth`, i.e. the **DOC-derated** band
+-/// the gate judged by — not the raw vendor row the retargeter is handed.
++/// the gate judged by. Since Checkpoint P (1a) it is also the band the
++/// retargeter aims at — the point of the ruling was to make those one number
++/// rather than two.
+ fn observed_and_ceiling(v: &ChiploadVerdict) -> (f64, f64) {
+     match v {
+         ChiploadVerdict::Exceeds { triggering, .. } => (
+@@ -295,10 +297,17 @@ struct Round {
+     /// The chipload band the gate judged the BASELINE by (DOC-derated).
+     gate_ceiling: f64,
+     /// The matched vendor row's own maximum — diameter/hardness-scaled,
+-    /// **not** DOC-derated. This is what the retargeter is handed.
++    /// **not** DOC-derated. Until Checkpoint P (1a) this is what the
++    /// retargeter was handed; it is kept so the inversion can be quoted
++    /// against it rather than reconstructed.
+     row_max: f64,
+-    /// `row_max / high_headroom` — what the retargeter aims the feed at.
++    /// `gate_ceiling / high_headroom` — what the retargeter aims the feed at
++    /// since P-(1a): the DOC-derated band off the verdict, with headroom.
+     retarget_target: f64,
++    /// `row_max / high_headroom` — what it aimed at BEFORE P-(1a). Equal to
++    /// [`Self::retarget_target`] exactly while the derate is inactive, which
++    /// is why the control arm did not move.
++    pre_p1a_target: f64,
+     baseline_feed: f64,
+     retargeted_feed: f64,
+     /// Advance per tooth the re-simulation actually measured at the
+@@ -374,8 +383,6 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
+     };
+     let space = SearchSpace::build(&view, &axis_ctx, Some(&row), policy);
+     let retargeter = ChiploadFeedRetargeter {
+-        lut_chipload_min: row.chip_load_min_mm.unwrap_or(f64::NAN),
+-        lut_chipload_max: row.chip_load_max_mm.unwrap_or(f64::NAN),
+         low_headroom: policy.retarget.chipload_low_headroom.value,
+         high_headroom: policy.retarget.chipload_high_headroom.value,
+         plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,
+@@ -392,7 +399,11 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
+     let retargeted_feed = feed_patch.value;
+ 
+     let row_max = row.chip_load_max_mm.expect("matched row publishes a max");
+-    let retarget_target = row_max / policy.retarget.chipload_high_headroom.value;
++    let headroom = policy.retarget.chipload_high_headroom.value;
++    // Checkpoint P (1a): the retargeter aims at the band the GATE used.
++    let retarget_target = ceiling_a / headroom;
++    // What it aimed at before P-(1a), retained so the inversion is quotable.
++    let pre_p1a_target = row_max / headroom;
+ 
+     println!(
+         "row {} (d={:.3} mm, Ø×{:.3}, Janka×{:.3}, extrapolated {})",
+@@ -408,10 +419,11 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
+         ceiling_a / row_max
+     );
+     println!(
+-        "retarget target {retarget_target:.5} = row max / headroom {:.2}    \
+-         target / gate ceiling = {:.4}",
+-        policy.retarget.chipload_high_headroom.value,
+-        retarget_target / ceiling_a
++        "retarget target {retarget_target:.5} = gate ceiling / headroom \
++         {headroom:.2}    target / gate ceiling = {:.4}   \
++         (pre-P-(1a) target was {pre_p1a_target:.5} = {:.4}x the ceiling)",
++        retarget_target / ceiling_a,
++        pre_p1a_target / ceiling_a
+     );
+     println!(
+         "retarget feed   {retargeted_feed:>9.1}  ({:.4}x baseline)   rationale: {}",
+@@ -478,6 +490,7 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
+         gate_ceiling: ceiling_a,
+         row_max,
+         retarget_target,
++        pre_p1a_target,
+         baseline_feed: baseline.feed,
+         retargeted_feed,
+         reconciled_observed: obs_b,
+@@ -500,10 +513,32 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
+ /// retarget did not reconcile" could be any of a dozen things — a clamp, a
+ /// stale trace, a population artifact. With it, the only difference between
+ /// the two rounds is the DOC derate.
++///
++/// **Checkpoint P (1a) did not move this arm**, and that is load-bearing: at
++/// `DOC/Ø < 1` the raw row and the derated band are the same number, so the
++/// old target and the new one are bit-identical. Asserted below rather than
++/// argued, so the deep arm's inversion is attributable to the derate alone.
+ #[test]
+ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
+     let shallow = measure_retarget_round(SHALLOW_DEPTH_MM);
+ 
++    // P-(1a) control: with the derate inactive the two bands coincide, so the
++    // change of band source is a no-op here. Feed measured unchanged at
++    // 1708.1 mm/min across the ruling.
++    assert!(
++        (shallow.retarget_target - shallow.pre_p1a_target).abs() < 1e-12,
++        "CONTROL: P-(1a) must be a no-op below the knee; new target {:.6} vs \
++         pre-P-(1a) {:.6}",
++        shallow.retarget_target,
++        shallow.pre_p1a_target
++    );
++    assert!(
++        (shallow.retargeted_feed - 1708.1).abs() < 1.0,
++        "CONTROL: the control arm's feed is unchanged across P-(1a) \
++         (A-8 measured 1708.1 mm/min); got {:.1}",
++        shallow.retargeted_feed
++    );
++
+     assert!(
+         shallow.doc_over_diameter < 1.0,
+         "control arm must sit below the derate knee, got {:.3}",
+@@ -527,30 +562,46 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
+     );
+ }
+ 
+-/// **The finding (F-OPT).** A real retarget outcome, measured end to end:
+-/// it consumes a full generate + simulate and moves the verdict nowhere.
++/// **The finding arm (F-OPT), INVERTED by Checkpoint P (1a) on 2026-08-14.**
++///
++/// # What this test asserted before, and what it asserts now
++///
++/// A-8 wrote this arm to pin the *defect*, and said in its own words that
++/// when the ruling landed it must be inverted deliberately with the old and
++/// new numbers recorded. This is that inversion. Measured on this fixture
++/// (Ø6.35 flat 2F, hard maple, 20 mm single pass, `DOC/Ø = 3.15`, cell
++/// 0.5 mm, row `amana-flat-hardwood-pocket-6000-2f`):
++///
++/// | quantity | before P-(1a) | after P-(1a) |
++/// |---|---|---|
++/// | retarget target | 0.04745 (= row max / 1.2) | 0.02372 (= gate ceiling / 1.2) |
++/// | target ÷ gate ceiling | **1.6667** (above the bar) | **0.8333** (below the bar) |
++/// | retargeted feed | 1708.1 mm/min | 854.1 mm/min (0.5×) |
++/// | re-simulated verdict | `Exceeds(High)` | `Within` |
+ ///
+-/// Mechanism: `run_retarget_stage` hands `ChiploadFeedRetargeter` the
+-/// **raw** matched row (`MatchedRow::chip_load_max_mm` — diameter- and
+-/// hardness-scaled, *not* DOC-derated) while the chipload gate compares
+-/// against `geometry::derate_chipload_bounds(...)` of that same row at the
+-/// measured peak axial DOC. Past `DOC/Ø ≈ 1.67` the retargeter's target
+-/// `row_max / 1.2` is unreachable — it sits above the gate's own ceiling —
+-/// and the derated bar bottoms out at 0.50 × row_max from `DOC/Ø ≥ 3`.
++/// The old assertion was `deep.reconciled_is_exceeds`; it is now
++/// `!deep.reconciled_is_exceeds`. Nothing else about the fixture moved — same
++/// tool, same stock, same cell, same matched row, same gate population.
+ ///
+-/// The gate's own ceiling is available to the retargeter: it is
+-/// `ChiploadMetric::bounds.max_mm_per_tooth` on the very verdict it is
+-/// handed. It reads the injected row instead.
++/// # Mechanism, for the record
+ ///
+-/// **This test pins the DEFECT, not the desired behaviour.** A-8 did not
+-/// fix it: re-pointing the retargeter at the derated band moves every
+-/// optimizer outcome on every deep pass and is a Checkpoint request
+-/// (`planning/review_2026-08-08/OPTIMIZER_ASSUMPTIONS.md` §6, request 1).
+-/// When that is ruled and executed, this test fails, and it must be
+-/// inverted deliberately with the old/new numbers recorded — not deleted,
+-/// and not re-baselined.
++/// `run_retarget_stage` used to hand `ChiploadFeedRetargeter` the **raw**
++/// matched row (diameter- and hardness-scaled, *not* DOC-derated) while the
++/// chipload gate compares against `geometry::derate_chipload_bounds(...)` of
++/// that same row at the measured peak axial DOC. Past `DOC/Ø ≈ 1.67` the
++/// target `row_max / 1.2` sat above the gate's own ceiling, and the derated
++/// bar bottoms out at `0.50 × row_max` from `DOC/Ø ≥ 3` — so a retarget that
++/// landed perfectly on its own target still read `Exceeds(High)`, burning a
++/// full generate + simulate on a guaranteed-rejected candidate.
++///
++/// The retargeter now reads `ChiploadMetric::bounds` off the verdict it is
++/// handed, so there is no second band to diverge from.
++///
++/// **The control arm is what makes this attributable**: it did not move (the
++/// derate is inactive there, so the two bands were already the same number),
++/// which rules out a clamp, a stale trace or a population artifact.
+ #[test]
+-fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
++fn a_retarget_reconciles_once_it_reads_the_derated_band() {
+     let deep = measure_retarget_round(DEEP_DEPTH_MM);
+ 
+     assert!(
+@@ -559,19 +610,31 @@ fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
+         deep.doc_over_diameter
+     );
+ 
+-    // The two bars, and the gap between them.
++    // The derate is still there — P-(1a) did not touch it. What changed is
++    // which of the two bands the retargeter aims at.
+     let derate = deep.gate_ceiling / deep.row_max;
+     assert!(
+         (derate - 0.5).abs() < 1e-9,
+         "past DOC/D = 3 the derate is 0.50; measured {derate:.6}"
+     );
++
++    // OLD (pre-P-(1a)): this ratio was 1.6667 — the target sat ABOVE the bar.
++    let pre_over_ceiling = deep.pre_p1a_target / deep.gate_ceiling;
++    assert!(
++        (pre_over_ceiling - 5.0 / 3.0).abs() < 1e-9,
++        "the pre-P-(1a) target must still reproduce at 1.6667x the bar, or \
++         this inversion is not comparable to what A-8 measured; got \
++         {pre_over_ceiling:.6}"
++    );
++
++    // NEW: the target is the gate's own ceiling with headroom, so it sits
++    // BELOW the bar by exactly 1/1.2 whatever the derate does.
+     let target_over_ceiling = deep.retarget_target / deep.gate_ceiling;
+     assert!(
+-        (target_over_ceiling - 5.0 / 3.0).abs() < 1e-9,
+-        "PRE-FIX REPRODUCTION: the retargeter aims at row_max/1.2 while the \
+-         gate judges against 0.50 x row_max, i.e. 1.6667x the bar. Measured \
+-         {target_over_ceiling:.6} (target {:.6}, ceiling {:.6}, row {} \
+-         Ox{:.3} Jankax{:.3} extrapolated {})",
++        (target_over_ceiling - 1.0 / 1.2).abs() < 1e-9,
++        "P-(1a): the retargeter aims at gate_ceiling/1.2, i.e. 0.8333x the \
++         bar, at every depth. Measured {target_over_ceiling:.6} (target \
++         {:.6}, ceiling {:.6}, row {} Ox{:.3} Jankax{:.3} extrapolated {})",
+         deep.retarget_target,
+         deep.gate_ceiling,
+         deep.row_id,
+@@ -580,11 +643,28 @@ fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
+         deep.extrapolated
+     );
+ 
++    // The feed drops by exactly the derate. The retarget multiplier is
++    // `target / observed_peak` and only the numerator moved, so the feed this
++    // arm emits is `derate` times the one A-8 measured: 1708.1 -> 854.1.
++    // This is the "retargeted feeds drop up to 2x" the ruling anticipated,
++    // measured rather than asserted.
++    let pre_p1a_feed = deep.retargeted_feed / derate;
++    assert!(
++        (pre_p1a_feed - 1708.1).abs() < 1.0,
++        "the reconstructed pre-P-(1a) feed must match A-8's measured 1708.1 \
++         mm/min or the arms are not comparable; got {pre_p1a_feed:.1} from \
++         retargeted {:.1} / derate {derate:.4}",
++        deep.retargeted_feed
++    );
++
+     assert!(
+-        deep.reconciled_is_exceeds,
+-        "PRE-FIX REPRODUCTION: the retarget lands exactly on its own target \
+-         and is STILL Exceeds at the gate. baseline feed {:.1} -> retargeted \
+-         {:.1}, observed {:.5}, ceiling {:.5}",
+-        deep.baseline_feed, deep.retargeted_feed, deep.reconciled_observed, deep.gate_ceiling
++        !deep.reconciled_is_exceeds,
++        "P-(1a) INVERSION: the retarget must now reconcile to Within. \
++         baseline feed {:.1} -> retargeted {:.1}, observed {:.5}, ceiling \
++         {:.5} (was Exceeds at 1708.1 mm/min before P-(1a))",
++        deep.baseline_feed,
++        deep.retargeted_feed,
++        deep.reconciled_observed,
++        deep.gate_ceiling
+     );
+ }
+diff --git a/crates/rs_cam_core/src/tool_load/optimize/strategy/retarget.rs b/crates/rs_cam_core/src/tool_load/optimize/strategy/retarget.rs
+index 55293b03..f40829f3 100644
+--- a/crates/rs_cam_core/src/tool_load/optimize/strategy/retarget.rs
++++ b/crates/rs_cam_core/src/tool_load/optimize/strategy/retarget.rs
+@@ -169,15 +169,19 @@ mod tests {
+         }
+     }
+ 
+-    fn chip_bounds() -> crate::tool_load::verdict::ChipBounds {
++    fn chip_bounds_of(min: Option<f64>, max: f64) -> crate::tool_load::verdict::ChipBounds {
+         use crate::tool_load::verdict::{ChipBounds, ChipBoundsSource};
+         ChipBounds {
+-            min_mm_per_tooth: Some(0.05),
+-            max_mm_per_tooth: 0.10,
++            min_mm_per_tooth: min,
++            max_mm_per_tooth: max,
+             source: ChipBoundsSource::VendorLut,
+         }
+     }
+ 
++    fn chip_bounds() -> crate::tool_load::verdict::ChipBounds {
++        chip_bounds_of(Some(0.05), 0.10)
++    }
++
+     fn within(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+         use crate::tool_load::verdict::{
+             ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+@@ -197,7 +201,7 @@ mod tests {
+         }
+     }
+ 
+-    fn exceeds_burn(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
++    fn exceeds_burn(peak: f64, bounds: crate::tool_load::verdict::ChipBounds) -> crate::tool_load::verdict::ChiploadVerdict {
+         use crate::tool_load::verdict::{
+             ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+         };
+@@ -207,13 +211,13 @@ mod tests {
+                 observed_mm_per_tooth: peak,
+                 statistic: ChiploadStatistic::MedianLow,
+                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
+-                bounds: chip_bounds(),
++                bounds,
+             },
+             confidence: Confidence::Validated,
+         }
+     }
+ 
+-    fn exceeds_breakage(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
++    fn exceeds_breakage(peak: f64, bounds: crate::tool_load::verdict::ChipBounds) -> crate::tool_load::verdict::ChiploadVerdict {
+         use crate::tool_load::verdict::{
+             ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
+         };
+@@ -223,7 +227,7 @@ mod tests {
+                 observed_mm_per_tooth: peak,
+                 statistic: ChiploadStatistic::PeakHigh,
+                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
+-                bounds: chip_bounds(),
++                bounds,
+             },
+             confidence: Confidence::Validated,
+         }
+@@ -277,14 +281,12 @@ mod tests {
+         }
+     }
+ 
+-    fn make_chipload(
+-        env: &Env,
+-        lut_min: Option<f64>,
+-        lut_max: Option<f64>,
+-    ) -> ChiploadFeedRetargeter {
++    /// **Checkpoint P (1a).** The retargeter no longer carries a band, so
++    /// this helper no longer takes one — the band a test means is stated on
++    /// the *verdict* it builds (`chip_bounds_of`), which is the only place
++    /// the retargeter now reads it from.
++    fn make_chipload(env: &Env) -> ChiploadFeedRetargeter {
+         ChiploadFeedRetargeter {
+-            lut_chipload_min: lut_min.unwrap_or(f64::NAN),
+-            lut_chipload_max: lut_max.unwrap_or(f64::NAN),
+             low_headroom: env.policy.retarget.chipload_low_headroom.value,
+             high_headroom: env.policy.retarget.chipload_high_headroom.value,
+             plunge_tracking_threshold: env.policy.feed.plunge_tracking_threshold_fraction.value,
+@@ -310,7 +312,7 @@ mod tests {
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -335,7 +337,7 @@ mod tests {
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -343,7 +345,7 @@ mod tests {
+         };
+         let verdict = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.025),
++            chipload: exceeds_burn(0.025, chip_bounds()),
+             power: within_power(0.4),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+@@ -362,7 +364,7 @@ mod tests {
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -370,7 +372,7 @@ mod tests {
+         };
+         let verdict = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.025),
++            chipload: exceeds_burn(0.025, chip_bounds()),
+             power: exceeds_power(1.5),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+@@ -390,7 +392,7 @@ mod tests {
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -398,7 +400,7 @@ mod tests {
+         };
+         let verdict = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.025),
++            chipload: exceeds_burn(0.025, chip_bounds()),
+             power: exceeds_power(1.5),
+             deflection: exceeds_deflection(0.32),
+             drill_gates: None,
+@@ -429,7 +431,7 @@ mod tests {
+         };
+         let verdict = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.025),
++            chipload: exceeds_burn(0.025, chip_bounds()),
+             power: within_power(0.4),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+@@ -439,16 +441,24 @@ mod tests {
+         assert!(strat.candidates(&view, &verdict).is_empty());
+     }
+ 
++    /// **Checkpoint P (1a) re-pin — same behaviour, honest premise.**
++    ///
++    /// Named `missing_lut_min_skips_burnrisk_only` until P-(1a). It used to
++    /// state the absent floor on the *retargeter* while the verdict it fed in
++    /// carried a floor of 0.05 — the two-instrument divergence, inside the
++    /// fixture that was supposed to prove the behaviour. The band now lives in
++    /// one place, so the half band is stated where the gate would put it: on
++    /// the verdict.
+     #[test]
+-    fn missing_lut_min_skips_burnrisk_only() {
++    fn a_half_band_verdict_skips_burnrisk_only() {
+         // Row with only `chip_load_max_mm` set: BreakageRisk verdicts
+-        // can retarget; BurnRisk verdicts cannot (NaN target).
++        // can retarget; BurnRisk verdicts cannot (no floor to aim at).
+         let env = Env::new(3000.0);
+         let view = env.view();
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, None, Some(0.10))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -456,7 +466,7 @@ mod tests {
+         };
+         let burn = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.025),
++            chipload: exceeds_burn(0.025, chip_bounds_of(None, 0.10)),
+             power: within_power(0.4),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+@@ -467,7 +477,7 @@ mod tests {
+ 
+         let breakage = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_breakage(0.20),
++            chipload: exceeds_breakage(0.20, chip_bounds_of(None, 0.10)),
+             power: within_power(0.4),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+@@ -490,7 +500,7 @@ mod tests {
+         let ctx = env.ctx();
+         let space = env.space(&view, &ctx);
+         let strat = PerGateRetargetStrategy {
+-            chipload: Some(make_chipload(&env, Some(0.038), Some(0.07))),
++            chipload: Some(make_chipload(&env)),
+             power: make_power(&env, 1.0),
+             deflection: make_deflection(&env),
+             space: &space,
+@@ -498,7 +508,7 @@ mod tests {
+         };
+         let verdict = ToolpathLoadVerdict {
+             toolpath_id: ToolpathId(0),
+-            chipload: exceeds_burn(0.0253),
++            chipload: exceeds_burn(0.0253, chip_bounds_of(Some(0.038), 0.07)),
+             power: within_power(0.4),
+             deflection: within_deflection(0.020),
+             drill_gates: None,
+diff --git a/crates/rs_cam_viz/src/ui/optimize_modal.rs b/crates/rs_cam_viz/src/ui/optimize_modal.rs
+index 0056d3a1..16050cf1 100644
+--- a/crates/rs_cam_viz/src/ui/optimize_modal.rs
++++ b/crates/rs_cam_viz/src/ui/optimize_modal.rs
+@@ -9,12 +9,13 @@
+ //! `optimize_toolpath` synchronously and stashes the outcome here.
+ 
+ use rs_cam_core::tool_load::optimize::{
+-    EntryAdvisory, GateKind, KnobAxis, LimitingGate, OperatorSuggestion, OptimizeCandidate,
+-    OptimizeOutcome, OutcomeKind, ParamDelta, SearchEnvelopeReached, limiting_gates_for_verdict,
++    BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
++    LutQueryStamp, MachineSnapshot, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
++    OutcomeKind, ParamDelta, SearchEnvelopeReached, SimAssumptionStamp, limiting_gates_for_verdict,
+ };
+ use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
+ 
+-use super::components::FreshnessGate;
++use super::components::{FreshnessGate, UiExt};
+ use super::{AppEvent, theme};
+ use crate::state::AppState;
+ use crate::state::{OptimizeModalState, OptimizeRunStatus};
+@@ -110,13 +111,17 @@ fn draw_outcome(
+ ) {
+     let narrative = outcome.narrative.as_ref();
+     let attempted = &outcome.candidates;
++    // Set by the two shapes that have nothing to tabulate; the Close button
++    // they own is drawn after the provenance drawer (see below).
++    let mut trailing_close = false;
+     match outcome.kind {
+         OutcomeKind::Skipped => {
+             let reason = outcome
+                 .reason
+                 .as_ref()
+                 .map_or("optimizer refused", |r| r.explanation_for_optimize());
+-            draw_refusal_section(ui, "Cannot optimise this toolpath", reason, events);
++            draw_refusal_section(ui, "Cannot optimise this toolpath", reason);
++            trailing_close = true;
+         }
+         OutcomeKind::NoSafeImprovement => {
+             // G17 A2: render the structured narrative — headline,
+@@ -154,11 +159,9 @@ fn draw_outcome(
+             }
+             ui.add_space(8.0);
+             if attempted.len() <= 1 {
+-                // No non-baseline candidates ran (early refuse). Just
+-                // close — there's nothing to show.
+-                if ui.button("Close").clicked() {
+-                    events.push(AppEvent::CloseOptimizeModal);
+-                }
++                // No non-baseline candidates ran (early refuse). Nothing to
++                // tabulate; the Close button is drawn below the provenance.
++                trailing_close = true;
+             } else {
+                 ui.separator();
+                 ui.add_space(4.0);
+@@ -238,6 +241,276 @@ fn draw_outcome(
+             draw_ranked(ui, &outcome.candidates, None, toolpath_id, events);
+         }
+     }
++
++    // Checkpoint P (4): every tier, refusals included. A `Skipped` outcome
++    // never simulated, but it still decided something about the world at an
++    // operating point — that is why `optimize_toolpath` stamps both blocks
++    // outside the inner search, and why they are rendered here rather than
++    // inside one of the arms above.
++    ui.add_space(10.0);
++    draw_run_provenance(ui, outcome);
++
++    if trailing_close {
++        ui.add_space(8.0);
++        if ui.button("Close").clicked() {
++            events.push(AppEvent::CloseOptimizeModal);
++        }
++    }
++}
++
++/// **Checkpoint P (4), 2026-08-14 — the run's own provenance, rendered.**
++///
++/// `OptimizeOutcome::machine_snapshot` has been written and never read since
++/// F4.3; `assumptions` (A-8's `SimAssumptionStamp`) reached MCP agents over
++/// the wire but no human surface. The operator's 2026-08-07 review asked for
++/// the candidate-model isolation to be made *"explicit in every optimizer
++/// result"*, and a JSON field an agent can read is half of that.
++///
++/// **Read-only.** Nothing here is editable and nothing locks a field
++/// (feedback: no background field locking). It is a footer disclosure in the
++/// panel's existing `CollapsingHeader` + `UiExt::param_grid` idiom, open by
++/// default — see the comment at the header for why this one differs from its
++/// siblings in `optimize_project.rs`.
++///
++/// **It renders absence as absence.** `assumptions: None` means *not
++/// stamped* — never "the defaults" — and `baseline.resolution_mm: None` means
++/// the trace does not record a dexel cell, which is a different statement
++/// from "the same cell as the candidates". Substituting a guess for either is
++/// precisely the defect the stamp exists to close.
++fn draw_run_provenance(ui: &mut egui::Ui, outcome: &OptimizeOutcome) {
++    ui.separator();
++    // `default_open(true)`, unlike the sibling drawers in
++    // `optimize_project.rs`. The review's repair was worded as "make it
++    // explicit in every optimizer result", and a drawer the operator has to
++    // find and open is not explicit. The modal is resizable and this is the
++    // last block on the card, so the cost is scroll, not obstruction.
++    egui::CollapsingHeader::new(
++        egui::RichText::new("How these numbers were taken")
++            .small()
++            .strong(),
++    )
++    .id_salt("optimize_run_provenance")
++    .default_open(true)
++    .show(ui, |ui| {
++        match outcome.machine_snapshot.as_ref() {
++            Some(m) => draw_machine_snapshot(ui, m),
++            None => draw_not_stamped(
++                ui,
++                "Machine the search was bounded by",
++                "not stamped — this result predates the machine snapshot, or \
++                 was built by a constructor that never ran a search",
++            ),
++        }
++        ui.add_space(6.0);
++        match outcome.assumptions.as_ref() {
++            Some(a) => draw_assumptions(ui, a),
++            None => draw_not_stamped(
++                ui,
++                "Simulation assumptions",
++                "not stamped — which is not the same thing as \"the defaults\". \
++                 This outcome was not passed through optimize_toolpath, or was \
++                 loaded from a record written before the stamp existed.",
++            ),
++        }
++    });
++}
++
++fn draw_not_stamped(ui: &mut egui::Ui, title: &str, why: &str) {
++    ui.named_section(title, |ui| {
++        ui.label(
++            egui::RichText::new(why)
++                .small()
++                .italics()
++                .color(theme::TEXT_MUTED),
++        );
++    });
++}
++
++fn prov_row(ui: &mut egui::Ui, label: &str, value: impl Into<String>) {
++    ui.label(
++        egui::RichText::new(label)
++            .small()
++            .color(theme::TEXT_MUTED),
++    );
++    ui.label(egui::RichText::new(value.into()).small());
++    ui.end_row();
++}
++
++fn draw_machine_snapshot(ui: &mut egui::Ui, m: &MachineSnapshot) {
++    ui.named_section("Machine the search was bounded by", |ui| {
++        ui.param_grid("optimize_prov_machine", |ui| {
++            prov_row(ui, "Profile", m.name.clone());
++            prov_row(
++                ui,
++                "Cutting feed ceiling",
++                format!("{:.0} mm/min", m.cutting_feed_ceiling_mm_min),
++            );
++            prov_row(
++                ui,
++                "Travel rate",
++                format!("{:.0} mm/min", m.max_feed_mm_min),
++            );
++            prov_row(
++                ui,
++                "Spindle range",
++                format!("{:.0} – {:.0} rpm", m.rpm_min, m.rpm_max),
++            );
++        });
++        ui.label(
++            egui::RichText::new(
++                "Snapshot taken when the search ran — the session's machine \
++                 may have changed since.",
++            )
++            .small()
++            .color(theme::TEXT_MUTED),
++        );
++    });
++}
++
++fn draw_assumptions(ui: &mut egui::Ui, a: &SimAssumptionStamp) {
++    let c = &a.candidates;
++    ui.named_section("Candidate scoring sims", |ui| {
++        ui.param_grid("optimize_prov_candidates", |ui| {
++            prov_row(
++                ui,
++                "Dexel cell (rank / report)",
++                format!(
++                    "{:.2} mm / {:.2} mm",
++                    c.coarse_resolution_mm, c.refined_resolution_mm
++                ),
++            );
++            prov_row(
++                ui,
++                "Feed modulation",
++                if c.adaptive_feed_modulation {
++                    format!(
++                        "on ({:?}, {:.2})",
++                        c.modulation_strategy, c.modulation_aggressiveness
++                    )
++                } else {
++                    "off".to_owned()
++                },
++            );
++            prov_row(
++                ui,
++                "Predicted feed in gates",
++                if c.use_predicted_feed_in_gates {
++                    "on"
++                } else {
++                    "off"
++                },
++            );
++        });
++    });
++
++    // The disclosure the review actually asked for — say it in words, not
++    // just as a flag the operator has to interpret.
++    if c.diverges_from_library_default_modulation() {
++        ui.add_space(2.0);
++        ui.label(
++            egui::RichText::new(
++                "Candidates were scored with feed modulation OFF while normal \
++                 simulation runs it ON. \"Safe\" and \"faster\" here mean safe \
++                 and faster in the unmodulated commanded-feed model.",
++            )
++            .small()
++            .color(theme::WARNING),
++        );
++    }
++
++    ui.add_space(6.0);
++    draw_baseline_assumptions(ui, &a.baseline);
++
++    ui.add_space(6.0);
++    ui.named_section("Model provenance", |ui| {
++        ui.param_grid("optimize_prov_model", |ui| {
++            prov_row(
++                ui,
++                "Kinematics",
++                match a.kinematics {
++                    KinematicsSource::ProfileDeclared => "declared by the machine profile",
++                    KinematicsSource::GenericWoodRouterFallback => {
++                        "generic wood-router fallback (profile declares none)"
++                    }
++                },
++            );
++            match a.lut_query.as_ref() {
++                Some(q) => prov_row(ui, "Vendor LUT query", format_lut_query(q)),
++                None => prov_row(
++                    ui,
++                    "Vendor LUT query",
++                    "not measured — no evaluation context could be built",
++                ),
++            }
++            prov_row(
++                ui,
++                "Boundary epsilon",
++                format!("{:.3e} relative", a.boundary_epsilon_rel),
++            );
++        });
++    });
++}
++
++fn draw_baseline_assumptions(ui: &mut egui::Ui, b: &BaselineTraceAssumptions) {
++    ui.named_section("Baseline (your on-screen sim)", |ui| {
++        ui.param_grid("optimize_prov_baseline", |ui| {
++            prov_row(
++                ui,
++                "Dexel cell",
++                match b.resolution_mm {
++                    Some(mm) => format!("{mm:.2} mm"),
++                    // Not "same as the candidates" — the trace does not
++                    // record a cell at all.
++                    None => "not recorded by the trace".to_owned(),
++                },
++            );
++            prov_row(
++                ui,
++                "Feed modulation",
++                match b.adaptive_feed_modulation {
++                    Some(true) => "on (observed in the trace)",
++                    Some(false) | None => "not measured",
++                },
++            );
++            prov_row(ui, "Sampling step", format!("{:.3} mm", b.sample_step_mm));
++        });
++        ui.label(
++            egui::RichText::new(
++                "The baseline row is scored against this trace directly — it \
++                 is not re-simulated at the candidate operating point.",
++            )
++            .small()
++            .color(theme::TEXT_MUTED),
++        );
++    });
++}
++
++fn format_lut_query(q: &LutQueryStamp) -> String {
++    match q {
++        LutQueryStamp::Routed {
++            declared_family,
++            declared_pass_role,
++            queried_family,
++            queried_pass_role,
++        } => {
++            if q.is_rerouted() {
++                format!(
++                    "{declared_family:?}/{declared_pass_role:?} → \
++                     {queried_family:?}/{queried_pass_role:?} (rerouted)"
++                )
++            } else {
++                format!("{queried_family:?}/{queried_pass_role:?}")
++            }
++        }
++        LutQueryStamp::Refused {
++            declared_family,
++            declared_pass_role,
++            tool_family,
++        } => format!(
++            "refused — no rows for {tool_family:?} on \
++             {declared_family:?}/{declared_pass_role:?}"
++        ),
++    }
+ }
+ 
+ /// Render the attempted-candidates table for `NoSafeImprovement`
+@@ -347,19 +620,15 @@ fn draw_attempted_row(
+     }
+ }
+ 
+-fn draw_refusal_section(
+-    ui: &mut egui::Ui,
+-    heading: &str,
+-    explanation: &str,
+-    events: &mut Vec<AppEvent>,
+-) {
++/// The refusal headline + explanation. The trailing Close button used to live
++/// here; Checkpoint P (4) moved it to the end of [`draw_outcome`] so the
++/// provenance drawer sits **above** it rather than below the last control —
++/// a refusal is the case where naming the operating point matters most. The
++/// button appears for exactly the same two outcome shapes as before.
++fn draw_refusal_section(ui: &mut egui::Ui, heading: &str, explanation: &str) {
+     ui.label(egui::RichText::new(heading).strong().color(theme::WARNING));
+     ui.add_space(4.0);
+     ui.label(egui::RichText::new(explanation).small());
+-    ui.add_space(8.0);
+-    if ui.button("Close").clicked() {
+-        events.push(AppEvent::CloseOptimizeModal);
+-    }
+ }
+ 
+ fn draw_ranked(
