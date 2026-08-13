@@ -598,7 +598,12 @@ pub fn suggest_for_operation(
         input.operation.feeds_style().1,
         input.context,
     );
-    apply_drill_defaults(&mut operation, input.tool, input.material);
+    apply_drill_defaults(
+        &mut operation,
+        input.tool,
+        input.material,
+        input.context.stock,
+    );
     Ok(SuggestedParams {
         operation,
         feeds_result,
@@ -1155,10 +1160,33 @@ pub fn feeds_preview_for_operation(
 /// workflow `w39ma2j1y`, fix #6).
 ///
 /// Non-drill ops are untouched.
+///
+/// # Why `stock` (DR-PIN, 2026-08-14)
+///
+/// Both drill families get the same Suggest peck, but only `Drill`
+/// carries its hole depth in its own config. `AlignmentPinDrill`'s hole
+/// depth is `stock_z + spoilboard_penetration`, computed at generation
+/// time in `compute::execute::generate_alignment_pin_drill` — so until
+/// this parameter existed the pin family was written **unclamped**, and
+/// a softwood Ø6 pin drill took an 18 mm Suggest peck against a ~13 mm
+/// hole: a single-shot cycle wearing a `Peck` label, which the per-peck
+/// gate then passed at 2.17 vs 6.0 because one descent is a legal
+/// descent (`TECH_DEBT_2_CLOSEOUT.md` §4.4, DR-PIN).
+///
+/// `stock` is `Option` because not every Suggest caller has a project:
+/// the canonical GUI/MCP path
+/// ([`crate::session::ProjectSession::cutter_op_profile`]) populates
+/// [`SuggestContext::stock`], the strategy-advisor probe in
+/// `session::compute` passes `SuggestContext::default()`. **`None` means
+/// the pin clamp cannot be applied**, not that it was applied and found
+/// nothing to do — the value is left at the unclamped Suggest default,
+/// exactly as before, and generation's own emitter guard
+/// ([`crate::drill::fed_descents`]) remains the last line.
 pub fn apply_drill_defaults(
     operation: &mut OperationConfig,
     tool: &ToolConfig,
     material: &Material,
+    stock: Option<&StockContext>,
 ) {
     let d = tool.diameter;
     if !d.is_finite() || d <= 0.0 {
@@ -1176,7 +1204,17 @@ pub fn apply_drill_defaults(
             // matrix `drill_no_peck_cycle` anti-pattern fires.
             cfg.peck_depth = clamp_peck_to_depth(peck, cfg.depth);
         }
-        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth = peck,
+        OperationConfig::AlignmentPinDrill(cfg) => {
+            // Same clamp, same ceiling factor, against the depth this
+            // family will actually drill. Mirrors `generate_alignment_
+            // pin_drill`'s `let depth = stock_z + cfg.spoilboard_
+            // penetration;` — if that expression moves, this one has to
+            // move with it.
+            cfg.peck_depth = match stock {
+                Some(ctx) => clamp_peck_to_depth(peck, ctx.stock_z + cfg.spoilboard_penetration),
+                None => peck,
+            };
+        }
         _ => {}
     }
 }
@@ -3039,7 +3077,7 @@ mod tests {
         let mut tool_3mm = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool_3mm.diameter = 3.0;
 
-        apply_drill_defaults(&mut op_3mm, &tool_3mm, &material);
+        apply_drill_defaults(&mut op_3mm, &tool_3mm, &material, None);
 
         let peck_3mm = match &op_3mm {
             OperationConfig::Drill(cfg) => cfg.peck_depth,
@@ -3061,7 +3099,7 @@ mod tests {
         let mut tool_12mm = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool_12mm.diameter = 12.0;
 
-        apply_drill_defaults(&mut op_12mm, &tool_12mm, &material);
+        apply_drill_defaults(&mut op_12mm, &tool_12mm, &material, None);
 
         let peck_12mm = match &op_12mm {
             OperationConfig::Drill(cfg) => cfg.peck_depth,
@@ -3075,11 +3113,116 @@ mod tests {
         // Non-drill op: untouched.
         let mut op_pocket = OperationConfig::Pocket(PocketConfig::default());
         let pocket_before = format!("{op_pocket:?}");
-        apply_drill_defaults(&mut op_pocket, &tool_3mm, &material);
+        apply_drill_defaults(&mut op_pocket, &tool_3mm, &material, None);
         assert_eq!(
             format!("{op_pocket:?}"),
             pocket_before,
             "apply_drill_defaults must be a no-op for non-drill ops"
+        );
+    }
+
+    /// **DR-PIN sentry.** An out-of-range `AlignmentPinDrill` peck must
+    /// be clamped by the same rule, with the same ceiling factor, as
+    /// `Drill`'s — against the depth the pin family actually drills
+    /// (`stock_z + spoilboard_penetration`, the expression
+    /// `compute::execute::generate_alignment_pin_drill` uses).
+    ///
+    /// The pre-fix reproduction is the first assertion and it stays:
+    /// with **no stock context** the pin arm is still written
+    /// unclamped, because the clamp has nothing to clamp against. That
+    /// was the ONLY behaviour before 2026-08-14 — the arm read
+    /// `AlignmentPinDrill(cfg) => cfg.peck_depth = peck` on every path
+    /// — and it is what `TECH_DEBT_2_CLOSEOUT.md` §4.4 DR-PIN measured:
+    /// a softwood Ø6 pin drill takes an 18 mm peck at a ~13 mm hole, a
+    /// single-shot cycle wearing a `Peck` label that the per-peck gate
+    /// then passes at 2.17 vs 6.0 because one descent is a legal
+    /// descent.
+    ///
+    /// "Identically to Drill's" is asserted as an EQUALITY between the
+    /// two families at the same hole depth, not as two numbers that
+    /// happen to match a literal — so a future change to
+    /// `clamp_peck_to_depth`'s 0.75 factor moves both or fails here.
+    #[test]
+    fn alignment_pin_drill_peck_is_clamped_like_drill() {
+        use crate::compute::operation_configs::{
+            AlignmentPinDrillConfig, DrillConfig, DrillCycleType,
+        };
+        use crate::material::{Material, WoodSpecies};
+
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        };
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        tool.diameter = 6.0;
+
+        // Softwood Ø6 Suggest default: 0.5 × 6.0 × 6.0 = 18.0 mm.
+        let suggest_default = material.drill_default_peck_depth_mm(6.0);
+        assert!(
+            (suggest_default - 18.0).abs() < 1e-9,
+            "fixture assumes the softwood Ø6 Suggest peck is 18 mm, got {suggest_default}"
+        );
+
+        let pin_cfg = || AlignmentPinDrillConfig {
+            spoilboard_penetration: 2.0,
+            cycle: DrillCycleType::Peck,
+            peck_depth: 3.0,
+            ..AlignmentPinDrillConfig::default()
+        };
+        let peck_of = |op: &OperationConfig| -> f64 {
+            match op {
+                OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth,
+                OperationConfig::Drill(cfg) => cfg.peck_depth,
+                other => panic!("expected a drill family op, got {other:?}"),
+            }
+        };
+
+        // Pre-fix reproduction, preserved: no stock context, no clamp.
+        let mut unclamped = OperationConfig::AlignmentPinDrill(pin_cfg());
+        apply_drill_defaults(&mut unclamped, &tool, &material, None);
+        assert!(
+            (peck_of(&unclamped) - 18.0).abs() < 1e-9,
+            "with no stock context the pin peck stays at the raw Suggest default \
+             (the clamp has no depth to clamp against); got {}",
+            peck_of(&unclamped)
+        );
+
+        // 11 mm stock + 2 mm spoilboard penetration = a 13 mm hole.
+        let stock = StockContext {
+            stock_top_z: 0.0,
+            stock_bottom_z: -11.0,
+            stock_z: 11.0,
+            stock_padding: 0.0,
+        };
+        let hole_depth = stock.stock_z + 2.0;
+
+        let mut pin = OperationConfig::AlignmentPinDrill(pin_cfg());
+        apply_drill_defaults(&mut pin, &tool, &material, Some(&stock));
+
+        let mut drill = OperationConfig::Drill(DrillConfig {
+            cycle: DrillCycleType::Peck,
+            peck_depth: 3.0,
+            depth: hole_depth,
+            ..DrillConfig::default()
+        });
+        apply_drill_defaults(&mut drill, &tool, &material, Some(&stock));
+
+        assert!(
+            (peck_of(&pin) - peck_of(&drill)).abs() < 1e-9,
+            "the pin family must clamp identically to Drill at the same hole \
+             depth ({hole_depth} mm): pin {} vs drill {}",
+            peck_of(&pin),
+            peck_of(&drill)
+        );
+        assert!(
+            (peck_of(&pin) - 9.75).abs() < 1e-9,
+            "0.75 × 13 mm = 9.75 mm is the shared ceiling; got {}",
+            peck_of(&pin)
+        );
+        assert!(
+            peck_of(&pin) < hole_depth,
+            "a clamped peck must be strictly below the hole depth or the cycle \
+             is single-shot: {} vs {hole_depth}",
+            peck_of(&pin)
         );
     }
 
@@ -3133,7 +3276,7 @@ mod tests {
                 depth: drill_depth,
                 ..DrillConfig::default()
             });
-            apply_drill_defaults(&mut op, &tool, material);
+            apply_drill_defaults(&mut op, &tool, material, None);
             match &op {
                 OperationConfig::Drill(cfg) => cfg.peck_depth,
                 _ => panic!("expected Drill"),

@@ -471,7 +471,12 @@ fn run_cell_in_material(
     // generic feed/RPM/DOC fields. The GUI calls this via
     // `suggest_for_operation`; the shim opts into the same step so
     // drill cells see the same peck depth a user would.
-    apply_drill_defaults(&mut op_clamped, &tool, material);
+    // `None` stock: the matrix's cells describe a tool × material ×
+    // operation, not a project, so there is no stock thickness to clamp
+    // an AlignmentPinDrill peck against. No matrix cell uses that
+    // family (they all bind `peck_depth` through the `Drill` arm, whose
+    // clamp reads `cfg.depth` and is unaffected).
+    apply_drill_defaults(&mut op_clamped, &tool, material, None);
 
     let snapshot = snapshot_from_clamped(cell, &result, &op_clamped);
     Ok(snapshot)
