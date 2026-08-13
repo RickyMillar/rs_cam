@@ -66,7 +66,10 @@ pub use narrative::{
     limiting_gates_for_verdict, suggest_levers,
 };
 pub(crate) use outcome::build_outcome;
-pub use outcome::{OptimizeOutcome, OutcomeKind, ProjectOptimizeReport};
+pub use outcome::{
+    BaselineTraceAssumptions, CandidateSimAssumptions, KinematicsSource, LutQueryStamp,
+    MachineSnapshot, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport, SimAssumptionStamp,
+};
 
 use context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
@@ -141,8 +144,16 @@ pub fn optimize_toolpath(
     // (including refusals/skips), so narratives stay reconcilable with
     // the profile that actually bounded the search.
     let snapshot = outcome::MachineSnapshot::of(session.machine());
+    // A-8 (F-OPT) — stamp the simulation assumptions the run's numbers
+    // are taken at, on every outcome including refusals, for the same
+    // reason F4.3 stamps the machine. Observed BEFORE the search so a
+    // `Skipped` outcome that never simulated still names its operating
+    // point, and so the observation cannot be taken from a session the
+    // search has transiently mutated.
+    let assumptions = outcome::SimAssumptionStamp::of(session, toolpath_index, baseline_trace);
     let mut outcome = optimize_toolpath_inner(session, baseline_trace, toolpath_index, cancel);
     outcome.machine_snapshot = Some(snapshot);
+    outcome.assumptions = Some(assumptions);
     outcome
 }
 
