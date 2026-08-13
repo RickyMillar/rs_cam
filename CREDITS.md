@@ -586,6 +586,61 @@ Declared repo-authored / unsourced (values held, not moved):
   documentation portal, not a retrievable drill-defaults table. The row is
   community-tier and represents community CAM practice, not a cited document.
 
+### Literature-matrix source registry refresh (2026-08-13)
+
+`crates/rs_cam_core/tests/literature_matrix/sources.toml` was refreshed under
+`.claude/skills/refresh-lit-matrix/SKILL.md`. All 23 distinct citation URLs
+across its 32 rows were fetched individually and the *content served* was
+read, not just the status code. Full record:
+`planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md`.
+
+Newly cited primary documents, retrieved and read in full on 2026-08-13:
+
+- **Freud**, *Router Bit Feed Rates and Speeds for CNC* (2017-08-22) —
+  <https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf>.
+  Already the provenance of the bundled `freud_solid_carbide.json` LUT rows;
+  now also a literature-matrix source (`freud_router_cnc`). Its 1/8 in
+  hardwood solid-carbide row is `.002"-.005"` = 0.0508-0.1270 mm/tooth.
+- **DAPRA Corporation**, *Radial Chip Thinning — How to Max Out Your Milling
+  Tool Feed Rate* — <https://www.dapra.com/articles/radial-chip-thinning>.
+  The `dapra_rctf` row was named for DAPRA but cited a dead Kennametal URL;
+  it now cites its own publisher. The stored closed form
+  `RCTF = D / (2*sqrt(ae*(D-ae)))` is algebraically identical to DAPRA's
+  published `1/sqrt(1-(1-2*ae/D)^2)` and reproduces DAPRA's printed
+  multiplier chart to within 2 %.
+- **Shapeoko CNC A to Z**, *Feeds & speeds* —
+  <https://shapeokoenthusiasts.gitbook.io/shapeoko-cnc-a-to-z/feeds-and-speeds-basics>.
+  Successor to the retired `wiki.shapeoko.com`, whose host no longer accepts
+  connections; 145 matrix cells cite this row. Publishes chipload by endmill
+  diameter, depth-of-cut guidance, and "30% to 40% of the feedrate for woods"
+  for plunge.
+- **Cutter Shop Limited (UK)**, *Chip Load Chart* —
+  <https://cutter-shop.com/chip-load-chart/>. Same publisher as the previous
+  `thecuttershop.com` citation, whose domain is now NXDOMAIN.
+
+Corrections recorded rather than papered over:
+
+- **Whiteside Machine Co. publishes no feeds/speeds, RPM, or chipload chart**
+  in any of its own downloadable documents. Its 2024 Master eCatalog
+  (11.4 MB), CNC brochure and Fine Woodworking reprint were downloaded and
+  text-extracted: zero occurrences of "RPM" in any of the three, and the one
+  "chip load" hit in the catalogue is about saw blades. The only retrievable
+  Whiteside cutting guidance is a per-product-page `Recommended RPM` string.
+  Both Whiteside rows were re-tiered off `gold` accordingly.
+- **Kennametal's calculators publish no static tables** — the engineering-
+  calculators pages are interactive only. Both Kennametal rows re-tiered off
+  `gold` to `engineering`, matching the existing Sandvik precedent.
+- **The Onsrud *Hard Wood* chart contains no `1.5-4.5x D` depth-of-cut rule.**
+  A full-text read returns zero occurrences. What it prints is a chip-load
+  reduction keyed to depth of cut ("1 x D use recommended chip load, 2 x D
+  reduce by 25%, 3 x D reduce by 50%") — a rule about chip load, not about
+  cut depth. The `onsrud_doc_rule` row's name is corrected; the 54 cells
+  citing it are ledgered, not re-derived.
+- **The USDA FPL Wood Handbook was removed from the Ipe cell's chipload
+  band.** It has no machining chapter in either the 2021 (GTR-282) or 2010
+  (GTR-190) edition — the same finding that removed it from every drill cell
+  in the 2026-08-04 audit.
+
 ### Formula provenance
 
 The feeds/speeds implementation in `rs_cam_core` uses:
