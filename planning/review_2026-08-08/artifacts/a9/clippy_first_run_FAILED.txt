@@ -1,0 +1,14 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+error: approximate value of `f64::consts::FRAC_2_PI` found
+   --> crates/rs_cam_core/tests/chip_thickness_policy_a9.rs:394:45
+    |
+394 |         (geom.mean_chip_thickness_mm / fz - 0.6366_f64).abs() < 1e-3,
+    |                                             ^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#approx_constant
+    = note: `#[deny(clippy::approx_constant)]` on by default
+
+error: could not compile `rs_cam_core` (test "chip_thickness_policy_a9") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+EXIT=101

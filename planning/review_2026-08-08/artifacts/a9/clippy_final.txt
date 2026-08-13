@@ -1,0 +1,3 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.02s
+EXIT=0
