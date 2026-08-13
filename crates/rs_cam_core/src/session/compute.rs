@@ -385,6 +385,7 @@ impl ProjectSession {
             _ => {
                 // Config-specific param: serialize -> merge -> deserialize
                 let target_type = tc.operation.param_type_name(param);
+                let range_for_param = tc.operation.param_range(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
                     SessionError::InvalidParam(format!("failed to serialize config: {e}"))
                 })?;
@@ -473,6 +474,24 @@ impl ProjectSession {
                     }
                     _ => value,
                 };
+                // DR-LIVE (2026-08-14): refuse a value outside the domain
+                // the registry declares for this param, BEFORE it reaches
+                // serde. A refusal, not a clamp — the caller finds out its
+                // number was rejected instead of quietly becoming another
+                // number. Params with no declared range are unchanged (see
+                // `ParamRange`'s doc: absent means *not stated*, and
+                // stating them is a per-param decision, not a sweep).
+                if let Some(range) = range_for_param
+                    && let Some(n) = value.as_f64()
+                    && !range.accepts(n)
+                {
+                    return Err(SessionError::InvalidParam(format!(
+                        "'{param}' = {n} is outside the accepted range for {} \
+                         ({}); the value was NOT applied",
+                        tc.operation.label(),
+                        range.describe(),
+                    )));
+                }
                 params_obj.insert(param.to_owned(), value);
                 let valid_params = tc.operation.param_names();
                 let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
@@ -4171,6 +4190,120 @@ mod tests {
         match &s.toolpath_configs()[0].operation {
             OperationConfig::Pocket(cfg) => assert!((cfg.depth_per_pass - 1.5).abs() < 1e-9),
             _ => panic!("expected Pocket"),
+        }
+    }
+
+    /// **DR-LIVE sentry.** `peck_depth`'s `ParamDef` now declares the
+    /// domain its emitter actually accepts, and `set_toolpath_param`
+    /// refuses outside it.
+    ///
+    /// The pre-fix state (`TECH_DEBT_2_CLOSEOUT.md` §4.4, DR-LIVE):
+    /// `ParamDef::required("peck_depth", "f64")` carried **no range**, so
+    /// an agent could set `0` or `-3` through MCP and the setter said
+    /// `Ok`. `drill::fed_descents` then silently degraded the cycle to
+    /// one full-depth descent — a `Peck` cycle that does not peck, which
+    /// no surface reports. The GUI's `0.5..=50.0` widget clamp was the
+    /// only thing that had ever stopped it, and MCP does not go through
+    /// the widget.
+    ///
+    /// Boundaries asserted, in the order that matters: `0.0` refused
+    /// (the emitter's exact `peck <= 0.0` guard), a negative refused, the
+    /// smallest sane positive accepted, and **the refused value not
+    /// applied** — a setter that rejects and mutates anyway is worse than
+    /// one that accepts.
+    #[test]
+    fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
+        let mut s = make_session();
+        let mut tc = make_tc(s.tools()[0].id.0);
+        tc.operation = OperationConfig::Drill(DrillConfig {
+            peck_depth: 3.0,
+            ..DrillConfig::default()
+        });
+        s.add_toolpath(0, tc).unwrap();
+
+        let peck = |s: &ProjectSession| -> f64 {
+            match &s.toolpath_configs()[0].operation {
+                OperationConfig::Drill(cfg) => cfg.peck_depth,
+                other => panic!("expected Drill, got {other:?}"),
+            }
+        };
+
+        for bad in [0.0_f64, -3.0, -0.000_001] {
+            let err = s
+                .set_toolpath_param(0, "peck_depth", json!(bad))
+                .expect_err(
+                    "a peck the emitter degrades to a single full-depth descent must be \
+                     refused at the setter, not accepted and silently neutered",
+                );
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("peck_depth") && msg.contains("outside the accepted range"),
+                "the refusal must name the param and the domain; got: {msg}"
+            );
+            assert!(
+                (peck(&s) - 3.0).abs() < 1e-9,
+                "a refused set must leave the value untouched; it became {}",
+                peck(&s)
+            );
+        }
+
+        // The accepting side of the same boundary.
+        s.set_toolpath_param(0, "peck_depth", json!(0.5)).unwrap();
+        assert!((peck(&s) - 0.5).abs() < 1e-9);
+
+        // And the domain is published, so an agent can read it before
+        // guessing: `get_operation_schema` carries it.
+        let schema = ProjectSession::operation_schema("drill").unwrap();
+        let entry = schema
+            .params
+            .iter()
+            .find(|p| p.name == "peck_depth")
+            .expect("drill schema must list peck_depth");
+        let range = entry
+            .range
+            .as_ref()
+            .expect("peck_depth must publish its range");
+        assert_eq!(range["min"], json!(0.0));
+        assert_eq!(range["min_exclusive"], json!(true));
+        assert_eq!(range["finite"], json!(true));
+    }
+
+    /// The **residual** the sentry above deliberately does not close, so
+    /// it is on the record rather than implied away.
+    ///
+    /// `ParamRange::greater_than(0.0)` matches `drill::fed_descents`'
+    /// guard exactly (`!peck.is_finite() || peck <= 0.0`). It bounds the
+    /// *sign and finiteness* of the peck. It does **not** bound the peck
+    /// COUNT: `fed_descents` has no cap, so descents scale as
+    /// `depth / peck` without limit, and a positive-but-tiny peck set
+    /// through MCP is still a practical hang (allocation-bound, not a
+    /// spin). This is measured at safe magnitudes and asserted as a
+    /// TREND, not run at the magnitude that would take the machine down.
+    ///
+    /// Not fixed here: capping the emitter is a behavioural change to
+    /// generation, and S-5's brief is to align the ParamDef. Reported as
+    /// TD3 intake in this wave's log entry.
+    #[test]
+    fn a_positive_peck_still_has_no_descent_cap() {
+        use crate::drill::{DrillCycle, fed_descents};
+
+        let counts: Vec<usize> = [1.0_f64, 0.1, 0.01, 0.001]
+            .iter()
+            .map(|p| fed_descents(DrillCycle::Peck(*p), -10.0, 5.0).len())
+            .collect();
+
+        // Tolerant by one step at each magnitude: the loop accumulates
+        // `current_z - peck` in f64 and the final step is clamped, so the
+        // last descent can land on either side of the boundary. The
+        // CLAIM is the 10× growth, not the exact integer.
+        for (i, (&count, expected)) in counts.iter().zip([15, 150, 1500, 15_000]).enumerate() {
+            assert!(
+                count.abs_diff(expected) <= 1,
+                "descents must scale as (retract - bottom) / peck with no cap — at \
+                 magnitude {i} expected ~{expected}, got {count}. If this list stops \
+                 growing linearly a cap has been added, and the DR-LIVE residual \
+                 recorded in this test's doc can be closed"
+            );
         }
     }
 

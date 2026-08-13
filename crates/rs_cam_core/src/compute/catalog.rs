@@ -904,6 +904,23 @@ impl OperationConfig {
             .map(|def| def.type_name)
     }
 
+    /// Return the declared numeric domain for one settable parameter, if
+    /// the registry declares one. See [`ParamRange`] for what "declares
+    /// one" is worth — most params carry `None`, which means **no domain
+    /// has been stated**, not "any float is fine".
+    pub fn param_range(&self, param: &str) -> Option<ParamRange> {
+        Self::param_range_for_type(self.op_type(), param)
+    }
+
+    /// Type-level sibling of [`Self::param_range`], for callers holding an
+    /// [`OperationType`] rather than a config.
+    pub fn param_range_for_type(op_type: OperationType, param: &str) -> Option<ParamRange> {
+        param_defs_for_type(op_type)
+            .iter()
+            .find(|def| def.name == param)
+            .and_then(|def| def.range)
+    }
+
     /// Schema-backed settable param names for this operation.
     pub fn param_names(&self) -> Vec<&'static str> {
         Self::param_names_for_type(self.op_type())
@@ -932,7 +949,7 @@ impl OperationConfig {
                     .and_then(|m| m.get(def.name))
                     .cloned()
                     .unwrap_or(serde_json::Value::Null),
-                range: None,
+                range: def.range.map(ParamRange::to_json),
                 description: def.description.map(str::to_owned),
             })
             .collect();
@@ -981,12 +998,122 @@ pub struct OperationSchema {
     pub tool_constraints: ToolConstraints,
 }
 
+/// The numeric domain a settable parameter is declared to accept.
+///
+/// # What `None` on [`ParamDef::range`] means (DR-LIVE, 2026-08-14)
+///
+/// **Not measured, not "unbounded".** Almost every entry in the registry
+/// still carries `None`, because nobody has stated that param's domain —
+/// exactly the state `peck_depth` was in when
+/// `TECH_DEBT_2_CLOSEOUT.md` §4.4 ledgered DR-LIVE: `ParamDef::required
+/// ("peck_depth", "f64")` advertised no domain at all, so MCP
+/// `set_toolpath_param` accepted `0` and `-3` on a param whose emitter
+/// refuses both. (Non-finite never got that far — JSON has no `NaN`
+/// literal and the string path fails serde — so `accepts` rejecting it
+/// is belt-and-braces, not the reported hole.) Reading an absent range
+/// as "any f64 is valid here" is the same category error this whole
+/// ledger keeps finding, so it is written down at the type.
+///
+/// A declared range is a **refusal at the setter**, not a clamp: the
+/// value the caller asked for is rejected with a message naming the
+/// domain, rather than silently becoming a different number. Project
+/// TOML is deliberately **not** validated against it — a file is loaded
+/// by serde with no registry in scope, and the generator-side guard
+/// ([`crate::drill::fed_descents`]) is what catches that path.
+#[derive(Debug, Clone, Copy)]
+pub struct ParamRange {
+    /// Lower bound. Inclusive unless [`Self::min_exclusive`].
+    pub min: Option<f64>,
+    /// Upper bound, inclusive.
+    pub max: Option<f64>,
+    /// When true `min` is a STRICT bound: `value > min`, not `>=`.
+    pub min_exclusive: bool,
+}
+
+impl ParamRange {
+    /// A strictly-positive-and-above-`min` domain with no ceiling — the
+    /// shape of every "a physical length that must be real" dial.
+    const fn greater_than(min: f64) -> Self {
+        Self {
+            min: Some(min),
+            max: None,
+            min_exclusive: true,
+        }
+    }
+
+    /// Whether `value` is inside the declared domain. Non-finite is
+    /// ALWAYS outside: a range says a quantity is numeric, and `NaN`
+    /// compares false against every bound, so an unguarded comparison
+    /// would let it through.
+    pub fn accepts(&self, value: f64) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
+        if let Some(min) = self.min {
+            let ok = if self.min_exclusive {
+                value > min
+            } else {
+                value >= min
+            };
+            if !ok {
+                return false;
+            }
+        }
+        if let Some(max) = self.max
+            && value > max
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Human/agent-readable domain, used verbatim in the setter's
+    /// refusal message and in the published schema.
+    pub fn describe(&self) -> String {
+        let lo = match (self.min, self.min_exclusive) {
+            (Some(m), true) => format!("> {m}"),
+            (Some(m), false) => format!(">= {m}"),
+            (None, _) => String::new(),
+        };
+        let hi = match self.max {
+            Some(m) => format!("<= {m}"),
+            None => String::new(),
+        };
+        match (lo.is_empty(), hi.is_empty()) {
+            (false, false) => format!("finite, {lo} and {hi}"),
+            (false, true) => format!("finite and {lo}"),
+            (true, false) => format!("finite and {hi}"),
+            (true, true) => "finite".to_owned(),
+        }
+    }
+
+    /// Schema projection for `get_operation_schema` consumers.
+    pub fn to_json(self) -> serde_json::Value {
+        let mut obj = serde_json::Map::new();
+        if let Some(min) = self.min {
+            obj.insert("min".to_owned(), serde_json::json!(min));
+            obj.insert(
+                "min_exclusive".to_owned(),
+                serde_json::json!(self.min_exclusive),
+            );
+        }
+        if let Some(max) = self.max {
+            obj.insert("max".to_owned(), serde_json::json!(max));
+        }
+        obj.insert("finite".to_owned(), serde_json::json!(true));
+        serde_json::Value::Object(obj)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ParamDef {
     pub name: &'static str,
     pub type_name: &'static str,
     pub optional: bool,
     pub description: Option<&'static str>,
+    /// Declared numeric domain, or `None` for "no domain stated" — see
+    /// [`ParamRange`], which spells out why those are different claims.
+    pub range: Option<ParamRange>,
 }
 
 impl ParamDef {
@@ -996,6 +1123,23 @@ impl ParamDef {
             type_name,
             optional: false,
             description: None,
+            range: None,
+        }
+    }
+
+    /// A required parameter whose numeric domain the registry states.
+    const fn required_ranged(
+        name: &'static str,
+        type_name: &'static str,
+        range: ParamRange,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            type_name,
+            optional: false,
+            description: Some(description),
+            range: Some(range),
         }
     }
 
@@ -1005,6 +1149,7 @@ impl ParamDef {
             type_name,
             optional: true,
             description: None,
+            range: None,
         }
     }
 
@@ -1018,6 +1163,7 @@ impl ParamDef {
             type_name,
             optional: true,
             description: Some(description),
+            range: None,
         }
     }
 
@@ -1036,6 +1182,7 @@ impl ParamDef {
             type_name,
             optional: false,
             description: Some(description),
+            range: None,
         }
     }
 }
@@ -1293,7 +1440,16 @@ const TRACE_PARAMS: &[ParamDef] = &[
 const DRILL_PARAMS: &[ParamDef] = &[
     ParamDef::required("depth", "f64"),
     ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-    ParamDef::required("peck_depth", "f64"),
+    ParamDef::required_ranged(
+        "peck_depth",
+        "f64",
+        ParamRange::greater_than(0.0),
+        "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. \
+         Must be strictly positive and finite: `drill::fed_descents` \
+         degrades a zero, negative or non-finite peck to a single \
+         full-depth descent, so any such value silently turns a Peck \
+         cycle into a single-shot one (DR-LIVE).",
+    ),
     ParamDef::required("dwell_time", "f64"),
     ParamDef::required("retract_amount", "f64"),
     ParamDef::required("feed_rate", "f64"),
@@ -1525,7 +1681,16 @@ const ALIGNMENT_PIN_DRILL_PARAMS: &[ParamDef] = &[
     ParamDef::required("holes", "array<[f64;2]>"),
     ParamDef::required("spoilboard_penetration", "f64"),
     ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-    ParamDef::required("peck_depth", "f64"),
+    ParamDef::required_ranged(
+        "peck_depth",
+        "f64",
+        ParamRange::greater_than(0.0),
+        "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. \
+         Must be strictly positive and finite: `drill::fed_descents` \
+         degrades a zero, negative or non-finite peck to a single \
+         full-depth descent, so any such value silently turns a Peck \
+         cycle into a single-shot one (DR-LIVE).",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("retract_z", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
