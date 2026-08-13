@@ -2837,3 +2837,155 @@ discharged.** Two things want the orchestrator's attention when
 sequencing: the GUI capture above is a rule-3 debt that now spans two
 waves (A-6 → A-7 → next), and **G-IPE-PLUNGE** is a new open row whose
 next step is a measurement across the matrix, not a fix.
+
+---
+
+## S-2 — literature-matrix source refresh (DR-URL, DR-WS) + Checkpoint K-(e1), 2026-08-13
+
+Status: COMPLETE. **Headline: DR-URL and DR-WS are discharged; the dead-URL
+count was half again larger than the ledger recorded — five rows across three
+URLs died since the 2026-08-04 census, one by a failure mode neither check in
+this repo can detect — and K-(e1) exonerates the engine on the Ipe cell: none
+of that cell's three cited sources ever supported its 0.013–0.027 band, and
+the engine's number turns out to be Freud's own published band, Janka-derated.**
+
+Commit(s), parent `2b1a5c66` (branch `tech-debt-3`):
+
+| commit | slice |
+|---|---|
+| `32b0f980` | **s2a** — `sources.toml` refresh: 6 URLs replaced, 4 rows re-tiered, 1 row added, 13 link-clocks advanced, `CREDITS.md` + evidence doc |
+| `6408dd55` | **s2b** — Checkpoint K-(e1): the Ipe `feed_per_tooth` re-baseline (number-moving, isolated, last) |
+| this entry | the wave record + five new ledger rows |
+
+Territory held: `crates/rs_cam_core/tests/literature_matrix/{sources,cells}.toml`,
+`CREDITS.md`, `planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md`,
+`planning/review_2026-08-08/artifacts/s2/`, this entry. Disjoint from A-8
+(`src/tool_load/optimize/`) and A-9 (`tests/chip_thickness_policy_a9.rs`); the
+only shared file was `CREDITS.md`, whose diff is a pure 55-line insertion.
+
+Question and pre-registered bars: the `/refresh-lit-matrix` skill's own
+four-step procedure, plus the brief's — (a) every URL disposition stated per
+row with what replaced it; (b) the Whiteside tier question answered, not
+re-deferred; (c) K-(e1) either re-baselines **with the new sources cited** or
+declares the ~2× disagreement real and says so loudly; (d) the affected cell
+run before **and** after, both quoted, because A-7 learned the hard way that
+`cells.toml` is read at *runtime*; (e) end-state litmatrix fully green.
+
+**All 23 distinct citation URLs fetched individually, content read.** Nine
+rows across six URLs did not resolve to a document. The four DR-URL named
+(`toolgrit`, and `dapra_rctf`/`kennametal_metals`/`kennametal_chipload`
+sharing one dead Kennametal URL) were still dead and are repaired. **Five
+rows across three URLs are NEW**: `cutter_shop` (NXDOMAIN — the domain is
+gone, publisher relocated to `cutter-shop.com`, which `CREDITS.md` already
+knew), `shapeoko_wiki` (DNS resolves, port 443 refuses, 3/3 — and **145
+citations** rest on it), and the three `gwizard_*`.
+
+**New failure class, its own ledger row (DR-SOFT404).** The old cnccookbook
+URL returns **HTTP 200, zero redirects**, and serves the site's home-page
+shell — the article is gone. The offline shape check never performs a GET,
+and a status probe reads 200 and passes. **This makes DR-P3's "opt-in URL
+liveness check" insufficient as specified.**
+
+**DR-WS answered on evidence.** All three documents on Whiteside's downloads
+index were downloaded and text-extracted — the 11.4 MB 2024 Master eCatalog,
+the CNC brochure, the Fine Woodworking reprint: **zero occurrences of "RPM"
+in any of the three**, and the catalogue's single "chip load" hit is about
+saw blades. Tier rule applied and written down so it is auditable: `gold`
+means a retrievable document containing the numbers the row is cited for.
+`whiteside_wood` → **engineering** (per-product `Recommended RPM` strings do
+support its 14 rpm citations); `whiteside_chipload` → **community** (its only
+artefact is a self-disclaimed Vectric `.tool` file on a Dropbox share).
+**NOT MERGED** — the ledger called it a judgement call and the call is no:
+they back different claims with different support, and merging would erase
+the only distinction in the pair that carries information. The same rule
+re-tiers both Kennametal rows to `engineering`, matching the existing Sandvik
+precedent. No code reads `authority_tier` (repo-wide grep), so this is
+documentary, exactly as DR-WS said.
+
+**K-(e1) — the Ipe cell.** None of `onsrud_hwood` / `gwizard_hwood` /
+`fpl_wood_handbook` supports 0.013–0.027 at Ø3 hardwood. Onsrud, read in
+full: its **lowest** 1/8in entry of any series is .002–.004 in =
+0.0508–0.1016 mm/tooth — its floor is **1.88× the old band's ceiling**.
+GWizard's successor publishes four 1/2in figures and no diameter table.
+FPL has no machining chapter in either edition. **The band's real provenance
+is the Shapeoko-lineage chart the cell already cites on four OTHER rows**,
+which prints `hard wood & metals 0.013mm–0.025mm` at 1/8in — the band, to
+the millimetre, carried under vendor citations that contradict it. So A-6's
+disagreement is real but **re-attributed**: hobby-community vs
+industrial-vendor, not literature vs engine. The engine's 0.0360 is Freud's
+own Ø1/8in hardwood band (0.0508–0.1270, verified against the PDF today)
+scaled for density — `0.0508 × 0.6062 × 0.9660 = 0.0297`, reproducing A-6's
+measured band minimum exactly.
+
+**Six predictions pre-registered before the after-capture ran; 6/6 confirmed,
+none falsified.** Before → after, same instrument:
+
+```text
+before:  fpt        Outside   0.0360 > max 0.0270 (+33.4%)
+         verdict: moderate (fpt: 0.0360 > max 0.0270 (+33.4%))
+after:   fpt        Within    0.0360 ∈ [0.0130, 0.1270]
+         verdict: moderate (axial_doc: 0.6000 > max 0.5000 (+20.0%))
+```
+```text
+before:  total=32  fresh=32  warn=0  stale=0   23 of 32 links confirmed; 9 never
+after:   total=33  fresh=33  warn=0  stale=0   30 of 33 links confirmed; 3 never
+```
+
+Citation audit clean both runs. **Across all 56 cells the only differences in
+the full report are four lines, all on the Ipe cell** — no other cell moved.
+The whole value-level diff of `cells.toml` is two lines; everything else added
+there is comment. All 7 `_litmatrix_*` sentries green (26 tests). Post-refresh
+the registry measures **21 of 25 URLs at 200, zero 404s, zero dead hosts,
+zero soft-404s**; the four undetermined are 403/202 bot-blocks whose
+`url_verified` is deliberately not advanced.
+
+Method note, recorded rather than glossed: A-8 held the single Cargo slot for
+the whole wave, so both captures were produced by running the **already-built**
+test binary directly. Sound *here specifically* — the two TOMLs are read at
+runtime via `CARGO_MANIFEST_DIR`, not compiled in, and this wave's diff touches
+no Rust source, so the binary cannot be stale with respect to the change under
+test. The "before" arm came from `git show HEAD:…` and was restored afterwards
+— never `git stash`, which would have mutated a tree two other agents were
+working in. One real scare worth logging: the first restore attempt used `cp`,
+which is aliased to `cp -i` in this shell, prompted, and **silently did not
+overwrite** — so the first "after" run was actually a second "before". Caught
+by diffing the two captures, force-restored, re-run. A capture that looks
+plausible is not the same as a capture that happened.
+
+Ledger rows: **DR-URL discharged**, **DR-WS discharged**. Five new rows in
+`LIT_MATRIX_REFRESH_S2.md` §8 — **DR-SOFT404**, **DR-GWIZ**, **DR-DOCRULE**,
+**DR-WSCITE**, **DR-403**.
+
+- **NOT FIXED: DR-GWIZ.** 12 `feed_per_tooth` and 21 `rpm` bands cite rows
+  whose live source publishes no diameter table. URLs repaired, bands
+  untouched. Owner: a matrix-content wave.
+- **NOT FIXED: DR-DOCRULE.** `onsrud_doc_rule` was named for a "1.5-4.5x tool
+  diameter" band a full-text read of the cited PDF does not contain; its
+  actual rule is a CHIP-LOAD reduction keyed to DOC. 54 citations, most on
+  `axial_doc`. Name and notes corrected, no band re-derived.
+- **NOT TAKEN: retiring `whiteside_chipload`.** Zero of its 20
+  `feed_per_tooth` bands cite it as sole source, so it could be dropped from
+  all 20 without leaving a band uncited. Kept so the record survives that 20
+  bands were once justified by a chart that does not exist (DR-WSCITE).
+- **NOT TAKEN: DR-P3.** No network I/O was added to any test binary, and
+  DR-SOFT404 changes its specification anyway.
+- **NOT EXERCISED: `hobby_derate`.** Deserialized at `cell.rs:187` and read by
+  nothing. The re-baselined band carries `hobby_derate = 0.7`; it is
+  documentary, so the TOML min/max are the band as evaluated and no derate
+  arithmetic was applied.
+- **NOT RE-DERIVED: any `axial_doc`, `radial_woc`, `rpm` or `plunge_feed`
+  band**, on any cell, including the Ipe cell's own two remaining Outside
+  rows. **G-IPE-PLUNGE stays open** — with one negative datum added: its
+  cited `shapeoko_wiki` does publish "30% to 40% of the feedrate for woods"
+  verbatim, so the −61.1 % is **not** explained by a dead citation.
+- **NOT RE-OPENED: whether a hobby-machine cell should be judged against a
+  hobby chart or a vendor chart.** Matrix policy across many cells, not a
+  source question.
+
+Next action / checkpoint request: **none — S-2 needs no checkpoint.** Two
+things want the orchestrator's attention: **DR-SOFT404 amends DR-P3's
+specification** (a status probe would have passed the one URL that was lying),
+and **DR-GWIZ + DR-DOCRULE are content debt, not link debt** — 33 and 54
+citations now rest on rows whose notes say, in the file, that they cannot
+support what they are cited for. That is a matrix-content wave, and it is
+bigger than a sweep-pool slot.
