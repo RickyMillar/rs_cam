@@ -1,0 +1,31 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.75s
+     Running tests/chip_thickness_policy_a9.rs (target/debug/deps/chip_thickness_policy_a9-4bbad6783cdefaf0)
+
+running 4 tests
+test ball_chip_geometry_refuses_past_the_pole_which_is_what_empties_the_gate ... ok
+test the_canonical_chip_model_pins_a_full_slot_where_the_floors_copy_reads_zero ... ok
+
+thread 'safe_band_empty_is_unreachable_on_every_shipped_ball_row' (2816685) panicked at crates/rs_cam_core/tests/chip_thickness_policy_a9.rs:347:13:
+assertion `left == right` failed: ball 1.0 softwood @ 0.6275 D: the envelope is expected to report NO FLOOR (None), not a judged band — this is the X-VAC shape the doc reports
+  left: Some(true)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test safe_band_empty_is_unreachable_on_every_shipped_ball_row ... FAILED
+A-9 probe: 48 (row x stepover) combinations exercised
+
+thread 'axial_chipload_floor_is_none_across_the_whole_shipped_ball_population' (2816683) panicked at crates/rs_cam_core/tests/chip_thickness_policy_a9.rs:300:5:
+PRE-EXISTING STATE PINNED: the axial chipload floor is expected to be None on every shipped ball/tapered row at every shipped stepover, even at the band maximum. These produced a value instead (if a fix landed, re-pin deliberately):
+  ball 1.0 softwood @ 0.6275 D (geometric optimum (above every shipped default)), fz=0.05080 (= band max), floor=0.23259
+test axial_chipload_floor_is_none_across_the_whole_shipped_ball_population ... FAILED
+
+failures:
+
+failures:
+    axial_chipload_floor_is_none_across_the_whole_shipped_ball_population
+    safe_band_empty_is_unreachable_on_every_shipped_ball_row
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p rs_cam_core --test chip_thickness_policy_a9`
+EXIT=101

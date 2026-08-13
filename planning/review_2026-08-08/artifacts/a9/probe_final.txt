@@ -1,0 +1,15 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.55s
+     Running tests/chip_thickness_policy_a9.rs (target/debug/deps/chip_thickness_policy_a9-4bbad6783cdefaf0)
+
+running 4 tests
+test ball_chip_geometry_refuses_past_the_pole_which_is_what_empties_the_gate ... ok
+test the_canonical_chip_model_pins_a_full_slot_where_the_floors_copy_reads_zero ... ok
+A-9 probe: reachable @ 0.6275 D — ball 1.0 softwood floor=0.23259 safe_band_empty=true
+test the_axial_floor_only_becomes_reachable_above_every_shipped_default ... ok
+A-9 probe: 36 (row x shipped-default stepover) combinations exercised
+test axial_chipload_floor_is_none_at_every_shipped_default_stepover ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+EXIT=0
