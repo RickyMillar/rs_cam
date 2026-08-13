@@ -1,0 +1,68 @@
+### _litmatrix_drill_rpm_ceiling
+
+running 2 tests
+test match_chart_drill_stays_at_ceiling ... ok
+test max_speed_cannot_lift_drill_above_ceiling ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+### _litmatrix_drill_rpm_diameter_tier
+
+running 4 tests
+test big_drill_12mm_matchchart_under_8k_ceiling ... ok
+test big_drill_12mm_maxspeed_under_8k_ceiling ... ok
+test mid_drill_8mm_under_10k_ceiling ... ok
+test small_drill_3mm_retains_14k_ceiling ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+### _litmatrix_ipe_janka_scaling
+
+running 1 test
+test ipe_chipload_derates_below_oak_when_row_lacks_hardness_annotation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+### _litmatrix_milling_rpm_diameter_tier
+
+running 6 tests
+test big_mill_12mm_adaptive_under_14k_ceiling ... ok
+test small_mill_6mm_pocket_under_20k_ceiling ... ok
+test small_mill_1p5mm_pocket_still_allowed_to_climb ... ok
+test tiny_mill_3mm_pocket_under_22k_ceiling ... ok
+test mid_mill_8mm_pocket_under_18k_ceiling ... ok
+test mid_mill_10mm_pocket_under_16k_ceiling ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+### _litmatrix_rpm_only_lut_chipload
+
+running 2 tests
+test rpm_only_lut_row_does_not_collapse_chipload_to_zero ... ok
+test rpm_only_lut_row_match_chart_also_produces_chipload ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+### _litmatrix_rubbing_floor_clamp
+
+running 4 tests
+test ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor ... ok
+test oak_pocket_chipload_above_floor_is_not_clamped ... ok
+test ipe_pocket_emits_chipload_clamped_warning ... ok
+test record_the_cell ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+### _litmatrix_scallop_refuses_flat
+
+running 7 tests
+test parallel_without_scallop_target_accepts_flat ... ok
+test dropcutter_with_scallop_target_refuses_flat ... ok
+test scallop_accepts_tapered_ball ... ok
+test scallop_accepts_ball_endmill ... ok
+test scallop_accepts_bull_endmill ... ok
+test scallop_refuses_flat_endmill ... ok
+test scallop_refuses_vbit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
