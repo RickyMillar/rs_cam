@@ -170,6 +170,22 @@ fn chipload_within_carries_burn_advisory(v: &ChiploadVerdict) -> bool {
     )
 }
 
+/// # Checkpoint P (2), 2026-08-14 — these re-decisions honour the gate's
+/// boundary contract
+///
+/// The three helpers below re-decide, from scratch, a comparison a gate has
+/// already made: they take a `Within` verdict and ask whether the reading was
+/// *strictly* inside its bound or only admitted by the tolerance band. Until
+/// P-(2) each wrote that as a bare `>` / `<` and reached none of Checkpoint
+/// K's epsilon helpers, so a candidate the epsilon-aware gate called `Within`
+/// could be re-decided here as a strict breach **on float noise** — the
+/// G-CHIP-ULP shape, relocated into the optimizer's tier dispatch, where the
+/// consequence is auto-recommend (`Ranked`) vs "verify on a scrap"
+/// (`MarginalSafe`).
+///
+/// Tolerance is `0.0` at every site on purpose: the *point* of these helpers
+/// is to compare against the un-widened bound. The boundary epsilon is not a
+/// tolerance (see [`crate::tool_load::boundary`]) and applies regardless.
 fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {
     let ChiploadVerdict::Within {
         approach_to_min,
@@ -180,14 +196,21 @@ fn chipload_within_breaches_strict(v: &ChiploadVerdict) -> bool {
         return false;
     };
     // High-side breach: per-sample peak above the strict LUT max.
-    if approach_to_max.observed_mm_per_tooth > approach_to_max.bounds.max_mm_per_tooth {
+    if approach_to_max
+        .bounds
+        .exceeds_high(approach_to_max.observed_mm_per_tooth, 0.0)
+    {
         return true;
     }
     // Low-side breach: median observed below the strict LUT min, when
     // the matched row publishes a min (some rows are upper-bound only).
+    // `below_low` returns `None` for exactly that upper-bound-only case, and
+    // `None` must not collapse into "breached".
     if let Some(min_metric) = approach_to_min
-        && let Some(strict_min) = min_metric.bounds.min_mm_per_tooth
-        && min_metric.observed_mm_per_tooth < strict_min
+        && min_metric
+            .bounds
+            .below_low(min_metric.observed_mm_per_tooth, 0.0)
+            == Some(true)
     {
         return true;
     }
@@ -203,7 +226,7 @@ fn power_within_breaches_strict(v: &PowerVerdict) -> bool {
     else {
         return false;
     };
-    *peak_kw > *available_kw
+    crate::tool_load::boundary::exceeds_high(*peak_kw, *available_kw, 0.0)
 }
 
 fn deflection_within_breaches_strict(v: &DeflectionVerdict) -> bool {
@@ -213,7 +236,7 @@ fn deflection_within_breaches_strict(v: &DeflectionVerdict) -> bool {
     else {
         return false;
     };
-    *peak_mm > bounds.exceeds_mm
+    crate::tool_load::boundary::exceeds_high(*peak_mm, bounds.exceeds_mm, 0.0)
 }
 
 /// Compute the per-criterion delta for one candidate vs the baseline
@@ -323,4 +346,222 @@ pub(crate) fn delta_against_baseline(
         delta.scallop_height_mm = Some(s);
     }
     delta
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::compute::operation_configs::PocketConfig;
+    use crate::ids::ToolpathId;
+    use crate::tool_load::verdict::{
+        ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
+        DeflectionBounds, SampleEvidence,
+    };
+
+    /// The G-CHIP-ULP reference bound: the value A-6's census found a
+    /// multiply→divide round trip landing 1 ulp above in 6–8 % of the
+    /// (rpm, flutes) grid. Reused here so the optimizer's tier decision is
+    /// probed at the same number the gate's own contract is documented at.
+    const REF_BOUND: f64 = 0.011_525_378_354_629_83;
+
+    fn one_ulp_above(x: f64) -> f64 {
+        f64::from_bits(x.to_bits() + 1)
+    }
+
+    fn one_ulp_below(x: f64) -> f64 {
+        f64::from_bits(x.to_bits() - 1)
+    }
+
+    fn bounds(min: Option<f64>, max: f64) -> ChipBounds {
+        ChipBounds {
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
+            source: ChipBoundsSource::VendorLut,
+        }
+    }
+
+    fn metric(observed: f64, b: ChipBounds) -> ChiploadMetric {
+        ChiploadMetric {
+            observed_mm_per_tooth: observed,
+            statistic: ChiploadStatistic::PeakInRange,
+            evidence: SampleEvidence::empty(),
+            bounds: b,
+        }
+    }
+
+    fn within_chipload(high_observed: f64, low: Option<(f64, f64)>) -> ChiploadVerdict {
+        ChiploadVerdict::Within {
+            approach_to_min: low.map(|(observed, min)| metric(observed, bounds(Some(min), 1.0))),
+            approach_to_max: metric(high_observed, bounds(None, REF_BOUND)),
+            confidence: Confidence::Validated,
+            entry_spikes: Vec::new(),
+            burn_advisory: None,
+            ceiling_advisory: None,
+        }
+    }
+
+    fn within_power(peak_kw: f64, available_kw: f64) -> PowerVerdict {
+        PowerVerdict::Within {
+            peak_kw,
+            available_kw,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+            entry_spike: None,
+        }
+    }
+
+    fn within_deflection(peak_mm: f64) -> DeflectionVerdict {
+        DeflectionVerdict::Within {
+            peak_mm,
+            bounds: DeflectionBounds {
+                validated_within_mm: 0.050,
+                exceeds_mm: 0.200,
+            },
+            evidence: SampleEvidence::at(0),
+            confidence: Confidence::Validated,
+            entry_spike: None,
+        }
+    }
+
+    fn candidate(verdict: ToolpathLoadVerdict) -> OptimizeCandidate {
+        OptimizeCandidate {
+            params: OperationConfig::Pocket(PocketConfig::default()),
+            delta: ParamDelta::default(),
+            cycle_time_s: 100.0,
+            verdict,
+            stage: super::super::SearchStage::Refined,
+            reconciled_cycle_time_s: None,
+            reconciled_verdict: None,
+            gate_deltas: None,
+            air_cut_fraction_of_total_runtime: None,
+        }
+    }
+
+    fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
+        ToolpathLoadVerdict {
+            toolpath_id: ToolpathId(0),
+            chipload,
+            power: within_power(0.4, 1.0),
+            deflection: within_deflection(0.020),
+            drill_gates: None,
+            modulation_summary: None,
+            feed_explanation: None,
+        }
+    }
+
+    /// **Checkpoint P (2) — the tier flip, at one ulp.**
+    ///
+    /// A candidate the epsilon-aware chipload gate has already called `Within`
+    /// arrives here with its observation sitting **1 ulp above** the band
+    /// ceiling — the reconstruction noise `tool_load::boundary` exists to
+    /// absorb, routine on the recipes the rubbing-floor clamp parks exactly on
+    /// the ceiling.
+    ///
+    /// RED at the parent (`e94be53a`): `chipload_within_breaches_strict` wrote
+    /// a bare `observed > bounds.max_mm_per_tooth`, so this candidate was
+    /// re-decided as a strict breach and routed to `MarginalSafe` — the modal
+    /// says **"verify on a scrap"** instead of auto-recommending, on the last
+    /// bit of a multiply/divide round trip.
+    ///
+    /// GREEN after: the comparison goes through `ChipBounds::exceeds_high`,
+    /// which carries `BOUNDARY_EPSILON_REL`, and the tier is `strictly safe`.
+    #[test]
+    fn one_ulp_above_the_ceiling_does_not_demote_the_tier() {
+        let c = candidate(verdict_with(within_chipload(
+            one_ulp_above(REF_BOUND),
+            None,
+        )));
+        assert!(
+            !candidate_is_marginally_safe(&c),
+            "a 1-ulp reconstruction must not route an auto-recommendable \
+             candidate to verify-on-scrap (observed {:.17e} vs bound \
+             {REF_BOUND:.17e})",
+            one_ulp_above(REF_BOUND)
+        );
+        assert!(
+            candidate_is_strictly_safe(&c),
+            "and it must land in the auto-recommend tier"
+        );
+    }
+
+    /// The other half of the same contract: the epsilon is not a tolerance in
+    /// disguise. A breach twelve orders of magnitude smaller than 5 % still
+    /// demotes the tier, so P-(2) cannot be read as widening the band.
+    #[test]
+    fn a_genuine_breach_still_demotes_the_tier() {
+        let c = candidate(verdict_with(within_chipload(
+            REF_BOUND * (1.0 + 1e-9),
+            None,
+        )));
+        assert!(
+            candidate_is_marginally_safe(&c),
+            "a real overshoot must still route to verify-on-scrap"
+        );
+        assert!(!candidate_is_strictly_safe(&c));
+    }
+
+    /// The low side, same shape. `below_low` returns `Option<bool>`; the
+    /// upper-bound-only case must stay `None`-safe rather than collapsing to
+    /// "breached".
+    #[test]
+    fn the_low_side_absorbs_one_ulp_and_still_catches_a_real_burn() {
+        let noise = candidate(verdict_with(within_chipload(
+            REF_BOUND * 0.5,
+            Some((one_ulp_below(0.032), 0.032)),
+        )));
+        assert!(
+            !candidate_is_marginally_safe(&noise),
+            "1 ulp below the floor is reconstruction noise, not a burn"
+        );
+
+        let real = candidate(verdict_with(within_chipload(
+            REF_BOUND * 0.5,
+            Some((0.032 * (1.0 - 1e-9), 0.032)),
+        )));
+        assert!(
+            candidate_is_marginally_safe(&real),
+            "a genuine sub-floor median must still demote"
+        );
+
+        let no_floor = candidate(verdict_with(within_chipload(REF_BOUND * 0.5, None)));
+        assert!(
+            !candidate_is_marginally_safe(&no_floor),
+            "an upper-bound-only row has no floor to breach"
+        );
+    }
+
+    /// Sites 3 and 4 of the sweep: power and deflection re-decide their own
+    /// `Within` the same way and reach `boundary::exceeds_high` now.
+    #[test]
+    fn power_and_deflection_re_decisions_absorb_one_ulp_too() {
+        let mut v = verdict_with(within_chipload(REF_BOUND * 0.5, None));
+        v.power = within_power(one_ulp_above(1.0), 1.0);
+        assert!(
+            !candidate_is_marginally_safe(&candidate(v.clone())),
+            "1 ulp over available_kw is not a power breach"
+        );
+        v.power = within_power(1.0 * (1.0 + 1e-9), 1.0);
+        assert!(
+            candidate_is_marginally_safe(&candidate(v)),
+            "a genuine power overshoot still demotes"
+        );
+
+        let mut d = verdict_with(within_chipload(REF_BOUND * 0.5, None));
+        d.deflection = within_deflection(one_ulp_above(0.200));
+        assert!(
+            !candidate_is_marginally_safe(&candidate(d.clone())),
+            "1 ulp over the deflection bound is not a breach"
+        );
+        d.deflection = within_deflection(0.200 * (1.0 + 1e-9));
+        assert!(
+            candidate_is_marginally_safe(&candidate(d)),
+            "a genuine deflection overshoot still demotes"
+        );
+    }
 }
