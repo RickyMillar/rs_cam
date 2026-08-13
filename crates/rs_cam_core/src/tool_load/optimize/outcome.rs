@@ -106,6 +106,41 @@ pub struct OptimizeOutcome {
     /// and the readout).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine_snapshot: Option<MachineSnapshot>,
+    /// **A-8 (F-OPT), 2026-08-13 — the simulation assumptions these
+    /// numbers were taken at.**
+    ///
+    /// Populated by [`super::optimize_toolpath`] on **every** outcome,
+    /// refusals and skips included, for the same reason
+    /// [`Self::machine_snapshot`] is: a refusal is also a claim about
+    /// the world, and it is also taken at an operating point.
+    ///
+    /// # Measurement contract — the `truncated_core_mm2` family
+    ///
+    /// `None` means **not stamped**, and never "no assumptions" or
+    /// "the defaults". It is reachable exactly two ways: an outcome
+    /// built by a constructor and not yet passed through
+    /// [`super::optimize_toolpath`] (every `OptimizeOutcome::*`
+    /// constructor leaves it `None`), or an outcome deserialized from a
+    /// record written before this field existed. A consumer must render
+    /// the absence, not substitute a guess — the whole defect this field
+    /// addresses is a candidate card that *looked* like it named its
+    /// operating point.
+    ///
+    /// This is the same three-valued discipline
+    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
+    /// carries (`None` = not measured, a present value = measured), and
+    /// deliberately **not**
+    /// [`crate::compute::config::ToolpathStats::zero_removal`]'s weaker
+    /// contract where `None` conflates "not measured" with "nothing to
+    /// report". Here the two are distinguishable and the inner
+    /// `Option`s keep them distinguished — see
+    /// [`BaselineTraceAssumptions`], where the honest answer to two of
+    /// three questions is "the trace does not record it".
+    ///
+    /// Report-only: no gate consumes it, no candidate is ranked on it,
+    /// and no verdict changes on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assumptions: Option<SimAssumptionStamp>,
 }
 
 /// F4.3 — the machine caps an optimize run consumed.
@@ -134,6 +169,310 @@ impl MachineSnapshot {
     }
 }
 
+/// **A-8 (F-OPT) — the simulation assumptions an optimize run's numbers
+/// were taken at.**
+///
+/// # The defect this exists for
+///
+/// The operator's 2026-08-07 feeds/speeds review, `[medium] The optimizer
+/// initially evaluates a different feed world than production simulation`:
+/// candidate scoring pins `use_predicted_feed_in_gates` and
+/// `adaptive_feed_modulation` to `false` while normal simulation can
+/// enable either, so *"safe/faster candidate" means safe/faster in the
+/// unmodulated commanded-feed candidate model until reconciliation, not
+/// necessarily in the live emitted-feed model.* The review's repair was
+/// explicitly **not** to unify the two models — it was to stop the
+/// isolation being invisible. This type is that disclosure.
+///
+/// Since the review was written the gap got **wider**, not narrower:
+/// Checkpoint J (2026-08-13) flipped `SimulationOptions::default()
+/// .adaptive_feed_modulation` to `true` and Checkpoint K (g1) flipped the
+/// CLI flag to match, while
+/// [`super::candidate::candidate_sim_options`] still pins `false`.
+///
+/// # What it is not
+///
+/// It is **not** a claim that every number in the outcome shares one
+/// operating point. It records the opposite where that is true: the
+/// candidates and the baseline are two different sets, and
+/// [`Self::baseline`] is mostly the honest answer *"the trace does not
+/// record it"*.
+///
+/// Report-only. No gate consumes it and no verdict changes on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SimAssumptionStamp {
+    /// Options every **non-baseline** candidate's scoring sim ran under.
+    pub candidates: CandidateSimAssumptions,
+    /// What is knowable about the caller-supplied `baseline_trace` that
+    /// candidate 0 was scored against. Deliberately mostly unknown.
+    pub baseline: BaselineTraceAssumptions,
+    /// Where the machine's kinematics model came from.
+    pub kinematics: KinematicsSource,
+    /// The vendor-LUT query the chipload band was negotiated through
+    /// (Checkpoint K's `lut_query_for`). `None` = **not measured**: no
+    /// [`super::context::EvaluationContext`] could be built for this
+    /// toolpath (missing toolpath or missing tool), so no query was
+    /// formed. Never read it as "unrouted".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut_query: Option<LutQueryStamp>,
+    /// The boundary-comparison contract in force
+    /// ([`crate::tool_load::boundary::BOUNDARY_EPSILON_REL`], Checkpoint
+    /// K (b1)). Recorded because a verdict's *side* at the band edge is
+    /// a function of it, so two outcomes taken under different epsilons
+    /// are not comparable at the bound.
+    ///
+    /// **Caveat, stated because the number invites the wrong reading:**
+    /// this records the crate constant, not a promise that the optimizer
+    /// *used* it. A-8's census found the optimizer's own re-decisions of
+    /// gate verdicts (`delta.rs`, `narrative.rs`) still use bare
+    /// comparisons and reach none of Checkpoint K's epsilon helpers.
+    pub boundary_epsilon_rel: f64,
+}
+
+/// The candidate-scoring sim's operating point. Read straight off
+/// [`super::candidate::candidate_sim_options`] so it cannot drift from
+/// what the sim ran (§0 rule 5).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CandidateSimAssumptions {
+    /// Dexel cell for the Stage-0/Stage-1 sims (`coarse_resolution_mm`).
+    pub coarse_resolution_mm: f64,
+    /// Dexel cell for the Stage-2 sims, i.e. the cell every **reported**
+    /// candidate verdict and cycle time was measured at
+    /// (`refined_resolution_mm`).
+    pub refined_resolution_mm: f64,
+    /// `auto_resolution` is pinned off, so the session's own
+    /// resolution choice — including whatever the on-screen baseline sim
+    /// used — does not reach any candidate.
+    pub auto_resolution: bool,
+    /// The F-036b pin. `false` today while
+    /// `SimulationOptions::default()` ships `true`.
+    pub adaptive_feed_modulation: bool,
+    /// Stable tag for the modulation strategy the candidate sim carries.
+    /// Inert while [`Self::adaptive_feed_modulation`] is `false`, and
+    /// recorded anyway so a future flip is legible against this record.
+    pub modulation_strategy: crate::tool_load::ModulationStrategyTag,
+    /// Aggressiveness the candidate sim carries. Inert on the same
+    /// condition as [`Self::modulation_strategy`].
+    pub modulation_aggressiveness: f64,
+    /// The F-035 pin. `false`, matching `SimulationOptions::default()`.
+    /// While this is off, [`SimAssumptionStamp::kinematics`] cannot
+    /// influence a candidate verdict.
+    pub use_predicted_feed_in_gates: bool,
+}
+
+impl CandidateSimAssumptions {
+    /// Read the assumptions off the real options builder. The two
+    /// resolutions come from the search policy, which is where the two
+    /// call sites get them.
+    fn observed() -> Self {
+        let policy = super::search_policy();
+        let opts =
+            super::candidate::candidate_sim_options(policy.stages.refined_resolution_mm.value);
+        Self {
+            coarse_resolution_mm: policy.stages.coarse_resolution_mm.value,
+            refined_resolution_mm: policy.stages.refined_resolution_mm.value,
+            auto_resolution: opts.auto_resolution,
+            adaptive_feed_modulation: opts.adaptive_feed_modulation,
+            modulation_strategy: opts.modulation_strategy.tag(),
+            modulation_aggressiveness: opts.modulation_aggressiveness,
+            use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
+        }
+    }
+
+    /// True when the candidate sims and `SimulationOptions::default()`
+    /// disagree about feed modulation — i.e. when an optimizer verdict
+    /// and a default-path verdict for the same project are taken at
+    /// different operating points.
+    ///
+    /// Report-only helper for renderers; nothing branches on it.
+    #[must_use]
+    pub fn diverges_from_library_default_modulation(&self) -> bool {
+        self.adaptive_feed_modulation
+            != crate::session::SimulationOptions::default().adaptive_feed_modulation
+    }
+}
+
+/// What the caller's `baseline_trace` will admit about how it was made.
+///
+/// Candidate 0 is scored against that trace directly — no re-sim — so it
+/// does **not** share [`CandidateSimAssumptions`]. Two of the three
+/// questions below currently have no answer on the wire, and this type
+/// says so rather than filling them in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BaselineTraceAssumptions {
+    /// Dexel cell the baseline trace was simulated at.
+    ///
+    /// **Always `None` today.** `SimulationCutTrace` records
+    /// `sample_step_mm` (the along-path sampling step) and a
+    /// `SimulationProvenance` of geometry hashes; it records no dexel
+    /// cell. The cell survives only on `SimulationCutArtifact`, which
+    /// the optimizer is not handed. `None` is therefore **not
+    /// measured**, and must not be rendered as "same as the
+    /// candidates" — the two are known to differ whenever the user's
+    /// on-screen sim did not happen to run at
+    /// [`CandidateSimAssumptions::refined_resolution_mm`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_mm: Option<f64>,
+    /// Whether the modulator ran on the baseline trace.
+    ///
+    /// `Some(true)` is a **positive observation**: the trace carries
+    /// per-toolpath `modulation_summaries`, which only
+    /// `apply_adaptive_feed_modulation` writes. `None` is **not
+    /// measured** and is deliberately never `Some(false)` — an empty
+    /// map has two causes that cannot be told apart here (modulation
+    /// was off, or the trace was round-tripped through serde, where the
+    /// map is `#[serde(skip)]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_feed_modulation: Option<bool>,
+    /// Along-path sampling step the trace does record. Not the dexel
+    /// cell; kept because it is the only sampling scale the baseline
+    /// publishes, and it bounds how finely the baseline cycle time
+    /// resolves.
+    pub sample_step_mm: f64,
+}
+
+impl BaselineTraceAssumptions {
+    fn observed(trace: &crate::simulation_cut::SimulationCutTrace) -> Self {
+        Self {
+            // Not recorded on the trace — see the field doc.
+            resolution_mm: None,
+            adaptive_feed_modulation: if trace.modulation_summaries.is_empty() {
+                None
+            } else {
+                Some(true)
+            },
+            sample_step_mm: trace.sample_step_mm,
+        }
+    }
+}
+
+/// Where the machine's kinematics model came from.
+///
+/// Recorded because A-5i's instrument-integrity correction showed the
+/// distinction had been documented backwards: `SimulationOptions
+/// ::adaptive_feed_modulation` claimed modulation fires only "when the
+/// active `MachineProfile` carries `kinematics`", while
+/// `MachineProfile::effective_kinematics()` falls back to the generic
+/// wood router — so it applies on every machine. Every built-in preset
+/// ships `kinematics: None`, which makes
+/// [`Self::GenericWoodRouterFallback`] the *common* case, not the
+/// exceptional one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KinematicsSource {
+    /// `MachineProfile::kinematics` is `Some(_)` — the profile declares
+    /// its own accel / junction-deviation model.
+    ProfileDeclared,
+    /// `MachineProfile::kinematics` is `None`;
+    /// `MachineKinematics::generic_wood_router()` is what any consumer
+    /// calling `effective_kinematics()` gets. This is what every
+    /// built-in preset ships.
+    GenericWoodRouterFallback,
+}
+
+impl KinematicsSource {
+    fn of(machine: &crate::machine::MachineProfile) -> Self {
+        if machine.kinematics.is_some() {
+            Self::ProfileDeclared
+        } else {
+            Self::GenericWoodRouterFallback
+        }
+    }
+}
+
+/// The vendor-LUT query the chipload band was negotiated through.
+///
+/// Checkpoint K (a4) hoisted the reroute into
+/// `feeds::vendor_normalize::lut_query_for` so Suggest and the gate can
+/// no longer resolve different rows. The optimizer inherits that routing
+/// transitively (via `tool_load::chipload::matched_chip_envelope`) but
+/// never names it, so nothing on any optimizer surface said which family
+/// the band came from. This records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum LutQueryStamp {
+    /// A row query was formed. `queried_*` is what the LUT saw;
+    /// `declared_*` is the operation's own `feeds_family` /
+    /// `feeds_pass_role` before routing. They differ for `Adaptive3d`
+    /// (→ `Pocket`) and `ProjectCurve` (→ `Parallel`/`Contour` +
+    /// `Finish`).
+    Routed {
+        declared_family: crate::feeds::vendor_lut::LutOperationFamily,
+        declared_pass_role: crate::feeds::vendor_lut::LutPassRole,
+        queried_family: crate::feeds::vendor_lut::LutOperationFamily,
+        queried_pass_role: crate::feeds::vendor_lut::LutPassRole,
+    },
+    /// `lut_query_for` **refused**: `ProjectCurve` on a bull nose,
+    /// V-bit or facing bit, where the LUT publishes no rows and
+    /// inventing a family would be worse than saying so. A refusal is
+    /// not a fallback to the declared family.
+    Refused {
+        declared_family: crate::feeds::vendor_lut::LutOperationFamily,
+        declared_pass_role: crate::feeds::vendor_lut::LutPassRole,
+        tool_family: crate::feeds::vendor_lut::ToolFamily,
+    },
+}
+
+impl LutQueryStamp {
+    /// True when routing rewrote the family or the pass role.
+    #[must_use]
+    pub fn is_rerouted(&self) -> bool {
+        match self {
+            Self::Routed {
+                declared_family,
+                declared_pass_role,
+                queried_family,
+                queried_pass_role,
+            } => declared_family != queried_family || declared_pass_role != queried_pass_role,
+            Self::Refused { .. } => false,
+        }
+    }
+}
+
+impl SimAssumptionStamp {
+    /// Observe the assumptions for one optimize run.
+    ///
+    /// Built **outside** `optimize_toolpath_inner`, beside
+    /// [`MachineSnapshot::of`], so a `Skipped` outcome that never ran a
+    /// sim still names the operating point its refusal was decided at.
+    #[must_use]
+    pub fn of(
+        session: &crate::session::ProjectSession,
+        toolpath_index: usize,
+        baseline_trace: &crate::simulation_cut::SimulationCutTrace,
+    ) -> Self {
+        let lut_query = super::context::EvaluationContext::from_session(session, toolpath_index)
+            .map(|ctx| {
+                let tool_family = ctx.tool.to_geometry_hint().cutter_kind().lut_family();
+                match crate::feeds::vendor_normalize::lut_query_for(
+                    ctx.operation_kind,
+                    tool_family,
+                    ctx.lut_op_family,
+                    ctx.lut_pass_role,
+                ) {
+                    Some((queried_family, queried_pass_role)) => LutQueryStamp::Routed {
+                        declared_family: ctx.lut_op_family,
+                        declared_pass_role: ctx.lut_pass_role,
+                        queried_family,
+                        queried_pass_role,
+                    },
+                    None => LutQueryStamp::Refused {
+                        declared_family: ctx.lut_op_family,
+                        declared_pass_role: ctx.lut_pass_role,
+                        tool_family,
+                    },
+                }
+            });
+        Self {
+            candidates: CandidateSimAssumptions::observed(),
+            baseline: BaselineTraceAssumptions::observed(baseline_trace),
+            kinematics: KinematicsSource::of(session.machine()),
+            lut_query,
+            boundary_epsilon_rel: crate::tool_load::boundary::BOUNDARY_EPSILON_REL,
+        }
+    }
+}
+
 impl OptimizeOutcome {
     /// Construct a `Ranked` outcome. Caller is responsible for sorting
     /// `candidates` (baseline at index 0) and computing
@@ -150,6 +489,7 @@ impl OptimizeOutcome {
             recommended_index,
             reason: None,
             machine_snapshot: None,
+            assumptions: None,
         }
     }
 
@@ -166,6 +506,7 @@ impl OptimizeOutcome {
             recommended_index,
             reason: None,
             machine_snapshot: None,
+            assumptions: None,
         }
     }
 
@@ -180,6 +521,7 @@ impl OptimizeOutcome {
             recommended_index: None,
             reason: None,
             machine_snapshot: None,
+            assumptions: None,
         }
     }
 
@@ -198,6 +540,7 @@ impl OptimizeOutcome {
             recommended_index: None,
             reason: Some(reason),
             machine_snapshot: None,
+            assumptions: None,
         }
     }
 
@@ -211,6 +554,7 @@ impl OptimizeOutcome {
             recommended_index: None,
             reason: Some(reason),
             machine_snapshot: None,
+            assumptions: None,
         }
     }
 
