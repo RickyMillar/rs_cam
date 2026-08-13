@@ -4983,14 +4983,61 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_hwood", "gwizard_hwood", "whiteside_wood"]
 
+# Checkpoint K (e1), 2026-08-13 — RE-BASELINED on re-verified sources.
+# Full record: `planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md` §5.
+#
+#   old:  min = 0.013  max = 0.027
+#         sources = ["onsrud_hwood", "gwizard_hwood", "fpl_wood_handbook"]
+#
+# K-(e2) fixed this cell's ANTI-TEST; it did not touch the disagreement
+# the cell was detecting. K-(e1) sent S-2's `/refresh-lit-matrix` at the
+# three cited sources. **None of the three supports 0.013–0.027 for Ø3
+# hardwood, and none of them ever did:**
+#
+#   - `onsrud_hwood` — retrieved and read in full 2026-08-13. Its
+#     LOWEST 1/8 in hardwood entry of any series is .002–.004 in =
+#     0.0508–0.1016 mm/tooth. The chart's own `GOOD` pick for Single
+#     Pass and Roughing (52-200/57-200) reads .003–.005 in =
+#     0.0762–0.1270 mm. Its floor is **1.88× the old band's ceiling**.
+#   - `gwizard_hwood` — its cited URL was a soft 404 (HTTP 200 serving a
+#     home-page shell). The live successor publishes four 1/2 in figures
+#     and **no diameter table at all**, so it cannot speak to Ø3.
+#   - `fpl_wood_handbook` — has no machining chapter in either the 2021
+#     (GTR-282) or 2010 (GTR-190) edition. Same mis-citation class the
+#     W6 audit removed from every drill cell on 2026-08-04.
+#
+# Where 0.013–0.027 actually came from: the Shapeoko-lineage community
+# chart this cell already cites on four OTHER rows publishes, for
+# 1/8 in, `hard wood & metals 0.013mm–0.025mm`. That is the band, to the
+# millimetre — carried under vendor citations that contradict it.
+#
+# So the ~2× gap A-6 diagnosed is real but **re-attributed**: it is a
+# hobby-community-vs-industrial-vendor disagreement, not
+# literature-vs-engine. The engine's commanded 0.0360 is Freud's own
+# published Ø1/8 in hardwood band (0.0508–0.1270) scaled down 39 % for
+# Ipe's density — 0.0508 × 0.6062 × 0.9660 = 0.0297, reproducing A-6's
+# measured band exactly.
+#
+# The new band is a UNION WITH A HOLE IN IT and that is deliberate: the
+# community band tops out at 0.025, the industrial band starts at
+# 0.0508, they do not overlap, and NO retrievable chart resolves wood
+# density — so none of them can adjudicate an Ipe recommendation. A
+# narrower band here would be false precision. The ceiling 0.127 is
+# where three independent charts agree Ø1/8 in hardwood tops out
+# (Onsrud, Freud, Cutter Shop: all `.005"`).
 [cell.expected.feed_per_tooth]
 min = 0.013
-max = 0.027
+max = 0.127
 mode = "band"
 unit = "mm/tooth"
 hobby_derate = 0.7
-sources = ["onsrud_hwood", "gwizard_hwood", "fpl_wood_handbook"]
+sources = ["shapeoko_wiki", "onsrud_hwood", "freud_router_cnc"]
 
+# NOT re-derived by S-2 (out of scope, ledgered DR-DOCRULE): the
+# `onsrud_doc_rule` key cited here is named for a "1.5-4.5x tool
+# diameter" band that the Onsrud PDF does not contain, and
+# `fpl_wood_handbook` has no machining content. This band's numbers are
+# untouched; only their citations are now known to be weak.
 [cell.expected.axial_doc]
 min = 0.20
 max = 0.50
