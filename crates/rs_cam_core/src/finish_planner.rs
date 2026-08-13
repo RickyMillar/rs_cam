@@ -110,7 +110,19 @@ pub enum FinishBand {
 pub struct FinishPlannerParams {
     /// Slope entering steep (deg from horizontal). Primary dial. Default 45.
     pub steep_threshold_deg: f64,
-    /// Slope entering very-steep/waterline (deg). Advanced dial. Default 65.
+    /// Slope entering very-steep/waterline (deg). Advanced dial.
+    ///
+    /// **Default 75**, not 65. The number lives in
+    /// [`FinishPlannerParams::for_tool`] (`waterline_threshold_deg: 75.0`),
+    /// which [`Default`] delegates to, and is mirrored by
+    /// `UnifiedFinishConfig::default` in
+    /// `compute::operation_configs`. It was locked at 75 by the P2.e sweep
+    /// (2026-07-08) — see `for_tool`'s own note: `65→75` measured −11.7%
+    /// finish time with collisions unchanged, while `65→55` exploded +27%.
+    /// This line said "Default 65" from before that sweep and was ledgered
+    /// as **FP-65** in `planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md`
+    /// §4.6; the doc moved to the shipped number, the shipped number did
+    /// not move.
     pub waterline_threshold_deg: f64,
     /// Hysteresis width (deg): a cell LEAVES a band only below
     /// `enter - hysteresis_deg`. Default 10.
