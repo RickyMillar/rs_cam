@@ -1769,26 +1769,24 @@ fn draw_chart_c(
             //    pointer's RPM/feed. Same text as the verdict line so
             //    the user can learn the chart by hovering.
             if let Some(hover) = plot_ui.pointer_coordinate() {
-                let cl = if hover.x > 0.0 {
-                    hover.y / (hover.x * flutes)
-                } else {
-                    0.0
-                };
+                // Read the CLAMPED coordinates once and derive everything
+                // from them, readout and cap-note alike — see
+                // `hover_readout_chipload`.
+                let (rpm, feed) = (hover.x.max(0.0), hover.y.max(0.0));
+                let cl = hover_readout_chipload(rpm, feed, flutes);
                 let (verdict, color) = chipload_verdict(cl, explain);
-                let cap_note = if hover.x > env.spindle_max_rpm {
+                let cap_note = if rpm > env.spindle_max_rpm {
                     " · past spindle cap".to_owned()
-                } else if hover.y > env.max_feed_mm_min {
+                } else if feed > env.max_feed_mm_min {
                     " · past feed cap".to_owned()
-                } else if hover.x < env.spindle_min_rpm {
+                } else if rpm < env.spindle_min_rpm {
                     " · below spindle min".to_owned()
                 } else {
                     String::new()
                 };
                 let label = format!(
-                    "{:.0} RPM · {:.0} mm/min\n→ commanded advance/tooth {cl:.4} mm/tooth · \
-                     {verdict}{cap_note}",
-                    hover.x.max(0.0),
-                    hover.y.max(0.0),
+                    "{rpm:.0} RPM · {feed:.0} mm/min\n→ commanded advance/tooth \
+                     {cl:.4} mm/tooth · {verdict}{cap_note}",
                 );
                 // Anchor the readout near the top-left of the chart so
                 // it stays out of the band area.
@@ -2263,6 +2261,34 @@ fn preview_power_kw(explain: &FeedsExplain, explore_feed: f64) -> f64 {
         return 0.0;
     }
     (rec.power_kw * (explore_feed / rec.feed_rate_mm_min)).max(0.0)
+}
+
+/// Advance/tooth for the nomogram's hover readout — **display only**.
+///
+/// The bug this exists to hold (ledgered in
+/// `planning/review_2026-08-04/ORCHESTRATION_LOG.md`, W10-LV item 10, as
+/// a cosmetic wart): the readout printed the RPM and feed through
+/// `.max(0.0)` but divided the RAW pointer coordinates, so dragging
+/// below the feed axis produced a line that read
+/// `18000 RPM · 0 mm/min → −0.0928 mm/tooth`. Three quantities on one
+/// line, two of them clamped and one not — a negative advance per tooth
+/// is not a thing, and the number did not correspond to the RPM and feed
+/// printed beside it.
+///
+/// The fix is agreement, not a second clamp: the caller clamps once and
+/// this function is handed the same values the label prints. Zero RPM
+/// (or zero flutes) yields `0.0` rather than an infinity, which is what
+/// the pre-existing `hover.x > 0.0` guard already did.
+///
+/// **Nothing downstream reads this.** It formats a tooltip; no recipe,
+/// gate or export consumes it.
+fn hover_readout_chipload(rpm: f64, feed_mm_min: f64, flutes: f64) -> f64 {
+    let divisor = rpm * flutes;
+    if divisor > 0.0 {
+        (feed_mm_min / divisor).max(0.0)
+    } else {
+        0.0
+    }
 }
 
 fn chipload_verdict(cl: f64, explain: &FeedsExplain) -> (&'static str, egui::Color32) {
@@ -3274,4 +3300,57 @@ fn speedup(current: &CurrentValues, explain: &FeedsExplain) -> f64 {
         return 1.0;
     }
     explain.recommended.feed_rate_mm_min / current.feed_rate_mm_min
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::hover_readout_chipload;
+
+    /// The nomogram hover readout must never print a negative advance
+    /// per tooth.
+    ///
+    /// Pre-fix reproduction, preserved as the first case: the readout
+    /// divided the RAW pointer coordinates while printing the CLAMPED
+    /// ones, so a drag below the feed axis at 18000 RPM on a 2-flute
+    /// cutter printed `18000 RPM · 0 mm/min → −0.0928 mm/tooth`
+    /// (W10-LV item 10). The literal −0.0928 is reproduced here from the
+    /// feed that produces it, so the case is the observed one and not a
+    /// paraphrase: −0.0928 × 18000 × 2 = −3340.8 mm/min.
+    ///
+    /// Display-only: this function formats a tooltip. No recipe number
+    /// moves.
+    #[test]
+    fn hover_readout_never_prints_a_negative_chipload() {
+        // The exact reported reading, through the pre-fix arithmetic.
+        let raw: f64 = -3340.8 / (18000.0 * 2.0);
+        assert!(
+            (raw - -0.0928).abs() < 1e-4,
+            "fixture must reproduce the reported −0.0928 mm/tooth, got {raw}"
+        );
+
+        // Same pointer position, through the shipped path: the caller
+        // clamps the feed to 0 and hands this function the same value it
+        // prints.
+        assert_eq!(hover_readout_chipload(18000.0, 0.0, 2.0), 0.0);
+
+        // And the clamp is defended at the function too, so a caller
+        // that forgets cannot resurrect the wart.
+        assert_eq!(hover_readout_chipload(18000.0, -3340.8, 2.0), 0.0);
+
+        // Zero RPM / zero flutes must be 0.0, not an infinity or a NaN —
+        // both reach `{:.4}` in the label.
+        assert_eq!(hover_readout_chipload(0.0, 2520.0, 2.0), 0.0);
+        assert_eq!(hover_readout_chipload(0.0, 0.0, 2.0), 0.0);
+        assert_eq!(hover_readout_chipload(18000.0, 2520.0, 0.0), 0.0);
+
+        // The ordinary case is untouched: 2520 / (18000 × 2) = 0.07.
+        let ok = hover_readout_chipload(18000.0, 2520.0, 2.0);
+        assert!((ok - 0.07).abs() < 1e-12, "got {ok}");
+    }
 }
