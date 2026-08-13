@@ -3287,3 +3287,278 @@ inherits both as inputs to the chip-thickness-policy question rather than as
 open discoveries; (c) note request 4 lands in **B-5's** current territory.
 
 ---
+
+## A-9 — chip-thickness policy investigation, 2026-08-13
+
+Status: COMPLETE, research only. **Headline: the axial-DOC chipload floor
+— the operator review's location 1 of 3 — is dead at every shipped
+default. `None` on 36 of 36 (row × default-stepover) combinations with the
+feed at the row's own band MAXIMUM, `SafeBandEmpty` never binding. It is
+not dead code: it fires at ~0.63 D radial WOC, above every default.**
+
+Commit(s), parent `2b1a5c66`:
+- `9a2e082f` — the probe file (4 tests) + `artifacts/a9/` (5 captures,
+  including both the failed and the corrected run).
+- this entry + `CHIP_THICKNESS_POLICY.md`.
+
+Deliverable: `planning/review_2026-08-08/CHIP_THICKNESS_POLICY.md`.
+Territory held: `crates/rs_cam_core/tests/chip_thickness_policy_a9.rs`
+(new), `planning/review_2026-08-08/CHIP_THICKNESS_POLICY.md`,
+`artifacts/a9/`, this entry. **Zero `src` diff.**
+
+Question and pre-registered bars: plan §2 A-9 (F-BIPOLAR, F-VALID,
+F-MISSAE, axial-DOC floors, the gate population predicate), and the
+review's step 6 — this "must not be folded into a cosmetic graph change".
+Bars set before starting: (a) evidence document + checkpoint questions
+only, no behavioural change; (b) every claim about a consumer is read from
+the shipped call graph, not inferred from a docstring; (c) any claim about
+reachability is measured against the **shipped** LUT, not a synthetic row;
+(d) the options space for the low side is presented as options, never as a
+design commitment; (e) every ledger figure re-quoted is re-derived from the
+data, not carried.
+
+Fixture/population/resolution: the 252-row embedded LUT
+(`data/vendor_lut/observations/`), of which 36 rows are `ball_nose` /
+`tapered_ball_nose` and 24 are distinct (diameter, chipload band) triples.
+Axial-floor probe: 12 real LUT queries × the 3 radial-WOC fractions a
+shipped `axial_envelope_for_operation` call site DEFAULTS to on a
+ball-tipped tool (0.15 D / 0.20 D / 0.40 D) = **36 combinations**, with
+`fz` set to each row's own `chipload_max` (the most aggressive in-band
+advance), plus a separate reachability probe at 0.6275 D. The analytic
+sweep behind the multiples quoted below covers all **24** distinct
+(diameter, chipload band) triples. No simulation was run in this wave; the
+chip-thickness *measurement* chain is censused from source, and every
+emptying path is cited to a guard.
+
+### Result — F-BIPOLAR: four surviving consumers, two of which claim physics
+
+`is_bipolar_engagement` (`chipload.rs:265-297`) is confirmed as the last
+consumer of the *measured* chip signal against the advance band, and A-2's
+handover note is right on that reading. It is not the whole census:
+`min_doc_chipload_floor` (`cutter_constraints.rs:386-462`) makes the same
+category of comparison on a **predicted** chip in `feeds/`. The review named
+it first; nobody found it by following the measured signal because it is
+dead.
+
+Two properties of the bipolar predicate that bear on any ruling: it is a
+**refusal**, not an advisory (`optimize/preflight.rs:102-111` →
+`RefuseReason::BipolarEngagement`), and a vacuous chip population returns
+`false` (`chipload.rs:291-295`) — i.e. **every emptying path in F-VALID
+reads as an exoneration**. Checkpoint K fixed its *operator* (epsilon
+boundary contract) and left its *yardstick*; do not read K as having
+addressed F-BIPOLAR.
+
+### Result — the axial-DOC chipload floor is a dead surface, five ways
+
+1. **The docstring's monotonicity claim is false.** `chip_at` is unimodal
+   in `ap`, peaking at arc ≈ 1.9713 rad with a factor of **0.4183 × fz** —
+   which is the same peak the A-1 fixture already pinned
+   (`HEATMAP_VOCAB_CENSUS.md:255-270`, "peaks near arc ≈ 2.0 rad
+   (≈ 0.418)"). Monotone-increasing holds only for
+   `radial_woc ≥ 0.6275 D`; every shipped call site is below it.
+2. **The bracket's upper end is the function's minimum.**
+   `BINSEARCH_UPPER_FRACTION = 0.95` puts it at 28.5 mm on a 30 mm
+   stickout, far past where a ball's `width_at_height` saturates at R, so
+   the `chip_hi < cl_min → None` guard (`:437`) compares the *smallest*
+   chip over the bracket and fires.
+3. **`None` on 36 / 36 combinations at the shipped defaults, measured
+   through production code** (`lookup_best` on the embedded LUT →
+   `cutter_axial_constraints`), with `fz` at each row's band maximum.
+   Required feed as a multiple of the row's own band **maximum**:
+   7.0–18.8× at 0.15 D (3D finish), 4.1–10.9× at 0.20 D (ProjectCurve),
+   1.3–3.5× at 0.40 D (Adaptive3d). **At 0.6275 D it fires**:
+   `ball 1.0 softwood floor=0.23259 safe_band_empty=true`
+   (`amana-ball-softwood-parallel-1000-2f-zrn`, band 0.0191–0.0508, the
+   widest ball band in the LUT; 2 of 24 distinct rows clear the bar
+   there). Two of the three call sites accept an operator stepover
+   (`radial.unwrap_or(...)`), so this is reachable in production, never by
+   default.
+4. **The model omits the `arc ≥ π` branch its own comment cites.**
+   `cutter_constraints.rs:424-428` says "Same closed-form mean as
+   `flat_chip_geometry_for_radius`" but writes
+   `h_max = fz * arc.sin().abs()` with no π branch (`tool/mod.rs:125-130`
+   has one). At a full slot the canonical model reports 0.6366 × fz; the
+   copy reports ≈ 1.2e-16 × fz.
+5. **The one case it claims to report is the case it reports as
+   unmeasured.** `:433-437` says `None` reaches the consumer "via
+   SafeBandEmpty downstream"; the consumer (`:236-240`) is
+   `if let Some(floor) = …`, so `None` skips it and `safe_band_is_empty()`
+   returns `None`, not `Some(true)` — the X-VAC shape, "not measured"
+   presenting as healthy.
+
+The existing test (`cutter_constraints.rs:740-777`) accepts `Some(true)`,
+`Some(false)` and `None` alike and says in its own comment that the
+assertion that matters is that SafeBandEmpty **can** be triggered — which
+it does not assert either. This wave's
+`the_axial_floor_only_becomes_reachable_above_every_shipped_default` is the
+first test in the repository that has observed the bound produce a value.
+
+**A claim this wave falsified, and narrowed rather than loosened.** The
+first draft of both the section and the probe said the bound was
+*structurally unreachable*. The probe's first run failed on
+`ball 1.0 softwood @ 0.6275 D` with `floor=0.23259`,
+`safe_band_is_empty() == Some(true)`. The claim was narrowed to the
+measured statement ("dead at every default"), the sweep restricted to the
+three shipped defaults, and a **third, two-sided** test added pinning the
+reachability boundary itself — so a future "fix" that makes the bound
+*more* dead trips as well. Pre-fix failure text is the first capture in
+`artifacts/a9/probe.txt`.
+
+### Result — F-VALID: thirteen silent emptying paths, and an abstention gap
+
+Tier 1 (trace-wide, 1): `capture_arc_engagement` defaults **false**
+(`simulation_cut.rs:12-17`); `compute/simulate.rs:1391,1418` construct it
+false, only the viz layer force-enables it — a headless/metrics-off sim has
+a 100 %-vacuous chip population.
+Tier 2 (production, 7): non-cutting emitter; retract-feed move; degenerate
+segment (which returns `radial = 1.0` and therefore survives every air-cut
+filter before dying on the chip predicate); plunge forcing
+`axial_engagement_mm = 0.0`; `FRESH_MATERIAL_THRESHOLD_MM = 0.05`;
+`PERP_COVERAGE_GATE = 0.95`; four cutter-shape refusals.
+Tier 3 (consumption, 5): `!is_cutting`; `radial_woc_fraction < 0.02`;
+`STEADY_STATE_FEED_FRACTION = 0.95`; phantom transit; configured entry.
+
+**Bullnose is the worst refusal**: `axial_doc_mm <= corner_radius`
+(`tool/bullnose.rs:76-80`) makes a 6 mm bull with a 1 mm corner chip-blind
+for the entire finishing regime. Ball is blind at DOC ≥ its own radius;
+tapered ball carries a ±0.05 mm bare-literal dead band.
+
+**The abstention gap is the sharpest F-VALID finding.**
+`SimMetric::ChipEngagement` already exists and is wired
+(`sim_measurability.rs:87-95`, `:121-125`) — so a chip gate would get
+abstention *for free*, for **two of the thirteen paths**. The detector's
+blindness predicate is `radial_woc_fraction > 0.0 { continue; }` (`:414`),
+not "chip thickness is `None`", so a bullnose finishing below its corner
+radius reports `Measurable` while 100 % of its chip population is `None`.
+Same for a metrics-off trace, ball-past-pole and the tapered dead band.
+
+Two further X-VAC shapes: a population emptied by the transit/entry filters
+renders as `ChiploadVerdict::Within` with `approach_to_min: None` and an
+`approach_to_max` of `(0.0, 0)` with `SampleEvidence::empty()`
+(`chipload.rs:996-1019`) — a clean pass, not an abstention; and the refusal
+reason at `valid_count == 0` is a **plurality vote** among three mutually
+exclusive per-sample causes (`:906-921`), ties breaking toward
+`ArcEngagementNotCaptured`.
+
+And one hard zero dressed as a measurement: `spindle_rpm == 0` with
+`flute_count > 0` yields `chipload_mm_per_tooth = 0.0`
+(`stamping.rs:835-845`), which passes the universal guard (only `< 0.0` is
+rejected) and produces `effective_chip_thickness_mm = Some(0.0)` — counted
+in `valid_count`, admitted to `burn_samples` and to
+`is_bipolar_engagement` as a below-min reading.
+
+### Result — F-MISSAE: the ledger's 176/252 is right as a row property and wrong as a blast radius
+
+Re-derived from `data/vendor_lut/observations/`: **176 of 252** rows carry
+neither `ae_min_mm` nor `ae_max_mm` — the ledger figure is correct. But the
+classification at `chipload.rs:615-627` is worst-first, so on an exact
+match:
+
+| classification | rows | low side |
+|---|---:|---|
+| no usable chipload bounds | 17 | — |
+| `VendorLutPointPreset` | **48** | advisory |
+| `VendorLutMissingAe` | **114** | advisory |
+| `VendorLut` | **73** | hard `Exceeds(Low)` |
+
+**Retiring `VendorLutMissingAe` promotes 114 rows, not 176** — the other 62
+are already demoted by `PointPreset` or carry no usable band. And 162 / 235
+chipload-bearing rows (**69 %**) have an advisory-only burn side before any
+extrapolation is considered.
+
+The 76 rows that *do* carry an `ae` window carry repo-authored application
+rules — 19 × `"scallop driven"`, 8 × `"scallop driven; not specified by
+source"`, 8 × `"width-at-depth"`, and a tail of `"10% to 30%D"`-style
+stepover bands. **`ae` in this crate is a stepover recommendation, not a
+vendor measurement condition**, which is the same fact that killed H1-c.
+So absence of `ae` is evidence about annotation completeness, not about the
+chipload column's calibration — and that is exactly the question F-MISSAE
+asks the operator to rule.
+
+Both routes that could produce burn-side evidence are blocked: the
+retargeter matches only the two `Exceeds` arms
+(`optimize/retarget/chipload.rs:74-88`), and the axial burn floor has never
+produced a value. **Absence of burn evidence in this repo is a property of
+the instrument, not of the machining.** Six options L0–L5 are laid out in
+the deliverable §3.4; none is recommended.
+
+### Result — axial-DOC floors × the future policy
+
+Four interactions, in the deliverable §4. The two that constrain sequencing:
+(a) the DropCutter DOC-derate divergence (F-3 / C-2 / C-5) is **absorbed**
+by default-on modulation, not fixed (`ORCHESTRATION_LOG.md:2273-2277`), so a
+chip gate would sit on an absorbed error; (b) a chip observation adds a
+**second** cell-size dependence — the perp-coverage gate is explicitly a
+function of cell size (`stamping.rs:173-180`), with a downward truncation
+bias of about one sub-sample per side (`:167-169`) — on top of the band's
+already-measured 14.16 % drift (A-6 §3). Both sides of the comparison would
+move with the cell.
+
+### Verification (focused commands + exact known-red state)
+
+```text
+$ cargo test -p rs_cam_core --test chip_thickness_policy_a9 -- --nocapture
+running 4 tests
+test the_canonical_chip_model_pins_a_full_slot_where_the_floors_copy_reads_zero ... ok
+test ball_chip_geometry_refuses_past_the_pole_which_is_what_empties_the_gate ... ok
+A-9 probe: reachable @ 0.6275 D — ball 1.0 softwood floor=0.23259 safe_band_empty=true
+A-9 probe: 36 (row x shipped-default stepover) combinations exercised
+test the_axial_floor_only_becomes_reachable_above_every_shipped_default ... ok
+test axial_chipload_floor_is_none_at_every_shipped_default_stepover ... ok
+test result: ok. 4 passed; 0 failed
+```
+
+`cargo clippy -p rs_cam_core --tests -- -D warnings` — clean (run over the
+whole crate, so it also covers A-8's in-flight `optimize/` edits).
+`cargo fmt --check -p rs_cam_core` — clean. Captures in `artifacts/a9/`.
+
+Known-red state **not re-verified in this wave**: the full core suite was
+held by A-8 for the whole slot, so this wave ran only its own focused
+target. The known reds at entry (G-XFP ×3 + `wanaka_suggest_baseline`) are
+untouched by definition — **zero `src` diff**.
+
+### Checkpoint request
+
+Six questions in `CHIP_THICKNESS_POLICY.md` §5. The two that gate the rest:
+
+- **Q1** — should anything gate on arc-mean chip thickness again, and under
+  what sourcing bar? (a) nothing gates; (b) only a sourced envelope, which
+  the shipped corpus does not contain; (c) a disclosed repo-authored
+  envelope on the drill-threshold / scaling-exponent precedent.
+- **Q2** — the axial-DOC floor is dead: retire, repair, or ledger as dead?
+  Note repair is **not** a safe default — it turns an inert bound into a
+  live clamp on ball-finishing `depth_per_pass`, still comparing a chip
+  thickness against an advance band unless Q1 is answered first.
+
+Q3 (F-MISSAE, with the narrower cheap sub-question: may the retargeter act
+on a `burn_advisory` as a soft target without the verdict changing?), Q4
+(may the vestigial gate predicate be widened, and before or after Q1?),
+Q5 (is resolving the DOC-derate denominator a prerequisite?) and Q6 (does
+`ChipEngagement`'s detector need widening regardless of Q1?) can be ruled
+independently.
+
+### NOT EXERCISED / NOT MEASURED — owner and re-open condition
+
+Seven items, in the deliverable §6. The load-bearing ones:
+
+- `is_bipolar_engagement` **end-to-end on a real project** — NOT
+  EXERCISED. `pub(crate)`, unreachable from an integration test; behaviour
+  read from source and its unit tests. Owner: whoever rules Q1/Q3.
+  Re-open: any change to the predicate.
+- **How often `RefuseReason::BipolarEngagement` actually fires** — NOT
+  MEASURED. Needs an optimizer run over a project corpus; the Cargo slot
+  was held by A-8's full-core suite for most of this wave. Owner: the
+  optimizer lane (F-OPT).
+- **Whether `is_extrapolated` shifts the §3.2 census** — NOT MEASURABLE
+  statically; extrapolation is query-dependent. It can only *raise* the
+  advisory count, never lower it.
+- **GUI/MCP render of the burn advisory and the unbanded chip track** —
+  NOT EXERCISED (§0 rule 3). This document makes no claim about how either
+  looks; the advisory strings are read from `from_tool_load.rs:270-277`.
+- **Any literature search for a chip-thickness envelope** — NOT ATTEMPTED,
+  deliberately: S-2 owns the literature lane, and Q1 is the question that
+  would commission it.
+
+Next action / checkpoint request: **operator ruling on Q1–Q6**
+(`CHIP_THICKNESS_POLICY.md` §5). This wave commits no production code and
+proposes none.
