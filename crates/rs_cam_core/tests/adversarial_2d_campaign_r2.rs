@@ -713,8 +713,11 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 /// `generate_drill` polls as its first statement. Both are also in
 /// `compute::execute`'s in-crate `cancellable_families_honour_a_preset_cancel_flag`
 /// case list, which is the coverage claim `ExecutionContext`'s doc says goes
-/// stale otherwise. Registry-wide that leaves AlignmentPinDrill and Chamfer,
-/// neither of which is in this campaign's nine.
+/// stale otherwise. Registry-wide that left AlignmentPinDrill and Chamfer,
+/// neither of which is in this campaign's nine; both were closed by S-5's
+/// O-CANC item (2026-08-14), and that in-crate sentry now asserts its case
+/// list covers `OperationType::ALL` rather than carrying a hand-written
+/// count. This campaign's claim is unchanged — it is about these nine.
 ///
 /// **Rest's first statement is the cancel check, ahead of its prev-tool
 /// precondition.** That ordering is deliberate and this test depends on it:

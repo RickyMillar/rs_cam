@@ -584,10 +584,22 @@ impl From<String> for OperationError {
 /// (Checkpoint C Q3, 2026-08-05 — W4's F-4 measured those two ignoring a
 /// pre-set flag entirely: `generate_rest` built no `cancel_fn` and called the
 /// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
-/// read `ctx.cancel`). 21 of 23 registered families; the remaining two are
-/// AlignmentPinDrill and Chamfer. Adding cancel support to another family
-/// means adding it to that sentry's case list too, or the coverage claim here
-/// silently goes stale.
+/// read `ctx.cancel`), plus UnifiedFinish, plus AlignmentPinDrill and
+/// Chamfer (O-CANC, 2026-08-14 — neither was in the 2D campaign's nine,
+/// so W4's evidence never reached them).
+///
+/// **24 of 24 registered families**, and the denominator is the
+/// correction. This paragraph read "21 of 23" until 2026-08-14: the 21
+/// was the sentry's case count and the 23 was an undercount of
+/// `OperationType::ALL`, which has **24** entries (`for_each_op!`).
+/// UnifiedFinish was the family that fell through the gap — it has
+/// routed through `unified_finish_toolpath_with_cancel` all along and
+/// was simply never enumerated, so it was neither in the claimed
+/// numerator nor named as an exception. The count is no longer written
+/// by hand: `cancellable_families_honour_a_preset_cancel_flag` asserts
+/// its own case list covers `OperationType::ALL`, so a 25th family
+/// cannot join without either polling the flag or turning that sentry
+/// red.
 pub struct ExecutionContext<'a> {
     /// Write-only sink for generation-time findings (see
     /// [`GenerationFindings`]). A `Cell` rather than a return value so an
@@ -749,10 +761,21 @@ pub(crate) fn generate_drill(
 }
 
 /// Alignment-pin drill family adapter (holes from the stock snapshot).
+///
+/// Cancellable since 2026-08-14 (O-CANC). Like `generate_drill`, the
+/// cycle is short, so the poll is at the entry point rather than per
+/// hole — but it is the FIRST statement, ahead of the empty-holes
+/// refusal, for the same reason rest's is ahead of its prev-tool
+/// precondition: a pre-set flag on a pin-drill op with no pins must
+/// report "cancelled", not "No alignment pin positions defined". Pinned
+/// by `cancellable_families_honour_a_preset_cancel_flag`.
 pub(crate) fn generate_alignment_pin_drill(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
     let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
     // Stock alignment pins plus any extra targets picked from the model.
     let mut holes = cfg.holes.clone();
@@ -928,17 +951,29 @@ pub(crate) fn generate_vcarve(
 }
 
 /// Chamfer family adapter. Cut-run spans labeled "Chamfer run"; refusal
-/// for non-V-bit tools preserved verbatim.
+/// for non-V-bit tools preserved verbatim. Cancellable since 2026-08-14
+/// (O-CANC): the check is the very first statement — ahead of the
+/// polygon and V-bit preconditions, so a pre-set flag reports
+/// "cancelled" rather than whatever else happened to be wrong first —
+/// and it is repeated per polygon, which is the only unbounded axis this
+/// family has. Pinned by
+/// `cancellable_families_honour_a_preset_cancel_flag`.
 pub(crate) fn generate_chamfer(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
+    if ctx.cancel.load(Ordering::SeqCst) {
+        return Err(OperationError::Cancelled);
+    }
     let cfg = config_guard!(op, Chamfer, "generate_chamfer");
     let polys = require_polygons(ctx.polygons)?;
     let ha = vbit_half_angle(ctx.tool_cfg, "Chamfer")?;
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
     for poly in polys {
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
         let params = crate::chamfer::ChamferParams {
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
@@ -4477,7 +4512,56 @@ mod tests {
                 false,
                 true,
             ),
+            // O-CANC (2026-08-14) — the last two registry families, plus
+            // UnifiedFinish, which was cancellable all along and simply
+            // never enumerated here (see `ExecutionContext`'s doc for why
+            // that made the coverage count wrong in BOTH terms).
+            // AlignmentPinDrill and Chamfer both poll as their first
+            // statement, ahead of their own preconditions — the pin op's
+            // default config has no holes and Chamfer's tool here is a
+            // V-bit, so a check placed after those guards would report
+            // MissingGeometry / InvalidTool instead of Cancelled and this
+            // case would fail.
+            (
+                "UnifiedFinish",
+                OperationConfig::new_default(OperationType::UnifiedFinish),
+                ToolType::BallNose,
+                true,
+                false,
+            ),
+            (
+                "AlignmentPinDrill",
+                OperationConfig::new_default(OperationType::AlignmentPinDrill),
+                ToolType::EndMill,
+                false,
+                false,
+            ),
+            (
+                "Chamfer",
+                OperationConfig::new_default(OperationType::Chamfer),
+                ToolType::VBit,
+                false,
+                true,
+            ),
         ];
+
+        // The coverage claim on `ExecutionContext` is no longer a
+        // hand-written count. Assert the case list IS the registry, so a
+        // new family either polls the flag or turns this red.
+        let covered: std::collections::BTreeSet<String> =
+            cases.iter().map(|(name, ..)| (*name).to_owned()).collect();
+        let registered: std::collections::BTreeSet<String> = OperationType::ALL
+            .iter()
+            .map(|op| format!("{op:?}"))
+            .collect();
+        assert_eq!(
+            covered,
+            registered,
+            "every registered operation family must appear in this list. Missing \
+             from the list: {:?}. In the list but not registered: {:?}",
+            registered.difference(&covered).collect::<Vec<_>>(),
+            covered.difference(&registered).collect::<Vec<_>>(),
+        );
 
         for (name, op, tool_type, needs_mesh, needs_polygons) in cases {
             let (tool_def, tool_cfg) = make_tool(tool_type);
