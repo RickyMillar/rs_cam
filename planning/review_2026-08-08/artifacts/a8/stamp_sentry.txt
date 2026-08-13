@@ -1,0 +1,14 @@
+    Blocking waiting for file lock on build directory
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.89s
+     Running tests/optimizer_assumption_stamp_a8.rs (target/debug/deps/optimizer_assumption_stamp_a8-725b749bdcb50f67)
+
+running 5 tests
+test an_optimizer_result_carries_its_simulation_assumptions ... ok
+test the_stamp_names_the_lut_family_the_band_was_negotiated_under ... ok
+test the_optimizer_scores_candidates_at_a_different_operating_point_than_the_library_default ... ok
+test baseline_modulation_is_observed_positively_or_not_at_all ... ok
+test two_results_from_different_assumption_sets_carry_different_stamps ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
