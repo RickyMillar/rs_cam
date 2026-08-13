@@ -270,7 +270,9 @@ fn run_arm(session: &mut ProjectSession, feed: f64) -> Arm {
 ///
 /// The second value is the load-bearing one: it is
 /// `ChiploadMetric::bounds.max_mm_per_tooth`, i.e. the **DOC-derated** band
-/// the gate judged by — not the raw vendor row the retargeter is handed.
+/// the gate judged by. Since Checkpoint P (1a) it is also the band the
+/// retargeter aims at — the point of the ruling was to make those one number
+/// rather than two.
 fn observed_and_ceiling(v: &ChiploadVerdict) -> (f64, f64) {
     match v {
         ChiploadVerdict::Exceeds { triggering, .. } => (
@@ -295,10 +297,17 @@ struct Round {
     /// The chipload band the gate judged the BASELINE by (DOC-derated).
     gate_ceiling: f64,
     /// The matched vendor row's own maximum — diameter/hardness-scaled,
-    /// **not** DOC-derated. This is what the retargeter is handed.
+    /// **not** DOC-derated. Until Checkpoint P (1a) this is what the
+    /// retargeter was handed; it is kept so the inversion can be quoted
+    /// against it rather than reconstructed.
     row_max: f64,
-    /// `row_max / high_headroom` — what the retargeter aims the feed at.
+    /// `gate_ceiling / high_headroom` — what the retargeter aims the feed at
+    /// since P-(1a): the DOC-derated band off the verdict, with headroom.
     retarget_target: f64,
+    /// `row_max / high_headroom` — what it aimed at BEFORE P-(1a). Equal to
+    /// [`Self::retarget_target`] exactly while the derate is inactive, which
+    /// is why the control arm did not move.
+    pre_p1a_target: f64,
     baseline_feed: f64,
     retargeted_feed: f64,
     /// Advance per tooth the re-simulation actually measured at the
@@ -374,8 +383,6 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
     };
     let space = SearchSpace::build(&view, &axis_ctx, Some(&row), policy);
     let retargeter = ChiploadFeedRetargeter {
-        lut_chipload_min: row.chip_load_min_mm.unwrap_or(f64::NAN),
-        lut_chipload_max: row.chip_load_max_mm.unwrap_or(f64::NAN),
         low_headroom: policy.retarget.chipload_low_headroom.value,
         high_headroom: policy.retarget.chipload_high_headroom.value,
         plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,
@@ -392,7 +399,11 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
     let retargeted_feed = feed_patch.value;
 
     let row_max = row.chip_load_max_mm.expect("matched row publishes a max");
-    let retarget_target = row_max / policy.retarget.chipload_high_headroom.value;
+    let headroom = policy.retarget.chipload_high_headroom.value;
+    // Checkpoint P (1a): the retargeter aims at the band the GATE used.
+    let retarget_target = ceiling_a / headroom;
+    // What it aimed at before P-(1a), retained so the inversion is quotable.
+    let pre_p1a_target = row_max / headroom;
 
     println!(
         "row {} (d={:.3} mm, Ø×{:.3}, Janka×{:.3}, extrapolated {})",
@@ -408,10 +419,11 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
         ceiling_a / row_max
     );
     println!(
-        "retarget target {retarget_target:.5} = row max / headroom {:.2}    \
-         target / gate ceiling = {:.4}",
-        policy.retarget.chipload_high_headroom.value,
-        retarget_target / ceiling_a
+        "retarget target {retarget_target:.5} = gate ceiling / headroom \
+         {headroom:.2}    target / gate ceiling = {:.4}   \
+         (pre-P-(1a) target was {pre_p1a_target:.5} = {:.4}x the ceiling)",
+        retarget_target / ceiling_a,
+        pre_p1a_target / ceiling_a
     );
     println!(
         "retarget feed   {retargeted_feed:>9.1}  ({:.4}x baseline)   rationale: {}",
@@ -478,6 +490,7 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
         gate_ceiling: ceiling_a,
         row_max,
         retarget_target,
+        pre_p1a_target,
         baseline_feed: baseline.feed,
         retargeted_feed,
         reconciled_observed: obs_b,
@@ -500,9 +513,31 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
 /// retarget did not reconcile" could be any of a dozen things — a clamp, a
 /// stale trace, a population artifact. With it, the only difference between
 /// the two rounds is the DOC derate.
+///
+/// **Checkpoint P (1a) did not move this arm**, and that is load-bearing: at
+/// `DOC/Ø < 1` the raw row and the derated band are the same number, so the
+/// old target and the new one are bit-identical. Asserted below rather than
+/// argued, so the deep arm's inversion is attributable to the derate alone.
 #[test]
 fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
     let shallow = measure_retarget_round(SHALLOW_DEPTH_MM);
+
+    // P-(1a) control: with the derate inactive the two bands coincide, so the
+    // change of band source is a no-op here. Feed measured unchanged at
+    // 1708.1 mm/min across the ruling.
+    assert!(
+        (shallow.retarget_target - shallow.pre_p1a_target).abs() < 1e-12,
+        "CONTROL: P-(1a) must be a no-op below the knee; new target {:.6} vs \
+         pre-P-(1a) {:.6}",
+        shallow.retarget_target,
+        shallow.pre_p1a_target
+    );
+    assert!(
+        (shallow.retargeted_feed - 1708.1).abs() < 1.0,
+        "CONTROL: the control arm's feed is unchanged across P-(1a) \
+         (A-8 measured 1708.1 mm/min); got {:.1}",
+        shallow.retargeted_feed
+    );
 
     assert!(
         shallow.doc_over_diameter < 1.0,
@@ -527,30 +562,46 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
     );
 }
 
-/// **The finding (F-OPT).** A real retarget outcome, measured end to end:
-/// it consumes a full generate + simulate and moves the verdict nowhere.
+/// **The finding arm (F-OPT), INVERTED by Checkpoint P (1a) on 2026-08-14.**
 ///
-/// Mechanism: `run_retarget_stage` hands `ChiploadFeedRetargeter` the
-/// **raw** matched row (`MatchedRow::chip_load_max_mm` — diameter- and
-/// hardness-scaled, *not* DOC-derated) while the chipload gate compares
-/// against `geometry::derate_chipload_bounds(...)` of that same row at the
-/// measured peak axial DOC. Past `DOC/Ø ≈ 1.67` the retargeter's target
-/// `row_max / 1.2` is unreachable — it sits above the gate's own ceiling —
-/// and the derated bar bottoms out at 0.50 × row_max from `DOC/Ø ≥ 3`.
+/// # What this test asserted before, and what it asserts now
 ///
-/// The gate's own ceiling is available to the retargeter: it is
-/// `ChiploadMetric::bounds.max_mm_per_tooth` on the very verdict it is
-/// handed. It reads the injected row instead.
+/// A-8 wrote this arm to pin the *defect*, and said in its own words that
+/// when the ruling landed it must be inverted deliberately with the old and
+/// new numbers recorded. This is that inversion. Measured on this fixture
+/// (Ø6.35 flat 2F, hard maple, 20 mm single pass, `DOC/Ø = 3.15`, cell
+/// 0.5 mm, row `amana-flat-hardwood-pocket-6000-2f`):
 ///
-/// **This test pins the DEFECT, not the desired behaviour.** A-8 did not
-/// fix it: re-pointing the retargeter at the derated band moves every
-/// optimizer outcome on every deep pass and is a Checkpoint request
-/// (`planning/review_2026-08-08/OPTIMIZER_ASSUMPTIONS.md` §6, request 1).
-/// When that is ruled and executed, this test fails, and it must be
-/// inverted deliberately with the old/new numbers recorded — not deleted,
-/// and not re-baselined.
+/// | quantity | before P-(1a) | after P-(1a) |
+/// |---|---|---|
+/// | retarget target | 0.04745 (= row max / 1.2) | 0.02372 (= gate ceiling / 1.2) |
+/// | target ÷ gate ceiling | **1.6667** (above the bar) | **0.8333** (below the bar) |
+/// | retargeted feed | 1708.1 mm/min | 854.1 mm/min (0.5×) |
+/// | re-simulated verdict | `Exceeds(High)` | `Within` |
+///
+/// The old assertion was `deep.reconciled_is_exceeds`; it is now
+/// `!deep.reconciled_is_exceeds`. Nothing else about the fixture moved — same
+/// tool, same stock, same cell, same matched row, same gate population.
+///
+/// # Mechanism, for the record
+///
+/// `run_retarget_stage` used to hand `ChiploadFeedRetargeter` the **raw**
+/// matched row (diameter- and hardness-scaled, *not* DOC-derated) while the
+/// chipload gate compares against `geometry::derate_chipload_bounds(...)` of
+/// that same row at the measured peak axial DOC. Past `DOC/Ø ≈ 1.67` the
+/// target `row_max / 1.2` sat above the gate's own ceiling, and the derated
+/// bar bottoms out at `0.50 × row_max` from `DOC/Ø ≥ 3` — so a retarget that
+/// landed perfectly on its own target still read `Exceeds(High)`, burning a
+/// full generate + simulate on a guaranteed-rejected candidate.
+///
+/// The retargeter now reads `ChiploadMetric::bounds` off the verdict it is
+/// handed, so there is no second band to diverge from.
+///
+/// **The control arm is what makes this attributable**: it did not move (the
+/// derate is inactive there, so the two bands were already the same number),
+/// which rules out a clamp, a stale trace or a population artifact.
 #[test]
-fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
+fn a_retarget_reconciles_once_it_reads_the_derated_band() {
     let deep = measure_retarget_round(DEEP_DEPTH_MM);
 
     assert!(
@@ -559,19 +610,31 @@ fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
         deep.doc_over_diameter
     );
 
-    // The two bars, and the gap between them.
+    // The derate is still there — P-(1a) did not touch it. What changed is
+    // which of the two bands the retargeter aims at.
     let derate = deep.gate_ceiling / deep.row_max;
     assert!(
         (derate - 0.5).abs() < 1e-9,
         "past DOC/D = 3 the derate is 0.50; measured {derate:.6}"
     );
+
+    // OLD (pre-P-(1a)): this ratio was 1.6667 — the target sat ABOVE the bar.
+    let pre_over_ceiling = deep.pre_p1a_target / deep.gate_ceiling;
+    assert!(
+        (pre_over_ceiling - 5.0 / 3.0).abs() < 1e-9,
+        "the pre-P-(1a) target must still reproduce at 1.6667x the bar, or \
+         this inversion is not comparable to what A-8 measured; got \
+         {pre_over_ceiling:.6}"
+    );
+
+    // NEW: the target is the gate's own ceiling with headroom, so it sits
+    // BELOW the bar by exactly 1/1.2 whatever the derate does.
     let target_over_ceiling = deep.retarget_target / deep.gate_ceiling;
     assert!(
-        (target_over_ceiling - 5.0 / 3.0).abs() < 1e-9,
-        "PRE-FIX REPRODUCTION: the retargeter aims at row_max/1.2 while the \
-         gate judges against 0.50 x row_max, i.e. 1.6667x the bar. Measured \
-         {target_over_ceiling:.6} (target {:.6}, ceiling {:.6}, row {} \
-         Ox{:.3} Jankax{:.3} extrapolated {})",
+        (target_over_ceiling - 1.0 / 1.2).abs() < 1e-9,
+        "P-(1a): the retargeter aims at gate_ceiling/1.2, i.e. 0.8333x the \
+         bar, at every depth. Measured {target_over_ceiling:.6} (target \
+         {:.6}, ceiling {:.6}, row {} Ox{:.3} Jankax{:.3} extrapolated {})",
         deep.retarget_target,
         deep.gate_ceiling,
         deep.row_id,
@@ -580,11 +643,25 @@ fn a_retarget_cannot_reconcile_once_the_doc_derate_engages() {
         deep.extrapolated
     );
 
+    // The feed drops by exactly the derate. The retarget multiplier is
+    // `target / observed_peak` and only the numerator moved, so the feed this
+    // arm emits is `derate` times the one A-8 measured: 1708.1 -> 854.1.
+    // This is the "retargeted feeds drop up to 2x" the ruling anticipated,
+    // measured rather than asserted.
+    let pre_p1a_feed = deep.retargeted_feed / derate;
     assert!(
-        deep.reconciled_is_exceeds,
-        "PRE-FIX REPRODUCTION: the retarget lands exactly on its own target \
-         and is STILL Exceeds at the gate. baseline feed {:.1} -> retargeted \
-         {:.1}, observed {:.5}, ceiling {:.5}",
+        (pre_p1a_feed - 1708.1).abs() < 1.0,
+        "the reconstructed pre-P-(1a) feed must match A-8's measured 1708.1 \
+         mm/min or the arms are not comparable; got {pre_p1a_feed:.1} from \
+         retargeted {:.1} / derate {derate:.4}",
+        deep.retargeted_feed
+    );
+
+    assert!(
+        !deep.reconciled_is_exceeds,
+        "P-(1a) INVERSION: the retarget must now reconcile to Within. \
+         baseline feed {:.1} -> retargeted {:.1}, observed {:.5}, ceiling \
+         {:.5} (was Exceeds at 1708.1 mm/min before P-(1a))",
         deep.baseline_feed, deep.retargeted_feed, deep.reconciled_observed, deep.gate_ceiling
     );
 }

@@ -525,13 +525,17 @@ fn run_retarget_strategy(
     };
     let space = space::SearchSpace::build(&view, &axis_ctx, matched_lut_row, policy);
 
+    // Checkpoint P (1a): the row is consulted only to decide whether a
+    // chipload retarget is possible at all (a row publishing neither bound
+    // cannot produce one). The *band* the retargeter aims at is no longer
+    // injected here — it is read off the verdict's `ChiploadMetric::bounds`,
+    // which is DOC-derated, so the retargeter and the gate can no longer hold
+    // two different numbers. See `retarget::chipload`'s module docs.
     let chipload = matched_lut_row.and_then(|row| {
         if row.chip_load_min_mm.is_none() && row.chip_load_max_mm.is_none() {
             return None;
         }
         Some(retarget::chipload::ChiploadFeedRetargeter {
-            lut_chipload_min: row.chip_load_min_mm.unwrap_or(f64::NAN),
-            lut_chipload_max: row.chip_load_max_mm.unwrap_or(f64::NAN),
             low_headroom: policy.retarget.chipload_low_headroom.value,
             high_headroom: policy.retarget.chipload_high_headroom.value,
             plunge_tracking_threshold: policy.feed.plunge_tracking_threshold_fraction.value,

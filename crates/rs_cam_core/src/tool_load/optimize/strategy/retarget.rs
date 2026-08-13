@@ -169,13 +169,17 @@ mod tests {
         }
     }
 
-    fn chip_bounds() -> crate::tool_load::verdict::ChipBounds {
+    fn chip_bounds_of(min: Option<f64>, max: f64) -> crate::tool_load::verdict::ChipBounds {
         use crate::tool_load::verdict::{ChipBounds, ChipBoundsSource};
         ChipBounds {
-            min_mm_per_tooth: Some(0.05),
-            max_mm_per_tooth: 0.10,
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
             source: ChipBoundsSource::VendorLut,
         }
+    }
+
+    fn chip_bounds() -> crate::tool_load::verdict::ChipBounds {
+        chip_bounds_of(Some(0.05), 0.10)
     }
 
     fn within(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
@@ -197,7 +201,10 @@ mod tests {
         }
     }
 
-    fn exceeds_burn(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+    fn exceeds_burn(
+        peak: f64,
+        bounds: crate::tool_load::verdict::ChipBounds,
+    ) -> crate::tool_load::verdict::ChiploadVerdict {
         use crate::tool_load::verdict::{
             ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
         };
@@ -207,13 +214,16 @@ mod tests {
                 observed_mm_per_tooth: peak,
                 statistic: ChiploadStatistic::MedianLow,
                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
-                bounds: chip_bounds(),
+                bounds,
             },
             confidence: Confidence::Validated,
         }
     }
 
-    fn exceeds_breakage(peak: f64) -> crate::tool_load::verdict::ChiploadVerdict {
+    fn exceeds_breakage(
+        peak: f64,
+        bounds: crate::tool_load::verdict::ChipBounds,
+    ) -> crate::tool_load::verdict::ChiploadVerdict {
         use crate::tool_load::verdict::{
             ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, SampleEvidence,
         };
@@ -223,7 +233,7 @@ mod tests {
                 observed_mm_per_tooth: peak,
                 statistic: ChiploadStatistic::PeakHigh,
                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
-                bounds: chip_bounds(),
+                bounds,
             },
             confidence: Confidence::Validated,
         }
@@ -277,14 +287,12 @@ mod tests {
         }
     }
 
-    fn make_chipload(
-        env: &Env,
-        lut_min: Option<f64>,
-        lut_max: Option<f64>,
-    ) -> ChiploadFeedRetargeter {
+    /// **Checkpoint P (1a).** The retargeter no longer carries a band, so
+    /// this helper no longer takes one — the band a test means is stated on
+    /// the *verdict* it builds (`chip_bounds_of`), which is the only place
+    /// the retargeter now reads it from.
+    fn make_chipload(env: &Env) -> ChiploadFeedRetargeter {
         ChiploadFeedRetargeter {
-            lut_chipload_min: lut_min.unwrap_or(f64::NAN),
-            lut_chipload_max: lut_max.unwrap_or(f64::NAN),
             low_headroom: env.policy.retarget.chipload_low_headroom.value,
             high_headroom: env.policy.retarget.chipload_high_headroom.value,
             plunge_tracking_threshold: env.policy.feed.plunge_tracking_threshold_fraction.value,
@@ -310,7 +318,7 @@ mod tests {
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -335,7 +343,7 @@ mod tests {
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -343,7 +351,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.025),
+            chipload: exceeds_burn(0.025, chip_bounds()),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
@@ -362,7 +370,7 @@ mod tests {
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -370,7 +378,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.025),
+            chipload: exceeds_burn(0.025, chip_bounds()),
             power: exceeds_power(1.5),
             deflection: within_deflection(0.020),
             drill_gates: None,
@@ -390,7 +398,7 @@ mod tests {
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, Some(0.05), Some(0.10))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -398,7 +406,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.025),
+            chipload: exceeds_burn(0.025, chip_bounds()),
             power: exceeds_power(1.5),
             deflection: exceeds_deflection(0.32),
             drill_gates: None,
@@ -429,7 +437,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.025),
+            chipload: exceeds_burn(0.025, chip_bounds()),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
@@ -439,16 +447,24 @@ mod tests {
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
 
+    /// **Checkpoint P (1a) re-pin — same behaviour, honest premise.**
+    ///
+    /// Named `missing_lut_min_skips_burnrisk_only` until P-(1a). It used to
+    /// state the absent floor on the *retargeter* while the verdict it fed in
+    /// carried a floor of 0.05 — the two-instrument divergence, inside the
+    /// fixture that was supposed to prove the behaviour. The band now lives in
+    /// one place, so the half band is stated where the gate would put it: on
+    /// the verdict.
     #[test]
-    fn missing_lut_min_skips_burnrisk_only() {
+    fn a_half_band_verdict_skips_burnrisk_only() {
         // Row with only `chip_load_max_mm` set: BreakageRisk verdicts
-        // can retarget; BurnRisk verdicts cannot (NaN target).
+        // can retarget; BurnRisk verdicts cannot (no floor to aim at).
         let env = Env::new(3000.0);
         let view = env.view();
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, None, Some(0.10))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -456,7 +472,7 @@ mod tests {
         };
         let burn = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.025),
+            chipload: exceeds_burn(0.025, chip_bounds_of(None, 0.10)),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
@@ -467,7 +483,7 @@ mod tests {
 
         let breakage = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_breakage(0.20),
+            chipload: exceeds_breakage(0.20, chip_bounds_of(None, 0.10)),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,
@@ -490,7 +506,7 @@ mod tests {
         let ctx = env.ctx();
         let space = env.space(&view, &ctx);
         let strat = PerGateRetargetStrategy {
-            chipload: Some(make_chipload(&env, Some(0.038), Some(0.07))),
+            chipload: Some(make_chipload(&env)),
             power: make_power(&env, 1.0),
             deflection: make_deflection(&env),
             space: &space,
@@ -498,7 +514,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
-            chipload: exceeds_burn(0.0253),
+            chipload: exceeds_burn(0.0253, chip_bounds_of(Some(0.038), 0.07)),
             power: within_power(0.4),
             deflection: within_deflection(0.020),
             drill_gates: None,

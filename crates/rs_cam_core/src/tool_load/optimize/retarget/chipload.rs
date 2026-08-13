@@ -18,6 +18,27 @@
 //!
 //! See `planning/STEP5_PREP_RETARGETERS.md` §1 for the design rationale and
 //! the wanaka TP 4 acceptance trace.
+//!
+//! # The band comes off the verdict — Checkpoint P (1a), 2026-08-14
+//!
+//! The retargeter used to be handed the **raw** matched LUT row at
+//! construction time (`MatchedRow::chip_load_{min,max}_mm` — diameter- and
+//! hardness-scaled, but *not* DOC-derated) while the chipload gate judges
+//! against `geometry::derate_chipload_bounds(...)` of that same row at the
+//! measured peak axial DOC. Two instruments, one comparison.
+//!
+//! A-8 measured the consequence end to end
+//! (`planning/review_2026-08-08/OPTIMIZER_ASSUMPTIONS.md` §2): the retargeter
+//! emitted the **identical** feed for a 3 mm and a 20 mm single pass while the
+//! gate's ceiling halved between them, so past `DOC/Ø ≈ 1.67` it was aiming at
+//! a number above the bar it would be judged by and the retargeted candidate
+//! came back `Exceeds(High)` — a guaranteed-rejected candidate costing a full
+//! generate + simulate.
+//!
+//! The band the gate used is already in the retargeter's hand: it is
+//! `ChiploadMetric::bounds` on the very `ChiploadVerdict` it is passed. It
+//! reads that now, and nothing else. There is deliberately **no second band**
+//! on this struct for the two to drift apart again.
 
 use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
 use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
@@ -37,19 +58,17 @@ const DRIVING_AXES: &[SearchAxis] = &[SearchAxis::FeedRate];
 
 /// Sample-driven feed retargeter for the chipload gate.
 ///
-/// LUT bounds are injected at construction time (the orchestrator at Step 6
-/// will plumb them through from the matched LUT row). Headroom factors and the
-/// plunge-tracking threshold come from `policy`.
+/// **Carries no band.** Checkpoint P (1a): the band is read off the
+/// `ChiploadVerdict` handed to [`Retargeter::target`] — `ChiploadMetric
+/// ::bounds`, the DOC-derated band the gate actually judged by. Only the
+/// policy dials live here.
 pub struct ChiploadFeedRetargeter {
-    /// Vendor LUT row's chipload floor (mm/tooth).
-    pub lut_chipload_min: f64,
-    /// Vendor LUT row's chipload ceiling (mm/tooth).
-    pub lut_chipload_max: f64,
-    /// Multiplier (>= 1.0) applied to LUT min for BurnRisk targets so we don't
-    /// land exactly on the boundary. From `policy.retarget.chipload_low_headroom`.
+    /// Multiplier (>= 1.0) applied to the band's floor for BurnRisk targets so
+    /// we don't land exactly on the boundary. From
+    /// `policy.retarget.chipload_low_headroom`.
     pub low_headroom: f64,
-    /// Divisor (>= 1.0) applied to LUT max for BreakageRisk targets so we
-    /// don't land exactly on the boundary. From
+    /// Divisor (>= 1.0) applied to the band's ceiling for BreakageRisk targets
+    /// so we don't land exactly on the boundary. From
     /// `policy.retarget.chipload_high_headroom`.
     pub high_headroom: f64,
     /// |Δfeed/baseline| threshold above which plunge must track feed. From
@@ -73,17 +92,29 @@ impl Retargeter for ChiploadFeedRetargeter {
     ) -> Option<RetargetSolution> {
         // Only fires on the chipload-Exceeds variants. Within and
         // Unmodeled return None.
-        let (peak, side) = match verdict {
+        //
+        // Checkpoint P (1a): `bounds` travels with the peak. It is the
+        // DOC-derated band this very verdict was decided against, so the
+        // target below is aimed at the bar the re-simulation will judge it by.
+        let (peak, side, bounds) = match verdict {
             ChiploadVerdict::Exceeds {
                 side: ChipSide::Low,
                 triggering,
                 ..
-            } => (triggering.observed_mm_per_tooth, Side::Burn),
+            } => (
+                triggering.observed_mm_per_tooth,
+                Side::Burn,
+                &triggering.bounds,
+            ),
             ChiploadVerdict::Exceeds {
                 side: ChipSide::High,
                 triggering,
                 ..
-            } => (triggering.observed_mm_per_tooth, Side::Breakage),
+            } => (
+                triggering.observed_mm_per_tooth,
+                Side::Breakage,
+                &triggering.bounds,
+            ),
             _ => return None,
         };
 
@@ -95,14 +126,16 @@ impl Retargeter for ChiploadFeedRetargeter {
         }
 
         // Target chipload with headroom margin: pull the peak away from the
-        // boundary by `low_headroom` (above LUT min) or by `high_headroom`
-        // (below LUT max).
+        // boundary by `low_headroom` (above the band's floor) or by
+        // `high_headroom` (below the band's ceiling).
+        //
+        // The floor is `Option` because a row may publish no minimum
+        // (`ChiploadBoundPolicy::AllowHalfBand`). `None` is *unmodelled*, not
+        // zero — refuse the burn retarget rather than invent a floor.
         let target_chipload = match side {
-            Side::Burn => self.lut_chipload_min * self.low_headroom,
-            Side::Breakage => self.lut_chipload_max / self.high_headroom,
+            Side::Burn => bounds.min_mm_per_tooth? * self.low_headroom,
+            Side::Breakage => bounds.max_mm_per_tooth / self.high_headroom,
         };
-        // The bound for the matched side may be missing (NaN sentinel from the
-        // strategy when the LUT row only carries the opposite bound).
         if !target_chipload.is_finite() || target_chipload <= 0.0 {
             return None;
         }
@@ -187,8 +220,9 @@ impl Retargeter for ChiploadFeedRetargeter {
         Some(RetargetSolution {
             patches,
             rationale: format!(
-                "{side:?}: scale feed by {multiplier:.2}× to lift sample peak \
-                 from {peak:.4} toward LUT × headroom"
+                "{side:?}: scale feed by {multiplier:.2}× to move sample peak \
+                 from {peak:.4} to {target_chipload:.4} — the gate's own \
+                 DOC-derated band with headroom"
             ),
         })
     }
@@ -283,37 +317,55 @@ mod tests {
         }
     }
 
-    fn chip_bounds() -> ChipBounds {
+    fn chip_bounds_of(min: Option<f64>, max: f64) -> ChipBounds {
         ChipBounds {
-            min_mm_per_tooth: Some(0.05),
-            max_mm_per_tooth: 0.10,
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
             source: ChipBoundsSource::VendorLut,
         }
     }
 
-    fn burn_verdict(peak: f64) -> ChiploadVerdict {
+    fn chip_bounds() -> ChipBounds {
+        chip_bounds_of(Some(0.05), 0.10)
+    }
+
+    /// **Checkpoint P (1a) re-pin.** These builders now take the band
+    /// explicitly. Before P-(1a) the band lived on the retargeter and the
+    /// verdict carried its own, so a fixture could — and several did — state
+    /// two different bands for one recipe. That divergence *was* the defect
+    /// (`OPTIMIZER_ASSUMPTIONS.md` §2.5); a fixture is no longer able to
+    /// express it.
+    fn burn_verdict(peak: f64, bounds: ChipBounds) -> ChiploadVerdict {
         ChiploadVerdict::Exceeds {
             side: ChipSide::Low,
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: peak,
                 statistic: ChiploadStatistic::MedianLow,
                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::MedianLow),
-                bounds: chip_bounds(),
+                bounds,
             },
             confidence: Confidence::Validated,
         }
     }
 
-    fn breakage_verdict(peak: f64) -> ChiploadVerdict {
+    fn breakage_verdict(peak: f64, bounds: ChipBounds) -> ChiploadVerdict {
         ChiploadVerdict::Exceeds {
             side: ChipSide::High,
             triggering: ChiploadMetric {
                 observed_mm_per_tooth: peak,
                 statistic: ChiploadStatistic::PeakHigh,
                 evidence: SampleEvidence::at_with_stat(0, ChiploadStatistic::PeakHigh),
-                bounds: chip_bounds(),
+                bounds,
             },
             confidence: Confidence::Validated,
+        }
+    }
+
+    fn retargeter(low_headroom: f64, high_headroom: f64) -> ChiploadFeedRetargeter {
+        ChiploadFeedRetargeter {
+            low_headroom,
+            high_headroom,
+            plunge_tracking_threshold: 0.10,
         }
     }
 
@@ -325,15 +377,9 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let solution = r
-            .target(&burn_verdict(0.025), &space, &view, &ctx)
+            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
             .expect("BurnRisk should produce a solution");
         let primary = solution
             .patches
@@ -357,15 +403,9 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let solution = r
-            .target(&breakage_verdict(0.20), &space, &view, &ctx)
+            .target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx)
             .expect("BreakageRisk should produce a solution");
         let primary = solution
             .patches
@@ -386,15 +426,9 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let solution = r
-            .target(&burn_verdict(0.025), &space, &view, &ctx)
+            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
             .expect("solution");
         assert_eq!(
             solution.patches.len(),
@@ -417,15 +451,9 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let solution = r
-            .target(&burn_verdict(0.048), &space, &view, &ctx)
+            .target(&burn_verdict(0.048, chip_bounds()), &space, &view, &ctx)
             .expect("solution");
         assert_eq!(
             solution.patches.len(),
@@ -445,13 +473,7 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let within = ChiploadVerdict::Within {
             approach_to_min: None,
             approach_to_max: ChiploadMetric {
@@ -481,15 +503,9 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let solution = r
-            .target(&burn_verdict(0.025), &space, &view, &ctx)
+            .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
             .expect("solution");
         let primary = solution
             .patches
@@ -516,15 +532,14 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.038,
-            lut_chipload_max: 0.07,
-            low_headroom: 1.20,
-            high_headroom: 1.20,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.20, 1.20);
         let solution = r
-            .target(&burn_verdict(0.0253), &space, &view, &ctx)
+            .target(
+                &burn_verdict(0.0253, chip_bounds_of(Some(0.038), 0.07)),
+                &space,
+                &view,
+                &ctx,
+            )
             .expect("solution");
         let primary = solution
             .patches
@@ -568,15 +583,14 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.038,
-            lut_chipload_max: 0.07,
-            low_headroom: 1.20,
-            high_headroom: 1.20,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.20, 1.20);
         let solution = r
-            .target(&burn_verdict(0.0253), &space, &view, &ctx)
+            .target(
+                &burn_verdict(0.0253, chip_bounds_of(Some(0.038), 0.07)),
+                &space,
+                &view,
+                &ctx,
+            )
             .expect("solution");
         let rpm_patch = solution
             .patches
@@ -617,13 +631,7 @@ mod tests {
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
-        let r = ChiploadFeedRetargeter {
-            lut_chipload_min: 0.05,
-            lut_chipload_max: 0.10,
-            low_headroom: 1.0,
-            high_headroom: 1.0,
-            plunge_tracking_threshold: 0.10,
-        };
+        let r = retargeter(1.0, 1.0);
         let breakage = ChiploadVerdict::Exceeds {
             side: ChipSide::High,
             triggering: ChiploadMetric {
@@ -642,6 +650,73 @@ mod tests {
                 .any(|p| matches!(p.axis, SearchAxis::SpindleRpm)),
             "breakage retarget must not emit an RPM patch, got {:?}",
             solution.patches.iter().map(|p| p.axis).collect::<Vec<_>>()
+        );
+    }
+
+    /// **Checkpoint P (1a) — the property, stated as a unit.**
+    ///
+    /// One retargeter, two verdicts whose bands differ by exactly the DOC
+    /// derate (`doc_derating_scale(3.15) = 0.50`), same observed peak. The
+    /// targets must differ by the same 0.50.
+    ///
+    /// Before P-(1a) this was impossible to express: the band lived on the
+    /// retargeter, so one retargeter had exactly one target regardless of what
+    /// the gate measured. That is the whole of A-8 §2.4's "read the retarget
+    /// feed column — it is 1708.1 on both arms".
+    #[test]
+    fn the_band_the_retargeter_aims_at_comes_from_the_verdict() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+
+        // Raw row band, as the gate would report it at DOC/Ø <= 1.
+        let raw_band = breakage_verdict(0.20, chip_bounds_of(Some(0.032), 0.055));
+        // The same row at DOC/Ø = 3.15: `derate_chipload_bounds` scales BOTH
+        // bounds by 0.50, which is why the band's shape is preserved.
+        let derated_band = breakage_verdict(0.20, chip_bounds_of(Some(0.016), 0.0275));
+
+        let feed_of = |v: &ChiploadVerdict| {
+            r.target(v, &space, &view, &ctx)
+                .expect("breakage verdict must retarget")
+                .patches
+                .iter()
+                .find(|p| matches!(p.source, PatchSource::Primary))
+                .expect("primary patch")
+                .value
+        };
+        let shallow = feed_of(&raw_band);
+        let deep = feed_of(&derated_band);
+        assert!(
+            (deep / shallow - 0.5).abs() < 1e-9,
+            "the retargeted feed must track the band the GATE used: shallow \
+             {shallow:.4} vs deep {deep:.4} (ratio {:.6}, expected 0.5)",
+            deep / shallow
+        );
+    }
+
+    /// A row that publishes no floor gives a half-band verdict
+    /// (`ChiploadBoundPolicy::AllowHalfBand`). Burn cannot be modelled
+    /// against a band with no floor, so the retarget refuses rather than
+    /// inventing one — and the high side is unaffected.
+    #[test]
+    fn a_half_band_verdict_refuses_the_burn_retarget_only() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+        let half = chip_bounds_of(None, 0.10);
+        assert!(
+            r.target(&burn_verdict(0.025, half.clone()), &space, &view, &ctx)
+                .is_none(),
+            "no published floor means burn is unmodelled, not zero"
+        );
+        assert!(
+            r.target(&breakage_verdict(0.20, half), &space, &view, &ctx)
+                .is_some(),
+            "the ceiling is still actionable on a half band"
         );
     }
 }
