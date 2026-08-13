@@ -164,9 +164,15 @@ fn deflection_at_min_force_corner(
         .or_else(|| baseline_op.stepover())
         .unwrap_or_else(|| ctx.tool.radius() * 2.0);
 
-    // Minimum-force corner: lowest feed and highest RPM both minimise feed
-    // per tooth (chip thickness), so the feed-aware force is smallest here.
-    // If even this corner exceeds the limit, no operating point is safe.
+    // Minimum-force corner: lowest feed and highest RPM both minimise the
+    // ADVANCE PER TOOTH, so the feed-aware force is smallest here. If even
+    // this corner exceeds the limit, no operating point is safe.
+    //
+    // A-8 doc correction (2026-08-13): this comment used to gloss the
+    // quantity as "(chip thickness)". It is not one — the 2026-08-06 unit
+    // deletion separated the two, and the arithmetic three lines below
+    // (`min_feed_mm_min / (max_rpm * flutes)`) has always been an advance
+    // per tooth. The code was right; the gloss was the retired vocabulary.
     let min_feed_mm_min = space
         .axis(SearchAxis::FeedRate)
         .map(|b| b.hard.lo)

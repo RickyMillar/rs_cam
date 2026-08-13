@@ -112,8 +112,23 @@ pub(crate) fn diameter_for_lut_lookup(
 /// material / operation combination. Mirrors `suggest::evaluate`'s
 /// LUT plumbing so the optimizer reads from the same calibration data
 /// the gate does. Returns `None` for ProjectCurve+VBit/BullNose etc.
-/// where `routed_lookup_family` has no target, or for `Custom`
-/// material.
+/// where [`crate::feeds::vendor_normalize::lut_query_for`] refuses, or
+/// for `Custom` material.
+///
+/// A-8 doc correction (2026-08-13): this named `routed_lookup_family`,
+/// which Checkpoint K (a4) replaced with the shared `lut_query_for` so
+/// Suggest and the gate could not route differently. The routing is
+/// reached **transitively** here, through `matched_chip_envelope` — the
+/// optimizer never names it, which is why
+/// [`super::outcome::LutQueryStamp`] now records which family the band
+/// was actually negotiated under.
+///
+/// **The row this returns is the RAW (diameter/hardness-scaled) vendor
+/// row.** It is *not* the band the chipload gate compares against: the
+/// gate additionally applies `geometry::derate_chipload_bounds` with the
+/// measured peak axial DOC. Callers that need the bar a verdict was
+/// judged by must read `ChiploadMetric::bounds` off the verdict, not
+/// these fields. See `OPTIMIZER_ASSUMPTIONS.md` §3.
 pub(crate) fn find_matched_lut_row(
     tool: &crate::tool::ToolDefinition,
     material: &crate::material::Material,
