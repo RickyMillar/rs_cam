@@ -1,0 +1,92 @@
+
+running 1 test
+··· running pocket × slot-under
+| pocket | slot-under | 0.002 s | ok | 200 | 152 | 1711.5 | 16 | 2088 kB |
+··· running adaptive × slot-under
+| adaptive | slot-under | 0.103 s | ok | 157 | 136 | 656.5 | 7 | 244 kB |
+··· running profile × slot-under
+| profile | slot-under | 0.000 s | ok | 26 | 23 | 422.1 | 1 | 0 kB |
+··· running trace × slot-under
+| trace | slot-under | 0.000 s | ok | 20 | 16 | 383.4 | 1 | 0 kB |
+··· running zigzag × slot-under
+| zigzag | slot-under | 0.001 s | ok | 210 | 120 | 2165.6 | 30 | 80 kB |
+··· running vcarve × slot-under
+| vcarve | slot-under | 0.226 s | ok | 26323 | 26230 | 2489.9 | 31 | 6404 kB |
+··· running inlay × slot-under
+| inlay | slot-under | 0.329 s | ok | 38036 | 37693 | 6980.9 | 94 | 5180 kB |
+··· running drill × slot-under
+| drill | slot-under | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × slot-under
+| rest | slot-under | 0.021 s | ok | 364 | 208 | 2378.4 | 52 | 0 kB |
+··· running pocket × slot-exact
+| pocket | slot-exact | 0.002 s | ok | 202 | 157 | 1742.8 | 15 | 0 kB |
+··· running adaptive × slot-exact
+| adaptive | slot-exact | 0.049 s | ok | 261 | 237 | 1080.7 | 8 | 0 kB |
+··· running profile × slot-exact
+| profile | slot-exact | 0.000 s | ok | 26 | 23 | 416.1 | 1 | 0 kB |
+··· running trace × slot-exact
+| trace | slot-exact | 0.000 s | ok | 20 | 16 | 377.4 | 1 | 0 kB |
+··· running zigzag × slot-exact
+| zigzag | slot-exact | 0.001 s | ok | 210 | 120 | 2172.9 | 30 | 0 kB |
+··· running vcarve × slot-exact
+| vcarve | slot-exact | 0.221 s | ok | 26918 | 26828 | 2481.9 | 30 | 0 kB |
+··· running inlay × slot-exact
+| inlay | slot-exact | 0.329 s | ok | 38623 | 38287 | 6966.4 | 92 | 496 kB |
+··· running drill × slot-exact
+| drill | slot-exact | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × slot-exact
+| rest | slot-exact | 0.017 s | ok | 364 | 208 | 2385.2 | 52 | 0 kB |
+··· running pocket × high-curvature
+| pocket | high-curvature | 0.027 s | ok | 410 | 362 | 2481.5 | 16 | 0 kB |
+··· running adaptive × high-curvature
+| adaptive | high-curvature | 0.751 s | ok | 485 | 473 | 1493.4 | 4 | 0 kB |
+··· running profile × high-curvature
+| profile | high-curvature | 0.007 s | ok | 31 | 28 | 306.3 | 1 | 0 kB |
+··· running trace × high-curvature
+| trace | high-curvature | 0.001 s | ok | 32 | 28 | 255.8 | 1 | 0 kB |
+··· running zigzag × high-curvature
+| zigzag | high-curvature | 0.006 s | ok | 224 | 128 | 2991.7 | 32 | 0 kB |
+··· running vcarve × high-curvature
+| vcarve | high-curvature | 1.367 s | ok | 41749 | 41647 | 3375.5 | 34 | 180 kB |
+··· running inlay × high-curvature
+| inlay | high-curvature | 1.760 s | ok | 56336 | 55896 | 9647.4 | 119 | 3600 kB |
+··· running drill × high-curvature
+| drill | high-curvature | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × high-curvature
+| rest | high-curvature | 0.035 s | ok | 406 | 232 | 2478.4 | 58 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| pocket | slot-under | 0.002 s | ok | 200 | 152 | 1711.5 | 16 | 2088 kB |
+| adaptive | slot-under | 0.103 s | ok | 157 | 136 | 656.5 | 7 | 244 kB |
+| profile | slot-under | 0.000 s | ok | 26 | 23 | 422.1 | 1 | 0 kB |
+| trace | slot-under | 0.000 s | ok | 20 | 16 | 383.4 | 1 | 0 kB |
+| zigzag | slot-under | 0.001 s | ok | 210 | 120 | 2165.6 | 30 | 80 kB |
+| vcarve | slot-under | 0.226 s | ok | 26323 | 26230 | 2489.9 | 31 | 6404 kB |
+| inlay | slot-under | 0.329 s | ok | 38036 | 37693 | 6980.9 | 94 | 5180 kB |
+| drill | slot-under | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | slot-under | 0.021 s | ok | 364 | 208 | 2378.4 | 52 | 0 kB |
+| pocket | slot-exact | 0.002 s | ok | 202 | 157 | 1742.8 | 15 | 0 kB |
+| adaptive | slot-exact | 0.049 s | ok | 261 | 237 | 1080.7 | 8 | 0 kB |
+| profile | slot-exact | 0.000 s | ok | 26 | 23 | 416.1 | 1 | 0 kB |
+| trace | slot-exact | 0.000 s | ok | 20 | 16 | 377.4 | 1 | 0 kB |
+| zigzag | slot-exact | 0.001 s | ok | 210 | 120 | 2172.9 | 30 | 0 kB |
+| vcarve | slot-exact | 0.221 s | ok | 26918 | 26828 | 2481.9 | 30 | 0 kB |
+| inlay | slot-exact | 0.329 s | ok | 38623 | 38287 | 6966.4 | 92 | 496 kB |
+| drill | slot-exact | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | slot-exact | 0.017 s | ok | 364 | 208 | 2385.2 | 52 | 0 kB |
+| pocket | high-curvature | 0.027 s | ok | 410 | 362 | 2481.5 | 16 | 0 kB |
+| adaptive | high-curvature | 0.751 s | ok | 485 | 473 | 1493.4 | 4 | 0 kB |
+| profile | high-curvature | 0.007 s | ok | 31 | 28 | 306.3 | 1 | 0 kB |
+| trace | high-curvature | 0.001 s | ok | 32 | 28 | 255.8 | 1 | 0 kB |
+| zigzag | high-curvature | 0.006 s | ok | 224 | 128 | 2991.7 | 32 | 0 kB |
+| vcarve | high-curvature | 1.367 s | ok | 41749 | 41647 | 3375.5 | 34 | 180 kB |
+| inlay | high-curvature | 1.760 s | ok | 56336 | 55896 | 9647.4 | 119 | 3600 kB |
+| drill | high-curvature | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | high-curvature | 0.035 s | ok | 406 | 232 | 2478.4 | 58 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+27 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 5.40s
+

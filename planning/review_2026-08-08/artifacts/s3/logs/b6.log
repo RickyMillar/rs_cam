@@ -1,0 +1,90 @@
+
+running 1 test
+··· SKIPPED pocket × invalid-cw — DOES NOT TERMINATE — pocket's ring cascade exits only on collapse, and a CW exterior makes every offset GROW. Proved instead, bounded, by the_pocket_ring_cascade_is_bounded_only_by_collapse. Running it here would hang the suite, not test it (22.9 GB RSS on the first attempt)
+··· running adaptive × invalid-cw
+| adaptive | invalid-cw | 0.064 s | ok | 273 | 270 | 1038.2 | 1 | 1956 kB |
+··· running profile × invalid-cw
+| profile | invalid-cw | 0.001 s | ok | 10 | 7 | 254.2 | 1 | 64 kB |
+··· running trace × invalid-cw
+| trace | invalid-cw | 0.001 s | ok | 12 | 8 | 249.4 | 1 | 64 kB |
+··· running zigzag × invalid-cw
+| zigzag | invalid-cw | 0.002 s | ok | 196 | 112 | 2905.7 | 28 | 0 kB |
+··· running vcarve × invalid-cw
+| vcarve | invalid-cw | 0.353 s | ok | 31380 | 31302 | 2554.7 | 26 | 6904 kB |
+··· SKIPPED inlay × invalid-cw — same cascade, reached through inlay's female pocket (inlay.rs:108)
+··· running drill × invalid-cw
+| drill | invalid-cw | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-cw
+| rest | invalid-cw | 0.001 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running pocket × invalid-open
+| pocket | invalid-open | 0.001 s | ok | 63 | 42 | 868.8 | 7 | 0 kB |
+··· running adaptive × invalid-open
+| adaptive | invalid-open | 0.020 s | ok | 161 | 149 | 515.1 | 4 | 0 kB |
+··· running profile × invalid-open
+| profile | invalid-open | 0.000 s | ok | 12 | 9 | 258.3 | 1 | 0 kB |
+··· running trace × invalid-open
+| trace | invalid-open | 0.000 s | ok | 11 | 7 | 214.2 | 1 | 0 kB |
+··· running zigzag × invalid-open
+| zigzag | invalid-open | 0.001 s | ok | 147 | 84 | 1342.3 | 21 | 0 kB |
+··· running vcarve × invalid-open
+| vcarve | invalid-open | 0.112 s | ok | 14448 | 14376 | 1631.8 | 24 | 0 kB |
+··· running inlay × invalid-open
+| inlay | invalid-open | 0.248 s | ok | 30933 | 30635 | 5536.6 | 81 | 1384 kB |
+··· running drill × invalid-open
+| drill | invalid-open | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-open
+| rest | invalid-open | 0.003 s | ok | 259 | 148 | 1632.5 | 37 | 0 kB |
+··· running pocket × invalid-far
+| pocket | invalid-far | 0.001 s | ok | 120 | 84 | 1782.7 | 12 | 0 kB |
+··· running adaptive × invalid-far
+| adaptive | invalid-far | 0.023 s | ok | 320 | 311 | 1157.5 | 3 | 0 kB |
+··· running profile × invalid-far
+| profile | invalid-far | 0.000 s | ok | 14 | 11 | 295.1 | 1 | 0 kB |
+··· running trace × invalid-far
+| trace | invalid-far | 0.000 s | ok | 16 | 12 | 249.8 | 1 | 0 kB |
+··· running zigzag × invalid-far
+| zigzag | invalid-far | 0.001 s | ok | 161 | 92 | 2119.7 | 23 | 0 kB |
+··· running vcarve × invalid-far
+| vcarve | invalid-far | 0.348 s | ok | 30100 | 30025 | 2451.6 | 25 | 0 kB |
+··· running inlay × invalid-far
+| inlay | invalid-far | 0.425 s | ok | 32689 | 32364 | 6667.5 | 88 | 3404 kB |
+··· running drill × invalid-far
+| drill | invalid-far | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-far
+| rest | invalid-far | 0.004 s | ok | 301 | 172 | 1913.0 | 43 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| pocket | invalid-cw | — | SKIPPED | | | | | DOES NOT TERMINATE — pocket's ring cascade exits only on collapse, and a CW exterior makes every offset GROW. Proved instead, bounded, by the_pocket_ring_cascade_is_bounded_only_by_collapse. Running it here would hang the suite, not test it (22.9 GB RSS on the first attempt) |
+| adaptive | invalid-cw | 0.064 s | ok | 273 | 270 | 1038.2 | 1 | 1956 kB |
+| profile | invalid-cw | 0.001 s | ok | 10 | 7 | 254.2 | 1 | 64 kB |
+| trace | invalid-cw | 0.001 s | ok | 12 | 8 | 249.4 | 1 | 64 kB |
+| zigzag | invalid-cw | 0.002 s | ok | 196 | 112 | 2905.7 | 28 | 0 kB |
+| vcarve | invalid-cw | 0.353 s | ok | 31380 | 31302 | 2554.7 | 26 | 6904 kB |
+| inlay | invalid-cw | — | SKIPPED | | | | | same cascade, reached through inlay's female pocket (inlay.rs:108) |
+| drill | invalid-cw | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-cw | 0.001 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| pocket | invalid-open | 0.001 s | ok | 63 | 42 | 868.8 | 7 | 0 kB |
+| adaptive | invalid-open | 0.020 s | ok | 161 | 149 | 515.1 | 4 | 0 kB |
+| profile | invalid-open | 0.000 s | ok | 12 | 9 | 258.3 | 1 | 0 kB |
+| trace | invalid-open | 0.000 s | ok | 11 | 7 | 214.2 | 1 | 0 kB |
+| zigzag | invalid-open | 0.001 s | ok | 147 | 84 | 1342.3 | 21 | 0 kB |
+| vcarve | invalid-open | 0.112 s | ok | 14448 | 14376 | 1631.8 | 24 | 0 kB |
+| inlay | invalid-open | 0.248 s | ok | 30933 | 30635 | 5536.6 | 81 | 1384 kB |
+| drill | invalid-open | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-open | 0.003 s | ok | 259 | 148 | 1632.5 | 37 | 0 kB |
+| pocket | invalid-far | 0.001 s | ok | 120 | 84 | 1782.7 | 12 | 0 kB |
+| adaptive | invalid-far | 0.023 s | ok | 320 | 311 | 1157.5 | 3 | 0 kB |
+| profile | invalid-far | 0.000 s | ok | 14 | 11 | 295.1 | 1 | 0 kB |
+| trace | invalid-far | 0.000 s | ok | 16 | 12 | 249.8 | 1 | 0 kB |
+| zigzag | invalid-far | 0.001 s | ok | 161 | 92 | 2119.7 | 23 | 0 kB |
+| vcarve | invalid-far | 0.348 s | ok | 30100 | 30025 | 2451.6 | 25 | 0 kB |
+| inlay | invalid-far | 0.425 s | ok | 32689 | 32364 | 6667.5 | 88 | 3404 kB |
+| drill | invalid-far | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-far | 0.004 s | ok | 301 | 172 | 1913.0 | 43 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+24 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.70s
+

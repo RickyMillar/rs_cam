@@ -1,0 +1,132 @@
+
+running 1 test
+··· running pocket × islands-4x4
+| pocket | islands-4x4 | 0.009 s | ok | 480 | 336 | 3598.2 | 48 | 2136 kB |
+··· running adaptive × islands-4x4
+| adaptive | islands-4x4 | 0.040 s | ok | 368 | 320 | 1308.2 | 16 | 192 kB |
+··· running profile × islands-4x4
+| profile | islands-4x4 | 0.001 s | ok | 224 | 176 | 2162.1 | 16 | 0 kB |
+··· running trace × islands-4x4
+| trace | islands-4x4 | 0.001 s | ok | 192 | 128 | 1429.9 | 16 | 0 kB |
+··· running zigzag × islands-4x4
+| zigzag | islands-4x4 | 0.046 s | ok | 672 | 384 | 5007.6 | 96 | 140 kB |
+··· running vcarve × islands-4x4
+| vcarve | islands-4x4 | 0.235 s | ok | 54896 | 54488 | 7896.5 | 136 | 14760 kB |
+··· running inlay × islands-4x4
+| inlay | islands-4x4 | 0.296 s | ok | 66334 | 64600 | 24814.7 | 468 | 7788 kB |
+··· running drill × islands-4x4
+| drill | islands-4x4 | 0.001 s | ok | 96 | 32 | 0.0 | 32 | 0 kB |
+··· running rest × islands-4x4
+| rest | islands-4x4 | 0.108 s | ok | 1008 | 576 | 6431.4 | 144 | 0 kB |
+··· running pocket × holed-9
+| pocket | holed-9 | 0.156 s | ok | 794 | 548 | 11464.5 | 82 | 0 kB |
+··· running adaptive × holed-9
+| adaptive | holed-9 | 9.399 s | ok | 2795 | 2732 | 9408.2 | 21 | 0 kB |
+··· running profile × holed-9
+| profile | holed-9 | 0.003 s | ok | 14 | 11 | 855.1 | 1 | 0 kB |
+··· running trace × holed-9
+| trace | holed-9 | 0.003 s | ok | 102 | 62 | 920.2 | 10 | 0 kB |
+··· running zigzag × holed-9
+| zigzag | holed-9 | 0.302 s | ok | 1512 | 864 | 20157.7 | 216 | 0 kB |
+··· running vcarve × holed-9
+| vcarve | holed-9 | 15.795 s | ok | 279761 | 279179 | 21339.0 | 194 | 53788 kB |
+··· running inlay × holed-9
+| inlay | holed-9 | 17.890 s | ok | 338904 | 336860 | 47963.3 | 560 | 16172 kB |
+··· running drill × holed-9
+| drill | holed-9 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × holed-9
+| rest | holed-9 | 1.796 s | ok | 3171 | 1812 | 19657.4 | 453 | 0 kB |
+··· running pocket × walls-1e-2
+| pocket | walls-1e-2 | 0.002 s | ok | 246 | 183 | 4434.3 | 21 | 0 kB |
+··· running adaptive × walls-1e-2
+| adaptive | walls-1e-2 | 0.099 s | ok | 792 | 771 | 2868.1 | 7 | 0 kB |
+··· running profile × walls-1e-2
+| profile | walls-1e-2 | 0.000 s | ok | 16 | 13 | 455.1 | 1 | 0 kB |
+··· running trace × walls-1e-2
+| trace | walls-1e-2 | 0.001 s | ok | 16 | 12 | 529.4 | 1 | 0 kB |
+··· running zigzag × walls-1e-2
+| zigzag | walls-1e-2 | 0.008 s | ok | 392 | 224 | 5526.4 | 56 | 0 kB |
+··· running vcarve × walls-1e-2
+| vcarve | walls-1e-2 | 1.047 s | ok | 79374 | 79200 | 6167.4 | 58 | 0 kB |
+··· running inlay × walls-1e-2
+
+thread 'adversarial_2d_full_campaign' (561683) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'adversarial_2d_full_campaign' (561683) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+
+thread 'adversarial_2d_full_campaign' (561683) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+
+thread 'adversarial_2d_full_campaign' (561683) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+| inlay | walls-1e-2 | 1.143 s | ok | 81771 | 80996 | 13934.9 | 209 | 0 kB |
+··· running drill × walls-1e-2
+| drill | walls-1e-2 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × walls-1e-2
+| rest | walls-1e-2 | 0.019 s | ok | 763 | 436 | 4807.5 | 109 | 0 kB |
+··· running pocket × walls-1e-6
+| pocket | walls-1e-6 | 0.002 s | ok | 231 | 171 | 4394.5 | 20 | 0 kB |
+··· running adaptive × walls-1e-6
+| adaptive | walls-1e-6 | 0.129 s | ok | 697 | 676 | 2855.8 | 7 | 0 kB |
+··· running profile × walls-1e-6
+| profile | walls-1e-6 | 0.000 s | ok | 14 | 11 | 455.1 | 1 | 0 kB |
+··· running trace × walls-1e-6
+| trace | walls-1e-6 | 0.000 s | ok | 16 | 12 | 529.4 | 1 | 0 kB |
+··· running zigzag × walls-1e-6
+| zigzag | walls-1e-6 | 0.004 s | ok | 378 | 216 | 5456.8 | 54 | 0 kB |
+··· running vcarve × walls-1e-6
+| vcarve | walls-1e-6 | 1.159 s | ok | 79386 | 79212 | 6167.6 | 58 | 0 kB |
+··· running inlay × walls-1e-6
+| inlay | walls-1e-6 | 1.052 s | ok | 81291 | 80691 | 14646.3 | 165 | 0 kB |
+··· running drill × walls-1e-6
+| drill | walls-1e-6 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × walls-1e-6
+| rest | walls-1e-6 | 0.014 s | ok | 728 | 416 | 4601.2 | 104 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| pocket | islands-4x4 | 0.009 s | ok | 480 | 336 | 3598.2 | 48 | 2136 kB |
+| adaptive | islands-4x4 | 0.040 s | ok | 368 | 320 | 1308.2 | 16 | 192 kB |
+| profile | islands-4x4 | 0.001 s | ok | 224 | 176 | 2162.1 | 16 | 0 kB |
+| trace | islands-4x4 | 0.001 s | ok | 192 | 128 | 1429.9 | 16 | 0 kB |
+| zigzag | islands-4x4 | 0.046 s | ok | 672 | 384 | 5007.6 | 96 | 140 kB |
+| vcarve | islands-4x4 | 0.235 s | ok | 54896 | 54488 | 7896.5 | 136 | 14760 kB |
+| inlay | islands-4x4 | 0.296 s | ok | 66334 | 64600 | 24814.7 | 468 | 7788 kB |
+| drill | islands-4x4 | 0.001 s | ok | 96 | 32 | 0.0 | 32 | 0 kB |
+| rest | islands-4x4 | 0.108 s | ok | 1008 | 576 | 6431.4 | 144 | 0 kB |
+| pocket | holed-9 | 0.156 s | ok | 794 | 548 | 11464.5 | 82 | 0 kB |
+| adaptive | holed-9 | 9.399 s | ok | 2795 | 2732 | 9408.2 | 21 | 0 kB |
+| profile | holed-9 | 0.003 s | ok | 14 | 11 | 855.1 | 1 | 0 kB |
+| trace | holed-9 | 0.003 s | ok | 102 | 62 | 920.2 | 10 | 0 kB |
+| zigzag | holed-9 | 0.302 s | ok | 1512 | 864 | 20157.7 | 216 | 0 kB |
+| vcarve | holed-9 | 15.795 s | ok | 279761 | 279179 | 21339.0 | 194 | 53788 kB |
+| inlay | holed-9 | 17.890 s | ok | 338904 | 336860 | 47963.3 | 560 | 16172 kB |
+| drill | holed-9 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | holed-9 | 1.796 s | ok | 3171 | 1812 | 19657.4 | 453 | 0 kB |
+| pocket | walls-1e-2 | 0.002 s | ok | 246 | 183 | 4434.3 | 21 | 0 kB |
+| adaptive | walls-1e-2 | 0.099 s | ok | 792 | 771 | 2868.1 | 7 | 0 kB |
+| profile | walls-1e-2 | 0.000 s | ok | 16 | 13 | 455.1 | 1 | 0 kB |
+| trace | walls-1e-2 | 0.001 s | ok | 16 | 12 | 529.4 | 1 | 0 kB |
+| zigzag | walls-1e-2 | 0.008 s | ok | 392 | 224 | 5526.4 | 56 | 0 kB |
+| vcarve | walls-1e-2 | 1.047 s | ok | 79374 | 79200 | 6167.4 | 58 | 0 kB |
+| inlay | walls-1e-2 | 1.143 s | ok | 81771 | 80996 | 13934.9 | 209 | 0 kB |
+| drill | walls-1e-2 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | walls-1e-2 | 0.019 s | ok | 763 | 436 | 4807.5 | 109 | 0 kB |
+| pocket | walls-1e-6 | 0.002 s | ok | 231 | 171 | 4394.5 | 20 | 0 kB |
+| adaptive | walls-1e-6 | 0.129 s | ok | 697 | 676 | 2855.8 | 7 | 0 kB |
+| profile | walls-1e-6 | 0.000 s | ok | 14 | 11 | 455.1 | 1 | 0 kB |
+| trace | walls-1e-6 | 0.000 s | ok | 16 | 12 | 529.4 | 1 | 0 kB |
+| zigzag | walls-1e-6 | 0.004 s | ok | 378 | 216 | 5456.8 | 54 | 0 kB |
+| vcarve | walls-1e-6 | 1.159 s | ok | 79386 | 79212 | 6167.6 | 58 | 0 kB |
+| inlay | walls-1e-6 | 1.052 s | ok | 81291 | 80691 | 14646.3 | 165 | 0 kB |
+| drill | walls-1e-6 | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | walls-1e-6 | 0.014 s | ok | 728 | 416 | 4601.2 | 104 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+36 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 51.68s
+

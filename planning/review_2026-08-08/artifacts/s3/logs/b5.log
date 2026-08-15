@@ -1,0 +1,153 @@
+
+running 1 test
+··· running pocket × invalid-bowtie
+| pocket | invalid-bowtie | 0.002 s | ok | 72 | 48 | 848.6 | 8 | 2348 kB |
+··· running adaptive × invalid-bowtie
+| adaptive | invalid-bowtie | 0.065 s | ok | 102 | 84 | 314.8 | 6 | 376 kB |
+··· running profile × invalid-bowtie
+| profile | invalid-bowtie | 0.000 s | ok | 12 | 9 | 198.3 | 1 | 0 kB |
+··· running trace × invalid-bowtie
+| trace | invalid-bowtie | 0.000 s | ok | 12 | 8 | 299.1 | 1 | 0 kB |
+··· running zigzag × invalid-bowtie
+| zigzag | invalid-bowtie | 0.002 s | ok | 259 | 148 | 1842.5 | 37 | 72 kB |
+··· running vcarve × invalid-bowtie
+| vcarve | invalid-bowtie | 0.080 s | ok | 15124 | 14980 | 2574.8 | 48 | 3272 kB |
+··· running inlay × invalid-bowtie
+| inlay | invalid-bowtie | 0.203 s | ok | 31376 | 30894 | 7660.9 | 133 | 5016 kB |
+··· running drill × invalid-bowtie
+| drill | invalid-bowtie | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-bowtie
+| rest | invalid-bowtie | 0.024 s | ok | 420 | 240 | 2511.3 | 60 | 0 kB |
+··· running pocket × invalid-zero-area
+| pocket | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running adaptive × invalid-zero-area
+| adaptive | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running profile × invalid-zero-area
+| profile | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running trace × invalid-zero-area
+| trace | invalid-zero-area | 0.000 s | ok | 20 | 16 | 129.4 | 1 | 0 kB |
+··· running zigzag × invalid-zero-area
+| zigzag | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running vcarve × invalid-zero-area
+| vcarve | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running inlay × invalid-zero-area
+| inlay | invalid-zero-area | 0.014 s | ok | 1228 | 1225 | 99.2 | 1 | 0 kB |
+··· running drill × invalid-zero-area
+| drill | invalid-zero-area | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-zero-area
+| rest | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running pocket × invalid-two-vertex
+| pocket | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running adaptive × invalid-two-vertex
+| adaptive | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running profile × invalid-two-vertex
+| profile | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running trace × invalid-two-vertex
+| trace | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running zigzag × invalid-two-vertex
+| zigzag | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running vcarve × invalid-two-vertex
+| vcarve | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running inlay × invalid-two-vertex
+| inlay | invalid-two-vertex | 0.015 s | ok | 1228 | 1225 | 99.2 | 1 | 0 kB |
+··· running drill × invalid-two-vertex
+| drill | invalid-two-vertex | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × invalid-two-vertex
+| rest | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running pocket × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+| pocket | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running adaptive × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| adaptive | invalid-nan | 0.006 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running profile × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| profile | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running trace × invalid-nan
+| trace | invalid-nan | 0.000 s | ok | 9 | 5 | 9.4 | 1 | 0 kB |
+··· running zigzag × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| zigzag | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running vcarve × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| vcarve | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running inlay × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| inlay | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+··· running drill × invalid-nan
+| drill | invalid-nan | 0.000 s | ok | 6 | 2 | NaN | 2 | 0 kB |
+··· running rest × invalid-nan
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+
+thread 'adversarial_2d_full_campaign' (569061) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/static_aabb2d_index-2.0.0/src/static_aabb2d_index.rs:266:9:
+assertion failed: min_x <= max_x
+| rest | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| pocket | invalid-bowtie | 0.002 s | ok | 72 | 48 | 848.6 | 8 | 2348 kB |
+| adaptive | invalid-bowtie | 0.065 s | ok | 102 | 84 | 314.8 | 6 | 376 kB |
+| profile | invalid-bowtie | 0.000 s | ok | 12 | 9 | 198.3 | 1 | 0 kB |
+| trace | invalid-bowtie | 0.000 s | ok | 12 | 8 | 299.1 | 1 | 0 kB |
+| zigzag | invalid-bowtie | 0.002 s | ok | 259 | 148 | 1842.5 | 37 | 72 kB |
+| vcarve | invalid-bowtie | 0.080 s | ok | 15124 | 14980 | 2574.8 | 48 | 3272 kB |
+| inlay | invalid-bowtie | 0.203 s | ok | 31376 | 30894 | 7660.9 | 133 | 5016 kB |
+| drill | invalid-bowtie | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-bowtie | 0.024 s | ok | 420 | 240 | 2511.3 | 60 | 0 kB |
+| pocket | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| adaptive | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| profile | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| trace | invalid-zero-area | 0.000 s | ok | 20 | 16 | 129.4 | 1 | 0 kB |
+| zigzag | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| vcarve | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| inlay | invalid-zero-area | 0.014 s | ok | 1228 | 1225 | 99.2 | 1 | 0 kB |
+| drill | invalid-zero-area | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-zero-area | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| pocket | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| adaptive | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| profile | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| trace | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| zigzag | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| vcarve | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| inlay | invalid-two-vertex | 0.015 s | ok | 1228 | 1225 | 99.2 | 1 | 0 kB |
+| drill | invalid-two-vertex | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | invalid-two-vertex | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| pocket | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| adaptive | invalid-nan | 0.006 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| profile | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| trace | invalid-nan | 0.000 s | ok | 9 | 5 | 9.4 | 1 | 0 kB |
+| zigzag | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| vcarve | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| inlay | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+| drill | invalid-nan | 0.000 s | ok | 6 | 2 | NaN | 2 | 0 kB |
+| rest | invalid-nan | 0.000 s | ok | 0 | 0 | 0.0 | 0 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+16 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.45s
+
