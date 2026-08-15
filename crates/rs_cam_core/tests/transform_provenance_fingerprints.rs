@@ -26,7 +26,29 @@
 //! | `arc_raster` | same pipeline over collinear/arc-shaped runs (arc fit + segment merge actually fire) |
 //! | `face_full_chain` | real `face` op → full dressups → boundary clip → entry-descent split |
 //!
-//! Every constant below was captured at HEAD 5d32150, BEFORE any C1 edit.
+//! Every constant below was ORIGINALLY captured at HEAD 5d32150, BEFORE any
+//! C1 edit. Two re-pins have happened since; each names its own mechanism.
+//!
+//! ## Pin lineage
+//!
+//! | Wave | Commit | What moved | Which pins |
+//! |------|--------|-----------|------------|
+//! | C1 capture | `5d32150` | — (original capture) | all five |
+//! | PR-6 (H2.2 / Checkpoint F1) | `3dbec75` | arc-fit's run key gained `intent`, so four dressup-inserted `LeadOut` segments stopped being swallowed into an `Unknown`-labelled arc — LABEL only | `arc_raster` |
+//! | W8 / F23-impl (Checkpoints F2+F3, ruled 2026-08-06) | `268e427` | the closing retract now lifts from the lead-out ARC endpoint instead of the stale cut endpoint — XY of N rapids per fixture | **all five** |
+//!
+//! `268e427`'s move went un-re-pinned for eight days: that lane re-pinned
+//! `crease_own_region_pr6b` in its own preceding commit (`23f98fc`) but did not
+//! re-run this suite, and TD2's closing green claim over the core tests hit the
+//! first-failing-binary trap, so the red was never surfaced. Re-pinned under TD3
+//! intake row **G-XFP** on 2026-08-14 with the archaeology recorded in
+//! `planning/review_2026-08-08/ORCHESTRATION_LOG.md` §3.1.
+//!
+//! **The link sites did not move under either re-pin.** That is the load-bearing
+//! half: `268e427` is a geometry fix, and the semantic-channel landing sites this
+//! file exists to guard are byte-identical across it. Only the geometry hashes
+//! moved, and every move COUNT (23 / 40 / 74 / 97 / 103) and the stage-3
+//! `split_count` (6) held.
 
 #![allow(
     clippy::unwrap_used,
@@ -251,10 +273,27 @@ fn three_pass_full_dressups_fingerprint() {
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
+    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 / F23-impl,
+    // Checkpoints F2+F3 ruled 2026-08-06 — "the closing retract must lift from
+    // where the tool IS"). Was `(23, 14_756_822_782_673_573_601)`.
+    //
+    // Mechanism: move count unchanged at 23; exactly THREE moves differ, the
+    // closing rapid of each of the three passes (indices 4, 13, 22). Each was
+    // emitted by the fixture at the cut endpoint and is now lifted from the
+    // lead-out arc's own endpoint — XY only, Z and intent untouched:
+    //
+    //     move  4  [20.0, 0.0, 10.0] -> [21.5, 1.5, 10.0]
+    //     move 13  [21.0, 0.0, 10.0] -> [22.5, 1.5, 10.0]
+    //     move 22  [22.0, 0.0, 10.0] -> [23.5, 1.5, 10.0]
+    //
+    // The +(1.5, 1.5) is `full_dressups()`'s `lead_radius`. Link sites below
+    // are UNCHANGED.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (23, 14_756_822_782_673_573_601),
-        "three_pass geometry moved; captured at HEAD 5d32150 before C1"
+        (23, 14_265_253_333_427_783_116),
+        "three_pass geometry moved; re-pinned 2026-08-14 for the lead-out retract \
+         lift (268e427), previously re-pinned by PR-6, originally captured at \
+         HEAD 5d32150 before C1"
     );
     assert_eq!(
         link_sites(&recorder.finish()),
@@ -305,13 +344,29 @@ fn arc_raster_full_dressups_fingerprint() {
     // This is exactly the relabelling H2.2 exists to stop, and it costs zero
     // arcs (8 before, 8 after) and zero moves.
     //
-    // The other four pinned constants in this file did NOT move: `three_pass`
-    // and all three `face_full_chain` stages are byte-identical.
+    // The other four pinned constants in this file did NOT move at PR-6:
+    // `three_pass` and all three `face_full_chain` stages were byte-identical.
+    //
+    // RE-PINNED AGAIN 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 /
+    // F23-impl, Checkpoints F2+F3 ruled 2026-08-06 — the lead-out retract lift).
+    // Was `(40, 5_428_414_886_474_768_522)`.
+    //
+    // Mechanism: move count still 40; exactly FOUR moves differ, the closing
+    // rapid of each of the four raster rows (indices 9, 19, 29, 39), lifted from
+    // the lead-out arc endpoint instead of the stale cut endpoint — XY only:
+    //
+    //     move  9  [22.0,  0.0, 10.0] -> [23.5,  1.5, 10.0]
+    //     move 19  [22.0,  4.0, 10.0] -> [23.5,  5.5, 10.0]
+    //     move 29  [22.0,  8.0, 10.0] -> [23.5,  9.5, 10.0]
+    //     move 39  [22.0, 12.0, 10.0] -> [23.5, 13.5, 10.0]
+    //
+    // Link sites below are UNCHANGED under both re-pins.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (40, 5_428_414_886_474_768_522),
-        "arc_raster geometry moved; re-pinned by PR-6 (arcfit intent key), \
-         originally captured at HEAD 5d32150 before C1"
+        (40, 1_344_905_273_783_580_007),
+        "arc_raster geometry moved; re-pinned 2026-08-14 for the lead-out retract \
+         lift (268e427), before that by PR-6 (arcfit intent key), originally \
+         captured at HEAD 5d32150 before C1"
     );
     assert_eq!(
         link_sites(&recorder.finish()),
@@ -349,10 +404,20 @@ fn face_full_chain_fingerprint() {
         None,
         &mut ReconcileSet::new(Some(&recorder), None),
     );
+    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 / F23-impl,
+    // Checkpoints F2+F3, the lead-out retract lift). Was
+    // `(74, 9_692_869_450_022_244_402)`.
+    //
+    // Mechanism: move count unchanged at 74; exactly SEVEN moves differ —
+    // indices 10, 21, 32, 43, 54, 65, 73, the closing `Retract` rapid of each
+    // faced row, `[37.0, y, 30.0]` -> `[38.5, y + 1.5, 30.0]`. XY only; the
+    // `Retract` intent and the 30.0 safe-Z are untouched.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (74, 9_692_869_450_022_244_402),
-        "face stage-1 (dressups) geometry moved; captured at HEAD 5d32150 before C1"
+        (74, 8_357_027_825_945_903_145),
+        "face stage-1 (dressups) geometry moved; re-pinned 2026-08-14 for the \
+         lead-out retract lift (268e427), originally captured at HEAD 5d32150 \
+         before C1"
     );
 
     // Stage 2 — boundary clip against a rectangle that actually cuts the
@@ -363,8 +428,10 @@ fn face_full_chain_fingerprint() {
         .into_inner();
     assert_eq!(
         fingerprint(&current.toolpath),
-        (97, 3_258_911_278_473_560_309),
-        "face stage-2 (boundary clip) geometry moved; captured at HEAD 5d32150 before C1"
+        (97, 7_877_196_034_056_840_142),
+        "face stage-2 (boundary clip) geometry moved; re-pinned 2026-08-14 for the \
+         lead-out retract lift (268e427) carried forward from stage 1, originally \
+         captured at HEAD 5d32150 before C1"
     );
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
@@ -375,8 +442,10 @@ fn face_full_chain_fingerprint() {
         .into_inner();
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
-        (6, (103, 2_154_614_841_165_484_301)),
-        "face stage-3 (entry-descent split) geometry moved; captured at HEAD 5d32150 before C1"
+        (6, (103, 3_086_279_569_100_738_182)),
+        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-08-14 for \
+         the lead-out retract lift (268e427) carried forward from stage 1, originally \
+         captured at HEAD 5d32150 before C1"
     );
 
     assert_eq!(
