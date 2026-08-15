@@ -5046,6 +5046,34 @@ chipload spot-check (post-closeout follow-up, evidence doc only, no numbers
 move) — its own §3.1 entry follows when it lands. Desktop-gated items
 unchanged: N-3 five-item agenda, merge call.
 
+**Addendum (orchestrator, 2026-08-16, after VSBS landed `d7b6156f`):** VSBS
+returned two NEW findings, recorded here as fresh intake rows routed to TD4
+(not folded into the chip-thickness package — neither is a chip-thickness
+policy question):
+
+- **VSBS-SEED** — `amana-flat-hardwood-pocket-6000-2f` (the matched row on
+  the A-8 retarget, A-5i arc-fit and `_litmatrix_rubbing_floor_clamp`
+  fixtures) has no inch preimage and no provenance entry; it and its 19
+  file-mates date to the original LUT seeding commit `def88067` yet carry
+  `evidence_grade: "a"` / `row_kind: "exact"`, tagged hardwood/Janka 1450
+  against a source whose own manifest says it does not separate softwood
+  from hardwood, and whose URL is one of S-2's four 403-blocked. The claim
+  is that grade `a`/`exact` is unearned, not that the numbers are wrong.
+- **VSBS-DERATE-SPLIT** — the band derate and the feed derate are different
+  functions (`chipload_bounds` uses piecewise-linear `doc_derating_scale`,
+  0.875 at 1.5×D; the feed uses step `depth_tier_multiplier`, 0.750 at
+  1.5×D); they agree only at 1×/2×/3×D. Pinned by a VSBS test.
+
+VSBS also **corrected a running characterisation**: "Suggest rests at 0.999×
+the derated band minimum" was an outcome on two Adaptive3d fixtures, never
+the mechanism — the seed is the row midpoint × the derate stack, and the
+measured resting point spans 0.56×–2.42× of derated band minimum across six
+probes; probe D (sub-Ø2 ball, pine) commands **1.478× the derated band
+ceiling** even after the machine ceiling. Evidence:
+`VENDOR_SIDEBYSIDE_CHIPLOAD.md` + `tests/vendor_sidebyside_chipload.rs`.
+No shipped number moved by VSBS; whether probe D warrants a Suggest-side
+wave is the operator's call at TD4 kickoff (or earlier if they pull it).
+
 ---
 
 ## 3.1 log entry — VSBS (post-closeout follow-up), 2026-08-16
