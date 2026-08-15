@@ -5153,3 +5153,242 @@ report the row the engine picked rather than the row a human would have.
 **Question for the orchestrator.** VSBS-SEED and the §1.2 derate
 asymmetry are both new and both TD4-shaped. Ledger as intake, or fold
 into the already-parked chip-thickness checkpoint package?
+
+---
+
+## G-WANAKA-DPP — re-baseline the last core red, 2026-08-16
+
+Ruled Tier-1, first of three, in "Post-closeout intake triage — RULED
+(operator, AskUserQuestion), 2026-08-16". Brief: re-baseline or attribute
+the sole surviving core red, `wanaka_suggest_baseline`, with a full §0.2
+record. Commit `f1c9239b`.
+
+### 1. What the red actually was
+
+The closeout (§0, §2.2) characterised it as two independent reds: a
+working-tree red from play-file drift (`Toolpath id 11 missing from
+suggest cases`) and a clean-worktree numeric red. **Measured: the drift
+red is real but latent, not primary.** Running the pre-fix test unmodified
+in the working tree gives
+
+```
+Back Rough (tp 4 / Back Rough): envelope-clamped DPP must land near
+5.4 mm (regression baseline), got 4.199999999999999
+```
+
+— the same failure the clean worktree gives, because the tp-4 assertion
+block sits ~240 lines above the `find_case(ToolpathId(11))` call. The
+drift red only surfaces once the number is fixed. Both were real; the
+closeout's ordering was not. Correcting it matters because the two have
+different owners and the numeric one masks the other.
+
+### 2. Attribution — `b7234d2f`, Checkpoint K-(a4). Arithmetic, not inference.
+
+The warning is `AxialDocClampedByEnvelope { op_kind: "adaptive3d",
+commanded_mm: 9.0, clamped_mm: 4.199999999999999, binding: "vendor_ap" }`.
+`binding: "vendor_ap"` fixes the mechanism exactly: the clamp is
+`cutter_constraints::max_doc_vendor` = `min(ap_max_factor × D,
+ap_max_mm)` on the **matched LUT row**, and nothing else. Wanaka's Back
+Rough is tool 3, a Ø6 2-flute carbide end mill, in `SolidWood {
+GenericHardwood }`. Two rows are candidates for that query:
+
+| row | `ap_max_factor` | `ap_max_mm` | `min(f × 6.0, a)` in f64 |
+|---|---:|---:|---|
+| `amana-flat-hardwood-adaptive-6000-2f` | 0.9 | 5.5 | `5.4` |
+| `amana-flat-hardwood-pocket-6000-2f` | 0.7 | 4.2 | `4.199999999999999` |
+
+`0.7 × 6.0` rounds *down* in IEEE-754 double and therefore wins its own
+`min` against the literal `4.2`; `0.9 × 6.0` is exact. So the old baseline
+and the new observation are each a **bit-exact** reproduction of their
+row's ceiling. No fitting, no tolerance, no rebuild at a historical commit
+was needed to establish which row produced which number.
+
+**Mechanism commit: `b7234d2f`** — *"feat(a7)!: K-(a4) — route the LUT
+query ONCE; both consumers call `lut_query_for`"*, A-7, ruled binding
+under **Checkpoint K-(a4)** and self-declared NUMBER-MOVING for Adaptive3d
+in its own message. Before a4, Suggest queried the *declared* operation
+family, so an `Adaptive3d` op matched the `adaptive` row, while the
+gate / optimizer / viewport side already rerouted Adaptive3d → Pocket.
+a4 hoisted the routing into `feeds::vendor_normalize::lut_query_for` and
+made both sides call it, so Suggest's matched row moved adaptive → pocket.
+Path from there to the assertion:
+
+```
+feeds_input_for_operation (sets operation_kind — the a4 field)
+  → FeedsResult::matched_lut_row
+  → SuggestContext::matched_lut_row
+  → suggest::pick_axial_envelope
+  → cutter_constraints::cutter_axial_constraints
+  → max_doc_vendor = min(ap_max_factor × D, ap_max_mm)
+```
+
+Independent corroboration: the companion commit **`16786d3b`** ("re-pin
+the two Adaptive3d Suggest feeds — K-(a4) attribution") re-pinned
+`arc_fit_disposition_a5.rs` on **this exact row pair**, naming both ids
+and quoting the band move 0.038–0.070 → 0.032–0.055 for the same Ø6
+hardwood reference. Its A3D-1 fixture is the same tool, material and
+family as Wanaka's Back Rough.
+
+**Why this file was missed then.** a4 landed 2026-08-13. This test was
+already red on cause 1 at that date, so a4's verification run never
+reached the tp-4 assertion — the wave re-pinned the fixture-based sentry
+it could see and could not see this one. A test that is red for reason A
+does not protect against reason B; that is the second-order cost of
+leaving a red standing, and it is the argument for §2 of this entry.
+
+**NOT the cause, ruled out by the binding string:** the J-1 arc-fit
+retirement and modulation flip (`2544908` / `f6533a1`) move *feed*, not
+the axial envelope; a deflection move would report `binding:
+"deflection"` and a scallop move `"scallop"`. The 2026-06-20
+unified-load-model recalibration (the provenance the old pin actually
+cited) is likewise a deflection-side change.
+
+### 3. §0.2 record — the baseline move
+
+| field | value |
+|---|---|
+| **assertion** | `wanaka_suggest_integration.rs :: wanaka_suggest_baseline`, tp 4 Back Rough envelope clamp |
+| **old** | `(envelope_clamped - 5.4).abs() < 0.5` |
+| **old provenance (as the file stated it)** | "the vendor_ap envelope's output on this exact geometry/tool/LUT row, not a literature value or a named constant"; re-baseline only on the unified-load-model recalibration (2026-06-20, Ks=49.95/F_edge=5.30) or a deliberate LUT `ap_max` change for this row. Set 2026-07-06. |
+| **new** | `(envelope_clamped - 4.2).abs() < 0.05`, **plus** two stronger guards (below) |
+| **new provenance** | `min(ap_max_factor 0.7 × Ø6, ap_max_mm 4.2)` on `amana-flat-hardwood-pocket-6000-2f` (`ap_rule "0.25xD to 0.7xD"`, Amana Spektra Spiral Plunge v24) |
+| **mechanism** | `b7234d2f`, A-7 / Checkpoint K-(a4), ruled binding, self-declared NUMBER-MOVING for Adaptive3d |
+| **tolerance** | ±0.05 (was ±0.5). The value is a product of two exact LUT constants, so it is exactly reproducible; the tolerance exists only so the file does not pin a float literal. |
+| **direction** | the clamp got *tighter* (4.2 < 5.4) — the shipped DPP is more conservative, not less. Nothing was loosened to make a test pass. |
+
+**The re-pin is not a literal swap.** Three assertions now stand where one
+did, so a future move says *which part* moved:
+
+1. **Row identity** — `matched.observation_id ==
+   "amana-flat-hardwood-pocket-6000-2f"`, with the failure message naming
+   the regression it catches ("if this reads
+   `…-adaptive-6000-2f` again, the shared routing through
+   `vendor_normalize::lut_query_for` has regressed"). This is the same
+   guard shape `16786d3b` chose for the band, applied to the ceiling.
+2. **Derivation** — the clamp must equal the matched row's own
+   `min(ap_max_factor × Ø6, ap_max_mm)` to 1e-9. A legitimate LUT edit
+   moves both sides together; a plumbing bug that feeds the envelope a
+   different row than the feeds result moves only one.
+3. **Magnitude** — the 4.2 ± 0.05 determinism sentry, kept as a
+   cross-check rather than as the whole guarantee.
+
+**Consumer census.** `rg` for the constant and for the fixture path:
+the 5.4 pin existed **only here** (the other `5.4` hits in the tree are
+document section numbers). `AxialDocClampedByEnvelope` is asserted in no
+other test — its other references are the three production construction
+sites (`session/compute.rs`, `feeds/suggest.rs`, `feeds/rationale.rs`).
+tp 10 (3D Rough 6) clamps to the same 4.2 but deliberately pins direction
+only, so one re-baseline ratifies one number. Nothing downstream consumes
+this baseline.
+
+### 4. Drift immunity — the fixture re-pin
+
+**Old source:** `planning/airrun_2026-06-01/wanaka.toml`, read directly,
+on the stated rationale that the sentry "exists precisely to fail when
+that project drifts."
+
+**New source:** `crates/rs_cam_core/tests/fixtures/wanaka_2026-08-16_f530995a.toml`
+— byte-identical snapshot from `git show
+f530995a:planning/airrun_2026-06-01/wanaka.toml`, blob `fa04baaa`,
+sha256 `0f1069c3…`. **The play-file was not read for content, edited,
+staged, or reverted at any point in this wave.**
+
+The old rationale conflated two failures under one red. Every assertion
+in the file is about what Suggest computes; the project is the fixed
+geometry those computations are pinned against. But the file is a
+document the operator edits between machining sessions, and ordinary
+play — here, `enabled = false` on toolpath 11 and a new toolpath 15
+"Unified Finish 6 (live v2)" — is indistinguishable at the assertion from
+a Suggest regression.
+
+It was not hypothetical, and the cost was not just noise. **The whole
+3D Finish 6 block was unreachable**, and the A-5i log entry carried it as
+a NOT EXERCISED row: J-1's inversion there ("`FeedRaisedForChipload` must
+NOT fire") was mechanical and unverified. A sentry red for a fixture
+reason verifies nothing while it stands.
+
+**Discharged by the re-pin — the A-5i NOT EXERCISED row.** Toolpath 11
+now executes on every run. Measured, not asserted in hope:
+
+```
+tp 11 "3D Finish 6": feed=653 plunge=132 stepover=Some(0.22781250000000003)
+     FinishEnvelopeAdvisory { op_kind: "drop_cutter",
+       max_safe_doc_mm: 0.3122, binding: "scallop" }
+     StepoverRaisedForRuntime { requested_mm: 0.03, raised_mm: 0.22781,
+       predicted_moves_at_requested: 3333333,
+       predicted_moves_at_raised: 438957, iterations: 5 }
+```
+
+— the runtime back-off fires and lands at 0.228 mm (the file's docstring
+predicted "~0.23"), and neither retired lift warning appears. J-1's
+inversion holds on real geometry.
+
+**Fixture census.** Three test files load the play-file:
+`wanaka_suggest_integration.rs` (repointed here),
+`p1_headless_ab_wanaka.rs` and `finish_planner_wanaka_decompose.rs`.
+Every test in the latter two that touches it is `#[ignore]`d (manual
+sampling harnesses), so **this was the only default-run test exposed to
+play-file drift**. Nothing else needs repointing.
+
+Re-snapshotting is a deliberate act: new dated file, new commit sha in
+the name, re-ratify the numbers. Drift of the play-file is now a
+fixture-provenance event and no longer lands on a feeds sentry.
+
+### 5. Honest caveat — the new baseline stands on a row VSBS just flagged
+
+`amana-flat-hardwood-pocket-6000-2f` is **the row VSBS-SEED names**
+(intake row, same date, addendum above): no inch preimage, no provenance
+entry, dating to the original LUT seeding commit `def88067` yet carrying
+`evidence_grade: "a"` / `row_kind: "exact"`, tagged hardwood/Janka 1450
+against a source whose own manifest says it does not separate softwood
+from hardwood, behind one of S-2's four 403-blocked URLs.
+
+This wave does not weaken that finding and does not depend on resolving
+it. The re-baseline asserts *the engine reads the row the routing sends
+it to*, which is true whatever the row's evidence grade turns out to be —
+and the row-identity assertion is precisely what will make the TD4 LUT
+wave's blast radius visible when it re-grades or re-values that row.
+Recording it here so the next reader does not discover the coupling by
+surprise: **if VSBS-SEED moves `ap_max_factor` on that row, this baseline
+moves with it, by design.**
+
+### 6. Verification
+
+| check | result |
+|---|---|
+| `cargo test -p rs_cam_core --test wanaka_suggest_integration` (working tree) | **3 passed, 0 failed** — `wanaka_suggest_baseline`, `wanaka_suggest_idempotent_on_second_run`, `session_cutter_op_profile_matches_gui_rationale_assembly` |
+| same, clean detached worktree at `f1c9239b`, **isolated `CARGO_TARGET_DIR`** (lesson L2) | **3 passed, 0 failed** |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+
+Red-first evidence retained above: the pre-fix run reproduced in both
+configurations, and the post-fixture / pre-re-pin run isolated the number
+from the drift.
+
+The full ~40-minute core suite was **not** run (out of brief). Scope
+touched: one test file and one new fixture; no production code changed,
+so no other suite is at risk.
+
+### 7. Machine-discipline incident (self-reported)
+
+One cargo invocation — the post-fixture re-run — **overlapped an external
+`cargo test --release -p sysml-service` job** belonging to another repo.
+Cause: my slot guard was written `(pgrep -x cargo || echo FREE) && cargo
+…`, which is inverted — `pgrep` *succeeding* (i.e. finding a running
+cargo) returns 0 and satisfies the `&&`. The guard printed the offending
+PID and proceeded anyway. Impact was small (a 2 s incremental compile and
+a 4 s test, 30 GB free throughout, no OOM), but the rule is one cargo job
+machine-wide and it was broken. Every later invocation used a blocking
+until-loop that waits while *either* probe matches and aborts if still
+busy. Recorded because a discipline slip that happened to be harmless is
+still the failure mode that eventually is not.
+
+### 8. State
+
+Core red set from this wave's perspective: **empty**. `wanaka_suggest_baseline`
+was the sole surviving core red per the closeout; it is green in both a
+dirty working tree and a clean worktree, and it is now immune to the
+play-file edits that made it red in the first place.
+
+Next in the ruled Tier-1 sequence: **G-EXPL-HIDDEN**, then
+**G-REGEN-RACE**.
