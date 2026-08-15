@@ -4340,3 +4340,280 @@ to a ruled change, §0.2 record complete, three tests green, red set reduced to
 COMPLETE and, if the programme wants it, retire "G-XFP ×3" from the standing
 known-red set used by other lanes' suite attributions — those lanes should now
 expect **one** red, not four.
+
+---
+
+## QN-c — execute Q-NARROW (c): the retargeter refuses a band it cannot hit, 2026-08-14
+
+Status: **COMPLETE on (c). (d) ledgered, not built (§7) — as the ruling
+directed. One deliverable NOT EXERCISED with a named blocker (§8).**
+
+Commit(s). Briefed on parent `1eb1074b`; G-XFP's two commits landed underneath
+during the wave, so the slice sits on `1d05ede2`:
+
+- `eb0f9c9b` — the typed refusal, end to end: retargeter → strategy → outcome.
+- this entry.
+
+**One code commit, not three.** The three layers do not compile apart: the
+refusal's `reason()` needs the `RefuseReason` variant, and a `mod.rs` that
+collected refusals but did not attach them would be dead code dressed as a
+slice. Splitting a single behaviour into non-compiling halves buys attribution
+that the red-first quotes in §2 already provide.
+
+### 0. Environment, stated because it cost measurement
+
+The Claude Code host process died mid-wave (machine reboot) and took the
+session with it. **Nothing was committed at that point and nothing was lost** —
+the working-tree edits survived and were re-verified against intent (`git diff`)
+before work resumed. Two consequences worth recording:
+
+- The parallel G-XFP lane ran `cargo test -p rs_cam_core --no-fail-fast` for
+  ~40 minutes **while this wave's uncommitted edits were in the shared tree**.
+  Its capture therefore compiled code this wave had not yet verified. It
+  compiled and its result stands, but the tree was not clean for it, and a
+  reader of that capture should know.
+- This wave waited ~40 minutes on the shared Cargo slot rather than overlap
+  (free RAM sat at 14 GB, under the 20 GB overlap bar). No release build was
+  run at any point.
+
+### 1. What changed, and three things it is not
+
+A-8i's P-(1b) slice asked the gate's own predicate whether the chipload
+retarget's headroom target lands inside the band the gate judges by, printed
+the answer in the rationale, and **emitted the candidate anyway**. On 86 of the
+235 two-sided shipped LUT rows the answer is no, so the optimizer spent a full
+generate + simulate per affected row discovering what `ChipBounds::contains`
+already knew.
+
+Q-NARROW ruled (c). The branch is now taken: the retargeter returns a **typed
+refusal** instead of a candidate. Three things this deliberately is **not**:
+
+- **Not a clamp.** Option (b) — aim at the nearest in-band value, or the
+  midpoint of a single-point row — was explicitly rejected by the ruling, and
+  no code in this slice computes such a target. The refusal record carries the
+  two headroom targets *as computed*; nothing invents a third.
+- **Not a new band.** The predicate is `ChipBounds::contains` on the bounds
+  travelling with the verdict — the Checkpoint K (b1) epsilon comparison the
+  `Exceeds` itself was decided by. No bare `>`, no re-derived band. P-(1a)'s
+  "one instrument, one comparison" invariant holds by construction.
+- **Not a silent drop.** A refusal is a claim about the world, so it carries
+  numbers and it reaches the outcome the operator reads (§4).
+
+### 2. Red first
+
+The red arm is the pre-ruling behaviour reached by disabling the refusal branch
+(`if false && !bounds.contains(...)`) — same fixtures, same recipe, band
+`[0.09, 0.10]` at peak 0.20 with headroom 1.20, where `max/min = 1.111 < 1.20`
+so `max / 1.20 = 0.0833` falls under the floor and `min × 1.20 = 0.108` clears
+the ceiling:
+
+```
+running 4 tests
+test ...chipload::tests::a_band_that_hosts_its_target_still_retargets_bit_identically ... ok
+test ...chipload::tests::a_single_point_row_refuses_both_sides ... FAILED
+test ...strategy::retarget::tests::a_narrow_band_emits_no_candidate_and_one_typed_refusal ... FAILED
+test ...chipload::tests::a_narrow_band_refuses_the_retarget_with_a_typed_reason ... FAILED
+
+---- a_narrow_band_refuses_the_retarget_with_a_typed_reason stdout ----
+panicked at chipload.rs:858:14:
+a band narrower than the headroom must refuse, not propose
+
+---- a_single_point_row_refuses_both_sides stdout ----
+panicked at chipload.rs:921:36:
+burn side must refuse on a single-point row
+
+---- a_narrow_band_emits_no_candidate_and_one_typed_refusal stdout ----
+panicked at strategy/retarget.rs:567:9:
+a refused retarget must not leave a candidate behind: ["chipload-retarget"]
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 2298 filtered out
+```
+
+Green, branch taken, the same fixtures plus the three outcome-plumbing units:
+
+```
+running 8 tests
+test ...orchestration_skip_tests::a_refusal_does_not_overwrite_a_more_specific_reason ... ok
+test ...orchestration_skip_tests::no_refusal_leaves_the_outcome_alone ... ok
+test ...orchestration_skip_tests::a_refused_retarget_names_itself_on_the_outcome ... ok
+test ...chipload::tests::a_band_that_hosts_its_target_still_retargets_bit_identically ... ok
+test ...chipload::tests::a_single_point_row_refuses_both_sides ... ok
+test ...strategy::retarget::tests::a_narrow_band_emits_no_candidate_and_one_typed_refusal ... ok
+test ...strategy::retarget::tests::a_wide_band_emits_its_candidate_and_refuses_nothing ... ok
+test ...chipload::tests::a_narrow_band_refuses_the_retarget_with_a_typed_reason ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 2294 filtered out
+```
+
+Note which line is `ok` in **both** blocks: the control. The three plumbing
+units are red-neutral by construction — they exercise
+`attach_retarget_refusals` directly, not the branch — and are marked as such
+here rather than counted as evidence the branch moved.
+
+### 3. The control arm, stated as a number
+
+Band `[0.05, 0.10]`, ratio 2.0 — comfortably wider than the 1.20 headroom, on
+the identical fixture, peak 0.20, baseline feed 2000:
+
+| | before QN-c | after QN-c |
+|---|---|---|
+| outcome | solution | solution |
+| target | 0.10 / 1.20 = 0.083333… | 0.083333… |
+| emitted feed | 2000 × (0.0833/0.20) = **833.333…** | **833.333…** |
+| refusals | none | none |
+
+Asserted to `1e-9` against the arithmetic, not against a recorded constant. A
+band the ruling does not touch does not move.
+
+And the inverted fixture, on the same recipe as the reds:
+
+| | P-(1b), report-only | QN-c, refusal |
+|---|---|---|
+| outcome | `Solved` | `Refused` |
+| primary feed | 833.333 mm/min | none emitted |
+| operator text | rationale contains "OUTSIDE" | typed reason + explanation |
+| cost of finding out | full generate + simulate | zero |
+
+### 4. The typed reason, and where it surfaces
+
+`Retargeter::target` returns `RetargetOutcome` — `Solved`, `NotApplicable`
+(not this retargeter's verdict arm, or an unmodellable input: **carries no
+reason by design**, there is no claim to explain), `Refused(RetargetRefusal)`.
+Power and deflection move to the same vocabulary and nothing else; their whole
+diff is `return None` → `return RetargetOutcome::NotApplicable`, and no number
+moves on either.
+
+`RetargetRefusal::ChiploadBandNarrowerThanHeadroom(NarrowChipBandRefusal)`
+carries `side`, `band_min/max_mm_per_tooth`, `band_source`, both headroom
+dials, **both** headroom targets (`min × low_headroom` and
+`max / high_headroom`), and the observed peak. That is the ruling's "band
+min/max and the unreachable targets", plus provenance and observation, so no
+reader has to re-derive the decision.
+
+Three surfaces, verified by test and code review (no screenshot — see §8):
+
+- **MCP** — `mcp_optimize_toolpath` serializes the whole `OptimizeOutcome`, so
+  both the new `reason` and `narrative.chipload_band_refusal` reach an agent
+  with no wire change. Serde-derived; `skip_serializing_if = "Option::is_none"`
+  keeps it absent when nothing was refused.
+- **GUI project rollup** (`optimize_project.rs:449,693`) renders
+  `narrative.explanation` for `NoSafeImprovement` — which now carries the
+  refusal sentence with the band in it.
+- **GUI per-toolpath modal** (`optimize_modal.rs:136`) renders
+  `narrative.headline`, **not** `explanation`, on that branch. At zero
+  non-baseline attempts the stock headline reads *"No candidates were produced
+  — the search space is empty for this op."* — which the refusal falsifies (the
+  space was not empty; the target inside it was unreachable). So the headline
+  is replaced **only in that case**, pinned by
+  `a_refused_retarget_names_itself_on_the_outcome`. With attempts on the board
+  the existing headline describes them accurately and is kept.
+
+**Pre-existing gap, not introduced here and not fixed here:** that modal branch
+never renders `narrative.explanation` at all, so the `DeflectionSetupLocked`
+prescription (F2.3) has been computed and not shown since it landed. Reported,
+not touched — fixing it would move a surface this ruling does not cover.
+
+**On the predicate's shape.** The ruling states the condition two-sidedly
+(`min × 1.20 > max` **and** `max / 1.20 < min`). The implementation triggers on
+the side being retargeted (`!bounds.contains(target)`), which under the shipped
+policy — `chipload_low_headroom == chipload_high_headroom == 1.20`
+(`policy.rs:480,487`) — is exactly the same statement about the band ratio.
+They can only come apart if an operator sets the two dials differently, and
+then refusing the side whose target is provably outside the bar it would be
+judged by is still the honest answer. Both targets are on the record either
+way, so a consumer can see whether the other side was reachable. Stated here
+rather than silently chosen.
+
+### 5. Reason precedence, pinned
+
+`attach_retarget_refusals` replaces the outcome's reason **only** when the
+outcome is `NoSafeImprovement` and still carries the generic
+`NoImprovementFound` — a reason that claims a search ran and came back
+empty-handed, which is a different and here untrue statement. A reason set by a
+closer classifier (`DeflectionSetupLocked`, `BipolarEngagement`) is left alone,
+and the structured record still lands beside it, because both facts are true.
+The structured record also lands on outcomes that went on to find a grid
+candidate: a refused retarget is a fact about the run regardless of what else
+won. Three units pin the three cases, including a no-refusal control.
+
+### 6. Suite attribution
+
+`cargo test -p rs_cam_core --no-fail-fast`, unbounded, at `eb0f9c9b`
+(i.e. **with** G-XFP's two commits underneath). Full capture:
+`artifacts/qnc/core_suite_after.txt`.
+
+| | |
+|---|---|
+| test binaries | 171 |
+| passed | **2982** |
+| failed | **1** |
+| ignored | 244 |
+
+The lib slice reads **2290 passed / 0 failed / 12 ignored**, against A-8i's
+2284 baseline: **+6 exactly**, and the +6 is enumerable — `+1` chipload (the
+single-point row; the narrow-band refusal *replaces* the report-only fixture it
+inverts, and the control was renamed, not added), `+2` strategy, `+3` outcome
+plumbing. No test disappeared into a rename.
+
+The single red is **`wanaka_suggest_baseline`**
+(`--test wanaka_suggest_integration`), failing on the same
+`AxialDocClampedByEnvelope { commanded_mm: 9.0, clamped_mm: 4.199…, binding:
+"vendor_ap" }` line it has been failing on — the known environmental red, not
+this wave's. **The G-XFP ×3 are green in this capture**, which is G-XFP's
+landed re-pin (`1b3835ca`), not a surprise and not this wave's doing: the tree
+this ran on already contained them. Known red set after this wave: **one**.
+
+Nothing else moved. No optimizer test outside the eight in §2 changed state,
+which is the attribution claim: the only outcomes that move are on rows whose
+vendor band is narrower than the retarget headroom, per Q-NARROW (c).
+
+### 7. Q-NARROW (d) — the ledger row this wave owes
+
+**LEDGER ROW (research, OPEN): the 1.20 retarget headroom is a repo-authored
+dial that is unsatisfiable by construction on a third of shipped vendor rows.**
+`chipload_low_headroom` / `chipload_high_headroom`
+(`optimize/policy.rs:480,487`, both 1.20, rationale "aim 20% above LUT
+minimum" / "20% below LUT maximum") exist to keep a retargeted candidate off
+the band boundary. They are **not** vendor or literature figures — no source
+this repo has retrieved publishes a multiplicative headroom on a chipload
+envelope. On 86 of 235 two-sided shipped rows the band is narrower than the
+dial; on the 48 single-point rows (`max == min`, already labelled
+`ChipBoundsSource::VendorLutPointPreset` — the engine knows they are nominal
+presets) **any** multiplicative headroom is unsatisfiable. The open question is
+therefore whether a multiplicative margin is the right instrument for a nominal
+preset at all, not whether 1.20 is the right number. **Census instrument:** the
+typed refusal — count `RefuseReason::ChiploadBandNarrowerThanHeadroom` /
+`narrative.chipload_band_refusal` by reason on any future corpus run to size
+the population empirically instead of from LUT arithmetic. Owner: the
+optimizer/feeds decider. Not scheduled by this wave.
+
+### 8. NOT EXERCISED, stated
+
+- **No screenshot of the refused card.** The `NoSafeImprovement` headline and
+  the rollup's explanation line were verified by test and by reading the two
+  renderers (`optimize_modal.rs:118-160`, `optimize_project.rs:430-460,
+  685-712`), **not** by a capture. Blocker is the same one A-8i's P-4
+  screenshot is owed on: no visible desktop session; owner **N-3**. This wave
+  adds a second item to that queue and must not be marked screenshot-clean
+  until it runs.
+- **No end-to-end `optimize_toolpath` run on a real narrow-band sim verdict.**
+  Unchanged from A-8i §7: the retargeter and the outcome plumbing are each
+  driven through the constructions production uses, but the full search
+  orchestration (`optimize_smoke`, `#[ignore]`d) was not run. What that leaves
+  open is the *frequency* claim in the field, not whether the branch fires —
+  the census answers the population exactly and is scale-invariant.
+- **No live MCP verification of the serialized refusal.** The field is
+  serde-derived on a struct the MCP path already serializes whole; asserted by
+  construction, not by a live `optimize_toolpath` call over the wire.
+- **Half-band burn refusal left as `NotApplicable`, not typed.** A row
+  publishing no floor still declines the burn retarget without a reason
+  record. That is pre-existing behaviour, outside Q-NARROW's scope, and is now
+  the only un-typed decline left on this path. Candidate for the same
+  treatment if anyone wants the vocabulary complete.
+
+### 9. Next action
+
+None owed by (c) beyond the N-3 screenshot in §8. Orchestrator action: put the
+§7 ledger row in the programme ledger as a research row, and note that other
+lanes' suite attributions should now expect **one** known red
+(`wanaka_suggest_baseline`), per G-XFP's discharge — this wave's capture agrees.
