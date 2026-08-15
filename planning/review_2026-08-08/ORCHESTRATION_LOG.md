@@ -5637,3 +5637,241 @@ None owed by this wave. Two carried forward unchanged:
 - **Q-NARROW (d)**, the research row on whether a multiplicative headroom is
   the right instrument for a nominal single-point preset. Untouched here; §4
   only moved which line prints the numbers, not the numbers.
+
+---
+
+## G-REGEN-RACE — generate_all and auto-regen stop cancelling each other, 2026-08-16
+
+Status: **COMPLETE, headlessly.** The mutual cancellation is fixed at the
+coordination point and sentried four ways. N-3 validates rather than
+diagnoses, which was the point of doing it here.
+
+Commit: `cc8e623c`. Artifacts in `artifacts/gregen/` (README carries the
+reproduction recipe and the `unfix.py` toggle that takes the red).
+
+Parent/revision measured: branch `tech-debt-3` on `166893bd`. Debug build
+throughout, no release build, one cargo job at a time. Cargo slot waits:
+**161 s**, then **30 s**, then 0 s twice — an EXTERNAL `sysml` session ran
+release cargo jobs on this machine for most of the wave and the guard
+blocked on every one of them. One pre-existing `target/release/rs_cam_gui
+--mcp` (pid 33655, started 22:04 the previous evening) is **not mine and
+was not touched**; every GUI I launched is gone.
+
+### The interleaving — who cancelled whom
+
+Not a mystery once the two submitters are put side by side. Both the GUI's
+own sweep and MCP go through `AppController::submit_toolpath_compute`, and
+underneath them the toolpath lane's rule is
+**resubmit-cancels-and-requeues** (`compute/worker.rs::submit_toolpath`): a
+request for the toolpath that is currently ACTIVE sets the lane cancel flag
+and queues the replacement, in one lock.
+
+1. `load_project` marks **every** toolpath `auto_regen = true` and
+   `stale_since = Some(loaded_at)` (`controller/io.rs:180-182`; the legacy
+   loader does the same at `:250-251`).
+2. 500 ms later `process_auto_regen` (`controller.rs:239` — driver 1's
+   site; the ledger's `:230` had drifted) submits them. One — the
+   `adaptive3d` on a 220k-triangle terrain — becomes the lane's active job
+   and stays there for tens of seconds.
+3. The agent's `generate_all` pushes `GenerateToolpath` for every enabled
+   toolpath. The submit for the one already in flight **supersedes it**.
+4. The abandoned job returns `Err(ComputeError::Cancelled)`. Pre-fix,
+   `drain_compute_results` read that as the toolpath's **outcome**:
+   `rt.status = Pending`, then `notify_mcp_toolpath_complete` removed the id
+   from `PendingGenerateAll::remaining` and — `Pending` being exactly what a
+   cancel leaves behind — pushed `"<name>: generation cancelled"` and
+   incremented `failed`.
+5. The replacement `generate_all` had itself queued then ran to completion
+   and produced a real toolpath. Its id was already out of `remaining`, so
+   nothing counted it.
+
+**So: `generate_all` cancelled the auto-regen job, and then reported that
+cancellation as a failure of its own request.** Direction B is the same
+defect mirrored — a fixpoint round-2 submit landing just before an
+auto-regen sweep for the same id is superseded by the sweep — which is why
+the fix is symmetric and sits below both callers rather than inside either.
+
+**Why never-minimised reproduces it.** Nothing in that chain reads the
+window. The debounce fires from the frame loop or from `off_frame_pump`
+either way, and after a `load_project` it is *guaranteed* to have fired
+before an agent can round-trip a `generate_all`. Mailbox +
+`about_to_wait` (Checkpoint O) widens the window; it does not open it. The
+compositor was never a term in this — B-4b's conclusion, re-established
+from the code rather than inherited.
+
+### The fix, and the shapes rejected
+
+`ToolpathSubmitOutcome::{Queued, SupersededActive}`, returned from
+`ComputeBackend::submit_toolpath` **from inside the lane lock**, recorded in
+a `superseded_toolpaths` ledger on the controller, and consumed at the one
+place that turns a lane message into a toolpath outcome: **a superseded job
+has no outcome.** Status stays `Computing` (it is), no MCP waiter resolves,
+no `generate_all` bucket moves — the replacement's own result does all
+three.
+
+Rejected, on evidence rather than taste:
+
+- **Suppress auto-regen while an MCP generate holds the lane.** Wrong
+  shape: a genuinely stale toolpath must not be skipped because an older
+  request is in flight, and it only covers direction A.
+- **Infer the supersede from a lane snapshot.** That is the same race one
+  level up. The lane decides under its own lock, so the lane reports it.
+- **Treat `Cancelled` as non-terminal for `generate_all`.** Loses the real
+  cancellation. The ledger is what separates them; sentry 2 pins it.
+- **A counter instead of a set.** Two supersedes before the first
+  `Cancelled` drains produce **one** `Cancelled` — the second submit only
+  re-`retain`s the queued replacement — so a counter leaks an entry and
+  swallows the next genuine cancel. Written at the field.
+
+### Evidence — red then green, twice, and the rig proves its own arm
+
+**B-4b's `nomin/result.json` is gone** (session scratch), so both arms are
+the repro *rebuilt from the mechanism*, not recovered.
+
+**Arm 1 — LIVE, on the shipped `--mcp` path.** Debug binary, Wayland,
+`present mode NEGOTIATED Mailbox`, window **never minimised and never
+touched**. Fixture: a scratch COPY of wanaka trimmed to the one enabled
+`Back Rough` adaptive3d on the real 219 944-triangle terrain (the operator's
+`wanaka.toml` was READ only, never edited or staged).
+
+The rig refuses to guess: it polls `generation_status` and will not record a
+verdict unless the GUI's own sweep already holds the lane when
+`generate_all` is issued. Both arms armed —
+`{'busy': True, 'lane_state': 'running', 'job': 'Back Rough (3D Rough)'}`.
+
+| arm | reading |
+|---|---|
+| **pre-fix** (`live_red/result.json`) | `generated: 0`, `failed: 1`, `rounds: 1`, `errors: [{"message": "Back Rough: generation cancelled", "toolpath_id": 4}]` |
+| **post-fix** (`live_green/result.json`) | `generated: 1`, `failed: 0`, `rounds: 1`, `errors: []` |
+
+That red is B-4b's string, to the word, on the shipped binary.
+
+**Arm 2 — DETERMINISTIC, at the controller.** Same tree, same tests, **one
+hunk** toggled (`artifacts/gregen/unfix.py` reverts the supersede guard and
+leaves the plumbing, so red and green are one tree with one behaviour
+changed). Red: **2 failed / 269**, the reply carrying the shipped JSON
+verbatim —
+
+```
+{"errors":[{"message":"Scallop: generation cancelled","toolpath_id":0}],
+ "failed":1,"generated":0,"rounds":1}
+```
+
+— and the second failure on `left: Some("Pending")` vs
+`right: Some("Computing")`. Green: **0 failed**.
+
+**A note on the relationship to B-4b's rig.** `shipped_flip_check.py`'s
+`wait_for_idle` **waits this race out**, and its docstring names the same
+mechanism (26.1 s of settle on its fixture). This wave's rig fires into it
+on purpose. That wait is now optional, and B-4b's step-5 measurement is
+retrospectively explained rather than contradicted.
+
+### How the OTHER half — interactive auto-regen — is known to still work
+
+Stated plainly because "the fix didn't break the GUI" is the easy thing to
+assert and the hard thing to show, and I did **not** have an operator at the
+desktop:
+
+- **By construction.** `process_auto_regen` is unchanged apart from
+  reverting my own out-of-scope edit; the sweep, the 500 ms debounce and the
+  submit path are byte-identical to `166893bd`. Nothing conditions on who
+  submitted.
+- **By sentry.** `a_param_edit_mid_generate_regenerates_without_a_pending_flicker`
+  drives two edits, the second landing while the first regenerate is still
+  running, and asserts the toolpath (a) stays `Computing` across the
+  superseded job rather than reverting to `Pending`, (b) reaches `Done` off
+  the replacement, and (c) has its staleness cleared. That test is **red
+  pre-fix** on assertion (a) — so it is measuring the change, not agreeing
+  with it.
+- **By live run.** In both live arms the toolpath is generated by the
+  auto-regen sweep's own submit chain; the post-fix run's `generated: 1` is
+  auto-regen's work being counted correctly, not bypassed.
+- **NOT shown: the pixels.** The operations tree's rendering of `Computing`
+  vs not-generated is asserted through the status label, never seen. That is
+  N-3 item 2 below.
+
+### Verification
+
+- `cargo test -p rs_cam_viz`: **269 lib + 14 + 15 + 11, 0 failed**, on the
+  final tree (`green_unit.txt`).
+- `cargo clippy --workspace --all-targets -- -D warnings` — **exit 0**
+  (`green_clippy.txt`). `cargo fmt --all --check` — **exit 0**; `cargo fmt
+  -p rs_cam_viz` touched only files already in my diff, verified against
+  `git status` before and after (the known sibling-module cascade).
+- **No machining number, threshold or gate can have moved:** every source
+  file in the commit is under `crates/rs_cam_viz/src/{compute,controller}`
+  plus tests and `artifacts/gregen/`. No generation, geometry, feeds or gate
+  path is reachable from the diff. The core suite was deliberately **not**
+  re-run for this purpose — it would measure nothing about this change.
+- The four sentries: `generate_all_does_not_report_its_own_supersede_as_a_failure`,
+  `a_genuine_cancel_is_still_reported_by_generate_all`,
+  `a_param_edit_mid_generate_regenerates_without_a_pending_flicker`
+  (controller), and `resubmitting_the_active_toolpath_reports_a_supersede`
+  (worker lane, real `ThreadedComputeBackend`).
+
+### A wrong turn, recorded because it was nearly shipped
+
+I drafted a second change — consolidating the `stale_since` clear into
+`submit_toolpath_compute` — and justified it with a claimed per-pump
+resubmit storm: a rejected submit leaves the toolpath stale, and
+`process_auto_regen` runs from `off_frame_pump` far more often than 60 Hz.
+**The claim was false.** `process_auto_regen` already clears `stale_since`
+for every id it sweeps, before submitting, and always has (`166893bd`,
+`controller.rs:259-261`). There is no storm. The change, its test and its
+comment were reverted before commit and the original comment restored. It is
+written here so the next wave does not rediscover the same wrong reason and
+believe it.
+
+### Uncertainty / NOT EXERCISED
+
+- **The GUI-visible half is asserted, not seen** (above). No screenshot is
+  claimed and none is owed by this wave's own bar — it is N-3's item 2.
+- **NOT EXERCISED: the fixpoint (direction B) live.** Both live arms use
+  `fixpoint: false` on a one-op fixture, which is what isolates the race to
+  a single unambiguous submit. Direction B — a round-2 retry superseded by a
+  sweep — is covered by argument and by the shared code path, **not** by a
+  live multi-round measurement. B-4b's `rounds: 2` arm is the shape that
+  would exercise it.
+- **NOT EXERCISED: any window state other than "never minimised".** This
+  wave never touched the window, deliberately — the whole point was that the
+  compositor is not a term. It therefore adds nothing to G-LV.1's incident-
+  state coverage, which stays N-3's and stays OPEN.
+- **One narrow TOCTOU remains, and self-heals.** If the active job finishes
+  between the lane's decision and the drain, the ledger holds an id with no
+  `Cancelled` coming. `drain_compute_results` removes the id on *any* result
+  for that toolpath, so the next drain clears it; worst case is one genuine
+  cancellation reported as a supersede, and only if a real cancel lands in
+  that same gap. Documented at the field rather than left to be found.
+- **The 100 ms heartbeat stays** (M-5), `off_frame_pump`, the proxy ping and
+  the Mailbox/`AutoNoVsync` flip are untouched, and **the other five
+  frame-coupled drivers are not swept.** One of the six is now fixed on its
+  own merits; whether the remaining five justify deleting the heartbeat is
+  unchanged and still N-3's call.
+
+### What N-3 should validate
+
+Validation, not diagnosis. Four things, in the order that would actually
+change the verdict:
+
+1. **The shipped red is gone on the operator's own instance.** Load a
+   multi-op project and issue `generate_all` **without** waiting for the
+   lane to go idle — removing B-4b's `wait_for_idle` *is* the test. Bar: no
+   `errors` entry containing "generation cancelled", and `generated` equal
+   to the number of ops that really produced toolpaths.
+2. **Interactive auto-regen at the desk, including the flicker.** Edit a
+   parameter and watch it regenerate on its own ~0.5 s later; then edit
+   twice in quick succession **while the first regenerate is still
+   running** and confirm the operations tree holds `Computing` instead of
+   flicking back to not-generated, and that the final result reflects the
+   second edit. This is the half only a human can see.
+3. **A real cancel still cancels.** `cancel_generation` or the GUI cancel
+   button mid-generate must still report the cancellation. This is the
+   boundary the fix is narrow around, and the one way it could be wrong.
+4. **Whether step 6 still wants the other five drivers** — unchanged by
+   this wave, but one fewer than it was.
+
+Next action / checkpoint request: **no checkpoint requested.** Two notes for
+the orchestrator: (a) the closeout §2.2 `G-REGEN-RACE` row can be marked
+CLOSED, with its "inside N-3's step 6" routing amended — it was fixable
+headlessly and N-3 now only validates; (b) the ledger's site reference
+`controller.rs:230` should read `:239`.
