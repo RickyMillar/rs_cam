@@ -606,3 +606,53 @@ are recorded in the matrix instead of failing the gate.
   operation's obligation.** It says the fixture contains material a tool of
   the stated diameter can remove. Where an operation legitimately declines
   (rest, above), that is stated as an exemption rather than silently absorbed.
+
+---
+
+## ADDENDUM 2026-08-16 (orchestrator, append-only)
+
+**The 165 cells have now run.** TD3's sweep-pool item S-3 executed all 165
+previously-uncollected matrix cells, plus a full 198-cell pass, on
+2026-08-16. Results, per cell, are in
+`planning/review_2026-08-08/A2D165_RESULTS.md` (per-cell artifacts in
+`planning/review_2026-08-08/artifacts/s3/`); the wave record is the S-3
+entry in `planning/review_2026-08-08/ORCHESTRATION_LOG.md`.
+
+**§1.1's count statement is superseded.** The last row of §1.1's table —
+*"PARTIAL — 33 of 198 cells, §1.2. Stopped on F-12, then by a full disk.
+The 165 uncollected cells are `NOT RUN`, not passing."* — was true when
+written and is no longer the state. §1.2's heading ("The measured matrix —
+33 of 198 cells") and its table remain a correct record of **W4's** 33
+cells: S-3 re-ran all 33 at `9c2eb01e` and every one reproduces **moves,
+cutting moves, cut length and cut runs identically**; only wall clock and
+RSS differ.
+
+Four things a reader of §1 and §3 should carry forward, none of which
+rewrites anything above:
+
+1. **The cost was never the obstacle.** 165 cells ran in **112 s**; the
+   full 198 in **120 s**, one process, debug build. §1.1's two
+   environmental interruptions (the 100 %-full root filesystem, and F-10's
+   22.9 GB RSS) are what actually stopped W4.
+2. **The first verdict was 165/165 `ok` and was not trustworthy.** The
+   campaign's three failure conditions cannot see a *contained* library
+   panic or a non-finite coordinate in the emitted path. A second,
+   non-asserting probe row was added **before** any verdict was read.
+   Final: 150 clean / 13 red / 2 declared non-terminating
+   (`pocket × invalid-cw`, `inlay × invalid-cw`).
+3. **All 19 contained panics are in the previously-unrun 165** — W4's 33
+   cells contained zero. The unrun portion held the entire signal. This
+   also gives **F-12** a second witness: `pline_seg.rs:33` is reached from
+   `inlay × walls-1e-2`, a second fully valid fixture, so F-12's *"no
+   contract violation is needed"* no longer rests on `rosette-24` alone.
+4. **W4's single ceiling breach does not reproduce.** `inlay × rosette-24`,
+   recorded here as `> 129 s, CEILING EXCEEDED, run stopped`, completes in
+   **6.977 s**. Two candidate explanations (a different revision; W4's own
+   recorded 100 %-full disk in that window) are left undiscriminated. This
+   is recorded as *the prior red does not reproduce*, **not** as a fix.
+
+Five new defect candidates were filed from the run — **A2D-F1 … A2D-F5**,
+summarised in `A2D165_RESULTS.md` §3 and routed in
+`planning/review_2026-08-08/TD3_CLOSEOUT.md` §2.2. No production code was
+changed by S-3, and no expectation, ceiling or fixture in this campaign was
+altered.
