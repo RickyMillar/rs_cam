@@ -4130,3 +4130,211 @@ P-(4) are landed and P-3 is verified as ruled. The **only** open A-8i
 obligation is the §0 rule 3 screenshot, blocked on a visible desktop session
 and owned by N-3; it must not be marked discharged until the PNGs exist and
 have been read back.
+
+## G-XFP — the transform fingerprints, re-pinned on a named mechanism, 2026-08-14
+
+Status: **COMPLETE.** The intake row's disposition ("a re-pin wave with mechanism
+per §0.2 — when did geometry move relative to the PR-6 re-pin?") is discharged.
+The mechanism is a single commit, it is an INTENDED consequence of a ruled
+change, and the three tests are green. **No defect candidate was raised** — the
+alternative outcome (unattributable move ⇒ STOP before re-pinning) did not
+arise, and the evidence for that is below rather than asserted.
+
+Commit(s). Briefed on parent `1eb1074b`:
+
+- `1b3835ca` — the re-pin, with the §0.2 record and the per-move mechanism in
+  the file's own comments.
+- this entry.
+
+### 0. What the intake had already established, and what it had not
+
+Three independent TD3 attributions (S-4's stash test, A-4's revert-diff, the
+orchestrator's master-worktree run) agreed the failing values were
+**byte-identical throughout TD3**, and the suite is red at master `53b1c72`
+itself. So: no TD3 wave moved this geometry, and §0.2's STOP did not apply to
+any TD3 slice.
+
+What none of the three established is **when** it moved and **why**. §0.2
+forbids re-pinning on fresh numbers alone. This wave supplies the missing half.
+
+### 1. Archaeology — method, so it is reproducible
+
+1. **`git log --follow` on the test file.** Last touched at `3dbec75` (PR-6's
+   re-pin of `arc_raster` for the arcfit intent key). So the pins are stale
+   relative to something in `3dbec75..master` — 116 commits.
+2. **Narrow by path, not by build.** `git log 3dbec75..53b1c72 --` over the
+   geometry-producing paths the three fixtures actually drive (`dressup.rs`,
+   `arcfit.rs`, `face.rs`, `boundary.rs`, `toolpath.rs`, `toolpath_spans.rs`,
+   `transform_provenance.rs`) cut 116 to **8 candidates**.
+3. **Read the failure shape before reading the diffs.** All three fixtures moved
+   and **every move COUNT was unchanged** (23 / 40 / 74). That excludes any
+   topology change — no insertion, no deletion, no merge/arc-fit count change —
+   and points at a coordinate-or-label rewrite on existing moves. Of the 8
+   candidates exactly one has that shape in a path all three fixtures run:
+   `268e427` in `apply_lead_in_out_with_provenance`. (`5fad7e21`, the
+   `merge_linear_runs` intent key, was the other strong prior and is **ruled
+   out** by this reasoning: suppressing a merge ADDS moves.)
+4. **Verify the boundary with two builds, not fifteen.** Detached worktrees at
+   `23f98fc` (the parent) and `268e427`, with the test file confirmed
+   byte-identical to HEAD's at both, so the pins are directly comparable.
+5. **Read the mechanism off the moves.** A `{:?}` dump of the move list either
+   side of the boundary, diffed. The per-move deltas are transcribed into the
+   test file's comments.
+
+**Method trap, recorded because it silently produces a wrong answer.** A
+**shared** `CARGO_TARGET_DIR` across worktrees does NOT re-build: cargo hashed
+the pre- and post-commit test binaries identically
+(`transform_provenance_fingerprints-ecdd32e8a46e9528` at both commits and at
+HEAD), so the second worktree reported the FIRST worktree's result — 3/3 "green"
+at `268e427`, which is the opposite of the truth. Caught because green at the
+suspected mechanism commit was the one result the hypothesis forbade. **Isolated
+target dirs per commit**; the dep cache saving is not worth an inverted verdict.
+
+### 2. The mechanism
+
+**`268e427` — "fix(dressup): the closing retract must lift from where the tool
+IS"**, landed under **W8 / F23-impl, Checkpoints F2+F3, RULED 2026-08-06**.
+
+`apply_lead_in_out_with_provenance` INSERTS a lead-out arc between a pass's last
+cutting move and the rapid that closes it, and used to copy that rapid verbatim.
+The tool is then one lead radius away from where the rapid was written, so a
+retract the generator emitted as a pure vertical lift became a **diagonal rapid
+travelling backwards across the surface it had just finished**, while climbing
+to safe Z. The commit rewrites such a rapid's XY — and only XY, and only when it
+lands within 0.01 mm of the cut endpoint the arc departed from — to the arc's
+own endpoint.
+
+**Intended consequence of a ruled change, and the wave said so at the time.**
+`review_2026-08-04/ORCHESTRATION_LOG.md` records it as a crash-class defect
+found on the way to F2 and fixed in its own commit **before** F2 so the safety
+gate never went red (A/M7 rapid collisions 1 → 0 at 0.1 mm). Geometry motion was
+expected and authorised.
+
+**What it did not do was re-run this suite.** The same lane's immediately
+preceding commit `23f98fc` re-pinned `crease_own_region_pr6b` for exactly this
+class of staleness — so the lane was pin-aware and still missed this file. TD2's
+closing green claim over the core tests then hit the first-failing-binary trap,
+so the red was never surfaced. **Eight days stale, not unexplained.**
+
+### 3. The §0.2 re-pin record
+
+| Pin | old | new | moves |
+|---|---|---|---|
+| `three_pass` dressups | `14_756_822_782_673_573_601` | `14_265_253_333_427_783_116` | 23 → 23 |
+| `arc_raster` dressups | `5_428_414_886_474_768_522` | `1_344_905_273_783_580_007` | 40 → 40 |
+| `face` stage 1 dressups | `9_692_869_450_022_244_402` | `8_357_027_825_945_903_145` | 74 → 74 |
+| `face` stage 2 boundary clip | `3_258_911_278_473_560_309` | `7_877_196_034_056_840_142` | 97 → 97 |
+| `face` stage 3 descent split | `2_154_614_841_165_484_301` | `3_086_279_569_100_738_182` | 103 → 103, `split_count` 6 → 6 |
+
+Every move count held; so did the stage-3 `split_count`. The differing moves,
+read off the dump:
+
+| fixture | moves that differ | shape |
+|---|---|---|
+| `three_pass` | 3 — indices 4, 13, 22 | `[20.0, 0.0, 10.0]` → `[21.5, 1.5, 10.0]` and the two like it: one closing rapid per pass |
+| `arc_raster` | 4 — indices 9, 19, 29, 39 | `[22.0, y, 10.0]` → `[23.5, y + 1.5, 10.0]`: one per raster row |
+| `face` stage 1 | 7 — indices 10, 21, 32, 43, 54, 65, 73 | `[37.0, y, 30.0]` → `[38.5, y + 1.5, 30.0]`: one `Retract` per faced row |
+
+XY only. Z, `move_type` and `intent` are untouched on every one of them, and the
+offset is `full_dressups()`'s `lead_radius` of 1.5 — i.e. exactly the arc
+endpoint, which is what the fix says it does.
+
+**No link site moved.** All four `link_sites` assertions in all three tests pass
+unchanged. This is the load-bearing half and deserves stating plainly: **this
+file exists to guard the semantic-channel landing sites**, and the geometry
+hashes are the secondary oracle. `268e427` is a geometry fix that left
+provenance byte-identical — which is the correct result, not a lucky one.
+
+**Boundary, both directions:**
+
+| commit | under OLD pins | under NEW pins |
+|---|---|---|
+| `23f98fc` (parent) | **3/3 green** | 3/3 red |
+| `268e427` (mechanism) | **3/3 red, with exactly today's values** | 3/3 green |
+| `1eb1074b` (HEAD at brief) | 3/3 red | **3/3 green** |
+
+The boundary is **one commit wide**, and nothing in the 60+ commits from
+`268e427` to HEAD moved these fingerprints again — established by the middle
+row, where the mechanism commit reproduces HEAD's failing values byte-for-byte
+on all five constants.
+
+**Exact build.** rustc 1.92.0 (`ded5c06cf`, 2025-12-08), host
+`x86_64-unknown-linux-gnu`, cargo 1.92.0, debug profile,
+`cargo test -p rs_cam_core --test transform_provenance_fingerprints`. Measured
+at `1eb1074b` in a **detached worktree with only this file modified**, so the
+concurrent QN-c lane's in-flight edits to `optimize/**` cannot have contributed
+to any pinned value. (This was not optional: the shared working tree failed to
+compile twice mid-wave on QN-c's partial edits.)
+
+**Consumer census.** `rg` over the repo for all five constants finds them in
+`crates/rs_cam_core/tests/transform_provenance_fingerprints.rs` and **nowhere
+else in code**. The only other occurrences are planning logs and captured
+test-output artifacts that RECORD the values as they stood
+(`review_2026-08-04/ORCHESTRATION_LOG.md`, `ARCFIT_INTENT_EVIDENCE.md`,
+`review_2026-08-08/artifacts/*`); those are historical records and are
+deliberately **not** rewritten. `tests/common/fingerprint.rs` names this test
+file in a doc comment only, and shares no constant with it. **Test-only pins, as
+intended** — no shipped behaviour reads them.
+
+The file's header now carries the full lineage as a table (`5d32150` capture →
+`3dbec75` PR-6 → `268e427` this re-pin), so the next reader gets the mechanism
+without repeating the archaeology.
+
+### 4. Verification and suite attribution
+
+Full core suite, **unbounded, `--no-fail-fast`**, run at `1b3835ca` in a
+detached worktree with a **clean** `git status` — so it measures the committed
+branch, not the shared working tree (QN-c's in-flight `optimize/**` edits were
+present and non-compiling in the shared tree at the time, twice).
+
+```
+cargo test -p rs_cam_core --no-fail-fast
+171 test binaries; 2976 passed, 1 failed, 244 ignored
+```
+
+**End-state red set: `wanaka_suggest_baseline`, alone.** The intake's target for
+this row is met — G-XFP ×3 is gone from the known-red set:
+
+| binary | before | after |
+|---|---|---|
+| `transform_provenance_fingerprints` ×3 | RED (since `268e427`, 2026-08-06) | **GREEN** |
+| `wanaka_suggest_integration::wanaka_suggest_baseline` | RED | RED — unchanged, not this wave's |
+
+`literature_matrix` (G-LIT-IPE) and `sub_1mm_tapered_ball_hardwood_finish_
+extrapolates_with_scaling` (G-SUB1MM), both red in A-4's six-item enumeration,
+are **green** in this run — consistent with A-7's reported closures, and
+re-confirmed here on a clean tree.
+
+**One caveat on the surviving red, so the "environmental" label is not read as
+"meaningless".** `wanaka_suggest_baseline` fails on an *assertion about a
+number*, not on a missing file or a display: `Back Rough (tp 4): envelope-clamped
+DPP must land near 5.4 mm (regression baseline), got 4.199999999999999`. It
+reproduces on the **committed** `wanaka.toml` inside a clean worktree, so it is
+not caused by the working tree's local modification to that play-file. It is out
+of scope for this wave and untouched by it; whoever owns it should treat it as a
+live baseline disagreement rather than a fixture-path problem.
+
+### 5. NOT EXERCISED, stated
+
+- **`5fad7e21` (the `merge_linear_runs` intent key) was ruled out by reasoning,
+  not by a build.** The argument is sound and stated in §1.3 — suppressing a
+  merge can only ADD moves, and every move count held — but it was not
+  independently confirmed at that commit. Cheap to close if anyone wants it:
+  one worktree build on an isolated target dir.
+- **No re-run of the GUI/CLI/MCP crates.** These pins are test-only (§3's
+  census), so no consumer outside `rs_cam_core`'s test tree can observe them.
+  `-p rs_cam_viz`, `-p rs_cam_cli`, `-p rs_cam_mcp` were not run by this wave.
+- **The historical planning-log copies of the OLD constants were deliberately
+  left in place.** They are records of what the pins were when those waves ran;
+  rewriting them would destroy the evidence trail this wave depended on.
+- **No screenshot / live-GUI validation.** Nothing in this row has a visible
+  surface.
+
+### 6. Next action
+
+None owed by this row. **G-XFP is discharged**: mechanism named and attributed
+to a ruled change, §0.2 record complete, three tests green, red set reduced to
+`wanaka_suggest_baseline` alone. Orchestrator action: mark the G-XFP intake row
+COMPLETE and, if the programme wants it, retire "G-XFP ×3" from the standing
+known-red set used by other lanes' suite attributions — those lanes should now
+expect **one** red, not four.
