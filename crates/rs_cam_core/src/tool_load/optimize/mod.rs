@@ -324,8 +324,14 @@ fn optimize_toolpath_inner(
     //      worse, a power/deflection-Exceeds baseline with Within
     //      chipload ran the headroom SCALE-UP instead.
     let mut all_candidates: Vec<OptimizeCandidate> = Vec::new();
+    // Q-NARROW (c): a retargeter can now decline with a typed reason
+    // instead of emitting a candidate its own gate has already rejected.
+    // The refusals travel alongside the candidates and are attached to
+    // whatever outcome this run ends up producing — including the cancel
+    // paths, so a partial result still says what was declined.
+    let mut retarget_refusals: Vec<retarget::RetargetRefusal> = Vec::new();
     if any_load_gate_exceeds(&baseline_verdict) {
-        all_candidates.extend(run_retarget_strategy(
+        let staged = run_retarget_strategy(
             &mut guard,
             &ctx,
             &baseline_op,
@@ -334,7 +340,9 @@ fn optimize_toolpath_inner(
             matched_lut_row.as_ref(),
             &machine,
             cancel,
-        ));
+        );
+        all_candidates.extend(staged.candidates);
+        retarget_refusals.extend(staged.refusals);
     } else if matches!(baseline_verdict.chipload, ChiploadVerdict::Within { .. })
         && let Some(c) = run_headroom_strategy(
             &mut guard,
@@ -352,7 +360,10 @@ fn optimize_toolpath_inner(
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
-        return finalize_partial(baseline_candidate, all_candidates, &machine);
+        return attach_retarget_refusals(
+            finalize_partial(baseline_candidate, all_candidates, &machine),
+            &retarget_refusals,
+        );
     }
 
     // 8. Axis-grid strategy: joint DOC × stepover × scallop_height
@@ -372,7 +383,10 @@ fn optimize_toolpath_inner(
 
     if cancel.load(Ordering::SeqCst) {
         drop(guard);
-        return finalize_partial(baseline_candidate, all_candidates, &machine);
+        return attach_retarget_refusals(
+            finalize_partial(baseline_candidate, all_candidates, &machine),
+            &retarget_refusals,
+        );
     }
 
     // 9. Stage 2: top-N by composite_score, re-eval at full resolution.
@@ -392,10 +406,13 @@ fn optimize_toolpath_inner(
                 .to_owned(),
             ..OutcomeNarrative::default()
         };
-        return OptimizeOutcome::no_safe_improvement(
-            vec![baseline_candidate],
-            RefuseReason::NoImprovementFound,
-            narrative,
+        return attach_retarget_refusals(
+            OptimizeOutcome::no_safe_improvement(
+                vec![baseline_candidate],
+                RefuseReason::NoImprovementFound,
+                narrative,
+            ),
+            &retarget_refusals,
         );
     };
 
@@ -404,7 +421,76 @@ fn optimize_toolpath_inner(
     //     not the session). The outcome is returned to the caller; the
     //     caller's view of `session` is now back at the baseline.
     drop(guard);
-    build_outcome(baseline_candidate, stage2_candidates, &machine)
+    attach_retarget_refusals(
+        build_outcome(baseline_candidate, stage2_candidates, &machine),
+        &retarget_refusals,
+    )
+}
+
+/// **Q-NARROW (c), 2026-08-14.** Fold the typed retarget refusals this
+/// run produced into the outcome it ended up with.
+///
+/// Three separable effects, deliberately not one:
+///
+/// 1. **The structured record always lands** on
+///    [`OutcomeNarrative::chipload_band_refusal`]. A refused retarget is
+///    a fact about the run regardless of what the rest of the search
+///    found — a grid candidate can still win, and both things are true.
+/// 2. **The reason is replaced only on a `NoSafeImprovement` outcome
+///    still carrying the generic `NoImprovementFound`.** That reason
+///    claims "no candidate was both faster and safe", i.e. that a search
+///    ran and came back empty. When the retarget was declined before it
+///    ran, the typed reason is the honest one. A reason set by some
+///    other classifier (pre-flight `DeflectionSetupLocked`,
+///    `BipolarEngagement`) is left alone — it is closer to the cause.
+/// 3. **The headline is replaced only when nothing non-baseline was
+///    attempted.** `headline_no_safe` says "No candidates were produced
+///    — the search space is empty for this op" at zero attempts, which
+///    the refusal falsifies: the space was not empty, the target inside
+///    it was unreachable. With attempts on the board the existing
+///    headline describes them accurately and is kept.
+fn attach_retarget_refusals(
+    mut outcome: OptimizeOutcome,
+    refusals: &[retarget::RetargetRefusal],
+) -> OptimizeOutcome {
+    let Some(first) = refusals.first() else {
+        return outcome;
+    };
+    let retarget::RetargetRefusal::ChiploadBandNarrowerThanHeadroom(detail) = first;
+    outcome.narrative.chipload_band_refusal = Some(detail.clone());
+
+    if outcome.kind == OutcomeKind::NoSafeImprovement
+        && matches!(
+            outcome.reason,
+            None | Some(RefuseReason::NoImprovementFound)
+        )
+    {
+        outcome.reason = Some(first.reason());
+        let explanation = first.explanation();
+        outcome.narrative.explanation = if outcome.narrative.explanation.is_empty() {
+            explanation
+        } else {
+            format!("{explanation}. {}", outcome.narrative.explanation)
+        };
+        if outcome.candidates.len() <= 1 {
+            outcome.narrative.headline = explanation_headline(detail);
+        }
+    }
+    outcome
+}
+
+/// Short headline for a narrow-band refusal — the modal renders
+/// `headline`, not `explanation`, on its `NoSafeImprovement` branch.
+fn explanation_headline(detail: &retarget::NarrowChipBandRefusal) -> String {
+    let min = detail
+        .band_min_mm_per_tooth
+        .map_or_else(|| "none".to_owned(), |m| format!("{m:.4}"));
+    format!(
+        "No candidate proposed: the vendor chipload band [{min}, {max:.4}] mm/tooth \
+         is narrower than the retarget headroom, so every target it could aim at \
+         is outside the band the gate judges by.",
+        max = detail.band_max_mm_per_tooth,
+    )
 }
 
 /// Run Stage 0 (analytical RPM/feed headroom scale-up) for one
@@ -502,15 +588,14 @@ fn run_retarget_strategy(
     matched_lut_row: Option<&MatchedRow>,
     machine: &MachineProfile,
     cancel: &AtomicBool,
-) -> Vec<OptimizeCandidate> {
+) -> RetargetStageOutput {
     use crate::compute::catalog::OptimizationSurface;
     use std::sync::atomic::Ordering;
-    use strategy::OptimizationStrategy;
     use strategy::retarget::PerGateRetargetStrategy;
 
     let view = match baseline_op.optimization_surface() {
         OptimizationSurface::Optimizable(v) => v,
-        OptimizationSurface::NotOptimizable { .. } => return Vec::new(),
+        OptimizationSurface::NotOptimizable { .. } => return RetargetStageOutput::default(),
     };
 
     let policy = search_policy();
@@ -561,10 +646,17 @@ fn run_retarget_strategy(
         space: &space,
         ctx: &axis_ctx,
     };
-    let cps = strat.candidates(&view, baseline_verdict);
+    // Q-NARROW (c): both halves of the strategy's answer come back from
+    // ONE call — the refusals are decided by the same arithmetic that
+    // would have produced the candidates, so asking twice would put two
+    // instruments on one comparison.
+    let staged = strat.candidates_and_refusals(&view, baseline_verdict);
 
-    let mut out: Vec<OptimizeCandidate> = Vec::new();
-    for cp in cps {
+    let mut out = RetargetStageOutput {
+        candidates: Vec::new(),
+        refusals: staged.refusals,
+    };
+    for cp in staged.candidates {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
@@ -581,10 +673,21 @@ fn run_retarget_strategy(
             policy.stages.coarse_resolution_mm.value,
             cancel,
         ) {
-            out.push(candidate);
+            out.candidates.push(candidate);
         }
     }
     out
+}
+
+/// What the retarget stage produced: evaluated candidates plus the
+/// typed refusals the retargeters returned instead of candidates
+/// (Q-NARROW (c)). Distinct from
+/// [`strategy::retarget::RetargetStrategyOutput`], whose candidates are
+/// un-simulated patch lists.
+#[derive(Debug, Default)]
+struct RetargetStageOutput {
+    candidates: Vec<OptimizeCandidate>,
+    refusals: Vec<retarget::RetargetRefusal>,
 }
 
 /// Run the [`AxisGridStrategy`] against the baseline (or the headroom
@@ -1192,6 +1295,93 @@ mod orchestration_skip_tests {
         assert!((p.target_stickout_mm - 27.8).abs() < 0.5);
         assert!(p.text.contains("200"), "Exceeds limit not in '{}'", p.text);
         assert!(p.text.contains("50"), "Within target not in '{}'", p.text);
+    }
+
+    // ── Q-NARROW (c): the refusal on the outcome ─────────────────────
+
+    fn narrow_band_refusal() -> retarget::RetargetRefusal {
+        use crate::tool_load::verdict::{ChipBoundsSource, ChipSide};
+        retarget::RetargetRefusal::ChiploadBandNarrowerThanHeadroom(
+            retarget::NarrowChipBandRefusal {
+                side: ChipSide::High,
+                band_min_mm_per_tooth: Some(0.09),
+                band_max_mm_per_tooth: 0.10,
+                band_source: ChipBoundsSource::VendorLut,
+                low_headroom: 1.20,
+                high_headroom: 1.20,
+                low_target_mm_per_tooth: Some(0.108),
+                high_target_mm_per_tooth: 0.10 / 1.20,
+                observed_mm_per_tooth: 0.20,
+            },
+        )
+    }
+
+    fn no_safe_outcome(narrative: OutcomeNarrative) -> OptimizeOutcome {
+        OptimizeOutcome::no_safe_improvement(
+            Vec::new(),
+            RefuseReason::NoImprovementFound,
+            narrative,
+        )
+    }
+
+    /// The typed reason replaces the generic one, the structured record
+    /// lands, and the prose says which band and which dial.
+    #[test]
+    fn a_refused_retarget_names_itself_on_the_outcome() {
+        let outcome = attach_retarget_refusals(
+            no_safe_outcome(OutcomeNarrative::default()),
+            &[narrow_band_refusal()],
+        );
+        assert_eq!(
+            outcome.reason,
+            Some(RefuseReason::ChiploadBandNarrowerThanHeadroom),
+            "the generic 'searched and found nothing' reason claims a search \
+             that never ran"
+        );
+        let detail = outcome
+            .narrative
+            .chipload_band_refusal
+            .as_ref()
+            .expect("the machine-readable half must land too");
+        assert_eq!(detail.band_min_mm_per_tooth, Some(0.09));
+        assert!(outcome.narrative.explanation.contains("0.0900"));
+        // Nothing was attempted, so the stock headline would have said the
+        // search space is empty — which the refusal falsifies.
+        assert!(outcome.narrative.headline.contains("narrower than"));
+    }
+
+    /// A reason set by a closer classifier is left alone; the structured
+    /// record still lands, because both facts are true.
+    #[test]
+    fn a_refusal_does_not_overwrite_a_more_specific_reason() {
+        let outcome = attach_retarget_refusals(
+            OptimizeOutcome::no_safe_improvement(
+                Vec::new(),
+                RefuseReason::DeflectionSetupLocked,
+                OutcomeNarrative {
+                    explanation: "deflection prescription".to_owned(),
+                    ..OutcomeNarrative::default()
+                },
+            ),
+            &[narrow_band_refusal()],
+        );
+        assert_eq!(outcome.reason, Some(RefuseReason::DeflectionSetupLocked));
+        assert_eq!(outcome.narrative.explanation, "deflection prescription");
+        assert!(outcome.narrative.chipload_band_refusal.is_some());
+    }
+
+    /// No refusals — every field is untouched. The control that keeps the
+    /// two tests above from being true of every outcome.
+    #[test]
+    fn no_refusal_leaves_the_outcome_alone() {
+        let before = no_safe_outcome(OutcomeNarrative {
+            headline: "Tried 3 candidates".to_owned(),
+            ..OutcomeNarrative::default()
+        });
+        let after = attach_retarget_refusals(before.clone(), &[]);
+        assert_eq!(after.reason, before.reason);
+        assert_eq!(after.narrative.headline, before.narrative.headline);
+        assert!(after.narrative.chipload_band_refusal.is_none());
     }
 
     #[test]

@@ -390,6 +390,7 @@ fn measure_retarget_round(depth_mm: f64) -> Round {
 
     let solution = retargeter
         .target(&baseline.verdict, &space, &view, &axis_ctx)
+        .solution()
         .expect("the retargeter must fire on an Exceeds(High) verdict");
     let feed_patch = solution
         .patches

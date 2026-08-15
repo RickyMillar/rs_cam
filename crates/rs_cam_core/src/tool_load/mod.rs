@@ -137,6 +137,17 @@ pub enum RefuseReason {
     /// Optimizer-specific: every Stage-1/Stage-2 candidate was
     /// either slower than baseline or failed the gate.
     NoImprovementFound,
+    /// **Q-NARROW (c), 2026-08-14.** The matched vendor band the gate
+    /// judges by is narrower than the retarget's own headroom policy,
+    /// so no feed can both clear the headroom and stay inside the band.
+    /// The retargeter refused instead of emitting a candidate its own
+    /// gate had already rejected; the numbers behind the decision are on
+    /// [`optimize::narrative::OutcomeNarrative::chipload_band_refusal`].
+    ///
+    /// Distinct from [`Self::NoImprovementFound`], which claims a search
+    /// happened and came back empty-handed. Here the retarget was
+    /// declined before it ran.
+    ChiploadBandNarrowerThanHeadroom,
 }
 
 impl RefuseReason {
@@ -180,6 +191,9 @@ impl RefuseReason {
             }
             Self::NoImprovementFound => {
                 "no candidate was both faster than baseline and within the gate's safe envelope"
+            }
+            Self::ChiploadBandNarrowerThanHeadroom => {
+                "the matched vendor chipload band is narrower than the retarget headroom — no feed can both clear the headroom and stay inside the band, so the optimizer refused rather than propose one it would reject"
             }
         }
     }

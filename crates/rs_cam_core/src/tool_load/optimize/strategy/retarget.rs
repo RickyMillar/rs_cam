@@ -23,7 +23,7 @@ use super::super::axes::{AxisContext, AxisView};
 use super::super::retarget::chipload::ChiploadFeedRetargeter;
 use super::super::retarget::deflection::DeflectionDocRetargeter;
 use super::super::retarget::power::PowerFeedRetargeter;
-use super::super::retarget::{RetargetSolution, Retargeter};
+use super::super::retarget::{RetargetRefusal, RetargetSolution, Retargeter};
 use super::super::space::SearchSpace;
 use super::{CandidatePatch, OptimizationStrategy};
 
@@ -48,6 +48,66 @@ pub struct PerGateRetargetStrategy<'a> {
     pub ctx: &'a AxisContext<'a>,
 }
 
+/// What one run of [`PerGateRetargetStrategy`] produced: the candidates
+/// to evaluate **and** the typed refusals the retargeters returned.
+///
+/// Q-NARROW (c) is why this is one struct rather than two calls: a
+/// refusal is decided by the same arithmetic that would have produced
+/// the candidate, so asking twice would put two instruments on one
+/// comparison — the defect class this programme keeps finding.
+#[derive(Debug, Clone, Default)]
+pub struct RetargetStrategyOutput {
+    pub candidates: Vec<CandidatePatch>,
+    /// Empty on every path that emitted or declined nothing. A refusal
+    /// here is not a failure: it is a decision with numbers attached.
+    pub refusals: Vec<RetargetRefusal>,
+}
+
+impl<'a> PerGateRetargetStrategy<'a> {
+    /// Run all three retargeters and keep both halves of each answer.
+    /// [`OptimizationStrategy::candidates`] is this, with the refusals
+    /// dropped — the trait has nowhere to carry them.
+    pub fn candidates_and_refusals(
+        &self,
+        baseline: &AxisView<'_>,
+        baseline_verdict: &ToolpathLoadVerdict,
+    ) -> RetargetStrategyOutput {
+        let mut out = RetargetStrategyOutput::default();
+
+        if let Some(cl) = &self.chipload {
+            let answer = cl.target(&baseline_verdict.chipload, self.space, baseline, self.ctx);
+            if let Some(refusal) = answer.refusal() {
+                out.refusals.push(refusal.clone());
+            }
+            if let Some(sol) = answer.solution() {
+                out.candidates.push(into_candidate(CHIPLOAD_SUB, sol));
+            }
+        }
+
+        let power = self
+            .power
+            .target(&baseline_verdict.power, self.space, baseline, self.ctx);
+        if let Some(refusal) = power.refusal() {
+            out.refusals.push(refusal.clone());
+        }
+        if let Some(sol) = power.solution() {
+            out.candidates.push(into_candidate(POWER_SUB, sol));
+        }
+
+        let deflection =
+            self.deflection
+                .target(&baseline_verdict.deflection, self.space, baseline, self.ctx);
+        if let Some(refusal) = deflection.refusal() {
+            out.refusals.push(refusal.clone());
+        }
+        if let Some(sol) = deflection.solution() {
+            out.candidates.push(into_candidate(DEFLECTION_SUB, sol));
+        }
+
+        out
+    }
+}
+
 impl<'a> OptimizationStrategy for PerGateRetargetStrategy<'a> {
     fn name(&self) -> &'static str {
         STRATEGY_NAME
@@ -58,29 +118,8 @@ impl<'a> OptimizationStrategy for PerGateRetargetStrategy<'a> {
         baseline: &AxisView<'_>,
         baseline_verdict: &ToolpathLoadVerdict,
     ) -> Vec<CandidatePatch> {
-        let mut out: Vec<CandidatePatch> = Vec::new();
-
-        if let Some(cl) = &self.chipload
-            && let Some(sol) = cl.target(&baseline_verdict.chipload, self.space, baseline, self.ctx)
-        {
-            out.push(into_candidate(CHIPLOAD_SUB, sol));
-        }
-
-        if let Some(sol) =
-            self.power
-                .target(&baseline_verdict.power, self.space, baseline, self.ctx)
-        {
-            out.push(into_candidate(POWER_SUB, sol));
-        }
-
-        if let Some(sol) =
-            self.deflection
-                .target(&baseline_verdict.deflection, self.space, baseline, self.ctx)
-        {
-            out.push(into_candidate(DEFLECTION_SUB, sol));
-        }
-
-        out
+        self.candidates_and_refusals(baseline, baseline_verdict)
+            .candidates
     }
 }
 
@@ -493,6 +532,82 @@ mod tests {
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
         assert_eq!(cps[0].strategy, CHIPLOAD_SUB);
+    }
+
+    /// **Q-NARROW (c) — the refusal reaches the strategy, not just the
+    /// retargeter.**
+    ///
+    /// A band narrower than the headroom emits NO chipload candidate and
+    /// exactly one typed refusal. Before the ruling this recipe produced a
+    /// candidate the gate had already rejected, at the price of a full
+    /// generate + simulate.
+    #[test]
+    fn a_narrow_band_emits_no_candidate_and_one_typed_refusal() {
+        let env = Env::new(2000.0);
+        let view = env.view();
+        let ctx = env.ctx();
+        let space = env.space(&view, &ctx);
+        let strat = PerGateRetargetStrategy {
+            chipload: Some(make_chipload(&env)),
+            power: make_power(&env, 1.0),
+            deflection: make_deflection(&env),
+            space: &space,
+            ctx: &ctx,
+        };
+        let verdict = ToolpathLoadVerdict {
+            toolpath_id: ToolpathId(0),
+            chipload: exceeds_breakage(0.20, chip_bounds_of(Some(0.09), 0.10)),
+            power: within_power(0.4),
+            deflection: within_deflection(0.020),
+            drill_gates: None,
+            modulation_summary: None,
+            feed_explanation: None,
+        };
+        let out = strat.candidates_and_refusals(&view, &verdict);
+        assert!(
+            out.candidates.is_empty(),
+            "a refused retarget must not leave a candidate behind: {:?}",
+            out.candidates
+                .iter()
+                .map(|c| c.strategy)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(out.refusals.len(), 1);
+        let RetargetRefusal::ChiploadBandNarrowerThanHeadroom(detail) = &out.refusals[0];
+        assert_eq!(detail.band_min_mm_per_tooth, Some(0.09));
+        // The trait method is the same run with the refusals dropped — the
+        // two views cannot disagree about what was emitted.
+        assert!(strat.candidates(&view, &verdict).is_empty());
+    }
+
+    /// The control at strategy level: a two-sided band wider than the
+    /// headroom still emits its one chipload candidate and refuses nothing.
+    #[test]
+    fn a_wide_band_emits_its_candidate_and_refuses_nothing() {
+        let env = Env::new(2000.0);
+        let view = env.view();
+        let ctx = env.ctx();
+        let space = env.space(&view, &ctx);
+        let strat = PerGateRetargetStrategy {
+            chipload: Some(make_chipload(&env)),
+            power: make_power(&env, 1.0),
+            deflection: make_deflection(&env),
+            space: &space,
+            ctx: &ctx,
+        };
+        let verdict = ToolpathLoadVerdict {
+            toolpath_id: ToolpathId(0),
+            chipload: exceeds_breakage(0.20, chip_bounds()),
+            power: within_power(0.4),
+            deflection: within_deflection(0.020),
+            drill_gates: None,
+            modulation_summary: None,
+            feed_explanation: None,
+        };
+        let out = strat.candidates_and_refusals(&view, &verdict);
+        assert_eq!(out.candidates.len(), 1);
+        assert_eq!(out.candidates[0].strategy, CHIPLOAD_SUB);
+        assert!(out.refusals.is_empty());
     }
 
     /// Wanaka TP 4 fixture: BurnRisk on a 3150 mm/min Pocket should now
