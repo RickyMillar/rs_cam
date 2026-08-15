@@ -1,8 +1,11 @@
 //! Wanaka real-shape regression sentry for the combined-Suggest pipeline.
 //!
 //! Unlike the in-crate `feeds::suggest::tests` block (24 unit tests with
-//! hand-tuned synthetic operating points), this test loads the actual
-//! `planning/airrun_2026-06-01/wanaka.toml` via `ProjectSession::load`
+//! hand-tuned synthetic operating points), this test loads a real
+//! operator project — `tests/fixtures/wanaka_2026-08-16_f530995a.toml`, a
+//! dated snapshot of `planning/airrun_2026-06-01/wanaka.toml` (see
+//! `wanaka_project_path` for the 2026-08-16 fixture re-pin and why the
+//! live play-file is no longer read) — via `ProjectSession::load`
 //! and runs every enabled toolpath through the same
 //! `suggest_for_operation` invocation the CLI's `--apply-suggest`
 //! flag uses (`crates/rs_cam_cli/src/project.rs::apply_suggested_feeds_to_session`).
@@ -17,8 +20,12 @@
 //!   carbide stub is chipload/power-bound, not deflection-bound, so
 //!   `DppCappedByDeflection` must NOT fire. Instead the axial-DOC
 //!   envelope (`binding: "vendor_ap"`) clamps the calculator's 9 mm
-//!   DPP straight to ~5.4 mm via `AxialDocClampedByEnvelope`, and the
-//!   deflection solve never runs. **Re-baselined 2026-08-13 (Checkpoint
+//!   DPP straight to the matched row's ap ceiling via
+//!   `AxialDocClampedByEnvelope`, and the deflection solve never runs.
+//!   **Re-baselined 2026-08-16 (G-WANAKA-DPP):** that ceiling is 4.2 mm,
+//!   not 5.4 — Checkpoint K-(a4) (`b7234d2f`) moved the matched row from
+//!   the adaptive to the pocket family. Full record at the assertion.
+//!   **Re-baselined 2026-08-13 (Checkpoint
 //!   J-1):** `FeedRaisedForChipload` used to fire here, lifting feed
 //!   911 → 6000 mm/min (the derived cutting ceiling) with
 //!   `cap_hit == Some(MaxFeed)`. Suggest pass 8 is retired; the feed now
@@ -29,9 +36,11 @@
 //!   stock envelope) — `StepoverRaisedForRuntime` must fire raising
 //!   stepover toward ~0.23 mm. The `FeedRaisedForChipload` half of this
 //!   case was re-baselined 2026-08-13 (Checkpoint J-1) to "must NOT
-//!   fire". That inversion is UNVERIFIED by execution: toolpath 11 is
-//!   absent from the operator's working `wanaka.toml`, so
-//!   `wanaka_suggest_baseline` panics in `find_case` before reaching it.
+//!   fire". That inversion was UNVERIFIED by execution until 2026-08-16:
+//!   the operator had disabled toolpath 11 in their working copy, so
+//!   `wanaka_suggest_baseline` never reached this block. The G-WANAKA-DPP
+//!   fixture re-pin restores it — **measured, not asserted-in-hope**:
+//!   stepover 0.030 → 0.22781 mm and neither lift warning fires.
 //! - **Pin Drill / Holes** (drill family): chipload is `NotApplicable` —
 //!   neither `FeedRaisedForChipload` nor `DppCappedByDeflection` may
 //!   leak through.
@@ -47,8 +56,9 @@
 //! `StepoverClampedToToolDiameter` — fails the test loudly so a
 //! future regression that quietly leaks a new variant gets flagged.
 //!
-//! If `wanaka.toml` is intentionally mutated this test will fail and
-//! force a deliberate re-baseline — that's the design.
+//! If the snapshot fixture is intentionally re-taken this test will fail
+//! and force a deliberate re-baseline — that's the design. Edits to the
+//! operator's live play-file no longer reach it; see `wanaka_project_path`.
 //!
 //! ## Pin convention (R4, tech-debt review 2026-06-10)
 //!
@@ -67,7 +77,10 @@
 //!    (`DEFAULT_CUTTING_FEED_CAP_MM_MIN`) instead of literals.
 //! 3. **Determinism sentries** (rare): a raw numeric pin is allowed
 //!    only with a comment naming what legitimately re-baselines it
-//!    (see the 5.4 mm envelope-clamped DPP pin below).
+//!    (see the 4.2 mm envelope-clamped DPP pin below, which since
+//!    2026-08-16 also derives its expectation from the matched LUT row
+//!    and pins that row's identity — so the literal is a cross-check
+//!    rather than the whole guarantee).
 
 #![allow(
     clippy::unwrap_used,
@@ -91,17 +104,41 @@ use rs_cam_core::feeds::{
 use rs_cam_core::machine::DEFAULT_CUTTING_FEED_CAP_MM_MIN;
 use rs_cam_core::session::ProjectSession;
 
-/// Resolve the on-disk wanaka project path. We deliberately load the
-/// canonical project at `planning/airrun_2026-06-01/wanaka.toml`
-/// rather than copying it into `tests/fixtures/` — this sentry exists
-/// precisely to fail when that project drifts.
+/// Resolve the wanaka project this sentry runs against.
+///
+/// ## FIXTURE RE-PIN 2026-08-16 (G-WANAKA-DPP)
+///
+/// **Old source:** `planning/airrun_2026-06-01/wanaka.toml` — the
+/// operator's live play-file, loaded directly. The rationale that stood
+/// here was "this sentry exists precisely to fail when that project
+/// drifts".
+///
+/// **New source:** `tests/fixtures/wanaka_2026-08-16_f530995a.toml` — a
+/// byte-identical snapshot of that play-file taken from
+/// `git show f530995a:planning/airrun_2026-06-01/wanaka.toml`
+/// (blob `fa04baaa`).
+///
+/// **Why:** the old rationale conflated two different failures under one
+/// red. This is a *feeds-pipeline* sentry: every assertion below is about
+/// what Suggest computes, and the project is the fixed geometry those
+/// computations are pinned against. But the file it read is a document the
+/// operator edits between machining sessions, so ordinary play — here,
+/// disabling toolpath 11 and adding a toolpath 15 — turned the sentry red
+/// with `Toolpath id 11 missing from suggest cases` and kept it red for
+/// weeks. A test whose fixture a human edits for unrelated reasons cannot
+/// distinguish "Suggest regressed" from "the operator tried something", and
+/// during that window it verified neither: the whole tp-11 block was
+/// unreachable (see its own NOT EXERCISED note, now retired).
+///
+/// Drift of the play-file is a *fixture-provenance* event, not a feeds
+/// regression, so it no longer lands here. Re-snapshot deliberately (new
+/// dated file, new commit sha in the name, re-ratify the numbers below)
+/// when the play-file's geometry should become the new reference.
 fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("planning")
-        .join("airrun_2026-06-01")
-        .join("wanaka.toml")
+        .join("tests")
+        .join("fixtures")
+        .join("wanaka_2026-08-16_f530995a.toml")
 }
 
 /// Run Suggest for every enabled toolpath through the canonical
@@ -197,7 +234,7 @@ fn wanaka_suggest_baseline() {
     let path = wanaka_project_path();
     assert!(
         path.exists(),
-        "Wanaka project not found at {} — the real-shape sentry needs the canonical project on disk",
+        "Wanaka snapshot fixture not found at {} — the real-shape sentry needs its dated snapshot on disk",
         path.display()
     );
     let session = ProjectSession::load(&path).expect("Load wanaka.toml as ProjectSession");
@@ -235,13 +272,13 @@ fn wanaka_suggest_baseline() {
         // Unified-load-model re-baseline (2026-07-06): the axial-DOC
         // envelope pass runs FIRST in enforce_invariants. On Wanaka's
         // Back Rough the vendor `ap_max` row binds and clamps the
-        // calculator's 9 mm initial DPP straight to ~5.4 mm via
-        // `AxialDocClampedByEnvelope { binding: "vendor_ap" }`. Since the
-        // 2026-06-20 unified-load-model recalibration (Ks=49.95/F_edge=
-        // 5.30 anchored to GenericHardwood), the closed-form deflection
-        // back-off only fires for long/thin tools — this 6 mm carbide
-        // stub is chipload/power-bound, so the back-off never runs and
-        // `DppCappedByDeflection` must NOT fire.
+        // calculator's 9 mm initial DPP straight to the row's ap ceiling
+        // via `AxialDocClampedByEnvelope { binding: "vendor_ap" }`. Since
+        // the 2026-06-20 unified-load-model recalibration (Ks=49.95/
+        // F_edge=5.30 anchored to GenericHardwood), the closed-form
+        // deflection back-off only fires for long/thin tools — this 6 mm
+        // carbide stub is chipload/power-bound, so the back-off never runs
+        // and `DppCappedByDeflection` must NOT fire.
         let envelope_clamp = suggested
             .warnings
             .iter()
@@ -275,15 +312,76 @@ fn wanaka_suggest_baseline() {
             envelope_clamped > 0.0 && envelope_clamped < envelope_commanded,
             "{ctx}: envelope-clamped DPP must drop below the calculator's initial 9.0 mm, got {envelope_clamped}"
         );
-        // R4 convention: DETERMINISM SENTRY (rule 3) — 5.4 mm is the
-        // vendor_ap envelope's output on this exact geometry/tool/LUT
-        // row, not a literature value or a named constant. Re-baseline
-        // it only when the unified-load-model recalibration
-        // (2026-06-20, Ks=49.95/F_edge=5.30) or the vendor LUT's ap_max
-        // for this tool/material row changes deliberately.
+        // ── RE-BASELINED 2026-08-16 (G-WANAKA-DPP): 5.4 mm → 4.2 mm ────
+        //
+        // OLD: `(envelope_clamped - 5.4).abs() < 0.5`. Provenance as this
+        // file stated it: "the vendor_ap envelope's output on this exact
+        // geometry/tool/LUT row"; re-baseline only on the unified-load-
+        // model recalibration or a deliberate LUT ap_max change. 5.4 is
+        // `min(ap_max_factor 0.9 × Ø6, ap_max_mm 5.5)` on the LUT row
+        // `amana-flat-hardwood-adaptive-6000-2f`.
+        //
+        // NEW: 4.2 mm, observed as 4.199999999999999 — which is exactly
+        // `min(0.7 × 6.0, 4.2)` in IEEE-754 double (0.7 × 6.0 rounds to
+        // 4.199999999999999 and wins the min against 4.2). That is the ap
+        // ceiling of the LUT row `amana-flat-hardwood-pocket-6000-2f`
+        // (`ap_max_factor 0.7`, `ap_max_mm 4.2`, `ap_rule "0.25xD to
+        // 0.7xD"`, Amana Spektra Spiral Plunge v24). Both the old and the
+        // new value are bit-exact reproductions of their row's ceiling, so
+        // the attribution is arithmetic, not inference.
+        //
+        // MECHANISM: `b7234d2f` — "feat(a7)!: K-(a4) — route the LUT query
+        // ONCE; both consumers call `lut_query_for`" (A-7, Checkpoint
+        // K-(a4), ruled binding and declared NUMBER-MOVING for Adaptive3d).
+        // Before a4, Suggest queried the *declared* family, so an
+        // `Adaptive3d` op matched the `adaptive` row; the gate/optimizer
+        // side already rerouted Adaptive3d → Pocket. a4 hoisted that
+        // routing into `feeds::vendor_normalize::lut_query_for` and made
+        // both sides call it, so Suggest's matched row moved adaptive →
+        // pocket. The matched row reaches this envelope through
+        // `FeedsResult::matched_lut_row` → `SuggestContext::matched_lut_row`
+        // → `pick_axial_envelope` → `cutter_axial_constraints` →
+        // `max_doc_vendor` = `min(ap_max_factor × D, ap_max_mm)`.
+        //
+        // The same commit's companion `16786d3b` re-pinned the two
+        // Adaptive3d feeds in `arc_fit_disposition_a5.rs` on this exact
+        // row pair (band 0.038–0.070 → 0.032–0.055) and named the row ids.
+        // This file was NOT re-pinned then because it was already red on
+        // the play-file drift and its verification never reached here.
+        //
+        // R4 convention: this stays a DETERMINISM SENTRY (rule 3), but the
+        // number is no longer a bare literal — the assertion below derives
+        // the expectation from the matched row and the row-identity check
+        // above states which row that must be. Re-baseline on a deliberate
+        // LUT ap change or a deliberate re-route; if it moves for any other
+        // reason, one of those two guards will say which.
+        let matched = suggested
+            .feeds_result
+            .matched_lut_row
+            .as_ref()
+            .unwrap_or_else(|| panic!("{ctx}: Suggest matched no vendor LUT row"));
+        assert_eq!(
+            matched.observation_id, "amana-flat-hardwood-pocket-6000-2f",
+            "{ctx}: post-K-(a4) an Adaptive3d Suggest query must resolve the POCKET row. \
+             If this reads `amana-flat-hardwood-adaptive-6000-2f` again, the shared routing \
+             through `vendor_normalize::lut_query_for` has regressed (b7234d2f)"
+        );
+        let row_ap_ceiling = match (matched.ap_max_factor, matched.ap_max_mm) {
+            (Some(f), Some(a)) => (f * 6.0).min(a),
+            (Some(f), None) => f * 6.0,
+            (None, Some(a)) => a,
+            (None, None) => panic!("{ctx}: matched row carries no ap ceiling at all"),
+        };
         assert!(
-            (envelope_clamped - 5.4).abs() < 0.5,
-            "{ctx}: envelope-clamped DPP must land near 5.4 mm (regression baseline), got {envelope_clamped}"
+            (envelope_clamped - row_ap_ceiling).abs() < 1e-9,
+            "{ctx}: the clamp must be the matched row's own ap ceiling \
+             (min(ap_max_factor × Ø6, ap_max_mm) = {row_ap_ceiling}), got {envelope_clamped}"
+        );
+        assert!(
+            (envelope_clamped - 4.2).abs() < 0.05,
+            "{ctx}: envelope-clamped DPP must land near 4.2 mm (regression baseline, \
+             re-baselined from 5.4 on 2026-08-16 — mechanism b7234d2f / Checkpoint K-(a4)), \
+             got {envelope_clamped}"
         );
         // This assertion catches the deflection back-off leaking back
         // into stub-tool roughing — a regression that would silently
@@ -404,10 +502,14 @@ fn wanaka_suggest_baseline() {
         let ctx = format!("3D Rough 6 (tp {_id} / {name})");
 
         // Same unified-load-model re-baseline as Back Rough above: the
-        // vendor_ap envelope clamps DPP first (~9.0 mm → ~5.4 mm) and
+        // vendor_ap envelope clamps DPP first (9.0 mm → the matched
+        // pocket row's 4.2 mm ap ceiling since Checkpoint K-(a4)) and
         // the deflection back-off never runs for this chipload/power-
         // bound stub tool. See the Back Rough block for the full
-        // rationale.
+        // rationale and the 2026-08-16 re-baseline record. This block
+        // deliberately pins direction only (pin convention rule 2); the
+        // magnitude sentry lives on Back Rough alone so one re-baseline
+        // ratifies one number.
         let (envelope_commanded, envelope_clamped) = suggested
             .warnings
             .iter()
@@ -503,12 +605,15 @@ fn wanaka_suggest_baseline() {
         // RE-BASELINED 2026-08-13 (Checkpoint J-1). Pre-fix this pinned
         // the DropCutter lift reaching its target uncapped (`cap_hit ==
         // None`, `obs_after >= 0.95 × lut_target`, no still-low). Retired
-        // with pass 8. NOTE: this whole block is **unreachable at
-        // `5c4e847c`** — `wanaka_suggest_baseline` panics earlier, at
-        // `find_case(ToolpathId(11))`, because the operator's working copy
-        // of `wanaka.toml` no longer carries toolpath 11. The inversion is
-        // therefore mechanical and UNVERIFIED by execution; see the A-5i
-        // log entry's NOT EXERCISED row.
+        // with pass 8. The A-5i log entry carried this block as a NOT
+        // EXERCISED row: at `5c4e847c` the test never got here, because
+        // the operator had disabled toolpath 11 in their working copy of
+        // `wanaka.toml` and `find_case(ToolpathId(11))` panicked first.
+        // **That row is discharged 2026-08-16 (G-WANAKA-DPP):** the
+        // fixture re-pin reads the committed snapshot, toolpath 11 is
+        // enabled there, and the inversion is now verified by execution —
+        // measured warnings on this case are `FinishEnvelopeAdvisory` +
+        // `StepoverRaisedForRuntime { 0.03 → 0.22781 }` and nothing else.
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
