@@ -1104,6 +1104,18 @@ fn verdict_badge(
     // cap — `% of cap` is misleading there. Skip the % branch and fall
     // back to a non-numeric badge.
     let peak = status.display_peak.unwrap_or(0.0);
+    // X-VAC (2026-08-14) — a gate handed an empty population returns
+    // `Within` and, before this branch, painted theme::SUCCESS with a
+    // "0%" or "OK" badge: indistinguishable from a measured clean cut.
+    // The VERDICT is unchanged (report-tier); the badge stops claiming
+    // it measured something. See
+    // `planning/review_2026-08-08/XVAC_CENSUS.md`.
+    if status.is_vacuous() {
+        let text = format!("{label} \u{2205}");
+        ui.label(egui::RichText::new(text).small().color(theme::TEXT_DIM))
+            .on_hover_text(verdict_tooltip(status, cap, burn_risk));
+        return;
+    }
     let (color, status_text) = match (status.state, status.confidence) {
         (LoadState::Within, Some(Confidence::Validated)) | (LoadState::Within, None) => {
             match pct_of_cap(peak, cap) {
@@ -1128,6 +1140,16 @@ fn verdict_badge(
 }
 
 fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bool) -> String {
+    // X-VAC: the clause comes from core so GUI, CLI, MCP and the
+    // diagnostics list cannot word it differently.
+    let vacuity = status.vacuity_clause();
+    if !vacuity.is_empty() {
+        return format!(
+            "{} reports {:?} but{vacuity}",
+            status.kind.label(),
+            status.state
+        );
+    }
     // For burn-risk chipload, the bound is the LUT *floor* — render as
     // "peak / floor" instead of "peak / cap" so the relationship reads
     // correctly (peak < floor, not peak > cap). (Roadmap C.3)
@@ -1838,6 +1860,9 @@ mod tests {
             confidence: None,
             unmodeled_reason: Some(&reason),
             sample_range: None,
+            // X-VAC: an `Unmodeled` gate has no population to state, and
+            // `None` here means exactly that — not an empty one.
+            population: None,
             display_peak: None,
             unit: "mm/tooth",
             exceeded: None,

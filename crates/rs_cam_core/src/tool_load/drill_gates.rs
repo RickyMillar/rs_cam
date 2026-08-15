@@ -113,6 +113,18 @@ pub struct DrillGatesVerdict {
     /// attributed to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worst_hole_id: Option<usize>,
+    /// **X-VAC** — the hole population all three gates above were
+    /// computed from. One shared population, because all three are
+    /// vacuous together: with no hole of positive depth nothing is
+    /// drilled, so the two depth-derived gates read `0.0 → Within` and
+    /// the config-derived plunge-feed gate judges a feed nothing runs at.
+    ///
+    /// `None` = not stated (pre-2026-08-14 wire payload), never zero.
+    /// Reported through [`DrillGateOutcome::as_criterion_status`] onto
+    /// every drill criterion so no consumer has to know the drill path
+    /// counts holes rather than samples.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub population: Option<crate::tool_load::verdict::GatePopulation>,
     /// The cycle these verdicts are about. Consumed only by remedy
     /// wording (R-4) — no gate reads it.
     #[serde(default = "default_cycle_kind")]
@@ -137,12 +149,29 @@ pub fn plunge_feed_envelope(material: &Material) -> (f64, f64) {
 
 /// Evaluate the three drill gates for a single drilling toolpath.
 pub fn evaluate(drill_op: &DrillOp, summary: &DrillToolpathSummary) -> DrillGatesVerdict {
+    // X-VAC: the population, stated. `contributing` counts holes with a
+    // POSITIVE depth — the only holes any of the three observations can
+    // come from — and `offered` is every hole the op carries. A drill op
+    // whose holes all have `top_z == bottom_z` yields `max_dtd = 0.0`,
+    // `per_peck_max_dtd = 0.0` and `ChipWeldingRisk::Low`, i.e. two
+    // `Within` verdicts computed from nothing at all.
+    let contributing = drill_op
+        .holes
+        .iter()
+        .filter(|h| h.top_z - h.bottom_z > 0.0)
+        .count();
+    let population = crate::tool_load::verdict::GatePopulation::new(
+        contributing,
+        drill_op.holes.len(),
+        crate::tool_load::verdict::PopulationUnit::Holes,
+    );
     DrillGatesVerdict {
         chip_welding: evaluate_chip_welding(summary, &drill_op.material),
         peck_adequacy: evaluate_peck_adequacy(drill_op, summary),
         plunge_feed: evaluate_plunge_feed(drill_op),
         worst_hole_id: summary.deepest_hole_index,
         cycle: DrillCycleKind::of(drill_op.cycle),
+        population: Some(population),
     }
 }
 
@@ -297,10 +326,14 @@ impl DrillGateOutcome {
     /// (warning band — surfaced by the drill badges and narrate, not
     /// an export blocker). Drill outcomes are always modeled, so
     /// `Unmodeled` never appears here.
+    /// `population` is the drill toolpath's shared hole population
+    /// ([`DrillGatesVerdict::population`]); pass `None` only where none
+    /// is known, which reads as "not stated", never as zero (X-VAC).
     pub fn as_criterion_status(
         &self,
         kind: crate::tool_load::verdict::CriterionKind,
         cycle: DrillCycleKind,
+        population: Option<crate::tool_load::verdict::GatePopulation>,
     ) -> crate::tool_load::verdict::CriterionStatus<'_> {
         use crate::tool_load::verdict::{
             CriterionKind, CriterionStatus, ExceededCriterion, LoadState,
@@ -333,6 +366,7 @@ impl DrillGateOutcome {
             confidence: None,
             unmodeled_reason: None,
             sample_range: None,
+            population,
             display_peak: Some(self.observed()),
             unit: kind.unit(),
             exceeded,
@@ -487,17 +521,21 @@ mod tests {
         use crate::tool_load::verdict::{CriterionKind, LoadState};
         // Ø3 @ 1500 mm/min → 500 per mm Ø > 400 hi → Critical.
         let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
-        let status = critical
-            .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
+        let status = critical.plunge_feed.as_criterion_status(
+            CriterionKind::DrillPlungeFeed,
+            DrillCycleKind::Peck,
+            None,
+        );
         assert_eq!(status.state, LoadState::Exceeds);
         assert!(status.exceeded.is_some());
 
         // Ø6 @ 100 mm/min → 16.7 < 50 lo → Elevated (rubbing — warn only).
         let elevated = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 12.0, 100.0));
-        let status = elevated
-            .plunge_feed
-            .as_criterion_status(CriterionKind::DrillPlungeFeed, DrillCycleKind::Peck);
+        let status = elevated.plunge_feed.as_criterion_status(
+            CriterionKind::DrillPlungeFeed,
+            DrillCycleKind::Peck,
+            None,
+        );
         assert_eq!(status.state, LoadState::Within);
         assert!(status.exceeded.is_none());
     }

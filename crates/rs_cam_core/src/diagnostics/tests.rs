@@ -418,6 +418,10 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
             },
             // R-7: no hole attribution in a hand-built verdict.
             worst_hole_id: None,
+            // X-VAC: not stated by this fixture — it exercises the
+            // gate wording, not the population marker. `None` reads as
+            // "not stated", never as an empty gate.
+            population: None,
             cycle: crate::tool_load::drill_gates::DrillCycleKind::Peck,
         }),
         modulation_summary: None,
@@ -443,6 +447,9 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
             sample_range: 188118..188119,
             statistic: Some(ChiploadStatistic::MedianLow),
             locality: Some("arc-fit".to_owned()),
+            // X-VAC: this fixture reproduces the 2026-08-05 arc-fit
+            // reading, which had a real triggering sample. Not vacuous.
+            population: None,
         },
         bounds: ChipBounds {
             min_mm_per_tooth: Some(0.0305),

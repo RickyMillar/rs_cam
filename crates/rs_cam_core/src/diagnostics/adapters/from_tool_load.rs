@@ -267,6 +267,7 @@ fn chipload_to_diagnostic(
             // possibilities are mutually exclusive by construction: the
             // burn advisory is a low-side reading, the ceiling advisory a
             // high-side one.
+            let vacuity = vacuity_clause(&approach_to_max.evidence);
             let message = match (burn_advisory.as_deref(), ceiling_advisory.as_deref()) {
                 (Some(advisory), _) => format!(
                     "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
@@ -289,6 +290,7 @@ fn chipload_to_diagnostic(
                     approach_to_max.observed_mm_per_tooth
                 ),
             };
+            let message = format!("{message}{vacuity}");
             Some(Diagnostic {
                 id: DiagnosticId::from(ids::LOAD_CHIPLOAD_WITHIN),
                 scope: Scope::Toolpath { id: tp_id },
@@ -345,8 +347,9 @@ fn chipload_to_diagnostic(
                 state: DiagnosticState::Current,
                 source: Source::ToolLoad,
                 message: format!(
-                    "{msg_prefix}: {:.4} mm{qualifier}{provenance}",
-                    triggering.observed_mm_per_tooth
+                    "{msg_prefix}: {:.4} mm{qualifier}{provenance}{}",
+                    triggering.observed_mm_per_tooth,
+                    vacuity_clause(&triggering.evidence)
                 ),
                 evidence: Some(DiagnosticEvidence::SampleRange {
                     toolpath_id: tp_id,
@@ -382,6 +385,27 @@ fn chipload_to_diagnostic(
             chipload_supersedes,
         ),
     }
+}
+
+/// **X-VAC** — the one vacuity clause, appended to every gate message
+/// this adapter emits.
+///
+/// The 2026-08-05 measurement was that a gate handed an empty population
+/// returns `Within` and reads, on every surface, exactly like a measured
+/// clean cut. This adapter is the construction site four of those
+/// surfaces share (CLI `project` report, GUI diagnostics panel, MCP
+/// `get_diagnostics`, narration's diagnostic list), so the clause is
+/// written once here and the wording cannot drift between them.
+///
+/// Report-tier: severity, id, state and the verdict itself are all
+/// unchanged — `LOAD_CHIPLOAD_WITHIN` is what the supersession reducer
+/// keys on, and raising severity would move badge counts. What changes
+/// is that the message now says the pass rests on nothing.
+fn vacuity_clause(evidence: &crate::tool_load::verdict::SampleEvidence) -> String {
+    evidence
+        .population
+        .map(crate::tool_load::verdict::GatePopulation::vacuity_clause)
+        .unwrap_or_default()
 }
 
 fn chipload_supersedes() -> Vec<DiagnosticId> {
@@ -421,8 +445,10 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "Power within budget ({:.2}/{:.2} kW peak)",
-                peak_kw, available_kw
+                "Power within budget ({:.2}/{:.2} kW peak){}",
+                peak_kw,
+                available_kw,
+                vacuity_clause(evidence)
             ),
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id: tp_id,
@@ -455,8 +481,10 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "Spindle power exceeded: {:.2} kW peak > {:.2} kW available",
-                peak_kw, available_kw
+                "Spindle power exceeded: {:.2} kW peak > {:.2} kW available{}",
+                peak_kw,
+                available_kw,
+                vacuity_clause(evidence)
             ),
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id: tp_id,
@@ -500,9 +528,10 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "Tip deflection within limit ({:.0} µm / {:.0} µm)",
+                "Tip deflection within limit ({:.0} µm / {:.0} µm){}",
                 peak_mm * 1000.0,
-                bounds.exceeds_mm * 1000.0
+                bounds.exceeds_mm * 1000.0,
+                vacuity_clause(evidence)
             ),
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id: tp_id,
@@ -535,9 +564,10 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "Tip deflection exceeds limit: {:.0} µm > {:.0} µm",
+                "Tip deflection exceeds limit: {:.0} µm > {:.0} µm{}",
                 peak_mm * 1000.0,
-                bounds.exceeds_mm * 1000.0
+                bounds.exceeds_mm * 1000.0,
+                vacuity_clause(evidence)
             ),
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id: tp_id,
@@ -584,6 +614,7 @@ fn drill_gates_to_diagnostics(drill: &DrillGatesVerdict, scope: &Scope) -> Vec<D
             scope.clone(),
             "ratio",
             drill.worst_hole_id,
+            drill.population,
         ),
         drill_gate_to_diagnostic(
             ids::DRILL_PECK_ADEQUACY,
@@ -592,6 +623,7 @@ fn drill_gates_to_diagnostics(drill: &DrillGatesVerdict, scope: &Scope) -> Vec<D
             scope.clone(),
             "ratio",
             drill.worst_hole_id,
+            drill.population,
         ),
         drill_gate_to_diagnostic(
             ids::DRILL_PLUNGE_FEED,
@@ -602,6 +634,10 @@ fn drill_gates_to_diagnostics(drill: &DrillGatesVerdict, scope: &Scope) -> Vec<D
             // Hole-independent by construction (`feed / diameter`) —
             // attributing it to a hole would be a second fabrication.
             None,
+            // The POPULATION still applies: this gate judges the feed a
+            // drill op runs at, and an op with no hole of positive depth
+            // runs at it nowhere (X-VAC).
+            drill.population,
         ),
     ]
 }
@@ -685,6 +721,7 @@ fn drill_gate_to_diagnostic(
     scope: Scope,
     unit: &str,
     worst_hole_id: Option<usize>,
+    population: Option<crate::tool_load::verdict::GatePopulation>,
 ) -> Diagnostic {
     // R-7: drill gates are closed-form ratios over config + material.
     // The honest evidence for one is the comparison itself, plus the
@@ -693,6 +730,13 @@ fn drill_gate_to_diagnostic(
     // was not measured.
     let hole_clause = worst_hole_id
         .map(|h| format!(" [deepest hole #{}]", h + 1))
+        .unwrap_or_default();
+    // X-VAC — same clause, same wording, hole-counted instead of
+    // sample-counted. `chip_welding_dtd` and `per_peck_max_dtd` both
+    // read 0.0 on a hole set with no depth, which classifies `Low` and
+    // renders as a comfortable pass.
+    let vacuity = population
+        .map(crate::tool_load::verdict::GatePopulation::vacuity_clause)
         .unwrap_or_default();
     match outcome {
         DrillGateOutcome::Within {
@@ -709,7 +753,7 @@ fn drill_gate_to_diagnostic(
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "{label} within ({observed:.2} of {threshold:.2}{})",
+                "{label} within ({observed:.2} of {threshold:.2}{}){vacuity}",
                 band_suffix(*envelope_lo, *envelope_hi, *threshold)
             ),
             evidence: Some(DiagnosticEvidence::GeometryCompare {
@@ -744,7 +788,7 @@ fn drill_gate_to_diagnostic(
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
             message: format!(
-                "{}{hole_clause}",
+                "{}{hole_clause}{vacuity}",
                 drill_exceedance_message(
                     label,
                     *observed,

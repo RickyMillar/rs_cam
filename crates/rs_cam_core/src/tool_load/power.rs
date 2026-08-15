@@ -169,11 +169,23 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let mut entry_peak_power: f64 = 0.0;
     let mut entry_peak_idx: Option<usize> = None;
     let mut entry_peak_available: f64 = 0.0;
+    // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`). `offered`
+    // counts every sample this toolpath emitted; `contributing` counts
+    // the samples that reached the peak comparison. The 2026-08-05
+    // measurement is exactly the case where the second is zero while the
+    // first is large: `any_arc_captured` is set BEFORE the phantom /
+    // entry split below, so a toolpath whose every cutting sample is
+    // transit reaches the `Within` arm with `peak_idx == None`,
+    // `available_kw == 0.0` and empty evidence — a healthy-looking pass
+    // resting on nothing.
+    let mut offered: usize = 0;
+    let mut contributing: usize = 0;
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
             continue;
         }
+        offered += 1;
         if !s.is_cutting {
             continue;
         }
@@ -235,6 +247,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             any_slot = true;
         }
 
+        contributing += 1;
         last_available_kw = avail;
 
         if p_kw > peak_power {
@@ -266,15 +279,23 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         )
     };
 
-    let evidence = match peak_idx {
-        Some(idx) => SampleEvidence::at(idx).with_locality(
-            trace
-                .samples
-                .get(idx)
-                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref())),
-        ),
-        None => SampleEvidence::empty(),
-    };
+    // X-VAC: state the population on BOTH arms — `Exceeds` needs it too,
+    // so a consumer can always ask the same question of any verdict
+    // rather than inferring "populated" from the state.
+    let population = super::verdict::GatePopulation::new(
+        contributing,
+        offered,
+        super::verdict::PopulationUnit::Samples,
+    );
+    let evidence =
+        match peak_idx {
+            Some(idx) => SampleEvidence::at(idx)
+                .with_locality(trace.samples.get(idx).and_then(|s| {
+                    super::locality::classify_sample_locality(s, span_lookup.as_ref())
+                }))
+                .with_population(population),
+            None => SampleEvidence::empty().with_population(population),
+        };
 
     // available_kw on the verdict reflects the capacity at the worst
     // sample we saw. Falls back to the last captured sample's available
