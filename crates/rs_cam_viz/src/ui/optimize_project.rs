@@ -16,6 +16,7 @@ use rs_cam_core::tool_load::optimize::{
 };
 
 use super::components::FreshnessGate;
+use super::optimize_modal::narrative_prose;
 use super::{AppEvent, theme};
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 
@@ -435,40 +436,7 @@ fn draw_not_optimized_row(
     outcome: &OptimizeOutcome,
 ) {
     let name = toolpath_name(state, toolpath_index);
-    let tried = outcome.candidates.len().saturating_sub(1);
-    let (glyph, color, phrase, detail) = match outcome.kind {
-        OutcomeKind::Skipped => {
-            let reason = outcome
-                .reason
-                .as_ref()
-                .map_or("optimizer refused", |r| r.explanation_for_optimize())
-                .to_owned();
-            ("·", theme::TEXT_DIM, format!("skipped: {reason}"), reason)
-        }
-        OutcomeKind::NoSafeImprovement => {
-            let explanation = outcome.narrative.explanation.clone();
-            let detail = if tried > 0 {
-                format!(
-                    "{explanation}\n\nTried {tried} candidate(s); none beat the baseline safely."
-                )
-            } else {
-                explanation.clone()
-            };
-            (
-                "⚠",
-                theme::WARNING,
-                format!("no safe gain — {}", truncate(&explanation, 60)),
-                detail,
-            )
-        }
-        // Ranked-without-safe lands here too (bucketed as not-optimized).
-        _ => (
-            "·",
-            theme::TEXT_MUTED,
-            "no improvement found".to_owned(),
-            "The optimizer found no candidate faster than the baseline.".to_owned(),
-        ),
-    };
+    let (glyph, color, phrase, detail) = not_optimized_row_text(outcome);
     egui::CollapsingHeader::new(
         egui::RichText::new(format!("{glyph}  {name} — {phrase}"))
             .small()
@@ -479,6 +447,55 @@ fn draw_not_optimized_row(
     .show(ui, |ui| {
         ui.label(egui::RichText::new(detail).small().color(theme::TEXT_MUTED));
     });
+}
+
+/// The four strings/colour [`draw_not_optimized_row`] renders: header
+/// glyph, header colour, header phrase, disclosure body. Pure so the
+/// row's TEXT is testable — this crate has no egui render harness, so
+/// splitting the derivation out is how a test can witness what the row
+/// says rather than only that it drew something (G-EXPL-HIDDEN).
+fn not_optimized_row_text(
+    outcome: &OptimizeOutcome,
+) -> (&'static str, egui::Color32, String, String) {
+    let tried = outcome.candidates.len().saturating_sub(1);
+    match outcome.kind {
+        OutcomeKind::Skipped => {
+            let reason = outcome
+                .reason
+                .as_ref()
+                .map_or("optimizer refused", |r| r.explanation_for_optimize())
+                .to_owned();
+            ("·", theme::TEXT_DIM, format!("skipped: {reason}"), reason)
+        }
+        OutcomeKind::NoSafeImprovement => {
+            // G-EXPL-HIDDEN (2026-08-16): this row used to read
+            // `narrative.explanation` alone, which is the mirror of the
+            // modal's omission — a search that ran and lost puts its
+            // limiting-gate readings on `headline` and only the generic
+            // reason on `explanation`, so the row named the reason with
+            // no gate numbers behind it. `narrative_prose` is the shared
+            // render order for both surfaces.
+            let prose = narrative_prose(&outcome.narrative).join(" ");
+            let detail = if tried > 0 {
+                format!("{prose}\n\nTried {tried} candidate(s); none beat the baseline safely.")
+            } else {
+                prose.clone()
+            };
+            (
+                "⚠",
+                theme::WARNING,
+                format!("no safe gain — {}", truncate(&prose, 60)),
+                detail,
+            )
+        }
+        // Ranked-without-safe lands here too (bucketed as not-optimized).
+        _ => (
+            "·",
+            theme::TEXT_MUTED,
+            "no improvement found".to_owned(),
+            "The optimizer found no candidate faster than the baseline.".to_owned(),
+        ),
+    }
 }
 
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
@@ -690,7 +707,10 @@ fn draw_readonly_row(
             }
         }
         OutcomeKind::NoSafeImprovement => {
-            let explanation = &outcome.narrative.explanation;
+            // G-EXPL-HIDDEN (2026-08-16): same omission as
+            // `draw_not_optimized_row`, same fix — the prose is both
+            // narrative fields, in `narrative_prose`'s order.
+            let prose = narrative_prose(&outcome.narrative).join(" ");
             ui.label(egui::RichText::new(name).small());
             ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
             let tried = outcome.candidates.len().saturating_sub(1);
@@ -700,7 +720,7 @@ fn draw_readonly_row(
                 String::new()
             };
             ui.label(
-                egui::RichText::new(format!("{}{}", truncate(explanation, 50), suffix))
+                egui::RichText::new(format!("{}{}", truncate(&prose, 50), suffix))
                     .small()
                     .color(theme::WARNING),
             );
@@ -784,6 +804,79 @@ fn truncate(s: &str, max: usize) -> String {
 )]
 mod tests {
     use super::*;
+
+    use rs_cam_core::tool_load::RefuseReason;
+    use rs_cam_core::tool_load::optimize::OutcomeNarrative;
+
+    fn no_safe_row(narrative: OutcomeNarrative) -> OptimizeOutcome {
+        // Zero candidates — a pre-flight refusal never gets to burn a
+        // sim, so `tried` is 0 and the disclosure body is the prose
+        // alone.
+        OptimizeOutcome::no_safe_improvement(
+            Vec::new(),
+            RefuseReason::DeflectionSetupLocked,
+            narrative,
+        )
+    }
+
+    /// G-EXPL-HIDDEN. The rollup row already read `explanation`, so the
+    /// deflection prescription reached it — this pins that the shared
+    /// helper did not lose it.
+    #[test]
+    fn not_optimized_row_carries_the_deflection_prescription() {
+        let outcome = no_safe_row(OutcomeNarrative {
+            explanation: "Deflection is setup-locked: predicted peak 622 µm exceeds the \
+                          200 µm bound. Reduce stickout to 31.4 mm."
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        });
+        let (_, _, phrase, detail) = not_optimized_row_text(&outcome);
+        assert!(detail.contains("stickout"), "got: {detail}");
+        assert!(detail.contains("622 µm"), "got: {detail}");
+        assert!(
+            phrase.starts_with("no safe gain — Deflection"),
+            "got: {phrase}"
+        );
+    }
+
+    /// G-EXPL-HIDDEN, the rollup's half of the defect. A search that ran
+    /// and lost populates BOTH fields — `headline_no_safe` names the
+    /// limiting gate, `build_outcome` names which of the two ways it
+    /// lost — and this row read only the second, so the operator got the
+    /// generic reason with no gate numbers behind it.
+    #[test]
+    fn not_optimized_row_no_longer_drops_the_limiting_gate_readings() {
+        let outcome = no_safe_row(OutcomeNarrative {
+            headline: "Tried 6 candidates; chipload 0.2100 mm/tooth (+31% over LUT max \
+                       0.1600) is the limiting gate."
+                .to_owned(),
+            explanation: "no candidate was both faster and safe: every candidate hit a \
+                          gate limit (chipload, power, or deflection)"
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        });
+        let (_, _, phrase, detail) = not_optimized_row_text(&outcome);
+        assert!(detail.contains("limiting gate"), "got: {detail}");
+        assert!(detail.contains("0.2100"), "the gate reading, got: {detail}");
+        assert!(detail.contains("every candidate hit"), "got: {detail}");
+        assert!(phrase.contains("Tried 6 candidates"), "got: {phrase}");
+    }
+
+    /// Both fields populated (QN-c's typed chipload refusal) — both
+    /// reach the row, explanation second.
+    #[test]
+    fn not_optimized_row_carries_both_narrative_fields() {
+        let outcome = no_safe_row(OutcomeNarrative {
+            headline: "No candidate proposed — the chipload retarget was refused.".to_owned(),
+            explanation: "chipload retarget refused: the band [0.0900, 0.1000] mm/tooth is \
+                          narrower than the 1.20× high-side headroom"
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        });
+        let (_, _, _, detail) = not_optimized_row_text(&outcome);
+        assert!(detail.contains("No candidate proposed"), "got: {detail}");
+        assert!(detail.contains("0.0900"), "got: {detail}");
+    }
 
     #[test]
     fn truncate_short() {

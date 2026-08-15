@@ -11,7 +11,8 @@
 use rs_cam_core::tool_load::optimize::{
     BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
     LutQueryStamp, MachineSnapshot, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
-    OutcomeKind, ParamDelta, SearchEnvelopeReached, SimAssumptionStamp, limiting_gates_for_verdict,
+    OutcomeKind, OutcomeNarrative, ParamDelta, SearchEnvelopeReached, SimAssumptionStamp,
+    limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
@@ -127,13 +128,28 @@ fn draw_outcome(
             // G17 A2: render the structured narrative — headline,
             // search envelope, then the attempted table. Per-row
             // limiting-gate readings replace the generic "gate" status.
+            //
+            // G-EXPL-HIDDEN (2026-08-16): the prose is `headline` AND
+            // `explanation`, not headline alone. This branch used to
+            // drop `explanation` on the floor, which hid F2.3's
+            // `DeflectionSetupLocked` prescription entirely — that
+            // refusal ships an EMPTY headline and puts the whole
+            // prescription on `explanation`, so the card printed a
+            // blank line where the operator's instructions belonged.
             ui.label(
                 egui::RichText::new("No improvement found")
                     .strong()
                     .color(theme::WARNING),
             );
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(&narrative.headline).small());
+            for (i, line) in narrative_prose(narrative).into_iter().enumerate() {
+                ui.add_space(4.0);
+                let text = egui::RichText::new(line).small();
+                ui.label(if i == 0 {
+                    text
+                } else {
+                    text.color(theme::TEXT_MUTED)
+                });
+            }
             if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
                 ui.add_space(4.0);
                 ui.label(
@@ -183,13 +199,29 @@ fn draw_outcome(
             // tolerance band. G17 A2 swaps the prior generic
             // explanation for narrative.headline (which carries the
             // band-admit overshoot) and renders the search envelope.
+            //
+            // G-EXPL-HIDDEN (2026-08-16): "swaps" turned out to mean
+            // "drops" — `build_outcome` still sets an `explanation` on
+            // this tier ("verify on a scrap before applying; the strict
+            // LUT bound was exceeded by less than the configured
+            // breakage / burn tolerance"), and it was never rendered.
+            // Same omission as the `NoSafeImprovement` branch, same fix,
+            // found while fixing that one. `TradeOff` is left alone: its
+            // narrative contract populates no `explanation` at all.
             ui.label(
                 egui::RichText::new("Verify on a scrap")
                     .strong()
                     .color(theme::WARNING),
             );
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(&narrative.headline).small());
+            for (i, line) in narrative_prose(narrative).into_iter().enumerate() {
+                ui.add_space(4.0);
+                let text = egui::RichText::new(line).small();
+                ui.label(if i == 0 {
+                    text
+                } else {
+                    text.color(theme::TEXT_MUTED)
+                });
+            }
             if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
                 ui.add_space(4.0);
                 ui.label(
@@ -627,6 +659,48 @@ fn draw_refusal_section(ui: &mut egui::Ui, heading: &str, explanation: &str) {
     ui.label(egui::RichText::new(explanation).small());
 }
 
+/// **G-EXPL-HIDDEN, 2026-08-16.** The prose an outcome carries —
+/// `headline` then `explanation` — in render order, with empties
+/// dropped.
+///
+/// One construction site for the two surfaces that show a refusal:
+/// this modal renders the list as stacked labels, the project rollup
+/// ([`super::optimize_project`]) joins it for its collapsed row. Before
+/// this wave each surface rendered exactly ONE field and silently
+/// dropped the other — the modal kept `headline`, the rollup kept
+/// `explanation` — so between them every `NoSafeImprovement` shape was
+/// half-reported somewhere. What each drop cost, checked against the
+/// construction sites rather than assumed:
+///
+/// - **The modal, on four paths, showed nothing at all.** A pre-flight
+///   refusal (`DeflectionSetupLocked`, `BipolarEngagement`), a cancel
+///   before any candidate, a stage-2 evaluation failure and a cancelled
+///   partial all build from `OutcomeNarrative::default()` plus an
+///   `explanation`, so `headline` is **empty** and the branch printed a
+///   blank label. F2.3's stickout prescription is one of these.
+/// - **The modal, on the ordinary path, dropped the reason.** A search
+///   that ran and lost populates BOTH: `headline_no_safe` names the
+///   limiting gate readings, and `build_outcome` sets an `explanation`
+///   naming which of the two ways it lost ("every candidate hit a gate
+///   limit" vs "no candidate beat the baseline cycle time by more than
+///   N s"). Only the first reached the card.
+/// - **The rollup dropped the limiting-gate readings**, the mirror
+///   image: it never read `headline`, so on the ordinary path the
+///   operator got the generic reason with no gate numbers behind it.
+///
+/// Both fields are operator prose about the same outcome, so both are
+/// rendered. Identical strings collapse to one — nothing here rewords,
+/// truncates or invents text.
+pub(super) fn narrative_prose(narrative: &OutcomeNarrative) -> Vec<&str> {
+    let mut lines: Vec<&str> = Vec::new();
+    for line in [narrative.headline.as_str(), narrative.explanation.as_str()] {
+        if !line.trim().is_empty() && !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
 fn draw_ranked(
     ui: &mut egui::Ui,
     candidates: &[OptimizeCandidate],
@@ -1037,6 +1111,135 @@ fn format_cycle(seconds: f64) -> String {
 )]
 mod tests {
     use super::*;
+
+    /// The narrative a pre-flight `DeflectionSetupLocked` refusal builds:
+    /// `OutcomeNarrative::default()` plus an `explanation`, so the
+    /// headline is EMPTY. Shape pinned core-side by
+    /// `deflection_exceeds_with_unreachable_corner_refuses_setup_locked`
+    /// (`tool_load/optimize/mod.rs`).
+    fn deflection_setup_locked_narrative() -> OutcomeNarrative {
+        OutcomeNarrative {
+            explanation: "Deflection is setup-locked: predicted peak 622 µm exceeds the \
+                          200 µm safety bound even at the lowest-force corner the search \
+                          can reach. Reduce stickout to 31.4 mm or fit a stiffer tool."
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        }
+    }
+
+    /// The narrative `attach_retarget_refusals` builds for a
+    /// `ChiploadBandNarrowerThanHeadroom` refusal at zero non-baseline
+    /// attempts: headline replaced (the stock one falsely claims an
+    /// empty search space), explanation carrying the band and the
+    /// unreachable target. Shape pinned core-side by
+    /// `a_refused_retarget_names_itself_on_the_outcome`.
+    fn narrow_band_refusal_narrative() -> OutcomeNarrative {
+        OutcomeNarrative {
+            headline: "No candidate proposed — the chipload retarget was refused: the vendor \
+                       band the gate judges by is narrower than the retarget headroom."
+                .to_owned(),
+            explanation: "chipload retarget refused: the band the gate judges by \
+                          [0.0900, 0.1000] mm/tooth is narrower than the 1.20× high-side \
+                          headroom, so its target 0.0833 mm/tooth falls outside that band"
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        }
+    }
+
+    /// G-EXPL-HIDDEN. The prescription is the ONLY prose this refusal
+    /// carries — before the fix the branch rendered `headline` alone and
+    /// the operator got a blank line where the instruction belonged.
+    #[test]
+    fn narrative_prose_renders_the_deflection_prescription() {
+        let narrative = deflection_setup_locked_narrative();
+        let prose = narrative_prose(&narrative);
+        assert_eq!(
+            prose,
+            vec![narrative.explanation.as_str()],
+            "the deflection prescription must reach the card verbatim"
+        );
+        assert!(prose[0].contains("stickout"), "got: {:?}", prose[0]);
+        assert!(prose[0].contains("µm"), "got: {:?}", prose[0]);
+    }
+
+    /// G-EXPL-HIDDEN. QN-c's typed refusal populates both fields; both
+    /// render, explanation second, and it is the explanation that
+    /// carries the band and the unreachable target.
+    #[test]
+    fn narrative_prose_renders_both_lines_for_a_narrow_band_refusal() {
+        let narrative = narrow_band_refusal_narrative();
+        let prose = narrative_prose(&narrative);
+        assert_eq!(prose.len(), 2, "got: {prose:?}");
+        assert_eq!(prose[0], narrative.headline.as_str());
+        assert_eq!(prose[1], narrative.explanation.as_str());
+        assert!(prose[1].contains("0.0900"), "got: {:?}", prose[1]);
+        assert!(prose[1].contains("0.0833"), "got: {:?}", prose[1]);
+        // The unwind of QN-c's headline-only workaround: the band is
+        // stated once, on the explanation, not twice in one card.
+        assert!(
+            !prose[0].contains("mm/tooth"),
+            "the headline should no longer duplicate the band, got: {:?}",
+            prose[0]
+        );
+    }
+
+    /// The control. A narrative carrying only a headline yields exactly
+    /// one line — the helper never emits a blank second label. Not a
+    /// shipped `NoSafeImprovement` shape (every construction site sets
+    /// an explanation); it pins the empties-dropped half of the contract
+    /// so the fix cannot regress into two labels, one blank.
+    #[test]
+    fn narrative_prose_keeps_a_headline_only_narrative() {
+        let narrative = OutcomeNarrative {
+            headline: "Tried 6 candidates; none were faster than baseline by enough to \
+                       recommend."
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        };
+        assert_eq!(
+            narrative_prose(&narrative),
+            vec![narrative.headline.as_str()]
+        );
+    }
+
+    /// G-EXPL-HIDDEN, second surface. `build_outcome` sets this exact
+    /// explanation on every `MarginalSafe` outcome (`outcome.rs`), and
+    /// the modal's branch rendered `headline` alone — so the one
+    /// sentence telling the operator to cut a scrap first never
+    /// appeared on the card that recommends the candidate.
+    #[test]
+    fn narrative_prose_renders_the_marginal_safe_scrap_warning() {
+        let narrative = OutcomeNarrative {
+            headline: "Best candidate is 0.1840 mm/tooth against a 0.1600 LUT max, \
+                       admitted by the tolerance band."
+                .to_owned(),
+            explanation: "Best candidate is admitted only by the layer-1 tolerance band — \
+                          verify on a scrap before applying. The strict LUT bound was \
+                          exceeded by less than the configured breakage / burn tolerance."
+                .to_owned(),
+            ..OutcomeNarrative::default()
+        };
+        let prose = narrative_prose(&narrative);
+        assert_eq!(prose.len(), 2, "got: {prose:?}");
+        assert!(
+            prose[1].contains("verify on a scrap"),
+            "got: {:?}",
+            prose[1]
+        );
+    }
+
+    /// Identical strings collapse — the helper never prints one sentence
+    /// twice, and never invents or truncates text.
+    #[test]
+    fn narrative_prose_collapses_a_duplicated_line_and_drops_empties() {
+        let narrative = OutcomeNarrative {
+            headline: "same sentence".to_owned(),
+            explanation: "same sentence".to_owned(),
+            ..OutcomeNarrative::default()
+        };
+        assert_eq!(narrative_prose(&narrative), vec!["same sentence"]);
+        assert!(narrative_prose(&OutcomeNarrative::default()).is_empty());
+    }
 
     #[test]
     fn format_delta_empty() {
