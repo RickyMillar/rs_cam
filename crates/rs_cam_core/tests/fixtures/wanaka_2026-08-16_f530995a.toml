@@ -1,0 +1,1010 @@
+format_version = 3
+toolpaths = []
+
+[job]
+name = "wanaka_full_tuned"
+machine_ref = "shapeoko_pro_xxl"
+
+[job.stock]
+x = 140.0
+y = 150.0
+z = 25.0
+origin_x = -20.0
+origin_y = -25.0
+origin_z = -20.0
+padding = 5.0
+workholding_rigidity = "Medium"
+auto_from_model = false
+
+[job.stock.material.SolidWood]
+species = "GenericHardwood"
+
+[[job.stock.alignment_pins]]
+x = 2.5
+y = 2.5
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 137.5
+y = 147.5
+diameter = 6.0
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+
+[job.machine]
+name = "Shapeoko Pro XXL"
+max_feed_mm_min = 10000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[job.machine.kinematics]
+acceleration_mm_s2 = 350.0
+
+[[tools]]
+id = 2
+name = "Tapered Ball 2mm tip / 7° / 6mm shank"
+type = "tapered_ball_nose"
+diameter = 1.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 2.0
+included_angle = 90.0
+taper_half_angle = 7.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 3
+name = "End Mill"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 2.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 3
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 4
+name = '1" (25.4mm)'
+type = "end_mill"
+diameter = 25.4
+cutting_length = 5.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 20.0
+flute_count = 3
+tool_number = 4
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 5
+name = "R2.0mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 4.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 2.9
+shaft_diameter = 6.026312585724034
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 5
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R2.0-6-20"
+
+[[tools]]
+id = 6
+name = "R1.0mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 2.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 5.7
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 6
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R1.0-6-20"
+
+[[tools]]
+id = 7
+name = "R0.5mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 1.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 7.1
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 7
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R0.5-6-20"
+
+[[tools]]
+id = 8
+name = "R1.5mm x 6mm x 30.5mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 3.0
+cutting_length = 30.5
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 2.8
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 45.5
+flute_count = 2
+tool_number = 8
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R1.5-6-30.5"
+
+[[tools]]
+id = 9
+name = "90deg V-Bit 12.7mm 2F"
+type = "v_bit"
+diameter = 12.7
+cutting_length = 12.7
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 45.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 27.7
+flute_count = 2
+tool_number = 9
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 10
+name = "60deg V-Bit 12.7mm 2F"
+type = "v_bit"
+diameter = 12.7
+cutting_length = 12.7
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 60.0
+taper_half_angle = 30.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 27.7
+flute_count = 2
+tool_number = 10
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 11
+name = "20° V-bit"
+type = "v_bit"
+diameter = 5.5
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 20.0
+taper_half_angle = 10.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 30.0
+flute_count = 2
+tool_number = 11
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 12
+name = "6mm Ball Nose 2F"
+type = "ball_nose"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 40.0
+flute_count = 2
+tool_number = 12
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 13
+name = "3mm Ball Endmill"
+type = "ball_nose"
+diameter = 3.0
+cutting_length = 12.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 27.0
+flute_count = 3
+tool_number = 13
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl"
+name = "terrain.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 2
+path = "/home/ricky/Downloads/wanaka100/lakes.dxf"
+name = "lakes.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 3
+path = "/home/ricky/Downloads/wanaka100/rivmap_export/holes.dxf"
+name = "holes.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 5
+path = "/home/ricky/Downloads/wanaka100/rivmap_export/rivers.dxf"
+name = "rivers.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "bottom"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 14
+name = "Pin Drill"
+type = "alignment_pin_drill"
+enabled = true
+tool_id = 3
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "alignment_pin_drill"
+
+[setups.toolpaths.operation.params]
+holes = [
+    [
+    2.5,
+    2.5,
+],
+    [
+    137.5,
+    147.5,
+],
+]
+spoilboard_penetration = 2.0
+cycle = "peck"
+peck_depth = 3.0
+feed_rate = 300.0
+retract_z = 2.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = false
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 4
+name = "Back Rough"
+type = "adaptive3d"
+enabled = true
+tool_id = 3
+model_id = 1
+boundary_inherit = false
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 2.53
+depth_per_pass = 3.0
+stock_to_leave_radial = 0.5
+stock_to_leave_axial = 4.0
+feed_rate = 4000.0
+plunge_rate = 750.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "agent_search"
+z_blend = false
+spindle_rpm = 12194
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.clearance_z.value]
+reference = "stock_top"
+offset = 16.02068018913269
+
+[setups.toolpaths.heights.retract_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.retract_z.value]
+reference = "stock_top"
+offset = 6.02068018913269
+
+[setups.toolpaths.heights.feed_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.feed_z.value]
+reference = "stock_top"
+offset = 2.0
+
+[setups.toolpaths.heights.top_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.top_z.value]
+reference = "model_top"
+offset = 0.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.bottom_z.value]
+reference = "model_bottom"
+offset = -0.0
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 7
+name = "Holes"
+type = "drill"
+enabled = true
+tool_id = 3
+model_id = 3
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drill"
+
+[setups.toolpaths.operation.params]
+depth = 12.0
+cycle = "peck"
+peck_depth = 3.0
+dwell_time = 0.5
+retract_amount = 0.5
+feed_rate = 300.0
+retract_z = 2.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 12
+name = "Rivers (back) (copy)"
+type = "project_curve"
+enabled = false
+tool_id = 3
+model_id = 5
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = 1.0
+point_spacing = 0.5
+feed_rate = 1500.0
+plunge_rate = 527.0
+surface_model_id = 1
+direction = "from_below"
+side = "center"
+spindle_rpm = 10610
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 5
+name = "Rivers (back)"
+type = "project_curve"
+enabled = true
+tool_id = 11
+model_id = 5
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = 0.4
+point_spacing = 0.5
+feed_rate = 2500.0
+plunge_rate = 150.0
+surface_model_id = 1
+direction = "from_below"
+side = "center"
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 6
+name = "Lakes (back, inside)"
+type = "project_curve"
+enabled = true
+tool_id = 11
+model_id = 2
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = 0.5
+point_spacing = 0.5
+feed_rate = 3000.0
+plunge_rate = 150.0
+surface_model_id = 1
+direction = "from_below"
+side = "inside"
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups]]
+id = 1
+name = "Setup 2"
+face_up = "top"
+z_rotation = "90"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 10
+name = "3D Rough 6"
+type = "adaptive3d"
+enabled = true
+tool_id = 3
+model_id = 1
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 2.2
+depth_per_pass = 2.6
+stock_to_leave_radial = 0.5
+stock_to_leave_axial = 0.5
+feed_rate = 4000.0
+plunge_rate = 500.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "agent_search"
+z_blend = false
+spindle_rpm = 12194
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "minimum"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 11
+name = "3D Finish 6"
+type = "drop_cutter"
+enabled = true
+tool_id = 2
+model_id = 1
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drop_cutter"
+
+[setups.toolpaths.operation.params]
+stepover = 0.3
+feed_rate = 3000.0
+plunge_rate = 150.0
+min_z = -20.0
+slope_from = 0.0
+slope_to = 90.0
+spindle_rpm = 21000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "minimum"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.clearance_z.value]
+reference = "stock_top"
+offset = 16.02068018913269
+
+[setups.toolpaths.heights.retract_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.retract_z.value]
+reference = "stock_top"
+offset = 6.02068018913269
+
+[setups.toolpaths.heights.feed_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.feed_z.value]
+reference = "stock_top"
+offset = 2.0
+
+[setups.toolpaths.heights.top_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.top_z.value]
+reference = "stock_top"
+offset = 0.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "from_reference"
+
+[setups.toolpaths.heights.bottom_z.value]
+reference = "stock_top"
+offset = -50.0
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
