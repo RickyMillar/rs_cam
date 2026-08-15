@@ -984,6 +984,21 @@ fn toolpath_status_flags(
             if is_drill_not_applicable(verdict, &status) {
                 continue;
             }
+            // X-VAC (2026-08-14): a vacuous verdict raised no flag at
+            // all on this surface — `Within` + `Validated` is the silent
+            // case — so an op whose gates measured nothing looked
+            // cleaner than one whose gates measured an approximation.
+            // Report-tier: the flag names the emptiness, it does not
+            // change `status.state`.
+            if status.is_vacuous() {
+                flags.push(ToolpathStatusFlag::new(
+                    format!("\u{2205} {}", criterion_short_label(status.kind)),
+                    criterion_detail(&status),
+                    theme::WARNING_MILD,
+                    2,
+                ));
+                continue;
+            }
             match status.state {
                 LoadState::Exceeds => flags.push(ToolpathStatusFlag::new(
                     format!("⚠ {}", criterion_short_label(status.kind)),
@@ -1102,6 +1117,12 @@ fn criterion_detail(status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_
         Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
         None => "no confidence tag".to_owned(),
     };
+    // X-VAC: prepend the vacuity, because the sentence that follows
+    // ("is within bounds") is exactly the one a reader must not believe.
+    let vacuity = status.vacuity_clause();
+    if !vacuity.is_empty() {
+        return format!("{}{vacuity}.{peak}", status.kind.label());
+    }
     match status.state {
         LoadState::Within => format!(
             "{} is within bounds; {confidence}.{peak}",

@@ -199,11 +199,20 @@ pub fn evaluate(
     let span_lookup = spans.map(SpanLookup::new);
     let mut entry_peak_delta_mm = 0.0_f64;
     let mut entry_peak_idx: Option<usize> = None;
+    // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`) — see the same
+    // block in `power.rs`. This gate's vacuous case is the worse of the
+    // two: with `peak_delta_mm == 0.0` and `any_slot == false` the
+    // confidence tier below resolves to `Confidence::Validated`, so an
+    // empty population renders as the most trustworthy label the gate
+    // can print.
+    let mut offered: usize = 0;
+    let mut contributing: usize = 0;
 
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
             continue;
         }
+        offered += 1;
         if !s.is_cutting {
             continue;
         }
@@ -251,6 +260,7 @@ pub fn evaluate(
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
         }
+        contributing += 1;
         if delta_mm > peak_delta_mm {
             peak_delta_mm = delta_mm;
             peak_idx = Some(i);
@@ -276,15 +286,21 @@ pub fn evaluate(
         format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only)")
     };
 
-    let evidence = match peak_idx {
-        Some(idx) => SampleEvidence::at(idx).with_locality(
-            trace
-                .samples
-                .get(idx)
-                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref())),
-        ),
-        None => SampleEvidence::empty(),
-    };
+    // X-VAC: stated on both arms, same contract as `power.rs`.
+    let population = super::verdict::GatePopulation::new(
+        contributing,
+        offered,
+        super::verdict::PopulationUnit::Samples,
+    );
+    let evidence =
+        match peak_idx {
+            Some(idx) => SampleEvidence::at(idx)
+                .with_locality(trace.samples.get(idx).and_then(|s| {
+                    super::locality::classify_sample_locality(s, span_lookup.as_ref())
+                }))
+                .with_population(population),
+            None => SampleEvidence::empty().with_population(population),
+        };
     let bounds = standard_bounds();
 
     // Checkpoint K (b1) — shared boundary contract; see `power.rs` for

@@ -739,6 +739,18 @@ fn evaluate_inner(
     let mut entry_high: Option<(f64, usize)> = None;
     // Worst Entry-ancestry under-min sample (smallest observed_fpt < min).
     let mut entry_low: Option<(f64, usize)> = None;
+    // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`). `offered` is
+    // the steady-state set handed to this loop; `contributing` is
+    // `burn_samples.len()` below — the samples that actually reached a
+    // bound comparison. The two differ by the sample-validity predicate,
+    // the no-divisor skip, and the phantom / configured-entry split, and
+    // the second can be zero while the first is large.
+    //
+    // Deliberately NOT `valid_count`: that counter increments before the
+    // transit skip and is documented at its own definition as
+    // overstating the gate's denominator. Publishing an overstated count
+    // as the vacuity marker would reproduce the defect in the fix.
+    let offered = steady_samples.len();
 
     for (i, s) in steady_samples {
         // **The sample-validity predicate is deliberately unchanged, and
@@ -921,6 +933,16 @@ fn evaluate_inner(
         return ChiploadVerdict::Unmodeled { reason };
     }
 
+    // X-VAC: the population every metric below reports itself against.
+    // `burn_samples` IS the trip set — the same vector the median and the
+    // in-range peak are drawn from — so its length is the honest count of
+    // what decided this verdict.
+    let population = super::verdict::GatePopulation::new(
+        burn_samples.len(),
+        offered,
+        super::verdict::PopulationUnit::Samples,
+    );
+
     // 6. Build verdict. Above-max takes priority over below-min: breakage is more
     // catastrophic than burn risk and we want it surfaced.
     let locality_for = |idx: usize| -> Option<String> {
@@ -944,7 +966,8 @@ fn evaluate_inner(
                 observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::PeakHigh,
                 evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::PeakHigh)
-                    .with_locality(locality_for(idx)),
+                    .with_locality(locality_for(idx))
+                    .with_population(population),
                 bounds,
             },
             confidence: chipload_confidence,
@@ -962,7 +985,8 @@ fn evaluate_inner(
             observed_mm_per_tooth: observed,
             statistic: ChiploadStatistic::MedianLow,
             evidence: SampleEvidence::at_with_stat(idx, ChiploadStatistic::MedianLow)
-                .with_locality(locality_for(idx)),
+                .with_locality(locality_for(idx))
+                .with_population(population),
             bounds: bounds.clone(),
         };
         if bounds.source.low_side_is_advisory() {
@@ -1000,7 +1024,8 @@ fn evaluate_inner(
             observed_mm_per_tooth: median_cl,
             statistic: ChiploadStatistic::MedianLow,
             evidence: SampleEvidence::at_with_stat(median_idx, ChiploadStatistic::MedianLow)
-                .with_locality(locality_for(median_idx)),
+                .with_locality(locality_for(median_idx))
+                .with_population(population),
             bounds: bounds.clone(),
         }),
         _ => None,
@@ -1012,8 +1037,9 @@ fn evaluate_inner(
         evidence: if peak_value > 0.0 {
             SampleEvidence::at_with_stat(peak_idx, ChiploadStatistic::PeakInRange)
                 .with_locality(locality_for(peak_idx))
+                .with_population(population)
         } else {
-            SampleEvidence::empty()
+            SampleEvidence::empty().with_population(population)
         },
         bounds,
     };

@@ -284,18 +284,21 @@ impl ToolpathLoadVerdict {
         // milling trip (pre-fix `drill_gates` was display-only and
         // `enforce_load_policy` never saw it).
         if let Some(d) = &self.drill_gates {
-            all.push(
-                d.chip_welding
-                    .as_criterion_status(CriterionKind::DrillChipWelding, d.cycle),
-            );
-            all.push(
-                d.peck_adequacy
-                    .as_criterion_status(CriterionKind::DrillPeckAdequacy, d.cycle),
-            );
-            all.push(
-                d.plunge_feed
-                    .as_criterion_status(CriterionKind::DrillPlungeFeed, d.cycle),
-            );
+            all.push(d.chip_welding.as_criterion_status(
+                CriterionKind::DrillChipWelding,
+                d.cycle,
+                d.population,
+            ));
+            all.push(d.peck_adequacy.as_criterion_status(
+                CriterionKind::DrillPeckAdequacy,
+                d.cycle,
+                d.population,
+            ));
+            all.push(d.plunge_feed.as_criterion_status(
+                CriterionKind::DrillPlungeFeed,
+                d.cycle,
+                d.population,
+            ));
         }
         all
     }
@@ -548,6 +551,14 @@ pub struct CriterionStatus<'a> {
     pub confidence: Option<&'a Confidence>,
     pub unmodeled_reason: Option<&'a UnmodeledReason>,
     pub sample_range: Option<Range<usize>>,
+    /// **X-VAC** — the population behind this verdict. `None` = not
+    /// stated (never "zero"). `Some(p)` with `p.is_vacuous()` means the
+    /// verdict rests on nothing; see [`CriterionStatus::is_vacuous`].
+    ///
+    /// This is the single field every verdict-rendering surface reads to
+    /// tell a measured pass from a vacuous one. Report-tier: `state` is
+    /// unaffected, so a vacuous `Within` still reads `Within`.
+    pub population: Option<GatePopulation>,
     pub display_peak: Option<f64>,
     pub unit: &'static str,
     /// `Some` iff `state == Exceeds` — the typed exceedance label for
@@ -557,6 +568,113 @@ pub struct CriterionStatus<'a> {
     /// in `criteria()` is the one decision that makes it gate g-code
     /// export (Phase 6 task 5).
     pub exceeded: Option<ExceededCriterion>,
+}
+
+impl CriterionStatus<'_> {
+    /// **The X-VAC bar, and it is a POPULATION bar.** True only when the
+    /// gate stated its population and that population was empty.
+    ///
+    /// A verdict bar tests this vacuously — `Within` is exactly what a
+    /// vacuous gate returns — so any surface asserting "this gate
+    /// exonerated the cut" must consult this first.
+    pub fn is_vacuous(&self) -> bool {
+        self.population.is_some_and(GatePopulation::is_vacuous)
+    }
+
+    /// The one operator-facing vacuity clause, shared by every renderer
+    /// so the wording cannot drift between GUI, CLI, MCP and narration.
+    /// Empty when not vacuous.
+    pub fn vacuity_clause(&self) -> String {
+        self.population
+            .map(GatePopulation::vacuity_clause)
+            .unwrap_or_default()
+    }
+}
+
+/// What a gate's verdict was actually computed from — **X-VAC**
+/// (`planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §4;
+/// `planning/review_2026-08-08/XVAC_CENSUS.md`).
+///
+/// Measured 2026-08-05: three gates returned `Within` with
+/// `sample_range 0..0`, no locality and `available_kw 0.0` —
+/// indistinguishable on every surface from a measured clean cut. The
+/// verdict was *not* wrong; it was **vacuous**, and nothing said so.
+/// Every predicate that can shrink a gate's population (the phantom /
+/// configured-entry split, the steady-state feed filter, the fresh
+/// material floor, the sample-validity predicate, a hole set with no
+/// depth) can drive `contributing` to zero while the gate still returns
+/// a healthy-looking `Within`.
+///
+/// This type is **report-tier**: no gate outcome, threshold, severity or
+/// export decision reads it. A vacuous `Within` stays `Within` — it just
+/// says it is vacuous. Do not derive a refusal from it without a
+/// checkpoint ruling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GatePopulation {
+    /// Units that actually reached the gate's own comparison. Zero means
+    /// **vacuous**: the verdict rests on nothing.
+    pub contributing: usize,
+    /// Units the gate was handed before its own filters ran. Always
+    /// `>= contributing`; the difference is what the predicates removed.
+    pub offered: usize,
+    /// What is being counted, so a consumer can word the marker without
+    /// knowing which gate it is looking at.
+    pub unit: PopulationUnit,
+}
+
+/// What a [`GatePopulation`] counts. Milling gates count simulation
+/// samples; the drill trio counts holes (its gates are hole-derived, and
+/// the drill path has no per-sample dexel stream at all).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PopulationUnit {
+    Samples,
+    Holes,
+}
+
+impl PopulationUnit {
+    pub fn plural(self) -> &'static str {
+        match self {
+            PopulationUnit::Samples => "samples",
+            PopulationUnit::Holes => "holes",
+        }
+    }
+}
+
+impl GatePopulation {
+    pub fn new(contributing: usize, offered: usize, unit: PopulationUnit) -> Self {
+        Self {
+            contributing,
+            offered: offered.max(contributing),
+            unit,
+        }
+    }
+
+    /// **The X-VAC predicate.** True when the verdict was computed from
+    /// nothing at all.
+    pub fn is_vacuous(self) -> bool {
+        self.contributing == 0
+    }
+
+    /// How many offered units the gate's own predicates removed.
+    pub fn filtered_out(self) -> usize {
+        self.offered.saturating_sub(self.contributing)
+    }
+
+    /// One operator-facing clause, identical on every surface. Empty
+    /// string when the population is not vacuous, so a renderer can
+    /// append it unconditionally.
+    pub fn vacuity_clause(self) -> String {
+        if !self.is_vacuous() {
+            return String::new();
+        }
+        format!(
+            " — VACUOUS: this verdict rests on 0 of {} {} (all filtered out); \
+             it is not a measurement of a clean cut",
+            self.offered,
+            self.unit.plural(),
+        )
+    }
 }
 
 /// Sample-range evidence behind a peak metric. Empty range (`0..0`)
@@ -576,6 +694,21 @@ pub struct SampleEvidence {
     /// per-gate evaluators via [`crate::tool_load::locality`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locality: Option<String>,
+    /// **X-VAC** — the population this evidence was drawn from.
+    ///
+    /// `None` means **not stated** (a pre-2026-08-14 wire payload, or a
+    /// construction site that has no population to report), never
+    /// "measured zero" — the same contract `ToolpathStats`' report-only
+    /// findings carry. `Some(p)` with `p.contributing == 0` is the
+    /// vacuous case: an `0..0` `sample_range` that means "nothing
+    /// contributed", as opposed to the same `0..0` meaning "no single
+    /// sample is worth naming".
+    ///
+    /// Read it through [`SampleEvidence::is_vacuous`]; never infer
+    /// vacuity from `sample_range` alone, which is exactly the
+    /// ambiguity X-VAC is about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub population: Option<GatePopulation>,
 }
 
 impl SampleEvidence {
@@ -585,6 +718,7 @@ impl SampleEvidence {
             sample_range: 0..0,
             statistic: None,
             locality: None,
+            population: None,
         }
     }
 
@@ -594,6 +728,7 @@ impl SampleEvidence {
             sample_range: idx..(idx + 1),
             statistic: None,
             locality: None,
+            population: None,
         }
     }
 
@@ -603,6 +738,7 @@ impl SampleEvidence {
             sample_range: idx..(idx + 1),
             statistic: Some(statistic),
             locality: None,
+            population: None,
         }
     }
 
@@ -613,6 +749,21 @@ impl SampleEvidence {
     pub fn with_locality(mut self, locality: Option<String>) -> Self {
         self.locality = locality;
         self
+    }
+
+    /// Builder — state the population this evidence was drawn from
+    /// (X-VAC). Every per-sample gate calls this on both arms, so a
+    /// consumer can always ask "how many samples decided this?".
+    #[must_use]
+    pub fn with_population(mut self, population: GatePopulation) -> Self {
+        self.population = Some(population);
+        self
+    }
+
+    /// True only when the population is **stated and empty**. An
+    /// unstated population is not vacuous — it is unknown.
+    pub fn is_vacuous(&self) -> bool {
+        self.population.is_some_and(GatePopulation::is_vacuous)
     }
 }
 
@@ -908,13 +1059,14 @@ impl ChiploadVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range, exceeded) = match self {
+        let (state, peak, range, population, exceeded) = match self {
             ChiploadVerdict::Within {
                 approach_to_max, ..
             } => (
                 LoadState::Within,
                 Some(approach_to_max.observed_mm_per_tooth),
                 option_range(&approach_to_max.evidence.sample_range),
+                approach_to_max.evidence.population,
                 None,
             ),
             ChiploadVerdict::Exceeds {
@@ -923,12 +1075,13 @@ impl ChiploadVerdict {
                 LoadState::Exceeds,
                 Some(triggering.observed_mm_per_tooth),
                 option_range(&triggering.evidence.sample_range),
+                triggering.evidence.population,
                 Some(match side {
                     ChipSide::Low => ExceededCriterion::chipload_burn(),
                     ChipSide::High => ExceededCriterion::chipload_breakage(),
                 }),
             ),
-            ChiploadVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
+            ChiploadVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Chipload,
@@ -936,6 +1089,7 @@ impl ChiploadVerdict {
             confidence: self.confidence(),
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
+            population,
             display_peak: peak,
             unit: CriterionKind::Chipload.unit(),
             exceeded,
@@ -1003,13 +1157,14 @@ impl PowerVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range) = match self {
+        let (state, peak, range, population) = match self {
             PowerVerdict::Within {
                 peak_kw, evidence, ..
             } => (
                 LoadState::Within,
                 Some(*peak_kw),
                 option_range(&evidence.sample_range),
+                evidence.population,
             ),
             PowerVerdict::Exceeds {
                 peak_kw, evidence, ..
@@ -1017,8 +1172,9 @@ impl PowerVerdict {
                 LoadState::Exceeds,
                 Some(*peak_kw),
                 option_range(&evidence.sample_range),
+                evidence.population,
             ),
-            PowerVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None),
+            PowerVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Power,
@@ -1026,6 +1182,7 @@ impl PowerVerdict {
             confidence: self.confidence(),
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
+            population,
             display_peak: peak,
             unit: CriterionKind::Power.unit(),
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::power),
@@ -1105,13 +1262,14 @@ impl DeflectionVerdict {
     }
 
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
-        let (state, peak, range) = match self {
+        let (state, peak, range, population) = match self {
             DeflectionVerdict::Within {
                 peak_mm, evidence, ..
             } => (
                 LoadState::Within,
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
+                evidence.population,
             ),
             DeflectionVerdict::Exceeds {
                 peak_mm, evidence, ..
@@ -1119,8 +1277,9 @@ impl DeflectionVerdict {
                 LoadState::Exceeds,
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
+                evidence.population,
             ),
-            DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None),
+            DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None),
         };
         CriterionStatus {
             kind: CriterionKind::Deflection,
@@ -1128,6 +1287,7 @@ impl DeflectionVerdict {
             confidence: self.confidence(),
             unmodeled_reason: self.unmodeled_reason(),
             sample_range: range,
+            population,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::deflection),
@@ -1498,6 +1658,10 @@ mod tests {
                 plunge_feed: plunge,
                 // R-7: no hole attribution in a hand-built verdict.
                 worst_hole_id: None,
+                // X-VAC: not stated by this fixture — it exercises the
+                // gate wording, not the population marker. `None` reads as
+                // "not stated", never as an empty gate.
+                population: None,
                 cycle: crate::tool_load::drill_gates::DrillCycleKind::Peck,
             }),
             modulation_summary: None,
