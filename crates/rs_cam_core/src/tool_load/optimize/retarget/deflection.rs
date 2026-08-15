@@ -20,7 +20,7 @@ use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
 use crate::tool_load::optimize::space::SearchSpace;
 use crate::tool_load::verdict::DeflectionVerdict;
 
-use super::{RetargetSolution, Retargeter};
+use super::{RetargetOutcome, RetargetSolution, Retargeter};
 
 /// Drives DOC in response to a deflection-exceeded verdict.
 ///
@@ -72,7 +72,7 @@ impl Retargeter for DeflectionDocRetargeter {
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
-    ) -> Option<RetargetSolution> {
+    ) -> RetargetOutcome {
         // Only deflection-exceeded verdicts retarget. The typed
         // `DeflectionVerdict::Exceeds` carries the peak directly; we
         // prefer the verdict's bounds (when present) over the
@@ -80,19 +80,21 @@ impl Retargeter for DeflectionDocRetargeter {
         // numbers drive the math.
         let peak_mm = match verdict {
             DeflectionVerdict::Exceeds { peak_mm, .. } => *peak_mm,
-            _ => return None,
+            _ => return RetargetOutcome::NotApplicable,
         };
 
         // Op must expose DOC for retargeting to make sense.
-        let baseline_doc = view.axis_value(SearchAxis::DepthPerPass, ctx)?;
+        let Some(baseline_doc) = view.axis_value(SearchAxis::DepthPerPass, ctx) else {
+            return RetargetOutcome::NotApplicable;
+        };
 
         // Peak must be a usable positive number — otherwise the
         // multiplier math diverges or goes complex.
         if !peak_mm.is_finite() || peak_mm <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
         if !self.threshold_mm.is_finite() || self.threshold_mm <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
 
         let target_deflection = self.threshold_mm * self.headroom;
@@ -102,7 +104,9 @@ impl Retargeter for DeflectionDocRetargeter {
         let multiplier = (target_deflection / peak_mm).cbrt();
         let raw_target_doc = baseline_doc * multiplier;
 
-        let doc_bounds = space.axis(SearchAxis::DepthPerPass)?;
+        let Some(doc_bounds) = space.axis(SearchAxis::DepthPerPass) else {
+            return RetargetOutcome::NotApplicable;
+        };
         let clamped_value = doc_bounds.hard.clamp(raw_target_doc);
         let was_clamped = (clamped_value - raw_target_doc).abs() > 1e-6;
 
@@ -112,7 +116,7 @@ impl Retargeter for DeflectionDocRetargeter {
             multiplier, peak_mm, target_deflection,
         );
 
-        Some(RetargetSolution {
+        RetargetOutcome::Solved(RetargetSolution {
             patches: vec![AxisPatch {
                 axis: SearchAxis::DepthPerPass,
                 value: clamped_value,
@@ -230,7 +234,10 @@ mod tests {
 
         let r = DeflectionDocRetargeter::with_headroom(0.04, 1.0);
         let v = exceeds(0.32);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         assert_eq!(sol.patches.len(), 1, "single primary DOC patch expected");
         let p = &sol.patches[0];
         assert_eq!(p.axis, SearchAxis::DepthPerPass);
@@ -255,7 +262,10 @@ mod tests {
         // threshold = 0.200, headroom = 1.0, peak = 0.21 (just over)
         let r = DeflectionDocRetargeter::with_headroom(0.200, 1.0);
         let v = exceeds(0.21);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         let p = &sol.patches[0];
         // multiplier = cbrt(0.200 / 0.21) ≈ cbrt(0.9524) ≈ 0.9839
         // target DOC = 1.5 × 0.9839 ≈ 1.4759
@@ -284,7 +294,10 @@ mod tests {
         // raw = 1.5e-3 → below 0.05 floor.
         let r = DeflectionDocRetargeter::with_headroom(1e-9, 1.0);
         let v = exceeds(1.0);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         let p = &sol.patches[0];
         let floor = space
             .axis(SearchAxis::DepthPerPass)
@@ -321,12 +334,16 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spike: None,
         };
-        assert!(r.target(&within, &space, &view, &ctx).is_none());
+        assert!(r.target(&within, &space, &view, &ctx).solution().is_none());
 
         let unmodeled = DeflectionVerdict::Unmodeled {
             reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
         };
-        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
+        assert!(
+            r.target(&unmodeled, &space, &view, &ctx)
+                .solution()
+                .is_none()
+        );
     }
 
     #[test]
@@ -341,7 +358,10 @@ mod tests {
         // clamped flag this time.
         let r = DeflectionDocRetargeter::with_headroom(1e-9, 1.0);
         let v = exceeds(1.0);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         assert!(sol.patches[0].clamped, "expected clamped=true");
     }
 
@@ -355,7 +375,10 @@ mod tests {
 
         let r = DeflectionDocRetargeter::with_headroom(0.04, 1.0);
         let v = exceeds(0.32);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         // 0.32 mm peak, 0.04 mm target, 0.500 multiplier.
         assert!(
             sol.rationale.contains("0.3200"),
@@ -384,7 +407,10 @@ mod tests {
 
         let r = DeflectionDocRetargeter::new(0.200);
         let v = exceeds(0.4);
-        let sol = r.target(&v, &space, &view, &ctx).expect("must retarget");
+        let sol = r
+            .target(&v, &space, &view, &ctx)
+            .solution()
+            .expect("must retarget");
         assert_eq!(sol.patches.len(), 1);
         assert!(matches!(sol.patches[0].source, PatchSource::Primary));
     }

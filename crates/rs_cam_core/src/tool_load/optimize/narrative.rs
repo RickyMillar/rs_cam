@@ -25,6 +25,7 @@ use crate::tool_load::verdict::{
 };
 
 use super::OptimizeCandidate;
+use super::retarget::NarrowChipBandRefusal;
 
 /// Unified narrative carried by every [`super::OptimizeOutcome`] tier.
 /// Roadmap F.7 collapsed the prior split (`FailureNarrative` +
@@ -85,6 +86,21 @@ pub struct OutcomeNarrative {
     /// the explanation prose. `None` for every other outcome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deflection_setup: Option<DeflectionSetupDetail>,
+    /// **Q-NARROW (c), 2026-08-14** — structured numbers behind a
+    /// chipload retarget the retargeter **declined**: the band the gate
+    /// judges by, both headroom targets, and the observed peak. Same
+    /// contract as [`Self::deflection_setup`] — the machine-readable
+    /// half of a refusal whose prose half is on
+    /// [`Self::explanation`].
+    ///
+    /// `None` means **no retarget was refused on this outcome** — it is
+    /// not a "not measured" slot. It is populated whenever a retargeter
+    /// refused during the run, including on outcomes that went on to
+    /// find a candidate some other way (a grid candidate can win while
+    /// the chipload retarget was still declined, and both facts are
+    /// true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chipload_band_refusal: Option<NarrowChipBandRefusal>,
 }
 
 /// F2.3 — the numbers behind a `DeflectionSetupLocked` refusal
@@ -280,6 +296,7 @@ pub(crate) fn build_no_safe_narrative(
         .unwrap_or_default();
     OutcomeNarrative {
         deflection_setup: None,
+        chipload_band_refusal: None,
         headline,
         explanation: String::new(),
         envelope,
@@ -316,6 +333,7 @@ pub(crate) fn build_marginal_safe_narrative(
     // Skip suggestions for now; the "verify on a scrap" header covers it.
     OutcomeNarrative {
         deflection_setup: None,
+        chipload_band_refusal: None,
         headline,
         explanation: String::new(),
         envelope,
@@ -543,6 +561,7 @@ pub(crate) fn build_tradeoff_narrative(
     let headline = headline_tradeoff(&improved_gates, &worsened_gates);
     OutcomeNarrative {
         deflection_setup: None,
+        chipload_band_refusal: None,
         headline,
         explanation: String::new(),
         envelope,

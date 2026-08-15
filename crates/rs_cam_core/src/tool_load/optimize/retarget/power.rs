@@ -28,7 +28,7 @@ use crate::tool_load::verdict::PowerVerdict;
 use super::super::axes::{AxisContext, AxisView, SearchAxis};
 use super::super::patches::{AxisPatch, PatchSource};
 use super::super::space::SearchSpace;
-use super::{RetargetSolution, Retargeter};
+use super::{RetargetOutcome, RetargetSolution, Retargeter};
 
 /// The single axis this retargeter drives. RPM is intentionally
 /// excluded so the linear feed-multiplier math holds.
@@ -68,19 +68,19 @@ impl Retargeter for PowerFeedRetargeter {
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
-    ) -> Option<RetargetSolution> {
+    ) -> RetargetOutcome {
         // 1. Match only the power-exceeded variant. Every other verdict
         //    (Within, Unmodeled) is a no-op for this retargeter.
         let peak_kw = match verdict {
             PowerVerdict::Exceeds { peak_kw, .. } => *peak_kw,
-            _ => return None,
+            _ => return RetargetOutcome::NotApplicable,
         };
 
         // Defensive: a non-positive peak is nonsensical for power and
         // would produce a non-finite multiplier. Refuse rather than
         // emit garbage.
         if !peak_kw.is_finite() || peak_kw <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
 
         // 2. Linear feed multiplier: scale the cutting load (≈ MRR ×
@@ -89,9 +89,13 @@ impl Retargeter for PowerFeedRetargeter {
         let multiplier = target_kw / peak_kw;
 
         // 3. Apply to the baseline feed and clamp to hard feed bounds.
-        let baseline_feed = view.axis_value(SearchAxis::FeedRate, ctx)?;
+        let Some(baseline_feed) = view.axis_value(SearchAxis::FeedRate, ctx) else {
+            return RetargetOutcome::NotApplicable;
+        };
         let raw_target = baseline_feed * multiplier;
-        let feed_bounds = space.axis(SearchAxis::FeedRate)?;
+        let Some(feed_bounds) = space.axis(SearchAxis::FeedRate) else {
+            return RetargetOutcome::NotApplicable;
+        };
         let clamped = feed_bounds.hard.clamp(raw_target);
         let was_clamped = (clamped - raw_target).abs() > 1e-6;
 
@@ -124,7 +128,7 @@ impl Retargeter for PowerFeedRetargeter {
             });
         }
 
-        Some(RetargetSolution {
+        RetargetOutcome::Solved(RetargetSolution {
             patches,
             rationale: format!(
                 "power: scale feed by {multiplier:.2}× to bring peak {peak_kw:.3} kW under available × headroom = {target_kw:.3} kW",
@@ -257,6 +261,7 @@ mod tests {
         };
         let solution = r
             .target(&power_exceeds(1.5), &space, &view, &ctx)
+            .solution()
             .expect("power exceeds must produce a solution");
         let p = primary(&solution.patches);
         assert!(
@@ -284,6 +289,7 @@ mod tests {
         };
         let solution = r
             .target(&power_exceeds(1.5), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         assert_eq!(solution.patches.len(), 2, "{:?}", solution.patches);
         let coupled = solution
@@ -310,6 +316,7 @@ mod tests {
         };
         let solution = r
             .target(&power_exceeds(1.05), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         assert_eq!(
             solution.patches.len(),
@@ -351,12 +358,16 @@ mod tests {
             confidence: Confidence::Validated,
             entry_spike: None,
         };
-        assert!(r.target(&within, &space, &view, &ctx).is_none());
+        assert!(r.target(&within, &space, &view, &ctx).solution().is_none());
 
         let unmodeled = PowerVerdict::Unmodeled {
             reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
         };
-        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
+        assert!(
+            r.target(&unmodeled, &space, &view, &ctx)
+                .solution()
+                .is_none()
+        );
     }
 
     #[test]
@@ -381,6 +392,7 @@ mod tests {
         };
         let solution = r
             .target(&power_exceeds(100.0), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         let p = primary(&solution.patches);
         // multiplier = 0.5 / 100 = 0.005 → raw = 15. Machine min is 0,
@@ -419,6 +431,7 @@ mod tests {
         };
         let solution = r
             .target(&power_exceeds(0.1), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         let p = primary(&solution.patches);
         let feed_bounds = space.axis(SearchAxis::FeedRate).expect("feed bounds");

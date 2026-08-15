@@ -39,10 +39,32 @@
 //! `ChiploadMetric::bounds` on the very `ChiploadVerdict` it is passed. It
 //! reads that now, and nothing else. There is deliberately **no second band**
 //! on this struct for the two to drift apart again.
+//!
+//! # A band narrower than the headroom is refused — Q-NARROW (c), 2026-08-14
+//!
+//! Reading the gate's band is not sufficient: the retarget then pulls the
+//! target *off* that band's edge by a repo-authored headroom factor (1.20).
+//! On **86 of the 235** two-sided shipped LUT rows the band is narrower than
+//! that factor — 48 of them single-point rows where `max == min`, which the
+//! bounds already label `ChipBoundsSource::VendorLutPointPreset` — so the
+//! headroom target falls outside the band the gate judges by and the
+//! candidate is rejected by construction, at the price of a full generate +
+//! simulate.
+//!
+//! A-8i measured that and reported it in the rationale (P-(1b), report-only).
+//! Q-NARROW ruled (c): **refuse, with a typed reason**
+//! ([`crate::tool_load::optimize::retarget::NarrowChipBandRefusal`]) — and
+//! explicitly rejected clamping the target into the band, because a clamped
+//! target is a number the vendor row does not support. The refusal carries
+//! the band, both headroom targets and the observed peak, so it is
+//! self-explanatory on the wire and doubles as the census instrument for the
+//! ledgered follow-up on the headroom policy itself (Q-NARROW (d)).
 
 use crate::tool_load::optimize::axes::{AxisContext, AxisView, SearchAxis};
 use crate::tool_load::optimize::patches::{AxisPatch, PatchSource};
-use crate::tool_load::optimize::retarget::{RetargetSolution, Retargeter};
+use crate::tool_load::optimize::retarget::{
+    NarrowChipBandRefusal, RetargetOutcome, RetargetRefusal, RetargetSolution, Retargeter,
+};
 use crate::tool_load::optimize::space::SearchSpace;
 use crate::tool_load::verdict::{ChipSide, ChiploadVerdict};
 
@@ -89,9 +111,9 @@ impl Retargeter for ChiploadFeedRetargeter {
         space: &SearchSpace,
         view: &AxisView<'_>,
         ctx: &AxisContext<'_>,
-    ) -> Option<RetargetSolution> {
+    ) -> RetargetOutcome {
         // Only fires on the chipload-Exceeds variants. Within and
-        // Unmodeled return None.
+        // Unmodeled are NotApplicable.
         //
         // Checkpoint P (1a): `bounds` travels with the peak. It is the
         // DOC-derated band this very verdict was decided against, so the
@@ -115,14 +137,15 @@ impl Retargeter for ChiploadFeedRetargeter {
                 Side::Breakage,
                 &triggering.bounds,
             ),
-            _ => return None,
+            _ => return RetargetOutcome::NotApplicable,
         };
 
-        // Refuse non-positive peaks — division would blow up. In practice the
+        // Non-positive peaks would blow the division up. In practice the
         // verdict pipeline filters these before dispatch, but defending here
-        // keeps the math total.
+        // keeps the math total. `NotApplicable`, not `Refused` — there is no
+        // evidence to explain, the input is unmodellable.
         if !peak.is_finite() || peak <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
 
         // Target chipload with headroom margin: pull the peak away from the
@@ -132,52 +155,76 @@ impl Retargeter for ChiploadFeedRetargeter {
         // The floor is `Option` because a row may publish no minimum
         // (`ChiploadBoundPolicy::AllowHalfBand`). `None` is *unmodelled*, not
         // zero — refuse the burn retarget rather than invent a floor.
+        let low_target = bounds.min_mm_per_tooth.map(|m| m * self.low_headroom);
+        let high_target = bounds.max_mm_per_tooth / self.high_headroom;
         let target_chipload = match side {
-            Side::Burn => bounds.min_mm_per_tooth? * self.low_headroom,
-            Side::Breakage => bounds.max_mm_per_tooth / self.high_headroom,
+            Side::Burn => match low_target {
+                Some(t) => t,
+                None => return RetargetOutcome::NotApplicable,
+            },
+            Side::Breakage => high_target,
         };
         if !target_chipload.is_finite() || target_chipload <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
 
-        // ── Checkpoint P (1b) — the same COMPARISON, not just the same band ──
+        // ── Q-NARROW (c) — the branch A-8i measured is now TAKEN ─────────
         //
-        // P-(1a) made the retargeter read the gate's band. This asks the
+        // P-(1a) made the retargeter read the gate's band. P-(1b) asked the
         // gate's *own predicate* whether the headroom target actually lands
-        // inside it. `ChipBounds::contains` is the inclusive-with-epsilon
+        // inside it — `ChipBounds::contains`, the inclusive-with-epsilon
         // comparison this very `Exceeds` was decided by (Checkpoint K b1), so
-        // retargeter and gate can no longer disagree about the edge either.
+        // retargeter and gate cannot disagree about the edge either — and
+        // **reported** the answer without acting on it, because acting moves
+        // a measured **86 of the 235** two-sided shipped LUT rows (36.6 %; 48
+        // of them single-point rows where max == min) and that is a ruling,
+        // not an implementation detail.
         //
-        // **Report-only, deliberately — the branch is NOT taken.** Turning
-        // this into a refusal or a clamp would move a measured **86 of the 235**
-        // two-sided shipped LUT rows (36.6 %; 48 of them single-point rows
-        // where max == min). On any row narrower than the headroom factor both
-        // `min * 1.20 > max` and `max / 1.20 < min`, so BOTH headroom targets
-        // fall outside the band the gate judges by — P-(1a)'s defect class
-        // reached through the *headroom policy* instead of the DOC derate, on
-        // a third of shipped rows. The ratio is scale-invariant (vendor
-        // scaling and DOC derating each multiply both bounds by one factor),
-        // so the census answers it exactly. That population is far outside
-        // this wave's authorised movement, so A-8i measures it, says it in the
-        // rationale the operator reads, and hands the branch to a checkpoint.
+        // Q-NARROW ruled (c), 2026-08-14, BINDING: refuse, with a typed
+        // reason. Option (b) — clamp the target into the band — was
+        // explicitly rejected as the invent-a-number failure mode. So on a
+        // band narrower than the headroom the retargeter now declines instead
+        // of emitting a candidate its own gate has already rejected, and the
+        // full generate + simulate that candidate would have cost is not
+        // spent finding that out.
         //
-        // Evidence: `planning/review_2026-08-08/artifacts/a8i/narrow_band_census.{py,txt}`.
-        let headroom = match side {
-            Side::Burn => self.low_headroom,
-            Side::Breakage => self.high_headroom,
-        };
-        let target_in_band = bounds.contains(target_chipload);
+        // The ratio is scale-invariant (vendor scaling and DOC derating each
+        // multiply both bounds by one factor), so the census answers the
+        // population exactly:
+        // `planning/review_2026-08-08/artifacts/a8i/narrow_band_census.{py,txt}`.
+        if !bounds.contains(target_chipload) {
+            return RetargetOutcome::Refused(RetargetRefusal::ChiploadBandNarrowerThanHeadroom(
+                NarrowChipBandRefusal {
+                    side: match side {
+                        Side::Burn => ChipSide::Low,
+                        Side::Breakage => ChipSide::High,
+                    },
+                    band_min_mm_per_tooth: bounds.min_mm_per_tooth,
+                    band_max_mm_per_tooth: bounds.max_mm_per_tooth,
+                    band_source: bounds.source,
+                    low_headroom: self.low_headroom,
+                    high_headroom: self.high_headroom,
+                    low_target_mm_per_tooth: low_target,
+                    high_target_mm_per_tooth: high_target,
+                    observed_mm_per_tooth: peak,
+                },
+            ));
+        }
 
         let multiplier = target_chipload / peak;
 
         // Apply the multiplier to baseline feed; clamp to the hard feed
         // envelope (machine max_feed).
-        let baseline_feed = view.axis_value(SearchAxis::FeedRate, ctx)?;
+        let Some(baseline_feed) = view.axis_value(SearchAxis::FeedRate, ctx) else {
+            return RetargetOutcome::NotApplicable;
+        };
         if !baseline_feed.is_finite() || baseline_feed <= 0.0 {
-            return None;
+            return RetargetOutcome::NotApplicable;
         }
         let raw_target = baseline_feed * multiplier;
-        let feed_bounds = space.axis(SearchAxis::FeedRate)?;
+        let Some(feed_bounds) = space.axis(SearchAxis::FeedRate) else {
+            return RetargetOutcome::NotApplicable;
+        };
         let clamped_target = feed_bounds.hard.clamp(raw_target);
         let was_clamped = (clamped_target - raw_target).abs() > 1e-6;
 
@@ -259,28 +306,17 @@ impl Retargeter for ChiploadFeedRetargeter {
             }
         }
 
-        let mut rationale = format!(
+        // Every solution that reaches here aims at a target the gate's own
+        // predicate has already admitted — the out-of-band case returned a
+        // typed refusal above, so this rationale can no longer be a warning
+        // dressed as a plan.
+        let rationale = format!(
             "{side:?}: scale feed by {multiplier:.2}× to move sample peak \
              from {peak:.4} to {target_chipload:.4} — the gate's own \
              DOC-derated band with headroom"
         );
-        if !target_in_band {
-            // The gate's own predicate says this target would trip. Say so
-            // where the operator reads it, rather than emitting a candidate
-            // that cannot reconcile and letting the re-simulation discover it.
-            rationale.push_str(&format!(
-                ". WARNING: {target_chipload:.4} is OUTSIDE that band \
-                 [{min}, {max:.4}] — the band is narrower than the \
-                 {headroom:.2}× headroom, so no feed can both clear the \
-                 headroom and stay inside the band",
-                min = bounds
-                    .min_mm_per_tooth
-                    .map_or_else(|| "none".to_owned(), |m| format!("{m:.4}")),
-                max = bounds.max_mm_per_tooth,
-            ));
-        }
 
-        Some(RetargetSolution { patches, rationale })
+        RetargetOutcome::Solved(RetargetSolution { patches, rationale })
     }
 }
 
@@ -436,6 +472,7 @@ mod tests {
         let r = retargeter(1.0, 1.0);
         let solution = r
             .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+            .solution()
             .expect("BurnRisk should produce a solution");
         let primary = solution
             .patches
@@ -462,6 +499,7 @@ mod tests {
         let r = retargeter(1.0, 1.0);
         let solution = r
             .target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx)
+            .solution()
             .expect("BreakageRisk should produce a solution");
         let primary = solution
             .patches
@@ -485,6 +523,7 @@ mod tests {
         let r = retargeter(1.0, 1.0);
         let solution = r
             .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         assert_eq!(
             solution.patches.len(),
@@ -510,6 +549,7 @@ mod tests {
         let r = retargeter(1.0, 1.0);
         let solution = r
             .target(&burn_verdict(0.048, chip_bounds()), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         assert_eq!(
             solution.patches.len(),
@@ -543,12 +583,16 @@ mod tests {
             burn_advisory: None,
             ceiling_advisory: None,
         };
-        assert!(r.target(&within, &space, &view, &ctx).is_none());
+        assert!(r.target(&within, &space, &view, &ctx).solution().is_none());
 
         let unmodeled = ChiploadVerdict::Unmodeled {
             reason: crate::tool_load::verdict::UnmodeledReason::SimulationRequired,
         };
-        assert!(r.target(&unmodeled, &space, &view, &ctx).is_none());
+        assert!(
+            r.target(&unmodeled, &space, &view, &ctx)
+                .solution()
+                .is_none()
+        );
     }
 
     #[test]
@@ -562,6 +606,7 @@ mod tests {
         let r = retargeter(1.0, 1.0);
         let solution = r
             .target(&burn_verdict(0.025, chip_bounds()), &space, &view, &ctx)
+            .solution()
             .expect("solution");
         let primary = solution
             .patches
@@ -596,6 +641,7 @@ mod tests {
                 &view,
                 &ctx,
             )
+            .solution()
             .expect("solution");
         let primary = solution
             .patches
@@ -647,6 +693,7 @@ mod tests {
                 &view,
                 &ctx,
             )
+            .solution()
             .expect("solution");
         let rpm_patch = solution
             .patches
@@ -698,7 +745,10 @@ mod tests {
             },
             confidence: Confidence::Validated,
         };
-        let solution = r.target(&breakage, &space, &view, &ctx).expect("solution");
+        let solution = r
+            .target(&breakage, &space, &view, &ctx)
+            .solution()
+            .expect("solution");
         assert!(
             !solution
                 .patches
@@ -735,6 +785,7 @@ mod tests {
 
         let feed_of = |v: &ChiploadVerdict| {
             r.target(v, &space, &view, &ctx)
+                .solution()
                 .expect("breakage verdict must retarget")
                 .patches
                 .iter()
@@ -766,44 +817,138 @@ mod tests {
         let half = chip_bounds_of(None, 0.10);
         assert!(
             r.target(&burn_verdict(0.025, half.clone()), &space, &view, &ctx)
+                .solution()
                 .is_none(),
             "no published floor means burn is unmodelled, not zero"
         );
         assert!(
             r.target(&breakage_verdict(0.20, half), &space, &view, &ctx)
+                .solution()
                 .is_some(),
             "the ceiling is still actionable on a half band"
         );
     }
 
-    /// **Checkpoint P (1b) — the branch NOT taken, pinned as a report.**
+    /// **Q-NARROW (c) — the branch P-(1b) measured, now TAKEN.**
     ///
-    /// A band narrower than the headroom factor cannot host either headroom
-    /// target: at `max/min = 1.111 < 1.20`, `max / 1.20 = 0.0833` falls under
-    /// the floor and `min * 1.20 = 0.108` clears the ceiling. `ChipBounds
-    /// ::contains` — the gate's own predicate — says so, and the retargeter
-    /// now says so in the rationale.
+    /// Inverted from `a_target_outside_a_narrow_band_is_reported_and_the_feed_
+    /// is_unchanged`, which pinned the pre-ruling behaviour on the identical
+    /// recipe. What it asserted, and what this asserts now:
     ///
-    /// **It still emits the patch, unchanged.** That is the whole point of the
-    /// slice: 86 of the 235 two-sided shipped rows are this shape, so
-    /// branching here would move a third of shipped rows and is a checkpoint
-    /// question, not a fix. This test pins BOTH halves — the report appears,
-    /// and the number does not move.
+    /// | | P-(1b), report-only | Q-NARROW (c), refusal |
+    /// |---|---|---|
+    /// | outcome | `Solved` | `Refused` |
+    /// | primary feed | 833.333 mm/min | none emitted |
+    /// | operator text | rationale contains "OUTSIDE" | typed reason + explanation |
+    /// | cost of finding out | full generate + simulate | zero |
+    ///
+    /// The band is `[0.09, 0.10]` — `max/min = 1.111 < 1.20`, so `max / 1.20
+    /// = 0.0833` falls under the floor and `min × 1.20 = 0.108` clears the
+    /// ceiling. Both headroom targets are outside the band; `ChipBounds
+    /// ::contains`, the gate's own epsilon-inclusive predicate, is what says
+    /// so — not a bare comparison written here.
     #[test]
-    fn a_target_outside_a_narrow_band_is_reported_and_the_feed_is_unchanged() {
+    fn a_narrow_band_refuses_the_retarget_with_a_typed_reason() {
         let fx = Fixture::new(2000.0);
         let space = fx.space();
         let view = fx.view();
         let ctx = fx.ctx();
         let r = retargeter(1.20, 1.20);
         let narrow = chip_bounds_of(Some(0.09), 0.10);
-        let solution = r
-            .target(&breakage_verdict(0.20, narrow), &space, &view, &ctx)
-            .expect("a narrow band still retargets — it only reports");
+        let answer = r.target(&breakage_verdict(0.20, narrow), &space, &view, &ctx);
+        let refusal = answer
+            .refusal()
+            .expect("a band narrower than the headroom must refuse, not propose");
+        let RetargetRefusal::ChiploadBandNarrowerThanHeadroom(detail) = refusal;
+        assert_eq!(detail.side, ChipSide::High);
+        assert_eq!(detail.band_min_mm_per_tooth, Some(0.09));
+        assert!((detail.band_max_mm_per_tooth - 0.10).abs() < 1e-12);
+        // Both headroom targets are recorded, and both are outside [0.09, 0.10]
+        // — the ruling's two-sided condition, asserted from the record rather
+        // than restated as prose.
+        assert!((detail.high_target_mm_per_tooth - 0.10 / 1.20).abs() < 1e-12);
         assert!(
-            solution.rationale.contains("OUTSIDE"),
-            "the gate's own predicate rejects this target; the rationale must \
-             say so. got: {}",
+            (detail.low_target_mm_per_tooth.expect("floor published") - 0.09 * 1.20).abs() < 1e-12
+        );
+        assert!((detail.observed_mm_per_tooth - 0.20).abs() < 1e-12);
+        assert_eq!(
+            detail.refused_target_mm_per_tooth(),
+            Some(detail.high_target_mm_per_tooth)
+        );
+        // And no patch survives: this is the whole behavioural point — the
+        // 833.333 mm/min candidate the pre-ruling code emitted is gone.
+        assert!(
+            answer.clone().solution().is_none(),
+            "a refusal must not also carry a solution"
+        );
+        assert_eq!(
+            refusal.reason(),
+            crate::tool_load::RefuseReason::ChiploadBandNarrowerThanHeadroom
+        );
+        let text = refusal.explanation();
+        for needle in ["0.0900", "0.1000", "1.20", "0.0833"] {
+            assert!(
+                text.contains(needle),
+                "the refusal must be self-explanatory — {needle} missing from: {text}"
+            );
+        }
+    }
+
+    /// **Q-NARROW (c) — the single-point row, the cleanest case.**
+    ///
+    /// 48 of the 86 affected shipped rows publish `max == min`: a nominal
+    /// preset, which the bounds already label
+    /// `ChipBoundsSource::VendorLutPointPreset`. *Any* multiplicative
+    /// headroom is unsatisfiable on a point — which is the observation
+    /// Q-NARROW (d) is ledgered to revisit. Both sides refuse.
+    #[test]
+    fn a_single_point_row_refuses_both_sides() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+        let point = ChipBounds {
+            min_mm_per_tooth: Some(0.05),
+            max_mm_per_tooth: 0.05,
+            source: ChipBoundsSource::VendorLutPointPreset,
+        };
+        let burn = r.target(&burn_verdict(0.02, point.clone()), &space, &view, &ctx);
+        let breakage = r.target(&breakage_verdict(0.20, point), &space, &view, &ctx);
+        for (label, answer, side) in [
+            ("burn", &burn, ChipSide::Low),
+            ("breakage", &breakage, ChipSide::High),
+        ] {
+            let refusal = answer
+                .refusal()
+                .unwrap_or_else(|| panic!("{label} side must refuse on a single-point row"));
+            let RetargetRefusal::ChiploadBandNarrowerThanHeadroom(detail) = refusal;
+            assert_eq!(detail.side, side);
+            assert_eq!(detail.band_source, ChipBoundsSource::VendorLutPointPreset);
+        }
+    }
+
+    /// The control: a band wider than the headroom hosts the target, so the
+    /// retarget still happens — and lands on the **same number** it did
+    /// before Q-NARROW (c). Without this, "the narrow band refuses" above
+    /// could be true of every recipe.
+    #[test]
+    fn a_band_that_hosts_its_target_still_retargets_bit_identically() {
+        let fx = Fixture::new(2000.0);
+        let space = fx.space();
+        let view = fx.view();
+        let ctx = fx.ctx();
+        let r = retargeter(1.20, 1.20);
+        // 0.10 / 0.05 = 2.0, comfortably wider than the 1.20 headroom.
+        let answer = r.target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx);
+        assert!(
+            answer.refusal().is_none(),
+            "a band that hosts its own target must not refuse"
+        );
+        let solution = answer.solution().expect("solution");
+        assert!(
+            !solution.rationale.contains("OUTSIDE"),
+            "the report-only warning is gone with the branch it belonged to: {}",
             solution.rationale
         );
         let primary = solution
@@ -811,35 +956,13 @@ mod tests {
             .iter()
             .find(|p| matches!(p.source, PatchSource::Primary))
             .expect("primary patch");
-        // target = 0.10 / 1.20 = 0.08333; multiplier = 0.08333 / 0.20;
-        // feed = 2000 * that = 833.33. Bare arithmetic, unmoved by the report.
+        // target = 0.10 / 1.20 = 0.08333; multiplier = target / 0.20;
+        // feed = 2000 × that = 833.333… — bit-identical to the pre-ruling
+        // number on a band the ruling does not touch.
         assert!(
             (primary.value - 2000.0 * (0.10 / 1.20) / 0.20).abs() < 1e-9,
-            "P-(1b) is report-only — the emitted feed must be the same number \
-             it was before the check existed; got {}",
+            "the control arm's feed must not move; got {}",
             primary.value
-        );
-    }
-
-    /// The control: a band wider than the headroom hosts the target, so the
-    /// rationale carries no warning. Without this, "the rationale contains
-    /// OUTSIDE" above could be true of every recipe.
-    #[test]
-    fn a_target_inside_the_band_says_nothing_extra() {
-        let fx = Fixture::new(2000.0);
-        let space = fx.space();
-        let view = fx.view();
-        let ctx = fx.ctx();
-        let r = retargeter(1.20, 1.20);
-        // 0.10 / 0.05 = 2.0, comfortably wider than the 1.20 headroom.
-        let solution = r
-            .target(&breakage_verdict(0.20, chip_bounds()), &space, &view, &ctx)
-            .expect("solution");
-        assert!(
-            !solution.rationale.contains("OUTSIDE"),
-            "a band that hosts its own target must not be reported as narrow: \
-             {}",
-            solution.rationale
         );
     }
 }
