@@ -103,15 +103,21 @@ batch logs in `artifacts/s3/logs/`.
 | **silent empty on a `MustCut` fixture** | **0** |
 | **wall-clock ceiling breach** (60 s) | **0** |
 
-Slowest cell in the whole matrix: `inlay × holed-9` at **17.9 s**, 3.4× under
-the ceiling. Nine of the ten slowest are `inlay` or `vcarve`, which is the
-same shape W4 reported.
+Slowest cell in the whole matrix: `inlay × holed-9`, at **14.5 s** in the full
+pass and **17.9 s** in the batched one — 3.4× under the ceiling at its worst.
+The two readings differ by machine state, not by cell: wall clock here
+separates "does not terminate" from "slow debug build" and is not a
+performance pin. **Seven of the ten slowest cells are `inlay` or `vcarve`**
+(the other three are `adaptive`), which is the same shape W4 reported.
 
 ### 2.1 Per-family verdicts over the 165
 
 `clean` = `ok`, no violation, nothing flagged by the probes.
 `red` = carries evidence for a finding in §3.
 `not exercised` = declared non-terminating.
+
+`max wall` is from the batched pass over the 165 (the higher of the two
+readings for every family).
 
 | family | cells | clean | red | not exercised | max wall | reds |
 |---|---|---|---|---|---|---|
