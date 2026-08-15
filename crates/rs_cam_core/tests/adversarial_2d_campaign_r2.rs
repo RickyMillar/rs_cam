@@ -309,6 +309,103 @@ fn announce(op: &str, fixture: &str) {
     let _ = std::io::stdout().flush();
 }
 
+// ---------------------------------------------------------------------------
+// Batching (S-3 / A2D-165)
+// ---------------------------------------------------------------------------
+//
+// The full matrix was never run in one sitting: W4 collected 33 of 198 cells
+// and stopped, first on F-12 and then on a full disk, leaving 165 cells
+// recorded as `NOT RUN`. Running the remainder needs the matrix to be
+// divisible — one process per batch, so a cell that does not terminate costs
+// one batch rather than the campaign — and needs each row on disk the moment
+// it is measured, because the matrix file is written only after the last cell
+// and a killed process leaves nothing behind.
+//
+// Both knobs are opt-in and change no assertion: unset, the campaign runs
+// exactly the matrix it always ran.
+
+/// Comma-separated allow-list from `var`; `None` when unset or empty, which
+/// means "everything".
+fn allow_list(var: &str) -> Option<Vec<String>> {
+    let raw = std::env::var(var).ok()?;
+    let items: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if items.is_empty() { None } else { Some(items) }
+}
+
+fn selected(list: Option<&Vec<String>>, name: &str) -> bool {
+    list.is_none_or(|l| l.iter().any(|w| w == name))
+}
+
+/// Append one matrix row to `R2_ROW_LOG` (if set) and flush it immediately.
+///
+/// The point is durability, not tidiness: the campaign's own `campaign_matrix.md`
+/// is written after the final cell, so a batch killed by a non-terminating
+/// cell or an external memory bound loses every row it had already measured.
+fn record_row(row: &str) {
+    let Ok(path) = std::env::var("R2_ROW_LOG") else {
+        return;
+    };
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{row}");
+        let _ = f.flush();
+    }
+}
+
+/// A second, **wider** record for one cell: what the campaign's three failure
+/// conditions cannot see.
+///
+/// S-3 measured two blind spots on the first pass of the 165, both on cells
+/// that the matrix row reports as a clean `ok`:
+///
+/// 1. **A contained library panic leaves no trace in the record.**
+///    `inlay × rosette-24` and `inlay × walls-1e-2` each drive
+///    `cavalier_contours`' `pline_seg.rs:33` `debug_assert!` four times; the
+///    chokepoint's `catch_unwind` (`polygon.rs:495`) contains it, the offset
+///    comes back empty, and the row says `ok`. The only trace is stderr text
+///    that no verdict reads. Checkpoint C already built the typed channel —
+///    `ToolpathStats::offset_library_failures` — so the campaign was reading
+///    the wrong side of a fix that had landed.
+/// 2. **A non-finite coordinate can reach the emitted toolpath.**
+///    `drill × invalid-nan` reports `ok` with 6 moves, and only the
+///    `cut_length_mm` column printing `NaN` gave it away — a NaN in Z, or in
+///    a rapid, would have printed nothing at all.
+///
+/// Neither is a new *behaviour*; both are new *visibility*. The counts are
+/// recorded per cell rather than asserted on, because turning either into a
+/// failure condition is a Checkpoint decision, not this wave's.
+fn probe_row(op: &str, fixture: &str, session: &ProjectSession) -> String {
+    let Some(res) = session.get_result(0) else {
+        return format!("+ | {op} | {fixture} | no result | | |");
+    };
+    let nan_moves = res
+        .toolpath()
+        .moves
+        .iter()
+        .filter(|m| !(m.target.x.is_finite() && m.target.y.is_finite() && m.target.z.is_finite()))
+        .count();
+    let olf = res
+        .stats
+        .offset_library_failures
+        .map_or_else(|| "not measured".to_owned(), |n| n.to_string());
+    let bcd = res.stats.boundary_clip_dropped.as_ref().map_or_else(
+        || "none".to_owned(),
+        |f| format!("{:?}/{} regions", f.containment, f.source_region_count),
+    );
+    format!(
+        "+ | {op} | {fixture} | offset_library_failures {olf} | \
+         boundary_clip_dropped {bcd} | nan_moves {nan_moves} |"
+    )
+}
+
 /// One `(operation, fixture)` cell, run and judged. `None` when the fixture
 /// declares the cell non-terminating — see `Fixture::skip_ops`.
 fn run_cell(
@@ -890,6 +987,8 @@ fn cancellable_2d_families_return_after_the_flag_is_set() {
             every_2d_operation_survives_its_worst_fixtures."]
 fn adversarial_2d_full_campaign() {
     let fixtures = adv::fixtures();
+    let only_fixtures = allow_list("R2_ONLY_FIXTURES");
+    let only_ops = allow_list("R2_ONLY_OPS");
     let mut rows = String::from(
         "| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |\n\
          |---|---|---|---|---|---|---|---|---|\n",
@@ -898,6 +997,9 @@ fn adversarial_2d_full_campaign() {
     let mut renders = Vec::new();
 
     for f in &fixtures {
+        if !selected(only_fixtures.as_ref(), f.name) {
+            continue;
+        }
         f.assert_contains_mechanism();
         let mut cells: Vec<(String, OperationConfig, ToolKind)> = op_matrix(f.tool_d)
             .into_iter()
@@ -905,11 +1007,14 @@ fn adversarial_2d_full_campaign() {
             .collect();
         // Rest last, because it is the one that needs a second tool.
         for (name, op, kind) in cells.drain(..) {
+            if !selected(only_ops.as_ref(), &name) {
+                continue;
+            }
             if let Some(why) = f.skip_reason(&name) {
-                rows.push_str(&format!(
-                    "| {name} | {} | — | SKIPPED | | | | | {why} |\n",
-                    f.name
-                ));
+                let row = format!("| {name} | {} | — | SKIPPED | | | | | {why} |", f.name);
+                rows.push_str(&row);
+                rows.push('\n');
+                record_row(&row);
                 println!("··· SKIPPED {name} × {} — {why}", f.name);
                 continue;
             }
@@ -920,6 +1025,8 @@ fn adversarial_2d_full_campaign() {
             println!("{}", rec.row());
             rows.push_str(&rec.row());
             rows.push('\n');
+            record_row(&rec.row());
+            record_row(&probe_row(&name, f.name, &session));
             if rec.moves > 0
                 && let Some(r) = session.get_result(0)
                 && let Some(p) =
@@ -928,7 +1035,7 @@ fn adversarial_2d_full_campaign() {
                 renders.push(p);
             }
         }
-        if f.skip_reason("rest").is_none() {
+        if selected(only_ops.as_ref(), "rest") && f.skip_reason("rest").is_none() {
             announce("rest", f.name);
             let mut session = rest_session(f);
             let rec = adv::run_op(&mut session, 0, "rest", f.name);
@@ -936,6 +1043,8 @@ fn adversarial_2d_full_campaign() {
             println!("{}", rec.row());
             rows.push_str(&rec.row());
             rows.push('\n');
+            record_row(&rec.row());
+            record_row(&probe_row("rest", f.name, &session));
             if rec.moves > 0
                 && let Some(r) = session.get_result(0)
                 && let Some(p) =

@@ -1,0 +1,33 @@
+
+running 1 test
+··· running inlay × rosette-24
+
+thread 'adversarial_2d_full_campaign' (561056) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'adversarial_2d_full_campaign' (561056) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+
+thread 'adversarial_2d_full_campaign' (561056) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+
+thread 'adversarial_2d_full_campaign' (561056) panicked at /home/ricky/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cavalier_contours-0.7.0/src/polyline/pline_seg.rs:33:5:
+v1 must not be on top of v2
+| inlay | rosette-24 | 7.425 s | ok | 181559 | 172909 | 114808.3 | 2271 | 58572 kB |
+··· running drill × rosette-24
+| drill | rosette-24 | 0.001 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × rosette-24
+| rest | rosette-24 | 0.191 s | ok | 1071 | 612 | 6560.6 | 153 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| inlay | rosette-24 | 7.425 s | ok | 181559 | 172909 | 114808.3 | 2271 | 58572 kB |
+| drill | rosette-24 | 0.001 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | rosette-24 | 0.191 s | ok | 1071 | 612 | 6560.6 | 153 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+3 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 7.86s
+

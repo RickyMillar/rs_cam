@@ -1,0 +1,92 @@
+
+running 1 test
+··· running pocket × short-edges
+| pocket | short-edges | 0.122 s | ok | 201 | 141 | 4635.2 | 20 | 2136 kB |
+··· running adaptive × short-edges
+| adaptive | short-edges | 5.621 s | ok | 834 | 822 | 3034.1 | 4 | 376 kB |
+··· running profile × short-edges
+| profile | short-edges | 0.117 s | ok | 14 | 11 | 455.1 | 1 | 36 kB |
+··· running trace × short-edges
+| trace | short-edges | 0.029 s | ok | 1605 | 1602 | 402.8 | 1 | 160 kB |
+··· running zigzag × short-edges
+| zigzag | short-edges | 0.125 s | ok | 280 | 160 | 5286.5 | 40 | 0 kB |
+··· running vcarve × short-edges
+| vcarve | short-edges | 9.149 s | ok | 82123 | 82000 | 5660.6 | 41 | 22664 kB |
+··· running inlay × short-edges
+| inlay | short-edges | 8.112 s | ok | 86910 | 86377 | 14247.3 | 144 | 5840 kB |
+··· running drill × short-edges
+| drill | short-edges | 0.001 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × short-edges
+| rest | short-edges | 0.249 s | ok | 532 | 304 | 3474.3 | 76 | 0 kB |
+··· running pocket × near-collinear-1nm
+| pocket | near-collinear-1nm | 0.017 s | ok | 218 | 158 | 4635.2 | 20 | 0 kB |
+··· running adaptive × near-collinear-1nm
+| adaptive | near-collinear-1nm | 1.645 s | ok | 804 | 792 | 3041.3 | 4 | 0 kB |
+··· running profile × near-collinear-1nm
+| profile | near-collinear-1nm | 0.011 s | ok | 14 | 11 | 455.1 | 1 | 0 kB |
+··· running trace × near-collinear-1nm
+| trace | near-collinear-1nm | 0.003 s | ok | 408 | 404 | 409.4 | 1 | 0 kB |
+··· running zigzag × near-collinear-1nm
+| zigzag | near-collinear-1nm | 0.020 s | ok | 280 | 160 | 5192.5 | 40 | 0 kB |
+··· running vcarve × near-collinear-1nm
+| vcarve | near-collinear-1nm | 3.221 s | ok | 82139 | 82016 | 5660.6 | 41 | 0 kB |
+··· running inlay × near-collinear-1nm
+| inlay | near-collinear-1nm | 3.357 s | ok | 87158 | 86625 | 14250.2 | 144 | 256 kB |
+··· running drill × near-collinear-1nm
+| drill | near-collinear-1nm | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+··· running rest × near-collinear-1nm
+| rest | near-collinear-1nm | 0.073 s | ok | 525 | 300 | 3359.5 | 75 | 0 kB |
+··· running pocket × tiny-islands
+| pocket | tiny-islands | 0.002 s | ok | 240 | 168 | 6560.7 | 24 | 0 kB |
+··· running adaptive × tiny-islands
+| adaptive | tiny-islands | 0.107 s | ok | 1334 | 1322 | 4235.3 | 4 | 0 kB |
+··· running profile × tiny-islands
+| profile | tiny-islands | 0.001 s | ok | 84 | 60 | 930.3 | 8 | 0 kB |
+··· running trace × tiny-islands
+| trace | tiny-islands | 0.001 s | ok | 96 | 64 | 567.5 | 8 | 0 kB |
+··· running zigzag × tiny-islands
+| zigzag | tiny-islands | 0.002 s | ok | 336 | 192 | 7303.8 | 48 | 0 kB |
+··· running vcarve × tiny-islands
+| vcarve | tiny-islands | 2.251 s | ok | 117834 | 117666 | 8014.6 | 56 | 3532 kB |
+··· running inlay × tiny-islands
+| inlay | tiny-islands | 2.147 s | ok | 120544 | 119854 | 19538.8 | 187 | 0 kB |
+··· running drill × tiny-islands
+| drill | tiny-islands | 0.001 s | ok | 48 | 16 | 0.0 | 16 | 0 kB |
+··· running rest × tiny-islands
+| rest | tiny-islands | 0.012 s | ok | 651 | 372 | 4138.6 | 93 | 0 kB |
+| op | fixture | wall | outcome | moves | cutting | cut mm | runs | RSS growth |
+|---|---|---|---|---|---|---|---|---|
+| pocket | short-edges | 0.122 s | ok | 201 | 141 | 4635.2 | 20 | 2136 kB |
+| adaptive | short-edges | 5.621 s | ok | 834 | 822 | 3034.1 | 4 | 376 kB |
+| profile | short-edges | 0.117 s | ok | 14 | 11 | 455.1 | 1 | 36 kB |
+| trace | short-edges | 0.029 s | ok | 1605 | 1602 | 402.8 | 1 | 160 kB |
+| zigzag | short-edges | 0.125 s | ok | 280 | 160 | 5286.5 | 40 | 0 kB |
+| vcarve | short-edges | 9.149 s | ok | 82123 | 82000 | 5660.6 | 41 | 22664 kB |
+| inlay | short-edges | 8.112 s | ok | 86910 | 86377 | 14247.3 | 144 | 5840 kB |
+| drill | short-edges | 0.001 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | short-edges | 0.249 s | ok | 532 | 304 | 3474.3 | 76 | 0 kB |
+| pocket | near-collinear-1nm | 0.017 s | ok | 218 | 158 | 4635.2 | 20 | 0 kB |
+| adaptive | near-collinear-1nm | 1.645 s | ok | 804 | 792 | 3041.3 | 4 | 0 kB |
+| profile | near-collinear-1nm | 0.011 s | ok | 14 | 11 | 455.1 | 1 | 0 kB |
+| trace | near-collinear-1nm | 0.003 s | ok | 408 | 404 | 409.4 | 1 | 0 kB |
+| zigzag | near-collinear-1nm | 0.020 s | ok | 280 | 160 | 5192.5 | 40 | 0 kB |
+| vcarve | near-collinear-1nm | 3.221 s | ok | 82139 | 82016 | 5660.6 | 41 | 0 kB |
+| inlay | near-collinear-1nm | 3.357 s | ok | 87158 | 86625 | 14250.2 | 144 | 256 kB |
+| drill | near-collinear-1nm | 0.000 s | ok | 6 | 2 | 0.0 | 2 | 0 kB |
+| rest | near-collinear-1nm | 0.073 s | ok | 525 | 300 | 3359.5 | 75 | 0 kB |
+| pocket | tiny-islands | 0.002 s | ok | 240 | 168 | 6560.7 | 24 | 0 kB |
+| adaptive | tiny-islands | 0.107 s | ok | 1334 | 1322 | 4235.3 | 4 | 0 kB |
+| profile | tiny-islands | 0.001 s | ok | 84 | 60 | 930.3 | 8 | 0 kB |
+| trace | tiny-islands | 0.001 s | ok | 96 | 64 | 567.5 | 8 | 0 kB |
+| zigzag | tiny-islands | 0.002 s | ok | 336 | 192 | 7303.8 | 48 | 0 kB |
+| vcarve | tiny-islands | 2.251 s | ok | 117834 | 117666 | 8014.6 | 56 | 3532 kB |
+| inlay | tiny-islands | 2.147 s | ok | 120544 | 119854 | 19538.8 | 187 | 0 kB |
+| drill | tiny-islands | 0.001 s | ok | 48 | 16 | 0.0 | 16 | 0 kB |
+| rest | tiny-islands | 0.012 s | ok | 651 | 372 | 4138.6 | 93 | 0 kB |
+
+matrix: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art/campaign_matrix.md
+27 toolpath renders in /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/0934e428-3a02-4818-b682-76c62c03a29a/scratchpad/a2d/art
+test adversarial_2d_full_campaign ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 37.22s
+
