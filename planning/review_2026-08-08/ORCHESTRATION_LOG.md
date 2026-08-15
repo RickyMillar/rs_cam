@@ -5392,3 +5392,248 @@ play-file edits that made it red in the first place.
 
 Next in the ruled Tier-1 sequence: **G-EXPL-HIDDEN**, then
 **G-REGEN-RACE**.
+
+## G-EXPL-HIDDEN — the refusal explanation reaches the operator, 2026-08-16
+
+Status: **COMPLETE on the ruled row. One adjacent instance found and fixed
+(§3). Rule-3 capture RAN and was read back (§6) — but it does NOT discharge
+QN-c's N-3 item, which is a different card.**
+
+Commit(s). Briefed on `ac0b5985`:
+
+- `2883a719` — the fix, its tests, and the unwind of QN-c's headline.
+- this entry.
+
+### 0. Environment
+
+An EXTERNAL session on this machine ("sysml") held the cargo slot for the
+first **380 s** of this wave — `cargo test --release -p sysml-runtime` plus a
+`cargo check --workspace`. The guard blocked rather than decorated: an
+explicit `until` loop over `pgrep -x cargo`, `pgrep -f 'bin/[c]argo'` and
+`free -g` ≥ 20 GB available, re-checked before EVERY cargo invocation, not
+once at the top. It reported `GUARD: slot free after 380s (avail 33 GB)` and
+each later step re-checked and passed at 0 s. No release build was run by this
+wave. Script kept at `scratchpad/gexpl_verify.sh` (not committed — it is
+machine-local plumbing, not an artifact of the finding).
+
+### 1. The defect, read at the construction sites rather than assumed
+
+TD3_CLOSEOUT §2.2 states the modal's `NoSafeImprovement` branch renders
+`narrative.headline` and never `narrative.explanation`. True. What the row does
+not say, and what changes the size of the fix, is that the **project rollup has
+the exact mirror defect** — `optimize_project.rs` reads `explanation` and never
+`headline`, on both of its two `NoSafeImprovement` render sites.
+
+So the two surfaces each showed one field and dropped the other. What that
+cost, checked against every `no_safe_improvement(...)` construction site in
+core rather than inferred from the field names:
+
+| shape | `headline` | `explanation` | modal showed | rollup showed |
+|---|---|---|---|---|
+| pre-flight `DeflectionSetupLocked` (F2.3) | **empty** | the whole stickout prescription | **a blank label** | the prescription |
+| pre-flight `BipolarEngagement` | **empty** | the op-aware prescription | **a blank label** | the prescription |
+| cancel before any candidate | **empty** | "cancelled before any candidates were generated" | **a blank label** | the sentence |
+| stage-2 evaluation failure | **empty** | "candidate evaluation failed at full resolution" | **a blank label** | the sentence |
+| cancelled partial (no candidates) | **empty** | "cancelled before any candidates were evaluated" | **a blank label** | the sentence |
+| ordinary search that ran and lost | limiting-gate readings | which of the two ways it lost | the gate readings only | the reason only |
+| QN-c narrow-band refusal at 0 attempts | replaced (see §4) | band + unreachable target | the replacement only | the refusal sentence |
+
+Two corrections to the intake wording follow from that table and are worth
+stating because I had them wrong myself before reading the sites:
+
+- The closeout row implies the ordinary path was fine and only F2.3 suffered.
+  It is not: on the ordinary path the modal dropped a real sentence too, the
+  one naming *which* of the two failure modes occurred ("every candidate hit a
+  gate limit" vs "no candidate beat the baseline cycle time by more than N s").
+- The rollup was never blank on any shipped shape — every construction site
+  sets `explanation`. What the rollup lost was the **limiting-gate readings**.
+  A test asserting "the rollup used to print nothing" would have been a false
+  red, and the first draft of my test said exactly that before I checked.
+
+### 2. The fix
+
+One construction site, `ui::optimize_modal::narrative_prose(&OutcomeNarrative)
+-> Vec<&str>`: `headline` then `explanation`, empties dropped, identical
+strings collapsed. It rewords nothing, truncates nothing and invents nothing —
+the two surfaces already had the text, they just each threw half of it away.
+
+- **modal** — `NoSafeImprovement` renders the list as stacked labels, first
+  line in the branch's existing `.small()`, later lines `.small()` +
+  `TEXT_MUTED` (the house style for subordinate prose in the neighbouring
+  branches).
+- **rollup** — `draw_not_optimized_row` and `draw_readonly_row` join the same
+  list for their one-line phrase and their disclosure body.
+
+### 3. The adjacent instance: `MarginalSafe`
+
+Found while reading the neighbouring branches for the egui idiom, so it is
+reported rather than filed. `build_outcome` sets an `explanation` on **every**
+`MarginalSafe` outcome — *"Best candidate is admitted only by the layer-1
+tolerance band — verify on a scrap before applying"* — and the modal's
+`MarginalSafe` branch rendered `headline` alone. The one sentence telling the
+operator to cut a scrap before applying the candidate the card is recommending
+never appeared on that card. Same helper, same fix.
+
+`TradeOff` is **deliberately left alone**: its narrative contract populates no
+`explanation` at all, so there is nothing there to drop. Stated so a later
+reader does not take the omission for an oversight.
+
+### 4. QN-c's workaround: unwound, but only halfway, and the half matters
+
+QN-c added `explanation_headline(detail)` with the docstring *"the modal
+renders `headline`, not `explanation`, on its `NoSafeImprovement` branch"* —
+i.e. a function whose reason for existing is the defect this wave fixes. The
+tempting unwind is to delete the headline replacement entirely and let the
+explanation flow. **That would restore a falsehood.** The replacement is doing
+two jobs, not one:
+
+1. displacing `headline_no_safe`'s zero-attempt sentence *"No candidates were
+   produced — the search space is empty for this op"*, which the refusal
+   falsifies (the space was not empty; the target inside it was unreachable);
+2. carrying the band values, because it was the only line that reached the
+   operator.
+
+Job 1 survives the fix; job 2 does not. So the replacement stays and the
+**numbers come out of it** — `NARROW_BAND_HEADLINE` is now a const naming only
+the claim the headline alone makes (a refusal, not a failed search), and
+`RetargetRefusal::explanation` states the band, the refused target and the dial
+responsible, once. Without this the card would have printed the band twice in
+two near-identical sentences — a defect this wave would have *created*.
+
+QN-c's own pin (`a_refused_retarget_names_itself_on_the_outcome`) still passes
+unweakened, and gains an assertion that the headline does **not** contain
+`mm/tooth`, so the de-duplication cannot silently regress.
+
+Nothing else in core moved. No machining number, threshold or gate behaviour
+was touched by this wave — the whole diff is prose routing.
+
+### 5. Tests
+
+**Architecture, stated because it constrains what the tests can witness.**
+`rs_cam_viz` has **no egui render harness** — no `egui_kittest`, no `Harness`,
+nothing that can walk a rendered frame. Every existing test in both optimize UI
+modules is a pure-formatter test (`format_delta`, `format_cycle`,
+`truncate`, …). So "assert the explanation is present in the rendered output"
+is met the only way this crate can meet it: the branch's text derivation is
+split into a pure function that `draw_*` then renders **verbatim and
+exclusively**, and the tests assert on that. `narrative_prose` is that function
+for the modal; `not_optimized_row_text` (extracted this wave) is it for the
+rollup row. This is a proxy for a rendered frame, and it is named as one — it
+witnesses *what text the branch computes*, not that egui painted it. The
+painting is what §6 is for.
+
+New, viz (`--lib`, filter `optimize`, **30 passed / 0 failed**):
+
+| test | what it pins |
+|---|---|
+| `narrative_prose_renders_the_deflection_prescription` | (a) F2.3's stickout prescription is the ONLY line, and it reaches the card |
+| `narrative_prose_renders_both_lines_for_a_narrow_band_refusal` | (b) QN-c's refusal renders both lines, explanation carries `0.0900` and the `0.0833` target, **and the headline no longer repeats `mm/tooth`** |
+| `narrative_prose_renders_the_marginal_safe_scrap_warning` | §3 — "verify on a scrap" reaches the card it belongs on |
+| `narrative_prose_keeps_a_headline_only_narrative` | the control: one field in, one line out, never a blank second label |
+| `narrative_prose_collapses_a_duplicated_line_and_drops_empties` | the helper never prints a sentence twice and never emits an empty label |
+| `not_optimized_row_carries_the_deflection_prescription` | rollup keeps what it already had |
+| `not_optimized_row_no_longer_drops_the_limiting_gate_readings` | rollup gains the gate numbers it never showed |
+| `not_optimized_row_carries_both_narrative_fields` | both fields reach the disclosure body |
+
+Extended, core — the shape half, so the viz fixtures are not free-floating
+prose someone invented:
+
+- `deflection_exceeds_with_unreachable_corner_refuses_setup_locked` now
+  asserts `narrative.headline.is_empty()`. That single assertion is the whole
+  defect in one line: a surface rendering `headline` alone shows **nothing**
+  on this outcome.
+- `a_refused_retarget_names_itself_on_the_outcome` (QN-c's) keeps its
+  `contains("narrower than")` and gains `!contains("mm/tooth")`, pinning §4's
+  de-duplication.
+
+### 6. Rule-3 capture — RAN, and I read the PNG
+
+**The committed rig could not do this job, and the reason is worth recording.**
+A-8i's `p4_screenshot.py` pairs with `a8i_pocket_refusal.toml`, whose header
+says it plainly: `Material::Custom` makes the optimizer **skip at step 3**. That
+is `OutcomeKind::Skipped` — a *different modal branch*
+(`draw_refusal_section`), not the one this wave fixed. Pointing the committed
+rig at the committed fixture would have produced a perfectly good screenshot of
+code nobody touched. "The refusal fixture costs zero simulations" is true and
+is why it exists; it is the wrong refusal.
+
+So this wave added a sibling pair under `artifacts/gexpl/`:
+
+- `gexpl_deflection_pocket.toml` — byte-for-byte `a8i_pocket.toml` except tool
+  1 is **HSS at 120 mm stickout** (from carbide at 45) in **hard maple** (from
+  GenericHardwood). Diameter, stepover, depth and geometry are untouched, so
+  the sim costs what a8i's already cost. Stiffness falls by
+  (120/45)³ ≈ 19× on stickout and ≈2.9× on Young's modulus, which is what puts
+  the min-force corner over the bound and produces the **pre-flight
+  `DeflectionSetupLocked`** refusal — the exact shape whose headline is empty.
+- `gexpl_screenshot.py` — A-8i's driver plus one change that matters: it
+  **prints the `optimize_toolpath` outcome before capturing**, so the run
+  states which branch the PNG is about to show. A capture of the wrong branch
+  proves nothing, and this is how the run tells you before you look.
+
+Measured, debug build, `resolution 1.0`: generate **0.38 s**, sim **1.71 s**,
+optimize **0.18 s** — the last because a pre-flight refusal burns **zero**
+candidate sims. Total under 5 s. The blocker A-8i and QN-c recorded ("no
+visible desktop session") did not hold in this session: `XDG_SESSION_TYPE=
+wayland`, `WAYLAND_DISPLAY=wayland-0`.
+
+`artifacts/gexpl/optimize_card_AFTER.png`, 1600×1000. **I read the image
+back.** Directly under the "No improvement found" heading the card now reads,
+legibly:
+
+> predicted tip deflection 664 µm at peak load exceeds the 200 µm safety limit
+> even at the lightest reachable cut — feed/RPM/DOC/stepover can't fix this
+> setup; shorten stickout to ~51 mm (sized for the 50 µm finish-quality band)
+> or use a stiffer tool/material
+
+That is F2.3's prescription, on the operator's screen, for the first time
+since it landed. Note it renders in the FIRST slot, not as a subdued second
+line — `narrative_prose` drops the empty headline, so the explanation is line
+0 and gets line 0's weight. The defect's own signature is what makes the fix
+read correctly here.
+
+**Two things I am NOT claiming.**
+
+- **QN-c's N-3 item is not discharged.** Its owed capture is the *narrow-band
+  chipload* refusal card; this fixture trips *deflection*. Different narrative,
+  still uncaptured. Item stands.
+- **A-8i P-4's item I am reporting, not closing.** The provenance drawer
+  ("How these numbers were taken" — machine snapshot, candidate scoring sims,
+  the feed-modulation asymmetry warning, baseline, model provenance) is fully
+  expanded and legible in this PNG, on a refusal outcome, which is what P-4
+  was owed. Whoever owns N-3 should look at this file before re-running that
+  capture. Closing another wave's obligation is not mine to do.
+
+Not done: a **before** PNG. I stashed the two viz files and started a rebuild
+to shoot the blank-label state as a pair, and abandoned it when the external
+session retook the cargo slot — holding the working tree in a stashed state
+against an unbounded external hold is a worse risk than a missing control
+image. The stash was popped immediately and the tree verified clean-modulo-
+this-wave. The "before" claim therefore rests on the code and on the new core
+assertion `narrative.headline.is_empty()`, not on a picture.
+
+### 7. Verification
+
+| gate | result |
+|---|---|
+| `cargo test -p rs_cam_viz --lib -q optimize` | **30 passed / 0 failed** |
+| `cargo test -p rs_cam_core --lib -q optimize::` | **223 passed / 0 failed** (2079 filtered) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | **exit 0**, zero warnings |
+| `cargo fmt --all -- --check` | **exit 0** (rc=1 on the first pass; three whitespace nits in this wave's own new code, fixed by hand rather than by running rustfmt on the files — this repo's rustfmt cascades to sibling modules) |
+
+Every one of those ran behind the blocking guard. The guard earned its keep:
+it held **380 s** before the first step and **2560 s** (~43 min) before the
+core tests, while the external session ran `cargo test --release` on four
+different sysml crates. At one point available RAM was 11 GB. Nothing in this
+wave overlapped it and no release build was run.
+
+### 8. Next action
+
+None owed by this wave. Two carried forward unchanged:
+
+- **N-3 queue item: QN-c's narrow-band refusal card** — still uncaptured
+  (§6). The rig to do it now exists; it needs a fixture whose vendor row is
+  narrower than the 1.20 headroom, not a deflection lock.
+- **Q-NARROW (d)**, the research row on whether a multiplicative headroom is
+  the right instrument for a nominal single-point preset. Untouched here; §4
+  only moved which line prints the numbers, not the numbers.
