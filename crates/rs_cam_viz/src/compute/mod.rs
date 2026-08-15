@@ -172,6 +172,30 @@ impl std::fmt::Display for ComputeError {
 
 impl std::error::Error for ComputeError {}
 
+/// What a toolpath submit did to the toolpath lane.
+///
+/// **G-REGEN-RACE.** The toolpath lane's submit rule is
+/// resubmit-cancels-and-requeues: a request for a toolpath that is already
+/// the lane's *active* job cancels that job and queues the new request in
+/// the same lock. The `ComputeError::Cancelled` that comes back from the
+/// abandoned job is therefore lane bookkeeping, **not an outcome for the
+/// toolpath** — a replacement is already queued and will produce the real
+/// result. Nothing downstream could tell the two apart, so
+/// `drain_compute_results` reported the supersede as a terminal failure
+/// ("`<name>`: generation cancelled") to whichever MCP request happened to
+/// be waiting. This is the fact that makes them distinguishable, and it is
+/// decided **inside the lane lock** rather than inferred from a snapshot,
+/// because inferring it is the same race one level up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolpathSubmitOutcome {
+    /// The request was queued; no in-flight job was touched.
+    Queued,
+    /// The request replaced the lane's active job for the same toolpath.
+    /// Exactly one `ComputeError::Cancelled` for that toolpath is expected
+    /// to drain as a consequence, and it must not be read as a result.
+    SupersededActive,
+}
+
 impl From<String> for ComputeError {
     fn from(value: String) -> Self {
         Self::Message(value)
@@ -211,7 +235,11 @@ pub enum ComputeMessage {
 }
 
 pub trait ComputeBackend: Send {
-    fn submit_toolpath(&mut self, request: ComputeRequest);
+    /// Submit a toolpath generation. The return value says whether this
+    /// submit **superseded** the lane's active job for the same toolpath —
+    /// see [`ToolpathSubmitOutcome`]. A backend with no real lane returns
+    /// [`ToolpathSubmitOutcome::Queued`].
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome;
     fn submit_simulation(&mut self, request: SimulationRequest);
     fn submit_collision(&mut self, request: CollisionRequest);
     /// Submit an Optimize request. The request takes ownership of the

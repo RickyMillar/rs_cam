@@ -1,0 +1,303 @@
+   Compiling rs_cam_viz v0.1.0 (/home/ricky/personal_repos/rs_cam/crates/rs_cam_viz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.91s
+warning: the following packages contain code that will be rejected by a future version of Rust: nom v3.2.1, quick-xml v0.22.0
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/debug/deps/rs_cam_viz-4cc3c986fd546ab3)
+
+running 269 tests
+test app::gpu_upload::tests::translate_annotated_shifts_targets_and_preserves_arc_offsets ... ok
+test app::mcp::tests::invalid_kind_returns_error ... ok
+test app::mcp::tests::default_returns_summary_with_kind_counts_and_top_level ... ok
+test app::mcp::tests::max_spans_truncates_and_reports_total ... ok
+test app::mcp::tests::narration_tool_lookup_refuses_where_the_parent_took_another_tool ... ok
+test app::mcp::tests::invalid_parent_id_returns_error ... ok
+test app::mcp::tests::kind_filter_returns_only_matching_spans ... ok
+test app::mcp::tests::inspect_spans_summary_mode_is_capped_and_says_so ... ok
+test app::mcp::tests::default_max_spans_is_50 ... ok
+test app::mcp::tests::narration_tool_lookup_still_finds_the_toolpaths_own_tool ... ok
+test app::mcp::tests::parent_id_combined_with_kind_filters_correctly ... ok
+test app::mcp::tests::parent_id_filter_narrows_to_contained_children ... ok
+test app::mcp::tests::pass_index_filters_to_matching_depth_pass ... ok
+test app::mcp::tests::workspace_keys_round_trip ... ok
+test compute::size_tests::compute_message_stays_small ... ok
+test app::mcp::tests::region_id_filters_to_matching_region ... ok
+test app::mcp::tests::an_unmatched_toolpath_id_is_refused_and_names_the_valid_ids ... ok
+test compute::worker::execute::tests::face_oneway_produces_nonempty_toolpath ... ok
+test compute::worker::execute::tests::zigzag_angle_uses_degrees_for_runtime_path ... ok
+test compute::worker::execute::tests::profile_multi_pass_tabs_only_on_final_depth ... ok
+test compute::worker::execute::tests::face_zigzag_alternates_direction ... ok
+test compute::worker::execute::tests::scallop_rejects_non_ballnose_tool ... ok
+test compute::worker::execute::tests::rest_semantic_angle_uses_degrees ... ok
+test compute::worker::tests::derived_rest_regions_boundary_clips_to_all_disjoint_regions ... ok
+test compute::worker::tests::drill_semantic_trace_records_cycle_children ... ok
+test compute::worker::tests::feed_optimization_uses_real_stock_bounds ... ok
+test compute::worker::tests::debug_trace_records_arc_fit_and_feed_optimization_phases ... ok
+test compute::worker::tests::feed_optimization_rejects_mesh_derived_operations ... ok
+test compute::worker::tests::feed_optimization_rejects_remaining_stock ... ok
+test compute::worker::tests::pencil_semantic_trace_records_chain_and_offset_pass_structure ... ok
+test app::mcp::tests::the_span_summary_cap_is_deterministic_and_documented ... ok
+test compute::worker::tests::debug_enabled_compute_attaches_trace_and_keeps_geometry_stable ... ok
+test compute::worker::tests::profile_semantic_trace_records_depth_and_finish_structure ... ok
+test compute::worker::tests::playback_data_carries_drill_op_for_drill_toolpaths ... ok
+test compute::worker::tests::radial_finish_semantic_trace_records_ray_angles ... ok
+test compute::worker::tests::playback_data_drill_op_transforms_to_global_frame_in_flipped_setup ... ok
+test compute::worker::execute::tests::inlay_output_contains_female_and_male_sections ... ok
+test compute::worker::tests::horizontal_finish_semantic_trace_records_slice_passes ... ok
+test app::mcp::tests::a_byte_starved_response_names_what_it_could_not_serve ... ok
+test compute::worker::tests::project_curve_semantic_trace_records_source_curve_groups ... ok
+test compute::worker::tests::analysis_requests_replace_stale_work ... ok
+test compute::worker::tests::semantic_trace_records_entry_params_and_boundary_clip ... ok
+test compute::worker::tests::adaptive_semantic_trace_records_runtime_structure ... ok
+test compute::worker::tests::analysis_cancel_completes_quickly ... ok
+test compute::worker::tests::multi_setup_backward_scrub_uses_checkpoints ... ok
+test controller::results_parity_tests::gui_drain_writes_findings_and_spans_into_session_results ... ok
+test compute::worker::tests::worker_reconciles_semantic_links_with_debug_options_disabled ... ok
+test controller::results_parity_tests::mcp_get_diagnostics_collision_count_comes_from_evidence ... ok
+test controller::results_parity_tests::mcp_get_diagnostics_row_is_a_superset_of_the_core_diagnostic_wire ... ok
+test controller::results_parity_tests::mcp_get_diagnostics_row_publishes_the_core_finding_channels ... ok
+test controller::tests::a_disabled_op_reports_disabled_not_its_last_error ... ok
+test controller::tests::a_disabled_rest_op_is_not_generated_blocked_or_failed ... ok
+test controller::tests::a_genuine_cancel_is_still_reported_by_generate_all ... ok
+test controller::tests::a_param_edit_mid_generate_regenerates_without_a_pending_flicker ... FAILED
+test controller::tests::add_setup_and_remove_setup_lifecycle ... ok
+test controller::tests::add_tool_and_remove_tool_lifecycle ... ok
+test compute::worker::tests::simulation_metrics_capture_emits_cut_trace_and_artifact ... ok
+test controller::results_parity_tests::gui_mode_toolpath_diagnostics_see_generation_stats ... ok
+test controller::tests::add_toolpath_and_remove_toolpath_lifecycle ... ok
+test controller::tests::add_toolpath_requires_geometry_for_polygon_operations ... ok
+test controller::tests::add_toolpath_blocked_when_no_tools_exist ... ok
+test controller::tests::build_world_stock_bbox_respects_stock_origin_f024 ... ok
+test controller::tests::as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028 ... ok
+test controller::tests::blocked_rest_op_names_its_blocking_upstream_operation ... ok
+test controller::tests::cancel_toolpath_generation_event_only_cancels_toolpath_lane ... ok
+test controller::tests::cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter ... ok
+test controller::tests::cancelled_toolpath_preserves_debug_trace_metadata ... ok
+test controller::tests::delete_selected_tool_clears_selection ... ok
+test controller::tests::delete_selected_toolpath_clears_selection ... ok
+test controller::tests::delete_setup_containing_selected_fixture_clears_selection ... ok
+test controller::tests::delete_setup_with_selected_keep_out_clears_selection ... ok
+test controller::tests::delete_unselected_toolpath_preserves_selection ... ok
+test controller::tests::diagnostics_separate_blocked_from_failed_and_exclude_disabled ... ok
+test controller::tests::drain_compute_results_clears_pending_apply_resim_on_success ... ok
+test controller::tests::drain_compute_results_keeps_pending_apply_resim_for_other_toolpath ... ok
+test compute::worker::tests::as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024 ... ok
+test controller::tests::drain_compute_results_repopulates_session_results ... ok
+test controller::tests::drain_compute_results_marks_derived_rest_dependents_stale ... ok
+test controller::tests::drain_compute_results_skips_session_write_on_error ... ok
+test controller::tests::duplicate_tool_creates_independent_copy ... ok
+test controller::tests::fixpoint_false_keeps_the_old_single_pass_behaviour ... ok
+test controller::tests::controller_save_open_and_export_smoke ... ok
+test controller::tests::generate_all_does_not_report_its_own_supersede_as_a_failure ... FAILED
+test controller::tests::generate_all_refuses_to_guess_a_simulation_resolution ... ok
+test controller::tests::handle_remove_toolpath_marks_derived_rest_dependents_stale ... ok
+test controller::tests::inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing ... ok
+test controller::tests::inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist ... ok
+test controller::tests::fixture_projects_load_2d_and_3d_models ... ok
+test controller::tests::generate_all_drives_a_three_deep_rest_chain_to_fixpoint_in_one_call ... ok
+test controller::tests::load_warning_window_can_be_shown_and_dismissed ... ok
+test compute::worker::tests::multi_setup_top_bottom_simulation ... ok
+test controller::tests::remove_tool_blocked_when_toolpath_references_it ... ok
+test controller::tests::rename_setup_updates_name ... ok
+test controller::tests::reset_simulation_cancels_analysis_lane ... ok
+test compute::worker::tests::simulation_metrics_capture_emits_semantic_cut_summaries ... ok
+test controller::tests::set_boundary_config_auto_enables_source_rest_analysis ... ok
+test controller::tests::remove_tool_succeeds_when_no_toolpath_references_it ... ok
+test controller::tests::reset_simulation_clears_results_and_checks ... ok
+test controller::tests::submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter ... ok
+test controller::tests::submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter ... ok
+test controller::tests::the_fixpoint_loop_terminates_on_a_genuinely_failing_op ... ok
+test controller::tests::toolpath_results_persist_debug_trace_metadata ... ok
+test controller::tests::playback_defaults_after_reset ... ok
+test controller::tests::workspace_defaults_to_toolpaths ... ok
+test controller::tests::ui_harness_records_lane_status_overlay_and_stock_to_leave ... ok
+test controller::tests::simulation_results_capture_setup_boundaries ... ok
+test controller::tests::simulation_staleness_tracks_edits ... ok
+test compute::worker::tests::spiral_finish_semantic_trace_records_band_and_ring_structure ... ok
+test controller::tests::workspace_switch_preserves_simulation_results ... ok
+test controller::tests::simulation_results_land_on_pending_inspect_toolpath_start ... ok
+test controller::tests::controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024 ... ok
+test controller::workflow_tests::w3_non_horizontal_face_produces_no_polygon ... ok
+test controller::workflow_tests::w3_face_selection_derives_polygon ... ok
+test controller::workflow_tests::w3_multi_face_toggle ... ok
+test controller::workflow_tests::w3_face_toggle_adds_and_removes ... ok
+test controller::workflow_tests::w3_face_z_propagates_to_height_resolution ... ok
+test controller::workflow_tests::w6_auto_height_defaults ... ok
+test controller::workflow_tests::w10_model_removal_clears_face_selection ... ok
+test controller::workflow_tests::w6_face_top_z_overrides_auto ... ok
+test controller::workflow_tests::w6_height_ordering_with_various_depths ... ok
+test controller::workflow_tests::w6_manual_heights_override_face_z ... ok
+test io::presets::tests::test_delete_preset_not_found ... ok
+test io::presets::tests::test_escape_unescape_roundtrip ... ok
+test controller::workflow_tests::w10_model_removal_blocked_when_toolpath_references_it ... ok
+test io::presets::tests::test_extract_field ... ok
+test io::presets::tests::test_extract_field_with_escaped_quotes ... ok
+test io::presets::tests::test_extract_multiline_field ... ok
+test io::presets::tests::test_sanitize_filename ... ok
+test io::presets::tests::test_load_preset_not_found ... ok
+test io::presets::tests::test_list_presets_empty_dir ... ok
+test io::presets::tests::test_save_and_load_preset ... ok
+test io::project::tests::project_tool_section_type_key_shape_frozen ... ok
+test io::project::tests::missing_models_warn_but_do_not_abort_load ... ok
+test io::project::tests::legacy_sparse_projects_still_load ... ok
+test io::project::tests::round_trip_persists_editable_2d_state ... ok
+test compute::worker::tests::resubmitting_the_active_toolpath_reports_a_supersede ... ok
+test io::project::tests::relative_paths_are_saved_and_resolved_against_project_dir ... ok
+test io::project::tests::typed_loader_defaults_missing_fields_cleanly ... ok
+test io::setup_sheet::tests::days_to_ymd_epoch ... ok
+test io::setup_sheet::tests::days_to_ymd_known_date ... ok
+test io::setup_sheet::tests::escape_html_works ... ok
+test io::setup_sheet::tests::format_time_renders_correctly ... ok
+test mcp_bridge::tests::a_live_or_freshly_requested_capture_is_never_refused ... ok
+test mcp_bridge::tests::a_parked_frame_loop_refuses_a_gui_screenshot_with_the_mechanism_named ... ok
+test io::project::tests::test_save_project_atomic_write ... ok
+test mcp_bridge::tests::a_parked_frame_loop_with_nothing_waiting_is_not_a_warning ... ok
+test mcp_bridge::tests::awaiting_gui_counts_deferred_completions ... ok
+test io::project::tests::round_trip_persists_rest_analysis_config ... ok
+test compute::worker::tests::resubmitting_active_toolpath_cancels_and_replaces_it ... ok
+test mcp_bridge::tests::frame_beat_separates_never_ran_from_in_frame_from_parked ... ok
+test mcp_bridge::tests::cancel_generation_response_busy_lane_names_the_job ... ok
+test mcp_bridge::tests::cancel_generation_response_idle_lane_is_no_op ... ok
+test mcp_bridge::tests::gui_screenshot_captures_immediately_without_resize ... ok
+test mcp_bridge::tests::pending_compute_gui_screenshot_slot_take_semantics ... ok
+test mcp_bridge::tests::read_cache_distinguishes_never_published_from_stale ... ok
+test mcp_bridge::tests::generation_status_on_an_idle_lane_names_a_parked_frame_loop ... ok
+test present_mode::tests::mcp_launches_request_auto_no_vsync_and_plain_launches_do_not ... ok
+test mcp_bridge::tests::gui_screenshot_countdown_defers_capture_after_resize ... ok
+test present_mode::tests::parses_wgpu_core_negotiation_line ... ok
+test mcp_bridge::tests::cancel_on_a_parked_loop_does_not_read_as_all_clear ... ok
+test present_mode::tests::unusable_env_falls_back_to_the_launch_default ... ok
+test render::toolpath_render::tests::advance_color_above_max_is_red ... ok
+test render::toolpath_render::tests::advance_color_below_min_is_blue ... ok
+test present_mode::tests::rig_override_outranks_the_launch_default ... ok
+test render::toolpath_render::tests::advance_color_near_max_is_orange ... ok
+test render::toolpath_render::tests::advance_color_no_band_is_grey ... ok
+test render::toolpath_render::tests::advance_color_within_band_is_green ... ok
+test render::camera::tests::unproject_round_trip ... ok
+test compute::worker::tests::cancel_all_marks_both_lanes_cancelling ... ok
+test render::toolpath_render::tests::colour_classes_are_monotonic_across_the_band ... ok
+test io::project::tests::round_trip_persists_multi_setup_state ... ok
+test state::history::tests::empty_undo_redo_returns_none ... ok
+test render::toolpath_render::tests::dashed_segment_emits_two_sub_segments ... ok
+test render::toolpath_render::tests::advance_color_no_sample_is_dim_grey ... ok
+test state::history::tests::multiple_undo_redo_sequence ... ok
+test state::history::tests::push_and_undo_returns_correct_action ... ok
+test state::job::tests::all_constants_are_exhaustive ... ok
+test state::history::tests::new_push_after_undo_clears_redo_stack ... ok
+test render::toolpath_render::tests::span_aware_renderer_colors_entry_distinct_from_default ... ok
+test present_mode::tests::report_distinguishes_requested_from_negotiated ... ok
+test state::job::tests::face_up_bottom_flips_z ... ok
+test state::history::tests::redo_after_undo_returns_undone_state ... ok
+test state::job::tests::emission_shift_non_identity_is_zero ... ok
+test state::history::tests::stack_overflow_drops_oldest ... ok
+test state::job::tests::all_constants_have_no_duplicates ... ok
+test state::job::tests::setup_transform_round_trip ... ok
+test state::job::tests::emission_shift_identity_is_negated_origin ... ok
+test state::runtime::tests::an_unknown_post_token_reads_back_as_grbl ... ok
+test state::job::tests::face_up_front_rotates_y_z ... ok
+test state::job::tests::identity_setup_is_passthrough ... ok
+test state::job::tests::setup_transform_round_trip_multiple_points ... ok
+test state::simulation::tests::current_debug_annotation_uses_local_toolpath_move ... ok
+test state::job::tests::transformed_coords_stay_non_negative_for_interior_points ... ok
+test state::runtime::tests::every_post_format_survives_the_session_round_trip ... ok
+test state::job::tests::z_rotation_90_swaps_axes ... ok
+test state::simulation::tests::cut_trace_surfaces_current_sample_and_cutting_issues ... ok
+test state::simulation::tests::active_semantic_item_prefers_deepest_matching_item ... ok
+test state::simulation::tests::runtime_hotspots_rank_leaf_semantics_and_metrics_are_available ... ok
+test state::simulation::tests::hotspot_target_resolves_move_and_semantic_item ... ok
+test state::simulation::tests::semantic_pick_prefers_deeper_item_then_smaller_move_span ... ok
+test state::runtime::tests::the_written_post_tokens_are_the_shipped_spellings ... ok
+test state::toolpath::entry::tests::duplicate_preserves_editable_state_but_not_runtime ... ok
+test state::simulation::tests::the_issue_list_is_ordered_by_severity_not_by_move_index ... ok
+test state::tests::close_modals_for_exclusivity_spares_running_optimize ... ok
+test state::toolpath::entry::tests::new_toolpath_uses_operation_defaults ... ok
+test ui::feeds_modal::tests::hover_readout_never_prints_a_negative_chipload ... ok
+test ui::optimize_modal::tests::format_cycle_handles_inf ... ok
+test ui::optimize_modal::tests::format_cycle_minutes ... ok
+test state::tests::close_modals_for_exclusivity_closes_settled_modals ... ok
+test ui::optimize_modal::tests::format_cycle_short_seconds ... ok
+test ui::optimize_modal::tests::format_delta_empty ... ok
+test state::simulation::tests::pinned_semantic_item_overrides_playback_resolution ... ok
+test ui::optimize_modal::tests::format_entry_advisory_chipload_high_includes_locality_and_pct ... ok
+test state::simulation::tests::issue_navigation_prioritizes_hotspots_then_annotations ... ok
+test ui::optimize_modal::tests::format_delta_with_feed_and_doc ... ok
+test ui::optimize_modal::tests::format_limiting_gate_deflection_uses_microns ... ok
+test ui::optimize_modal::tests::format_suggestion_action_doc_uses_two_decimals ... ok
+test ui::optimize_modal::tests::format_suggestion_action_feed_rounds_to_int ... ok
+test ui::optimize_modal::tests::format_suggestion_action_rpm ... ok
+test ui::optimize_modal::tests::narrative_prose_collapses_a_duplicated_line_and_drops_empties ... ok
+test ui::optimize_modal::tests::narrative_prose_keeps_a_headline_only_narrative ... ok
+test ui::optimize_modal::tests::narrative_prose_renders_both_lines_for_a_narrow_band_refusal ... ok
+test state::toolpath::entry::tests::loaded_init_can_override_auto_regen_and_runtime_reset ... ok
+test ui::optimize_modal::tests::narrative_prose_renders_the_deflection_prescription ... ok
+test ui::optimize_modal::tests::narrative_prose_renders_the_marginal_safe_scrap_warning ... ok
+test ui::optimize_project::tests::format_cycle_minutes_format ... ok
+test ui::optimize_project::tests::format_cycle_short_seconds ... ok
+test ui::optimize_project::tests::format_delta_feed_and_doc ... ok
+test ui::optimize_project::tests::format_delta_no_changes ... ok
+test ui::optimize_project::tests::not_optimized_row_carries_both_narrative_fields ... ok
+test ui::optimize_project::tests::not_optimized_row_carries_the_deflection_prescription ... ok
+test ui::optimize_project::tests::not_optimized_row_no_longer_drops_the_limiting_gate_readings ... ok
+test ui::optimize_project::tests::truncate_long_appends_ellipsis ... ok
+test ui::optimize_project::tests::truncate_short ... ok
+test ui::optimize_modal::tests::format_envelope_summary_collapsed_extents_returns_none ... ok
+test ui::optimize_modal::tests::format_limiting_gate_chipload_high ... ok
+test ui::optimize_modal::tests::format_envelope_summary_lists_axes_that_moved ... ok
+test ui::optimize_modal::tests::format_limiting_gate_appends_locality_suffix ... ok
+test ui::properties::operations::tests::validate_rest_accepts_earlier_matching_operation ... ok
+test ui::properties::operations::tests::validate_toolpath_rejects_wrong_geometry_type ... ok
+test ui::properties::stock::tests::auto_place_pins_keeps_pin_edge_inside_stock ... ok
+test ui::optimize_project::tests::format_cycle_handles_inf ... ok
+test ui::properties::tests::stateful_gate_rows_with_shared_status_merge_into_one_gates_row ... ok
+test ui::properties::tests::toolpath_tab_parse_covers_all_documented_keys ... ok
+test ui::sim_op_list::tests::toolpath_status_flags_scope_to_toolpath ... ok
+test ui::sim_op_list::tests::toolpath_status_flags_sort_worst_first_and_suppress_emission_noise ... ok
+test controller::workflow_tests::w4_face_selection_in_undo_snapshot ... ok
+test ui::properties::stock::tests::auto_place_pins_respects_edge_clearance ... ok
+test ui::properties::operations::tests::validate_rest_requires_earlier_matching_operation ... ok
+test ui::properties::operations::tests::gui_and_mcp_diagnostic_ids_match ... ok
+test ui::sim_diagnostics::tests::arc_engagement_unmodeled_tooltip_points_to_cut_metrics ... ok
+test ui::properties::tests::stateful_gate_rows_merge_groups_by_exact_status_text ... ok
+test compute::worker::tests::cancelled_toolpath_returns_partial_debug_trace ... ok
+test controller::workflow_tests::w5_project_round_trip_preserves_step_face_selection ... ok
+test controller::workflow_tests::w3_step_import_populates_enriched_mesh ... ok
+test app::mcp::tests::an_unfiltered_read_answers_bounded_instead_of_emitting_everything ... ok
+test compute::worker::tests::ramp_finish_semantic_trace_records_terrace_and_ramp_structure ... ok
+test compute::worker::tests::debug_trace_records_waterline_prepare_and_slice_phases ... ok
+test compute::worker::tests::scallop_semantic_trace_records_band_and_ring_structure ... ok
+test compute::worker::tests::non_pencil_rest_analysis_source_feeds_a_downstream_boundary ... ok
+test compute::worker::tests::derived_rest_regions_boundary_shrinks_generation_not_just_clips_it ... ok
+test compute::worker::tests::running_lane_snapshot_reports_current_phase ... ok
+test compute::worker::tests::duplicate_queued_toolpaths_are_coalesced ... ok
+test compute::worker::tests::adaptive3d_semantic_trace_records_runtime_structure ... ok
+test compute::worker::tests::debug_trace_records_dropcutter_prepare_and_rasterize_phases ... ok
+test io::project::tests::round_trip_persists_editable_3d_state ... ok
+test compute::worker::tests::steep_shallow_semantic_trace_splits_steep_and_shallow_regions ... ok
+test compute::worker::tests::analysis_lane_snapshot_reports_current_phase ... ok
+test compute::worker::tests::toolpath_and_analysis_lanes_run_independently ... ok
+
+failures:
+
+---- controller::tests::a_param_edit_mid_generate_regenerates_without_a_pending_flicker stdout ----
+
+thread 'controller::tests::a_param_edit_mid_generate_regenerates_without_a_pending_flicker' (554108) panicked at crates/rs_cam_viz/src/controller/tests.rs:3229:5:
+assertion `left == right` failed: a superseded job is not an outcome — the replacement is already queued, so the toolpath is still computing
+  left: Some("Pending")
+ right: Some("Computing")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- controller::tests::generate_all_does_not_report_its_own_supersede_as_a_failure stdout ----
+
+thread 'controller::tests::generate_all_does_not_report_its_own_supersede_as_a_failure' (554146) panicked at crates/rs_cam_viz/src/controller/tests.rs:3124:5:
+assertion `left == right` failed: reply: {"awaiting_prior_stock":[],"errors":[{"message":"Scallop: generation cancelled","toolpath_id":0}],"failed":1,"generated":0,"loop_error":null,"ok":false,"rounds":1,"simulations":0,"summary":"Generated 0 toolpaths, 1 failed (in 1 generate round, 0 simulations)"}
+  left: Bool(false)
+ right: true
+
+
+failures:
+    controller::tests::a_param_edit_mid_generate_regenerates_without_a_pending_flicker
+    controller::tests::generate_all_does_not_report_its_own_supersede_as_a_failure
+
+test result: FAILED. 267 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.62s
+
+error: test failed, to rerun pass `-p rs_cam_viz --lib`
+CARGO_TEST_EXIT=101

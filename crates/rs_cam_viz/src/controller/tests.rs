@@ -9,7 +9,7 @@ use rs_cam_core::toolpath::Toolpath;
 use super::*;
 use crate::compute::{
     CollisionRequest, ComputeMessage, ComputeRequest, LaneState, OptimizeRequest,
-    SimulationRequest, SimulationResult,
+    SimulationRequest, SimulationResult, ToolpathSubmitOutcome,
 };
 use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
@@ -23,6 +23,14 @@ struct ScriptedBackend {
     analysis_lane: LaneSnapshot,
     optimize_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
+    /// G-REGEN-RACE: the one piece of real lane state the supersede rule
+    /// reads. Setting it stands for "the toolpath lane is currently
+    /// running a job for this toolpath", which is the state
+    /// `ThreadedComputeBackend::submit_toolpath` turns into
+    /// `SupersededActive`. Modelled rather than stubbed so the controller
+    /// under test makes the same decision the real lane makes.
+    active_toolpath_id: Option<ToolpathId>,
+    submitted: Vec<ToolpathId>,
 }
 
 impl ScriptedBackend {
@@ -32,12 +40,22 @@ impl ScriptedBackend {
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
             optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
             drained: Vec::new(),
+            active_toolpath_id: None,
+            submitted: Vec::new(),
         }
     }
 }
 
 impl ComputeBackend for ScriptedBackend {
-    fn submit_toolpath(&mut self, _request: ComputeRequest) {}
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
+        let id = request.toolpath_id;
+        self.submitted.push(id);
+        if self.active_toolpath_id == Some(id) {
+            ToolpathSubmitOutcome::SupersededActive
+        } else {
+            ToolpathSubmitOutcome::Queued
+        }
+    }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
     fn submit_optimize(&mut self, _request: OptimizeRequest) {}
@@ -2035,8 +2053,9 @@ struct CapturingBackend {
 }
 
 impl crate::compute::ComputeBackend for CapturingBackend {
-    fn submit_toolpath(&mut self, request: ComputeRequest) {
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
         self.captured = Some(request);
+        ToolpathSubmitOutcome::Queued
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
@@ -2588,7 +2607,7 @@ impl RestChainBackend {
 
 #[cfg(feature = "mcp")]
 impl ComputeBackend for RestChainBackend {
-    fn submit_toolpath(&mut self, request: ComputeRequest) {
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
         let id = request.toolpath_id;
         let result = if self.poison == Some(id) {
             Err(crate::compute::ComputeError::Message(
@@ -2616,6 +2635,7 @@ impl ComputeBackend for RestChainBackend {
                 debug_trace_path: None,
             },
         )));
+        ToolpathSubmitOutcome::Queued
     }
 
     fn submit_simulation(&mut self, _request: SimulationRequest) {
@@ -2913,5 +2933,328 @@ fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
     assert_eq!(
         crate::state::toolpath::ComputeStatus::effective(false, raw).label(),
         "Disabled"
+    );
+}
+
+// ── G-REGEN-RACE: generate_all and process_auto_regen stop cancelling ────
+//
+// Reproduced live by B-4b on a never-minimised window and re-derived from
+// the code here: `load_project` marks every toolpath `auto_regen` + stale,
+// `process_auto_regen` submits them 500 ms later, and an agent's
+// `generate_all` arriving while one of them is still the lane's ACTIVE job
+// resubmits that same toolpath. The lane's resubmit-cancels-and-requeues
+// rule aborts the in-flight job and queues the replacement; the abandoned
+// job's `Cancelled` then drained as the toolpath's *outcome*, so
+// `generate_all` reported `"Back Rough: generation cancelled"`,
+// `generated: 0` for work it had itself replaced — while the replacement it
+// queued went on to succeed unobserved.
+
+/// A backend that models the toolpath lane's two load-bearing rules and
+/// nothing else: (1) a submit for the toolpath that is currently ACTIVE
+/// cancels that job and queues the replacement; (2) a cancelled job still
+/// reports, with `Err(Cancelled)`. `finish_active` stands for the worker
+/// thread completing whatever it is running.
+#[cfg(feature = "mcp")]
+struct LaneModelBackend {
+    active: Option<ToolpathId>,
+    active_cancelled: bool,
+    queue: std::collections::VecDeque<ToolpathId>,
+    drained: Vec<ComputeMessage>,
+    /// Every toolpath id ever handed to `submit_toolpath`, in order.
+    submits: Vec<ToolpathId>,
+}
+
+#[cfg(feature = "mcp")]
+impl LaneModelBackend {
+    fn new() -> Self {
+        Self {
+            active: None,
+            active_cancelled: false,
+            queue: std::collections::VecDeque::new(),
+            drained: Vec::new(),
+            submits: Vec::new(),
+        }
+    }
+
+    fn start_next(&mut self) {
+        if self.active.is_none() {
+            self.active = self.queue.pop_front();
+            self.active_cancelled = false;
+        }
+    }
+
+    /// The worker finishing its current job. A job whose cancel flag was
+    /// set reports `Cancelled` even though it ran, exactly as
+    /// `spawn_toolpath_lane` does.
+    fn finish_active(&mut self) {
+        let Some(id) = self.active.take() else {
+            return;
+        };
+        let result = if self.active_cancelled {
+            Err(crate::compute::ComputeError::Cancelled)
+        } else {
+            Ok(ToolpathResult {
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(
+                    Toolpath::new(),
+                )),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+                drill_op: None,
+            })
+        };
+        self.active_cancelled = false;
+        self.drained.push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::ComputeResult {
+                toolpath_id: id,
+                result,
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+        self.start_next();
+    }
+}
+
+#[cfg(feature = "mcp")]
+impl ComputeBackend for LaneModelBackend {
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
+        let id = request.toolpath_id;
+        self.submits.push(id);
+        self.queue.retain(|queued| *queued != id);
+        let outcome = if self.active == Some(id) {
+            self.active_cancelled = true;
+            ToolpathSubmitOutcome::SupersededActive
+        } else {
+            ToolpathSubmitOutcome::Queued
+        };
+        self.queue.push_back(id);
+        self.start_next();
+        outcome
+    }
+
+    fn submit_simulation(&mut self, _request: SimulationRequest) {}
+    fn submit_collision(&mut self, _request: CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+    fn cancel_lane(&mut self, _lane: ComputeLane) {
+        if self.active.is_some() {
+            self.active_cancelled = true;
+        }
+    }
+
+    fn drain_results(&mut self) -> Vec<ComputeMessage> {
+        std::mem::take(&mut self.drained)
+    }
+
+    fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {
+        LaneSnapshot::idle(lane)
+    }
+
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
+}
+
+/// A one-op project in exactly the state `load_project` leaves behind:
+/// auto-regen armed, stale, no cached result.
+#[cfg(feature = "mcp")]
+fn freshly_loaded_controller() -> (AppController<LaneModelBackend>, ToolpathId) {
+    let mut controller = AppController::with_backend(LaneModelBackend::new());
+    sample_project_into(&mut controller);
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let rt = controller.state.gui.toolpath_rt_or_default(tp_id);
+    rt.result = None;
+    rt.status = crate::state::toolpath::ComputeStatus::Pending;
+    rt.auto_regen = true;
+    // Older than the 500 ms debounce, i.e. the sweep is due.
+    rt.stale_since = Some(std::time::Instant::now() - std::time::Duration::from_millis(600));
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    (controller, tp_id)
+}
+
+/// Pump the controller — events, then the lane finishing a job, then the
+/// drain — until the `generate_all` oneshot resolves.
+#[cfg(feature = "mcp")]
+fn pump_lane_model(
+    controller: &mut AppController<LaneModelBackend>,
+    rx: &mut tokio::sync::oneshot::Receiver<crate::mcp_bridge::McpResponse>,
+) -> serde_json::Value {
+    for _ in 0..200 {
+        let events = controller.drain_events();
+        for event in events {
+            controller.handle_internal_event(event);
+        }
+        controller.compute.finish_active();
+        controller.drain_compute_results();
+        if let Ok(resp) = rx.try_recv() {
+            let payload = resp.result.expect("generate_all replies Ok(json)");
+            return serde_json::from_str(&payload)
+                .unwrap_or_else(|e| panic!("generate_all reply is not JSON ({e}): {payload}"));
+        }
+    }
+    panic!("generate_all never resolved");
+}
+
+/// THE G-REGEN-RACE gate. `generate_all` issued while the GUI's own
+/// auto-regen sweep still has that toolpath in flight must report the work
+/// it actually got — not a failure for the job it replaced itself.
+#[cfg(feature = "mcp")]
+#[test]
+fn generate_all_does_not_report_its_own_supersede_as_a_failure() {
+    let (mut controller, tp_id) = freshly_loaded_controller();
+
+    // 1. The GUI's own sweep fires first (this is guaranteed after a
+    //    load_project: the debounce is 500 ms and every toolpath is stale).
+    controller.process_auto_regen();
+    assert_eq!(
+        controller.compute.active,
+        Some(tp_id),
+        "the auto-regen sweep should have put this toolpath on the lane"
+    );
+
+    // 2. The agent calls generate_all while that job is still running.
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(false, None, tx, None);
+
+    let reply = pump_lane_model(&mut controller, &mut rx);
+
+    assert_eq!(reply["ok"], true, "reply: {reply}");
+    assert_eq!(
+        reply["generated"], 1,
+        "the replacement generate_all queued DID produce a toolpath; the reply \
+         must count it. Pre-fix this read 0. reply: {reply}"
+    );
+    assert_eq!(reply["failed"], 0, "reply: {reply}");
+    let errors = reply["errors"].as_array().expect("errors array");
+    assert!(
+        errors.is_empty(),
+        "generate_all must not report a failure for the job it superseded \
+         itself — pre-fix this carried \"Scallop: generation cancelled\". \
+         reply: {reply}"
+    );
+    assert!(
+        controller.superseded_toolpaths.is_empty(),
+        "the supersede ledger must be empty once the cancellation it was \
+         expecting has drained"
+    );
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("runtime exists");
+    assert!(
+        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        "the toolpath really did generate, got {:?}",
+        rt.status.label()
+    );
+}
+
+/// The other half of the same contract, and the reason the fix is a
+/// supersede ledger rather than "ignore Cancelled": a cancellation with no
+/// supersede behind it — `cancel_generation`, the GUI's cancel button — is
+/// still terminal and still reported.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_genuine_cancel_is_still_reported_by_generate_all() {
+    let (mut controller, tp_id) = freshly_loaded_controller();
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .stale_since = None;
+
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(false, None, tx, None);
+
+    // Let generate_all's own submit reach the lane, then cancel it the way
+    // the escape hatch does — nobody resubmitted, so nothing was superseded.
+    let events = controller.drain_events();
+    for event in events {
+        controller.handle_internal_event(event);
+    }
+    assert_eq!(controller.compute.active, Some(tp_id));
+    assert!(
+        controller.superseded_toolpaths.is_empty(),
+        "a submit onto an idle lane supersedes nothing"
+    );
+    controller.compute.cancel_lane(ComputeLane::Toolpath);
+
+    let reply = pump_lane_model(&mut controller, &mut rx);
+
+    assert_eq!(reply["generated"], 0, "reply: {reply}");
+    assert_eq!(reply["failed"], 1, "reply: {reply}");
+    let errors = reply["errors"].as_array().expect("errors array");
+    assert_eq!(errors.len(), 1, "reply: {reply}");
+    assert!(
+        errors[0]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cancelled"),
+        "a real cancellation must still say so: {reply}"
+    );
+}
+
+/// Interactive auto-regen keeps working, and the supersede path improves
+/// it: a param edit while the previous generate is still running no longer
+/// bounces the toolpath's status through `Pending` (which the operations
+/// tree renders as "not generated") on its way to the new result.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_param_edit_mid_generate_regenerates_without_a_pending_flicker() {
+    let (mut controller, tp_id) = freshly_loaded_controller();
+
+    // First edit: the sweep puts it on the lane.
+    controller.process_auto_regen();
+    assert_eq!(controller.compute.active, Some(tp_id));
+
+    // Second edit lands while that job runs — the GUI marks it stale again
+    // and the next sweep resubmits it.
+    controller
+        .state
+        .gui
+        .toolpath_rt_or_default(tp_id)
+        .stale_since = Some(std::time::Instant::now() - std::time::Duration::from_millis(600));
+    controller.process_auto_regen();
+    assert!(
+        controller.superseded_toolpaths.contains(&tp_id),
+        "resubmitting the running toolpath supersedes it"
+    );
+
+    // The abandoned job reports; the toolpath is still computing.
+    controller.compute.finish_active();
+    controller.drain_compute_results();
+    let status = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .map(|rt| rt.status.label());
+    assert_eq!(
+        status,
+        Some("Computing"),
+        "a superseded job is not an outcome — the replacement is already \
+         queued, so the toolpath is still computing"
+    );
+
+    // The replacement lands and the edit is honoured.
+    controller.compute.finish_active();
+    controller.drain_compute_results();
+    let rt = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .expect("runtime exists");
+    assert!(
+        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        "auto-regen must still deliver a fresh result, got {:?}",
+        rt.status.label()
+    );
+    assert!(
+        rt.stale_since.is_none(),
+        "the submit clears the staleness it satisfies"
     );
 }

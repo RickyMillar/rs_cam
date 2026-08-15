@@ -43,7 +43,12 @@ impl ScriptedBackend {
 }
 
 impl ComputeBackend for ScriptedBackend {
-    fn submit_toolpath(&mut self, _request: crate::compute::ComputeRequest) {}
+    fn submit_toolpath(
+        &mut self,
+        _request: crate::compute::ComputeRequest,
+    ) -> crate::compute::ToolpathSubmitOutcome {
+        crate::compute::ToolpathSubmitOutcome::Queued
+    }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
     fn submit_optimize(&mut self, _request: OptimizeRequest) {}

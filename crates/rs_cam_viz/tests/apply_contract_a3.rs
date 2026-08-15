@@ -42,7 +42,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{ProjectSession, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
-    GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest,
+    GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::ui::AppEvent;
@@ -55,7 +55,9 @@ use rs_cam_viz::ui::AppEvent;
 struct SilentBackend;
 
 impl ComputeBackend for SilentBackend {
-    fn submit_toolpath(&mut self, _request: ComputeRequest) {}
+    fn submit_toolpath(&mut self, _request: ComputeRequest) -> ToolpathSubmitOutcome {
+        ToolpathSubmitOutcome::Queued
+    }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
     fn submit_optimize(&mut self, _request: OptimizeRequest) {}
