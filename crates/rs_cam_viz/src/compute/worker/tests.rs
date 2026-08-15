@@ -2606,3 +2606,81 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// G-REGEN-RACE — the lane says, under its own lock, whether a submit
+// superseded the active job.
+//
+// The toolpath lane's submit rule is resubmit-cancels-and-requeues. Before
+// this, the rule was invisible to callers: the abandoned job's
+// `ComputeError::Cancelled` arrived looking exactly like an operator or an
+// agent having cancelled the generation, and the drain reported it as the
+// toolpath's outcome. Anything downstream that tried to reconstruct "was
+// that cancel mine?" from a lane snapshot would be re-running the same race
+// one level up, so the answer is returned from inside the lock.
+// ---------------------------------------------------------------------------
+
+/// A cheap replacement request for `id` — cheap on purpose, so the test's
+/// own supersede does not leave a second heavy DropCutter running behind it.
+fn cheap_request_for(id: usize) -> ComputeRequest {
+    let mut request = sample_request(
+        OperationConfig::new_default(OperationType::Pocket),
+        StockSource::Fresh,
+    );
+    request.toolpath_id = ToolpathId(id);
+    request.toolpath_index = id;
+    request
+}
+
+#[test]
+fn resubmitting_the_active_toolpath_reports_a_supersede() {
+    let mut backend = ThreadedComputeBackend::new();
+
+    // An idle lane has nothing to supersede.
+    assert_eq!(
+        backend.submit_toolpath(heavy_dropcutter_request(91)),
+        ToolpathSubmitOutcome::Queued,
+        "the first submit onto an idle lane cannot supersede anything"
+    );
+
+    // Retry rather than sleep-and-hope, and resubmit the HEAVY request so
+    // every attempt leaves another long job queued for the same toolpath.
+    // That is what makes the loop terminate rather than flake: if an
+    // attempt lands in the gap between two jobs it simply queues the next
+    // window instead of consuming the only one. A fixed sleep would make
+    // this assertion about the machine's speed rather than the lane's rule.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut superseded = false;
+    while Instant::now() < deadline {
+        if backend.submit_toolpath(heavy_dropcutter_request(91))
+            == ToolpathSubmitOutcome::SupersededActive
+        {
+            superseded = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        superseded,
+        "resubmitting the toolpath the lane is actively running must report \
+         SupersededActive — that report is what stops the resulting Cancelled \
+         from being read as the toolpath's outcome"
+    );
+
+    // Replace the heavy job still queued behind the supersede with a cheap
+    // one, so the test does not pay for a second DropCutter to tear down.
+    let _ = backend.submit_toolpath(cheap_request_for(91));
+
+    // A different toolpath never supersedes, however busy the lane is.
+    assert_eq!(
+        backend.submit_toolpath(cheap_request_for(92)),
+        ToolpathSubmitOutcome::Queued,
+        "a submit for a different toolpath must never claim a supersede"
+    );
+
+    backend.cancel_lane(ComputeLane::Toolpath);
+    let _ = wait_for(&mut backend, Duration::from_secs(60), |message| {
+        matches!(message, ComputeMessage::Toolpath(result)
+            if matches!(result.toolpath_id, ToolpathId(92)))
+    });
+}

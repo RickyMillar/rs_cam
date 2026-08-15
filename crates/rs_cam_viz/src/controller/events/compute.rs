@@ -651,7 +651,7 @@ impl<B: ComputeBackend> AppController<B> {
             rapid_feed_mm_min: machine.max_feed_mm_min.max(1.0),
         });
 
-        self.compute.submit_toolpath(ComputeRequest {
+        let submit_outcome = self.compute.submit_toolpath(ComputeRequest {
             toolpath_id: tp_id,
             toolpath_index: tp_idx,
             toolpath_name,
@@ -678,6 +678,19 @@ impl<B: ComputeBackend> AppController<B> {
             rest_analysis,
             link_kinematics,
         });
+        // G-REGEN-RACE: if this submit replaced the lane's active job for
+        // the same toolpath, the `Cancelled` that job is about to return is
+        // OUR doing and a replacement is already queued behind it. Record
+        // that so `drain_compute_results` does not read it as the
+        // toolpath's outcome. Recorded here rather than inferred later
+        // because only the lane, under its own lock, knows which submit
+        // won the race.
+        if matches!(
+            submit_outcome,
+            crate::compute::ToolpathSubmitOutcome::SupersededActive
+        ) {
+            self.superseded_toolpaths.insert(tp_id);
+        }
     }
 
     /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
@@ -724,6 +737,35 @@ impl<B: ComputeBackend> AppController<B> {
             match message {
                 ComputeMessage::Toolpath(result) => {
                     let tp_id = result.toolpath_id;
+                    // G-REGEN-RACE — the supersede is not an outcome.
+                    //
+                    // The toolpath lane's submit rule is
+                    // resubmit-cancels-and-requeues, so any second submit
+                    // of a toolpath that is currently the lane's active job
+                    // aborts that job and queues the replacement. Both the
+                    // GUI's `process_auto_regen` sweep and MCP
+                    // `generate_all` submit through this controller, and
+                    // after a `load_project` (which marks every toolpath
+                    // stale) the sweep is guaranteed to have a job in
+                    // flight 500 ms later — so an agent's `generate_all`
+                    // superseded its own work and then read the resulting
+                    // `Cancelled` as a *failure of the toolpath*, reporting
+                    // "`<name>`: generation cancelled" with `generated: 0`
+                    // while the replacement it had just queued went on to
+                    // succeed unobserved.
+                    //
+                    // The fix is here, at the one place that turns a lane
+                    // message into a toolpath outcome: a superseded job has
+                    // no outcome at all. The toolpath is still `Computing`,
+                    // no MCP waiter resolves, no `generate_all` bucket
+                    // moves, and the replacement's own result does all
+                    // three. A cancel with no supersede behind it — the
+                    // `cancel_generation` escape hatch, the GUI's cancel
+                    // button — is untouched and still terminal.
+                    let expected_supersede = self.superseded_toolpaths.remove(&tp_id);
+                    if expected_supersede && matches!(result.result, Err(ComputeError::Cancelled)) {
+                        continue;
+                    }
                     let rt = self.state.gui.toolpath_rt_or_default(tp_id);
                     rt.debug_trace = result.debug_trace.clone();
                     rt.semantic_trace = result.semantic_trace.clone();

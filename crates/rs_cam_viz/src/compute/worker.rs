@@ -29,7 +29,7 @@ use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
 use super::{
     CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
-    LaneControl, LaneSnapshot, LaneState,
+    LaneControl, LaneSnapshot, LaneState, ToolpathSubmitOutcome,
 };
 use crate::state::job::ToolConfig;
 #[cfg(test)]
@@ -545,7 +545,7 @@ impl Default for ThreadedComputeBackend {
 }
 
 impl ComputeBackend for ThreadedComputeBackend {
-    fn submit_toolpath(&mut self, request: ComputeRequest) {
+    fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome {
         let mut inner = self
             .toolpath_lane
             .inner
@@ -554,11 +554,18 @@ impl ComputeBackend for ThreadedComputeBackend {
         inner
             .queue
             .retain(|queued| queued.toolpath_id != request.toolpath_id);
+        // G-REGEN-RACE: decided here, under the lane lock, and reported to
+        // the caller. The push below is unconditional, so `SupersededActive`
+        // is a promise that a replacement request exists — which is what
+        // licenses the drain to treat the resulting `Cancelled` as
+        // bookkeeping rather than as the toolpath's outcome.
+        let mut outcome = ToolpathSubmitOutcome::Queued;
         if inner.active_toolpath_id == Some(request.toolpath_id) {
             self.toolpath_lane.cancel.store(true, Ordering::SeqCst);
             if inner.state == LaneState::Running {
                 inner.state = LaneState::Cancelling;
             }
+            outcome = ToolpathSubmitOutcome::SupersededActive;
         }
         inner.queue.push_back(request);
         if inner.started_at.is_none() {
@@ -567,6 +574,7 @@ impl ComputeBackend for ThreadedComputeBackend {
             inner.current_phase = None;
         }
         self.toolpath_lane.wake.notify_one();
+        outcome
     }
 
     fn submit_simulation(&mut self, request: SimulationRequest) {

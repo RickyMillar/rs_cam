@@ -80,6 +80,19 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     show_load_warnings: bool,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
+    /// G-REGEN-RACE: toolpaths whose in-flight generation this controller
+    /// has just replaced, and whose `ComputeError::Cancelled` is therefore
+    /// still on the wire as bookkeeping rather than as a result.
+    ///
+    /// A set, not a counter, on purpose: two supersedes of the same
+    /// toolpath before the first `Cancelled` drains produce **one**
+    /// `Cancelled` (the second submit only re-`retain`s the queued
+    /// replacement), so a counter would leak an entry and swallow the next
+    /// genuine cancellation. `drain_compute_results` removes the id on
+    /// *any* result for that toolpath, so a submit that superseded a job
+    /// which had already finished (the one narrow TOCTOU the lane can
+    /// produce) self-heals on the very next drain instead of persisting.
+    superseded_toolpaths: std::collections::HashSet<crate::state::toolpath::ToolpathId>,
     /// Pending MCP compute operations awaiting async results.
     /// `Some` when MCP mode is enabled, `None` otherwise.
     #[cfg(feature = "mcp")]
@@ -110,6 +123,7 @@ impl<B: ComputeBackend> AppController<B> {
             show_load_warnings: false,
             status_message: None,
             notifications: Vec::new(),
+            superseded_toolpaths: std::collections::HashSet::new(),
             #[cfg(feature = "mcp")]
             pending_mcp: None,
         }
