@@ -473,25 +473,31 @@ fn attach_retarget_refusals(
             format!("{explanation}. {}", outcome.narrative.explanation)
         };
         if outcome.candidates.len() <= 1 {
-            outcome.narrative.headline = explanation_headline(detail);
+            outcome.narrative.headline = NARROW_BAND_HEADLINE.to_owned();
         }
     }
     outcome
 }
 
-/// Short headline for a narrow-band refusal — the modal renders
-/// `headline`, not `explanation`, on its `NoSafeImprovement` branch.
-fn explanation_headline(detail: &retarget::NarrowChipBandRefusal) -> String {
-    let min = detail
-        .band_min_mm_per_tooth
-        .map_or_else(|| "none".to_owned(), |m| format!("{m:.4}"));
-    format!(
-        "No candidate proposed: the vendor chipload band [{min}, {max:.4}] mm/tooth \
-         is narrower than the retarget headroom, so every target it could aim at \
-         is outside the band the gate judges by.",
-        max = detail.band_max_mm_per_tooth,
-    )
-}
+/// Headline for a narrow-band refusal at zero non-baseline attempts.
+///
+/// It exists to displace `headline_no_safe`'s zero-attempt sentence
+/// ("No candidates were produced — the search space is empty for this
+/// op"), which the refusal falsifies: the space was not empty, the
+/// target inside it was unreachable.
+///
+/// **G-EXPL-HIDDEN, 2026-08-16** — it used to carry the band values
+/// too, because the modal rendered `headline` and never `explanation`,
+/// so this was the only line that reached the operator. The modal now
+/// renders both, and `RetargetRefusal::explanation` states the band,
+/// the refused target and the dial responsible. Repeating the band
+/// here would print it twice in one card, so the headline is trimmed
+/// back to the claim only it makes — that a refusal happened, not a
+/// failed search. The numbers live on `explanation` and on the
+/// structured `narrative.chipload_band_refusal`, both of which land on
+/// the same outcome.
+const NARROW_BAND_HEADLINE: &str = "No candidate proposed — the chipload retarget was refused: \
+     the vendor band the gate judges by is narrower than the retarget headroom.";
 
 /// Run Stage 0 (analytical RPM/feed headroom scale-up) for one
 /// toolpath. Returns the headroom candidate, or `None` if the baseline
@@ -1244,6 +1250,19 @@ mod orchestration_skip_tests {
             explanation.contains("stickout"),
             "explanation should point at the stickout lever, got: {explanation}"
         );
+        // G-EXPL-HIDDEN (2026-08-16): the shape the GUI depends on. A
+        // pre-flight refusal builds its narrative from
+        // `OutcomeNarrative::default()` plus an explanation, so the
+        // headline is EMPTY and the prescription above is the only
+        // prose there is. The modal's `NoSafeImprovement` branch used to
+        // render `headline` alone, which is why this text has been
+        // computed and unshown since F2.3 landed.
+        assert!(
+            outcome.narrative.headline.is_empty(),
+            "a pre-flight refusal carries no headline — the prescription is the whole \
+             prose, so any surface rendering only `headline` shows nothing; got: {}",
+            outcome.narrative.headline
+        );
         let detail = outcome
             .narrative
             .deflection_setup
@@ -1348,6 +1367,16 @@ mod orchestration_skip_tests {
         // Nothing was attempted, so the stock headline would have said the
         // search space is empty — which the refusal falsifies.
         assert!(outcome.narrative.headline.contains("narrower than"));
+        // G-EXPL-HIDDEN (2026-08-16): the headline used to repeat the
+        // band because the modal rendered `headline` and never
+        // `explanation`. The modal now renders both, so the numbers are
+        // stated once — on the explanation — and the headline keeps only
+        // the claim it alone makes: a refusal, not a failed search.
+        assert!(
+            !outcome.narrative.headline.contains("mm/tooth"),
+            "the headline must not duplicate the band the explanation states; got: {}",
+            outcome.narrative.headline
+        );
     }
 
     /// A reason set by a closer classifier is left alone; the structured

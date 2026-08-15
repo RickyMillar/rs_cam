@@ -1,0 +1,200 @@
+# G-EXPL-HIDDEN (2026-08-16) — capture fixture for the `NoSafeImprovement`
+# card. Identical to `a8i/a8i_pocket.toml` except tool 1 is HSS at 120 mm
+# stickout in hard maple, which drives the deflection gate to Exceeds with
+# the min-force corner still over the bound. That is the pre-flight
+# `DeflectionSetupLocked` refusal: its narrative has an EMPTY headline and
+# puts the whole prescription on `explanation` — the text the modal never
+# rendered. Geometry, stepover and diameter are unchanged from a8i_pocket so
+# the sim costs what that fixture already cost.
+format_version = 3
+toolpaths = []
+
+[job]
+name = "UX 2D Pocket (demo_pocket.svg)"
+
+[job.stock]
+x = 100.0
+y = 100.0
+z = 12.0
+origin_x = -10.0
+origin_y = -10.0
+origin_z = -12.0
+padding = 5.0
+workholding_rigidity = "Medium"
+auto_from_model = false
+
+[job.stock.material.SolidWood]
+species = "HardMaple"
+
+[[job.stock.alignment_pins]]
+x = 5.0
+y = 5.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 95.0
+y = 95.0
+diameter = 6.0
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+
+[job.machine]
+name = "Generic Wood Router"
+max_feed_mm_min = 4000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[[tools]]
+id = 1
+name = "End Mill 6mm"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 120.0
+flute_count = 2
+tool_number = 1
+tool_material = "hss"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 2
+name = "End Mill 3mm"
+type = "end_mill"
+diameter = 3.0
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "../../../../fixtures/demo_pocket.svg"
+name = "demo_pocket.svg"
+kind = "svg"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+# A-8i (Checkpoint P-4) — one pocket, added so the Optimize modal has a
+# result to render. Deliberately small: the screenshot obligation is about
+# the provenance drawer, not about finding a good recipe.
+[[setups.toolpaths]]
+id = 1
+name = "A8i Pocket"
+type = "pocket"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = false
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.4
+depth = 4.0
+depth_per_pass = 2.0
+feed_rate = 2400.0
+plunge_rate = 600.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 1.0
+helix_pitch = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 1.0
+lead_in_feed_rate = 400.0
+lead_out_feed_rate = 800.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 400.0
+arc_fitting = false
+arc_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = false
+retract_strategy = "full"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
