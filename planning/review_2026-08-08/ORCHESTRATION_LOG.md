@@ -4799,3 +4799,215 @@ one decision, not two** — extending the channel to five more families without
 fixing the predicate propagates the wrong measure. A2D-165 itself can close:
 the cells ran, and the results doc records the per-cell verdicts the row asked
 for.
+
+---
+
+## 3.1 log entry — S-1 (X-VAC), 2026-08-14
+
+Agent: S-1. Wave: sweep pool item **S-1 (X-VAC)**. Ledger row: **X-VAC**
+(`TECH_DEBT_2_CLOSEOUT.md` §4). Deliverable:
+`planning/review_2026-08-08/XVAC_CENSUS.md`. Sentry:
+`crates/rs_cam_core/tests/gate_population_vacuity_xvac.rs` (9 tests).
+Base: `9c2eb01e` on `tech-debt-3`.
+
+### 0. The bar, restated before anything else
+
+The ledger row ends with its own warning: *"a **verdict** bar tests this
+vacuously — the bar must be a **population** bar."* Two of the nine sentry
+tests pass identically before and after the fix, and they are in the file to
+make that warning executable rather than quotable. Everything that constitutes
+the bar reads `population.contributing`, or a string derived from it.
+
+### 1. Census headline
+
+Six gates publish a `LoadState` through `ToolpathLoadVerdict::criteria()`
+(chipload, power, deflection, drill chip-welding, drill peck-adequacy, drill
+plunge-feed). Ten distinct predicates can shrink a milling gate's population.
+
+**The class has an exact definition, and it is not "any filter":** it is *a
+predicate that runs AFTER the gate has already set its "the trace is usable"
+flag.* Before that flag, an emptied population **refuses** — 11 gate×predicate
+pairs already surface `Unmodeled` with a stated reason. After it, the gate
+returns `Within` on nothing:
+
+| gate | flag, set at | silent predicates |
+|---|---|---|
+| chipload | `valid_count` (`chipload.rs:797`) | `is_phantom_transit`, `is_configured_entry` |
+| power | `any_arc_captured` (`power.rs:198`) | `radial_width <= 0`, `is_phantom_transit`, `is_configured_entry` |
+| deflection | `any_arc_captured` (`deflection.rs:225`) | `sample_tip_deflection_mm == None`, `is_phantom_transit`, `is_configured_entry` |
+
+**8 silent milling pairs + 3 drill gates** (which share one hole population and
+are vacuous together on a depth-less hole set) = **11 silent emptying paths**,
+of which **0 were distinguishable on any surface**.
+
+Three findings the ledger row did not contain:
+
+1. **Deflection is the worst of the three, and it was not the one filed.**
+   With `peak_delta_mm == 0.0` and `any_slot == false`, `deflection.rs:335`
+   resolves the confidence tier to `Confidence::Validated` — the *most
+   trustworthy label the gate can print*, on a verdict resting on nothing.
+   Power's ledgered `available_kw 0.0` is the milder case.
+2. **`sample_count` is the wrong thing to check for vacuity, and it is the
+   field an agent would reach for.** The chipload verdict publishes
+   `valid_count`, which increments *before* the transit skip; the code says so
+   verbatim at `chipload.rs:790-798`. The new marker publishes
+   `burn_samples.len()` instead — publishing the overstated count as the
+   vacuity marker would have reproduced the defect inside the fix.
+3. **`sim_measurability` reaches no `tool_load` gate at all.** Its only
+   production consumer is the air-cut threshold gate
+   (`session/compute.rs:4013-4023`), plus narration / CLI / GUI strip. The two
+   mechanisms are complementary, not overlapping: measurability asks *"could
+   the simulation see the quantity?"*, the population marker asks *"how many
+   readings reached the comparison?"* A gate can be `Measurable` **and**
+   vacuous — which is exactly the 2026-08-05 shape. A-9's 13 chip-thickness
+   paths are cited and mapped, not re-derived (census §2).
+
+Recorded but not fixed: `chipload_envelopes_for_session`
+(`tool_load/mod.rs:289-301`) folds `axial_doc` over
+`is_steady_state_for_gate(s, **None**)` — the hardest fallback. If that
+population empties, `axial_doc` silently falls to `0.0` and the LUT is queried
+at the tool's *tip* diameter. A population collapse that moves a **band**, on
+the surface F-HEATMAP owns.
+
+### 2. The marker, and what it deliberately is not
+
+`GatePopulation { contributing, offered, unit: Samples|Holes }` in
+`tool_load::verdict`, with `is_vacuous()`, `filtered_out()` and one shared
+`vacuity_clause()`.
+
+Placement follows the **existing verdict-evidence shape** rather than adding a
+parallel one: `SampleEvidence.population` (already present on both arms of all
+three milling gates — **two** struct literals in the tree to update, not the
+~290 enum-variant sites a per-variant field would have touched), plus
+`DrillGatesVerdict.population` for the shared hole set, surfaced uniformly on
+`CriterionStatus.population`.
+
+Three contract choices, each pinned by a test:
+
+- **`Option`, and `None` means NOT STATED — never zero.** The repo's standing
+  contract. A pre-2026-08-14 wire payload must not start reading as an empty
+  gate (`an_unstated_population_is_unknown_not_empty`).
+- **Never infer vacuity from `sample_range`.** `0..0` already carries a second
+  legitimate meaning ("no single sample is worth naming") — that ambiguity *is*
+  X-VAC. `is_vacuous()` reads the population and nothing else.
+- **Report-tier.** `LoadState`, `ExceededCriterion`, `exceeded_criteria()` and
+  the export gate are byte-identical; a vacuous `Within` stays `Within` and
+  merely says it is vacuous (`gate_outcome_is_untouched_by_the_marker`).
+  **No threshold moved, no verdict flipped.** Whether a vacuous gate should
+  *refuse* is a Checkpoint question and is **not taken here** (§4).
+
+### 3. Red first — measured, not asserted
+
+`SampleEvidence::with_population` was temporarily neutered to a no-op (marker
+not stated, everything else identical) and the sentry re-run.
+
+**RED — 5 of 9 fail:**
+
+```
+test the_2026_08_05_shape_still_reproduces ... ok       <- passes both ways, by design
+test gate_outcome_is_untouched_by_the_marker ... ok     <- passes both ways, by design
+test every_per_sample_gate_states_its_population ... FAILED
+        Power stated no population
+test the_diagnostics_surface_says_the_pass_is_vacuous ... FAILED
+        every vacuous gate row must say so, got: Power within budget (0.00/0.00 kW peak)
+test the_mcp_wire_carries_the_population ... FAILED
+        assertion `left == right` failed
+          left: Null
+test an_unstated_population_is_unknown_not_empty ... FAILED
+        the marker must be on the wire to remove
+test the_shared_renderer_clause_names_the_population ... FAILED
+test result: FAILED. 4 passed; 5 failed
+```
+
+`Power within budget (0.00/0.00 kW peak)` is the pre-fix message **verbatim** —
+the 2026-08-05 shape, rendered as a pass.
+
+**GREEN:** `9 passed; 0 failed`.
+
+The two tests that pass in **both** columns are the point, not an oversight:
+`the_2026_08_05_shape_still_reproduces` (the pre-fix reproduction, kept
+permanently per §0.1 — every part of the ledger's shape is still true, because
+the fix added a field rather than moving a verdict) and the report-tier guard.
+
+### 4. Per-surface rendering evidence
+
+One clause, authored once in core, so the wording cannot drift between crates:
+`— VACUOUS: this verdict rests on 0 of 12 samples (all filtered out); it is not
+a measurement of a clean cut`.
+
+| surface | before | after |
+|---|---|---|
+| diagnostics adapter (`from_tool_load.rs`) — the construction site shared by the CLI `project` report, the GUI diagnostics panel, MCP `get_diagnostics` and the narration list | `Power within budget (0.00/0.00 kW peak)` | same + the clause. Id, severity, state and row count unchanged — `LOAD_CHIPLOAD_WITHIN` is what the supersession reducer keys on. |
+| MCP `get_tool_load_report` (`mcp.rs:2880`, serialises the report whole) | `evidence: {sample_range:{start:0,end:0}}`, byte-identical to a measured light cut | `evidence.population = {contributing:0, offered:12, unit:"samples"}` |
+| GUI verdict badge + tooltip (`sim_diagnostics.rs`) | `theme::SUCCESS`, text `0%` / `OK` | dimmed `∅` badge; tooltip leads with the clause |
+| GUI per-toolpath status flags (`sim_op_list.rs`) | **no flag at all** — a gate that measured nothing looked *cleaner* than one that measured an approximation | `∅ <gate>` flag at rank 2, detail leads with the clause |
+
+Asserted by test on the first two; the GUI pair is asserted through the shared
+`CriterionStatus::{is_vacuous, vacuity_clause}` the renderers call and never
+re-derive — see §6 for what that does **not** cover.
+
+### 5. Suite attribution
+
+Slot held solo; `pgrep -x cargo` after S-3 completed (the earlier
+`pgrep -f "carg[o] "` wait-loop was self-matching its own shell wrapper — the
+bracket defends against the pgrep process, not against a wrapper whose cmdline
+embeds the pattern text; fixed mid-wave on the orchestrator's flag).
+
+| slice | result |
+|---|---|
+| `-p rs_cam_core --lib` | **2290 passed / 0 failed / 12 ignored** — identical to the QN-c baseline. No lib test added or lost; the new sentry is an integration target. |
+| `-p rs_cam_core --no-fail-fast` (full, 44 min) | **one** red: `wanaka_suggest_baseline` (`wanaka_suggest_integration.rs:284`) — the known environmental red, unchanged. Nothing else. |
+| `-p rs_cam_viz --no-fail-fast` | 257 + 14 + 15 + 11 passed / 0 failed on re-run. **One intermittent** on the first pass: `compute::worker::tests::simulation_metrics_capture_emits_cut_trace_and_artifact` failed once, then passed in isolation and on two clean full re-runs. Cut-trace artifact emission — no contact with gate populations. Recorded as flaky, **not** attributed to this wave and **not** dismissed. |
+| `-p rs_cam_cli` | 7 + 9 passed / 0 failed |
+| `-p rs_cam_mcp` | 13 passed / 0 failed |
+| `clippy --workspace --all-targets -D warnings` | clean (only the pre-existing `nom` / `quick-xml` future-incompat note) |
+| `cargo fmt --check` | clean; `cargo fmt` touched only this wave's files |
+
+Known red set after this wave: **one** (`wanaka_suggest_baseline`), plus the
+viz intermittent above.
+
+### 6. NOT EXERCISED, stated
+
+- **No screenshot of either GUI surface.** The `∅` badge and the `∅` status
+  flag are verified by reading the two renderers and by asserting the shared
+  core clause they call — **not** by a capture. Blocker: no visible desktop
+  session; owner **N-3**. This wave adds a third item to that queue (after
+  A-8i's P-4 and QN-c's refused card) and must not be called screenshot-clean
+  until it runs. Programme rule §0.3 applies: an aggregate without a surface is
+  not evidence, and this is a *visible-surface* claim.
+- **No live MCP call.** The wire assertion is a `serde_json::to_value` on the
+  same `ToolLoadReport` the MCP path serialises whole, not an
+  `get_tool_load_report` over the socket.
+- **No real project reproduces the vacuous shape in this wave.** The fixture is
+  synthetic (12 cutting samples, all `in_transit_span`, `spans: None`). The
+  2026-08-05 *live* instance was arc-fit and has since been fixed at source, so
+  a real reproduction would need a project constructed for it. What is proven
+  is that the shape is reachable and now visible, not how often it occurs in
+  the field.
+- **`rs_cam_cli/src/smoke.rs` carries no vacuity column.** Its
+  `chipload_kind` / `deflection_kind` / `power_kind` columns feed
+  `planning/toolpath_acceptance/baselines/2026-06-04.csv`; widening them is a
+  baseline re-pin that **F-BASE** already owns and §0.2 requires old/new for.
+  The verdict *kinds* are unchanged by this wave, so the file stays
+  byte-stable. Named so the gap is not mistaken for coverage.
+- **`plunge_stress`'s own `None` conflation** ("no cap for this geometry" vs
+  "under the cap") is a different class; checked, recorded, untouched.
+
+### 7. Checkpoint question raised by this wave
+
+**Should a gate with an empty population refuse rather than pass?** This wave
+deliberately does not take it: flipping a vacuous `Within` to `Unmodeled` moves
+export gating and badge counts, which is number-moving and needs a ruling. The
+shape is ready if it is ruled yes — a new
+`UnmodeledReason::PopulationEmpty(GatePopulation)` slots into the existing
+refusal vocabulary with no other change. The counter-argument is on record too:
+`sim_measurability`'s Checkpoint D Q2 ruled abstention for a *metric* that
+could not be measured, and an empty population is a different fact (the metric
+was measurable; nothing was left to measure it on).
+
+### 8. Next action
+
+None owed by S-1 beyond the N-3 screenshot in §6. Orchestrator action: rule or
+ledger the §7 question, and note that X-VAC's ledger row can move from
+"unassigned intake candidate" to **census done + marker landed, refusal
+question open**.
