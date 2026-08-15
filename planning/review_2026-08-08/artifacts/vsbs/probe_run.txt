@@ -1,0 +1,107 @@
+
+running 4 tests
+test the_band_derate_and_the_feed_derate_are_different_functions ... ok
+test the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack ... ok
+test the_sub_two_millimetre_ball_probe_commands_above_its_own_vendor_band ... ok
+test vendor_sidebyside_chipload_spotcheck ... 
+=== A  Ø3.0 2F flat / Ipe (Janka 3510) / pocket rough / DOC 0.6 ===
+  rpm=21220.7  feed=1737.212 mm/min  commanded fpt=0.040932 mm/tooth
+  chipload_source = VendorLut { observation_id: "freud-solid-carbide-eighth-hardwood" }
+  ap=0.6000 ae=1.0500 effective_d=3.0000
+  derates: target_chip_load=0.052062  rctf=1.048285  axial_thin=1.000000  combined=1.048285
+           depth_tier=1.000000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=1.000000  safety=0.750000  spindle_speedup=1.000000
+  row = freud-solid-carbide-eighth-hardwood   vendor=Freud   page=2
+  raw stored band      = 0.05080 .. 0.12700 mm/tooth
+  raw ratios           = D 0.944882  Janka 0.367521   (extrapolated=true)
+  applied scales       = D 0.966007  Janka 0.606235   total 0.585628
+  transferred band     = 0.029750 .. 0.074375
+  DOC derate factor    = 1.000000
+  derated band (gate)  = 0.029750 .. 0.074375
+  commanded / derated  = min 1.3759x   mid 0.7862x   max 0.5503x
+  commanded / RAW      = min 0.8057x   mid 0.4604x   max 0.3223x
+
+=== B  Ø6.0 2F flat / white oak (1360) / contour finish / DOC 12.0 (2xD) ===
+  rpm=10610.3  feed=3000.000 mm/min  commanded fpt=0.141372 mm/tooth
+  chipload_source = VendorLut { observation_id: "onsrud-hardwood-60-100mw-1_4-finish" }
+  ap=12.0000 ae=0.3000 effective_d=6.0000
+  derates: target_chip_load=0.358452  rctf=2.294157  axial_thin=1.000000  combined=2.294157
+           depth_tier=0.750000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=0.305623  safety=0.750000  spindle_speedup=1.000000
+  row = onsrud-hardwood-60-100mw-1_4-finish   vendor=Onsrud   page=115
+  raw stored band      = 0.35560 .. 0.40640 mm/tooth
+  raw ratios           = D 0.944882  Janka 0.948529   (extrapolated=false)
+  applied scales       = D 0.966007  Janka 0.973925   total 0.940818
+  transferred band     = 0.334555 .. 0.382348
+  DOC derate factor    = 0.750000
+  derated band (gate)  = 0.250916 .. 0.286761
+  commanded / derated  = min 0.5634x   mid 0.5259x   max 0.4930x
+  commanded / RAW      = min 0.3976x   mid 0.3711x   max 0.3479x
+  warning: FeedRateClamped { requested: 13088.021450514836, actual: 4000.0 }
+
+=== C  Ø6.0 2F flat / hard maple (1450) / pocket rough / DOC 4.0 ===
+  rpm=15000.0  feed=1026.009 mm/min  commanded fpt=0.034200 mm/tooth
+  chipload_source = VendorLut { observation_id: "amana-flat-hardwood-pocket-6000-2f" }
+  ap=4.0000 ae=2.1000 effective_d=6.0000
+  derates: target_chip_load=0.043500  rctf=1.048285  axial_thin=1.000000  combined=1.048285
+           depth_tier=1.000000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=1.000000  safety=0.750000  spindle_speedup=1.000000
+  row = amana-flat-hardwood-pocket-6000-2f   vendor=Amana   page=
+  raw stored band      = 0.03200 .. 0.05500 mm/tooth
+  raw ratios           = D 1.000000  Janka 1.000000   (extrapolated=false)
+  applied scales       = D 1.000000  Janka 1.000000   total 1.000000
+  transferred band     = 0.032000 .. 0.055000
+  DOC derate factor    = 1.000000
+  derated band (gate)  = 0.032000 .. 0.055000
+  commanded / derated  = min 1.0688x   mid 0.7862x   max 0.6218x
+  commanded / RAW      = min 1.0688x   mid 0.7862x   max 0.6218x
+
+=== D  Ø1.5 2F ball / radiata pine (710) / parallel finish / DOC 0.3 ===
+  rpm=18000.0  feed=3000.000 mm/min  commanded fpt=0.083333 mm/tooth
+  chipload_source = VendorLut { observation_id: "amana-ball-softwood-parallel-1587-2f-zrn" }
+  ap=0.3000 ae=0.0375 effective_d=1.2000
+  derates: target_chip_load=0.045423  rctf=2.873685  axial_thin=1.250000  combined=3.592106
+           depth_tier=1.000000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=0.680983  safety=0.750000  spindle_speedup=1.000000
+  row = amana-ball-softwood-parallel-1587-2f-zrn   vendor=Amana   page=page 1, 2 Flute Ball Nose, 1/16" column, Wood/MDF/Sign-Foam row (CPT recomputed from IPM; printed 0.003-0.005 inch CPT is inconsistent with printed 55-90 IPM at 18000 RPM 2-flute, so we use the IPM-derived 0.00153-0.0025 inch range)
+  raw stored band      = 0.03880 .. 0.06350 mm/tooth
+  raw ratios           = D 0.944882  Janka 0.845070   (extrapolated=false)
+  applied scales       = D 0.966007  Janka 0.919277   total 0.888028
+  transferred band     = 0.034455 .. 0.056390
+  DOC derate factor    = 1.000000
+  derated band (gate)  = 0.034455 .. 0.056390
+  commanded / derated  = min 2.4186x   mid 1.8346x   max 1.4778x
+  commanded / RAW      = min 2.1478x   mid 1.6292x   max 1.3123x
+  warning: FeedRateClamped { requested: 5873.865917813477, actual: 4000.0 }
+
+=== E  Ø12.7 2F flat / white oak (1360) / pocket rough / DOC 6.0 ===
+  rpm=8000.0  feed=2396.375 mm/min  commanded fpt=0.149773 mm/tooth
+  chipload_source = VendorLut { observation_id: "amana-compression-wood-pocket-12700-2f" }
+  ap=6.0000 ae=4.4450 effective_d=12.7000
+  derates: target_chip_load=0.190500  rctf=1.048285  axial_thin=1.000000  combined=1.048285
+           depth_tier=1.000000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=1.000000  safety=0.750000  spindle_speedup=1.000000
+  row = amana-compression-wood-pocket-12700-2f   vendor=Amana   page=
+  raw stored band      = 0.19560 .. 0.19560 mm/tooth
+  raw ratios           = D 1.000000  Janka 0.948529   (extrapolated=false)
+  applied scales       = D 1.000000  Janka 0.973925   total 0.973925
+  transferred band     = 0.190500 .. 0.190500
+  DOC derate factor    = 1.000000
+  derated band (gate)  = 0.190500 .. 0.190500
+  commanded / derated  = min 0.7862x   mid 0.7862x   max 0.7862x
+  commanded / RAW      = min 0.7657x   mid 0.7657x   max 0.7657x
+
+=== F  Ø3.0 2F flat / 6061-T6 aluminium / pocket rough / DOC 1.5 ===
+  rpm=18000.0  feed=2777.903 mm/min  commanded fpt=0.077164 mm/tooth
+  chipload_source = VendorLut { observation_id: "amana-zrn-flat-aluminum-pocket-3175-2f" }
+  ap=1.5000 ae=1.0500 effective_d=3.0000
+  derates: target_chip_load=0.098146  rctf=1.048285  axial_thin=1.000000  combined=1.048285
+           depth_tier=1.000000  ld=1.000000  workholding=1.000000  power=1.000000  feed_clamp=1.000000  safety=0.750000  spindle_speedup=1.000000
+  row = amana-zrn-flat-aluminum-pocket-3175-2f   vendor=Amana   page=page 1, 2 Flute Flat Bottom, 1/8" column, Aluminum/Copper/Brass row
+  raw stored band      = 0.07620 .. 0.12700 mm/tooth
+  raw ratios           = D 0.944882  Janka 1.000000   (extrapolated=false)
+  applied scales       = D 0.966007  Janka 1.000000   total 0.966007
+  transferred band     = 0.073610 .. 0.122683
+  DOC derate factor    = 1.000000
+  derated band (gate)  = 0.073610 .. 0.122683
+  commanded / derated  = min 1.0483x   mid 0.7862x   max 0.6290x
+  commanded / RAW      = min 1.0127x   mid 0.7595x   max 0.6076x
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
