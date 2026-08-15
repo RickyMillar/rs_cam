@@ -5074,6 +5074,23 @@ ceiling** even after the machine ceiling. Evidence:
 No shipped number moved by VSBS; whether probe D warrants a Suggest-side
 wave is the operator's call at TD4 kickoff (or earlier if they pull it).
 
+**Completion note (orchestrator, 2026-08-16): all three Tier-1 waves are
+COMPLETE.** G-WANAKA-DPP closed (`f1c9239b`/`ac0b5985` — attributed to
+K-(a4) `b7234d2f`, re-pinned 5.4→4.2 with row-identity + derivation guards,
+drift-immune snapshot fixture; **core red set is EMPTY**). G-EXPL-HIDDEN
+closed (`2883a719`/`166893bd` — modal AND rollup fixed via one shared
+`narrative_prose`, five blank-label paths + MarginalSafe caution restored;
+rule-3 capture taken and Read: `artifacts/gexpl/optimize_card_AFTER.png`).
+G-REGEN-RACE closed (`cc8e623c`/`c6ed1651` — `ToolpathSubmitOutcome::
+SupersededActive` decided inside the lane lock, superseded set not counter;
+live red/green on shipped `--mcp` in `artifacts/gregen/`; four sentries).
+Ledger amendments per the wave: the closeout §2.2 G-REGEN-RACE row's routing
+("inside N-3's step 6") is superseded — it was headless-fixable; its site
+reference is `controller.rs:239`, not `:230`. N-3's agenda gains the wave's
+four validation items (its §3.1 entry lists them); G-LV.1 unaffected, still
+open. The TD3 tail is done; remaining work is desktop-gated (N-3, merge
+call) or parked to TD4 per the rulings above.
+
 ---
 
 ## 3.1 log entry — VSBS (post-closeout follow-up), 2026-08-16
