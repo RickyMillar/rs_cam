@@ -4749,10 +4749,22 @@ cannot observe.
 `cargo fmt --check`: clean **on this wave's file** (the four dirty
 `tool_load/*` files and `gate_population_vacuity_xvac.rs` are S-1's in-flight
 tree, untouched here). `cargo clippy -p rs_cam_core --test
-adversarial_2d_campaign_r2 -- -D warnings`: **clean**. Full-suite attribution
-not taken by this wave — S-1 held the slot for it — and this wave changed no
-production code, so the known red set is unchanged
+adversarial_2d_campaign_r2 -- -D warnings`: **clean**.
+
+`cargo test -p rs_cam_core --test adversarial_2d_campaign_r2`:
+**6 passed, 0 failed, 1 ignored, 20.75 s** — identical to the tier result W4
+recorded, so the two knobs and the probe row disturb nothing when unset. That
+is the target's own tier, run after the harness change; full-suite attribution
+was **not** taken by this wave (S-1 held the slot for it), and this wave
+changed no production code, so the known red set is unchanged
 (`wanaka_suggest_baseline`).
+
+**One machine-discipline deviation, stated.** That tier run was queued to fire
+when the slot freed, and S-1 relaunched its suite into the same moment, so two
+Cargo jobs ran concurrently for ~20 s against the one-job rule. Headroom was
+checked while it happened — 32 GB RAM available, 173 GB disk — and nothing
+was harmed, but the queue-on-free pattern is what caused it and should not be
+repeated while another agent is active.
 
 ### 8. NOT EXERCISED, stated
 
