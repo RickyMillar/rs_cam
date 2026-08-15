@@ -4619,3 +4619,170 @@ None owed by (c) beyond the N-3 screenshot in §8. Orchestrator action: put the
 §7 ledger row in the programme ledger as a research row, and note that other
 lanes' suite attributions should now expect **one** known red
 (`wanaka_suggest_baseline`), per G-XFP's discharge — this wave's capture agrees.
+
+---
+
+## S-3 — A2D-165: the 165 unrun adversarial 2D matrix cells, run, 2026-08-16
+
+Status: **COMPLETE. 165/165 run, plus a full 198-cell pass. Five findings,
+thirteen red cells, two NOT EXERCISED with the declaration quoted. No
+production code changed.**
+
+Commit(s). Briefed on `9c2eb01e`:
+
+- `57fcf214` — the two batching knobs, the probe row, and
+  `A2D165_RESULTS.md` with its per-cell artifacts.
+- this entry.
+
+Deliverable: `planning/review_2026-08-08/A2D165_RESULTS.md`; per-cell records
+in `planning/review_2026-08-08/artifacts/s3/`.
+
+### 0. The count, re-derived rather than inherited
+
+The brief warned that ledger counts have been wrong twice this programme, so
+the 165 was rebuilt from the registry: 22 fixtures × 9 families = **198**;
+W4 completed **33** (three fixtures entire + rosette-24's first six);
+198 − 33 = **165**, composed of fixtures 5…22 entire (162) plus
+`rosette-24 × {inlay, drill, rest}` (3). **The ledger's 165 is correct** —
+the first count this programme that did not need correcting. Note W4's
+34th cell, `inlay × rosette-24`, is inside the 165 and not outside it: it was
+attempted and stopped, so no data existed for it.
+
+### 1. What the cells cost, which is the finding behind the finding
+
+**165 cells in 112 s.** The full 198-cell matrix runs in **120 s** in one
+process, debug build. The `#[ignore]` reason calls it "minutes in debug",
+which was true and was never the obstacle. Nothing about this campaign's cost
+justified leaving 165 cells unrun for twelve days; W4's own §1.1 says what
+actually stopped it — a 100%-full root filesystem and the F-12 panic.
+
+Two harness knobs were added, both test-only, both no-ops when unset:
+`R2_ONLY_FIXTURES`/`R2_ONLY_OPS` (the matrix becomes divisible, so a
+non-terminating cell costs one batch) and `R2_ROW_LOG` (each row appended and
+flushed as measured, so a killed batch keeps its evidence). No assertion,
+ceiling, expectation or fixture changed. The binary was built once and invoked
+directly, so the campaign never held the Cargo slot while running; each batch
+ran under `ulimit -v 16777216`, below F-10's measured 22.9 GB.
+
+### 2. The first verdict was 165/165 `ok`, and it was not trustworthy
+
+`inlay × rosette-24` printed **four** `cavalier_contours` panics to stderr and
+recorded a clean `ok`. The campaign's three failure conditions cannot see a
+contained library panic (`polygon.rs:495`'s `catch_unwind` makes it an empty
+offset, which every caller reads as a collapse), and cannot see a non-finite
+coordinate in the emitted path. Both blind spots were closed **before**
+judging, by a second non-asserting probe row per cell reading
+`offset_library_failures`, `boundary_clip_dropped`, and a direct non-finite
+scan of the emitted moves. Everything in §3 comes from that probe. Neither is
+promoted to a failure condition — that is a Checkpoint decision, not this
+wave's.
+
+### 3. Findings — thirteen red cells, five rows proposed
+
+- **A2D-F1 (6 cells, 13 of 19 contained panics).** `offset_library_failures`
+  is `None` — *not measured* — on **109 of 196** run cells: adaptive, drill,
+  inlay, rest and vcarve never write it. That matches Checkpoint C's recorded
+  "four families opted in"; the gap is that **the family the finding was
+  written about is not one of the four.** The slot's own docstring
+  (`compute/config.rs:405-411`) names its motivating cost as *"F-12 — an
+  **inlay's** female pocket whose ring cascade stopped early …"*. Also new:
+  the `pline_seg.rs:33` site is reached from a **second fully valid fixture**,
+  `inlay × walls-1e-2`, so F-12's *"no contract violation is needed"* now has
+  two witnesses. And **all 19 contained panics are in the previously-unrun
+  165** — W4's 33 completed cells contained zero. The unrun portion was where
+  the entire signal was.
+- **A2D-F2 (2 cells + a caveat on 3).** `pocket`/`profile × invalid-two-vertex`
+  report `offset_library_failures 1` with **zero** panics: all four opted-in
+  families increment `usize::from(failure.is_some())`
+  (`zigzag.rs:91`, `profile.rs:118`, `trace.rs:74`, `pocket.rs:227`), so
+  `Collapsed` and `RejectedInput` count under a name that says library
+  failure — the exact distinction Checkpoint C's shape B exists to draw.
+  `OffsetFailure::is_library_failure` exists and has one consumer, none of
+  them. It is also a boolean per call, not a count. Instrument integrity, §0
+  rule 5.
+- **A2D-F3 (1 cell).** `drill × invalid-nan`: `nan_moves 6` of 6 — **every
+  emitted move non-finite**, `Ok`, across the toolpath IR boundary. F-13
+  said "a NaN hole position"; the measurement is worse than the finding.
+- **A2D-F4 (4 cells).** `inlay × invalid-zero-area` and
+  `inlay × invalid-two-vertex` each emit 1225 cutting moves / 99.2 mm —
+  **identical to the digit on two different degenerate inputs**, so the
+  emission is a function of tool and depth, not geometry. `MayBeEmpty`
+  licenses an *empty* result and says nothing about a non-empty one; there is
+  no expectation meaning "must not invent cuts". A missing expectation, not a
+  stale one.
+- **A2D-F5 (population, not a defect).** `drill` emits the same 6-move path on
+  **17 of its 19 cells** — it takes model centroids, so the hostile geometry
+  never reaches it. "Drill is clean on hostile 2D geometry" is **not** a claim
+  this campaign can support (§0 rule 4).
+
+### 4. Gate population, stated before the verdict is read
+
+Of the 165, the silent-empty condition could fire on **90**: 102 `MustCut`
+cells minus 12 `rest` cells exempt by contract. The other **61** run cells sit
+on `MayBeEmpty` fixtures where the gate is **vacuous by construction**; 21 of
+them returned zero cutting moves, which is neither a defect nor evidence of
+health.
+
+### 5. Drift — W4's 33 cells reproduce exactly, and its one red does not
+
+All 33 W4 rows re-run at this revision reproduce **moves, cutting moves, cut
+length and cut runs identically**, across a branch change
+(`0e7d38b` → `9c2eb01e`). Only wall clock and RSS differ. **W4's single
+ceiling breach does not reproduce**: `inlay × rosette-24`, recorded
+`> 129 s, CEILING EXCEEDED, run stopped`, completes in **6.977 s**. Two
+candidate explanations are left undiscriminated — a different revision, and
+W4's own record of a 100%-full disk during that window. Recorded as "the prior
+red does not reproduce", not as a fix.
+
+### 6. Stale expectations — none, structurally
+
+The brief anticipated cells encoding pre-Checkpoint-J/K feeds numbers. There
+are none and there cannot be: this campaign asserts on a panic escaping, an
+`Ok` with zero cutting moves on `MustCut`, and a wall-clock ceiling. It reads
+no feed, speed, chipload or recipe number, and builds tools from
+`ToolConfig::new_default`, not the LUT. J and K moved numbers this matrix
+cannot observe.
+
+### 7. Verification and suite attribution
+
+`cargo fmt --check`: clean **on this wave's file** (the four dirty
+`tool_load/*` files and `gate_population_vacuity_xvac.rs` are S-1's in-flight
+tree, untouched here). `cargo clippy -p rs_cam_core --test
+adversarial_2d_campaign_r2 -- -D warnings`: **clean**. Full-suite attribution
+not taken by this wave — S-1 held the slot for it — and this wave changed no
+production code, so the known red set is unchanged
+(`wanaka_suggest_baseline`).
+
+### 8. NOT EXERCISED, stated
+
+- **2 cells declared non-terminating**, quoted in the results doc:
+  `pocket × invalid-cw` and `inlay × invalid-cw`. The other seven families do
+  run against `invalid-cw` and complete, so the skip list is exactly as narrow
+  as it claims. The divergence stays proved by the bounded probe.
+- **Release behaviour.** Every panic in §3 is a `debug_assert!` in a
+  dependency; release skips them and proceeds on unvalidated input, which
+  makes `offset_library_failures` non-comparable across builds
+  (`polygon.rs:48`). Debug only, here.
+- **Importer reachability of A2D-F3 / A2D-F4** was not measured, only marked
+  unassessed. It is not "low".
+- **The 175 toolpath SVGs (285 MB) were written and not read**, and not
+  committed. No claim in the results doc rests on a visual.
+
+### 9. A machine-discipline incident worth recording
+
+Two agents' Cargo wait-loops deadlocked on each other: `pgrep -f "carg[o]"`
+matches the *peer shell's* cmdline, which contains the string `cargo test`, so
+each loop saw the other as a running build. Mine was killed; **S-1's loop is
+additionally self-matching** — `pgrep -f "carg[o] "` matches the zsh wrapper
+carrying its own `eval 'until … cargo test …'` string, so it will never exit
+on its own. Bracketing a character defeats pgrep's *self*-exclusion only for
+the pgrep process, not for the shell that spawned it. The repo's existing
+"pgrep self-match trap" note needs the peer case added.
+
+### 10. Next action
+
+Orchestrator: ledger A2D-F1…A2D-F5 as research rows. **A2D-F1 and A2D-F2 are
+one decision, not two** — extending the channel to five more families without
+fixing the predicate propagates the wrong measure. A2D-165 itself can close:
+the cells ran, and the results doc records the per-cell verdicts the row asked
+for.
