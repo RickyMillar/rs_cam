@@ -5012,3 +5012,116 @@ None owed by S-1 beyond the N-3 screenshot in §6. Orchestrator action: rule or
 ledger the §7 question, and note that X-VAC's ledger row can move from
 "unassigned intake candidate" to **census done + marker landed, refusal
 question open**.
+
+---
+
+## Post-closeout intake triage — RULED (operator, AskUserQuestion), 2026-08-16
+
+Context: all 25 waves complete, `TD3_CLOSEOUT.md` committed (`3c50693`). The
+operator asked to validate which remaining issues are worth attacking. The
+orchestrator presented the closeout §2.2 ledger as a four-tier worth/cost
+assessment; the operator ruled each tier. **BINDING.** Recorded by the
+orchestrator (tracker owner); this section does not edit any wave's entry.
+
+**Tier 1 — attack now (headless fixes, serialized one wave at a time):**
+ALL THREE approved — **G-WANAKA-DPP** first (re-baseline or attribute the sole
+core red, full §0.2 record), then **G-EXPL-HIDDEN** (render
+`narrative.explanation` in the optimizer's `NoSafeImprovement` modal), then
+**G-REGEN-RACE** (fix `generate_all` × `process_auto_regen` mutual
+cancellation headlessly; N-3 validates rather than diagnoses).
+
+**Tier 2 — research probes: NEITHER.** G-IPE-PLUNGE measurement and the
+Q-NARROW (d) headroom census are both **parked to TD4**.
+
+**Tier 3 — behaviour-moving ruled waves: PARK ALL THREE to TD4.**
+G-AXDOC-TIP, G-PECK-CAP, G-CLI-FIXPOINT stay ledgered; the TD3 tail is
+Tier-1 fixes only.
+
+**Tier 4 — big/decision-shaped items: PARK ALL to TD4 kickoff** (the
+recommended option): chip-thickness checkpoint package (Q1/Q2 first),
+vacuous-refuse question, DR content-debt wave, A2D-F1..F5, F-BASE.
+
+Also in flight this date: the operator-requested **VSBS** vendor side-by-side
+chipload spot-check (post-closeout follow-up, evidence doc only, no numbers
+move) — its own §3.1 entry follows when it lands. Desktop-gated items
+unchanged: N-3 five-item agenda, merge call.
+
+---
+
+## 3.1 log entry — VSBS (post-closeout follow-up), 2026-08-16
+
+Agent: VSBS. Wave: **post-closeout follow-up**, operator-requested; not a
+TD3 wave and not on the tracker. Deliverable:
+`planning/review_2026-08-08/VENDOR_SIDEBYSIDE_CHIPLOAD.md`. Probe:
+`crates/rs_cam_core/tests/vendor_sidebyside_chipload.rs` (4 tests, all
+green). Capture: `artifacts/vsbs/probe_run.txt`. Base `3c506934`.
+Commit: `d7b6156f`. **Nothing behavioural changed.**
+
+**What it is.** Six probes driven through `feeds::calculate` on the
+shipped LUT, each printing the matched vendor row, that row's raw stored
+band, the raw transfer ratios and applied `D^0.61` / `Janka^-0.5` scales,
+the DOC-derated band the gate judges against, and the commanded advance
+per tooth — put beside the vendor chart cell, verbatim, with the
+inch→mm conversion re-checked. Vendors covered: 1 Freud (grade a),
+1 Onsrud (grade b), 4 Amana (grade a).
+
+**Headline.** **3 of 6 land inside the vendor window, and they land low
+in it — 7.2 %, 9.6 % and 25.1 % up from the band floor** (1.05×–1.38×
+the derated minimum, 0.55×–0.63× the maximum). The other three miss for
+three different reasons: **B** (Ø6 oak profile, 2×D) reads 0.56× the
+floor *only because the 4 000 mm/min machine ceiling truncated it* —
+unclamped it is **1.61× the ceiling**; **E** (Ø12.7 oak pocket) reads
+0.79× a single-value Amana cell that has no window; **D** (Ø1.5 ball,
+the sub-Ø2 probe) reads **1.48× the ceiling as shipped, 2.17×
+unclamped**, because the chip-thinning stack multiplies the seed by
+3.592 and the gate's yardstick is engagement-blind — the same shape A-5
+measured 4/4.
+
+**Three corrections to numbers in circulation.**
+
+1. **"Suggest rests at 0.999× the derated band minimum" is an outcome on
+   two Adaptive3d fixtures, not the mechanism.** Measured across six
+   probes the resting point is 0.56× / 0.79× / 1.05× / 1.07× / 1.38× /
+   2.42× the derated minimum. The seed is the row **MIDPOINT**
+   (`chipload_midpoint(obs) * total_scale`); the commanded value is that
+   midpoint times the full derate stack, pinned to 1e-9. On four probes
+   the stack composes to exactly **0.7862** = `safety 0.75 ×
+   RCTF(0.35 D) 1.048285`, which is a stepover coincidence, not a target.
+   Corollary re-confirmed: `SuggestAggressiveness::target_chipload` has
+   **zero production call sites** — the dial is inert pre-simulation.
+2. **"+20.1 % from adaptive_feed_modulation where safe" is one fixture of
+   four.** `ARC_FIT_RATIO_EVIDENCE.md:200`'s arm-B medians are
+   **+20.1 % / −15.7 % / −40.8 % / −38.4 %** — the modulator *lowers*
+   feed on 3 of 4. Quoting the single positive row overstates headroom.
+3. **The band derate and the feed derate are different functions.**
+   `chipload_bounds` takes `doc_derating_scale` (piecewise **linear**);
+   the feed takes `depth_tier_multiplier` (**step**). They agree exactly
+   at 1×/2×/3×D — the vendor break points — and diverge between them
+   (0.875 vs 0.750 at 1.5×D), moving a verdict by 14 % for bookkeeping
+   reasons. New, pinned, undocumented before this.
+
+**New ledger row — VSBS-SEED.** `amana-flat-hardwood-pocket-6000-2f`
+(0.032–0.055) is the matched row on the A-8 retarget fixture, the A-5i
+arc-fit fixture and the `_litmatrix_rubbing_floor_clamp` cells — and its
+band has **no inch preimage and no provenance entry**. It comes from
+`def88067` (2026-03-21), the original LUT seeding commit, two months
+before the evidence-graded ingests; it carries `evidence_grade: "a"` /
+`row_kind: "exact"`; it is tagged `hardwood`/Janka 1450 against a source
+whose own manifest note says the chart *"does NOT separate softwood from
+hardwood"*; and that source (`amana_spektra`) is one of S-2's four
+403-blocked URLs, unread since 2026-03. The whole 20-row file
+`observations/amana_flat_end.json` is from that commit. **Not a claim the
+numbers are wrong — a claim that grade `a`/`exact` is unearned on them.**
+Owner: a matrix/LUT-content wave (TD4). Re-open: immediately, if any
+programme cites one of those rows as vendor-verified.
+
+**NOT MEASURED.** Every number is **pre-simulation** — no `run_simulation`
+was run, so no probe's post-sim verdict is known, and no modulation
+headroom was measured on any of the six. Garr was in the candidate set
+and lost the Ø3 aluminium match to Amana; that is the matcher's choice,
+not the analyst's, and it is itself the reason a "vendor comparison" must
+report the row the engine picked rather than the row a human would have.
+
+**Question for the orchestrator.** VSBS-SEED and the §1.2 derate
+asymmetry are both new and both TD4-shaped. Ledger as intake, or fold
+into the already-parked chip-thickness checkpoint package?
