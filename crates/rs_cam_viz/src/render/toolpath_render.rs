@@ -58,6 +58,11 @@ pub struct ToolpathGpuData {
     /// loop can apply per-toolpath visibility overrides. `None` only during
     /// transient states where the id isn't known.
     pub toolpath_id: Option<rs_cam_core::ToolpathId>,
+    /// What this buffer was built from (V8). Set by `upload_gpu_data` right
+    /// after construction; the next upload pass reuses the buffers untouched
+    /// when the freshly computed key compares equal. `None` on a buffer that
+    /// has not been through the upload pass, which forces a rebuild.
+    pub upload_key: Option<super::upload_cache::ToolpathUploadKey>,
     /// Cutting move vertices (line list, 2 verts per segment).
     pub cut_vertex_buffer: wgpu::Buffer,
     pub cut_vertex_count: u32,
@@ -338,6 +343,7 @@ impl ToolpathGpuData {
 
         Self {
             toolpath_id: None,
+            upload_key: None,
             cut_vertex_buffer,
             cut_vertex_count,
             rapid_vertex_buffer,
@@ -550,6 +556,7 @@ impl ToolpathGpuData {
 
         Self {
             toolpath_id: None,
+            upload_key: None,
             cut_vertex_buffer,
             cut_vertex_count,
             rapid_vertex_buffer,
@@ -705,6 +712,7 @@ impl ToolpathGpuData {
 
         Self {
             toolpath_id: None,
+            upload_key: None,
             cut_vertex_buffer,
             cut_vertex_count,
             rapid_vertex_buffer,
@@ -758,6 +766,11 @@ fn advance_per_tooth_segment_color(
 }
 
 /// Entry/exit style configuration passed from the toolpath dressup settings.
+///
+/// `PartialEq` so the upload cache can key the selected toolpath's entry
+/// overlay on the exact dial values it was drawn from (see
+/// `upload_cache::ToolpathUploadKey`).
+#[derive(Debug, Clone, PartialEq)]
 pub struct EntryPreviewConfig {
     pub entry_style: EntryStyle,
     pub ramp_angle_deg: f64,

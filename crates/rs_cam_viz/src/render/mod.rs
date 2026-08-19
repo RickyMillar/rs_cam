@@ -8,6 +8,7 @@ pub mod mesh_render;
 pub mod sim_render;
 pub mod stock_render;
 pub mod toolpath_render;
+pub mod upload_cache;
 
 use egui_wgpu::wgpu;
 
@@ -187,6 +188,24 @@ pub struct RenderResources {
     pub line_width_config: LineWidthConfig,
     /// Cached GPU device limits for buffer size validation.
     pub gpu_limits: gpu_safety::GpuLimits,
+
+    // --- Upload cache (V8) ---
+    //
+    // `upload_gpu_data` used to clear and rebuild every buffer above on any
+    // `pending_upload`. These keys record what each expensive resource was
+    // last built from, so a pass rebuilds only the resources whose inputs
+    // actually moved. See `upload_cache` for the key contracts.
+    /// Inputs `mesh_data_list` was last built from.
+    pub mesh_upload_key: Option<upload_cache::MeshUploadKey>,
+    /// Inputs `enriched_mesh_data_list` was last built from.
+    pub enriched_upload_key: Option<upload_cache::EnrichedUploadKey>,
+    /// Inputs the collision-marker buffer was last built from.
+    pub collision_upload_key: Option<upload_cache::CollisionUploadKey>,
+    /// Inputs `rest_heatmap_data` was last built from. `None` means the
+    /// overlay is (correctly) absent, which is also a cacheable state.
+    pub rest_heatmap_upload_key: Option<upload_cache::RestHeatmapUploadKey>,
+    /// Lifetime counts of upload passes and per-resource buffer builds.
+    pub upload_stats: upload_cache::UploadStats,
 }
 
 impl RenderResources {
@@ -627,6 +646,11 @@ impl RenderResources {
             origin_axes_data: None,
             line_width_config: LineWidthConfig::default(),
             gpu_limits,
+            mesh_upload_key: None,
+            enriched_upload_key: None,
+            collision_upload_key: None,
+            rest_heatmap_upload_key: None,
+            upload_stats: upload_cache::UploadStats::default(),
         }
     }
 
