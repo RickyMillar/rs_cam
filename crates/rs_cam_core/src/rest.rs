@@ -24,6 +24,9 @@ use crate::geo::{P2, P3};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// Parameters for rest machining.
 ///
 /// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
@@ -118,41 +121,66 @@ pub fn rest_segments(polygon: &Polygon2, params: &RestParams) -> Vec<Vec<P2>> {
     // very large tools; it is not a tool-radius-proportional resolution.
     let sample_step = params.tool_radius.clamp(0.25, 0.5);
 
+    // G9/parallelism (2026-08-20): each scan line is independent — its
+    // containment walk reads `large_reachable` and nothing else, and it
+    // contributes a contiguous block of segments at a fixed position in the
+    // output. Mapping per line and concatenating in order therefore produces
+    // the byte-identical `Vec<Vec<P2>>` the serial walk did.
+    #[cfg(feature = "parallel")]
+    let per_line: Vec<Vec<Vec<P2>>> = lines
+        .par_iter()
+        .map(|line| rest_segments_on_line(line, &large_reachable, sample_step))
+        .collect();
+    #[cfg(not(feature = "parallel"))]
+    let per_line: Vec<Vec<Vec<P2>>> = lines
+        .iter()
+        .map(|line| rest_segments_on_line(line, &large_reachable, sample_step))
+        .collect();
+
+    per_line.into_iter().flatten().collect()
+}
+
+/// Walk one scan line, returning the runs of samples the previous larger tool
+/// could NOT reach. Empty for a degenerate (zero-length) line.
+#[allow(clippy::indexing_slicing)]
+// SAFETY: `line` is a fixed-size [P2; 2] array.
+fn rest_segments_on_line(
+    line: &[P2; 2],
+    large_reachable: &[Polygon2],
+    sample_step: f64,
+) -> Vec<Vec<P2>> {
+    let dx = line[1].x - line[0].x;
+    let dy = line[1].y - line[0].y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-10 {
+        return Vec::new();
+    }
+
+    let n_samples = (len / sample_step).ceil() as usize;
+
     let mut segments: Vec<Vec<P2>> = Vec::new();
+    // Walk along the line, collecting segments NOT in large_reachable
+    let mut segment_points: Vec<P2> = Vec::new();
 
-    for line in &lines {
-        let dx = line[1].x - line[0].x;
-        let dy = line[1].y - line[0].y;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len < 1e-10 {
-            continue;
+    for i in 0..=n_samples {
+        let t = i as f64 / n_samples.max(1) as f64;
+        let x = line[0].x + t * dx;
+        let y = line[0].y + t * dy;
+        let p = P2::new(x, y);
+
+        let in_large = point_in_any_polygon(&p, large_reachable);
+
+        if !in_large {
+            segment_points.push(p);
+        } else if !segment_points.is_empty() {
+            // Exiting rest region — close the segment
+            segments.push(std::mem::take(&mut segment_points));
         }
+    }
 
-        let n_samples = (len / sample_step).ceil() as usize;
-
-        // Walk along the line, collecting segments NOT in large_reachable
-        let mut segment_points: Vec<P2> = Vec::new();
-
-        for i in 0..=n_samples {
-            let t = i as f64 / n_samples.max(1) as f64;
-            let x = line[0].x + t * dx;
-            let y = line[0].y + t * dy;
-            let p = P2::new(x, y);
-
-            let in_large = point_in_any_polygon(&p, &large_reachable);
-
-            if !in_large {
-                segment_points.push(p);
-            } else if !segment_points.is_empty() {
-                // Exiting rest region — close the segment
-                segments.push(std::mem::take(&mut segment_points));
-            }
-        }
-
-        // Keep the final segment if the line ended in a rest region
-        if !segment_points.is_empty() {
-            segments.push(segment_points);
-        }
+    // Keep the final segment if the line ended in a rest region
+    if !segment_points.is_empty() {
+        segments.push(segment_points);
     }
 
     segments
@@ -296,6 +324,99 @@ mod tests {
                     b.iter().map(|p| (p.x.to_bits(), p.y.to_bits())).collect();
                 assert_eq!(ab, bb, "segment geometry moved at z={z}");
             }
+        }
+    }
+
+    /// **Parallel scan-line sentry (2026-08-20).**
+    ///
+    /// `rest_segments` now maps the per-line containment walk across the
+    /// rayon pool. The claim is that concatenating the per-line results in
+    /// order reproduces the serial walk exactly — including where segments
+    /// break, which is the part a reordering would corrupt without changing
+    /// the point count. Raw bits, not `==`: `-0.0 == 0.0` would mask it.
+    #[test]
+    fn parallel_rest_segments_match_the_serial_walk() {
+        /// Verbatim pre-parallel body of `rest_segments`' sampling loop.
+        fn serial_segments(polygon: &Polygon2, params: &RestParams) -> Vec<Vec<P2>> {
+            if params.tool_radius >= params.prev_tool_radius {
+                return Vec::new();
+            }
+            let large_reachable = offset_polygon(polygon, params.prev_tool_radius);
+            let lines = crate::zigzag::zigzag_lines(
+                polygon,
+                params.tool_radius,
+                params.stepover,
+                params.angle,
+            );
+            if lines.is_empty() {
+                return Vec::new();
+            }
+            if large_reachable.is_empty() {
+                return lines.iter().map(|l| vec![l[0], l[1]]).collect();
+            }
+            let sample_step = params.tool_radius.clamp(0.25, 0.5);
+            let mut segments: Vec<Vec<P2>> = Vec::new();
+            for line in &lines {
+                let dx = line[1].x - line[0].x;
+                let dy = line[1].y - line[0].y;
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < 1e-10 {
+                    continue;
+                }
+                let n_samples = (len / sample_step).ceil() as usize;
+                let mut segment_points: Vec<P2> = Vec::new();
+                for i in 0..=n_samples {
+                    let t = i as f64 / n_samples.max(1) as f64;
+                    let p = P2::new(line[0].x + t * dx, line[0].y + t * dy);
+                    if !point_in_any_polygon(&p, &large_reachable) {
+                        segment_points.push(p);
+                    } else if !segment_points.is_empty() {
+                        segments.push(std::mem::take(&mut segment_points));
+                    }
+                }
+                if !segment_points.is_empty() {
+                    segments.push(segment_points);
+                }
+            }
+            segments
+        }
+
+        fn seg_bits(segs: &[Vec<P2>]) -> Vec<Vec<(u64, u64)>> {
+            segs.iter()
+                .map(|s| s.iter().map(|p| (p.x.to_bits(), p.y.to_bits())).collect())
+                .collect()
+        }
+
+        // A ring-shaped pocket: the 6 mm large tool clears the middle but
+        // misses the corners, so the scan lines break into many segments.
+        let mut ring = Polygon2::rectangle(-40.0, -40.0, 40.0, 40.0);
+        ring.holes.push(vec![
+            P2::new(-8.0, -8.0),
+            P2::new(-8.0, 8.0),
+            P2::new(8.0, 8.0),
+            P2::new(8.0, -8.0),
+        ]);
+
+        for (label, poly, params) in [
+            ("square", square_polygon(40.0), default_params()),
+            ("ring", ring, default_params()),
+            ("angled", square_polygon(60.0), RestParams {
+                angle: 37.0,
+                stepover: 0.7,
+                tool_radius: 0.8,
+                ..default_params()
+            }),
+            // The "large tool cannot fit at all" fallback branch.
+            ("fallback", square_polygon(8.0), default_params()),
+        ] {
+            let got = rest_segments(&poly, &params);
+            let want = serial_segments(&poly, &params);
+            assert!(!want.is_empty(), "{label}: vacuous fixture");
+            assert_eq!(
+                seg_bits(&got),
+                seg_bits(&want),
+                "{label}: parallel scan lines diverged from the serial walk"
+            );
         }
     }
 

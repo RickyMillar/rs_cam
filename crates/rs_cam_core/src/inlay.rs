@@ -9,13 +9,17 @@
 //! The V-bit angle must match for both operations. A `glue_gap` parameter accounts
 //! for the adhesive layer between mating surfaces.
 
-use crate::geo::{P2, P3, point_to_segment_distance};
+use crate::edge_distance::EdgeDistanceField;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::pocket::{PocketParams, pocket_toolpath_with_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
-use crate::vcarve::{VCarveParams, vcarve_toolpath_with_cancel};
+use crate::vcarve::{SCAN_CHUNK, VCarveParams, vcarve_toolpath_with_cancel};
 use crate::zigzag::zigzag_lines;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Parameters for inlay operations.
 pub struct InlayParams {
@@ -123,9 +127,11 @@ fn female_toolpath_with_cancel(
 /// region between the design and the boundary is carved with inverted depth.
 ///
 /// Cancellable: checks `cancel` as its very first statement, then polls
-/// once per scan line of the distance-field sampling loop
+/// once per [`SCAN_CHUNK`]-line batch of the distance-field sampling loop
 /// (planning/finishing_stack_review_2026-07.md S.5), mirroring
-/// `vcarve_toolpath_with_cancel`'s cadence for the same kind of loop.
+/// `vcarve_toolpath_with_cancel`'s cadence for the same kind of loop —
+/// including G9's move of that poll from per-line to per-batch so the
+/// batch can be sampled across the rayon pool.
 fn male_toolpath_with_cancel(
     polygon: &Polygon2,
     params: &InlayParams,
@@ -165,77 +171,97 @@ fn male_toolpath_with_cancel(
     // This makes the male plug slightly smaller than the female pocket
     let gap_offset = params.glue_gap / tan_half;
 
-    for line in &scan_lines {
+    // G9: index the DESIGN boundary once (not the outer stock rectangle the
+    // scan lines run over) instead of walking every design edge per sample.
+    let field = EdgeDistanceField::from_rings(&polygon.exterior, &polygon.holes);
+
+    for batch in scan_lines.chunks(SCAN_CHUNK) {
         check_cancel(cancel)?;
-        let dx = line[1].x - line[0].x;
-        let dy = line[1].y - line[0].y;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len < 1e-10 {
-            continue;
+        let sampled = sample_male_chunk(batch, &field, sample_step, tan_half, gap_offset, params);
+        for points in sampled {
+            if points.is_empty() {
+                continue;
+            }
+            tp.emit_path_segment_with_intent(
+                &points,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
+            );
         }
-
-        let n_samples = (len / sample_step).ceil() as usize;
-        let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
-
-        for i in 0..=n_samples {
-            let t = i as f64 / n_samples.max(1) as f64;
-            let x = line[0].x + t * dx;
-            let y = line[0].y + t * dy;
-
-            // Distance to the design boundary (not the outer boundary)
-            let dist = point_to_polygon_boundary(&P2::new(x, y), &polygon.exterior, &polygon.holes);
-
-            // Male depth: increases with distance from design boundary
-            // At the boundary: depth = glue_gap_depth (flush with slight gap)
-            // Moving outward: depth increases linearly
-            let depth = ((dist - gap_offset) / tan_half + params.flat_depth)
-                .clamp(0.0, params.pocket_depth);
-
-            points.push(P3::new(x, y, params.top_z - depth));
-        }
-
-        if points.is_empty() {
-            continue;
-        }
-
-        tp.emit_path_segment_with_intent(
-            &points,
-            params.safe_z,
-            params.feed_rate,
-            params.plunge_rate,
-            crate::toolpath::MoveIntent::FinishingCut,
-        );
     }
 
     Ok(tp)
 }
 
-/// Compute the minimum distance from a point to the edges of a polygon boundary.
-#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
-fn point_to_polygon_boundary(point: &P2, exterior: &[P2], holes: &[Vec<P2>]) -> f64 {
-    let mut min_dist = f64::INFINITY;
-
-    for w in exterior.windows(2) {
-        let dist = point_to_segment_distance(point, &w[0], &w[1]);
-        min_dist = min_dist.min(dist);
-    }
-    if let (Some(last), Some(first)) = (exterior.last(), exterior.first()) {
-        let dist = point_to_segment_distance(point, last, first);
-        min_dist = min_dist.min(dist);
-    }
-
-    for hole in holes {
-        for w in hole.windows(2) {
-            let dist = point_to_segment_distance(point, &w[0], &w[1]);
-            min_dist = min_dist.min(dist);
-        }
-        if let (Some(last), Some(first)) = (hole.last(), hole.first()) {
-            let dist = point_to_segment_distance(point, last, first);
-            min_dist = min_dist.min(dist);
-        }
+/// Sample one male-plug scan line. Empty for a degenerate line (the pre-G9
+/// `continue`).
+fn sample_male_line(
+    line: &[P2; 2],
+    field: &EdgeDistanceField,
+    sample_step: f64,
+    tan_half: f64,
+    gap_offset: f64,
+    params: &InlayParams,
+) -> Vec<P3> {
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: `line` is a fixed-size [P2; 2] array.
+    let (dx, dy) = (line[1].x - line[0].x, line[1].y - line[0].y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-10 {
+        return Vec::new();
     }
 
-    min_dist
+    let n_samples = (len / sample_step).ceil() as usize;
+    let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
+
+    for i in 0..=n_samples {
+        let t = i as f64 / n_samples.max(1) as f64;
+        #[allow(clippy::indexing_slicing)]
+        // SAFETY: `line` is a fixed-size [P2; 2] array.
+        let (x, y) = (line[0].x + t * dx, line[0].y + t * dy);
+
+        // Distance to the design boundary (not the outer boundary)
+        let dist = field.distance(&P2::new(x, y));
+
+        // Male depth: increases with distance from design boundary
+        // At the boundary: depth = glue_gap_depth (flush with slight gap)
+        // Moving outward: depth increases linearly
+        let depth =
+            ((dist - gap_offset) / tan_half + params.flat_depth).clamp(0.0, params.pocket_depth);
+
+        points.push(P3::new(x, y, params.top_z - depth));
+    }
+
+    points
+}
+
+/// Sample a batch of male-plug scan lines, in parallel when the `parallel`
+/// feature is on. Order is preserved, so emission is byte-identical either
+/// way.
+fn sample_male_chunk(
+    chunk: &[[P2; 2]],
+    field: &EdgeDistanceField,
+    sample_step: f64,
+    tan_half: f64,
+    gap_offset: f64,
+    params: &InlayParams,
+) -> Vec<Vec<P3>> {
+    #[cfg(feature = "parallel")]
+    {
+        chunk
+            .par_iter()
+            .map(|line| sample_male_line(line, field, sample_step, tan_half, gap_offset, params))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        chunk
+            .iter()
+            .map(|line| sample_male_line(line, field, sample_step, tan_half, gap_offset, params))
+            .collect()
+    }
 }
 
 /// Get the XY bounding box of a polygon.
@@ -299,6 +325,109 @@ mod tests {
     fn square_polygon(size: f64) -> Polygon2 {
         let h = size / 2.0;
         Polygon2::rectangle(-h, -h, h, h)
+    }
+
+    /// The pre-G9 male-plug body, verbatim except that the per-sample
+    /// distance comes from the field's **linear** scan (the old
+    /// `point_to_polygon_boundary`) and the lines are walked serially.
+    fn naive_male(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
+        let mut tp = Toolpath::new();
+        let tan_half = params.half_angle.tan();
+        if tan_half < 1e-10 {
+            return tp;
+        }
+        let (x_min, y_min, x_max, y_max) = polygon_bounds(polygon);
+        let margin = params.pocket_depth * tan_half + params.boundary_offset;
+        let outer = Polygon2::rectangle(
+            x_min - margin,
+            y_min - margin,
+            x_max + margin,
+            y_max + margin,
+        );
+        let mut holes = vec![polygon.exterior.clone()];
+        holes.extend(polygon.holes.iter().cloned());
+        let male_region = Polygon2::with_holes(outer.exterior, holes);
+        let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);
+        let sample_step = params.tolerance.max(0.05);
+        let gap_offset = params.glue_gap / tan_half;
+        let field = EdgeDistanceField::from_rings(&polygon.exterior, &polygon.holes);
+
+        for line in &scan_lines {
+            let dx = line[1].x - line[0].x;
+            let dy = line[1].y - line[0].y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-10 {
+                continue;
+            }
+            let n_samples = (len / sample_step).ceil() as usize;
+            let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
+            for i in 0..=n_samples {
+                let t = i as f64 / n_samples.max(1) as f64;
+                let x = line[0].x + t * dx;
+                let y = line[0].y + t * dy;
+                let dist = field.distance_linear(&P2::new(x, y));
+                let depth = ((dist - gap_offset) / tan_half + params.flat_depth)
+                    .clamp(0.0, params.pocket_depth);
+                points.push(P3::new(x, y, params.top_z - depth));
+            }
+            if points.is_empty() {
+                continue;
+            }
+            tp.emit_path_segment_with_intent(
+                &points,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
+            );
+        }
+        tp
+    }
+
+    /// **G9 equivalence sentry, inlay side.** The male plug's depth is a
+    /// clamped function of the same boundary distance, so an index error
+    /// shows up as a wrong plug that still mates "about right" — exactly the
+    /// kind of defect a move-count check would miss. Raw bits.
+    #[test]
+    fn inlay_male_indexed_field_is_bit_identical_to_linear_scan() {
+        let mut poly = square_polygon(40.0);
+        // Star-ish holes so ties and near-ties are dense.
+        for (cx, cy) in [(-8.0, -8.0), (9.0, 4.0), (0.0, 12.0)] {
+            poly.holes.push(
+                (0..64)
+                    .map(|i| {
+                        let t = -std::f64::consts::TAU * i as f64 / 64.0;
+                        let r = if i % 2 == 0 { 4.0 } else { 2.0 };
+                        P2::new(cx + r * t.cos(), cy + r * t.sin())
+                    })
+                    .collect(),
+            );
+        }
+
+        for (tolerance, glue_gap, flat_depth) in
+            [(0.05, 0.1, 0.5), (0.3, 0.0, 0.0), (0.1, 0.4, 1.25)]
+        {
+            let params = InlayParams {
+                tolerance,
+                glue_gap,
+                flat_depth,
+                ..default_params()
+            };
+            let indexed = male_toolpath_with_cancel(&poly, &params, &(|| false)).unwrap();
+            let linear = naive_male(&poly, &params);
+            assert!(!indexed.moves.is_empty(), "vacuous fixture");
+            let bits = |tp: &Toolpath| -> Vec<(u64, u64, u64)> {
+                tp.moves
+                    .iter()
+                    .map(|m| (m.target.x.to_bits(), m.target.y.to_bits(), m.target.z.to_bits()))
+                    .collect()
+            };
+            assert_eq!(
+                bits(&indexed),
+                bits(&linear),
+                "male plug diverged at tolerance={tolerance} glue_gap={glue_gap}"
+            );
+        }
     }
 
     fn default_params() -> InlayParams {
