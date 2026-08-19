@@ -90,6 +90,15 @@ Fixes, easiest first:
 - **`coverage_max` has zero consumers** (written `stamping.rs:365,460,568,673`, read by
   nothing; its own doc says "purely observational"). Delete/cfg-gate: −4 B/cell in every
   clone AND removes a third cache stream from the inner loop.
+  **CORRECTION (wave 1 SIM): "read by nothing" is wrong.** It was read by the PUBLIC
+  accessor `DexelGrid::coverage_at`, which `tests/sub_cell_stamping_fa.rs` — the F.a
+  sub-cell-stamping sentry suite — read in six places. The accurate statement is the
+  narrower one the field's own docstring makes: **no production reader** (verified by grep
+  across core/viz/mcp/cli). DONE anyway, with the sentry **converted, not dropped**: on
+  fresh stock `coverage = (top₀ − top) / depth` recovers the same number from the blended
+  ray top, which is the channel the simulator actually consumes. The conversion also added
+  an assertion the sidecar reading never made (partial coverage must be a multiple of 1/16,
+  pinning the 4×4 sub-sample fan). See `DELTA_sim_w1.md` §1a.
 - `global_stock` redundant for single identity group (translation of group_stock —
   derivable O(1)); checkpoints could store a top-Z field (4 B/cell) instead of full rays.
 - `append_transformed` (`stock_mesh.rs:34-64`) pushes one f32 at a time, no reserve;
@@ -113,8 +122,20 @@ metrics-only mode.
 
 - `span_path: to_vec()` per sample (`simulation.rs:550`, `stamping.rs:827`) — 70k mallocs
   of near-identical content. Intern: `Arc<[SpanId]>` or `SmallVec<[SpanId;4]>`.
+  **DEFERRED (wave 1 SIM), with a prerequisite the finding does not name:** neither type
+  serializes on this workspace as configured. `serde`'s `Arc` impls are behind its `rc`
+  feature and `Cargo.toml:27` enables only `derive`; smallvec has `union`, not `serde`
+  (`Cargo.toml:33`). `SimulationCutSample` IS serialized, so the change starts with a
+  workspace-manifest edit affecting all lanes — and even with `rc` on, serde deserializes
+  each `Arc` separately, so sharing does not survive a round-trip and only the in-process
+  trace gains. It is also a public field type change whose broken constructors include two
+  `#[cfg(test)]` modules in `rs_cam_viz`. Measured sizing: ~5–8 ms per 12.6k-move toolpath,
+  i.e. single-digit percent. Schedule as its own commit. See `DELTA_sim_w1.md` §3b.
 - samples Vec reserved at `moves.len()*2` (`simulation.rs:162`) vs actual Σ subsegments
   (5–20× larger) — estimate from cutting_distance/sample_step.
+  **DONE (wave 1 SIM):** `estimate_sample_count` reproduces the emitter's own arithmetic
+  (`max(⌈len/step⌉, ⌈|Δz|/0.02⌉)`, length-only for rapids and `MoveIntent::Retract`), exact
+  except that arcs are counted by chord — so it is never an over-estimate and needs no cap.
 - `execute/mod.rs:427` deep-clones the whole trace, then `simulation_cut.rs:1502` writes
   `to_vec_pretty` JSON synchronously on the analysis lane, EVERY simulation including every
   fixpoint round — hundreds of MB. Make opt-in, serialize by reference, drop pretty.
@@ -123,8 +144,27 @@ metrics-only mode.
 
 - `stamping.rs:130-138`: two per-cell sqrts avoidable — both fast-path tests exact in
   squared space vs hoisted `(r±ext_diag)²`. (`point_cell_coverage` already sqrt-free.)
+  **DONE (wave 1 SIM)**, with one case the text above omits: the "fully inside" test
+  squares correctly **only while `r ≥ ext_diag`**. When the 4×4 sub-sample fan is wider
+  than the cutter (Ø0.5 tool on a 1 mm grid — a real fine-tool regime), `r − ext_diag` is
+  negative, the original test is unsatisfiable for every cell, and naively squaring it
+  flips the sense and reports FULL coverage for cells near the tool axis. The landed form
+  carries a `-1.0` sentinel there. Sentried by
+  `squared_fast_paths_agree_with_the_sqrt_form`, which compares against a verbatim copy of
+  the pre-S7 body over 36 (radius, cell) pairs and asserts the sentinel case is exercised.
+  Note also that `r_sq.sqrt()` was a **loop invariant** being recomputed per cell.
 - `cell_upper_bound_surface` (:241-250): third sqrt + LUT probe per covered cell —
   precompute a dilated LUT `h(√d² + cs·√2/2)` once per tool/resolution.
+  **DECLINED (wave 1 SIM).** Three reasons. (1) The formula as written is dimensionally
+  wrong — it adds a length to an area under the root; the code computes
+  `h((√(d²) + cs·√2/2)²)`, a different function. (2) It is **not metric-neutral**:
+  `cell_upper_bound_surface` feeds `conservative_top`, which feeds
+  `check_rapid_collisions_against_stock`. A dilated interpolated table rounds differently
+  than the exact evaluation and the failure direction is "a clearance ceiling that is no
+  longer an upper bound" — a safety channel, not a metric, and it does not belong inside a
+  change advertised as no-behaviour-change. (3) It is already guarded by
+  `from_high && coverage >= FULL_COVERAGE`, so it never runs on the boundary band. Re-scope
+  as its own item with its own net.
 - f64 throughout kernel where result truncates to f32 on write (:663); LUT Vec<f64>×4096
   = 32 KB ≈ L1 — f32 halves it.
 
@@ -196,6 +236,21 @@ pure emission fns are already pub. Hoist geometry above `toolpath_at_levels_with
 closure stamps Z only. Identical output by construction.
 Bench blind spot: `perf_suite.rs:295 run_cascade` seeds rings once — cannot see the L×;
 no bench exists for any *_toolpath or dressup.
+**FIXED in wave 2 (473c3d1f) — prescription held exactly as written.** L20/L1
+**22.2×/22.5×/20.4× → 1.04×/1.14×/1.01×** (pocket/profile/zigzag), i.e. L20 is
+**21.7–21.9× faster**. `depth.rs` needed no change: the choke point was already right,
+the repetition was at the call sites. Three things the finding did not name:
+(1) **`truncated_core_mm2` was multiplied by L too** — `generate_pocket` accumulated it
+inside the per-level closure, so a bounded cascade reported 20× the material it left
+standing on a 20-level pocket. Quantitative, on a surface that reaches narrate/MCP.
+(2) **The `offset_library_failures` channel needs NO adjustment** — it always counted
+offset *calls*; the compute was genuinely making L× of them, so it self-corrects.
+The CLAUDE.md caveat is now stale for these five families.
+(3) **`face.rs` has the same defect, unfixed** (`face_toolpath_with_cancel` re-insets the
+facing rectangle per level) — outside wave 2's file ownership, small win, same finding.
+Also: the Phase 0 golden pins the PRE-fix call shape and therefore cannot see the hoist;
+six new bit-for-bit hoisted-vs-naive property sentries were added alongside it.
+Numbers and caveats: `DELTA_gen_w2.md`.
 
 ## G3. `drop_cutter` lacks bbox/monotone-Z early-outs + virtual call per triangle. HIGH
 
@@ -391,6 +446,16 @@ per frame.
   toggles, and EACH completed toolpath during generate_all (`controller/events/compute.rs:840`)
   → 8-op generate rebuilds the scene 8×. Fix: per-resource dirty bits + per-toolpath GPU
   data keyed by result generation.
+  **FIXED in wave 2** (`DELTA_viz_w2.md`). **CORRECTION: the "dirty bits" half of the
+  prescription was NOT taken.** Dirty bits put the burden on ~40 `pending_upload = true`
+  setters to name the right resource, and a setter that names too few silently stales the
+  viewport — which is the exact defect V13 already is. The landed fix is content keys
+  (`render/upload_cache.rs`): each expensive resource records what it was last built from
+  and rebuilds only when *those values* move. Strictly stronger (a coarse "everything"
+  fire is now cheap too) and the 40 setters are untouched. Cheap resources (stock, axes,
+  fixtures, polygons, height planes) are deliberately still rebuilt unconditionally —
+  keying them costs more than the rebuild. Counts: 8-op generate_all 36→8 toolpath builds
+  and 8→0 mesh builds; a selection click N→2 toolpath builds and 1→0 mesh builds.
 - **V9. Full AnnotatedToolpath deep-clone per toolpath per upload — twice for selected**
   (`gpu_upload.rs:867-869,1010-1014,1040-1045` → `toolpath_spans.rs:518-533 translated`).
   has_display_shift is true for identity setups with non-zero stock origin — the NORMAL
@@ -411,6 +476,22 @@ per frame.
   `last_hover_face` written (`viewport.rs:296,332`) but nothing sets pending_upload → BREP
   hover highlight only appears when something else redraws, and always one frame stale
   (upload runs before draw). Fix flag only AFTER V8, plus HashSet for selected_faces.
+  **FIXED in wave 2** (`DELTA_viz_w2.md`): hover now sets `pending_upload` on a *change* of
+  hovered face, paired with a repaint conditional on the same change (G-LV.1 intact); with
+  V8's keys in place that rebuilds one enriched mesh and nothing else, and a pointer move
+  *within* a face rebuilds nothing. HashSet landed. **Two corrections:**
+  (a) *"always one frame stale" is resolved to a one-repaint lag, not eliminated.* The
+  upload pass runs near the top of `update()` and the viewport draws below it, so frame N's
+  hover reaches the GPU at the top of frame N+1. The highlight now appears and is correct
+  while the pointer rests; killing the last frame of lag needs a second upload pass after
+  `handle_events`, which reorders the frame for all ~40 upload sites — judged a worse trade
+  than 16 ms on a hover tint. (b) *Indexing the enriched path is structural, not contained
+  — do not attempt it as written.* That path is flat-shaded (per-triangle face normal) and
+  per-face-group coloured, so two triangles share a vertex only when they share both normal
+  and face group; indexing means either switching to smooth shading (wrong for a BREP part,
+  where face boundaries should read as creases) or a (position, normal, colour) dedupe pass
+  whose hashing cost on a 661k-tri mesh plausibly exceeds the VRAM saved. The STL path is
+  indexed precisely because it *is* smooth-shaded.
 - **V14. Properties panel per frame:** rest-grid coverage full surface_z scan per PEER
   toolpath (`properties/mod.rs:461-466` → `rest_field.rs:249-251`; ~1.1M float checks/frame
   worst case) + deep clones of DXF layers/drill_targets (:533-537). Cache footprint area on
@@ -516,6 +597,16 @@ frame-time tracing span pass is optional follow-up, not Phase 0.
   totals — compared within stated tolerances. This is the net that lets S2 (exact tile
   skip) and S3 (bit-identical bands) claim "metric-neutral", and the thing that gets
   DELIBERATELY re-baselined for S1.
+  **EXTENDED (wave 1 SIM, `b2a5e661`).** The Phase 0 fixture is 2.5D only and emits **no
+  `CutKinematics::Arc` sample at all** — a net that pins only that arm cannot cover the arc
+  or ball-tip stamp branches S1/S2/S3 reshape. A second arm (hemisphere mesh, Ø6 ball nose,
+  drop cutter + waterline with `arc_fitting` on, 0.5 mm cells) now sits beside it in
+  `perf_golden_sim_metrics_3d.json`, and **both** arms record `per_kinematics`.
+  `three_d_arm_covers_arc_and_helix_kinematics` asserts the Arc and Helix classes stay
+  populated, so the arm cannot decay back into a Linear-only fixture while staying green.
+  Measured on the new arm: 765 Arc / 4402 Helix samples, avg engagement 0.265, 3423.7 mm³.
+  Note the 2.5D arm already emitted `Helix` (ramp entries); `Arc` is what the 3D arm
+  uniquely adds.
 - **Toolpath-fingerprint equality for G2**: depth-stepped fixtures through the existing
   fingerprint infra — hoisted geometry must emit byte-identical moves.
 - Existing nets stay load-bearing: F-XXX sentries, `_litmatrix_*`, 56 param sweeps.
