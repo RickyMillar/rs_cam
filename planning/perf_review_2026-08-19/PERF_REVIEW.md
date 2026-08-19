@@ -201,9 +201,14 @@ no bench exists for any *_toolpath or dressup.
 
 `tool/mod.rs:428`: no cheap reject before facet + 3 vertex + 3 edge drops (divisions,
 sqrts). `Triangle.bbox` precomputed (`geo.rs:154-158`), never consulted.
-`CLPoint::update_z` is monotone increasing ⇒ `if tri.bbox.max.z <= cl.z { return }` is
-provably sound and skips most triangles after first contact; XY-AABB reject vs cl±radius
-equally sound. CLASSIFICATION_PERF_STUDY.md:91 measured contact math = 4/5 of classify cost.
+`CLPoint::update_z` is monotone increasing ⇒ a max-Z bbox reject skips most triangles
+after first contact; XY-AABB reject vs cl±radius similarly.
+**CORRECTION (wave 1, ca92d767): the bare `tri.bbox.max.z <= cl.z` form is NOT sound** —
+edge_drop accepts edge params in ±1e-8 slack (contact can land outside the bbox in Z), and
+flat-tip vertex_drop makes `cl.z` exactly a vertex height, so `bbox.max.z == cl.z` is
+SYSTEMATIC for every triangle sharing that vertex. Caught by `steep_shallow_fingerprint`
+with an identical move count and a different hash. Landed form pads both rejects by
+`DROP_CONTACT_SLACK_MM = 1e-4`. CLASSIFICATION_PERF_STUDY.md:91 measured contact math = 4/5 of classify cost.
 Also: `ToolDefinition` (`tool/mod.rs:596,691`) dispatches through `Box<dyn MillingCutter>`
 per triangle — blocks inlining. Fix: early-outs + dispatch once per batch on concrete
 cutter; sort cell lists by descending max-Z at index build.
@@ -219,6 +224,12 @@ Other sites: `toolpath.rs:658`, `scallop.rs:2260`, `waterline.rs:225`,
 `surface_link.rs:318`, `rest.rs:49`.
 Fix: cache AABB on Polygon2 (one change, twelve sites); then y-bucketed edge index;
 memoize (last_xy,result) in the boundary closure for plunge/retract runs.
+FIXED in wave 1 (1e3c5d8c): lazy OnceLock exterior-only bbox + invalidation at the five
+post-construction exterior-mutation sites; NaN poisons the box (disables reject, never
+changes an answer). Measured: contains_point 3.90×, RegionSet path **51×**.
+G3 FIXED in wave 1 (ca92d767, with the slack correction above): batch drop-cutter
+**6.5× flat / 6.1× ball**; query_only control flat — the index query now bounds
+classification cost. Devirtualization + cell-sort-by-maxZ remain follow-ups.
 
 ## G5. Six hand-rolled O(n²) greedy NN path orderers. HIGH at scale
 
@@ -336,19 +347,31 @@ per frame.
   toolpath) + SimulationTriage::build (another scan + height collect+SORT per toolpath) +
   build_cutter per toolpath + project_evidence allocs. O(samples×toolpaths) w/ sorts, per
   frame, to render one strip. Fix: the existing (Arc::as_ptr(trace), edit_counter) cache
-  pattern. **Largest single win, smallest diff.**
+  pattern. **Largest single win, smallest diff.** FIXED in wave 1 (42ed4774):
+  `SimulationTriageCache`, returns `&SimulationTriage` (no clone on hit — unlike the
+  sibling caches, see Tier-4: cached_load_report/envelopes still clone on hit, easy wave-2
+  follow-up in the same file).
 - **V2. Signal-spine re-derives the trace 6×/frame** (`sim_timeline.rs:295-310,675-710`):
   per-sample pointer Vec (~4.8 MB/frame @600k) + each of 6 tracks re-walks all samples into
   a fresh Vec before decimating to ≤1600 pts. Memoize GroupPoints per
   (trace_ptr, focus, x_range, track) alongside span_aggregates. Minor: format!("signal_track_{label}") per track/frame.
 - **V3. Deflection lookup scans full trace/frame BEFORE its early-out**
   (`app/simulation.rs:422-437` scan; the `tool_gpu_move == Some(current)` guard at :478).
-  With MCP's 100 ms heartbeat this burns continuously. Fix: hoist the guard (two lines);
-  index trace by (toolpath_id, move_index).
+  With MCP's 100 ms heartbeat this burns continuously.
+  **CORRECTION (wave 1, 42ed4774): do NOT naively hoist the whole guard** — the pre-guard
+  block is not pure: it publishes six playback fields (tool_position, deflection, radius,
+  label, stickout, cutting_length) that the 2D tool overlay in viewport.rs reads every
+  frame; a full hoist silently stales that overlay. The landed fix gates only the
+  expensive `peak_deflection_for_move` trace scan (reusing `playback.tool_deflection_mm`
+  when the move index is unchanged — sound because tool_gpu_move and the deflection field
+  are written in lockstep and reset together). FIXED in wave 1.
 - **V4. `sim.issues()` deep-clones ~25k issues (with Strings) 3–4×/frame on cache HIT**
   (`state/simulation.rs:1563-1567`); `sim_timeline.rs:117-121` clones the vec just to count
   hotspots; issue_cache_key re-hashes all collision indices per call. Fix: return
-  &[..]/Arc<[..]>; cached count.
+  &[..]/Arc<[..]>; cached count. FIXED in wave 1 (42ed4774): `Arc<[SimulationIssue]>` —
+  note `&[..]` does NOT work here (two call sites hold the list across later `&mut sim`
+  calls); `issue_hotspot_count()` added; issue_cache_key re-hash left as-is (O(handful),
+  needs a dirty-flag mechanism, not worth it).
 - **V5. O(spans²) span tree per frame** (`sim_op_list.rs:502,541,679-686`), force-expanded
   for the focused op during playback, unbounded rows, format!+clone per row (gated on
   sim.debug.enabled). Memoize per (toolpath_id, spans_ptr).
