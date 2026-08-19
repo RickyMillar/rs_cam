@@ -62,7 +62,27 @@ pub fn trace_polygon_at_z_reported(
     z: f64,
     params: &TraceParams,
 ) -> (Toolpath, usize) {
-    let (working_polygons, failures): (Vec<Polygon2>, usize) = match params.compensation {
+    let (working_polygons, failures) = trace_compensated_polygons_reported(polygon, params);
+    (trace_polygons_at_z(&working_polygons, z, params), failures)
+}
+
+/// The **Z-independent half** of [`trace_polygon_at_z_reported`]: the
+/// cutter-compensated rings this trace will follow, plus Checkpoint C's offset
+/// failure count.
+///
+/// Split out for the G2 hoist (2026-08-20). A depth-stepped trace used to
+/// re-run this offset once per Z level to produce the same rings every time;
+/// `z` reaches the output only through [`trace_polygons_at_z`]'s stamp.
+///
+/// An empty result means the compensation offset collapsed (or failed and was
+/// contained), which is why the failure count is returned alongside rather
+/// than inferred from the emptiness — the two are not the same event.
+#[must_use]
+pub fn trace_compensated_polygons_reported(
+    polygon: &Polygon2,
+    params: &TraceParams,
+) -> (Vec<Polygon2>, usize) {
+    match params.compensation {
         TraceCompensation::None => (vec![polygon.clone()], 0),
         TraceCompensation::Left | TraceCompensation::Right => {
             let distance = if matches!(params.compensation, TraceCompensation::Left) {
@@ -71,22 +91,25 @@ pub fn trace_polygon_at_z_reported(
                 params.tool_radius
             };
             let (result, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
-            let failures = usize::from(failure.is_some());
-            if result.is_empty() {
-                return (Toolpath::new(), failures);
-            }
-            (result, failures)
+            (result, usize::from(failure.is_some()))
         }
-    };
+    }
+}
 
+/// The **Z-dependent half**: stamp pre-compensated rings at `z`.
+///
+/// `z` is the only thing a depth-stepped caller varies, which is the whole of
+/// G2 for this family.
+#[must_use]
+pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) -> Toolpath {
     let mut tp = Toolpath::new();
-    for poly in &working_polygons {
+    for poly in polygons {
         trace_ring(&mut tp, &poly.exterior, z, params);
         for hole in &poly.holes {
             trace_ring(&mut tp, hole, z, params);
         }
     }
-    (tp, failures)
+    tp
 }
 
 /// Generate a toolpath that traces polygon contours with depth stepping.
@@ -104,21 +127,29 @@ pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
 /// Cancellable variant of [`trace_toolpath`]. Polls `cancel` once per Z
 /// level via the shared `depth::toolpath_at_levels_with_cancel` choke point
 /// (planning/finishing_stack_review_2026-07.md S.5).
+///
+/// G2 (2026-08-20): the compensation offset is computed ONCE above the level
+/// loop instead of once per level. The per-level closure stamps Z only.
 pub fn trace_toolpath_with_cancel(
     polygon: &Polygon2,
     params: &TraceParams,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
+    // The hoisted offset now runs BEFORE `depth_stepped_toolpath_with_cancel`,
+    // which used to be the first thing to poll. Poll here so a pre-set flag
+    // still short-circuits ahead of any geometry work rather than after it.
+    crate::interrupt::check_cancel(cancel)?;
     let depth = DepthStepping::new(
         params.top_z,
         params.top_z - params.depth,
         params.depth_per_pass,
     );
 
+    let (rings, _failures) = trace_compensated_polygons_reported(polygon, params);
     depth_stepped_toolpath_with_cancel(
         &depth,
         params.safe_z,
-        |z| Ok(trace_polygon_at_z(polygon, z, params)),
+        |z| Ok(trace_polygons_at_z(&rings, z, params)),
         cancel,
     )
 }
@@ -168,6 +199,66 @@ mod tests {
             safe_z: 10.0,
             compensation: TraceCompensation::None,
             top_z: 0.0,
+        }
+    }
+
+    /// **G2, trace side.** `trace_toolpath_with_cancel` now hoists the
+    /// compensation offset above the level loop; this asserts the composed
+    /// output is bit-identical to calling `trace_polygon_at_z` per level, on
+    /// all three compensation modes — the offsetting ones are the point, and
+    /// `None` is included so the clone-per-call path is covered too.
+    #[test]
+    fn the_hoisted_compensation_emits_exactly_what_the_per_level_offset_did() {
+        let poly = Polygon2::rectangle(0.0, 0.0, 40.0, 25.0);
+
+        for compensation in [
+            TraceCompensation::None,
+            TraceCompensation::Left,
+            TraceCompensation::Right,
+        ] {
+            let params = TraceParams {
+                depth: 6.0,
+                depth_per_pass: 1.5,
+                compensation,
+                ..default_params()
+            };
+            let levels = DepthStepping::new(
+                params.top_z,
+                params.top_z - params.depth,
+                params.depth_per_pass,
+            )
+            .all_levels();
+            assert_eq!(levels.len(), 4, "the fixture must actually be multi-level");
+
+            let naive = crate::depth::toolpath_at_levels(&levels, params.safe_z, |z| {
+                trace_polygon_at_z(&poly, z, &params)
+            });
+            let hoisted = trace_toolpath(&poly, &params);
+
+            let label = format!("{compensation:?}");
+            assert!(!naive.moves.is_empty(), "{label}: vacuous fixture");
+            assert_eq!(
+                hoisted.moves.len(),
+                naive.moves.len(),
+                "{label}: move count"
+            );
+            for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
+                assert_eq!(
+                    (
+                        h.target.x.to_bits(),
+                        h.target.y.to_bits(),
+                        h.target.z.to_bits()
+                    ),
+                    (
+                        n.target.x.to_bits(),
+                        n.target.y.to_bits(),
+                        n.target.z.to_bits()
+                    ),
+                    "{label}: move {i} diverges"
+                );
+                assert_eq!(h.move_type, n.move_type, "{label}: move {i} type");
+                assert_eq!(h.intent, n.intent, "{label}: move {i} intent");
+            }
         }
     }
 

@@ -10,6 +10,12 @@ use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2};
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for pocket clearing.
+///
+/// `Copy` since the G2 hoist (2026-08-20) so a depth-stepping caller can
+/// restamp one set of parameters per Z level with `PocketParams { cut_depth:
+/// z, ..*params }` instead of re-listing every field — re-listing is how a
+/// field silently goes missing when one is added.
+#[derive(Debug, Clone, Copy)]
 pub struct PocketParams {
     /// Tool radius in mm (half of tool diameter).
     pub tool_radius: f64,
@@ -78,7 +84,48 @@ pub fn pocket_toolpath_reported_with_cancel(
 ) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
     let (contours, report) =
         pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
-    Ok((contours_to_toolpath(&contours, params), report))
+    Ok((pocket_contours_to_toolpath(&contours, params), report))
+}
+
+/// Depth-stepped pocket: the ring cascade computed **once**, then stamped at
+/// every Z level (G2, `planning/perf_review_2026-08-19/PERF_REVIEW.md`).
+///
+/// The old shape called this whole function once per level, so an `L`-level
+/// pocket re-ran tool compensation plus the full [`OffsetRingSet`] cascade
+/// `L` times to produce `L` copies of the same XY geometry — the only
+/// Z-dependent thing in the output is the stamp in
+/// [`pocket_contours_to_toolpath`]. Composition still runs through
+/// [`crate::depth::toolpath_at_levels_with_cancel`], so the inter-level
+/// retract and the cancellation cadence are unchanged.
+///
+/// Cancellation is preserved on **both** granularities: the cascade polls per
+/// offset ring (once, now, instead of once per level) and the level loop polls
+/// per level.
+///
+/// `params.cut_depth` is ignored — `levels` supplies the Z for every pass.
+pub fn pocket_toolpath_at_levels_reported_with_cancel(
+    polygon: &Polygon2,
+    levels: &[f64],
+    params: &PocketParams,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
+    let (contours, report) =
+        pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
+    let tp = crate::depth::toolpath_at_levels_with_cancel(
+        levels,
+        params.safe_z,
+        |z| {
+            Ok(pocket_contours_to_toolpath(
+                &contours,
+                &PocketParams {
+                    cut_depth: z,
+                    ..*params
+                },
+            ))
+        },
+        cancel,
+    )?;
+    Ok((tp, report))
 }
 
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
@@ -373,7 +420,14 @@ pub fn pocket_contours_reported_with_cancel(
 /// retract envelope instead of open-coding it — byte-identical to the
 /// previous hand-rolled sequence for every contour `pocket_contours`
 /// produces (all are pre-filtered to >= 3 points before being pushed).
-fn contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath {
+///
+/// `pub` since the G2 hoist (2026-08-20): this is the Z-dependent HALF of a
+/// pocket, and `params.cut_depth` is the only thing in it that a depth-stepped
+/// caller varies. Pairing it with one `pocket_contours_reported_with_cancel`
+/// call is what makes the per-level output identical by construction — the
+/// same `contours` slice through the same emitter, differing only in the
+/// stamp below.
+pub fn pocket_contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
     for contour in contours {
@@ -425,6 +479,97 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             climb: false,
+        }
+    }
+
+    /// Every move as raw bits, so a last-ULP divergence cannot hide behind
+    /// `f64` equality and `-0.0 == 0.0` cannot mask one.
+    ///
+    /// Shared shape with `tests/perf_golden_depth_level_geometry.rs`'s
+    /// `xy_bits_at`, and for the same reason: this is an identity check, not a
+    /// similarity check.
+    fn move_bits(tp: &Toolpath) -> Vec<(u64, u64, u64, String)> {
+        tp.moves
+            .iter()
+            .map(|m| {
+                (
+                    m.target.x.to_bits(),
+                    m.target.y.to_bits(),
+                    m.target.z.to_bits(),
+                    format!("{:?}/{:?}", m.move_type, m.intent),
+                )
+            })
+            .collect()
+    }
+
+    /// **G2's acceptance property, at the seam that actually moved.**
+    ///
+    /// `tests/perf_golden_depth_level_geometry.rs` pins the PRE-fix call shape
+    /// — `pocket_toolpath` inside the per-level closure — and it must keep
+    /// passing, but it cannot see the hoist because the hoist is a different
+    /// call shape. This is the other half: the hoisted composition against the
+    /// naive one, bit for bit, on the shape class the review is written against
+    /// (a jittered ring at marching-squares vertex density).
+    ///
+    /// It is a property, not a pinned constant, so it cannot rot and never
+    /// needs re-baselining. If it fires, the hoist changed emission rather than
+    /// scheduling — which is precisely the claim "identical by construction"
+    /// makes and the only thing that could invalidate it.
+    #[test]
+    fn the_hoisted_cascade_emits_exactly_what_the_per_level_one_did() {
+        let poly = Polygon2::new(
+            (0..600)
+                .map(|i| {
+                    let t = std::f64::consts::TAU * i as f64 / 600.0;
+                    let r = 40.0 + 0.6 * (7.0 * t).sin() + 0.25 * (23.0 * t).cos();
+                    P2::new(r * t.cos(), r * t.sin())
+                })
+                .collect(),
+        );
+        let base = PocketParams {
+            tool_radius: 3.0,
+            stepover: 4.0,
+            cut_depth: 0.0,
+            feed_rate: 1200.0,
+            plunge_rate: 400.0,
+            safe_z: 10.0,
+            climb: true,
+        };
+        let never = || false;
+
+        for n in [1_usize, 5] {
+            let levels: Vec<f64> = (1..=n).map(|i| -1.5 * i as f64).collect();
+
+            let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+                pocket_toolpath(
+                    &poly,
+                    &PocketParams {
+                        cut_depth: z,
+                        ..base
+                    },
+                )
+            });
+            let (hoisted, report) =
+                pocket_toolpath_at_levels_reported_with_cancel(&poly, &levels, &base, &never)
+                    .expect("never cancelled");
+
+            assert!(
+                !naive.moves.is_empty(),
+                "L{n}: the fixture emitted nothing — the comparison would be vacuous"
+            );
+            assert_eq!(
+                move_bits(&hoisted),
+                move_bits(&naive),
+                "L{n}: the hoisted cascade emitted a different move list"
+            );
+            // The whole point: one cascade, not `n` of them. The report is the
+            // only observable that legitimately CHANGES with the hoist, and it
+            // changes in the direction the `offset_library_failures` x L
+            // over-count documents.
+            assert_eq!(
+                report.stopped_by, None,
+                "L{n}: the convergent fixture must not trip a cascade bound"
+            );
         }
     }
 
