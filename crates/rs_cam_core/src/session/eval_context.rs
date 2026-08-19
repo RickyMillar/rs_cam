@@ -17,7 +17,7 @@
 
 use crate::compute::config::effective_safe_z;
 use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
-use crate::geo::BoundingBox3;
+use crate::geo::{BoundingBox3, P3};
 
 use super::{ProjectSession, SetupData};
 
@@ -134,6 +134,44 @@ impl SetupEvalContext {
         self.local_to_global
             .as_ref()
             .is_some_and(|info| info.is_z_flipped())
+    }
+
+    /// Translation applied to this setup's emitted toolpath so every
+    /// setup in a project expresses XY in ONE frame: **stock-relative**,
+    /// with program X0 Y0 at the stock's min corner.
+    ///
+    /// G-EXPORT-DATUM (2026-08-19). Identity setups emit their toolpath
+    /// in the WORLD frame; non-identity setups emit in the zero-rooted
+    /// setup-local frame (which is already stock-relative — see
+    /// [`crate::compute::transform::SetupTransformInfo::world_to_local`],
+    /// whose first step is `-stock_origin`). When
+    /// `StockConfig::origin_{x,y} != 0` those two frames differ by
+    /// exactly the origin, so a two-sided job exported one file per
+    /// setup handed the operator two different XY datums under a single
+    /// plain `G54` — and the only header warning was about **Z**. Keeping
+    /// one XY zero across the flip then machines the second side off by
+    /// the origin (240×250 stock at origin (-20,-25): 20 mm / 25 mm).
+    ///
+    /// Stock-relative is the frame to converge on because it is what the
+    /// non-identity setups already emit, it is the frame
+    /// `StockConfig::alignment_pins` are dimensioned in (the feature that
+    /// physically registers the flip), and it names a datum the operator
+    /// can actually find: the stock's own corner.
+    ///
+    /// **Z is deliberately NOT shifted.** See the module note on
+    /// `gcode::export_datum_shift_for_toolpath`.
+    pub fn export_datum_shift(&self) -> P3 {
+        if self.local_to_global.is_some() {
+            // Non-identity: the toolpath is already stock-relative.
+            P3::new(0.0, 0.0, 0.0)
+        } else {
+            // Identity: world → stock-relative is a pure XY translation.
+            P3::new(
+                -self.world_stock_bbox.min.x,
+                -self.world_stock_bbox.min.y,
+                0.0,
+            )
+        }
     }
 
     /// The simulator's per-setup local bbox slot. F-024 requires `None`

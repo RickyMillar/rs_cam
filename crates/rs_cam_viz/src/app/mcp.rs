@@ -2797,15 +2797,40 @@ impl super::RsCamApp {
                         Ok(g) => g,
                         Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
                     };
-                    let reminder = if i > 0 {
-                        " -- FLIP PART + RE-ZERO Z BEFORE RUNNING"
+                    // G-EXPORT-DATUM: name the datum instead of only
+                    // warning about Z. Since the export now re-expresses
+                    // every setup in the stock-relative frame, X0 Y0 is
+                    // the stock's min corner in EVERY file — so the
+                    // operator must KEEP the XY zero across the flip, and
+                    // the header has to say so. Z is not shifted (see
+                    // `rs_cam_core::gcode::export_datum_shift_for_toolpath`),
+                    // so each file states where its own Z0 sits relative
+                    // to the up-facing stock surface; that keeps the
+                    // pre-existing "re-zero Z" instruction truthful by
+                    // making it specific.
+                    let setup_ref = state.session.list_setups().iter().find(|s| s.id == *id);
+                    let ctx = rs_cam_core::session::SetupEvalContext::build_for_setup(
+                        &state.session,
+                        setup_ref,
+                    );
+                    let z_top = ctx.heights_stock_bbox.max.z;
+                    let z_datum = if z_top.abs() < 1e-6 {
+                        "Z0 = top of stock".to_owned()
+                    } else if z_top > 0.0 {
+                        format!("Z0 = {z_top:.3}mm BELOW top of stock")
                     } else {
-                        ""
+                        format!("Z0 = {:.3}mm ABOVE top of stock", -z_top)
                     };
-                    let header = post.render_comment(&format!(
-                        "rs_cam setup {}/{total}: \"{name}\"{reminder}",
-                        i + 1
-                    ));
+                    let mut header =
+                        post.render_comment(&format!("rs_cam setup {}/{total}: \"{name}\"", i + 1));
+                    header.push_str(&post.render_comment(&format!(
+                        "DATUM: X0 Y0 = stock min corner (SAME in every setup file); {z_datum}"
+                    )));
+                    if i > 0 {
+                        header.push_str(&post.render_comment(
+                            "FLIP PART BEFORE RUNNING -- re-zero Z to the datum above; KEEP the same X/Y zero",
+                        ));
+                    }
                     let safe_name: String = name
                         .chars()
                         .map(|c| if c.is_alphanumeric() { c } else { '_' })
