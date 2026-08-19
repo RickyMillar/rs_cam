@@ -186,10 +186,12 @@ pub struct SimulationRequest {
     /// supplies). Non-identity setup groups' `local_to_global` outputs
     /// already live in that frame (`SetupTransformInfo::stock_origin_*`
     /// doc: origin is never re-added). Identity groups' dexel grids are
-    /// WORLD-framed (F-024), so the deviation passes frame-map their
-    /// query points by `-stock_bbox.min` before touching this mesh — a
-    /// world-frame model here silently mis-registers every comparison by
-    /// exactly the stock origin.
+    /// WORLD-framed (F-024), so the per-column deviation pass frame-maps
+    /// its query points by `-stock_bbox.min` before touching this mesh
+    /// (the per-vertex pass reads the composite mesh, which
+    /// `transform_stock_mesh_to_global` has already put in this frame) —
+    /// a world-frame model here silently mis-registers every comparison
+    /// by exactly the stock origin.
     pub model_mesh: Option<Arc<TriangleMesh>>,
     /// F-034: when `Some`, the simulator post-processes the cut trace
     /// and replaces each toolpath's naive `distance / feed`
@@ -460,19 +462,111 @@ impl From<Cancelled> for SimulationError {
     }
 }
 
-/// Transform a stock mesh from setup-local to global coordinates.
+/// Map a point from one setup group's own emission frame into the sim's
+/// ZERO-ROOTED stock-relative global frame.
+///
+/// FRAME CONTRACT (G-SIM-IDENTITY-FRAME, 2026-08-19). The global /
+/// playback stock is built from `(0,0,0)..(stock_dx, stock_dy, stock_dz)`,
+/// so everything stamped into it must be stock-relative:
+///
+/// - Non-identity groups already are — `SetupTransformInfo::local_to_global`
+///   deliberately does not re-add the stock origin (see its
+///   `stock_origin_x` doc).
+/// - Identity groups have no transform at all and emit in WORLD
+///   coordinates (F-024: their per-setup dexel grid is the world
+///   `stock_bbox`), so they must be translated by `-stock_min`.
+///
+/// Before this existed, identity groups were stamped in verbatim and every
+/// cut from them landed in the playback stock displaced by exactly
+/// `StockConfig::origin` — silently, because per-toolpath metrics, gates
+/// and collision checks all read the correctly-framed per-group stock.
+/// This is the same frame-map the deviation pass applies to its query
+/// points; see [`collect_column_deviations`].
+#[inline]
+fn group_point_to_global(p: P3, transform: &Option<SetupTransformInfo>, stock_min: P3) -> P3 {
+    match transform {
+        Some(info) => info.local_to_global(p),
+        None => P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
+    }
+}
+
+/// Frame-map a whole toolpath into the sim's stock-relative global frame.
+/// See [`group_point_to_global`] for the contract.
+///
+/// Arc `i`/`j` offsets are relative to the arc's start point, so they are
+/// invariant under the pure translation the identity arm applies and are
+/// carried through unchanged; the non-identity arm delegates to
+/// [`SetupTransformInfo::transform_toolpath`], which rotates them (and
+/// flips arc direction on a reflecting transform).
+pub fn group_toolpath_to_global(
+    toolpath: &Toolpath,
+    transform: &Option<SetupTransformInfo>,
+    stock_min: P3,
+) -> Toolpath {
+    match transform {
+        Some(info) => info.transform_toolpath(toolpath),
+        None => Toolpath {
+            moves: toolpath
+                .moves
+                .iter()
+                .map(|m| crate::toolpath::Move {
+                    target: P3::new(
+                        m.target.x - stock_min.x,
+                        m.target.y - stock_min.y,
+                        m.target.z - stock_min.z,
+                    ),
+                    move_type: m.move_type,
+                    intent: m.intent,
+                })
+                .collect(),
+        },
+    }
+}
+
+/// Frame-map an analytic drill op into the sim's stock-relative global
+/// frame. See [`group_point_to_global`] for the contract.
+pub fn group_drill_op_to_global(
+    drill_op: &crate::drill_op::DrillOp,
+    transform: &Option<SetupTransformInfo>,
+    stock_min: P3,
+) -> crate::drill_op::DrillOp {
+    let mut out = drill_op.clone();
+    for hole in &mut out.holes {
+        let g_top = group_point_to_global(
+            P3::new(hole.xy[0], hole.xy[1], hole.top_z),
+            transform,
+            stock_min,
+        );
+        let g_bot = group_point_to_global(
+            P3::new(hole.xy[0], hole.xy[1], hole.bottom_z),
+            transform,
+            stock_min,
+        );
+        hole.xy = [g_top.x, g_top.y];
+        hole.top_z = g_top.z;
+        hole.bottom_z = g_bot.z;
+    }
+    out
+}
+
+/// Transform a stock mesh from setup-local to the stock-relative global
+/// frame. See [`group_point_to_global`] for the contract.
 fn transform_stock_mesh_to_global(
     mesh: &StockMesh,
     transform: &Option<SetupTransformInfo>,
+    stock_min: P3,
 ) -> StockMesh {
-    let Some(info) = transform else {
-        return mesh.clone();
-    };
     let mut out = StockMesh::empty();
-    out.append_transformed(mesh, |x, y, z| {
-        let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
-        (p.x as f32, p.y as f32, p.z as f32)
-    });
+    match transform {
+        Some(info) => out.append_transformed(mesh, |x, y, z| {
+            let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+            (p.x as f32, p.y as f32, p.z as f32)
+        }),
+        None => {
+            let (sx, sy, sz) = (stock_min.x as f32, stock_min.y as f32, stock_min.z as f32);
+            out.append_transformed(mesh, |x, y, z| (x - sx, y - sy, z - sz));
+        }
+    }
     out
 }
 
@@ -727,38 +821,27 @@ where
                 direction: playback_direction,
             });
 
-            // Transform toolpath to global frame for parallel global stock.
-            let global_tp = if let Some(info) = &group.local_to_global {
-                Arc::new(info.transform_toolpath(entry_toolpath))
-            } else {
-                Arc::new(entry_toolpath.clone())
-            };
+            // Frame-map the toolpath into the zero-rooted stock-relative
+            // global frame for the parallel global stock. Identity groups
+            // emit in world coords and are shifted by `-stock_bbox.min`;
+            // see `group_toolpath_to_global`.
+            let global_tp = Arc::new(group_toolpath_to_global(
+                entry_toolpath,
+                &group.local_to_global,
+                request.stock_bbox.min,
+            ));
 
             // Stamp the global stock in parallel for checkpoint/playback support.
             // This uses the same global-frame toolpath + direction as playback.
             // For drill ops, apply analytical removal in the global frame
-            // — hole XYs are transformed when `local_to_global` is set.
+            // — hole XYs are frame-mapped for every group, non-identity
+            // through `local_to_global` and identity by `-stock_bbox.min`.
             if let Some(drill_op_arc) = entry.drill_op.as_ref() {
-                let global_drill_op = match &group.local_to_global {
-                    Some(info) => {
-                        let mut transformed = (**drill_op_arc).clone();
-                        for hole in &mut transformed.holes {
-                            let g_top = info.local_to_global(crate::geo::P3::new(
-                                hole.xy[0], hole.xy[1], hole.top_z,
-                            ));
-                            let g_bot = info.local_to_global(crate::geo::P3::new(
-                                hole.xy[0],
-                                hole.xy[1],
-                                hole.bottom_z,
-                            ));
-                            hole.xy = [g_top.x, g_top.y];
-                            hole.top_z = g_top.z;
-                            hole.bottom_z = g_bot.z;
-                        }
-                        transformed
-                    }
-                    None => (**drill_op_arc).clone(),
-                };
+                let global_drill_op = group_drill_op_to_global(
+                    drill_op_arc,
+                    &group.local_to_global,
+                    request.stock_bbox.min,
+                );
                 global_stock.apply_drill_op(&global_drill_op);
                 global_drill_ops.push(global_drill_op);
             } else {
@@ -784,8 +867,11 @@ where
                     group_drill_ops.iter().map(|d| d.as_ref()).collect();
                 crate::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
             }
-            let checkpoint_mesh =
-                transform_stock_mesh_to_global(&local_mesh, &group.local_to_global);
+            let checkpoint_mesh = transform_stock_mesh_to_global(
+                &local_mesh,
+                &group.local_to_global,
+                request.stock_bbox.min,
+            );
             checkpoints.push(SimCheckpointMesh {
                 boundary_index,
                 mesh: checkpoint_mesh,
@@ -830,14 +916,18 @@ where
                 group_drill_ops.iter().map(|d| d.as_ref()).collect();
             crate::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
         }
-        if let Some(info) = &group.local_to_global {
-            composite_mesh.append_transformed(&group_mesh, |x, y, z| {
-                let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
-                (p.x as f32, p.y as f32, p.z as f32)
-            });
-        } else {
-            composite_mesh.append_transformed(&group_mesh, |x, y, z| (x, y, z));
-        }
+        // Same frame contract as the checkpoint meshes: every group lands
+        // in the zero-rooted stock-relative frame, identity groups via the
+        // `-stock_bbox.min` shift. Before this, a MIXED project composited
+        // its identity groups (world) and non-identity groups
+        // (stock-relative) into one mesh, displacing the two setups'
+        // surfaces from each other by the stock origin.
+        let group_global = transform_stock_mesh_to_global(
+            &group_mesh,
+            &group.local_to_global,
+            request.stock_bbox.min,
+        );
+        composite_mesh.append(&group_global);
     }
 
     // `global_drill_ops` is currently accumulated for future use by
@@ -901,19 +991,16 @@ where
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = if request.model_mesh.is_some() {
         set_phase("Compute deviations");
-        // Frame-map for the vertex path (same hole as the columns path,
-        // see `collect_column_deviations`): the composite mesh is
-        // world-framed when every group is an identity setup (F-024),
-        // stock-relative when every group is non-identity. Mixed
-        // projects would need per-vertex group tags the composite
-        // doesn't carry — that case keeps today's (non-identity)
-        // behavior and is documented as unresolved.
-        let all_identity = request.groups.iter().all(|g| g.local_to_global.is_none());
-        let world_shift = all_identity.then_some(request.stock_bbox.min);
+        // No frame-map needed: `transform_stock_mesh_to_global` now lands
+        // EVERY group — identity included — in the stock-relative frame
+        // the model mesh is supplied in (`SimulationRequest::model_mesh`
+        // contract). This used to branch on an `all_identity` test with
+        // mixed projects documented as unresolved; the per-group shift
+        // makes that case fall out uniformly.
         request
             .model_mesh
             .as_ref()
-            .map(|model| compute_deviations(&mesh.vertices, model, world_shift))
+            .map(|model| compute_deviations(&mesh.vertices, model))
     } else {
         None
     };
@@ -1114,22 +1201,20 @@ fn collect_column_deviations(
 /// Returns one `f32` per vertex. Positive = material remaining, negative = overcut.
 /// Vertices far from any model surface or outside the model footprint get 0.0.
 ///
-/// `world_shift`: `Some(stock_bbox.min)` when the vertices are WORLD-framed
-/// (all-identity-setup projects, F-024 grids) and must be frame-mapped into
-/// the stock-relative model frame before the query; `None` keeps the
-/// pre-existing behavior for stock-relative (non-identity) meshes. See
+/// FRAME: `stock_vertices` and `model_mesh` must both be in the sim's
+/// stock-relative global frame, so the query needs no frame-map. Every
+/// setup group's mesh is put there by `transform_stock_mesh_to_global`
+/// (identity groups by the `-stock_bbox.min` shift), and the model mesh
+/// arrives there by `SimulationRequest::model_mesh`'s contract. The
+/// per-column path still frame-maps because it reads the group's own
+/// (world-framed, for identity setups) dexel grid — see
 /// `collect_column_deviations`' frame doc.
 // SAFETY: indexing with `i * 3 + {0,1,2}` where `i < num_verts` and
 // `num_verts = stock_vertices.len() / 3`, so all accesses are in bounds.
 #[allow(clippy::indexing_slicing)]
-fn compute_deviations(
-    stock_vertices: &[f32],
-    model_mesh: &TriangleMesh,
-    world_shift: Option<P3>,
-) -> Vec<f32> {
+fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<f32> {
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
-    let (sx, sy, sz) = world_shift.map_or((0.0, 0.0, 0.0), |s| (s.x, s.y, s.z));
 
     // Model thickness sets a relevance threshold. Vertices further than this
     // from any model surface have no meaningful deviation (e.g. the flat
@@ -1138,9 +1223,9 @@ fn compute_deviations(
     let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
 
     let compute_vertex_deviation = |i: usize| -> f32 {
-        let x = stock_vertices[i * 3] as f64 - sx;
-        let y = stock_vertices[i * 3 + 1] as f64 - sy;
-        let sim_z = stock_vertices[i * 3 + 2] as f64 - sz;
+        let x = stock_vertices[i * 3] as f64;
+        let y = stock_vertices[i * 3 + 1] as f64;
+        let sim_z = stock_vertices[i * 3 + 2] as f64;
         let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
             return 0.0; // outside model footprint
         };

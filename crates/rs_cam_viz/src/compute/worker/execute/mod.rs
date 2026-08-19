@@ -350,6 +350,8 @@ fn build_core_simulation_request(
 /// analytical removal during forward scrub rather than relying on
 /// `simulate_toolpath_range`'s degenerate-Z dexel stamping for plunge moves.
 fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> {
+    use rs_cam_core::compute::simulate::{group_drill_op_to_global, group_toolpath_to_global};
+
     let mut playback = Vec::new();
     for group in &req.groups {
         let playback_direction = group.local_to_global.as_ref().map_or(
@@ -357,34 +359,22 @@ fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> 
             |info| info.cut_direction(),
         );
         for tp in &group.toolpaths {
-            let global_tp = if let Some(info) = &group.local_to_global {
-                Arc::new(info.transform_toolpath(&tp.annotated.toolpath))
-            } else {
-                Arc::new(tp.annotated.toolpath.clone())
-            };
-            // Transform drill_op holes into the global frame, matching the
-            // approach in `rs_cam_core::compute::simulate` (the global stock
-            // there receives the same transformed DrillOp for checkpoint use).
+            // Frame-map through the SAME core helpers the global stock is
+            // stamped with, so live playback and the checkpoint stocks can't
+            // drift apart. Identity groups emit in world frame and are
+            // shifted by `-stock_bbox.min`; carrying a private copy of this
+            // mapping is how G-SIM-IDENTITY-FRAME got a second home.
+            let global_tp = Arc::new(group_toolpath_to_global(
+                &tp.annotated.toolpath,
+                &group.local_to_global,
+                req.stock_bbox.min,
+            ));
             let global_drill_op = tp.drill_op.as_ref().map(|drill_op_arc| {
-                if let Some(info) = &group.local_to_global {
-                    let mut transformed = (**drill_op_arc).clone();
-                    for hole in &mut transformed.holes {
-                        let g_top = info.local_to_global(rs_cam_core::geo::P3::new(
-                            hole.xy[0], hole.xy[1], hole.top_z,
-                        ));
-                        let g_bot = info.local_to_global(rs_cam_core::geo::P3::new(
-                            hole.xy[0],
-                            hole.xy[1],
-                            hole.bottom_z,
-                        ));
-                        hole.xy = [g_top.x, g_top.y];
-                        hole.top_z = g_top.z;
-                        hole.bottom_z = g_bot.z;
-                    }
-                    Arc::new(transformed)
-                } else {
-                    Arc::clone(drill_op_arc)
-                }
+                Arc::new(group_drill_op_to_global(
+                    drill_op_arc,
+                    &group.local_to_global,
+                    req.stock_bbox.min,
+                ))
             });
             playback.push((
                 global_tp,

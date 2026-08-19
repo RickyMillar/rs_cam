@@ -4019,7 +4019,7 @@ impl super::RsCamApp {
                 };
 
             let html = rs_cam_core::viz::stock_mesh_to_3d_html(
-                &results.mesh,
+                &sim_mesh_in_world_frame(&results.mesh, session),
                 &toolpaths,
                 &format!("{} -- Simulation", session.name()),
             );
@@ -4071,7 +4071,7 @@ impl super::RsCamApp {
                     .results
                     .as_ref()
                     .map(|sim| {
-                        let mut m = sim.mesh.clone();
+                        let mut m = sim_mesh_in_world_frame(&sim.mesh, session);
                         m.apply_height_gradient();
                         m
                     })
@@ -4926,6 +4926,33 @@ pub(crate) fn build_cut_trace_response(
     resp.insert_capped("span_summaries", span_arr);
 
     Ok(resp.finish())
+}
+
+/// Translate a `SimulationResult::mesh` from the simulator's ZERO-ROOTED
+/// stock-relative frame back into world coordinates.
+///
+/// The screenshot exporters composite the sim mesh with toolpaths taken raw
+/// out of `gui.toolpath_rt`, i.e. in their **emission** frame, and the
+/// combined scene is centroid-normalised — so only the RELATIVE offset
+/// between mesh and path matters. Identity setups emit in world frame, so
+/// this shift is what puts the two in register. (Non-identity setups emit
+/// in their own local frame, which differs from the mesh by a flip rather
+/// than a translation; that overlay was never in register and this does not
+/// change it. The GUI viewport does not go through here — it maps
+/// everything into the zero-rooted display frame instead, via
+/// `Setup::emission_to_display_shift`.)
+fn sim_mesh_in_world_frame(
+    mesh: &rs_cam_core::stock_mesh::StockMesh,
+    session: &rs_cam_core::session::ProjectSession,
+) -> rs_cam_core::stock_mesh::StockMesh {
+    let min = session.stock_bbox().min;
+    let (ox, oy, oz) = (min.x as f32, min.y as f32, min.z as f32);
+    if ox == 0.0 && oy == 0.0 && oz == 0.0 {
+        return mesh.clone();
+    }
+    let mut out = rs_cam_core::stock_mesh::StockMesh::empty();
+    out.append_transformed(mesh, |x, y, z| (x + ox, y + oy, z + oz));
+    out
 }
 
 /// Build the `span_summaries` array under an item cap and a byte budget.

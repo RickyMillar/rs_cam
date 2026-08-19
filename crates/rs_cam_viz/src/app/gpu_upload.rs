@@ -87,14 +87,24 @@ impl RsCamApp {
     /// Transform a `StockMesh` from its simulation frame to the setup-local
     /// display frame for the given simulation `move_idx`.
     ///
-    /// Non-identity setups: the checkpoint mesh arrives stock-relative
-    /// (the simulator's `local_to_global` does not re-add origin), so the
-    /// face/rotation transform applies directly. Identity setups: the
-    /// F-024 dexel grid is rooted at the *world* stock bbox, so the mesh
-    /// arrives in world coordinates and must shift by `-stock.origin` to
-    /// land in the zero-rooted display frame (heights/setup-frame audit
-    /// 2026-06-12, finding 1 — pre-fix this was a no-op and the sim stock
-    /// rendered offset from the stock outline by exactly `origin`).
+    /// Every sim mesh arrives in the simulator's ZERO-ROOTED stock-relative
+    /// global frame — checkpoint meshes via `transform_stock_mesh_to_global`
+    /// and live-scrub meshes off the equally zero-rooted global stock. For
+    /// an identity setup that frame IS the display frame, so nothing to do.
+    /// Non-identity setups only need the face/rotation part of
+    /// `world_to_local`; the origin translation was already applied
+    /// upstream.
+    ///
+    /// This used to subtract `stock.origin` on the identity arm (heights /
+    /// setup-frame audit 2026-06-12, finding 1). That shift was correct
+    /// against a WORLD-framed mesh, which is what the simulator used to
+    /// hand back for identity groups — and it cancelled the mis-registered
+    /// carve those groups produced in the zero-rooted global stock, which
+    /// is why the viewport looked right while
+    /// `screenshot_simulation` (no such compensation) showed the part cut
+    /// through. Both halves are fixed at the source now
+    /// (G-SIM-IDENTITY-FRAME, 2026-08-19); keeping the shift here would
+    /// double-count it.
     // SAFETY: step_by(3) loop with i+1, i+2 bounded by vertices.len() (always multiple of 3)
     #[allow(clippy::indexing_slicing)]
     pub(super) fn transform_mesh_to_local_frame(
@@ -102,40 +112,22 @@ impl RsCamApp {
         mesh: &mut rs_cam_core::simulation::StockMesh,
         move_idx: usize,
     ) {
-        match self.active_setup_orientation(move_idx) {
-            Some((face_up, z_rot, true)) => {
-                let stock_cfg = self.controller.state().session.stock_config();
-                let (eff_w, eff_d, _) =
-                    face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
-                for i in (0..mesh.vertices.len()).step_by(3) {
-                    let p = rs_cam_core::geo::P3::new(
-                        mesh.vertices[i] as f64,
-                        mesh.vertices[i + 1] as f64,
-                        mesh.vertices[i + 2] as f64,
-                    );
-                    let flipped = face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.z);
-                    let local = z_rot.transform_point(flipped, eff_w, eff_d);
-                    mesh.vertices[i] = local.x as f32;
-                    mesh.vertices[i + 1] = local.y as f32;
-                    mesh.vertices[i + 2] = local.z as f32;
-                }
-            }
-            Some((_, _, false)) => {
-                let stock_cfg = self.controller.state().session.stock_config();
-                let (ox, oy, oz) = (
-                    stock_cfg.origin_x as f32,
-                    stock_cfg.origin_y as f32,
-                    stock_cfg.origin_z as f32,
-                );
-                if ox != 0.0 || oy != 0.0 || oz != 0.0 {
-                    for i in (0..mesh.vertices.len()).step_by(3) {
-                        mesh.vertices[i] -= ox;
-                        mesh.vertices[i + 1] -= oy;
-                        mesh.vertices[i + 2] -= oz;
-                    }
-                }
-            }
-            None => {}
+        let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) else {
+            return;
+        };
+        let stock_cfg = self.controller.state().session.stock_config();
+        let (eff_w, eff_d, _) = face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
+        for i in (0..mesh.vertices.len()).step_by(3) {
+            let p = rs_cam_core::geo::P3::new(
+                mesh.vertices[i] as f64,
+                mesh.vertices[i + 1] as f64,
+                mesh.vertices[i + 2] as f64,
+            );
+            let flipped = face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.z);
+            let local = z_rot.transform_point(flipped, eff_w, eff_d);
+            mesh.vertices[i] = local.x as f32;
+            mesh.vertices[i + 1] = local.y as f32;
+            mesh.vertices[i + 2] = local.z as f32;
         }
     }
 
