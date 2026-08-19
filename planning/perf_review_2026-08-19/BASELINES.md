@@ -423,3 +423,90 @@ cell-sorting-by-max-Z idea, which was explicitly out of scope for this wave.
   the fifth compare against a verbatim copy of the pre-change body — bit
   patterns for the drop, exhaustive lattice for the containment — rather than
   against a pinned constant, so they cannot rot.
+
+---
+
+# Campaign scoreboard — waves 1-3 landed
+
+Consolidated by the orchestrator from the per-lane `DELTA_*.md` files, which
+remain the primary record (method, sentries, declined levers). This table is a
+summary, not a substitute: read the delta doc before citing a number.
+
+## Measurement discipline — read before comparing anything here
+
+**Cross-day absolutes on this box are NOT comparable.** The SIM lane measured
+the *unmodified* tree at 98.4 ms on `sim_kernel_plunge/24` against Phase 0's
+126.61 ms — a 22% swing with no code change. Only **paired same-session A/B**
+(measure the tree as found, then the change, in one session) is load-bearing.
+Later waves quote paired numbers; the Phase 0 column below is the original
+capture and is included for shape, not for arithmetic.
+
+Criterion's stored state under `target/criterion/` has been overwritten several
+times by lane runs. The numbers written down here and in the delta docs are the
+record.
+
+## Landed
+
+| Finding | Commit | Measured | Delta doc |
+|---|---|---|---|
+| **G9** v-carve/inlay distance field | `7d9557db` | `gen_vcarve_field` 193.67 ms → **15.869 ms** (**12.2×**) | `DELTA_gen_w3.md` |
+| **G1** push-cutter band query | `932a9719` | `push_cutter_batch/terrain` **4.51×**; `gen_waterline/L20` 97.84 → **31.83 ms** (3.07×) | `DELTA_gen_w2b.md` |
+| **G4** Polygon2 cached AABB | `1e3c5d8c` | `contains_point` **3.90×**; RegionSet **51×** | (in-file, above) |
+| **G2** 2.5D depth hoist | `473c3d1f` | L20/L1 **22.2× → 1.04×**; pocket L20 738.19 → **33.78 ms** | `DELTA_gen_w2.md` |
+| **face.rs** (G2 sibling) | `7d9557db` | `gen_face_levels` 264.89 → **85.18 µs** (3.11×) | `DELTA_gen_w3.md` |
+| **G3** drop-cutter early-outs | `ca92d767` | see in-file section above | (in-file, above) |
+| **S4a/S7/S6** | `5099db9e`, `29823980` | `flat6/cs0.25` **−7.10%**, `e2e/res1` **−7.93%**; plunge arms **no change** | `DELTA_sim_w1.md` |
+| **V8/V13** content-keyed uploads | `08345ee4` | 8-op generate: 36 → **8** toolpath builds, 8 → **0** mesh builds | `DELTA_viz_w2.md` |
+| **V1/V3/V4** viz caching | `42ed4774` | per-frame triage/deflection/issues rebuilds removed | — |
+
+Phase 0 instruments: `bfe4e251` (benches + goldens), `b2a5e661` (3D golden arm).
+Gate repair: `e4379dd5`.
+
+## Corrections to PERF_REVIEW — the campaign's other output
+
+Every wave refuted something. These are the corrections, all consolidated into
+`PERF_REVIEW.md` in place:
+
+| Finding | What the review said | What was true |
+|---|---|---|
+| **S7** | fast paths "exact in squared space vs hoisted `(r±ext_diag)²`" | True over the reals, **false in f64** — 32 disagreements in 302,900 probes, both directions; no comparison operator makes it exact. Fixed by *solving* for the flip point (exact by construction), not by asserting the identity. |
+| **S4a** | `coverage_max` "has zero consumers" | Read by the **public** `DexelGrid::coverage_at`, six times, from a sentry. True claim is the narrower one its docstring made: no *production* reader. |
+| **G3** | `tri.bbox.max.z <= cl.z` "provably sound" | **Unsound.** `edge_drop`'s ±1e-8 slack plus flat-tip `vertex_drop` make `bbox.max.z == cl.z` systematic. Landed form pads by 1e-4. |
+| **G9** | index is the fix; `par_iter()` "mechanical" | **Inverted.** Parallelism **4.10×**, index **2.98×**. |
+| **G9** | three call sites share a distance field | **Two.** `rest.rs:126` is `contains_point` — a containment query, not a distance field, and it already has a bbox early-out. |
+| **G2** | `offset_library_failures` over-counts by L | True and self-correcting — but **`truncated_core_mm2` was also ×L**, an unnamed *quantitative* defect on a surface reaching narration/diagnostics/MCP. Fixed. |
+| **V3** | hoist the deflection guard | Would **silently stale** the 2D tool overlay — the pre-guard block publishes six playback fields it reads every frame. |
+| **V4** | return `&[..]` | Does not compile — two call sites hold the list across a later `&mut sim`. `Arc<[SimulationIssue]>` does. |
+| **V8** | per-resource dirty bits | Substituted **content keys**: dirty bits put the burden on ~40 setters, and a setter naming too few is *exactly what V13 is*. |
+| **V13** | highlight "one frame stale" | Reduced to a one-*repaint* lag, not eliminated; killing it would reorder the frame for all ~40 upload sites. |
+
+## Levers measured and declined
+
+Recorded so they are not re-proposed:
+
+- **G1 lever 2** (reuse fiber candidates across Z levels): query is **3.0%** of a
+  level's cost, so the ceiling across 20 levels is **2.9%**. Not taken.
+- **S7's `cell_upper_bound_surface` tail**: prescribed formula dimensionally
+  wrong as written, and that sqrt feeds `conservative_top` → rapid-collision
+  detection, a **safety** channel. Declined.
+- **S6 `span_path` interning**: neither `Arc<[SpanId]>` nor `SmallVec`
+  serialises without a workspace-manifest edit, and sharing does not survive a
+  round-trip. Deferred; sized at single-digit percent.
+- **STEP/enriched mesh indexing** (V13 adjacent): structural, not contained —
+  that path is flat-shaded *and* per-face-group coloured, so a shared vertex
+  needs agreement on both. The STL path is indexed because it *is* smooth-shaded.
+
+## Calibration for the remaining sim work
+
+The SIM lane's parting note, which sets expectations for S2/S3: **"S7 is a
+rounding error next to S2/S3. The loop's cost is three ray walks, a LUT probe
+and an RMW, not two sqrts."** The plunge arms showing *no change* under S7
+(p=0.08, p=0.76) are the evidence — that fixture routes through the already
+sqrt-free `point_cell_coverage`.
+
+## In flight
+
+S2 (tile max-top early-out), S3 (row-band parallel stamping), G5/G6 (shared NN
+orderer + surface_link provenance inversion), G8 (per-setup index/silhouette/
+mesh caching). Not yet started: S1, S5, S8, G7, G10-G12, V2, V5-V7, V9, V11,
+V14, V15, and the 0C wanaka wall-clock protocol.
