@@ -158,6 +158,12 @@ pub struct SimulationDebugState {
     /// The lookup needs per-toolpath peak axial DOC and otherwise scans the
     /// full sample trace for every toolpath if rebuilt per frame.
     pub(crate) chipload_envelope_cache: ChiploadEnvelopeCache,
+    /// Cached simulation triage keyed by sim trace + edit counter, matching
+    /// the `load_report_cache` / `chipload_envelope_cache` staleness rule.
+    /// Building it walks the full cut trace per toolpath twice (diagnostics
+    /// then triage) with a per-toolpath height sort, so the inspector's
+    /// measurability strip must not rebuild it every frame.
+    pub(crate) triage_cache: SimulationTriageCache,
     /// Cached sorted issue list keyed by sim/debug trace fingerprints.
     /// Avoids rebuilding + sorting the same air-cut/hotspot/collision list
     /// in multiple panels during smooth playback.
@@ -180,6 +186,18 @@ pub(crate) struct ChiploadEnvelopeCache {
     envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
 }
 
+/// Cached [`rs_cam_core::sim_triage::SimulationTriage`] for the inspector.
+///
+/// `built` distinguishes "never built" from "built for a project with no cut
+/// trace", because `trace_ptr == None` is itself a legitimate cached state.
+#[derive(Default)]
+pub(crate) struct SimulationTriageCache {
+    built: bool,
+    trace_ptr: Option<usize>,
+    edit_counter: u64,
+    triage: rs_cam_core::sim_triage::SimulationTriage,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct IssueListCacheKey {
     cut_trace_ptr: Option<usize>,
@@ -189,10 +207,25 @@ struct IssueListCacheKey {
     collision_fingerprint: u64,
 }
 
-#[derive(Default)]
+/// Cached issue list. Held behind an `Arc<[_]>` rather than a `Vec` because
+/// the list runs to tens of thousands of entries (each with a `String`) and
+/// three or four panels ask for it every frame — a cache hit must not deep
+/// copy it. `hotspot_count` is folded in at build time so the timeline's
+/// hotspot pill needs no scan at all.
 struct IssueListCache {
     key: Option<IssueListCacheKey>,
-    issues: Vec<SimulationIssue>,
+    issues: Arc<[SimulationIssue]>,
+    hotspot_count: usize,
+}
+
+impl Default for IssueListCache {
+    fn default() -> Self {
+        Self {
+            key: None,
+            issues: Arc::from(Vec::new()),
+            hotspot_count: 0,
+        }
+    }
 }
 
 /// Per-(toolpath, span) aggregate of cut samples whose `span_path` contains
@@ -689,6 +722,7 @@ impl SimulationState {
                 span_aggregates: SpanAggregateCache::default(),
                 load_report_cache: ToolLoadReportCache::default(),
                 chipload_envelope_cache: ChiploadEnvelopeCache::default(),
+                triage_cache: SimulationTriageCache::default(),
                 issue_cache: IssueListCache::default(),
                 semantic_indexes: HashMap::new(),
                 runtime_profiles: HashMap::new(),
@@ -775,6 +809,52 @@ impl SimulationState {
         self.debug.chipload_envelope_cache.edit_counter = edit_counter;
         self.debug.chipload_envelope_cache.envelopes = Some(envelopes.clone());
         envelopes
+    }
+
+    /// Simulation triage cached by simulation trace pointer and GUI edit
+    /// counter — the same staleness rule as [`Self::cached_load_report`] and
+    /// [`Self::cached_chipload_envelopes`].
+    ///
+    /// Building it is `O(samples × toolpaths)` with a per-toolpath sort (full
+    /// `ProjectDiagnostics` + `MeasurabilityReport` + `SimulationTriage::build`,
+    /// plus a `build_cutter` per toolpath), and the inspector's measurability
+    /// strip asks for it on every frame the Diagnostics header is open.
+    /// Returned by reference: the triage carries several `Vec<Finding>`, so
+    /// even a cache-hit clone would be per-frame allocation.
+    pub fn cached_simulation_triage(
+        &mut self,
+        session: &ProjectSession,
+        edit_counter: u64,
+    ) -> &rs_cam_core::sim_triage::SimulationTriage {
+        let trace_ptr = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
+            .map(|trace| Arc::as_ptr(trace) as usize);
+        let fresh = self.debug.triage_cache.built
+            && self.debug.triage_cache.trace_ptr == trace_ptr
+            && self.debug.triage_cache.edit_counter == edit_counter;
+        if !fresh {
+            let start = std::time::Instant::now();
+            // Scoped so the immutable `project_evidence` borrow of `self`
+            // ends before the cache write below.
+            let triage = {
+                let evidence = self.project_evidence();
+                session.simulation_triage(&evidence)
+            };
+            let elapsed = start.elapsed();
+            if elapsed > std::time::Duration::from_millis(8) {
+                tracing::debug!(
+                    elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                    "slow simulation triage build"
+                );
+            }
+            self.debug.triage_cache.built = true;
+            self.debug.triage_cache.trace_ptr = trace_ptr;
+            self.debug.triage_cache.edit_counter = edit_counter;
+            self.debug.triage_cache.triage = triage;
+        }
+        &self.debug.triage_cache.triage
     }
 
     /// Total moves from results (0 if no results).
@@ -1560,11 +1640,32 @@ impl SimulationState {
         }
     }
 
-    pub fn issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Vec<SimulationIssue> {
+    /// Sorted issue list for the current simulation.
+    ///
+    /// Returns a shared handle, not a copy: the list runs to tens of
+    /// thousands of entries (each with a `String` label) and three or four
+    /// panels ask for it every frame, so a cache hit must cost an `Arc`
+    /// bump rather than a deep clone. `Arc<[_]>` derefs to `&[_]`, so read
+    /// sites (`iter`, `get`, indexing, `&issues` into a `&[_]` parameter)
+    /// are unchanged.
+    pub fn issues(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> Arc<[SimulationIssue]> {
+        self.ensure_issue_cache(gui, max_feed_mm_min);
+        Arc::clone(&self.debug.issue_cache.issues)
+    }
+
+    /// Number of `Hotspot` issues, folded in when the issue cache is built.
+    /// The timeline's pill needs only this count and used to clone the whole
+    /// list to get it.
+    pub fn issue_hotspot_count(&mut self, gui: &GuiState, max_feed_mm_min: f64) -> usize {
+        self.ensure_issue_cache(gui, max_feed_mm_min);
+        self.debug.issue_cache.hotspot_count
+    }
+
+    fn ensure_issue_cache(&mut self, gui: &GuiState, max_feed_mm_min: f64) {
         self.sync_debug_state(gui, max_feed_mm_min);
         let cache_key = self.issue_cache_key(gui, max_feed_mm_min);
         if self.debug.issue_cache.key == Some(cache_key) {
-            return self.debug.issue_cache.issues.clone();
+            return;
         }
 
         let start = std::time::Instant::now();
@@ -1705,9 +1806,13 @@ impl SimulationState {
                 "slow simulation issue list build"
             );
         }
+        let hotspot_count = issues
+            .iter()
+            .filter(|issue| issue.kind == SimulationIssueKind::Hotspot)
+            .count();
         self.debug.issue_cache.key = Some(cache_key);
-        self.debug.issue_cache.issues = issues.clone();
-        issues
+        self.debug.issue_cache.issues = Arc::from(issues);
+        self.debug.issue_cache.hotspot_count = hotspot_count;
     }
 
     fn issue_cache_key(&self, gui: &GuiState, max_feed_mm_min: f64) -> IssueListCacheKey {

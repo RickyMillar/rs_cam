@@ -585,8 +585,11 @@ fn draw_project_section(
             // nobody reads by the time it matters.
             {
                 use rs_cam_core::sim_measurability::Measurability;
-                let evidence = sim.project_evidence();
-                let triage = session.simulation_triage(&evidence);
+                // Cached by (trace pointer, edit counter) — the same
+                // staleness rule as the load report and chipload envelopes
+                // beside it. Rebuilding the triage per frame is a full
+                // trace pass per toolpath plus a sort, to render one strip.
+                let triage = sim.cached_simulation_triage(session, gui.edit_counter);
                 let unmeasured: Vec<_> = triage
                     .measurability
                     .entries

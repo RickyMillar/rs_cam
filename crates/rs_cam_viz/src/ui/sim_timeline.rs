@@ -3,9 +3,7 @@ use super::components::{CountPill, FreshnessGate};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{
-    ActiveSemanticItem, SimulationAnalyticsTab, SimulationIssueKind, SimulationState,
-};
+use crate::state::simulation::{ActiveSemanticItem, SimulationAnalyticsTab, SimulationState};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::simulation_cut::SimulationCutSample;
@@ -114,11 +112,7 @@ fn draw_verdict_hud(
     // and re-enters material a run breaks and a new segment opens. An
     // all-air toolpath is the CHEAP case (one long run); a normal pocket is
     // the expensive one.
-    let hotspot_count = sim
-        .issues(gui, max_feed)
-        .iter()
-        .filter(|i| i.kind == SimulationIssueKind::Hotspot)
-        .count();
+    let hotspot_count = sim.issue_hotspot_count(gui, max_feed);
 
     // TIM-005 — the pills *are* the navigation, not a sign pointing at the
     // markers below. Pre-compute the first offending move for the exceeds and
