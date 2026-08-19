@@ -7,6 +7,7 @@
 mod cut_direction;
 mod simulation;
 mod stamping;
+mod tile_mip;
 
 pub use cut_direction::StockCutDirection;
 pub use simulation::{
@@ -117,7 +118,7 @@ impl TriDexelStock {
         let (cu, cv, cd) = direction.decompose(cx, cy, tip_z);
         let from_high = direction.cuts_from_high_side();
         let grid = self.ensure_grid(direction);
-        stamp_point_on_grid(grid, lut, radius, cu, cv, cd, from_high);
+        stamp_point_on_grid(grid, lut, radius, cu, cv, cd, from_high, None);
     }
 
     // ── Swept linear segment ────────────────────────────────────────────
@@ -134,11 +135,28 @@ impl TriDexelStock {
         end: P3,
         direction: StockCutDirection,
     ) {
+        self.stamp_linear_segment_with_mip(lut, radius, start, end, direction, &mut None);
+    }
+
+    /// [`Self::stamp_linear_segment`] with the S2 air-skip mip threaded in.
+    ///
+    /// Private because the mip is an optimisation artefact with a lifetime tied
+    /// to one replay of one toolpath, not part of the stock's public surface.
+    /// The public entry point passes `None` and behaves exactly as before.
+    fn stamp_linear_segment_with_mip(
+        &mut self,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        start: P3,
+        end: P3,
+        direction: StockCutDirection,
+        mip: &mut Option<tile_mip::TileMaxTop>,
+    ) {
         let s = direction.decompose(start.x, start.y, start.z);
         let e = direction.decompose(end.x, end.y, end.z);
         let from_high = direction.cuts_from_high_side();
         let grid = self.ensure_grid(direction);
-        stamp_segment_on_grid(grid, lut, radius, s, e, from_high);
+        stamp_segment_on_grid(grid, lut, radius, s, e, from_high, mip.as_mut());
     }
 
     /// Sum of material top-Z values in a circular window around (cx, cy).

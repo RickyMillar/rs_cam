@@ -8,6 +8,7 @@ use super::stamping::{
     CuttingCaptureParams, SegmentSampleParams, build_move_semantic_lookup, chipload_mm_per_tooth,
     lerp_point, sample_segment_runtime, stamp_segment_with_metrics,
 };
+use super::tile_mip::TileMaxTop;
 use super::{StockCutDirection, TriDexelStock};
 use crate::ids::ToolpathId;
 
@@ -62,6 +63,10 @@ impl TriDexelStock {
         }
 
         let mut arc_buf = Vec::new();
+        // S2 — same air-skip as the metric path. This is the playback stamp
+        // `compute/simulate.rs` runs against `global_stock` for EVERY toolpath,
+        // so it is a second full replay of the whole project.
+        let mut air_mip = self.build_air_mip(lut, direction);
 
         for i in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -71,14 +76,28 @@ impl TriDexelStock {
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {}
                 MoveType::Linear { .. } => {
-                    self.stamp_linear_segment(lut, radius, start, end, direction);
+                    self.stamp_linear_segment_with_mip(
+                        lut,
+                        radius,
+                        start,
+                        end,
+                        direction,
+                        &mut air_mip,
+                    );
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
                     for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment_with_mip(
+                            lut,
+                            radius,
+                            w[0],
+                            w[1],
+                            direction,
+                            &mut air_mip,
+                        );
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
@@ -86,12 +105,39 @@ impl TriDexelStock {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
                     for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment_with_mip(
+                            lut,
+                            radius,
+                            w[0],
+                            w[1],
+                            direction,
+                            &mut air_mip,
+                        );
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// Build the S2 air-skip mip for `direction`, or `None` where the skip
+    /// cannot be shown exact.
+    ///
+    /// Two preconditions, both read off the objects that will actually be
+    /// used rather than assumed from the call site: `conservative_top` is a
+    /// high-side channel only, and the skip's `tip <= tip + h(d)` step needs
+    /// `h >= 0` over a total profile. Returning `None` turns every downstream
+    /// early-out off, which is the safe direction.
+    fn build_air_mip(
+        &mut self,
+        lut: &RadialProfileLUT,
+        direction: StockCutDirection,
+    ) -> Option<TileMaxTop> {
+        if direction.cuts_from_high_side() && lut.profile_is_nonneg_total() {
+            Some(TileMaxTop::build(self.ensure_grid(direction)))
+        } else {
+            None
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -163,6 +209,15 @@ impl TriDexelStock {
         let mut cumulative_time_s = 0.0;
         let mut next_sample_index = 0usize;
         let mut arc_buf = Vec::new();
+
+        // S2 (PERF_REVIEW): coarse max-`conservative_top` mip, so a stamp over
+        // ground already cut below it costs a handful of tile reads instead of
+        // a full swept-bbox sweep. Built once per toolpath and refreshed on an
+        // amortised budget — see `tile_mip`. Only the high side has a
+        // `conservative_top` channel, and only a non-negative total profile
+        // makes the skip exact, so the mip is simply not built otherwise and
+        // every early-out downstream degrades to "never fires".
+        let mut air_mip = self.build_air_mip(lut, direction);
 
         for move_index in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -263,6 +318,7 @@ impl TriDexelStock {
                         &mut cumulative_time_s,
                         &mut next_sample_index,
                         &mut samples,
+                        &mut air_mip,
                     )?;
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
@@ -294,6 +350,7 @@ impl TriDexelStock {
                             &mut cumulative_time_s,
                             &mut next_sample_index,
                             &mut samples,
+                            &mut air_mip,
                         )?;
                     }
                 }
@@ -334,6 +391,7 @@ impl TriDexelStock {
                             &mut cumulative_time_s,
                             &mut next_sample_index,
                             &mut samples,
+                            &mut air_mip,
                         )?;
                     }
                 }
@@ -380,6 +438,7 @@ impl TriDexelStock {
         let first = start_move.max(1);
         let last = end_move.min(toolpath.moves.len());
         let mut arc_buf = Vec::new();
+        let mut air_mip = self.build_air_mip(lut, direction);
 
         for i in first..last {
             let start = toolpath.moves[i - 1].target;
@@ -388,20 +447,41 @@ impl TriDexelStock {
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {}
                 MoveType::Linear { .. } => {
-                    self.stamp_linear_segment(lut, radius, start, end, direction);
+                    self.stamp_linear_segment_with_mip(
+                        lut,
+                        radius,
+                        start,
+                        end,
+                        direction,
+                        &mut air_mip,
+                    );
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
                     for w in arc_buf.windows(2) {
-                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment_with_mip(
+                            lut,
+                            radius,
+                            w[0],
+                            w[1],
+                            direction,
+                            &mut air_mip,
+                        );
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
                     linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
                     for w in arc_buf.windows(2) {
-                        self.stamp_linear_segment(lut, radius, w[0], w[1], direction);
+                        self.stamp_linear_segment_with_mip(
+                            lut,
+                            radius,
+                            w[0],
+                            w[1],
+                            direction,
+                            &mut air_mip,
+                        );
                     }
                 }
             }
@@ -422,6 +502,7 @@ impl TriDexelStock {
         cumulative_time_s: &mut f64,
         next_sample_index: &mut usize,
         samples: &mut Vec<SimulationCutSample>,
+        air_mip: &mut Option<TileMaxTop>,
     ) -> Result<(), Cancelled> {
         let segment_length = (end - start).norm();
         if segment_length <= 1e-9 {
@@ -469,6 +550,7 @@ impl TriDexelStock {
                 midpoint,
                 direction,
                 params.capture_arc_engagement,
+                air_mip,
             );
             let (axial_engagement_mm, plunge_descent_mm) =
                 if params.cut_kinematics == CutKinematics::Plunge {
@@ -566,6 +648,7 @@ impl TriDexelStock {
         midpoint: P3,
         direction: StockCutDirection,
         capture_arc_engagement: bool,
+        air_mip: &mut Option<TileMaxTop>,
     ) -> (f64, f64, Option<f64>, f64) {
         let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
@@ -582,6 +665,7 @@ impl TriDexelStock {
             mv,
             from_high,
             capture_arc_engagement,
+            air_mip.as_mut(),
         )
     }
 }

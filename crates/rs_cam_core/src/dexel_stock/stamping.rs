@@ -9,6 +9,7 @@
 //! `simulation.rs` within the `dexel_stock` module, but do not leak out of
 //! the crate.
 
+use super::tile_mip::TileMaxTop;
 use crate::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
@@ -374,6 +375,61 @@ fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64>
     }
 }
 
+/// The lowest tip position the segment kernel can evaluate, in the same
+/// floating-point arithmetic the kernel itself uses (PERF_REVIEW S2).
+///
+/// The per-cell tip height is `sd + t_center * seg_dd` with
+/// `t_center ∈ [0, 1]` — `clamp`ed, so both endpoints are attainable.
+/// `min(sd, ed)` is the obvious answer and it is **wrong at the last bit**:
+/// `seg_dd` is `fl(ed − sd)`, and `fl(sd + seg_dd)` need not equal `ed`. Both
+/// `fl(t·seg_dd)` and `fl(sd + x)` are monotone in their arguments, so the
+/// attainable minimum is the value at whichever endpoint minimises them —
+/// which is what this returns, exactly.
+///
+/// Getting this wrong by one ULP is precisely the class of defect that made
+/// the review's S7 "exact in squared space" claim false and G3's
+/// `bbox.max.z <= cl.z` reject unsound. The skip is only exact if the bound
+/// it compares against is the bound the kernel actually reaches.
+#[inline]
+fn segment_tip_low(sd: f64, seg_dd: f64) -> f64 {
+    if seg_dd < 0.0 { sd + seg_dd } else { sd }
+}
+
+/// Can a stamp whose lowest tip position is `tip_lo` remove anything at a cell
+/// whose sliver-safe bound is `conservative_top`?
+///
+/// `false` ⇒ the cell is **inert** for this stamp: `ray_blend_above` is a
+/// no-op, `ray_material_length_above` at the cutter surface is `0.0`, and
+/// `lower_conservative_top` is a no-op. The argument, and every step of it is
+/// load-bearing:
+///
+/// 1. `ray_top <= conservative_top` — maintained by design (see
+///    [`DexelGrid::conservative_top`]); it is lowered only to an upper bound
+///    of the cutter surface across the whole cell, and only when the cell is
+///    covered end to end, in which case the blend is a plain
+///    `ray_subtract_above` to a surface at or below that bound.
+/// 2. `conservative_top <= tip_lo <= tip <= tip + h(d)` — the second step
+///    needs `h >= 0`, which is why the caller gates on
+///    [`RadialProfileLUT::profile_is_nonneg_total`] rather than assuming it.
+/// 3. The surface the kernel actually writes is `(tip + h) as f32`. Rounding
+///    to nearest is **monotone**, and `conservative_top` is already an `f32`,
+///    so `f32(tip + h) >= f32(conservative_top as f64) = conservative_top >=
+///    ray_top`. The `f32`/`f64` boundary does not open a gap.
+///
+/// Non-strict `<=` throughout is deliberate and checked: at exact equality
+/// `ray_blend_above` skips the segment (`seg.exit <= above_lo`),
+/// `ray_material_length_above` skips it (`seg.exit <= z`), and
+/// `lower_conservative_top` skips it (`surface < self.conservative_top[idx]`
+/// is false). Equality is the common case, not a corner one — a flat end mill
+/// re-passing ground it already cut at the same Z hits it on every cell.
+#[inline]
+fn cell_can_remove(conservative_top: f32, tip_lo: f64) -> bool {
+    let top = conservative_top as f64;
+    // Spelled out rather than `!(top <= tip_lo)` so the NaN arm is explicit:
+    // an unorderable bound must never be read as "inert".
+    top > tip_lo || top.is_nan() || tip_lo.is_nan()
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct CuttingCaptureParams<'a> {
     pub(super) toolpath_id: ToolpathId,
@@ -408,6 +464,7 @@ pub(super) struct CuttingCaptureParams<'a> {
 /// `DEXEL_Z_ONLY_INVESTIGATION.md` §6.F): boundary cells are blended toward
 /// the cutter surface by their fractional coverage `f` instead of flipping
 /// binary on/off at the cell-center crossing.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn stamp_point_on_grid(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -416,7 +473,13 @@ pub(super) fn stamp_point_on_grid(
     cv: f64,
     tip_depth: f64,
     from_high: bool,
+    mip: Option<&mut TileMaxTop>,
 ) {
+    // S2. This kernel has no metric accumulators at all, so an inert cell can
+    // simply be dropped — no `pre_volume`/`post_volume` bookkeeping to
+    // reproduce, unlike `stamp_segment_with_metrics`.
+    let air_skip = mip.is_some() && from_high && lut.profile_is_nonneg_total();
+    let mut mip = if air_skip { mip } else { None };
     let cs = grid.cell_size;
     // §6.F gap 3: extend bounding box past `r` so annular cells (centers
     // outside disk but sub-samples reaching into it) are visited. The
@@ -436,6 +499,16 @@ pub(super) fn stamp_point_on_grid(
     let row_lo = row_min.max(0) as usize;
     let row_hi = (row_max as usize).min(grid.rows.saturating_sub(1));
 
+    if let Some(m) = mip.as_mut() {
+        let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
+        m.charge_and_maybe_refresh(grid, bbox_cells);
+        if !cell_can_remove(m.max_over(row_lo, row_hi, col_lo, col_hi), tip_depth) {
+            m.note_stamp_skipped();
+            return;
+        }
+        m.note_stamp_run(bbox_cells as u64, 0);
+    }
+
     let r_sq = lut.radius_sq();
 
     for row in row_lo..=row_hi {
@@ -446,6 +519,9 @@ pub(super) fn stamp_point_on_grid(
             let du = cell_u - cu;
             let coverage = point_cell_coverage(du, dv, r_sq, cs);
             if coverage <= 0.0 {
+                continue;
+            }
+            if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), tip_depth) {
                 continue;
             }
             // §6.F gap 3: interior cells query h at the cell center; annular
@@ -492,6 +568,7 @@ pub(super) fn stamp_segment_on_grid(
     start: (f64, f64, f64),
     end: (f64, f64, f64),
     from_high: bool,
+    mip: Option<&mut TileMaxTop>,
 ) {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
@@ -500,10 +577,14 @@ pub(super) fn stamp_segment_on_grid(
     let seg_dd = ed - sd;
     let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
 
+    // S2 — see `stamp_point_on_grid`. No accumulators here either.
+    let air_skip = mip.is_some() && from_high && lut.profile_is_nonneg_total();
+    let mut mip = if air_skip { mip } else { None };
+
     // Degenerate segment (zero planar length) — stamp at the min depth.
     if seg_len_sq < 1e-20 {
         let d = sd.min(ed);
-        stamp_point_on_grid(grid, lut, radius, su, sv, d, from_high);
+        stamp_point_on_grid(grid, lut, radius, su, sv, d, from_high, mip);
         return;
     }
 
@@ -525,6 +606,17 @@ pub(super) fn stamp_segment_on_grid(
     let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
     let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
 
+    let tip_lo = segment_tip_low(sd, seg_dd);
+    if let Some(m) = mip.as_mut() {
+        let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
+        m.charge_and_maybe_refresh(grid, bbox_cells);
+        if !cell_can_remove(m.max_over(row_lo, row_hi, col_lo, col_hi), tip_lo) {
+            m.note_stamp_skipped();
+            return;
+        }
+        m.note_stamp_run(bbox_cells as u64, 0);
+    }
+
     for row in row_lo..=row_hi {
         let cell_v = grid.origin_v + row as f64 * cs;
         for col in col_lo..=col_hi {
@@ -542,6 +634,9 @@ pub(super) fn stamp_segment_on_grid(
                 fast,
             );
             if coverage <= 0.0 {
+                continue;
+            }
+            if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), tip_lo) {
                 continue;
             }
             let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
@@ -594,6 +689,30 @@ pub(super) fn stamp_segment_on_grid(
 /// Returns `(axial_doc_mm, radial_engagement, arc_engagement_radians, volume_removed_mm3)`,
 /// where `axial_doc_mm` is the maximum per-cell material length removed by
 /// this stamp.
+///
+/// # The S2 air-skip
+///
+/// `mip`, when supplied, enables the tile early-out of `PERF_REVIEW.md` S2 at
+/// two granularities. Both are **exact** — they produce bit-identical grids,
+/// bit-identical `conservative_top`, and a bit-identical return tuple — and
+/// the exactness argument is written out at [`cell_can_remove`].
+///
+/// * **Whole stamp.** If the mip's bound over the swept bounding box is at or
+///   below the lowest tip position, every cell is inert and the function
+///   returns without touching the grid. `pre_volume` and `post_volume` would
+///   have accumulated *identical addend sequences in identical order*, so
+///   their difference is exactly `0.0`; `perp_max > perp_min` is false so
+///   radial is `0.0`; `max_penetration` never leaves `0.0`.
+/// * **Per cell.** A cell whose own `conservative_top` is at or below the tip
+///   floor still has to contribute `pre_len·cell_area` to **both** volume
+///   accumulators, because `post_len == pre_len` bit-for-bit on an inert cell
+///   and the two sums are taken *separately* and differenced at the end.
+///   Dropping the pair — the literal "skip the tile" of the review's text —
+///   would reassociate the volume sum and move `removed_volume_est_mm3` in its
+///   last bits. Keeping the pair costs one ray walk and buys the LUT probe,
+///   `ray_material_length_above`, the blend, the second ray walk, the
+///   `cell_upper_bound_surface` sqrt, the `conservative_top` read-modify-write
+///   and the whole engagement block.
 pub(super) fn stamp_segment_with_metrics(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -604,6 +723,7 @@ pub(super) fn stamp_segment_with_metrics(
     mid_v: f64,
     from_high: bool,
     capture_arc_engagement: bool,
+    mip: Option<&mut TileMaxTop>,
 ) -> (f64, f64, Option<f64>, f64) {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
@@ -611,6 +731,14 @@ pub(super) fn stamp_segment_with_metrics(
     let seg_dv = ev - sv;
     let seg_dd = ed - sd;
     let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
+
+    // S2: the skip reasons about `tip + h(d)` from below, so it needs
+    // `h >= 0`, and it reproduces the kernel's own `None`-means-no-
+    // contribution branch, so it needs the profile to be total. Both are read
+    // off the table that will actually be queried. `from_high` because
+    // `conservative_top` is a high-side channel only.
+    let air_skip = mip.is_some() && from_high && lut.profile_is_nonneg_total();
+    let mut mip = if air_skip { mip } else { None };
 
     // Degenerate segment (pure-vertical, e.g. drill plunge): planar offset is
     // zero, so the metric formulas below would divide by zero. Stamp at the
@@ -636,7 +764,25 @@ pub(super) fn stamp_segment_with_metrics(
         let row_lo = row_min.max(0) as usize;
         let row_hi = (row_max as usize).min(grid.rows.saturating_sub(1));
 
+        // S2. The degenerate branch accumulates `coverage · above · cell_area`
+        // and an inert cell has `above == 0.0` exactly, so here — unlike the
+        // swept branch — a skipped cell adds a literal `0.0` and dropping it
+        // is bit-exact with no bookkeeping at all.
+        let mut tile_bound = f32::INFINITY;
+        let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
+        if let Some(m) = mip.as_mut() {
+            m.charge_and_maybe_refresh(grid, bbox_cells);
+            tile_bound = m.max_over(row_lo, row_hi, col_lo, col_hi);
+            if !cell_can_remove(tile_bound, d) {
+                m.note_stamp_skipped();
+            }
+        }
+        if !cell_can_remove(tile_bound, d) {
+            return (descent, 0.0, None, 0.0);
+        }
+
         let mut removed_volume = 0.0_f64;
+        let mut cells_skipped = 0u64;
 
         for row in row_lo..=row_hi {
             let cell_v = grid.origin_v + row as f64 * cs;
@@ -646,6 +792,10 @@ pub(super) fn stamp_segment_with_metrics(
                 let du = cell_u - su;
                 let coverage = point_cell_coverage(du, dv, r_sq, cs);
                 if coverage <= 0.0 {
+                    continue;
+                }
+                if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), d) {
+                    cells_skipped += 1;
                     continue;
                 }
                 let dist_sq = du * du + dv * dv;
@@ -682,6 +832,9 @@ pub(super) fn stamp_segment_with_metrics(
             }
         }
 
+        if let Some(m) = mip.as_mut() {
+            m.note_stamp_run(bbox_cells as u64, cells_skipped);
+        }
         let radial = if removed_volume > 1e-9 { 1.0 } else { 0.0 };
         return (descent, radial, None, removed_volume);
     }
@@ -706,6 +859,30 @@ pub(super) fn stamp_segment_with_metrics(
     let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
     let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
 
+    // S2 — see the function docs. `tip_lo` is the lowest tip position any cell
+    // in this loop can see, computed in the kernel's own arithmetic.
+    let tip_lo = segment_tip_low(sd, seg_dd);
+    let mut tile_bound = f32::INFINITY;
+    let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
+    if let Some(m) = mip.as_mut() {
+        m.charge_and_maybe_refresh(grid, bbox_cells);
+        tile_bound = m.max_over(row_lo, row_hi, col_lo, col_hi);
+        if !cell_can_remove(tile_bound, tip_lo) {
+            m.note_stamp_skipped();
+        }
+    }
+    if !cell_can_remove(tile_bound, tip_lo) {
+        // Every cell is inert: both volume accumulators would take the same
+        // addends in the same order, so the difference is exactly zero, no
+        // cell qualifies for the perp extent, and nothing is removed.
+        let arc_engagement_radians = if capture_arc_engagement {
+            Some(0.0)
+        } else {
+            None
+        };
+        return (0.0, 0.0, arc_engagement_radians, 0.0);
+    }
+
     // Metrics accumulators.
     let mut pre_volume = 0.0f64;
     let mut post_volume = 0.0f64;
@@ -716,6 +893,7 @@ pub(super) fn stamp_segment_with_metrics(
     // way that is independent of sample density.
     let mut perp_min = f64::INFINITY;
     let mut perp_max = f64::NEG_INFINITY;
+    let mut cells_skipped = 0u64;
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
     // Both measurement floors this loop applies — the fixed material floor
@@ -742,11 +920,21 @@ pub(super) fn stamp_segment_with_metrics(
             if coverage <= 0.0 {
                 continue;
             }
+            let idx = row * grid.cols + col;
+            // S2 per-cell early-out. The two volume accumulators still take
+            // their (identical) addends — see the function docs for why
+            // dropping them would move `removed_volume_est_mm3`.
+            if air_skip && !cell_can_remove(grid.conservative_top[idx], tip_lo) {
+                let inert = ray_material_length(&grid.rays[idx]) as f64 * cell_area;
+                pre_volume += inert;
+                post_volume += inert;
+                cells_skipped += 1;
+                continue;
+            }
             let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
                 continue;
             };
 
-            let idx = row * grid.cols + col;
             let ray = &mut grid.rays[idx];
 
             // 1. Pre-stamp material totals (read before mutation). pre_len
@@ -776,7 +964,6 @@ pub(super) fn stamp_segment_with_metrics(
             //    (unlike the degenerate branch, §6.F gap 1).
             let post_len = ray_material_length(ray) as f64;
             post_volume += post_len * cell_area;
-
 
             // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
             // simulator actually runs, so it is the one that decides whether
@@ -818,6 +1005,10 @@ pub(super) fn stamp_segment_with_metrics(
                 }
             }
         }
+    }
+
+    if let Some(m) = mip.as_mut() {
+        m.note_stamp_run(bbox_cells as u64, cells_skipped);
     }
 
     // Width of cut perpendicular to motion / tool diameter.
@@ -1018,7 +1209,287 @@ pub(super) fn build_move_semantic_lookup(
     clippy::indexing_slicing
 )]
 mod tests {
+    use super::super::tile_mip::SkipStats;
     use super::*;
+    use crate::geo::BoundingBox3;
+    use crate::tool::{BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill};
+
+    // ── S2: the air-skip must change nothing at all ─────────────────────
+
+    type StampOut = (f64, f64, Option<f64>, f64);
+
+    /// Replay a scripted stamp sequence, with the S2 mip either supplied or
+    /// withheld, and hand back everything the kernel could possibly have
+    /// touched: the rays, the sliver-safe channel, and every returned tuple.
+    fn replay(
+        cutter: &dyn MillingCutter,
+        cell_size: f64,
+        from_high: bool,
+        air_skip: bool,
+    ) -> (DexelGrid, Vec<StampOut>, Option<SkipStats>) {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(30.0, 20.0, 8.0),
+        };
+        let mut grid = DexelGrid::z_grid_from_bounds(&bbox, cell_size);
+        let lut = RadialProfileLUT::from_cutter(cutter, crate::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+        let mut mip = if air_skip {
+            Some(TileMaxTop::build(&grid))
+        } else {
+            None
+        };
+        let mut out = Vec::new();
+        let stamp = |grid: &mut DexelGrid,
+                     out: &mut Vec<StampOut>,
+                     mip: &mut Option<TileMaxTop>,
+                     s: (f64, f64, f64),
+                     e: (f64, f64, f64)| {
+            out.push(stamp_segment_with_metrics(
+                grid,
+                &lut,
+                radius,
+                s,
+                e,
+                (s.0 + e.0) * 0.5,
+                (s.1 + e.1) * 0.5,
+                from_high,
+                true,
+                mip.as_mut(),
+            ));
+        };
+
+        // Three depth ladders. The third REPEATS the second, which is the
+        // case the non-strict comparisons in `cell_can_remove` exist for:
+        // re-passing ground already cut to exactly this tip height, where
+        // `conservative_top == tip` holds bit-for-bit on a flat end mill.
+        for depth in [6.0_f64, 4.0, 4.0] {
+            for line in 0..7 {
+                let y = 3.0 + 2.0 * line as f64;
+                // Overlapping sub-steps along the line: consecutive stamps
+                // share most of their footprint, which is where the per-cell
+                // early-out lives.
+                for step in 0..12 {
+                    let x0 = 3.0 + 2.0 * step as f64;
+                    stamp(
+                        &mut grid,
+                        &mut out,
+                        &mut mip,
+                        (x0, y, depth),
+                        (x0 + 2.0, y, depth),
+                    );
+                }
+            }
+            // A ramp — the tip varies along the segment, so `segment_tip_low`
+            // rather than the endpoint decides.
+            stamp(
+                &mut grid,
+                &mut out,
+                &mut mip,
+                (5.0, 15.0, depth + 1.5),
+                (20.0, 15.0, depth),
+            );
+            // A pure plunge — the degenerate branch, whose accumulator is a
+            // single running sum rather than a pre/post pair.
+            stamp(
+                &mut grid,
+                &mut out,
+                &mut mip,
+                (25.0, 10.0, depth + 1.5),
+                (25.0, 10.0, depth),
+            );
+            // GENUINE AIR: a pass at and above the untouched stock top, over
+            // ground the ladders have already cut well below it. This is the
+            // regime the whole-stamp early-out exists for, and without it the
+            // sweep only exercises the per-cell one.
+            for line in 0..4 {
+                let y = 4.0 + 4.0 * line as f64;
+                stamp(&mut grid, &mut out, &mut mip, (4.0, y, 8.5), (26.0, y, 8.5));
+            }
+            // …and a plunge through air, for the degenerate branch's own
+            // whole-stamp return.
+            stamp(
+                &mut grid,
+                &mut out,
+                &mut mip,
+                (15.0, 9.0, 9.5),
+                (15.0, 9.0, 8.5),
+            );
+        }
+        let stats = mip.map(|m| m.stats());
+        (grid, out, stats)
+    }
+
+    fn assert_grids_bit_identical(a: &DexelGrid, b: &DexelGrid, what: &str) {
+        assert_eq!(a.rays.len(), b.rays.len(), "{what}: ray count");
+        for (i, (ra, rb)) in a.rays.iter().zip(b.rays.iter()).enumerate() {
+            assert_eq!(ra.len(), rb.len(), "{what}: cell {i} segment count");
+            for (sa, sb) in ra.iter().zip(rb.iter()) {
+                assert_eq!(
+                    (sa.enter.to_bits(), sa.exit.to_bits()),
+                    (sb.enter.to_bits(), sb.exit.to_bits()),
+                    "{what}: cell {i} segment bits"
+                );
+            }
+        }
+        for (i, (ca, cb)) in a
+            .conservative_top
+            .iter()
+            .zip(b.conservative_top.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                ca.to_bits(),
+                cb.to_bits(),
+                "{what}: conservative_top bits at cell {i}"
+            );
+        }
+    }
+
+    /// **The S2 net.** The tile early-out claims to be an *exact* skip, not a
+    /// tolerated approximation, so this compares the two runs at bit level on
+    /// every channel the kernel writes — the rays, `conservative_top`, and all
+    /// four returned metrics — with no tolerance anywhere.
+    ///
+    /// Two things this is deliberately built to catch, both of which the
+    /// review's one-line prescription ("`tile_max_top <= depth_min` ⇒ skip the
+    /// tile, exactly") would have got wrong:
+    ///
+    /// 1. **The volume accumulators.** `pre_volume` and `post_volume` are
+    ///    summed *separately* over covered cells and differenced at the end.
+    ///    An inert cell contributes the same addend to both, so dropping it
+    ///    outright reassociates the sum and moves `removed_volume_est_mm3` in
+    ///    its last bits. The per-cell early-out therefore keeps the pair.
+    /// 2. **The tip floor.** `min(sd, ed)` is NOT the lowest tip the kernel
+    ///    evaluates, because `fl(sd + fl(ed − sd))` need not be `ed`. See
+    ///    [`segment_tip_low`].
+    ///
+    /// The `stats` assertions are the anti-vacuity half: a skip that never
+    /// fires is exactly identical and worth nothing.
+    #[test]
+    fn the_air_skip_is_bit_exact_and_not_vacuous() {
+        let cutters: Vec<(&str, Box<dyn MillingCutter>)> = vec![
+            ("flat6", Box::new(FlatEndmill::new(6.0, 25.0))),
+            ("ball6", Box::new(BallEndmill::new(6.0, 25.0))),
+            ("vbit60", Box::new(VBitEndmill::new(6.0, 60.0, 20.0))),
+            (
+                "tapered_ball1",
+                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+            ),
+        ];
+        let mut total_skipped_stamps = 0u64;
+        let mut flat_skipped_cells = 0u64;
+        let mut flat_bbox_cells = 0u64;
+
+        for (name, cutter) in &cutters {
+            for &cell_size in &[0.2_f64, 0.5] {
+                for &from_high in &[true, false] {
+                    let (g_off, out_off, _) = replay(cutter.as_ref(), cell_size, from_high, false);
+                    let (g_on, out_on, stats) = replay(cutter.as_ref(), cell_size, from_high, true);
+                    let what = format!("{name} cs={cell_size} from_high={from_high}");
+                    assert_grids_bit_identical(&g_off, &g_on, &what);
+                    assert_eq!(out_off.len(), out_on.len(), "{what}: stamp count");
+                    for (i, (a, b)) in out_off.iter().zip(out_on.iter()).enumerate() {
+                        assert_eq!(a.0.to_bits(), b.0.to_bits(), "{what}: stamp {i} axial");
+                        assert_eq!(a.1.to_bits(), b.1.to_bits(), "{what}: stamp {i} radial");
+                        assert_eq!(
+                            a.2.map(f64::to_bits),
+                            b.2.map(f64::to_bits),
+                            "{what}: stamp {i} arc"
+                        );
+                        assert_eq!(a.3.to_bits(), b.3.to_bits(), "{what}: stamp {i} volume");
+                    }
+                    if let Some(stats) = stats
+                        && from_high
+                    {
+                        total_skipped_stamps += stats.stamps_skipped;
+                        if *name == "flat6" {
+                            flat_skipped_cells += stats.cells_skipped;
+                            flat_bbox_cells += stats.cells_in_bbox;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            total_skipped_stamps > 0,
+            "no whole-stamp early-out fired anywhere in the sweep — the test \
+             proves nothing"
+        );
+        // The per-cell rate is asserted on the FLAT tool only, and that
+        // restriction is a finding, not a convenience. `conservative_top` is
+        // lowered to `tip + h(near_dist + cs·√2/2)`, so on a round-profile
+        // cutter a re-pass over its own ground still reads a bound strictly
+        // ABOVE the tip — correctly, because the rim cells of the old stamp
+        // really do still hold material the new stamp will take. Overlap
+        // therefore only becomes skippable when `h ≡ 0` across the cell; for
+        // ball, v-bit and tapered tools the early-out fires on genuine air
+        // and not on overlap. Measured across this sweep: ~15 % of in-bbox
+        // cells overall, ~40 % on the flat arm alone.
+        assert!(
+            flat_skipped_cells * 4 > flat_bbox_cells,
+            "the per-cell early-out took only {flat_skipped_cells} of \
+             {flat_bbox_cells} in-bbox cells on the flat arm; the fixture has \
+             stopped exercising the overlap regime S2 exists for"
+        );
+    }
+
+    /// `segment_tip_low` must return the exact minimum of the tip expression
+    /// the kernel evaluates, not the algebraically-equal `min(sd, ed)`.
+    /// Swept over pairs whose `fl(sd + fl(ed − sd))` differs from `ed`.
+    #[test]
+    fn segment_tip_low_is_the_true_floor_of_the_kernels_own_expression() {
+        let mut disagreements = 0usize;
+        let mut probes = 0usize;
+        // The pairs that matter are the ones where `fl(sd + fl(ed − sd))`
+        // is not `ed`. `(1.0, 1e-20)` is the clean one: `1e-20 − 1.0` rounds
+        // to exactly `-1.0`, so the kernel evaluates a tip of `0.0` at
+        // `t = 1` — BELOW `min(sd, ed)`. The naive floor is unsound there.
+        for &sd in &[0.0_f64, 1.0, -3.25, 1e6, -1e-7, 12.700000000000001] {
+            for &ed in &[
+                0.0_f64,
+                1.0,
+                -3.25,
+                1e6,
+                -1e-7,
+                12.700000000000001,
+                1e-16,
+                1e-20,
+                1e-25,
+            ] {
+                for k in -3i32..=3 {
+                    let mut ed = ed;
+                    for _ in 0..k.abs() {
+                        ed = if k > 0 { ed.next_up() } else { ed.next_down() };
+                    }
+                    let seg_dd = ed - sd;
+                    let floor = segment_tip_low(sd, seg_dd);
+                    // The kernel's own expression, at both attainable ends and
+                    // a spread of interior parameters.
+                    for i in 0..=64 {
+                        let t = i as f64 / 64.0;
+                        let depth = sd + t * seg_dd;
+                        probes += 1;
+                        assert!(
+                            depth >= floor,
+                            "sd={sd} ed={ed} t={t}: depth {depth} < floor {floor}"
+                        );
+                    }
+                    if floor != sd.min(ed) {
+                        disagreements += 1;
+                    }
+                }
+            }
+        }
+        assert!(probes > 10_000, "sweep thinned to {probes} probes");
+        assert!(
+            disagreements > 0,
+            "no (sd, ed) pair made `segment_tip_low` differ from `min(sd, ed)` \
+             — the sweep is not reaching the rounding case the function exists \
+             for, so it would pass with the naive form"
+        );
+    }
 
     /// The pre-S7 fast-path test, copied verbatim from the sqrt form it
     /// replaced. Kept as an oracle rather than a pinned constant so it cannot
@@ -1074,9 +1545,7 @@ mod tests {
         let radii = [
             0.1_f64, 0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 3.0, 6.0, 10.0, 12.7,
         ];
-        let cells = [
-            0.02_f64, 0.05, 0.1, 0.2, 0.25, 0.4, 0.5, 1.0, 2.0, 3.0, 5.0,
-        ];
+        let cells = [0.02_f64, 0.05, 0.1, 0.2, 0.25, 0.4, 0.5, 1.0, 2.0, 3.0, 5.0];
         const SWEEP_STEPS: usize = 600;
         const ULP_NEIGHBOURHOOD: i32 = 4;
 
