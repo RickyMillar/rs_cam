@@ -128,6 +128,8 @@ pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport 
                     pt.y *= scale;
                 }
             }
+            // `exterior` moved — see the mutation contract on `Polygon2`.
+            poly.invalidate_bbox();
         }
         for t in &mut drill_targets {
             t.x *= scale;

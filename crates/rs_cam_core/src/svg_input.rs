@@ -82,6 +82,8 @@ pub fn load_svg_data_mm(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, Sv
                 pt.y *= PX_TO_MM;
             }
         }
+        // `exterior` moved — see the mutation contract on `Polygon2`.
+        poly.invalidate_bbox();
     }
     Ok(polygons)
 }

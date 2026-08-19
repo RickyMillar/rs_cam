@@ -560,6 +560,8 @@ impl AnnotatedToolpath {
                         p.y += shift.y;
                     }
                 }
+                // `exterior` moved — see the mutation contract on `Polygon2`.
+                poly.invalidate_bbox();
             }
             regions
         });

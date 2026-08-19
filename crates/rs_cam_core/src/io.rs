@@ -154,6 +154,8 @@ fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64)
                 pt.y *= scale;
             }
         }
+        // `exterior` moved — see the mutation contract on `Polygon2`.
+        poly.invalidate_bbox();
     }
 }
 

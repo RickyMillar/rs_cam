@@ -1547,16 +1547,12 @@ mod tests {
         use crate::polygon::Polygon2;
 
         // 30×30 mm square polygon at z=0 — the 2D pocket geometry.
-        let polygon = Polygon2 {
-            exterior: vec![
-                crate::geo::P2::new(0.0, 0.0),
-                crate::geo::P2::new(30.0, 0.0),
-                crate::geo::P2::new(30.0, 30.0),
-                crate::geo::P2::new(0.0, 30.0),
-            ],
-            holes: vec![],
-            closed: true,
-        };
+        let polygon = Polygon2::new(vec![
+            crate::geo::P2::new(0.0, 0.0),
+            crate::geo::P2::new(30.0, 0.0),
+            crate::geo::P2::new(30.0, 30.0),
+            crate::geo::P2::new(0.0, 30.0),
+        ]);
 
         // Auto-size stock from the polygon bbox via the same code path
         // that the GUI and MCP use. This is what Package N fixed.

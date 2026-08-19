@@ -4814,16 +4814,12 @@ mod tests {
     /// populate `prior_stocks` at all.
     fn make_session_with_pocket_model() -> ProjectSession {
         let mut s = make_session();
-        let polygon = crate::polygon::Polygon2 {
-            exterior: vec![
-                crate::geo::P2::new(0.0, 0.0),
-                crate::geo::P2::new(30.0, 0.0),
-                crate::geo::P2::new(30.0, 30.0),
-                crate::geo::P2::new(0.0, 30.0),
-            ],
-            holes: vec![],
-            closed: true,
-        };
+        let polygon = crate::polygon::Polygon2::new(vec![
+            crate::geo::P2::new(0.0, 0.0),
+            crate::geo::P2::new(30.0, 0.0),
+            crate::geo::P2::new(30.0, 30.0),
+            crate::geo::P2::new(0.0, 30.0),
+        ]);
         let model = crate::session::LoadedModel {
             id: 0,
             name: "phantom_prior_stock_fixture".to_owned(),

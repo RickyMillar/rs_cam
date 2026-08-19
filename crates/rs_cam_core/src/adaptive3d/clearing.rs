@@ -1547,11 +1547,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     let single_loops: Vec<crate::polygon::Polygon2> = contours
         .into_iter()
         .filter(|pts| polygon_signed_area(pts).abs() > cell_size * cell_size)
-        .map(|pts| crate::polygon::Polygon2 {
-            exterior: pts,
-            holes: Vec::new(),
-            closed: true,
-        })
+        .map(crate::polygon::Polygon2::new)
         .collect();
     if single_loops.is_empty() {
         return Ok(());
@@ -1963,6 +1959,9 @@ pub(super) fn clear_z_level_agent_2d_slice(
                         .map(|h| crate::adaptive::path::simplify_path(&h, SIMPLIFY_TOLERANCE))
                         .filter(|h| h.len() >= 3)
                         .collect();
+                    // `exterior` replaced — see the mutation contract on
+                    // `Polygon2`.
+                    poly.invalidate_bbox();
                     poly
                 })
                 .filter(|p| p.exterior.len() >= 3)

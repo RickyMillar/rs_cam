@@ -77,6 +77,33 @@ use cavalier_contours::polyline::{PlineCreation, PlineSource, PlineSourceMut, Po
 /// - `holes`: inner boundary vertices in CW order (negative area)
 ///
 /// Vertices are not duplicated (last implicitly connects back to first for closed polygons).
+///
+/// # Cached exterior AABB — the mutation contract
+///
+/// [`Polygon2::bbox`] lazily computes and caches the exterior ring's
+/// axis-aligned bounding box so [`Polygon2::contains_point`] can reject an
+/// outside point in O(1) instead of ray-casting O(V) edges (PERF_REVIEW
+/// 2026-08-19, finding G4 — the inner predicate of ~12 generators).
+///
+/// The cache is **lazy**, which is what makes it sound against the way this
+/// type is actually used: every "build then adjust" site in the codebase
+/// (`out.holes = …`, `poly.exterior = …` on a freshly constructed value)
+/// mutates before anything queries it, so no cache exists yet to go stale.
+/// Two rules keep it that way:
+///
+/// 1. Only the **exterior** feeds the box. Holes can never widen containment
+///    (they only remove area), so the many `holes.push(…)` / `holes = …`
+///    sites need no invalidation at all.
+/// 2. Any code that mutates `exterior` **after** the polygon may already have
+///    been queried must call [`Polygon2::invalidate_bbox`]. As of this change
+///    the whole workspace has five such sites (`io::apply_uniform_scale_2d`,
+///    `svg_input::load_svg`, `dxf_input::load_dxf`,
+///    `toolpath_spans` display translation, `adaptive3d::clearing`'s
+///    simplify pass), all of which do.
+///
+/// `ensure_winding`/`reverse` are bbox-preserving and need no invalidation,
+/// but `ensure_winding` invalidates anyway so callers never have to reason
+/// about it.
 #[derive(Debug, Clone)]
 pub struct Polygon2 {
     pub exterior: Vec<P2>,
@@ -84,6 +111,13 @@ pub struct Polygon2 {
     /// If true (default), the last vertex connects back to the first.
     /// Open paths (e.g. rivers, contour lines) set this to false.
     pub closed: bool,
+    /// Lazily-computed `[x_min, y_min, x_max, y_max]` of `exterior`.
+    ///
+    /// Private on purpose: it is the one field whose value is derived rather
+    /// than given, so struct-literal construction of `Polygon2` outside this
+    /// module is closed off and every construction goes through a
+    /// constructor that starts the cache empty.
+    bbox_cache: std::sync::OnceLock<[f64; 4]>,
 }
 
 impl Polygon2 {
@@ -93,6 +127,7 @@ impl Polygon2 {
             exterior,
             holes: Vec::new(),
             closed: true,
+            bbox_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -102,6 +137,7 @@ impl Polygon2 {
             exterior,
             holes: Vec::new(),
             closed: false,
+            bbox_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -111,7 +147,55 @@ impl Polygon2 {
             exterior,
             holes,
             closed: true,
+            bbox_cache: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Create a polygon with holes and an explicit `closed` flag.
+    ///
+    /// The general-purpose constructor for the handful of call sites that
+    /// used to build `Polygon2` by struct literal.
+    pub fn with_holes_closed(exterior: Vec<P2>, holes: Vec<Vec<P2>>, closed: bool) -> Self {
+        Self {
+            exterior,
+            holes,
+            closed,
+            bbox_cache: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// `[x_min, y_min, x_max, y_max]` of the **exterior** ring, cached.
+    ///
+    /// An empty ring yields `[+inf, +inf, -inf, -inf]`, which contains
+    /// nothing — matching `point_in_polygon`'s `n < 3 => false`.
+    ///
+    /// If any exterior coordinate is NaN the box is all-NaN, which makes
+    /// [`Polygon2::bbox_may_contain`] answer `true` for every point and so
+    /// disables the reject entirely. That is deliberate: on a NaN-corrupted
+    /// ring the ray cast's parity can disagree with any finite box, and this
+    /// change is not allowed to alter a single containment answer.
+    #[inline]
+    pub fn bbox(&self) -> [f64; 4] {
+        *self.bbox_cache.get_or_init(|| ring_aabb(&self.exterior))
+    }
+
+    /// O(1) conservative containment test against the cached exterior AABB.
+    ///
+    /// `false` means the point is **definitely** outside the polygon.
+    /// `true` means "may be inside" — the caller must still ray-cast.
+    /// Points exactly on the box edge answer `true` and fall through, so
+    /// boundary semantics are untouched.
+    #[inline]
+    pub fn bbox_may_contain(&self, p: &P2) -> bool {
+        let [x_min, y_min, x_max, y_max] = self.bbox();
+        !(p.x < x_min || p.x > x_max || p.y < y_min || p.y > y_max)
+    }
+
+    /// Drop the cached exterior AABB. Call after mutating `exterior` in
+    /// place on a polygon that may already have been queried — see the
+    /// mutation contract on [`Polygon2`].
+    pub fn invalidate_bbox(&mut self) {
+        self.bbox_cache.take();
     }
 
     /// Create a rectangle from bounds.
@@ -141,6 +225,9 @@ impl Polygon2 {
     pub fn ensure_winding(&mut self) {
         if shoelace_area(&self.exterior) < 0.0 {
             self.exterior.reverse();
+            // Reversal is bbox-preserving; invalidate anyway so no caller has
+            // to know that.
+            self.invalidate_bbox();
         }
         for hole in &mut self.holes {
             if shoelace_area(hole) > 0.0 {
@@ -168,11 +255,7 @@ impl Polygon2 {
     pub fn from_geo_polygon(poly: &geo::Polygon<f64>) -> Self {
         let exterior = ring_from_geo(poly.exterior());
         let holes: Vec<Vec<P2>> = poly.interiors().iter().map(ring_from_geo).collect();
-        Self {
-            exterior,
-            holes,
-            closed: true,
-        }
+        Self::with_holes(exterior, holes)
     }
 
     /// Convert exterior to a cavalier_contours closed Polyline (no arcs).
@@ -199,7 +282,15 @@ impl Polygon2 {
     }
 
     /// Test if a point is inside this polygon (inside exterior, not inside any hole).
+    ///
+    /// The cached exterior AABB rejects outside points in O(1) before the
+    /// O(V) ray cast. The reject is exact: even-odd containment of the
+    /// exterior is a subset of the exterior's own bounding box, and holes
+    /// only ever remove area.
     pub fn contains_point(&self, p: &P2) -> bool {
+        if !self.bbox_may_contain(p) {
+            return false;
+        }
         if !point_in_polygon(p, &self.exterior) {
             return false;
         }
@@ -1464,6 +1555,32 @@ pub(crate) fn point_in_polygon(point: &P2, polygon: &[P2]) -> bool {
     inside
 }
 
+/// `[x_min, y_min, x_max, y_max]` of a ring, **NaN-poisoning**.
+///
+/// Unlike [`polygon_bbox`] (which uses `f64::min`/`max` and therefore ignores
+/// NaN), a single NaN coordinate here makes the whole box NaN. That is what
+/// keeps [`Polygon2::contains_point`]'s reject exactly equivalent to the bare
+/// ray cast: a NaN box compares `false` against every point on both sides, so
+/// nothing is rejected and the ray cast decides, exactly as before.
+fn ring_aabb(pts: &[P2]) -> [f64; 4] {
+    let mut x_min = f64::INFINITY;
+    let mut y_min = f64::INFINITY;
+    let mut x_max = f64::NEG_INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    let mut poisoned = false;
+    for p in pts {
+        poisoned |= p.x.is_nan() || p.y.is_nan();
+        x_min = x_min.min(p.x);
+        y_min = y_min.min(p.y);
+        x_max = x_max.max(p.x);
+        y_max = y_max.max(p.y);
+    }
+    if poisoned {
+        return [f64::NAN; 4];
+    }
+    [x_min, y_min, x_max, y_max]
+}
+
 fn polygon_bbox(pts: &[P2]) -> (f64, f64, f64, f64) {
     let mut x_min = f64::INFINITY;
     let mut y_min = f64::INFINITY;
@@ -1704,6 +1821,140 @@ mod tests {
     fn square(size: f64) -> Polygon2 {
         let h = size / 2.0;
         Polygon2::rectangle(-h, -h, h, h)
+    }
+
+    // ── G4: cached exterior AABB (PERF_REVIEW 2026-08-19) ────────────────
+    //
+    // The bbox reject in `contains_point` is only allowed to be faster, never
+    // different. These three tests pin exactness, the mutation contract, and
+    // the NaN carve-out respectively.
+
+    /// The pre-G4 body of `contains_point`, verbatim: no bbox, straight to
+    /// the ray cast. The oracle every reject must agree with.
+    fn contains_point_reference(poly: &Polygon2, p: &P2) -> bool {
+        if !point_in_polygon(p, &poly.exterior) {
+            return false;
+        }
+        !poly.holes.iter().any(|h| point_in_polygon(p, h))
+    }
+
+    fn ring(cx: f64, cy: f64, r: f64, n: usize) -> Vec<P2> {
+        (0..n)
+            .map(|i| {
+                let t = std::f64::consts::TAU * i as f64 / n as f64;
+                // Deterministic non-convex jitter, so the reject is exercised
+                // against a shape whose hull is not its boundary.
+                let rr = r * (1.0 + 0.25 * (5.0 * t).sin());
+                P2::new(cx + rr * t.cos(), cy + rr * t.sin())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bbox_reject_agrees_with_the_ray_cast_everywhere() {
+        let poly = Polygon2::with_holes(
+            ring(0.0, 0.0, 20.0, 257),
+            vec![
+                ring(6.0, 4.0, 4.0, 61),
+                ring(-7.0, -5.0, 3.0, 43),
+                // A hole poking outside the exterior — the case that would
+                // break a reject built from the hole bboxes too.
+                ring(19.0, 19.0, 5.0, 37),
+            ],
+        );
+        // A lattice that straddles the box on all four sides, plus points
+        // landing exactly ON each bbox edge (those must fall through to the
+        // ray cast, not be rejected).
+        let [x_min, y_min, x_max, y_max] = poly.bbox();
+        let mut checked_on_edge = 0usize;
+        for i in 0..=120 {
+            for j in 0..=120 {
+                let x = -35.0 + 70.0 * i as f64 / 120.0;
+                let y = -35.0 + 70.0 * j as f64 / 120.0;
+                let p = P2::new(x, y);
+                assert_eq!(
+                    poly.contains_point(&p),
+                    contains_point_reference(&poly, &p),
+                    "bbox reject disagreed with the ray cast at ({x}, {y})"
+                );
+            }
+        }
+        for k in 0..=40 {
+            let t = k as f64 / 40.0;
+            for p in [
+                P2::new(x_min, y_min + t * (y_max - y_min)),
+                P2::new(x_max, y_min + t * (y_max - y_min)),
+                P2::new(x_min + t * (x_max - x_min), y_min),
+                P2::new(x_min + t * (x_max - x_min), y_max),
+            ] {
+                checked_on_edge += 1;
+                assert_eq!(
+                    poly.contains_point(&p),
+                    contains_point_reference(&poly, &p),
+                    "on-edge point {p:?} answered differently"
+                );
+            }
+        }
+        assert!(checked_on_edge > 0);
+    }
+
+    #[test]
+    fn invalidate_bbox_clears_a_populated_cache() {
+        let mut poly = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        // Populate the cache first — a stale cache can only bite AFTER a
+        // query, which is exactly what makes the lazy design sound.
+        assert!(poly.contains_point(&P2::new(5.0, 5.0)));
+        assert_eq!(poly.bbox(), [0.0, 0.0, 10.0, 10.0]);
+
+        for p in &mut poly.exterior {
+            p.x += 100.0;
+        }
+        poly.invalidate_bbox();
+
+        assert_eq!(poly.bbox(), [100.0, 0.0, 110.0, 10.0]);
+        assert!(!poly.contains_point(&P2::new(5.0, 5.0)));
+        assert!(poly.contains_point(&P2::new(105.0, 5.0)));
+    }
+
+    #[test]
+    fn nan_vertex_disables_the_reject_rather_than_changing_an_answer() {
+        // `tests/common/adversarial2d.rs::non_finite` — a square with one NaN
+        // vertex. `f64::min`/`max` would silently drop the NaN and produce a
+        // finite box; the ray cast's parity does not respect that box, so the
+        // reject has to switch itself off instead.
+        let poly = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(10.0, 0.0),
+            P2::new(f64::NAN, 10.0),
+            P2::new(0.0, 10.0),
+        ]);
+        assert!(poly.bbox().iter().all(|v| v.is_nan()));
+        for i in -3..14 {
+            for j in -3..14 {
+                let p = P2::new(i as f64, j as f64);
+                assert!(poly.bbox_may_contain(&p), "reject must be inert");
+                assert_eq!(
+                    poly.contains_point(&p),
+                    contains_point_reference(&poly, &p),
+                    "NaN-ring answer changed at {p:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn degenerate_rings_reject_without_changing_the_answer() {
+        for exterior in [
+            Vec::new(),
+            vec![P2::new(1.0, 1.0)],
+            vec![P2::new(0.0, 0.0), P2::new(1.0, 0.0)],
+        ] {
+            let poly = Polygon2::new(exterior);
+            for p in [P2::new(0.0, 0.0), P2::new(1.0, 1.0), P2::new(50.0, 50.0)] {
+                assert!(!poly.contains_point(&p));
+                assert_eq!(poly.contains_point(&p), contains_point_reference(&poly, &p));
+            }
+        }
     }
 
     #[test]
