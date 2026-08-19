@@ -60,6 +60,14 @@ impl<'a> RegionSet<'a> {
     }
 
     /// Is `p` inside any region in the set?
+    ///
+    /// The per-region AABB pre-filter (PERF_REVIEW 2026-08-19, G4) lives
+    /// *inside* `Polygon2::contains_point`, which rejects on its cached
+    /// exterior box before ray-casting. Regions are disjoint by construction,
+    /// so for a set of `m` regions a query now costs `m` box tests plus at
+    /// most the ray casts of the boxes it actually lands in — the `m × V`
+    /// factor this `.any()` used to layer on is gone. Do **not** re-test the
+    /// box here: it would double the check on the region that hits.
     pub fn contains(&self, p: &P2) -> bool {
         self.regions.iter().any(|r| r.contains_point(p))
     }
