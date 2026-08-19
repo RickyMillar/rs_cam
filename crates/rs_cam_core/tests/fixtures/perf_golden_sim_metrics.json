@@ -34,7 +34,45 @@
       "air_cut_pct_of_cutting_time": 62.09233153901547,
       "peak_chipload_mm_per_tooth": 0.027777777777777776,
       "peak_axial_doc_mm": 2.0625,
-      "peak_plunge_descent_mm": 0.02000000000000135
+      "peak_plunge_descent_mm": 0.02000000000000135,
+      "per_kinematics": [
+        {
+          "kind": "Linear",
+          "sample_count": 2112,
+          "cutting_runtime_s": 126.7200000000033,
+          "average_radial_woc_fraction": 0.3434343434343434,
+          "average_leading_edge_speed_mm_min": 999.999999999974,
+          "average_arc_radians": 1.1803249464458896,
+          "peak_radial_woc_fraction": 0.6666666666666666,
+          "peak_axial_doc_mm": 2.0625,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": 0.027777777777777776
+        },
+        {
+          "kind": "Plunge",
+          "sample_count": 3600,
+          "cutting_runtime_s": 21.600000000000694,
+          "average_radial_woc_fraction": 0.23138888888888326,
+          "average_leading_edge_speed_mm_min": 199.9999999999802,
+          "average_arc_radians": null,
+          "peak_radial_woc_fraction": 1.0,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.02000000000000135,
+          "peak_chip_thickness_mm": null
+        },
+        {
+          "kind": "Helix",
+          "sample_count": 1600,
+          "cutting_runtime_s": 183.43029704924982,
+          "average_radial_woc_fraction": 0.02208333333333397,
+          "average_leading_edge_speed_mm_min": 200.00000000000432,
+          "average_arc_radians": 0.07328177742234043,
+          "peak_radial_woc_fraction": 0.6666666666666666,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": 0.005237828008789242
+        }
+      ]
     },
     {
       "name": "Zigzag",
@@ -58,7 +96,45 @@
       "air_cut_pct_of_cutting_time": 98.08816965336467,
       "peak_chipload_mm_per_tooth": 0.027777777777777776,
       "peak_axial_doc_mm": 0.0,
-      "peak_plunge_descent_mm": 0.020000000000000462
+      "peak_plunge_descent_mm": 0.020000000000000462,
+      "per_kinematics": [
+        {
+          "kind": "Linear",
+          "sample_count": 948,
+          "cutting_runtime_s": 56.308657865101445,
+          "average_radial_woc_fraction": 0.0,
+          "average_leading_edge_speed_mm_min": 999.9999999999934,
+          "average_arc_radians": 0.0,
+          "peak_radial_woc_fraction": 0.0,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": null
+        },
+        {
+          "kind": "Plunge",
+          "sample_count": 3900,
+          "cutting_runtime_s": 23.400000000000762,
+          "average_radial_woc_fraction": 0.0,
+          "average_leading_edge_speed_mm_min": 199.99999999997843,
+          "average_arc_radians": null,
+          "peak_radial_woc_fraction": 0.0,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.020000000000000462,
+          "peak_chip_thickness_mm": null
+        },
+        {
+          "kind": "Helix",
+          "sample_count": 2600,
+          "cutting_runtime_s": 298.07423270504046,
+          "average_radial_woc_fraction": 0.008022942325001184,
+          "average_leading_edge_speed_mm_min": 199.99999999998712,
+          "average_arc_radians": 0.02926536876672177,
+          "peak_radial_woc_fraction": 0.7071067811865476,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": 0.005546462542638331
+        }
+      ]
     },
     {
       "name": "Profile",
@@ -82,7 +158,45 @@
       "air_cut_pct_of_cutting_time": 28.716954146748673,
       "peak_chipload_mm_per_tooth": 0.027777777777777776,
       "peak_axial_doc_mm": 2.63671875,
-      "peak_plunge_descent_mm": 0.02000000000000135
+      "peak_plunge_descent_mm": 0.02000000000000135,
+      "per_kinematics": [
+        {
+          "kind": "Linear",
+          "sample_count": 520,
+          "cutting_runtime_s": 30.836467529817,
+          "average_radial_woc_fraction": 0.6405402947306071,
+          "average_leading_edge_speed_mm_min": 1000.000000000009,
+          "average_arc_radians": 1.8437533185805541,
+          "peak_radial_woc_fraction": 0.7071067811865476,
+          "peak_axial_doc_mm": 2.63671875,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": 0.026189140043946207
+        },
+        {
+          "kind": "Plunge",
+          "sample_count": 450,
+          "cutting_runtime_s": 2.6999999999999997,
+          "average_radial_woc_fraction": 0.2822222222222223,
+          "average_leading_edge_speed_mm_min": 199.99999999999986,
+          "average_arc_radians": null,
+          "peak_radial_woc_fraction": 1.0,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.02000000000000135,
+          "peak_chip_thickness_mm": null
+        },
+        {
+          "kind": "Helix",
+          "sample_count": 200,
+          "cutting_runtime_s": 22.928787131156934,
+          "average_radial_woc_fraction": 0.17666666666666642,
+          "average_leading_edge_speed_mm_min": 199.99999999999912,
+          "average_arc_radians": 0.5862542193787054,
+          "peak_radial_woc_fraction": 0.6666666666666666,
+          "peak_axial_doc_mm": 0.0,
+          "peak_plunge_descent_mm": 0.0,
+          "peak_chip_thickness_mm": 0.005237828008789242
+        }
+      ]
     }
   ]
 }

@@ -39,6 +39,29 @@
 //! accumulated across tens of thousands of samples get [`LOOSE_REL`], because
 //! float addition is not associative and any change to iteration order — the
 //! thing S3 explicitly does — reassociates the sum.
+//!
+//! # Two arms, and why the second one exists
+//!
+//! The original fixture is **2.5D**: pocket + zigzag + profile on a polygon
+//! model, one flat end mill. It exercises the stamp kernel hard, and it
+//! contains no 3D finishing kinematics whatsoever — every cutting sample it
+//! emits is `Linear` or `Plunge`. A net built only from that arm would pin
+//! the straight-and-level path and let a bug in the arc or helix branch
+//! (`dexel_stock/simulation.rs`'s `MoveType::ArcCW`/`ArcCCW` linearisation,
+//! and `classify_cut_kinematics`'s XY+Z case) through in silence — and those
+//! are exactly the branches S1 (swept-volume stamping), S2 (tile early-out)
+//! and S3 (row-band parallel stamping) reshape.
+//!
+//! So there is a second arm: a **3D** fixture — synthetic hemisphere mesh,
+//! ball-nose cutter, drop-cutter + waterline with arc fitting on — and both
+//! arms record the per-kinematics block. The 3D arm's own test
+//! [`three_d_arm_covers_arc_and_helix_kinematics`] asserts the `Arc` and
+//! `Helix` classes are actually populated, so the arm cannot quietly decay
+//! into another Linear-only fixture the day a generator stops emitting arcs.
+//!
+//! ```text
+//! cargo test -p rs_cam_core --test perf_golden_sim_metrics
+//! ```
 
 #![allow(
     clippy::unwrap_used,
@@ -54,11 +77,12 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::config::HeightMode;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{
-    PocketConfig, PocketPattern, ProfileConfig, ZigzagConfig,
+    DropCutterConfig, PocketConfig, PocketPattern, ProfileConfig, WaterlineConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -71,7 +95,7 @@ use rs_cam_core::profile::ProfileSide;
 use rs_cam_core::session::{
     LoadedModel, ProjectEvidence, ProjectSession, SimulationOptions, ToolpathConfig,
 };
-use rs_cam_core::simulation_cut::AirCutRatios;
+use rs_cam_core::simulation_cut::{AirCutRatios, CutKinematics, KinematicsSummary};
 use serde::{Deserialize, Serialize};
 
 /// Single-expression quantities: identical unless the arithmetic changed.
@@ -81,11 +105,63 @@ const TIGHT_REL: f64 = 1e-9;
 /// any change a human would call a metric change, and far above float noise.
 const LOOSE_REL: f64 = 1e-3;
 
-/// Simulation cell size. Pinned, not defaulted — every engagement and
-/// air-cut number in the golden moves with it.
+/// Simulation cell size for the 2.5D arm. Pinned, not defaulted — every
+/// engagement and air-cut number in the golden moves with it.
 const SIM_RESOLUTION_MM: f64 = 1.0;
 
+/// Simulation cell size for the 3D arm. Finer than the 2.5D arm because the
+/// fixture is smaller and because a ball tip against a curved surface needs a
+/// cell well under the tip radius before radial engagement is measurable at
+/// all (`PERP_COVERAGE_GATE`'s `cell ≲ √(2·R_tip·d − d²)` condition).
+const SIM_RESOLUTION_3D_MM: f64 = 0.5;
+
 // ── The golden record ───────────────────────────────────────────────────
+
+/// One `CutKinematics` class's row of the per-toolpath `per_kinematics` map.
+///
+/// This block is the whole reason the 3D arm exists: it is the only place the
+/// trace says *which kind of motion* produced a measurement, so it is the only
+/// place a golden can prove an arc or a helix was measured rather than
+/// silently skipped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KinematicsAggregate {
+    /// `CutKinematics` rendered with `Debug` — `"Linear"`, `"Arc"`, …
+    kind: String,
+    // Exact.
+    sample_count: usize,
+    // Accumulated → LOOSE_REL.
+    cutting_runtime_s: f64,
+    average_radial_woc_fraction: f64,
+    average_leading_edge_speed_mm_min: f64,
+    /// `None` means **not measured** — no sample in this class carried an
+    /// arc. The None-ness is compared exactly; only the value is toleranced.
+    average_arc_radians: Option<f64>,
+    // Per-sample maxima → TIGHT_REL.
+    peak_radial_woc_fraction: f64,
+    peak_axial_doc_mm: f64,
+    peak_plunge_descent_mm: f64,
+    peak_chip_thickness_mm: Option<f64>,
+}
+
+fn kinematics_aggregates(
+    per_kinematics: &std::collections::BTreeMap<CutKinematics, KinematicsSummary>,
+) -> Vec<KinematicsAggregate> {
+    per_kinematics
+        .iter()
+        .map(|(kind, s)| KinematicsAggregate {
+            kind: format!("{kind:?}"),
+            sample_count: s.sample_count,
+            cutting_runtime_s: s.cutting_runtime_s,
+            average_radial_woc_fraction: s.average_radial_woc_fraction,
+            average_leading_edge_speed_mm_min: s.average_leading_edge_speed_mm_min,
+            average_arc_radians: s.average_arc_radians,
+            peak_radial_woc_fraction: s.peak_radial_woc_fraction,
+            peak_axial_doc_mm: s.peak_axial_doc_mm,
+            peak_plunge_descent_mm: s.peak_plunge_descent_mm,
+            peak_chip_thickness_mm: s.peak_chip_thickness_mm,
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ToolpathAggregate {
@@ -116,6 +192,11 @@ struct ToolpathAggregate {
     peak_chipload_mm_per_tooth: f64,
     peak_axial_doc_mm: f64,
     peak_plunge_descent_mm: f64,
+    /// Axis-aware breakdown. `#[serde(default)]` so a pre-3D-arm golden JSON
+    /// still parses — and then fails loudly on the length comparison rather
+    /// than on a deserialisation error, which is the more informative failure.
+    #[serde(default)]
+    per_kinematics: Vec<KinematicsAggregate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,21 +218,21 @@ struct ProjectAggregate {
     per_toolpath: Vec<ToolpathAggregate>,
 }
 
-fn golden_path() -> PathBuf {
+fn golden_path(stem: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("perf_golden_sim_metrics.json")
+        .join(format!("{stem}.json"))
 }
 
-// ── The fixture ─────────────────────────────────────────────────────────
+// ── The fixtures ────────────────────────────────────────────────────────
 
 /// Three 2.5D operations over one rectangular region, on one 6 mm end mill.
 ///
 /// Nothing here is loaded from disk and nothing is random: the polygon is a
 /// literal, the tool is built field by field, and every operation dial is
 /// spelled out. A default that moves must not silently move the golden.
-fn fixture_session() -> ProjectSession {
+fn fixture_session_2d() -> ProjectSession {
     let mut session = ProjectSession::new_empty();
 
     // 2D ops cut at negative Z (`project_2d_stock_z_frame`), so `origin_z`
@@ -247,29 +328,146 @@ fn fixture_session() -> ProjectSession {
     ];
 
     for (name, op) in ops {
-        let op_type = op.op_type();
-        let cfg = ToolpathConfig {
-            id: ToolpathId(0),
-            name: name.to_owned(),
-            enabled: true,
-            operation: op,
-            dressups: DressupConfig::for_op(op_type),
-            heights: HeightsConfig::default(),
-            tool_id,
-            model_id,
-            pre_gcode: None,
-            post_gcode: None,
-            boundary: BoundaryConfig::default(),
-            boundary_inherit: true,
-            stock_source: StockSource::default(),
-            coolant: CoolantMode::Off,
-            face_selection: None,
-            debug_options: ToolpathDebugOptions::default(),
-            feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-            rest_analysis: RestAnalysisConfig::default(),
-        };
-        session.add_toolpath(0, cfg).expect("add toolpath");
+        session
+            .add_toolpath(0, toolpath_config(name, op, tool_id, model_id))
+            .expect("add toolpath");
     }
+
+    session
+}
+
+/// The 19-field `ToolpathConfig` literal, once, shared by both arms.
+fn toolpath_config(
+    name: &str,
+    op: OperationConfig,
+    tool_id: usize,
+    model_id: usize,
+) -> ToolpathConfig {
+    let op_type = op.op_type();
+    ToolpathConfig {
+        id: ToolpathId(0),
+        name: name.to_owned(),
+        enabled: true,
+        operation: op,
+        dressups: DressupConfig::for_op(op_type),
+        heights: HeightsConfig::default(),
+        tool_id,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: StockSource::default(),
+        coolant: CoolantMode::Off,
+        face_selection: None,
+        debug_options: ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: RestAnalysisConfig::default(),
+    }
+}
+
+/// Radius of the synthetic hemisphere the 3D arm finishes.
+const HEMI_RADIUS_MM: f64 = 10.0;
+/// Half-extent of the stock around it (2 mm of flat margin per side).
+const HEMI_STOCK_HALF_MM: f64 = HEMI_RADIUS_MM + 2.0;
+
+/// Two 3D finishing operations over a synthetic hemisphere, on one 6 mm
+/// ball-nose cutter.
+///
+/// The point of this arm is the *kinematics*, not the shape:
+///
+/// * **drop cutter** rakes the dome in XY while Z tracks the surface, so
+///   almost every cutting move changes X/Y **and** Z —
+///   `classify_cut_kinematics` calls that `Helix`, and it is the class the
+///   2.5D arm never produces.
+/// * **waterline** cuts constant-Z contours around a dome, i.e. near-perfect
+///   circles, and `arc_fitting` is turned on explicitly so the emitter
+///   actually issues `MoveType::ArcCW`/`ArcCCW` — the branch that runs the
+///   arc lineariser and stamps through `CutKinematics::Arc`.
+///
+/// Surface operations carry no depth dial, so waterline's Z band has to be
+/// pinned by hand (`HeightMode::Manual`); left on `Auto` the band collapses
+/// to zero height and the op emits nothing.
+fn fixture_session_3d() -> ProjectSession {
+    let mut session = ProjectSession::new_empty();
+
+    // The dome's base sits on z = 0 and its apex at z = HEMI_RADIUS_MM, so
+    // the stock is exactly as tall as the dome and its top plane touches the
+    // apex. Nothing is auto-derived: `auto_from_model` off.
+    session.set_stock_config(StockConfig {
+        x: 2.0 * HEMI_STOCK_HALF_MM,
+        y: 2.0 * HEMI_STOCK_HALF_MM,
+        z: HEMI_RADIUS_MM,
+        origin_x: -HEMI_STOCK_HALF_MM,
+        origin_y: -HEMI_STOCK_HALF_MM,
+        origin_z: 0.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    });
+
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shank_diameter = 6.35;
+    tool.shank_length = 20.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 2;
+    tool.name = "Ball Nose 6mm".to_owned();
+    let tool_idx = session.add_tool(tool);
+    let tool_id = session.tools()[tool_idx].id.0;
+
+    // 8 divisions → 32 vertices per ring, 8 rings: 992 triangles. Small
+    // enough to simulate twice per test run, curved enough that the
+    // waterline contours fit arcs.
+    let model_id = session.add_model(LoadedModel {
+        id: 0,
+        name: "perf_hemisphere".to_owned(),
+        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
+            HEMI_RADIUS_MM,
+            8,
+        ))),
+        polygons: None,
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: PathBuf::from("synthetic://perf_hemisphere.stl"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
+
+    let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {
+        stepover: 1.5,
+        feed_rate: 1000.0,
+        plunge_rate: 400.0,
+        min_z: 0.0,
+        slope_from: 0.0,
+        slope_to: 90.0,
+        spindle_rpm: Some(18_000),
+        scallop_height: None,
+    });
+    let waterline = OperationConfig::Waterline(WaterlineConfig {
+        z_step: 1.5,
+        sampling: 0.4,
+        feed_rate: 1000.0,
+        plunge_rate: 400.0,
+        continuous: false,
+        spindle_rpm: Some(18_000),
+    });
+
+    let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id);
+    dc.dressups.arc_fitting = true;
+    session.add_toolpath(0, dc).expect("add drop cutter");
+
+    let mut wl = toolpath_config("Waterline", waterline, tool_id, model_id);
+    wl.dressups.arc_fitting = true;
+    wl.heights = HeightsConfig {
+        top_z: HeightMode::Manual(HEMI_RADIUS_MM),
+        bottom_z: HeightMode::Manual(0.0),
+        ..HeightsConfig::default()
+    };
+    session.add_toolpath(0, wl).expect("add waterline");
 
     session
 }
@@ -277,9 +475,9 @@ fn fixture_session() -> ProjectSession {
 /// Every simulation dial spelled out. `adaptive_feed_modulation` defaults to
 /// `true` and would put a feed-modulation pass between the toolpath and the
 /// numbers; the golden measures the sim, so it is off.
-fn sim_options() -> SimulationOptions {
+fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
-        resolution: SIM_RESOLUTION_MM,
+        resolution,
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
@@ -290,16 +488,15 @@ fn sim_options() -> SimulationOptions {
     }
 }
 
-fn measure() -> ProjectAggregate {
+fn measure(mut session: ProjectSession, resolution: f64) -> ProjectAggregate {
     let cancel = AtomicBool::new(false);
-    let mut session = fixture_session();
     for i in 0..session.toolpath_count() {
         session
             .generate_toolpath(i, &cancel)
             .expect("generation must succeed");
     }
     session
-        .run_simulation(&sim_options(), &cancel)
+        .run_simulation(&sim_options(resolution), &cancel)
         .expect("simulation completes");
 
     let holder_collisions = session.holder_collision_counts(&cancel);
@@ -349,12 +546,15 @@ fn measure() -> ProjectAggregate {
                 peak_chipload_mm_per_tooth: summary.map_or(0.0, |s| s.peak_chipload_mm_per_tooth),
                 peak_axial_doc_mm: summary.map_or(0.0, |s| s.peak_axial_doc_mm),
                 peak_plunge_descent_mm: summary.map_or(0.0, |s| s.peak_plunge_descent_mm),
+                per_kinematics: summary
+                    .map(|s| kinematics_aggregates(&s.per_kinematics))
+                    .unwrap_or_default(),
             }
         })
         .collect();
 
     ProjectAggregate {
-        resolution_mm: SIM_RESOLUTION_MM,
+        resolution_mm: resolution,
         toolpath_count: trace.summary.toolpath_count,
         total_sample_count: trace.summary.sample_count,
         project_collision_count: diagnostics.collision_count,
@@ -377,7 +577,9 @@ fn close(actual: f64, expected: f64, rel: f64, what: &str, failures: &mut Vec<St
         return;
     }
     if actual.is_nan() != expected.is_nan() {
-        failures.push(format!("{what}: NaN mismatch — got {actual}, golden {expected}"));
+        failures.push(format!(
+            "{what}: NaN mismatch — got {actual}, golden {expected}"
+        ));
         return;
     }
     let scale = expected.abs().max(actual.abs()).max(1e-12);
@@ -396,15 +598,27 @@ fn exact<T: PartialEq + std::fmt::Debug + Copy>(
     failures: &mut Vec<String>,
 ) {
     if actual != expected {
-        failures.push(format!("{what}: got {actual:?}, golden {expected:?} (exact)"));
+        failures.push(format!(
+            "{what}: got {actual:?}, golden {expected:?} (exact)"
+        ));
     }
 }
 
 fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> {
     let mut f = Vec::new();
 
-    exact(actual.resolution_mm, golden.resolution_mm, "resolution_mm", &mut f);
-    exact(actual.toolpath_count, golden.toolpath_count, "toolpath_count", &mut f);
+    exact(
+        actual.resolution_mm,
+        golden.resolution_mm,
+        "resolution_mm",
+        &mut f,
+    );
+    exact(
+        actual.toolpath_count,
+        golden.toolpath_count,
+        "toolpath_count",
+        &mut f,
+    );
     exact(
         actual.total_sample_count,
         golden.total_sample_count,
@@ -482,15 +696,30 @@ fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> 
 
     for (a, g) in actual.per_toolpath.iter().zip(golden.per_toolpath.iter()) {
         let tag = format!("[{}]", g.name);
-        exact(a.name.as_str(), g.name.as_str(), &format!("{tag}.name"), &mut f);
+        exact(
+            a.name.as_str(),
+            g.name.as_str(),
+            &format!("{tag}.name"),
+            &mut f,
+        );
         exact(
             a.op_kind.as_str(),
             g.op_kind.as_str(),
             &format!("{tag}.op_kind"),
             &mut f,
         );
-        exact(a.sample_count, g.sample_count, &format!("{tag}.sample_count"), &mut f);
-        exact(a.move_count, g.move_count, &format!("{tag}.move_count"), &mut f);
+        exact(
+            a.sample_count,
+            g.sample_count,
+            &format!("{tag}.sample_count"),
+            &mut f,
+        );
+        exact(
+            a.move_count,
+            g.move_count,
+            &format!("{tag}.move_count"),
+            &mut f,
+        );
         exact(
             a.collision_count,
             g.collision_count,
@@ -511,10 +740,22 @@ fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> 
         );
 
         for (av, gv, name) in [
-            (a.cutting_distance_mm, g.cutting_distance_mm, "cutting_distance_mm"),
-            (a.rapid_distance_mm, g.rapid_distance_mm, "rapid_distance_mm"),
+            (
+                a.cutting_distance_mm,
+                g.cutting_distance_mm,
+                "cutting_distance_mm",
+            ),
+            (
+                a.rapid_distance_mm,
+                g.rapid_distance_mm,
+                "rapid_distance_mm",
+            ),
             (a.total_runtime_s, g.total_runtime_s, "total_runtime_s"),
-            (a.cutting_runtime_s, g.cutting_runtime_s, "cutting_runtime_s"),
+            (
+                a.cutting_runtime_s,
+                g.cutting_runtime_s,
+                "cutting_runtime_s",
+            ),
             (a.rapid_runtime_s, g.rapid_runtime_s, "rapid_runtime_s"),
             (a.air_cut_time_s, g.air_cut_time_s, "air_cut_time_s"),
             (
@@ -527,8 +768,16 @@ fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> 
                 g.total_removed_volume_est_mm3,
                 "total_removed_volume_est_mm3",
             ),
-            (a.average_engagement, g.average_engagement, "average_engagement"),
-            (a.average_mrr_mm3_s, g.average_mrr_mm3_s, "average_mrr_mm3_s"),
+            (
+                a.average_engagement,
+                g.average_engagement,
+                "average_engagement",
+            ),
+            (
+                a.average_mrr_mm3_s,
+                g.average_mrr_mm3_s,
+                "average_mrr_mm3_s",
+            ),
             (
                 a.air_cut_pct_of_total_runtime,
                 g.air_cut_pct_of_total_runtime,
@@ -551,7 +800,11 @@ fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> 
                 g.peak_chipload_mm_per_tooth,
                 "peak_chipload_mm_per_tooth",
             ),
-            (a.peak_axial_doc_mm, g.peak_axial_doc_mm, "peak_axial_doc_mm"),
+            (
+                a.peak_axial_doc_mm,
+                g.peak_axial_doc_mm,
+                "peak_axial_doc_mm",
+            ),
             (
                 a.peak_plunge_descent_mm,
                 g.peak_plunge_descent_mm,
@@ -560,20 +813,120 @@ fn compare(actual: &ProjectAggregate, golden: &ProjectAggregate) -> Vec<String> 
         ] {
             close(av, gv, TIGHT_REL, &format!("{tag}.{name}"), &mut f);
         }
+
+        compare_kinematics(&a.per_kinematics, &g.per_kinematics, &tag, &mut f);
     }
 
     f
 }
 
+/// `None` on a `KinematicsSummary` field means **not measured** (the class
+/// carried no sample reporting that quantity), which is a different statement
+/// from "measured zero". So the None-ness is compared EXACTLY and only the
+/// contained value gets a tolerance.
+fn close_opt(
+    actual: Option<f64>,
+    expected: Option<f64>,
+    rel: f64,
+    what: &str,
+    failures: &mut Vec<String>,
+) {
+    match (actual, expected) {
+        (None, None) => {}
+        (Some(a), Some(g)) => close(a, g, rel, what, failures),
+        (a, g) => failures.push(format!(
+            "{what}: measured-ness changed — got {a:?}, golden {g:?} \
+             (None means NOT MEASURED, not zero)"
+        )),
+    }
+}
+
+fn compare_kinematics(
+    actual: &[KinematicsAggregate],
+    golden: &[KinematicsAggregate],
+    tag: &str,
+    f: &mut Vec<String>,
+) {
+    if actual.len() != golden.len() {
+        let a_kinds: Vec<&str> = actual.iter().map(|k| k.kind.as_str()).collect();
+        let g_kinds: Vec<&str> = golden.iter().map(|k| k.kind.as_str()).collect();
+        f.push(format!(
+            "{tag}.per_kinematics: got {a_kinds:?}, golden {g_kinds:?} \
+             (a class appearing or disappearing is a real change)"
+        ));
+        return;
+    }
+    for (a, g) in actual.iter().zip(golden.iter()) {
+        let kt = format!("{tag}.per_kinematics[{}]", g.kind);
+        exact(a.kind.as_str(), g.kind.as_str(), &format!("{kt}.kind"), f);
+        exact(
+            a.sample_count,
+            g.sample_count,
+            &format!("{kt}.sample_count"),
+            f,
+        );
+        for (av, gv, name) in [
+            (
+                a.cutting_runtime_s,
+                g.cutting_runtime_s,
+                "cutting_runtime_s",
+            ),
+            (
+                a.average_radial_woc_fraction,
+                g.average_radial_woc_fraction,
+                "average_radial_woc_fraction",
+            ),
+            (
+                a.average_leading_edge_speed_mm_min,
+                g.average_leading_edge_speed_mm_min,
+                "average_leading_edge_speed_mm_min",
+            ),
+        ] {
+            close(av, gv, LOOSE_REL, &format!("{kt}.{name}"), f);
+        }
+        close_opt(
+            a.average_arc_radians,
+            g.average_arc_radians,
+            LOOSE_REL,
+            &format!("{kt}.average_arc_radians"),
+            f,
+        );
+        for (av, gv, name) in [
+            (
+                a.peak_radial_woc_fraction,
+                g.peak_radial_woc_fraction,
+                "peak_radial_woc_fraction",
+            ),
+            (
+                a.peak_axial_doc_mm,
+                g.peak_axial_doc_mm,
+                "peak_axial_doc_mm",
+            ),
+            (
+                a.peak_plunge_descent_mm,
+                g.peak_plunge_descent_mm,
+                "peak_plunge_descent_mm",
+            ),
+        ] {
+            close(av, gv, TIGHT_REL, &format!("{kt}.{name}"), f);
+        }
+        close_opt(
+            a.peak_chip_thickness_mm,
+            g.peak_chip_thickness_mm,
+            TIGHT_REL,
+            &format!("{kt}.peak_chip_thickness_mm"),
+            f,
+        );
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
-#[test]
-fn sim_metrics_match_golden() {
-    let actual = measure();
-    let path = golden_path();
+fn check_against_golden(actual: &ProjectAggregate, stem: &str) {
+    let path = golden_path(stem);
 
     if std::env::var("UPDATE_PERF_GOLDENS").is_ok_and(|v| v != "0" && !v.is_empty()) {
-        let json = serde_json::to_string_pretty(&actual).expect("serialize aggregate");
+        let json = serde_json::to_string_pretty(actual).expect("serialize aggregate");
         std::fs::create_dir_all(path.parent().expect("fixtures dir has a parent"))
             .expect("create fixtures dir");
         std::fs::write(&path, format!("{json}\n")).expect("write golden");
@@ -590,10 +943,11 @@ fn sim_metrics_match_golden() {
     });
     let golden: ProjectAggregate = serde_json::from_str(&raw).expect("parse golden JSON");
 
-    let failures = compare(&actual, &golden);
+    let failures = compare(actual, &golden);
     assert!(
         failures.is_empty(),
-        "simulation metrics moved against the Phase 0 golden ({} field(s)).\n{}\n\n\
+        "simulation metrics moved against the Phase 0 golden `{stem}` \
+         ({} field(s)).\n{}\n\n\
          If this is a DELIBERATE re-baseline (e.g. PERF_REVIEW S1 swept-volume \
          stamping), regenerate with UPDATE_PERF_GOLDENS=1 and say so in the \
          commit message.",
@@ -602,21 +956,39 @@ fn sim_metrics_match_golden() {
     );
 }
 
+#[test]
+fn sim_metrics_match_golden() {
+    check_against_golden(
+        &measure(fixture_session_2d(), SIM_RESOLUTION_MM),
+        "perf_golden_sim_metrics",
+    );
+}
+
+#[test]
+fn sim_metrics_3d_match_golden() {
+    check_against_golden(
+        &measure(fixture_session_3d(), SIM_RESOLUTION_3D_MM),
+        "perf_golden_sim_metrics_3d",
+    );
+}
+
 /// The golden is only worth anything if the fixture actually cuts. A
 /// simulation that removed nothing would pin a page of zeros and pass
 /// forever — the vacuity failure `gate_population_vacuity_xvac` exists for,
 /// applied to a golden instead of a gate.
-#[test]
-fn golden_fixture_is_not_vacuous() {
-    let a = measure();
-    assert_eq!(a.per_toolpath.len(), 3, "fixture must carry three toolpaths");
+fn assert_not_vacuous(a: &ProjectAggregate, toolpaths: usize, min_samples: usize, min_mm3: f64) {
+    assert_eq!(
+        a.per_toolpath.len(),
+        toolpaths,
+        "fixture must carry {toolpaths} toolpaths"
+    );
     assert!(
-        a.total_sample_count > 500,
+        a.total_sample_count > min_samples,
         "fixture produced only {} cut samples — too few to detect a metric change",
         a.total_sample_count
     );
     assert!(
-        a.project_total_removed_volume_est_mm3 > 100.0,
+        a.project_total_removed_volume_est_mm3 > min_mm3,
         "fixture removed only {:.3} mm³ — the golden would be pinning air",
         a.project_total_removed_volume_est_mm3
     );
@@ -630,6 +1002,56 @@ fn golden_fixture_is_not_vacuous() {
             tp.cutting_distance_mm > 0.0,
             "[{}] emitted no cutting distance",
             tp.name
+        );
+    }
+}
+
+#[test]
+fn golden_fixture_is_not_vacuous() {
+    assert_not_vacuous(
+        &measure(fixture_session_2d(), SIM_RESOLUTION_MM),
+        3,
+        500,
+        100.0,
+    );
+}
+
+#[test]
+fn golden_3d_fixture_is_not_vacuous() {
+    assert_not_vacuous(
+        &measure(fixture_session_3d(), SIM_RESOLUTION_3D_MM),
+        2,
+        500,
+        50.0,
+    );
+}
+
+/// The reason the 3D arm exists, asserted rather than assumed.
+///
+/// A golden that pinned only `Linear` samples would sit there green while a
+/// bug in the arc lineariser or in the XY+Z stamp path shipped. This test
+/// fails the day the fixture stops producing arcs or helical cuts — which is
+/// the day the golden above stops covering S1/S2/S3's arc and helix
+/// branches, whether or not any pinned number moved.
+#[test]
+fn three_d_arm_covers_arc_and_helix_kinematics() {
+    let a = measure(fixture_session_3d(), SIM_RESOLUTION_3D_MM);
+
+    let mut totals: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for tp in &a.per_toolpath {
+        for k in &tp.per_kinematics {
+            *totals.entry(k.kind.as_str()).or_default() += k.sample_count;
+        }
+    }
+    eprintln!("3D arm per-kinematics sample counts: {totals:?}");
+
+    for want in ["Arc", "Helix"] {
+        let n = totals.get(want).copied().unwrap_or(0);
+        assert!(
+            n > 0,
+            "3D golden arm produced no `{want}` cutting samples ({totals:?}). \
+             The arm exists precisely to cover that stamp branch; a golden \
+             without it pins only straight-and-level motion."
         );
     }
 }
