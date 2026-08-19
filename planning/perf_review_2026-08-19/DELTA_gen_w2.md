@@ -209,12 +209,21 @@ still passes for all 24 families.
 | `rest_grid_resolution_c9` | 2/2 |
 | `project_curve_depth_sign` | 4/4 |
 | `arcfit_intent_boundary_f1` | 5/5 |
-| `cargo test -p rs_cam_core --lib` | 2296/2296 before the new sentries, 2302/2302 after |
+| `cargo test -p rs_cam_core --no-fail-fast` (whole crate) | **one failure, not ours** — see below |
+
+The broad run is green apart from a single lib test,
+`dexel_stock::stamping::tests::squared_fast_paths_agree_with_the_sqrt_form`
+(2303 passed / 1 failed / 12 ignored), which is the SIM lane's in-flight S7
+de-sqrt work in `dexel_stock/stamping.rs`. Nothing in this wave touches that
+file or anything it depends on. Every integration target passed.
 
 Two integration targets (`generic_rest_routing_pr7`, `rest_routing_probe_e9`)
-failed to *compile* on the first attempt against an in-flight edit in the SIM
-lane's `dexel_stock/simulation.rs`; both pass on retry once that lane's tree
-settled. Nothing in this wave touches that file.
+also failed to *compile* on the first attempt against an in-flight edit in the
+same lane's `dexel_stock/simulation.rs`; both pass on retry once that lane's
+tree settled.
+
+`cargo fmt --check -p rs_cam_core` is clean for all seven files this wave
+touched (the two remaining diffs in the crate are, again, the SIM lane's).
 
 ## Not done, deliberately
 
