@@ -56,3 +56,9 @@ harness = false
 [[bench]]
 name = "classification"
 harness = false
+
+# Phase 0A baselines for planning/perf_review_2026-08-19/PERF_REVIEW.md —
+# one bench per finding cluster, landed before any fix.
+[[bench]]
+name = "hot_paths"
+harness = false
