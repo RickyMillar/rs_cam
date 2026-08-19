@@ -576,8 +576,145 @@ rows** (`...-parallel-...` for drop_cutter vs `...-scallop-...`, `row_pass_role
 semi_finish`, for unified) which gives them different bands from the same tool
 and material.
 
-Not yet root-caused. Needs its own investigation before either op's feed is
-trusted on a different machine.
+### ROOT-CAUSED 2026-08-19 — the chip-thinning term is computed at a stepover the op does not run
+
+**The 1.61× is not an unclamped number; it is a deliberately multiplied one,
+multiplied by the wrong amount.** Running Suggest over this project:
+
+```
+feed 1259.841 @ 19000 rpm, 2F  → commanded 0.033154 mm/tooth
+target chip_load = 0.015415  (LUT band MIDPOINT, inside band)
+derates: radial_chip_thinning 2.2942 × axial 1.6667 = 3.8236
+         × ld_overhang 0.75 × safety 0.75
+ae used by the calculator = 0.0900
+ae the toolpath actually runs = 0.30375
+```
+
+`0.015415 × 3.8236 × 0.75 × 0.75 = 0.033155`. The commanded advance is the band
+midpoint times a chip-thinning factor derived from a stepover **3.4× smaller than
+the one the operation cuts at**.
+
+**Falsification test** — hypothesis: *if the calculator saw the real stepover, its
+existing clamp would contain the feed.* Re-ran `feeds::calculate` on identical
+inputs with only `radial_width_mm` overridden:
+
+| `ae` fed in | RCTF | feed | mm/tooth | vs band max | warning |
+|---|---|---|---|---|---|
+| **0.09** (what it uses) | 2.2942 | **1259.84** | 0.033154 | **1.613×** | *(none)* |
+| 0.30 (authored) | 1.3416 | **781.02** | 0.020553 | **1.000×** | `ChiploadClampedToFloor { band_capped_from: Some(0.025) }` |
+| 0.30375 (applied) | 1.3350 | **781.02** | 0.020553 | **1.000×** | same |
+
+At the true stepover the op lands **exactly on its band maximum** and emits **the
+same warning `unified_finish` already gets**. The hypothesis survived a test
+designed to kill it.
+
+**Two independent gaps produce the stale stepover:**
+
+1. `calculate` never sees the authored stepover. `FeedsHints::radial_width_mm` is
+   documented "none of the current ops set this" (`compute/catalog.rs:2225`) and
+   the exhaustive `feeds_hints()` match confirms it. `ae` therefore comes from
+   `operation_default_profile(Parallel, Finish).ae_factor = 0.03` × Ø3.0 = 0.09.
+   The project's `stepover = 0.3` is ignored.
+2. `enforce_invariants` then mutates the stepover 0.09 → 0.30375
+   (`feeds/suggest.rs:1909`) **after** `calculate` froze the feed. There is a
+   direct precedent eleven lines earlier: when pass 0 mutates DPP,
+   `suggest.rs:1785-1793` explicitly re-derives `chipload_bounds`. **Retired pass 8
+   (Checkpoint J-1) was the only stage that reconciled the feed with the final
+   geometry, and nothing replaced it.**
+
+**It is generic, not specific to this op.** Mirror-image on toolpath 5: pass 0
+clamps DPP 9.0 → 4.2 mm, but the feed still carries `depth_tier = 0.75` computed
+at ap = 9.0, so that op is **under**-fed by 1.33× against its own model. The
+commanded feed is derived at *pre-clamp* geometry throughout.
+
+**Why `unified_finish` looked safe.** It was **not** clamped down — it was clamped
+*up* to the ceiling by the rubbing-floor rule (`band_capped_from: Some(0.025)`).
+Its `ae` is equally wrong, just conservatively so: `scallop_height = Some(0.1)`
+gives `scallop_stepover(1.5, 0.1) = 1.0770`, ae/D = 0.598 ≥ 0.5, so RCTF = 1.0 and
+its commanded landed at 0.70× band max. Both ops actually cut at ~0.3 mm. It
+landed safe by accident of a large `ae`, not by a guardrail.
+
+**There is no ceiling clamp anywhere in the Suggest path.** `calculate` has a
+power step, a machine cap, a chipload **floor** (Step 9b) and a drill envelope;
+`enforce_invariants` has eight passes, none chipload-related since pass 8 retired.
+`chipload_bounds.max_mm_per_tooth` is never compared against the commanded feed on
+the recipe side.
+
+**Vendor-row divergence is correct by design, not a mapping gap.** `lut_query_for`
+is a no-op for both ops (it only reroutes Adaptive3d/ProjectCurve); the rows differ
+because the ops declare different families — `drop_cutter` → `Parallel/Finish`,
+`unified_finish` → `Scallop/Finish`. `row_pass_role: semi_finish` on the unified
+side is honest fallback: the LUT publishes no scallop/finish row for tapered ball
+in hardwood. One wart worth a ledger row: `unified_finish` is a **three-band** op
+that resolves a single scallop row for all three bands.
+
+**Modulation is a write path, but a no-op here — verified.** `adaptive_feed_modulate`
+does write per-move feeds and swap the IR (10/10 existing sentries green, including
+one asserting ≥2 distinct emitted F words). But the swap is skipped when
+`changed == 0`, and modulated feeds live only in the post-sim IR — any later
+generate discards them, and `generate_all`'s fixpoint is literally
+generate → simulate → generate. **Falsifier run on the live session:
+`run_simulation` → `export_gcode` with no generate between produced a
+byte-identical file with the same six commanded F values.** So on this project
+modulation changes nothing, and the 1.63× reaches the machine unreduced. The
+1.63× is a **Suggest** defect, not a modulation one.
+
+`moves_touched` is not inconsistent after all — it counts changes against *that
+move's current feed* (per-invocation) while `median_feed_delta_pct` measures
+against the *authored* feed (cumulative). A second pass over an already-modulated
+IR gives 0 touched with an unchanged delta. Idempotence, not contradiction — but
+two quantities under one heading, and neither answers "is this program modulated?"
+
+### Recommended fix (not implemented)
+
+**Primary:** add a pass at the end of `enforce_invariants`
+(`feeds/suggest.rs:1820`, where retired pass 8 sat) that re-runs the chip-thinning
+and depth-tier terms against the operation's **final** stepover and DPP, rescales
+the feed, and re-applies the Step-9b floor clamp. Direct precedent eleven lines
+above. Expected on tp 8: **1260 → 781 mm/min**, commanded lands on the band
+maximum, and the same disclosure `unified_finish` already gets appears in
+`get_suggest_rationale`.
+
+**Do NOT** instead populate `FeedsHints::radial_width_mm`. That slot is empty
+deliberately — `apply_feeds_subset` writes `result.radial_width_mm` back as the
+operation's stepover, so feeding the current stepover in would make the calculator
+echo its input and stop recommending a stepover at all. The bug is ordering, not
+the hint.
+
+**Secondary backstop:** mirror Step 9b with a commanded-side *ceiling* clamp in
+`calculate` (`feeds/mod.rs:1735`) plus a new `ChiploadClampedToBandCeiling`
+warning. Land it *after* the primary fix and measure the verdict-flip table first —
+with the chip-thinning multiplication still in place it would bind on a large
+fraction of small-tool finishing ops.
+
+**Tertiary:** `tool_load/chipload.rs:666-682` already computes
+`CommandedStage::feed_per_tooth_mm` and **no verdict arm reads it**. Add an
+advisory (never a hard export block) when commanded exceeds the band, worded to
+name the contingency: *"inside band only because the machine cannot reach the
+commanded feed."*
+
+### G-CHIPTHIN-HALFFIX — flagged, needs its own decision
+
+The 2026-08-06 wave established from primary sources that every vendor chipload
+column in the LUT is a **linear advance per tooth**, and **deleted** the gate-side
+chip-thinning normalisation rather than inverting it.
+`CHIPLOAD_LITERATURE_VERDICT.md` §2.3 records that no wood chart in the LUT
+publishes a radial-engagement condition for its chipload column at all, and §V-5
+warns that applying a thinning factor to such a column "double-thins".
+
+**That correction was applied to the gate and to nothing else.** Two sites still
+multiply the vendor band by chip thinning: `feeds/mod.rs:1492-1506` (Suggest,
+factor ∈ [1.0, 4.0]) and `feed_modulation.rs:373` (the modulator). Measured across
+this project: 1.25× (tp5), 1.67× (tp6), 3.82× (tp8), 4.00× (tp9 — **on the clamp
+ceiling**). So Suggest can command up to 4× the vendor's published number by
+design, while the gate judges against that number unmultiplied, and the two are
+compared to each other on operator-facing surfaces.
+
+**Fact:** the two sides differ by `combined_chip_thinning`. **Judgement (not a new
+retrieval):** given the column is an advance per tooth with no published `ae`
+condition, the multiplication is the surviving half of the category error the gate
+wave deleted. This moves every feed in the product — it needs its own ledger row
+and its own decision, not a bundle with G-SUGGEST-NOCLAMP.
 
 ### Minor: `modulation_summary.moves_touched` is not stable across reads
 
