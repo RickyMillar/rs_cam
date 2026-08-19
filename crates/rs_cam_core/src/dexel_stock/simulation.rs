@@ -159,7 +159,7 @@ impl TriDexelStock {
         let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
         let empty_span_path: Vec<SpanId> = Vec::new();
 
-        let mut samples = Vec::with_capacity(toolpath.moves.len() * 2);
+        let mut samples = Vec::with_capacity(estimate_sample_count(toolpath, sample_step_mm));
         let mut cumulative_time_s = 0.0;
         let mut next_sample_index = 0usize;
         let mut arc_buf = Vec::new();
@@ -692,6 +692,64 @@ pub fn chip_thickness_stats(
         })
 }
 
+/// Per-subsegment Z-drop cap. Kept in lockstep with the constant of the same
+/// name inside [`TriDexelStock::capture_cutting_segment`] — see the reasoning
+/// there. Duplicated rather than shared because the two live at different
+/// scopes and the estimator must not be able to change the stamp.
+const ESTIMATOR_MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
+
+/// How many `SimulationCutSample`s a toolpath will emit, near enough to
+/// reserve for (PERF_REVIEW S6).
+///
+/// The old reserve was `moves.len() * 2`, which is not an estimate of anything
+/// — the emitter pushes **one sample per subsegment**, and a move is cut into
+/// `max(⌈len/sample_step⌉, ⌈|Δz|/0.02⌉)` of them. At the shipped sample steps
+/// that is 5–20× the old figure on a raster pass and far more on a plunge, so
+/// the Vec re-allocated and memcpy'd its way up through every doubling.
+///
+/// This walks the move list once (O(moves), against an O(moves × cells) stamp)
+/// and reproduces the emitter's own arithmetic. It is deliberately an
+/// **under**-estimate in one case and exact otherwise:
+///
+/// * arcs are counted by their **chord**, because the true count comes from
+///   `linearize_arc_into` and reproducing it here would mean linearising every
+///   arc twice. An under-reserve costs at most the doublings above the
+///   estimate, which is what the old code paid on every move.
+/// * `MoveIntent::Retract` Linear moves and rapids are counted by length only,
+///   matching `sample_segment_runtime`, which has no Z-drop subdivision.
+///
+/// Never an over-estimate by construction, so no cap is needed: the Vec cannot
+/// be asked to reserve more than the run will actually push.
+#[allow(clippy::indexing_slicing)] // bounded by the loop range
+fn estimate_sample_count(toolpath: &Toolpath, sample_step_mm: f64) -> usize {
+    let step = sample_step_mm.max(1e-3);
+    let mut total = 0usize;
+    for move_index in 1..toolpath.moves.len() {
+        let start = toolpath.moves[move_index - 1].target;
+        let end = toolpath.moves[move_index].target;
+        let length = (end - start).norm();
+        if length <= 1e-9 {
+            continue;
+        }
+        let by_length = (length / step).ceil() as usize;
+        let mv = &toolpath.moves[move_index];
+        // Length-only (no Z-drop subdivision): rapids, and Linear moves the
+        // generator tagged `Retract` — both go through `sample_segment_runtime`.
+        let length_only = matches!(mv.move_type, MoveType::Rapid)
+            || (matches!(mv.intent, crate::toolpath::MoveIntent::Retract)
+                && matches!(mv.move_type, MoveType::Linear { .. }));
+        let n = if length_only {
+            by_length
+        } else {
+            let by_z =
+                ((end.z - start.z).abs() / ESTIMATOR_MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
+            by_length.max(by_z)
+        };
+        total = total.saturating_add(n.max(1));
+    }
+    total
+}
+
 fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {
     if is_arc {
         return CutKinematics::Arc;
@@ -754,6 +812,68 @@ mod tests {
                 &never_cancel,
             )
             .expect("simulation succeeds")
+    }
+
+    /// S6: the reserve must never ask for more than the run will push, and
+    /// must not be the near-useless under-estimate it replaced.
+    ///
+    /// The over-estimate half is the load-bearing one — `estimate_sample_count`
+    /// claims "never an over-estimate by construction", and a claim like that
+    /// is worth exactly as much as the test that checks it. The lower bound
+    /// (≥ half the actual) is what distinguishes this from `moves.len() * 2`,
+    /// which under-reserves this very fixture by more than 10×.
+    #[test]
+    fn sample_count_estimate_never_exceeds_the_run() {
+        let bbox = BoundingBox3 {
+            min: P3::new(-20.0, -20.0, -5.0),
+            max: P3::new(20.0, 20.0, 5.0),
+        };
+        let cutter = FlatEndmill::new(6.0, 20.0);
+        let never_cancel = || false;
+
+        // Laterals, a plunge (the `by_z` arm), a ramp (both arms) and a
+        // rapid — every branch the estimator distinguishes.
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(-10.0, -5.0, 2.0));
+        toolpath.feed_to(P3::new(-10.0, -5.0, -1.0), 300.0); // plunge
+        toolpath.feed_to(P3::new(10.0, -5.0, -1.0), 600.0); // lateral
+        toolpath.feed_to(P3::new(10.0, 5.0, -2.5), 600.0); // ramp
+        toolpath.feed_to(P3::new(-10.0, 5.0, -2.5), 600.0); // lateral
+        toolpath.rapid_to(P3::new(-10.0, -5.0, 2.0));
+
+        for step in [0.25_f64, 1.0, 4.0] {
+            let mut stock = TriDexelStock::from_bounds(&bbox, 0.5);
+            let samples = stock
+                .simulate_toolpath_with_metrics_with_cancel(
+                    &toolpath,
+                    &cutter,
+                    StockCutDirection::FromTop,
+                    ToolpathId(0),
+                    12_000,
+                    2,
+                    3000.0,
+                    step,
+                    None,
+                    &[],
+                    &[],
+                    true,
+                    &never_cancel,
+                )
+                .expect("simulation succeeds");
+            let estimate = estimate_sample_count(&toolpath, step);
+            assert!(
+                estimate <= samples.len(),
+                "step {step}: estimate {estimate} EXCEEDS the {} samples actually \
+                 emitted — the reserve is documented as never over-estimating",
+                samples.len()
+            );
+            assert!(
+                estimate * 2 >= samples.len(),
+                "step {step}: estimate {estimate} is less than half the {} samples \
+                 emitted — that is the `moves.len() * 2` failure mode again",
+                samples.len()
+            );
+        }
     }
 
     #[test]

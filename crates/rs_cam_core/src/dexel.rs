@@ -260,18 +260,6 @@ pub struct DexelGrid {
     pub origin_v: f64,
     pub cell_size: f64,
     pub axis: DexelAxis,
-    /// Maximum fractional cutter coverage seen at each cell across the
-    /// project's stamping history (parallel to `rays`).
-    ///
-    /// Populated by sub-cell stamping (F.a, see `DEXEL_Z_ONLY_INVESTIGATION.md`
-    /// §6.F gap 4). Forward-compatible bridge to F.b sub-cell-resolved ray
-    /// storage: a value `f ∈ [0, 1]` per cell can later seed `f` of the
-    /// sub-cells at the cut surface and `(1-f)` at the bulk material level.
-    ///
-    /// Not used by any planning / mesh / collision consumer today — purely
-    /// observational. Stamping kernels update via running max.
-    pub coverage_max: Vec<f32>,
-
     /// **Sliver-safe upper bound** on where material may still stand anywhere
     /// inside each cell (parallel to `rays`), along the ray axis' high end.
     ///
@@ -316,7 +304,6 @@ impl Clone for DexelGrid {
             origin_v: self.origin_v,
             cell_size: self.cell_size,
             axis: self.axis,
-            coverage_max: self.coverage_max.clone(),
             conservative_top: self.conservative_top.clone(),
         }
     }
@@ -396,7 +383,6 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.z as f32, bbox.max.z as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
-        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -405,7 +391,6 @@ impl DexelGrid {
             origin_v: bbox.min.y,
             cell_size,
             axis: DexelAxis::Z,
-            coverage_max,
             conservative_top: vec![bbox.max.z as f32; rows * cols],
         }
     }
@@ -423,7 +408,6 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.x as f32, bbox.max.x as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
-        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -432,7 +416,6 @@ impl DexelGrid {
             origin_v: bbox.min.z,
             cell_size,
             axis: DexelAxis::X,
-            coverage_max,
             conservative_top: vec![bbox.max.x as f32; rows * cols],
         }
     }
@@ -450,7 +433,6 @@ impl DexelGrid {
         let seg = DexelSegment::new(bbox.min.y as f32, bbox.max.y as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
-        let coverage_max = vec![0.0_f32; rows * cols];
         Self {
             rays,
             rows,
@@ -459,7 +441,6 @@ impl DexelGrid {
             origin_v: bbox.min.z,
             cell_size,
             axis: DexelAxis::Y,
-            coverage_max,
             conservative_top: vec![bbox.max.y as f32; rows * cols],
         }
     }
@@ -526,14 +507,6 @@ impl DexelGrid {
     #[inline]
     pub fn material_length_at(&self, row: usize, col: usize) -> f32 {
         ray_material_length(&self.rays[row * self.cols + col])
-    }
-
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// Maximum fractional cutter coverage seen at the cell across the
-    /// project's stamping history. See `DexelGrid::coverage_max` docstring.
-    #[inline]
-    pub fn coverage_at(&self, row: usize, col: usize) -> f32 {
-        self.coverage_max[row * self.cols + col]
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

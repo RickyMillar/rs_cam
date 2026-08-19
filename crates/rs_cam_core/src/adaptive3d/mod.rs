@@ -592,7 +592,6 @@ mod tests {
                 rays.push(SmallVec::from_buf([seg]));
             }
         }
-        let coverage_max = vec![0.0_f32; rows * cols];
         // A/M10: this grid is built from an explicit per-cell top array, so
         // each cell's top IS the stated height — there is no sub-cell blend
         // to be conservative about. Seed the sliver-safe bound to the same
@@ -607,7 +606,6 @@ mod tests {
             origin_v: origin_y,
             cell_size,
             axis: crate::dexel::DexelAxis::Z,
-            coverage_max,
             conservative_top,
         };
         TriDexelStock {

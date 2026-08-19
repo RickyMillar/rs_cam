@@ -845,11 +845,15 @@ where
                 global_stock.apply_drill_op(&global_drill_op);
                 global_drill_ops.push(global_drill_op);
             } else {
-                let playback_lut =
-                    RadialProfileLUT::from_cutter(&entry.tool, crate::radial_profile::LUT_SAMPLES);
+                // S4a: this used to build a second `RadialProfileLUT` from
+                // `entry.tool` at `LUT_SAMPLES` — the same two arguments as
+                // `lut` above, i.e. a bit-for-bit duplicate of a 4096-entry
+                // table, rebuilt once per toolpath. The playback stamp is a
+                // different grid and a different frame, but it is the same
+                // cutter, so it takes the same profile.
                 let _ = global_stock.simulate_toolpath_with_lut_cancel(
                     &global_tp,
-                    &playback_lut,
+                    &lut,
                     radius,
                     playback_direction,
                     &|| cancel.load(Ordering::SeqCst),
