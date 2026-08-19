@@ -86,47 +86,113 @@ fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
     inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32
 }
 
-/// The two squared-space radii `segment_cell_coverage`'s fast paths test
-/// against, hoisted out of the per-cell loop (PERF_REVIEW S7).
+/// Bound on the ULP walk in [`CoverageFastPath::new`]. The naive squared
+/// bound is within ~2 ULP of the exact flip point; 64 is four orders of
+/// slack, and the loops are bounded so a NaN or infinity cannot spin.
+const FAST_PATH_ULP_SEARCH_LIMIT: usize = 64;
+
+/// The two squared-space thresholds `segment_cell_coverage`'s fast paths test
+/// against, solved once per stamp instead of per cell (PERF_REVIEW S7).
 ///
 /// The fast paths ask whether the *worst-case* sub-sample of a cell is outside
 /// the cutter (`center_d − ext_diag ≥ r`) or the *best*-case one is inside
 /// (`center_d + ext_diag ≤ r`), where `ext_diag = cs·SUBSAMPLE_HALF_EXTENT·√2`
-/// is the corner sub-sample's offset from the cell centre. Both sides of both
-/// comparisons are non-negative — with one exception, handled below — so
-/// squaring is order-preserving and the tests can be answered without ever
-/// taking a square root: the kernel already has `center_d_sq` in hand.
+/// is the corner sub-sample's offset from the cell centre. The kernel already
+/// holds `center_d_sq`, so answering these without a per-cell `sqrt` is worth
+/// real time — the loop used to pay TWO, and one of them (`r_sq.sqrt()`) was a
+/// loop invariant being recomputed for every cell in the swept bounding box.
 ///
-/// `r` and `ext_diag` are constant for a whole stamp, so this is built once
-/// per `stamp_*` call rather than once per covered cell. Before S7 the inner
-/// loop paid `r_sq.sqrt()` — a loop-invariant! — plus `center_d_sq.sqrt()`,
-/// for every cell in the swept bounding box.
+/// # Why this is not just `(r ± ext_diag)²`
+///
+/// It is tempting — and `PERF_REVIEW.md` S7 says so — that the tests are
+/// "exact in squared space against hoisted `(r ± ext_diag)²`". **They are
+/// not.** In exact arithmetic they would be; in `f64` the two forms round
+/// differently, and `squared_fast_paths_agree_with_the_sqrt_form` catches it
+/// at the boundary. The clearest case: at `d = fl(r + ext_diag)` the squared
+/// form sees `d² == outer_sq` and takes the fast path, while the sqrt form
+/// evaluates `fl(fl(r + ext_diag) − ext_diag)`, which lands *below* `r`, and
+/// falls through to sub-sampling. A denser sweep finds the disagreement going
+/// the other way too, and no choice of strict-vs-non-strict comparison removes
+/// it — the rounding paths simply differ by an ULP either side of both bounds.
+///
+/// # What is done instead
+///
+/// Both legacy predicates are **monotone in `d_sq`** (`sqrt` is monotone and
+/// correctly rounded; adding a constant and comparing preserve that). A
+/// monotone predicate over a totally ordered domain has an exact flip point,
+/// so rather than approximating it, this *solves* for it: start from the naive
+/// squared bound and walk ULPs until the legacy predicate's own answer flips.
+/// The result is exact **by construction** — the threshold is defined as the
+/// boundary of the old test, not derived from an algebraic identity that only
+/// holds over the reals. The walk costs a handful of `sqrt`s once per stamp
+/// and buys back one per cell.
 #[derive(Clone, Copy)]
 struct CoverageFastPath {
-    /// `(r + ext_diag)²`. At or past this squared distance every sub-sample
-    /// is outside the cutter ⇒ coverage 0.
+    /// Smallest `d_sq` for which the legacy test `√d_sq − ext_diag ≥ r` holds.
+    /// At or past it, every sub-sample is outside the cutter ⇒ coverage 0.
     outer_sq: f64,
-    /// `(r − ext_diag)²`, or `-1.0` when `ext_diag > r`.
+    /// Largest `d_sq` for which the legacy test `√d_sq + ext_diag ≤ r` holds,
+    /// or `-1.0` when `ext_diag > r`.
     ///
-    /// The negative sentinel is the exception the squaring argument needs:
-    /// when the sub-sample fan is wider than the cutter, `r − ext_diag < 0`
-    /// and `center_d ≤ r − ext_diag` is unsatisfiable for any cell (distances
-    /// are non-negative). Squaring a negative would wrongly re-admit cells
-    /// near the axis, so the sentinel makes `center_d_sq <= inner_sq` false
-    /// for every cell instead — matching the pre-S7 comparison exactly.
+    /// The negative sentinel matters: when the sub-sample fan is wider than
+    /// the cutter — a Ø0.5 tool on a 1 mm grid, which is a real fine-tool
+    /// regime — no cell can satisfy the legacy test at all, because distances
+    /// are non-negative. `-1.0` makes `center_d_sq <= inner_sq` false for
+    /// every cell. Squaring the negative `r − ext_diag` instead would flip the
+    /// test's sense and report FULL coverage for cells near the tool axis.
     inner_sq: f64,
 }
 
 impl CoverageFastPath {
-    #[inline]
     fn new(r_sq: f64, cs: f64) -> Self {
         let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
         let r = r_sq.sqrt();
-        let outer = r + ext_diag;
-        let inner = r - ext_diag;
+
+        // `outer`: smallest t with `√t − ext_diag ≥ r`. Monotone increasing,
+        // so walk up until it holds, then down to the first t that still does.
+        let outside = |t: f64| t.sqrt() - ext_diag >= r;
+        let mut outer = (r + ext_diag) * (r + ext_diag);
+        for _ in 0..FAST_PATH_ULP_SEARCH_LIMIT {
+            if outside(outer) {
+                break;
+            }
+            outer = outer.next_up();
+        }
+        for _ in 0..FAST_PATH_ULP_SEARCH_LIMIT {
+            let down = outer.next_down();
+            if down < 0.0 || !outside(down) {
+                break;
+            }
+            outer = down;
+        }
+
+        // `inner`: largest t with `√t + ext_diag ≤ r`. Monotone DEcreasing, so
+        // walk down until it holds, then up to the last t that still does.
+        let inside = |t: f64| t.sqrt() + ext_diag <= r;
+        let inner = if ext_diag > r {
+            // Unsatisfiable for every cell — see the field docs.
+            -1.0
+        } else {
+            let mut inner = (r - ext_diag) * (r - ext_diag);
+            for _ in 0..FAST_PATH_ULP_SEARCH_LIMIT {
+                if inner <= 0.0 || inside(inner) {
+                    break;
+                }
+                inner = inner.next_down();
+            }
+            for _ in 0..FAST_PATH_ULP_SEARCH_LIMIT {
+                let up = inner.next_up();
+                if !inside(up) {
+                    break;
+                }
+                inner = up;
+            }
+            inner.max(0.0)
+        };
+
         Self {
-            outer_sq: outer * outer,
-            inner_sq: if inner >= 0.0 { inner * inner } else { -1.0 },
+            outer_sq: outer,
+            inner_sq: inner,
         }
     }
 }
@@ -982,21 +1048,41 @@ mod tests {
         None
     }
 
-    /// S7 claims the de-sqrt is exact. This is where that claim is checked —
-    /// including the regime the review's text did not mention, where the
-    /// sub-sample fan is WIDER than the cutter (`ext_diag > r`) and the
-    /// "fully inside" bound goes negative. Naively squaring `r − ext_diag`
-    /// there would flip the test's sense and report full coverage for cells
-    /// near the tool axis.
+    /// S7 claims the de-sqrt is exact. This is where that claim is checked, at
+    /// **exact equality of `Option<f32>`** — there is deliberately no tolerance
+    /// here to widen, because the whole point of the change is that it moves
+    /// nothing.
+    ///
+    /// Two things this covers that the review's text does not mention:
+    ///
+    /// 1. The regime where the sub-sample fan is WIDER than the cutter
+    ///    (`ext_diag > r`) and the "fully inside" bound goes negative. Naively
+    ///    squaring `r − ext_diag` there flips the test's sense and reports full
+    ///    coverage for cells near the tool axis. `sentinel_rows` asserts that
+    ///    regime is actually exercised rather than silently absent.
+    /// 2. The **boundary ties**, which is where the review's "exact in squared
+    ///    space" claim actually fails. `(r ± ext_diag)²` is NOT the flip point
+    ///    of the sqrt form in `f64`; this sweep lands on both boundaries and
+    ///    walks four ULPs either side of each, and it found real disagreements
+    ///    against the naive squared bound. That is why `CoverageFastPath`
+    ///    solves for the threshold instead of computing it algebraically.
     #[test]
     fn squared_fast_paths_agree_with_the_sqrt_form() {
-        // Radii from a Ø0.5 micro tool to a Ø20 shell mill; cells from a fine
-        // 0.05 mm sim grid up to 2 mm — the last two rows put `ext_diag`
-        // above `r`, which is the sentinel case.
-        let radii = [0.25_f64, 0.5, 1.0, 3.0, 6.0, 10.0];
-        let cells = [0.05_f64, 0.1, 0.25, 0.5, 1.0, 2.0];
+        // Radii from a Ø0.2 engraver to a Ø25.4 shell mill; cells from a fine
+        // 0.02 mm sim grid up to 5 mm. Several pairs put `ext_diag` above `r`,
+        // which is the sentinel case.
+        let radii = [
+            0.1_f64, 0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 3.0, 6.0, 10.0, 12.7,
+        ];
+        let cells = [
+            0.02_f64, 0.05, 0.1, 0.2, 0.25, 0.4, 0.5, 1.0, 2.0, 3.0, 5.0,
+        ];
+        const SWEEP_STEPS: usize = 600;
+        const ULP_NEIGHBOURHOOD: i32 = 4;
+
         let mut disagreements = Vec::new();
         let mut sentinel_rows = 0usize;
+        let mut probes_checked = 0usize;
 
         for &r in &radii {
             let r_sq = r * r;
@@ -1005,21 +1091,30 @@ mod tests {
                 if ext_diag > r {
                     sentinel_rows += 1;
                 }
-                // Sweep the distance densely across the whole decision band,
-                // and land exactly on both boundaries.
-                let mut probes: Vec<f64> = (0..=400)
-                    .map(|i| (r + 2.0 * ext_diag) * i as f64 / 400.0)
+                // Sweep the whole decision band …
+                let mut probes: Vec<f64> = (0..=SWEEP_STEPS)
+                    .map(|i| (r + 2.0 * ext_diag) * i as f64 / SWEEP_STEPS as f64)
                     .collect();
-                probes.push((r + ext_diag).max(0.0));
-                probes.push((r - ext_diag).max(0.0));
-                probes.push(0.0);
+                // … then land ON each interesting value and walk ULPs either
+                // side of it. The disagreements this test exists to catch live
+                // within one ULP of a boundary, so sweeping alone misses them.
+                for base in [r + ext_diag, (r - ext_diag).max(0.0), r, ext_diag, 0.0] {
+                    for k in -ULP_NEIGHBOURHOOD..=ULP_NEIGHBOURHOOD {
+                        let mut p = base;
+                        for _ in 0..k.abs() {
+                            p = if k > 0 { p.next_up() } else { p.next_down() };
+                        }
+                        probes.push(p.max(0.0));
+                    }
+                }
                 for d in probes {
                     let d_sq = d * d;
+                    probes_checked += 1;
                     let legacy = legacy_fast_path(d_sq, r_sq, cs);
                     let s7 = s7_fast_path(d_sq, r_sq, cs);
                     if legacy != s7 {
                         disagreements.push(format!(
-                            "r={r} cs={cs} d={d}: legacy {legacy:?}, S7 {s7:?}"
+                            "r={r} cs={cs} d={d:.17e}: legacy {legacy:?}, S7 {s7:?}"
                         ));
                     }
                 }
@@ -1032,11 +1127,21 @@ mod tests {
              test is not covering the case it exists for"
         );
         assert!(
+            probes_checked > 70_000,
+            "only {probes_checked} probes ran — the sweep has been thinned, and \
+             a thinned sweep is how this test goes green without being true"
+        );
+        assert!(
             disagreements.is_empty(),
             "the squared-space fast paths disagree with the sqrt form in {} \
-             place(s):\n{}",
+             place(s) out of {probes_checked}:\n{}",
             disagreements.len(),
-            disagreements.join("\n")
+            disagreements
+                .iter()
+                .take(20)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
         );
     }
 }
