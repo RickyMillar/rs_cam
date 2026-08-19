@@ -196,11 +196,12 @@ fn vendor_sidebyside_chipload_spotcheck() {
             result.axial_depth_mm, result.radial_width_mm, result.effective_diameter_mm
         );
         println!(
-            "  derates: target_chip_load={:.6}  rctf={:.6}  axial_thin={:.6}  combined={:.6}",
+            "  target_chip_load={:.6}   chip-thinning OBSERVED but NOT applied: \
+             rctf={:.6} axial={:.6} combined={:.6}",
             dr.target_chip_load_mm,
-            dr.radial_chip_thinning,
-            dr.axial_chip_thinning,
-            dr.combined_chip_thinning
+            dr.observed_radial_chip_thinning,
+            dr.observed_axial_chip_thinning,
+            dr.observed_combined_chip_thinning
         );
         println!(
             "           depth_tier={:.6}  ld={:.6}  workholding={:.6}  power={:.6}  \
@@ -312,9 +313,14 @@ fn vendor_sidebyside_chipload_spotcheck() {
 /// commanded advance per tooth equals
 ///
 /// ```text
-/// target_chip_load_mm x combined_chip_thinning x depth_tier
+/// target_chip_load_mm x depth_tier
 ///                     x ld x workholding x safety_factor x spindle_speedup
 /// ```
+///
+/// **`combined_chip_thinning` left this identity on 2026-08-19**
+/// (G-CHIPTHIN-HALFFIX, operator-ruled): the calculator no longer multiplies
+/// the feed by it, so composing it here would predict a feed the engine does
+/// not emit. It is still reported above, as an observation.
 ///
 /// to float precision, where `target_chip_load_mm` is the matched row's
 /// **transferred** midpoint. So the same identity that puts one op at
@@ -342,7 +348,6 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
         assert!(divisor > 0.0, "{}: no fpt divisor", probe.label);
         let commanded_fpt = result.feed_rate_mm_min / divisor;
         let predicted = dr.target_chip_load_mm
-            * dr.combined_chip_thinning
             * dr.depth_tier
             * dr.ld_overhang
             * dr.workholding
@@ -410,15 +415,28 @@ fn the_band_derate_and_the_feed_derate_are_different_functions() {
     );
 }
 
-/// **A sub-Ø2 ball finishing recommendation lands ABOVE the vendor
-/// window it was derived from**, because the chip-thinning stack
-/// multiplies the band midpoint by more than the band's own
-/// max/mid ratio. The gate has observed a plain advance per tooth since
-/// 2026-08-06 and is engagement-blind, so it reads this as an
-/// exceedance even though the *intended chip* is inside the window.
-/// Reproduction of current state — see the doc's Gaps §3.
+/// **INVERTED 2026-08-19 (G-CHIPTHIN-HALFFIX), not deleted.**
+///
+/// This test used to assert the defect: a sub-Ø2 ball finishing recommendation
+/// landed **above** the vendor window it was derived from, at **1.478× the
+/// derated band ceiling**, because the chip-thinning stack multiplied the band
+/// midpoint by more than the band's own max/mid ratio. The gate has observed a
+/// plain advance per tooth since 2026-08-06 and is engagement-blind, so it read
+/// that as an exceedance. It was the headline of the VSBS side-by-side and the
+/// reason `VSBS-SEED` was raised.
+///
+/// The multiplication is gone. Probe D now commands **0.034067 mm/tooth**
+/// against a derated band of **0.034455..0.056390** — it falls just under the
+/// vendor minimum rather than over the maximum, a 1.5 % undershoot in place of
+/// a 47.8 % overshoot.
+///
+/// The assertion is inverted rather than dropped, per this repo's convention
+/// for a defect reproduction that has been fixed (`arc_fit_disposition_a5`
+/// did the same when pass 8 retired): the old magnitude stays in the docs so
+/// the fix remains checkable, and the new assertion fails if the multiplication
+/// ever comes back.
 #[test]
-fn the_sub_two_millimetre_ball_probe_commands_above_its_own_vendor_band() {
+fn the_sub_two_millimetre_ball_probe_no_longer_commands_above_its_vendor_band() {
     let probe = probes()
         .into_iter()
         .find(|p| p.label.starts_with("D "))
@@ -429,12 +447,24 @@ fn the_sub_two_millimetre_ball_probe_commands_above_its_own_vendor_band() {
         .expect("probe D must resolve a banded vendor row");
     let commanded_fpt = result.feed_rate_mm_min / (result.rpm * f64::from(probe.flutes));
     assert!(
-        commanded_fpt > bounds.max_mm_per_tooth,
-        "probe D commanded {commanded_fpt:.6} was expected ABOVE the derated band max {:.6} \
-         (band {:.6}..{:.6}); if this now passes inside the band, the chip-thinning stack \
-         or the ball finishing defaults moved — re-read the doc before re-pinning",
+        commanded_fpt <= bounds.max_mm_per_tooth,
+        "probe D commanded {commanded_fpt:.6}, ABOVE the derated band max {:.6} \
+         (band {:.6}..{:.6}) — that is {:.3}× the ceiling. Chip thinning was deleted from \
+         the feed on 2026-08-19 by operator ruling precisely to stop this; if it is back, \
+         see the Step 5 note in feeds/mod.rs before re-pinning.",
         bounds.max_mm_per_tooth,
         bounds.min_mm_per_tooth,
         bounds.max_mm_per_tooth,
+        commanded_fpt / bounds.max_mm_per_tooth,
+    );
+    // And the direction it moved to, so a future regression that overshoots
+    // the OTHER way is caught too. The undershoot is expected and small: a
+    // sub-Ø2 ball in this material simply cannot be fed hard.
+    assert!(
+        commanded_fpt > bounds.min_mm_per_tooth * 0.9,
+        "probe D commanded {commanded_fpt:.6}, more than 10 % under the derated band \
+         minimum {:.6} — the deletion was expected to land it just below the minimum \
+         (measured 0.034067 vs 0.034455, a 1.5 % undershoot), not to collapse it",
+        bounds.min_mm_per_tooth,
     );
 }

@@ -364,13 +364,31 @@ fn max_safe_feed_for_move(
     let flutes = ctx.flute_count.max(1) as f64;
     let band = ctx.chipload_band;
 
-    // Effective WOC fraction: clamp to a small floor so chip-thinning
-    // doesn't blow up at near-zero engagement. The simulator's air-
-    // cut samples are gated out upstream; this protects against
-    // single-sample noise.
+    // Effective WOC fraction: clamped to a small floor because the deflection
+    // and power limits below divide by it. The simulator's air-cut samples are
+    // gated out upstream; this protects against single-sample noise.
     let woc_eff = engagement.radial_woc_fraction.clamp(1e-3, 1.0);
-    let chip_thinning_inv = woc_eff.sqrt().max(1e-6);
-    let target_chipload = band.max_mm_per_tooth / chip_thinning_inv;
+
+    // Chip-thinning correction DELETED 2026-08-19 (G-CHIPTHIN-HALFFIX,
+    // operator-ruled). This site used a different formula from Suggest's —
+    // `band.max ÷ sqrt(woc_eff)` rather than `radial_chip_thinning_factor` —
+    // but it made the same claim, and it fails for the same reason: the vendor
+    // chipload column it re-keys against publishes no radial reference
+    // condition to correct from (`CHIPLOAD_LITERATURE_VERDICT.md` N-8, a
+    // deliberate negative result over six wood charts read in full).
+    //
+    // The magnitude here was larger than Suggest's, not smaller: `1/sqrt(woc)`
+    // is unbounded below and had no equivalent of Suggest's `[1, 4]` clamp, so
+    // at the 1e-3 floor it reached 31.6×. It was applied to the band MAXIMUM,
+    // so a lightly-engaged move could be handed a target tens of times the
+    // largest chipload the vendor publishes — and the post-simulation gate
+    // that judges the result deleted its own half of this correction on
+    // 2026-08-06. The two halves now agree.
+    //
+    // The target is simply the band maximum: this is a constrained-MAX solver,
+    // so the chipload ceiling is the constraint, and the five other caps below
+    // are what actually bind on an engaged move.
+    let target_chipload = band.max_mm_per_tooth;
 
     let mut limits: Vec<(f64, BindingConstraint)> = Vec::with_capacity(6);
 

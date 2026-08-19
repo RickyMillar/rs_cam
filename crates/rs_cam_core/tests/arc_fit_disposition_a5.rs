@@ -263,6 +263,19 @@ fn fixtures() -> Vec<Fixture> {
             // maximum; 1/1.2727 = 0.786 against an observed 0.7556, the
             // remainder being the DOC derate applied to the new band.
             //
+            // **RE-PINNED AGAIN 2026-08-19, G-CHIPTHIN-HALFFIX: 1223.4 →
+            // 1000.0** (÷1.2234, this fixture's `combined_chip_thinning`).
+            // Suggest no longer multiplies the feed by chip thinning at all —
+            // operator-ruled after the magnitude survey, on the finding that
+            // no wood chart in the LUT publishes a radial condition for its
+            // chipload column. Commanded advance 0.04078 → **0.03333
+            // mm/tooth** against a derated band of 0.032–0.055: still inside
+            // the vendor window, now near its lower edge rather than its
+            // middle. That is the intended direction — the deletion trades
+            // "middle of the band on an unsourced multiplier" for "low in the
+            // band on the vendor's own number".
+            //
+            // Superseded note, kept for lineage:
             // **RE-PINNED 2026-08-19, G-SUGGEST-NOCLAMP: 918.0 → 1223.4**
             // (×4/3, exactly). Suggest pass 9 now re-derives the feed at the
             // geometry the operation ships, and the axial envelope clamps
@@ -275,7 +288,7 @@ fn fixtures() -> Vec<Fixture> {
             // target. Nothing about the retired arc-fit lift changed —
             // point 3 still holds at 5.65×, and arm C is reconstructed from
             // the band and RPM, so point 4 is untouched.
-            expected_suggest_feed: 1223.4,
+            expected_suggest_feed: 1000.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -296,6 +309,12 @@ fn fixtures() -> Vec<Fixture> {
             // figures, the same factor as A3D-1, which is what one
             // expects from one row-pair carried by the same scale terms.
             //
+            // **RE-PINNED AGAIN 2026-08-19, G-CHIPTHIN-HALFFIX: 2258.4 →
+            // 1806.7** (÷1.25). Commanded advance 0.05019 → **0.04015
+            // mm/tooth** against a derated band of 0.03938–0.06768 — inside,
+            // near the lower edge, same story as A3D-1.
+            //
+            // Superseded note, kept for lineage:
             // **RE-PINNED 2026-08-19, G-SUGGEST-NOCLAMP: 1694.0 → 2258.4**
             // (×4/3, exactly — the same depth-tier crossing as A3D-1, on Ø8
             // rather than Ø6). Commanded advance 0.03764 → 0.05019 mm/tooth
@@ -310,7 +329,7 @@ fn fixtures() -> Vec<Fixture> {
             // fire. That asymmetry — the DPP-clamped family moves, the
             // family with no DPP does not — is itself the check that the
             // pass is keyed on geometry and not on op family.
-            expected_suggest_feed: 2258.4,
+            expected_suggest_feed: 1806.7,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -325,7 +344,16 @@ fn fixtures() -> Vec<Fixture> {
             max_feed_mm_min: 12_000.0,
             max_cutting_feed_mm_min: None,
             legacy_shipped_feed: 4405.0,
-            expected_suggest_feed: 1487.0,
+            // **RE-PINNED 2026-08-19, G-CHIPTHIN-HALFFIX: 1487.0 → 881.0**
+            // (÷1.688). Unlike the two Adaptive3d fixtures this one does NOT
+            // land mid-band: its derated band is 0.01159–0.02318, entirely
+            // below the 0.025 mm/tooth chip-formation floor, so
+            // `effective_rubbing_floor` collapses to the band CEILING and
+            // Step 9b pins the commanded advance there — **0.02318 mm/tooth,
+            // exactly `max`**. A hardwood ball tool cannot both clear chip
+            // formation and stay inside its vendor window, which is the
+            // FEEDS_CENSUS C-12 tradeoff, disclosed rather than hidden.
+            expected_suggest_feed: 881.0,
         },
         // A small router: the ceiling binds on a DropCutter lift too.
         Fixture {
@@ -341,7 +369,11 @@ fn fixtures() -> Vec<Fixture> {
             max_feed_mm_min: 2_500.0,
             max_cutting_feed_mm_min: None,
             legacy_shipped_feed: 2500.0,
-            expected_suggest_feed: 1029.0,
+            // **RE-PINNED 2026-08-19, G-CHIPTHIN-HALFFIX: 1029.0 → 638.0**
+            // (÷1.613). Same rubbing-floor-at-the-band-ceiling outcome as
+            // DC-1: band 0.00839–0.01679, commanded lands on **0.01679
+            // mm/tooth, exactly `max`**.
+            expected_suggest_feed: 638.0,
         },
     ]
 }
@@ -517,15 +549,18 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 ///
 /// 1. neither retired chipload-lift warning appears in `profile.warnings`;
 /// 2. `suggested_operation.feed_rate()` equals the pinned arm-B feed
-///    (1223.4 / 2258.4 / 1487.0 / 1029.0) within 0.5 mm/min — Suggest ships
-///    the calculator's own number, **re-derived at the geometry the operation
-///    ships** since G-SUGGEST-NOCLAMP landed on 2026-08-19. That fix moved
-///    the two Adaptive3d pins by exactly 4/3 each (a depth-tier crossing the
-///    axial-envelope DPP clamp produces) and left both DropCutter pins alone;
-///    the per-fixture comments carry the band evidence for each;
+///    (1000.0 / 1806.7 / 881.0 / 638.0) within 0.5 mm/min — Suggest ships
+///    the calculator's own number, re-derived at the geometry the operation
+///    ships (G-SUGGEST-NOCLAMP, 2026-08-19) and **no longer multiplied by chip
+///    thinning** (G-CHIPTHIN-HALFFIX, same day, operator-ruled). All four pins
+///    moved for the second reason; the per-fixture comments carry the band
+///    evidence for each. The headline is that **all four now command INSIDE
+///    their derated vendor band** — the two Adaptive3d ones low in the window,
+///    the two DropCutter ones pinned exactly on the band ceiling by the
+///    rubbing floor because their whole band sits under 0.025 mm/tooth;
 /// 3. the shipped feed is **strictly below** the pinned legacy feed, by the
-///    per-fixture ratio the retirement removes (5.65× / 2.66× / 2.96× /
-///    2.43×);
+///    per-fixture ratio the retirement removes (6.91× / 3.32× / 5.00× /
+///    3.92×);
 /// 4. the closed form still reproduces off the pinned constants where no
 ///    ceiling truncated the legacy lift (A3D-1 4.00×, DC-1 6.67×).
 ///

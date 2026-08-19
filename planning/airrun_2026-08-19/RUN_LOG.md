@@ -865,6 +865,61 @@ sqrt(woc)` — not `radial_chip_thinning_factor`. It was not swept here because 
 only runs post-simulation. Whatever is decided for Suggest must be decided for
 that site too, or the two halves of the product will disagree again.
 
+#### RULED AND FIXED 2026-08-19 — delete, and let the existing floor catch it
+
+Operator ruling after the survey: **delete the multiplication; do not bundle the
+seed-target change with it.** Both sites are gone — `feeds/mod.rs` Step 5 and
+`feed_modulation.rs`. The modulator's was the larger of the two: `1/sqrt(woc)`
+is unbounded and had no equivalent of Suggest's `[1, 4]` clamp, so at its
+engagement floor it reached **31.6×**, applied to the band *maximum*.
+
+The three factors are still **computed and reported** — the geometric condition
+is real and an operator should be able to see it — but renamed
+`observed_*_chip_thinning`, excluded from `FeedsDerates::combined_factor()`, and
+shown in the modal as "chip-thinning (observed, NOT applied)". Leaving a
+non-derate inside a struct called `FeedsDerates` whose doc said "the effective
+chipload is `target × every_multiplier_here`" is the naming trap this programme
+keeps getting caught by, so the doc names the exception explicitly.
+
+**Achieved vs predicted**, on the same 1 134 banded points:
+
+| | in-band | materially over max | under min | median ÷ midpoint |
+|---|---|---|---|---|
+| predicted (delete + floor) | 44.5 % | 0.1 % | 55.4 % | 0.735 |
+| **achieved** | **45.9 %** | **0.1 % (1 point)** | **54.1 %** | **0.750** |
+
+The instrument called it. One wrinkle worth recording: the raw over-band count
+reads 9.3 %, but **105 of those 106 points sit within 1 % of the band maximum**
+— the rubbing floor clamps them exactly onto the ceiling and
+`apply_feeds_subset` then rounds the feed to 1 mm/min, pushing them a hair over.
+Only one point is materially over. The survey now separates the two, because
+conflating them overstates the defect by two orders of magnitude.
+
+**Blast radius: six tests, all explicable, none re-baselined without evidence.**
+
+| test | what moved | justification |
+|---|---|---|
+| `arc_fit_disposition_a5` | all four pins: 1223.4→1000, 2258.4→1806.7, 1487→881, 1029→638 | **all four now command INSIDE their derated vendor band** — the two Adaptive3d low in the window, the two DropCutter pinned exactly on the band ceiling by the rubbing floor (their whole band is under 0.025) |
+| `vendor_sidebyside_chipload` | the sub-Ø2 probe test **inverted** | it existed to pin the defect: probe D commanded **1.478× the band ceiling**. It now commands 0.034067 against a band of 0.034455–0.056390 — a 1.5 % undershoot in place of a 47.8 % overshoot. Assertion inverted, old magnitude kept in the doc |
+| `suggest_feed_matches_final_geometry` | stepover arm **inverted** | its premise (a stale chip-thinning lift) no longer exists. Replaced by the contract the deletion created: **a stepover mutation must not move the feed at all**, which did not previously hold |
+| `_litmatrix_rubbing_floor_clamp` | pre-clamp advance 0.0219816 → 0.0209692 | exactly ÷1.0483, this cell's own thinning factor. The cell's conclusion is unchanged — it was below the floor before and is further below now, so the clamp still fires |
+| `tapered_width_model_parity_c3` | the pinned feed delta **collapsed to zero** | C3's entire feed effect was mediated by chip thinning; with it gone, effective diameter no longer reaches the feed. All four rows now sit on **1200.00 = the chip-formation floor itself** (0.025 × 24 000 × 2). C3's effective-diameter column is untouched and still asserted |
+| `chipload_thinning_magnitude_survey` | promoted from instrument to **instrument + sentry** | now pins the mechanism: commanded advance must equal target × the APPLIED derates and nothing else |
+
+Two of my own instrument bugs surfaced and are worth recording, because both
+would have read as engine defects: the mechanism check compared the
+**shipped** feed against the **calculator's** published derates, which flags
+Suggest pass 9's legitimate depth-tier rescale as "an unexplained multiplier"
+(measured exactly 4/3); and it included **drill** ops, whose feed Step 9c
+replaces outright with a plunge envelope (65 % disagreement, a different code
+path entirely). Both now excluded with the reason stated at the code.
+
+**Still open after this:** the seed target (`SuggestAggressiveness::Default`
+aims at the band midpoint; the survey measured band-max seeding at 56.3 %
+in-band vs 45.9 %) — deliberately not bundled. And **54 % of banded points
+still command below the vendor minimum**, which the deletion did not fix and was
+never going to: that is the derate stack, not the multiplier.
+
 ### Minor: `modulation_summary.moves_touched` is not stable across reads
 
 Toolpath 1 (back rough) was not regenerated between two `get_tool_load_report`

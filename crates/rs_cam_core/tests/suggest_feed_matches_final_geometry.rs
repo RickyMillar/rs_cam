@@ -76,7 +76,7 @@ use std::path::PathBuf;
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::feeds::suggest::{SuggestWarning, SuggestedParams};
-use rs_cam_core::feeds::{FeedsResult, ToolGeometryHint, effective_diameter, geometry};
+use rs_cam_core::feeds::{FeedsResult, ToolGeometryHint, geometry};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::ProjectSession;
 
@@ -87,27 +87,27 @@ fn wanaka_project_path() -> PathBuf {
         .join("wanaka_2026-08-16_f530995a.toml")
 }
 
-/// The product of the two geometry-dependent terms `feeds::calculate` folds
-/// into its feed: `clamp(radial_thinning × axial_thinning, 1, 4) × depth_tier`.
+/// The geometry-dependent term `feeds::calculate` folds into its feed: the
+/// depth tier, and since 2026-08-19 **only** the depth tier.
 ///
-/// Mirrors the calculator's SHADOW POINT: chip thinning reads the effective
-/// diameter at the commanded axial DOC, the depth tier reads the nominal one.
+/// It used to be `clamp(radial × axial thinning, 1, 4) × depth_tier`.
+/// G-CHIPTHIN-HALFFIX deleted the chip-thinning multiplication from the
+/// calculator, so keeping it here would have this test check the feed against
+/// an expression the engine does not evaluate — which is a version of the very
+/// defect the file exists to catch, pointed at the test instead of the code.
+///
+/// The unused parameters are kept so the signature still states what the feed
+/// is allowed to depend on, and so the open `G-SUGGEST-POWERSTALE` row (the
+/// Step 6 power check, whose cross-section moves with both `ae` and `ap`) has
+/// an obvious home if it is ever instrumented.
 fn geometry_factor(
-    geom: ToolGeometryHint,
+    _geom: ToolGeometryHint,
     nominal_d_mm: f64,
-    shank_d_mm: f64,
-    ae_mm: f64,
+    _shank_d_mm: f64,
+    _ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    let effective_d = effective_diameter(geom, nominal_d_mm, shank_d_mm, ap_mm);
-    let rctf = geometry::radial_chip_thinning_factor(ae_mm, effective_d);
-    let axial = match geom {
-        ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
-            geometry::axial_chip_thinning_factor_for_ball(nominal_d_mm, effective_d)
-        }
-        _ => 1.0,
-    };
-    (rctf * axial).clamp(1.0, 4.0) * geometry::depth_tier_multiplier(ap_mm, nominal_d_mm)
+    geometry::depth_tier_multiplier(ap_mm, nominal_d_mm)
 }
 
 struct Case {
@@ -268,8 +268,26 @@ fn assert_feed_consistent_with_final_geometry(case: &Case) {
     );
 }
 
+/// **INVERTED 2026-08-19 (G-CHIPTHIN-HALFFIX), not deleted.**
+///
+/// This arm used to assert that a raised stepover left no stale chip-thinning
+/// lift in the feed. That premise is gone: chip thinning no longer enters the
+/// feed at all, so a stepover cannot leave a stale lift in it — and a test
+/// asserting an impossibility passes for the wrong reason forever.
+///
+/// What replaces it is the contract the deletion actually created, which is
+/// stronger and did not previously hold: **a stepover mutation must not move
+/// the feed by any amount.** `ae` reaches the feed expression through exactly
+/// one surviving route, the Step 6 power check, and
+/// `power_ceiling_parity_f2.rs` measured that branch never firing across three
+/// shipped presets × ten species × Ø3/Ø6/Ø12. So on this fixture the feed must
+/// be bit-for-bit what the calculator produced, despite `ae` moving 7.6×.
+///
+/// If chip thinning is ever re-introduced into the feed, this goes red
+/// immediately and loudly, because this fixture's back-off is the largest
+/// stepover mutation in the suite.
 #[test]
-fn stepover_backoff_does_not_leave_a_stale_chip_thinning_lift_in_the_feed() {
+fn a_raised_stepover_does_not_move_the_feed_at_all() {
     let path = wanaka_project_path();
     assert!(
         path.exists(),
@@ -277,12 +295,6 @@ fn stepover_backoff_does_not_leave_a_stale_chip_thinning_lift_in_the_feed() {
         path.display()
     );
     let session = ProjectSession::load(&path).expect("load wanaka fixture");
-
-    // Toolpath 11, "3D Finish 6" (DropCutter on a tapered ball): its
-    // scallop-height target resolves to a ~0.03 mm stepover, which
-    // `backoff_stepover_for_runtime` raises by ~7.6× for move-count sanity.
-    // That raise is exactly the mutation the calculator's chip-thinning lift
-    // was computed before.
     let case = suggest_case(&session, ToolpathId(11));
     dump(&case);
 
@@ -301,34 +313,66 @@ fn stepover_backoff_does_not_leave_a_stale_chip_thinning_lift_in_the_feed() {
         .unwrap_or_else(|| {
             panic!(
                 "{}: this sentry requires the runtime stepover back-off to fire — without a \
-                 mutated stepover there is no stale geometry to catch. Warnings: {:?}",
+                 mutated stepover it proves nothing. Warnings: {:?}",
                 case.name, case.suggested.warnings
             )
         });
     assert!(
-        raised.1 > raised.0,
-        "{}: stepover back-off must raise, got {} → {}",
+        raised.1 > raised.0 * 2.0,
+        "{}: this fixture is chosen for a LARGE stepover mutation; {} → {} is no longer one",
         case.name,
         raised.0,
         raised.1
     );
 
-    assert_feed_consistent_with_final_geometry(&case);
+    // The feed the calculator produced, and the feed shipped after every
+    // invariant pass ran, must agree to the 1 mm/min the apply path rounds to.
+    let calculator_feed = case.suggested.feeds_result.feed_rate_mm_min;
+    let shipped_feed = case.suggested.operation.feed_rate();
+    assert!(
+        (shipped_feed - calculator_feed).abs() <= 0.5 + calculator_feed * 1e-9,
+        "{}: the stepover moved {:.5} → {:.5} mm and the feed moved with it, \
+         {calculator_feed:.4} → {shipped_feed:.4} mm/min.\n  Since G-CHIPTHIN-HALFFIX \
+         (2026-08-19) `ae` must not reach the feed: chip thinning was deleted from the \
+         calculator, and the only surviving `ae` dependence is the Step 6 power ceiling, \
+         which does not fire on shipped profiles. A feed that tracks stepover means a \
+         geometry multiplier is back in the feed expression — see the Step 5 note in \
+         feeds/mod.rs.",
+        case.name,
+        raised.0,
+        raised.1
+    );
 
-    // Consequence the operator sees. See the module header for why this is
-    // asserted on this fixture rather than stated as a general law.
+    // And the consequence the operator sees: with the lift gone, the commanded
+    // advance can no longer sit above the band it is judged against. The
+    // licensed exception is the rubbing-floor clamp, which deliberately
+    // overrides the derates and pins the advance to the band ceiling when the
+    // whole band sits under the chip-formation floor — which is this fixture.
     let (advance, _, _) = final_operating_point(&case);
     let band = case
         .suggested
         .feeds_result
         .chipload_bounds
         .expect("wanaka's tapered-ball finish matches a vendor LUT row");
+    // The tolerance is the apply path's feed rounding, not slack: this
+    // fixture's whole derated band sits under the 0.025 mm/tooth
+    // chip-formation floor, so `effective_rubbing_floor` collapses to the band
+    // CEILING and Step 9b pins the advance exactly there — after which
+    // `apply_feeds_subset` rounds the feed to 1 mm/min and can push it a hair
+    // over. Measured 1.001×, which is 0.5 mm/min on a 405 mm/min feed.
+    let flutes = f64::from(case.tool.flute_count.max(1));
+    let rpm = f64::from(
+        case.suggested
+            .operation
+            .spindle_rpm()
+            .expect("Suggest writes the calculator RPM"),
+    );
+    let rounding = 0.5 / (rpm * flutes);
     assert!(
-        advance <= band.max_mm_per_tooth * (1.0 + 1e-9),
+        advance <= band.max_mm_per_tooth + rounding,
         "{}: commanded advance {advance:.8} mm/tooth exceeds the derated band maximum \
-         {:.8} by {:.3}× — at the operation's FINAL stepover the chip-thinning lift does \
-         not reach the band edge, so anything above it is residue from the pre-back-off \
-         stepover.",
+         {:.8} by {:.3}×, which is more than the {rounding:.8} the 1 mm/min feed rounding \
+         can account for",
         case.name,
         band.max_mm_per_tooth,
         advance / band.max_mm_per_tooth

@@ -2453,28 +2453,35 @@ fn check_plunge_entry_stability(
     warnings
 }
 
-/// The two geometry-dependent terms [`crate::feeds::calculate`] folds into
-/// its feed at Step 5 / Step 5a: `clamp(radial × axial thinning, 1, 4)` times
-/// the depth tier.
+/// The geometry-dependent term [`crate::feeds::calculate`] folds into its feed:
+/// the depth tier, and **only** the depth tier.
 ///
-/// Deliberately calls the same shipped helpers the calculator calls, in the
-/// same order, including the calculator's SHADOW POINT — chip thinning reads
-/// the effective diameter *at the commanded axial DOC*, while the depth tier
-/// reads the nominal one. A second implementation of the chip-thinning
-/// diameter is exactly what Checkpoint C3 retired; this is a re-evaluation of
-/// the calculator's expression at a different point, not a model of it.
-fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, ae_mm: f64, ap_mm: f64) -> f64 {
-    use crate::feeds::geometry;
-    let effective_d =
-        crate::feeds::effective_diameter(geom, tool.diameter, tool.shank_diameter, ap_mm);
-    let rctf = geometry::radial_chip_thinning_factor(ae_mm, effective_d);
-    let axial = match geom {
-        ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
-            geometry::axial_chip_thinning_factor_for_ball(tool.diameter, effective_d)
-        }
-        _ => 1.0,
-    };
-    (rctf * axial).clamp(1.0, 4.0) * geometry::depth_tier_multiplier(ap_mm, tool.diameter)
+/// Deliberately calls the same shipped helper the calculator calls, so this is
+/// a re-evaluation of the calculator's own expression at a different operating
+/// point rather than a model of it — a second implementation is exactly what
+/// Checkpoint C3 retired.
+///
+/// # Why `ae` is still a parameter
+///
+/// Until 2026-08-19 this also composed `clamp(radial × axial chip thinning, 1,
+/// 4)`, which is why the pass fired on stepover changes at all. G-CHIPTHIN-HALFFIX
+/// deleted that multiplication from the calculator, so re-deriving it here
+/// would rescale the feed by a factor the feed no longer contains — the exact
+/// failure this pass exists to prevent, inverted.
+///
+/// `ae_mm` is kept in the signature because the calculator's remaining
+/// `ae` dependence — the Step 6 power check, whose cross-section moves with
+/// both `ae` and `ap` — is the open **G-SUGGEST-POWERSTALE** row. When that is
+/// instrumented, this is where the term goes. Keeping the parameter also keeps
+/// the pass's mutation test honest: it still notices a stepover the invariants
+/// moved, and still declines to act on it, rather than becoming blind to one.
+fn geometry_feed_factor(
+    _geom: ToolGeometryHint,
+    tool: &ToolConfig,
+    _ae_mm: f64,
+    ap_mm: f64,
+) -> f64 {
+    crate::feeds::geometry::depth_tier_multiplier(ap_mm, tool.diameter)
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the
