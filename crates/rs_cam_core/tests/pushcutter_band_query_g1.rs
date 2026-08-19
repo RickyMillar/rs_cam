@@ -29,7 +29,12 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    // The `#[ignore]`d lever-2 headroom harness REPORTS a measurement — the
+    // number is its entire output, and it is read off the terminal by whoever
+    // runs it explicitly. Same reason `classification.rs` and
+    // `pocket_lift_bridge_b1.rs` carry the print allows.
+    clippy::print_stdout
 )]
 
 mod common;
