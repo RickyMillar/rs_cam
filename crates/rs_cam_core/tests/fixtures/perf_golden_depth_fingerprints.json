@@ -1,0 +1,26 @@
+{
+  "pocket_L1": {
+    "moves": 11989,
+    "hash": "59cc2182761d9087"
+  },
+  "pocket_L8": {
+    "moves": 95912,
+    "hash": "4ba05b5102a51bff"
+  },
+  "profile_L1": {
+    "moves": 2249,
+    "hash": "ab093c1debebbb8f"
+  },
+  "profile_L8": {
+    "moves": 17992,
+    "hash": "fce9f14353bc184f"
+  },
+  "zigzag_L1": {
+    "moves": 76,
+    "hash": "1e1c37ac23d56b91"
+  },
+  "zigzag_L8": {
+    "moves": 608,
+    "hash": "6c1e2d61c8a92387"
+  }
+}
