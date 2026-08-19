@@ -144,15 +144,35 @@ metrics-only mode.
 
 - `stamping.rs:130-138`: two per-cell sqrts avoidable — both fast-path tests exact in
   squared space vs hoisted `(r±ext_diag)²`. (`point_cell_coverage` already sqrt-free.)
-  **DONE (wave 1 SIM)**, with one case the text above omits: the "fully inside" test
-  squares correctly **only while `r ≥ ext_diag`**. When the 4×4 sub-sample fan is wider
-  than the cutter (Ø0.5 tool on a 1 mm grid — a real fine-tool regime), `r − ext_diag` is
-  negative, the original test is unsatisfiable for every cell, and naively squaring it
-  flips the sense and reports FULL coverage for cells near the tool axis. The landed form
-  carries a `-1.0` sentinel there. Sentried by
-  `squared_fast_paths_agree_with_the_sqrt_form`, which compares against a verbatim copy of
-  the pre-S7 body over 36 (radius, cell) pairs and asserts the sentinel case is exercised.
-  Note also that `r_sq.sqrt()` was a **loop invariant** being recomputed per cell.
+  **CORRECTION (wave 1 SIM): "exact in squared space vs hoisted `(r±ext_diag)²`" is
+  FALSE.** Over the reals it holds; in `f64` the two rounding paths differ by an ULP either
+  side of BOTH bounds, in both directions. Measured in exact IEEE754 semantics: **4
+  disagreements in 14,544 probes**, and **32 in 302,900** at a denser sweep with ULP
+  neighbourhoods. Clearest case: at `d = fl(r + ext_diag)` the squared form sees
+  `d² == outer_sq` and fast-paths to `Some(0.0)`, while the sqrt form evaluates
+  `fl(fl(r+ext) − ext)`, which lands below `r`, and falls through to sub-sampling. All four
+  strict/non-strict variants were swept (32 / 114 / 117 / 199 disagreements) — **no
+  comparison operator makes the algebraic bound exact.** This is the same class of defect
+  as G3's `bbox.max.z <= cl.z`: a proof about exact arithmetic applied to floating-point
+  code, and it was caught the same way, by a bit-level oracle rather than a shape check.
+  **DONE (wave 1 SIM) in a corrected form.** Both legacy predicates are *monotone in
+  `d_sq`*, so an exact flip point exists; `CoverageFastPath::new` **solves** for it (walk
+  ULPs from the naive bound until the legacy predicate's own answer flips, bounded at 64)
+  instead of deriving it. Exact **by construction** — the threshold is defined as the
+  boundary of the old test. 0/402,072 disagreements in the f64 model. Two further notes:
+  the "fully inside" bound also needs a `-1.0` sentinel when `ext_diag > r` (Ø0.5 tool on a
+  1 mm grid — a real fine-tool regime), where squaring a negative flips the sense and
+  reports FULL coverage near the tool axis; and `r_sq.sqrt()` was a **loop invariant**
+  being recomputed per cell. Sentried by `squared_fast_paths_agree_with_the_sqrt_form`
+  against a verbatim copy of the pre-S7 body: 11 radii × 11 cells × 600 steps plus a ±4 ULP
+  neighbourhood at every boundary (~73k probes, exact `Option<f32>` equality), with
+  `sentinel_rows > 0` and `probes_checked > 70_000` so the sweep cannot be thinned into
+  passing.
+  **Measured: 1.04–1.07× on the lateral kernel, and NOTHING on either plunge arm**
+  (p = 0.08 / 0.76) — the plunge fixture drives the degenerate branch, which routes through
+  the already-sqrt-free `point_cell_coverage`. Read that as the calibration: the inner
+  loop's cost is three ray walks, a LUT probe and a read-modify-write, not two square roots.
+  S7 is a rounding error next to S2/S3, and its real value here was the sentry it forced.
 - `cell_upper_bound_surface` (:241-250): third sqrt + LUT probe per covered cell —
   precompute a dilated LUT `h(√d² + cs·√2/2)` once per tool/resolution.
   **DECLINED (wave 1 SIM).** Three reasons. (1) The formula as written is dimensionally
