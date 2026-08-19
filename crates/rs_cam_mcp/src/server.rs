@@ -147,8 +147,11 @@ pub struct ExportParam {
     /// When true and the project has more than one setup, write one
     /// G-code file per setup instead of a single combined program. Each
     /// file is self-contained and carries a header comment naming the
-    /// setup (with a FLIP + RE-ZERO reminder on setups after the first),
-    /// so a two-sided job is run as `setup1` → flip & re-zero → `setup2`.
+    /// setup and its datum — `X0 Y0 = stock min corner`, identical in
+    /// every setup file, plus that file's own Z zero relative to the
+    /// up-facing stock surface — with a FLIP reminder on setups after
+    /// the first, so a two-sided job is run as `setup1` → flip & re-zero
+    /// Z (keeping the same XY zero) → `setup2`.
     /// Output files are named `<stem>_<n>_<setup name>.<ext>` next to
     /// `path`. Ignored for single-setup projects.
     #[serde(default)]

@@ -75,17 +75,46 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
     }
 }
 
+/// G-EXPORT-DATUM (2026-08-19): collect each toolpath re-expressed in the
+/// shared export datum (stock-relative XY — see
+/// [`rs_cam_core::gcode::export_datum_shift_for_toolpath`]). Returned as an
+/// owning vec because [`GcodePhase`] borrows its toolpath and the shifted
+/// copy has to outlive the phases. Zero-shift toolpaths (non-identity
+/// setups, zero-origin stock) stay borrowed — no clone.
+///
+/// `indices` are indices into `session.toolpath_configs()`; the setup a
+/// toolpath belongs to (hence its emission frame) is resolved from there.
+fn emitted_toolpaths<'a>(
+    session: &'a ProjectSession,
+    gui: &'a GuiState,
+    indices: impl Iterator<Item = usize>,
+) -> Vec<(usize, std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>)> {
+    indices
+        .filter_map(|idx| {
+            let tc = session.toolpath_configs().get(idx)?;
+            if !tc.enabled {
+                return None;
+            }
+            let result = gui.toolpath_rt.get(&tc.id)?.result.as_ref()?;
+            let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
+            Some((
+                idx,
+                rs_cam_core::gcode::toolpath_in_export_datum(result.toolpath(), shift),
+            ))
+        })
+        .collect()
+}
+
 fn gcode_phase_for_session_toolpath<'a>(
     session: &'a ProjectSession,
     gui: &'a GuiState,
     tc: &'a rs_cam_core::session::ToolpathConfig,
+    toolpath: &'a rs_cam_core::toolpath::Toolpath,
 ) -> Option<GcodePhase<'a>> {
-    let rt = gui.toolpath_rt.get(&tc.id)?;
-    let result = rt.result.as_ref()?;
     let tool = session.tools().iter().find(|t| t.id.0 == tc.tool_id);
 
     Some(GcodePhase {
-        toolpath: result.toolpath(),
+        toolpath,
         // Per-toolpath spindle RPM: the op's own override wins, the
         // project default is only a fallback — same resolution as the
         // core export path (`export_gcode_checked`). Pre-fix this read
@@ -163,11 +192,13 @@ pub fn export_gcode_from_session_with_policy(
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 
-    let phases: Vec<GcodePhase<'_>> = session
-        .toolpath_configs()
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
+    let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
-        .filter(|tc| tc.enabled)
-        .filter_map(|tc| gcode_phase_for_session_toolpath(session, gui, tc))
+        .filter_map(|(idx, tp)| {
+            let tc = session.toolpath_configs().get(*idx)?;
+            gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+        })
         .collect();
 
     if phases.is_empty() {
@@ -202,16 +233,24 @@ pub fn export_combined_gcode_from_session(
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 
+    // Shifted toolpaths must outlive the borrowed phases, so build the
+    // whole project's set up front and slice it per setup below.
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
     let setup_phases: Vec<GcodeSetupPhase<'_>> = session
         .list_setups()
         .iter()
         .filter_map(|setup| {
+            // Driven by `setup.toolpath_indices`, NOT by `emitted`'s own
+            // order: the setup's list is the machining order and it is
+            // not necessarily ascending after an op reorder.
             let phases: Vec<GcodePhase<'_>> = setup
                 .toolpath_indices
                 .iter()
-                .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
-                .filter(|tc| tc.enabled)
-                .filter_map(|tc| gcode_phase_for_session_toolpath(session, gui, tc))
+                .filter_map(|tp_idx| {
+                    let (_, tp) = emitted.iter().find(|(idx, _)| idx == tp_idx)?;
+                    let tc = session.toolpath_configs().get(*tp_idx)?;
+                    gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+                })
                 .collect();
             if phases.is_empty() {
                 None
@@ -259,13 +298,16 @@ pub fn export_single_toolpath_from_session(
 ) -> Result<String, crate::error::VizError> {
     let post = gui.post.format.definition();
 
-    let tc = session
+    let tp_index = session
         .toolpath_configs()
         .iter()
-        .find(|tc| tc.id == toolpath_id)
+        .position(|tc| tc.id == toolpath_id)
         .ok_or_else(|| {
             crate::error::VizError::Export(format!("Toolpath id {toolpath_id} not found"))
         })?;
+    let tc = session.toolpath_configs().get(tp_index).ok_or_else(|| {
+        crate::error::VizError::Export(format!("Toolpath id {toolpath_id} not found"))
+    })?;
 
     if !tc.enabled {
         return Err(crate::error::VizError::Export(format!(
@@ -274,12 +316,20 @@ pub fn export_single_toolpath_from_session(
         )));
     }
 
-    let phase = gcode_phase_for_session_toolpath(session, gui, tc).ok_or_else(|| {
+    let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index));
+    let (_, emitted_toolpath) = emitted.first().ok_or_else(|| {
         crate::error::VizError::Export(format!(
             "Toolpath '{}' has no computed result — generate it first",
             tc.name
         ))
     })?;
+    let phase = gcode_phase_for_session_toolpath(session, gui, tc, emitted_toolpath.as_ref())
+        .ok_or_else(|| {
+            crate::error::VizError::Export(format!(
+                "Toolpath '{}' has no computed result — generate it first",
+                tc.name
+            ))
+        })?;
 
     let mut gcode = export_gcode_phases_with_overlay_checked(
         std::slice::from_ref(&phase),
@@ -333,12 +383,13 @@ pub fn export_setup_gcode_from_session_with_policy(
 
     let post = gui.post.format.definition();
 
-    let phases: Vec<GcodePhase<'_>> = setup
-        .toolpath_indices
+    let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied());
+    let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
-        .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
-        .filter(|tc| tc.enabled)
-        .filter_map(|tc| gcode_phase_for_session_toolpath(session, gui, tc))
+        .filter_map(|(idx, tp)| {
+            let tc = session.toolpath_configs().get(*idx)?;
+            gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+        })
         .collect();
 
     if phases.is_empty() {

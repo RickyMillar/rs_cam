@@ -23,6 +23,7 @@ use crate::session::ProjectSession;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::toolpath::Toolpath;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fmt::{Display, Write};
 
 /// Policy knobs reserved for tool-load-aware export checks.
@@ -212,6 +213,77 @@ fn prepend_t_collision_warnings<'a>(
     }
 }
 
+// ── Export datum (G-EXPORT-DATUM, 2026-08-19) ────────────────────────
+//
+// Every setup's G-code must express XY in ONE frame, or a two-sided job
+// hands the operator two datums under a single `G54` and the second side
+// machines off by the stock origin. The chosen frame is **stock-relative**:
+// program X0 Y0 at the stock's min corner, which is what non-identity
+// setups already emit and the frame `StockConfig::alignment_pins` — the
+// feature that physically registers the flip — is dimensioned in.
+//
+// The stored/generated toolpath is NOT touched: this is a translation
+// applied at emit time only, so the simulator, the viewport, screenshots
+// and every metric keep reading the frame they were built against. (The
+// separate G-SIM-IDENTITY-FRAME fix shifts the *simulation* stock by the
+// same vector inside `compute::simulate`; the two never compose because
+// neither writes back to the toolpath.)
+//
+// ── Why Z is NOT shifted ────────────────────────────────────────────
+//
+// The shift is XY-only, deliberately:
+//
+//  * XY is never re-zeroed between setups — the operator flips the part
+//    against the same pins and keeps the same XY zero. A disagreement in
+//    XY is therefore silent and fatal. Z *is* explicitly re-zeroed between
+//    setups (the split-export header says so), so a per-file Z datum is
+//    an instruction problem, not a registration problem. The fix for Z is
+//    to NAME the datum in the header, which the split export now does.
+//  * Shifting Z would move program Z0 to the stock's UNDERSIDE for every
+//    identity setup. That breaks the repo's documented 2D convention —
+//    `StockConfig::update_from_bbox` sets `origin_z = bbox.min.z - z` for
+//    2D models precisely so the stock TOP sits at Z0 and 2D ops cut at
+//    negative Z. Every 2D project would move from "zero to the top of the
+//    stock" (self-correcting for actual stock thickness, and the near
+//    universal router convention) to "zero to the spoilboard" (every cut
+//    depth then carries the nominal-vs-actual thickness error).
+//  * It buys nothing physical. The retract plane is already derived from
+//    the LOCAL stock top (F-024, `SetupEvalContext::safe_z`), so a Z shift
+//    would re-express the same physical height with a bigger number, not
+//    change any motion.
+
+/// Translation from the frame `toolpath_index`'s toolpath was generated
+/// in to the shared export datum. See the module note above; XY only,
+/// zero for non-identity setups, `-stock_bbox.min` in XY for identity
+/// setups. A toolpath that belongs to no setup is treated as identity
+/// (that is the frame the generator used for it).
+pub fn export_datum_shift_for_toolpath(
+    session: &ProjectSession,
+    toolpath_index: usize,
+) -> crate::geo::P3 {
+    let setup = session.find_setup_for_toolpath_index(toolpath_index);
+    crate::session::SetupEvalContext::build_for_setup(session, setup).export_datum_shift()
+}
+
+/// Apply an export-datum shift to a toolpath, borrowing unchanged when
+/// the shift is zero (the non-identity case, and every zero-origin
+/// project). Arc `i`/`j` are start→centre offsets, so a pure translation
+/// leaves them alone.
+pub fn toolpath_in_export_datum(toolpath: &Toolpath, shift: crate::geo::P3) -> Cow<'_, Toolpath> {
+    if shift.x == 0.0 && shift.y == 0.0 && shift.z == 0.0 {
+        return Cow::Borrowed(toolpath);
+    }
+    let mut shifted = toolpath.clone();
+    for m in &mut shifted.moves {
+        m.target = crate::geo::P3::new(
+            m.target.x + shift.x,
+            m.target.y + shift.y,
+            m.target.z + shift.z,
+        );
+    }
+    Cow::Owned(shifted)
+}
+
 /// Emit checked G-code from a project session.
 pub fn export_gcode_checked(
     project: &ProjectSession,
@@ -233,12 +305,25 @@ pub fn export_gcode_checked(
         PostFormat::from_token(&project.post_config().format).unwrap_or(PostFormat::Grbl);
     let post = post_format.definition();
 
-    let phases: Vec<GcodePhase<'_>> = project
+    // G-EXPORT-DATUM: re-express each toolpath in the shared export
+    // datum BEFORE building phases, so the emitted program has one XY
+    // zero across every setup. Owned here (not written back to the
+    // session) so nothing downstream of generation is disturbed.
+    let emitted: Vec<(usize, Cow<'_, Toolpath>)> = project
         .toolpath_configs()
         .iter()
         .enumerate()
-        .filter_map(|(idx, tc)| {
+        .filter_map(|(idx, _)| {
             let result = project.get_result(idx)?;
+            let shift = export_datum_shift_for_toolpath(project, idx);
+            Some((idx, toolpath_in_export_datum(result.toolpath(), shift)))
+        })
+        .collect();
+
+    let phases: Vec<GcodePhase<'_>> = emitted
+        .iter()
+        .filter_map(|(idx, emitted_toolpath)| {
+            let tc = project.toolpath_configs().get(*idx)?;
             // Pull tool identity (config id) + display number + name
             // from the matching tool config so the emitter can insert
             // the post's tool-change block between toolpaths that use
@@ -257,7 +342,7 @@ pub fn export_gcode_checked(
                     label: t.name.as_str(),
                 });
             Some(GcodePhase {
-                toolpath: result.toolpath(),
+                toolpath: emitted_toolpath.as_ref(),
                 spindle_rpm: effective_spindle_rpm(
                     &tc.operation,
                     project.post_config().spindle_speed,

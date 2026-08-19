@@ -306,15 +306,31 @@ fn default_wizard_state_does_not_mutate_export() {
     // through `export_gcode_phases_with_overlay_checked` — only the
     // overlay-construction step differs.
     use rs_cam_core::gcode::{CoolantMode, GcodePhase, PhaseTool};
-    let phases: Vec<GcodePhase<'_>> = session
+    // G-EXPORT-DATUM (2026-08-19): the baseline must apply the same
+    // export-datum correction the helper does, or this test stops being
+    // about the OVERLAY and starts pinning the datum. `build_session`'s
+    // stock is `auto_from_model` over a 40 mm flat with 5 mm padding, so
+    // its origin is (-25,-25) and the shift is a real +25 mm in XY.
+    let emitted: Vec<(usize, std::borrow::Cow<'_, rs_cam_core::toolpath::Toolpath>)> = session
         .toolpath_configs()
         .iter()
-        .filter(|tc| tc.enabled)
-        .filter_map(|tc| {
-            let rt = gui.toolpath_rt.get(&tc.id)?;
-            let result = rt.result.as_ref()?;
+        .enumerate()
+        .filter(|(_, tc)| tc.enabled)
+        .filter_map(|(idx, tc)| {
+            let result = gui.toolpath_rt.get(&tc.id)?.result.as_ref()?;
+            let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, idx);
+            Some((
+                idx,
+                rs_cam_core::gcode::toolpath_in_export_datum(result.toolpath(), shift),
+            ))
+        })
+        .collect();
+    let phases: Vec<GcodePhase<'_>> = emitted
+        .iter()
+        .filter_map(|(idx, emitted_toolpath)| {
+            let tc = session.toolpath_configs().get(*idx)?;
             Some(GcodePhase {
-                toolpath: result.toolpath(),
+                toolpath: emitted_toolpath.as_ref(),
                 spindle_rpm: rs_cam_core::compute::catalog::effective_spindle_rpm(
                     &tc.operation,
                     gui.post.spindle_speed,
@@ -623,5 +639,122 @@ fn export_with_policy_emits_gcode_from_viz_results() {
     assert!(
         gcode.contains("G1"),
         "expected at least one feed move: {gcode}"
+    );
+}
+
+/// G-EXPORT-DATUM (2026-08-19): the viz / MCP per-setup export must
+/// re-express an IDENTITY setup's toolpath in the stock-relative frame,
+/// so both files of a two-sided job share one XY datum.
+///
+/// Identity setups emit in the world frame; every other setup emits in
+/// the zero-rooted setup-local frame, which is already stock-relative.
+/// With `StockConfig::origin_{x,y} != 0` those differ by exactly the
+/// origin, and before the fix export copied both through verbatim — two
+/// datums under a single `G54`, with the header warning only about Z.
+///
+/// The stub toolpaths here are identical in both setups (X 0 → 10), so
+/// the ONLY difference the assertions can see is the frame correction.
+#[test]
+fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::compute::transform::FaceUp;
+
+    let (mut session, mut gui, sim) = build_session();
+
+    // Stock whose min corner is NOT the world origin — the condition
+    // that makes the two emission frames disagree.
+    session.set_stock_config(StockConfig {
+        x: 60.0,
+        y: 70.0,
+        z: 12.0,
+        origin_x: -20.0,
+        origin_y: -25.0,
+        origin_z: -12.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    });
+
+    let top_id = SetupId(session.list_setups()[0].id);
+
+    let bottom_idx = session.add_setup("Bottom".to_owned(), FaceUp::Bottom);
+    let bottom_id = SetupId(session.list_setups()[bottom_idx].id);
+    let tp_bottom = ToolpathConfig {
+        id: rs_cam_core::ToolpathId(99),
+        name: "Bottom Op".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+    };
+    session
+        .add_toolpath(bottom_idx, tp_bottom)
+        .expect("add bottom toolpath");
+    let bottom_tp_id = session.list_setups()[bottom_idx]
+        .toolpath_indices
+        .first()
+        .map(|&i| session.toolpath_configs()[i].id)
+        .expect("bottom setup has a toolpath");
+
+    // Byte-identical stub to the one `build_session` gave setup 0.
+    let mut path = Toolpath::new();
+    path.rapid_to(P3::new(0.0, 0.0, 5.0));
+    path.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+    path.feed_to(P3::new(10.0, 10.0, -1.0), 600.0);
+    path.rapid_to(P3::new(10.0, 10.0, 5.0));
+    let mut rt = ToolpathRuntime::new(true);
+    rt.result = Some(ToolpathResult {
+        annotated: Arc::new(AnnotatedToolpath::new(path)),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+        drill_op: None,
+    });
+    gui.toolpath_rt.insert(bottom_tp_id, rt);
+
+    let top_gcode = export_setup_gcode_from_session(&session, &gui, &sim, top_id)
+        .expect("identity setup exports");
+    let bottom_gcode = export_setup_gcode_from_session(&session, &gui, &sim, bottom_id)
+        .expect("flipped setup exports");
+
+    // Identity setup: world X 0/10 → stock-relative 20/30 (shift -origin_x).
+    assert!(
+        top_gcode.contains("X20.000") && top_gcode.contains("X30.000"),
+        "G-EXPORT-DATUM: identity setup must emit stock-relative XY \
+         (X20/X30 for a world-frame 0/10 path on a stock at origin_x=-20). \
+         Pre-fix it emitted the raw world X0/X10 while the flipped setup \
+         emitted stock-relative coordinates — two datums under one G54:\n\
+         {top_gcode}"
+    );
+    assert!(
+        !top_gcode.contains("X0.000 Y0.000"),
+        "identity setup must no longer emit the un-shifted world origin"
+    );
+
+    // Non-identity setup: already stock-relative, must pass through unchanged.
+    assert!(
+        bottom_gcode.contains("X0.000") && bottom_gcode.contains("X10.000"),
+        "non-identity setups already emit stock-relative — the export datum \
+         shift must be a no-op for them:\n{bottom_gcode}"
+    );
+
+    // Z is deliberately NOT shifted (see
+    // `rs_cam_core::gcode::export_datum_shift_for_toolpath`): the stub's
+    // cutting Z of -1 must survive in both files.
+    assert!(
+        top_gcode.contains("Z-1.000") && bottom_gcode.contains("Z-1.000"),
+        "Z must not be shifted by the export datum correction"
     );
 }
