@@ -18,6 +18,11 @@ pub enum ProfileSide {
 }
 
 /// Parameters for profile cutting.
+///
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// for why a depth-stepping caller wants struct-update rather than a re-listed
+/// literal per Z level.
+#[derive(Debug, Clone, Copy)]
 pub struct ProfileParams {
     /// Tool radius in mm.
     pub tool_radius: f64,
@@ -67,22 +72,42 @@ pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath 
 /// failure this channel names.
 #[must_use]
 pub fn profile_toolpath_reported(polygon: &Polygon2, params: &ProfileParams) -> (Toolpath, usize) {
+    let (contour, failures) = profile_path_reported(polygon, params);
+    let tp = match contour {
+        Some(pts) => profile_path_to_toolpath(&pts, params),
+        None => Toolpath::new(),
+    };
+    (tp, failures)
+}
+
+/// The **Z-independent half** of [`profile_toolpath_reported`]: the tool-centre
+/// path this profile will cut, plus Checkpoint C's offset failure count.
+///
+/// Split out for the G2 hoist (2026-08-20). A depth-stepped profile used to
+/// re-run the compensation offset once per Z level to produce the same
+/// polyline every time; `cut_depth` reaches the output only through
+/// [`profile_path_to_toolpath`]'s stamp. `profile_toolpath_reported` is now
+/// literally this function composed with that one, so a hoisted caller and a
+/// per-level caller cannot drift apart.
+///
+/// Handles both compensation modes: `compensate_in_controller` returns the
+/// exterior verbatim (no offset is made, so the count is a measured `0`), and
+/// the software-compensation branch delegates to [`profile_contour_reported`].
+#[must_use]
+pub fn profile_path_reported(
+    polygon: &Polygon2,
+    params: &ProfileParams,
+) -> (Option<Vec<P2>>, usize) {
     if params.compensate_in_controller {
         // Controller handles the offset — toolpath follows the exact boundary.
         let pts = polygon.exterior.clone();
         if pts.len() < 3 {
-            return (Toolpath::new(), 0);
+            return (None, 0);
         }
         // No offset is made on this branch, so there is nothing to count.
-        (contour_to_toolpath(&pts, params), 0)
+        (Some(pts), 0)
     } else {
-        let (contour, failures) =
-            profile_contour_reported(polygon, params.tool_radius, params.side);
-        let tp = match contour {
-            Some(pts) => contour_to_toolpath(&pts, params),
-            None => Toolpath::new(),
-        };
-        (tp, failures)
+        profile_contour_reported(polygon, params.tool_radius, params.side)
     }
 }
 
@@ -126,7 +151,11 @@ pub fn profile_contour_reported(
 /// `compensate_in_controller` path checks `pts.len() < 3` and bails early),
 /// so the shared emitter's `< 3` no-op guard is never exercised differently
 /// than the old `is_empty()` guard was.
-fn contour_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
+///
+/// `pub` since the G2 hoist (2026-08-20): this is the Z-dependent half, and
+/// `params.cut_depth` is the only thing a depth-stepped caller varies across
+/// levels. See [`profile_path_reported`] for the other half.
+pub fn profile_path_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
     let mut tp = Toolpath::new();
 
     if contour.is_empty() {
@@ -176,6 +205,86 @@ mod tests {
             safe_z: 10.0,
             climb: false,
             compensate_in_controller: false,
+        }
+    }
+
+    /// **G2, profile side.** The hoisted composition (`profile_path_reported`
+    /// once, `profile_path_to_toolpath` per level) against the naive one
+    /// (`profile_toolpath` per level), bit for bit — and on BOTH compensation
+    /// modes, because `compensate_in_controller` is the branch the split had to
+    /// absorb and the one most likely to drift.
+    #[test]
+    fn the_hoisted_contour_emits_exactly_what_the_per_level_offset_did() {
+        let poly = Polygon2::new(
+            (0..400)
+                .map(|i| {
+                    let t = std::f64::consts::TAU * i as f64 / 400.0;
+                    let r = 25.0 + 0.7 * (5.0 * t).sin();
+                    P2::new(r * t.cos(), r * t.sin())
+                })
+                .collect(),
+        );
+        let levels: Vec<f64> = (1..=5).map(|i| -1.5 * i as f64).collect();
+
+        for in_control in [false, true] {
+            for side in [ProfileSide::Outside, ProfileSide::Inside] {
+                let base = ProfileParams {
+                    side,
+                    compensate_in_controller: in_control,
+                    ..default_params(side)
+                };
+
+                let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+                    profile_toolpath(
+                        &poly,
+                        &ProfileParams {
+                            cut_depth: z,
+                            ..base
+                        },
+                    )
+                });
+
+                let (contour, _failures) = profile_path_reported(&poly, &base);
+                let hoisted =
+                    crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| match &contour {
+                        Some(pts) => profile_path_to_toolpath(
+                            pts,
+                            &ProfileParams {
+                                cut_depth: z,
+                                ..base
+                            },
+                        ),
+                        None => Toolpath::new(),
+                    });
+
+                let label = format!("in_control={in_control} side={side:?}");
+                assert!(
+                    !naive.moves.is_empty(),
+                    "{label}: the fixture emitted nothing — vacuous comparison"
+                );
+                assert_eq!(
+                    hoisted.moves.len(),
+                    naive.moves.len(),
+                    "{label}: move count"
+                );
+                for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
+                    assert_eq!(
+                        (
+                            h.target.x.to_bits(),
+                            h.target.y.to_bits(),
+                            h.target.z.to_bits()
+                        ),
+                        (
+                            n.target.x.to_bits(),
+                            n.target.y.to_bits(),
+                            n.target.z.to_bits()
+                        ),
+                        "{label}: move {i} diverges"
+                    );
+                    assert_eq!(h.move_type, n.move_type, "{label}: move {i} type");
+                    assert_eq!(h.intent, n.intent, "{label}: move {i} intent");
+                }
+            }
         }
     }
 

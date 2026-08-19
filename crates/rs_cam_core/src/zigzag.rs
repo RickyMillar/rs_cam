@@ -9,6 +9,11 @@ use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Parameters for zigzag/raster clearing.
+///
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// for why a depth-stepping caller wants struct-update rather than a re-listed
+/// literal per Z level.
+#[derive(Debug, Clone, Copy)]
 pub struct ZigzagParams {
     /// Tool radius in mm.
     pub tool_radius: f64,
@@ -262,6 +267,68 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             angle: 0.0,
+        }
+    }
+
+    /// **G2, zigzag side.** The hoisted composition (`zigzag_lines_reported`
+    /// once, `lines_to_toolpath` per level) against the naive one
+    /// (`zigzag_toolpath` per level), bit for bit.
+    ///
+    /// A property rather than a pinned constant, so it cannot rot. See
+    /// `pocket::tests::the_hoisted_cascade_emits_exactly_what_the_per_level_one_did`
+    /// for why the Phase 0 golden cannot cover this seam on its own.
+    #[test]
+    fn the_hoisted_scan_lines_emit_exactly_what_the_per_level_build_did() {
+        let poly = Polygon2::rectangle(0.0, 0.0, 60.0, 40.0);
+        let base = ZigzagParams {
+            angle: 23.0,
+            ..default_params()
+        };
+        let levels: Vec<f64> = (1..=5).map(|i| -1.5 * i as f64).collect();
+
+        let naive = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+            zigzag_toolpath(
+                &poly,
+                &ZigzagParams {
+                    cut_depth: z,
+                    ..base
+                },
+            )
+        });
+
+        let (lines, _failures) =
+            zigzag_lines_reported(&poly, base.tool_radius, base.stepover, base.angle);
+        let hoisted = crate::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
+            lines_to_toolpath(
+                &lines,
+                &ZigzagParams {
+                    cut_depth: z,
+                    ..base
+                },
+            )
+        });
+
+        assert!(
+            !naive.moves.is_empty(),
+            "the fixture emitted nothing — the comparison would be vacuous"
+        );
+        assert_eq!(hoisted.moves.len(), naive.moves.len());
+        for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
+            assert_eq!(
+                (
+                    h.target.x.to_bits(),
+                    h.target.y.to_bits(),
+                    h.target.z.to_bits()
+                ),
+                (
+                    n.target.x.to_bits(),
+                    n.target.y.to_bits(),
+                    n.target.z.to_bits()
+                ),
+                "move {i} diverges between the hoisted and per-level builds"
+            );
+            assert_eq!(h.move_type, n.move_type, "move {i} type");
+            assert_eq!(h.intent, n.intent, "move {i} intent");
         }
     }
 

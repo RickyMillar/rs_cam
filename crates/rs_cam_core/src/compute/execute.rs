@@ -834,21 +834,35 @@ pub(crate) fn generate_rest(
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
     let mut combined = Toolpath::new();
     for poly in polys {
+        // G2: the rest geometry — the inward offset, the zigzag scan lines and
+        // the per-sample containment walk over the large tool's reachable
+        // region — is entirely XY, so it is computed ONCE per polygon here
+        // instead of once per Z level inside the closure. `cut_depth` on the
+        // base params is a placeholder; `rest_segments` never reads it, and
+        // the per-level stamp below overrides it.
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
+        let base = crate::rest::RestParams {
+            prev_tool_radius: ptr,
+            tool_radius,
+            cut_depth: 0.0,
+            stepover: cfg.stepover,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z,
+            angle: cfg.angle,
+        };
+        let segments = crate::rest::rest_segments(poly, &base);
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                Ok(crate::rest::rest_machining_toolpath(
-                    poly,
+                Ok(crate::rest::rest_segments_to_toolpath(
+                    &segments,
                     &crate::rest::RestParams {
-                        prev_tool_radius: ptr,
-                        tool_radius,
                         cut_depth: z,
-                        stepover: cfg.stepover,
-                        feed_rate: op.feed_rate(),
-                        plunge_rate: op.plunge_rate(),
-                        safe_z,
-                        angle: cfg.angle,
+                        ..base
                     },
                 ))
             },
@@ -1013,24 +1027,39 @@ pub(crate) fn generate_zigzag(
     // and testable without a global.
     let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
+        // G2: the wall inset and the scan-line build are Z-independent, so
+        // they run ONCE per polygon. The per-level closure stamps Z only.
+        //
+        // This is also where the documented `offset_library_failures` x L
+        // over-count goes away: the wall inset is now made once per polygon,
+        // so the channel counts one failure per failing offset CALL, which is
+        // what its own doc always claimed it counted.
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
+        let base = crate::zigzag::ZigzagParams {
+            tool_radius,
+            stepover: cfg.stepover,
+            cut_depth: 0.0,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z,
+            angle: cfg.angle,
+        };
+        let (lines, failures) =
+            crate::zigzag::zigzag_lines_reported(poly, tool_radius, cfg.stepover, cfg.angle);
+        offset_failures.set(offset_failures.get() + failures);
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
-                    poly,
+                Ok(crate::zigzag::lines_to_toolpath(
+                    &lines,
                     &crate::zigzag::ZigzagParams {
-                        tool_radius,
-                        stepover: cfg.stepover,
                         cut_depth: z,
-                        feed_rate: op.feed_rate(),
-                        plunge_rate: op.plunge_rate(),
-                        safe_z,
-                        angle: cfg.angle,
+                        ..base
                     },
-                );
-                offset_failures.set(offset_failures.get() + failures);
-                Ok(tp)
+                ))
             },
             &cancel_fn,
         )
@@ -1072,14 +1101,19 @@ pub(crate) fn generate_trace(
             compensation: cfg.compensation,
             top_z: ctx.heights.top_z,
         };
+        // G2: the cutter-compensation offset is Z-independent, so it runs ONCE
+        // per polygon instead of once per Z level. The per-level closure stamps
+        // Z only — and the failure count is now one per offset CALL rather than
+        // one per call x level.
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
+        let (rings, failures) = crate::trace::trace_compensated_polygons_reported(poly, &params);
+        offset_failures.set(offset_failures.get() + failures);
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
-            |z| {
-                let (tp, failures) = crate::trace::trace_polygon_at_z_reported(poly, z, &params);
-                offset_failures.set(offset_failures.get() + failures);
-                Ok(tp)
-            },
+            |z| Ok(crate::trace::trace_polygons_at_z(&rings, z, &params)),
             &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
@@ -1124,25 +1158,40 @@ pub(crate) fn generate_profile(
     // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
     let offset_failures = std::cell::Cell::new(0usize);
     for poly in polys {
+        // G2: the compensation offset that produces the tool-centre path is
+        // Z-independent, so it runs ONCE per polygon. Tabs stay inside the
+        // closure — they are applied to the FINAL level only, which is the one
+        // genuinely per-level thing this family does.
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
+        let base = crate::profile::ProfileParams {
+            tool_radius,
+            side: cfg.side,
+            cut_depth: 0.0,
+            feed_rate,
+            plunge_rate,
+            safe_z,
+            climb: cfg.climb,
+            compensate_in_controller: cfg.compensation
+                == crate::compute::CompensationType::InControl,
+        };
+        let (contour, failures) = crate::profile::profile_path_reported(poly, &base);
+        offset_failures.set(offset_failures.get() + failures);
         let tp = crate::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
             |z| {
-                let (pass_tp, failures) = crate::profile::profile_toolpath_reported(
-                    poly,
-                    &crate::profile::ProfileParams {
-                        tool_radius,
-                        side: cfg.side,
-                        cut_depth: z,
-                        feed_rate,
-                        plunge_rate,
-                        safe_z,
-                        climb: cfg.climb,
-                        compensate_in_controller: cfg.compensation
-                            == crate::compute::CompensationType::InControl,
-                    },
-                );
-                offset_failures.set(offset_failures.get() + failures);
+                let pass_tp = match &contour {
+                    Some(pts) => crate::profile::profile_path_to_toolpath(
+                        pts,
+                        &crate::profile::ProfileParams {
+                            cut_depth: z,
+                            ..base
+                        },
+                    ),
+                    None => Toolpath::new(),
+                };
                 if pass_tp.moves.is_empty() {
                     return Ok(pass_tp);
                 }
@@ -1198,58 +1247,82 @@ pub(crate) fn generate_pocket(
     // "not measured" reading and must not be coerced to a zero.
     let truncated_by_bound: std::cell::Cell<Option<f64>> = std::cell::Cell::new(None);
     for poly in polys {
-        let tp = crate::depth::toolpath_at_levels_with_cancel(
-            &levels,
-            safe_z,
-            |z| match cfg.pattern {
-                crate::compute::operation_configs::PocketPattern::Contour => {
-                    let (tp, report) = crate::pocket::pocket_toolpath_reported_with_cancel(
-                        poly,
-                        &crate::pocket::PocketParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            climb: cfg.climb,
-                        },
-                        &cancel_fn,
-                    )?;
-                    offset_failures.set(offset_failures.get() + report.offset_failures);
-                    // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
-                    // leaves material, and that is exactly what
-                    // `truncated_core_mm2` already means — "region interior a
-                    // ring cascade left UNCUT because it hit a cap before
-                    // collapsing". Recorded on the existing channel rather
-                    // than a new one, so it reaches narrate, the diagnostics
-                    // list and MCP with no extra plumbing.
-                    if let Some(standing) = report.truncated_core_mm2 {
-                        truncated_by_bound
-                            .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
-                    }
-                    Ok(tp)
+        // G2: the 2D geometry — tool compensation plus the whole
+        // `OffsetRingSet` cascade for Contour, the wall inset plus scan lines
+        // for Zigzag — is Z-independent and is computed ONCE per polygon here.
+        // The per-level closures below stamp Z and nothing else. The pattern
+        // match is loop-invariant too, so it is hoisted with the geometry.
+        if ctx.cancel.load(Ordering::SeqCst) {
+            return Err(OperationError::Cancelled);
+        }
+        let tp = match cfg.pattern {
+            crate::compute::operation_configs::PocketPattern::Contour => {
+                let base = crate::pocket::PocketParams {
+                    tool_radius,
+                    stepover: cfg.stepover,
+                    cut_depth: 0.0,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    climb: cfg.climb,
+                };
+                let (tp, report) = crate::pocket::pocket_toolpath_at_levels_reported_with_cancel(
+                    poly, &levels, &base, &cancel_fn,
+                )
+                .map_err(|_e| OperationError::Cancelled)?;
+                offset_failures.set(offset_failures.get() + report.offset_failures);
+                // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
+                // leaves material, and that is exactly what
+                // `truncated_core_mm2` already means — "region interior a
+                // ring cascade left UNCUT because it hit a cap before
+                // collapsing". Recorded on the existing channel rather
+                // than a new one, so it reaches narrate, the diagnostics
+                // list and MCP with no extra plumbing.
+                //
+                // G2: the cascade now runs once per polygon rather than once
+                // per level, so this area is no longer multiplied by the level
+                // count either — it is the standing area of ONE cascade, which
+                // is what "material this pocket will not clear" always meant.
+                if let Some(standing) = report.truncated_core_mm2 {
+                    truncated_by_bound
+                        .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
                 }
-                crate::compute::operation_configs::PocketPattern::Zigzag => {
-                    let (tp, failures) = crate::zigzag::zigzag_toolpath_reported(
-                        poly,
-                        &crate::zigzag::ZigzagParams {
-                            tool_radius,
-                            stepover: cfg.stepover,
-                            cut_depth: z,
-                            feed_rate,
-                            plunge_rate,
-                            safe_z,
-                            angle: cfg.angle,
-                        },
-                    );
-                    offset_failures.set(offset_failures.get() + failures);
-                    Ok(tp)
-                }
-            },
-            &cancel_fn,
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+                tp
+            }
+            crate::compute::operation_configs::PocketPattern::Zigzag => {
+                let base = crate::zigzag::ZigzagParams {
+                    tool_radius,
+                    stepover: cfg.stepover,
+                    cut_depth: 0.0,
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    angle: cfg.angle,
+                };
+                let (lines, failures) = crate::zigzag::zigzag_lines_reported(
+                    poly,
+                    tool_radius,
+                    cfg.stepover,
+                    cfg.angle,
+                );
+                offset_failures.set(offset_failures.get() + failures);
+                crate::depth::toolpath_at_levels_with_cancel(
+                    &levels,
+                    safe_z,
+                    |z| {
+                        Ok(crate::zigzag::lines_to_toolpath(
+                            &lines,
+                            &crate::zigzag::ZigzagParams {
+                                cut_depth: z,
+                                ..base
+                            },
+                        ))
+                    },
+                    &cancel_fn,
+                )
+                .map_err(|_e| OperationError::Cancelled)?
+            }
+        };
         combined.moves.extend(tp.moves);
     }
     record_offset_library_failures(ctx.findings, offset_failures.get());

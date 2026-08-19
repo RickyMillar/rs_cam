@@ -25,6 +25,11 @@ use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
 
 /// Parameters for rest machining.
+///
+/// `Copy` since the G2 hoist (2026-08-20) — see [`crate::pocket::PocketParams`]
+/// for why a depth-stepping caller wants struct-update rather than a re-listed
+/// literal per Z level.
+#[derive(Debug, Clone, Copy)]
 pub struct RestParams {
     /// Previous (larger) tool radius in mm.
     pub prev_tool_radius: f64,
@@ -64,10 +69,30 @@ fn point_in_any_polygon(p: &P2, polygons: &[Polygon2]) -> bool {
     stepover = params.stepover,
 ))]
 pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolpath {
-    let mut tp = Toolpath::new();
+    rest_segments_to_toolpath(&rest_segments(polygon, params), params)
+}
 
+/// The **Z-independent half** of [`rest_machining_toolpath`]: the XY polylines
+/// this rest pass will cut.
+///
+/// Split out for the G2 hoist (2026-08-20), and rest is the family that gained
+/// most from it — the whole of this function is XY (an inward offset, a zigzag
+/// scan-line build, and a per-sample containment walk over the large tool's
+/// reachable region), while `cut_depth` reaches the output only through
+/// [`rest_segments_to_toolpath`]'s stamp. A depth-stepped rest op used to
+/// repeat all of it once per Z level.
+///
+/// Each returned polyline is one contiguous run of samples the previous larger
+/// tool could NOT reach. The "large tool cannot fit at all" fallback returns
+/// the raw scan lines as two-point polylines, which emit through the same
+/// `emit_path_segment_with_intent(ClearingCut)` envelope
+/// [`crate::zigzag::lines_to_toolpath`] uses — byte-identical to the previous
+/// `zigzag_toolpath` delegation, and it no longer recomputes the scan lines
+/// this function has already built.
+#[must_use]
+pub fn rest_segments(polygon: &Polygon2, params: &RestParams) -> Vec<Vec<P2>> {
     if params.tool_radius >= params.prev_tool_radius {
-        return tp;
+        return Vec::new();
     }
 
     // What the large tool center could reach (inward offset by large radius)
@@ -78,23 +103,12 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
         crate::zigzag::zigzag_lines(polygon, params.tool_radius, params.stepover, params.angle);
 
     if lines.is_empty() {
-        return tp;
+        return Vec::new();
     }
 
     // If large tool can't fit at all, the entire pocket is rest region
     if large_reachable.is_empty() {
-        return crate::zigzag::zigzag_toolpath(
-            polygon,
-            &crate::zigzag::ZigzagParams {
-                tool_radius: params.tool_radius,
-                stepover: params.stepover,
-                cut_depth: params.cut_depth,
-                feed_rate: params.feed_rate,
-                plunge_rate: params.plunge_rate,
-                safe_z: params.safe_z,
-                angle: params.angle,
-            },
-        );
+        return lines.iter().map(|l| vec![l[0], l[1]]).collect();
     }
 
     // Sampling resolution along each scan line, in mm. Deliberately clamped
@@ -103,6 +117,8 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
     // a coarser one. This bounds the per-line sample count for very small or
     // very large tools; it is not a tool-radius-proportional resolution.
     let sample_step = params.tool_radius.clamp(0.25, 0.5);
+
+    let mut segments: Vec<Vec<P2>> = Vec::new();
 
     for line in &lines {
         let dx = line[1].x - line[0].x;
@@ -128,18 +144,28 @@ pub fn rest_machining_toolpath(polygon: &Polygon2, params: &RestParams) -> Toolp
             if !in_large {
                 segment_points.push(p);
             } else if !segment_points.is_empty() {
-                // Exiting rest region — emit the segment
-                emit_rest_segment(&mut tp, &segment_points, params);
-                segment_points.clear();
+                // Exiting rest region — close the segment
+                segments.push(std::mem::take(&mut segment_points));
             }
         }
 
-        // Emit final segment if line ended in a rest region
+        // Keep the final segment if the line ended in a rest region
         if !segment_points.is_empty() {
-            emit_rest_segment(&mut tp, &segment_points, params);
+            segments.push(segment_points);
         }
     }
 
+    segments
+}
+
+/// The **Z-dependent half**: stamp pre-computed rest polylines at
+/// `params.cut_depth`.
+#[must_use]
+pub fn rest_segments_to_toolpath(segments: &[Vec<P2>], params: &RestParams) -> Toolpath {
+    let mut tp = Toolpath::new();
+    for seg in segments {
+        emit_rest_segment(&mut tp, seg, params);
+    }
     tp
 }
 
@@ -179,6 +205,97 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             angle: 0.0,
+        }
+    }
+
+    // ── G2 hoist ────────────────────────────────────────────────────────
+
+    fn move_bits(tp: &Toolpath) -> Vec<(u64, u64, u64, String)> {
+        tp.moves
+            .iter()
+            .map(|m| {
+                (
+                    m.target.x.to_bits(),
+                    m.target.y.to_bits(),
+                    m.target.z.to_bits(),
+                    format!("{:?}/{:?}", m.move_type, m.intent),
+                )
+            })
+            .collect()
+    }
+
+    /// **G2, rest side, and the branch that needed proving.**
+    ///
+    /// The hoist replaced the "large tool cannot fit at all" fallback — which
+    /// delegated to `zigzag_toolpath`, RE-deriving scan lines this function had
+    /// already built — with the lines it already has, emitted through
+    /// `emit_rest_segment`. Those are two different code paths reaching the
+    /// same `emit_path_segment_with_intent(ClearingCut)` envelope, so "they
+    /// agree" is a claim, not a tautology. This asserts it bit for bit.
+    #[test]
+    fn the_full_zigzag_fallback_still_matches_the_zigzag_op_exactly() {
+        // 8 mm square: a 6 mm-radius large tool cannot fit, so the whole
+        // pocket is rest region and the fallback fires.
+        let sq = square_polygon(8.0);
+        let params = default_params();
+        assert!(
+            offset_polygon(&sq, params.prev_tool_radius).is_empty(),
+            "this fixture must actually take the fallback, or it proves nothing"
+        );
+
+        let got = rest_machining_toolpath(&sq, &params);
+        let want = crate::zigzag::zigzag_toolpath(
+            &sq,
+            &crate::zigzag::ZigzagParams {
+                tool_radius: params.tool_radius,
+                stepover: params.stepover,
+                cut_depth: params.cut_depth,
+                feed_rate: params.feed_rate,
+                plunge_rate: params.plunge_rate,
+                safe_z: params.safe_z,
+                angle: params.angle,
+            },
+        );
+
+        assert!(!want.moves.is_empty(), "vacuous fixture");
+        assert_eq!(
+            move_bits(&got),
+            move_bits(&want),
+            "the fallback no longer matches the zigzag op it used to delegate to"
+        );
+    }
+
+    /// **G2's premise, stated as a property.** The rest geometry — the inward
+    /// offset, the scan lines and the containment walk — does not depend on
+    /// `cut_depth`, which is why a depth-stepped rest op can compute it once.
+    /// If this ever stopped holding, the hoist in `compute::execute` would be
+    /// silently wrong rather than loudly wrong.
+    #[test]
+    fn rest_segments_are_independent_of_cut_depth() {
+        let sq = square_polygon(40.0);
+        let base = default_params();
+        let reference = rest_segments(&sq, &base);
+        assert!(
+            !reference.is_empty(),
+            "vacuous fixture — no rest region to compare"
+        );
+
+        for z in [-0.001_f64, -5.0, -37.5] {
+            let other = rest_segments(
+                &sq,
+                &RestParams {
+                    cut_depth: z,
+                    ..base
+                },
+            );
+            assert_eq!(other.len(), reference.len(), "segment count moved at z={z}");
+            for (a, b) in other.iter().zip(reference.iter()) {
+                let ab: Vec<(u64, u64)> =
+                    a.iter().map(|p| (p.x.to_bits(), p.y.to_bits())).collect();
+                let bb: Vec<(u64, u64)> =
+                    b.iter().map(|p| (p.x.to_bits(), p.y.to_bits())).collect();
+                assert_eq!(ab, bb, "segment geometry moved at z={z}");
+            }
         }
     }
 

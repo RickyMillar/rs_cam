@@ -85,10 +85,7 @@ fn ring_with_holes(radius: f64, verts: usize, hole_verts: usize) -> Polygon2 {
                 .map(|i| {
                     // CW winding, per `Polygon2`'s hole contract.
                     let t = -std::f64::consts::TAU * i as f64 / hole_verts as f64;
-                    P2::new(
-                        cx + 0.18 * radius * t.cos(),
-                        cy + 0.18 * radius * t.sin(),
-                    )
+                    P2::new(cx + 0.18 * radius * t.cos(), cy + 0.18 * radius * t.sin())
                 })
                 .collect(),
         );
@@ -256,7 +253,16 @@ fn bench_sim_kernel_plunge(c: &mut Criterion) {
         let tp = plunge_pass(holes, -5.0);
         let fresh = TriDexelStock::from_stock(0.0, 0.0, 44.0, 24.0, 0.0, 10.0, 0.25);
         group.bench_function(BenchmarkId::new("flat6_cs025", holes), |b| {
-            b.iter(|| black_box(run_metric_sim(&fresh, &tp, &lut, &flat, flat.radius(), 0.25)))
+            b.iter(|| {
+                black_box(run_metric_sim(
+                    &fresh,
+                    &tp,
+                    &lut,
+                    &flat,
+                    flat.radius(),
+                    0.25,
+                ))
+            })
         });
     }
 
@@ -268,11 +274,24 @@ fn bench_sim_kernel_plunge(c: &mut Criterion) {
 /// The G2 number is the **ratio** `L20 / L1`. Before the fix it should be
 /// ≈ 20 (the whole 2D cascade re-runs per level); after the hoist it should
 /// fall towards 1 plus the per-level emission cost.
+///
+/// **Two families of arms, deliberately.** `pocket/L20` and friends measure
+/// the PRE-FIX call shape — `pocket_toolpath` inside the per-level closure, so
+/// the whole 2D cascade re-runs per level. Those arms are left exactly as
+/// Phase 0 captured them, and they still read the Phase 0 numbers, because the
+/// hoist does not make that shape faster; it makes it avoidable. The
+/// `*_hoisted` arms measure the POST-FIX shape that `compute/execute.rs` now
+/// uses: geometry once, then stamp per level. The G2 deliverable is
+/// `pocket/L20_hoisted` against `pocket/L1`, in one run, on one machine.
 fn bench_gen_depth(c: &mut Criterion) {
-    use rs_cam_core::depth::toolpath_at_levels;
-    use rs_cam_core::pocket::{PocketParams, pocket_toolpath};
-    use rs_cam_core::profile::{ProfileParams, ProfileSide, profile_toolpath};
-    use rs_cam_core::zigzag::{ZigzagParams, zigzag_toolpath};
+    use rs_cam_core::depth::{toolpath_at_levels, toolpath_at_levels_with_cancel};
+    use rs_cam_core::pocket::pocket_toolpath;
+    use rs_cam_core::pocket::{PocketParams, pocket_contours, pocket_contours_to_toolpath};
+    use rs_cam_core::profile::{
+        ProfileParams, ProfileSide, profile_path_reported, profile_path_to_toolpath,
+        profile_toolpath,
+    };
+    use rs_cam_core::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath};
 
     let mut group = c.benchmark_group("gen_depth");
     group.sample_size(10);
@@ -339,6 +358,123 @@ fn bench_gen_depth(c: &mut Criterion) {
                 }))
             })
         });
+
+        // ── POST-FIX shape (G2 hoist): geometry once, stamp per level ──
+        //
+        // This is what `compute::execute`'s pocket/profile/zigzag adapters do
+        // since 2026-08-20. The composition still runs through
+        // `toolpath_at_levels_with_cancel`, so inter-level retracts and the
+        // cancellation cadence are identical to the arms above.
+        let never = || false;
+
+        group.bench_function(
+            BenchmarkId::new("pocket", format!("{label}_hoisted")),
+            |b| {
+                b.iter(|| {
+                    let base = PocketParams {
+                        tool_radius: 3.0,
+                        stepover: 4.0,
+                        cut_depth: 0.0,
+                        feed_rate: 1200.0,
+                        plunge_rate: 400.0,
+                        safe_z: 10.0,
+                        climb: true,
+                    };
+                    let contours = pocket_contours(&poly, base.tool_radius, base.stepover);
+                    black_box(
+                        toolpath_at_levels_with_cancel(
+                            levels,
+                            10.0,
+                            |z| {
+                                Ok(pocket_contours_to_toolpath(
+                                    &contours,
+                                    &PocketParams {
+                                        cut_depth: z,
+                                        ..base
+                                    },
+                                ))
+                            },
+                            &never,
+                        )
+                        .expect("never cancelled"),
+                    )
+                })
+            },
+        );
+
+        group.bench_function(
+            BenchmarkId::new("profile", format!("{label}_hoisted")),
+            |b| {
+                b.iter(|| {
+                    let base = ProfileParams {
+                        tool_radius: 3.0,
+                        side: ProfileSide::Outside,
+                        cut_depth: 0.0,
+                        feed_rate: 1200.0,
+                        plunge_rate: 400.0,
+                        safe_z: 10.0,
+                        climb: true,
+                        compensate_in_controller: false,
+                    };
+                    let (contour, _failures) = profile_path_reported(&poly, &base);
+                    black_box(
+                        toolpath_at_levels_with_cancel(
+                            levels,
+                            10.0,
+                            |z| {
+                                Ok(match &contour {
+                                    Some(pts) => profile_path_to_toolpath(
+                                        pts,
+                                        &ProfileParams {
+                                            cut_depth: z,
+                                            ..base
+                                        },
+                                    ),
+                                    None => rs_cam_core::toolpath::Toolpath::new(),
+                                })
+                            },
+                            &never,
+                        )
+                        .expect("never cancelled"),
+                    )
+                })
+            },
+        );
+
+        group.bench_function(
+            BenchmarkId::new("zigzag", format!("{label}_hoisted")),
+            |b| {
+                b.iter(|| {
+                    let base = ZigzagParams {
+                        tool_radius: 3.0,
+                        stepover: 4.0,
+                        cut_depth: 0.0,
+                        feed_rate: 1200.0,
+                        plunge_rate: 400.0,
+                        safe_z: 10.0,
+                        angle: 0.0,
+                    };
+                    let lines = zigzag_lines(&poly, base.tool_radius, base.stepover, base.angle);
+                    black_box(
+                        toolpath_at_levels_with_cancel(
+                            levels,
+                            10.0,
+                            |z| {
+                                Ok(lines_to_toolpath(
+                                    &lines,
+                                    &ZigzagParams {
+                                        cut_depth: z,
+                                        ..base
+                                    },
+                                ))
+                            },
+                            &never,
+                        )
+                        .expect("never cancelled"),
+                    )
+                })
+            },
+        );
     }
 
     group.finish();
@@ -378,26 +514,29 @@ fn bench_gen_waterline(c: &mut Criterion) {
         // pick a step that yields exactly `levels` planes.
         let z_step = span / levels as f64;
         let final_z = top - span * (levels as f64 - 0.5) / levels as f64;
-        group.bench_function(BenchmarkId::new("rolling61_ball6", format!("L{levels}")), |b| {
-            b.iter(|| {
-                black_box(
-                    waterline_toolpath_with_cancel(
-                        &mesh,
-                        &index,
-                        &ball,
-                        top,
-                        final_z,
-                        z_step,
-                        &params,
-                        None,
-                        &never_cancel,
+        group.bench_function(
+            BenchmarkId::new("rolling61_ball6", format!("L{levels}")),
+            |b| {
+                b.iter(|| {
+                    black_box(
+                        waterline_toolpath_with_cancel(
+                            &mesh,
+                            &index,
+                            &ball,
+                            top,
+                            final_z,
+                            z_step,
+                            &params,
+                            None,
+                            &never_cancel,
+                        )
+                        .expect("never cancelled")
+                        .moves
+                        .len(),
                     )
-                    .expect("never cancelled")
-                    .moves
-                    .len(),
-                )
-            })
-        });
+                })
+            },
+        );
     }
 
     group.finish();
@@ -416,10 +555,7 @@ fn bench_gen_contains_point(c: &mut Criterion) {
     let queries: Vec<P2> = (0..10_000)
         .map(|i| {
             let t = i as f64;
-            P2::new(
-                60.0 * ((t * 0.37).sin()),
-                60.0 * ((t * 0.61).cos()),
-            )
+            P2::new(60.0 * ((t * 0.37).sin()), 60.0 * ((t * 0.61).cos()))
         })
         .collect();
 
@@ -572,9 +708,7 @@ fn bench_gen_vcarve_field(c: &mut Criterion) {
 /// S6's per-sample allocation half) only.
 fn three_op_session() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::catalog::OperationConfig;
-    use rs_cam_core::compute::config::{
-        BoundaryConfig, DressupConfig, HeightsConfig, StockSource,
-    };
+    use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
     use rs_cam_core::compute::operation_configs::{
         PocketConfig, PocketPattern, ProfileConfig, ZigzagConfig,
     };
@@ -728,14 +862,17 @@ fn bench_sim_e2e_small(c: &mut Criterion) {
             modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
             modulation_aggressiveness: 1.0,
         };
-        group.bench_function(BenchmarkId::new("3op_2d", format!("res{resolution}")), |b| {
-            b.iter(|| {
-                let sim = session
-                    .run_simulation(&opts, &cancel)
-                    .expect("simulation completes");
-                black_box(sim.total_moves)
-            })
-        });
+        group.bench_function(
+            BenchmarkId::new("3op_2d", format!("res{resolution}")),
+            |b| {
+                b.iter(|| {
+                    let sim = session
+                        .run_simulation(&opts, &cancel)
+                        .expect("simulation completes");
+                    black_box(sim.total_moves)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -813,7 +950,13 @@ fn bench_viz_triage_build(c: &mut Criterion) {
             (0..8).map(|i| (ToolpathId(i), 6.0)).collect();
 
         group.bench_function(BenchmarkId::new("measurability", n_samples), |b| {
-            b.iter(|| black_box(MeasurabilityReport::from_trace(&trace, Some(0.25)).entries.len()))
+            b.iter(|| {
+                black_box(
+                    MeasurabilityReport::from_trace(&trace, Some(0.25))
+                        .entries
+                        .len(),
+                )
+            })
         });
 
         let measurability = MeasurabilityReport::from_trace(&trace, Some(0.25));
