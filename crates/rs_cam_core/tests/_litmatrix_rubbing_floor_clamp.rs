@@ -120,7 +120,16 @@ const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.035_350_302_327_474_86;
 /// with the band midpoint: the midpoint went above the floor and this
 /// did not, which is why the clamp still fires. Was 0.014128326084665594
 /// under the retired `^1.0` law.
-const IPE_PRE_CLAMP_REQUESTED_MM_TOOTH: f64 = 0.021_981_648_910_896_722;
+///
+/// **RE-PINNED 2026-08-19 (G-CHIPTHIN-HALFFIX): 0.021981648910896722 →
+/// 0.020969157...**, a factor of exactly **1.0483** — this cell's
+/// `observed_combined_chip_thinning`, which the calculator no longer
+/// multiplies into the feed. The cell's *conclusion* is unchanged and that is
+/// the point: the pre-clamp advance was already below the chip-formation floor
+/// and it moved further below, so the clamp still fires and the cell still
+/// demonstrates what it was written to demonstrate. Only the magnitude moved,
+/// and it moved by the deleted multiplier exactly.
+const IPE_PRE_CLAMP_REQUESTED_MM_TOOTH: f64 = 0.020_969_157_101_952_5;
 
 fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();

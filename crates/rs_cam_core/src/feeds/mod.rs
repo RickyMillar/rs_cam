@@ -509,10 +509,14 @@ pub struct FeedsResult {
 /// Per-step record of the chipload → feed pipeline. Each multiplier
 /// is positive (no zero divisors); a value of 1.0 means "no effect."
 /// The "effective chipload" the toolpath actually cuts at is
-/// `target_chip_load_mm × every_multiplier_here`.
+/// `target_chip_load_mm × combined_factor()` — note the accessor, **not**
+/// the product of every field. Since 2026-08-19 three fields here
+/// (`observed_*_chip_thinning`) are measurements the engine reports but does
+/// not apply, so multiplying the struct out by hand overstates the feed by up
+/// to 4×. `combined_factor()` is the only correct composition.
 ///
 /// Derived purely so the UI can render the breakdown — calculate()
-/// applies each factor in place, this struct just captures them.
+/// applies each APPLIED factor in place, this struct just captures them.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FeedsDerates {
     /// LUT midpoint (or formula chipload) before any multipliers.
@@ -521,15 +525,30 @@ pub struct FeedsDerates {
     /// came from [`ChiploadSource::FormulaFallback`] / `EdgeRadiusFloor`.
     /// `None` when the LUT supplied the value.
     pub formula: Option<FormulaBreakdown>,
-    /// Radial chip thinning factor (≥ 1.0). At small stepovers the
-    /// chip is thinner per tooth-pass so we feed faster to keep the
-    /// effective chipload constant.
-    pub radial_chip_thinning: f64,
-    /// Axial chip thinning factor for ball/tapered-ball tools at
-    /// shallow DOC.
-    pub axial_chip_thinning: f64,
-    /// Combined chip thinning, clamped to `[1.0, 4.0]`.
-    pub combined_chip_thinning: f64,
+    /// Radial chip-thinning factor (≥ 1.0) — **OBSERVED, NOT APPLIED** since
+    /// 2026-08-19 (G-CHIPTHIN-HALFFIX).
+    ///
+    /// The geometric statement is real: at a small stepover the chip is
+    /// thinner per tooth-pass. What is gone is the inference "…so feed
+    /// faster", because the vendor column this would correct publishes no
+    /// radial reference condition to correct *from* — see the deletion note at
+    /// Step 5 of [`calculate`] and `CHIPLOAD_LITERATURE_VERDICT.md` N-8.
+    ///
+    /// Reported so the condition stays visible to the operator and to
+    /// diagnostics. It is deliberately **excluded** from
+    /// [`FeedsDerates::combined_factor`]: a number in this struct that does not
+    /// multiply the feed must not be composed with the ones that do.
+    pub observed_radial_chip_thinning: f64,
+    /// Axial chip-thinning factor for ball / tapered-ball tools at shallow DOC
+    /// — **OBSERVED, NOT APPLIED**, same ruling and same reasoning as
+    /// [`Self::observed_radial_chip_thinning`]. The vendor charts publish a
+    /// rule for cutting deeper than 1 × D and none at all for shallower.
+    pub observed_axial_chip_thinning: f64,
+    /// Combined observed chip thinning, clamped to `[1.0, 4.0]` — **OBSERVED,
+    /// NOT APPLIED**. The clamp is retained because the reported number should
+    /// stay the one the engine historically computed, so the survey that
+    /// justified the deletion remains comparable against it.
+    pub observed_combined_chip_thinning: f64,
     /// Depth-tier feed derate (≤ 1.0). Deep cuts get slower feed to
     /// limit deflection.
     pub depth_tier: f64,
@@ -574,7 +593,7 @@ pub struct FormulaBreakdown {
 }
 
 impl FeedsDerates {
-    /// Compose every multiplier into a single number. The effective
+    /// Compose every **applied** multiplier into a single number. The effective
     /// chipload (`feed / (RPM × flutes)`) equals
     /// `target_chip_load_mm × combined_factor()`.
     pub fn combined_factor(&self) -> f64 {
@@ -586,8 +605,14 @@ impl FeedsDerates {
         // renders `spindle_speedup` as a peer row so the operator
         // sees the speed-axis change separately from the chipload
         // derates.
-        self.combined_chip_thinning
-            * self.depth_tier
+        //
+        // The three `observed_*_chip_thinning` fields are NOT included either,
+        // and for a different reason: since 2026-08-19 they are measurements
+        // rather than derates, and `calculate` no longer multiplies the feed by
+        // them. Composing them here would make this function — and the
+        // `effective_chip_load_mm` identity built on it — disagree with the
+        // feed the engine actually emits. See their field docs.
+        self.depth_tier
             * self.ld_overhang
             * self.workholding
             * self.power_limit
@@ -1488,10 +1513,48 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         ap,
     );
 
-    // Radial chip thinning (all tools)
+    // ── Chip thinning: MEASURED, NOT APPLIED (G-CHIPTHIN-HALFFIX, 2026-08-19)
+    //
+    // These two factors are still computed, because the geometric condition
+    // they describe is real and worth reporting — a Ø6 ball at 0.05 mm DOC
+    // genuinely does present a thinner chip per tooth-pass. What was deleted
+    // here is the **multiplication into the feed**.
+    //
+    // The reason is the same one that deleted the gate-side normalisation on
+    // 2026-08-06, applied to the half that wave did not reach.
+    // `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` §2.3 / N-8
+    // records, as a deliberate negative result, that **no wood source in the
+    // shipped LUT publishes a radial-engagement condition for its chipload
+    // column**: six wood charts were read in full and all six state an *axial*
+    // condition (1 × D) plus an axial derate table, none mentioning stepover,
+    // width of cut, radial engagement or `ae`. A correction can only be applied
+    // against a stated reference condition, and for these columns there is
+    // none. The `ae_min`/`ae_max` values the factor read are repo-authored
+    // application windows (`ae_rule` strings like `"scallop driven"`), not
+    // transcriptions — so the multiplier was scaling a vendor number by a
+    // quantity the vendor never conditioned it on.
+    //
+    // The same argument retires the axial term: the vendor charts publish a
+    // rule for cutting *deeper* than 1 × D (reduce chipload) and no rule at all
+    // for cutting shallower, so "feed faster at shallow DOC" has no source
+    // either.
+    //
+    // Measured before the deletion (`tests/chipload_thinning_magnitude_survey.rs`,
+    // 3 420 operating points): the multiplier was active on 99.1 % of them at a
+    // median of 1.809, with 636 points pinned to the 4.0 clamp ceiling — i.e.
+    // there the applied value was not the geometric one, it was the cap.
+    // Against the derated vendor band it put 37.7 % of banded points ABOVE the
+    // maximum the post-sim gate judges them by. Deleting it drops that to
+    // 0.1 % and more than doubles in-band adherence, 19.0 % → 44.5 %, once the
+    // Step-9b rubbing floor below catches the fall. Ruled by the operator
+    // 2026-08-19 after that survey; the seed-target half of the question
+    // (midpoint vs band maximum) was deliberately NOT bundled with it.
+    //
+    // Consequence worth knowing: with this gone, `ae` no longer enters the feed
+    // expression at all except through the Step 6 power check, which
+    // `power_ceiling_parity_f2.rs` measured as never firing on shipped
+    // profiles. A stepover change therefore no longer moves the feed.
     let rctf = geometry::radial_chip_thinning_factor(ae, effective_d);
-
-    // Axial chip thinning (ball nose tools at shallow depth)
     let axial_thinning = match input.tool_geometry {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
             geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
@@ -1500,10 +1563,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     };
     let chip_thinning = (rctf * axial_thinning).clamp(1.0, 4.0);
 
-    // Depth tier feed derate — deep cuts need slower feed to limit deflection
+    // Depth tier feed derate — deep cuts need slower feed to limit deflection.
+    // This one IS applied, and unlike chip thinning it has triple primary-source
+    // backing: Onsrud, Freud and Amana all print the same axial derate table
+    // (1×D full chipload / 2×D −25 % / 3×D −50 %), and the vendors are
+    // unambiguous that the ratio's numerator is the AXIAL depth of cut.
     let depth_tier = geometry::depth_tier_multiplier(ap, d);
 
-    let mut raw_feed = rpm * chip_load * input.flute_count as f64 * chip_thinning * depth_tier;
+    let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
 
     // --- Step 5b: Setup derates ---
     // L/D ratio derating — long tools deflect more
@@ -1833,9 +1900,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let derates = FeedsDerates {
         target_chip_load_mm: chip_load,
         formula,
-        radial_chip_thinning: rctf,
-        axial_chip_thinning: axial_thinning,
-        combined_chip_thinning: chip_thinning,
+        observed_radial_chip_thinning: rctf,
+        observed_axial_chip_thinning: axial_thinning,
+        observed_combined_chip_thinning: chip_thinning,
         depth_tier,
         ld_overhang: ld_factor,
         workholding: workholding_factor,

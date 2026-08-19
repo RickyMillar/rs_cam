@@ -238,6 +238,14 @@ fn the_tapered_ball_feed_recipe_matches_its_ball_twin_below_tangency() {
 /// | 0.25 | 1.000000 → 0.866025 | 1406.97 → 1525.05 | **+8.4%** |
 /// | 0.50 | 1.000000 → 1.004229 | 1539.96 → 1542.85 | +0.2% |
 ///
+/// **The feed column of that table is now history.** On 2026-08-19
+/// G-CHIPTHIN-HALFFIX deleted the chip-thinning multiplication from the feed,
+/// and every one of those deltas was mediated by it — the corrected effective
+/// diameter fed `axial_chip_thinning_factor_for_ball` and nothing else that
+/// reaches a feed. All four rows have returned to the pre-C3 column. The
+/// effective-diameter column, which is what C3 was actually about, is
+/// unchanged and still asserted.
+///
 /// The change is a feed INCREASE on shallow tapered-ball finishing — the
 /// direction that wants a human's eyes, so it is stated here and in the wave
 /// log rather than buried in a diff. Its scope is bounded: this path is
@@ -256,12 +264,35 @@ fn the_c3_feed_delta_is_pinned() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    // (doc, eff_d before C3, feed before C3, eff_d after, feed after)
+    // (doc, eff_d before C3, feed before C3, eff_d after, feed NOW)
+    //
+    // **The feed column collapsed back on 2026-08-19 (G-CHIPTHIN-HALFFIX).**
+    // C3's feed delta was mediated ENTIRELY by chip thinning: the corrected
+    // effective diameter fed `axial_chip_thinning_factor_for_ball`, and that
+    // factor multiplied the feed. With the multiplication deleted, effective
+    // diameter no longer reaches the feed at all, so every row returns to its
+    // pre-C3 value — 1200.00 / 1200.00 / 1406.97 / 1539.96, the third column.
+    //
+    // The four rows do not merely return to the pre-C3 column, they all
+    // COLLAPSE ONTO 1200.00, and that number is not a coincidence: it is the
+    // chip-formation floor itself, `RUBBING_FLOOR_MM_TOOTH × rpm × flutes`
+    // = 0.025 × 24 000 × 2. Pre-C3 the two shallowest rows were already
+    // sitting on that floor (which is why both read 1200.00 in the third
+    // column); with the chip-thinning multiplier gone the two deeper rows fall
+    // onto it as well. So this fixture no longer measures a feed model at all
+    // — every row is the floor — and that is worth knowing about a sub-Ø2
+    // tapered ball in softwood: Step 9b is the only thing setting its feed.
+    //
+    // **C3 itself is NOT reverted and is not in question.** The
+    // `effective_diameter_mm` column is untouched and still asserted below —
+    // that was C3's actual subject, and it still feeds the chipload band's DOC
+    // derate, the cutter-trait parity sentries and the reported geometry. What
+    // this test can no longer pin is a feed *delta*, because there is none.
     let rows: &[(f64, f64, f64, f64, f64)] = &[
-        (0.05, 1.0, 1200.00, 0.435890, 1515.07),
-        (0.10, 1.0, 1200.00, 0.600000, 1509.04),
-        (0.25, 1.0, 1406.97, 0.866025, 1525.05),
-        (0.50, 1.0, 1539.96, 1.004229, 1542.85),
+        (0.05, 1.0, 1200.00, 0.435890, 1200.00),
+        (0.10, 1.0, 1200.00, 0.600000, 1200.00),
+        (0.25, 1.0, 1406.97, 0.866025, 1200.00),
+        (0.50, 1.0, 1539.96, 1.004229, 1200.00),
     ];
 
     for &(doc, eff_before, feed_before, eff_after, feed_after) in rows {
@@ -274,8 +305,11 @@ fn the_c3_feed_delta_is_pinned() {
         );
         assert!(
             (r.feed_rate_mm_min - feed_after).abs() < 0.01,
-            "doc={doc}: feed {} left its pinned post-C3 value {feed_after} \
-             (pre-C3 {feed_before})",
+            "doc={doc}: feed {} left its pinned value {feed_after}. Since \
+             G-CHIPTHIN-HALFFIX (2026-08-19) that value is also the pre-C3 one \
+             ({feed_before}) — effective diameter no longer reaches the feed, so if \
+             these have diverged again, something is multiplying the feed by a \
+             geometry term. See the Step 5 note in feeds/mod.rs.",
             r.feed_rate_mm_min
         );
     }

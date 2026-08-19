@@ -1296,33 +1296,20 @@ fn draw_chipload_breakdown(ui: &mut egui::Ui, explain: &FeedsExplain) {
                 );
                 ui.end_row();
 
-                derate_row(
-                    ui,
-                    "radial chip-thinning",
-                    d.radial_chip_thinning,
-                    if d.radial_chip_thinning > 1.001 {
-                        "thin chip at small stepover — feed faster"
-                    } else {
-                        "stepover deep enough, no thinning"
-                    },
-                );
-                if (d.axial_chip_thinning - 1.0).abs() > 1e-3 {
+                // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
+                // (G-CHIPTHIN-HALFFIX). It is still shown, because the
+                // geometric condition is real and an operator should see it —
+                // but it must not read as one of the multipliers that produced
+                // the feed, because it no longer is one. The old rows said
+                // "feed faster" and sat in the same column as the derates that
+                // do multiply; that wording is what a reader would have cited.
+                if d.observed_combined_chip_thinning > 1.001 {
                     derate_row(
                         ui,
-                        "axial chip-thinning",
-                        d.axial_chip_thinning,
-                        "ball / tapered-ball at shallow DOC",
-                    );
-                }
-                if (d.combined_chip_thinning - d.radial_chip_thinning * d.axial_chip_thinning)
-                    .abs()
-                    > 1e-3
-                {
-                    derate_row(
-                        ui,
-                        "combined chip-thinning (clamped 1.0–4.0)",
-                        d.combined_chip_thinning,
-                        "guard so feed doesn't explode",
+                        "chip-thinning (observed, NOT applied)",
+                        d.observed_combined_chip_thinning,
+                        "chip is thinner per pass at this stepover / DOC — reported only; \
+                         the vendor chipload column states no radial condition to correct from",
                     );
                 }
                 derate_row(
