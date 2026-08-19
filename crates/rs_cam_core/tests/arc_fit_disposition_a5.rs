@@ -262,7 +262,20 @@ fn fixtures() -> Vec<Fixture> {
             // the reference case A-6 measured at ×1.2727 on the band
             // maximum; 1/1.2727 = 0.786 against an observed 0.7556, the
             // remainder being the DOC derate applied to the new band.
-            expected_suggest_feed: 918.0,
+            //
+            // **RE-PINNED 2026-08-19, G-SUGGEST-NOCLAMP: 918.0 → 1223.4**
+            // (×4/3, exactly). Suggest pass 9 now re-derives the feed at the
+            // geometry the operation ships, and the axial envelope clamps
+            // this op's DPP across the 1×D depth-tier boundary on a Ø6 tool
+            // — tier 0.75 → 1.00 — so the derate the calculator had folded
+            // in no longer applies. Justified by the band, not by the test:
+            // the commanded advance moves 0.03060 → 0.04078 mm/tooth against
+            // a derated band of 0.032–0.055 with target 0.04350. It was
+            // BELOW the vendor minimum and now sits inside the band near its
+            // target. Nothing about the retired arc-fit lift changed —
+            // point 3 still holds at 5.65×, and arm C is reconstructed from
+            // the band and RPM, so point 4 is untouched.
+            expected_suggest_feed: 1223.4,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -282,7 +295,22 @@ fn fixtures() -> Vec<Fixture> {
             // 1694.0** (×0.7552) — the same mechanism and, to three
             // figures, the same factor as A3D-1, which is what one
             // expects from one row-pair carried by the same scale terms.
-            expected_suggest_feed: 1694.0,
+            //
+            // **RE-PINNED 2026-08-19, G-SUGGEST-NOCLAMP: 1694.0 → 2258.4**
+            // (×4/3, exactly — the same depth-tier crossing as A3D-1, on Ø8
+            // rather than Ø6). Commanded advance 0.03764 → 0.05019 mm/tooth
+            // against a derated band of 0.03938–0.06768, target 0.05353:
+            // again below the vendor minimum before, inside the band and
+            // close to target after.
+            //
+            // The two DropCutter fixtures below are deliberately NOT
+            // re-pinned. Surface-following ops command no axial step, so
+            // their depth-tier term is identical at both operating points
+            // and cancels; pass 9 finds no mutated geometry and does not
+            // fire. That asymmetry — the DPP-clamped family moves, the
+            // family with no DPP does not — is itself the check that the
+            // pass is keyed on geometry and not on op family.
+            expected_suggest_feed: 2258.4,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -489,10 +517,14 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 ///
 /// 1. neither retired chipload-lift warning appears in `profile.warnings`;
 /// 2. `suggested_operation.feed_rate()` equals the pinned arm-B feed
-///    (1215.0 / 2243.0 / 1487.0 / 1029.0) within 0.5 mm/min — Suggest ships
-///    the calculator's own number;
+///    (1223.4 / 2258.4 / 1487.0 / 1029.0) within 0.5 mm/min — Suggest ships
+///    the calculator's own number, **re-derived at the geometry the operation
+///    ships** since G-SUGGEST-NOCLAMP landed on 2026-08-19. That fix moved
+///    the two Adaptive3d pins by exactly 4/3 each (a depth-tier crossing the
+///    axial-envelope DPP clamp produces) and left both DropCutter pins alone;
+///    the per-fixture comments carry the band evidence for each;
 /// 3. the shipped feed is **strictly below** the pinned legacy feed, by the
-///    per-fixture ratio the retirement removes (5.69× / 2.67× / 2.96× /
+///    per-fixture ratio the retirement removes (5.65× / 2.66× / 2.96× /
 ///    2.43×);
 /// 4. the closed form still reproduces off the pinned constants where no
 ///    ceiling truncated the legacy lift (A3D-1 4.00×, DC-1 6.67×).
@@ -506,6 +538,14 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
         "{:<46} {:>12} {:>12} {:>10} {:>9} {:>9}",
         "fixture", "legacy_A", "shipped_B", "arm_C", "A/B", "A/C"
     );
+
+    // Points 2 and 3 are a per-fixture TABLE, so they are collected and
+    // reported together rather than aborting on the first row: failing fast
+    // here hides the other three fixtures' measured feeds, which are the
+    // numbers a reader needs in order to tell a real regression from a
+    // deliberate re-baseline. (Changed 2026-08-19, when pass 9 moved two of
+    // the four pins and the first row's abort concealed the rest.)
+    let mut mismatches: Vec<String> = Vec::new();
 
     for fx in fixtures() {
         let session = build_session(&fx);
@@ -540,23 +580,21 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
         );
 
         // 2 — Suggest ships the calculator's feed.
-        assert!(
-            (r.shipped_feed - fx.expected_suggest_feed).abs() < 0.5,
-            "{}: Suggest must ship the un-lifted feed {} ± 0.5, got {}",
-            fx.label,
-            fx.expected_suggest_feed,
-            r.shipped_feed
-        );
+        if (r.shipped_feed - fx.expected_suggest_feed).abs() >= 0.5 {
+            mismatches.push(format!(
+                "{}: Suggest must ship the un-lifted feed {} ± 0.5, got {}",
+                fx.label, fx.expected_suggest_feed, r.shipped_feed
+            ));
+        }
 
         // 3 — and that is strictly less than what it used to ship. A
         //     partial retirement would land between the two.
-        assert!(
-            r.shipped_feed < fx.legacy_shipped_feed - 0.5,
-            "{}: shipped feed {} must sit strictly below the retired lift's {}",
-            fx.label,
-            r.shipped_feed,
-            fx.legacy_shipped_feed
-        );
+        if r.shipped_feed >= fx.legacy_shipped_feed - 0.5 {
+            mismatches.push(format!(
+                "{}: shipped feed {} must sit strictly below the retired lift's {}",
+                fx.label, r.shipped_feed, fx.legacy_shipped_feed
+            ));
+        }
 
         // 4 — the closed form, restated on the pinned constants. It holds
         //     only where the machine cutting-feed ceiling did not truncate
@@ -601,6 +639,12 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
             );
         }
     }
+
+    assert!(
+        mismatches.is_empty(),
+        "the Suggest-side disposition table moved:\n  {}",
+        mismatches.join("\n  ")
+    );
 }
 
 // ── Sim-side arms ───────────────────────────────────────────────────────

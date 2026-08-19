@@ -179,11 +179,49 @@ pub struct SuggestContext<'a> {
     /// branches on it explicitly. Pinned by
     /// `unpopulated_effective_diameter_skips_doc_derating`.
     pub effective_diameter_mm: f64,
+    /// The operating point [`crate::feeds::calculate`] derived its feed at
+    /// (G-SUGGEST-NOCLAMP, 2026-08-19). Populated by `apply_feeds_subset`
+    /// from the `FeedsResult` it is applying; read only by
+    /// [`rescale_feed_to_final_geometry`].
+    ///
+    /// `None` means **there is no derivation point to reconcile against**,
+    /// and the rescale pass short-circuits. That is the correct answer for
+    /// [`resolve_operation_invariants`], whose whole contract is "run the
+    /// safety clamps over a value a human or the optimizer chose, and do
+    /// not substitute a number of our own" — a hand-typed feed was never
+    /// derived from a chip-thinning term, so there is nothing to re-derive.
+    pub calculator_operating_point: Option<CalculatorOperatingPoint>,
     /// v3.0b: caller-supplied policy threading through the
     /// orchestrator. Default = `SuggestPolicy::default()` =
     /// aggressiveness `Default` (LUT band midpoint) since the v3.0c
     /// flip per the 2026-06-03 directive.
     pub policy: SuggestPolicy,
+}
+
+/// The point [`crate::feeds::calculate`] evaluated its feed expression at.
+///
+/// `enforce_invariants` may legally overwrite the operation's stepover and
+/// DPP after the calculator has already folded chip-thinning and depth-tier
+/// terms sized at *these* values into the feed. Reconciling the two needs
+/// the original point, and it must be the calculator's **unrounded** values:
+/// `apply_feeds_subset` writes rounded copies onto the operation, and
+/// anchoring the re-derivation on a rounded intermediate would fold that
+/// rounding into the ratio.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalculatorOperatingPoint {
+    /// `FeedsResult::radial_width_mm` — the `ae` the chip-thinning term was
+    /// sized at.
+    pub radial_width_mm: f64,
+    /// `FeedsResult::axial_depth_mm` — the `ap` the depth-tier term and the
+    /// chip-thinning effective diameter were sized at.
+    pub axial_depth_mm: f64,
+    /// `FeedsResult::feed_rate_mm_min`, unrounded.
+    pub feed_rate_mm_min: f64,
+    /// `FeedsResult::rpm`. Paired with the feed so the pass can recover the
+    /// commanded advance per tooth rather than working in feed units, which
+    /// keeps the re-derivation exact when the applied RPM is a rounded copy
+    /// of this one.
+    pub rpm: f64,
 }
 
 /// Warnings emitted while applying suggestions to an operation.
@@ -498,6 +536,15 @@ pub enum SuggestWarning {
         factor_at_calculator: f64,
         /// The same combined factor at the operation's final stepover / DPP.
         factor_at_final: f64,
+        /// `Some(MaxFeed)` when the re-derived feed was above the machine's
+        /// cutting-feed ceiling and got truncated there, so
+        /// `rescaled_mm_per_min` is the ceiling rather than the re-derived
+        /// value. Added 2026-08-19 alongside the pass that first produces
+        /// this warning: an up-rescale is bounded only by the geometry terms
+        /// (worst case ~8.9×), and emitting a feed the machine cannot run
+        /// would trade one wrong number for another. Same cap vocabulary the
+        /// retired pass 8 used for the same ceiling.
+        cap_hit: Option<FeedRecalibrationCap>,
     },
     /// **DECLARED 2026-08-19, NOT YET PRODUCED — G-SUGGEST-NOCLAMP.**
     ///
@@ -816,6 +863,7 @@ fn apply_feeds_subset(
     pass_role: PassRole,
     context: SuggestContext<'_>,
     subset: ApplyScope,
+    speeds_explored: bool,
 ) -> Vec<SuggestWarning> {
     let mut scratch = operation.clone();
     scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
@@ -845,10 +893,24 @@ fn apply_feeds_subset(
     // (`pick_axial_envelope`) can query vendor `ap_*_factor` / `ap_*_mm`
     // and the chipload-bounds re-derivation step in `enforce_invariants`
     // can re-apply `doc_derating_scale` against a mutated DPP.
+    // ...and the operating point the calculator sized the feed at, so the
+    // final pass can re-derive the chip-thinning and depth-tier terms once
+    // the clamps above have settled what the operation actually runs.
+    // Unrounded on purpose — see `CalculatorOperatingPoint`.
+    //
+    // Withheld for a drag-to-explore apply: those speeds are the operator's,
+    // not the calculator's, so there is no derivation to reconcile and pass 9
+    // must leave them exactly as dialled. See `with_explored_speeds`.
     let enriched = SuggestContext {
         chipload_bounds: result.chipload_bounds,
         matched_lut_row: result.matched_lut_row.as_ref(),
         effective_diameter_mm: result.effective_diameter_mm,
+        calculator_operating_point: (!speeds_explored).then_some(CalculatorOperatingPoint {
+            radial_width_mm: result.radial_width_mm,
+            axial_depth_mm: result.axial_depth_mm,
+            feed_rate_mm_min: result.feed_rate_mm_min,
+            rpm: result.rpm,
+        }),
         ..context
     };
     let warnings = enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
@@ -914,6 +976,7 @@ pub fn apply_feeds_result_to_op(
         pass_role,
         context,
         ApplyScope::Both,
+        false,
     )
 }
 
@@ -941,6 +1004,7 @@ pub fn apply_speeds_to_op(
         pass_role,
         context,
         ApplyScope::Speeds,
+        false,
     )
 }
 
@@ -968,6 +1032,7 @@ pub fn apply_cut_geometry_to_op(
         pass_role,
         context,
         ApplyScope::CutGeometry,
+        false,
     )
 }
 
@@ -1059,6 +1124,7 @@ impl FeedsPreview {
         }
         Some(ApplicableRecommendation {
             result: std::borrow::Cow::Borrowed(&self.explain.recommended),
+            speeds_explored: false,
         })
     }
 }
@@ -1071,6 +1137,14 @@ impl FeedsPreview {
 #[derive(Debug, Clone)]
 pub struct ApplicableRecommendation<'a> {
     result: std::borrow::Cow<'a, FeedsResult>,
+    /// Set by [`ApplicableRecommendation::with_explored_speeds`]: the feed and
+    /// RPM on `result` came off a chart the operator dragged, not out of
+    /// [`crate::feeds::calculate`].
+    ///
+    /// Read by [`apply_feeds_subset`], which then withholds
+    /// [`SuggestContext::calculator_operating_point`] so the pass-9 rescale
+    /// finds no derivation to reconcile and leaves the dialled value alone.
+    speeds_explored: bool,
 }
 
 impl ApplicableRecommendation<'_> {
@@ -1092,6 +1166,13 @@ impl ApplicableRecommendation<'_> {
     /// silently re-solved back to the band target. Applying an explored point
     /// and then having the feed move on its own would be a new instance of
     /// the defect this funnel closes, not a fix for it.
+    ///
+    /// The dropped band is **not** a general "do not touch this feed" signal
+    /// and must not be reused as one — a legitimate calculator result on an
+    /// RPM-only vendor row publishes no band either, and that feed does want
+    /// reconciling. So the 2026-08-19 pass-9 rescale keys off its own explicit
+    /// [`ApplicableRecommendation::speeds_explored`] flag, set here, rather
+    /// than inferring the operator's intent from an absent band.
     #[must_use]
     pub fn with_explored_speeds(self, feed_mm_min: f64, rpm: f64) -> Self {
         let mut owned = self.result.into_owned();
@@ -1100,6 +1181,7 @@ impl ApplicableRecommendation<'_> {
         owned.chipload_bounds = None;
         Self {
             result: std::borrow::Cow::Owned(owned),
+            speeds_explored: true,
         }
     }
 }
@@ -1145,6 +1227,7 @@ pub fn apply(
         ctx.pass_role,
         ctx.suggest,
         scope,
+        rec.speeds_explored,
     )
 }
 
@@ -1833,6 +1916,16 @@ fn enforce_invariants(
     // doc-derating ratio just changed — so we re-derive it from the
     // matched LUT row before the chipload-recalibration pass downstream
     // consumes it.
+    //
+    // The geometry as it stands BEFORE any pass runs — i.e. what
+    // `apply_feeds_subset` wrote off the calculator's result. Pass 9 compares
+    // the final values against these to decide whether any pass actually
+    // moved the cut, and only re-derives the feed when one did. Captured here
+    // rather than reconstructed from the calculator's result because that
+    // result is unrounded and these are not; comparing like with like is what
+    // keeps an untouched operation's feed byte-identical.
+    let entry_stepover = operation.stepover();
+    let entry_dpp = operation.depth_per_pass();
     let mut working_context = context;
     let (axial_envelope_warnings, dpp_mutated) =
         pick_axial_envelope(operation, tool, material, working_context);
@@ -1874,6 +1967,18 @@ fn enforce_invariants(
     // 2026-08-13 (Checkpoint J-1, BINDING). Suggest now emits the un-lifted
     // feed the calculator produced. See the retirement note on
     // `feeds::predict` and `planning/review_2026-08-08/ARC_FIT_RATIO_EVIDENCE.md`.
+    //
+    // Pass 9 runs LAST, and must: every pass above may still move the stepover
+    // or the DPP, and this one exists to reconcile the feed with wherever they
+    // finally land.
+    warnings.extend(rescale_feed_to_final_geometry(
+        operation,
+        tool,
+        machine,
+        entry_stepover,
+        entry_dpp,
+        context,
+    ));
     warnings
 }
 
@@ -2345,6 +2450,231 @@ fn check_plunge_entry_stability(
             entry_style: style.to_owned(),
         });
     }
+    warnings
+}
+
+/// The two geometry-dependent terms [`crate::feeds::calculate`] folds into
+/// its feed at Step 5 / Step 5a: `clamp(radial × axial thinning, 1, 4)` times
+/// the depth tier.
+///
+/// Deliberately calls the same shipped helpers the calculator calls, in the
+/// same order, including the calculator's SHADOW POINT — chip thinning reads
+/// the effective diameter *at the commanded axial DOC*, while the depth tier
+/// reads the nominal one. A second implementation of the chip-thinning
+/// diameter is exactly what Checkpoint C3 retired; this is a re-evaluation of
+/// the calculator's expression at a different point, not a model of it.
+fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, ae_mm: f64, ap_mm: f64) -> f64 {
+    use crate::feeds::geometry;
+    let effective_d =
+        crate::feeds::effective_diameter(geom, tool.diameter, tool.shank_diameter, ap_mm);
+    let rctf = geometry::radial_chip_thinning_factor(ae_mm, effective_d);
+    let axial = match geom {
+        ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
+            geometry::axial_chip_thinning_factor_for_ball(tool.diameter, effective_d)
+        }
+        _ => 1.0,
+    };
+    (rctf * axial).clamp(1.0, 4.0) * geometry::depth_tier_multiplier(ap_mm, tool.diameter)
+}
+
+/// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the
+/// geometry the operation actually ships.**
+///
+/// `feeds::calculate` sizes two terms — radial × axial chip thinning (Step 5)
+/// and the depth tier (Step 5a) — against the `ae` / `ap` it was handed, and
+/// bakes both into the feed it returns. Every pass above is then free to
+/// rewrite exactly those two values: `backoff_stepover_for_runtime` raises
+/// stepover for move-count sanity, `pick_axial_envelope` /
+/// `clamp_dpp_to_rigidity` / `clamp_dpp_to_cutting_length` /
+/// `backoff_dpp_for_deflection` lower DPP. Nothing reconciled the feed with
+/// the result once retired pass 8 left in Checkpoint J-1, so Suggest shipped a
+/// feed quoting a cut the operation does not make — over-fed when a stepover
+/// was raised, under-fed when a DPP was clamped down a tier.
+///
+/// # What is held fixed
+///
+/// The **implied target chipload**: commanded advance per tooth divided by the
+/// geometry terms. Every other factor in the calculator's feed expression
+/// (target chipload, RPM, flute count, the L/D overhang derate, the
+/// workholding factor, the power derate, the safety factor) is independent of
+/// `ae` / `ap`, so holding the implied target fixed and re-multiplying by the
+/// factor at the final geometry reproduces exactly the feed the calculator
+/// would have produced had it been handed the final values — without
+/// re-running it, and so without disturbing anything else it decides.
+///
+/// The re-derivation works in advance-per-tooth rather than feed units so it
+/// stays exact when the operation carries a rounded copy of the calculator's
+/// RPM (`apply_feeds_subset` writes `result.rpm.round()`).
+///
+/// # When it does nothing
+///
+/// - No calculator operating point in the context — [`resolve_operation_invariants`]
+///   and direct callers. There is no derivation to reconcile against; see the
+///   field docs on [`SuggestContext::calculator_operating_point`].
+/// - No pass moved the stepover or the DPP. This is the common case and the
+///   pass must leave it **byte-identical**: the entry values are the rounded
+///   ones `apply_feeds_subset` wrote, so re-deriving unconditionally would
+///   silently un-round every feed in the product for no physical reason.
+///
+/// # What it deliberately does not re-check
+///
+/// The **power ceiling** (calculator Step 6). Required power scales with both
+/// the feed and the cross-section, and the cross-section moves with `ae`/`ap`,
+/// so a rescale can in principle invalidate a power-limited feed. It is not
+/// re-checked here because `tests/power_ceiling_parity_f2.rs` measured the
+/// power branch never firing at all across three shipped presets × ten species
+/// × Ø3/Ø6/Ø12 — rigidity and the machine cutting ceiling bind first, peak
+/// utilisation 23.6 % — and the machine ceiling *is* enforced below. On a
+/// profile where power does bind this pass can over-feed; that wants its own
+/// instrument rather than an unmeasured clamp bolted on here.
+///
+/// The **deflection budget** (retired pass 8 verified it after its lift). The
+/// closed-form predictor is feed-independent — force is `Kc × axial_doc ×
+/// radial_woc` — so the verify was a documented no-op there and would be one
+/// here too. `backoff_dpp_for_deflection` has already settled DPP above.
+fn rescale_feed_to_final_geometry(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    entry_stepover: Option<f64>,
+    entry_dpp: Option<f64>,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    let mut warnings = Vec::new();
+    let Some(calc) = context.calculator_operating_point else {
+        return warnings;
+    };
+    let usable = |v: f64| v.is_finite() && v > 0.0;
+    let requested = operation.feed_rate();
+    if !(usable(calc.feed_rate_mm_min) && usable(requested)) {
+        return warnings;
+    }
+
+    // The operation's final cut geometry. An operation that exposes no
+    // stepover / DPP field at all (the surface-following finishes command no
+    // axial step, and `narrate_toolpath` says so in those words) cannot have
+    // gone stale on that axis, so it falls back to the calculator's own value
+    // and that term cancels exactly.
+    let final_ae = operation
+        .stepover()
+        .filter(|v| usable(*v))
+        .unwrap_or(calc.radial_width_mm);
+    let final_ap = operation
+        .depth_per_pass()
+        .filter(|v| usable(*v))
+        .unwrap_or(calc.axial_depth_mm);
+
+    // Did any pass above actually move the cut? Compared against the entry
+    // values, not the calculator's, so an untouched operation is left exactly
+    // as it was rather than being re-derived to an unrounded near-identical
+    // number.
+    let moved = |entry: Option<f64>, final_v: f64| {
+        entry.is_some_and(|e| (e - final_v).abs() > f64::EPSILON * e.abs().max(1.0))
+    };
+    if !(moved(entry_stepover, final_ae) || moved(entry_dpp, final_ap)) {
+        return warnings;
+    }
+
+    let geom = build_cutter(tool).to_geometry_hint();
+    let factor_at_calculator =
+        geometry_feed_factor(geom, tool, calc.radial_width_mm, calc.axial_depth_mm);
+    let factor_at_final = geometry_feed_factor(geom, tool, final_ae, final_ap);
+    if !(usable(factor_at_calculator) && usable(factor_at_final)) {
+        return warnings;
+    }
+    // The cut moved but the feed's geometry terms did not — a stepover raised
+    // while both points sit at or past the half-diameter chip-thinning
+    // shoulder, a DPP clamped inside one depth tier. There is nothing to
+    // re-derive, and re-deriving anyway would replace the calculator's rounded
+    // feed with an unrounded near-identical one and file a warning saying
+    // nothing changed.
+    if (factor_at_final - factor_at_calculator).abs() <= factor_at_calculator * 1e-12 {
+        return warnings;
+    }
+
+    let flutes = f64::from(tool.flute_count.max(1));
+    // Work in advance per tooth where we can — see the RPM note above. When
+    // the operation carries no RPM the terms cancel identically in feed units,
+    // which is the same statement one algebraic step earlier.
+    let op_rpm = operation
+        .spindle_rpm()
+        .map(f64::from)
+        .filter(|v| usable(*v));
+    let mut rescaled = match (op_rpm, calc.rpm.is_finite() && calc.rpm > 0.0) {
+        (Some(rpm), true) => {
+            let implied_target = calc.feed_rate_mm_min / (calc.rpm * flutes) / factor_at_calculator;
+            implied_target * factor_at_final * rpm * flutes
+        }
+        _ => calc.feed_rate_mm_min * factor_at_final / factor_at_calculator,
+    };
+    if !usable(rescaled) {
+        return warnings;
+    }
+
+    // Calculator Step 7, re-applied. The cutting-feed ceiling is a physical
+    // limit, not a derate, so it survives a re-derivation the same way it
+    // survived retired pass 8's lift.
+    let mut cap_hit = None;
+    let ceiling = machine.cutting_feed_ceiling_mm_min();
+    if usable(ceiling) && rescaled > ceiling {
+        rescaled = ceiling;
+        cap_hit = Some(FeedRecalibrationCap::MaxFeed);
+    }
+
+    warnings.push(SuggestWarning::FeedRescaledToFinalGeometry {
+        requested_mm_per_min: requested,
+        rescaled_mm_per_min: rescaled,
+        factor_at_calculator,
+        factor_at_final,
+        cap_hit,
+    });
+
+    // Calculator Step 9b, re-applied. A downward re-derivation (a raised
+    // stepover cancelling a chip-thinning lift) can put the commanded advance
+    // under the chip-formation threshold, and the floor governs there for the
+    // same reason it governs inside the calculator: the derates exist to
+    // protect the tool, but rubbing burns the work.
+    //
+    // The band read is `context.chipload_bounds`, which pass 0 already
+    // re-derated against its own DPP mutation. A DPP the rigidity /
+    // cutting-length / deflection clamps lowered further is *not* re-derated
+    // there, which leaves this floor judged against a slightly harsher band
+    // than the final DOC deserves — conservative in the safe direction (a
+    // harsher band can only lower the ceiling the floor is capped to), and
+    // ledgered rather than fixed inside a feed pass.
+    if let Some(rpm) = op_rpm {
+        let divisor = rpm * flutes;
+        if divisor > 0.0 {
+            let commanded = rescaled / divisor;
+            let floor = crate::feeds::effective_rubbing_floor(context.chipload_bounds);
+            if commanded > 0.0 && commanded < floor {
+                let band_capped_from =
+                    match crate::feeds::rubbing_floor_clamp_reason(context.chipload_bounds) {
+                        crate::feeds::ClampReason::RubbingFloorCappedToBandCeiling {
+                            global_floor_mm_per_tooth,
+                            ..
+                        } => Some(global_floor_mm_per_tooth),
+                        crate::feeds::ClampReason::RubbingFloor { .. } => None,
+                    };
+                warnings.push(SuggestWarning::FeedClampedToChiploadFloor {
+                    requested_mm_per_tooth: commanded,
+                    floor_mm_per_tooth: floor,
+                    band_capped_from,
+                });
+                // Same conflict resolution as Step 9b: the machine cap wins
+                // over the floor, and the warning still fires so the operator
+                // sees that neither guarantee was met.
+                let machine_max_after_safety = machine.max_feed_mm_min * machine.safety_factor;
+                rescaled = (floor * divisor).min(machine_max_after_safety);
+            }
+        }
+    }
+
+    operation.set_feed_rate(rescaled);
+    // Pass 1 ran before the feed moved. A downward re-derivation can leave the
+    // plunge rate above the feed it was clamped to, so the invariant it exists
+    // to hold has to be re-established here rather than left broken.
+    warnings.extend(clamp_plunge_to_feed(operation));
     warnings
 }
 
@@ -3883,6 +4213,7 @@ mod tests {
             chipload_bounds: None,
             matched_lut_row: None,
             effective_diameter_mm: 0.0,
+            calculator_operating_point: None,
             policy: SuggestPolicy::default(),
         };
 

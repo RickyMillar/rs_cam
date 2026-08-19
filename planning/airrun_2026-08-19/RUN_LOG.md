@@ -665,7 +665,98 @@ against the *authored* feed (cumulative). A second pass over an already-modulate
 IR gives 0 touched with an unchanged delta. Idempotence, not contradiction — but
 two quantities under one heading, and neither answers "is this program modulated?"
 
-### Recommended fix (not implemented)
+### FIXED 2026-08-19 — Suggest pass 9, `rescale_feed_to_final_geometry`
+
+The primary fix below landed. `enforce_invariants` now ends with a pass that
+holds the **implied target chipload** fixed — commanded advance per tooth
+divided by the geometry terms — and re-multiplies by the chip-thinning ×
+depth-tier factor at the operation's final `ae`/`ap`. It works in advance per
+tooth rather than feed units so it stays exact when the operation carries a
+rounded copy of the calculator's RPM.
+
+It short-circuits in two cases, both load-bearing:
+
+- **No calculator operating point in the context.** `SuggestContext` gained
+  `calculator_operating_point`, populated only by `apply_feeds_subset`. A feed a
+  human or the optimizer typed was never derived from a chip-thinning term, so
+  there is nothing to reconcile — this preserves `resolve_operation_invariants`'
+  documented contract ("the safety clamps, not a substitute number").
+- **No pass moved the stepover or the DPP.** The entry values are the *rounded*
+  ones `apply_feeds_subset` wrote, so re-deriving unconditionally would silently
+  un-round every feed in the product for no physical reason. This guard is why
+  the blast radius came in at 3 tests rather than hundreds.
+
+**Measured effect.** Every op the pass fires on was previously commanding
+**below its vendor band minimum** and now sits inside the band:
+
+| fixture | tier | feed | advance before | after | band (target) |
+|---|---|---|---|---|---|
+| wanaka Back Rough Ø6 | 0.75 → 1.00 | 750 → 1000 | 0.02500 | 0.03333 | 0.032–0.055 |
+| A3D-1 Ø6 HardMaple | 0.75 → 1.00 | 918 → 1223.4 | 0.03060 | 0.04078 | 0.032–0.055 (0.0435) |
+| A3D-2 Ø8 WhiteOak | 0.75 → 1.00 | 1694 → 2258.4 | 0.03764 | 0.05019 | 0.0394–0.0677 (0.0535) |
+
+All three are exactly ×4/3 — the same 1×D depth-tier boundary crossing produced
+by the axial-envelope DPP clamp. The two DropCutter fixtures in the same table
+did **not** move: surface-following ops command no axial step, so their
+depth-tier term is identical at both operating points and cancels. That
+asymmetry is the check that the pass keys on geometry and not on op family.
+
+**The finish case did not land where the rescale alone put it, and this is
+worth knowing.** On the sentry's `3D Finish 6` the stepover back-off
+(0.03 → 0.2278) cancels a 3.8236 → 1.7171 chip-thinning lift, and the rescale
+produced 293.2 mm/min — advance 0.0077, comfortably mid-band. The existing
+Step-9b rubbing-floor rule then lifted it 38% to 404.8. Reason:
+`band_capped_from: Some(0.025)` — this row's **entire** derated band sits under
+the 0.025 mm/tooth chip-formation floor, so `effective_rubbing_floor` collapses
+to the band *maximum*, and the clamp then fires against anything below the band
+max, pinning the op to its ceiling. That is the ruled 2026-08-06 behaviour
+(FEEDS_CENSUS C-12 / T3.3), not something pass 9 invented — but pass 9 routes
+more ops into it, so it is now doing visible work on a shipped surface. Net for
+that op: 1.613× over the band max → exactly on it.
+
+**What the sentry actually proved.** Because the floor clamp fired on the finish
+case, that arm took the sentry's *licensed exception* branch (advance must sit on
+the reported floor) rather than the implied-target-agreement branch. The
+mechanism assertion was genuinely exercised only on Back Rough. Do not cite the
+finish arm as evidence for the mechanism.
+
+**Deliberately beyond the brief, both documented at the code:**
+
+- `FeedRescaledToFinalGeometry` gained `cap_hit: Option<FeedRecalibrationCap>`
+  and the pass enforces the machine cutting-feed ceiling. An up-rescale is
+  bounded only by the geometry terms (worst case ~8.9×); emitting a feed the
+  machine cannot run would trade one wrong number for another. Same cap
+  vocabulary retired pass 8 used for the same ceiling. Neither fixture hits it.
+- Pass 1 (`clamp_plunge_to_feed`) re-runs after the rescale. A *downward*
+  re-derivation can leave the plunge rate above the feed it was clamped to.
+
+**Not re-checked, stated rather than hidden:** the **power ceiling** (calculator
+Step 6). Required power scales with feed *and* with cross-section, and
+cross-section moves with `ae`/`ap`, so a rescale can in principle invalidate a
+power-limited feed. `power_ceiling_parity_f2.rs` measured that branch never
+firing at all across three shipped presets × ten species × Ø3/Ø6/Ø12 — peak
+utilisation 23.6 %, rigidity and the machine cutting ceiling bind first — and
+the machine ceiling *is* enforced. On a profile where power does bind, pass 9
+can over-feed. That wants its own instrument, not an unmeasured clamp bolted on
+here. **G-SUGGEST-POWERSTALE**, open.
+
+The **deflection budget** is also not re-verified. Retired pass 8 did verify it
+and documented the verify as a no-op: the closed-form predictor is
+feed-independent (force = `Kc × axial_doc × radial_woc`). It would be a no-op
+here too, and `backoff_dpp_for_deflection` has already settled DPP.
+
+**One defect the fix surfaced in passing.** `with_explored_speeds` drops
+`chipload_bounds` deliberately, so that a feed-rewriting pass short-circuits and
+a drag-to-explore feed is not silently re-solved. Pass 9 keyed off a different
+signal and re-solved a hand-dialled feed —
+`explored_speeds_survive_the_funnel_but_still_get_clamped` caught it. Fixed by
+adding an explicit `ApplicableRecommendation::speeds_explored` flag rather than
+reusing the absent band as the signal: a legitimate calculator result on an
+**RPM-only vendor row** publishes no band either, and that feed *does* want
+reconciling. Inferring operator intent from a missing band would have silently
+disabled the fix for every RPM-only row.
+
+### The original recommendation (for the record)
 
 **Primary:** add a pass at the end of `enforce_invariants`
 (`feeds/suggest.rs:1820`, where retired pass 8 sat) that re-runs the chip-thinning
