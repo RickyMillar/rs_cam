@@ -470,13 +470,13 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 )),
             }
         }
-        // G-SUGGEST-NOCLAMP: rendered here so the surface is ready when the
-        // rescale pass lands. Neither variant is produced by Suggest yet.
+        // G-SUGGEST-NOCLAMP: produced by Suggest pass 9 since 2026-08-19.
         SuggestWarning::FeedRescaledToFinalGeometry {
             requested_mm_per_min,
             rescaled_mm_per_min,
             factor_at_calculator,
             factor_at_final,
+            cap_hit,
         } => RationaleEntry {
             param: RationaleParam::Feed,
             reason: RationaleReason::FinalGeometryRescale,
@@ -489,7 +489,15 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             detail: Some(format!(
                 "Chip-thinning × depth-tier was {factor_at_calculator:.4} at the operating \
                  point the calculator sized the feed against, and is {factor_at_final:.4} at \
-                 the stepover / DPP the operation actually runs"
+                 the stepover / DPP the operation actually runs{}",
+                match cap_hit {
+                    Some(FeedRecalibrationCap::MaxFeed) =>
+                        "; truncated at the machine's cutting-feed ceiling, so the re-derived \
+                         feed was not reached",
+                    Some(FeedRecalibrationCap::DeflectionThreshold) =>
+                        "; refused by the deflection budget",
+                    None => "",
+                }
             )),
         },
         SuggestWarning::FeedClampedToChiploadFloor {

@@ -70,6 +70,7 @@ fn main() -> Result<()> {
             chipload_bounds: None,
             matched_lut_row: None,
             effective_diameter_mm: 0.0,
+            calculator_operating_point: None,
             policy: SuggestPolicy::default(),
         };
         let suggested = match suggest_for_operation(SuggestForOperationInput {

@@ -476,6 +476,51 @@ fn wanaka_suggest_baseline() {
             suggested.warnings
         );
 
+        // G-SUGGEST-NOCLAMP (2026-08-19), pinned POSITIVELY rather than
+        // merely tolerated: this case is the reason the pass exists. The
+        // axial envelope clamps DPP 9.0 → 4.2 mm, which crosses the 1×D
+        // depth-tier boundary downward and so REMOVES a derate the
+        // calculator had already folded into the feed. The direction is the
+        // assertion — a rescale that came out ≤ 1 would mean the tier
+        // crossing was read backwards.
+        let (factor_c, factor_f, from, to) = suggested
+            .warnings
+            .iter()
+            .find_map(|w| match w {
+                SuggestWarning::FeedRescaledToFinalGeometry {
+                    factor_at_calculator,
+                    factor_at_final,
+                    requested_mm_per_min,
+                    rescaled_mm_per_min,
+                    ..
+                } => Some((
+                    *factor_at_calculator,
+                    *factor_at_final,
+                    *requested_mm_per_min,
+                    *rescaled_mm_per_min,
+                )),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{ctx}: the DPP clamp fired, so the feed must have been re-derived at the \
+                     clamped depth — see tests/suggest_feed_matches_final_geometry.rs. \
+                     Warnings: {:?}",
+                    suggested.warnings
+                )
+            });
+        assert!(
+            factor_f > factor_c,
+            "{ctx}: clamping DPP 9.0 → 4.2 on a Ø6 tool crosses the 1×D depth tier downward, \
+             which removes a derate — the final geometry factor must exceed the calculator's, \
+             got {factor_c} → {factor_f}"
+        );
+        assert!(
+            to > from,
+            "{ctx}: the removed derate must make the shipped feed FASTER than the one the \
+             calculator froze at 9.0 mm, got {from} → {to}"
+        );
+
         // No surprising variants on this case.
         for w in &suggested.warnings {
             match w {
@@ -488,6 +533,7 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
                 | SuggestWarning::StrategyRewrote { .. }
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
                 | SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
@@ -661,6 +707,10 @@ fn wanaka_suggest_baseline() {
     // this test forces the conversation.
     for (id, name, suggested) in &cases {
         for w in &suggested.warnings {
+            // This match has NO `_` arm, deliberately: adding a variant to
+            // the enum forces it to be updated, which forces the baseline
+            // owner to decide whether that variant should ever fire on
+            // Wanaka. It did exactly that for G-SUGGEST-NOCLAMP below.
             match w {
                 SuggestWarning::PlungeClampedToFeed { .. }
                 | SuggestWarning::StepoverClampedToToolDiameter { .. }
@@ -692,24 +742,27 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::AxialDocBelowBurnFloor { .. }
                 | SuggestWarning::ProjectCurveDepthInfeasible { .. }
                 | SuggestWarning::FinishEnvelopeAdvisory { .. } => {}
-                // G-SUGGEST-NOCLAMP (2026-08-19): declared but NOT yet
-                // produced by Suggest — the pass that re-derives the feed
-                // against the final stepover / DPP has not landed. When it
-                // does, BOTH of these are expected to start firing on this
-                // fixture (its Back Rough is the DPP-clamp case), and that
-                // is an intentional re-baseline, not an accident. Panic
-                // until then so the baseline owner makes that call
-                // explicitly rather than discovering it in a diff.
+                // G-SUGGEST-NOCLAMP: the forcing arm fired as designed when
+                // Suggest pass 9 landed on 2026-08-19, and this is the
+                // deliberate re-baseline it demanded. Both variants are now
+                // EXPECTED on Wanaka and allowed here:
+                //
+                //   * `FeedRescaledToFinalGeometry` on the two Adaptive3d
+                //     roughs (tp 4, tp 10), whose DPP the axial envelope
+                //     clamps 9.0 → 4.2 mm — a depth-tier crossing that
+                //     removes a derate the calculator had already applied.
+                //     Pinned positively, with its direction, in the tp 4
+                //     block above; allowed generically here.
+                //   * `FeedClampedToChiploadFloor` on the finish pass, whose
+                //     whole derated band sits under the 0.025 mm/tooth
+                //     chip-formation floor, so `effective_rubbing_floor`
+                //     collapses to the band maximum and the existing Step-9b
+                //     rule pins the op there.
+                //
+                // Neither is tolerated blindly: the mechanism both speak for
+                // is asserted in tests/suggest_feed_matches_final_geometry.rs.
                 SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::FeedClampedToChiploadFloor { .. } => panic!(
-                    "tp {id} ({name}): a G-SUGGEST-NOCLAMP warning fired, but the feed-rescale \
-                     pass is not supposed to be producing them yet. If the fix just landed, \
-                     re-baseline this test deliberately — see \
-                     tests/suggest_feed_matches_final_geometry.rs"
-                ), // No `_` arm — adding a new variant to the enum will
-                                                                      // force this match to be updated, which forces the
-                                                                      // baseline owner to decide whether the variant should
-                                                                      // ever fire on Wanaka.
+                | SuggestWarning::FeedClampedToChiploadFloor { .. } => {}
             }
             // Print a one-line breadcrumb when the catch-all fires
             // anything unexpected via the explicit-arms form above.
@@ -864,6 +917,7 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             chipload_bounds: None,
             matched_lut_row: None,
             effective_diameter_mm: 0.0,
+            calculator_operating_point: None,
             policy: SuggestPolicy::default(),
         };
         let direct = suggest_for_operation(SuggestForOperationInput {
