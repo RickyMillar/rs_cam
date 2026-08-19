@@ -419,22 +419,36 @@ impl RsCamApp {
                     let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
                     (tool, tool_def)
                 });
-            let deflection_mm = tool_info.as_ref().and_then(|(_, tool_def)| {
-                state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|results| results.cut_trace.as_deref())
-                    .and_then(|trace| {
-                        peak_deflection_for_move(
-                            trace,
-                            toolpath_id,
-                            local_idx,
-                            tool_def,
-                            &session.stock_config().material,
-                        )
-                    })
-            });
+            // `peak_deflection_for_move` is a linear scan of the whole cut
+            // trace (up to ~600k samples), and this runs every frame —
+            // continuously, given the 100 ms MCP heartbeat. It is a pure
+            // function of (trace, toolpath, move, tool, material), and
+            // `tool_gpu_move == Some(current)` is exactly the condition under
+            // which a previous frame already evaluated it for THIS move
+            // against THIS trace: a completed simulation resets
+            // `tool_gpu_move` to `None` (controller/events/compute.rs), as
+            // does `clear_playback_tool`. So reuse the value the playback
+            // state is already holding instead of rescanning.
+            let deflection_mm = if state.simulation.playback.tool_gpu_move == Some(current) {
+                state.simulation.playback.tool_deflection_mm
+            } else {
+                tool_info.as_ref().and_then(|(_, tool_def)| {
+                    state
+                        .simulation
+                        .results
+                        .as_ref()
+                        .and_then(|results| results.cut_trace.as_deref())
+                        .and_then(|trace| {
+                            peak_deflection_for_move(
+                                trace,
+                                toolpath_id,
+                                local_idx,
+                                tool_def,
+                                &session.stock_config().material,
+                            )
+                        })
+                })
+            };
             // Toolpath moves are in the emission frame (world for identity
             // setups); the display frame is zero-rooted local. Shift
             // identity-setup positions by -stock.origin so the tool marker
