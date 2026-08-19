@@ -86,11 +86,57 @@ fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
     inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32
 }
 
+/// The two squared-space radii `segment_cell_coverage`'s fast paths test
+/// against, hoisted out of the per-cell loop (PERF_REVIEW S7).
+///
+/// The fast paths ask whether the *worst-case* sub-sample of a cell is outside
+/// the cutter (`center_d − ext_diag ≥ r`) or the *best*-case one is inside
+/// (`center_d + ext_diag ≤ r`), where `ext_diag = cs·SUBSAMPLE_HALF_EXTENT·√2`
+/// is the corner sub-sample's offset from the cell centre. Both sides of both
+/// comparisons are non-negative — with one exception, handled below — so
+/// squaring is order-preserving and the tests can be answered without ever
+/// taking a square root: the kernel already has `center_d_sq` in hand.
+///
+/// `r` and `ext_diag` are constant for a whole stamp, so this is built once
+/// per `stamp_*` call rather than once per covered cell. Before S7 the inner
+/// loop paid `r_sq.sqrt()` — a loop-invariant! — plus `center_d_sq.sqrt()`,
+/// for every cell in the swept bounding box.
+#[derive(Clone, Copy)]
+struct CoverageFastPath {
+    /// `(r + ext_diag)²`. At or past this squared distance every sub-sample
+    /// is outside the cutter ⇒ coverage 0.
+    outer_sq: f64,
+    /// `(r − ext_diag)²`, or `-1.0` when `ext_diag > r`.
+    ///
+    /// The negative sentinel is the exception the squaring argument needs:
+    /// when the sub-sample fan is wider than the cutter, `r − ext_diag < 0`
+    /// and `center_d ≤ r − ext_diag` is unsatisfiable for any cell (distances
+    /// are non-negative). Squaring a negative would wrongly re-admit cells
+    /// near the axis, so the sentinel makes `center_d_sq <= inner_sq` false
+    /// for every cell instead — matching the pre-S7 comparison exactly.
+    inner_sq: f64,
+}
+
+impl CoverageFastPath {
+    #[inline]
+    fn new(r_sq: f64, cs: f64) -> Self {
+        let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+        let r = r_sq.sqrt();
+        let outer = r + ext_diag;
+        let inner = r - ext_diag;
+        Self {
+            outer_sq: outer * outer,
+            inner_sq: if inner >= 0.0 { inner * inner } else { -1.0 },
+        }
+    }
+}
+
 /// Fractional coverage of a square cell by a swept-segment stadium.
 ///
 /// `(cu, cv)` is the cell center; the segment goes from `(su, sv)` through
 /// direction `(seg_du, seg_dv)` with length² = `seg_len_sq`. `r_sq` is the
-/// cutter radius squared.
+/// cutter radius squared and `fast` carries its
+/// [`CoverageFastPath`] bounds.
 ///
 /// Returns `(coverage, t_at_closest, near_dist_sq)`:
 /// - `coverage` ∈ [0, 1] — area fraction inside the stadium.
@@ -111,6 +157,7 @@ fn segment_cell_coverage(
     inv_seg_len_sq: f64,
     r_sq: f64,
     cs: f64,
+    fast: CoverageFastPath,
 ) -> (f32, f64, f64) {
     // Project cell center onto segment.
     let pu = cu - su;
@@ -127,13 +174,11 @@ fn segment_cell_coverage(
     // cell center (worst-case corner sub-sample), so the swept-stadium
     // distance from any sub-sample lies within `[center_d − ext_diag,
     // center_d + ext_diag]` of the cell-center's distance to the segment.
-    let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
-    let r = r_sq.sqrt();
-    let center_d = center_d_sq.sqrt();
-    if center_d - ext_diag >= r {
+    // Both tests are done in squared space — see [`CoverageFastPath`].
+    if center_d_sq >= fast.outer_sq {
         return (0.0, t_center, center_d_sq);
     }
-    if center_d + ext_diag <= r {
+    if center_d_sq <= fast.inner_sq {
         return (1.0, t_center, center_d_sq);
     }
 
@@ -296,8 +341,7 @@ pub(super) struct CuttingCaptureParams<'a> {
 /// Uses sub-cell area-weighted coverage (F.a, see
 /// `DEXEL_Z_ONLY_INVESTIGATION.md` §6.F): boundary cells are blended toward
 /// the cutter surface by their fractional coverage `f` instead of flipping
-/// binary on/off at the cell-center crossing. `DexelGrid.coverage_max` is
-/// updated to the running max of `f` per cell.
+/// binary on/off at the cell-center crossing.
 pub(super) fn stamp_point_on_grid(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -362,9 +406,6 @@ pub(super) fn stamp_point_on_grid(
             {
                 grid.lower_conservative_top(idx, ub as f32);
             }
-            if coverage > grid.coverage_max[idx] {
-                grid.coverage_max[idx] = coverage;
-            }
         }
     }
 }
@@ -403,6 +444,8 @@ pub(super) fn stamp_segment_on_grid(
     let inv_seg_len_sq = 1.0 / seg_len_sq;
     let cs = grid.cell_size;
     let r_sq = lut.radius_sq();
+    // S7: the coverage fast-path radii are constant across the whole stamp.
+    let fast = CoverageFastPath::new(r_sq, cs);
     // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
     let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
@@ -430,6 +473,7 @@ pub(super) fn stamp_segment_on_grid(
                 inv_seg_len_sq,
                 r_sq,
                 cs,
+                fast,
             );
             if coverage <= 0.0 {
                 continue;
@@ -456,9 +500,6 @@ pub(super) fn stamp_segment_on_grid(
                 && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
             {
                 grid.lower_conservative_top(idx, ub as f32);
-            }
-            if coverage > grid.coverage_max[idx] {
-                grid.coverage_max[idx] = coverage;
             }
         }
     }
@@ -565,9 +606,6 @@ pub(super) fn stamp_segment_with_metrics(
                     let total_after = ray_material_length(ray) as f64;
                     removed_volume += (total_before - total_after) * cell_area;
                 }
-                if coverage > grid.coverage_max[idx] {
-                    grid.coverage_max[idx] = coverage;
-                }
                 // A/M10 — see `stamp_point_on_grid`.
                 if from_high
                     && coverage >= FULL_COVERAGE
@@ -586,6 +624,8 @@ pub(super) fn stamp_segment_with_metrics(
     let cs = grid.cell_size;
     let cell_area = cs * cs;
     let radius_sq = lut.radius_sq();
+    // S7: the coverage fast-path radii are constant across the whole stamp.
+    let fast = CoverageFastPath::new(radius_sq, cs);
     // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
     let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
@@ -631,6 +671,7 @@ pub(super) fn stamp_segment_with_metrics(
                 inv_seg_len_sq,
                 radius_sq,
                 cs,
+                fast,
             );
             if coverage <= 0.0 {
                 continue;
@@ -670,9 +711,6 @@ pub(super) fn stamp_segment_with_metrics(
             let post_len = ray_material_length(ray) as f64;
             post_volume += post_len * cell_area;
 
-            if coverage > grid.coverage_max[idx] {
-                grid.coverage_max[idx] = coverage;
-            }
 
             // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
             // simulator actually runs, so it is the one that decides whether
@@ -902,4 +940,103 @@ pub(super) fn build_move_semantic_lookup(
     }
 
     lookup
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// The pre-S7 fast-path test, copied verbatim from the sqrt form it
+    /// replaced. Kept as an oracle rather than a pinned constant so it cannot
+    /// rot: if someone changes `CoverageFastPath`, this still says what the
+    /// old code said.
+    fn legacy_fast_path(center_d_sq: f64, r_sq: f64, cs: f64) -> Option<f32> {
+        let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+        let r = r_sq.sqrt();
+        let center_d = center_d_sq.sqrt();
+        if center_d - ext_diag >= r {
+            return Some(0.0);
+        }
+        if center_d + ext_diag <= r {
+            return Some(1.0);
+        }
+        None
+    }
+
+    fn s7_fast_path(center_d_sq: f64, r_sq: f64, cs: f64) -> Option<f32> {
+        let fast = CoverageFastPath::new(r_sq, cs);
+        if center_d_sq >= fast.outer_sq {
+            return Some(0.0);
+        }
+        if center_d_sq <= fast.inner_sq {
+            return Some(1.0);
+        }
+        None
+    }
+
+    /// S7 claims the de-sqrt is exact. This is where that claim is checked —
+    /// including the regime the review's text did not mention, where the
+    /// sub-sample fan is WIDER than the cutter (`ext_diag > r`) and the
+    /// "fully inside" bound goes negative. Naively squaring `r − ext_diag`
+    /// there would flip the test's sense and report full coverage for cells
+    /// near the tool axis.
+    #[test]
+    fn squared_fast_paths_agree_with_the_sqrt_form() {
+        // Radii from a Ø0.5 micro tool to a Ø20 shell mill; cells from a fine
+        // 0.05 mm sim grid up to 2 mm — the last two rows put `ext_diag`
+        // above `r`, which is the sentinel case.
+        let radii = [0.25_f64, 0.5, 1.0, 3.0, 6.0, 10.0];
+        let cells = [0.05_f64, 0.1, 0.25, 0.5, 1.0, 2.0];
+        let mut disagreements = Vec::new();
+        let mut sentinel_rows = 0usize;
+
+        for &r in &radii {
+            let r_sq = r * r;
+            for &cs in &cells {
+                let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+                if ext_diag > r {
+                    sentinel_rows += 1;
+                }
+                // Sweep the distance densely across the whole decision band,
+                // and land exactly on both boundaries.
+                let mut probes: Vec<f64> = (0..=400)
+                    .map(|i| (r + 2.0 * ext_diag) * i as f64 / 400.0)
+                    .collect();
+                probes.push((r + ext_diag).max(0.0));
+                probes.push((r - ext_diag).max(0.0));
+                probes.push(0.0);
+                for d in probes {
+                    let d_sq = d * d;
+                    let legacy = legacy_fast_path(d_sq, r_sq, cs);
+                    let s7 = s7_fast_path(d_sq, r_sq, cs);
+                    if legacy != s7 {
+                        disagreements.push(format!(
+                            "r={r} cs={cs} d={d}: legacy {legacy:?}, S7 {s7:?}"
+                        ));
+                    }
+                }
+            }
+        }
+
+        assert!(
+            sentinel_rows > 0,
+            "no (radius, cell) pair exercised the ext_diag > r sentinel — the \
+             test is not covering the case it exists for"
+        );
+        assert!(
+            disagreements.is_empty(),
+            "the squared-space fast paths disagree with the sqrt form in {} \
+             place(s):\n{}",
+            disagreements.len(),
+            disagreements.join("\n")
+        );
+    }
 }
