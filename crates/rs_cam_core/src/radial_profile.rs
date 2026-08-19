@@ -25,6 +25,9 @@ pub struct RadialProfileLUT {
     heights: Vec<f64>,
     radius_sq: f64,
     inv_step: f64, // num_samples / radius_sq
+    /// Every sampled height inside the cutter radius is finite, `>= 0`, and
+    /// non-decreasing. See [`RadialProfileLUT::profile_is_nonneg_total`].
+    nonneg_total: bool,
 }
 
 impl RadialProfileLUT {
@@ -43,13 +46,60 @@ impl RadialProfileLUT {
                 None => heights.push(f64::INFINITY),
             }
         }
+        // Whether this profile satisfies the two properties the dexel
+        // air-skip (PERF_REVIEW S2) needs — measured on the table that will
+        // actually be queried, rather than assumed from the cutter shape.
+        // Sampled over `0..=num_samples`, which is every index
+        // `height_at_dist_sq` can read `h0` from for `dist_sq <= radius_sq`.
+        let mut nonneg_total = true;
+        let mut prev = f64::NEG_INFINITY;
+        for &h in heights.iter() {
+            if !(h.is_finite() && h >= 0.0 && h >= prev) {
+                nonneg_total = false;
+                break;
+            }
+            prev = h;
+        }
         // Extra sentinel for interpolation past the last sample
         heights.push(f64::INFINITY);
         Self {
             heights,
             radius_sq: r_sq,
             inv_step,
+            nonneg_total,
         }
+    }
+
+    /// `true` when the profile is **total** (defined everywhere inside the
+    /// cutter radius) and **non-negative and non-decreasing** in radius.
+    ///
+    /// This is the precondition the dexel simulator's air-skip rests on
+    /// (`PERF_REVIEW.md` S2). The skip's argument is that a stamp whose
+    /// *lowest* tip position already sits at or above the material top cannot
+    /// remove anything, because the removal surface is `tip + h(d)` and
+    /// `h(d) >= 0`. Three things have to hold for that to be an *exact*
+    /// statement about this code rather than about the geometry:
+    ///
+    /// * **`h >= 0`** — otherwise the cutter surface can dip BELOW the tip and
+    ///   a stamp the skip declared inert would have cut.
+    /// * **non-decreasing** — the interpolation `h0 + frac·(h1 − h0)` is then
+    ///   `>= h0 >= 0` in `f64` as well as over the reals. Without it, a
+    ///   descending pair can round the interpolated value a few ULP below
+    ///   `h1`, and "`h >= 0` at the samples" would not give "`h >= 0` at the
+    ///   query".
+    /// * **total** — [`Self::height_at_dist_sq`] returns `None` where the
+    ///   table holds `INFINITY`, and the stamp kernels treat `None` as "this
+    ///   cell contributes nothing at all", which is NOT the same as "this cell
+    ///   is inert" once the skip has to reproduce the kernel's accumulator
+    ///   arithmetic.
+    ///
+    /// Every cutter shape in [`crate::tool`] satisfies all three
+    /// (`radial_profile_nonneg_total_holds_for_every_shipped_shape`); the flag
+    /// exists so that one which does not simply turns the optimisation off
+    /// instead of turning it wrong.
+    #[inline]
+    pub fn profile_is_nonneg_total(&self) -> bool {
+        self.nonneg_total
     }
 
     /// Look up the cutter height at a given dist_sq (no sqrt needed).
@@ -96,6 +146,66 @@ impl RadialProfileLUT {
 mod tests {
     use super::*;
     use crate::tool::TaperedBallEndmill;
+    use crate::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, VBitEndmill};
+
+    /// The S2 air-skip is gated on [`RadialProfileLUT::profile_is_nonneg_total`],
+    /// and a gate that silently reads `false` everywhere would disable the
+    /// optimisation without failing anything. This asserts the flag is
+    /// actually TRUE for every cutter shape the crate ships, across a spread
+    /// of sizes — including the small-tip tapered ball, whose profile is
+    /// piecewise (ball then cone) and is the one plausible candidate for a
+    /// float-noise dip at the junction.
+    ///
+    /// If a future shape legitimately fails this, the correct response is to
+    /// exclude that shape here with a reason — **not** to weaken the flag,
+    /// which is what makes the skip exact.
+    #[test]
+    fn radial_profile_nonneg_total_holds_for_every_shipped_shape() {
+        let shapes: Vec<(&str, Box<dyn MillingCutter>)> = vec![
+            ("flat_6", Box::new(FlatEndmill::new(6.0, 25.0))),
+            ("flat_0p5", Box::new(FlatEndmill::new(0.5, 6.0))),
+            ("ball_6", Box::new(BallEndmill::new(6.0, 25.0))),
+            ("ball_1", Box::new(BallEndmill::new(1.0, 8.0))),
+            (
+                "bullnose_6r1",
+                Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0)),
+            ),
+            (
+                "bullnose_12r3",
+                Box::new(BullNoseEndmill::new(12.0, 3.0, 40.0)),
+            ),
+            ("vbit_60", Box::new(VBitEndmill::new(12.7, 60.0, 20.0))),
+            ("vbit_90", Box::new(VBitEndmill::new(25.4, 90.0, 20.0))),
+            (
+                "tapered_ball_1_7deg",
+                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+            ),
+            (
+                "tapered_ball_0p5_3deg",
+                Box::new(TaperedBallEndmill::new(0.5, 3.0, 6.0, 30.0)),
+            ),
+        ];
+        for (name, cutter) in shapes {
+            let lut = RadialProfileLUT::from_cutter(cutter.as_ref(), LUT_SAMPLES);
+            assert!(
+                lut.profile_is_nonneg_total(),
+                "{name}: profile_is_nonneg_total() is false — the S2 dexel \
+                 air-skip silently disables itself for this shape"
+            );
+            // And the property the flag stands for, checked at the query
+            // surface rather than at the samples.
+            let mut prev = f64::NEG_INFINITY;
+            for i in 0..=4096 {
+                let d_sq = lut.radius_sq() * i as f64 / 4096.0;
+                let h = lut
+                    .height_at_dist_sq(d_sq)
+                    .expect("total profile answers everywhere inside the radius");
+                assert!(h >= 0.0, "{name}: h({d_sq}) = {h} < 0");
+                assert!(h >= prev, "{name}: h decreased at d_sq={d_sq}");
+                prev = h;
+            }
+        }
+    }
 
     /// P2.g sentry (2026-07-09): the dist²-uniform LUT must stay accurate
     /// on small-tip tapered tools. At 256 samples the Ø1-tip/Ø6-shank
