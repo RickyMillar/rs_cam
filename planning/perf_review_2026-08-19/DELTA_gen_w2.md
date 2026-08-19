@@ -225,6 +225,37 @@ tree settled.
 `cargo fmt --check -p rs_cam_core` is clean for all seven files this wave
 touched (the two remaining diffs in the crate are, again, the SIM lane's).
 
+### One wart in commit `473c3d1f`, for whoever reads that diff
+
+`benches/hot_paths.rs` shows **187 insertions / 44 deletions**, and only about
+130 of those lines are this wave's work. The rest are **rustfmt reflow of code
+this wave did not write** — in `ring_with_holes`, `bench_sim_kernel_plunge`,
+`bench_gen_waterline`, `bench_gen_contains_point`, `bench_gen_vcarve_field`,
+`bench_sim_e2e_small` and `bench_viz_triage_build`.
+
+Cause: Phase 0 committed `hot_paths.rs` **unformatted** (93 diff lines against
+`rustfmt --edition 2024`), and running rustfmt on the file to format this
+wave's additions necessarily formatted the whole file. This is the
+"rustfmt cascades" hazard, in its within-one-file form.
+
+It is reflow only — **no semantic change, and no bench arm added or removed
+outside `gen_depth`**. Proof, reproducible:
+
+```text
+git show 473c3d1f^:crates/rs_cam_core/benches/hot_paths.rs > before.rs
+cp before.rs before_fmt.rs && rustfmt --edition 2024 before_fmt.rs
+diff before_fmt.rs <(git show 473c3d1f:crates/rs_cam_core/benches/hot_paths.rs)
+```
+
+The only removals are `bench_gen_depth`'s four old `use` lines; every addition
+is inside `bench_gen_depth`. `group.bench_function` count goes **13 → 16**,
+i.e. exactly the three `*_hoisted` arms. In particular **no waterline arm was
+added** — that hunk is a reflow of the existing `rolling61_ball6` arm from
+one-line to multi-line call style.
+
+History was not rewritten to tidy this: other lanes may already have built on
+the commit, and a cosmetic rebase is not worth that risk.
+
 ## Not done, deliberately
 
 - **`face.rs` has the same defect and is not fixed.** `face_toolpath_with_cancel`
