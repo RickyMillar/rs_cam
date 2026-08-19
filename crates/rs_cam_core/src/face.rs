@@ -9,7 +9,7 @@ use crate::geo::BoundingBox3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
-use crate::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath};
+use crate::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines};
 
 /// Direction of facing passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -53,20 +53,41 @@ pub struct FaceParams {
     pub stock_top_z: f64,
 }
 
-/// Generate a one-way (unidirectional) raster toolpath inside a polygon.
+/// The **Z-independent half** of a face pass: the XY scan rows this facing
+/// rectangle rasters, in emission order.
 ///
-/// Uses `zigzag_lines` to compute scan rows, then normalises every row so
-/// they all cut in the same direction (the direction of the first row).
-/// Between rows the tool rapids at `safe_z`, exactly like the zigzag path
-/// but without alternating.
-fn oneway_toolpath(polygon: &Polygon2, zp: &ZigzagParams) -> Toolpath {
-    let mut lines = zigzag_lines(polygon, zp.tool_radius, zp.stepover, zp.angle);
+/// Split out for the G2 hoist (2026-08-20, the sibling defect the G2 wave
+/// found in this file but did not own). `zigzag_lines` insets the facing
+/// rectangle by the tool radius and slices it into rows — none of which
+/// depends on Z, yet a depth-stepped face used to redo all of it once per
+/// level. `cut_depth` reaches the output only through
+/// [`lines_to_toolpath`]'s stamp.
+///
+/// `OneWay` normalisation lives here too: it only permutes endpoints within
+/// each row, so it is Z-independent by the same argument.
+fn face_scan_lines(
+    polygon: &Polygon2,
+    params: &FaceParams,
+    angle: f64,
+) -> Vec<[crate::geo::P2; 2]> {
+    let lines = zigzag_lines(polygon, params.tool_radius, params.stepover, angle);
+    match params.direction {
+        FaceDirection::OneWay => normalise_oneway(lines, angle),
+        FaceDirection::Zigzag => lines,
+    }
+}
 
+/// Normalise scan rows so they all cut in the same direction (the direction
+/// of the first row) — the `OneWay` half of the old `oneway_toolpath`,
+/// factored out so the hoist can run it once instead of once per Z level.
+/// Between rows the tool still rapids at `safe_z`, exactly like the zigzag
+/// path but without alternating.
+fn normalise_oneway(mut lines: Vec<[crate::geo::P2; 2]>, angle: f64) -> Vec<[crate::geo::P2; 2]> {
     if lines.len() > 1 {
         // Pick the direction of the first row as the canonical direction.
         // For angle=0 this is the X component; generalise via the scan
         // direction vector (cos(angle), sin(angle)).
-        let angle_rad = zp.angle.to_radians();
+        let angle_rad = angle.to_radians();
         let cos_a = angle_rad.cos();
         let sin_a = angle_rad.sin();
 
@@ -95,7 +116,7 @@ fn oneway_toolpath(polygon: &Polygon2, zp: &ZigzagParams) -> Toolpath {
         }
     }
 
-    lines_to_toolpath(&lines, zp)
+    lines
 }
 
 /// Generate a face/surfacing toolpath over the XY extent of a bounding box.
@@ -130,13 +151,11 @@ pub fn face_toolpath_with_cancel(
         bounds.max.y + params.stock_offset,
     );
 
-    // Choose the raster strategy based on direction.
-    let raster_fn = |polygon: &Polygon2, zp: &ZigzagParams| -> Toolpath {
-        match params.direction {
-            FaceDirection::OneWay => oneway_toolpath(polygon, zp),
-            FaceDirection::Zigzag => zigzag_toolpath(polygon, zp),
-        }
-    };
+    // G2 hoist: the scan rows (inset + slicing + any OneWay normalisation)
+    // are XY-only, so they are built ONCE here rather than once per Z level.
+    // `FACE_ANGLE` is what both branches passed as `ZigzagParams::angle`.
+    const FACE_ANGLE: f64 = 0.0;
+    let lines = face_scan_lines(&rect, params, FACE_ANGLE);
 
     if params.depth <= 0.0 {
         // Single pass at the stock top (F-028: was hardcoded Z=0)
@@ -147,9 +166,9 @@ pub fn face_toolpath_with_cancel(
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
             safe_z: params.safe_z,
-            angle: 0.0,
+            angle: FACE_ANGLE,
         };
-        Ok(raster_fn(&rect, &zp))
+        Ok(lines_to_toolpath(&lines, &zp))
     } else {
         // Multi-pass depth stepping anchored at `stock_top_z` (F-028).
         let stepping = DepthStepping {
@@ -172,9 +191,9 @@ pub fn face_toolpath_with_cancel(
                     feed_rate: params.feed_rate,
                     plunge_rate: params.plunge_rate,
                     safe_z: params.safe_z,
-                    angle: 0.0,
+                    angle: FACE_ANGLE,
                 };
-                Ok(raster_fn(&rect, &zp))
+                Ok(lines_to_toolpath(&lines, &zp))
             },
             cancel,
         )
@@ -213,6 +232,156 @@ mod tests {
             // `ProjectSession::run_simulation` (see
             // `tests/face_stock_top_z_frame_f028.rs`).
             stock_top_z: 0.0,
+        }
+    }
+
+    // ── G2 hoist (face side) ────────────────────────────────────────────
+
+    fn move_bits(tp: &Toolpath) -> Vec<(u64, u64, u64, String)> {
+        tp.moves
+            .iter()
+            .map(|m| {
+                (
+                    m.target.x.to_bits(),
+                    m.target.y.to_bits(),
+                    m.target.z.to_bits(),
+                    format!("{:?}/{:?}", m.move_type, m.intent),
+                )
+            })
+            .collect()
+    }
+
+    /// The **pre-hoist** shape: rebuild the scan rows inside the per-Z-level
+    /// closure, exactly as `face_toolpath_with_cancel` used to via
+    /// `raster_fn`. Kept verbatim so the sentry below compares against what
+    /// actually shipped, not against a tidied paraphrase.
+    fn naive_face(bounds: &BoundingBox3, params: &FaceParams) -> Toolpath {
+        let rect = Polygon2::rectangle(
+            bounds.min.x - params.stock_offset,
+            bounds.min.y - params.stock_offset,
+            bounds.max.x + params.stock_offset,
+            bounds.max.y + params.stock_offset,
+        );
+        // Verbatim pre-hoist `oneway_toolpath`.
+        fn old_oneway_toolpath(polygon: &Polygon2, zp: &ZigzagParams) -> Toolpath {
+            let mut lines = zigzag_lines(polygon, zp.tool_radius, zp.stepover, zp.angle);
+            if lines.len() > 1 {
+                let angle_rad = zp.angle.to_radians();
+                let cos_a = angle_rad.cos();
+                let sin_a = angle_rad.sin();
+                let ref_dot = lines.first().map(|first| {
+                    let dx = first[1].x - first[0].x;
+                    let dy = first[1].y - first[0].y;
+                    dx * cos_a + dy * sin_a
+                });
+                if let Some(ref_dot) = ref_dot {
+                    for line in &mut lines {
+                        let dot =
+                            (line[1].x - line[0].x) * cos_a + (line[1].y - line[0].y) * sin_a;
+                        if dot * ref_dot < 0.0 {
+                            line.swap(0, 1);
+                        }
+                    }
+                }
+            }
+            lines_to_toolpath(&lines, zp)
+        }
+        // Re-derived per level, which is the defect.
+        let raster = |zp: &ZigzagParams| -> Toolpath {
+            match params.direction {
+                FaceDirection::OneWay => old_oneway_toolpath(&rect, zp),
+                FaceDirection::Zigzag => crate::zigzag::zigzag_toolpath(&rect, zp),
+            }
+        };
+        let zp_for = |z: f64| ZigzagParams {
+            tool_radius: params.tool_radius,
+            stepover: params.stepover,
+            cut_depth: z,
+            feed_rate: params.feed_rate,
+            plunge_rate: params.plunge_rate,
+            safe_z: params.safe_z,
+            angle: 0.0,
+        };
+        if params.depth <= 0.0 {
+            raster(&zp_for(params.stock_top_z))
+        } else {
+            let stepping = DepthStepping {
+                start_z: params.stock_top_z,
+                final_z: params.stock_top_z - params.depth,
+                max_step_down: params.depth_per_pass,
+                distribution: DepthDistribution::Even,
+                finish_allowance: 0.0,
+                finishing_passes: 0,
+            };
+            let never = || false;
+            depth_stepped_toolpath_with_cancel(
+                &stepping,
+                params.safe_z,
+                |z| Ok(raster(&zp_for(z))),
+                &never,
+            )
+            .unwrap()
+        }
+    }
+
+    /// **G2 face sentry.** Bit-identical moves, pre-hoist vs post-hoist.
+    ///
+    /// Raw bits rather than `==`: `-0.0 == 0.0` would mask a divergence, and
+    /// the whole claim of a hoist is that nothing about the output changed.
+    #[test]
+    fn face_hoisted_scan_lines_are_bit_identical() {
+        let cases: Vec<(&str, BoundingBox3, FaceParams)> = vec![
+            ("single pass, zigzag", stock_100x100(), default_params()),
+            ("multi pass, zigzag", stock_100x100(), FaceParams {
+                depth: 6.0,
+                depth_per_pass: 2.0,
+                ..default_params()
+            }),
+            ("multi pass, oneway", stock_100x100(), FaceParams {
+                depth: 5.0,
+                depth_per_pass: 1.5,
+                direction: FaceDirection::OneWay,
+                ..default_params()
+            }),
+            ("single pass, oneway", stock_100x100(), FaceParams {
+                direction: FaceDirection::OneWay,
+                ..default_params()
+            }),
+            ("non-zero stock top", stock_100x100(), FaceParams {
+                depth: 4.0,
+                depth_per_pass: 1.0,
+                stock_top_z: 12.5,
+                ..default_params()
+            }),
+            (
+                "tool wider than stock (empty inset)",
+                BoundingBox3 {
+                    min: P3::new(0.0, 0.0, 0.0),
+                    max: P3::new(10.0, 10.0, 5.0),
+                },
+                FaceParams {
+                    tool_radius: 25.0,
+                    depth: 3.0,
+                    depth_per_pass: 1.0,
+                    ..default_params()
+                },
+            ),
+            ("stepover wider than stock", stock_100x100(), FaceParams {
+                stepover: 200.0,
+                depth: 4.0,
+                depth_per_pass: 2.0,
+                ..default_params()
+            }),
+        ];
+
+        for (label, bounds, params) in cases {
+            let hoisted = face_toolpath(&bounds, &params);
+            let naive = naive_face(&bounds, &params);
+            assert_eq!(
+                move_bits(&hoisted),
+                move_bits(&naive),
+                "{label}: hoisting the face scan rows changed the emitted motion"
+            );
         }
     }
 

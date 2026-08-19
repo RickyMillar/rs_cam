@@ -47,6 +47,7 @@ pub mod drill_metrics;
 pub mod drill_op;
 pub mod dropcutter;
 pub mod dxf_input;
+pub mod edge_distance;
 pub mod enriched_mesh;
 pub mod face;
 pub mod feed_modulation;

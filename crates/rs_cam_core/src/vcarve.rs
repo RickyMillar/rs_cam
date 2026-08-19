@@ -11,10 +11,14 @@
 //!
 //! Reference: research/02_algorithms.md §11
 
-use crate::geo::{P2, P3, point_to_segment_distance};
+use crate::edge_distance::EdgeDistanceField;
+use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Parameters for V-carve toolpath generation.
 pub struct VCarveParams {
@@ -41,38 +45,81 @@ pub struct VCarveParams {
     pub top_z: f64,
 }
 
-// ── Distance computation ──────────────────────────────────────────────
+// ── Scan-line sampling ────────────────────────────────────────────────
 
-/// Compute the minimum distance from a point to any edge of a polygon
-/// (exterior + all holes).
-#[allow(clippy::indexing_slicing)] // windows(2) guarantees w[0] and w[1] exist
-fn point_to_polygon_distance(point: &P2, polygon: &Polygon2) -> f64 {
-    let mut min_dist = f64::INFINITY;
+/// Scan lines sampled between cancellation polls (G9).
+///
+/// The pre-G9 loop polled once per scan line. With the lines batched across
+/// rayon the poll moves to the chunk boundary, so this is the cancellation
+/// latency knob: one chunk is 32 lines spread over the pool, a few
+/// milliseconds on the shipped-default fixture. Small enough to stay
+/// responsive, large enough that the per-chunk join is noise.
+pub(crate) const SCAN_CHUNK: usize = 32;
 
-    // Exterior edges
-    let ext = &polygon.exterior;
-    for w in ext.windows(2) {
-        let dist = point_to_segment_distance(point, &w[0], &w[1]);
-        min_dist = min_dist.min(dist);
+/// Sample one scan line into the 3D points the V-groove cuts along it.
+///
+/// Returns an empty vec for a degenerate (zero-length) line, which the caller
+/// skips — the pre-G9 `continue`.
+fn sample_scan_line(
+    line: &[P2; 2],
+    field: &EdgeDistanceField,
+    sample_step: f64,
+    tan_half: f64,
+    params: &VCarveParams,
+) -> Vec<P3> {
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: `line` is a fixed-size [P2; 2] array.
+    let (dx, dy) = (line[1].x - line[0].x, line[1].y - line[0].y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-10 {
+        return Vec::new();
     }
-    if let (Some(last), Some(first)) = (ext.last(), ext.first()) {
-        let dist = point_to_segment_distance(point, last, first);
-        min_dist = min_dist.min(dist);
+
+    let n_samples = (len / sample_step).ceil() as usize;
+    let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
+
+    for i in 0..=n_samples {
+        let t = i as f64 / n_samples.max(1) as f64;
+        #[allow(clippy::indexing_slicing)]
+        // SAFETY: `line` is a fixed-size [P2; 2] array.
+        let (x, y) = (line[0].x + t * dx, line[0].y + t * dy);
+
+        let dist = field.distance(&P2::new(x, y));
+        let depth = if params.max_depth > 0.0 {
+            (dist / tan_half).min(params.max_depth)
+        } else {
+            dist / tan_half
+        };
+        points.push(P3::new(x, y, params.top_z - depth));
     }
 
-    // Hole edges
-    for hole in &polygon.holes {
-        for w in hole.windows(2) {
-            let dist = point_to_segment_distance(point, &w[0], &w[1]);
-            min_dist = min_dist.min(dist);
-        }
-        if let (Some(last), Some(first)) = (hole.last(), hole.first()) {
-            let dist = point_to_segment_distance(point, last, first);
-            min_dist = min_dist.min(dist);
-        }
-    }
+    points
+}
 
-    min_dist
+/// Sample a batch of scan lines, in parallel when the `parallel` feature is
+/// on. Order is preserved, so emission — and therefore the emitted G-code —
+/// is byte-identical either way.
+fn sample_chunk(
+    chunk: &[[P2; 2]],
+    field: &EdgeDistanceField,
+    sample_step: f64,
+    tan_half: f64,
+    params: &VCarveParams,
+) -> Vec<Vec<P3>> {
+    #[cfg(feature = "parallel")]
+    {
+        chunk
+            .par_iter()
+            .map(|line| sample_scan_line(line, field, sample_step, tan_half, params))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        chunk
+            .iter()
+            .map(|line| sample_scan_line(line, field, sample_step, tan_half, params))
+            .collect()
+    }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────
@@ -94,10 +141,17 @@ pub fn vcarve_toolpath(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
 }
 
 /// Cancellable variant of [`vcarve_toolpath`]. Checks `cancel` as its very
-/// first statement, then polls again once per scan line of the
-/// distance-field sampling loop
+/// first statement, then polls again once per [`SCAN_CHUNK`]-line batch of
+/// the distance-field sampling loop
 /// (planning/finishing_stack_review_2026-07.md S.5: "vcarve/inlay
 /// (scanline distance field)").
+///
+/// **G9 (2026-08-20) moved the poll from per-line to per-batch** so the
+/// lines within a batch can be sampled in parallel. The cadence is still
+/// bounded by wall clock, not by polygon size: a batch is 32 lines shared
+/// across the rayon pool. A cancel flag set before the call still
+/// short-circuits before any sampling, which is what
+/// `cancellable_families_honour_a_preset_cancel_flag` pins.
 pub fn vcarve_toolpath_with_cancel(
     polygon: &Polygon2,
     params: &VCarveParams,
@@ -115,46 +169,25 @@ pub fn vcarve_toolpath_with_cancel(
 
     let sample_step = params.tolerance.max(0.05);
 
+    // G9: index the boundary ONCE instead of walking every edge per sample.
+    let field = EdgeDistanceField::from_polygon(polygon);
+
     let mut tp = Toolpath::new();
 
-    for line in &scan_lines {
+    for batch in scan_lines.chunks(SCAN_CHUNK) {
         check_cancel(cancel)?;
-        let dx = line[1].x - line[0].x;
-        let dy = line[1].y - line[0].y;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len < 1e-10 {
-            continue;
+        for points in sample_chunk(batch, &field, sample_step, tan_half, params) {
+            if points.is_empty() {
+                continue;
+            }
+            tp.emit_path_segment_with_intent(
+                &points,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
+            );
         }
-
-        // Sample along the line at regular intervals
-        let n_samples = (len / sample_step).ceil() as usize;
-        let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
-
-        for i in 0..=n_samples {
-            let t = i as f64 / n_samples.max(1) as f64;
-            let x = line[0].x + t * dx;
-            let y = line[0].y + t * dy;
-
-            let dist = point_to_polygon_distance(&P2::new(x, y), polygon);
-            let depth = if params.max_depth > 0.0 {
-                (dist / tan_half).min(params.max_depth)
-            } else {
-                dist / tan_half
-            };
-            points.push(P3::new(x, y, params.top_z - depth));
-        }
-
-        if points.is_empty() {
-            continue;
-        }
-
-        tp.emit_path_segment_with_intent(
-            &points,
-            params.safe_z,
-            params.feed_rate,
-            params.plunge_rate,
-            crate::toolpath::MoveIntent::FinishingCut,
-        );
     }
 
     Ok(tp)
@@ -165,6 +198,130 @@ pub fn vcarve_toolpath_with_cancel(
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;
+
+    /// Shim keeping the pre-G9 unit tests calling the shape they were written
+    /// against. The generator now builds one [`EdgeDistanceField`] per
+    /// polygon rather than one per sample, so this is the same query, not a
+    /// parallel implementation of it.
+    fn point_to_polygon_distance(point: &P2, polygon: &Polygon2) -> f64 {
+        EdgeDistanceField::from_polygon(polygon).distance(point)
+    }
+
+    /// The pre-G9 generator body, verbatim except that the per-sample
+    /// distance comes from the field's **linear** scan. Reference for
+    /// `vcarve_indexed_field_is_bit_identical_to_linear_scan`.
+    fn naive_vcarve(polygon: &Polygon2, params: &VCarveParams) -> Toolpath {
+        let tan_half = params.half_angle.tan();
+        if tan_half < 1e-10 {
+            return Toolpath::new();
+        }
+        let inset = params.tolerance.min(0.05);
+        let scan_lines = crate::zigzag::zigzag_lines(polygon, inset, params.stepover, 0.0);
+        let sample_step = params.tolerance.max(0.05);
+        let field = EdgeDistanceField::from_polygon(polygon);
+
+        let mut tp = Toolpath::new();
+        for line in &scan_lines {
+            let dx = line[1].x - line[0].x;
+            let dy = line[1].y - line[0].y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-10 {
+                continue;
+            }
+            let n_samples = (len / sample_step).ceil() as usize;
+            let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
+            for i in 0..=n_samples {
+                let t = i as f64 / n_samples.max(1) as f64;
+                let x = line[0].x + t * dx;
+                let y = line[0].y + t * dy;
+                let dist = field.distance_linear(&P2::new(x, y));
+                let depth = if params.max_depth > 0.0 {
+                    (dist / tan_half).min(params.max_depth)
+                } else {
+                    dist / tan_half
+                };
+                points.push(P3::new(x, y, params.top_z - depth));
+            }
+            if points.is_empty() {
+                continue;
+            }
+            tp.emit_path_segment_with_intent(
+                &points,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                crate::toolpath::MoveIntent::FinishingCut,
+            );
+        }
+        tp
+    }
+
+    fn move_bits(tp: &Toolpath) -> Vec<(u64, u64, u64, String)> {
+        tp.moves
+            .iter()
+            .map(|m| {
+                (
+                    m.target.x.to_bits(),
+                    m.target.y.to_bits(),
+                    m.target.z.to_bits(),
+                    format!("{:?}/{:?}", m.move_type, m.intent),
+                )
+            })
+            .collect()
+    }
+
+    /// **G9 equivalence sentry.**
+    ///
+    /// Raw bits, not `==`: `-0.0 == 0.0` would hide a divergence, and wave 1's
+    /// G3 shipped a "provably sound" reject that produced an identical move
+    /// *count* with a different hash. V-carve maps boundary distance straight
+    /// to cut depth, so a one-ULP index error is a cut-quality defect, not a
+    /// rounding curiosity.
+    #[test]
+    fn vcarve_indexed_field_is_bit_identical_to_linear_scan() {
+        // A lettering-ish fixture: outer frame plus a grid of many-vertex
+        // holes, so pruning has something to prune and ties are plentiful.
+        let mut poly = Polygon2::rectangle(-30.0, -30.0, 30.0, 30.0);
+        for r in 1..=3 {
+            for c in 1..=3 {
+                let (cx, cy) = (-30.0 + 15.0 * c as f64, -30.0 + 15.0 * r as f64);
+                poly.holes.push(
+                    (0..96)
+                        .map(|i| {
+                            let t = -std::f64::consts::TAU * i as f64 / 96.0;
+                            P2::new(cx + 3.3 * t.cos(), cy + 3.3 * t.sin())
+                        })
+                        .collect(),
+                );
+            }
+        }
+
+        for (max_depth, tolerance, half_angle) in [
+            (4.0, 0.05, FRAC_PI_4),
+            (0.0, 0.2, FRAC_PI_4),
+            (2.0, 0.5, (30.0_f64).to_radians()),
+        ] {
+            let params = VCarveParams {
+                half_angle,
+                max_depth,
+                stepover: 1.0,
+                feed_rate: 1200.0,
+                plunge_rate: 400.0,
+                safe_z: 10.0,
+                tolerance,
+                top_z: 0.0,
+            };
+            let indexed = vcarve_toolpath(&poly, &params);
+            let linear = naive_vcarve(&poly, &params);
+            assert!(!indexed.moves.is_empty(), "fixture should cut something");
+            assert_eq!(
+                move_bits(&indexed),
+                move_bits(&linear),
+                "indexed distance field diverged from the linear scan at \
+                 max_depth={max_depth} tolerance={tolerance}"
+            );
+        }
+    }
 
     fn square_polygon(size: f64) -> Polygon2 {
         let h = size / 2.0;

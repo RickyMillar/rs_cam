@@ -690,6 +690,47 @@ fn bench_gen_vcarve_field(c: &mut Criterion) {
     group.finish();
 }
 
+// ── G2 (face side): scan rows rebuilt per Z level ───────────────────────
+
+/// Facing a large stock at a fine stepover over many depth levels. The scan
+/// rows (inset + slicing + any OneWay normalisation) are Z-independent, so
+/// this arm measures exactly what the hoist removed: `levels - 1` redundant
+/// rebuilds.
+fn bench_gen_face_levels(c: &mut Criterion) {
+    use rs_cam_core::face::{FaceDirection, FaceParams, face_toolpath};
+    use rs_cam_core::geo::BoundingBox3;
+
+    let mut group = c.benchmark_group("gen_face_levels");
+    group.sample_size(20);
+
+    let bounds = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(600.0, 400.0, 25.0),
+    };
+    for (label, direction) in [
+        ("zigzag_20levels", FaceDirection::Zigzag),
+        ("oneway_20levels", FaceDirection::OneWay),
+    ] {
+        let params = FaceParams {
+            tool_radius: 6.0,
+            stepover: 1.0,
+            depth: 10.0,
+            depth_per_pass: 0.5,
+            feed_rate: 2000.0,
+            plunge_rate: 500.0,
+            safe_z: 10.0,
+            stock_offset: 5.0,
+            direction,
+            stock_top_z: 0.0,
+        };
+        group.bench_function(label, |b| {
+            b.iter(|| black_box(face_toolpath(&bounds, &params).moves.len()))
+        });
+    }
+
+    group.finish();
+}
+
 // ── S4 / S6: the end-to-end simulation tail ─────────────────────────────
 
 /// A deterministic three-operation 2.5D project, built through the REAL
@@ -991,6 +1032,7 @@ criterion_group!(
     bench_gen_contains_point,
     bench_gen_rapid_order,
     bench_gen_vcarve_field,
+    bench_gen_face_levels,
     bench_viz_triage_build,
 );
 criterion_main!(benches);
