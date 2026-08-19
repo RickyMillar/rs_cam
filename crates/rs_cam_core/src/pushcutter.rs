@@ -9,7 +9,7 @@
 use crate::fiber::{Fiber, Interval};
 use crate::geo::{P3, Triangle};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
 /// Push a cutter along a fiber against a single triangle.
@@ -20,34 +20,190 @@ pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn Mill
     edge_push(fiber, tri, cutter);
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Millimetres of headroom added to the fiber's lateral query band on top of
+/// the cutter's envelope radius (G1, `PERF_REVIEW.md`).
+///
+/// The band bound below is exact in real arithmetic — every contact test in
+/// this module rejects geometry further than `envelope_radius` from the fiber
+/// segment. But three of those tests carry their own comparison slack, and a
+/// bound that is tight to the last ULP would turn one of them into a
+/// *different answer* rather than a faster one:
+///
+/// - [`vertex_push`] and [`edge_push_single`] reject at `perp_dist > w +
+///   1e-10`, so a vertex exactly `envelope_radius` away is **accepted** and
+///   contributes a zero-width interval;
+/// - [`facet_push`] accepts the fiber parameter over `-1e-8..=1.0 + 1e-8`, so
+///   its contact point can sit a hair beyond either fiber endpoint —
+///   `1e-8 · fiber_length`, i.e. 1e-6 mm on a 100 mm fiber;
+/// - `Triangle::contains_point_xy` accepts barycentric coordinates down to
+///   `-1e-8`, which is a distance of `1e-8 · triangle_scale` outside the
+///   triangle — 1e-4 mm even on a 10 m triangle.
+///
+/// 1e-3 mm clears all three by at least an order of magnitude while costing
+/// nothing: the band is `2·radius` wide, so a Ø6 cutter's band grows by
+/// 0.03%, and the index quantises to whole cells (≥ 0.1 mm) anyway, so on
+/// almost every query it does not change the cell range at all.
+pub const PUSH_QUERY_SLACK_MM: f64 = 1e-3;
+
+/// How far, laterally, a cutter swept along a fiber can reach off the fiber
+/// line — the half-width of the band the spatial index needs to return.
+///
+/// `envelope_radius_mm()` is the documented "maximum lateral extent any part
+/// of the cutter sweeps, at any height" (`tool/mod.rs`), which bounds
+/// [`MillingCutter::width_at_height`] — the quantity `vertex_push` and
+/// `edge_push_single` compare their perpendicular distance against. The facet
+/// contact offsets by `xy_normal_length · n̂_xy + normal_length · n`, whose XY
+/// magnitude is at most `xy_normal_length + normal_length`; that sum equals
+/// the envelope radius for every shipped shape (flat `R+0`, ball `0+R`,
+/// bullnose `r1+r2 = R`, V-bit `R+0`, tapered ball `0 + r_ball ≤ R`), but it
+/// is taken as a `max` here rather than assumed, so a future shape cannot
+/// silently under-size the band.
+#[must_use]
+pub fn fiber_lateral_reach_mm(cutter: &dyn MillingCutter) -> f64 {
+    let envelope = cutter.envelope_radius_mm();
+    debug_assert!(
+        {
+            // The envelope contract, checked rather than trusted: sample the
+            // profile and confirm nothing pokes outside it.
+            let len = cutter.length().max(0.0);
+            (0..=16).all(|i| {
+                let h = len * (i as f64 / 16.0);
+                cutter.width_at_height(h) <= envelope + 1e-9
+            })
+        },
+        "cutter profile exceeds its own envelope_radius_mm; fiber band would under-query"
+    );
+    envelope.max(cutter.xy_normal_length() + cutter.normal_length()) + PUSH_QUERY_SLACK_MM
+}
+
 /// Push a cutter along a fiber against all triangles near it using the spatial index.
+///
+/// Allocates a candidate buffer and dedup scratch per call. Callers with many
+/// fibers should use [`push_cutter_fiber_into`] (or [`batch_push_cutter`],
+/// which already does) and hand the same buffers back each time.
 pub fn push_cutter_fiber(
     fiber: &mut Fiber,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
 ) {
-    let r = cutter.radius();
-    let length = cutter.length();
+    let mut scratch = QueryScratch::new();
+    let mut candidates = Vec::new();
+    push_cutter_fiber_into(fiber, mesh, index, cutter, &mut scratch, &mut candidates);
+}
 
-    // Query the spatial index with a circle covering the fiber + cutter radius.
-    // Center is the midpoint of the fiber, radius covers half-length + cutter radius.
-    let cx = (fiber.p1.x + fiber.p2.x) / 2.0;
-    let cy = (fiber.p1.y + fiber.p2.y) / 2.0;
-    let half_len = fiber.length() / 2.0;
-    let query_r = half_len + r;
+/// Collect the spatial-index candidates for `fiber` into `candidates`.
+///
+/// **G1**: the query is the fiber's own XY bounding box inflated by
+/// [`fiber_lateral_reach_mm`] — for an X-fiber at row `y` that is the band
+/// `y ± reach`, not a square of side `fiber_length + 2·reach` centred on the
+/// fiber's midpoint. The old square was sized by the fiber's *length*, and
+/// waterline fibers span the whole mesh bbox, so it selected every cell in
+/// the index and pruned nothing whatsoever.
+///
+/// Soundness: contact is only possible where some point of the triangle lies
+/// within `envelope_radius` of the swept cutter centre, and the cutter centre
+/// never leaves the fiber segment — so a triangle whose XY bbox misses the
+/// inflated segment bbox cannot contribute. Every push test in this module
+/// rejects on exactly that distance (`perp_dist > w`, `contains_point_xy` of a
+/// point offset by at most the envelope radius); [`PUSH_QUERY_SLACK_MM`]
+/// documents the comparison epsilons that headroom absorbs. The X extent is
+/// unchanged from the old query — `[x_min - reach, x_max + reach]` was already
+/// exactly what the square gave along the fiber.
+pub fn fiber_query_candidates(
+    fiber: &Fiber,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    scratch: &mut QueryScratch,
+    candidates: &mut Vec<usize>,
+) {
+    let w = FiberWindow::of(fiber, cutter);
+    index.query_rect_into(w.x_min, w.x_max, w.y_min, w.y_max, scratch, candidates);
+}
+
+/// The fiber's XY reach window: its own segment bbox inflated by
+/// [`fiber_lateral_reach_mm`]. Used both to size the index query and to reject
+/// individual candidates the cell-granular query rounded in.
+#[derive(Debug, Clone, Copy)]
+struct FiberWindow {
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+}
+
+impl FiberWindow {
+    fn of(fiber: &Fiber, cutter: &dyn MillingCutter) -> Self {
+        let reach = fiber_lateral_reach_mm(cutter);
+        Self {
+            x_min: fiber.p1.x.min(fiber.p2.x) - reach,
+            x_max: fiber.p1.x.max(fiber.p2.x) + reach,
+            y_min: fiber.p1.y.min(fiber.p2.y) - reach,
+            y_max: fiber.p1.y.max(fiber.p2.y) + reach,
+        }
+    }
+
+    /// Does this triangle's XY bounding box meet the window at all?
+    ///
+    /// `Triangle::bbox` is built from the three vertices at construction
+    /// (`geo.rs`), so this costs two loads and four compares and is exact —
+    /// where the index query is quantised to whole cells and therefore
+    /// admits up to one cell row of slop on each side of the band.
+    #[inline]
+    fn admits(&self, tri: &Triangle) -> bool {
+        tri.bbox.min.x <= self.x_max
+            && tri.bbox.max.x >= self.x_min
+            && tri.bbox.min.y <= self.y_max
+            && tri.bbox.max.y >= self.y_min
+    }
+}
+
+/// Buffer-reusing form of [`push_cutter_fiber`].
+///
+/// `candidates` is overwritten; `scratch` must be a [`QueryScratch`] the
+/// caller keeps alive across calls (it is left zeroed, so it can be shared
+/// freely between successive fibers on one thread).
+pub fn push_cutter_fiber_into(
+    fiber: &mut Fiber,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    scratch: &mut QueryScratch,
+    candidates: &mut Vec<usize>,
+) {
+    fiber_query_candidates(fiber, index, cutter, scratch, candidates);
+    push_cutter_fiber_over(fiber, mesh, cutter, candidates);
+}
+
+/// Run the contact tests for `fiber` over an already-collected candidate list.
+///
+/// Split out from [`push_cutter_fiber_into`] because the candidate list for a
+/// given fiber ROW is identical at every Z level — the waterline fiber grid's
+/// XY does not move as the plane descends — so a multi-level caller can pay
+/// for the query once and replay the contact tests per level.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub fn push_cutter_fiber_over(
+    fiber: &mut Fiber,
+    mesh: &TriangleMesh,
+    cutter: &dyn MillingCutter,
+    candidates: &[usize],
+) {
     let z_min = fiber.z();
-    let z_max = fiber.z() + length;
+    let z_max = fiber.z() + cutter.length();
+    let window = FiberWindow::of(fiber, cutter);
 
-    let candidates = index.query(cx, cy, query_r);
-
-    for &tri_idx in &candidates {
+    for &tri_idx in candidates {
         let tri = &mesh.faces[tri_idx];
         // Quick Z check: skip triangles entirely above or below the cutter at this Z
         let tri_z_min = tri.v[0].z.min(tri.v[1].z).min(tri.v[2].z);
         let tri_z_max = tri.v[0].z.max(tri.v[1].z).max(tri.v[2].z);
         if tri_z_min > z_max || tri_z_max < z_min {
+            continue;
+        }
+        // Exact XY reject, one cell finer than the query could be. Same bound
+        // as the query window, so it can only drop candidates the contact
+        // tests below would have rejected anyway.
+        if !window.admits(tri) {
             continue;
         }
         push_cutter_triangle(fiber, tri, cutter);
@@ -78,12 +234,34 @@ pub fn batch_push_cutter_with_cancel(
     const CHUNK_SIZE: usize = 64;
     for chunk in fibers.chunks_mut(CHUNK_SIZE) {
         check_cancel(cancel)?;
-        chunk.par_iter_mut().for_each(|fiber| {
-            push_cutter_fiber(fiber, mesh, index, cutter);
-        });
+        // `for_each_init` gives each rayon worker its own candidate Vec and
+        // dedup bitset, reused across every fiber that worker handles. The
+        // per-query allocation was measured at only 0.99× on the
+        // classification grid (`CLASSIFICATION_PERF_STUDY.md`) so this is not
+        // where the win is — but with the band query in place the candidate
+        // lists are small and the buffers are genuinely free to keep.
+        chunk
+            .par_iter_mut()
+            .for_each_init(QueryState::default, |state, fiber| {
+                push_cutter_fiber_into(
+                    fiber,
+                    mesh,
+                    index,
+                    cutter,
+                    &mut state.scratch,
+                    &mut state.candidates,
+                );
+            });
     }
 
     Ok(())
+}
+
+/// Per-worker buffers for [`batch_push_cutter_with_cancel`].
+#[derive(Default)]
+struct QueryState {
+    scratch: QueryScratch,
+    candidates: Vec<usize>,
 }
 
 /// Vertex push: for each triangle vertex, compute the interval on the fiber

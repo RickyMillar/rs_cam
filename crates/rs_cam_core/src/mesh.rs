@@ -622,16 +622,52 @@ impl SpatialIndex {
         scratch: &mut QueryScratch,
         out: &mut Vec<usize>,
     ) {
+        self.query_rect_into(
+            cx - radius,
+            cx + radius,
+            cy - radius,
+            cy + radius,
+            scratch,
+            out,
+        );
+    }
+
+    /// Rectangle form of [`Self::query_into`] — the primitive both it and the
+    /// push-cutter fiber query are expressed in.
+    ///
+    /// [`Self::query`] and [`Self::query_into`] take a *square* window around a
+    /// centre, which is the right shape for a cutter sitting at one XY point.
+    /// A push-cutter **fiber** is a long thin segment: an X-fiber at row `y`
+    /// spans the whole part in X but reaches only `±reach` in Y, so a square
+    /// window sized to cover its length is quadratically over-inclusive. On a
+    /// bbox-spanning waterline fiber the square degenerates to "the whole
+    /// mesh" and the index prunes nothing at all (`PERF_REVIEW.md` G1). This
+    /// entry point lets the caller state the two axes independently.
+    ///
+    /// Output is the same *set* and the same (cell-major, first-occurrence)
+    /// *order* as `query_into` would produce for a square of the same bounds;
+    /// the two share one implementation, so they cannot drift.
+    ///
+    /// The odd `x1 as usize` wrap on a negative index — which clamps a fully
+    /// off-grid query up to the last column rather than to nothing — is
+    /// reproduced verbatim from [`Self::query`]. It is pre-existing behaviour
+    /// and over-inclusive rather than wrong, and this primitive must not "fix"
+    /// it, or the three query paths would disagree on off-grid cells.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub fn query_rect_into(
+        &self,
+        x_min: f64,
+        x_max: f64,
+        y_min: f64,
+        y_max: f64,
+        scratch: &mut QueryScratch,
+        out: &mut Vec<usize>,
+    ) {
         out.clear();
-        // Bounds arithmetic reproduced verbatim from `query` — including the
-        // `x1 as usize` wrap on a negative index, which clamps a fully
-        // off-grid query up to the last column rather than to nothing. That
-        // is pre-existing behaviour and this twin must not "fix" it, or the
-        // two would disagree on off-grid cells.
-        let x0 = ((cx - radius - self.origin_x) / self.cell_size).floor() as isize;
-        let x1 = ((cx + radius - self.origin_x) / self.cell_size).floor() as isize;
-        let y0 = ((cy - radius - self.origin_y) / self.cell_size).floor() as isize;
-        let y1 = ((cy + radius - self.origin_y) / self.cell_size).floor() as isize;
+        let x0 = ((x_min - self.origin_x) / self.cell_size).floor() as isize;
+        let x1 = ((x_max - self.origin_x) / self.cell_size).floor() as isize;
+        let y0 = ((y_min - self.origin_y) / self.cell_size).floor() as isize;
+        let y1 = ((y_max - self.origin_y) / self.cell_size).floor() as isize;
 
         let x0 = x0.max(0) as usize;
         let x1 = (x1 as usize).min(self.cell_count_x.saturating_sub(1));
