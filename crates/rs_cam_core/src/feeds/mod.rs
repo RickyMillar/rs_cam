@@ -2118,7 +2118,14 @@ fn default_engagement(
 /// cone shoulder takes over, capped at the shank. See
 /// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
 /// `tests/tapered_width_model_parity_c3.rs` for what it cost.
-fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
+///
+/// Made `pub` on 2026-08-19 for Suggest pass 9's regression sentry
+/// (`tests/suggest_feed_matches_final_geometry.rs`), which reconstructs the
+/// calculator's geometry-dependent feed terms at two operating points. The
+/// sentry deliberately calls THIS function rather than carrying a copy — a
+/// second implementation of the chip-thinning diameter is exactly what C3
+/// retired above.
+pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,
         ToolGeometryHint::Ball => geometry::ball_effective_diameter(nominal_d, ap),

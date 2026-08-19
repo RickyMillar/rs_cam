@@ -462,6 +462,62 @@ pub enum SuggestWarning {
         max_safe_doc_mm: f64,
         binding: &'static str,
     },
+    /// **DECLARED 2026-08-19, NOT YET PRODUCED — G-SUGGEST-NOCLAMP.**
+    ///
+    /// Reserved for the pass that re-derives the feed once
+    /// `enforce_invariants` has settled the operation's final stepover and
+    /// DPP. `feeds::calculate` freezes the feed against the geometry it was
+    /// handed; later passes (`backoff_stepover_for_runtime`,
+    /// `pick_axial_envelope`, the rigidity/deflection clamps) then overwrite
+    /// that geometry, leaving the chip-thinning and depth-tier terms derived
+    /// at an operating point the operation does not run.
+    ///
+    /// Measured motivating case (wanaka200 tp 8, `drop_cutter`, R1.5 tapered
+    /// ball in White Oak): the calculator sized the feed at `ae = 0.09` — the
+    /// `operation_default_profile(Parallel, Finish).ae_factor` fallback,
+    /// because no op populates `FeedsHints::radial_width_mm` — while
+    /// `backoff_stepover_for_runtime` then wrote `ae = 0.30375`. The stale
+    /// radial-chip-thinning lift left the commanded advance at
+    /// 0.033154 mm/tooth against a band maximum of 0.020553, i.e. **1.613×**,
+    /// with no warning. Re-running the calculator at the true stepover yields
+    /// 781.02 mm/min, landing exactly on the band maximum.
+    ///
+    /// The defect is symmetric, so the pass must handle both signs: on tp 5
+    /// the axial envelope clamps DPP 9.0 → 4.2 mm while the feed keeps a
+    /// `depth_tier` of 0.75 computed at 9.0, where 4.2 mm on a Ø6 tool is
+    /// tier 1.0 — that op is **under**-fed by 1.33×.
+    ///
+    /// Sentry: `tests/suggest_feed_matches_final_geometry.rs`.
+    FeedRescaledToFinalGeometry {
+        /// `feed_rate` (mm/min) as the calculator and earlier invariants left it.
+        requested_mm_per_min: f64,
+        /// `feed_rate` (mm/min) after rescaling to the final geometry.
+        rescaled_mm_per_min: f64,
+        /// Combined chip-thinning × depth-tier factor at the operating point
+        /// the calculator sized the feed against.
+        factor_at_calculator: f64,
+        /// The same combined factor at the operation's final stepover / DPP.
+        factor_at_final: f64,
+    },
+    /// **DECLARED 2026-08-19, NOT YET PRODUCED — G-SUGGEST-NOCLAMP.**
+    ///
+    /// Reserved for the case where rescaling to the final geometry pushes the
+    /// commanded advance *below* the chip-formation floor, so the existing
+    /// rubbing-floor rule lifts it back. This is the licensed exception to
+    /// the "implied target chipload must agree at both operating points"
+    /// invariant: when it fires, the commanded advance sits on the reported
+    /// floor rather than on the derated target.
+    FeedClampedToChiploadFloor {
+        /// Advance per tooth the rescale asked for (mm/tooth), before the floor.
+        requested_mm_per_tooth: f64,
+        /// The floor actually applied (mm/tooth) — the chip-formation floor,
+        /// or the band maximum where the whole derated band sits beneath it.
+        floor_mm_per_tooth: f64,
+        /// `Some(_)` when the floor was itself capped to the matched band
+        /// maximum, mirroring `FeedsWarning::ChiploadClampedToFloor`'s
+        /// `band_capped_from`.
+        band_capped_from: Option<f64>,
+    },
 }
 
 /// Reason the v2 step 2 feed-up recalibration terminated early

@@ -691,7 +691,22 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::AxialDocBelowBurnFloor { .. }
                 | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. } => {} // No `_` arm — adding a new variant to the enum will
+                | SuggestWarning::FinishEnvelopeAdvisory { .. } => {}
+                // G-SUGGEST-NOCLAMP (2026-08-19): declared but NOT yet
+                // produced by Suggest — the pass that re-derives the feed
+                // against the final stepover / DPP has not landed. When it
+                // does, BOTH of these are expected to start firing on this
+                // fixture (its Back Rough is the DPP-clamp case), and that
+                // is an intentional re-baseline, not an accident. Panic
+                // until then so the baseline owner makes that call
+                // explicitly rather than discovering it in a diff.
+                SuggestWarning::FeedRescaledToFinalGeometry { .. }
+                | SuggestWarning::FeedClampedToChiploadFloor { .. } => panic!(
+                    "tp {id} ({name}): a G-SUGGEST-NOCLAMP warning fired, but the feed-rescale \
+                     pass is not supposed to be producing them yet. If the fix just landed, \
+                     re-baseline this test deliberately — see \
+                     tests/suggest_feed_matches_final_geometry.rs"
+                ), // No `_` arm — adding a new variant to the enum will
                                                                       // force this match to be updated, which forces the
                                                                       // baseline owner to decide whether the variant should
                                                                       // ever fire on Wanaka.
