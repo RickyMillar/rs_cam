@@ -807,6 +807,64 @@ condition, the multiplication is the surviving half of the category error the ga
 wave deleted. This moves every feed in the product — it needs its own ledger row
 and its own decision, not a bundle with G-SUGGEST-NOCLAMP.
 
+#### MEASURED 2026-08-19 — `tests/chipload_thinning_magnitude_survey.rs`
+
+**The per-op magnitudes above are STALE.** They were taken before pass 9
+(`a1bb964b`), which re-derives the thinning term at the stepover the operation
+actually runs; on the reference finish pass that alone cut the factor from
+3.8236 to 1.7171. The survey below is the post-pass-9 measurement and is the one
+a decision should be taken against.
+
+3 420 feasible operating points, 24 op types × 5 tool types × 5 (Ø, flute) pairs
+× 6 materials. **99.1 % have thinning active.** Multiplier where active: median
+**1.809**, p75 3.571, p95 4.000 — and **636 points sit ON the 4.0 clamp
+ceiling**, meaning the multiplier there is not the geometric value at all, it is
+the cap. 1 134 points matched a vendor row that published a band.
+
+Where the commanded advance lands against that band:
+
+| | inside | over max | under min | median ÷ midpoint |
+|---|---|---|---|---|
+| as shipped today | 216 (19.0 %) | **427 (37.7 %)** | 491 (43.3 %) | 1.000 |
+| thinning deleted, no floor re-applied | 96 (8.5 %) | 1 (0.1 %) | **1 037 (91.4 %)** | 0.563 |
+| thinning deleted, Step-9b floor applied | 505 (44.5 %) | 1 (0.1 %) | 628 (55.4 %) | 0.735 |
+| thinning deleted, seed at band max + floor | **639 (56.3 %)** | 12 (1.1 %) | 483 (42.6 %) | 0.831 |
+
+**Three findings the original framing did not anticipate.**
+
+1. **81 % of banded operating points already command outside the vendor band** —
+   37.7 % over, 43.3 % under, only 19.0 % inside. The defect is not "Suggest
+   over-feeds"; it is that the feed stack does not land in the vendor window in
+   either direction. The median sits dead centre (1.000) while the distribution
+   is far wider than the window, which is exactly the shape a median hides.
+2. **A bare deletion makes it worse, not better.** Removing the multiplier with
+   nothing else changed drops the median to 0.563 of the band midpoint and puts
+   **91.4 %** under the vendor minimum — trading a two-sided error for a
+   systematic under-feed, which in wood is the burnishing/heat direction. The
+   multiplier is currently doing load-bearing work offsetting the derate stack,
+   whatever its justification.
+3. **Deletion plus the floor the engine already has is a clear improvement**, and
+   deletion plus moving the seed to the band maximum is better still: in-band
+   more than doubles (19.0 % → 44.5 % → 56.3 %) while over-band effectively
+   vanishes (37.7 % → 0.1 % → 1.1 %). Over-feeding is the breakage direction and
+   under-feeding is the finish/heat direction, so this is not a symmetric trade.
+
+Over-feeding is also **bounded at about 2.3×**, not 4× — the worst 20 points run
+2.06×–2.34× of band max, led by `RampFinish` on a Ø12 tapered ball in ipe
+(2.34×) and `VCarve` with a 60° V-bit in pine (2.31×). The 4.0 figure is the
+clamp ceiling on the *multiplier*, not on the resulting band excess.
+
+Caveat carried in the instrument: 553 of the 1 134 banded points had a later
+clamp bind (power, machine ceiling, or the rubbing floor), so for those the bare
+counterfactual is a lower bound rather than an equality. The floored and
+band-max columns model Step 9b explicitly for this reason.
+
+**Not measured, and it matters:** the modulator's site
+(`feed_modulation.rs:373`) uses a *different* formula — `target = band_max ÷
+sqrt(woc)` — not `radial_chip_thinning_factor`. It was not swept here because it
+only runs post-simulation. Whatever is decided for Suggest must be decided for
+that site too, or the two halves of the product will disagree again.
+
 ### Minor: `modulation_summary.moves_touched` is not stable across reads
 
 Toolpath 1 (back rough) was not regenerated between two `get_tool_load_report`
