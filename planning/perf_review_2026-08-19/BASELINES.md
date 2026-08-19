@@ -264,3 +264,162 @@ Per `PERF_REVIEW.md`: baseline number from this file → implement fix →
 goldens + F-XXX sentries + targeted `cargo test -p rs_cam_core` green →
 re-run the finding's bench and record the delta here → for structural fixes,
 re-run the 0C wanaka wall clock.
+
+---
+
+# Wave 1 (GEN) — G4 then G3
+
+Captured 2026-08-19, same machine, criterion release builds, every cargo
+invocation serialized behind `flock /tmp/rs_cam_cargo.lock`.
+
+**Machine state.** Not an idle box, and honesty about that is part of the
+number. An editor-driven `cargo check --workspace` (rust-analyzer) runs
+continuously in this repo and a second agent's `cargo test -p rs_cam_core`
+plus an unrelated repository's `cargo test -p sysml-spec-tests` were live for
+much of the window; available memory sat at **15–18 Gi**, i.e. the same
+condition the Phase 0 capture recorded (18 Gi), not the 20 Gi house rule.
+Every G3 arm below is a **before/after pair measured minutes apart under the
+same contention**, so the ratio is sound even where an absolute would not be.
+The G4 comparison is against the committed Phase 0 absolute; its effect sizes
+(3.9× and 51×) are far outside any plausible contention noise.
+
+Note on the idle gate, extending the Phase 0 note: `pgrep -x cargo` is the
+right check, but waiting for it to read **zero** in this repo is waiting for
+something that does not happen — rust-analyzer keeps a `cargo check` in
+flight. Gate on the flock plus a memory floor, not on an empty process table.
+
+## G4 — `Polygon2` cached exterior AABB + `RegionSet` pre-filter
+
+`cargo bench -p rs_cam_core --bench hot_paths -- gen_contains_point`.
+Before = the 0A table above (same bench, same fixture, unchanged).
+
+| Bench | Before | After | Change | Speed-up |
+|---|---:|---:|---:|---:|
+| `gen_contains_point/polygon_1400v_3holes_10k` | 20.966 ms | **5.3794 ms** | −74.34% | **3.90×** |
+| `gen_contains_point/regionset_8x350v_10k` | 38.928 ms | **762.54 µs** | −98.04% | **51.0×** |
+
+Criterion's own verdict on both: `Performance has improved`, p = 0.00.
+
+The gap between the two arms is the finding's shape, not a fluke. The single
+polygon pays one O(1) box test and then still ray-casts every query point that
+lands inside its box, so 3.9× is bounded by whatever share of this fixture's
+sample the box can refuse — a fixture property, not a general figure, and the
+one number here that should not be quoted out of context. The `RegionSet` arm
+is the `.any()` layer the review named: eight
+disjoint 350-vertex regions, of which a query point can be inside **at most
+one**, so seven of eight ray casts were pure waste on every single call. The
+`m` factor collapses and 51× is what is left. That ratio is the direct
+argument for the twelve inner loops in G4's list — the ones that call this
+per move, per sample, per grid cell.
+
+## G3 — `drop_cutter` monotone-Z + XY-AABB early-outs
+
+Neither `perf_suite`'s drop groups nor `classification` were in Phase 0, and
+the only stored criterion data for them was **17 days old** (2026-08-02) at an
+unrelated commit — worthless as a baseline. So both arms were measured fresh
+in this session: `git stash push` of *only* `tool/mod.rs` + `dropcutter.rs`
+→ bench (before) → `git stash pop` → bench (after). Nothing else in the tree
+moved between the two.
+
+`cargo bench -p rs_cam_core --bench perf_suite -- drop_cutter`:
+
+| Bench | Before | After | Change | Speed-up |
+|---|---:|---:|---:|---:|
+| `batch_drop_cutter/hemisphere_ball_6mm` | 5.9134 ms | **1.9384 ms** | −67.26% | **3.05×** |
+| `batch_drop_cutter/terrain_ball_6mm_step1` | 79.099 ms | **13.001 ms** | −83.61% | **6.08×** |
+| `batch_drop_cutter/terrain_flat_6mm_step1` | 62.200 ms | **9.5539 ms** | −84.72% | **6.51×** |
+| `point_drop_cutter/terrain_center_ball` | 6.3921 µs | **1.9588 µs** | −69.83% | **3.26×** |
+
+`cargo bench -p rs_cam_core --bench classification`:
+
+| Bench | Before | After | Change | Speed-up |
+|---|---:|---:|---:|---:|
+| `classification/current/synthetic/64` | 510.79 µs | **345.05 µs** | −34.72% | 1.48× |
+| `classification/current/synthetic/143` | 4.2849 ms | **3.5431 ms** | −17.31% | 1.21× |
+| `classification/current/query_only/143` | 8.5887 ms | 8.7383 ms | +1.74% (p = 0.11) | — |
+
+**`query_only` is the control and it is the most informative row.** It runs
+the spatial-index queries with none of the contact math, and it did not move
+(p = 0.11, i.e. not distinguishable from noise). So the drop-cutter gains
+above are the contact math being skipped, not the harness getting faster —
+and it confirms `CLASSIFICATION_PERF_STUDY.md:91`'s "contact math = 4/5 of
+classify cost" from the other direction. It also bounds what G3 can ever do
+for classification: with the query half untouched at 8.6 ms, the synthetic
+rows' 1.2–1.5× is near the ceiling, and the next classification lever is the
+query, not the drop.
+
+The terrain rows are the ones to quote for the wanaka workload — a 6× on a
+661k-triangle mesh is the regime the review's reference workload lives in.
+`classification/current/terrain` stayed skipped (needs `RS_CAM_M3_HEAVY=1`,
+minutes per row at 849²).
+
+### The early-out that was not exact — and what caught it
+
+The first G3 implementation used the review's literal formulation,
+`if tri.bbox.max.z <= cl.z { return }`. It made
+`finish_resolution_policy_pr3::steep_shallow_fingerprint` fail with an
+**identical move count (913) and a different hash** — the exact signature of a
+last-ULP divergence, and precisely the thing a fingerprint golden exists to
+catch.
+
+The cause: every `edge_drop` implementation accepts an edge parameter in
+`-1e-8..=1.0 + 1e-8` and then *evaluates the edge at it*, so a contact can land
+up to `1e-8 × edge_length` outside the triangle's own bounding box — including
+in Z. That is not a rare coincidence on a real mesh: a flat-tipped cutter's
+`vertex_drop` returns `vertex.z - 0.0`, so `cl.z` becomes **exactly** a vertex
+height, and every triangle sharing that vertex then satisfies
+`bbox.max.z == cl.z`. The unpadded test skipped them; the old code ran
+`edge_drop` and let the overshoot nudge `cl.z` up.
+
+Both rejects are now padded by `DROP_CONTACT_SLACK_MM = 1e-4` (covers edges to
+10 km; four orders past any mesh here). `steep_shallow_fingerprint` returned to
+its pre-change hash, and the pad costs nothing measurable — the numbers in the
+tables above are the **padded** implementation.
+
+Two things worth carrying forward from that:
+
+1. **The review's G3 text states the `<=` form as "provably sound".** It is
+   not, at the ULP level, and the proof it offers is a proof about exact
+   arithmetic applied to code with a tolerance in it. The invariant that
+   actually holds is "≤ `bbox.max.z` **plus the edge-parameter overshoot**".
+2. **A fingerprint golden with an unchanged count is worth more than one with
+   a changed count.** Nothing about the toolpath's shape moved; only its last
+   bits did. Had the net been "same number of moves", this would have shipped.
+
+### Devirtualization: partial, deliberately
+
+Full devirtualization of the `Box<dyn MillingCutter>` per-triangle call was
+**not** attempted — `MillingCutter` carries no `Any` bound, so a match on the
+concrete type from a `&dyn MillingCutter` would need a downcast facility added
+to a public trait implemented by five shapes plus the `ToolDefinition`
+wrapper. That spiders, exactly as the wave brief anticipated.
+
+What landed instead gets most of the effect for two lines: `point_drop_cutter`
+hoists `cutter.radius()` out of the triangle loop (on the `ToolDefinition`
+wrapper that accessor is *itself* an indirect call, once per triangle) and
+calls `drop_cutter_can_contact` **before** `drop_cutter`, so a rejected
+triangle costs no virtual dispatch at all. The trait's default `drop_cutter`
+keeps its own copy of the check as the safety net for every other caller
+(`classify_probe`, `slope`, the tool-module tests). Accepted triangles pay the
+four-compare check twice; that is inside the noise of a facet + 3 vertex + 3
+edge drop.
+
+Full devirtualization stays on the table as follow-up, as does the review's
+cell-sorting-by-max-Z idea, which was explicitly out of scope for this wave.
+
+### Correctness
+
+- `cargo test -p rs_cam_core` green apart from two failures in
+  `arc_fit_disposition_a5` and `wanaka_suggest_integration`, both asserting
+  **Suggest feed values** and both inside another agent's in-flight
+  `feeds/suggest.rs` work — nothing in this wave can move a feed rate.
+- `cargo clippy -p rs_cam_core --all-targets -- -D warnings`: clean.
+- New nets: `polygon::tests::{bbox_reject_agrees_with_the_ray_cast_everywhere,
+  invalidate_bbox_clears_a_populated_cache,
+  nan_vertex_disables_the_reject_rather_than_changing_an_answer,
+  degenerate_rings_reject_without_changing_the_answer}` and
+  `tool::tests::{drop_cutter_early_outs_are_bit_identical,
+  drop_cutter_can_contact_rejects_only_unreachable_triangles}`. The first and
+  the fifth compare against a verbatim copy of the pre-change body — bit
+  patterns for the drop, exhaustive lattice for the containment — rather than
+  against a pinned constant, so they cannot rot.

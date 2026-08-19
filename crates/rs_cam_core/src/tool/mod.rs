@@ -77,6 +77,84 @@ impl CLPoint {
     }
 }
 
+/// Slack that [`drop_cutter_can_contact`] adds to **both** of its rejects, in
+/// mm. Not cosmetic — without it the early-out is not exact.
+///
+/// Every `edge_drop` implementation accepts an edge parameter in
+/// `-1e-8..=1.0 + 1e-8` and then evaluates the edge at it, so a contact can
+/// land up to `1e-8 × edge_length` **outside** the triangle's own bounding
+/// box — laterally *and in Z*.
+///
+/// The Z half is the one that bites, and it bites systematically rather than
+/// rarely. On a shared-vertex mesh a flat-tipped cutter's `vertex_drop`
+/// returns `vertex.z - 0.0`, i.e. `cl.z` becomes *exactly* a vertex height;
+/// every triangle sharing that vertex then has `bbox.max.z == cl.z` and an
+/// unpadded `bbox.max.z <= cl.z` would skip it — while the old code ran
+/// `edge_drop` and let the `1 + 1e-8` overshoot nudge `cl.z` up by
+/// `1e-8 × dz`. Caught by `finish_resolution_policy_pr3::steep_shallow_fingerprint`,
+/// which moved with an identical move count (913) and a different hash: the
+/// exact signature of a last-ULP divergence.
+///
+/// At 1e-4 mm the pad covers edges up to 10 km long — four orders of
+/// magnitude past any mesh this code meets — while costing nothing
+/// measurable against a mm-scale cutter radius or Z step.
+const DROP_CONTACT_SLACK_MM: f64 = 1e-4;
+
+/// Can `tri` possibly raise `cl`? Two exact rejections, no contact math.
+///
+/// This is the G3 early-out from `planning/perf_review_2026-08-19/PERF_REVIEW.md`.
+/// `false` means the full drop (facet + 3 vertex + 3 edge tests, each with
+/// divisions and square roots) is guaranteed to leave `cl` **bit-identical**,
+/// so skipping it cannot change a toolpath. Both halves are proved, not
+/// assumed:
+///
+/// 1. **Monotone Z.** Every drop path in this module reaches `cl` through
+///    [`CLPoint::update_z`], which is a strict max — `update_z` writes only
+///    when `z > self.z`, and `contacted` flips only on that same branch.
+///    (`update_z_min` exists for a raise-cutter test and has no caller on any
+///    drop path.) A resting cutter tip is never above the highest point of
+///    the triangle it rests on: facet contact yields `cc_z + r₂·n_z −
+///    center_height` with `r₂·n_z ≤ center_height` for every shipped shape,
+///    vertex contact yields `v.z − height_at_radius(q)` with
+///    `height_at_radius ≥ 0`, and edge contact yields a point on the edge
+///    minus a non-negative profile height. So every candidate is
+///    `≤ tri.bbox.max.z` **up to the edge-parameter overshoot**, which is why
+///    the comparison is padded by [`DROP_CONTACT_SLACK_MM`] rather than
+///    written as a bare `<=`. Read that constant's docs before tightening it.
+/// 2. **XY reach.** Every contact this module can find lies within
+///    `envelope_radius` of `cl` in XY: `height_at_radius` returns `None`
+///    beyond `radius()` for all five cutter shapes, each `edge_drop` returns
+///    early on `d² > radius²`, and each `facet_drop` displaces CC from CL by
+///    at most `xy_normal_length + normal_length ≤ radius()`. If the
+///    triangle's XY box is farther than that (plus
+///    [`DROP_CONTACT_SLACK_MM`]) from `cl`, nothing on the triangle is
+///    reachable.
+///
+/// `envelope_radius` must be [`MillingCutter::radius`] — the same value
+/// [`MillingCutter::envelope_radius_mm`] documents. Callers dropping many
+/// triangles against one cutter should hoist it out of the loop and call
+/// this directly, which also skips the per-triangle virtual call into
+/// `drop_cutter`.
+///
+/// NaN safety: every comparison here is `<` / `<=`, so a NaN in `cl` or in
+/// the triangle box answers `false` on both sides and nothing is rejected —
+/// degenerate input keeps reaching the contact math exactly as before.
+#[inline]
+pub fn drop_cutter_can_contact(cl: &CLPoint, tri: &Triangle, envelope_radius: f64) -> bool {
+    // (1) Monotone-Z: the triangle tops out below the CL point already found,
+    //     so no contact on it can raise the max. Padded — see
+    //     `DROP_CONTACT_SLACK_MM`; an exact `<=` here is NOT sound.
+    if tri.bbox.max.z + DROP_CONTACT_SLACK_MM <= cl.z {
+        return false;
+    }
+    // (2) XY-AABB: the cutter cannot reach the triangle laterally.
+    let reach = envelope_radius + DROP_CONTACT_SLACK_MM;
+    !(cl.x < tri.bbox.min.x - reach
+        || cl.x > tri.bbox.max.x + reach
+        || cl.y < tri.bbox.min.y - reach
+        || cl.y > tri.bbox.max.y + reach)
+}
+
 /// The core trait for all milling cutter types.
 ///
 /// Follows OpenCAMLib's template-method pattern: the drop-cutter algorithm
@@ -426,6 +504,13 @@ pub trait MillingCutter: Send + Sync {
 
     /// Run the full drop-cutter test against a single triangle.
     fn drop_cutter(&self, cl: &mut CLPoint, tri: &Triangle) {
+        // Cheap exact reject before the facet + 3 vertex + 3 edge drops
+        // (PERF_REVIEW 2026-08-19, G3). See `drop_cutter_can_contact` for
+        // why both halves are exact.
+        if !drop_cutter_can_contact(cl, tri, self.radius()) {
+            return;
+        }
+
         // Facet test first (if hit, edge/vertex are redundant per OpenCAMLib)
         if self.facet_drop(cl, tri) {
             return;
@@ -702,6 +787,148 @@ impl MillingCutter for ToolDefinition {
 )]
 mod tests {
     use super::*;
+
+    // ── G3: drop_cutter early-outs (PERF_REVIEW 2026-08-19) ─────────────
+    //
+    // The claim is EXACT rejection, so the bar is bit-identity, not
+    // tolerance: any numeric difference at all is a bug in the early-out.
+
+    /// The pre-G3 body of `MillingCutter::drop_cutter`, verbatim — facet
+    /// first, then 3 vertex and 3 edge drops, with no reject in front.
+    fn drop_cutter_reference<C: MillingCutter + ?Sized>(
+        cutter: &C,
+        cl: &mut CLPoint,
+        tri: &Triangle,
+    ) {
+        if cutter.facet_drop(cl, tri) {
+            return;
+        }
+        for v in &tri.v {
+            cutter.vertex_drop(cl, v);
+        }
+        cutter.edge_drop(cl, &tri.v[0], &tri.v[1]);
+        cutter.edge_drop(cl, &tri.v[1], &tri.v[2]);
+        cutter.edge_drop(cl, &tri.v[2], &tri.v[0]);
+    }
+
+    /// A deterministic bumpy triangulated surface spanning 0..40 mm in XY
+    /// with ±6 mm of relief — steep walls, flats, and overhanging normals,
+    /// so all three contact modes fire.
+    fn bumpy_surface() -> Vec<Triangle> {
+        let n = 14usize;
+        let h = |i: usize, j: usize| -> P3 {
+            let x = 40.0 * i as f64 / n as f64;
+            let y = 40.0 * j as f64 / n as f64;
+            let z = 3.0 * (x * 0.31).sin() + 3.0 * (y * 0.47).cos() + 0.5 * ((x + y) * 0.9).sin();
+            P3::new(x, y, z)
+        };
+        let mut tris = Vec::new();
+        for i in 0..n {
+            for j in 0..n {
+                tris.push(Triangle::new(h(i, j), h(i + 1, j), h(i + 1, j + 1)));
+                tris.push(Triangle::new(h(i, j), h(i + 1, j + 1), h(i, j + 1)));
+            }
+        }
+        tris
+    }
+
+    #[test]
+    fn drop_cutter_early_outs_are_bit_identical() {
+        let cutters: Vec<Box<dyn MillingCutter>> = vec![
+            Box::new(FlatEndmill::new(6.0, 25.0)),
+            Box::new(BallEndmill::new(6.0, 25.0)),
+            Box::new(BullNoseEndmill::new(6.0, 1.5, 25.0)),
+            Box::new(VBitEndmill::new(12.0, 90.0, 25.0)),
+            Box::new(TaperedBallEndmill::new(2.0, 5.0, 6.0, 25.0)),
+        ];
+        let tris = bumpy_surface();
+        assert!(tris.len() > 300);
+
+        let mut contacted_any = 0usize;
+        for cutter in &cutters {
+            // Sample well outside the surface as well as over it, so the
+            // XY-AABB arm of the reject is genuinely exercised.
+            for gi in 0..29 {
+                for gj in 0..29 {
+                    let x = -6.0 + 52.0 * gi as f64 / 28.0;
+                    let y = -6.0 + 52.0 * gj as f64 / 28.0;
+
+                    let mut fast = CLPoint::new(x, y);
+                    let mut reference = CLPoint::new(x, y);
+                    for tri in &tris {
+                        cutter.drop_cutter(&mut fast, tri);
+                        drop_cutter_reference(cutter.as_ref(), &mut reference, tri);
+                    }
+
+                    assert_eq!(
+                        fast.z.to_bits(),
+                        reference.z.to_bits(),
+                        "z diverged at ({x}, {y}): {} vs {}",
+                        fast.z,
+                        reference.z
+                    );
+                    assert_eq!(fast.contacted, reference.contacted, "contacted diverged");
+                    if fast.contacted {
+                        contacted_any += 1;
+                    }
+                }
+            }
+        }
+        // A vacuous pass — every CL point missing every triangle — would
+        // prove nothing. (CLAUDE.md: check the population before believing
+        // a verdict.)
+        assert!(
+            contacted_any > 1000,
+            "fixture did not actually contact: {contacted_any}"
+        );
+    }
+
+    #[test]
+    fn drop_cutter_can_contact_rejects_only_unreachable_triangles() {
+        let tri = Triangle::new(
+            P3::new(10.0, 10.0, 5.0),
+            P3::new(20.0, 10.0, 5.0),
+            P3::new(15.0, 20.0, 7.0),
+        );
+        let r = 3.0;
+
+        // Monotone-Z: clearly above the triangle's top -> rejected.
+        let mut high = CLPoint::new(15.0, 15.0);
+        high.update_z(7.5);
+        assert!(!drop_cutter_can_contact(&high, &tri, r));
+
+        // Exactly ON the triangle's top -> must NOT be rejected. This is the
+        // shared-vertex case a bare `bbox.max.z <= cl.z` gets wrong: a
+        // flat-tip `vertex_drop` sets `cl.z` to a vertex height exactly, and
+        // `edge_drop`'s `1 + 1e-8` overshoot can still raise it from there.
+        // See `DROP_CONTACT_SLACK_MM`.
+        let mut on_top = CLPoint::new(15.0, 15.0);
+        on_top.update_z(7.0);
+        assert!(
+            drop_cutter_can_contact(&on_top, &tri, r),
+            "a triangle whose top equals cl.z must still be tested"
+        );
+
+        // Below the top: reachable.
+        let mut low = CLPoint::new(15.0, 15.0);
+        low.update_z(6.9);
+        assert!(drop_cutter_can_contact(&low, &tri, r));
+
+        // XY: just inside and just outside the radius-expanded box.
+        let near = CLPoint::new(10.0 - r + 0.5, 15.0);
+        let far = CLPoint::new(10.0 - r - 0.5, 15.0);
+        assert!(drop_cutter_can_contact(&near, &tri, r));
+        assert!(!drop_cutter_can_contact(&far, &tri, r));
+
+        // A fresh CL point (z = -inf) over the triangle is always reachable.
+        assert!(drop_cutter_can_contact(&CLPoint::new(15.0, 15.0), &tri, r));
+
+        // NaN never rejects — degenerate input keeps reaching the old math.
+        let mut nan_cl = CLPoint::new(f64::NAN, 15.0);
+        assert!(drop_cutter_can_contact(&nan_cl, &tri, r));
+        nan_cl.z = f64::NAN;
+        assert!(drop_cutter_can_contact(&nan_cl, &tri, r));
+    }
 
     #[test]
     fn engagement_radius_matches_shape() {
