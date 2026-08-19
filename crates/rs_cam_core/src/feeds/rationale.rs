@@ -123,6 +123,13 @@ pub enum RationaleReason {
     /// closed-form predictor is feed-independent so Speed never
     /// trips the deflection refusal).
     SpeedTargetGated,
+    /// G-SUGGEST-NOCLAMP (2026-08-19): the feed was re-derived after the
+    /// invariant passes settled the operation's final stepover / DPP,
+    /// because `feeds::calculate` sizes the chip-thinning and depth-tier
+    /// terms against the geometry it was handed and later passes overwrite
+    /// that geometry. Declared with the warning variants; not emitted until
+    /// the rescale pass lands.
+    FinalGeometryRescale,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -463,6 +470,56 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 )),
             }
         }
+        // G-SUGGEST-NOCLAMP: rendered here so the surface is ready when the
+        // rescale pass lands. Neither variant is produced by Suggest yet.
+        SuggestWarning::FeedRescaledToFinalGeometry {
+            requested_mm_per_min,
+            rescaled_mm_per_min,
+            factor_at_calculator,
+            factor_at_final,
+        } => RationaleEntry {
+            param: RationaleParam::Feed,
+            reason: RationaleReason::FinalGeometryRescale,
+            from_value: Some(*requested_mm_per_min),
+            to_value: Some(*rescaled_mm_per_min),
+            headline: format!(
+                "Feed re-derived at the final geometry ({requested_mm_per_min:.0} → \
+                 {rescaled_mm_per_min:.0} mm/min)"
+            ),
+            detail: Some(format!(
+                "Chip-thinning × depth-tier was {factor_at_calculator:.4} at the operating \
+                 point the calculator sized the feed against, and is {factor_at_final:.4} at \
+                 the stepover / DPP the operation actually runs"
+            )),
+        },
+        SuggestWarning::FeedClampedToChiploadFloor {
+            requested_mm_per_tooth,
+            floor_mm_per_tooth,
+            band_capped_from,
+        } => RationaleEntry {
+            param: RationaleParam::Feed,
+            reason: RationaleReason::FinalGeometryRescale,
+            from_value: Some(*requested_mm_per_tooth),
+            to_value: Some(*floor_mm_per_tooth),
+            headline: format!(
+                "Chipload clamped to floor after rescale ({requested_mm_per_tooth:.4} → \
+                 {floor_mm_per_tooth:.4} mm/tooth)"
+            ),
+            detail: Some(band_capped_from.map_or_else(
+                || {
+                    "Re-deriving the feed at the final geometry put the advance below the \
+                     chip-formation floor; the floor governs"
+                        .to_owned()
+                },
+                |band_max| {
+                    format!(
+                        "The whole derated band sits below the chip-formation floor, so the \
+                         floor was itself capped to the band maximum {band_max:.4} mm/tooth — \
+                         expect burnishing"
+                    )
+                },
+            )),
+        },
     }
 }
 
