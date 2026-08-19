@@ -8,6 +8,7 @@ use crate::render::mesh_render::MeshGpuData;
 use crate::render::sim_render::{self, SimMeshGpuData};
 use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::{self, ToolpathGpuData};
+use crate::render::upload_cache;
 use crate::state::Workspace;
 use crate::state::job::{
     self, Setup, SetupId, height_context_from_session, session_fixture_bbox,
@@ -131,6 +132,24 @@ impl RsCamApp {
         }
     }
 
+    /// Re-upload whatever GPU state has actually changed since the last pass.
+    ///
+    /// **V8 (2026-08-19).** This used to clear and rebuild *every* buffer in
+    /// the scene on any `pending_upload` — and `pending_upload` is set by
+    /// roughly forty call sites, including each completed toolpath during
+    /// `generate_all` and every selection click. An 8-operation generate
+    /// therefore re-transformed and re-uploaded the model mesh, all eight
+    /// toolpaths, the stock and the fixtures eight times over.
+    ///
+    /// The expensive resources now carry content keys
+    /// ([`crate::render::upload_cache`]) recording what they were last built
+    /// from; each is rebuilt only when its own inputs moved. The forty
+    /// setters are unchanged — `set_pending_upload()` still means "look
+    /// again", it just no longer means "rebuild everything". Cheap resources
+    /// (stock wireframe, origin axes, fixture boxes, polygon outlines,
+    /// height planes — tens to a few thousand vertices) are still rebuilt
+    /// unconditionally; keying them would cost more in key comparison than
+    /// the rebuild costs.
     pub(super) fn upload_gpu_data(&mut self, frame: &mut eframe::Frame) {
         let Some(render_state) = frame.wgpu_render_state() else {
             return;
@@ -140,6 +159,8 @@ impl RsCamApp {
         // SAFETY: RenderResources inserted in RsCamApp::new; always present.
         #[allow(clippy::unwrap_used)]
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
+        let stats_before = resources.upload_stats;
+        resources.upload_stats.passes += 1;
 
         // Everything is always displayed in the active setup's local coordinate
         // frame ("machine view").  Toolpaths, simulation, mesh, stock — all at
@@ -174,8 +195,6 @@ impl RsCamApp {
         let use_local_frame = active_setup_ref.is_some();
 
         // Upload mesh data for all models with geometry
-        resources.enriched_mesh_data_list.clear();
-        resources.mesh_data_list.clear();
         let selected_faces = self.selected_face_ids();
         let hovered_face = self.hovered_face_id();
         let stock = self.controller.state().session.stock_config().clone();
@@ -192,9 +211,67 @@ impl RsCamApp {
             });
         let has_display_shift =
             display_shift.x != 0.0 || display_shift.y != 0.0 || display_shift.z != 0.0;
+        let shift_arr = [display_shift.x, display_shift.y, display_shift.z];
+
+        // V8: the two model-mesh lists are keyed separately. `mesh_data_list`
+        // (plain STL, `transform_mesh` + indexed smooth-normal upload — the
+        // 661k-triangle cost on the reference workload) reads nothing
+        // selection- or hover-dependent, so a face click or a pointer move
+        // over a STEP part cannot drag it along. `enriched_mesh_data_list`
+        // bakes the selected/hovered face colours into its vertices, so those
+        // two are in its key and nothing else's.
+        //
+        // Geometry identity is `(Arc::as_ptr, element count)` rather than the
+        // pointer alone: the cache holds no strong reference, so a freed
+        // allocation could in principle be reused at the same address by a
+        // replacement mesh. Requiring the element count to match as well
+        // makes that coincidence require an identically sized replacement.
+        let frame_key = upload_cache::FrameKey {
+            setup: active_setup_ref
+                .as_ref()
+                .map(|s| (s.id, s.face_up, s.z_rotation)),
+            stock: stock.clone(),
+        };
+        let mut plain_mesh_ids: Vec<usize> = Vec::new();
+        let mut enriched_ids: Vec<usize> = Vec::new();
+        for model in self.controller.state().session.models() {
+            if let Some(enriched) = &model.enriched_mesh {
+                enriched_ids.push(Arc::as_ptr(enriched) as usize);
+                enriched_ids.push(enriched.as_mesh().triangles.len());
+            } else if let Some(mesh) = &model.mesh {
+                plain_mesh_ids.push(Arc::as_ptr(mesh) as usize);
+                plain_mesh_ids.push(mesh.triangles.len());
+            }
+        }
+        let mesh_key = upload_cache::MeshUploadKey {
+            frame: frame_key.clone(),
+            meshes: plain_mesh_ids,
+        };
+        let enriched_key = upload_cache::EnrichedUploadKey {
+            frame: frame_key,
+            meshes: enriched_ids,
+            selected_faces: selected_faces.clone(),
+            hovered_face,
+        };
+        let rebuild_meshes = resources.mesh_upload_key.as_ref() != Some(&mesh_key);
+        let rebuild_enriched = resources.enriched_upload_key.as_ref() != Some(&enriched_key);
+        if rebuild_enriched {
+            resources.enriched_mesh_data_list.clear();
+            resources.upload_stats.enriched_builds += 1;
+        }
+        if rebuild_meshes {
+            resources.mesh_data_list.clear();
+            resources.upload_stats.mesh_builds += 1;
+        }
+        resources.mesh_upload_key = Some(mesh_key);
+        resources.enriched_upload_key = Some(enriched_key);
+
         for model in self.controller.state().session.models() {
             // If model has enriched mesh (STEP), use face-colored rendering
             if let Some(enriched) = &model.enriched_mesh {
+                if !rebuild_enriched {
+                    continue;
+                }
                 let transform: crate::render::mesh_render::VertexTransform<'_> = if use_local_frame
                 {
                     // SAFETY: use_local_frame is active_setup_ref.is_some()
@@ -216,6 +293,9 @@ impl RsCamApp {
                     resources.enriched_mesh_data_list.push(gpu);
                 }
             } else if let Some(mesh) = &model.mesh {
+                if !rebuild_meshes {
+                    continue;
+                }
                 let gpu = if use_local_frame {
                     // SAFETY: use_local_frame is true iff active_setup_ref.is_some().
                     #[allow(clippy::unwrap_used)]
@@ -695,9 +775,28 @@ impl RsCamApp {
 
         // Upload collision markers with density-based heatmap coloring.
         // Nearby collisions cluster to brighter red; isolated ones are dimmer yellow.
-        if !self.controller.collision_positions().is_empty() {
+        //
+        // V8: the density pass is O(n²) (V12), so it is worth an O(n)
+        // comparison against the marker set the current buffer was built
+        // from. Collisions only move when a simulation runs, so every other
+        // upload pass now skips this entirely.
+        let positions_now = self.controller.collision_positions();
+        let collisions_fresh = match (&resources.collision_upload_key, positions_now.is_empty()) {
+            // Nothing uploaded and nothing to upload.
+            (None, true) => true,
+            (Some(key), false) => key.positions == positions_now && key.shift == shift_arr,
+            _ => false,
+        };
+        if collisions_fresh {
+            // Buffer already matches the current markers — leave it alone.
+        } else if !positions_now.is_empty() {
             use crate::render::LineVertex;
-            let positions = self.controller.collision_positions();
+            resources.upload_stats.collision_builds += 1;
+            resources.collision_upload_key = Some(upload_cache::CollisionUploadKey {
+                positions: positions_now.to_vec(),
+                shift: shift_arr,
+            });
+            let positions = positions_now;
             let s = 1.0f32; // marker size in mm
             let cluster_radius = 5.0_f32; // mm radius for density estimation
 
@@ -779,12 +878,33 @@ impl RsCamApp {
                 0
             };
         } else {
+            resources.upload_stats.collision_builds += 1;
+            resources.collision_upload_key = None;
             resources.collision_vertex_buffer = None;
             resources.collision_vertex_count = 0;
         }
 
         // Upload toolpath line data (with per-toolpath colors and isolation filtering)
-        resources.toolpath_data.clear();
+        //
+        // V8: keep the previous pass's per-toolpath buffers, keyed by toolpath
+        // id, and hand each back untouched when its key still matches. During
+        // `generate_all` exactly one toolpath's `Arc<AnnotatedToolpath>`
+        // changes per completion, so each of the eight upload passes an
+        // 8-operation generate fires rebuilds one toolpath instead of eight.
+        // A selection click flips `selected` on at most two keys, so it
+        // rebuilds at most two.
+        //
+        // Anything left in `previous` at the end of the loop (a toolpath that
+        // became invisible, was isolated away, moved to another setup, or was
+        // deleted) is dropped with the map, releasing its GPU buffers exactly
+        // as the old unconditional `clear()` did.
+        let mut previous: HashMap<rs_cam_core::ToolpathId, ToolpathGpuData> = resources
+            .toolpath_data
+            .drain(..)
+            .filter_map(|data| data.toolpath_id.map(|id| (id, data)))
+            .collect();
+        let mut toolpath_builds: u64 = 0;
+        let mut toolpath_reuses: u64 = 0;
         let selected_tp_id = match self.controller.state().selection {
             Selection::Toolpath(id) => Some(id),
             _ => None,
@@ -800,38 +920,45 @@ impl RsCamApp {
             let session = &state.session;
             let gui = &state.gui;
 
-            // For the advance/tooth colour mode: build per-toolpath vendor
-            // band + per-move achieved advance/tooth maps once before the
-            // per-toolpath loop. Both maps are keyed by toolpath_id (the
-            // simulator-side `usize`).
+            // For the advance/tooth colour mode: per-toolpath vendor band +
+            // per-move achieved advance/tooth maps. Both maps are keyed by
+            // toolpath_id (the simulator-side `usize`).
             //
             // Both halves are typed (`VendorChiploadBand` /
             // `AdvancePerToothMm`) so the pairing that produced F-HEATMAP —
             // an arc-mean chip thickness handed to a band comparison —
             // cannot be reassembled here without a compile error.
+            //
+            // V8: built on first use rather than before the loop. Both halves
+            // are full cut-trace scans (V11); when every toolpath's key is
+            // unchanged there is nothing to colour, so the scans do not run
+            // at all.
             // SAFETY: complex tuple type used only as a local binding in
             // this function; aliasing it project-wide would obscure the
             // (band, per-move) pairing.
             #[allow(clippy::type_complexity)]
-            let advance_inputs: Option<(
+            let mut advance_inputs: Option<(
                 HashMap<rs_cam_core::ToolpathId, VendorChiploadBand>,
                 HashMap<rs_cam_core::ToolpathId, HashMap<usize, AdvancePerToothMm>>,
-            )> = if matches!(
+            )> = None;
+
+            // Identity of everything the AdvancePerTooth colouring reads that
+            // is not the toolpath itself: the cut trace it measures, and the
+            // session edit counter standing in for the tool/material config
+            // the vendor band is matched from.
+            let advance_source: Option<(usize, u64)> = matches!(
                 state.viewport.toolpath_color_mode,
                 crate::state::viewport::ToolpathColorMode::AdvancePerTooth
-            ) {
-                let sim_trace = state
+            )
+            .then(|| {
+                let trace_ptr = state
                     .simulation
                     .results
                     .as_ref()
-                    .and_then(|r| r.cut_trace.as_deref());
-                let bands = build_advance_bands(session, sim_trace);
-                let per_move =
-                    rs_cam_core::tool_load::display::advance_per_tooth_per_move(sim_trace);
-                Some((bands, per_move))
-            } else {
-                None
-            };
+                    .and_then(|r| r.cut_trace.as_ref())
+                    .map_or(0, |trace| Arc::as_ptr(trace) as usize);
+                (trace_ptr, gui.edit_counter)
+            });
 
             for (i, tc) in session.toolpath_configs().iter().enumerate() {
                 // Find which setup owns this toolpath
@@ -856,6 +983,70 @@ impl RsCamApp {
                 let result = rt.and_then(|r| r.result.as_ref());
                 if visible && let Some(result) = result {
                     let selected = selected_tp_id == Some(tp_id);
+                    let color_mode = state.viewport.toolpath_color_mode;
+
+                    // Overlay inputs for the selected toolpath, resolved
+                    // before the key so the key covers them. Both are `None`
+                    // when the overlay is not drawn, which is what makes
+                    // "deselect" a key change rather than a silent stale
+                    // overlay.
+                    let entry_config = selected.then(|| {
+                        use crate::state::toolpath::DressupEntryStyle;
+                        let entry_style = match tc.dressups.entry_style {
+                            DressupEntryStyle::None => toolpath_render::EntryStyle::None,
+                            DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
+                            DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
+                        };
+                        let height_ctx = height_context_from_session(session, tc);
+                        let resolved = tc.heights.resolve(&height_ctx);
+                        toolpath_render::EntryPreviewConfig {
+                            entry_style,
+                            ramp_angle_deg: tc.dressups.ramp_angle,
+                            helix_radius: tc.dressups.helix_radius,
+                            helix_pitch: tc.dressups.helix_pitch,
+                            lead_in_out: tc.dressups.lead_in_out,
+                            lead_radius: tc.dressups.lead_radius,
+                            // Heights resolve in the emission frame; shift
+                            // alongside the toolpath the preview rides on.
+                            feed_z: resolved.feed_z + display_shift.z,
+                            top_z: resolved.top_z + display_shift.z,
+                        }
+                    });
+                    let profile_tool = (selected && state.viewport.show_tool_profile_preview)
+                        .then(|| {
+                            session
+                                .tools()
+                                .iter()
+                                .find(|t| t.id.0 == tc.tool_id)
+                                .cloned()
+                        })
+                        .flatten();
+
+                    // V8: everything above is cheap; everything below —
+                    // the `translate_annotated` deep clone (V9), the line
+                    // buffer build, the entry/profile preview sampling — is
+                    // not. Reuse the previous pass's buffers when nothing
+                    // they were built from has moved.
+                    let key = upload_cache::ToolpathUploadKey {
+                        annotated: Arc::as_ptr(&result.annotated) as usize,
+                        palette_index: i,
+                        selected,
+                        color_mode,
+                        span_filter: state.viewport.span_kind_filter,
+                        shift: shift_arr,
+                        feed_rate: tc.operation.feed_rate(),
+                        advance_source,
+                        entry_preview: entry_config.clone(),
+                        tool_profile: profile_tool.clone(),
+                    };
+                    if let Some(reusable) = previous.remove(&tp_id)
+                        && reusable.upload_key.as_ref() == Some(&key)
+                    {
+                        toolpath_reuses += 1;
+                        resources.toolpath_data.push(reusable);
+                        continue;
+                    }
+                    toolpath_builds += 1;
 
                     // Toolpaths arrive in their emission frame: setup-local
                     // for non-identity setups, *world* for identity setups
@@ -869,7 +1060,6 @@ impl RsCamApp {
                     let render_annotated = shifted_annotated.as_ref().unwrap_or(&result.annotated);
                     let render_tp = &render_annotated.toolpath;
 
-                    let color_mode = state.viewport.toolpath_color_mode;
                     let mut gpu_data = match color_mode {
                         crate::state::viewport::ToolpathColorMode::Engagement => {
                             ToolpathGpuData::from_toolpath_engagement(
@@ -880,14 +1070,22 @@ impl RsCamApp {
                             )
                         }
                         crate::state::viewport::ToolpathColorMode::AdvancePerTooth => {
-                            let band = advance_inputs
-                                .as_ref()
-                                .and_then(|(bands, _)| bands.get(&tc.id).copied());
+                            let inputs = advance_inputs.get_or_insert_with(|| {
+                                let sim_trace = state
+                                    .simulation
+                                    .results
+                                    .as_ref()
+                                    .and_then(|r| r.cut_trace.as_deref());
+                                let bands = build_advance_bands(session, sim_trace);
+                                let per_move =
+                                    rs_cam_core::tool_load::display::advance_per_tooth_per_move(
+                                        sim_trace,
+                                    );
+                                (bands, per_move)
+                            });
+                            let band = inputs.0.get(&tc.id).copied();
                             let empty: HashMap<usize, AdvancePerToothMm> = HashMap::new();
-                            let per_move = advance_inputs
-                                .as_ref()
-                                .and_then(|(_, m)| m.get(&tc.id))
-                                .unwrap_or(&empty);
+                            let per_move = inputs.1.get(&tc.id).unwrap_or(&empty);
                             ToolpathGpuData::from_toolpath_advance_per_tooth(
                                 &render_state.device,
                                 &resources.gpu_limits,
@@ -908,57 +1106,39 @@ impl RsCamApp {
                         }
                     };
                     gpu_data.toolpath_id = Some(tc.id);
+                    gpu_data.upload_key = Some(key);
 
-                    // Generate entry path preview for selected toolpaths with a non-None entry style
-                    if selected {
-                        use crate::state::toolpath::DressupEntryStyle;
-                        let entry_style = match tc.dressups.entry_style {
-                            DressupEntryStyle::None => toolpath_render::EntryStyle::None,
-                            DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
-                            DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
-                        };
-                        let height_ctx = height_context_from_session(session, tc);
-                        let resolved = tc.heights.resolve(&height_ctx);
-                        let config = toolpath_render::EntryPreviewConfig {
-                            entry_style,
-                            ramp_angle_deg: tc.dressups.ramp_angle,
-                            helix_radius: tc.dressups.helix_radius,
-                            helix_pitch: tc.dressups.helix_pitch,
-                            lead_in_out: tc.dressups.lead_in_out,
-                            lead_radius: tc.dressups.lead_radius,
-                            // Heights resolve in the emission frame; shift
-                            // alongside the toolpath the preview rides on.
-                            feed_z: resolved.feed_z + display_shift.z,
-                            top_z: resolved.top_z + display_shift.z,
-                        };
+                    // Entry path preview — selected toolpaths only, config
+                    // resolved above so it is part of the key.
+                    if let Some(config) = entry_config.as_ref() {
                         let preview_verts =
-                            toolpath_render::entry_preview_vertices(render_tp, &config);
+                            toolpath_render::entry_preview_vertices(render_tp, config);
                         gpu_data.attach_entry_preview(
                             &render_state.device,
                             &resources.gpu_limits,
                             &preview_verts,
                         );
+                    }
 
-                        // Tool-profile ghost overlay (optional).
-                        if self.controller.state().viewport.show_tool_profile_preview
-                            && let Some(tool) =
-                                session.tools().iter().find(|t| t.id.0 == tc.tool_id)
-                        {
-                            let cutter = rs_cam_core::compute::build_cutter(tool);
-                            let profile_verts =
-                                toolpath_render::tool_profile_preview_vertices(render_tp, &cutter);
-                            gpu_data.attach_tool_profile_preview(
-                                &render_state.device,
-                                &resources.gpu_limits,
-                                &profile_verts,
-                            );
-                        }
+                    // Tool-profile ghost overlay (optional).
+                    if let Some(tool) = profile_tool.as_ref() {
+                        let cutter = rs_cam_core::compute::build_cutter(tool);
+                        let profile_verts =
+                            toolpath_render::tool_profile_preview_vertices(render_tp, &cutter);
+                        gpu_data.attach_tool_profile_preview(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            &profile_verts,
+                        );
                     }
 
                     resources.toolpath_data.push(gpu_data);
                 }
             }
         }
+        resources.upload_stats.toolpath_builds += toolpath_builds;
+        resources.upload_stats.toolpath_reuses += toolpath_reuses;
+        drop(previous);
 
         // Upload height plane overlays whenever a toolpath is selected (any workspace)
         if let Selection::Toolpath(tp_id) = self.controller.state().selection {
@@ -994,7 +1174,30 @@ impl RsCamApp {
         // height-plane upload gate directly above — rebuilt on the same
         // pending-upload cycle, not every frame (`upload_gpu_data` only runs
         // when `take_pending_upload()` fires, so this isn't a per-frame cost).
-        {
+        //
+        // V8: keyed on the selected toolpath's result generation. The build
+        // reaches `.rest_grid` through a full `AnnotatedToolpath` deep clone
+        // whenever a display shift is in play (V9) — the NORMAL config for an
+        // identity setup with a non-zero stock origin — so skipping it when
+        // nothing moved is the single largest saving in this block.
+        let rest_key = if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+            self.controller
+                .state()
+                .gui
+                .toolpath_rt
+                .get(&tp_id)
+                .and_then(|rt| rt.result.as_ref())
+                .map(|result| upload_cache::RestHeatmapUploadKey {
+                    toolpath: tp_id,
+                    annotated: Arc::as_ptr(&result.annotated) as usize,
+                    shift: shift_arr,
+                })
+        } else {
+            None
+        };
+        if resources.rest_heatmap_upload_key != rest_key {
+            resources.upload_stats.rest_heatmap_builds += 1;
+            resources.rest_heatmap_upload_key = rest_key;
             let rest_grid = if let Selection::Toolpath(tp_id) = self.controller.state().selection {
                 let state = self.controller.state();
                 state
@@ -1026,6 +1229,22 @@ impl RsCamApp {
                 })
             });
         }
+
+        // V8 instrument. There is no criterion harness for the GUI loop, so
+        // the pass reports what it actually rebuilt; `RUST_LOG=rs_cam_viz=debug`
+        // turns an 8-op `generate_all` into eight lines that each name one
+        // toolpath build, where they used to name eight.
+        let delta = resources.upload_stats.since(&stats_before);
+        tracing::debug!(
+            mesh_builds = delta.mesh_builds,
+            enriched_builds = delta.enriched_builds,
+            toolpath_builds = delta.toolpath_builds,
+            toolpath_reuses = delta.toolpath_reuses,
+            collision_builds = delta.collision_builds,
+            rest_heatmap_builds = delta.rest_heatmap_builds,
+            total_passes = resources.upload_stats.passes,
+            "gpu upload pass"
+        );
     }
 }
 

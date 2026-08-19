@@ -292,7 +292,26 @@ impl RsCamApp {
             self.handle_viewport_click(pos);
         }
 
-        // Update hovered face for BREP hover highlighting
+        // Update hovered face for BREP hover highlighting.
+        //
+        // V13: `last_hover_face` is read by `upload_gpu_data` when it builds
+        // the enriched (STEP/BREP) mesh colours, but until 2026-08-19 nothing
+        // here marked an upload pending — so the hover highlight only ever
+        // appeared when some *other* event happened to trigger an upload, and
+        // even then showed the face the pointer had been over on some earlier
+        // frame. A genuine user-visible defect, not just a missed
+        // optimisation.
+        //
+        // The flag is set only on a *change* of hovered face, and only now
+        // that per-object keys exist (V8): before that, one pointer move
+        // across a face boundary would have rebuilt the entire scene. With
+        // the keys in place the only resource whose key moved is the enriched
+        // mesh, so exactly that one buffer is rebuilt. The paired
+        // `request_repaint` is conditional on the same change — the
+        // unconditional repaint that G-LV.1 removed is not being reintroduced
+        // — and is needed because the pointer can come to rest on a new face,
+        // producing no further egui repaint of its own to carry the upload.
+        let previous_hover_face = self.last_hover_face;
         self.last_hover_face = None;
         if response.hovered()
             && self.controller.state().workspace == Workspace::Toolpaths
@@ -331,6 +350,10 @@ impl RsCamApp {
             {
                 self.last_hover_face = Some(face_id);
             }
+        }
+        if self.last_hover_face != previous_hover_face {
+            self.controller.set_pending_upload();
+            ui.ctx().request_repaint();
         }
 
         // Span-path tooltip on toolpath hover. Shows the SpanKind path for

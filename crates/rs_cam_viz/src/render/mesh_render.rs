@@ -216,6 +216,16 @@ fn face_group_color(id: FaceGroupId) -> [f32; 3] {
 /// Selected faces get a highlight color, hovered face gets a hover tint,
 /// and other faces get deterministic pastel colors.
 /// Optional vertex transform applied during GPU upload.
+///
+/// **Why this emits 3 unindexed vertices per triangle** while
+/// [`MeshGpuData::from_mesh`] indexes: this path is *flat*-shaded (each
+/// triangle carries its own face normal) and per-face-group coloured, so two
+/// triangles can share a source vertex only when they agree on both normal
+/// and face group. Indexing it would mean switching to smooth normals — the
+/// wrong choice for a BREP part, where face boundaries should read as creases
+/// — or a (position, normal, colour) dedupe pass whose hashing cost on a
+/// large mesh plausibly exceeds the VRAM it saves. Left as-is deliberately
+/// (V13, `planning/perf_review_2026-08-19/DELTA_viz_w2.md`).
 pub type VertexTransform<'a> =
     Option<Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + 'a>>;
 
@@ -232,12 +242,18 @@ pub fn enriched_mesh_gpu_data(
     let highlight_color: [f32; 3] = [0.3, 0.5, 1.0]; // bright blue
     let hover_color: [f32; 3] = [0.4, 0.7, 0.85]; // soft cyan
 
+    // V13: the selection test runs once per triangle, so a linear scan of the
+    // selected-face list is O(triangles × selected) — on a STEP part with a
+    // many-face selection that is the dominant cost of this upload. One
+    // small set build up front makes it O(triangles).
+    let selected: std::collections::HashSet<FaceGroupId> = selected_faces.iter().copied().collect();
+
     let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
     let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
 
     for (tri_idx, tri) in mesh.triangles.iter().enumerate() {
         let face_id = enriched.face_for_triangle(tri_idx);
-        let color = if selected_faces.contains(&face_id) {
+        let color = if selected.contains(&face_id) {
             highlight_color
         } else if hovered_face == Some(face_id) {
             hover_color
