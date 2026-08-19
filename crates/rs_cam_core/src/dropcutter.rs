@@ -7,7 +7,7 @@
 use crate::interrupt::check_cancel;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::tool::{CLPoint, MillingCutter};
+use crate::tool::{CLPoint, MillingCutter, drop_cutter_can_contact};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -21,12 +21,21 @@ pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
     cutter: &C,
 ) -> CLPoint {
     let mut cl = CLPoint::new(x, y);
-    let tri_indices = index.query(x, y, cutter.radius());
+    // Hoisted once per CL point rather than re-fetched per triangle: on a
+    // `Box<dyn MillingCutter>` (the `ToolDefinition` wrapper) `radius()` is
+    // itself an indirect call. Rejecting here rather than inside
+    // `drop_cutter` also skips the per-triangle virtual dispatch entirely
+    // for the triangles that cannot contribute — PERF_REVIEW G3.
+    let envelope_radius = cutter.radius();
+    let tri_indices = index.query(x, y, envelope_radius);
 
     for &idx in &tri_indices {
         // SAFETY: idx comes from SpatialIndex which only stores valid face indices
         #[allow(clippy::indexing_slicing)]
         let tri = &mesh.faces[idx];
+        if !drop_cutter_can_contact(&cl, tri, envelope_radius) {
+            continue;
+        }
         cutter.drop_cutter(&mut cl, tri);
     }
 
