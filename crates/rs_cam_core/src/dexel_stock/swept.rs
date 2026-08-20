@@ -498,11 +498,12 @@ fn stamp_swept_chunk(
     // a bin width covers the fine-grid case, where a cell is narrower than a
     // subsegment.
     //
-    // Weights sum to 1 over the clamped interval, so `Σ_b (pre_b − post_b)` is
-    // the cell's own removal exactly — the total is conserved, only its
-    // distribution over the samples changes. And at `bins == 1` the single
-    // weight is exactly `1.0`, which is what keeps the one-bin case
-    // bit-identical to the shipped kernel.
+    // Weights sum to 1 over the clamped interval (to rounding), so
+    // `Σ_b (pre_b − post_b)` is the cell's own removal — the total is
+    // conserved and only its distribution over the samples changes. At
+    // `bins == 1` the single weight is exactly `1.0`, which is what keeps the
+    // one-bin case bit-identical to the shipped kernel; see the note at the
+    // division for why that is a division and not a hoisted reciprocal.
     let ux = seg_du * inv_seg_len;
     let uy = seg_dv * inv_seg_len;
     let half_t = (0.5 * cs * (ux.abs() + uy.abs()) * inv_seg_len).max(0.5 / bins_f);
@@ -561,10 +562,15 @@ fn stamp_swept_chunk(
             let hi_t = (t_center + half_t).min(1.0);
             let b_lo = ((lo_t * bins_f) as usize).min(bins - 1);
             let b_hi = ((hi_t * bins_f) as usize).min(bins - 1);
-            let inv_span = {
-                let span = hi_t - lo_t;
-                if span > 0.0 { 1.0 / span } else { 0.0 }
-            };
+            // A DIVISION, not a multiply by a hoisted reciprocal. The
+            // single-bin case needs `w` to be exactly `1.0` — that is what
+            // keeps `bins == 1` bit-identical to the shipped kernel — and
+            // `span * (1.0 / span)` is NOT `1.0` in IEEE754, while `span /
+            // span` is. Caught by the plunge-only sentry at 2 ULP on one
+            // sample out of 1693, which is the fourth "obviously exact" step
+            // in this review to be wrong at the last bit (after S7, G3 and
+            // S2's `min(sd, ed)`).
+            let span = hi_t - lo_t;
             let idx = band.local(row, col);
             let depth = sd + t_center * seg_dd;
 
@@ -576,7 +582,11 @@ fn stamp_swept_chunk(
             let weight = |b: usize| -> f64 {
                 let s0 = (b as f64 / bins_f).max(lo_t);
                 let s1 = ((b + 1) as f64 / bins_f).min(hi_t);
-                if s1 > s0 { (s1 - s0) * inv_span } else { 0.0 }
+                if s1 > s0 && span > 0.0 {
+                    (s1 - s0) / span
+                } else {
+                    0.0
+                }
             };
 
             if air_skip && !cell_can_remove(band.conservative_top[idx], depth) {
@@ -713,11 +723,18 @@ pub(super) struct SweptDispatch {
     pending_partials: usize,
     pending_visits: u64,
     visit_budget: u64,
+    /// May a `ChunkKind::Swept` chunk hold more than one bin?
+    ///
+    /// `false` is `StampDispatch::SweptPlungeOnly`: lateral chunks stay at one
+    /// bin, where the swept kernel reproduces the shipped one bit-for-bit, so
+    /// only the exactly-vertical hoist — which is bit-identical at any length —
+    /// actually changes the schedule.
+    lateral_chunking: bool,
     stats: StampDispatchStats,
 }
 
 impl SweptDispatch {
-    pub(super) fn for_grid(grid: &DexelGrid) -> Option<Self> {
+    pub(super) fn for_grid(grid: &DexelGrid, lateral_chunking: bool) -> Option<Self> {
         let bands = grid.rows.div_ceil(BAND_ROWS);
         if bands < MIN_BANDS_FOR_SWEPT || grid.cols == 0 {
             return None;
@@ -736,6 +753,7 @@ impl SweptDispatch {
             pending_partials: 0,
             pending_visits: 0,
             visit_budget: cells.saturating_mul(BATCH_VISIT_BUDGET_PASSES),
+            lateral_chunking,
             stats: StampDispatchStats {
                 bands,
                 ..StampDispatchStats::default()
@@ -752,6 +770,9 @@ impl SweptDispatch {
             // Every bin has the same footprint, so growth is free.
             ChunkKind::PureVertical | ChunkKind::PerBin => true,
             ChunkKind::Swept => {
+                if !self.lateral_chunking {
+                    return false;
+                }
                 let mut grown = *job;
                 grown.bins += 1;
                 chunk_fits(&grown, radius, cs)

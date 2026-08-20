@@ -98,6 +98,17 @@ pub enum StampDispatch {
     /// never selects it; it must be asked for. See `swept.rs`'s module docs
     /// for what moves and why.
     Swept,
+    /// S1's shape with the **metric-changing half switched off**: chunks are
+    /// grown only where growing them is bit-identical.
+    ///
+    /// A one-bin swept chunk reproduces the shipped kernel exactly (proved by
+    /// `swept_with_one_bin_matches_per_stamp_bit_for_bit`), and an
+    /// exactly-vertical chunk of any length does too (the hoist is loop
+    /// inversion, not approximation). So this mode kills S1's `by_z` redundancy
+    /// — the 250-stamps-per-plunge arm — while leaving every published number
+    /// where the shipped kernel put it. It is the part of S1 that needs no
+    /// re-baseline and no decision.
+    SweptPlungeOnly,
 }
 
 /// Process-wide dispatch override, parsed once. `None` means "not set".
@@ -110,6 +121,7 @@ fn dispatch_override() -> Option<StampDispatch> {
             "per_stamp" | "per-stamp" | "perstamp" => Some(StampDispatch::PerStamp),
             "whole" | "whole_path" | "whole_toolpath" => Some(StampDispatch::WholeToolpath),
             "swept" => Some(StampDispatch::Swept),
+            "swept_plunge" | "swept_plunge_only" => Some(StampDispatch::SweptPlungeOnly),
             _ => None,
         }
     })
@@ -249,7 +261,7 @@ impl BandDispatch {
             StampDispatch::PerStamp => false,
             // Swept dispatch runs its own driver; this one must stay out of
             // the way rather than queue a second, duplicate set of stamps.
-            StampDispatch::Swept => false,
+            StampDispatch::Swept | StampDispatch::SweptPlungeOnly => false,
             StampDispatch::WholeToolpath => true,
             // No thread-count condition, and that is a measurement rather
             // than an omission: at a ONE-thread pool whole-path dispatch was
