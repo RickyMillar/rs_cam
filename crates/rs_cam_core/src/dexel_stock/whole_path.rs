@@ -73,10 +73,15 @@ use crate::radial_profile::RadialProfileLUT;
 /// the sample stream and all four published metrics are bit-identical across
 /// them — which is what `whole_path_dispatch_matches_per_stamp_bit_for_bit`
 /// pins, and what makes [`StampDispatch::Auto`] safe to change.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// **The default is not `#[derive(Default)]`.** It consults
+/// `RS_CAM_STAMP_DISPATCH` once per process so a whole test binary, a bench, or
+/// the CLI can be forced onto one shape without threading a flag through every
+/// construction site — which is what the S1 decision package's
+/// "run the full suite with the new mode on" measurement needs. Unset (the
+/// shipped case) is [`StampDispatch::Auto`], unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StampDispatch {
     /// Pick per simulation from the grid shape and the pool size.
-    #[default]
     Auto,
     /// Wave 2's shape: one `par_bands` call per stamp. Kept because it is the
     /// A/B partner the wave-4 numbers are quoted against, and because it is
@@ -85,6 +90,47 @@ pub enum StampDispatch {
     PerStamp,
     /// Wave 4's shape: one `par_bands` call per batch of stamps.
     WholeToolpath,
+    /// S1's shape: one pass per *chunk of consecutive subsegments*, metrics
+    /// binned by closest-approach parameter (`super::swept`).
+    ///
+    /// **Not bit-identical to the other two, by design** — it is the only
+    /// value of this enum that changes what the simulator measures. `Auto`
+    /// never selects it; it must be asked for. See `swept.rs`'s module docs
+    /// for what moves and why.
+    Swept,
+    /// S1's shape with the **metric-changing half switched off**: chunks are
+    /// grown only where growing them is bit-identical.
+    ///
+    /// A one-bin swept chunk reproduces the shipped kernel exactly (proved by
+    /// `swept_with_one_bin_matches_per_stamp_bit_for_bit`), and an
+    /// exactly-vertical chunk of any length does too (the hoist is loop
+    /// inversion, not approximation). So this mode kills S1's `by_z` redundancy
+    /// — the 250-stamps-per-plunge arm — while leaving every published number
+    /// where the shipped kernel put it. It is the part of S1 that needs no
+    /// re-baseline and no decision.
+    SweptPlungeOnly,
+}
+
+/// Process-wide dispatch override, parsed once. `None` means "not set".
+fn dispatch_override() -> Option<StampDispatch> {
+    static OVERRIDE: std::sync::OnceLock<Option<StampDispatch>> = std::sync::OnceLock::new();
+    *OVERRIDE.get_or_init(|| {
+        let raw = std::env::var("RS_CAM_STAMP_DISPATCH").ok()?;
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(StampDispatch::Auto),
+            "per_stamp" | "per-stamp" | "perstamp" => Some(StampDispatch::PerStamp),
+            "whole" | "whole_path" | "whole_toolpath" => Some(StampDispatch::WholeToolpath),
+            "swept" => Some(StampDispatch::Swept),
+            "swept_plunge" | "swept_plunge_only" => Some(StampDispatch::SweptPlungeOnly),
+            _ => None,
+        }
+    })
+}
+
+impl Default for StampDispatch {
+    fn default() -> Self {
+        dispatch_override().unwrap_or(Self::Auto)
+    }
 }
 
 /// What the whole-toolpath dispatcher actually did on the last metric
@@ -213,6 +259,9 @@ impl BandDispatch {
         let bands = grid.rows.div_ceil(BAND_ROWS);
         let wanted = match mode {
             StampDispatch::PerStamp => false,
+            // Swept dispatch runs its own driver; this one must stay out of
+            // the way rather than queue a second, duplicate set of stamps.
+            StampDispatch::Swept | StampDispatch::SweptPlungeOnly => false,
             StampDispatch::WholeToolpath => true,
             // No thread-count condition, and that is a measurement rather
             // than an omission: at a ONE-thread pool whole-path dispatch was

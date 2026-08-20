@@ -233,6 +233,12 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
             for (mode_name, mode) in [
                 ("per_stamp", StampDispatch::PerStamp),
                 ("whole_path", StampDispatch::WholeToolpath),
+                // S1 wave 5. Metric-CHANGING, and in the same session on
+                // purpose: the ratio against `whole_path` is the number the
+                // landing decision turns on, and a cross-day absolute on this
+                // box is worth nothing (`BASELINES.md`, measurement discipline).
+                ("swept_plunge", StampDispatch::SweptPlungeOnly),
+                ("swept", StampDispatch::Swept),
             ] {
                 group.bench_function(
                     BenchmarkId::new(format!("{name}/{mode_name}"), threads),
