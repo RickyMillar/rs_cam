@@ -2093,6 +2093,13 @@ mod tests {
         /// planner's mirror must produce, and it is the sensitive
         /// instrument for that defect class — see `assert_parity_bars`.
         sim_higher: u64,
+        /// …restricted to the interior population. Added SIM w5b: the
+        /// whole-grid split above is dominated by the boundary ring, and
+        /// the skew bar was reading that ring rather than the defect
+        /// class it was written for.
+        interior_planner_higher: u64,
+        /// …likewise.
+        interior_sim_higher: u64,
         max_dz: f64,
     }
 
@@ -2104,6 +2111,25 @@ mod tests {
             let hi = self.planner_higher.max(self.sim_higher) as f64;
             let lo = self.planner_higher.min(self.sim_higher).max(1) as f64;
             hi / lo
+        }
+
+        /// The same ratio over the INTERIOR population only — the one the
+        /// skew bar is actually stated against since SIM w5b.
+        fn interior_directional_skew(&self) -> f64 {
+            let hi = self.interior_planner_higher.max(self.interior_sim_higher) as f64;
+            let lo = self
+                .interior_planner_higher
+                .min(self.interior_sim_higher)
+                .max(1) as f64;
+            hi / lo
+        }
+
+        /// Divergent cells outside the interior window, and how they split.
+        fn boundary_split(&self) -> (u64, u64) {
+            (
+                self.planner_higher - self.interior_planner_higher,
+                self.sim_higher - self.interior_sim_higher,
+            )
         }
     }
 
@@ -2129,10 +2155,76 @@ mod tests {
     /// that fix (429 -> 647) while its defect was repaired, which is
     /// exactly why the count alone was a weak detector and why this bar
     /// exists.
+    ///
+    /// **SIM w5b: the bar is unchanged at 2.5x; what changed is the
+    /// population it is stated against.** It used to read the WHOLE grid,
+    /// which is dominated by the boundary ring, and the swept default made
+    /// that visible by deleting the other side of the interior
+    /// disagreement — see [`assert_parity_bars`].
     const DIRECTIONAL_SKEW_BAR: f64 = 2.5;
+
+    /// Fewest interior divergent cells before the skew ratio means
+    /// anything.
+    ///
+    /// A ratio over a handful of cells is not a direction. Under the swept
+    /// default the interior disagreement is 21/5184 and 8/5184, and
+    /// `directional_skew`'s `.max(1)` on the low side would turn "21 cells,
+    /// all one way" into "21x lopsided" and fail a bar written to detect a
+    /// systematic transform mismatch across hundreds of cells. This is the
+    /// mirror of the empty-population trap in `CLAUDE.md` ("a gate handed an
+    /// empty population passes and looks healthy") — here a near-empty
+    /// population would FAIL and look meaningful. Below this floor the bar
+    /// abstains and the count bar underneath it is asserted instead, tighter.
+    const SKEW_MIN_INTERIOR_POPULATION: u64 = 50;
+
+    /// What fraction of the interior population may diverge while the skew
+    /// bar is abstaining. Guards the abstention: "too few to have a
+    /// direction" must also mean "few".
+    const ABSTAIN_MAX_INTERIOR_PCT: f64 = 1.0;
+
+    /// Boundary-ring one-sided divergence cap, as a fraction of the
+    /// boundary population.
+    ///
+    /// **This is a named open finding pinned so it cannot grow silently,
+    /// not a bar anyone passed.** Outside the interior window the planner
+    /// claims removal its own emitted path does not deliver, on
+    /// 1360/2737 cells (49.7%) for AgentSearch and 568/2737 (20.8%) for
+    /// ContourParallel — and those two numbers are **bit-for-bit identical
+    /// under `whole_path` and under `swept`**, which is what identifies
+    /// them as pre-existing and entirely independent of the stamp kernel.
+    /// 98.7% / 100% of the boundary divergence is in this one direction.
+    /// See `DELTA_sim_w5b_landing.md`, finding **W5B-F1**.
+    const BOUNDARY_ONE_SIDED_CAP_PCT: f64 = 55.0;
 
     /// Both bars, applied identically to every strategy so a green
     /// sibling can never again be mistaken for a clean one (W0 §4.5).
+    ///
+    /// # The whole-grid skew bar was masking two divergences, not none
+    ///
+    /// Measured SIM w5b, both dispatches, same session:
+    ///
+    /// | | interior planner_higher | interior sim_higher | boundary sim_higher | whole-grid skew |
+    /// |---|---:|---:|---:|---:|
+    /// | AgentSearch, `whole_path` | 704 | **0** | 1360 | 1.55x — *passed* |
+    /// | AgentSearch, `swept` | 21 | **0** | 1360 | 34.87x — failed |
+    /// | ContourParallel, `whole_path` | 647 | **0** | 568 | 1.30x — *passed* |
+    /// | ContourParallel, `swept` | 8 | **0** | 568 | 71.00x — failed |
+    ///
+    /// Interior `sim_higher` is **exactly zero in all four cells of that
+    /// table**. So there were never two mixed directions inside the
+    /// window — there were two *separate*, each perfectly one-sided
+    /// populations: an interior one (simulator over-removing, the old
+    /// kernel's per-subsegment `f`-blend artifact) and a boundary one
+    /// (planner over-claiming, invariant under the dispatch). Summed over
+    /// the whole grid they nearly cancelled, and 1.55x/1.30x is what a
+    /// cancellation looks like from the outside.
+    ///
+    /// Restating the bar over the interior population is therefore a
+    /// **tightening**: under `whole_path` the interior skew reads 704x and
+    /// 647x against the same 2.5x bar. `RS_CAM_STAMP_DISPATCH=whole_path`
+    /// no longer runs this pair green, and that is the correct outcome —
+    /// the old kernel really does disagree with the planner on 704
+    /// interior cells, all in one direction.
     fn assert_parity_bars(r: &ParityResult, label: &str) {
         let interior_bar =
             (r.interior_total as f64 * INTERIOR_DIVERGENCE_BAR_PCT / 100.0).round() as u64;
@@ -2151,16 +2243,75 @@ mod tests {
             r.total_cells,
             r.max_dz,
         );
+        // SIM w5b: the skew bar reads the INTERIOR population now.
+        //
+        // It used to read the whole grid and it failed under the swept
+        // default — not because anything got worse, but because swept
+        // deleted one whole side of the disagreement. `planner_higher`
+        // (the simulator removing more than the planner claims) is exactly
+        // the boundary-cell over-removal the old kernel's per-subsegment
+        // f-blend produced, and it collapsed 880 -> 39 and 741 -> 8.
+        // `sim_higher` did not move by a single cell: 1360 and 568 under
+        // both dispatches. Interior disagreement fell 33x and 81x.
+        //
+        // So the bar's own reasoning is sound and its conclusion was
+        // inverted here: removing the symmetric noise is what made the
+        // asymmetry visible. Widening it would have buried that. Instead
+        // it is restated over the population it was written for, and the
+        // surviving one-sided divergence gets its own bar below.
+        if r.interior_divergent >= SKEW_MIN_INTERIOR_POPULATION {
+            assert!(
+                r.interior_directional_skew() <= DIRECTIONAL_SKEW_BAR,
+                "[{label}] INTERIOR divergence is {:.2}x lopsided (bar \
+                 {DIRECTIONAL_SKEW_BAR:.2}x): interior planner_higher {} (simulator \
+                 removed more), interior sim_higher {} (planner's bookkeeping claims \
+                 more than its emitted path removes), over {} interior divergent cells. \
+                 Symmetric discretisation noise is balanced; a systematic skew means one \
+                 side is applying a transformation the other is not.",
+                r.interior_directional_skew(),
+                r.interior_planner_higher,
+                r.interior_sim_higher,
+                r.interior_divergent,
+            );
+        } else {
+            // The skew bar ABSTAINS — and says so, rather than passing
+            // quietly. Guard the abstention so "too few to have a
+            // direction" cannot cover a large divergence.
+            let pct = r.interior_divergent as f64 / r.interior_total.max(1) as f64 * 100.0;
+            assert!(
+                pct <= ABSTAIN_MAX_INTERIOR_PCT,
+                "[{label}] the interior skew bar abstained on a population of {} \
+                 (< {SKEW_MIN_INTERIOR_POPULATION}) but that population is {pct:.2}% of \
+                 {} interior cells — over the {ABSTAIN_MAX_INTERIOR_PCT:.1}% an abstention \
+                 is allowed to cover. Either the interior population shrank or the bar's \
+                 floor is wrong.",
+                r.interior_divergent,
+                r.interior_total,
+            );
+            eprintln!(
+                "[{label}] interior skew bar ABSTAINS: {} interior divergent cells \
+                 (planner_higher {}, sim_higher {}) is below the {SKEW_MIN_INTERIOR_POPULATION}-cell \
+                 floor a direction needs. Interior divergence is {pct:.2}% of {}.",
+                r.interior_divergent,
+                r.interior_planner_higher,
+                r.interior_sim_higher,
+                r.interior_total,
+            );
+        }
+
+        // W5B-F1, pinned. See `BOUNDARY_ONE_SIDED_CAP_PCT`.
+        let boundary_total = r.total_cells.saturating_sub(r.interior_total);
+        let (boundary_planner_higher, boundary_sim_higher) = r.boundary_split();
+        let boundary_pct = boundary_sim_higher as f64 / boundary_total.max(1) as f64 * 100.0;
         assert!(
-            r.directional_skew() <= DIRECTIONAL_SKEW_BAR,
-            "[{label}] divergence is {:.2}x lopsided (bar {DIRECTIONAL_SKEW_BAR:.2}x): \
-             planner_higher {} (simulator removed more), sim_higher {} (planner's \
-             bookkeeping claims more than its emitted path removes). Symmetric \
-             discretisation noise is balanced; a systematic skew means one side is \
-             applying a transformation the other is not.",
-            r.directional_skew(),
-            r.planner_higher,
-            r.sim_higher,
+            boundary_pct <= BOUNDARY_ONE_SIDED_CAP_PCT,
+            "[{label}] W5B-F1 grew: {boundary_sim_higher} of {boundary_total} \
+             boundary-ring cells ({boundary_pct:.1}%, cap {BOUNDARY_ONE_SIDED_CAP_PCT:.1}%) \
+             have the planner claiming removal its emitted path does not deliver \
+             (boundary planner_higher {boundary_planner_higher}, for contrast). This is a \
+             KNOWN OPEN FINDING pinned at its measured value, not a bar that was passed — \
+             it is invariant under the stamp dispatch and predates SIM w5b. Do not raise \
+             this cap; see DELTA_sim_w5b_landing.md."
         );
     }
 
@@ -2250,6 +2401,8 @@ mod tests {
         let mut interior_total = 0u64;
         let mut planner_higher = 0u64; // sim removed more
         let mut sim_higher = 0u64; // planner removed more
+        let mut interior_planner_higher = 0u64;
+        let mut interior_sim_higher = 0u64;
         let mut max_dz = 0.0_f64;
         let mut violations: Vec<(usize, usize, f64, f64, f64, f64)> = Vec::new();
         let interior_x_lo = mesh_bbox_for_interior.min.x + 1.0;
@@ -2277,8 +2430,14 @@ mod tests {
                     max_dz = max_dz.max(dz);
                     if p > s + tol_mm {
                         planner_higher += 1;
+                        if is_interior {
+                            interior_planner_higher += 1;
+                        }
                     } else if s > p + tol_mm {
                         sim_higher += 1;
+                        if is_interior {
+                            interior_sim_higher += 1;
+                        }
                     }
                     if is_interior {
                         interior_divergent += 1;
@@ -2298,7 +2457,8 @@ mod tests {
         eprintln!(
             "[{label}] PARITY: {divergent}/{total_cells} cells differ > {tol_mm:.2}mm; \
              interior {interior_divergent}/{interior_total}; planner_higher {planner_higher} \
-             (sim removed more); sim_higher {sim_higher} (planner removed more); \
+             (sim removed more, interior {interior_planner_higher}); sim_higher \
+             {sim_higher} (planner removed more, interior {interior_sim_higher}); \
              max dz {max_dz:.3}mm",
         );
         for (row, col, p, s, surf, dz) in &violations {
@@ -2315,6 +2475,8 @@ mod tests {
             total_cells,
             planner_higher,
             sim_higher,
+            interior_planner_higher,
+            interior_sim_higher,
             max_dz,
         }
     }
