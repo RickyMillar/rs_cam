@@ -750,6 +750,268 @@ pub(super) fn stamp_segment_on_grid(
     }
 }
 
+/// One row band's share of a single **playback** stamp.
+///
+/// The playback kernel collects no metrics, so this carries only what the S2
+/// mip's own bookkeeping needs — which is the whole point of the SIM w6 wave:
+/// [`StampPartial`] is 80 B of accumulators that reduce into four published
+/// numbers, and the playback replay publishes none of them.
+///
+/// **`stamp_skipped` starts `true` and is `&`-reduced**, exactly as
+/// [`StampPartial`] does it: a band the stamp never reaches contributes
+/// "skipped", so the reduced value means *every* band skipped. That is the
+/// only reading under which the mip's `stamps_skipped` counter keeps meaning
+/// what its name says.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PlaybackPartial {
+    /// Cells inside this band's clipped bounding box. Feeds the mip's refresh
+    /// budget and its diagnostics; no other reader.
+    pub(super) bbox_cells: u64,
+    pub(super) stamp_skipped: bool,
+}
+
+impl PlaybackPartial {
+    pub(super) fn empty() -> Self {
+        Self {
+            bbox_cells: 0,
+            stamp_skipped: true,
+        }
+    }
+
+    /// Fold another band's share of the SAME stamp in.
+    ///
+    /// Both channels are order-independent — a sum of disjoint counts and a
+    /// boolean `and` — so unlike [`StampPartial::merge`] there is nothing here
+    /// that reassociates. That is the structural reason the playback banding
+    /// can promise bit-identity outright instead of "deterministically
+    /// reassociated": the kernel writes only to cells, and cells are
+    /// partitioned by the bands.
+    pub(super) fn merge(&mut self, other: &Self) {
+        self.bbox_cells += other.bbox_cells;
+        self.stamp_skipped &= other.stamp_skipped;
+    }
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[allow(clippy::too_many_arguments)]
+/// [`stamp_segment_on_grid`], restricted to one row band (SIM w6).
+///
+/// The band-clipped twin of the non-metric playback kernel. Every per-cell
+/// expression below is **verbatim** from `stamp_segment_on_grid` (and, in the
+/// degenerate branch, from [`stamp_point_on_grid`]) — what changes is only
+/// which rows are walked and which slice they are indexed through.
+///
+/// # Why this is bit-identical and not merely deterministic
+///
+/// A cell belongs to exactly one band, and a band replays its share of a batch
+/// in the original stamp order, so every cell still sees its stamps in the
+/// original sequence — which is what `ray_blend_above`'s non-commutativity at
+/// `f < 1` requires. There are no cross-cell accumulators at all in this
+/// kernel (that is the entire difference from `stamp_segment_with_metrics`), so
+/// there is no sum to reassociate and no reduce to order.
+///
+/// # The mip is asked about the GLOBAL bounding box
+///
+/// Deliberately, and for a different reason than in the metric kernel. There
+/// the band-local whole-stamp skip was *unsound* because it dropped an addend
+/// from two separately-summed volume channels. Here a band-local skip would be
+/// sound — but it would make `PlaybackPartial::stamp_skipped` mean "this band
+/// skipped", which is not what the mip's counter is documented to count, and it
+/// would let the two dispatch shapes disagree about the refresh cadence for a
+/// reason that is harder to state than "they don't". Asking about the global
+/// box makes every band reach one verdict, as in the metric kernel.
+pub(super) fn stamp_segment_on_band(
+    band: &mut GridBand<'_>,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    start: (f64, f64, f64),
+    end: (f64, f64, f64),
+    from_high: bool,
+    mip: Option<&TileMaxTop>,
+) -> PlaybackPartial {
+    let (su, sv, sd) = start;
+    let (eu, ev, ed) = end;
+    let seg_du = eu - su;
+    let seg_dv = ev - sv;
+    let seg_dd = ed - sd;
+    let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
+
+    // S2 — same three preconditions as every other kernel, read off the table
+    // that will actually be queried.
+    let air_skip = mip.is_some() && from_high && lut.profile_is_nonneg_total();
+
+    let mut out = PlaybackPartial::empty();
+    if band.rows == 0 || band.cols == 0 {
+        return out;
+    }
+
+    let cs = band.cell_size;
+    // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
+    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+
+    // ── Degenerate segment (zero planar length) — the `stamp_point_on_grid`
+    // delegation `stamp_segment_on_grid` performs, inlined so the band clip
+    // can apply to it. `d` is `sd.min(ed)`, verbatim from that call site.
+    if seg_len_sq < 1e-20 {
+        let d = sd.min(ed);
+        let r_sq = lut.radius_sq();
+
+        let col_min = ((su - scan_radius - band.origin_u) / cs).floor() as isize;
+        let col_max = ((su + scan_radius - band.origin_u) / cs).ceil() as isize;
+        let row_min = ((sv - scan_radius - band.origin_v) / cs).floor() as isize;
+        let row_max = ((sv + scan_radius - band.origin_v) / cs).ceil() as isize;
+        let Some((col_lo_g, col_hi_g, row_lo_g, row_hi_g)) = clamped_cell_bbox(
+            col_min,
+            col_max,
+            row_min,
+            row_max,
+            band.cols,
+            band.grid_rows,
+        ) else {
+            return out;
+        };
+        if let Some(m) = mip
+            && air_skip
+            && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), d)
+        {
+            return out;
+        }
+
+        let col_lo = col_lo_g;
+        let col_hi = col_hi_g.min(band.cols - 1);
+        let row_lo = row_lo_g.max(band.row_offset);
+        let row_hi = row_hi_g.min(band.last_row());
+        if row_lo > row_hi || col_lo > col_hi {
+            return out;
+        }
+        out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
+        out.stamp_skipped = false;
+
+        for row in row_lo..=row_hi {
+            let cell_v = band.origin_v + row as f64 * cs;
+            let dv = cell_v - sv;
+            for col in col_lo..=col_hi {
+                let cell_u = band.origin_u + col as f64 * cs;
+                let du = cell_u - su;
+                let coverage = point_cell_coverage(du, dv, r_sq, cs);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let idx = band.local(row, col);
+                if air_skip && !cell_can_remove(band.conservative_top[idx], d) {
+                    continue;
+                }
+                let dist_sq = du * du + dv * dv;
+                let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
+                    continue;
+                };
+                let ray = &mut band.rays[idx];
+                if from_high {
+                    let surface = (d + h) as f32;
+                    ray_blend_above(ray, surface, coverage);
+                } else {
+                    let surface = (d - h) as f32;
+                    ray_blend_below(ray, surface, coverage);
+                }
+                if from_high
+                    && coverage >= FULL_COVERAGE
+                    && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
+                {
+                    band.lower_conservative_top(idx, ub as f32);
+                }
+            }
+        }
+        return out;
+    }
+
+    let u_min = su.min(eu) - scan_radius;
+    let u_max = su.max(eu) + scan_radius;
+    let v_min = sv.min(ev) - scan_radius;
+    let v_max = sv.max(ev) + scan_radius;
+
+    let Some((col_lo_g, col_hi_g, row_lo_g, row_hi_g)) = clamped_cell_bbox(
+        ((u_min - band.origin_u) / cs).floor() as isize,
+        ((u_max - band.origin_u) / cs).ceil() as isize,
+        ((v_min - band.origin_v) / cs).floor() as isize,
+        ((v_max - band.origin_v) / cs).ceil() as isize,
+        band.cols,
+        band.grid_rows,
+    ) else {
+        return out;
+    };
+
+    let tip_lo = segment_tip_low(sd, seg_dd);
+    if let Some(m) = mip
+        && air_skip
+        && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), tip_lo)
+    {
+        return out;
+    }
+
+    let col_lo = col_lo_g;
+    let col_hi = col_hi_g.min(band.cols - 1);
+    let row_lo = row_lo_g.max(band.row_offset);
+    let row_hi = row_hi_g.min(band.last_row());
+    if row_lo > row_hi || col_lo > col_hi {
+        return out;
+    }
+    out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
+    out.stamp_skipped = false;
+
+    // Per-stamp setup after every early return, for the reason spelled out in
+    // `stamp_segment_with_metrics`: `CoverageFastPath::new` costs a handful of
+    // `sqrt`s and it now runs once per BAND rather than once per stamp.
+    let inv_seg_len_sq = 1.0 / seg_len_sq;
+    let r_sq = lut.radius_sq();
+    let fast = CoverageFastPath::new(r_sq, cs);
+
+    for row in row_lo..=row_hi {
+        let cell_v = band.origin_v + row as f64 * cs;
+        for col in col_lo..=col_hi {
+            let cell_u = band.origin_u + col as f64 * cs;
+            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+                cell_u,
+                cell_v,
+                su,
+                sv,
+                seg_du,
+                seg_dv,
+                inv_seg_len_sq,
+                r_sq,
+                cs,
+                fast,
+            );
+            if coverage <= 0.0 {
+                continue;
+            }
+            let idx = band.local(row, col);
+            if air_skip && !cell_can_remove(band.conservative_top[idx], tip_lo) {
+                continue;
+            }
+            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
+                continue;
+            };
+            let depth = sd + t_center * seg_dd;
+            let ray = &mut band.rays[idx];
+            if from_high {
+                let surface = (depth + h) as f32;
+                ray_blend_above(ray, surface, coverage);
+            } else {
+                let surface = (depth - h) as f32;
+                ray_blend_below(ray, surface, coverage);
+            }
+            if from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
+            {
+                band.lower_conservative_top(idx, ub as f32);
+            }
+        }
+    }
+
+    out
+}
+
 /// One row band's share of a single stamp's metrics (PERF_REVIEW S3).
 ///
 /// The metric kernel used to return the four published numbers directly. It
