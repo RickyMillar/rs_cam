@@ -679,23 +679,28 @@ impl TriDexelStock {
         // geometry rather than by which worker finished first.
         let start = (su, sv, sd);
         let end = (eu, ev, ed);
-        let (row_lo, row_hi) = band::stamp_row_span(grid, radius, start, end);
-        let parallel = band::stamp_wants_threads(grid, radius, start, end);
+        let span = band::stamp_row_span(grid, radius, start, end);
+        let parallel = span.is_some() && band::stamp_wants_threads(grid, radius, start, end);
         let mip = air_mip.as_ref();
-        if parallel {
-            grid.par_bands(row_lo, row_hi)
-                .map(|mut band| {
-                    stamp_segment_with_metrics(
+        match (span, parallel) {
+            // A stamp whose rows miss the grid visits no band at all.
+            (None, _) => band_scratch.clear(),
+            (Some((row_lo, row_hi)), true) => {
+                grid.par_bands(row_lo, row_hi)
+                    .map(|mut band| {
+                        stamp_segment_with_metrics(
+                            &mut band, lut, radius, start, end, mu, mv, from_high, mip,
+                        )
+                    })
+                    .collect_into_vec(band_scratch);
+            }
+            (Some((row_lo, row_hi)), false) => {
+                band_scratch.clear();
+                for mut band in grid.serial_bands(row_lo, row_hi) {
+                    band_scratch.push(stamp_segment_with_metrics(
                         &mut band, lut, radius, start, end, mu, mv, from_high, mip,
-                    )
-                })
-                .collect_into_vec(band_scratch);
-        } else {
-            band_scratch.clear();
-            for mut band in grid.serial_bands(row_lo, row_hi) {
-                band_scratch.push(stamp_segment_with_metrics(
-                    &mut band, lut, radius, start, end, mu, mv, from_high, mip,
-                ));
+                    ));
+                }
             }
         }
         let mut reduced = StampPartial::empty();

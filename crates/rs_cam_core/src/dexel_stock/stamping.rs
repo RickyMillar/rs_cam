@@ -431,6 +431,58 @@ fn cell_can_remove(conservative_top: f32, tip_lo: f64) -> bool {
     top > tip_lo || top.is_nan() || tip_lo.is_nan()
 }
 
+/// Clamp a stamp's cell-space bounding box to the grid, or report that the
+/// stamp misses the grid entirely.
+///
+/// **This exists because the open-coded version of it was wrong in two ways at
+/// once**, and both only show up when a stamp's footprint leaves the grid —
+/// which ordinary projects do all the time (profile lead-ins, edge drills, any
+/// op whose boundary extends past the blank).
+///
+/// 1. `(col_max as usize)` on a **negative** `isize` wraps to a huge value that
+///    the following `.min(cols - 1)` then clamps to `cols - 1`. A stamp
+///    entirely to the *left* of the grid therefore iterated the whole column
+///    range instead of none of it. The per-cell coverage test rejected every
+///    one of those cells, so the results were right and the work was not.
+/// 2. `row_hi + 1 - row_lo` underflows when the clamps leave `row_lo > row_hi`
+///    — a stamp entirely *above* the grid. Debug builds panicked with "attempt
+///    to subtract with overflow"; release wrapped. Reproduced by a raster pass
+///    at `y ∈ [31, 35]` over a stock whose Y extent is `[0, 24]`
+///    (`DELTA_sim_w3.md` §6).
+///
+/// Returning `None` — a clean skip — is the only correct answer for a stamp
+/// with no cells: it is exactly what the cell loop would have computed, and it
+/// is what every caller wants.
+///
+/// The returned bounds satisfy `col_lo <= col_hi < cols` and
+/// `row_lo <= row_hi < rows`, given `col_min <= col_max` and
+/// `row_min <= row_max` (which `floor`/`ceil` of an ordered pair guarantees).
+#[inline]
+pub(super) fn clamped_cell_bbox(
+    col_min: isize,
+    col_max: isize,
+    row_min: isize,
+    row_max: isize,
+    cols: usize,
+    rows: usize,
+) -> Option<(usize, usize, usize, usize)> {
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+    let last_col = (cols - 1) as isize;
+    let last_row = (rows - 1) as isize;
+    // Entirely off the grid on any of the four sides.
+    if col_max < 0 || row_max < 0 || col_min > last_col || row_min > last_row {
+        return None;
+    }
+    Some((
+        col_min.max(0) as usize,
+        col_max.min(last_col) as usize,
+        row_min.max(0) as usize,
+        row_max.min(last_row) as usize,
+    ))
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct CuttingCaptureParams<'a> {
     pub(super) toolpath_id: ToolpathId,
@@ -495,10 +547,13 @@ pub(super) fn stamp_point_on_grid(
     let row_min = ((cv - scan_radius - grid.origin_v) / cs).floor() as isize;
     let row_max = ((cv + scan_radius - grid.origin_v) / cs).ceil() as isize;
 
-    let col_lo = col_min.max(0) as usize;
-    let col_hi = (col_max as usize).min(grid.cols.saturating_sub(1));
-    let row_lo = row_min.max(0) as usize;
-    let row_hi = (row_max as usize).min(grid.rows.saturating_sub(1));
+    // A stamp whose footprint misses the grid has no cells to visit — see
+    // `clamped_cell_bbox` for the two defects the open-coded clamp carried.
+    let Some((col_lo, col_hi, row_lo, row_hi)) =
+        clamped_cell_bbox(col_min, col_max, row_min, row_max, grid.cols, grid.rows)
+    else {
+        return;
+    };
 
     if let Some(m) = mip.as_mut() {
         let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
@@ -603,10 +658,18 @@ pub(super) fn stamp_segment_on_grid(
     let v_min = sv.min(ev) - scan_radius;
     let v_max = sv.max(ev) + scan_radius;
 
-    let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
-    let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
-    let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
-    let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
+    // Same clamp defect as `stamp_point_on_grid`: with the footprint above or
+    // right of the grid the clamps left `row_lo > row_hi`, and the
+    // `bbox_cells` line below underflowed in debug. See `clamped_cell_bbox`.
+    let col_min = ((u_min - grid.origin_u) / cs).floor() as isize;
+    let col_max = ((u_max - grid.origin_u) / cs).ceil() as isize;
+    let row_min = ((v_min - grid.origin_v) / cs).floor() as isize;
+    let row_max = ((v_max - grid.origin_v) / cs).ceil() as isize;
+    let Some((col_lo, col_hi, row_lo, row_hi)) =
+        clamped_cell_bbox(col_min, col_max, row_min, row_max, grid.cols, grid.rows)
+    else {
+        return;
+    };
 
     let tip_lo = segment_tip_low(sd, seg_dd);
     if let Some(m) = mip.as_mut() {
@@ -903,10 +966,22 @@ pub(super) fn stamp_segment_with_metrics(
         // GLOBAL bounding box first — the mip is asked about the whole stamp,
         // not about this band's share of it. See the note at the swept
         // branch's own query: a band-local whole-stamp skip is not exact.
-        let col_lo_g = col_min.max(0) as usize;
-        let col_hi_g = col_max.max(0) as usize;
-        let row_lo_g = row_min.max(0) as usize;
-        let row_hi_g = row_max.max(0) as usize;
+        //
+        // Clamped through `clamped_cell_bbox` rather than `.max(0)`: the latter
+        // folds a stamp entirely LEFT of (or BELOW) the grid onto row/column 0
+        // and then walks it, rejecting every cell on coverage. The mip sees the
+        // same tiles either way — `max_over` clamps its own arguments — so this
+        // is a work change, not a result change.
+        let Some((col_lo_g, col_hi_g, row_lo_g, row_hi_g)) = clamped_cell_bbox(
+            col_min,
+            col_max,
+            row_min,
+            row_max,
+            band.cols,
+            band.grid_rows,
+        ) else {
+            return out;
+        };
         if let Some(m) = mip
             && air_skip
             && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), d)
@@ -997,10 +1072,21 @@ pub(super) fn stamp_segment_with_metrics(
     // EVERY band takes it, because then both sums stay at `0.0` and their
     // difference is exactly zero. Asking about the global box makes every band
     // reach the same verdict, so it is all of them or none.
-    let col_lo_g = ((u_min - band.origin_u) / cs).floor().max(0.0) as usize;
-    let col_hi_g = ((u_max - band.origin_u) / cs).ceil().max(0.0) as usize;
-    let row_lo_g = ((v_min - band.origin_v) / cs).floor().max(0.0) as usize;
-    let row_hi_g = ((v_max - band.origin_v) / cs).ceil().max(0.0) as usize;
+    //
+    // Clamped through `clamped_cell_bbox` — see the degenerate branch's own
+    // note. `max_over` clamps its arguments to the grid anyway, so the tile set
+    // it reads is unchanged; what changes is that a stamp entirely off the grid
+    // now returns instead of folding onto row/column 0 and walking it.
+    let Some((col_lo_g, col_hi_g, row_lo_g, row_hi_g)) = clamped_cell_bbox(
+        ((u_min - band.origin_u) / cs).floor() as isize,
+        ((u_max - band.origin_u) / cs).ceil() as isize,
+        ((v_min - band.origin_v) / cs).floor() as isize,
+        ((v_max - band.origin_v) / cs).ceil() as isize,
+        band.cols,
+        band.grid_rows,
+    ) else {
+        return out;
+    };
     if let Some(m) = mip
         && air_skip
         && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), tip_lo)
@@ -1357,7 +1443,12 @@ mod tests {
             }
             let mut reduced = StampPartial::empty();
             let view = mip.as_ref();
-            let (row_lo, row_hi) = crate::dexel_stock::band::stamp_row_span(grid, radius, s, e);
+            let Some((row_lo, row_hi)) =
+                crate::dexel_stock::band::stamp_row_span(grid, radius, s, e)
+            else {
+                out.push(reduced.finish(radius, true));
+                return;
+            };
             for mut band in grid.serial_bands(row_lo, row_hi) {
                 reduced.merge(&stamp_segment_with_metrics(
                     &mut band,
@@ -1551,6 +1642,305 @@ mod tests {
              {flat_bbox_cells} in-bbox cells on the flat arm; the fixture has \
              stopped exercising the overlap regime S2 exists for"
         );
+    }
+
+    // ── Out-of-grid stamps (DELTA_sim_w3.md §6) ─────────────────────────
+
+    /// Eight ways to miss a grid: four sides and four corners, as
+    /// `(name, du, dv)` offsets in multiples of the stock extent.
+    const OUT_OF_GRID_OFFSETS: [(&str, f64, f64); 8] = [
+        ("left", -1.0, 0.0),
+        ("right", 1.0, 0.0),
+        ("below", 0.0, -1.0),
+        ("above", 0.0, 1.0),
+        ("left_below", -1.0, -1.0),
+        ("left_above", -1.0, 1.0),
+        ("right_below", 1.0, -1.0),
+        ("right_above", 1.0, 1.0),
+    ];
+
+    /// A stamp whose footprint misses the grid entirely must be a clean skip:
+    /// no panic in a **debug** build, no cell touched, and metrics identical to
+    /// not having emitted the stamp at all.
+    ///
+    /// This is `DELTA_sim_w3.md` §6. The `bbox_cells` expression underflowed —
+    /// "attempt to subtract with overflow" in debug, a wrap in release, so the
+    /// two builds disagreed — whenever the clamps left `row_lo > row_hi`, and
+    /// separately a negative `col_max` cast through `usize` clamped back to
+    /// `cols - 1`, making a stamp to the LEFT of the grid walk every column.
+    /// It is reachable from an ordinary project: profile lead-ins, edge drills
+    /// and any op whose boundary extends past the blank all leave the stock.
+    ///
+    /// Both non-metric kernels are exercised, with the S2 mip on and off, and
+    /// the four-corner cases are covered as well as the four sides — the
+    /// underflow needs one axis outside and the wrapping cast needs the other,
+    /// so a sides-only fixture proves less than it looks.
+    #[test]
+    fn stamps_entirely_outside_the_grid_are_a_clean_skip() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(24.0, 16.0, 8.0),
+        };
+        let cutter = FlatEndmill::new(6.0, 25.0);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+        let pristine = DexelGrid::z_grid_from_bounds(&bbox, 0.25);
+
+        for &(name, du, dv) in &OUT_OF_GRID_OFFSETS {
+            // Far enough out that even the scan-radius inflation cannot reach
+            // back into the grid.
+            let cu = 12.0 + du * 64.0;
+            let cv = 8.0 + dv * 64.0;
+            for &with_mip in &[false, true] {
+                let mut grid = DexelGrid::z_grid_from_bounds(&bbox, 0.25);
+                let mut mip = with_mip.then(|| TileMaxTop::build(&grid));
+                stamp_point_on_grid(&mut grid, &lut, radius, cu, cv, 2.0, true, mip.as_mut());
+                stamp_segment_on_grid(
+                    &mut grid,
+                    &lut,
+                    radius,
+                    (cu, cv, 2.0),
+                    (cu + 9.0, cv + 3.0, 1.0),
+                    true,
+                    mip.as_mut(),
+                );
+                // …and from the low side, which takes the `ray_blend_below`
+                // arm and has no `conservative_top` channel at all.
+                stamp_segment_on_grid(
+                    &mut grid,
+                    &lut,
+                    radius,
+                    (cu, cv, 2.0),
+                    (cu - 9.0, cv - 3.0, 1.0),
+                    false,
+                    None,
+                );
+                assert_grids_bit_identical(
+                    &pristine,
+                    &grid,
+                    &format!("out-of-grid {name} mip={with_mip}"),
+                );
+            }
+        }
+    }
+
+    /// The metric kernel's answer for an out-of-grid stamp must be the answer
+    /// for "no stamp at all" — bit for bit, on all four published numbers.
+    ///
+    /// The band driver reduces `StampPartial::empty()` when no band is reached,
+    /// so this is really a check that the empty partial *is* the identity the
+    /// merge chain assumes. Compared against a run that simply does not call
+    /// the kernel.
+    #[test]
+    fn out_of_grid_metrics_equal_not_stamping_at_all() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(24.0, 16.0, 8.0),
+        };
+        let cutter = FlatEndmill::new(6.0, 25.0);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let radius = cutter.radius();
+
+        for &(name, du, dv) in &OUT_OF_GRID_OFFSETS {
+            let cu = 12.0 + du * 64.0;
+            let cv = 8.0 + dv * 64.0;
+            let mut grid = DexelGrid::z_grid_from_bounds(&bbox, 0.25);
+            let pristine = grid.clone();
+            let mip = TileMaxTop::build(&grid);
+            let s = (cu, cv, 2.0);
+            let e = (cu + 9.0, cv + 3.0, 1.0);
+            // `stamp_row_span` only knows about rows, so it can reject the
+            // four cases that leave the grid in V and must NOT reject the two
+            // that only leave it in U — those are the kernel's own job.
+            let span = crate::dexel_stock::band::stamp_row_span(&grid, radius, s, e);
+            assert_eq!(
+                span.is_none(),
+                dv != 0.0,
+                "{name}: row-span reject disagrees with the V offset"
+            );
+            let mut reduced = StampPartial::empty();
+            // Drive every band anyway, so the kernel's own off-grid reject is
+            // what is under test rather than the row-span helper's.
+            let last_row = grid.rows - 1;
+            for mut band in grid.serial_bands(0, last_row) {
+                reduced.merge(&stamp_segment_with_metrics(
+                    &mut band,
+                    &lut,
+                    radius,
+                    s,
+                    e,
+                    (s.0 + e.0) * 0.5,
+                    (s.1 + e.1) * 0.5,
+                    true,
+                    Some(&mip),
+                ));
+            }
+            let got = reduced.finish(radius, true);
+            let never = StampPartial::empty().finish(radius, true);
+            assert_eq!(got.0.to_bits(), never.0.to_bits(), "{name}: axial");
+            assert_eq!(got.1.to_bits(), never.1.to_bits(), "{name}: radial");
+            assert_eq!(
+                got.2.map(f64::to_bits),
+                never.2.map(f64::to_bits),
+                "{name}: arc"
+            );
+            assert_eq!(got.3.to_bits(), never.3.to_bits(), "{name}: volume");
+            assert_eq!(reduced.bbox_cells, 0, "{name}: cells were visited");
+            assert_grids_bit_identical(&pristine, &grid, &format!("metric out-of-grid {name}"));
+        }
+    }
+
+    /// The §6 reproduction, end to end through the public simulator: a raster
+    /// pass at `y ∈ [31, 35]` over a stock whose Y extent is `[0, 24]`. This is
+    /// the shape that was found while building the S5 wave's fixture, and it is
+    /// here so the regression is pinned at the level a project reaches, not
+    /// only at the kernel.
+    #[test]
+    fn a_toolpath_that_leaves_the_stock_does_not_panic() {
+        use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+        use crate::toolpath::Toolpath;
+
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 44.0, 24.0, 0.0, 10.0, 0.25);
+        let cutter = FlatEndmill::new(6.0, 25.0);
+        let lut = RadialProfileLUT::from_cutter(&cutter, crate::radial_profile::LUT_SAMPLES);
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(4.0, 31.0, 10.0));
+        for i in 0..3 {
+            let y = 31.0 + 2.0 * i as f64;
+            tp.feed_to(P3::new(4.0, y, -2.0), 500.0);
+            tp.feed_to(P3::new(40.0, y, -2.0), 1200.0);
+        }
+        // …and one line that is genuinely inside, so the fixture is not just
+        // "nothing happened".
+        tp.feed_to(P3::new(4.0, 12.0, -2.0), 500.0);
+        tp.feed_to(P3::new(40.0, 12.0, -2.0), 1200.0);
+        tp.final_retract(10.0);
+
+        let never_cancel = || false;
+        let samples = stock
+            .simulate_toolpath_with_lut_metrics_cancel(
+                &tp,
+                &lut,
+                &cutter,
+                cutter.radius(),
+                StockCutDirection::FromTop,
+                ToolpathId(0),
+                18_000,
+                2,
+                5000.0,
+                0.25,
+                None,
+                &[],
+                &[],
+                true,
+                &never_cancel,
+            )
+            .expect("never cancelled");
+        assert!(
+            samples.iter().any(|s| s.removed_volume_est_mm3 > 0.0),
+            "the in-stock line removed nothing — the fixture proves nothing"
+        );
+        // The non-metric replay path (`stamp_segment_on_grid`) is where the
+        // underflow actually lived; run it over the same toolpath.
+        let mut playback = TriDexelStock::from_stock(0.0, 0.0, 44.0, 24.0, 0.0, 10.0, 0.25);
+        playback
+            .simulate_toolpath_with_lut_cancel(
+                &tp,
+                &lut,
+                cutter.radius(),
+                StockCutDirection::FromTop,
+                &never_cancel,
+            )
+            .expect("never cancelled");
+    }
+
+    /// **The anti-vacuity half.** The three tests above are worth exactly as
+    /// much as the proof that the code they pin was actually broken, and a
+    /// fixture that never reaches the defect passes for free.
+    ///
+    /// So the pre-fix expressions are reproduced verbatim here as an oracle —
+    /// the same technique `legacy_fast_path` uses for S7 — and this asserts
+    /// that on the very offsets the fixtures use, the old form **both**
+    ///
+    /// * underflows `row_hi + 1 - row_lo` (checked, so this test does not
+    ///   itself panic in debug), and
+    /// * clamps a negative `col_max` back to `cols - 1`, producing a walk over
+    ///   the grid's **entire** column range for a stamp that is nowhere near
+    ///   it.
+    ///
+    /// Both classes have to be observed, because they need opposite sides:
+    /// the underflow needs the footprint past the far edge and the wrapping
+    /// cast needs it past the near one.
+    #[test]
+    fn the_pre_fix_clamp_really_did_underflow_and_over_walk() {
+        let (cols, rows) = (96usize, 64usize);
+        let mut underflows = 0usize;
+        let mut full_width_walks = 0usize;
+        for &(_, du, dv) in &OUT_OF_GRID_OFFSETS {
+            // Cell-space bbox of a footprint pushed well outside the grid, in
+            // the same `isize` the kernels compute.
+            let col_min = (du * 400.0) as isize - 24;
+            let col_max = (du * 400.0) as isize + 24;
+            let row_min = (dv * 400.0) as isize - 24;
+            let row_max = (dv * 400.0) as isize + 24;
+
+            // ── the pre-fix expressions, verbatim ──
+            let old_col_lo = col_min.max(0) as usize;
+            let old_col_hi = (col_max as usize).min(cols.saturating_sub(1));
+            let old_row_lo = row_min.max(0) as usize;
+            let old_row_hi = (row_max as usize).min(rows.saturating_sub(1));
+
+            if (old_row_hi + 1).checked_sub(old_row_lo).is_none() {
+                underflows += 1;
+            }
+            if let Some(width) = (old_col_hi + 1).checked_sub(old_col_lo)
+                && width == cols
+            {
+                full_width_walks += 1;
+            }
+
+            // ── and the replacement, on the same input ──
+            assert!(
+                clamped_cell_bbox(col_min, col_max, row_min, row_max, cols, rows).is_none(),
+                "clamped_cell_bbox accepted a footprint that is entirely \
+                 outside the grid ({col_min}..{col_max}, {row_min}..{row_max})"
+            );
+        }
+        assert!(
+            underflows > 0,
+            "no offset reproduced the `row_hi + 1 - row_lo` underflow — the \
+             sweep no longer covers the defect it exists for"
+        );
+        assert!(
+            full_width_walks > 0,
+            "no offset reproduced the negative-`col_max` wrap that clamps back \
+             to `cols - 1` and walks the whole column range"
+        );
+    }
+
+    /// Discs entirely off the grid must read as "no information", not as a
+    /// full-grid walk. Same wrapping clamp, different callers.
+    #[test]
+    fn off_grid_disc_queries_are_empty_not_full_grid() {
+        use crate::dexel_stock::TriDexelStock;
+        let stock = TriDexelStock::from_stock(0.0, 0.0, 24.0, 16.0, 0.0, 8.0, 0.25);
+        for &(name, du, dv) in &OUT_OF_GRID_OFFSETS {
+            let cx = 12.0 + du * 64.0;
+            let cy = 8.0 + dv * 64.0;
+            assert_eq!(
+                stock.local_material_sum(cx, cy, 3.0),
+                0.0,
+                "{name}: off-grid disc summed material"
+            );
+            assert!(
+                stock.max_top_z_in_disc(cx, cy, 3.0).is_none(),
+                "{name}: off-grid disc found a top"
+            );
+            assert!(
+                stock.max_conservative_top_z_in_disc(cx, cy, 3.0).is_none(),
+                "{name}: off-grid disc found a conservative top"
+            );
+        }
     }
 
     /// `segment_tip_low` must return the exact minimum of the tip expression

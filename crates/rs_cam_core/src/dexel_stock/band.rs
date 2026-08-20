@@ -47,6 +47,11 @@ pub(super) struct GridBand<'a> {
     pub(super) row_offset: usize,
     /// Rows in this band.
     pub(super) rows: usize,
+    /// Rows in the WHOLE grid. A band's stamp kernel clamps the stamp's
+    /// *global* bounding box before clipping to its own rows — the mip query
+    /// and the off-grid reject are both global questions — so it needs the
+    /// grid's extent, not only its own.
+    pub(super) grid_rows: usize,
     /// Columns — the same for every band, and the row stride.
     pub(super) cols: usize,
     pub(super) origin_u: f64,
@@ -139,6 +144,7 @@ impl DexelGrid {
     ) -> impl Iterator<Item = GridBand<'_>> {
         let (skip, take) = self.band_span(row_lo, row_hi);
         let cols = self.cols;
+        let grid_rows = self.rows;
         let (origin_u, origin_v, cell_size) = (self.origin_u, self.origin_v, self.cell_size);
         let chunk = BAND_ROWS.saturating_mul(cols).max(1);
         self.rays
@@ -149,6 +155,7 @@ impl DexelGrid {
             .take(take)
             .map(move |(i, (rays, conservative_top))| GridBand {
                 rows: if cols == 0 { 0 } else { rays.len() / cols },
+                grid_rows,
                 row_offset: i * BAND_ROWS,
                 cols,
                 origin_u,
@@ -170,6 +177,7 @@ impl DexelGrid {
     ) -> impl IndexedParallelIterator<Item = GridBand<'_>> {
         let (skip, take) = self.band_span(row_lo, row_hi);
         let cols = self.cols;
+        let grid_rows = self.rows;
         let (origin_u, origin_v, cell_size) = (self.origin_u, self.origin_v, self.cell_size);
         let chunk = BAND_ROWS.saturating_mul(cols).max(1);
         self.rays
@@ -180,6 +188,7 @@ impl DexelGrid {
             .take(take)
             .map(move |(i, (rays, conservative_top))| GridBand {
                 rows: if cols == 0 { 0 } else { rays.len() / cols },
+                grid_rows,
                 row_offset: i * BAND_ROWS,
                 cols,
                 origin_u,
@@ -198,22 +207,33 @@ impl DexelGrid {
 /// this uses `radius + 2·cs`, so it can only be wider. A band the kernel would
 /// have found empty contributes `StampPartial::empty()`, the identity of
 /// `merge`, so widening costs time and narrowing would cost correctness.
+///
+/// `None` means the stamp's rows miss the grid entirely, so **no** band is
+/// visited. That is not just an optimisation: the old form clamped a
+/// below-the-grid span to `(0, 0)` and handed band 0 a stamp with no cells in
+/// it, which then walked a whole row of the grid rejecting every cell on
+/// coverage. Same defect class as the underflow in `clamped_cell_bbox`, one
+/// level up (`DELTA_sim_w3.md` §6).
 pub(super) fn stamp_row_span(
     grid: &DexelGrid,
     radius: f64,
     start: (f64, f64, f64),
     end: (f64, f64, f64),
-) -> (usize, usize) {
+) -> Option<(usize, usize)> {
     let cs = grid.cell_size;
-    if cs <= 0.0 || grid.rows == 0 {
-        return (0, 0);
+    if cs <= 0.0 || grid.rows == 0 || grid.cols == 0 {
+        return None;
     }
     let scan = radius + 2.0 * cs;
     let v_min = start.1.min(end.1) - scan;
     let v_max = start.1.max(end.1) + scan;
-    let lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
-    let hi = (((v_max - grid.origin_v) / cs).ceil().max(0.0) as usize).min(grid.rows - 1);
-    (lo, hi)
+    let lo = ((v_min - grid.origin_v) / cs).floor() as isize;
+    let hi = ((v_max - grid.origin_v) / cs).ceil() as isize;
+    let last = (grid.rows - 1) as isize;
+    if hi < 0 || lo > last {
+        return None;
+    }
+    Some((lo.max(0) as usize, hi.min(last) as usize))
 }
 
 /// Cells in a stamp's swept bounding box below which the bands are driven
