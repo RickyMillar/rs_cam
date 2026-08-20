@@ -33,7 +33,7 @@ const COVERAGE_SUBSAMPLES_PER_AXIS: usize = 4;
 /// Half-extent of the 4×4 sub-sample grid as a fraction of cell size.
 /// Sub-samples at axis offsets `{−3, −1, +1, +3} · cs/8`; the outermost
 /// sub-sample sits at `±3·cs/8` from the cell center.
-const SUBSAMPLE_HALF_EXTENT: f64 = 3.0 / 8.0;
+pub(super) const SUBSAMPLE_HALF_EXTENT: f64 = 3.0 / 8.0;
 
 /// Sub-sample axis offsets as fractions of `cs`. Hoisted out of the kernel
 /// inner loops so the arithmetic `start + i·step` doesn't run per cell.
@@ -49,7 +49,7 @@ const SUBSAMPLE_OFFSETS_FRAC: [f64; 4] = [-3.0 / 8.0, -1.0 / 8.0, 1.0 / 8.0, 3.0
 /// sampling kernel would compute. Falls back to 4×4 sub-sampling for the
 /// boundary band.
 #[inline]
-fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
+pub(super) fn point_cell_coverage(du: f64, dv: f64, r_sq: f64, cs: f64) -> f32 {
     let extent = cs * SUBSAMPLE_HALF_EXTENT;
     let abs_du = du.abs();
     let abs_dv = dv.abs();
@@ -129,7 +129,7 @@ const FAST_PATH_ULP_SEARCH_LIMIT: usize = 64;
 /// holds over the reals. The walk costs a handful of `sqrt`s once per stamp
 /// and buys back one per cell.
 #[derive(Clone, Copy)]
-struct CoverageFastPath {
+pub(super) struct CoverageFastPath {
     /// Smallest `d_sq` for which the legacy test `√d_sq − ext_diag ≥ r` holds.
     /// At or past it, every sub-sample is outside the cutter ⇒ coverage 0.
     outer_sq: f64,
@@ -146,7 +146,7 @@ struct CoverageFastPath {
 }
 
 impl CoverageFastPath {
-    fn new(r_sq: f64, cs: f64) -> Self {
+    pub(super) fn new(r_sq: f64, cs: f64) -> Self {
         let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
         let r = r_sq.sqrt();
 
@@ -215,7 +215,7 @@ impl CoverageFastPath {
 ///   LUT query (§6.F gap 3).
 #[allow(clippy::too_many_arguments)]
 #[inline]
-fn segment_cell_coverage(
+pub(super) fn segment_cell_coverage(
     cu: f64,
     cv: f64,
     su: f64,
@@ -291,7 +291,7 @@ fn segment_cell_coverage(
 /// has a contact radius of ≈ 0.218 mm, so a 0.25 mm grid yields at most one
 /// qualifying cell and reads zero. That is the quantitative form of the
 /// standing rule "sim cell must be well below the tool TIP radius".
-const PERP_COVERAGE_GATE: f32 = 0.95;
+pub(super) const PERP_COVERAGE_GATE: f32 = 0.95;
 
 /// Threshold for "fresh material exists above the cutter at this cell",
 /// millimetres. A cell contributes to the perpendicular-extent measurement —
@@ -335,7 +335,7 @@ pub const FRESH_MATERIAL_THRESHOLD_MM: f64 = 0.05;
 /// up to that quantisation. `1.0 - 1/32` sits half a sub-sample below full
 /// and cannot be reached by a cell that has any sub-sample outside the
 /// cutter.
-const FULL_COVERAGE: f32 = 1.0 - 1.0 / 32.0;
+pub(super) const FULL_COVERAGE: f32 = 1.0 - 1.0 / 32.0;
 
 /// Upper bound of the removal surface across a WHOLE cell, for the
 /// sliver-safe channel.
@@ -351,15 +351,33 @@ const FULL_COVERAGE: f32 = 1.0 - 1.0 / 32.0;
 /// for a swept segment that is the higher of its two endpoints, not the
 /// interpolated value at the cell centre.
 #[inline]
-fn cell_upper_bound_surface(
+pub(super) fn cell_upper_bound_surface(
     lut: &RadialProfileLUT,
     near_dist_sq: f64,
     cs: f64,
     depth_max: f64,
 ) -> Option<f64> {
+    cell_upper_bound_height(lut, near_dist_sq, cs).map(|h| depth_max + h)
+}
+
+/// The *depth-independent* half of [`cell_upper_bound_surface`]: `h` evaluated
+/// at the cell's far corner.
+///
+/// Split out for S1's pure-vertical kernel, which visits one cell against many
+/// tip depths. `near_dist_sq` and `cs` do not move across those depths, so the
+/// `sqrt` and the LUT probe are loop invariants; only the `depth_max +` is not.
+/// `cell_upper_bound_surface` is defined in terms of this, so the two cannot
+/// drift — the composition is the same two floating-point operations in the
+/// same order the single-shot form always performed.
+#[inline]
+pub(super) fn cell_upper_bound_height(
+    lut: &RadialProfileLUT,
+    near_dist_sq: f64,
+    cs: f64,
+) -> Option<f64> {
     let far = near_dist_sq.sqrt() + cs * std::f64::consts::SQRT_2 * 0.5;
     let far_sq = (far * far).min(lut.radius_sq());
-    lut_h_with_edge_fallback(lut, far_sq).map(|h| depth_max + h)
+    lut_h_with_edge_fallback(lut, far_sq)
 }
 
 /// LUT query for an annular cell at squared distance `dist_sq` from disk
@@ -367,7 +385,7 @@ fn cell_upper_bound_surface(
 /// disk (§6.F gap 3). Returns `None` only if the LUT returns `None` at the
 /// query point (e.g., cutter has a hollow center — not used in practice).
 #[inline]
-fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64> {
+pub(super) fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64> {
     if dist_sq <= lut.radius_sq() {
         lut.height_at_dist_sq(dist_sq)
     } else {
@@ -392,7 +410,7 @@ fn lut_h_with_edge_fallback(lut: &RadialProfileLUT, dist_sq: f64) -> Option<f64>
 /// `bbox.max.z <= cl.z` reject unsound. The skip is only exact if the bound
 /// it compares against is the bound the kernel actually reaches.
 #[inline]
-fn segment_tip_low(sd: f64, seg_dd: f64) -> f64 {
+pub(super) fn segment_tip_low(sd: f64, seg_dd: f64) -> f64 {
     if seg_dd < 0.0 { sd + seg_dd } else { sd }
 }
 
@@ -424,7 +442,7 @@ fn segment_tip_low(sd: f64, seg_dd: f64) -> f64 {
 /// is false). Equality is the common case, not a corner one — a flat end mill
 /// re-passing ground it already cut at the same Z hits it on every cell.
 #[inline]
-fn cell_can_remove(conservative_top: f32, tip_lo: f64) -> bool {
+pub(super) fn cell_can_remove(conservative_top: f32, tip_lo: f64) -> bool {
     let top = conservative_top as f64;
     // Spelled out rather than `!(top <= tip_lo)` so the NaN arm is explicit:
     // an unorderable bound must never be read as "inert".
