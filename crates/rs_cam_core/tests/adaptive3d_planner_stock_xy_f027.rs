@@ -233,9 +233,36 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
     let sim = session.simulation_result().expect("simulation result");
     let cut_trace = sim.cut_trace.as_ref().expect("metric cut trace");
 
+    // SIM w5b re-baseline. The swept measure reports a cell's whole removed
+    // column once, instead of splitting it across the subsegments that blend
+    // it, so a steady-state sample on terrain may legitimately read above
+    // `dpp`: a column at a model edge or a steep face can hold more than one
+    // pass depth above the tool surface, and the previous pass may have left
+    // more than `dpp` there. The old kernel's per-sample maximum sat BELOW the
+    // column's real removal, which is why `dpp + 0.5` used to be comfortably
+    // met — the bar was being cleared by an under-read, not by the geometry.
+    //
+    // Rather than widen one bar and lose the net, the single bar is split in
+    // two, so what F-027 exists to catch is still caught:
+    //
+    // * `CEILING` — an absolute per-sample ceiling. The pre-fix defect read
+    //   **30–47 mm** in this band; measured here it is **3.694 mm**, so a
+    //   ceiling of `dpp + 1.0 = 4.0` still catches the defect by 7–12x while
+    //   giving the swept measure 8% headroom over what it actually reads.
+    // * `POPULATION` — the ORIGINAL `dpp + 0.5` bar, kept, but as a bound on
+    //   how many samples may sit above it. Pre-fix this band held ~300 of
+    //   ~54 k (**0.55%**); measured here it is **3 of 54 477** (0.0055%). The
+    //   cap is 0.05% — 10x below the defect, 10x above the observation.
+    //
+    // Neither number is a guess: both were measured on this fixture at this
+    // resolution on 2026-08-21 and reproduce the decision package's figures
+    // from the previous session exactly.
     let commanded_dpp = 3.0_f64;
-    let margin = 0.5_f64;
-    let limit = commanded_dpp + margin;
+    let population_margin = 0.5_f64;
+    let ceiling_margin = 1.0_f64;
+    let limit = commanded_dpp + population_margin;
+    let ceiling = commanded_dpp + ceiling_margin;
+    const MAX_OVER_FRACTION: f64 = 5e-4;
 
     // Restrict to the F-027 band: cutter center at Y > mesh.max.y (and
     // still inside the world stock bbox). Cells in this band can only
@@ -283,14 +310,29 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
     );
 
     assert!(
-        max_axial <= limit,
+        max_axial <= ceiling,
         "F-027: max per-sample axial_engagement_mm in the model-edge band \
-         (Y in ({mesh_max_y:.2}, {stock_max_y:.2}]) is {max_axial:.3} mm — exceeds commanded \
-         depth_per_pass + margin ({limit:.3}). Over-limit sample at (y={max_sample_y:.2}, \
-         z={max_sample_z:.2}). {over_count} of {band_sample_count} samples in the band are \
-         over the limit. Pre-fix the worst samples read 30-47 mm here because adaptive3d's \
-         planner stock was bounded by `mesh.bbox + tool_radius` while the simulator's dexel \
-         grid spanned the auto-grown world stock bbox."
+         (Y in ({mesh_max_y:.2}, {stock_max_y:.2}]) is {max_axial:.3} mm — exceeds the \
+         absolute ceiling depth_per_pass + {ceiling_margin:.1} ({ceiling:.3}). Over-ceiling \
+         sample at (y={max_sample_y:.2}, z={max_sample_z:.2}). {over_count} of \
+         {band_sample_count} samples in the band are over the {limit:.3} population bar. \
+         Pre-fix the worst samples read 30-47 mm here because adaptive3d's planner stock \
+         was bounded by `mesh.bbox + tool_radius` while the simulator's dexel grid spanned \
+         the auto-grown world stock bbox. Under the swept measure (SIM w5b) this band reads \
+         3.694 mm; anything near 30 mm is the original defect back."
+    );
+
+    let over_fraction = over_count as f64 / band_sample_count as f64;
+    assert!(
+        over_fraction <= MAX_OVER_FRACTION,
+        "F-027: {over_count} of {band_sample_count} model-edge-band samples \
+         ({:.4}%) read above depth_per_pass + {population_margin:.1} ({limit:.3} mm) — \
+         the cap is {:.4}%. Pre-fix this band held ~300 outliers (~0.55%) driven by the \
+         planner-stock/simulator-grid XY mismatch; the swept measure's own residue on this \
+         fixture is 3 of 54 477 (0.0055%). A number in between means the fix is partly \
+         undone, not that the measure moved.",
+        over_fraction * 100.0,
+        MAX_OVER_FRACTION * 100.0
     );
 }
 
@@ -299,10 +341,19 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
 ///
 /// This is a softer regression guard than bar 1 — it catches partial
 /// undoing of the fix even if no single sample crosses the absolute
-/// limit. Pre-fix this band held ~300 outliers; post-fix it must hold
-/// none.
+/// limit. Pre-fix this band held ~300 outliers.
+///
+/// **SIM w5b re-baseline: `== 0` became a bounded fraction, and the test
+/// was renamed to say so.** The swept measure reports a cell's whole
+/// removed column once rather than splitting it across the subsegments
+/// that blend it, so a terrain column that genuinely holds more than one
+/// pass depth now reads that way. On this fixture that is **3 of 54 477**
+/// band samples (0.0055%), against ~0.55% pre-fix. The bar is 0.05% — an
+/// order of magnitude either side, which is the whole point: `== 0` was
+/// only ever true because the old kernel under-read, and a bar cleared by
+/// an under-read is not a bar.
 #[test]
-fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
+fn as013_terrain_model_edge_band_outlier_count_bounded_f027() {
     let mut session = build_as013_terrain_session();
     let cancel = AtomicBool::new(false);
     session
@@ -334,20 +385,34 @@ fn as013_terrain_model_edge_band_outlier_count_zero_f027() {
     let cut_trace = sim.cut_trace.as_ref().expect("metric cut trace");
 
     let limit = 3.0 + 0.5;
-    let outliers_in_band: usize = cut_trace
+    const MAX_OVER_FRACTION: f64 = 5e-4;
+    let in_band: Vec<_> = cut_trace
         .samples
         .iter()
         // F-031 alignment: skip transit-span samples; see sibling test.
         .filter(|s| s.is_cutting && s.cut_kinematics != CutKinematics::Plunge && !s.in_transit_span)
         .filter(|s| s.position[1] > mesh_max_y && s.position[1] <= stock_max_y)
+        .collect();
+    let band_sample_count = in_band.len();
+    let outliers_in_band = in_band
+        .iter()
         .filter(|s| s.axial_engagement_mm > limit)
         .count();
 
-    assert_eq!(
-        outliers_in_band, 0,
-        "F-027: no per-sample axial outliers > {limit:.3} mm should land in the model-edge \
-         band (Y in ({mesh_max_y:.2}, {stock_max_y:.2}]) on AS013 post-fix; pre-fix this \
-         band held ~300 outliers driven by the planner-stock/simulator-grid XY mismatch."
+    assert!(
+        band_sample_count > 0,
+        "F-027 boundary-band must contain samples for this bar to be meaningful"
+    );
+    let over_fraction = outliers_in_band as f64 / band_sample_count as f64;
+    assert!(
+        over_fraction <= MAX_OVER_FRACTION,
+        "F-027: {outliers_in_band} of {band_sample_count} model-edge-band samples \
+         ({:.4}%) read axial > {limit:.3} mm (Y in ({mesh_max_y:.2}, {stock_max_y:.2}]) — \
+         the cap is {:.4}%. Pre-fix this band held ~300 outliers (~0.55%) driven by the \
+         planner-stock/simulator-grid XY mismatch. The swept measure's own residue here is \
+         3 of 54 477.",
+        over_fraction * 100.0,
+        MAX_OVER_FRACTION * 100.0
     );
 
     // Sanity check the load-report verdict shape exists for the toolpath

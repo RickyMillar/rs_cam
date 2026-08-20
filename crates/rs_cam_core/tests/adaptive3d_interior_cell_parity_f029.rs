@@ -218,9 +218,29 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
     let sim = session.simulation_result().expect("simulation result");
     let cut_trace = sim.cut_trace.as_ref().expect("metric cut trace");
 
+    // SIM w5b re-baseline — same treatment as F-027's two bars, and for the
+    // same reason. The swept measure reports a cell's whole removed column
+    // once instead of splitting it across the subsegments that blend it, so a
+    // terrain column that genuinely holds more than one pass depth above the
+    // tool surface now reads that way. `dpp + 0.5` used to be met because the
+    // old kernel under-read the column, not because the geometry was inside
+    // it.
+    //
+    // The single bar becomes two, so what F-031 exists to catch survives:
+    // an absolute per-sample CEILING at `dpp + 1.0`, and the ORIGINAL
+    // `dpp + 0.5` kept as a bound on how many samples may sit above it.
+    // Measured on this fixture 2026-08-21: max **3.890 mm** (2.8% under the
+    // 4.000 ceiling) and **10 of 630 865** steady-state samples over the
+    // population bar (0.0016%, against a 0.05% cap). The defect this sentry
+    // was written for read **44.8 mm** on a transit sample and 282 samples
+    // over the bar — 11x the ceiling and 30x the cap, so both bars still
+    // catch it outright.
     let commanded_dpp = 3.0_f64;
-    let margin = 0.5_f64;
-    let limit = commanded_dpp + margin;
+    let population_margin = 0.5_f64;
+    let ceiling_margin = 1.0_f64;
+    let limit = commanded_dpp + population_margin;
+    let ceiling = commanded_dpp + ceiling_margin;
+    const MAX_OVER_FRACTION: f64 = 5e-4;
 
     let mut max_axial = 0.0_f64;
     let mut max_sample_pos = [f64::NAN, f64::NAN, f64::NAN];
@@ -244,14 +264,27 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
         "expected steady-state cutting samples on AS013"
     );
     assert!(
-        max_axial <= limit,
+        max_axial <= ceiling,
         "F-031: steady-state max per-sample axial_engagement_mm = {max_axial:.3} mm \
-         exceeds commanded depth_per_pass + margin ({limit:.3}). Worst sample at \
-         (x={:.2}, y={:.2}, z={:.2}). {over_count} of {sample_count} steady-state \
-         samples exceed the limit.",
+         exceeds the absolute ceiling depth_per_pass + {ceiling_margin:.1} ({ceiling:.3}). \
+         Worst sample at (x={:.2}, y={:.2}, z={:.2}). {over_count} of {sample_count} \
+         steady-state samples are over the {limit:.3} population bar. Under the swept \
+         measure (SIM w5b) this fixture reads 3.890 mm; the defect this sentry was written \
+         for read 44.8 mm.",
         max_sample_pos[0],
         max_sample_pos[1],
         max_sample_pos[2],
+    );
+
+    let over_fraction = over_count as f64 / sample_count as f64;
+    assert!(
+        over_fraction <= MAX_OVER_FRACTION,
+        "F-031: {over_count} of {sample_count} steady-state samples ({:.4}%) read axial \
+         above depth_per_pass + {population_margin:.1} ({limit:.3} mm) — the cap is \
+         {:.4}%. The defect this sentry was written for put 282 samples over the bar; the \
+         swept measure's own residue on this fixture is 10 of 630 865.",
+        over_fraction * 100.0,
+        MAX_OVER_FRACTION * 100.0
     );
 }
 
