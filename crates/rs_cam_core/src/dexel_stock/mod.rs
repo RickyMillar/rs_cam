@@ -6,6 +6,7 @@
 
 mod band;
 mod cut_direction;
+mod playback;
 mod simulation;
 mod stamping;
 mod swept;
@@ -13,6 +14,7 @@ mod tile_mip;
 mod whole_path;
 
 pub use cut_direction::StockCutDirection;
+pub use playback::{PlaybackDispatch, PlaybackDispatchStats};
 pub use simulation::{
     ChipThicknessStats, chip_thickness_stats, effective_chip_thickness_mm, peak_chip_thickness_mm,
 };
@@ -48,6 +50,17 @@ pub struct TriDexelStock {
     /// every `simulate_toolpath_with_lut_metrics_cancel` and left all-zero when
     /// that run used per-stamp dispatch.
     pub last_stamp_dispatch: StampDispatchStats,
+    /// How the **non-metric playback** replay schedules its stamp kernel
+    /// (SIM w6). A schedule only — both shapes produce bit-identical grids, and
+    /// that matters more here than on the metric side: this is the kernel that
+    /// builds `global_stock`, which `StockSource::FromRemainingStock`
+    /// generation reads. Defaults to [`PlaybackDispatch::Auto`].
+    pub playback_dispatch: PlaybackDispatch,
+    /// What the last non-metric replay's dispatcher did. Diagnostics for the
+    /// w6 non-vacuity sentries; reset at the start of every
+    /// `simulate_toolpath_with_lut_cancel` and left all-zero when that run was
+    /// serial.
+    pub last_playback_dispatch: PlaybackDispatchStats,
 }
 
 impl Clone for TriDexelStock {
@@ -59,6 +72,8 @@ impl Clone for TriDexelStock {
             stock_bbox: self.stock_bbox,
             stamp_dispatch: self.stamp_dispatch,
             last_stamp_dispatch: self.last_stamp_dispatch,
+            playback_dispatch: self.playback_dispatch,
+            last_playback_dispatch: self.last_playback_dispatch,
         }
     }
 }
@@ -73,6 +88,8 @@ impl TriDexelStock {
             stock_bbox: *bbox,
             stamp_dispatch: StampDispatch::default(),
             last_stamp_dispatch: StampDispatchStats::default(),
+            playback_dispatch: PlaybackDispatch::default(),
+            last_playback_dispatch: PlaybackDispatchStats::default(),
         }
     }
 

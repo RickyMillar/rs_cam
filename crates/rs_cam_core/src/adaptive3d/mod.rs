@@ -615,6 +615,8 @@ mod tests {
             stock_bbox: bbox,
             stamp_dispatch: Default::default(),
             last_stamp_dispatch: Default::default(),
+            playback_dispatch: Default::default(),
+            last_playback_dispatch: Default::default(),
         }
     }
 

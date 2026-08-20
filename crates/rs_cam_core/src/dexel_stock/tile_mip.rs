@@ -174,6 +174,23 @@ impl TileMaxTop {
         }
     }
 
+    /// Fold one playback stamp's band-reduced diagnostics in (SIM w6 path).
+    ///
+    /// The twin of [`Self::absorb`] for the non-metric kernel, which has no
+    /// per-cell early-out counter to report — the serial playback kernel passes
+    /// a literal `0` for `skipped` to [`Self::note_stamp_run`], and this keeps
+    /// that exactly.
+    #[inline]
+    pub(super) fn absorb_playback(&mut self, partial: &super::stamping::PlaybackPartial) {
+        self.charge(partial.bbox_cells);
+        if partial.stamp_skipped {
+            self.stats.stamps_skipped += 1;
+        } else {
+            self.stats.stamps_run += 1;
+            self.stats.cells_in_bbox += partial.bbox_cells;
+        }
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded by rows/cols, checked above
     fn rebuild(&mut self, grid: &DexelGrid) {
         for slot in self.tile_max.iter_mut() {

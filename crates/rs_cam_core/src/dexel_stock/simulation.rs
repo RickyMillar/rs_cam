@@ -5,6 +5,7 @@
 //! stamp operations. Behavior is unchanged from the monolithic version.
 
 use super::band;
+use super::playback::{PlaybackBandDispatch, PlaybackJob};
 use super::stamping::StampPartial;
 use super::stamping::{
     CuttingCaptureParams, SegmentSampleParams, build_move_semantic_lookup, chipload_mm_per_tooth,
@@ -55,7 +56,6 @@ impl TriDexelStock {
     }
 
     /// Simulate with a pre-built LUT (avoids rebuilding for repeated same-tool calls).
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     pub fn simulate_toolpath_with_lut_cancel(
         &mut self,
         toolpath: &Toolpath,
@@ -67,43 +67,109 @@ impl TriDexelStock {
         if toolpath.moves.is_empty() {
             return Ok(());
         }
+        self.replay_moves(
+            toolpath,
+            lut,
+            radius,
+            direction,
+            1,
+            toolpath.moves.len(),
+            cancel,
+        )
+    }
+
+    /// **The single playback enumerator.** Both non-metric entry points —
+    /// [`Self::simulate_toolpath_with_lut_cancel`] and
+    /// [`Self::simulate_toolpath_range_with_lut`] — walk the move list here and
+    /// nowhere else.
+    ///
+    /// That consolidation is deliberate and it is the same argument
+    /// `push_cutting_sample` makes on the metric side (`DELTA_sim_w4.md` §2b):
+    /// two loops that must stay in step by hand cannot be proved identical by
+    /// any test, only observed identical today. Before SIM w6 these were two
+    /// copies of the same `match` and the range one was already missing the
+    /// per-arc-window structure the other had grown.
+    ///
+    /// The dispatch mode selects **what happens to the geometry, never what is
+    /// enumerated**: `RS_CAM_PLAYBACK_DISPATCH=serial` stamps each move as it is
+    /// reached, `banded` queues it and stamps whole batches across row bands.
+    /// The two produce bit-identical grids — see `playback.rs`.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[allow(clippy::too_many_arguments)]
+    fn replay_moves(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        first_move: usize,
+        end_move: usize,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(), Cancelled> {
+        if toolpath.moves.len() < 2 {
+            return Ok(());
+        }
+        let first = first_move.max(1);
+        let last = end_move.min(toolpath.moves.len());
 
         let mut arc_buf = Vec::new();
         // S2 — same air-skip as the metric path. This is the playback stamp
         // `compute/simulate.rs` runs against `global_stock` for EVERY toolpath,
         // so it is a second full replay of the whole project.
         let mut air_mip = self.build_air_mip(lut, direction);
+        // SIM w6: `Some` selects banded dispatch — one `par_bands` per batch of
+        // queued stamps instead of one serial `stamp_segment_on_grid` per move.
+        // A schedule only; see `playback.rs`.
+        let mode = self.playback_dispatch.resolved();
+        let mut dispatch = {
+            let grid = self.ensure_grid(direction);
+            PlaybackBandDispatch::for_grid(grid, mode)
+        };
+        self.last_playback_dispatch = super::PlaybackDispatchStats::default();
+        let from_high = direction.cuts_from_high_side();
 
-        for i in 1..toolpath.moves.len() {
+        for i in first..last {
             check_cancel(cancel)?;
             let start = toolpath.moves[i - 1].target;
             let end = toolpath.moves[i].target;
 
             match toolpath.moves[i].move_type {
                 MoveType::Rapid => {}
+                // NOTE: `MoveIntent::Retract` linear feeds are stamped here like
+                // any other cut, exactly as they always have been. The metric
+                // path excludes them (§6.C); this one does not, and changing
+                // that would move `global_stock` and therefore the geometry
+                // `FromRemainingStock` ops generate. See `playback.rs`'s module
+                // docs — out of scope for the banding wave on purpose.
                 MoveType::Linear { .. } => {
-                    self.stamp_linear_segment_with_mip(
+                    self.playback_stamp(
                         lut,
                         radius,
                         start,
                         end,
                         direction,
+                        from_high,
                         &mut air_mip,
-                    );
+                        &mut dispatch,
+                        cancel,
+                    )?;
                 }
                 MoveType::ArcCW { i, j, .. } => {
                     let cs = self.z_grid.cell_size;
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
                     for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment_with_mip(
+                        self.playback_stamp(
                             lut,
                             radius,
                             w[0],
                             w[1],
                             direction,
+                            from_high,
                             &mut air_mip,
-                        );
+                            &mut dispatch,
+                            cancel,
+                        )?;
                     }
                 }
                 MoveType::ArcCCW { i, j, .. } => {
@@ -111,19 +177,66 @@ impl TriDexelStock {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
                     for w in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        self.stamp_linear_segment_with_mip(
+                        self.playback_stamp(
                             lut,
                             radius,
                             w[0],
                             w[1],
                             direction,
+                            from_high,
                             &mut air_mip,
-                        );
+                            &mut dispatch,
+                            cancel,
+                        )?;
                     }
                 }
             }
         }
+
+        // The tail batch. Everything queued after the last mid-replay flush
+        // still has to reach the grid.
+        if let Some(queue) = dispatch.as_mut()
+            && !queue.is_empty()
+        {
+            let grid = self.ensure_grid(direction);
+            queue.run_batch(grid, lut, radius, from_high, &mut air_mip, cancel)?;
+        }
+        if let Some(queue) = dispatch.as_ref() {
+            self.last_playback_dispatch = queue.stats();
+        }
         Ok(())
+    }
+
+    /// One playback stamp: straight to the grid, or queued for its band batch.
+    #[allow(clippy::too_many_arguments)]
+    fn playback_stamp(
+        &mut self,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        start: P3,
+        end: P3,
+        direction: StockCutDirection,
+        from_high: bool,
+        air_mip: &mut Option<TileMaxTop>,
+        dispatch: &mut Option<PlaybackBandDispatch>,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(), Cancelled> {
+        match dispatch.as_mut() {
+            None => {
+                self.stamp_linear_segment_with_mip(lut, radius, start, end, direction, air_mip);
+                Ok(())
+            }
+            Some(queue) => {
+                let s = direction.decompose(start.x, start.y, start.z);
+                let e = direction.decompose(end.x, end.y, end.z);
+                let grid = self.ensure_grid(direction);
+                queue.push(grid, radius, PlaybackJob { start: s, end: e });
+                if queue.batch_is_due() {
+                    queue.run_batch(grid, lut, radius, from_high, air_mip, cancel)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Build the S2 air-skip mip for `direction`, or `None` where the skip
@@ -520,7 +633,9 @@ impl TriDexelStock {
     }
 
     /// Simulate a range of moves using a pre-built LUT.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    ///
+    /// Since SIM w6 this is [`Self::replay_moves`] with a never-firing cancel
+    /// token, rather than a second hand-maintained copy of the same `match`.
     pub fn simulate_toolpath_range_with_lut(
         &mut self,
         toolpath: &Toolpath,
@@ -530,60 +645,16 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        if toolpath.moves.len() < 2 {
-            return;
-        }
-        let first = start_move.max(1);
-        let last = end_move.min(toolpath.moves.len());
-        let mut arc_buf = Vec::new();
-        let mut air_mip = self.build_air_mip(lut, direction);
-
-        for i in first..last {
-            let start = toolpath.moves[i - 1].target;
-            let end = toolpath.moves[i].target;
-
-            match toolpath.moves[i].move_type {
-                MoveType::Rapid => {}
-                MoveType::Linear { .. } => {
-                    self.stamp_linear_segment_with_mip(
-                        lut,
-                        radius,
-                        start,
-                        end,
-                        direction,
-                        &mut air_mip,
-                    );
-                }
-                MoveType::ArcCW { i, j, .. } => {
-                    let cs = self.z_grid.cell_size;
-                    linearize_arc_into(&mut arc_buf, start, end, i, j, true, cs);
-                    for w in arc_buf.windows(2) {
-                        self.stamp_linear_segment_with_mip(
-                            lut,
-                            radius,
-                            w[0],
-                            w[1],
-                            direction,
-                            &mut air_mip,
-                        );
-                    }
-                }
-                MoveType::ArcCCW { i, j, .. } => {
-                    let cs = self.z_grid.cell_size;
-                    linearize_arc_into(&mut arc_buf, start, end, i, j, false, cs);
-                    for w in arc_buf.windows(2) {
-                        self.stamp_linear_segment_with_mip(
-                            lut,
-                            radius,
-                            w[0],
-                            w[1],
-                            direction,
-                            &mut air_mip,
-                        );
-                    }
-                }
-            }
-        }
+        let never_cancel = || false;
+        let _ = self.replay_moves(
+            toolpath,
+            lut,
+            radius,
+            direction,
+            start_move,
+            end_move,
+            &never_cancel,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
