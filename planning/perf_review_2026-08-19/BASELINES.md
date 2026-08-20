@@ -979,3 +979,80 @@ on the merged lane (4 `needless_range_loop` in `swept.rs`, 6 `print_stdout` in
 in `217be7a2`. Every other number in the package reproduced exactly, including
 all 39 + 29 golden fields, all three F-XXX readings, both parity splits and
 every wanaka metric row.
+
+---
+
+# Wave 6 (SIM) — playback-replay banding + W5B follow-up lanes (2026-08-21)
+
+Three parallel lanes. Full write-ups: `DELTA_sim_w6_playback.md` (banding),
+`DELTA_w5b_f1_planner_boundary.md` (parity root cause),
+`DELTA_w5b_f4_aircut_DECISION.md` (threshold decision package, **awaiting the
+user's decision — no shipped bar moved**).
+
+## Playback banding — the numbers (paired, post-hoist run, `da1aac06`)
+
+Bit-identical by construction (no accumulators to reassociate), sentried on
+every live grid + 300-probe remaining-stock lattice, mutation-checked. Ratios
+serial/banded:
+
+| fixture | 1 thr | 4 thr | 24 thr |
+|---|---:|---:|---:|
+| `flat12_cs0.1` | 1.04× | 1.90× | **2.25×** |
+| `flat6_cs0.1` | 1.12× | 1.62× | 1.61× |
+| `flat6_cs0.5_dense` | 1.02× | 1.50× | 1.14× |
+| `flat6_cs0.25_plunge` | 1.02× | 1.25× | 1.01× |
+
+Pre-hoist run 1 had `flat6_cs0.5_dense`@1 at **0.42×** — a per-band
+`CoverageFastPath` cost invisible on the 25×-heavier metric kernel. Hoisted per
+batch; the loss arm is now 1.02×. **Absolute-scale caveat:** the serial replay
+was 4.7 ms on a fixture whose metric sim costs 175 ms — quote this wave as a
+structural fix (the replay no longer serializes the box; two drifted enumerator
+copies became one), not as an end-to-end speed-up, until a paired wanaka A/B
+exists.
+
+## W5B-F1 — RESOLVED: not a planner defect
+
+The 1360/568 boundary "over-claim" was the F-027 border clear acting on parity
+FIXTURES that passed `world_stock_xy_bbox: None` — production has supplied that
+bbox on every adaptive3d call since F-027. Control run: declaring the stock
+bbox takes `sim_higher` 1360 → 0 and 568 → 0. Landed `77ead905`, test-only.
+Residual watch item: the `boundary`-polygon clear (`path.rs:404-430`) is the
+same mechanism live in production and **un-measured** (parity fixtures set
+`boundary: None`).
+
+## W5B-F5 — MOOT: retract share of playback time is 0.0%
+
+Static census: all 26 production `MoveIntent::Retract` sites are
+`rapid_to_with_intent`; playback already skips rapids. Verified independently
+by the consolidator (the one `feed_to_with_intent(.., Retract)` outside
+`measurement.rs` tests is also in a `#[cfg(test)]` module,
+`feed_modulation.rs:859`). Corollary: the metric path's `is_retract_feed`
+Linear branch is unreachable from shipped generators — the CLAUDE.md Step-1
+sentence attributes the exclusion to intent-tagging when the moves being
+rapids is what does the work. CLAUDE.md wording fix + a "no Retract-tagged
+Linear feed ships" sentry are queued for the user.
+
+## Ledger entries 12–14 — the campaign's own claims, refuted
+
+The first eleven were review prescriptions. These three are claims in this
+campaign's OWN documents that did not survive the next lane's verification:
+
+| # | Where the claim lived | What it said | What is true |
+|---|---|---|---|
+| **12** | `DELTA_sim_w5b_landing.md` §4/§9 (W5B-F1) | "the planner claims removal its emitted path does not deliver … standing candidate: first emitted feed sweeps from the emitter's true position rather than `last_pos`" | The candidate explains **0 of 1928** cells; the border clear explains 1928 of 1928, and only because the fixtures omit `world_stock_xy_bbox`. The shipped configuration has **zero** one-sided boundary divergence. |
+| **13** | `DELTA_sim_w5b_landing.md` §2 | "`triage_action_count` 3 → 1: two air-cut actions dropped below their threshold" | Impossible — the verdict folds all air-cut offenders into ONE action. Air-cut actions were 1 before and 1 after; the two that vanished were `crosses_standing_material`, and the air-cut action's *subject* changed (Pocket → Zigzag, which had been abstaining). The air-cut band can move a project's action count by at most one. |
+| **14** | `DELTA_sim_w4.md` §6 + the intake framing | "the partial is empty and the reduce disappears"; "the largest remaining perf lever" | The S2 mip bookkeeping still needs a partial and a fold (3 numbers, not 9). And in wall-clock terms the replay was already ~4.7 ms vs 175 ms metric — largest remaining *serial loop*, not largest remaining *time*. |
+
+## Verification at the new tip
+
+Post-OOM re-verification by the consolidator (the banding lane was killed by
+`systemd-oomd` at 10:57 before its final gates — machine did not reboot; all
+lane commits and docs survived): `playback_band_dispatch_s6` 7/7,
+`cargo clippy --workspace --all-targets -- -D warnings` zero warnings,
+`cargo fmt --check` clean after `1a0a4ee0` (drift in six G1/G9-era files the
+original lanes' per-file spot checks missed). Full release suites at `-j 8`:
+core **3129 passed / 1 failed** — the one failure is the C9 wall-clock flake
+(`remap_interval_index_c9.rs:539`), 4.66× vs its ≥5× bar, **5.3× and passing
+on immediate re-run**, with the run-to-run movement entirely in the linear
+reference arm; viz / cli / mcp clean. The C9 bar has zero margin — candidate
+re-statement (bar 4×, or median-of-3) queued as a user decision.
