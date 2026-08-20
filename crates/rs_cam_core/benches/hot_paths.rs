@@ -237,6 +237,7 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
                 // purpose: the ratio against `whole_path` is the number the
                 // landing decision turns on, and a cross-day absolute on this
                 // box is worth nothing (`BASELINES.md`, measurement discipline).
+                ("swept_plunge", StampDispatch::SweptPlungeOnly),
                 ("swept", StampDispatch::Swept),
             ] {
                 group.bench_function(

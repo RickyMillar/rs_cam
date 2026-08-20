@@ -242,11 +242,13 @@ impl TriDexelStock {
         // whole-path code paths below are untouched — which is what makes the
         // A/B same-binary and the "old mode unchanged" claim checkable by
         // reading the diff rather than by trusting it.
-        let mut swept = if self.stamp_dispatch == StampDispatch::Swept {
-            let grid = self.ensure_grid(direction);
-            SweptDispatch::for_grid(grid)
-        } else {
-            None
+        let mut swept = match self.stamp_dispatch {
+            StampDispatch::Swept | StampDispatch::SweptPlungeOnly => {
+                let lateral = self.stamp_dispatch == StampDispatch::Swept;
+                let grid = self.ensure_grid(direction);
+                SweptDispatch::for_grid(grid, lateral)
+            }
+            _ => None,
         };
         self.last_stamp_dispatch = super::StampDispatchStats::default();
         let from_high = direction.cuts_from_high_side();

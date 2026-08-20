@@ -226,6 +226,53 @@ fn pure_vertical_chunks_are_bit_identical_to_per_stamp() {
     }
 }
 
+/// **Claim 1b, and the landable subset.** `SweptPlungeOnly` must be bit-identical
+/// to the shipped dispatch on a fixture that mixes *everything* — rasters, a
+/// ramp, a plunge, a re-pass, an arc — not just on pure descents.
+///
+/// The mode grows a chunk only where growing it is provably free: an
+/// exactly-vertical run (loop inversion) or a single bin (`bins == 1`, where the
+/// swept kernel *is* the shipped kernel). If this passes, the `by_z` half of S1
+/// carries no re-baseline and no decision at all — which is the single most
+/// useful thing this wave can establish.
+#[test]
+fn swept_plunge_only_is_bit_identical_to_the_shipped_dispatch() {
+    for tp in [mixed_pass(), plunge_pass()] {
+        for (label, cutter) in [
+            (
+                "flat6",
+                Box::new(FlatEndmill::new(6.0, 25.0)) as Box<dyn MillingCutter>,
+            ),
+            (
+                "ball6",
+                Box::new(BallEndmill::new(6.0, 25.0)) as Box<dyn MillingCutter>,
+            ),
+        ] {
+            for cell_size in [0.2_f64, 0.5] {
+                let what = format!("{label}/cs{cell_size}");
+                let shipped = simulate_with(
+                    &tp,
+                    cutter.as_ref(),
+                    cell_size,
+                    StampDispatch::WholeToolpath,
+                );
+                let hoisted = simulate_with(
+                    &tp,
+                    cutter.as_ref(),
+                    cell_size,
+                    StampDispatch::SweptPlungeOnly,
+                );
+                assert_grids_bit_identical(&shipped.0, &hoisted.0, &format!("{what}: grid"));
+                assert_samples_bit_identical(&shipped.1, &hoisted.1, &format!("{what}: samples"));
+                assert!(
+                    hoisted.0.last_stamp_dispatch.batches > 0,
+                    "{what}: swept-plunge dispatch never ran"
+                );
+            }
+        }
+    }
+}
+
 /// **Claim 2.** Swept dispatch must not move with the core count.
 ///
 /// The chunk decomposition is a function of the move's subdivision, the tool
