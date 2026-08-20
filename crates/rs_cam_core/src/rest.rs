@@ -400,12 +400,16 @@ mod tests {
         for (label, poly, params) in [
             ("square", square_polygon(40.0), default_params()),
             ("ring", ring, default_params()),
-            ("angled", square_polygon(60.0), RestParams {
-                angle: 37.0,
-                stepover: 0.7,
-                tool_radius: 0.8,
-                ..default_params()
-            }),
+            (
+                "angled",
+                square_polygon(60.0),
+                RestParams {
+                    angle: 37.0,
+                    stepover: 0.7,
+                    tool_radius: 0.8,
+                    ..default_params()
+                },
+            ),
             // The "large tool cannot fit at all" fallback branch.
             ("fallback", square_polygon(8.0), default_params()),
         ] {

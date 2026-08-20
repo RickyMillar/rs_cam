@@ -276,8 +276,7 @@ mod tests {
                 });
                 if let Some(ref_dot) = ref_dot {
                     for line in &mut lines {
-                        let dot =
-                            (line[1].x - line[0].x) * cos_a + (line[1].y - line[0].y) * sin_a;
+                        let dot = (line[1].x - line[0].x) * cos_a + (line[1].y - line[0].y) * sin_a;
                         if dot * ref_dot < 0.0 {
                             line.swap(0, 1);
                         }
@@ -332,27 +331,43 @@ mod tests {
     fn face_hoisted_scan_lines_are_bit_identical() {
         let cases: Vec<(&str, BoundingBox3, FaceParams)> = vec![
             ("single pass, zigzag", stock_100x100(), default_params()),
-            ("multi pass, zigzag", stock_100x100(), FaceParams {
-                depth: 6.0,
-                depth_per_pass: 2.0,
-                ..default_params()
-            }),
-            ("multi pass, oneway", stock_100x100(), FaceParams {
-                depth: 5.0,
-                depth_per_pass: 1.5,
-                direction: FaceDirection::OneWay,
-                ..default_params()
-            }),
-            ("single pass, oneway", stock_100x100(), FaceParams {
-                direction: FaceDirection::OneWay,
-                ..default_params()
-            }),
-            ("non-zero stock top", stock_100x100(), FaceParams {
-                depth: 4.0,
-                depth_per_pass: 1.0,
-                stock_top_z: 12.5,
-                ..default_params()
-            }),
+            (
+                "multi pass, zigzag",
+                stock_100x100(),
+                FaceParams {
+                    depth: 6.0,
+                    depth_per_pass: 2.0,
+                    ..default_params()
+                },
+            ),
+            (
+                "multi pass, oneway",
+                stock_100x100(),
+                FaceParams {
+                    depth: 5.0,
+                    depth_per_pass: 1.5,
+                    direction: FaceDirection::OneWay,
+                    ..default_params()
+                },
+            ),
+            (
+                "single pass, oneway",
+                stock_100x100(),
+                FaceParams {
+                    direction: FaceDirection::OneWay,
+                    ..default_params()
+                },
+            ),
+            (
+                "non-zero stock top",
+                stock_100x100(),
+                FaceParams {
+                    depth: 4.0,
+                    depth_per_pass: 1.0,
+                    stock_top_z: 12.5,
+                    ..default_params()
+                },
+            ),
             (
                 "tool wider than stock (empty inset)",
                 BoundingBox3 {
@@ -366,12 +381,16 @@ mod tests {
                     ..default_params()
                 },
             ),
-            ("stepover wider than stock", stock_100x100(), FaceParams {
-                stepover: 200.0,
-                depth: 4.0,
-                depth_per_pass: 2.0,
-                ..default_params()
-            }),
+            (
+                "stepover wider than stock",
+                stock_100x100(),
+                FaceParams {
+                    stepover: 200.0,
+                    depth: 4.0,
+                    depth_per_pass: 2.0,
+                    ..default_params()
+                },
+            ),
         ];
 
         for (label, bounds, params) in cases {

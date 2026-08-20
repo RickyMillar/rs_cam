@@ -213,11 +213,21 @@ impl EdgeDistanceField {
         let cells = self.nx * self.ny;
         let mut counts = vec![0u32; cells + 1];
         for (a, b) in &self.edges {
-            Self::for_each_cell(self.min_x, self.min_y, self.cell_x, self.cell_y, self.nx, self.ny, a, b, |c| {
-                if let Some(slot) = counts.get_mut(c + 1) {
-                    *slot = slot.saturating_add(1);
-                }
-            });
+            Self::for_each_cell(
+                self.min_x,
+                self.min_y,
+                self.cell_x,
+                self.cell_y,
+                self.nx,
+                self.ny,
+                a,
+                b,
+                |c| {
+                    if let Some(slot) = counts.get_mut(c + 1) {
+                        *slot = slot.saturating_add(1);
+                    }
+                },
+            );
         }
         for i in 1..=cells {
             let prev = counts.get(i - 1).copied().unwrap_or(0);
@@ -229,14 +239,24 @@ impl EdgeDistanceField {
         let mut items = vec![0u32; total];
         let mut cursor = counts.clone();
         for (idx, (a, b)) in self.edges.iter().enumerate() {
-            Self::for_each_cell(self.min_x, self.min_y, self.cell_x, self.cell_y, self.nx, self.ny, a, b, |c| {
-                if let Some(pos) = cursor.get_mut(c) {
-                    if let Some(slot) = items.get_mut(*pos as usize) {
-                        *slot = idx as u32;
+            Self::for_each_cell(
+                self.min_x,
+                self.min_y,
+                self.cell_x,
+                self.cell_y,
+                self.nx,
+                self.ny,
+                a,
+                b,
+                |c| {
+                    if let Some(pos) = cursor.get_mut(c) {
+                        if let Some(slot) = items.get_mut(*pos as usize) {
+                            *slot = idx as u32;
+                        }
+                        *pos += 1;
                     }
-                    *pos += 1;
-                }
-            });
+                },
+            );
         }
         self.starts = counts;
         self.items = items;
@@ -366,10 +386,7 @@ impl EdgeDistanceField {
         let x_hi = self.min_x + (cx as f64 + r + 1.0) * self.cell_x;
         let y_lo = self.min_y + (cy as f64 - r) * self.cell_y;
         let y_hi = self.min_y + (cy as f64 + r + 1.0) * self.cell_y;
-        (p.x - x_lo)
-            .min(x_hi - p.x)
-            .min(p.y - y_lo)
-            .min(y_hi - p.y)
+        (p.x - x_lo).min(x_hi - p.x).min(p.y - y_lo).min(y_hi - p.y)
     }
 
     fn scan_ring(
@@ -453,7 +470,10 @@ mod tests {
     struct Rng(u64);
     impl Rng {
         fn next_u64(&mut self) -> u64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let x = self.0;
             (x >> 33) ^ x
         }
@@ -526,10 +546,7 @@ mod tests {
             for hole in poly.holes.clone() {
                 for w in hole.windows(2) {
                     pts.push(w[0]);
-                    pts.push(P2::new(
-                        (w[0].x + w[1].x) / 2.0,
-                        (w[0].y + w[1].y) / 2.0,
-                    ));
+                    pts.push(P2::new((w[0].x + w[1].x) / 2.0, (w[0].y + w[1].y) / 2.0));
                 }
             }
             // Grid-cell boundaries are the one place the bound arithmetic and
@@ -648,7 +665,10 @@ mod tests {
         }
         let field = EdgeDistanceField::from_polygon(&poly);
         let n_edges = field.edge_count();
-        assert!(n_edges > 1900, "fixture should be edge-dense, got {n_edges}");
+        assert!(
+            n_edges > 1900,
+            "fixture should be edge-dense, got {n_edges}"
+        );
 
         let mut total_visits = 0usize;
         let samples = 20_000;
