@@ -25,7 +25,12 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    // Three of the tests here ARE measurements — they print the slope they
+    // assert on so a reader can see the shape, not just the verdict. That is
+    // the point of `print_swept_metric_delta`, and `tracing` is not wired in
+    // a test binary.
+    clippy::print_stdout
 )]
 
 use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
