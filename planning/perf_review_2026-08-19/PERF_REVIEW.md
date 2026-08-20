@@ -64,6 +64,29 @@ Fix: coarse max-top mip over the z-grid (one f32 per 16×16 tile, ~4 KB/1M cells
 `tile_max_top ≤ depth_min` ⇒ skip tile, exactly (h(r) ≥ 0). Tile maxima only decrease
 under top-down stamping — maintain with a monotone min where `lower_conservative_top`
 is called (`dexel.rs:554`). 2–10× on finish passes, multiplicative with S1.
+**FIXED in wave 2 SIM (`f9f26997`). Measured 1.46–2.07× on every bench arm** —
+including BOTH plunge arms, which S7 could not touch at all. `DELTA_sim_w2.md`.
+Four corrections to the prescription, all of which would have shipped as a silent
+metric change:
+(1) **"skip tile, exactly" is NOT bit-exact.** `pre_volume` and `post_volume` are
+separate running sums differenced at the end, so an inert cell contributes the SAME
+addend to both and dropping it reassociates: `(a+X)−(b+X) ≠ a−b`. The per-cell
+early-out keeps the pair and skips everything else; the whole-stamp early-out is
+exact for the opposite reason (no cell visited ⇒ both sums stay 0.0 ⇒ difference
+exactly 0.0).
+(2) **`h(r) ≥ 0` is a claim, not a fact** — now MEASURED on the table that will be
+queried (`RadialProfileLUT::profile_is_nonneg_total`: finite, non-negative AND
+non-decreasing), and the skip disables itself where it fails. Non-decreasing is
+load-bearing: the interpolation can land ULPs below `h1` on a descending pair.
+(3) **`min(sd, ed)` is not the lowest tip the kernel evaluates.** `fl(sd + fl(ed−sd))`
+need not be `ed`; `(1.0, 1e-20)` evaluates a tip of 0.0 at t=1, BELOW `min(sd,ed)`.
+Third "obviously exact" bound in this review to be wrong at the last bit, after S7
+and G3.
+(4) The mip must be over `conservative_top`, not the ray tops — the sliver-safe
+bound feeds rapid-collision detection, and skipping on ray tops alone would leave it
+un-lowered on a SAFETY channel. Also: the overlap half of the win is flat-tool only
+(a round profile's `conservative_top` sits above the tip by `h(far)`), so a 3D
+finishing workload should expect the air half only.
 
 ## S3. Stamping is 100% single-threaded. HIGH
 
@@ -76,6 +99,28 @@ Fix: row-band decomposition over a whole toolpath (`rays.par_chunks_mut(band_row
 moves whose bbox misses. Per-cell mutation order preserved ⇒ **bit-identical** results
 (matters: `ray_blend_above` with f<1 is non-commutative). Metrics reduce across bands.
 Expected 6–12× desktop.
+**PARTIALLY DONE in wave 2 SIM (`5973b7cb`) — per-STAMP bands, and two corrections.**
+(1) **"bit-identical" is false for `removed_volume_est_mm3`.** The mutation-order half
+is true and the conclusion is not: the volume comes off the `pre_volume`/`post_volume`
+pair, and splitting the rows splits both sums. Everything else IS bit-identical (rays,
+`conservative_top`, axial DOC, radial engagement, the arc, and the sample stream's
+order/indices/timings). The golden absorbed it because its own docs anticipated exactly
+this. The decomposition is a function of the grid's row count and NEVER of
+`current_num_threads()`, so 1 thread and N agree bit-for-bit
+(`band_stamping_determinism_s3`).
+(2) **6–12× is not reachable per stamp.** Measured ceiling **2.10× at FOUR threads**,
+and it gets *worse* past 8 (165.1 / 102.3 / 78.5 / 78.6 / 108.6 ms at 1/2/4/8/24 on
+`flat12/cs0.1`). A stamp is tens of µs; the join tree deepens and nothing pins a band
+to a worker, so rows migrate between cores every subsegment. `with_min_len` coarsening
+made it worse at every count. Below ~12 k bbox cells the parallel path is a net LOSS
+(28 % at 4.3 k), so it is gated. **The remaining lever is amortising the dispatch over
+a whole toolpath** — one `par_bands` per thousands of stamps, with band-to-core
+affinity — which needs the two-phase sample-stream restructure `DELTA_sim_w2.md` §3f
+describes. `GridBand`, `StampPartial`, the row-span helper and the determinism harness
+are in the tree as its substrate.
+Also landed with it and worth as much as the parallelism: `CoverageFastPath::new` sat
+ABOVE the bbox early-outs, and the fan-out visited every band in the grid rather than
+the stamp's own rows. Fixing both is 1.02–1.11× on arms that never dispatch.
 
 ## S4. Per-toolpath full-grid clones + mesh extraction: O(k·cells). HIGH
 
