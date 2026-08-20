@@ -9,6 +9,7 @@
 //! `simulation.rs` within the `dexel_stock` module, but do not leak out of
 //! the crate.
 
+use super::band::GridBand;
 use super::tile_mip::TileMaxTop;
 use crate::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
@@ -501,7 +502,8 @@ pub(super) fn stamp_point_on_grid(
 
     if let Some(m) = mip.as_mut() {
         let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
-        m.charge_and_maybe_refresh(grid, bbox_cells);
+        m.refresh_if_due(grid);
+        m.charge(bbox_cells as u64);
         if !cell_can_remove(m.max_over(row_lo, row_hi, col_lo, col_hi), tip_depth) {
             m.note_stamp_skipped();
             return;
@@ -609,7 +611,8 @@ pub(super) fn stamp_segment_on_grid(
     let tip_lo = segment_tip_low(sd, seg_dd);
     if let Some(m) = mip.as_mut() {
         let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
-        m.charge_and_maybe_refresh(grid, bbox_cells);
+        m.refresh_if_due(grid);
+        m.charge(bbox_cells as u64);
         if !cell_can_remove(m.max_over(row_lo, row_hi, col_lo, col_hi), tip_lo) {
             m.note_stamp_skipped();
             return;
@@ -666,6 +669,137 @@ pub(super) fn stamp_segment_on_grid(
     }
 }
 
+/// One row band's share of a single stamp's metrics (PERF_REVIEW S3).
+///
+/// The metric kernel used to return the four published numbers directly. It
+/// now returns the *accumulators* instead, so a stamp split across row bands
+/// can be reduced before those numbers are formed. With one band covering
+/// every row — the serial path — [`Self::finish`] reproduces the pre-S3
+/// expressions verbatim.
+///
+/// # Which of these reduce exactly and which do not
+///
+/// `max_penetration` is a max, `perp_min`/`perp_max` are a min and a max:
+/// order-independent, so banding cannot move them. `pre_volume` and
+/// `post_volume` are **sums**, and `(a₁+a₂)+(a₃+a₄)` is not
+/// `((a₁+a₂)+a₃)+a₄` in `f64` — so banding reassociates the removed-volume
+/// sum. That is a real, if tiny, departure from the serial value, and it is
+/// why the review's "bit-identical" claim for S3 does not survive contact
+/// with the volume channel; see `band.rs`.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct StampPartial {
+    pub(super) pre_volume: f64,
+    pub(super) post_volume: f64,
+    pub(super) max_penetration: f64,
+    pub(super) perp_min: f64,
+    pub(super) perp_max: f64,
+    /// The pure-vertical branch, which has one running sum instead of a
+    /// pre/post pair. Every band agrees on this — it is a property of the
+    /// segment, not of the cells.
+    pub(super) degenerate: bool,
+    pub(super) descent: f64,
+    pub(super) removed_volume: f64,
+    /// Cells inside this band's clipped bounding box. Diagnostics for the S2
+    /// sentries and the delta doc; no production reader.
+    pub(super) bbox_cells: u64,
+    pub(super) cells_skipped: u64,
+    pub(super) stamp_skipped: bool,
+}
+
+impl StampPartial {
+    pub(super) fn empty() -> Self {
+        Self {
+            pre_volume: 0.0,
+            post_volume: 0.0,
+            max_penetration: 0.0,
+            perp_min: f64::INFINITY,
+            perp_max: f64::NEG_INFINITY,
+            degenerate: false,
+            descent: 0.0,
+            removed_volume: 0.0,
+            bbox_cells: 0,
+            cells_skipped: 0,
+            stamp_skipped: true,
+        }
+    }
+
+    /// Fold another band's share of the SAME stamp into this one.
+    ///
+    /// Bands are merged in row order, so the reassociation is fixed by the
+    /// grid geometry and not by which thread finished first.
+    pub(super) fn merge(&mut self, other: &Self) {
+        self.pre_volume += other.pre_volume;
+        self.post_volume += other.post_volume;
+        self.removed_volume += other.removed_volume;
+        if other.max_penetration > self.max_penetration {
+            self.max_penetration = other.max_penetration;
+        }
+        if other.perp_min < self.perp_min {
+            self.perp_min = other.perp_min;
+        }
+        if other.perp_max > self.perp_max {
+            self.perp_max = other.perp_max;
+        }
+        self.degenerate |= other.degenerate;
+        if other.descent > self.descent {
+            self.descent = other.descent;
+        }
+        self.bbox_cells += other.bbox_cells;
+        self.cells_skipped += other.cells_skipped;
+        self.stamp_skipped &= other.stamp_skipped;
+    }
+
+    /// Form the four published numbers. Byte-for-byte the pre-S3 expressions.
+    pub(super) fn finish(
+        &self,
+        radius: f64,
+        capture_arc_engagement: bool,
+    ) -> (f64, f64, Option<f64>, f64) {
+        if self.degenerate {
+            let radial = if self.removed_volume > 1e-9 { 1.0 } else { 0.0 };
+            return (self.descent, radial, None, self.removed_volume);
+        }
+        // Width of cut perpendicular to motion / tool diameter.
+        let radial_engagement = if self.perp_max > self.perp_min {
+            ((self.perp_max - self.perp_min) / (2.0 * radius)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // Engagement arc derived geometrically from radial engagement. The
+        // conventional CAM relationship (one-sided side bite of width W = D ·
+        // radial_engagement on a cutter of diameter D): arc = arccos(1 − 2 ·
+        // radial). Reads π/2 at half-immersion (RWoC=0.5) and π at full slot
+        // (RWoC=1.0) — matching the tooth-load arc convention the chipload
+        // formula expects.
+        //
+        // Computing this from radial rather than per-cell bearing binning
+        // avoids the dense-sample lune artifact: a per-cell scan over engaged
+        // cells in the midpoint disk only sees the thin sliver of fresh
+        // material between consecutive overlapping samples, and its bearing
+        // extent is much smaller than the steady-state engagement arc the
+        // chipload formula expects. The radial measurement (perp extent of
+        // fresh cells) is more robust because the bite zone has nontrivial
+        // perp extent even when the sliver is thin.
+        let arc_engagement_radians = if capture_arc_engagement {
+            let arc = if radial_engagement > 0.0 {
+                let one_minus_two_w_over_d = 1.0 - 2.0 * radial_engagement;
+                one_minus_two_w_over_d.clamp(-1.0, 1.0).acos()
+            } else {
+                0.0
+            };
+            Some(arc.clamp(0.0, std::f64::consts::TAU))
+        } else {
+            None
+        };
+        (
+            self.max_penetration.max(0.0),
+            radial_engagement,
+            arc_engagement_radians,
+            (self.pre_volume - self.post_volume).max(0.0),
+        )
+    }
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 #[allow(clippy::too_many_arguments)]
 /// Stamp a tool along a linear segment AND compute metrics in a single pass.
@@ -714,7 +848,7 @@ pub(super) fn stamp_segment_on_grid(
 ///   `cell_upper_bound_surface` sqrt, the `conservative_top` read-modify-write
 ///   and the whole engagement block.
 pub(super) fn stamp_segment_with_metrics(
-    grid: &mut DexelGrid,
+    band: &mut GridBand<'_>,
     lut: &RadialProfileLUT,
     radius: f64,
     start: (f64, f64, f64),
@@ -722,15 +856,15 @@ pub(super) fn stamp_segment_with_metrics(
     mid_u: f64,
     mid_v: f64,
     from_high: bool,
-    capture_arc_engagement: bool,
-    mip: Option<&mut TileMaxTop>,
-) -> (f64, f64, Option<f64>, f64) {
+    mip: Option<&TileMaxTop>,
+) -> StampPartial {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
     let seg_du = eu - su;
     let seg_dv = ev - sv;
     let seg_dd = ed - sd;
     let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
+    let degenerate = seg_len_sq < 1e-20;
 
     // S2: the skip reasons about `tip + h(d)` from below, so it needs
     // `h >= 0`, and it reproduces the kernel's own `None`-means-no-
@@ -738,72 +872,79 @@ pub(super) fn stamp_segment_with_metrics(
     // off the table that will actually be queried. `from_high` because
     // `conservative_top` is a high-side channel only.
     let air_skip = mip.is_some() && from_high && lut.profile_is_nonneg_total();
-    let mut mip = if air_skip { mip } else { None };
+
+    let mut out = StampPartial::empty();
+    out.degenerate = degenerate;
+    if degenerate {
+        out.descent = (sd - ed).abs();
+    }
+    if band.rows == 0 || band.cols == 0 {
+        return out;
+    }
+
+    let cs = band.cell_size;
+    let cell_area = cs * cs;
+    // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
+    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
     // Degenerate segment (pure-vertical, e.g. drill plunge): planar offset is
     // zero, so the metric formulas below would divide by zero. Stamp at the
     // segment's bottom and compute volume by measuring the ray-by-ray drop
     // in material height. axial_doc is the Z descent; radial_engagement is
     // 1.0 when material is actually being removed (drill bites full-flute).
-    if seg_len_sq < 1e-20 {
+    if degenerate {
         let d = sd.min(ed);
-        let descent = (sd - ed).abs();
-
-        let cs = grid.cell_size;
-        let cell_area = cs * cs;
         let r_sq = lut.radius_sq();
-        // §6.F gap 3: extend scan to capture annular cells.
-        let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
-        let col_min = ((su - scan_radius - grid.origin_u) / cs).floor() as isize;
-        let col_max = ((su + scan_radius - grid.origin_u) / cs).ceil() as isize;
-        let row_min = ((sv - scan_radius - grid.origin_v) / cs).floor() as isize;
-        let row_max = ((sv + scan_radius - grid.origin_v) / cs).ceil() as isize;
-        let col_lo = col_min.max(0) as usize;
-        let col_hi = (col_max as usize).min(grid.cols.saturating_sub(1));
-        let row_lo = row_min.max(0) as usize;
-        let row_hi = (row_max as usize).min(grid.rows.saturating_sub(1));
-
-        // S2. The degenerate branch accumulates `coverage · above · cell_area`
-        // and an inert cell has `above == 0.0` exactly, so here — unlike the
-        // swept branch — a skipped cell adds a literal `0.0` and dropping it
-        // is bit-exact with no bookkeeping at all.
-        let mut tile_bound = f32::INFINITY;
-        let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
-        if let Some(m) = mip.as_mut() {
-            m.charge_and_maybe_refresh(grid, bbox_cells);
-            tile_bound = m.max_over(row_lo, row_hi, col_lo, col_hi);
-            if !cell_can_remove(tile_bound, d) {
-                m.note_stamp_skipped();
-            }
-        }
-        if !cell_can_remove(tile_bound, d) {
-            return (descent, 0.0, None, 0.0);
+        let col_min = ((su - scan_radius - band.origin_u) / cs).floor() as isize;
+        let col_max = ((su + scan_radius - band.origin_u) / cs).ceil() as isize;
+        let row_min = ((sv - scan_radius - band.origin_v) / cs).floor() as isize;
+        let row_max = ((sv + scan_radius - band.origin_v) / cs).ceil() as isize;
+        // GLOBAL bounding box first — the mip is asked about the whole stamp,
+        // not about this band's share of it. See the note at the swept
+        // branch's own query: a band-local whole-stamp skip is not exact.
+        let col_lo_g = col_min.max(0) as usize;
+        let col_hi_g = col_max.max(0) as usize;
+        let row_lo_g = row_min.max(0) as usize;
+        let row_hi_g = row_max.max(0) as usize;
+        if let Some(m) = mip
+            && air_skip
+            && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), d)
+        {
+            out.stamp_skipped = true;
+            return out;
         }
 
-        let mut removed_volume = 0.0_f64;
-        let mut cells_skipped = 0u64;
+        let col_lo = col_lo_g;
+        let col_hi = col_hi_g.min(band.cols - 1);
+        let row_lo = row_lo_g.max(band.row_offset);
+        let row_hi = row_hi_g.min(band.last_row());
+        if row_lo > row_hi || col_lo > col_hi {
+            return out;
+        }
+        out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
+        out.stamp_skipped = false;
 
         for row in row_lo..=row_hi {
-            let cell_v = grid.origin_v + row as f64 * cs;
+            let cell_v = band.origin_v + row as f64 * cs;
             let dv = cell_v - sv;
             for col in col_lo..=col_hi {
-                let cell_u = grid.origin_u + col as f64 * cs;
+                let cell_u = band.origin_u + col as f64 * cs;
                 let du = cell_u - su;
                 let coverage = point_cell_coverage(du, dv, r_sq, cs);
                 if coverage <= 0.0 {
                     continue;
                 }
-                if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), d) {
-                    cells_skipped += 1;
+                let idx = band.local(row, col);
+                if air_skip && !cell_can_remove(band.conservative_top[idx], d) {
+                    out.cells_skipped += 1;
                     continue;
                 }
                 let dist_sq = du * du + dv * dv;
                 let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
                     continue;
                 };
-                let idx = row * grid.cols + col;
-                let ray = &mut grid.rays[idx];
+                let ray = &mut band.rays[idx];
                 if from_high {
                     let surface = (d + h) as f32;
                     let above = ray_material_length_above(ray, surface) as f64;
@@ -814,39 +955,26 @@ pub(super) fn stamp_segment_with_metrics(
                     // correcting (pre/post diff); the degenerate branch
                     // accumulates `above` directly and would otherwise
                     // overcount by 1/f for boundary cells.
-                    removed_volume += coverage as f64 * above * cell_area;
+                    out.removed_volume += coverage as f64 * above * cell_area;
                 } else {
                     let surface = (d - h) as f32;
                     let total_before = ray_material_length(ray) as f64;
                     ray_blend_below(ray, surface, coverage);
                     let total_after = ray_material_length(ray) as f64;
-                    removed_volume += (total_before - total_after) * cell_area;
+                    out.removed_volume += (total_before - total_after) * cell_area;
                 }
                 // A/M10 — see `stamp_point_on_grid`.
                 if from_high
                     && coverage >= FULL_COVERAGE
                     && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
                 {
-                    grid.lower_conservative_top(idx, ub as f32);
+                    band.lower_conservative_top(idx, ub as f32);
                 }
             }
         }
 
-        if let Some(m) = mip.as_mut() {
-            m.note_stamp_run(bbox_cells as u64, cells_skipped);
-        }
-        let radial = if removed_volume > 1e-9 { 1.0 } else { 0.0 };
-        return (descent, radial, None, removed_volume);
+        return out;
     }
-
-    let inv_seg_len_sq = 1.0 / seg_len_sq;
-    let cs = grid.cell_size;
-    let cell_area = cs * cs;
-    let radius_sq = lut.radius_sq();
-    // S7: the coverage fast-path radii are constant across the whole stamp.
-    let fast = CoverageFastPath::new(radius_sq, cs);
-    // §6.F gap 3: extend scan by cs·√2 to capture annular cells.
-    let scan_radius = radius + cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
 
     // Bounding box of segment sweep + tool radius (superset of all footprints).
     let u_min = su.min(eu) - scan_radius;
@@ -854,34 +982,52 @@ pub(super) fn stamp_segment_with_metrics(
     let v_min = sv.min(ev) - scan_radius;
     let v_max = sv.max(ev) + scan_radius;
 
-    let col_lo = ((u_min - grid.origin_u) / cs).floor().max(0.0) as usize;
-    let col_hi = (((u_max - grid.origin_u) / cs).ceil() as usize).min(grid.cols.saturating_sub(1));
-    let row_lo = ((v_min - grid.origin_v) / cs).floor().max(0.0) as usize;
-    let row_hi = (((v_max - grid.origin_v) / cs).ceil() as usize).min(grid.rows.saturating_sub(1));
-
     // S2 — see the function docs. `tip_lo` is the lowest tip position any cell
     // in this loop can see, computed in the kernel's own arithmetic.
     let tip_lo = segment_tip_low(sd, seg_dd);
-    let mut tile_bound = f32::INFINITY;
-    let bbox_cells = (row_hi + 1 - row_lo).saturating_mul(col_hi + 1 - col_lo);
-    if let Some(m) = mip.as_mut() {
-        m.charge_and_maybe_refresh(grid, bbox_cells);
-        tile_bound = m.max_over(row_lo, row_hi, col_lo, col_hi);
-        if !cell_can_remove(tile_bound, tip_lo) {
-            m.note_stamp_skipped();
-        }
+
+    // The mip is queried over the stamp's GLOBAL bounding box, deliberately,
+    // even though this band will only walk its own slice of it.
+    //
+    // A band-local whole-stamp skip is **not exact**, and the exactness sentry
+    // caught it the first time this kernel was banded. `pre_volume` and
+    // `post_volume` are separate running sums differenced at the end; a band
+    // that skips its share drops the same addend from both, and
+    // `(a + X) − (b + X) != a − b`. The whole-stamp skip is only exact when
+    // EVERY band takes it, because then both sums stay at `0.0` and their
+    // difference is exactly zero. Asking about the global box makes every band
+    // reach the same verdict, so it is all of them or none.
+    let col_lo_g = ((u_min - band.origin_u) / cs).floor().max(0.0) as usize;
+    let col_hi_g = ((u_max - band.origin_u) / cs).ceil().max(0.0) as usize;
+    let row_lo_g = ((v_min - band.origin_v) / cs).floor().max(0.0) as usize;
+    let row_hi_g = ((v_max - band.origin_v) / cs).ceil().max(0.0) as usize;
+    if let Some(m) = mip
+        && air_skip
+        && !cell_can_remove(m.max_over(row_lo_g, row_hi_g, col_lo_g, col_hi_g), tip_lo)
+    {
+        out.stamp_skipped = true;
+        return out;
     }
-    if !cell_can_remove(tile_bound, tip_lo) {
-        // Every cell is inert: both volume accumulators would take the same
-        // addends in the same order, so the difference is exactly zero, no
-        // cell qualifies for the perp extent, and nothing is removed.
-        let arc_engagement_radians = if capture_arc_engagement {
-            Some(0.0)
-        } else {
-            None
-        };
-        return (0.0, 0.0, arc_engagement_radians, 0.0);
+
+    let col_lo = col_lo_g;
+    let col_hi = col_hi_g.min(band.cols - 1);
+    let row_lo = row_lo_g.max(band.row_offset);
+    let row_hi = row_hi_g.min(band.last_row());
+    if row_lo > row_hi || col_lo > col_hi {
+        return out;
     }
+    out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
+    out.stamp_skipped = false;
+
+    // Per-stamp setup, deliberately placed AFTER every early return.
+    // `CoverageFastPath::new` costs a handful of `sqrt`s and up to four bounded
+    // ULP walks; under S3 this function runs once per BAND rather than once per
+    // stamp, and hoisting it above the band-range test cost ~20 % on the
+    // fine-cell lateral arm and ~40 % end-to-end before it was moved.
+    let inv_seg_len_sq = 1.0 / seg_len_sq;
+    let radius_sq = lut.radius_sq();
+    // S7: the coverage fast-path radii are constant across the whole stamp.
+    let fast = CoverageFastPath::new(radius_sq, cs);
 
     // Metrics accumulators.
     let mut pre_volume = 0.0f64;
@@ -893,7 +1039,6 @@ pub(super) fn stamp_segment_with_metrics(
     // way that is independent of sample density.
     let mut perp_min = f64::INFINITY;
     let mut perp_max = f64::NEG_INFINITY;
-    let mut cells_skipped = 0u64;
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
     // Both measurement floors this loop applies — the fixed material floor
@@ -901,9 +1046,9 @@ pub(super) fn stamp_segment_with_metrics(
     // `PERP_COVERAGE_GATE` — are module-level constants; see their docs.
 
     for row in row_lo..=row_hi {
-        let cell_v = grid.origin_v + row as f64 * cs;
+        let cell_v = band.origin_v + row as f64 * cs;
         for col in col_lo..=col_hi {
-            let cell_u = grid.origin_u + col as f64 * cs;
+            let cell_u = band.origin_u + col as f64 * cs;
 
             let (coverage, t_center, center_d_sq) = segment_cell_coverage(
                 cell_u,
@@ -920,22 +1065,22 @@ pub(super) fn stamp_segment_with_metrics(
             if coverage <= 0.0 {
                 continue;
             }
-            let idx = row * grid.cols + col;
+            let idx = band.local(row, col);
             // S2 per-cell early-out. The two volume accumulators still take
             // their (identical) addends — see the function docs for why
             // dropping them would move `removed_volume_est_mm3`.
-            if air_skip && !cell_can_remove(grid.conservative_top[idx], tip_lo) {
-                let inert = ray_material_length(&grid.rays[idx]) as f64 * cell_area;
+            if air_skip && !cell_can_remove(band.conservative_top[idx], tip_lo) {
+                let inert = ray_material_length(&band.rays[idx]) as f64 * cell_area;
                 pre_volume += inert;
                 post_volume += inert;
-                cells_skipped += 1;
+                out.cells_skipped += 1;
                 continue;
             }
             let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
                 continue;
             };
 
-            let ray = &mut grid.rays[idx];
+            let ray = &mut band.rays[idx];
 
             // 1. Pre-stamp material totals (read before mutation). pre_len
             //    is total material height; pre_fresh is material above the
@@ -968,13 +1113,13 @@ pub(super) fn stamp_segment_with_metrics(
             // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
             // simulator actually runs, so it is the one that decides whether
             // `prior_stocks` carries a sliver-safe bound at all. Placed
-            // after the last read of `ray`: the update takes `&mut grid`,
+            // after the last read of `ray`: the update takes `&mut band`,
             // and the ray borrow is still live above it.
             if from_high
                 && coverage >= FULL_COVERAGE
                 && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
             {
-                grid.lower_conservative_top(idx, ub as f32);
+                band.lower_conservative_top(idx, ub as f32);
             }
 
             // 4. Engagement metrics. The midpoint disk defines the
@@ -1007,51 +1152,13 @@ pub(super) fn stamp_segment_with_metrics(
         }
     }
 
-    if let Some(m) = mip.as_mut() {
-        m.note_stamp_run(bbox_cells as u64, cells_skipped);
-    }
-
-    // Width of cut perpendicular to motion / tool diameter.
-    let radial_engagement = if perp_max > perp_min {
-        ((perp_max - perp_min) / (2.0 * radius)).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    // Engagement arc derived geometrically from radial engagement. The
-    // conventional CAM relationship (one-sided side bite of width W = D ·
-    // radial_engagement on a cutter of diameter D): arc = arccos(1 − 2 ·
-    // radial). Reads π/2 at half-immersion (RWoC=0.5) and π at full slot
-    // (RWoC=1.0) — matching the tooth-load arc convention the chipload
-    // formula expects.
-    //
-    // Computing this from radial rather than per-cell bearing binning
-    // avoids the dense-sample lune artifact: a per-cell scan over engaged
-    // cells in the midpoint disk only sees the thin sliver of fresh
-    // material between consecutive overlapping samples, and its bearing
-    // extent is much smaller than the steady-state engagement arc the
-    // chipload formula expects. The radial measurement (perp extent of
-    // fresh cells) is more robust because the bite zone has nontrivial
-    // perp extent even when the sliver is thin.
-    let arc_engagement_radians = if capture_arc_engagement {
-        let arc = if radial_engagement > 0.0 {
-            let one_minus_two_w_over_d = 1.0 - 2.0 * radial_engagement;
-            one_minus_two_w_over_d.clamp(-1.0, 1.0).acos()
-        } else {
-            0.0
-        };
-        Some(arc.clamp(0.0, std::f64::consts::TAU))
-    } else {
-        None
-    };
-
-    (
-        max_penetration.max(0.0),
-        radial_engagement,
-        arc_engagement_radians,
-        (pre_volume - post_volume).max(0.0),
-    )
+    out.pre_volume = pre_volume;
+    out.post_volume = post_volume;
+    out.max_penetration = max_penetration;
+    out.perp_min = perp_min;
+    out.perp_max = perp_max;
+    out
 }
-
 /// Bundled parameters for `sample_segment_runtime`.
 pub(super) struct SegmentSampleParams<'a> {
     pub(super) move_index: usize,
@@ -1245,18 +1352,29 @@ mod tests {
                      mip: &mut Option<TileMaxTop>,
                      s: (f64, f64, f64),
                      e: (f64, f64, f64)| {
-            out.push(stamp_segment_with_metrics(
-                grid,
-                &lut,
-                radius,
-                s,
-                e,
-                (s.0 + e.0) * 0.5,
-                (s.1 + e.1) * 0.5,
-                from_high,
-                true,
-                mip.as_mut(),
-            ));
+            if let Some(m) = mip.as_mut() {
+                m.refresh_if_due(grid);
+            }
+            let mut reduced = StampPartial::empty();
+            let view = mip.as_ref();
+            let (row_lo, row_hi) = crate::dexel_stock::band::stamp_row_span(grid, radius, s, e);
+            for mut band in grid.serial_bands(row_lo, row_hi) {
+                reduced.merge(&stamp_segment_with_metrics(
+                    &mut band,
+                    &lut,
+                    radius,
+                    s,
+                    e,
+                    (s.0 + e.0) * 0.5,
+                    (s.1 + e.1) * 0.5,
+                    from_high,
+                    view,
+                ));
+            }
+            if let Some(m) = mip.as_mut() {
+                m.absorb(&reduced);
+            }
+            out.push(reduced.finish(radius, true));
         };
 
         // Three depth ladders. The third REPEATS the second, which is the

@@ -4,6 +4,8 @@
 //! `mod.rs` file stays focused on the type, construction, and single-shot
 //! stamp operations. Behavior is unchanged from the monolithic version.
 
+use super::band;
+use super::stamping::StampPartial;
 use super::stamping::{
     CuttingCaptureParams, SegmentSampleParams, build_move_semantic_lookup, chipload_mm_per_tooth,
     lerp_point, sample_segment_runtime, stamp_segment_with_metrics,
@@ -21,6 +23,7 @@ use crate::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::{EngagementMode, MillingCutter};
 use crate::toolpath::{MoveType, Toolpath};
 use crate::toolpath_spans::SpanId;
+use rayon::prelude::*;
 
 impl TriDexelStock {
     // ── Toolpath simulation ─────────────────────────────────────────────
@@ -218,6 +221,9 @@ impl TriDexelStock {
         // makes the skip exact, so the mip is simply not built otherwise and
         // every early-out downstream degrades to "never fires".
         let mut air_mip = self.build_air_mip(lut, direction);
+        // S3: reused across every stamp so the band fan-out costs no
+        // allocation. `collect_into_vec` writes into it in band order.
+        let mut band_scratch: Vec<StampPartial> = Vec::new();
 
         for move_index in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -319,6 +325,7 @@ impl TriDexelStock {
                         &mut next_sample_index,
                         &mut samples,
                         &mut air_mip,
+                        &mut band_scratch,
                     )?;
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
@@ -351,6 +358,7 @@ impl TriDexelStock {
                             &mut next_sample_index,
                             &mut samples,
                             &mut air_mip,
+                            &mut band_scratch,
                         )?;
                     }
                 }
@@ -392,6 +400,7 @@ impl TriDexelStock {
                             &mut next_sample_index,
                             &mut samples,
                             &mut air_mip,
+                            &mut band_scratch,
                         )?;
                     }
                 }
@@ -503,6 +512,7 @@ impl TriDexelStock {
         next_sample_index: &mut usize,
         samples: &mut Vec<SimulationCutSample>,
         air_mip: &mut Option<TileMaxTop>,
+        band_scratch: &mut Vec<StampPartial>,
     ) -> Result<(), Cancelled> {
         let segment_length = (end - start).norm();
         if segment_length <= 1e-9 {
@@ -551,6 +561,7 @@ impl TriDexelStock {
                 direction,
                 params.capture_arc_engagement,
                 air_mip,
+                band_scratch,
             );
             let (axial_engagement_mm, plunge_descent_mm) =
                 if params.cut_kinematics == CutKinematics::Plunge {
@@ -649,24 +660,60 @@ impl TriDexelStock {
         direction: StockCutDirection,
         capture_arc_engagement: bool,
         air_mip: &mut Option<TileMaxTop>,
+        band_scratch: &mut Vec<StampPartial>,
     ) -> (f64, f64, Option<f64>, f64) {
         let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
         let (mu, mv, _md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
         let from_high = direction.cuts_from_high_side();
         let grid = self.ensure_grid(direction);
-        stamp_segment_with_metrics(
-            grid,
-            lut,
-            radius,
-            (su, sv, sd),
-            (eu, ev, ed),
-            mu,
-            mv,
-            from_high,
-            capture_arc_engagement,
-            air_mip.as_mut(),
-        )
+        if let Some(m) = air_mip.as_mut() {
+            m.refresh_if_due(grid);
+        }
+
+        // S3: one stamp, decomposed into row bands. The bands are the same
+        // whether they run on one thread or many — `stamp_wants_threads` picks
+        // a SCHEDULE, never a decomposition — so this choice cannot move a
+        // result. Partials are collected in band order and folded in that
+        // order, so the reassociation of the volume sums is fixed by the grid
+        // geometry rather than by which worker finished first.
+        let start = (su, sv, sd);
+        let end = (eu, ev, ed);
+        let (row_lo, row_hi) = band::stamp_row_span(grid, radius, start, end);
+        let parallel = band::stamp_wants_threads(grid, radius, start, end);
+        let mip = air_mip.as_ref();
+        if parallel {
+            grid.par_bands(row_lo, row_hi)
+                .map(|mut band| {
+                    stamp_segment_with_metrics(
+                        &mut band, lut, radius, start, end, mu, mv, from_high, mip,
+                    )
+                })
+                .collect_into_vec(band_scratch);
+        } else {
+            band_scratch.clear();
+            for mut band in grid.serial_bands(row_lo, row_hi) {
+                band_scratch.push(stamp_segment_with_metrics(
+                    &mut band, lut, radius, start, end, mu, mv, from_high, mip,
+                ));
+            }
+        }
+        let mut reduced = StampPartial::empty();
+        for partial in band_scratch.iter() {
+            reduced.merge(partial);
+        }
+        // Restricting the fan-out to the stamp's own rows means a stamp whose
+        // footprint misses the grid entirely visits NO band, so these two —
+        // which are properties of the segment rather than of any cell — have
+        // to come from the driver, not from a band that may never run.
+        if (eu - su) * (eu - su) + (ev - sv) * (ev - sv) < 1e-20 {
+            reduced.degenerate = true;
+            reduced.descent = (sd - ed).abs();
+        }
+        if let Some(m) = air_mip.as_mut() {
+            m.absorb(&reduced);
+        }
+        reduced.finish(radius, capture_arc_engagement)
     }
 }
 
