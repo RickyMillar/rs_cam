@@ -477,11 +477,32 @@ pub struct SetupBoundary {
 }
 
 /// Checkpoint: a snapshot of the stock at a toolpath boundary.
+///
+/// **Shared with the core simulation result, not owned** (S5,
+/// `rs_cam_core::compute::sim_prefix`). A checkpoint carries a marching-cubes
+/// mesh plus a full dexel-grid clone, so it is the heaviest per-toolpath
+/// artifact a simulation produces; deep-copying it here would put a second
+/// copy of every checkpoint in GUI state while the fixpoint prefix memo holds
+/// the first. Read through [`Self::mesh`] / [`Self::stock`].
 pub struct SimCheckpoint {
     pub boundary_index: usize,
-    pub mesh: StockMesh,
-    /// The tri-dexel stock at this checkpoint (for resuming incremental sim).
-    pub stock: Option<TriDexelStock>,
+    /// The core checkpoint: composited display mesh + the tri-dexel stock at
+    /// this boundary (the latter for resuming incremental sim).
+    pub core: Arc<rs_cam_core::compute::simulate::SimCheckpointMesh>,
+}
+
+impl SimCheckpoint {
+    /// Composited stock mesh at this boundary, in the global stock frame.
+    #[must_use]
+    pub fn mesh(&self) -> &StockMesh {
+        &self.core.mesh
+    }
+
+    /// Tri-dexel stock at this boundary, for resuming incremental simulation.
+    #[must_use]
+    pub fn stock(&self) -> &TriDexelStock {
+        &self.core.stock
+    }
 }
 
 // ---------------------------------------------------------------------------

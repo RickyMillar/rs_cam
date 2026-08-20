@@ -932,8 +932,7 @@ impl<B: ComputeBackend> AppController<B> {
                             .into_iter()
                             .map(|checkpoint| crate::state::simulation::SimCheckpoint {
                                 boundary_index: checkpoint.boundary_index,
-                                mesh: checkpoint.mesh,
-                                stock: Some(checkpoint.stock),
+                                core: checkpoint,
                             })
                             .collect();
 
@@ -1452,7 +1451,7 @@ impl<B: ComputeBackend> AppController<B> {
             Next::Simulate(resolution) => {
                 self.state.simulation.resolution = resolution;
                 self.state.simulation.auto_resolution = false;
-                if self.run_simulation_with_all() {
+                if self.run_simulation_with_all_memoized(true) {
                     self.mcp_generate_all_progress(
                         "Simulating so the blocked rest operations can see their stock...",
                     );
@@ -1467,6 +1466,11 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             Next::Finish(summary) => {
+                // S5: the ladder is the only thing that asked the analysis
+                // lane to retain a prefix snapshot, so it is the thing that
+                // releases it. Without this the last round's snapshot would
+                // sit on the lane until the next simulation consumed it.
+                self.compute.clear_sim_prefix_cache();
                 if let Some(pending) = self.pending_mcp.as_mut()
                     && let Some(ga) = pending.generate_all.take()
                 {

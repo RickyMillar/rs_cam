@@ -694,6 +694,7 @@ fn long_simulation_request() -> SimulationRequest {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     }
 }
 
@@ -741,6 +742,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     }
 }
 
@@ -1906,6 +1908,7 @@ fn multi_setup_top_bottom_simulation() {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2048,6 +2051,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2200,6 +2204,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2301,6 +2306,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2459,12 +2465,13 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     // Drive the viz production sim entry point directly (the same function
     // the worker thread calls from `worker.rs:739`).
     let cancel = AtomicBool::new(false);
-    let result = super::execute::run_simulation_with_phase(&request, &cancel, |_phase| {})
+    let result = super::execute::run_simulation_with_phase(&request, &cancel, |_phase| {}, None)
         .expect("viz simulation completes");
 
     let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");

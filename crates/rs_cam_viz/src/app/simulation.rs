@@ -15,7 +15,7 @@ impl RsCamApp {
             .checkpoint_for_move(move_idx)
         {
             let mut mesh = match self.controller.state().simulation.checkpoints().get(cp_idx) {
-                Some(c) => c.mesh.clone(),
+                Some(c) => c.mesh().clone(),
                 None => return,
             };
             // Checkpoint mesh is in global stock frame — transform to active
@@ -132,10 +132,8 @@ impl RsCamApp {
             }
 
             if let Some(cp_idx) = best_cp {
-                if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx)
-                    && let Some(stock) = &cp.stock
-                {
-                    let stock_clone = stock.clone();
+                if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx) {
+                    let stock_clone = cp.stock().clone();
                     let cp_end = boundaries[cp_idx].end_move;
                     let pb = &mut self.controller.state_mut().simulation.playback;
                     pb.live_stock = Some(stock_clone);
