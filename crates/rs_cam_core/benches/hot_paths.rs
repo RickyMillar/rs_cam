@@ -919,6 +919,141 @@ fn bench_sim_e2e_small(c: &mut Criterion) {
     group.finish();
 }
 
+// ── S5: the fixpoint ladder, memo off vs on ─────────────────────────────
+
+/// One raster pass of a synthetic rest chain: each op is offset in Y and cut
+/// deeper, so it both re-passes the previous op's ground and takes fresh
+/// material — the shape a `FromRemainingStock` cascade produces.
+fn ladder_pass(index: usize) -> std::sync::Arc<AnnotatedToolpath> {
+    let y0 = 6.0 + 4.0 * index as f64;
+    let depth = -1.0 - 0.6 * index as f64;
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(4.0, y0, 5.0));
+    for lane in 0..14 {
+        let y = y0 + 0.4 * lane as f64;
+        let (a, b) = if lane % 2 == 0 {
+            (4.0, 96.0)
+        } else {
+            (96.0, 4.0)
+        };
+        tp.feed_to(P3::new(a, y, depth), 1200.0);
+        tp.feed_to(P3::new(b, y, depth), 1200.0);
+    }
+    tp.rapid_to(P3::new(96.0, y0, 5.0));
+    std::sync::Arc::new(AnnotatedToolpath::new(tp))
+}
+
+fn ladder_request(
+    chain: &[std::sync::Arc<AnnotatedToolpath>],
+    count: usize,
+) -> rs_cam_core::compute::simulate::SimulationRequest {
+    use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry, SimulationRequest};
+    use rs_cam_core::geo::BoundingBox3;
+
+    let tool = || {
+        rs_cam_core::tool::ToolDefinition::new(
+            Box::new(FlatEndmill::new(6.0, 25.0)),
+            6.0,
+            20.0,
+            25.0,
+            45.0,
+            2,
+            rs_cam_core::compute::tool_config::ToolMaterial::Carbide,
+        )
+    };
+    SimulationRequest {
+        groups: vec![SimGroupEntry {
+            toolpaths: chain
+                .iter()
+                .take(count)
+                .enumerate()
+                .map(|(i, tp)| SimToolpathEntry {
+                    id: ToolpathId(i + 1),
+                    name: format!("Pass{i}"),
+                    annotated: std::sync::Arc::clone(tp),
+                    tool: tool(),
+                    flute_count: 2,
+                    tool_summary: "6mm Flat".to_owned(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: i as u64,
+                })
+                .collect(),
+            direction: StockCutDirection::FromTop,
+            local_stock_bbox: None,
+            local_to_global: None,
+            phantom_prior_stock: None,
+        }],
+        stock_bbox: BoundingBox3 {
+            min: P3::new(0.0, 0.0, -8.0),
+            max: P3::new(100.0, 60.0, 0.0),
+        },
+        stock_top_z: 0.0,
+        resolution: 0.4,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions {
+            enabled: true,
+            capture_arc_engagement: true,
+        },
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5000.0,
+        model_mesh: None,
+        kinematics: None,
+    }
+}
+
+/// S5. A **paired same-session A/B**: both arms run the identical three-round
+/// ladder (2 → 4 → 6 toolpaths at 0.4 mm, the wanaka reference resolution) in
+/// one criterion group. The only difference is whether each round leaves a
+/// prefix snapshot for the next one.
+///
+/// `memo_off` is the pre-S5 behaviour exactly — three full replays — so the
+/// ratio is the finding, measured rather than argued. Cross-day absolutes on
+/// this box are not comparable (`BASELINES.md`, "Measurement discipline"),
+/// which is why both arms are here rather than one arm plus a stored number.
+fn bench_sim_fixpoint_ladder(c: &mut Criterion) {
+    use std::sync::atomic::AtomicBool;
+
+    use rs_cam_core::compute::sim_prefix::{SimMemo, SimPrefixCache};
+    use rs_cam_core::compute::simulate::run_simulation_memoized;
+
+    let mut group = c.benchmark_group("sim_fixpoint_ladder");
+    group.sample_size(10);
+
+    let chain: Vec<_> = (0..6).map(ladder_pass).collect();
+    let rounds: Vec<_> = [2_usize, 4, 6]
+        .into_iter()
+        .map(|n| ladder_request(&chain, n))
+        .collect();
+    let cancel = AtomicBool::new(false);
+
+    for (label, memoize) in [("memo_off", false), ("memo_on", true)] {
+        group.bench_function(BenchmarkId::new("3round_6op_res0.4", label), |b| {
+            b.iter(|| {
+                let mut cache = SimPrefixCache::new();
+                let mut moves = 0;
+                for request in &rounds {
+                    let result = run_simulation_memoized(
+                        request,
+                        &cancel,
+                        |_p| {},
+                        Some(SimMemo {
+                            cache: &mut cache,
+                            store: memoize,
+                        }),
+                    )
+                    .expect("simulation completes");
+                    moves += result.total_moves;
+                }
+                black_box(moves)
+            })
+        });
+    }
+
+    group.finish();
+}
+
 // ── V1 (core side): triage + measurability over a whole trace ───────────
 
 /// Synthetic cut samples at trace scale. Deterministic, no RNG.
@@ -1027,6 +1162,7 @@ criterion_group!(
     bench_sim_kernel_lateral,
     bench_sim_kernel_plunge,
     bench_sim_e2e_small,
+    bench_sim_fixpoint_ladder,
     bench_gen_depth,
     bench_gen_waterline,
     bench_gen_contains_point,
