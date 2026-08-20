@@ -317,12 +317,35 @@ barrier) → single group of 10³–10⁴ segments. surface_link documents 12,78
 wanaka ×2 → 163M distance evals.
 Fix: one shared `nearest_neighbour_order` on a grid/k-d tree with deletion — O(n log n),
 removes the need for caps; six sites collapse to one.
+FIXED in wave 3b (gen-w3b): shared `nn_order::NearestPicker` (CSR grid, rebuild-on-halving
+deletion, strict ring early-out). Output **bit-identical at every site** — the tie-break is
+lexicographic `(distance, index)`, reproduced exactly, and pinned against verbatim copies of
+the replaced loops plus a pre-change A/B fingerprint. Measured: `optimize_rapid_order`
+exponent **2.028 → 1.074** (5k→20k, 32.6× faster at 20k); `relink_fragments` **1.540 → 1.227**
+(12.5× faster at 6k fragments). **Two corrections to the text above.** (1) The count is FIVE
+sites, not six: `ramp_finish.rs:320` is a greedy bipartite MATCH, not a tour — its nearest
+candidate can be rejected by an extent test and must stay available for the next query, so it
+uses the shared type with acceptance-driven rather than selection-driven deletion; and
+`unified_finish.rs:2434` is not a distance problem at all — its per-candidate cost is a
+mesh-drape link TIME from `compute_cycle_time`, not monotone in XY, so a geometric orderer
+would change its route. (2) "Removes the need for caps" is true of the SEED only.
+`MAX_2OPT_SEGMENTS` guards the O(N³) 2-opt refinement, which nothing here touches; it must
+stay. Separately, `unified_finish`'s quadratic is already bounded by an existing net —
+`finish_planner_wanaka_decompose.rs:213,454` assert `region_count <= 24` on wanaka and
+`<= 100` across the dial sweep — so it is not the uncapped class this finding names. Its
+own fix (prune `choose_link` with the admissible bound `cost_s >= xy/v_max`, comparing
+lexicographic `(cost_s, index)`) is recorded as follow-up in `DELTA_gen_w3b.md`.
 
 ## G6. surface_link rescans provenance per fragment: O(fragments × total_moves). HIGH
 
 `surface_link.rs:391` inside the per-fragment loop scans all `n_in` moves; at 12,780
 fragments × 10⁵ moves ≈ 10⁹ iterations writing known info.
 Fix: invert once — owner→rapids in one O(n_in) pass before emit; O(n_in + F).
+FIXED in wave 3b (gen-w3b), landed as its own commit ahead of G5. The same single O(n_in)
+walk that already built `owner_of_rapid` now stores `rapids_of_frag` instead; only the
+storage shape changed, so the provenance is identical by construction (each rapid has exactly
+one owner in both formulations) and is pinned by an A/B fingerprint over `(moves, provenance)`.
+Counted: 6,000 fragments × 41,999 moves = 251,994,000 iterations → 11,999.
 
 ## G7. Arc fitting quadratic on both branches. MED-HIGH (runs on every toolpath)
 
@@ -352,6 +375,17 @@ all edges per sample; default tolerance 0.05 → sample_step 0.05 mm → 400k sa
 triplicated; inlay runs twice.
 Fix: one indexed EdgeDistanceField shared by all three; `scan_lines.par_iter()` is
 mechanical.
+**CORRECTED + FIXED (wave 3 gen, `DELTA_gen_w3.md`).** Two corrections to the row.
+(1) **`rest.rs:126` is not a distance field.** It is `point_in_any_polygon` →
+`Polygon2::contains_point`, an even-odd ray cast against the previous tool's reachable
+region — same family (per-sample linear walk over all edges) but a *containment* query
+that cannot share the distance index, and `contains_point` already has a bbox early-out.
+Verified against the pre-G2 file, so it is not an artifact of `473c3d1f` moving lines.
+The helper is **duplicated** (vcarve + inlay), not triplicated; the shared field covers
+**two** call sites. Rest got the parallelism half only.
+(2) **The emphasis is inverted.** Measured on `gen_vcarve_field`: the index alone is
+2.98×, the "mechanical" `par_iter()` is a further **4.10×**. Combined 193.67 ms →
+15.869 ms, **12.2×**. The parallelism was the bigger half.
 
 ## G10. Serial full-grid tail after parallel drop-cutter. MED
 
@@ -391,7 +425,8 @@ Fix: decorate-sort-undecorate with precomputed (bbox, area); bitset pass-1 resul
 Only 8 files in rs_cam_core genuinely use rayon (classify_probe, compute/simulate,
 dropcutter, pencil, pushcutter, rest_field, slope, waterline) — all low-level primitives.
 NO generator parallelizes its outer structure. Highest payoff, in order:
-1. per-scan-line sampling (vcarve/inlay/rest — pairs with G9)
+1. per-scan-line sampling (vcarve/inlay/rest — pairs with G9) — **DONE wave 3 gen**,
+   and it was the larger half of G9 (4.10× vs the index's 2.98×)
 2. drop-cutter coverage tail (G10)
 3. waterline Z levels (`waterline.rs:186`, independent)
 4. per-group offsets (`polygon.rs:1271` — independent by construction, catch_unwind already
