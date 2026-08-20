@@ -19,6 +19,7 @@
 //! | `sim_kernel_lateral` | S1a, S2, S3, S7, S8 |
 //! | `sim_kernel_plunge`  | S1b (the `by_z` 0.02 mm subdivision) |
 //! | `sim_e2e_small`      | S4, S6 |
+//! | `sim_dispatch_ab`    | S3 wave 4 — per-stamp vs whole-toolpath, PAIRED |
 //! | `gen_depth`          | G2 — the L20/L1 **ratio** is the number |
 //! | `gen_waterline`      | G1 — likewise the L20/L1 ratio |
 //! | `gen_contains_point` | G4 |
@@ -41,7 +42,7 @@
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -147,6 +148,115 @@ fn raster_pass(passes: usize, span: f64, stepover: f64, depth: f64) -> Toolpath 
     }
     tp.final_retract(10.0);
     tp
+}
+
+/// [`run_metric_sim`] with the stamp dispatch forced, for the wave-4 A/B.
+#[allow(clippy::too_many_arguments)]
+fn run_metric_sim_with(
+    fresh: &TriDexelStock,
+    tp: &Toolpath,
+    lut: &RadialProfileLUT,
+    cutter: &dyn MillingCutter,
+    radius: f64,
+    sample_step_mm: f64,
+    dispatch: StampDispatch,
+) -> usize {
+    let never_cancel = || false;
+    let mut stock = fresh.clone();
+    stock.stamp_dispatch = dispatch;
+    let samples = stock
+        .simulate_toolpath_with_lut_metrics_cancel(
+            tp,
+            lut,
+            cutter,
+            radius,
+            StockCutDirection::FromTop,
+            ToolpathId(0),
+            18_000,
+            2,
+            5000.0,
+            sample_step_mm,
+            None,
+            &[],
+            &[],
+            false,
+            &never_cancel,
+        )
+        .expect("never cancelled");
+    samples.len()
+}
+
+// ── S3 wave 4: per-stamp vs whole-toolpath dispatch, PAIRED ─────────────
+
+/// The wave-4 deliverable, and it is deliberately **one criterion invocation**.
+///
+/// `DELTA_sim_w2.md` §1 threw away this wave's first A/B because an unrelated
+/// test suite was running at 171 % CPU and the *unmodified* tree read 18–134 %
+/// above its own committed numbers — criterion reports p-values against
+/// contention exactly as confidently as against a real change. The only defence
+/// is to measure both arms in the same session on the same machine, which is
+/// what this group does: for each fixture and each thread count, `per_stamp`
+/// and `whole_path` sit adjacent in one run, and the number that matters is the
+/// RATIO between them, not either absolute.
+///
+/// Thread counts are pinned with a rayon pool per arm rather than through
+/// `RAYON_NUM_THREADS`, so the sweep is inside one process too. The wave-2
+/// ceiling to beat is in `DELTA_sim_w2.md` §3c: **2.10× at four threads** on
+/// `flat12/cs0.1`, saturating at eight and regressing at twenty-four.
+fn bench_sim_dispatch_ab(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sim_dispatch_ab");
+    group.sample_size(10);
+
+    let lateral = raster_pass(6, 40.0, 4.0, -2.0);
+    let plunge = plunge_pass(24, -5.0);
+
+    #[allow(clippy::type_complexity)]
+    let fixtures: Vec<(&str, f64, f64, &Toolpath)> = vec![
+        ("flat12_cs0.1", 12.0, 0.1, &lateral),
+        ("flat6_cs0.1", 6.0, 0.1, &lateral),
+        ("flat6_cs0.25_plunge", 6.0, 0.25, &plunge),
+    ];
+
+    for (name, diameter, cell_size, tp) in fixtures {
+        let flat = FlatEndmill::new(diameter, 25.0);
+        let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+        let fresh = TriDexelStock::from_stock(0.0, 0.0, 50.0, 32.0, 0.0, 10.0, cell_size);
+        // 24 is the box's core count and is in the sweep deliberately: wave 2
+        // measured per-stamp dispatch getting *worse* there (108.6 ms against
+        // 78.6 at eight), so "does the regression past eight survive?" is a
+        // question this group has to be able to answer.
+        for threads in [1usize, 2, 4, 8, 24] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .expect("thread pool builds");
+            for (mode_name, mode) in [
+                ("per_stamp", StampDispatch::PerStamp),
+                ("whole_path", StampDispatch::WholeToolpath),
+            ] {
+                group.bench_function(
+                    BenchmarkId::new(format!("{name}/{mode_name}"), threads),
+                    |b| {
+                        pool.install(|| {
+                            b.iter(|| {
+                                black_box(run_metric_sim_with(
+                                    &fresh,
+                                    tp,
+                                    &lut,
+                                    &flat,
+                                    flat.radius(),
+                                    0.25,
+                                    mode,
+                                ))
+                            })
+                        })
+                    },
+                );
+            }
+        }
+    }
+
+    group.finish();
 }
 
 /// The PRODUCTION metric-collecting sim kernel — not
@@ -1162,6 +1272,7 @@ criterion_group!(
     bench_sim_kernel_lateral,
     bench_sim_kernel_plunge,
     bench_sim_e2e_small,
+    bench_sim_dispatch_ab,
     bench_sim_fixpoint_ladder,
     bench_gen_depth,
     bench_gen_waterline,
