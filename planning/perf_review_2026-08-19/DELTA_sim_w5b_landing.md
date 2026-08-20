@@ -497,7 +497,7 @@ faster; S4 and S6 are still in front of it.
 | `swept_stamping_s1` | **9/9** + 1 measurement |
 | `band_stamping_determinism_s3` | green (`per_stamp` / `whole_path` arms intact) |
 | `_litmatrix_*` | 7 binaries, **no failure** |
-| param-sweep fingerprints | **NOT RUN** — all 56 are `#[ignore]`d by default and need `-- --ignored`. Follow-up W5B-F3. |
+| param-sweep fingerprints | **56/56 green** (run post-landing 2026-08-21, release, `-- --ignored`, 3.82 s, 21 GB free). The sweep half of W5B-F3 is closed; the **acceptance-corpus / rest-chain geometry diff half remains open**. |
 
 **The one failure**, `wanaka_scale_indexed_path_beats_linear_scan_and_matches_output`
 (`tests/remap_interval_index_c9.rs`), asserts the C9 remap interval index is
@@ -537,7 +537,7 @@ Running count of refuted prescriptions in this review: **eleven.**
 |---|---|---|
 | **W5B-F1** | adaptive3d's planner claims removal on the boundary ring its emitted path does not deliver — 1360/2737 and 568/2737 cells, invariant under the stamp kernel, 98.7–100% one-sided. Standing candidate: `Cut` segments whose first emitted feed sweeps from the emitter's true tool position rather than the planner's raw `last_pos`. | A planner defect, pre-existing, unrelated to stamping. Pinned so it cannot grow; investigating it is its own item. |
 | **W5B-F2** | Re-express F-027 / F-031 against the tool's **commanded Z travel per pass** — a quantity still bounded by `dpp` under both kernels — instead of against measured column removal. | Better sentry, bigger change than a landing lane should absorb. The split bar is the interim. |
-| **W5B-F3** | Run the **acceptance corpus and the 56 param sweeps** under the new default and read the *geometry* diff on rest chains. | The metric re-baseline is the small part; the geometry change on `FromRemainingStock` ops is the part with no net under it. |
+| **W5B-F3** | Run the **acceptance corpus and the 56 param sweeps** under the new default and read the *geometry* diff on rest chains. **Sweeps: 56/56 green 2026-08-21.** Corpus/geometry half still open. | The metric re-baseline is the small part; the geometry change on `FromRemainingStock` ops is the part with no net under it. |
 | **W5B-F4** | Re-tune the air-cut thresholds against the new measure — the CLI's 40% verdict, the GUI's 20% banner, and every per-operation band in `OperationType::air_cut_high_threshold_pct`. | Those bands were fitted to a reading that was 3–90% resolution artifact. They are now calibrated for a retired instrument. |
 | **W5B-F5** | The **non-metric** replay `simulate_toolpath_with_lut_cancel` stamps `MoveType::Linear` regardless of intent (`simulation.rs:84`), so the metric grid and the playback grid disagree about retracts. | Pre-existing, not a swept-stamping question, and changing it moves `global_stock`. Logged by the decision package; still logged. |
 | **W5B-F6** | The GUI viewport's chipload heat-map still colours by the retired per-move quantity. | Pre-existing (`CLAUDE.md`), unrelated, unchanged by this wave. |
