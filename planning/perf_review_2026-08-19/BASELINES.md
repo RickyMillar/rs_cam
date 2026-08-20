@@ -504,9 +504,69 @@ and an RMW, not two sqrts."** The plunge arms showing *no change* under S7
 (p=0.08, p=0.76) are the evidence — that fixture routes through the already
 sqrt-free `point_cell_coverage`.
 
+---
+
+# Wave 2 (SIM) — S2 then S3
+
+Captured 2026-08-20. Full write-up, corrections and sentry inventory in
+`DELTA_sim_w2.md`; this is the numbers table only.
+
+**Three tree states benched back to back in one session**, at load average 3.8
+on a 24-core box, by checking out each state of the lane's own files:
+pre-S2 (`25c6823e`), S2 (`f9f26997`), S2+S3 (working tree, later `5973b7cb`).
+The pre-S2 column reproduces wave 1's committed numbers to within 1 % on every
+arm, which is the check that the window was quiet.
+
+**An earlier pair from the same day is discarded** and should not be quoted: an
+unrelated repository's test suite was at 171 % CPU with load average 22, the
+*unmodified* tree read 18–134 % above wave 1's numbers for identical code, and
+the pair contradicted itself (`sim_e2e_small/res1` "improved 74 %" while
+`res0.5` "regressed 20 %", both at p = 0.00). Criterion reports p-values against
+contention as confidently as against a real change.
+
+| Bench | pre-S2 | S2 | S2+S3 (24 thr) | S2 alone | S3 alone | total |
+|---|---:|---:|---:|---:|---:|---:|
+| `sim_kernel_lateral/flat6/cs0.25` | 15.000 ms | 10.241 ms | **9.224 ms** | 1.46× | 1.11× | **1.63×** |
+| `sim_kernel_lateral/flat6/cs0.1` | 86.735 ms | 49.770 ms | **49.216 ms** | 1.74× | 1.01× | **1.76×** |
+| `sim_kernel_lateral/flat12/cs0.25` | 51.527 ms | 28.706 ms | **28.238 ms** | 1.79× | 1.02× | **1.82×** |
+| `sim_kernel_lateral/flat12/cs0.1` | 307.11 ms | 159.89 ms | **105.20 ms** | 1.92× | **1.52×** | **2.92×** |
+| `sim_kernel_plunge/flat6_cs025/24` | 98.387 ms | 57.311 ms | **51.398 ms** | 1.72× | 1.11× | **1.91×** |
+| `sim_kernel_plunge/flat6_cs025/60` | 235.25 ms | 125.99 ms | **115.75 ms** | 1.87× | 1.09× | **2.03×** |
+| `sim_e2e_small/3op_2d/res1` | 17.725 ms | 10.606 ms | **11.227 ms** | 1.67× | 0.94× | **1.58×** |
+| `sim_e2e_small/3op_2d/res0.5` | 67.865 ms | 32.834 ms | **31.940 ms** | 2.07× | 1.03× | **2.12×** |
+
+Every S2 column is `p = 0.00`, "Performance has improved".
+
+## S3 thread scaling — the number that bounds the finding
+
+`sim_kernel_lateral/flat12/cs0.1`, 16 bands per stamp:
+
+| threads | 1 | 2 | 4 | 8 | 24 |
+|---|---:|---:|---:|---:|---:|
+| ms | 165.1 | 102.3 | **78.5** | 78.6 | 108.6 |
+| vs 1 thread | 1.00× | 1.61× | **2.10×** | 2.10× | 1.52× |
+
+The review predicts 6–12×. Per-*stamp* dispatch saturates at **2.10× on four
+threads** and gets *worse* past eight: a stamp is tens of microseconds, the join
+tree deepens with the pool, and nothing pins a band to a worker so the rows
+migrate between cores on every subsegment. Below ~12 k bbox cells the parallel
+path is a net loss (28 % at 4.3 k) and is gated off. Amortising the dispatch
+over a whole toolpath is the remaining lever — see `DELTA_sim_w2.md` §3f.
+
+## Two things the plunge arm says
+
+1. **S2 reaches it and S7 could not.** Wave 1 measured p = 0.08 / 0.76 there;
+   S2 gets 1.72×/1.87×. `plunge_pass`'s *retract* is a Linear feed the kernel
+   stamps like any other, subdivided by the 0.02 mm `by_z` rule into **300
+   subsegments — more than the descent's 250** — every one of them pure air over
+   ground the descent just cleared. More than half the stamp budget on
+   plunge-heavy work was being spent retracting through a hole the cutter had
+   just made.
+2. That half is gone already, which changes what S1b is worth.
+
 ## In flight
 
-S2 (tile max-top early-out), S3 (row-band parallel stamping), G5/G6 (shared NN
+S3's whole-toolpath dispatch (the remaining 6–12× lever), G5/G6 (shared NN
 orderer + surface_link provenance inversion), G8 (per-setup index/silhouette/
 mesh caching). Not yet started: S1, S5, S8, G7, G10-G12, V2, V5-V7, V9, V11,
 V14, V15, and the 0C wanaka wall-clock protocol.
