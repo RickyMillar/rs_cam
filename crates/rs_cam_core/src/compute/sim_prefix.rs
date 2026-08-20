@@ -56,6 +56,37 @@
 //! | per-entry id, name, tool summary, flute count, rpm override, flags, op-config hash | entry scalar |
 //! | `phantom_prior_stock` | deliberately **excluded**; re-derived (below) |
 //! | `kinematics` | deliberately **excluded**; consumed only after the loop, by `apply_kinematics_cycle_time` |
+//! | `TriDexelStock::stamp_dispatch` | deliberately **excluded**; a process constant — see below |
+//!
+//! ## The stamp dispatch is excluded, and that is a precondition, not a proof
+//!
+//! Since SIM w5b the dispatch shape **changes what a carve produces**:
+//! `StampDispatch::Swept` (what `Auto` now resolves to) reports a different
+//! `removed_volume_est_mm3`, air-cut fraction and axial DOC than
+//! `WholeToolpath` does, and leaves a slightly different grid. A prefix carved
+//! under one shape and resumed under another would be exactly the key-closure
+//! defect this module exists to avoid.
+//!
+//! It cannot happen, for two reasons that are worth stating separately because
+//! either one changing re-opens the question:
+//!
+//! 1. **The mode is a process constant.** `TriDexelStock::from_bounds` — the
+//!    only constructor, and the one every simulation path goes through —
+//!    stamps `StampDispatch::default()`, which resolves an `RS_CAM_STAMP_DISPATCH`
+//!    read held in a `OnceLock`. No production code assigns `stamp_dispatch`;
+//!    only benches and the S1/S3 sentries do, and they build their own stocks.
+//!    So within one process every carve used the same kernel.
+//! 2. **The cache is in-process and single-slot.** There is no on-disk form and
+//!    no cross-process form, so a snapshot cannot reach a run with a different
+//!    environment. `take_match` also removes on lookup, hit or miss.
+//!
+//! Note that `Clone` **preserves** `stamp_dispatch`, so a restored snapshot
+//! carries the mode it was carved under rather than re-deriving it. Under (1)
+//! that is a no-op. If a `SimulationRequest`-level or per-toolpath dispatch
+//! setting is ever added, (1) fails and this row must move into the key —
+//! `tests/sim_prefix_memo_s5.rs::prefix_key_may_omit_stamp_dispatch_only_while_it_is_a_process_constant`
+//! pins the precondition so that lands as a red test rather than as a wrong
+//! resumed metric.
 //!
 //! **Pointer keys are `Weak`, never bare pointers.** A bare `Arc::as_ptr` key
 //! is ABA-unsound — an `Arc` can be dropped and a fresh allocation can land at
