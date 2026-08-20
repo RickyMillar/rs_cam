@@ -162,6 +162,46 @@ the deepest matching cached prefix. Round 2 of a 10-op project stamps 1 op, not 
 Adjacent: `session/compute.rs:930 simulate_candidate_isolated` runs a FULL run_simulation
 (global stock, checkpoints, mesh, snapshots) just to harvest one cut_trace — needs a
 metrics-only mode.
+**FIXED in wave 3 SIM (`compute/sim_prefix.rs`). `DELTA_sim_w3.md`.** The diagnosis
+held exactly; the prescribed *key* did not, and using it would have shipped a
+wrong-answer bug rather than a slow one:
+(1) **"the provenance hashes already exist" closes nothing.** The tool hash
+(`:421-429`) covers diameter/length/shank/holder/stickout/flutes and **no cutter
+shape at all** — a Ø6 flat and a Ø6 ball of the same length hash EQUAL, so a
+tool swap inside the prefix would have resumed onto a grid carved by the wrong
+cutter. `hash_toolpath` hashes **moves only**, not spans and not `MoveIntent`,
+both of which feed the sample stream. And neither covers resolution, stock,
+metric options, the reference model mesh or the per-group setup transform. The
+landed key is purpose-built, with its closure tabulated in the module doc; the
+tool — the one input with no stable identity — is keyed parametrically
+(`geometry_hint()` + scale accessors) **and** by 79 behavioural probes.
+(2) **`phantom_prior_stock` must be neither keyed nor restored.** It moves down
+the group on every fixpoint round, so keying on it means the memo hits ZERO
+times (the `DELTA_sim_w2.md` §2e silent-no-op failure); restoring it leaves the
+previous round's phantom id in `prior_stocks`, a key a full replay never
+produces, on the exact map rest generators read. It is re-derived from the live
+request instead, and the one un-reconstructable shape (a tail phantom on a group
+before the resume point) is **refused and counted**.
+(3) **"cache prefix-hash → post-carve grid" is not enough state.** The grid is
+one of fifteen loop-carried accumulators; `cut_samples`, checkpoints, boundaries,
+`prior_stocks`, the composite mesh, the parallel `global_stock`, column
+deviations, drill samples and the move/boundary counters all cross a toolpath
+iteration. `DELTA_sim_w3.md` §2.1 enumerates every output with a reuse-or-prove
+disposition, and the sentry fingerprints the WHOLE `SimulationResult` as bit
+patterns against a from-scratch replay.
+(4) The fixpoint's intermediate simulations are **not** a lighter path — same
+`submit_simulation` → `run_simulation_memoized` route as the Run Simulation
+button, result applied to GUI state in full — so the contract had to be full
+fidelity, not metrics-only.
+Also landed: `SimulationResult::checkpoints` is now `Vec<Arc<SimCheckpointMesh>>`
+(and the GUI's `SimCheckpoint` shares it), which is what stops the memo doubling
+peak memory — a checkpoint is a marching-cubes mesh plus a full grid clone, per
+toolpath. It also removes a pre-existing deep copy on the controller's result path.
+The adjacent `simulate_candidate_isolated` item is **deferred with a reason**: a
+metrics-only mode is a second orthogonal switch inside the loop S5 just
+restructured, and it would have to enter the cache key (a prefix carved with
+checkpoints suppressed is not interchangeable with one carved with them on).
+Sketch in `DELTA_sim_w3.md` §8.
 
 ## S6. Cut-trace pipeline: per-sample allocs + full clone + pretty JSON every run. MED-HIGH
 

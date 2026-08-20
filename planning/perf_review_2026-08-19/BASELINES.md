@@ -458,6 +458,8 @@ record.
 | **S4a/S7/S6** | `5099db9e`, `29823980` | `flat6/cs0.25` **−7.10%**, `e2e/res1` **−7.93%**; plunge arms **no change** | `DELTA_sim_w1.md` |
 | **V8/V13** content-keyed uploads | `08345ee4` | 8-op generate: 36 → **8** toolpath builds, 8 → **0** mesh builds | `DELTA_viz_w2.md` |
 | **V1/V3/V4** viz caching | `42ed4774` | per-frame triage/deflection/issues rebuilds removed | — |
+| **S2/S3** stamp early-out + row bands | `f9f26997`, `5973b7cb` | 1.46–2.07× (S2) on every arm; S3 ceiling 2.10× at 4 threads | `DELTA_sim_w2.md` |
+| **S5** fixpoint prefix memo | `2ed9df04`, `55847d4f` | `sim_fixpoint_ladder` 180.37 → **100.66 ms** (**1.79×**, ceiling 2.00×) | `DELTA_sim_w3.md` |
 
 Phase 0 instruments: `bfe4e251` (benches + goldens), `b2a5e661` (3D golden arm).
 Gate repair: `e4379dd5`.
@@ -479,6 +481,9 @@ Every wave refuted something. These are the corrections, all consolidated into
 | **V4** | return `&[..]` | Does not compile — two call sites hold the list across a later `&mut sim`. `Arc<[SimulationIssue]>` does. |
 | **V8** | per-resource dirty bits | Substituted **content keys**: dirty bits put the burden on ~40 setters, and a setter naming too few is *exactly what V13 is*. |
 | **V13** | highlight "one frame stale" | Reduced to a one-*repaint* lag, not eliminated; killing it would reorder the frame for all ~40 upload sites. |
+| **S5** | "provenance hashes already exist" ⇒ use them as the cache key | They exist and they **do not close the input set**. The tool hash carries **no cutter shape** (Ø6 flat ≡ Ø6 ball), `hash_toolpath` omits spans and `MoveIntent`, and none of the three covers resolution, stock, metric options, the model mesh or the group transform. Keyed on them, a tool swap inside the prefix resumes onto a grid carved by the wrong cutter — silently. |
+| **S5** | "cache prefix-hash → post-carve grid" | The grid is **one of fifteen** loop-carried accumulators. `DELTA_sim_w3.md` §2.1 enumerates all of them with a reuse-or-prove disposition. |
+| **S5** | (unstated) `phantom_prior_stock` | Must be **neither keyed nor restored**. Keyed ⇒ the memo hits zero times (S2 §2e's silent no-op). Restored ⇒ the previous round's phantom id survives into `prior_stocks`, a key a full replay never produces, on the map rest generators read. Re-derived from the live request instead. |
 
 ## Levers measured and declined
 
@@ -568,8 +573,8 @@ over a whole toolpath is the remaining lever — see `DELTA_sim_w2.md` §3f.
 
 S3's whole-toolpath dispatch (the remaining 6–12× lever), G5/G6 (shared NN
 orderer + surface_link provenance inversion), G8 (per-setup index/silhouette/
-mesh caching). Not yet started: S1, S5, S8, G7, G10-G12, V2, V5-V7, V9, V11,
-V14, V15, and the 0C wanaka wall-clock protocol.
+mesh caching). Not yet started: S1, S8, G7, G10-G12, V2, V5-V7, V9, V11,
+V14, V15. S5 landed in wave 3 SIM — see the section at the end of this file.
 
 ## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier)
 
@@ -596,3 +601,96 @@ cell_too_coarse_for_tip_contact at 0.4 mm), fixpoint converged in the same
 Machine state: load 4.05 at gen start, 11.55 at gen end (parallel stamping +
 rayon working), 8.27 at sim end; one idle stale-binary GUI from another session
 resident throughout; no cargo jobs during the run.
+
+---
+
+# Wave 3 (SIM) — S5 fixpoint prefix memoization
+
+Captured 2026-08-20. Full write-up, corrections, output enumeration and sentry
+inventory in `DELTA_sim_w3.md`; this is the numbers table only.
+
+Commits: `2ed9df04` (implementation), `55847d4f` (sentries + bench arm).
+
+## The number
+
+New bench group, built as a **paired same-session A/B inside one criterion
+invocation**: both arms run the identical three-round fixpoint ladder
+(2 → 4 → 6 toolpaths over a 100 × 60 × 8 mm stock at **0.4 mm**, the wanaka
+reference resolution) and differ only in whether each round leaves a prefix
+snapshot for the next. `memo_off` is the pre-S5 behaviour exactly — three full
+replays — so no stored "before" number is involved and the cross-day
+comparability rule above does not bite.
+
+Machine state: load average 6.09, 24 GiB available, `pgrep -x cargo` **0** at
+launch.
+
+| Bench | memo_off | memo_on | Speed-up |
+|---|---:|---:|---:|
+| `sim_fixpoint_ladder/3round_6op_res0.4` | **180.37 ms** [177.32, 184.11] | **100.66 ms** [98.605, 103.63] | **1.79×** |
+
+### Read the ratio against its ceiling, not on its own
+
+A `k`-round ladder runs `Σ nᵢ` op-simulations without the memo and only the
+newly generated ones with it. For 2/4/6 that is **12 → 6**, i.e. an arithmetic
+ceiling of **2.00×** — measured 1.79× is **90 % of the achievable**, and the
+residual is the three rounds' unavoidable end-of-run work (trace assembly,
+marching cubes, composite mesh) plus the snapshot copy.
+
+So **1.79× is not a general figure.** The ceiling for a `k`-round ladder is
+`(k+1)/2`: a 5-round rest cascade tops out near 3×, and a project with **no**
+rest ops takes `FixpointPlan::single_pass` and never simulates at all, so S5
+does nothing for it. The review's "HIGH on rest chains" is the right severity
+shape.
+
+## Memory, measured
+
+`the_snapshot_shares_checkpoints_rather_than_copying_them`, on the 3-op /
+0.5 mm sentry fixture:
+
+| | bytes |
+|---|---:|
+| snapshot's own footprint (`held_bytes`) | **786,048** |
+| checkpoint bytes it **shares** rather than copies | **1,561,680** |
+
+`SimulationResult::checkpoints` is now `Vec<Arc<SimCheckpointMesh>>` and the
+GUI's `SimCheckpoint` shares it, so the snapshot adds a refcount rather than a
+second copy of the heaviest per-toolpath artifact — a marching-cubes mesh plus
+a full grid clone, per toolpath. `Arc::strong_count` is **2** while held and
+**1** after `clear()`, asserted rather than argued. The change also removes a
+deep copy that predates S5 on the controller's result path.
+
+Bound: at most one snapshot; lookup **takes** (a stale snapshot is freed at the
+next simulation, not held); only the fixpoint ladder asks to store; a hard
+`max_bytes` ceiling that refuses and counts; and an explicit `clear()` when the
+ladder settles.
+
+## Correctness
+
+Both perf goldens green and **unchanged** — no re-baseline; S5 decides
+*whether* a toolpath is simulated again, never *how*.
+`cargo test -p rs_cam_core` exit 0 over 184 test binaries, `cargo test
+-p rs_cam_viz -q` exit 0, `cargo clippy --workspace --all-targets -- -D warnings`
+clean, `cargo fmt --check` clean for this lane's files.
+
+## An incidental defect, reported not fixed
+
+`dexel_stock/stamping.rs:504` panics in **debug** with "attempt to subtract
+with overflow" when a stamp's bbox falls entirely outside the grid
+(`row_hi + 1 - row_lo` underflows once the clamps give `row_lo > row_hi`).
+Reproduced with a raster pass at `y ∈ [31, 35]` over a stock whose Y extent is
+`[0, 24]`. **Pre-existing** — that line is S2's mip block (`f9f26997`) and
+nothing in S5 touches `dexel_stock/` — and reachable from ordinary projects,
+since toolpaths legitimately leave the stock (profile lead-ins, edge drills,
+any op whose boundary extends past the blank). Release wraps instead of
+panicking, so debug and release disagree. Left for the S3 lane, which owns that
+file; details and two adjacent issues in the same expression are in
+`DELTA_sim_w3.md` §6.
+
+## Deferred with a reason
+
+`session/compute.rs::simulate_candidate_isolated` still runs a **full**
+`run_simulation` to harvest one cut trace. A metrics-only mode is a second
+orthogonal switch inside the loop S5 just restructured **and it would have to
+enter the prefix cache key** — a prefix carved with checkpoints suppressed is
+not interchangeable with one carved with them on. Sketch in `DELTA_sim_w3.md`
+§8.
