@@ -5,8 +5,9 @@ landed on `tech-debt-3`.** S1 is metric-changing by design and the landing
 decision is the user's; this document is the evidence for it.
 
 The default is unchanged on this branch: `StampDispatch::Auto` still resolves to
-`WholeToolpath`, `Auto` never selects a swept shape, and the full `rs_cam_core`
-suite is green with zero diffs in the default mode.
+`WholeToolpath`, `Auto` never selects a swept shape, and the `rs_cam_core`,
+`rs_cam_viz`, `rs_cam_mcp` and `rs_cam_cli` suites are green in the default mode
+(one pre-existing wall-clock flake aside — §6), with clippy at zero warnings.
 
 ---
 
@@ -144,7 +145,7 @@ whose bounding box outruns their stadium.
 
 **This is the S1 finding's own arithmetic being over-optimistic in the same way
 S3's was.** "≈ 26×, scales as `2R/s`" is the cell-visit ratio, and the review
-quotes it as if it were the time ratio. It is not: measured **3.1–4.6×**.
+quotes it as if it were the time ratio. It is not: measured **2.9–5.1×**.
 
 ### What does NOT scale: the end-to-end workload
 
@@ -418,6 +419,11 @@ a **geometry** change. Every downstream consumer of a `FromRemainingStock` path
 | diagnostics | 2.18 s | 2.24 s | +2.6 % |
 | **total test** | **322.8 s** | **296.9 s** | **−8.0 %** |
 
+These two runs predate `9e65d1a7`, which made the swept kernel faster without
+moving a bit. The wall-clock column is therefore a **lower bound** on the gain;
+the metric columns above it are unaffected, because bit-identity was re-verified
+after that commit and the golden diff is unchanged at 39/29 fields.
+
 **The 3.1–4.6× kernel speed-up becomes 15 % on a real simulation and 8 %
 end-to-end.** The stamp kernel is no longer the majority of `run_simulation` on
 this workload — S2, S3 and S5 already took the large multiples out of it, and
@@ -470,7 +476,7 @@ its blends in ascending bin order, and for a fixed bin `removed_volume` still
 accumulates over cells in row-major order. The result is **bit-identical**,
 sentried over a full simulation
 (`pure_vertical_chunks_are_bit_identical_to_per_stamp`), and it is worth
-**3.1–4.6×** on the plunge fixture. No approximation, nothing to bound.
+**3.4–5.0×** on the plunge fixture. No approximation, nothing to bound.
 
 **(2) `floor(t_center · bins)` — the review's binning rule verbatim —
 ALIASES, badly.** A bin is one `sample_step` wide; a cell is one `cell_size`
@@ -495,8 +501,8 @@ by `SWEPT_MAX_BBOX_WASTE`, and it is why the measured speed-up is a function of
 path direction and not only of `2R/s`.
 
 **(4) "≈ 26×, scales as 2R/s" is a CELL-VISIT ratio quoted as a time ratio.**
-Measured 3.1–4.6× in wall clock at every thread count. Same class of error as
-S3's "6–12× desktop", refuted twice already in this review.
+Measured **2.9–5.1×** in wall clock across every fixture and thread count. Same
+class of error as S3's "6–12× desktop", refuted twice already in this review.
 
 **(5) S1b, "moves tagged `MoveIntent::Retract` may skip the removal math", is
 ALREADY DONE** and has been since Step 1 (2026-05-19). `simulation.rs`'s metric
@@ -573,9 +579,14 @@ under it — both perf goldens, both `_litmatrix_` suites, every F-XXX sentry �
 with the single exception of a pre-existing wall-clock flake that also fails in
 the default mode.
 
-It is worth **3.1–4.6×** on the plunge fixture and is a strict improvement on
-every arm at every thread count. Making `Auto` select it is a one-line change
-with a bit-identity sentry behind it.
+It is worth **3.4–5.0×** on the plunge fixture and, after the two fixes in
+`9e65d1a7`, **1.37–1.45×** on the raster fixtures as well — a strict improvement
+on every arm at every thread count, for zero metric movement. Making `Auto`
+select it is a one-line change with a bit-identity sentry behind it.
+
+One honest caveat on the raster figure: that gain comes from the plunge entries
+`raster_pass` makes into each pass, not from lateral stamping. A toolpath with no
+vertical run at all would be a wash, not a win. It would not be a loss.
 
 The only reason it is not already the default on this branch is that the brief
 reserved the landing decision.
