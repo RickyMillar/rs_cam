@@ -35,7 +35,7 @@ use rs_cam_core::compute::simulate::{
     run_simulation_memoized,
 };
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::simulation_cut::SimulationMetricOptions;
@@ -862,4 +862,53 @@ fn a_shorter_request_misses_cleanly() {
     let resumed = run_memo(&req, &mut cache, true);
     assert_eq!(cache.stats().hits, 0);
     assert_eq!(fingerprint(&resumed), fingerprint(&run(&req)));
+}
+
+/// The prefix key omits the stamp dispatch shape. That is sound only while the
+/// shape is a **process constant**, and this is where that precondition is
+/// pinned.
+///
+/// Since SIM w5b the dispatch shape changes what a carve produces — swept
+/// reports different removal, air-cut and axial DOC than whole-path, and leaves
+/// a slightly different grid. A prefix carved under one shape and resumed under
+/// another would be the key-closure defect class this module's ledger warns
+/// about. It cannot happen today because `TriDexelStock::from_bounds` — the
+/// only constructor, and the one every simulation path goes through — stamps
+/// `StampDispatch::default()`, which is a `OnceLock`-backed process constant,
+/// and because the cache has no cross-process form.
+///
+/// **This test does not prove the key is closed.** It pins the one assumption
+/// the closure argument rests on, so that adding a per-request or per-toolpath
+/// dispatch setting lands as a red test here rather than as a plausible-looking
+/// resumed metric. If it goes red, the fix is to put the dispatch shape in
+/// `SimPrefixKey`, not to relax this.
+#[test]
+fn prefix_key_may_omit_stamp_dispatch_only_while_it_is_a_process_constant() {
+    let bbox = stock();
+    let built = TriDexelStock::from_bounds(&bbox, 0.5);
+    assert_eq!(
+        built.stamp_dispatch,
+        StampDispatch::default(),
+        "a freshly built stock does not carry the process default — the prefix key \
+         must then carry the dispatch shape, because two carves in one process can \
+         no longer be assumed to have used the same kernel"
+    );
+
+    // The restored side: a snapshot is a clone, and a clone PRESERVES the mode
+    // rather than re-deriving it. Harmless while the mode is constant; the
+    // moment it is not, this is the edge a resumed prefix crosses.
+    let cloned = built.clone();
+    assert_eq!(
+        cloned.stamp_dispatch, built.stamp_dispatch,
+        "clone dropped the dispatch shape; a restored prefix would silently \
+         re-derive it instead of carrying it"
+    );
+
+    // And the default itself must not move under a running process.
+    assert_eq!(
+        StampDispatch::default(),
+        StampDispatch::default(),
+        "StampDispatch::default() is not idempotent — it is no longer a process \
+         constant and the OnceLock argument above is void"
+    );
 }
