@@ -366,6 +366,26 @@ Same region: `model_silhouette` (`boundary.rs:385`, called `execute/mod.rs:153`)
 all faces serially per toolpath; `transform_mesh_to_setup` (`session/compute.rs:1071`)
 deep-copies the mesh per toolpath — ~95 of ~111 MB is the redundant expanded `faces` array.
 Fix: build index/silhouette/transformed mesh once per (model, setup), thread through.
+**FIXED + SEVERITY CORRECTED (wave 4 gen, `DELTA_gen_w4.md`).** All three repetitions
+were real and all three are gone (`crate::geom_cache`, memoised on mesh identity; counts
+8→1, 16→1, 8→1 per round, asserted by a test that drives eight real `generate_toolpath`
+calls). Three corrections to the row.
+(1) **MED-HIGH is wrong — this is LOW on wall clock.** Measured paired same-run on the
+661k terrain: index build 37.9 ms, silhouette 33.0 ms, mesh transform 27.9 ms. Removing
+every repetition saves **0.97 s** per 8-op round in the most favourable project shape and
+**0.28 s** in the common one — **0.012–0.040 %** of a ~40 min `generate_all`. Its real
+value is memory (888 MB of deep-copy churn per round → 111 MB) and structural, not speed.
+(2) **The proposed `Arc::as_ptr` key is UNSOUND** (ABA: an `Arc` can be dropped and a new
+one land at the same address). Not hypothetical — a test that drops one `Arc` and
+allocates 64 more observes address reuse on this machine. Fixed by keying on a
+`Weak<TriangleMesh>`, which pins the allocation and so makes collision impossible rather
+than unlikely. `cached_simulation_triage`'s bare-pointer key (flagged in `DELTA_viz_w2.md`)
+still carries the hazard.
+(3) **`spatial_index/build_terrain` measures the wrong resolution.** It builds a
+few-hundred-cell grid, where CSR *loses* 8 % (two passes lose to one when there is nothing
+to allocate). The 82,944-cell grid `build_auto` produces — the only resolution any
+production call site uses — is where CSR wins **1.92×**, and nothing benches it. A
+`build_terrain_auto` arm is proposed in the delta doc.
 
 ## G9. V-carve/inlay/rest brute-force distance field per sample. MED-HIGH
 
