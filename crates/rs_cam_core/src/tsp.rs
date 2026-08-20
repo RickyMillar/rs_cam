@@ -300,31 +300,35 @@ fn optimize_one_group(
 #[allow(clippy::indexing_slicing)]
 fn run_tsp(segments: &[Segment]) -> Vec<usize> {
     let n = segments.len();
-    let mut visited = vec![false; n];
     let mut order = Vec::with_capacity(n);
 
+    // The seed used to be a Θ(n²) scan over every unvisited segment (the
+    // 2-opt refinement below is capped; this was not — PERF_REVIEW G5).
+    // `NearestPicker` answers the same question with the same tie-break:
+    // lexicographic minimum of `(xy_distance, segment index)`, so the tour is
+    // the one the scan produced, bit for bit. `f64::INFINITY` is the scan's
+    // own acceptance sentinel and index 0 its fallback when nothing clears it
+    // — both reproduced verbatim, including the degenerate re-push of an
+    // already-visited index that a NaN coordinate would provoke.
+    let mut picker = crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n);
+    for (i, s) in segments.iter().enumerate() {
+        picker.push(i, s.start.x, s.start.y);
+    }
+    picker.build();
+
     order.push(0);
-    visited[0] = true;
+    picker.remove(0);
 
     for _ in 1..n {
         let current = order[order.len() - 1];
         let current_end = &segments[current].end;
 
-        let mut best_idx = 0;
-        let mut best_dist = f64::INFINITY;
+        let best_idx = match picker.nearest(current_end.x, current_end.y) {
+            Some((idx, d)) if d < f64::INFINITY => idx,
+            _ => 0,
+        };
 
-        for j in 0..n {
-            if visited[j] {
-                continue;
-            }
-            let d = xy_distance(current_end, &segments[j].start);
-            if d < best_dist {
-                best_dist = d;
-                best_idx = j;
-            }
-        }
-
-        visited[best_idx] = true;
+        picker.remove(best_idx);
         order.push(best_idx);
     }
 
