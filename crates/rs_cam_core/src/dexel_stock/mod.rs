@@ -8,6 +8,7 @@ mod band;
 mod cut_direction;
 mod simulation;
 mod stamping;
+mod swept;
 mod tile_mip;
 mod whole_path;
 

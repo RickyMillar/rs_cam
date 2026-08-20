@@ -10,8 +10,9 @@ use super::stamping::{
     CuttingCaptureParams, SegmentSampleParams, build_move_semantic_lookup, chipload_mm_per_tooth,
     lerp_point, sample_segment_runtime, stamp_segment_with_metrics,
 };
+use super::swept::{SweptDispatch, SweptJob, classify_subsegment};
 use super::tile_mip::TileMaxTop;
-use super::whole_path::{BandDispatch, StampJob};
+use super::whole_path::{BandDispatch, StampDispatch, StampJob};
 use super::{StockCutDirection, TriDexelStock};
 use crate::dexel::DexelGrid;
 use crate::ids::ToolpathId;
@@ -234,6 +235,21 @@ impl TriDexelStock {
             let grid = self.ensure_grid(direction);
             BandDispatch::for_grid(grid, mode)
         };
+        // S1 wave 5: a THIRD scheduler, and deliberately a separate `Option`
+        // rather than a third arm of `dispatch`. The two are mutually
+        // exclusive by construction (`BandDispatch::for_grid` returns `None`
+        // for `Swept`), and keeping them apart means the per-stamp and
+        // whole-path code paths below are untouched — which is what makes the
+        // A/B same-binary and the "old mode unchanged" claim checkable by
+        // reading the diff rather than by trusting it.
+        let mut swept = match self.stamp_dispatch {
+            StampDispatch::Swept | StampDispatch::SweptPlungeOnly => {
+                let lateral = self.stamp_dispatch == StampDispatch::Swept;
+                let grid = self.ensure_grid(direction);
+                SweptDispatch::for_grid(grid, lateral)
+            }
+            _ => None,
+        };
         self.last_stamp_dispatch = super::StampDispatchStats::default();
         let from_high = direction.cuts_from_high_side();
         let flute_length = cutter.length().max(1e-9);
@@ -340,6 +356,7 @@ impl TriDexelStock {
                         &mut air_mip,
                         &mut band_scratch,
                         &mut dispatch,
+                        &mut swept,
                         flute_length,
                     )?;
                 }
@@ -375,6 +392,7 @@ impl TriDexelStock {
                             &mut air_mip,
                             &mut band_scratch,
                             &mut dispatch,
+                            &mut swept,
                             flute_length,
                         )?;
                     }
@@ -419,6 +437,7 @@ impl TriDexelStock {
                             &mut air_mip,
                             &mut band_scratch,
                             &mut dispatch,
+                            &mut swept,
                             flute_length,
                         )?;
                     }
@@ -447,6 +466,28 @@ impl TriDexelStock {
             )?;
         }
         if let Some(queue) = dispatch.as_ref() {
+            self.last_stamp_dispatch = queue.stats();
+        }
+        // The swept tail, same contract as the batched one above.
+        if let Some(queue) = swept.as_mut()
+            && !queue.is_empty()
+        {
+            let grid = self.ensure_grid(direction);
+            run_swept_batch_into_samples(
+                queue,
+                grid,
+                lut,
+                radius,
+                from_high,
+                capture_arc_engagement,
+                &mut air_mip,
+                cancel,
+                &mut samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        if let Some(queue) = swept.as_ref() {
             self.last_stamp_dispatch = queue.stats();
         }
 
@@ -557,8 +598,27 @@ impl TriDexelStock {
         air_mip: &mut Option<TileMaxTop>,
         band_scratch: &mut Vec<StampPartial>,
         dispatch: &mut Option<BandDispatch>,
+        swept: &mut Option<SweptDispatch>,
         flute_length: f64,
     ) -> Result<(), Cancelled> {
+        if let Some(queue) = swept.as_mut() {
+            return self.capture_cutting_segment_swept(
+                lut,
+                cutter,
+                radius,
+                start,
+                end,
+                direction,
+                params,
+                cancel,
+                cumulative_time_s,
+                next_sample_index,
+                samples,
+                air_mip,
+                queue,
+                flute_length,
+            );
+        }
         let segment_length = (end - start).norm();
         if segment_length <= 1e-9 {
             return Ok(());
@@ -826,7 +886,236 @@ fn run_batch_into_samples(
     )
 }
 
+/// Run one queued swept batch and patch its metrics onto the sample stream.
+/// The twin of [`run_batch_into_samples`]; both end in the same
+/// [`apply_subsegment_metrics`], so a divergence would have to be a divergence
+/// in the stamp.
+#[allow(clippy::too_many_arguments)]
+fn run_swept_batch_into_samples(
+    queue: &mut SweptDispatch,
+    grid: &mut DexelGrid,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    from_high: bool,
+    capture_arc_engagement: bool,
+    air_mip: &mut Option<TileMaxTop>,
+    cancel: &dyn CancelCheck,
+    samples: &mut [SimulationCutSample],
+    cutter: &dyn MillingCutter,
+    flute_length: f64,
+) -> Result<(), Cancelled> {
+    queue.run_batch(
+        grid,
+        lut,
+        radius,
+        from_high,
+        capture_arc_engagement,
+        air_mip,
+        cancel,
+        |slot, metrics| {
+            if let Some(sample) = samples.get_mut(slot) {
+                apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+            }
+        },
+    )
+}
+
 impl TriDexelStock {
+    /// The S1 enumerator: same sample stream, chunked geometry.
+    ///
+    /// The subsegment loop, the subdivision arithmetic and every argument to
+    /// [`push_cutting_sample`] are **verbatim** from
+    /// [`Self::capture_cutting_segment`]. What differs is only what happens to
+    /// the geometry: instead of queueing one stamp per subsegment, consecutive
+    /// subsegments of the same [`ChunkKind`] are accumulated into one
+    /// [`SweptJob`] and stamped in a single pass.
+    ///
+    /// A chunk is closed whenever the class changes, the chunk stops being
+    /// worth stamping in one pass (`SweptDispatch::chunk_may_grow`), or a
+    /// subsegment is skipped — the last one because a chunk's sample slots are
+    /// `first_slot..first_slot + bins` and a skipped subsegment would put a
+    /// hole in that run.
+    #[allow(clippy::too_many_arguments)]
+    fn capture_cutting_segment_swept(
+        &mut self,
+        lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
+        radius: f64,
+        start: P3,
+        end: P3,
+        direction: StockCutDirection,
+        params: CuttingCaptureParams,
+        cancel: &dyn CancelCheck,
+        cumulative_time_s: &mut f64,
+        next_sample_index: &mut usize,
+        samples: &mut Vec<SimulationCutSample>,
+        air_mip: &mut Option<TileMaxTop>,
+        queue: &mut SweptDispatch,
+        flute_length: f64,
+    ) -> Result<(), Cancelled> {
+        let segment_length = (end - start).norm();
+        if segment_length <= 1e-9 {
+            return Ok(());
+        }
+        let from_high = direction.cuts_from_high_side();
+        let chipload = chipload_mm_per_tooth(
+            params.feed_rate_mm_min,
+            params.spindle_rpm,
+            params.flute_count,
+        );
+
+        // Verbatim from `capture_cutting_segment`. The subdivision still sets
+        // the SAMPLE rate — S1 changes how the geometry is stamped, not how
+        // many samples a move emits, so the two dispatch shapes stay
+        // comparable sample-for-sample.
+        const MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
+        let z_drop = (end.z - start.z).abs();
+        let by_length = (segment_length / params.sample_step_mm).ceil() as usize;
+        let by_z = (z_drop / MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
+        let subsegments = by_length.max(by_z).max(1);
+
+        let m_start = direction.decompose(start.x, start.y, start.z);
+        let m_end = direction.decompose(end.x, end.y, end.z);
+        let cs = self.z_grid.cell_size;
+        let mut pending: Option<SweptJob> = None;
+
+        for subsegment in 0..subsegments {
+            check_cancel(cancel)?;
+            let t0 = subsegment as f64 / subsegments as f64;
+            let t1 = (subsegment + 1) as f64 / subsegments as f64;
+            let seg_start = lerp_point(start, end, t0);
+            let seg_end = lerp_point(start, end, t1);
+            let midpoint = lerp_point(seg_start, seg_end, 0.5);
+            let segment_len = (seg_end - seg_start).norm();
+            if segment_len <= 1e-9 {
+                if let Some(job) = pending.take() {
+                    self.flush_swept_job(
+                        job,
+                        queue,
+                        direction,
+                        lut,
+                        radius,
+                        from_high,
+                        params.capture_arc_engagement,
+                        air_mip,
+                        cancel,
+                        samples,
+                        cutter,
+                        flute_length,
+                    )?;
+                }
+                continue;
+            }
+            let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
+            *cumulative_time_s += segment_time_s;
+            let slot = push_cutting_sample(
+                samples,
+                next_sample_index,
+                &params,
+                midpoint,
+                segment_time_s,
+                *cumulative_time_s,
+                chipload,
+            );
+
+            let kind = classify_subsegment(m_start, m_end, subsegments, subsegment);
+            let extend = match pending.as_ref() {
+                Some(job) => {
+                    job.kind == kind
+                        && job.bin0 + job.bins == subsegment
+                        && job.first_slot + job.bins == slot
+                        && queue.chunk_may_grow(job, radius, cs)
+                }
+                None => false,
+            };
+            if extend {
+                if let Some(job) = pending.as_mut() {
+                    job.bins += 1;
+                }
+            } else {
+                if let Some(job) = pending.take() {
+                    self.flush_swept_job(
+                        job,
+                        queue,
+                        direction,
+                        lut,
+                        radius,
+                        from_high,
+                        params.capture_arc_engagement,
+                        air_mip,
+                        cancel,
+                        samples,
+                        cutter,
+                        flute_length,
+                    )?;
+                }
+                pending = Some(SweptJob {
+                    m_start,
+                    m_end,
+                    subsegments,
+                    bin0: subsegment,
+                    bins: 1,
+                    first_slot: slot,
+                    kind,
+                });
+            }
+        }
+        if let Some(job) = pending.take() {
+            self.flush_swept_job(
+                job,
+                queue,
+                direction,
+                lut,
+                radius,
+                from_high,
+                params.capture_arc_engagement,
+                air_mip,
+                cancel,
+                samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Queue one finished chunk, and run the batch if it is due.
+    #[allow(clippy::too_many_arguments)]
+    fn flush_swept_job(
+        &mut self,
+        job: SweptJob,
+        queue: &mut SweptDispatch,
+        direction: StockCutDirection,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        from_high: bool,
+        capture_arc_engagement: bool,
+        air_mip: &mut Option<TileMaxTop>,
+        cancel: &dyn CancelCheck,
+        samples: &mut [SimulationCutSample],
+        cutter: &dyn MillingCutter,
+        flute_length: f64,
+    ) -> Result<(), Cancelled> {
+        let grid = self.ensure_grid(direction);
+        queue.push(grid, radius, job);
+        if queue.batch_is_due() {
+            run_swept_batch_into_samples(
+                queue,
+                grid,
+                lut,
+                radius,
+                from_high,
+                capture_arc_engagement,
+                air_mip,
+                cancel,
+                samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn estimate_and_stamp_cutting_subsegment(
         &mut self,
