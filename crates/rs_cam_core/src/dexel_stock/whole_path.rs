@@ -491,20 +491,36 @@ mod tests {
     use super::*;
 
     /// The memory bound in [`MAX_PARTIALS_PER_BATCH`]'s docs is arithmetic over
-    /// a `size_of`, and a `size_of` is exactly the kind of number that changes
-    /// under someone adding a field. Pin the claim, not the layout: the
-    /// per-batch working set must stay under the documented ceiling.
+    /// two `size_of`s, and a `size_of` is exactly the kind of number that
+    /// changes under someone adding a field.
+    ///
+    /// Both the *inputs* and the *total* are pinned, deliberately. A test that
+    /// only checked a generous ceiling would let the working set grow by 40 %
+    /// while the delta doc's "≈ 23 MB, independent of toolpath length, grid
+    /// size and cutter diameter" quietly stopped being true — which is the
+    /// failure mode `CLAUDE.md` calls instrument integrity: a changed
+    /// instrument makes its own docstring a lie you then cite.
     #[test]
     fn partial_memory_bound_holds_at_the_documented_size() {
         let partial = std::mem::size_of::<StampPartial>();
         let job = std::mem::size_of::<StampJob>();
         let index = std::mem::size_of::<u32>();
+        assert!(
+            partial <= 80,
+            "`StampPartial` is {partial} B; the batch bound is documented at 80 B \
+             per partial in `MAX_PARTIALS_PER_BATCH` and in `DELTA_sim_w4.md` §2c"
+        );
+        assert!(
+            job <= 72,
+            "`StampJob` is {job} B; the batch bound is documented at 72 B per job"
+        );
         let bytes =
             MAX_PARTIALS_PER_BATCH * (partial + index) + MAX_JOBS_PER_BATCH * (job + partial);
         assert!(
-            bytes <= 32 * 1024 * 1024,
+            bytes <= 24 * 1024 * 1024,
             "a batch's working set is {} MB (partial {partial} B, job {job} B) — \
-             the documented bound is ~23 MB and the cap needs revisiting",
+             the documented bound is ~23 MB and both it and the caps need \
+             revisiting together",
             bytes / (1024 * 1024)
         );
     }
