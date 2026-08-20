@@ -463,10 +463,26 @@ pub fn ray_pick_triangle(mesh: &TriangleMesh, origin: &P3, dir: &V3) -> Option<(
 ///
 /// Uniform XY grid over triangle bounding boxes. For a given cutter at (x,y),
 /// we find nearby triangles by querying cells within cutter radius.
+/// Storage is **CSR** (compressed sparse row): two flat buffers rather than a
+/// `Vec<Vec<usize>>`. The per-cell `Vec` form allocated one heap block per
+/// non-empty cell and grew each one by repeated doubling — on the review's
+/// 661 k-triangle terrain that is ~82 k allocations and ~330 k reallocations
+/// for a structure that is written once and then only read
+/// (`PERF_REVIEW.md` G8). `cell_starts` is a prefix sum with a trailing
+/// sentinel, so cell `c`'s list is `cell_items[cell_starts[c]..cell_starts[c + 1]]`.
+///
+/// The conversion is **observationally identical**, not merely set-equivalent:
+/// both the counting pass and the fill pass walk `mesh.faces` in index order,
+/// so each cell's list comes out ascending by triangle index exactly as the
+/// `push`-per-triangle form produced it. Several consumers break ties on
+/// candidate order, so this is load-bearing and is pinned by
+/// `tests/geometry_cache_g8.rs`, which asserts element-wise equality against a
+/// verbatim transcript of the old builder.
 pub struct SpatialIndex {
-    /// Triangle indices grouped into grid cells for spatial lookup.
-    /// Simple uniform grid in XY for now. Each cell stores triangle indices.
-    cells: Vec<Vec<usize>>,
+    /// Prefix sum of per-cell counts, length `cell_count_x * cell_count_y + 1`.
+    cell_starts: Vec<usize>,
+    /// Triangle indices, cell-major, ascending within each cell.
+    cell_items: Vec<usize>,
     cell_count_x: usize,
     cell_count_y: usize,
     cell_size: f64,
@@ -524,29 +540,87 @@ impl SpatialIndex {
         let cell_count_y = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
         let total_cells = cell_count_x * cell_count_y;
 
-        let mut cells = vec![Vec::new(); total_cells];
-
-        for (i, face) in mesh.faces.iter().enumerate() {
-            // Find the range of grid cells this triangle's bbox overlaps
+        // Pass 1: for each triangle, the cell rectangle its XY bbox covers,
+        // recorded as `[first_cell, span_x, span_y]`, plus the per-cell count.
+        //
+        // The rectangle is kept rather than recomputed in the fill pass. The
+        // arithmetic itself is cheap, but re-deriving it means streaming the
+        // 144-byte-per-triangle `faces` array a second time — 95 MB on the
+        // reference terrain — where this table is 24 B per triangle. Measured:
+        // recomputing made the coarse-grid build (`build(mesh, 10.0)`, the
+        // `spatial_index/build_terrain` bench) *slower* than the
+        // `Vec<Vec<usize>>` form it replaced, because that case has few cells
+        // and few allocations to save. Keeping the table wins at both
+        // resolutions.
+        //
+        // Identical arithmetic to the pre-CSR builder, including the
+        // `x1 as usize` wrap on a negative index (over-inclusive,
+        // pre-existing, and shared with `query_rect_into` — see its doc).
+        let mut cell_starts = vec![0usize; total_cells + 1];
+        let mut spans: Vec<[usize; 3]> = Vec::with_capacity(mesh.faces.len());
+        for face in &mesh.faces {
             let x0 = ((face.bbox.min.x - origin_x) / cell_size).floor() as isize;
             let x1 = ((face.bbox.max.x - origin_x) / cell_size).floor() as isize;
             let y0 = ((face.bbox.min.y - origin_y) / cell_size).floor() as isize;
             let y1 = ((face.bbox.max.y - origin_y) / cell_size).floor() as isize;
-
             let x0 = x0.max(0) as usize;
             let x1 = (x1 as usize).min(cell_count_x - 1);
             let y0 = y0.max(0) as usize;
             let y1 = (y1 as usize).min(cell_count_y - 1);
 
-            for cy in y0..=y1 {
-                for cx in x0..=x1 {
-                    cells[cy * cell_count_x + cx].push(i);
+            // `x1 >= x0` and `y1 >= y0` always hold, so the record is exact.
+            // Proof for X (Y is symmetric): if `floor((min.x - origin)/cs) < 0`
+            // then `x0 = 0 <= x1`; otherwise `x0 = floor(min.x…) <=
+            // floor(max.x…)` because `min.x <= max.x`, and `x0 <= ncx - 1`
+            // because `min.x <= bbox.max.x` and `ncx - 1 = ceil(extent/cs)` —
+            // so the `.min(ncx - 1)` clamp on `x1` cannot pull it below `x0`.
+            // (`NaN as isize` is 0 under Rust's saturating float casts, which
+            // lands both ends at 0.)
+            //
+            // The count below walks the *stored* span, not the local one, so
+            // pass 1 and pass 3 write the same number of entries per cell by
+            // construction — they cannot disagree even if that proof is ever
+            // invalidated by a change upstream.
+            let span = [y0 * cell_count_x + x0, x1 - x0, y1 - y0];
+            spans.push(span);
+            let [first, span_x, span_y] = span;
+            for row_step in 0..=span_y {
+                let row = first + row_step * cell_count_x;
+                for col_step in 0..=span_x {
+                    cell_starts[row + col_step] += 1;
+                }
+            }
+        }
+
+        // Pass 2: exclusive prefix sum in place. The trailing sentinel slot
+        // stayed 0 through the count, so it ends up holding the total.
+        let mut acc = 0usize;
+        for slot in &mut cell_starts {
+            let count = *slot;
+            *slot = acc;
+            acc += count;
+        }
+
+        // Pass 3: fill. `cursor` walks each cell's write head; because
+        // triangles are visited in ascending index order, each cell's list
+        // ends up ascending — the same order the `push`-per-triangle form
+        // produced.
+        let mut cell_items = vec![0usize; acc];
+        let mut cursor = cell_starts.clone();
+        for (i, &[first, span_x, span_y]) in spans.iter().enumerate() {
+            for row_step in 0..=span_y {
+                let row = first + row_step * cell_count_x;
+                for col_step in 0..=span_x {
+                    let c = row + col_step;
+                    cell_items[cursor[c]] = i;
+                    cursor[c] += 1;
                 }
             }
         }
 
         Self {
-            cells,
+            cell_starts,
+            cell_items,
             cell_count_x,
             cell_count_y,
             cell_size,
@@ -579,7 +653,7 @@ impl SpatialIndex {
         for cy_idx in y0..=y1 {
             for cx_idx in x0..=x1 {
                 let cell_idx = cy_idx * self.cell_count_x + cx_idx;
-                for &tri_idx in &self.cells[cell_idx] {
+                for &tri_idx in self.cell_slice(cell_idx) {
                     let word = tri_idx / 64;
                     let bit = 1u64 << (tri_idx % 64);
                     if seen[word] & bit == 0 {
@@ -591,6 +665,55 @@ impl SpatialIndex {
         }
 
         result
+    }
+
+    /// The CSR row for grid cell `cell_idx` — the triangle indices registered
+    /// in it, ascending. Empty (never panics) for an out-of-range cell.
+    ///
+    /// This is the one place that decodes the CSR layout; every query path
+    /// goes through it, so the three of them cannot drift apart.
+    #[must_use]
+    pub fn cell_slice(&self, cell_idx: usize) -> &[usize] {
+        // Both bounds go through `get`, and `cell_starts` is monotone
+        // non-decreasing by construction, so the range is always valid for
+        // `cell_items` — no indexing lint to suppress and no panic path.
+        let (Some(&start), Some(&end)) = (
+            self.cell_starts.get(cell_idx),
+            self.cell_starts.get(cell_idx + 1),
+        ) else {
+            return &[];
+        };
+        self.cell_items.get(start..end).unwrap_or(&[])
+    }
+
+    /// Number of grid cells (`cell_count_x * cell_count_y`).
+    #[must_use]
+    pub fn cell_count(&self) -> usize {
+        self.cell_starts.len().saturating_sub(1)
+    }
+
+    /// Grid columns.
+    #[must_use]
+    pub const fn cell_count_x(&self) -> usize {
+        self.cell_count_x
+    }
+
+    /// Grid rows.
+    #[must_use]
+    pub const fn cell_count_y(&self) -> usize {
+        self.cell_count_y
+    }
+
+    /// The grid resolution actually used, after `build`'s clamp.
+    #[must_use]
+    pub const fn cell_size(&self) -> f64 {
+        self.cell_size
+    }
+
+    /// Triangle count of the mesh this index was built over.
+    #[must_use]
+    pub const fn total_triangles(&self) -> usize {
+        self.total_triangles
     }
 
     /// Allocation-free twin of [`Self::query`]: same triangle indices, same
@@ -680,7 +803,7 @@ impl SpatialIndex {
 
         if x0 == x1 && y0 == y1 {
             let cell_idx = y0 * self.cell_count_x + x0;
-            out.extend_from_slice(&self.cells[cell_idx]);
+            out.extend_from_slice(self.cell_slice(cell_idx));
             return;
         }
 
@@ -689,7 +812,7 @@ impl SpatialIndex {
         for cy_idx in y0..=y1 {
             for cx_idx in x0..=x1 {
                 let cell_idx = cy_idx * self.cell_count_x + cx_idx;
-                for &tri_idx in &self.cells[cell_idx] {
+                for &tri_idx in self.cell_slice(cell_idx) {
                     let word = tri_idx / 64;
                     let bit = 1u64 << (tri_idx % 64);
                     if seen[word] & bit == 0 {
@@ -713,7 +836,6 @@ impl SpatialIndex {
     /// topmost-surface sampling, with no dedup and no allocation. Not a
     /// substitute for [`Self::query`] with a non-zero radius: a cutter of
     /// radius `r` reaches triangles this slice does not contain.
-    #[allow(clippy::indexing_slicing)] // bounds checked immediately above
     #[must_use]
     pub fn cell_triangles_at(&self, x: f64, y: f64) -> &[usize] {
         let cx = ((x - self.origin_x) / self.cell_size).floor();
@@ -725,7 +847,7 @@ impl SpatialIndex {
         if cx >= self.cell_count_x || cy >= self.cell_count_y {
             return &[];
         }
-        &self.cells[cy * self.cell_count_x + cx]
+        self.cell_slice(cy * self.cell_count_x + cx)
     }
 }
 

@@ -60,6 +60,7 @@ pub mod finish_setup;
 pub mod gcode;
 pub mod gcode_validator;
 pub mod geo;
+pub mod geom_cache;
 pub mod grid2;
 pub mod grid_field;
 pub mod horizontal_finish;

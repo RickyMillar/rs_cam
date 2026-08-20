@@ -153,7 +153,9 @@ struct ResolvedGenInputs {
     emission_stock_bbox: BoundingBox3,
     heights: crate::compute::config::ResolvedHeights,
     tool_def: crate::tool::ToolDefinition,
-    spatial_index: Option<crate::mesh::SpatialIndex>,
+    /// G8: shared with the per-mesh memo in [`crate::geom_cache`] rather than
+    /// owned, so repeated toolpath resolution over one model reuses one grid.
+    spatial_index: Option<Arc<crate::mesh::SpatialIndex>>,
     cutting_levels: Vec<f64>,
     prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved real reference tool config when the Pencil op's
@@ -744,7 +746,7 @@ impl ProjectSession {
             let result = crate::compute::execute::execute_operation_annotated(
                 &op_loadlimited,
                 resolved.mesh.as_deref(),
-                resolved.spatial_index.as_ref(),
+                resolved.spatial_index.as_deref(),
                 resolved.polygons.as_deref().map(|v| v.as_slice()),
                 &resolved.tool_def,
                 &resolved.tool,
@@ -1074,8 +1076,15 @@ impl ProjectSession {
         // compute path).
         if ctx.needs_transform() {
             if let Some(raw_mesh) = mesh.as_ref() {
-                mesh = Some(Arc::new(
-                    self.transform_mesh_to_setup(raw_mesh, face_up, z_rotation),
+                // G8: memoised on (source mesh identity, full transform).
+                // This used to deep-copy the mesh per toolpath — ~111 MB on
+                // the reference terrain, ~95 MB of it the re-derived `faces`
+                // array. Returning a *shared* Arc is also what lets the
+                // spatial-index memo below hit on a non-identity setup: a
+                // fresh Arc per toolpath would miss however it was keyed.
+                mesh = Some(crate::geom_cache::cached_transform(
+                    raw_mesh,
+                    &self.setup_transform_info(face_up, z_rotation),
                 ));
             }
             if let Some(raw_polygons) = polygons.as_ref() {
@@ -1135,10 +1144,13 @@ impl ProjectSession {
         // Build tool definition
         let tool_def = build_cutter(&tool);
 
-        // Build spatial index for 3D ops
-        let spatial_index = mesh
-            .as_ref()
-            .map(|m| crate::mesh::SpatialIndex::build_auto(m));
+        // Spatial index for 3D ops. G8: memoised per mesh identity — this
+        // ran once per toolpath, so an 8-op `generate_all` rebuilt the
+        // 661 k-triangle grid eight times, multiplied again by every
+        // fixpoint round. `build_auto`'s cell size is a pure function of the
+        // mesh, so mesh identity is the whole key; see `geom_cache`'s module
+        // doc for why identity is keyed on a `Weak` and not a raw pointer.
+        let spatial_index = mesh.as_ref().map(crate::geom_cache::cached_auto_index);
 
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
@@ -1273,7 +1285,7 @@ impl ProjectSession {
                 Self::resolve_containment_polygon(
                     &boundary_config,
                     &emission_stock_bbox,
-                    mesh.as_deref(),
+                    mesh.as_ref(),
                     &keep_out_footprints,
                 )
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?
@@ -1433,7 +1445,7 @@ impl ProjectSession {
         let tp_result = crate::compute::execute::execute_operation_annotated_with_regions(
             &operation,
             mesh.as_deref(),
-            spatial_index.as_ref(),
+            spatial_index.as_deref(),
             polygons.as_deref().map(|v| v.as_slice()),
             &tool_def,
             &tool,
@@ -1541,7 +1553,7 @@ impl ProjectSession {
                                 annotated,
                                 &boundary_config,
                                 &emission_stock_bbox,
-                                mesh.as_deref(),
+                                mesh.as_ref(),
                                 &keep_out_footprints,
                                 tool_def.diameter(),
                                 heights.retract_z,
@@ -1738,17 +1750,18 @@ impl ProjectSession {
     pub(crate) fn resolve_containment_polygon(
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
-        mesh: Option<&crate::mesh::TriangleMesh>,
+        mesh: Option<&Arc<crate::mesh::TriangleMesh>>,
         keep_out_footprints: &[crate::polygon::Polygon2],
     ) -> Result<Option<crate::polygon::Polygon2>, crate::compute::execute::OperationError> {
         use crate::boundary::{UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts};
         use crate::compute::config::BoundarySource;
 
-        let mut stock_poly = match &boundary_config.source {
-            BoundarySource::ModelSilhouette if mesh.is_some() => {
-                #[allow(clippy::unwrap_used)]
-                let m = mesh.unwrap();
-                let silhouettes = crate::boundary::model_silhouette(m, None);
+        let mut stock_poly = match (&boundary_config.source, mesh) {
+            (BoundarySource::ModelSilhouette, Some(m)) => {
+                // G8: memoised per mesh identity. This ran twice per toolpath
+                // (pre-boundary resolution + the post-generation enforcement
+                // clip), each time rasterising every face of the mesh.
+                let silhouettes = crate::geom_cache::cached_silhouette(m);
                 crate::polygon::largest_by_area(&silhouettes)
                     .cloned()
                     .unwrap_or_else(|| {
@@ -1815,7 +1828,11 @@ impl ProjectSession {
         annotated: crate::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
-        mesh: Option<&crate::mesh::TriangleMesh>,
+        // G8: `&Arc` rather than `&TriangleMesh` so a `ModelSilhouette`
+        // boundary can reuse the per-mesh silhouette memo instead of
+        // re-rasterising every face on every toolpath. The mesh is an `Arc`
+        // at every production call site already; identity is the memo key.
+        mesh: Option<&Arc<crate::mesh::TriangleMesh>>,
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
@@ -5753,7 +5770,7 @@ mod tests {
         let annotated = crate::compute::execute::execute_operation_annotated(
             &resolved.operation,
             resolved.mesh.as_deref(),
-            resolved.spatial_index.as_ref(),
+            resolved.spatial_index.as_deref(),
             resolved.polygons.as_deref().map(|v| v.as_slice()),
             &resolved.tool_def,
             &resolved.tool,

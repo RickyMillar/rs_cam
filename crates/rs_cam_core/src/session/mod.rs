@@ -1627,16 +1627,12 @@ impl ProjectSession {
         )
     }
 
-    /// Transform a triangle mesh from global to setup-local coordinates.
-    pub(crate) fn transform_mesh_to_setup(
-        &self,
-        mesh: &TriangleMesh,
-        face_up: FaceUp,
-        z_rotation: ZRotation,
-    ) -> TriangleMesh {
-        self.setup_transform_info(face_up, z_rotation)
-            .apply_to_mesh(mesh)
-    }
+    // G8 removed `transform_mesh_to_setup`. Its one caller
+    // (`resolve_generation_inputs`) now goes through
+    // `geom_cache::cached_transform`, which needs the `SetupTransformInfo`
+    // itself as part of the memo key, so the wrapper that hid it had no
+    // remaining use. `setup_transform_info(..).apply_to_mesh(..)` is the
+    // uncached spelling if one is ever needed again.
 
     /// Transform 2D polygons from global to setup-local XY coordinates.
     pub(crate) fn transform_polygons_to_setup(

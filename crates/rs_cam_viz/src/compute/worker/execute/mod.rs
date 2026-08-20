@@ -51,8 +51,17 @@ fn generate_via_core(
 > {
     let tool_def = build_cutter(&req.tool);
     let mesh_ref = req.mesh.as_deref();
-    let index = mesh_ref.map(rs_cam_core::mesh::SpatialIndex::build_auto);
-    let index_ref = index.as_ref();
+    // G8: memoised per mesh identity in `rs_cam_core::geom_cache`, matching
+    // the core session path. This built the whole grid inside per-toolpath
+    // resolution, so an 8-operation `generate_all` rebuilt the reference
+    // 661 k-triangle index eight times, multiplied again by every fixpoint
+    // round. `ComputeRequest.mesh` is the model's own `Arc` for an identity
+    // setup, so consecutive toolpaths over one model share one build.
+    let index = req
+        .mesh
+        .as_ref()
+        .map(rs_cam_core::geom_cache::cached_auto_index);
+    let index_ref = index.as_deref();
     let polys = req.polygons.as_deref().map(|v| v.as_slice());
     let default_bbox = rs_cam_core::geo::BoundingBox3::empty();
     let stock_bbox = req.stock_bbox.as_ref().unwrap_or(&default_bbox);
@@ -113,7 +122,7 @@ fn generate_via_core(
     // cutter footprint can validly stamp cells in the band [silhouette -
     // tool_radius, silhouette]. Mirrors session/compute.rs::resolve_containment_polygon.
     let pre_boundary: Option<rs_cam_core::polygon::Polygon2> = if req.boundary.enabled {
-        use rs_cam_core::boundary::{model_silhouette, subtract_keepouts};
+        use rs_cam_core::boundary::subtract_keepouts;
         use rs_cam_core::compute::config::BoundarySource;
         let stock_rect = || {
             Some(rs_cam_core::polygon::Polygon2::rectangle(
@@ -148,13 +157,19 @@ fn generate_via_core(
                     .faces_boundary_as_polygon(face_ids)
                     .or_else(stock_rect)
             } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
-                && let Some(mesh) = req.mesh.as_deref()
+                && let Some(mesh) = req.mesh.as_ref()
             {
-                model_silhouette(mesh, None).into_iter().max_by(|a, b| {
-                    a.area()
-                        .partial_cmp(&b.area())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+                // G8: memoised per mesh identity, like the core session
+                // path. Same polygons, same order, same max_by tie-break —
+                // only the rasterisation is shared.
+                rs_cam_core::geom_cache::cached_silhouette(mesh)
+                    .iter()
+                    .max_by(|a, b| {
+                        a.area()
+                            .partial_cmp(&b.area())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .cloned()
             } else {
                 stock_rect()
             };
@@ -589,7 +604,7 @@ pub(super) fn run_compute_with_phase_tracker(
             let boundary_span_id = boundary_scope.as_ref().map(|scope| scope.id());
             use rs_cam_core::boundary::{
                 ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
-                model_silhouette, subtract_keepouts,
+                subtract_keepouts,
             };
             use rs_cam_core::compute::config::BoundarySource;
             // Resolve the source polygon. Order:
@@ -666,15 +681,20 @@ pub(super) fn run_compute_with_phase_tracker(
                         .faces_boundary_as_polygon(face_ids)
                         .unwrap_or_else(stock_rect)
                 } else if matches!(req.boundary.source, BoundarySource::ModelSilhouette)
-                    && let Some(mesh) = req.mesh.as_deref()
+                    && let Some(mesh) = req.mesh.as_ref()
                 {
-                    model_silhouette(mesh, None)
-                        .into_iter()
+                    // G8: memoised per mesh identity. This is the second of
+                    // the two silhouette rasterisations a single toolpath ran
+                    // (pre-clip above, enforcement clip here) — both now share
+                    // one build with every other toolpath over the same mesh.
+                    rs_cam_core::geom_cache::cached_silhouette(mesh)
+                        .iter()
                         .max_by(|a, b| {
                             a.area()
                                 .partial_cmp(&b.area())
                                 .unwrap_or(std::cmp::Ordering::Equal)
                         })
+                        .cloned()
                         .unwrap_or_else(stock_rect)
                 } else {
                     stock_rect()
