@@ -231,10 +231,23 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
     // `dpp + 0.5` kept as a bound on how many samples may sit above it.
     // Measured on this fixture 2026-08-21: max **3.890 mm** (2.8% under the
     // 4.000 ceiling) and **10 of 630 865** steady-state samples over the
-    // population bar (0.0016%, against a 0.05% cap). The defect this sentry
-    // was written for read **44.8 mm** on a transit sample and 282 samples
-    // over the bar — 11x the ceiling and 30x the cap, so both bars still
-    // catch it outright.
+    // population bar (0.0016%, against a 0.05% cap — 31x headroom).
+    //
+    // **Which bar carries which defect, stated exactly, because the obvious
+    // arithmetic is wrong here.** F-031's defect was 282 samples reading up
+    // to 44.8 mm, and those were *transit* samples: the `in_transit_span`
+    // filter added by the F-031 fix itself excludes them, so neither bar
+    // below is the instrument for that population any more. And 282 of
+    // 630 865 is 0.045%, which is *under* the 0.05% cap — the population bar
+    // would not have caught it even unfiltered. What catches a 44.8 mm
+    // reading is the CEILING, by 11x. The population bar's job is different:
+    // it stops the residue the swept measure legitimately produces from
+    // growing by an order of magnitude unnoticed.
+    //
+    // (F-027's two bars are the other way round — there the defect was ~300
+    // of ~54 477 band samples, 0.55%, which the same 0.05% cap catches by
+    // 11x. The pair is deliberately symmetric in form and is not symmetric
+    // in which half does the work.)
     let commanded_dpp = 3.0_f64;
     let population_margin = 0.5_f64;
     let ceiling_margin = 1.0_f64;
@@ -281,8 +294,12 @@ fn as013_terrain_whole_toolpath_axial_within_commanded_dpp_f031() {
         over_fraction <= MAX_OVER_FRACTION,
         "F-031: {over_count} of {sample_count} steady-state samples ({:.4}%) read axial \
          above depth_per_pass + {population_margin:.1} ({limit:.3} mm) — the cap is \
-         {:.4}%. The defect this sentry was written for put 282 samples over the bar; the \
-         swept measure's own residue on this fixture is 10 of 630 865.",
+         {:.4}%. The swept measure's own residue on this fixture is 10 of 630 865 \
+         (0.0016%), so this bar has 31x headroom and exists to stop that residue growing \
+         by an order of magnitude. It is NOT the bar that catches F-031's original defect \
+         — that was 282 TRANSIT samples at up to 44.8 mm, which this test's \
+         `in_transit_span` filter excludes and which at 0.045% would sit under this cap \
+         anyway. The ceiling above is what catches 44.8 mm.",
         over_fraction * 100.0,
         MAX_OVER_FRACTION * 100.0
     );
