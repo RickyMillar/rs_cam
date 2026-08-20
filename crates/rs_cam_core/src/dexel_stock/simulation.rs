@@ -11,7 +11,9 @@ use super::stamping::{
     lerp_point, sample_segment_runtime, stamp_segment_with_metrics,
 };
 use super::tile_mip::TileMaxTop;
+use super::whole_path::{BandDispatch, StampJob};
 use super::{StockCutDirection, TriDexelStock};
+use crate::dexel::DexelGrid;
 use crate::ids::ToolpathId;
 
 use crate::arc_util::linearize_arc_into;
@@ -224,6 +226,17 @@ impl TriDexelStock {
         // S3: reused across every stamp so the band fan-out costs no
         // allocation. `collect_into_vec` writes into it in band order.
         let mut band_scratch: Vec<StampPartial> = Vec::new();
+        // S3 wave 4: `Some` selects whole-toolpath dispatch — one `par_bands`
+        // per batch of stamps instead of one per stamp. A schedule only; see
+        // `whole_path.rs`.
+        let mut dispatch = {
+            let mode = self.stamp_dispatch;
+            let grid = self.ensure_grid(direction);
+            BandDispatch::for_grid(grid, mode)
+        };
+        self.last_stamp_dispatch = super::StampDispatchStats::default();
+        let from_high = direction.cuts_from_high_side();
+        let flute_length = cutter.length().max(1e-9);
 
         for move_index in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
@@ -326,6 +339,8 @@ impl TriDexelStock {
                         &mut samples,
                         &mut air_mip,
                         &mut band_scratch,
+                        &mut dispatch,
+                        flute_length,
                     )?;
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
@@ -359,6 +374,8 @@ impl TriDexelStock {
                             &mut samples,
                             &mut air_mip,
                             &mut band_scratch,
+                            &mut dispatch,
+                            flute_length,
                         )?;
                     }
                 }
@@ -401,10 +418,36 @@ impl TriDexelStock {
                             &mut samples,
                             &mut air_mip,
                             &mut band_scratch,
+                            &mut dispatch,
+                            flute_length,
                         )?;
                     }
                 }
             }
+        }
+
+        // The tail batch. Everything queued after the last mid-toolpath flush
+        // still has to reach the grid and the sample stream.
+        if let Some(queue) = dispatch.as_mut()
+            && !queue.is_empty()
+        {
+            let grid = self.ensure_grid(direction);
+            run_batch_into_samples(
+                queue,
+                grid,
+                lut,
+                radius,
+                from_high,
+                capture_arc_engagement,
+                &mut air_mip,
+                cancel,
+                &mut samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        if let Some(queue) = dispatch.as_ref() {
+            self.last_stamp_dispatch = queue.stats();
         }
 
         Ok(samples)
@@ -513,11 +556,21 @@ impl TriDexelStock {
         samples: &mut Vec<SimulationCutSample>,
         air_mip: &mut Option<TileMaxTop>,
         band_scratch: &mut Vec<StampPartial>,
+        dispatch: &mut Option<BandDispatch>,
+        flute_length: f64,
     ) -> Result<(), Cancelled> {
         let segment_length = (end - start).norm();
         if segment_length <= 1e-9 {
             return Ok(());
         }
+        let from_high = direction.cuts_from_high_side();
+        // Constant across the whole move; it used to be recomputed per
+        // subsegment, from the same three arguments, inside the loop.
+        let chipload = chipload_mm_per_tooth(
+            params.feed_rate_mm_min,
+            params.spindle_rpm,
+            params.flute_count,
+        );
 
         // Subdivision must be Z-AWARE, not just length-based: the per-cell
         // stamp surface is `z(t_closest_approach) + h(d)`, which ignores Z
@@ -547,108 +600,233 @@ impl TriDexelStock {
                 continue;
             }
             let segment_time_s = (segment_len / params.feed_rate_mm_min.max(1.0)) * 60.0;
-            let (
-                measured_axial_mm,
-                radial_engagement,
-                arc_engagement_radians,
-                removed_volume_est_mm3,
-            ) = self.estimate_and_stamp_cutting_subsegment(
-                lut,
-                radius,
-                seg_start,
-                seg_end,
-                midpoint,
-                direction,
-                params.capture_arc_engagement,
-                air_mip,
-                band_scratch,
-            );
-            let (axial_engagement_mm, plunge_descent_mm) =
-                if params.cut_kinematics == CutKinematics::Plunge {
-                    (0.0, measured_axial_mm)
-                } else {
-                    (measured_axial_mm, 0.0)
-                };
 
+            // The stamp does not feed the clock, so accumulating time before it
+            // rather than after is not observable — and it lets the sample be
+            // emitted before its metrics are known, which is what whole-path
+            // dispatch needs.
             *cumulative_time_s += segment_time_s;
-            let chipload_mm_per_tooth = chipload_mm_per_tooth(
-                params.feed_rate_mm_min,
-                params.spindle_rpm,
-                params.flute_count,
-            );
-            // F-4: one chip-model evaluation, both statistics off it. The
-            // arc-MEAN is what the chipload gate reads as
-            // `effective_chip_thickness_mm`; the arc-PEAK is what the
-            // `Engagement` vector's `peak_chip_thickness_mm` is documented
-            // to carry. Pre-fix the peak slot held the mean and the mean
-            // slot held the commanded advance per tooth.
-            let chip_stats = chip_thickness_stats(
-                cutter,
-                axial_engagement_mm,
-                arc_engagement_radians,
-                chipload_mm_per_tooth,
-                params.flute_count,
-            );
-            let effective_chip_thickness_mm = chip_stats.map(|stats| stats.mean_mm);
-            let flute_length = cutter.length().max(1e-9);
-            let engagement = crate::simulation_cut::Engagement {
-                radial_woc_fraction: radial_engagement,
-                // Always measured on this path: the cutter has a flute
-                // length, so the fraction is defined (C2 — `None` is reserved
-                // for emitters that have nothing to divide by).
-                axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
-                arc_radians: arc_engagement_radians,
-                // F-4 (census T1.3, Checkpoint B Q2): these two carried
-                // each other's values — `mean_` held the commanded
-                // advance per tooth (already published as
-                // `chipload_mm_per_tooth` on the sample) and `peak_` held
-                // the arc-MEAN chip, so the "peak" read *below* the
-                // "mean" on every partial-immersion cut. Both now come
-                // off the shipped chip model under their own names.
-                mean_chip_thickness_mm: chip_stats.map(|stats| stats.mean_mm),
-                peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
-                leading_edge_speed_mm_min: params.feed_rate_mm_min,
-                // Step 2 carries direction as a substrate; climb/conventional
-                // discrimination needs perp-axis side info from stamping
-                // (which side of the engaged arc has fresh material) — to be
-                // threaded in a follow-up. `Mixed` is the safe fallback.
-                direction: crate::simulation_cut::EngagementDirection::Mixed,
-            };
-            samples.push(SimulationCutSample {
-                toolpath_id: params.toolpath_id,
-                move_index: params.move_index,
-                sample_index: *next_sample_index,
-                position: [midpoint.x, midpoint.y, midpoint.z],
-                cumulative_time_s: *cumulative_time_s,
+            let slot = push_cutting_sample(
+                samples,
+                next_sample_index,
+                &params,
+                midpoint,
                 segment_time_s,
-                is_cutting: true,
-                cut_kinematics: params.cut_kinematics,
-                feed_rate_mm_min: params.feed_rate_mm_min,
-                spindle_rpm: params.spindle_rpm,
-                flute_count: params.flute_count,
-                axial_doc_mm: axial_engagement_mm,
-                axial_engagement_mm,
-                plunge_descent_mm,
-                arc_engagement_radians,
-                chipload_mm_per_tooth,
-                effective_chip_thickness_mm,
-                engagement,
-                removed_volume_est_mm3,
-                mrr_mm3_s: if segment_time_s <= 1e-9 {
-                    0.0
-                } else {
-                    removed_volume_est_mm3 / segment_time_s
-                },
-                semantic_item_id: params.semantic_item_id,
-                span_path: params.span_path.to_vec(),
-                in_transit_span: params.in_transit_span,
-                source_intent: params.source_intent,
-            });
-            *next_sample_index += 1;
+                *cumulative_time_s,
+                chipload,
+            );
+
+            match dispatch.as_mut() {
+                // Per-stamp dispatch (wave 2): stamp now, patch now.
+                None => {
+                    let metrics = self.estimate_and_stamp_cutting_subsegment(
+                        lut,
+                        radius,
+                        seg_start,
+                        seg_end,
+                        midpoint,
+                        direction,
+                        params.capture_arc_engagement,
+                        air_mip,
+                        band_scratch,
+                    );
+                    if let Some(sample) = samples.get_mut(slot) {
+                        apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+                    }
+                }
+                // Whole-toolpath dispatch (wave 4): queue, and run the batch
+                // when it is full. `slot` is the only thing carried forward.
+                Some(queue) => {
+                    let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
+                    let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
+                    let (mu, mv, _) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
+                    let grid = self.ensure_grid(direction);
+                    queue.push(
+                        grid,
+                        radius,
+                        StampJob {
+                            start: (su, sv, sd),
+                            end: (eu, ev, ed),
+                            mid_u: mu,
+                            mid_v: mv,
+                            sample_slot: slot,
+                        },
+                    );
+                    if queue.batch_is_due() {
+                        run_batch_into_samples(
+                            queue,
+                            grid,
+                            lut,
+                            radius,
+                            from_high,
+                            params.capture_arc_engagement,
+                            air_mip,
+                            cancel,
+                            samples,
+                            cutter,
+                            flute_length,
+                        )?;
+                    }
+                }
+            }
         }
         Ok(())
     }
+}
 
+/// Emit one cutting subsegment's sample with its metric fields at their zero
+/// values, and return the slot those metrics will be written into.
+///
+/// **This is the single enumerator.** Both dispatch shapes push a sample here
+/// and nowhere else, so the stream's order, its `sample_index` numbering and
+/// its timings are identical between them by construction rather than by
+/// keeping two loops in step — which `DELTA_sim_w2.md` §3f called the hardest
+/// part of the restructure, correctly.
+#[allow(clippy::too_many_arguments)]
+fn push_cutting_sample(
+    samples: &mut Vec<SimulationCutSample>,
+    next_sample_index: &mut usize,
+    params: &CuttingCaptureParams<'_>,
+    midpoint: P3,
+    segment_time_s: f64,
+    cumulative_time_s: f64,
+    chipload_mm_per_tooth: f64,
+) -> usize {
+    let slot = samples.len();
+    samples.push(SimulationCutSample {
+        toolpath_id: params.toolpath_id,
+        move_index: params.move_index,
+        sample_index: *next_sample_index,
+        position: [midpoint.x, midpoint.y, midpoint.z],
+        cumulative_time_s,
+        segment_time_s,
+        is_cutting: true,
+        cut_kinematics: params.cut_kinematics,
+        feed_rate_mm_min: params.feed_rate_mm_min,
+        spindle_rpm: params.spindle_rpm,
+        flute_count: params.flute_count,
+        // Every field below is overwritten by `apply_subsegment_metrics`
+        // before the run returns; none of these placeholders can be observed.
+        axial_doc_mm: 0.0,
+        axial_engagement_mm: 0.0,
+        plunge_descent_mm: 0.0,
+        arc_engagement_radians: None,
+        chipload_mm_per_tooth,
+        effective_chip_thickness_mm: None,
+        engagement: crate::simulation_cut::Engagement::with_radial_woc(0.0),
+        removed_volume_est_mm3: 0.0,
+        mrr_mm3_s: 0.0,
+        semantic_item_id: params.semantic_item_id,
+        span_path: params.span_path.to_vec(),
+        in_transit_span: params.in_transit_span,
+        source_intent: params.source_intent,
+    });
+    *next_sample_index += 1;
+    slot
+}
+
+/// Write one subsegment's four published stamp metrics, and everything derived
+/// from them, onto its already-emitted sample.
+///
+/// The other half of the single-enumerator argument: both dispatch shapes end
+/// here, so a divergence would have to be a divergence in the *stamp*, which is
+/// what the bit-identity sentries test.
+fn apply_subsegment_metrics(
+    sample: &mut SimulationCutSample,
+    cutter: &dyn MillingCutter,
+    flute_length: f64,
+    metrics: (f64, f64, Option<f64>, f64),
+) {
+    let (measured_axial_mm, radial_engagement, arc_engagement_radians, removed_volume_est_mm3) =
+        metrics;
+    let (axial_engagement_mm, plunge_descent_mm) = if sample.cut_kinematics == CutKinematics::Plunge
+    {
+        (0.0, measured_axial_mm)
+    } else {
+        (measured_axial_mm, 0.0)
+    };
+    // F-4: one chip-model evaluation, both statistics off it. The arc-MEAN is
+    // what the chipload gate reads as `effective_chip_thickness_mm`; the
+    // arc-PEAK is what the `Engagement` vector's `peak_chip_thickness_mm` is
+    // documented to carry. Pre-fix the peak slot held the mean and the mean
+    // slot held the commanded advance per tooth.
+    let chip_stats = chip_thickness_stats(
+        cutter,
+        axial_engagement_mm,
+        arc_engagement_radians,
+        sample.chipload_mm_per_tooth,
+        sample.flute_count,
+    );
+    sample.axial_doc_mm = axial_engagement_mm;
+    sample.axial_engagement_mm = axial_engagement_mm;
+    sample.plunge_descent_mm = plunge_descent_mm;
+    sample.arc_engagement_radians = arc_engagement_radians;
+    sample.effective_chip_thickness_mm = chip_stats.map(|stats| stats.mean_mm);
+    sample.engagement = crate::simulation_cut::Engagement {
+        radial_woc_fraction: radial_engagement,
+        // Always measured on this path: the cutter has a flute length, so the
+        // fraction is defined (C2 — `None` is reserved for emitters that have
+        // nothing to divide by).
+        axial_doc_fraction: Some((axial_engagement_mm / flute_length).clamp(0.0, 1.0)),
+        arc_radians: arc_engagement_radians,
+        // F-4 (census T1.3, Checkpoint B Q2): these two carried each other's
+        // values — `mean_` held the commanded advance per tooth (already
+        // published as `chipload_mm_per_tooth` on the sample) and `peak_` held
+        // the arc-MEAN chip, so the "peak" read *below* the "mean" on every
+        // partial-immersion cut. Both now come off the shipped chip model under
+        // their own names.
+        mean_chip_thickness_mm: chip_stats.map(|stats| stats.mean_mm),
+        peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
+        leading_edge_speed_mm_min: sample.feed_rate_mm_min,
+        // Step 2 carries direction as a substrate; climb/conventional
+        // discrimination needs perp-axis side info from stamping (which side of
+        // the engaged arc has fresh material) — to be threaded in a follow-up.
+        // `Mixed` is the safe fallback.
+        direction: crate::simulation_cut::EngagementDirection::Mixed,
+    };
+    sample.removed_volume_est_mm3 = removed_volume_est_mm3;
+    sample.mrr_mm3_s = if sample.segment_time_s <= 1e-9 {
+        0.0
+    } else {
+        removed_volume_est_mm3 / sample.segment_time_s
+    };
+}
+
+/// Run one queued batch and patch its metrics onto the sample stream.
+///
+/// Split out only so the closure that borrows `samples` has one construction
+/// site, shared by the mid-toolpath flush and the final one.
+#[allow(clippy::too_many_arguments)]
+fn run_batch_into_samples(
+    queue: &mut BandDispatch,
+    grid: &mut DexelGrid,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    from_high: bool,
+    capture_arc_engagement: bool,
+    air_mip: &mut Option<TileMaxTop>,
+    cancel: &dyn CancelCheck,
+    samples: &mut [SimulationCutSample],
+    cutter: &dyn MillingCutter,
+    flute_length: f64,
+) -> Result<(), Cancelled> {
+    queue.run_batch(
+        grid,
+        lut,
+        radius,
+        from_high,
+        capture_arc_engagement,
+        air_mip,
+        cancel,
+        |slot, metrics| {
+            if let Some(sample) = samples.get_mut(slot) {
+                apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+            }
+        },
+    )
+}
+
+impl TriDexelStock {
     #[allow(clippy::too_many_arguments)]
     fn estimate_and_stamp_cutting_subsegment(
         &mut self,
