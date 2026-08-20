@@ -9,6 +9,7 @@ mod cut_direction;
 mod simulation;
 mod stamping;
 mod tile_mip;
+mod whole_path;
 
 pub use cut_direction::StockCutDirection;
 pub use simulation::{
@@ -18,6 +19,7 @@ pub use simulation::{
 /// the (private) stamping kernel because [`crate::sim_measurability`] and its
 /// consumers need to cite the numbers they abstain on.
 pub use stamping::FRESH_MATERIAL_THRESHOLD_MM;
+pub use whole_path::{StampDispatch, StampDispatchStats};
 
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 
@@ -35,6 +37,16 @@ pub struct TriDexelStock {
     pub x_grid: Option<DexelGrid>,
     pub y_grid: Option<DexelGrid>,
     pub stock_bbox: BoundingBox3,
+    /// How the metric simulator schedules its stamp kernel (`PERF_REVIEW.md`
+    /// S3). A **schedule only** — every shape produces bit-identical grids,
+    /// samples and metrics, so this is safe to set from a bench harness or a
+    /// determinism sentry. Defaults to [`StampDispatch::Auto`].
+    pub stamp_dispatch: StampDispatch,
+    /// What the last metric simulation's whole-toolpath dispatcher did.
+    /// Diagnostics for the wave-4 non-vacuity sentries; reset at the start of
+    /// every `simulate_toolpath_with_lut_metrics_cancel` and left all-zero when
+    /// that run used per-stamp dispatch.
+    pub last_stamp_dispatch: StampDispatchStats,
 }
 
 impl Clone for TriDexelStock {
@@ -44,6 +56,8 @@ impl Clone for TriDexelStock {
             x_grid: self.x_grid.clone(),
             y_grid: self.y_grid.clone(),
             stock_bbox: self.stock_bbox,
+            stamp_dispatch: self.stamp_dispatch,
+            last_stamp_dispatch: self.last_stamp_dispatch,
         }
     }
 }
@@ -56,6 +70,8 @@ impl TriDexelStock {
             x_grid: None,
             y_grid: None,
             stock_bbox: *bbox,
+            stamp_dispatch: StampDispatch::default(),
+            last_stamp_dispatch: StampDispatchStats::default(),
         }
     }
 

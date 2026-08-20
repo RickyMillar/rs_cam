@@ -120,7 +120,7 @@ impl DexelGrid {
     /// the difference between visiting `grid_rows / BAND_ROWS` bands per stamp
     /// and visiting `footprint_rows / BAND_ROWS`. On a 500-row grid with a Ø6
     /// tool at 0.1 mm that is 63 bands versus 9, per subsegment.
-    fn band_span(&self, row_lo: usize, row_hi: usize) -> (usize, usize) {
+    pub(super) fn band_span(&self, row_lo: usize, row_hi: usize) -> (usize, usize) {
         let total = self.rows.div_ceil(BAND_ROWS);
         if self.rows == 0 || self.cols == 0 || row_lo > row_hi || row_lo >= self.rows {
             return (0, 0);
@@ -278,14 +278,28 @@ pub(super) fn stamp_wants_threads(
     if grid.rows <= BAND_ROWS {
         return false;
     }
+    stamp_bbox_cells(grid, radius, start, end) >= PARALLEL_MIN_BBOX_CELLS
+}
+
+/// Cells in a stamp's swept bounding box, estimated from the geometry.
+///
+/// Used for **scheduling only** — the per-stamp serial/parallel cutoff above,
+/// and the whole-toolpath dispatcher's batch budget (`whole_path.rs`). Nothing
+/// that reaches a result reads it, which is why an estimate is enough.
+pub(super) fn stamp_bbox_cells(
+    grid: &DexelGrid,
+    radius: f64,
+    start: (f64, f64, f64),
+    end: (f64, f64, f64),
+) -> f64 {
     let cs = grid.cell_size;
     if cs <= 0.0 {
-        return false;
+        return 0.0;
     }
     let scan = radius + cs;
     let span_u = (end.0 - start.0).abs() + 2.0 * scan;
     let span_v = (end.1 - start.1).abs() + 2.0 * scan;
-    (span_u / cs + 2.0) * (span_v / cs + 2.0) >= PARALLEL_MIN_BBOX_CELLS
+    (span_u / cs + 2.0) * (span_v / cs + 2.0)
 }
 
 #[cfg(test)]
