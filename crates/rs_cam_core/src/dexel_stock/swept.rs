@@ -508,11 +508,16 @@ fn stamp_swept_chunk(
     let uy = seg_dv * inv_seg_len;
     let half_t = (0.5 * cs * (ux.abs() + uy.abs()) * inv_seg_len).max(0.5 / bins_f);
 
-    // Per-bin midpoint (the reference disk for the engagement gate) and per-bin
-    // upper tip bound (for the sliver-safe channel). Both are properties of the
-    // bin, not of the cell, so they are precomputed once per chunk.
-    let mut bin_mid = Vec::with_capacity(bins);
-    let mut bin_depth_max = Vec::with_capacity(bins);
+    // The per-bin midpoint (the reference disk for the engagement gate) and the
+    // per-bin upper tip bound (for the sliver-safe channel) are computed
+    // INLINE, for the one bin a cell lands in, rather than tabulated per chunk.
+    //
+    // They were tabulated first, and it cost 6-19 % on the lateral arms: two
+    // `Vec` allocations per (band, chunk), which at one bin per chunk is two
+    // allocations per stamp — against a kernel wave 4 had already stripped of
+    // per-stamp allocation. Four flops per cell is cheaper than a heap
+    // allocation per chunk, and it is the same expressions in the same order,
+    // so the bit-identity of the one-bin case is unaffected.
     // `sd + 1.0·seg_dd` is not `ed` — `fl(sd + fl(ed − sd))` need not round back
     // (the same last-bit trap `segment_tip_low` documents). The endpoints are
     // therefore taken literally, which is both more accurate and what makes the
@@ -526,13 +531,6 @@ fn stamp_swept_chunk(
             sd + t * seg_dd
         }
     };
-    for b in 0..bins {
-        let mid_t = (b as f64 + 0.5) / bins_f;
-        bin_mid.push((su + mid_t * seg_du, sv + mid_t * seg_dv));
-        let d_lo = d_at(b as f64 / bins_f);
-        let d_hi = d_at((b as f64 + 1.0) / bins_f);
-        bin_depth_max.push(d_lo.max(d_hi));
-    }
 
     for row in row_lo..=row_hi {
         let cell_v = band.origin_v + row as f64 * cs;
@@ -558,10 +556,34 @@ fn stamp_swept_chunk(
             // off the end.
             let bin = ((t_center * bins_f) as usize).min(bins - 1);
             // The smeared interval and its bin range, clamped to the chunk.
-            let lo_t = (t_center - half_t).max(0.0);
-            let hi_t = (t_center + half_t).min(1.0);
-            let b_lo = ((lo_t * bins_f) as usize).min(bins - 1);
-            let b_hi = ((hi_t * bins_f) as usize).min(bins - 1);
+            // At ONE bin the whole apparatus is a no-op — the interval covers
+            // the only bin there is and the weight is exactly `1.0` — so it is
+            // skipped rather than evaluated. That is not a micro-optimisation:
+            // the weight costs a DIVISION per cell, and `StampDispatch::
+            // SweptPlungeOnly` runs every lateral chunk at one bin, where it
+            // measured a 5-24 % LOSS against the shipped dispatch on the
+            // lateral arms before this branch existed.
+            let single = bins == 1;
+            let lo_t = if single {
+                0.0
+            } else {
+                (t_center - half_t).max(0.0)
+            };
+            let hi_t = if single {
+                1.0
+            } else {
+                (t_center + half_t).min(1.0)
+            };
+            let b_lo = if single {
+                0
+            } else {
+                ((lo_t * bins_f) as usize).min(bins - 1)
+            };
+            let b_hi = if single {
+                0
+            } else {
+                ((hi_t * bins_f) as usize).min(bins - 1)
+            };
             // A DIVISION, not a multiply by a hoisted reciprocal. The
             // single-bin case needs `w` to be exactly `1.0` — that is what
             // keeps `bins == 1` bit-identical to the shipped kernel — and
@@ -580,6 +602,11 @@ fn stamp_swept_chunk(
             // describes cannot arise across bins.
             // Overlap weight of bin `b` with the cell's smeared interval.
             let weight = |b: usize| -> f64 {
+                if single {
+                    // Exactly `1.0`, and it has to be the literal rather than
+                    // `span / span`: multiplying by it must be the identity.
+                    return 1.0;
+                }
                 let s0 = (b as f64 / bins_f).max(lo_t);
                 let s1 = ((b + 1) as f64 / bins_f).min(hi_t);
                 if s1 > s0 && span > 0.0 {
@@ -591,13 +618,18 @@ fn stamp_swept_chunk(
 
             if air_skip && !cell_can_remove(band.conservative_top[idx], depth) {
                 let inert = ray_material_length(&band.rays[idx]) as f64 * cell_area;
-                for b in b_lo..=b_hi {
-                    let w = weight(b);
-                    if w <= 0.0 {
-                        continue;
+                if single {
+                    out[0].pre_volume += inert;
+                    out[0].post_volume += inert;
+                } else {
+                    for b in b_lo..=b_hi {
+                        let w = weight(b);
+                        if w <= 0.0 {
+                            continue;
+                        }
+                        out[b].pre_volume += w * inert;
+                        out[b].post_volume += w * inert;
                     }
-                    out[b].pre_volume += w * inert;
-                    out[b].post_volume += w * inert;
                 }
                 out[0].cells_skipped += 1;
                 continue;
@@ -618,18 +650,28 @@ fn stamp_swept_chunk(
                 ray_blend_below(ray, cell_tool_surface as f32, coverage);
             }
             let post_len = ray_material_length(ray) as f64;
-            for b in b_lo..=b_hi {
-                let w = weight(b);
-                if w <= 0.0 {
-                    continue;
+            if single {
+                out[0].pre_volume += pre_len * cell_area;
+                out[0].post_volume += post_len * cell_area;
+            } else {
+                for b in b_lo..=b_hi {
+                    let w = weight(b);
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    out[b].pre_volume += w * pre_len * cell_area;
+                    out[b].post_volume += w * post_len * cell_area;
                 }
-                out[b].pre_volume += w * pre_len * cell_area;
-                out[b].post_volume += w * post_len * cell_area;
             }
 
             if from_high
                 && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, bin_depth_max[bin])
+                && let Some(ub) = cell_upper_bound_surface(
+                    lut,
+                    center_d_sq,
+                    cs,
+                    d_at(bin as f64 / bins_f).max(d_at((bin as f64 + 1.0) / bins_f)),
+                )
             {
                 band.lower_conservative_top(idx, ub as f32);
             }
@@ -648,7 +690,8 @@ fn stamp_swept_chunk(
             // projection is the same number whichever midpoint it is measured
             // from. Only the `mid_dist_sq <= radius_sq` reachability gate is
             // bin-dependent.
-            let (mid_u, mid_v) = bin_mid[bin];
+            let mid_t = (bin as f64 + 0.5) / bins_f;
+            let (mid_u, mid_v) = (su + mid_t * seg_du, sv + mid_t * seg_dv);
             let dm_u = cell_u - mid_u;
             let dm_v = cell_v - mid_v;
             let mid_dist_sq = dm_u * dm_u + dm_v * dm_v;
