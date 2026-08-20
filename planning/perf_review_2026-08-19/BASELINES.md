@@ -570,3 +570,29 @@ S3's whole-toolpath dispatch (the remaining 6–12× lever), G5/G6 (shared NN
 orderer + surface_link provenance inversion), G8 (per-setup index/silhouette/
 mesh caching). Not yet started: S1, S5, S8, G7, G10-G12, V2, V5-V7, V9, V11,
 V14, V15, and the 0C wanaka wall-clock protocol.
+
+## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier)
+
+Binary: release, built at tip 9dee1889 (all waves through SIM w2 / GEN w4).
+Protocol: fresh MCP GUI instance, load wanaka200.toml, timed `generate_all`
+(fixpoint: true, simulation_resolution_mm: 0.4), then timed `run_simulation` (0.4).
+
+| Stage | This run | Reference (2026-08-19, pre-campaign) |
+|---|---|---|
+| generate_all fixpoint, 8 ops | **394 s (6 min 34 s)** | ~40 min (approximate — anecdotal wall clock, not a paired measurement) |
+| rounds / simulations | 3 / 2 (identical) | 3 / 2 |
+| run_simulation standalone | **84 s** | not separately recorded |
+
+**≈6× end-to-end**, with the caveat that the reference is approximate and
+unpaired (see the cross-day comparability rule above — this is the one place we
+accept it, because the gap dwarfs the observed 22% cross-day noise).
+
+Result-consistency check (metric-neutrality on the real project): zero rapid
+collisions, verdict unchanged (WARNING >20% air), measurability abstentions
+identical to the 2026-08-19 RUN_LOG (tp5/tp8/tp9 not_measurable, tp1 degraded,
+cell_too_coarse_for_tip_contact at 0.4 mm), fixpoint converged in the same
+3 rounds / 2 simulations.
+
+Machine state: load 4.05 at gen start, 11.55 at gen end (parallel stamping +
+rayon working), 8.27 at sim end; one idle stale-binary GUI from another session
+resident throughout; no cargo jobs during the run.
