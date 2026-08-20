@@ -12,6 +12,7 @@ pub mod cutter;
 pub mod execute;
 pub mod operation_configs;
 pub mod semantic_helpers;
+pub mod sim_prefix;
 pub mod simulate;
 pub mod spans;
 pub mod stats;

@@ -255,6 +255,15 @@ pub trait ComputeBackend: Send {
     /// real lane must decide explicitly whether the escape hatches reach it.
     fn generation_control(&self) -> GenerationControl;
 
+    /// S5 — drop the analysis lane's simulation prefix snapshot.
+    ///
+    /// Defaulted to a no-op: a backend with no real analysis lane has nothing
+    /// to drop, and a memo that is never populated is never stale. The GUI
+    /// calls this when the `generate_all` fixpoint ladder settles, so the
+    /// snapshot's memory is released at a known point instead of waiting for
+    /// the next simulation to consume it.
+    fn clear_sim_prefix_cache(&mut self) {}
+
     fn cancel_all(&mut self) {
         self.cancel_lane(ComputeLane::Toolpath);
         self.cancel_lane(ComputeLane::Analysis);

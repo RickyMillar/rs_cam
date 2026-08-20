@@ -1967,12 +1967,17 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         kinematics: None,
         use_predicted_feed_in_gates: false,
         max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
     };
 
     let cancel = AtomicBool::new(false);
-    let result =
-        crate::compute::worker::execute::run_simulation_with_phase(&request, &cancel, |_phase| {})
-            .expect("viz simulation completes");
+    let result = crate::compute::worker::execute::run_simulation_with_phase(
+        &request,
+        &cancel,
+        |_phase| {},
+        None,
+    )
+    .expect("viz simulation completes");
 
     let cut_trace = result.cut_trace.as_ref().expect("metric cut trace");
 

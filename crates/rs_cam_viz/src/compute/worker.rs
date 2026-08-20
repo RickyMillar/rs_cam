@@ -197,6 +197,15 @@ pub struct SimulationRequest {
     /// feeds inside the same envelope the controller would. Defaults
     /// to the same value as `rapid_feed_mm_min` when not specified.
     pub max_feed_mm_min: f64,
+    /// S5 — leave a prefix snapshot behind for the next simulation to resume
+    /// from (`rs_cam_core::compute::sim_prefix`).
+    ///
+    /// Set only by the `generate_all` fixpoint ladder, which is the one caller
+    /// that runs several simulations over a growing project in quick
+    /// succession. Every other simulation still *consumes* a held snapshot if
+    /// it matches — that is free — but leaves none, so the memo's memory is
+    /// released at the next run rather than held for the life of the session.
+    pub memoize_prefix: bool,
 }
 
 pub struct SimBoundary {
@@ -237,7 +246,9 @@ pub struct SimulationResult {
     /// display, not histograms (P2.g Task 1).
     pub column_deviations: Option<Vec<rs_cam_core::compute::simulate::ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
-    pub checkpoints: Vec<SimCheckpointMesh>,
+    /// `Arc`-shared with the core result — see
+    /// `rs_cam_core::compute::simulate::SimulationResult::checkpoints` (S5).
+    pub checkpoints: Vec<Arc<SimCheckpointMesh>>,
     /// Pre-transformed toolpath data for incremental playback.
     /// Each entry: (toolpath, tool_config, direction).
     pub playback_data: Vec<PlaybackToolpath>,
@@ -493,6 +504,12 @@ pub struct ThreadedComputeBackend {
     toolpath_handle: Option<std::thread::JoinHandle<()>>,
     analysis_handle: Option<std::thread::JoinHandle<()>>,
     optimize_handle: Option<std::thread::JoinHandle<()>>,
+    /// S5 — the analysis lane's simulation prefix memo. Shared so the GUI
+    /// thread can drop the snapshot at a known point (`clear_sim_prefix_cache`)
+    /// without waiting behind whatever is queued on the lane. The lane
+    /// serialises simulations, so the mutex is only ever contended by that
+    /// explicit clear.
+    sim_prefix_cache: Arc<Mutex<rs_cam_core::compute::sim_prefix::SimPrefixCache>>,
 }
 
 impl ThreadedComputeBackend {
@@ -501,9 +518,16 @@ impl ThreadedComputeBackend {
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
         let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
+        let sim_prefix_cache = Arc::new(Mutex::new(
+            rs_cam_core::compute::sim_prefix::SimPrefixCache::new(),
+        ));
 
         let toolpath_handle = spawn_toolpath_lane(Arc::clone(&toolpath_lane), result_tx.clone());
-        let analysis_handle = spawn_analysis_lane(Arc::clone(&analysis_lane), result_tx.clone());
+        let analysis_handle = spawn_analysis_lane(
+            Arc::clone(&analysis_lane),
+            result_tx.clone(),
+            Arc::clone(&sim_prefix_cache),
+        );
         let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx);
 
         Self {
@@ -514,6 +538,7 @@ impl ThreadedComputeBackend {
             toolpath_handle: Some(toolpath_handle),
             analysis_handle: Some(analysis_handle),
             optimize_handle: Some(optimize_handle),
+            sim_prefix_cache,
         }
     }
 }
@@ -579,6 +604,13 @@ impl ComputeBackend for ThreadedComputeBackend {
 
     fn submit_simulation(&mut self, request: SimulationRequest) {
         self.submit_analysis(AnalysisRequest::Simulation(request));
+    }
+
+    fn clear_sim_prefix_cache(&mut self) {
+        self.sim_prefix_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     fn submit_collision(&mut self, request: CollisionRequest) {
@@ -836,6 +868,7 @@ fn spawn_toolpath_lane(
 fn spawn_analysis_lane(
     lane: Arc<LaneQueue<AnalysisRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
+    sim_prefix_cache: Arc<Mutex<rs_cam_core::compute::sim_prefix::SimPrefixCache>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
@@ -881,8 +914,19 @@ fn spawn_analysis_lane(
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_owned());
                         };
-                        let result =
-                            execute::run_simulation_with_phase(&request, &lane.cancel, set_phase);
+                        // S5: the memo is held for the whole simulation, which
+                        // is why it lives on the lane rather than in a global.
+                        let mut cache = sim_prefix_cache.lock().unwrap_or_else(|e| e.into_inner());
+                        let result = execute::run_simulation_with_phase(
+                            &request,
+                            &lane.cancel,
+                            set_phase,
+                            Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                                store: request.memoize_prefix,
+                                cache: &mut cache,
+                            }),
+                        );
+                        drop(cache);
                         let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                             Err(ComputeError::Cancelled)
                         } else {

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::collision::{RapidCollision, check_rapid_collisions_against_stock};
+use crate::compute::sim_prefix::{PrefixState, SimMemo};
 use crate::compute::transform::SetupTransformInfo;
 use crate::dexel_mesh::dexel_stock_to_mesh;
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -17,8 +18,8 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{
-    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutSample, SimulationCutTrace,
-    SimulationMetricOptions, SimulationProvenance,
+    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutTrace, SimulationMetricOptions,
+    SimulationProvenance,
 };
 use crate::stock_mesh::StockMesh;
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -223,6 +224,7 @@ pub struct KinematicsContext {
 }
 
 /// Metadata for one toolpath boundary in the simulation timeline.
+#[derive(Clone)]
 pub struct SimBoundary {
     pub id: ToolpathId,
     pub name: String,
@@ -234,6 +236,7 @@ pub struct SimBoundary {
 }
 
 /// A per-toolpath checkpoint capturing the stock state after simulation.
+#[derive(Clone)]
 pub struct SimCheckpointMesh {
     pub boundary_index: usize,
     pub mesh: StockMesh,
@@ -294,7 +297,16 @@ pub struct SimulationResult {
     /// across setup groups, coordinates in world frame.
     pub column_deviations: Option<Vec<ColumnDeviation>>,
     pub boundaries: Vec<SimBoundary>,
-    pub checkpoints: Vec<SimCheckpointMesh>,
+    /// Per-toolpath checkpoints, in boundary order.
+    ///
+    /// **`Arc`-shared, not owned** (S5, `sim_prefix.rs`): a checkpoint is a
+    /// marching-cubes mesh plus a full dexel-grid clone, so it is the heaviest
+    /// per-toolpath artifact the simulation produces. The prefix memo holds the
+    /// prefix's checkpoints across fixpoint rounds, and sharing them with the
+    /// result they came from is what keeps that memo from doubling the
+    /// simulator's peak footprint. Consumers read through the `Arc`; nothing in
+    /// the tree mutates a checkpoint after it is produced.
+    pub checkpoints: Vec<Arc<SimCheckpointMesh>>,
     /// Rapid-through-stock collisions detected during simulation.
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).
@@ -462,6 +474,95 @@ impl From<Cancelled> for SimulationError {
     }
 }
 
+// ── S5 prefix-memo helpers (see `compute/sim_prefix.rs`) ────────────────
+
+/// The `(group, entry)` position a snapshot is taken at: the last toolpath
+/// entry of the last non-empty group. `None` when the request simulates
+/// nothing, in which case there is no prefix worth keeping.
+fn snapshot_point(request: &SimulationRequest) -> Option<(usize, usize)> {
+    request
+        .groups
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, group)| !group.toolpaths.is_empty())
+        .map(|(ordinal, group)| (ordinal, group.toolpaths.len() - 1))
+}
+
+/// The subset of `prior_stocks` that belongs in a snapshot: exactly the
+/// entries whose toolpaths were replayed, keyed by their own ids.
+///
+/// Phantom entries are deliberately excluded. Their key is the id of an op
+/// that had **not been generated** when the snapshot was taken, and by the
+/// next round that op typically *is* generated and gets a real entry at its
+/// own position — so carrying the old phantom forward would either be
+/// harmlessly overwritten or, if the op stayed ungenerated and the request's
+/// phantom moved elsewhere, leave a `prior_stocks` key a full replay would
+/// never have produced. Re-derivation from the live request
+/// ([`rederive_phantom_prior_stocks`]) is what makes the two agree.
+fn replayed_prior_stocks(
+    prior_stocks: &std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
+    request: &SimulationRequest,
+    resume_group: usize,
+    resume_entry: usize,
+) -> std::collections::HashMap<ToolpathId, Arc<TriDexelStock>> {
+    let mut out = std::collections::HashMap::new();
+    for (ordinal, group) in request.groups.iter().enumerate().take(resume_group + 1) {
+        let replayed = if ordinal < resume_group {
+            group.toolpaths.len()
+        } else {
+            resume_entry
+        };
+        for entry in group.toolpaths.iter().take(replayed) {
+            if let Some(stock) = prior_stocks.get(&entry.id) {
+                out.insert(entry.id, Arc::clone(stock));
+            }
+        }
+    }
+    out
+}
+
+/// Re-apply the LIVE request's phantom-prior-stock snapshots that fall inside
+/// the replayed region.
+///
+/// Inside the region the phantom shares its `Arc` with the entry at that
+/// position (the live path's `Arc::clone(&pre_carve_stock)`), so it is
+/// recovered from the restored map. Positions at or beyond the resume point
+/// are inserted by the normal loop and are not touched here.
+///
+/// The un-recoverable case — `phantom_k == toolpaths.len()` on a group
+/// strictly before the resume group, where the snapshot is that group's fully
+/// carved stock — is refused at lookup time by `SimPrefixCache::take_match`,
+/// so it cannot reach here.
+fn rederive_phantom_prior_stocks(
+    request: &SimulationRequest,
+    resume_group: usize,
+    resume_entry: usize,
+    prior_stocks: &mut std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
+) {
+    for (ordinal, group) in request.groups.iter().enumerate().take(resume_group + 1) {
+        let replayed = if ordinal < resume_group {
+            group.toolpaths.len()
+        } else {
+            resume_entry
+        };
+        let Some((phantom_k, phantom_id)) = group.phantom_prior_stock else {
+            continue;
+        };
+        if phantom_k >= replayed {
+            continue;
+        }
+        if let Some(stock) = group
+            .toolpaths
+            .get(phantom_k)
+            .and_then(|entry| prior_stocks.get(&entry.id))
+            .map(Arc::clone)
+        {
+            prior_stocks.insert(phantom_id, stock);
+        }
+    }
+}
+
 /// Map a point from one setup group's own emission frame into the sim's
 /// ZERO-ROOTED stock-relative global frame.
 ///
@@ -602,7 +703,35 @@ pub fn run_simulation(
 pub fn run_simulation_with_phase<F>(
     request: &SimulationRequest,
     cancel: &AtomicBool,
+    set_phase: F,
+) -> Result<SimulationResult, SimulationError>
+where
+    F: FnMut(&str),
+{
+    run_simulation_memoized(request, cancel, set_phase, None)
+}
+
+/// Run a full stock simulation, optionally resuming from — and refreshing — a
+/// cached prefix (`PERF_REVIEW.md` S5).
+///
+/// With `memo` as `None` this is exactly [`run_simulation_with_phase`].
+///
+/// With a [`SimMemo`], the run first asks the cache whether it holds a state
+/// snapshot whose group/entry sequence is a prefix of this request's. On a hit
+/// the leading toolpaths are **not** re-simulated: their accumulated state is
+/// restored verbatim and the run continues from the first new entry. On
+/// `memo.store`, a fresh snapshot is captured after this request's last entry
+/// so the next round can resume from it.
+///
+/// A resumed run is bit-identical to a full replay by construction — the
+/// restored values *are* the previous run's values and the code that runs
+/// afterwards is unchanged. See `sim_prefix.rs` for the key closure, the
+/// phantom-prior-stock rule and the memory bound.
+pub fn run_simulation_memoized<F>(
+    request: &SimulationRequest,
+    cancel: &AtomicBool,
     mut set_phase: F,
+    memo: Option<SimMemo<'_>>,
 ) -> Result<SimulationResult, SimulationError>
 where
     F: FnMut(&str),
@@ -624,19 +753,6 @@ where
     };
     let sample_step_mm = request.resolution.max(0.25);
 
-    let mut total_moves = 0;
-    let mut boundary_index = 0;
-    let mut boundaries = Vec::new();
-    let mut checkpoints = Vec::new();
-    let mut cut_samples: Vec<SimulationCutSample> = Vec::new();
-    // §6.E PR2 accumulators for drill-native metrics emitted alongside the
-    // engagement-side `cut_samples` stream. Each drill toolpath contributes
-    // a per-peck sample vector + a per-toolpath summary; both are attached
-    // to `SimulationCutTrace` after the per-group simulation loop.
-    let mut drill_samples_all: Vec<crate::drill_metrics::DrillSample> = Vec::new();
-    let mut drill_summaries_all: Vec<crate::drill_metrics::DrillToolpathSummary> = Vec::new();
-    // Composited mesh from all per-setup simulations.
-    let mut composite_mesh = StockMesh::empty();
     // Parallel global stock for checkpoint/playback support.
     // Use zero-origin bbox (stock dims only) because local_to_global
     // returns stock-relative coordinates (0→stock_x, 0→stock_y, 0→stock_z),
@@ -649,7 +765,82 @@ where
             request.stock_bbox.max.z - request.stock_bbox.min.z,
         ),
     };
-    let mut global_stock = TriDexelStock::from_bounds(&global_bbox, request.resolution);
+
+    // ── S5 prefix memo ─────────────────────────────────────────────────
+    // Two independent decisions, resolved up front so the borrow of the
+    // cache ends here: what to resume from, and where a fresh snapshot goes.
+    // `take_match` removes the held snapshot either way — a miss means it is
+    // stale, and a stale snapshot is pure memory.
+    let (resumed, store_into) = match memo {
+        Some(SimMemo { cache, store }) => {
+            let resumed = cache.take_match(request);
+            (resumed, if store { Some(cache) } else { None })
+        }
+        None => (None, None),
+    };
+    // The deepest point a snapshot can be taken at: immediately after this
+    // request's LAST toolpath entry, before that group's end-of-group work.
+    let snapshot_at = store_into.as_ref().and_then(|_| snapshot_point(request));
+    let (resume_group, resume_entry) = resumed
+        .as_ref()
+        .map_or((0, 0), |r| (r.resume_group, r.resume_entry));
+
+    let PrefixState {
+        mut total_moves,
+        mut boundary_index,
+        mut boundaries,
+        mut checkpoints,
+        mut cut_samples,
+        // §6.E PR2 accumulators for drill-native metrics emitted alongside the
+        // engagement-side `cut_samples` stream. Each drill toolpath contributes
+        // a per-peck sample vector + a per-toolpath summary; both are attached
+        // to `SimulationCutTrace` after the per-group simulation loop.
+        mut drill_samples_all,
+        mut drill_summaries_all,
+        // Composited mesh from all per-setup simulations.
+        mut composite_mesh,
+        mut global_stock,
+        mut column_deviations,
+        // Rapid collision accumulators — populated per-toolpath BEFORE each
+        // simulation step so we compare against the stock state left by all
+        // *previous* operations.
+        mut rapid_collisions,
+        mut rapid_collision_move_indices,
+        mut prior_stocks,
+        // §6.E accumulators for analytic drill geometry. The per-group half is
+        // reset per group (matches per-setup `group_stock` lifetime); the
+        // global accumulator stores transformed copies so the final
+        // composite mesh shows holes from all setups.
+        mut global_drill_ops,
+        group_stock: mut resumed_group_stock,
+        group_drill_ops: mut resumed_group_drill_ops,
+    } = match resumed {
+        Some(r) => r.state,
+        None => PrefixState {
+            total_moves: 0,
+            boundary_index: 0,
+            boundaries: Vec::new(),
+            checkpoints: Vec::new(),
+            cut_samples: Vec::new(),
+            drill_samples_all: Vec::new(),
+            drill_summaries_all: Vec::new(),
+            composite_mesh: StockMesh::empty(),
+            global_stock: TriDexelStock::from_bounds(&global_bbox, request.resolution),
+            column_deviations: request.model_mesh.as_ref().map(|_| Vec::new()),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+            prior_stocks: std::collections::HashMap::new(),
+            global_drill_ops: Vec::new(),
+            group_stock: None,
+            group_drill_ops: Vec::new(),
+        },
+    };
+    // `phantom_prior_stock` is the ONE per-group input deliberately left out
+    // of the cache key, because it moves down the group on every fixpoint
+    // round — keying on it would make the memo never hit. Its effect inside
+    // the replayed region is re-derived from the LIVE request instead, so a
+    // resumed `prior_stocks` matches a full replay's exactly.
+    rederive_phantom_prior_stocks(request, resume_group, resume_entry, &mut prior_stocks);
 
     // Model spatial index for per-column deviations (shared across groups;
     // `compute_deviations` builds its own for the vertex pass).
@@ -657,33 +848,47 @@ where
         .model_mesh
         .as_ref()
         .map(|model| SpatialIndex::build_auto(model));
-    let mut column_deviations: Option<Vec<ColumnDeviation>> =
-        request.model_mesh.as_ref().map(|_| Vec::new());
 
-    // Rapid collision accumulators — populated per-toolpath BEFORE each
-    // simulation step so we compare against the stock state left by all
-    // *previous* operations.
-    let mut rapid_collisions: Vec<RapidCollision> = Vec::new();
-    let mut rapid_collision_move_indices: Vec<usize> = Vec::new();
-    let mut prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>> =
-        std::collections::HashMap::new();
-    // §6.E accumulators for analytic drill geometry. `group_drill_ops` is
-    // reset per group (matches per-setup `group_stock` lifetime); the
-    // global accumulator stores transformed copies so the final
-    // composite mesh shows holes from all setups.
-    let mut global_drill_ops: Vec<crate::drill_op::DrillOp> = Vec::new();
+    let mut pending_snapshot: Option<PrefixState> = None;
 
     for (group_ordinal, group) in request.groups.iter().enumerate() {
+        // Groups before the resume point are entirely inside the restored
+        // state — including their end-of-group column deviations and
+        // composite-mesh append.
+        if group_ordinal < resume_group {
+            continue;
+        }
         // Per-setup stock: use local bbox if available, else fall back to global.
         let local_bbox = group
             .local_stock_bbox
             .as_ref()
             .unwrap_or(&request.stock_bbox);
-        let mut group_stock = TriDexelStock::from_bounds(local_bbox, request.resolution);
+        let restored_here = if group_ordinal == resume_group {
+            resumed_group_stock.take()
+        } else {
+            None
+        };
+        // Entries are skipped ONLY when their carved state was actually
+        // restored. Deriving the skip from the restored stock rather than from
+        // `resume_group` alone means a snapshot that somehow carried no group
+        // stock degrades into a full replay instead of silently dropping the
+        // prefix's cuts. (`SimPrefixCache::store` always records one, so this
+        // is a guard on an invariant, not a live path.)
+        let skip_entries = if restored_here.is_some() {
+            resume_entry
+        } else {
+            0
+        };
         // §6.E per-group accumulator: holes drilled into `group_stock`
         // get appended as analytic cylinders when this group's mesh
         // is extracted.
-        let mut group_drill_ops: Vec<Arc<crate::drill_op::DrillOp>> = Vec::new();
+        let (mut group_stock, mut group_drill_ops) = match restored_here {
+            Some(stock) => (stock, std::mem::take(&mut resumed_group_drill_ops)),
+            None => (
+                TriDexelStock::from_bounds(local_bbox, request.resolution),
+                Vec::new(),
+            ),
+        };
         // Per-setup stocks are always simulated from the top (Z-axis).
         let direction = StockCutDirection::FromTop;
 
@@ -694,6 +899,11 @@ where
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
         for (k, entry) in group.toolpaths.iter().enumerate() {
+            // Already carved, and its whole contribution is in the restored
+            // state (S5).
+            if k < skip_entries {
+                continue;
+            }
             let entry_toolpath = &entry.annotated.toolpath;
             // Snapshot the stock *before* this toolpath carves so the dressup
             // air-cut filter and rest-machining-aware generators can use it.
@@ -876,13 +1086,43 @@ where
                 &group.local_to_global,
                 request.stock_bbox.min,
             );
-            checkpoints.push(SimCheckpointMesh {
+            checkpoints.push(Arc::new(SimCheckpointMesh {
                 boundary_index,
                 mesh: checkpoint_mesh,
                 stock: global_stock.checkpoint(),
-            });
+            }));
 
             boundary_index += 1;
+
+            // S5: the snapshot point is this request's last entry, taken here
+            // — after the entry has fully carved and BEFORE the group's
+            // end-of-group work, so a resume redoes that work against the
+            // restored `group_stock` exactly as a full replay would.
+            if snapshot_at == Some((group_ordinal, k)) {
+                pending_snapshot = Some(PrefixState {
+                    total_moves,
+                    boundary_index,
+                    boundaries: boundaries.clone(),
+                    checkpoints: checkpoints.clone(),
+                    cut_samples: cut_samples.clone(),
+                    drill_samples_all: drill_samples_all.clone(),
+                    drill_summaries_all: drill_summaries_all.clone(),
+                    composite_mesh: composite_mesh.clone(),
+                    global_stock: global_stock.clone(),
+                    column_deviations: column_deviations.clone(),
+                    rapid_collisions: rapid_collisions.clone(),
+                    rapid_collision_move_indices: rapid_collision_move_indices.clone(),
+                    prior_stocks: replayed_prior_stocks(
+                        &prior_stocks,
+                        request,
+                        group_ordinal,
+                        k + 1,
+                    ),
+                    global_drill_ops: global_drill_ops.clone(),
+                    group_stock: Some(group_stock.clone()),
+                    group_drill_ops: group_drill_ops.clone(),
+                });
+            }
         }
 
         // F.4: phantom slot at the tail of the group — the first pending
@@ -932,6 +1172,14 @@ where
             request.stock_bbox.min,
         );
         composite_mesh.append(&group_global);
+    }
+
+    // S5: hand the captured prefix to the memo. `store` enforces the size
+    // ceiling; over it the snapshot is simply dropped.
+    if let (Some(state), Some(cache), Some((snap_group, snap_entry))) =
+        (pending_snapshot, store_into, snapshot_at)
+    {
+        cache.store(request, snap_group, snap_entry + 1, state);
     }
 
     // `global_drill_ops` is currently accumulated for future use by

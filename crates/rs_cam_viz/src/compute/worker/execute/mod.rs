@@ -406,15 +406,17 @@ pub(crate) fn run_simulation_with_phase<F>(
     req: &SimulationRequest,
     cancel: &AtomicBool,
     set_phase: F,
+    memo: Option<rs_cam_core::compute::sim_prefix::SimMemo<'_>>,
 ) -> Result<SimulationResult, ComputeError>
 where
     F: FnMut(&str),
 {
     use rs_cam_core::compute::simulate;
 
-    // Convert viz request to core request and delegate.
+    // Convert viz request to core request and delegate. `memo` carries the
+    // analysis lane's S5 prefix cache; `None` is the pre-S5 behaviour.
     let core_req = build_core_simulation_request(req);
-    let core_result = simulate::run_simulation_with_phase(&core_req, cancel, set_phase)
+    let core_result = simulate::run_simulation_memoized(&core_req, cancel, set_phase, memo)
         .map_err(|_cancelled| ComputeError::Cancelled)?;
 
     // Build viz-only playback data (global-frame toolpaths for viewport replay).

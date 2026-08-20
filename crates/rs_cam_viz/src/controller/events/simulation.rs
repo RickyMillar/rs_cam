@@ -230,6 +230,7 @@ impl<B: ComputeBackend> AppController<B> {
         all_toolpaths_flat: &[SetupSimToolpath],
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
+        memoize_prefix: bool,
     ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
@@ -274,6 +275,7 @@ impl<B: ComputeBackend> AppController<B> {
             kinematics,
             use_predicted_feed_in_gates: false,
             max_feed_mm_min,
+            memoize_prefix,
         });
     }
 
@@ -282,6 +284,17 @@ impl<B: ComputeBackend> AppController<B> {
     /// loop must know that, or it would wait forever for a completion that
     /// will never drain.
     pub(crate) fn run_simulation_with_all(&mut self) -> bool {
+        self.run_simulation_with_all_memoized(false)
+    }
+
+    /// [`Self::run_simulation_with_all`] with control over the S5 prefix memo.
+    ///
+    /// `memoize_prefix` is set **only** by the `generate_all` fixpoint ladder
+    /// (`controller::events::compute::settle_generate_all_round`), the one
+    /// caller that runs several simulations over a growing project back to
+    /// back. Every other simulation still consumes a held snapshot when it
+    /// matches, but leaves none behind.
+    pub(crate) fn run_simulation_with_all_memoized(&mut self, memoize_prefix: bool) -> bool {
         let Some((groups, all_toolpaths_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
@@ -292,7 +305,13 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return false;
         };
-        self.submit_simulation_for_groups(groups, &all_toolpaths_flat, stock_bbox, Some(0));
+        self.submit_simulation_for_groups(
+            groups,
+            &all_toolpaths_flat,
+            stock_bbox,
+            Some(0),
+            memoize_prefix,
+        );
         true
     }
 
@@ -334,6 +353,7 @@ impl<B: ComputeBackend> AppController<B> {
             &all_toolpaths_flat,
             stock_bbox,
             Some(target_setup_idx),
+            false,
         );
     }
 

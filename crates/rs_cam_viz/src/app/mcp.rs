@@ -3989,10 +3989,8 @@ impl super::RsCamApp {
             let w = width.unwrap_or(1200);
             let h = height.unwrap_or(800);
             let cp_idx = checkpoint.unwrap_or_else(|| results.checkpoints.len().saturating_sub(1));
-            let pixels = if let Some(cp) = results.checkpoints.get(cp_idx)
-                && let Some(ref stock) = cp.stock
-            {
-                rs_cam_core::fingerprint::render_stock_composite(stock, w, h)
+            let pixels = if let Some(cp) = results.checkpoints.get(cp_idx) {
+                rs_cam_core::fingerprint::render_stock_composite(cp.stock(), w, h)
             } else {
                 rs_cam_core::fingerprint::render_mesh_composite(&results.mesh, w, h)
             };
