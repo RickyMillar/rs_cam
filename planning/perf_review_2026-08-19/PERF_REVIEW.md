@@ -118,6 +118,28 @@ a whole toolpath** — one `par_bands` per thousands of stamps, with band-to-cor
 affinity — which needs the two-phase sample-stream restructure `DELTA_sim_w2.md` §3f
 describes. `GridBand`, `StampPartial`, the row-span helper and the determinism harness
 are in the tree as its substrate.
+**DONE in wave 4 SIM (`whole_path.rs`) — and 6–12× is refuted a second time.**
+Whole-toolpath (batched) dispatch beats the per-stamp ceiling on the same fixture and
+thread count — 2.61× against 2.21× at four threads — and, more usefully, removes the
+saturation: per-stamp regresses to 1.73× at 24 threads while whole-path is still
+climbing at **3.43×**. But the review's 6–12× is **not** reached at any count. The
+limit is band geometry, not dispatch: a `flat12/cs0.1` footprint covers 16 of the
+grid's 40 bands, so one batch can occupy at most 16 workers, and `BAND_ROWS` is
+deliberately a constant because it fixes the volume-sum reassociation.
+Three further corrections. (a) **The crossover in (2) above was never about work
+size.** `flat6/cs0.1` (4.3 k cells) is the arm per-stamp had to gate OFF; batched
+dispatch gets **2.76×** there, and 1.80× on the plunge fixture per-stamp also never
+dispatches on. The 12 k threshold is a property of the per-stamp granularity.
+(b) **"bit-identical" is now true without exception.** Wave 2 had to concede
+`removed_volume_est_mm3` reassociates; wave 4 does not re-split those sums (same band
+set, same ascending merge order), so it is bit-identical to per-stamp on every channel
+with no tolerance, at 1/2/4/8 threads. (c) **The band-to-core affinity in the
+prescription is not something rayon promises** and nothing here asks for it; what is
+real is intra-batch locality — a band walks its rows once per batch instead of once
+per stamp. Also found by measurement: dispatching every band in the grid rather than
+the batch's own row span made whole-path a *loss* at two threads — the same fan-out
+error wave 2 §3e fixed one level down, made twice by two waves, presenting both times
+as "parallelism does not help here".
 Also landed with it and worth as much as the parallelism: `CoverageFastPath::new` sat
 ABOVE the bbox early-outs, and the fan-out visited every band in the grid rather than
 the stamp's own rows. Fixing both is 1.02–1.11× on arms that never dispatch.
