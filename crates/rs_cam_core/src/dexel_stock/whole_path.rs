@@ -68,20 +68,27 @@ use crate::radial_profile::RadialProfileLUT;
 
 /// Which dispatch shape the metric simulator uses for its stamp kernel.
 ///
-/// Purely a **schedule**. Both shapes run the same kernel over the same band
+/// **Three of the five shapes are purely a schedule; one is not.**
+/// [`StampDispatch::PerStamp`], [`StampDispatch::WholeToolpath`] and
+/// [`StampDispatch::SweptPlungeOnly`] run the same kernel over the same band
 /// decomposition and merge the same partials in the same order, so the grid,
 /// the sample stream and all four published metrics are bit-identical across
 /// them — which is what `whole_path_dispatch_matches_per_stamp_bit_for_bit`
-/// pins, and what makes [`StampDispatch::Auto`] safe to change.
+/// and `pure_vertical_chunks_are_bit_identical_to_per_stamp` pin.
+/// [`StampDispatch::Swept`] changes what the simulator *measures*, on purpose,
+/// and **is what [`StampDispatch::Auto`] now resolves to** (SIM w5b, landed
+/// 2026-08-21; `planning/perf_review_2026-08-19/DELTA_sim_w5b_landing.md`).
+///
 /// **The default is not `#[derive(Default)]`.** It consults
 /// `RS_CAM_STAMP_DISPATCH` once per process so a whole test binary, a bench, or
 /// the CLI can be forced onto one shape without threading a flag through every
-/// construction site — which is what the S1 decision package's
-/// "run the full suite with the new mode on" measurement needs. Unset (the
-/// shipped case) is [`StampDispatch::Auto`], unchanged.
+/// construction site. That override is the A/B instrument the whole S1 decision
+/// rests on and it stays. Unset (the shipped case) is [`StampDispatch::Auto`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StampDispatch {
-    /// Pick per simulation from the grid shape and the pool size.
+    /// Pick per simulation. **Resolves to [`StampDispatch::Swept`]** — see
+    /// [`StampDispatch::resolved`], which is the single place that mapping
+    /// lives.
     Auto,
     /// Wave 2's shape: one `par_bands` call per stamp. Kept because it is the
     /// A/B partner the wave-4 numbers are quoted against, and because it is
@@ -93,10 +100,14 @@ pub enum StampDispatch {
     /// S1's shape: one pass per *chunk of consecutive subsegments*, metrics
     /// binned by closest-approach parameter (`super::swept`).
     ///
-    /// **Not bit-identical to the other two, by design** — it is the only
-    /// value of this enum that changes what the simulator measures. `Auto`
-    /// never selects it; it must be asked for. See `swept.rs`'s module docs
-    /// for what moves and why.
+    /// **Not bit-identical to the other three, by design** — it is the only
+    /// value of this enum that changes what the simulator measures. It is
+    /// what `Auto` resolves to as of SIM w5b; the other three remain
+    /// selectable because the A/B, the bit-identity sentries and the
+    /// determinism sentries are written against them. See `swept.rs`'s module
+    /// docs for what moves and why, and `DELTA_sim_w5_s1_DECISION.md` §2 for
+    /// the field-by-field classification of what moved when it was made the
+    /// default.
     Swept,
     /// S1's shape with the **metric-changing half switched off**: chunks are
     /// grown only where growing them is bit-identical.
@@ -130,6 +141,23 @@ fn dispatch_override() -> Option<StampDispatch> {
 impl Default for StampDispatch {
     fn default() -> Self {
         dispatch_override().unwrap_or(Self::Auto)
+    }
+}
+
+impl StampDispatch {
+    /// Turn `Auto` into the concrete shape it selects. **The only place that
+    /// mapping exists** — every consumer resolves first, so there is no second
+    /// site that can disagree about what the default means.
+    ///
+    /// `Auto` → [`StampDispatch::Swept`] since SIM w5b. Every other value is
+    /// returned unchanged, which is what keeps `RS_CAM_STAMP_DISPATCH=whole_path`
+    /// a usable A/B arm against the shipped default.
+    #[must_use]
+    pub fn resolved(self) -> Self {
+        match self {
+            Self::Auto => Self::Swept,
+            other => other,
+        }
     }
 }
 
@@ -256,6 +284,10 @@ impl BandDispatch {
     /// case the per-stamp path (which declines to dispatch at all below its own
     /// bbox cutoff) is strictly better.
     pub(super) fn for_grid(grid: &DexelGrid, mode: StampDispatch) -> Option<Self> {
+        // Resolve first so `Auto` cannot mean one thing here and another in
+        // `SweptDispatch::for_grid`. Since w5b `Auto` resolves to `Swept`, so
+        // the `Auto` arm below is reachable only if that mapping changes back.
+        let mode = mode.resolved();
         let bands = grid.rows.div_ceil(BAND_ROWS);
         let wanted = match mode {
             StampDispatch::PerStamp => false,
@@ -574,8 +606,10 @@ mod tests {
         );
     }
 
-    /// `Auto` must not turn whole-path dispatch on for a grid that cannot feed
-    /// the pool — the bookkeeping would be pure overhead.
+    /// `Auto` must not turn whole-path dispatch on. Since w5b that holds for a
+    /// second reason on top of the band count — `Auto` resolves to `Swept`,
+    /// which runs its own driver — and the assertion is kept because the
+    /// explicit arms below it are what the A/B harness depends on.
     #[test]
     fn auto_declines_a_grid_with_too_few_bands() {
         use crate::geo::{BoundingBox3, P3};

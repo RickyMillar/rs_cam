@@ -743,8 +743,20 @@ const MIN_JOBS_PER_BATCH: usize = 8;
 /// staleness bound, not a memory one.
 const BATCH_VISIT_BUDGET_PASSES: u64 = 4;
 
-/// Fewest bands a grid must have before swept dispatch bothers batching.
-const MIN_BANDS_FOR_SWEPT: usize = 2;
+/// Fewest bands a grid must have before swept dispatch will run at all.
+///
+/// **Lowered from 2 to 1 when `Auto` was flipped to `Swept` (w5b), and the
+/// reason is correctness rather than speed.** While swept was opt-in,
+/// "too small to bother batching" cost nothing: the caller had asked for a
+/// schedule and got a slightly different one. At the default it means
+/// something else entirely — a grid of fewer than `2 · BAND_ROWS = 16` rows
+/// would fall through to the per-stamp kernel and silently publish the *old*
+/// measure (sample-density-dependent removal, resolution-dependent air-cut,
+/// under-read axial DOC) while every other project published the new one. A
+/// measure that changes with the stock's row count is the defect class this
+/// review keeps finding, so swept now applies to every grid that has any rows
+/// at all; `bands == 0` (an empty grid) is the only decline.
+const MIN_BANDS_FOR_SWEPT: usize = 1;
 
 /// The swept batching driver — the same three phases as
 /// [`super::whole_path::BandDispatch`], over chunks instead of stamps.
