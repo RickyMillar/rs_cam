@@ -190,7 +190,10 @@ fn point_stamp_coverage_reaches_one_at_disk_interior_and_partial_at_boundary() {
     let (r_bnd, c_bnd) = grid.world_to_cell(0.0, radius - cs * 0.1).unwrap();
     let cov_bnd = observed_coverage(grid, r_bnd, c_bnd, depth);
     eprintln!("boundary cell coverage={cov_bnd:.3}");
-    assert!(cov_bnd > 0.0, "boundary cell coverage should be > 0, got {cov_bnd}");
+    assert!(
+        cov_bnd > 0.0,
+        "boundary cell coverage should be > 0, got {cov_bnd}"
+    );
 
     // Boundary-straddling cell (center near disk edge, some sub-samples
     // inside): coverage ∈ (0, 1).
@@ -216,7 +219,10 @@ fn point_stamp_coverage_reaches_one_at_disk_interior_and_partial_at_boundary() {
     // r + cs·√2 scan radius.
     let (r_out, c_out) = grid.world_to_cell(0.0, radius + cs * 4.0).unwrap();
     let cov_out = observed_coverage(grid, r_out, c_out, depth);
-    assert!(cov_out < 1e-6, "outside cell coverage should be 0, got {cov_out}");
+    assert!(
+        cov_out < 1e-6,
+        "outside cell coverage should be 0, got {cov_out}"
+    );
 }
 
 #[test]
@@ -272,7 +278,14 @@ fn coverage_increases_monotonically_with_stamps() {
 
     // Stamp a second cutter shifted laterally so the previous boundary cell
     // is now closer to the new disk center → coverage should not decrease.
-    stock.stamp_tool_at(&lut, radius, 0.0, cs * 0.5, cut_z, StockCutDirection::FromTop);
+    stock.stamp_tool_at(
+        &lut,
+        radius,
+        0.0,
+        cs * 0.5,
+        cut_z,
+        StockCutDirection::FromTop,
+    );
     let cov2 = observed_coverage(&stock.z_grid, r, c, depth);
     eprintln!("monotonicity: cov1={cov1:.3}, cov2={cov2:.3}");
     assert!(

@@ -428,9 +428,7 @@ fn band_query_actually_prunes() {
     );
     let mut scratch = rs_cam_core::mesh::QueryScratch::new();
     let mut new = Vec::new();
-    rs_cam_core::pushcutter::fiber_query_candidates(
-        &fiber, &index, &ball, &mut scratch, &mut new,
-    );
+    rs_cam_core::pushcutter::fiber_query_candidates(&fiber, &index, &ball, &mut scratch, &mut new);
 
     assert_eq!(
         old.len(),
@@ -519,7 +517,11 @@ fn measure_query_vs_contact_split() {
         let (mut xs, mut ys) = waterline_fibers(&mesh, &ball, z, 2.0);
         batch_push_cutter(&mut xs, &mesh, &index, &ball);
         batch_push_cutter(&mut ys, &mesh, &index, &ball);
-        n_intervals += xs.iter().chain(ys.iter()).map(|f| f.intervals().len()).sum::<usize>();
+        n_intervals += xs
+            .iter()
+            .chain(ys.iter())
+            .map(|f| f.intervals().len())
+            .sum::<usize>();
     }
     let full = t1.elapsed();
 
@@ -534,7 +536,10 @@ fn measure_query_vs_contact_split() {
         levels.len(),
         share * (1.0 - 1.0 / levels.len() as f64) * 100.0
     );
-    assert!(n_candidates > 0 && n_intervals > 0, "measurement was vacuous");
+    assert!(
+        n_candidates > 0 && n_intervals > 0,
+        "measurement was vacuous"
+    );
 }
 
 /// `query_rect_into` must remain a drop-in for `query_into` / `query` on a

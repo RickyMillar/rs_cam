@@ -419,7 +419,13 @@ mod tests {
             let bits = |tp: &Toolpath| -> Vec<(u64, u64, u64)> {
                 tp.moves
                     .iter()
-                    .map(|m| (m.target.x.to_bits(), m.target.y.to_bits(), m.target.z.to_bits()))
+                    .map(|m| {
+                        (
+                            m.target.x.to_bits(),
+                            m.target.y.to_bits(),
+                            m.target.z.to_bits(),
+                        )
+                    })
                     .collect()
             };
             assert_eq!(
