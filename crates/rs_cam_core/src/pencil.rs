@@ -570,11 +570,30 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
     }
 
     let mut ordered_indices = Vec::with_capacity(paths.len());
-    let mut used = vec![false; paths.len()];
+
+    // Was a Θ(chains²) scan over every unused chain (PERF_REVIEW G5). A chain
+    // is measured by BOTH of its endpoints — the scan's
+    // `d_start.min(d_end)` — so each chain registers two candidate points
+    // under one owner id and `NearestPicker` takes the min for us (its
+    // NaN-last ordering is `f64::min`'s). Chains with no points register
+    // nothing, which is the scan's `continue`. `f64::MAX` — not
+    // `f64::INFINITY` — is this site's acceptance sentinel, and index 0 its
+    // fallback; both reproduced exactly, including the fallback's ability to
+    // re-emit an already-used index when no chain clears the sentinel.
+    let mut picker =
+        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, paths.len());
+    for (i, path) in paths.iter().enumerate() {
+        let (Some(first), Some(last)) = (path.points.first(), path.points.last()) else {
+            continue;
+        };
+        picker.push(i, first.x, first.y);
+        picker.push(i, last.x, last.y);
+    }
+    picker.build();
 
     // Start with first chain
     ordered_indices.push(0);
-    used[0] = true;
+    picker.remove(0);
 
     for _ in 1..paths.len() {
         let last_path = &paths[ordered_indices[ordered_indices.len() - 1]];
@@ -584,34 +603,10 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
             continue;
         };
 
-        let mut best_idx = 0;
-        let mut best_dist = f64::MAX;
-
-        for (i, path) in paths.iter().enumerate() {
-            if used[i] || path.points.is_empty() {
-                continue;
-            }
-            // Check distance to start and end of candidate chain
-            let d_start = {
-                let p = path.points[0];
-                let dx = p.x - last_pt.x;
-                let dy = p.y - last_pt.y;
-                dx * dx + dy * dy
-            };
-            let d_end = if let Some(p) = path.points.last() {
-                let dx = p.x - last_pt.x;
-                let dy = p.y - last_pt.y;
-                dx * dx + dy * dy
-            } else {
-                f64::MAX
-            };
-
-            let d = d_start.min(d_end);
-            if d < best_dist {
-                best_dist = d;
-                best_idx = i;
-            }
-        }
+        let best_idx = match picker.nearest(last_pt.x, last_pt.y) {
+            Some((i, d)) if d < f64::MAX => i,
+            _ => 0,
+        };
 
         // If end is closer than start, reverse the chain
         if !paths[best_idx].points.is_empty() {
@@ -624,7 +619,10 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
             }
         }
 
-        used[best_idx] = true;
+        // The reversal above rewrote this chain's endpoints, but it leaves the
+        // picker at the same moment, so the registered points can never go
+        // stale.
+        picker.remove(best_idx);
         ordered_indices.push(best_idx);
     }
 

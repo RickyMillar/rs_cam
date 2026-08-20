@@ -211,15 +211,22 @@ pub fn relink_fragments(
     // rapids. Each belongs to the fragment it precedes, so it maps onto the
     // junction moves that replaced it; the ones after the last fragment map
     // onto the closing retract.
-    let mut owner_of_rapid: Vec<Option<usize>> = vec![None; n_in];
+    // Stored INVERTED — fragment -> the input rapid indices it owns — rather
+    // than as a per-move `Option<usize>`. The emit loop below needs "which
+    // rapids belong to fragment `fi`", and answering that from the forward
+    // map costs a full `n_in` scan per fragment: at wanaka's 12,780 fragments
+    // against ~10^5 moves that is ~10^9 iterations to write information this
+    // pass already knows (PERF_REVIEW G6). Both directions are built by the
+    // same single O(n_in) walk; only the storage shape changed.
+    let mut rapids_of_frag: Vec<Vec<usize>> = vec![Vec::new(); frags.len()];
     {
         let mut next_frag = 0usize;
         for (i, mv) in toolpath.moves.iter().enumerate() {
             if matches!(mv.move_type, MoveType::Rapid) {
                 // SAFETY: `next_frag` is only advanced past a fragment whose
                 // last index has been seen, so it stays in `0..=frags.len()`.
-                if let Some(slot) = owner_of_rapid.get_mut(i) {
-                    *slot = (next_frag < frags.len()).then_some(next_frag);
+                if let Some(slot) = rapids_of_frag.get_mut(next_frag) {
+                    slot.push(i);
                 }
             } else if frags
                 .get(next_frag)
@@ -236,31 +243,33 @@ pub fn relink_fragments(
     let xy_gap = |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
 
     // ── visiting order ──────────────────────────────────────────────────
-    // SAFETY: `visited` is sized from `frags.len()` and every index used to
-    // read it comes from `frags.iter().enumerate()`, so both stay in range.
-    #[allow(clippy::indexing_slicing)]
+    // Was a Θ(fragments²) scan: at the 12,780 fragments this op reaches on
+    // the wanaka workload that is ~163 M `xy_gap` evaluations (PERF_REVIEW
+    // G5). `NearestPicker` returns the lexicographic minimum of
+    // `(xy_gap, fragment index)`, which is exactly what the scan's
+    // "first strict improvement in index order" computed, so the visiting
+    // order — and therefore the emitted toolpath — is unchanged. The
+    // `usize::MAX` sentinel and its `break` are kept verbatim: they are what
+    // a non-finite fragment entry used to do, and that must stay true.
     let order: Vec<usize> = if params.reorder {
         let n = frags.len();
-        let mut visited = vec![false; n];
+        let mut picker = crate::nn_order::NearestPicker::new(crate::nn_order::Metric::Euclid, n);
+        for (j, f) in frags.iter().enumerate() {
+            let e = entry_of(f);
+            picker.push(j, e.x, e.y);
+        }
+        picker.build();
         let mut order = Vec::with_capacity(n);
         order.push(0);
-        visited[0] = true;
+        picker.remove(0);
         let mut here = frags.first().map_or(P3::origin(), exit_of);
         for _ in 1..n {
-            let mut best = usize::MAX;
-            let mut best_d = f64::INFINITY;
-            for (j, f) in frags.iter().enumerate() {
-                if visited[j] {
-                    continue;
-                }
-                let d = xy_gap(here, entry_of(f));
-                if d < best_d {
-                    best_d = d;
-                    best = j;
-                }
-            }
+            let best = match picker.nearest(here.x, here.y) {
+                Some((j, d)) if d < f64::INFINITY => j,
+                _ => usize::MAX,
+            };
             let Some(next) = frags.get(best) else { break };
-            visited[best] = true;
+            picker.remove(best);
             here = exit_of(next);
             order.push(best);
         }
@@ -389,8 +398,8 @@ pub fn relink_fragments(
         // Every junction rapid this fragment used to be reached through was
         // REPLACED by the moves emitted just above — that is where it went,
         // and saying so is the whole point of the provenance.
-        for (old, slot) in old_to_new.iter_mut().enumerate() {
-            if owner_of_rapid.get(old).copied().flatten() == Some(fi) {
+        for &old in rapids_of_frag.get(fi).map_or(&[][..], Vec::as_slice) {
+            if let Some(slot) = old_to_new.get_mut(old) {
                 *slot = Some(junction_start..junction_end);
             }
         }

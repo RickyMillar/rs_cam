@@ -312,32 +312,34 @@ impl ParamContour {
 ///
 /// Returns pairs of indices (upper_idx, lower_idx) for matched contours.
 /// Unmatched contours (new walls appearing/disappearing) are returned separately.
+///
+/// This is the one G5 site that is NOT a tour: it is a greedy bipartite
+/// MATCH, and the difference is load-bearing. The nearest candidate found for
+/// an upper contour may then be rejected by the extent test below, and a
+/// rejected candidate is *not* consumed — it stays available for the next
+/// upper contour. So the picker is used here as a pure query with the
+/// deletion driven by acceptance, not by selection. Same
+/// lexicographic `(d², index)` answer as the scan it replaces.
 fn match_contours(upper: &[ParamContour], lower: &[ParamContour]) -> Vec<(usize, usize)> {
     let mut matches = Vec::new();
-    let mut lower_used = vec![false; lower.len()];
+
+    let mut picker =
+        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, lower.len());
+    for (li, lc) in lower.iter().enumerate() {
+        picker.push(li, lc.centroid.0, lc.centroid.1);
+    }
+    picker.build();
 
     for (ui, uc) in upper.iter().enumerate() {
-        let mut best_dist = f64::INFINITY;
-        let mut best_li = None;
-        for (li, lc) in lower.iter().enumerate() {
-            if lower_used[li] {
-                continue;
-            }
-            let dx = uc.centroid.0 - lc.centroid.0;
-            let dy = uc.centroid.1 - lc.centroid.1;
-            let dist = dx * dx + dy * dy;
-            if dist < best_dist {
-                best_dist = dist;
-                best_li = Some(li);
-            }
-        }
-        if let Some(li) = best_li {
-            // Only match if centroids are reasonably close (within 2× max contour extent)
-            let max_extent = uc.total_length.max(lower[li].total_length) * 0.5;
-            if best_dist.sqrt() < max_extent {
-                matches.push((ui, li));
-                lower_used[li] = true;
-            }
+        let (li, best_dist) = match picker.nearest(uc.centroid.0, uc.centroid.1) {
+            Some((li, d)) if d < f64::INFINITY => (li, d),
+            _ => continue,
+        };
+        // Only match if centroids are reasonably close (within 2× max contour extent)
+        let max_extent = uc.total_length.max(lower[li].total_length) * 0.5;
+        if best_dist.sqrt() < max_extent {
+            matches.push((ui, li));
+            picker.remove(li);
         }
     }
 

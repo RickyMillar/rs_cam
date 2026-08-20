@@ -1358,31 +1358,35 @@ fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
 /// Greedy nearest-neighbor tour over 2D `anchors`, starting from
 /// `start`. Returns the visit order as indices into `anchors`. Used to
 /// order disjoint machinable regions so the cutter hops to the nearest
-/// one next instead of following marching-squares scan order. O(n²),
-/// fine for the handful of regions a Z-level produces.
-#[allow(clippy::indexing_slicing)] // visited/anchors indexed by enumerate idx
+/// one next instead of following marching-squares scan order.
+///
+/// Shares [`crate::nn_order::NearestPicker`] with the other four G5 sites
+/// (PERF_REVIEW G5) — the same lexicographic `(d², index)` answer
+/// the hand-rolled Θ(n²) scan gave, without the quadratic. A Z-level usually
+/// produces a handful of regions, for which the picker scans linearly and
+/// this is a consolidation rather than a speed-up; the guarantee is that no
+/// level can produce enough regions to hang.
+#[allow(clippy::indexing_slicing)] // anchors indexed by enumerate idx
 fn nearest_neighbor_order(anchors: &[(f64, f64)], start: (f64, f64)) -> Vec<usize> {
-    let mut visited = vec![false; anchors.len()];
+    let mut picker =
+        crate::nn_order::NearestPicker::new(crate::nn_order::Metric::EuclidSq, anchors.len());
+    for (i, a) in anchors.iter().enumerate() {
+        picker.push(i, a.0, a.1);
+    }
+    picker.build();
     let mut order: Vec<usize> = Vec::with_capacity(anchors.len());
     let mut cur = start;
     for _ in 0..anchors.len() {
-        let mut best: Option<usize> = None;
-        let mut best_d = f64::INFINITY;
-        for (i, a) in anchors.iter().enumerate() {
-            if visited[i] {
-                continue;
-            }
-            let d = (a.0 - cur.0).powi(2) + (a.1 - cur.1).powi(2);
-            if d < best_d {
-                best_d = d;
-                best = Some(i);
-            }
-        }
-        if let Some(i) = best {
-            visited[i] = true;
-            order.push(i);
-            cur = anchors[i];
-        }
+        // The scan had no fallback: a step that found nothing emitted
+        // nothing and left `cur` where it was, so the order came back short.
+        // `f64::INFINITY` was its sentinel; both are reproduced.
+        let i = match picker.nearest(cur.0, cur.1) {
+            Some((i, d)) if d < f64::INFINITY => i,
+            _ => continue,
+        };
+        picker.remove(i);
+        order.push(i);
+        cur = anchors[i];
     }
     order
 }
