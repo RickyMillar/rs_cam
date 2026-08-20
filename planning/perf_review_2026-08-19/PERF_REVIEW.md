@@ -54,6 +54,41 @@ Fix (two halves):
 - **Risk:** merging subsegments changes `pre_fresh` per sample (density-independence,
   `stamping.rs:471-486`); F-XXX / litmatrix sentries need deliberate re-baselining.
 
+**DONE in wave 5 + 5b SIM.** Built and evidenced on `perf/s1-swept-volume`
+(`DELTA_sim_w5_s1_DECISION.md`); landed on `tech-debt-3` by explicit user
+decision (`DELTA_sim_w5b_landing.md`). `StampDispatch::Auto` resolves to
+`Swept` as of `a4ff2a8c`; `SweptPlungeOnly`, `WholeToolpath` and `PerStamp`
+remain selectable via `RS_CAM_STAMP_DISPATCH`, which is the A/B instrument.
+
+**Measured 2.9–5.1× on the stamp kernel** across three fixtures and five thread
+counts, paired same-session — *not* the 26× the finding claims (see the
+corrections). End-to-end on wanaka200 that is **−14.8/−16.0% on the simulate
+phases and −8.0% on the whole run**: the stamp kernel is no longer the majority
+of `run_simulation`, and S4 and S6 are in front of it.
+
+`SweptPlungeOnly` is the **bit-identical** half — 1.37–1.45× on raster
+fixtures, 3.4–5.0× on the plunge fixture, for zero metric movement, sentried at
+whole-simulation level.
+
+Six corrections to this prescription, all in `DELTA_sim_w5b_landing.md` §8. The
+two with the most consequence: **(b) above is false for any round-tipped
+cutter** (the minimum of `z(t)+h(d(t))` is at an interior stationary point, and
+evaluating "both candidates" is 20× worse than the subdivision it replaces —
+the by_z redundancy is *loop order*, not subdivision, and inverting the loops is
+bit-identical); and **the Risk line names the wrong risk** — no `_litmatrix_*`
+sentry moved, but S1 **changes generated geometry** on every
+`StockSource::FromRemainingStock` op, because those generators read the
+simulated stock grid. On wanaka200 tp8's rapid distance halves. That is emitted
+G-code, and no part of this review anticipated it.
+
+Re-baselined, each with its old→new recorded before the change: both perf
+goldens (39 + 29 fields, **exactly one exact-compared field moved**), and three
+F-XXX axial bars — split into a `dpp + 1.0` ceiling plus the original
+`dpp + 0.5` kept as a 0.05% population bar, rather than widened. The
+planner/sim parity pair was **not** re-baselined: it failed because S1 fixed one
+side of a two-sided disagreement, and the fix un-masked a pre-existing
+planner-side divergence now filed as **W5B-F1**.
+
 ## S2. No air-cut early-out. HIGH
 
 No "can this stamp remove anything here?" test anywhere in the stamp path — full
@@ -324,7 +359,10 @@ issue coalescing + Bounded triage caps; cancellation threaded into the stamp loo
 2. Structural, no metric change: selective prior_stocks; metrics-only candidate sim;
    skip zero-shift mesh transform.
 3. Metric-neutral multipliers (baseline first): tile early-out (S2), row-band parallel (S3).
-4. Metric-changing: swept-volume stamping (S1) with deliberate sentry re-baseline.
+4. Metric-changing: swept-volume stamping (S1) with deliberate sentry re-baseline. **DONE,
+   waves 5 + 5b** — and step 4 as written is incomplete: S1 also changes *generated
+   geometry* on `FromRemainingStock` ops, so "sentry re-baseline" does not bound it.
+   See `DELTA_sim_w5b_landing.md` §6 and follow-up W5B-F3.
 5. Longer horizon: fixpoint prefix memoization (S5), SoA rays (S8).
 
 ---
@@ -736,8 +774,8 @@ Structural (bigger, mostly metric-neutral):
 9. G8 index/silhouette/mesh once per (model,setup); G5 shared NN orderer.
 
 Metric-changing / long horizon (baseline benches FIRST):
-10. S1 swept-volume stamping (+ sentry re-baseline).
-11. S5 fixpoint prefix memoization.
+10. S1 swept-volume stamping (+ sentry re-baseline). **DONE — waves 5 + 5b.**
+11. S5 fixpoint prefix memoization. **DONE — wave 3.**
 12. S8 SoA rays; V15 parallel MC + dirty rects.
 
 # Phase 0 — Baselines (do this before ANY fix lands)
@@ -778,7 +816,13 @@ frame-time tracing span pass is optional follow-up, not Phase 0.
   denominators), engagement summary, collision/holder counts, sample count, per_kinematics
   totals — compared within stated tolerances. This is the net that lets S2 (exact tile
   skip) and S3 (bit-identical bands) claim "metric-neutral", and the thing that gets
-  DELIBERATELY re-baselined for S1.
+  DELIBERATELY re-baselined for S1. **Re-baselined 2026-08-21 (`9b4505be`)**: 39 fields
+  on the 2.5D arm, 29 on the 3D one, every old→new recorded in
+  `DELTA_sim_w5b_landing.md` §2 before the regeneration. **Exactly one exact-compared
+  field moved** (`triage_action_count` 3 → 1, itself downstream of the air-cut change);
+  every collision channel and the whole sample stream were bit-stable. The
+  non-vacuity guards passed unchanged and no tolerance was widened — which is the
+  evidence that "deliberately re-baselined" did not become "regenerated until green".
   **EXTENDED (wave 1 SIM, `b2a5e661`).** The Phase 0 fixture is 2.5D only and emits **no
   `CutKinematics::Arc` sample at all** — a net that pins only that arm cannot cover the arc
   or ball-tip stamp branches S1/S2/S3 reshape. A second arm (hemisphere mesh, Ø6 ball nose,
@@ -799,7 +843,11 @@ Criterion can't hold the 40-minute workload. Separately record, on an idle machi
 wanaka200 (`planning/airrun_2026-08-19/wanaka200.toml`): `generate_all` (fixpoint) total +
 per-round, `run_simulation` at the run's resolution, per-toolpath generate times from
 `generation_status`/logs. Two runs, numbers into `BASELINES.md` with machine state noted.
-Re-run after each structural fix (S2/S3/S5, G1/G2/G8).
+Re-run after each structural fix (S2/S3/S5, G1/G2/G8). **0C is SUPERSEDED BY 0D**
+(`DELTA_sim_w5b_landing.md` §6, `BASELINES.md`): after the S1 landing nine metrics that
+were `not_measurable` became measurable, the project verdict changed kind, and one
+`FromRemainingStock` toolpath's geometry changed, so 0C's result-consistency checks are no
+longer the right comparison.
 
 All baseline numbers land in `planning/perf_review_2026-08-19/BASELINES.md`.
 
