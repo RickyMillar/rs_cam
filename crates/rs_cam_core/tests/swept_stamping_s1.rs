@@ -106,6 +106,40 @@ fn simulate_with(
     (stock, samples)
 }
 
+/// Same driver, but on a stock deliberately too small to be worth batching —
+/// used by `swept_applies_to_a_single_band_grid`.
+fn simulate_small_stock(
+    tp: &Toolpath,
+    cutter: &dyn MillingCutter,
+    cell_size: f64,
+    dispatch: StampDispatch,
+) -> (TriDexelStock, Vec<SimulationCutSample>) {
+    let mut stock = TriDexelStock::from_stock(0.0, 0.0, 40.0, 7.0, 0.0, 12.0, cell_size);
+    stock.stamp_dispatch = dispatch;
+    let lut = RadialProfileLUT::from_cutter(cutter, LUT_SAMPLES);
+    let never_cancel = || false;
+    let samples = stock
+        .simulate_toolpath_with_lut_metrics_cancel(
+            tp,
+            &lut,
+            cutter,
+            cutter.radius(),
+            StockCutDirection::FromTop,
+            ToolpathId(0),
+            18_000,
+            2,
+            5000.0,
+            0.25,
+            None,
+            &[],
+            &[],
+            true,
+            &never_cancel,
+        )
+        .expect("never cancelled");
+    (stock, samples)
+}
+
 fn assert_grids_bit_identical(a: &TriDexelStock, b: &TriDexelStock, what: &str) {
     let (ga, gb) = (&a.z_grid, &b.z_grid);
     assert_eq!(ga.rays.len(), gb.rays.len(), "{what}: ray count");
@@ -463,17 +497,82 @@ fn swept_dispatch_is_not_vacuous() {
     );
 }
 
-/// `Auto` must never resolve to the metric-changing shape. This is the one
-/// property that keeps S1 parked behind a switch until the landing decision is
-/// made, and it is cheap enough to state directly.
+/// `Auto` resolves to the metric-changing shape — the w5b flip, stated as a
+/// property rather than as a comment on an enum.
+///
+/// **Both halves matter.** "`Auto` == `Swept`" alone would pass if `resolved()`
+/// were ever quietly reverted *and* the two shapes happened to agree on this
+/// fixture; the second assertion is a non-vacuity guard that fails red the
+/// moment `Auto` goes back to publishing the old measure. This inverts
+/// `auto_never_selects_swept_dispatch`, which pinned the opposite property
+/// while the landing decision was open.
 #[test]
-fn auto_never_selects_swept_dispatch() {
+fn auto_selects_swept_dispatch() {
     let tp = mixed_pass();
     let cutter = FlatEndmill::new(6.0, 25.0);
     let auto = simulate_with(&tp, &cutter, 0.2, StampDispatch::Auto);
+    let swept = simulate_with(&tp, &cutter, 0.2, StampDispatch::Swept);
+    assert_grids_bit_identical(&auto.0, &swept.0, "auto == swept: grid");
+    assert_samples_bit_identical(&auto.1, &swept.1, "auto == swept: samples");
+
+    // Non-vacuity: the shape `Auto` used to resolve to must still be reachable
+    // AND must still differ, or the assertion above proves nothing.
     let whole = simulate_with(&tp, &cutter, 0.2, StampDispatch::WholeToolpath);
-    assert_grids_bit_identical(&auto.0, &whole.0, "auto == whole_toolpath: grid");
-    assert_samples_bit_identical(&auto.1, &whole.1, "auto == whole_toolpath: samples");
+    let air = |s: &[SimulationCutSample]| {
+        let cutting = s.iter().filter(|s| s.is_cutting).count();
+        let air = s
+            .iter()
+            .filter(|s| s.is_cutting && s.engagement.radial_woc_fraction < 0.02)
+            .count();
+        air as f64 / cutting.max(1) as f64
+    };
+    assert!(
+        (air(&auto.1) - air(&whole.1)).abs() > 1e-9,
+        "auto and whole_path agree on air fraction ({:.6} vs {:.6}) — either the \
+         flip reverted or this fixture no longer separates the two measures",
+        air(&auto.1),
+        air(&whole.1)
+    );
+}
+
+/// A grid too small to be worth *batching* must still get the new measure.
+///
+/// `MIN_BANDS_FOR_SWEPT` was 2 while swept was opt-in. At the default that
+/// threshold would mean a stock of fewer than `2 · BAND_ROWS = 16` rows
+/// silently publishes the pre-w5b measure while every larger stock publishes
+/// the new one — a metric that changes with the stock's row count. This pins
+/// the fix: on a grid of one band, `Auto` still agrees with `Swept` and still
+/// differs from the per-stamp kernel.
+#[test]
+fn swept_applies_to_a_single_band_grid() {
+    let tp = mixed_pass();
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    // 7 mm of Y at 1.0 mm/cell is 8 rows (endpoints inclusive) — one band.
+    let cell = 1.0;
+    let auto = simulate_small_stock(&tp, &cutter, cell, StampDispatch::Auto);
+    let swept = simulate_small_stock(&tp, &cutter, cell, StampDispatch::Swept);
+    let per = simulate_small_stock(&tp, &cutter, cell, StampDispatch::PerStamp);
+    assert_eq!(
+        auto.0.z_grid.rows.div_ceil(8),
+        1,
+        "fixture is not a one-band grid (rows {}); the whole point of this test \
+         is the band count",
+        auto.0.z_grid.rows
+    );
+    assert_samples_bit_identical(&auto.1, &swept.1, "one-band auto == swept");
+    assert!(
+        auto.1.iter().filter(|s| s.is_cutting).count() > 10,
+        "one-band fixture is vacuous"
+    );
+    let removed =
+        |s: &[SimulationCutSample]| s.iter().map(|s| s.removed_volume_est_mm3).sum::<f64>();
+    assert!(
+        (removed(&auto.1) - removed(&per.1)).abs() > 1e-9,
+        "one-band swept removal is bit-equal to per-stamp ({:.6} vs {:.6}) — the \
+         swept driver was skipped for this grid",
+        removed(&auto.1),
+        removed(&per.1)
+    );
 }
 
 fn simulate_step(

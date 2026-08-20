@@ -230,8 +230,13 @@ impl TriDexelStock {
         // S3 wave 4: `Some` selects whole-toolpath dispatch — one `par_bands`
         // per batch of stamps instead of one per stamp. A schedule only; see
         // `whole_path.rs`.
+        // `Auto` is resolved ONCE, here, and both schedulers below are asked
+        // about the same concrete shape. Resolving twice from
+        // `self.stamp_dispatch` would let the two disagree about what the
+        // default means, which is exactly how a grid ends up with neither
+        // scheduler or with both.
+        let mode = self.stamp_dispatch.resolved();
         let mut dispatch = {
-            let mode = self.stamp_dispatch;
             let grid = self.ensure_grid(direction);
             BandDispatch::for_grid(grid, mode)
         };
@@ -242,9 +247,9 @@ impl TriDexelStock {
         // whole-path code paths below are untouched — which is what makes the
         // A/B same-binary and the "old mode unchanged" claim checkable by
         // reading the diff rather than by trusting it.
-        let mut swept = match self.stamp_dispatch {
+        let mut swept = match mode {
             StampDispatch::Swept | StampDispatch::SweptPlungeOnly => {
-                let lateral = self.stamp_dispatch == StampDispatch::Swept;
+                let lateral = mode == StampDispatch::Swept;
                 let grid = self.ensure_grid(direction);
                 SweptDispatch::for_grid(grid, lateral)
             }
