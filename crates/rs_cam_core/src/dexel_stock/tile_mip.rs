@@ -141,19 +141,36 @@ impl TileMaxTop {
         self.stats
     }
 
-    /// Charge `cell_visits` against the refresh budget and rebuild if it has
-    /// run out. Call before [`Self::max_over`] so the answer is as tight as
-    /// the amortisation policy allows.
-    pub(super) fn charge_and_maybe_refresh(&mut self, grid: &DexelGrid, cell_visits: usize) {
+    /// Charge stamped cell-visits against the refresh budget.
+    #[inline]
+    pub(super) fn charge(&mut self, cell_visits: u64) {
+        self.budget -= cell_visits as i64;
+    }
+
+    /// Rebuild if the budget has run out. Call before [`Self::max_over`] so
+    /// the answer is as tight as the amortisation policy allows.
+    pub(super) fn refresh_if_due(&mut self, grid: &DexelGrid) {
         // A grid swapped underneath the mip (a different `StockCutDirection`
         // reaching a side grid) invalidates the shape, not just the values.
         if grid.rows != self.rows || grid.cols != self.cols {
             *self = Self::build(grid);
             return;
         }
-        self.budget -= cell_visits as i64;
         if self.budget <= 0 {
             self.rebuild(grid);
+        }
+    }
+
+    /// Fold one stamp's band-reduced diagnostics in (S3 path).
+    #[inline]
+    pub(super) fn absorb(&mut self, partial: &super::stamping::StampPartial) {
+        self.charge(partial.bbox_cells);
+        if partial.stamp_skipped {
+            self.stats.stamps_skipped += 1;
+        } else {
+            self.stats.stamps_run += 1;
+            self.stats.cells_in_bbox += partial.bbox_cells;
+            self.stats.cells_skipped += partial.cells_skipped;
         }
     }
 
@@ -297,7 +314,8 @@ mod tests {
             g.lower_conservative_top(idx, -5.0);
         }
         // Charge more than the whole budget so the refresh is due.
-        mip.charge_and_maybe_refresh(&g, usize::MAX / 4);
+        mip.charge(u64::MAX / 4);
+        mip.refresh_if_due(&g);
         let after = mip.max_over(0, g.rows - 1, 0, g.cols - 1);
         assert!((after - -5.0).abs() < 1e-6, "after refresh: {after}");
     }
@@ -322,13 +340,15 @@ mod tests {
             g.lower_conservative_top(idx, -5.0);
         }
 
-        lazy.charge_and_maybe_refresh(&g, cells / 8);
+        lazy.charge((cells / 8) as u64);
+        lazy.refresh_if_due(&g);
         assert!(
             lazy.max_over(0, g.rows - 1, 0, g.cols - 1) > 0.0,
             "rebuilt after an eighth of a grid pass — not amortised"
         );
 
-        due.charge_and_maybe_refresh(&g, cells);
+        due.charge(cells as u64);
+        due.refresh_if_due(&g);
         assert!(
             (due.max_over(0, g.rows - 1, 0, g.cols - 1) - -5.0).abs() < 1e-6,
             "one full grid-pass of stamped visits did not refresh the mip"

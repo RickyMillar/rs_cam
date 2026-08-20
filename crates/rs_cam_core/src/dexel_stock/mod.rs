@@ -4,6 +4,7 @@
 //! is always present; X and Y grids are created lazily when side-face cuts are
 //! needed (future work).
 
+mod band;
 mod cut_direction;
 mod simulation;
 mod stamping;
