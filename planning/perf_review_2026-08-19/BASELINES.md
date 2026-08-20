@@ -460,6 +460,17 @@ record.
 | **V1/V3/V4** viz caching | `42ed4774` | per-frame triage/deflection/issues rebuilds removed | — |
 | **S2/S3** stamp early-out + row bands | `f9f26997`, `5973b7cb` | 1.46–2.07× (S2) on every arm; S3 ceiling 2.10× at 4 threads | `DELTA_sim_w2.md` |
 | **S5** fixpoint prefix memo | `2ed9df04`, `55847d4f` | `sim_fixpoint_ladder` 180.37 → **100.66 ms** (**1.79×**, ceiling 2.00×) | `DELTA_sim_w3.md` |
+| **S1** `SweptPlungeOnly` — bit-identical | `5d02b7db`, `9e65d1a7` (merged `d671b049`) | raster arms **1.37–1.45×**, plunge arm **3.4–5.0×**, **zero metric movement** | `DELTA_sim_w5_s1_DECISION.md` |
+| **S1** full `Swept` — **metric-changing**, now the default | `51497a19` + flip `a4ff2a8c` | kernel **2.9–5.1×**; wanaka simulate phases **−14.8/−16.0%**, whole run **−8.0%** | `DELTA_sim_w5b_landing.md` |
+
+Two rows for S1 because they are two decisions. `SweptPlungeOnly` is free —
+bit-identical to the shipped kernel, sentried at whole-simulation level, and it
+needed no re-baseline of anything. Full `Swept` **changes what the simulator
+measures** and, on any project with a rest chain, **what it generates**; it was
+landed by explicit user decision, with the re-baselines and the accepted risks
+enumerated in `DELTA_sim_w5b_landing.md`. Read the ratio against its own
+context: a 3–5× stamp kernel buys 8% end-to-end, because S4 and S6 are now in
+front of it.
 
 Phase 0 instruments: `bfe4e251` (benches + goldens), `b2a5e661` (3D golden arm).
 Gate repair: `e4379dd5`.
@@ -483,6 +494,12 @@ Every wave refuted something. These are the corrections, all consolidated into
 | **V13** | highlight "one frame stale" | Reduced to a one-*repaint* lag, not eliminated; killing it would reorder the frame for all ~40 upload sites. |
 | **S5** | "provenance hashes already exist" ⇒ use them as the cache key | They exist and they **do not close the input set**. The tool hash carries **no cutter shape** (Ø6 flat ≡ Ø6 ball), `hash_toolpath` omits spans and `MoveIntent`, and none of the three covers resolution, stock, metric options, the model mesh or the group transform. Keyed on them, a tool swap inside the prefix resumes onto a grid carved by the wrong cutter — silently. |
 | **S5** | "cache prefix-hash → post-carve grid" | The grid is **one of fifteen** loop-carried accumulators. `DELTA_sim_w3.md` §2.1 enumerates all of them with a reuse-or-prove disposition. |
+| **S1** | "Kill by_z analytically: the min of `z(t)+h(d(t))` over a cell's in-reach interval is at `t_center` or the descending endpoint" | **False for any round-tipped cutter.** `f` is linear + convex, so the minimum is at an *interior* stationary point; evaluating "both candidates" returns a value strictly above it. On a Ø6 ball on a 30° ramp the prescribed rule errs by ≈0.40 mm against the 0.02 mm the shipped subdivision bounds — **20× worse than the thing it replaces**. The redundancy is **loop order, not subdivision**: on an exactly-vertical descent `(su, sv)` is the same `f64` for every subsegment, so inverting the loops hoists every invariant, is **bit-identical**, and is worth 3.4–5.0×. |
+| **S1** | `floor(t_center · bins)` as the binning rule, verbatim | **Aliases badly.** A bin is one `sample_step` wide, a cell one `cell_size`; whenever `sample_step < cell_size` — every coarse simulation, wanaka at 0.4 mm included — whole bins contain no cell centre. Measured at `cs = 0.5`: **35% of cutting samples reported zero removal** (0% on the shipped kernel) while their neighbours reported double. The landed form smears a cell over the parameter interval its own footprint occupies, which *tiles*; the artifact drops to **0.13%**. |
+| **S1** | "Stamp a whole move/chunk in one stadium pass" | **A loss on diagonals.** A swept pass costs its *bounding box*, not its stadium, and those diverge quadratically off-axis: a 100 mm move at 45° with a Ø6 cutter has an ~11 300 mm² bbox around a ~630 mm² stadium. Chunks exist for exactly this, capped by `SWEPT_MAX_BBOX_WASTE`, which is why the measured speed-up is a function of path direction and not only of `2R/s`. |
+| **S1** | "≈ 26×, scales as `2R/s`" | A **cell-visit** ratio quoted as a **time** ratio. Measured **2.9–5.1×** in wall clock across every fixture and thread count. Third instance of this error class in the review (after S3's "6–12× desktop"). |
+| **S1b** | "moves tagged `MoveIntent::Retract` may skip the removal math" | **Already done** since Step 1 (2026-05-19): the metric path routes a `Retract`-tagged `Linear` and every `Rapid` through `sample_segment_runtime` with no grid mutation at all. Nothing left to skip. |
+| **S1** | "F-XXX / litmatrix sentries need deliberate re-baselining" — i.e. the risk is a metric re-baseline | **The risk is bigger and differently shaped.** No `_litmatrix_*` sentry moved. What moved: two goldens, three F-XXX axial bars — and one item that is **not a re-baseline at all** (the planner/sim parity bar failed because S1 *fixed* one side of a two-sided disagreement, un-masking pre-existing finding W5B-F1). And the un-anticipated one: S1 **changes generated geometry** on every `StockSource::FromRemainingStock` op, because those generators read the simulated stock grid. On wanaka200 tp8's rapid distance **halves**. That is emitted G-code, not a metric. |
 | **S5** | (unstated) `phantom_prior_stock` | Must be **neither keyed nor restored**. Keyed ⇒ the memo hits zero times (S2 §2e's silent no-op). Restored ⇒ the previous round's phantom id survives into `prior_stocks`, a key a full replay never produces, on the map rest generators read. Re-derived from the live request instead. |
 
 ## Levers measured and declined
@@ -576,7 +593,16 @@ index/silhouette/mesh caching). Not yet started: S1, S8, G7, G10-G12, V2,
 V5-V7, V9, V11, V14, V15. S5 landed in wave 3 SIM and S3's whole-toolpath
 dispatch in wave 4 SIM — see the sections at the end of this file.
 
-## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier)
+## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier) — **SUPERSEDED BY 0D**
+
+> **Superseded 2026-08-21 by 0D (below).** After the S1 landing
+> (`Auto` → `Swept`, `a4ff2a8c`) this section's *result-consistency* checks are
+> no longer the right comparison: nine metrics that read `not_measurable` here
+> became measurable, the project verdict changed kind (abstention → WARNING),
+> and one `FromRemainingStock` toolpath's geometry changed. The **wall-clock**
+> figures below remain valid as the post-metric-neutral-tier reading and are
+> what the ≈6× against the pre-campaign reference is stated against; the
+> metric rows are historical.
 
 Binary: release, built at tip 9dee1889 (all waves through SIM w2 / GEN w4).
 Protocol: fresh MCP GUI instance, load wanaka200.toml, timed `generate_all`
@@ -786,3 +812,170 @@ second defect §6 flagged but could not locate: a negative `col_max` cast throug
 every column. Two of those four are on the hot metric path. Fixed at all six
 behind one helper (`clamped_cell_bbox`); no result moves; five regression tests
 including an oracle that asserts both defect classes are actually reached.
+---
+
+# Wave 5 / 5b (SIM) — S1 swept-volume stamping
+
+Wave 5 built and evidenced it on `perf/s1-swept-volume`
+(`DELTA_sim_w5_s1_DECISION.md`, the decision package). Wave 5b **landed** it on
+`tech-debt-3` by explicit user decision, with the default flipped:
+`DELTA_sim_w5b_landing.md`. Both delta docs are the primary record; this is the
+numbers table only.
+
+Merge `d671b049`; flip `a4ff2a8c`; re-baselines `9b4505be` (goldens),
+`a4452a59` (F-XXX axial), `b5b6db3c` (parity bar); `dbb9c8fa` (S5 key
+argument); `217be7a2` (clippy).
+
+## The kernel A/B — four modes, one criterion session per fixture and thread count
+
+Ratios against `whole_path`, the shape `Auto` resolved to before the flip. Only
+the ratios are load-bearing (cross-day rule above).
+
+| fixture | threads | `swept_plunge` (bit-identical) | **`swept`** (the new default) |
+|---|---:|---:|---:|
+| `flat12_cs0.1` | 1 / 4 / 24 | 1.43× / 1.37× / 1.38× | **4.03× / 4.16× / 4.66×** |
+| `flat6_cs0.1` | 1 / 4 / 24 | 1.38× / 1.45× / 1.44× | **3.29× / 3.34× / 3.67×** |
+| `flat6_cs0.25_plunge` | 1 / 4 / 24 | 3.39× / 4.86× / 5.01× | **3.47× / 4.82× / 5.11×** |
+
+Full 15-row table with absolutes in `DELTA_sim_w5_s1_DECISION.md` §1.
+
+**Read the `swept_plunge` column first.** It is bit-identical to the shipped
+kernel and still 1.37–1.45× on the raster fixtures and 3.4–5.0× on the plunge
+one — the raster gain is the plunge entries `raster_pass` makes into each pass,
+not lateral stamping, so a toolpath with no vertical run would be a wash rather
+than a win.
+
+**A 3–5× kernel does not buy a 3–5× simulation.** On wanaka200 the simulate
+phases move 14.8–16.0% and the whole run 8.0%. S2, S3 and S5 already took the
+large multiples out, and what is left in front of S1 is S4 (per-toolpath
+full-grid clones + marching cubes) and S6 (trace clone + JSON).
+
+## What the default flip cost, in one table
+
+| | |
+|---|---|
+| Perf goldens re-baselined | 39 fields (2.5D) + 29 (3D). **Exactly one exact-compared field moved**: `triage_action_count` 3 → 1, itself downstream of the air-cut change. Every collision channel and the whole sample stream bit-stable. Non-vacuity guards unchanged; no tolerance widened. |
+| F-XXX axial sentries re-baselined | 3 — F-027 (×2) and F-031. **Split, not widened**: absolute ceiling `dpp + 1.0`, plus the original `dpp + 0.5` kept as a 0.05% *population* bar. The ceiling catches both original defects (30–47 mm and 44.8 mm) by 7–12×. The population bar catches F-027's (0.55% vs the 0.05% cap, 11×) but **not** F-031's — those 282 samples were transit-class, which the test filters out, and 0.045% would sit under the cap regardless. Recorded because the tidy version of that sentence is false. |
+| Planner/sim parity pair | **Not a re-baseline — a tightening.** See below. |
+| `_litmatrix_*` (7 binaries), collision channels | **nothing moved** |
+| 56 param sweeps | **NOT RUN.** They are `#[ignore]`d by default, so a green suite says nothing about them. Follow-up W5B-F3 — the one gate this landing did not clear. |
+| Generated geometry | **CHANGES on every `FromRemainingStock` op.** wanaka200 tp8's rapid distance halves. Accepted risk; acceptance corpus + 56 sweeps under the new default are follow-up W5B-F3. |
+
+## The most interesting result in the wave: the parity bar was passing on a cancellation
+
+Measured today, paired, same binary, both dispatches:
+
+| fixture / mode | interior `planner_higher` | interior `sim_higher` | boundary `sim_higher` | whole-grid skew |
+|---|---:|---:|---:|---:|
+| AgentSearch, `whole_path` | 704 | **0** | 1360 | 1.55× — *passed* |
+| AgentSearch, `swept` | 21 | **0** | 1360 | 34.87× — failed |
+| ContourParallel, `whole_path` | 647 | **0** | 568 | 1.30× — *passed* |
+| ContourParallel, `swept` | 8 | **0** | 568 | 71.00× — failed |
+
+Interior `sim_higher` is **exactly zero in all four rows**, so the whole-grid
+bar was never reading one population with two directions. It was reading two
+*separate*, each perfectly one-sided populations — an interior one (the
+simulator over-removing; the old kernel's `f`-blend artifact, which swept fixed
+33×/81×) and a boundary one (the planner over-claiming; **bit-for-bit invariant
+under the dispatch**) — that nearly cancelled when summed. 1.55×/1.30× is what
+that cancellation looked like from outside.
+
+The bar is now stated over the interior population, which makes it **stricter**:
+under `whole_path` that skew reads 704× and 647× against the same 2.5× bar, and
+`RS_CAM_STAMP_DISPATCH=whole_path` no longer runs this pair green. The boundary
+divergence is pinned as named finding **W5B-F1**, not buried.
+
+## S5 interaction: the dispatch shape does not belong in the prefix key
+
+Checked because the flip made it a live question — a prefix carved under
+`whole_path` and resumed under `swept` would be a key-closure defect. It cannot
+happen: the mode is a `OnceLock`-backed **process constant** (only
+`TriDexelStock::from_bounds` constructs, and it always stamps
+`StampDispatch::default()`; no production code assigns the field), and the
+cache is in-process and single-slot. All 15 `sim_prefix_memo_s5` sentries green
+at the new default with no re-baseline, including the four whole-result
+bit-pattern fingerprints. The precondition is now pinned by a test and the
+argument written into `sim_prefix.rs`'s key table.
+
+## 0D — wanaka200 reference at the new default (2026-08-21)
+
+**Supersedes 0C's metric rows.** Headless harness
+(`crates/rs_cam_core/tests/swept_wanaka_ab_s1.rs`), one process,
+`RS_CAM_STAMP_DISPATCH` unset (= the shipped `Auto` = `Swept`), 0.4 mm, F.4
+ladder driven by hand.
+
+Machine state: load average **2.12 at start, 17.43 at end** (the run's own rayon
+pool), 21 GiB available, `pgrep -x cargo` zero at launch.
+
+### Safety — unchanged, and structurally so
+
+| Metric | 0C | **0D** |
+|---|---:|---:|
+| `rapid_collision_count`, project and all 8 toolpaths | 0 | **0** |
+| `collision_count`, project and all 8 toolpaths | 0 | **0** |
+| `resolution_clamped` / `effective_cell_mm` | 0 / 0.400 | **0 / 0.400** |
+| ladder rounds / pending after | 2 / 0 | **2 / 0** |
+
+Collision detection runs off the toolpath and a frozen pre-carve stock
+snapshot, never off the stamp stream, so no dispatch change can reach it.
+
+### Verdict, measurability and project metrics
+
+| | 0C | **0D** |
+|---|---|---|
+| Verdict | `NOT MEASURED: air-cut % withheld for 3 toolpaths` | `WARNING: high air cutting` — tp5 51%, tp8 36%, tp9 56% |
+| `not_measurable` rows | **9** | **0** |
+| `degraded` rows | 3 | **12** |
+| blind fraction tp1 / tp5 / tp8 / tp9 | 37 / 71 / 93 / 73 % | **15 / 27 / 31 / 46 %** |
+| `air_cut_pct_of_total_runtime` | 55.06 | **44.094** |
+| `air_cut_pct_of_cutting_time` | 64.60 | **50.458** |
+| `average_engagement` | 0.0515 | **0.08138** |
+| `total_removed_volume_est_mm3` | 819 223.8 | **815 307.3** |
+| `peak_axial_doc_mm` | 11.335 | **16.253** |
+| `sample_count` / `total_moves` | 5 696 467 / 507 620 | **5 646 202 / 509 652** |
+
+### Per toolpath
+
+| # | name | op_kind | removal mm³ | air % | avg eng | peak axial | moves | rapid mm |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| tp0 | 1 Pin Drill | `alignment_pin_drill` | — | — | — | — | 66 | 733.5 |
+| tp1 | 2 Back Rough | `adaptive3d` | 586 084.0 | 16.73 | 0.1592 | 16.253 | 11 761 | 19 944.6 |
+| tp2 | 3 Holes (6mm pilot) | `drill` | — | — | — | — | 234 | 1 103.7 |
+| tp3 | 4 Rivers (back, V-bit) | `project_curve` | 8 659.6 | 15.97 | 0.3464 | 3.429 | 4 365 | 13 045.1 |
+| tp4 | 5 Lakes (back) | `project_curve` | 7 558.2 | 10.90 | 0.4789 | 5.143 | 1 184 | 1 535.9 |
+| tp5 | 6 3D Rough (front) | `adaptive3d` | 156 356.5 | 50.77 | 0.1108 | 4.200 | 16 791 | 42 667.2 |
+| tp8 | 7 3D Finish (R1.5) | `drop_cutter` | 47 475.0 | 35.71 | 0.0819 | 2.805 | 443 902 | **35 698.3** |
+| tp9 | 8 Pencil detail (R0.5) | `pencil` | 9 173.9 | 55.83 | 0.0461 | 1.666 | 31 349 | 127 008.3 |
+
+tp8's rapid distance was **73 749.0 mm** at 0C. It halves because tp8 is a
+`FromRemainingStock` op whose generator reads the simulated grid, and swept
+changes that grid. That is emitted G-code.
+
+### Wall clock — recorded, NOT load-bearing
+
+Total **309.9 s** (load 0.576 / generate 26.90 / ladder1 sim 51.08 / ladder1
+regen 104.73 / ladder2 sim 57.58 / ladder2 regen 8.72 / final sim 57.69 /
+diagnostics 2.28). This is a single unpaired cross-day absolute and the rule at
+the top of this file forbids comparing it to the 2026-08-20 session. The paired
+figure from that session stands and is the one to cite: **−8.0% end-to-end,
+−14.8/−16.0% on the simulate phases**, itself a lower bound because both of
+those runs predate `9e65d1a7`.
+
+## Verification at the new default
+
+185 `rs_cam_core` test targets ok; `rs_cam_viz` / `rs_cam_cli` / `rs_cam_mcp`
+clean; `cargo clippy --workspace --all-targets -- -D warnings` zero warnings;
+`rustfmt --check` clean on every file the lane touches.
+
+One `rs_cam_core` failure:
+`wanaka_scale_indexed_path_beats_linear_scan_and_matches_output` read 4.4×
+against a ≥5× wall-clock bar while 180 other test binaries ran alongside it, and
+**passes in isolation on an idle lane**. Pre-existing, touches no dexel code,
+recorded as the same flake by the decision package.
+
+One claim from the decision package **did not reproduce**: clippy was not clean
+on the merged lane (4 `needless_range_loop` in `swept.rs`, 6 `print_stdout` in
+`tests/swept_stamping_s1.rs`, all pre-existing on the lane's own files). Fixed
+in `217be7a2`. Every other number in the package reproduced exactly, including
+all 39 + 29 golden fields, all three F-XXX readings, both parity splits and
+every wanaka metric row.
