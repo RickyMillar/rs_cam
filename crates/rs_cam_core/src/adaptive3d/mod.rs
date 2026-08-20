@@ -2311,7 +2311,10 @@ mod tests {
              (boundary planner_higher {boundary_planner_higher}, for contrast). This is a \
              KNOWN OPEN FINDING pinned at its measured value, not a bar that was passed — \
              it is invariant under the stamp dispatch and predates SIM w5b. Do not raise \
-             this cap; see DELTA_sim_w5b_landing.md."
+             this cap; see DELTA_sim_w5b_landing.md. Whole-grid skew for reference: {:.2}x \
+             — the figure this bar used to be stated against, and the one that read a \
+             comfortable 1.55x/1.30x while both populations were maximally one-sided.",
+            r.directional_skew(),
         );
     }
 

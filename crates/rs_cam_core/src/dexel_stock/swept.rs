@@ -264,6 +264,9 @@ fn stamp_plunge_chunk(
     // Per-bin tip depth, verbatim from the shipped degenerate branch:
     // `d = sd.min(ed)` on the bin's own reconstructed endpoints.
     let mut depths = Vec::with_capacity(bins);
+    // The index is the loop's subject, not an accident: `b` addresses `job.bin_segment(b)` as well as `out[b]`,
+    // so `enumerate()` would only move the same integer across the tuple.
+    #[allow(clippy::needless_range_loop)]
     for b in 0..bins {
         let (s, e) = job.bin_segment(b);
         depths.push(s.2.min(e.2));
@@ -622,6 +625,9 @@ fn stamp_swept_chunk(
                     out[0].pre_volume += inert;
                     out[0].post_volume += inert;
                 } else {
+                    // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
+                    // so `enumerate()` would only move the same integer across the tuple.
+                    #[allow(clippy::needless_range_loop)]
                     for b in b_lo..=b_hi {
                         let w = weight(b);
                         if w <= 0.0 {
@@ -654,6 +660,9 @@ fn stamp_swept_chunk(
                 out[0].pre_volume += pre_len * cell_area;
                 out[0].post_volume += post_len * cell_area;
             } else {
+                // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
+                // so `enumerate()` would only move the same integer across the tuple.
+                #[allow(clippy::needless_range_loop)]
                 for b in b_lo..=b_hi {
                     let w = weight(b);
                     if w <= 0.0 {
@@ -700,6 +709,9 @@ fn stamp_swept_chunk(
                     pre_fresh > FRESH_MATERIAL_THRESHOLD_MM && coverage >= PERP_COVERAGE_GATE;
                 let perp = (-seg_dv * dm_u + seg_du * dm_v) * inv_seg_len;
                 let removed_here = (pre_len - post_len).max(0.0);
+                // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
+                // so `enumerate()` would only move the same integer across the tuple.
+                #[allow(clippy::needless_range_loop)]
                 for b in b_lo..=b_hi {
                     if weight(b) <= 0.0 {
                         continue;
