@@ -321,6 +321,124 @@ fn swept_dispatch_is_bit_identical_across_thread_counts() {
     }
 }
 
+/// The second falsifiable claim behind the re-baseline, and the one that
+/// explains the largest number in the golden diff.
+///
+/// The shipped air-cut percentage counts a *sample* as air when its **radial
+/// engagement** reads below 0.02 — not when it removed nothing. Those are
+/// different questions, and the removal proxy this test was first written
+/// against reads 0 % on every arm, which is how the distinction was found.
+///
+/// At `cell_size > sample_step` the engagement criterion is a
+/// **grid-quantisation artifact**: several consecutive subsegments advance the
+/// tool within one cell column, the first of them takes the fresh material,
+/// and the rest find no cell with `pre_fresh > FRESH_MATERIAL_THRESHOLD_MM` at
+/// all — so `perp_max` never exceeds `perp_min`, radial engagement is exactly
+/// `0.0`, and the sample is booked as air. The reported air fraction therefore
+/// grows with the simulation cell size on a toolpath that has not changed. The
+/// Phase 0 2.5D golden runs at `cell = 1.0 mm` against `sample_step = 0.25 mm`,
+/// a 4:1 ratio, which is why its Pocket arm reports 60 % air on a pass that is
+/// cutting throughout.
+///
+/// A swept pass gives every bin the fresh cells of its own longitudinal slice,
+/// so its air fraction should be far flatter in cell size. This pins the
+/// comparison of *slopes*, which is what the claim actually is — not either
+/// absolute value.
+#[test]
+fn per_stamp_air_cut_pct_grows_with_cell_size_and_swept_does_not() {
+    let tp = mixed_pass();
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    let air = |v: &[SimulationCutSample]| -> f64 {
+        let cutting: f64 = v
+            .iter()
+            .filter(|s| s.is_cutting)
+            .map(|s| s.segment_time_s)
+            .sum();
+        let air: f64 = v
+            .iter()
+            // Verbatim from `SimulationCutTrace::accumulate`
+            // (`simulation_cut.rs:1195`).
+            .filter(|s| s.is_cutting && s.engagement.radial_woc_fraction < 0.02)
+            .map(|s| s.segment_time_s)
+            .sum();
+        if cutting <= 0.0 {
+            0.0
+        } else {
+            100.0 * air / cutting
+        }
+    };
+    let mut old_air = Vec::new();
+    let mut new_air = Vec::new();
+    for cell_size in [0.25_f64, 0.5, 1.0] {
+        let o = air(&simulate_with(&tp, &cutter, cell_size, StampDispatch::WholeToolpath).1);
+        let n = air(&simulate_with(&tp, &cutter, cell_size, StampDispatch::Swept).1);
+        println!("cs{cell_size}: per-stamp air {o:.2}% | swept air {n:.2}%");
+        old_air.push(o);
+        new_air.push(n);
+    }
+    let spread = |v: &[f64]| v.iter().cloned().fold(0.0_f64, f64::max) - v[0];
+    assert!(
+        spread(&old_air) > 20.0,
+        "per-stamp air-cut % did not grow with cell size ({old_air:?}) — the \
+         quantisation explanation for the golden's air-cut movement is wrong"
+    );
+    assert!(
+        spread(&new_air) < spread(&old_air) / 4.0,
+        "swept air-cut % is as cell-size-dependent as per-stamp's \
+         ({new_air:?} vs {old_air:?})"
+    );
+
+    // Above the lateral-resolution limit BOTH read the same near-total air,
+    // and that is the correct behaviour, not a failure of either dispatch.
+    // `PERP_COVERAGE_GATE` needs two qualifying cell centres at different
+    // perpendicular offsets for a width to exist at all; a 2 mm grid under a
+    // Ø6 cutter does not have them, so radial engagement is structurally
+    // zero. Swept stamping does NOT rescue that case and must not be sold as
+    // if it does — `sim_measurability`'s abstention is what covers it.
+    let coarse_old = air(&simulate_with(&tp, &cutter, 2.0, StampDispatch::WholeToolpath).1);
+    let coarse_new = air(&simulate_with(&tp, &cutter, 2.0, StampDispatch::Swept).1);
+    println!("cs2 (below lateral resolution): per-stamp {coarse_old:.2}% | swept {coarse_new:.2}%");
+    assert!(
+        coarse_old > 90.0 && (coarse_new - coarse_old).abs() < 1.0,
+        "at cs=2.0 the two dispatches should agree on near-total air \
+         ({coarse_old} vs {coarse_new}) — the lateral-resolution floor is not a \
+         dispatch property"
+    );
+}
+
+/// The third: measured axial DOC should equal *commanded* axial DOC on a
+/// flat-bottomed 2.5D pass. That is F-024's own property, and the shipped
+/// kernel misses it — the Phase 0 golden records `peak_axial_doc_mm` of
+/// **2.0625** and **2.6367** on Pocket and Profile passes commanded at
+/// **3.0 mm**, an under-read of up to 31 %, because a partially covered cell's
+/// removal is split across the subsegments that blend it. A swept pass removes
+/// the cell once and reads the whole depth.
+#[test]
+fn swept_peak_axial_doc_reaches_the_commanded_depth_and_per_stamp_does_not() {
+    // One flat pass at a commanded 3 mm DOC into fresh stock, nothing else.
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(4.0, 15.0, 12.0));
+    tp.feed_to(P3::new(4.0, 15.0, 9.0), 300.0);
+    tp.feed_to(P3::new(36.0, 15.0, 9.0), 900.0);
+    tp.final_retract(12.0);
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    let peak = |v: &[SimulationCutSample]| v.iter().map(|s| s.axial_doc_mm).fold(0.0_f64, f64::max);
+    for cell_size in [0.5_f64, 1.0] {
+        let o = peak(&simulate_with(&tp, &cutter, cell_size, StampDispatch::WholeToolpath).1);
+        let n = peak(&simulate_with(&tp, &cutter, cell_size, StampDispatch::Swept).1);
+        println!("cs{cell_size}: commanded 3.000 | per-stamp {o:.4} | swept {n:.4}");
+        assert!(
+            (n - 3.0).abs() < 1e-9,
+            "cs{cell_size}: swept peak axial DOC {n} != commanded 3.0"
+        );
+        assert!(
+            o < n,
+            "cs{cell_size}: per-stamp peak axial DOC {o} did not under-read \
+             the commanded 3.0 — the F-024 argument for S1 is wrong"
+        );
+    }
+}
+
 /// **Claim 3.** The fixture must actually chunk, batch and band — otherwise the
 /// two tests above pass on a degenerate schedule.
 #[test]
