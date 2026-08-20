@@ -175,10 +175,21 @@ impl TriDexelStock {
         let center_col = ((cx - grid.origin_u) / cs).round() as isize;
         let center_row = ((cy - grid.origin_v) / cs).round() as isize;
 
-        let col_min = (center_col - r_cells).max(0) as usize;
-        let col_max = ((center_col + r_cells) as usize).min(grid.cols.saturating_sub(1));
-        let row_min = (center_row - r_cells).max(0) as usize;
-        let row_max = ((center_row + r_cells) as usize).min(grid.rows.saturating_sub(1));
+        // Same clamp defect as the stamp kernels (see `clamped_cell_bbox`): a
+        // disc entirely LEFT of or BELOW the grid gave a negative `center + r`
+        // that `as usize` wrapped and `.min` then clamped to the last cell, so
+        // the walk covered the whole grid instead of nothing. The distance test
+        // rejected every cell, so the sum was right and the work was not.
+        let Some((col_min, col_max, row_min, row_max)) = stamping::clamped_cell_bbox(
+            center_col - r_cells,
+            center_col + r_cells,
+            center_row - r_cells,
+            center_row + r_cells,
+            grid.cols,
+            grid.rows,
+        ) else {
+            return 0.0;
+        };
 
         let r_sq = radius * radius;
         let mut sum = 0.0;
@@ -223,10 +234,15 @@ impl TriDexelStock {
         let center_col = ((cx - grid.origin_u) / cs).round() as isize;
         let center_row = ((cy - grid.origin_v) / cs).round() as isize;
 
-        let col_min = (center_col - r_cells).max(0) as usize;
-        let col_max = ((center_col + r_cells) as usize).min(grid.cols.saturating_sub(1));
-        let row_min = (center_row - r_cells).max(0) as usize;
-        let row_max = ((center_row + r_cells) as usize).min(grid.rows.saturating_sub(1));
+        // See `local_material_sum` — the same wrapping clamp, same fix.
+        let (col_min, col_max, row_min, row_max) = stamping::clamped_cell_bbox(
+            center_col - r_cells,
+            center_col + r_cells,
+            center_row - r_cells,
+            center_row + r_cells,
+            grid.cols,
+            grid.rows,
+        )?;
 
         let r_sq = radius * radius;
         let mut max_top: Option<f64> = None;
@@ -283,18 +299,16 @@ impl TriDexelStock {
         let center_col = ((cx - grid.origin_u) / cs).round() as isize;
         let center_row = ((cy - grid.origin_v) / cs).round() as isize;
 
-        if center_col + r_cells < 0
-            || center_row + r_cells < 0
-            || center_col - r_cells >= grid.cols as isize
-            || center_row - r_cells >= grid.rows as isize
-        {
-            return None;
-        }
-
-        let col_min = (center_col - r_cells).max(0) as usize;
-        let col_max = ((center_col + r_cells).max(0) as usize).min(grid.cols.saturating_sub(1));
-        let row_min = (center_row - r_cells).max(0) as usize;
-        let row_max = ((center_row + r_cells).max(0) as usize).min(grid.rows.saturating_sub(1));
+        // This one already had the off-grid guard the other two lacked; it now
+        // shares their helper so there is one place the clamp is written.
+        let (col_min, col_max, row_min, row_max) = stamping::clamped_cell_bbox(
+            center_col - r_cells,
+            center_col + r_cells,
+            center_row - r_cells,
+            center_row + r_cells,
+            grid.cols,
+            grid.rows,
+        )?;
 
         let reach_sq = reach * reach;
         let mut max_top: Option<f64> = None;
