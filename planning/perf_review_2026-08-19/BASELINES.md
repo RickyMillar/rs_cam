@@ -571,10 +571,10 @@ over a whole toolpath is the remaining lever — see `DELTA_sim_w2.md` §3f.
 
 ## In flight
 
-S3's whole-toolpath dispatch (the remaining 6–12× lever), G5/G6 (shared NN
-orderer + surface_link provenance inversion), G8 (per-setup index/silhouette/
-mesh caching). Not yet started: S1, S8, G7, G10-G12, V2, V5-V7, V9, V11,
-V14, V15. S5 landed in wave 3 SIM — see the section at the end of this file.
+G5/G6 (shared NN orderer + surface_link provenance inversion), G8 (per-setup
+index/silhouette/mesh caching). Not yet started: S1, S8, G7, G10-G12, V2,
+V5-V7, V9, V11, V14, V15. S5 landed in wave 3 SIM and S3's whole-toolpath
+dispatch in wave 4 SIM — see the sections at the end of this file.
 
 ## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier)
 
@@ -694,3 +694,95 @@ orthogonal switch inside the loop S5 just restructured **and it would have to
 enter the prefix cache key** — a prefix carved with checkpoints suppressed is
 not interchangeable with one carved with them on. Sketch in `DELTA_sim_w3.md`
 §8.
+
+
+---
+
+# Wave 4 (SIM) — S3 whole-toolpath band dispatch
+
+Captured 2026-08-20. Full write-up, corrections and sentry inventory in
+`DELTA_sim_w4.md`; this is the numbers table only. Commits: `c652ee52` (the
+out-of-grid clamp defect), `38b8e4a9` (restructure), `d1d9a0a4` (sentries +
+bench arm), `ee8b9da4`.
+
+**Paired, same-session, same-process.** The new bench group `sim_dispatch_ab`
+runs `per_stamp` and `whole_path` adjacent for every fixture and thread count in
+one criterion invocation, with the thread count pinned by a rayon pool per arm
+rather than by `RAYON_NUM_THREADS`. The number quoted is always the ratio
+between two arms of the same run.
+
+Machine state: load average **3.36 → 4.39** over the 7-minute run, 22 GB
+available, `pgrep -x cargo` / `pgrep -x rustc` clear at launch. Comparability
+cross-check: `flat12_cs0.1/per_stamp/1` reads 175.5 ms against wave 2's
+165.1 ms for the same code and fixture (6 %, inside the noise band this file
+allows), and the *shape* of per-stamp's thread curve reproduces exactly.
+
+**One earlier pair is discarded**: `flat12_cs0.1/whole_path/2` came back at
+239 ms with a CI of [184.6, 311.0] — a 68 % spread on a 10-sample arm — while
+its neighbours were tight.
+
+## The A/B — `wp/ps` at equal thread count, `scaling` against the same shape's own 1 thread
+
+| Fixture | thr | per_stamp | whole_path | wp/ps | wp scaling | ps scaling |
+|---|---:|---:|---:|---:|---:|---:|
+| `flat12_cs0.1` | 1 | 175.54 ms | 163.90 ms | 1.07× | 1.00× | 1.00× |
+| | 2 | 105.31 ms | 93.95 ms | 1.12× | 1.74× | 1.67× |
+| | 4 | 79.26 ms | 62.81 ms | 1.26× | **2.61×** | 2.21× |
+| | 8 | 76.39 ms | 52.04 ms | 1.47× | **3.15×** | 2.30× |
+| | 24 | 101.52 ms | 47.81 ms | **2.12×** | **3.43×** | 1.73× |
+| `flat6_cs0.1` | 1 | 52.61 ms | 48.60 ms | 1.08× | 1.00× | — |
+| | 2 | 57.76 ms | 29.91 ms | 1.93× | 1.62× | — |
+| | 4 | 52.64 ms | 22.31 ms | 2.36× | 2.18× | — |
+| | 8 | 51.79 ms | 18.78 ms | **2.76×** | 2.59× | — |
+| | 24 | 52.16 ms | 19.40 ms | 2.69× | 2.51× | — |
+| `flat6_cs0.25_plunge` | 1 | 57.56 ms | 52.11 ms | 1.10× | 1.00× | — |
+| | 2 | 57.04 ms | 34.57 ms | 1.65× | 1.51× | — |
+| | 4 | 57.44 ms | 31.86 ms | **1.80×** | 1.64× | — |
+| | 8 | 57.01 ms | 33.98 ms | 1.68× | 1.53× | — |
+| | 24 | 57.38 ms | 36.27 ms | 1.58× | 1.44× | — |
+
+`ps scaling` is blank on the two lower rows because per-stamp dispatch is gated
+**off** there by `PARALLEL_MIN_BBOX_CELLS = 12 000` — those arms are flat by
+construction.
+
+## The three findings
+
+1. **The 2.10× ceiling is beaten and, more usefully, removed.** On the same
+   fixture and thread count wave 2 measured it on (`flat12/cs0.1`, 4 threads),
+   per-stamp scales 2.21× in this session and whole-path 2.61×. Per-stamp then
+   *saturates and regresses* — 2.30× at 8, **1.73× at 24** — which reproduces
+   wave 2's shape on a different day. Whole-path is still climbing at 24:
+   2.61 → 3.15 → **3.43×**.
+2. **6–12× is NOT reached.** `DELTA_sim_w2.md` §3f said whole-toolpath dispatch
+   was what "would actually reach 6–12×". Measured ceiling **3.43×**, at 24
+   threads on a 24-core box. The limit is band geometry, not dispatch: a
+   `flat12/cs0.1` footprint covers 16 of the grid's 40 bands, so a batch of
+   consecutive subsegments can occupy at most 16 workers. `BAND_ROWS` is the
+   dial and it is deliberately a constant. **Sixth refuted prescription in this
+   review.**
+3. **The crossover was never about work size.** §3d gated per-stamp dispatch off
+   below 12 k bbox cells because it was a 28 % *loss* there. `flat6_cs0.1` is
+   that regime, and whole-path turns the refusal into **2.76×**. Same for the
+   plunge arm, which per-stamp also never dispatches: 1.80×. The crossover was a
+   property of the dispatch granularity.
+
+## Bit-identity, stronger than wave 2 could claim
+
+Wave 2 had to concede that `removed_volume_est_mm3` reassociates under banding.
+Wave 4 does **not** re-split those sums — a job's bucket is filled from exactly
+the `band_span` range the per-stamp path iterates, merged in the same ascending
+order — so whole-path is bit-identical to per-stamp on the grid,
+`conservative_top` and every metric field of every sample, with no tolerance
+anywhere, at 1/2/4/8 threads
+(`whole_path_dispatch_matches_per_stamp_bit_for_bit`). Goldens unchanged; no
+re-baseline.
+
+## The defect this wave also closed
+
+`DELTA_sim_w3.md` §6's debug-only "attempt to subtract with overflow" in
+`stamping.rs`. It was at **six** sites, not one, and four of them carried a
+second defect §6 flagged but could not locate: a negative `col_max` cast through
+`usize` clamps back to `cols - 1`, so a stamp entirely LEFT of the grid walked
+every column. Two of those four are on the hot metric path. Fixed at all six
+behind one helper (`clamped_cell_bbox`); no result moves; five regression tests
+including an oracle that asserts both defect classes are actually reached.
