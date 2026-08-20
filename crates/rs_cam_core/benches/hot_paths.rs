@@ -20,6 +20,7 @@
 //! | `sim_kernel_plunge`  | S1b (the `by_z` 0.02 mm subdivision) |
 //! | `sim_e2e_small`      | S4, S6 |
 //! | `sim_dispatch_ab`    | S3 wave 4 — per-stamp vs whole-toolpath, PAIRED |
+//! | `sim_playback_ab`    | SIM w6 — serial vs banded PLAYBACK replay, PAIRED |
 //! | `gen_depth`          | G2 — the L20/L1 **ratio** is the number |
 //! | `gen_waterline`      | G1 — likewise the L20/L1 ratio |
 //! | `gen_contains_point` | G4 |
@@ -42,7 +43,7 @@
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
+use rs_cam_core::dexel_stock::{PlaybackDispatch, StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -252,6 +253,108 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
                                     &flat,
                                     flat.radius(),
                                     0.25,
+                                    mode,
+                                ))
+                            })
+                        })
+                    },
+                );
+            }
+        }
+    }
+
+    group.finish();
+}
+
+// ── SIM w6: serial vs banded PLAYBACK replay, PAIRED ────────────────────
+
+/// One non-metric playback replay — the kernel `compute/simulate.rs` runs
+/// against `global_stock` for **every** toolpath in a project, and against
+/// `group_stock` for every toolpath whose metrics are off.
+///
+/// This is emphatically NOT `run_metric_sim`: the playback kernel collects no
+/// samples and no accumulators, and `perf_suite`'s own measurement puts it at
+/// roughly a 25th of the metric kernel's per-cell cost. Which is exactly why it
+/// needs its own A/B — a fixed rayon dispatch is a much larger fraction of a
+/// cheap stamp, so the batching argument has to be re-measured here rather than
+/// inherited from wave 4.
+fn run_playback_sim_with(
+    fresh: &TriDexelStock,
+    tp: &Toolpath,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    dispatch: PlaybackDispatch,
+) -> u64 {
+    let never_cancel = || false;
+    let mut stock = fresh.clone();
+    stock.playback_dispatch = dispatch;
+    stock
+        .simulate_toolpath_with_lut_cancel(
+            tp,
+            lut,
+            radius,
+            StockCutDirection::FromTop,
+            &never_cancel,
+        )
+        .expect("never cancelled");
+    stock.last_playback_dispatch.batches
+}
+
+/// The SIM w6 deliverable, and it is deliberately **one criterion invocation**.
+///
+/// `DELTA_sim_w2.md` §1 threw away a whole A/B because an unmodified tree read
+/// 18–134 % above its own committed numbers under contention — criterion reports
+/// p-values against contention exactly as confidently as against a real change.
+/// The only defence is to measure both arms in the same session on the same
+/// machine, which is what this group does: for each fixture and each thread
+/// count, `serial` and `banded` sit adjacent in one run, and the number that
+/// matters is the RATIO between them.
+///
+/// Both arms are bit-identical (`playback_band_dispatch_s6`), so unlike
+/// `sim_dispatch_ab`'s `swept` arm nothing here can be faster by measuring
+/// something else.
+fn bench_sim_playback_ab(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sim_playback_ab");
+    group.sample_size(10);
+
+    let lateral = raster_pass(6, 40.0, 4.0, -2.0);
+    let dense = raster_pass(40, 40.0, 0.6, -2.0);
+    let plunge = plunge_pass(24, -5.0);
+
+    #[allow(clippy::type_complexity)]
+    let fixtures: Vec<(&str, f64, f64, &Toolpath)> = vec![
+        ("flat12_cs0.1", 12.0, 0.1, &lateral),
+        ("flat6_cs0.1", 6.0, 0.1, &lateral),
+        // A long toolpath at a coarse cell: the regime where a playback move is
+        // CHEAP and the dispatch overhead is therefore most exposed. If banding
+        // loses anywhere, it loses here.
+        ("flat6_cs0.5_dense", 6.0, 0.5, &dense),
+        ("flat6_cs0.25_plunge", 6.0, 0.25, &plunge),
+    ];
+
+    for (name, diameter, cell_size, tp) in fixtures {
+        let flat = FlatEndmill::new(diameter, 25.0);
+        let lut = RadialProfileLUT::from_cutter(&flat, rs_cam_core::radial_profile::LUT_SAMPLES);
+        let fresh = TriDexelStock::from_stock(0.0, 0.0, 50.0, 32.0, 0.0, 10.0, cell_size);
+        for threads in [1usize, 4, 24] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .expect("thread pool builds");
+            for (mode_name, mode) in [
+                ("serial", PlaybackDispatch::Serial),
+                ("banded", PlaybackDispatch::Banded),
+            ] {
+                group.bench_function(
+                    BenchmarkId::new(format!("{name}/{mode_name}"), threads),
+                    |b| {
+                        pool.install(|| {
+                            b.iter(|| {
+                                black_box(run_playback_sim_with(
+                                    &fresh,
+                                    tp,
+                                    &lut,
+                                    flat.radius(),
                                     mode,
                                 ))
                             })
@@ -1279,6 +1382,7 @@ criterion_group!(
     bench_sim_kernel_plunge,
     bench_sim_e2e_small,
     bench_sim_dispatch_ab,
+    bench_sim_playback_ab,
     bench_sim_fixpoint_ladder,
     bench_gen_depth,
     bench_gen_waterline,
