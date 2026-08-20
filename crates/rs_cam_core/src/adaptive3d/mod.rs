@@ -2100,6 +2100,20 @@ mod tests {
         interior_planner_higher: u64,
         /// …likewise.
         interior_sim_higher: u64,
+        /// `sim_higher` cells that fall inside the **F-027 border-clear
+        /// zone** — the cells `path.rs` pre-clears in the planner's
+        /// internal stock because they sit outside `mesh.bbox ±
+        /// cutter.radius() * 0.5` *and* outside the declared world stock
+        /// footprint.
+        ///
+        /// Added W5B-F1: this is the mechanism-identifying counter. When
+        /// it equals `sim_higher`, every cell where the planner claims
+        /// removal its emitted path does not deliver is a cell the
+        /// planner was explicitly told carried no stock — which is not a
+        /// stamping-mirror defect at all. See `assert_parity_bars`.
+        sim_higher_in_border_clear_zone: u64,
+        /// Size of the border-clear zone, the denominator for the above.
+        border_clear_zone_total: u64,
         max_dz: f64,
     }
 
@@ -2185,16 +2199,31 @@ mod tests {
     /// Boundary-ring one-sided divergence cap, as a fraction of the
     /// boundary population.
     ///
-    /// **This is a named open finding pinned so it cannot grow silently,
-    /// not a bar anyone passed.** Outside the interior window the planner
-    /// claims removal its own emitted path does not deliver, on
-    /// 1360/2737 cells (49.7%) for AgentSearch and 568/2737 (20.8%) for
-    /// ContourParallel — and those two numbers are **bit-for-bit identical
-    /// under `whole_path` and under `swept`**, which is what identifies
-    /// them as pre-existing and entirely independent of the stamp kernel.
-    /// 98.7% / 100% of the boundary divergence is in this one direction.
-    /// See `DELTA_sim_w5b_landing.md`, finding **W5B-F1**.
-    const BOUNDARY_ONE_SIDED_CAP_PCT: f64 = 55.0;
+    /// Outside the interior window the planner's stock reads lower than
+    /// the simulator's on 1360/2737 cells (49.7%) for AgentSearch and
+    /// 568/2737 (20.8%) for ContourParallel, bit-for-bit identical under
+    /// `whole_path` and under `swept`. That is W5B-F1, and it was pinned
+    /// at 55% as an unexplained open finding.
+    ///
+    /// **Root-caused 2026-08-21 (`DELTA_w5b_f1_planner_boundary.md`): it
+    /// is the F-027 border clear, and it is a fixture artifact.** Every
+    /// one of those cells — 1360 of 1360 on AgentSearch, 568 of 568 on
+    /// ContourParallel, zero elsewhere on either strategy — sits in the
+    /// zone `path.rs` deliberately pre-clears because the cell is outside
+    /// `mesh.bbox ± cutter.radius() * 0.5` and no world stock footprint
+    /// was declared to rescue it. The planner is not mis-mirroring its
+    /// emitter there; it was told there is no stock there and believed
+    /// it. Re-run with `world_stock_xy_bbox` supplied — the configuration
+    /// `compute::execute` has always used — and the count is **exactly
+    /// zero** on both strategies. See
+    /// `planner_sim_dexel_parity_agent_search_world_stock_declared`.
+    ///
+    /// The cap survives as a growth pin, tightened from 55% to 51% now
+    /// that the value is understood and deterministic, and it is now the
+    /// *secondary* bar: `assert_parity_bars` first requires that every
+    /// such cell be inside the border-clear zone, which is the assertion
+    /// that would actually catch a mirror defect appearing here.
+    const BOUNDARY_ONE_SIDED_CAP_PCT: f64 = 51.0;
 
     /// Both bars, applied identically to every strategy so a green
     /// sibling can never again be mistaken for a clean one (W0 §4.5).
@@ -2299,7 +2328,32 @@ mod tests {
             );
         }
 
-        // W5B-F1, pinned. See `BOUNDARY_ONE_SIDED_CAP_PCT`.
+        // W5B-F1, root-caused. See `BOUNDARY_ONE_SIDED_CAP_PCT`.
+        //
+        // PRIMARY bar — mechanism, not magnitude. Every cell where the
+        // planner's stock reads lower than the simulator's must be a cell
+        // the F-027 border clear was told to empty. A single cell outside
+        // that zone is a genuine mirror defect: `stamp_emitted_segment`
+        // failing to apply a transformation `segments_to_toolpath`
+        // applies. That is the defect class `sim_higher`'s docstring
+        // names, and this bar — unlike the percentage cap under it — is
+        // sensitive to one cell of it.
+        assert_eq!(
+            r.sim_higher,
+            r.sim_higher_in_border_clear_zone,
+            "[{label}] {} of {} sim_higher cells lie OUTSIDE the F-027 border-clear zone \
+             ({} cells). Inside that zone the planner reads lower because `path.rs` cleared \
+             the ray on purpose (no declared world stock there) — that is W5B-F1 and it is \
+             understood. Outside it, the planner is claiming removal its own emitted path \
+             does not deliver, which means `stamp_emitted_segment` is missing a \
+             transformation `segments_to_toolpath` applies. Do not relax this into a \
+             percentage.",
+            r.sim_higher - r.sim_higher_in_border_clear_zone,
+            r.sim_higher,
+            r.border_clear_zone_total,
+        );
+
+        // SECONDARY bar — a growth pin on the understood population.
         let boundary_total = r.total_cells.saturating_sub(r.interior_total);
         let (boundary_planner_higher, boundary_sim_higher) = r.boundary_split();
         let boundary_pct = boundary_sim_higher as f64 / boundary_total.max(1) as f64 * 100.0;
@@ -2307,29 +2361,36 @@ mod tests {
             boundary_pct <= BOUNDARY_ONE_SIDED_CAP_PCT,
             "[{label}] W5B-F1 grew: {boundary_sim_higher} of {boundary_total} \
              boundary-ring cells ({boundary_pct:.1}%, cap {BOUNDARY_ONE_SIDED_CAP_PCT:.1}%) \
-             have the planner claiming removal its emitted path does not deliver \
-             (boundary planner_higher {boundary_planner_higher}, for contrast). This is a \
-             KNOWN OPEN FINDING pinned at its measured value, not a bar that was passed — \
-             it is invariant under the stamp dispatch and predates SIM w5b. Do not raise \
-             this cap; see DELTA_sim_w5b_landing.md. Whole-grid skew for reference: {:.2}x \
-             — the figure this bar used to be stated against, and the one that read a \
-             comfortable 1.55x/1.30x while both populations were maximally one-sided.",
+             have the planner reading lower than the simulator (boundary planner_higher \
+             {boundary_planner_higher}, for contrast). The mechanism is the F-027 border \
+             clear over a fixture that declares no world stock footprint; if this grew, \
+             either the border-clear predicate moved or the fixture's grid did. Do not \
+             raise this cap; see DELTA_w5b_f1_planner_boundary.md. Whole-grid skew for \
+             reference: {:.2}x — the figure this bar used to be stated against, and the one \
+             that read a comfortable 1.55x/1.30x while both populations were maximally \
+             one-sided.",
             r.directional_skew(),
         );
     }
 
     fn run_planner_sim_parity(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
-        run_planner_sim_parity_with_mesh(strategy, label, make_hemisphere_mesh())
+        run_planner_sim_parity_with_mesh(strategy, label, make_hemisphere_mesh(), None)
     }
 
     fn run_planner_sim_parity_flat(strategy: ClearingStrategy3d, label: &str) -> ParityResult {
-        run_planner_sim_parity_with_mesh(strategy, label, make_flat_mesh())
+        run_planner_sim_parity_with_mesh(strategy, label, make_flat_mesh(), None)
     }
 
+    /// `world_xy` is forwarded to [`Adaptive3dParams::world_stock_xy_bbox`].
+    /// The historical call sites pass `None`, which is what makes the
+    /// F-027 border clear in `path.rs` fire over this fixture's whole
+    /// off-mesh rim; production (`compute/execute.rs`) always passes
+    /// `Some`. Set `RS_CAM_PARITY_MAP=1` to dump an ASCII cell map.
     fn run_planner_sim_parity_with_mesh(
         strategy: ClearingStrategy3d,
         label: &str,
         mesh_pair: (TriangleMesh, SpatialIndex),
+        world_xy: Option<(f64, f64, f64, f64)>,
     ) -> ParityResult {
         let (mesh, si) = mesh_pair;
         let mesh_bbox_for_interior = mesh.bbox;
@@ -2364,6 +2425,7 @@ mod tests {
             stock_to_leave: 0.5,
             stepover: 1.0,
             tolerance: 0.5,
+            world_stock_xy_bbox: world_xy,
             ..default_params()
         };
 
@@ -2406,15 +2468,37 @@ mod tests {
         let mut sim_higher = 0u64; // planner removed more
         let mut interior_planner_higher = 0u64;
         let mut interior_sim_higher = 0u64;
+        let mut sim_higher_in_border_clear_zone = 0u64;
+        let mut border_clear_zone_total = 0u64;
         let mut max_dz = 0.0_f64;
         let mut violations: Vec<(usize, usize, f64, f64, f64, f64)> = Vec::new();
         let interior_x_lo = mesh_bbox_for_interior.min.x + 1.0;
         let interior_x_hi = mesh_bbox_for_interior.max.x - 1.0;
         let interior_y_lo = mesh_bbox_for_interior.min.y + 1.0;
         let interior_y_hi = mesh_bbox_for_interior.max.y - 1.0;
+        // W5B-F1: mirror of the F-027 border clear in `path.rs`. A cell is
+        // in the zone when it is outside `mesh.bbox ± cutter.radius() * 0.5`
+        // AND not rescued by a declared world stock footprint — exactly the
+        // two conditions `path.rs` tests before it calls
+        // `ray_subtract_above` on the planner's ray.
+        let border_margin = r * 0.5;
+        let dump_map = std::env::var("RS_CAM_PARITY_MAP").is_ok();
+        let mut map: Vec<String> = Vec::new();
         for row in 0..grid.rows {
+            let mut map_line = String::new();
             for col in 0..grid.cols {
                 let (x, y) = grid.cell_to_world(row, col);
+                let outside_mesh = x < bbox.min.x - border_margin
+                    || x > bbox.max.x + border_margin
+                    || y < bbox.min.y - border_margin
+                    || y > bbox.max.y + border_margin;
+                let rescued_by_world_stock = world_xy.is_some_and(|(wx0, wy0, wx1, wy1)| {
+                    x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1
+                });
+                let in_border_clear_zone = outside_mesh && !rescued_by_world_stock;
+                if in_border_clear_zone {
+                    border_clear_zone_total += 1;
+                }
                 let is_interior = x > interior_x_lo
                     && x < interior_x_hi
                     && y > interior_y_lo
@@ -2428,6 +2512,14 @@ mod tests {
                 let p = stock_top_z_at(&planner_stock, row, col);
                 let s = stock_top_z_at(&sim_stock, row, col);
                 let dz = (p - s).abs();
+                if dump_map {
+                    map_line.push(match (dz > tol_mm, p > s, in_border_clear_zone) {
+                        (false, _, _) => '.',
+                        (true, true, _) => 'p',
+                        (true, false, true) => 'S',
+                        (true, false, false) => 's',
+                    });
+                }
                 if dz > tol_mm {
                     divergent += 1;
                     max_dz = max_dz.max(dz);
@@ -2440,6 +2532,9 @@ mod tests {
                         sim_higher += 1;
                         if is_interior {
                             interior_sim_higher += 1;
+                        }
+                        if in_border_clear_zone {
+                            sim_higher_in_border_clear_zone += 1;
                         }
                     }
                     if is_interior {
@@ -2455,6 +2550,9 @@ mod tests {
                     }
                 }
             }
+            if dump_map {
+                map.push(map_line);
+            }
         }
 
         eprintln!(
@@ -2464,6 +2562,25 @@ mod tests {
              {sim_higher} (planner removed more, interior {interior_sim_higher}); \
              max dz {max_dz:.3}mm",
         );
+        eprintln!(
+            "[{label}] W5B-F1: {sim_higher_in_border_clear_zone}/{sim_higher} sim_higher cells \
+             lie in the F-027 border-clear zone ({border_clear_zone_total} cells, \
+             world_stock_xy_bbox {})",
+            if world_xy.is_some() {
+                "supplied"
+            } else {
+                "ABSENT"
+            },
+        );
+        if dump_map {
+            eprintln!(
+                "[{label}] map ('.' agree, 'p' planner_higher, 'S' sim_higher in border-clear \
+                 zone, 's' sim_higher elsewhere):"
+            );
+            for line in &map {
+                eprintln!("{line}");
+            }
+        }
         for (row, col, p, s, surf, dz) in &violations {
             let (x, y) = grid.cell_to_world(*row, *col);
             eprintln!(
@@ -2480,6 +2597,8 @@ mod tests {
             sim_higher,
             interior_planner_higher,
             interior_sim_higher,
+            sim_higher_in_border_clear_zone,
+            border_clear_zone_total,
             max_dz,
         }
     }
@@ -2788,10 +2907,11 @@ mod tests {
         );
     }
 
-    /// Boundary divergence (cells outside the mesh footprint) is a
-    /// separate, known issue outside the scope of these parity tests —
-    /// see the planner-↔-sim stamping fix notes (Bug 1 / Bug 2). What
-    /// they guard is INSIDE-the-mesh stamping consistency.
+    /// Boundary divergence (cells outside the mesh footprint) is the
+    /// F-027 border clear, not a stamping defect — see
+    /// `BOUNDARY_ONE_SIDED_CAP_PCT` and the mechanism assertion in
+    /// `assert_parity_bars`. What these tests guard is INSIDE-the-mesh
+    /// stamping consistency.
     ///
     /// Residual interior divergence that both bars deliberately tolerate:
     /// (a) F.a sub-cell blend drift — the simulator subdivides each
@@ -2805,6 +2925,14 @@ mod tests {
     /// `last_pos` (documented as NOT FIXED in the drape-mirror commit).
     /// Neither is directional, which is why the skew bar can be tight
     /// while the count bar cannot.
+    ///
+    /// W5B-F1, 2026-08-21: (b) was the standing candidate for the
+    /// boundary-ring over-claim and it is **not** the cause — the
+    /// boundary population is 100% F-027 border clear, and (b) would
+    /// produce cells at cut-segment starts, which is not where any of
+    /// them are. (b) remains a live candidate for part of the 21/8
+    /// interior `planner_higher` cells; it has never been measured
+    /// separately from (a).
     #[test]
     fn planner_sim_dexel_parity_agent_search() {
         let r = run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
@@ -2826,5 +2954,67 @@ mod tests {
             "ContourParallel hemisphere",
         );
         assert_parity_bars(&r, "ContourParallel hemisphere");
+    }
+
+    /// W5B-F1's decisive control, and the only parity pair that runs the
+    /// configuration the product actually ships.
+    ///
+    /// `compute::execute::execute_operation` has supplied
+    /// `world_stock_xy_bbox` on every adaptive3d call since F-027; the two
+    /// tests above, and every other unit-test call site, leave it `None`.
+    /// That single difference is the whole of W5B-F1: with the stock
+    /// footprint declared, `path.rs` stops border-clearing the rim, the
+    /// planner plans passes over it instead, and `sim_higher` — the
+    /// planner claiming removal its emitted path does not deliver — is
+    /// **exactly zero over the whole grid**, on both strategies, where it
+    /// was 1360 and 568.
+    ///
+    /// The bar is zero, not a percentage, deliberately: in the shipped
+    /// configuration there is no known mechanism that produces even one
+    /// such cell, so any is news. `world_xy` is set far wider than the
+    /// grid so every cell is declared stock — the fixture hands the
+    /// planner an `initial_stock` covering `mesh.bbox ± r`, and this is
+    /// what telling it so looks like.
+    fn assert_no_over_claim_with_world_stock(strategy: ClearingStrategy3d, label: &str) {
+        let r = run_planner_sim_parity_with_mesh(
+            strategy,
+            label,
+            make_hemisphere_mesh(),
+            Some((-1.0e4, -1.0e4, 1.0e4, 1.0e4)),
+        );
+        assert_eq!(
+            r.border_clear_zone_total, 0,
+            "[{label}] the world stock footprint should rescue every cell from the F-027 \
+             border clear; {} cells were still in the zone, so this control is not testing \
+             what it claims to.",
+            r.border_clear_zone_total,
+        );
+        assert_eq!(
+            r.sim_higher, 0,
+            "[{label}] with the world stock footprint declared — the configuration \
+             `compute::execute` ships — the planner claimed removal its emitted path does \
+             not deliver on {} of {} cells. This was zero when W5B-F1 was root-caused \
+             (2026-08-21); it is the bar that would catch a real \
+             `stamp_emitted_segment`/`segments_to_toolpath` mirror divergence, with none of \
+             the border-clear population masking it.",
+            r.sim_higher, r.total_cells,
+        );
+        assert_parity_bars(&r, label);
+    }
+
+    #[test]
+    fn planner_sim_dexel_parity_agent_search_world_stock_declared() {
+        assert_no_over_claim_with_world_stock(
+            ClearingStrategy3d::AgentSearch,
+            "AgentSearch hemisphere / world stock declared",
+        );
+    }
+
+    #[test]
+    fn planner_sim_dexel_parity_contour_parallel_world_stock_declared() {
+        assert_no_over_claim_with_world_stock(
+            ClearingStrategy3d::ContourParallel,
+            "ContourParallel hemisphere / world stock declared",
+        );
     }
 }
