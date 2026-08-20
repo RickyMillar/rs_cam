@@ -820,6 +820,21 @@ impl PlaybackPartial {
 /// would let the two dispatch shapes disagree about the refresh cadence for a
 /// reason that is harder to state than "they don't". Asking about the global
 /// box makes every band reach one verdict, as in the metric kernel.
+///
+/// # `fast` is passed in, and that is the fix for a measured loss
+///
+/// [`CoverageFastPath::new`] is a handful of `sqrt`s plus up to four bounded ULP
+/// walks, each with its own `sqrt`. In `stamp_segment_on_grid` it runs once per
+/// **stamp**; the naive banding ran it once per **(band, stamp)**, so a stamp
+/// spread over `k` bands paid it `k` times. On a cheap kernel that is not a
+/// rounding error: the first SIM w6 A/B had banded dispatch at **0.42×** — a
+/// 2.4× LOSS — at one thread on a coarse-cell fixture, which is the regime where
+/// a stamp is few cells and the per-band fixed cost dominates.
+///
+/// Its two arguments are `lut.radius_sq()` and `band.cell_size`, neither of
+/// which moves inside a replay, so the driver computes it **once per batch** and
+/// hands the same value to every band. Bit-identical by construction — it is the
+/// same pure function of the same two inputs.
 pub(super) fn stamp_segment_on_band(
     band: &mut GridBand<'_>,
     lut: &RadialProfileLUT,
@@ -828,6 +843,7 @@ pub(super) fn stamp_segment_on_band(
     end: (f64, f64, f64),
     from_high: bool,
     mip: Option<&TileMaxTop>,
+    fast: CoverageFastPath,
 ) -> PlaybackPartial {
     let (su, sv, sd) = start;
     let (eu, ev, ed) = end;
@@ -958,12 +974,8 @@ pub(super) fn stamp_segment_on_band(
     out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
     out.stamp_skipped = false;
 
-    // Per-stamp setup after every early return, for the reason spelled out in
-    // `stamp_segment_with_metrics`: `CoverageFastPath::new` costs a handful of
-    // `sqrt`s and it now runs once per BAND rather than once per stamp.
     let inv_seg_len_sq = 1.0 / seg_len_sq;
     let r_sq = lut.radius_sq();
-    let fast = CoverageFastPath::new(r_sq, cs);
 
     for row in row_lo..=row_hi {
         let cell_v = band.origin_v + row as f64 * cs;

@@ -51,7 +51,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use rayon::prelude::*;
 
 use super::band::{self, BAND_ROWS};
-use super::stamping::{PlaybackPartial, stamp_segment_on_band};
+use super::stamping::{CoverageFastPath, PlaybackPartial, stamp_segment_on_band};
 use super::tile_mip::TileMaxTop;
 use crate::dexel::DexelGrid;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -403,6 +403,12 @@ impl PlaybackBandDispatch {
         } = self;
         let active_rows = *active_rows;
         let mip = air_mip.as_ref();
+        // Computed ONCE per batch and shared by every band. Its two inputs are
+        // constant across a replay, and it is several `sqrt`s plus bounded ULP
+        // walks — recomputing it per (band, stamp) is what made the first w6
+        // A/B read 0.42× at one thread on a coarse-cell fixture. Bit-identical:
+        // same pure function, same two arguments.
+        let fast = CoverageFastPath::new(lut.radius_sq(), grid.cell_size);
         // Dispatch ONLY the bands the batch can reach. This is the fan-out
         // defect wave 2 §3e and wave 4 §3d each found once — rayon splits an
         // indexed parallel iterator by index RANGE, and a batch's stamps are
@@ -445,7 +451,7 @@ impl PlaybackBandDispatch {
                             continue;
                         };
                         out.push(stamp_segment_on_band(
-                            &mut band, lut, radius, job.start, job.end, from_high, mip,
+                            &mut band, lut, radius, job.start, job.end, from_high, mip, fast,
                         ));
                     }
                 });
