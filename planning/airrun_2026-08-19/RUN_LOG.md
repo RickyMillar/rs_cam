@@ -380,27 +380,56 @@ them, pinned by the sentry's third arm. The simulator's dexel grid keeps its
 local rooting through `SetupEvalContext::sim_local_stock_bbox`, so the actual
 F-024 concern is untouched.
 
-## G-AIRLADDER — five depth levels reported above the material (UNVERIFIED)
+## G-AIRLADDER — RESOLVED: it was G-SAFEZ-LOCAL after all
 
-Split out of G-SAFEZ-LOCAL 2026-08-21 when the fix for that row was shown not to
-move `top_z`. The original observation was a `narrate_toolpath` Z ladder on
-wanaka200 toolpath 5 reading `25.8 / 21.6 / 17.4 / 13.2 / 9.0` with first
-material contact at `6.648`, alongside 42,667 mm of rapid and 1,626 retract
-round-trips.
+> **My withdrawal of this claim was itself wrong, and is retracted 2026-08-21.**
 
-**Nothing here is confirmed.** Two candidate readings have to be separated before
-this is a defect at all:
+When G-SAFEZ-LOCAL was fixed I split this out as a separate row, on the grounds
+that `HeightsConfig::resolve` takes `top_z` from `ctx.stock_top_z` and only
+`retract_z` / `feed_z` / `clearance_z` derive from `safe_z` — so the fix
+"provably cannot move the depth ladder". That reasoning is correct about the
+**depth** ladder and irrelevant, because the observed rungs were never depth
+levels.
 
-- Narration's ladder is **nominal**. `summarize_z_levels` prefers span payload
-  `z_level` over emitted moves (`narrate.rs:711-745`), so the ladder may never
-  have been a statement about motion.
-- A level above the *model* but inside the *stock* is not air — roughing must
-  clear the stock standing above the model. Only levels above the **stock top**
-  are wasted, and `top_z` resolves from `stock_top_z`, which has been in the
-  emission frame since the 2026-06-12 audit.
+**They are the peck-plunge ENTRY ladder.** `adaptive3d/path.rs:1314` calls
+`emit_peck_plunge(&mut tp, entry, params.safe_z, params)` — rooted at the
+retract plane and stepping down by `depth_per_pass`. `30 − 4.2 = 25.8`, then
+21.6, 17.4, 13.2, 9.0. The Z-level plan (`path.rs:448`) starts at
+`stock_top_z − depth_per_pass` = 2.8 and never approaches 25.8. So safe_z
+drives this ladder after all, just not through the field I checked.
 
-First action: dump distinct cutting-Z from the emitted G-code against the world
-stock top, not from narration.
+**Measured from the shipped G-code**, not from narration — parsing
+`wanaka200_2_Setup_2___front.nc`, toolpath "6 3D Rough (front)", against the
+world stock top the file's own datum header names:
+
+| | value |
+|---|---|
+| distinct **fed** Z above stock top | **5** — 25.800 / 21.600 / 17.400 / 13.200 / 9.000 |
+| fed moves at each | 231 → 1,155 total |
+| **lateral cutting moves at those levels** | **0** — pure vertical descent |
+| fed path length above stock top | **14,591 mm** (≈28 min at F541) |
+| rapid in the section | 42,735 mm (the reported 42,667) |
+
+**So the saving G-SAFEZ-LOCAL's commit message declined to claim is real.** On
+a wanaka-shaped fixture the fix takes this from five wasted rungs to one, and
+from ~14,591 mm of fed air to ~27 mm. `889b1573` was too conservative about
+its own effect.
+
+**Why the error happened, since it is the reusable part.** I verified the
+mechanism I went looking for (`top_z`) and stopped, rather than asking what
+else could put motion at 25.8 — and I reached for code reading when the
+repo's own rule ("measure emitted motion, not the plan") prescribes parsing
+the G-code, which settles it in one pass. The original reading was NOT a
+nominal-vs-achieved narration error; the motion was real.
+
+**Residual, open and deliberately not fixed.** `emit_peck_plunge` is rooted at
+`safe_z` and knows nothing about the stock top, so while `SAFE_Z_CLEARANCE_MM`
+(5.0) exceeds `depth_per_pass` the first rung still lands above the stock —
+10.0 − 4.2 = 5.8 against a top of 5.0. Rooting the peck at the stock top would
+take it to zero, but that changes adaptive3d entry motion and moves
+fingerprints. Sentried at the residual (`≤ 1 level`, `≤ 40 mm`) by
+`crates/rs_cam_core/tests/air_ladder_emitted_z_levels_g_airladder.rs`, so the
+tree stays green but a *growth* in wasted air fails immediately.
 
 ## Renderer defects the frame bug was sitting behind
 
@@ -1105,8 +1134,10 @@ Kept because the process failure is more transferable than the bug.
    offset. Unverified beyond one measurement.
 5. ~~**G-SAFEZ-LOCAL**~~ — **FIXED 2026-08-21.** Floor now reads the emission
    frame. Was also a *safety* defect, not just waste: `origin_z > 5` put the
-   retract plane inside the stock. The "five air levels / ~42 m of rapid" half
-   was mis-attributed and is now **G-AIRLADDER**, unverified.
+   retract plane inside the stock. **G-AIRLADDER is the same defect** — my
+   split of it was wrong and is retracted: the rungs are the peck-plunge entry
+   ladder, rooted at `safe_z`, and the fix removes ~14.5 m of fed air on one
+   toolpath.
 6. Engine-side refusals: ramp/helix entry on drill-family ops
    (G-WANAKA-DRILL-RAMP), and `peck_depth >= depth` (G-WANAKA-PECK).
 7. Renderer: origin, panel mirror convention, anti-aliasing, labels.
