@@ -1131,3 +1131,107 @@ core **3129 passed / 1 failed** — the one failure is the C9 wall-clock flake
 on immediate re-run**, with the run-to-run movement entirely in the linear
 reference arm; viz / cli / mcp clean. The C9 bar has zero margin — candidate
 re-statement (bar 4×, or median-of-3) queued as a user decision.
+
+## Implementation wave — CLOSED (2026-08-21, "go, defaults")
+
+Full per-cluster detail: `RESEARCH_WAVE_IMPLEMENTATION_PLAN.md` §EXECUTION
+STATUS (the closure note for this wave). Ten wave commits + the 691304b4
+golden re-bless, landed alongside ten concurrent TD3-session commits with
+file-gate coordination and zero collisions (one recovered `--amend` incident
+→ standing rule: no history rewriting of any kind in a shared tree).
+
+Headlines: drill TSP was destroying canned cycles — 70.0→17.0 mm fed re-entry
+per hole (14.0→3.4 s, 4.12×), now exactly `fed_descents`, G73/G83 distinct
+again, sentried against MOTION (`drill_fed_descents_motion.rs`); corpus
+run_diff net reports 86 changes / 0 regressions where the old net printed
+zero lines, 211→0 printed for the first time (attribution still unnamed);
+AS015 re-cut through PhantomPriorStockScan @0.5 mm; four viz caches
+Weak-pinned with the triage keyed on its evidence; boundary parity sentried
+(B1 27.7%, B2 exactly 138); F2 C3 ladder sentry landed.
+
+Ledger additions (now TWENTY-ONE):
+- #17 the research doc's drill arithmetic was stale post-889b1573 (70/14/4.12×
+  per hole, not 105/21/4.65× — safe-Z resolves to 10, not 17).
+- #18 the research doc's C1 shape (rebuild-height) provably cannot go green —
+  45 mm vs the schedule's 17 mm; the landed shape is a split ceiling.
+- #19 the F2 brief's "uniform ladder" claim is false — rung 20/20 is 0.0652 mm
+  (stock_to_leave floor); the ratio bar would read 8.70 vs ceiling 1.35 on a
+  shipped green. C1-of-F2 deliberately NOT landed; user decision pending.
+- #20 the F2 brief's "pass 0 abstains" was dead code — pass_index is 1-based.
+- #21 the prescribed memory gate inverted below 10 GiB (`free -g` decimals);
+  canonical gate is now MemAvailable from /proc/meminfo.
+
+Open decisions for the user: F2 C1 bar shape (exempt final rung / uniform-gate
+/ re-depth the fixture); D4 boundary fix package; promote
+exceeds_low→exceeds_high (4 corpus rows) to failing; PR-6b split-hash backlog;
+retract_strategy badge overcount (viz); Arc::make_mut in-place mutation makes
+identity-keyed viz caches content-stale (latent — needs its own decision);
+corpus effective population is 14/18 (four rows vacuous since baseline).
+
+## 0E — wanaka200 at post-implementation-wave tip + first CPU profile (2026-08-22)
+
+Tip `1357441c` (implementation wave + 10 TD3 commits). Same harness and
+protocol as 0D (`swept_wanaka_ab_s1`, dispatch unset = Swept, 0.4 mm).
+Machine: 29.7 GiB available at launch, no cargo, no rust-analyzer.
+
+### Wall clock (single unpaired absolute — context, not A/B)
+
+| Phase | 0D | **0E** | 0E under perf |
+|---|---:|---:|---:|
+| load | 0.58 | **0.54** | 0.60 |
+| generate | 26.90 | **24.23** | 24.60 |
+| ladder1 sim | 51.08 | **46.14** | 44.76 |
+| ladder1 regen | 104.73 | **96.74** | 107.43 |
+| ladder2 sim | 57.58 | **55.23** | 51.13 |
+| ladder2 regen | 8.72 | **9.40** | 8.37 |
+| final sim | 57.69 | **54.70** | 52.30 |
+| diagnostics | 2.28 | **2.21** | 2.09 |
+| **total** | **309.9** | **289.7** | 291.3 (perf ≈ +0.6%) |
+
+Peak RSS 5.47 GB. Safety: all 19 collision rows zero, 2 ladder rounds.
+Air moved attributably: tp5 50.8→36.6 %, tp8 35.7→36.6 % — the TD3 drill/pin
+fixes (no ramp entry on pin drills 7c125fe9, pin XY frame d93837eb, peck clamp
+d019a5a4) changed removed material and both downstream ops are
+FromRemainingStock. Verdict now flags only tp9 (58.5 % pencil).
+
+### CPU profile — the headline finding (V16)
+
+perf 99 Hz, dwarf (callers unresolved under fat LTO — flat profile + source
+walk instead; perf.data in the session scratchpad). Share of ALL CPU samples
+across the full run:
+
+| % | function |
+|---:|---|
+| **55.45** | `compute::simulate::query_model_z_range` |
+| **23.21** | `mesh::SpatialIndex::query` |
+| 5.39 | `compute::execute::apply_dressups` (SELF time — see below) |
+| 3.91 | `dropcutter::point_is_over_mesh_xy` |
+| 2.85 | `dropcutter::point_drop_cutter` |
+| 2.61 | `TaperedBallEndmill::edge_drop` |
+
+`query_model_z_range` has exactly two callers, BOTH deviation
+instrumentation, and BOTH run unconditionally whenever
+`request.model_mesh.is_some()` — i.e. on every simulation of every real
+project: `collect_column_deviations` (per dexel column, ~665 k at 0.4 mm,
+per setup group per sim ×3 sims) and `compute_deviations` (per composite
+marching-cubes vertex). Each call is an `index.query()` (fresh `Vec<usize>`
+heap allocation per call) plus contains/z-at tests per candidate triangle.
+**The majority of all CPU cycles in a wanaka200 run compute deviation
+reporting that a headless/metrics run never consumes.** The sim kernel the
+campaign spent waves optimizing is now the minority of the sim phases.
+
+Levers (V16, in order):
+- **V16a** opt-out: `SimulationOptions` flag (or model_mesh omission) for
+  metric/headless runs — near-free; NOTE it must enter the S5 prefix-memo
+  cache key (the deferred output-mode-flag sketch in DELTA_sim_w3 applies).
+- **V16b** heightfield cache: the model is static across all sims of a run —
+  rasterize (min_z, max_z) per XY cell once (EdgeDistanceField / mip
+  pattern), turning per-query triangle walks into an O(1) lookup for both
+  passes AND both call sites.
+- **V16c** allocation-free `SpatialIndex::query` iteration (callback or
+  reused buffer) — benefits drop-cutter generation too.
+
+Secondary: `apply_dressups` shows 5.4 % SELF time (≈ this run's whole
+diagnostics phase ×7) — post-C1 it scans every move per toolpath
+(`toolpath_is_drill_cycle` + census); worth a look whether something is
+accidentally quadratic before assuming it's inherent.
