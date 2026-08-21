@@ -2018,7 +2018,19 @@ mod tests {
                     assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
                 }
-                OperationType::Drill | OperationType::Trace | OperationType::Adaptive3d => {
+                // AlignmentPinDrill joined the force-no-entry set 2026-08-21
+                // (G-WANAKA-DRILL-RAMP): it had been ANY_DRESSUP while its
+                // sibling Drill was ForceNone, so `DressupConfig::for_op`
+                // shipped a role-default Ramp on the one op whose entire
+                // purpose is flip registration. A ramped pin hole is an oval
+                // slot — the emitted motion on a real job was a 19 mm lateral
+                // move while descending. The generator hard-strips it, so the
+                // policy row was the last place config and behaviour still
+                // disagreed.
+                OperationType::Drill
+                | OperationType::AlignmentPinDrill
+                | OperationType::Trace
+                | OperationType::Adaptive3d => {
                     assert!(policy.strip_all_reason.is_none(), "{op:?}");
                     assert_eq!(policy.entry, EntryStylePolicy::ForceNone, "{op:?}");
                 }

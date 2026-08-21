@@ -2220,7 +2220,14 @@ static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     },
     param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
-    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    // FORCE_NO_ENTRY, matching REG_DRILL. A ramp or helix entry on a
+    // registration-pin hole cuts an oval slot, which destroys the flip
+    // registration the op exists to provide (G-WANAKA-DRILL-RAMP). The
+    // generator hard-strips it either way, but leaving the policy at
+    // ANY_DRESSUP meant `DressupConfig::for_op` SHIPPED a Ramp here, so
+    // the UI offered a control that silently did nothing and the strip
+    // warned on the product's own default.
+    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     generate: Some(crate::compute::execute::generate_alignment_pin_drill),
 };
 

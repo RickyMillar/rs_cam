@@ -17,9 +17,11 @@
 //! translation by its min corner serves both cases — and is a no-op for
 //! non-identity setups, which is why those were accidentally correct.
 //!
-//! NOT covered here: `selected_holes` are raw model/DXF coordinates and
-//! are still wrong on non-identity setups, a defect shared with the
-//! `Drill` family (G-DRILLPICK-FRAME, open).
+//! `selected_holes` are a DIFFERENT frame — raw model/DXF coordinates —
+//! and are reconciled separately by the setup transform, not by this
+//! stock-origin translation. That was G-DRILLPICK-FRAME, fixed in
+//! `d019a5a4`; `pin_holes_in_emission_frame` is now the single place both
+//! frames meet, and neither hole list ever takes the other's correction.
 
 #![allow(
     clippy::unwrap_used,
@@ -153,14 +155,11 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 /// be a no-op there. This arm is what stops the fix from "correcting" the
 /// case that was already right.
 ///
-/// It also records the second, still-open half of the tangle:
-/// `selected_holes` are raw model/DXF coordinates (the viz picker maps
-/// `drill_targets` straight through at
-/// `ui/properties/operations/drill.rs:47`), so on a flipped setup they are
-/// off by the setup transform — measured below at (30,40) world wanting
-/// (50,185) local. That is shared with the `Drill` family, needs a
-/// decision about whether picks are STORED world or stock-relative, and is
-/// deliberately not fixed here (G-DRILLPICK-FRAME).
+/// The second half of the tangle — `selected_holes` being raw model/DXF
+/// coordinates, so a pick at world (30,40) belonged at setup-local
+/// (50,185) on a flip — was G-DRILLPICK-FRAME, fixed in `d019a5a4` by
+/// transforming picks at generation while leaving storage in world frame.
+/// Its own sentry is `drill_pick_emission_frame_g_drillpick.rs`.
 #[test]
 fn a_flipped_setup_pin_translation_is_a_no_op() {
     let mut session = ProjectSession::new_empty();
