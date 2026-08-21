@@ -121,6 +121,19 @@ pub fn profile_contour(polygon: &Polygon2, tool_radius: f64, side: ProfileSide) 
 /// [`profile_contour`] with Checkpoint C's offset failure channel attached:
 /// `1` when the single offset this makes failed rather than collapsed, `0`
 /// otherwise.
+///
+/// # Precondition: `polygon` must be wound CCW
+///
+/// The sign below is the whole of the inside/outside decision, and cavalier's
+/// offset sign is relative to the direction of travel (positive = to the left
+/// of the segment tangent), not to the enclosed area. On a CW ring the two
+/// arms therefore mean the opposite of what they say. Every importer
+/// normalises to CCW (`Polygon2::ensure_winding`), so the precondition holds
+/// in production — but it held only by luck until G-PROFILE-FLIP, when a
+/// `face_up = Bottom` setup mirrored the polygon on its way into the setup
+/// frame and turned an Outside profile into an Inside one. The normalisation
+/// now lives at that mirror (`SetupTransformInfo::apply_to_polygons`); this
+/// note is here so the dependency is written down at the place that has it.
 #[must_use]
 pub fn profile_contour_reported(
     polygon: &Polygon2,
