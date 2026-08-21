@@ -36,6 +36,7 @@
 //! | [`session`] | `LoadedModel` / `StockConfig` / the 17-field `ToolpathConfig` / one-op `ProjectSession` builders |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
 //! | [`scallop_oracle`] | M4's analytic tool-envelope surface scorer + its ground-truth validation helpers |
+//! | [`zladder`] | the commanded Z ladder read from `SpanKind::DepthPass` spans, plus the sample→`pass_index` join — and the measured record that the AS013 ladder has a SHORT FINAL PASS, which is why the F-027/F-031 bars were NOT converted to per-pass ratios |
 //!
 //! # Migration policy
 //!
@@ -63,6 +64,7 @@ pub mod reference_plate;
 pub mod scallop_oracle;
 pub mod session;
 pub mod tools;
+pub mod zladder;
 
 use std::path::PathBuf;
 
