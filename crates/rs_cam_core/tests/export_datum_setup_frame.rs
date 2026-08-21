@@ -74,6 +74,7 @@ use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::session::ToolpathConfig;
 use rs_cam_core::session::ProjectSession;
 use std::sync::atomic::AtomicBool;
 
@@ -98,17 +99,41 @@ fn square_model_polygon() -> Polygon2 {
     ])
 }
 
-/// Trace, not profile: trace follows the polygon with no offset, so its
-/// emitted geometry is invariant under the winding reversal a `Bottom` flip
-/// applies to the model polygons. (An outside profile is NOT: the mirror
-/// reverses the winding and the offset flips inward — a separate finding,
-/// noted but not this sentry's subject.)
+/// Trace, not profile: trace follows the polygon with no offset, so its cut
+/// EXTENT does not depend on which way the ring is wound. (An outside profile
+/// does: the mirror reverses the winding and the offset flips inward — that
+/// was G-PROFILE-FLIP, now fixed in `apply_to_polygons`.) Traversal DIRECTION
+/// still changes with the winding, which is why `trace_toolpath` below takes
+/// the lead dressup off — see its doc.
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: 4.0,
         depth_per_pass: 2.0,
         ..TraceConfig::default()
     })
+}
+
+/// `toolpath_config` with the lead-in/out dressup off.
+///
+/// ISOLATE THE VARIABLE. Trace inherits `lead_in_out: true` from the Finish
+/// role, and a lead is a 2 mm tangential extension at the path's START — so
+/// where it lands physically depends on which way the ring is traversed.
+/// Until the G-PROFILE-FLIP winding fix, a `Bottom` flip left the mirrored
+/// ring wound backwards, which put the flipped setup's lead at the mirror of
+/// the identity setup's and made this sentry's Y assertion cancel by
+/// coincidence. Normalising the winding (correctly — it is what stops an
+/// outside profile becoming an inside one, and what stops `Shape::from_plines`
+/// reading a flipped pocket exterior as a hole) moves the lead to the other
+/// end of the square, and this sentry started failing on a 2 mm delta that has
+/// nothing to do with the datum it exists to pin.
+///
+/// The datum is the subject here, so the lead comes off. With it off the
+/// assertion compares cut geometry alone and is sharper, not weaker: identity
+/// emits 25..55 and flipped 15..45, an exact mirror about `STOCK_Y`.
+fn trace_toolpath(name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig {
+    let mut tc = toolpath_config(name, trace_op(), tool_id, model_id);
+    tc.dressups.lead_in_out = false;
+    tc
 }
 
 /// Two setups over one stock with a non-zero XY origin: setup 0 identity,
@@ -136,7 +161,7 @@ fn build_two_setup_session() -> ProjectSession {
     session
         .add_toolpath(
             0,
-            toolpath_config(IDENTITY_LABEL, trace_op(), tool_id, model_id),
+            trace_toolpath(IDENTITY_LABEL, tool_id, model_id),
         )
         .expect("add identity-setup trace");
 
@@ -144,7 +169,7 @@ fn build_two_setup_session() -> ProjectSession {
     session
         .add_toolpath(
             flipped,
-            toolpath_config(FLIPPED_LABEL, trace_op(), tool_id, model_id),
+            trace_toolpath(FLIPPED_LABEL, tool_id, model_id),
         )
         .expect("add flipped-setup trace");
 
@@ -388,7 +413,7 @@ fn zero_origin_stock_is_unchanged() {
     session
         .add_toolpath(
             0,
-            toolpath_config(IDENTITY_LABEL, trace_op(), tool_id, model_id),
+            trace_toolpath(IDENTITY_LABEL, tool_id, model_id),
         )
         .expect("add identity-setup trace");
 

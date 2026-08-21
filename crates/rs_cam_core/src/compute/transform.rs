@@ -252,6 +252,10 @@ impl SetupTransformInfo {
     }
 
     /// Transform 2D polygons from world coordinates to setup-local XY coordinates.
+    ///
+    /// Closed rings come back **re-wound to the crate convention** (exterior
+    /// CCW, holes CW) — see the winding note inside. Open paths keep their
+    /// point order, because for them the order is the machining direction.
     pub fn apply_to_polygons(&self, polygons: &[Polygon2]) -> Vec<Polygon2> {
         polygons
             .iter()
@@ -282,6 +286,32 @@ impl SetupTransformInfo {
                 // the path's end back to its start.
                 let mut result = Polygon2::with_holes(ext, holes);
                 result.closed = poly.closed;
+                // G-PROFILE-FLIP: a face-up flip is a MIRROR in XY — the
+                // `FaceUp::Bottom` row of `transform_point` maps (x, y) to
+                // (x, D - y), determinant -1 — so every ring comes out of the
+                // loop above wound the opposite way. Nothing downstream
+                // re-normalises: the importers are the ones that establish
+                // "exterior CCW, holes CW" (`svg_input` and `dxf_input` both
+                // call `ensure_winding` on load) and this is the only place
+                // that then breaks it.
+                //
+                // It is not cosmetic, because cavalier's offset sign is
+                // defined against the direction of travel — positive offsets
+                // to the LEFT of the segment tangent — so on a reversed ring
+                // every offset in the 2.5D stack silently inverts. Observed:
+                // an Outside profile on a Bottom setup came out INSET by the
+                // tool radius, i.e. cutting the part away. `Shape` has the
+                // same dependency by another route (it classifies CCW plines
+                // as boundaries and CW as holes), so a flipped pocket
+                // exterior would be taken for a hole.
+                //
+                // Fixing it here rather than in each offset consumer keeps
+                // one invariant with one owner. Closed rings only: an open
+                // path (river, trace) has no winding to speak of and its
+                // point order IS the machining direction.
+                if result.closed {
+                    result.ensure_winding();
+                }
                 result
             })
             .collect()
