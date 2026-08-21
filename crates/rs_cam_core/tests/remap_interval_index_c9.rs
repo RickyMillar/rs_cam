@@ -520,14 +520,13 @@ fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
     // occasionally on the tail (1 of 5 runs of the unmodified test today:
     // 4.4, 4.9, 4.7, 5.3, 4.4); after it, release fails deterministically.
     //
-    // The bar is DELIBERATELY LEFT AT 5×. Moving it is a decision about
-    // what this test claims, and it belongs to the operator, not to the
-    // lane that happened to measure it. The options on the table are: lower
-    // it to ~4× so one number holds in both profiles; make it
-    // profile-aware via `cfg!(debug_assertions)`; or pin the test to one
-    // profile. `RemapIndex` itself is NOT regressed — both arms are far
-    // faster than they were in August, and the index still wins by 4.3× in
-    // the profile that ships.
+    // The bar is PROFILE-AWARE (user decision, 2026-08-21): ≥4× in release
+    // and ≥10× in debug. One number cannot honestly cover two build
+    // profiles whose true answers differ by 3×; each bar carries real
+    // margin against its own measured median (4.3× / 12.9×) instead of a
+    // debug-derived number pretending to be a release claim. `RemapIndex`
+    // itself is NOT regressed — both arms are far faster than they were in
+    // August, and the index still wins by 4.3× in the profile that ships.
 
     // Both arms stay INLINE in the round loop rather than being hoisted
     // into two closures. A first draft used closures and read consistently
@@ -612,10 +611,20 @@ fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
         heap_bytes as f64 / (1024.0 * 1024.0),
     );
 
+    // Profile-aware bar (see the calibration table above): release and debug
+    // have honestly different answers, so each profile asserts against its
+    // own measured median with real margin.
+    let bar = if cfg!(debug_assertions) { 10.0 } else { 4.0 };
     assert!(
-        speedup >= 5.0,
-        "indexed path should be at least 5x faster than the linear scan on a wanaka-scale \
-         fixture: median-of-{ROUNDS} speedup={speedup:.2}x, per-round speedups={ratios:?}"
+        speedup >= bar,
+        "indexed path should be at least {bar}x faster than the linear scan on a wanaka-scale \
+         fixture ({} profile): median-of-{ROUNDS} speedup={speedup:.2}x, per-round \
+         speedups={ratios:?}",
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
     );
 
     // Memory regression guard: an earlier revision of `RemapIndex` answered
