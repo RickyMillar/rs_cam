@@ -14,21 +14,6 @@ fn depth_of(op: &OperationConfig) -> Option<f64> {
     }
 }
 
-/// Format a duration in seconds as "Xm Ys".
-fn format_time(seconds: f64) -> String {
-    if seconds < 0.0 || !seconds.is_finite() {
-        return "N/A".to_owned();
-    }
-    let total_secs = seconds.round() as u64;
-    let mins = total_secs / 60;
-    let secs = total_secs % 60;
-    if mins > 0 {
-        format!("{}m {}s", mins, secs)
-    } else {
-        format!("{}s", secs)
-    }
-}
-
 /// HTML-escape a string to prevent injection.
 fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -67,27 +52,28 @@ fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
 // ── Session-based setup sheet ────────────────────────────────────────
 
 use crate::state::runtime::GuiState;
+use crate::ui::readiness::{self, CycleTimeBasis};
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::simulation_cut::SimulationCutTrace;
 
 /// Generate an HTML setup sheet from session + GUI state.
-pub fn generate_setup_sheet_from_session(session: &ProjectSession, gui: &GuiState) -> String {
+///
+/// `trace` is the current simulation's cut trace. It is a parameter rather
+/// than something this module reaches for because the sheet is printed and
+/// carried to the machine: the estimate it prints has to be the SAME quantity
+/// the on-screen surfaces show, and the trace is what decides which quantity
+/// that is (G-TIMEEST). Passing `None` is legitimate — it means no simulation
+/// — and the sheet then says so in words rather than printing a bare number.
+pub fn generate_setup_sheet_from_session(
+    session: &ProjectSession,
+    gui: &GuiState,
+    trace: Option<&SimulationCutTrace>,
+) -> String {
     let mut html = String::with_capacity(8192);
 
-    // Compute total estimated time from GUI runtime results.
-    let total_seconds: f64 = session
-        .toolpath_configs()
-        .iter()
-        .filter(|tc| tc.enabled)
-        .filter_map(|tc| {
-            let rt = gui.toolpath_rt.get(&tc.id)?;
-            let result = rt.result.as_ref()?;
-            let feed = feed_rate_of(&tc.operation);
-            if feed <= 0.0 {
-                return None;
-            }
-            Some(result.stats.cutting_distance / feed * 60.0)
-        })
-        .sum();
+    // The project total, from the same fold the readiness panel, the pre-flight
+    // gate and the export wizard use — not a local re-derivation.
+    let cycle = readiness::project_cycle_time(session, gui, trace);
 
     let date = {
         let now = std::time::SystemTime::now();
@@ -122,6 +108,8 @@ td {{ padding: 6px 12px; border: 1px solid #3a3a4a; }}
 tr:nth-child(even) {{ background: #24242e; }}
 .meta {{ color: #888; font-size: 0.9em; }}
 .flip-instruction {{ background: #3a3520; border: 2px solid #d4a020; border-radius: 6px; padding: 12px 16px; margin: 12px 0; color: #f0d060; font-size: 1.1em; font-weight: bold; }}
+.time-basis {{ background: #33301e; border-left: 4px solid #d4a020; padding: 8px 12px; margin: 8px 0; color: #d8c88a; font-size: 0.9em; }}
+.time-basis .remedy {{ color: #9a9aa8; }}
 </style>
 </head>
 <body>
@@ -130,16 +118,47 @@ tr:nth-child(even) {{ background: #24242e; }}
         ),
     );
 
+    // The headline time always carries its basis in the same breath — the
+    // parenthetical is not decoration, it is the difference between a
+    // wall-clock prediction and a cutting-only figure measured 7x optimistic.
+    let (time_str, basis_str) = match cycle.basis {
+        Some(basis) => (
+            readiness::format_cycle_time(cycle.seconds),
+            format!(" ({})", basis.qualifier()),
+        ),
+        None => ("\u{2014}".to_owned(), " (no estimate)".to_owned()),
+    };
     let _ = std::fmt::Write::write_fmt(
         &mut html,
         format_args!(
             "<h1>Setup Sheet: {}</h1>\n\
-             <p class=\"meta\">Generated: {} | Estimated machining time: {}</p>\n",
+             <p class=\"meta\">Generated: {} | Estimated machining time: {}{}</p>\n",
             escape_html(name),
             escape_html(&date),
-            format_time(total_seconds),
+            escape_html(&time_str),
+            escape_html(&basis_str),
         ),
     );
+
+    // Paper has no hover. A sheet that prints "2:59:41" with no indication of
+    // which model produced it is precisely how one word came to cover two
+    // quantities, so on this surface the caveat is body text.
+    if let Some(basis) = cycle.basis
+        && basis != CycleTimeBasis::MachineModel
+    {
+        let remedy = basis
+            .remedy()
+            .map(|r| format!(" <span class=\"remedy\">{}</span>", escape_html(r)))
+            .unwrap_or_default();
+        let _ = std::fmt::Write::write_fmt(
+            &mut html,
+            format_args!(
+                "<p class=\"time-basis\">\u{26A0} {}{}</p>\n",
+                escape_html(basis.caveat()),
+                remedy,
+            ),
+        );
+    }
 
     // Stock
     let _ = std::fmt::Write::write_fmt(
@@ -274,11 +293,16 @@ tr:nth-child(even) {{ background: #24242e; }}
     let _ = std::fmt::Write::write_str(&mut html, "</table>\n");
 
     // Operations
-    let _ = std::fmt::Write::write_str(
+    // The column header names the basis too, so the table stays self-describing
+    // if someone photographs it away from the header line above.
+    let _ = std::fmt::Write::write_fmt(
         &mut html,
-        "<h2>Operations</h2>\n\
-         <table>\n\
-         <tr><th>#</th><th>Name</th><th>Tool</th><th>Type</th><th>Feed Rate</th><th>Depth</th><th>Est. Time</th></tr>\n",
+        format_args!(
+            "<h2>Operations</h2>\n\
+             <table>\n\
+             <tr><th>#</th><th>Name</th><th>Tool</th><th>Type</th><th>Feed Rate</th><th>Depth</th><th>Est. Time{}</th></tr>\n",
+            escape_html(&basis_str),
+        ),
     );
     for (i, tc) in session.toolpath_configs().iter().enumerate() {
         let tool_name = session
@@ -296,11 +320,17 @@ tr:nth-child(even) {{ background: #24242e; }}
             .toolpath_rt
             .get(&tc.id)
             .and_then(|rt| rt.result.as_ref())
-            .and_then(|result| {
-                if feed <= 0.0 {
-                    return None;
+            .map(|result| {
+                let op = readiness::toolpath_cycle_time(
+                    trace,
+                    tc.id,
+                    result.stats.cutting_distance,
+                    feed,
+                );
+                match op.basis {
+                    Some(_) => readiness::format_cycle_time(op.seconds),
+                    None => "-".to_owned(),
                 }
-                Some(format_time(result.stats.cutting_distance / feed * 60.0))
             })
             .unwrap_or_else(|| "-".to_owned());
         let enabled_marker = if tc.enabled { "" } else { " (disabled)" };
@@ -347,15 +377,12 @@ tr:nth-child(even) {{ background: #24242e; }}
 mod tests {
     use super::*;
 
-    #[test]
-    fn format_time_renders_correctly() {
-        assert_eq!(format_time(0.0), "0s");
-        assert_eq!(format_time(59.0), "59s");
-        assert_eq!(format_time(60.0), "1m 0s");
-        assert_eq!(format_time(125.0), "2m 5s");
-        assert_eq!(format_time(-1.0), "N/A");
-        assert_eq!(format_time(f64::NAN), "N/A");
-    }
+    // This module's private `format_time` is gone (G-TIMEEST): its
+    // `"{m}m {s}s"` spelling rendered the three-hour job that motivated the row
+    // as "179m 41s", and it was the second of two duration formatters
+    // disagreeing about the same seconds. `readiness::format_cycle_time` is now
+    // the only one; its coverage lives with it, in
+    // `tests/cycle_time_basis_g_timeest.rs`.
 
     #[test]
     fn escape_html_works() {

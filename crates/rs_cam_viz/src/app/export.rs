@@ -307,7 +307,11 @@ impl RsCamApp {
                 let line_count = gcode.lines().count();
                 let mut total_moves = 0usize;
                 let mut cutting_dist = 0.0f64;
-                let mut est_time_min = 0.0f64;
+                // G-TIMEEST — the log line below used to carry its own
+                // `cutting_distance / feed_rate()`, so an export logged a
+                // cycle time that disagreed with every GUI surface. It now
+                // reads the one shared decision, basis included.
+                let cycle = crate::ui::readiness::estimate_total_time(self.controller.state());
 
                 let tool_changes = {
                     let state = self.controller.state();
@@ -320,8 +324,6 @@ impl RsCamApp {
                         {
                             total_moves += result.stats.move_count;
                             cutting_dist += result.stats.cutting_distance;
-                            let feed = tc.operation.feed_rate().max(1.0);
-                            est_time_min += result.stats.cutting_distance / feed;
                         }
                     }
 
@@ -339,12 +341,13 @@ impl RsCamApp {
                 };
 
                 tracing::info!(
-                    "Export summary: {} G-code lines, {} moves, {:.0} mm cutting, {} tool changes, ~{:.1} min",
+                    "Export summary: {} G-code lines, {} moves, {:.0} mm cutting, {} tool changes, {} ({})",
                     line_count,
                     total_moves,
                     cutting_dist,
                     tool_changes,
-                    est_time_min,
+                    crate::ui::readiness::format_cycle_time(cycle.seconds),
+                    cycle.basis.map_or("no estimate", |b| b.qualifier()),
                 );
 
                 if let Some(path) = rfd::FileDialog::new()

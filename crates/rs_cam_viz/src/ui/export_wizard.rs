@@ -19,7 +19,9 @@ use rs_cam_core::gcode_validator::{Finding, Severity, validate};
 use rs_cam_core::session::OutputLayout;
 
 use super::AppEvent;
+use super::readiness;
 use crate::state::AppState;
+use crate::ui::theme;
 
 /// Total number of steps in the wizard.
 pub const STEP_COUNT: u8 = 7;
@@ -918,7 +920,6 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     let mut total_moves = 0usize;
     let mut cutting_dist = 0.0f64;
-    let mut est_time_min = 0.0f64;
     let mut tool_set: Vec<usize> = Vec::new();
     let mut longest_cut = 0.0f64;
     for tc in session.toolpath_configs() {
@@ -933,12 +934,16 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         {
             total_moves += result.stats.move_count;
             cutting_dist += result.stats.cutting_distance;
-            let feed = tc.operation.feed_rate().max(1.0);
-            est_time_min += result.stats.cutting_distance / feed;
             longest_cut = longest_cut.max(result.stats.cutting_distance);
         }
     }
     let tool_changes = tool_set.len().saturating_sub(1);
+    // G-TIMEEST: this step used to accumulate its own
+    // `cutting_distance / feed_rate()` alongside the loop above — one of seven
+    // copies, and the one an operator reads at the moment of export. It now
+    // shares the single `readiness` decision, which also tells us which model
+    // produced the number so the row can say so.
+    let cycle = readiness::estimate_total_time(state);
 
     egui::Grid::new("wizard_step_save_summary")
         .num_columns(2)
@@ -972,8 +977,18 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label(format!("{longest_cut:.0} mm"));
             ui.end_row();
 
-            ui.label("Estimated cycle time:");
-            ui.label(format!("~{est_time_min:.1} min"));
+            match cycle.basis {
+                Some(basis) => {
+                    ui.label(format!("Estimated cycle time ({}):", basis.qualifier()));
+                    ui.label(readiness::format_cycle_time(cycle.seconds))
+                        .on_hover_text(basis.caveat());
+                }
+                // No estimate is a dash, never a plausible-looking 0.0 min.
+                None => {
+                    ui.label("Estimated cycle time:");
+                    ui.label("\u{2014}");
+                }
+            }
             ui.end_row();
 
             ui.label("Tool changes:");
@@ -993,6 +1008,29 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.label(format!("{errors} error / {warnings} warn / {infos} info"));
             ui.end_row();
         });
+
+    // Below the grid, not inside it — the caveat is a paragraph and a grid
+    // cell will not wrap one. This is the last screen before Save, so the
+    // qualification has to be visible rather than hover-only.
+    if let Some(basis) = cycle.basis
+        && basis != readiness::CycleTimeBasis::MachineModel
+    {
+        ui.add_space(6.0);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(basis.caveat())
+                    .small()
+                    .color(theme::WARNING),
+            )
+            .wrap(),
+        );
+        if let Some(remedy) = basis.remedy() {
+            ui.add(
+                egui::Label::new(egui::RichText::new(remedy).small().color(theme::TEXT_MUTED))
+                    .wrap(),
+            );
+        }
+    }
 
     ui.add_space(12.0);
 
