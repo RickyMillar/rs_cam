@@ -117,20 +117,59 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Cycle time (info only) ---
-            let total_time = readiness::estimate_total_time(state);
-            let m = (total_time / 60.0).floor() as u32;
-            let s = (total_time % 60.0) as u32;
+            // The card names its own basis (G-TIMEEST). This is the last
+            // number an operator reads before starting a cut, and the old
+            // spelling printed a cutting-only figure — measured 7× optimistic
+            // on a real job — under the unqualified words "cycle time".
+            let cycle = readiness::estimate_total_time(state);
             let tool_changes = readiness::count_tool_changes(state);
+            let (title, detail, status) = match cycle.basis {
+                Some(basis) => (
+                    format!("Est. cycle time ({})", basis.qualifier()),
+                    format!(
+                        "{}  ({tool_changes} tool changes)",
+                        readiness::format_cycle_time(cycle.seconds)
+                    ),
+                    basis.status(),
+                ),
+                // No estimate at all — a dash, never 0:00.
+                None => (
+                    "Est. cycle time".to_owned(),
+                    format!("\u{2014}  ({tool_changes} tool changes)"),
+                    CheckStatus::Warning,
+                ),
+            };
             check_card(
                 ui,
-                CheckStatus::Pass,
-                "Est. cycle time (cutting only)",
-                &format!("{}:{:02}  ({} tool changes)", m, s, tool_changes),
+                status,
+                &title,
+                &detail,
                 "",
                 None,
                 events,
                 &mut still_open,
             );
+            if let Some(basis) = cycle.basis
+                && basis != readiness::CycleTimeBasis::MachineModel
+            {
+                // Inline rather than a hover — the caveat has to survive the
+                // operator reading this modal once, quickly.
+                let caveat = egui::RichText::new(basis.caveat())
+                    .small()
+                    .color(theme::WARNING);
+                ui.horizontal(|ui| {
+                    ui.add_space(18.0);
+                    ui.add(egui::Label::new(caveat).wrap());
+                });
+                if let Some(remedy) = basis.remedy() {
+                    let remedy = egui::RichText::new(remedy).small().color(theme::TEXT_MUTED);
+                    ui.horizontal(|ui| {
+                        ui.add_space(18.0);
+                        ui.add(egui::Label::new(remedy).wrap());
+                    });
+                }
+                ui.add_space(2.0);
+            }
 
             ui.add_space(8.0);
             ui.separator();

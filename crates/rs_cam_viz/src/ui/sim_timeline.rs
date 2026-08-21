@@ -1,5 +1,6 @@
 use super::AppEvent;
 use super::components::{CountPill, FreshnessGate};
+use super::readiness;
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
 use crate::state::runtime::GuiState;
@@ -1101,14 +1102,43 @@ fn draw_transport_and_scrubber(
         if sim.total_moves() > 0 {
             ui.separator();
 
-            let (elapsed_time, total_time) = estimate_times(sim, session, gui);
-            let elapsed_str = format_time(elapsed_time);
-            let total_str = format_time(total_time);
+            let (elapsed_time, cycle) = estimate_times(sim, session, gui);
+            let total_time = cycle.seconds;
+            let elapsed_str = readiness::format_cycle_time(elapsed_time);
+            let total_str = readiness::format_cycle_time(total_time);
             ui.label(
                 egui::RichText::new(format!("{} / {}", elapsed_str, total_str))
                     .monospace()
                     .color(egui::Color32::from_rgb(160, 200, 240)),
             );
+            // Name the basis next to the clock (G-TIMEEST). The readout drives
+            // the speed baseline below, so an operator who mistrusts one has to
+            // be able to see why the other moved.
+            let (basis_tag, basis_tip, basis_color) = match cycle.basis {
+                Some(basis) => (
+                    basis.qualifier(),
+                    match basis.remedy() {
+                        Some(remedy) => format!("{}\n\n{remedy}", basis.caveat()),
+                        None => basis.caveat().to_owned(),
+                    },
+                    if basis == readiness::CycleTimeBasis::MachineModel {
+                        super::theme::TEXT_MUTED
+                    } else {
+                        super::theme::WARNING
+                    },
+                ),
+                None => (
+                    "no estimate",
+                    "No computed toolpath in this simulation carries a time estimate.".to_owned(),
+                    super::theme::WARNING,
+                ),
+            };
+            ui.label(
+                egui::RichText::new(format!("({basis_tag})"))
+                    .small()
+                    .color(basis_color),
+            )
+            .on_hover_text(basis_tip);
 
             ui.separator();
 
@@ -1117,6 +1147,14 @@ fn draw_transport_and_scrubber(
             // project's actual move rate (total_moves / total_time_s) so
             // wanaka's ~200 mv/s real-time and a small project's ~50 mv/s
             // real-time both map to "1× = real time".
+            //
+            // G-TIMEEST: `total_time` above used to be the cutting-only
+            // estimate, which made this baseline ~7× too FAST on a measured
+            // job — 1× played a three-hour cut as a 25-minute one while the
+            // tooltip claimed real time. It now shares `estimate_times`' one
+            // source. The two quantities are the same population by
+            // construction: `estimate_times` sums over `sim.boundaries()`,
+            // which is what `sim.total_moves()` counts.
             //
             // Internally `playback.speed` stays in moves-per-second.
             let real_time_mv_s = if total_time > 0.0 {
@@ -1132,8 +1170,8 @@ fn draw_transport_and_scrubber(
                     .color(egui::Color32::from_rgb(140, 140, 150)),
             )
             .on_hover_text(format!(
-                "Playback speed multiplier. 1× = real-time playback for this project ({:.0} moves/sec). [ and ] keys to adjust.",
-                real_time_mv_s
+                "Playback speed multiplier. 1× = real-time playback for this project ({:.0} moves/sec, {}). [ and ] keys to adjust.",
+                real_time_mv_s, basis_tag
             ));
             let resp = ui.add(
                 egui::Slider::new(&mut multiplier, 0.1..=1000.0)
@@ -1957,10 +1995,26 @@ fn first_exceeded_tool_load_move(
     Some(boundary_start + sample.move_index)
 }
 
-/// Row 3: Playback speed slider and preset buttons.
-/// Estimate elapsed and total time (in seconds) based on feed rates.
-fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiState) -> (f64, f64) {
-    let mut total_secs = 0.0;
+/// Elapsed seconds at the playhead, plus the project's total cycle time and
+/// the basis it was measured on.
+///
+/// G-TIMEEST: this used to hold its own `cutting_distance / feed_rate()` — one
+/// of four copies of that formula, all of them printing a cutting-only figure
+/// under the word "time". The per-op number now comes from the single
+/// [`readiness::toolpath_cycle_time`] decision; only the *population* is local
+/// (the simulated boundaries, so the derived playback baseline divides by the
+/// same set `sim.total_moves()` counts).
+///
+/// Elapsed is still interpolated linearly in MOVES within an op, which is its
+/// own approximation — moves are not equal-duration — but it only affects the
+/// left half of the readout, never the total or the speed baseline.
+fn estimate_times(
+    sim: &SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) -> (f64, readiness::CycleTime) {
+    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
+    let mut total = readiness::CycleTime::NONE;
     let mut elapsed_secs = 0.0;
 
     for boundary in sim.boundaries() {
@@ -1968,9 +2022,13 @@ fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiStat
             && let Some(result) = &rt.result
             && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
-            let feed = tc.operation.feed_rate();
-            let op_time = (result.stats.cutting_distance / feed) * 60.0;
-            total_secs += op_time;
+            let op = readiness::toolpath_cycle_time(
+                trace,
+                boundary.id,
+                result.stats.cutting_distance,
+                tc.operation.feed_rate(),
+            );
+            total.fold(op);
 
             // Estimate elapsed time for this op
             let op_moves = boundary.end_move.saturating_sub(boundary.start_move);
@@ -1981,17 +2039,11 @@ fn estimate_times(sim: &SimulationState, session: &ProjectSession, gui: &GuiStat
             } else {
                 (sim.playback.current_move - boundary.start_move) as f64 / op_moves.max(1) as f64
             };
-            elapsed_secs += op_time * progress;
+            elapsed_secs += op.seconds * progress;
         }
     }
 
-    (elapsed_secs, total_secs)
-}
-
-fn format_time(secs: f64) -> String {
-    let m = (secs / 60.0).floor() as u32;
-    let s = (secs % 60.0) as u32;
-    format!("{}:{:02}", m, s)
+    (elapsed_secs, total)
 }
 
 /// Whether the debug semantic sub-band should render for `boundary`.

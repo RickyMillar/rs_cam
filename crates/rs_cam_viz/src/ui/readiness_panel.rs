@@ -136,21 +136,45 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 });
             }
 
-            // Cycle time — information only, never gates the verdict.
-            let secs = readiness::estimate_total_time(state);
-            let mins = (secs / 60.0).floor() as u32;
-            let rem = (secs % 60.0) as u32;
-            check_row(
-                ui,
-                CheckStatus::Pass,
-                "Est. cycle time (cutting only)",
-                &format!(
-                    "{mins}:{rem:02}  ({} tool changes)",
-                    readiness::count_tool_changes(state)
+            // Cycle time — information only, never gates the verdict. The row
+            // now names its own basis (G-TIMEEST): the same word used to cover
+            // a machine-model wall clock and a cutting-only figure ~7× smaller,
+            // and this panel is read immediately before starting a cut.
+            let cycle = readiness::estimate_total_time(state);
+            let changes = readiness::count_tool_changes(state);
+            let (title, detail, status) = match cycle.basis {
+                Some(basis) => (
+                    format!("Est. cycle time ({})", basis.qualifier()),
+                    format!(
+                        "{}  ({changes} tool changes)",
+                        readiness::format_cycle_time(cycle.seconds)
+                    ),
+                    basis.status(),
                 ),
-                None,
-                events,
-            );
+                // No estimate at all — a dash, never 0:00.
+                None => (
+                    "Est. cycle time".to_owned(),
+                    format!("\u{2014}  ({changes} tool changes)"),
+                    CheckStatus::Warning,
+                ),
+            };
+            // A basis with a remedy gets the same jump affordance every other
+            // row on this panel offers. Only the un-simulated case has a
+            // single-event fix; the no-kinematics case is a properties edit,
+            // so it gets named in text instead of a fake button.
+            let action = matches!(cycle.basis, Some(readiness::CycleTimeBasis::CuttingOnly))
+                .then_some(("Run sim", AppEvent::RunSimulation));
+            check_row(ui, status, &title, &detail, action, events);
+            if let Some(basis) = cycle.basis
+                && basis != readiness::CycleTimeBasis::MachineModel
+            {
+                // Inline, not a hover: an operator planning a shift around
+                // this number must not have to discover the caveat.
+                caveat_line(ui, basis.caveat(), theme::WARNING);
+                if let Some(remedy) = basis.remedy() {
+                    caveat_line(ui, remedy, theme::TEXT_MUTED);
+                }
+            }
         });
 
         ui.add_space(12.0);
@@ -203,6 +227,17 @@ fn draw_verdict_banner(ui: &mut egui::Ui, status: CheckStatus) {
         .show(ui, |ui| {
             ui.label(egui::RichText::new(text).heading().strong().color(stroke));
         });
+}
+
+/// A wrapped, indented qualifier under a check row — for the case where the
+/// row's number is real but does not mean what its name suggests. Colour
+/// separates the caveat (what is wrong) from the remedy (what to do).
+fn caveat_line(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+    ui.horizontal(|ui| {
+        ui.add_space(28.0);
+        ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
+    });
+    ui.add_space(4.0);
 }
 
 /// One readiness check row: status glyph, label, detail, optional jump action.

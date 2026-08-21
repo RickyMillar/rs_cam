@@ -1,5 +1,6 @@
 use super::AppEvent;
 use super::components::{CountPill, FreshnessGate};
+use super::readiness;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
@@ -445,9 +446,12 @@ fn draw_project_section(
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
-    let (total_cutting, total_rapid, total_time_min) = aggregate_stats(sim, session, gui);
-    let total_min = total_time_min.floor() as u32;
-    let total_sec = ((total_time_min - total_min as f64) * 60.0) as u32;
+    let (total_cutting, total_rapid, cycle) = aggregate_stats(sim, session, gui);
+    let cycle_str = match cycle.basis {
+        Some(_) => readiness::format_cycle_time(cycle.seconds),
+        // No estimate is a dash, never a plausible-looking 0:00.
+        None => "\u{2014}".to_owned(),
+    };
 
     // Roadmap C.2/F.11 — ToolLoadReport::summary() gives toolpath-counted
     // denominators (and operator-readable exceed labels), the same producer
@@ -467,10 +471,15 @@ fn draw_project_section(
     );
     let collision_count = sim.checks.total_collision_count();
 
-    // Summary-first header line: cycle + the within/exceeding glance.
-    let header = format!(
-        "Project — {total_min}:{total_sec:02} · \u{2713}{ok} within · \u{2715}{bad} exceeding"
-    );
+    // Summary-first header line: cycle + the within/exceeding glance. The
+    // cycle carries its basis — this header sits a panel away from the
+    // timeline's readout, and the two must not look like different numbers.
+    let basis_tag = match cycle.basis {
+        Some(basis) => format!(" ({})", basis.qualifier()),
+        None => " (no estimate)".to_owned(),
+    };
+    let header =
+        format!("Project — {cycle_str}{basis_tag} · \u{2713}{ok} within · \u{2715}{bad} exceeding");
     egui::CollapsingHeader::new(header)
         .id_salt("inspector_project")
         .default_open(true)
@@ -1273,15 +1282,23 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
     }
 }
 
-/// Aggregate cutting distance, rapid distance, and estimated time across all boundaries.
+/// Aggregate cutting distance, rapid distance, and cycle time across all
+/// boundaries.
+///
+/// G-TIMEEST: the time used to be a local `cutting_distance / feed_rate()`,
+/// which put this panel's header in direct disagreement with the timeline
+/// sitting beside it. Both now fold the one shared
+/// [`readiness::toolpath_cycle_time`] decision over the same simulated
+/// population.
 fn aggregate_stats(
     sim: &SimulationState,
     session: &ProjectSession,
     gui: &GuiState,
-) -> (f64, f64, f64) {
+) -> (f64, f64, readiness::CycleTime) {
+    let trace = sim.results.as_ref().and_then(|r| r.cut_trace.as_deref());
     let mut total_cutting = 0.0;
     let mut total_rapid = 0.0;
-    let mut total_time_min = 0.0;
+    let mut cycle = readiness::CycleTime::NONE;
 
     for boundary in sim.boundaries() {
         if let Some(rt) = gui.toolpath_rt.get(&boundary.id)
@@ -1290,12 +1307,16 @@ fn aggregate_stats(
         {
             total_cutting += result.stats.cutting_distance;
             total_rapid += result.stats.rapid_distance;
-            let feed = tc.operation.feed_rate();
-            total_time_min += result.stats.cutting_distance / feed;
+            cycle.fold(readiness::toolpath_cycle_time(
+                trace,
+                boundary.id,
+                result.stats.cutting_distance,
+                tc.operation.feed_rate(),
+            ));
         }
     }
 
-    (total_cutting, total_rapid, total_time_min)
+    (total_cutting, total_rapid, cycle)
 }
 
 // ── Selected span section ───────────────────────────────────────────────

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::AppEvent;
+use super::readiness;
 use super::sim_debug::draw_trace_badge;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
@@ -277,6 +278,22 @@ fn draw_toolpath_card(
     );
     let has_result = rt.is_some_and(|r| r.has_result);
     let stats = rt.and_then(|r| r.stats.as_ref());
+    // G-TIMEEST — the card's per-op time. Resolved HERE, before the card body
+    // takes `&mut state`, and from the one shared decision rather than the
+    // local `cutting_distance / feed` this row used to carry. `CycleTime` is
+    // `Copy`, so nothing borrows `state` past this line.
+    let cycle = stats.map_or(readiness::CycleTime::NONE, |s| {
+        readiness::toolpath_cycle_time(
+            state
+                .simulation
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_deref()),
+            tp_id,
+            s.cutting_distance,
+            tc.operation.feed_rate(),
+        )
+    });
     let dim = !tc.enabled || !visible;
 
     let pc = palette_color(global_idx);
@@ -475,32 +492,32 @@ fn draw_toolpath_card(
 
             // Row 3: stats (only when computed)
             if let Some(stats) = stats {
-                let feed = tc.operation.feed_rate();
-                let cut_time_min = if feed > 0.0 {
-                    stats.cutting_distance / feed
-                } else {
-                    0.0
-                };
                 let total_dist_m = (stats.cutting_distance + stats.rapid_distance) / 1000.0;
-
-                let stats_text = if cut_time_min >= 1.0 {
-                    format!(
-                        "{} moves \u{00B7} {:.0} min \u{00B7} {:.1} m",
-                        stats.move_count, cut_time_min, total_dist_m,
-                    )
-                } else {
-                    format!(
-                        "{} moves \u{00B7} {:.0} s \u{00B7} {:.1} m",
-                        stats.move_count,
-                        cut_time_min * 60.0,
-                        total_dist_m,
-                    )
+                let time_str = match cycle.basis {
+                    Some(_) => readiness::format_cycle_time(cycle.seconds),
+                    // No estimate is a dash, never a plausible-looking 0 s.
+                    None => "\u{2014}".to_owned(),
                 };
-                ui.label(
+                let stats_text = format!(
+                    "{} moves \u{00B7} {} \u{00B7} {:.1} m",
+                    stats.move_count, time_str, total_dist_m,
+                );
+                let resp = ui.label(
                     egui::RichText::new(stats_text)
                         .small()
                         .color(theme::TEXT_DIM),
                 );
+                // The card is too narrow for the basis inline, so it lives on
+                // hover here — the surfaces an operator plans a cut from
+                // (readiness, pre-flight, export, setup sheet) all state it
+                // without hovering.
+                if let Some(basis) = cycle.basis {
+                    resp.on_hover_text(format!(
+                        "Estimated time ({}). {}",
+                        basis.qualifier(),
+                        basis.caveat()
+                    ));
+                }
             }
 
             // Row 4: shared per-toolpath row controls (eye / C / R / isolate).
