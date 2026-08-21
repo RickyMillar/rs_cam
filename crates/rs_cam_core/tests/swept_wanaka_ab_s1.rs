@@ -1,5 +1,5 @@
-//! S1 swept-volume A/B harness — wanaka200, headless, one dispatch mode per
-//! process (2026-08-20).
+//! S1 swept-volume A/B harness — wanaka200 by default, headless, one dispatch
+//! mode per process (2026-08-20; project/resolution overrides 2026-08-21).
 //!
 //! Drives `planning/airrun_2026-08-19/wanaka200.toml` end to end without a GUI
 //! — fresh load → generate every enabled toolpath → F.4 ladder (simulate →
@@ -24,6 +24,27 @@
 //! (Accepted values: `auto`, `per_stamp`, `whole_path`, `swept`,
 //! `swept_plunge`. Unset resolves to `auto`. `swept_plunge` is the
 //! bit-identical half of S1 and is the third arm worth taking.)
+//!
+//! # Driving a different project (W5B-F3, 2026-08-21)
+//!
+//! Two further env hooks let the same harness A/B any project with a
+//! `FromRemainingStock` chain, which is what W5B-F3's rest-chain geometry
+//! diff needs. **Both default to the wanaka200 configuration 0D was captured
+//! with**, so an invocation that sets neither reproduces 0D exactly.
+//!
+//! * `S1AB_PROJECT` — path to the project `.toml`. Absolute, or relative to
+//!   the workspace root. Unset ⇒ `planning/airrun_2026-08-19/wanaka200.toml`.
+//! * `S1AB_RESOLUTION_MM` — simulation cell size for **every** simulation the
+//!   run performs (ladder rounds included — see `DEFAULT_SIM_RESOLUTION_MM`). Unset
+//!   ⇒ 0.4. A value that does not parse as a positive finite float is a hard
+//!   failure, not a silent fallback: an A/B that quietly ran two different
+//!   cell sizes would compare two geometries.
+//! * `S1AB_FEED_MODULATION` — `0`/`false`/`off`/`no` disables the F-036b
+//!   adaptive feed-modulation post-pass. Unset ⇒ enabled, which is the
+//!   shipped `SimulationOptions` default. See `feed_modulation_enabled`.
+//!
+//! The `REQUIRED_MODEL` pre-flight check only applies to the default project;
+//! an overridden project reports whatever `ProjectSession::load` reports.
 //!
 //! Capture both runs and diff them:
 //!
@@ -86,15 +107,21 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use rs_cam_core::sim_measurability::{Measurability, MeasurabilityReport};
 use rs_cam_core::simulation_cut::AirCutRatios;
 
-/// Simulation cell size for EVERY simulation this harness runs — the ladder
-/// rounds as well as the final one. Ladder rounds feed the rest ops their
-/// stock, so running them at a different resolution than the final pass would
-/// A/B two different geometries.
-const SIM_RESOLUTION_MM: f64 = 0.4;
+/// Default simulation cell size for EVERY simulation this harness runs — the
+/// ladder rounds as well as the final one. Ladder rounds feed the rest ops
+/// their stock, so running them at a different resolution than the final pass
+/// would A/B two different geometries. Overridable per run with
+/// `S1AB_RESOLUTION_MM`; the override applies to every simulation for the same
+/// reason.
+const DEFAULT_SIM_RESOLUTION_MM: f64 = 0.4;
 
-/// The STL `wanaka200.toml` references by absolute path. Checked separately
+/// Project the harness drives when `S1AB_PROJECT` is unset — the wanaka200
+/// configuration reference 0D was captured with.
+const DEFAULT_PROJECT_REL: &str = "planning/airrun_2026-08-19/wanaka200.toml";
+
+/// The STL the default project references by absolute path. Checked separately
 /// from the project file so a missing model reports the model, not a load
-/// error thirty lines deep.
+/// error thirty lines deep. Only meaningful for the default project.
 const REQUIRED_MODEL: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";
 
 fn repo_root() -> PathBuf {
@@ -104,11 +131,41 @@ fn repo_root() -> PathBuf {
         .join("..")
 }
 
-fn project_path() -> PathBuf {
-    repo_root()
-        .join("planning")
-        .join("airrun_2026-08-19")
-        .join("wanaka200.toml")
+/// `(path, is_default_project)`. A relative `S1AB_PROJECT` resolves against the
+/// workspace root, not the crate dir, so the value can be pasted straight from
+/// a `git`-relative path.
+fn project_path() -> (PathBuf, bool) {
+    match std::env::var("S1AB_PROJECT") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            let p = PathBuf::from(raw.trim());
+            let resolved = if p.is_absolute() {
+                p
+            } else {
+                repo_root().join(p)
+            };
+            (resolved, false)
+        }
+        _ => (repo_root().join(DEFAULT_PROJECT_REL), true),
+    }
+}
+
+/// Cell size for this run. A malformed override panics rather than falling
+/// back: the two arms of an A/B must agree on the cell size, and a silent
+/// fallback in one arm would compare two different geometries.
+fn sim_resolution_mm() -> f64 {
+    match std::env::var("S1AB_RESOLUTION_MM") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            let v: f64 = raw.trim().parse().unwrap_or_else(|e| {
+                panic!("S1AB_RESOLUTION_MM={raw:?} does not parse as a float: {e}")
+            });
+            assert!(
+                v.is_finite() && v > 0.0,
+                "S1AB_RESOLUTION_MM={raw:?} must be a positive finite cell size"
+            );
+            v
+        }
+        _ => DEFAULT_SIM_RESOLUTION_MM,
+    }
 }
 
 /// Effective dispatch mode for this process, as a short greppable tag.
@@ -139,13 +196,31 @@ fn tp_scope(id: ToolpathId) -> String {
     format!("tp{}", id.0)
 }
 
-fn sim_options() -> SimulationOptions {
+/// Whether the F-036b adaptive feed-modulation post-pass runs. `true` is the
+/// shipped `SimulationOptions` default and the value 0D was captured with;
+/// `S1AB_FEED_MODULATION=0` turns it off.
+///
+/// It is a knob because that post-pass is the **only** code path by which a
+/// runtime can move while the emitted geometry is bit-identical: it reads the
+/// measured per-move engagement, re-solves the feeds, and swaps the modulated
+/// toolpath into `self.results` for the emitter and the next ladder round to
+/// read. Turning it off is therefore the control that separates "swept changed
+/// the path" from "swept changed the engagement the modulator was fed".
+fn feed_modulation_enabled() -> bool {
+    match std::env::var("S1AB_FEED_MODULATION") {
+        Ok(raw) => !matches!(raw.trim(), "0" | "false" | "off" | "no"),
+        Err(_) => true,
+    }
+}
+
+fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
-        resolution: SIM_RESOLUTION_MM,
+        resolution,
         metrics_enabled: true,
         // Explicit: auto-resolution would silently override the cell size the
         // whole A/B is pinned to.
         auto_resolution: false,
+        adaptive_feed_modulation: feed_modulation_enabled(),
         ..Default::default()
     }
 }
@@ -156,19 +231,33 @@ fn swept_wanaka_ab_s1() {
     let mode = mode_tag();
     let raw_env = std::env::var("RS_CAM_STAMP_DISPATCH").unwrap_or_else(|_| "<unset>".to_owned());
 
-    let path = project_path();
+    let (path, is_default_project) = project_path();
+    let resolution = sim_resolution_mm();
     if !path.exists() {
         println!("SKIPPED: project not found at {}", path.display());
         return;
     }
-    if !PathBuf::from(REQUIRED_MODEL).exists() {
+    if is_default_project && !PathBuf::from(REQUIRED_MODEL).exists() {
         println!("SKIPPED: model referenced by the project not found at {REQUIRED_MODEL}");
         return;
     }
 
-    println!("== S1 swept A/B — wanaka200 — mode={mode} (RS_CAM_STAMP_DISPATCH={raw_env}) ==");
+    println!(
+        "== S1 swept A/B — {} — mode={mode} (RS_CAM_STAMP_DISPATCH={raw_env}) ==",
+        path.display()
+    );
     println!("S1AB mode={mode} scope=run metric=env_raw text=\"{raw_env}\"");
-    num(mode, "run", "requested_resolution_mm", SIM_RESOLUTION_MM);
+    println!(
+        "S1AB mode={mode} scope=run metric=project text=\"{}\"",
+        path.display()
+    );
+    num(mode, "run", "requested_resolution_mm", resolution);
+    int(
+        mode,
+        "run",
+        "adaptive_feed_modulation",
+        usize::from(feed_modulation_enabled()),
+    );
 
     let t_load = Instant::now();
     let mut s = match ProjectSession::load(&path) {
@@ -242,7 +331,7 @@ fn swept_wanaka_ab_s1() {
             break;
         }
         let t_round = Instant::now();
-        if let Err(e) = s.run_simulation(&sim_options(), &cancel) {
+        if let Err(e) = s.run_simulation(&sim_options(resolution), &cancel) {
             println!(
                 "S1AB mode={mode} scope=project metric=ladder_sim_error \
                  round={ladder_rounds} text=\"{e}\""
@@ -286,7 +375,7 @@ fn swept_wanaka_ab_s1() {
 
     // ── Final simulation over the complete chain ──
     let t_sim = Instant::now();
-    if let Err(e) = s.run_simulation(&sim_options(), &cancel) {
+    if let Err(e) = s.run_simulation(&sim_options(resolution), &cancel) {
         println!("S1AB mode={mode} scope=project metric=final_sim_error text=\"{e}\"");
         return;
     }
