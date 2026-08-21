@@ -619,10 +619,12 @@ pub enum McpRequestKind {
     RemoveToolpath {
         index: usize,
     },
+    /// Add a tool from a full `add_tool` request. Carries the whole
+    /// param struct because the per-type geometry (V-bit included
+    /// angle, taper half angle, bull-nose corner radius) is part of the
+    /// request, not something the handler may invent.
     AddTool {
-        name: String,
-        tool_type: String,
-        diameter: f64,
+        spec: rs_cam_mcp::server::AddToolParam,
     },
     /// Import a snapshot of a catalog tool into the project. Identified
     /// by catalog name + 0-based index from `ListToolLibrary`.
@@ -633,10 +635,20 @@ pub enum McpRequestKind {
     RemoveTool {
         index: usize,
     },
+    /// Set a setup's in-plane Z rotation (0 / 90 / 180 / 270 degrees).
+    SetSetupRotation {
+        setup_index: usize,
+        z_rotation: String,
+    },
+    /// Set stock geometry / material / rigidity. All-optional patch —
+    /// see `rs_cam_mcp::server::SetStockConfigParam`.
     SetStockConfig {
-        x: f64,
-        y: f64,
-        z: f64,
+        spec: rs_cam_mcp::server::SetStockConfigParam,
+    },
+    /// Write machine kinematics (per-axis accel + junction deviation)
+    /// without going through a GRBL `$$` dump.
+    SetMachineKinematics {
+        spec: rs_cam_mcp::server::SetMachineKinematicsParam,
     },
     SetBoundaryConfig {
         index: usize,

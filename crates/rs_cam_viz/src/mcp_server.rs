@@ -26,10 +26,11 @@ use rs_cam_mcp::server::{
     OperationSchemaParam, OptimizeToolpathInput, RemoveAlignmentPinParam, RemoveToolParam,
     RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
-    SetRestAnalysisConfigParam, SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam,
-    SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathParamInput,
-    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
-    SimulationParam, json_str,
+    SetMachineKinematicsParam, SetRestAnalysisConfigParam, SetSetupRotationParam,
+    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
+    SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathParamInput, SetUiViewParam,
+    SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -746,6 +747,26 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "set_setup_rotation",
+        description = "Set a setup's in-plane rotation of the stock about Z: \"0\", \"90\", \"180\" or \"270\" degrees. This is the second half of setup orientation alongside `set_setup_face` — it describes how the physical board is turned on the bed between setups, and it moves the emission frame for every toolpath in the setup. A 90-degree rotation does NOT map a non-square stock onto itself; for a diagonal alignment-pin pair on a rectangular board the in-plane mapping is usually 180. Invalidates the setup's toolpaths — regenerate to apply."
+    )]
+    async fn set_setup_rotation(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(SetSetupRotationParam {
+            setup_index,
+            z_rotation,
+        }): Parameters<SetSetupRotationParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetSetupRotation {
+                setup_index,
+                z_rotation,
+            })
+            .await,
+        )
+    }
+
+    #[tool(
         name = "move_toolpath_to_setup",
         description = "Move a toolpath from its current setup to a different setup. Both indices are 0-based."
     )]
@@ -888,7 +909,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_toolpath_param",
-        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type. Marks the toolpath as stale — regenerate to apply."
+        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. Marks the toolpath as stale — regenerate to apply."
     )]
     async fn set_toolpath_param(
         &self,
@@ -910,7 +931,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_tool_param",
-        description = "Set a tool parameter (e.g. diameter, flute_count, stickout, corner_radius). Invalidates all toolpaths using this tool — regenerate to apply."
+        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, shank_length, holder_diameter. Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
     )]
     async fn set_tool_param(
         &self,
@@ -960,7 +981,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_toolpath",
-        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve."
+        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
     )]
     async fn add_toolpath(
         &self,
@@ -1000,29 +1021,18 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_tool",
-        description = "Add a new tool to the project. Supported types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. Returns the new tool index."
+        description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), shank_length (20), stickout (45), holder_diameter (25), tool_number. Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
     )]
     async fn add_tool(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolParam {
-            name,
-            tool_type,
-            diameter,
-        }): Parameters<AddToolParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<AddToolParam>,
     ) -> String {
-        Self::format_result(
-            self.send_request(McpRequestKind::AddTool {
-                name,
-                tool_type,
-                diameter,
-            })
-            .await,
-        )
+        Self::format_result(self.send_request(McpRequestKind::AddTool { spec }).await)
     }
 
     #[tool(
         name = "add_tool_from_library",
-        description = "Import a tool from a library catalog into the loaded project as a snapshot (the project keeps its own copy, so later catalog edits don't change it). Identify the tool by `catalog` + `index` from `list_tool_library`. Returns the new project tool index for use with `add_toolpath`."
+        description = "Import a tool from a library catalog into the loaded project as a snapshot (the project keeps its own copy, so later catalog edits don't change it). Identify the tool by `catalog` + `index` from `list_tool_library`. If the catalog's `tool_number` is already used in this project it is reallocated to the next free number and the reply reports both — duplicate tool numbers collapse M6 tool changes on export. Returns the new project tool index for use with `add_toolpath`."
     )]
     async fn add_tool_from_library(
         &self,
@@ -1053,14 +1063,14 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_stock_config",
-        description = "Set stock dimensions (width x depth x height in mm). Invalidates simulation — re-run to update."
+        description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed); workholding_rigidity (\"low\"/\"medium\"/\"high\"). SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
     )]
     async fn set_stock_config(
         &self,
-        Parameters(SetStockConfigParam { x, y, z }): Parameters<SetStockConfigParam>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<SetStockConfigParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SetStockConfig { x, y, z })
+            self.send_request(McpRequestKind::SetStockConfig { spec })
                 .await,
         )
     }
@@ -1561,6 +1571,22 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::ImportMachineSettings { dump })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_machine_kinematics",
+        description = "Set the live machine profile's kinematics directly, without a GRBL dump: per-axis acceleration (acceleration_x/y/z_mm_s2, GRBL $120/$121/$122), junction_deviation_mm ($11), and optionally the isotropic fallback acceleration_mm_s2, max_junction_velocity_mm_min and jerk_mm_s3. Every field is optional and omitted fields keep their current value; when all three axis accelerations are given, the isotropic scalar follows their mean unless you pass one. Acceleration is not cosmetic — it drives the cycle-time integrator and the parallel-vs-spiral verdict from `recommend_clearing_strategy`. Breaks any machine-library link (the values become inline). For a raw `$$` dump use `import_machine_settings` instead. Verify with inspect_machine."
+    )]
+    async fn set_machine_kinematics(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<
+            SetMachineKinematicsParam,
+        >,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SetMachineKinematics { spec })
                 .await,
         )
     }
