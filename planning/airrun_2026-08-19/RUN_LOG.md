@@ -269,20 +269,91 @@ a separate, unverified finding** — it means a profile cut on a flipped setup m
 be offset to the wrong side. Worth its own investigation before any two-sided job
 relies on a profile.
 
-## G-SAFEZ-LOCAL — Setup 2's clearance plane sits 23 mm above the stock
+## G-SAFEZ-LOCAL — the retract plane is floored in the wrong frame
 
-`effective_safe_z` floors safe_z at `local_stock_bbox.max.z + clearance` = 25 + 5
-= **30** (`session/eval_context.rs:40-44, 100`), using the **local zero-rooted**
-stock top, while Setup 2 emits in **world** Z where the stock top is **+7**. The
-depth ladder therefore starts at `30 − 4.2 = 25.8` and burns five full levels
-(25.8, 21.6, 17.4, 13.2, 9.0) entirely in air before the first level that touches
-material at 6.648.
+> **FIXED 2026-08-21.** One line in `session/eval_context.rs:100`: the floor now
+> reads `heights_stock_bbox.max.z` (the emission frame) instead of
+> `local_stock_bbox.max.z`. Sentried by
+> `crates/rs_cam_core/tests/safe_z_emission_frame_g_safez_local.rs` (3 arms).
+> The wanaka200 rapid saving has NOT been re-measured live — that needs the GUI.
 
-That is the mechanism behind toolpath 5's **42,667 mm of rapid** and **1,626
-retract round-trips**, and a large share of the project's 57% air-cut reading.
-The doc comment calls this floor "conservatively-higher … always safe"; here it
-is not merely conservative. Same frame confusion as G-SIM-IDENTITY-FRAME, in a
-third place.
+`effective_safe_z` floored safe_z at `local_stock_bbox.max.z + clearance` using
+the **local zero-rooted** stock top, while identity setups emit in **world** Z.
+On wanaka200 (`stock.z = 25`, `origin_z = -20`, `post.safe_z = 10`) that is
+`max(10, 25 + 5)` = **30** against a world stock top of **+5** — the correct
+value is `max(10, 5 + 5)` = **10**.
+
+**The original write-up understated this in one direction and overstated it in
+the other. Both corrections matter more than the row did.**
+
+**1. It was not only waste — it was a rapid through material.** The local top is
+the stock *thickness*; the world top is `origin_z + thickness`. So for
+`origin_z > SAFE_Z_CLEARANCE_MM` the floor lands **inside** the stock. Measured
+by the red sentry: 12 mm stock at `origin_z = +20` has a world top of 32 and was
+floored at **17** — a retract plane 15 mm below the surface. `SetupEvalContext`'s
+own doc called this "a conservatively-higher floor (never below the world stock
+top for identity setups) … always safe". That claim is false above
+`origin_z = 5`, and the doc has been rewritten to say so.
+
+**2. It does NOT explain the five air levels, and that half of the claim is
+withdrawn.** `HeightsConfig::resolve` (`compute/config.rs:1382-1393`) takes
+`top_z` from `ctx.stock_top_z`, not `ctx.safe_z`; only `retract_z`, `feed_z` and
+`clearance_z` derive from safe_z. So this fix moves the retract plane (30 → 10),
+the feed plane (28 → 8) and the clearance plane (40 → 20) and provably leaves the
+depth ladder where it was. The `25.8 / 21.6 / 17.4 / 13.2 / 9.0` ladder and
+toolpath 5's 42,667 mm of rapid are therefore **not** attributed here. Those
+numbers came from `narrate_toolpath`, whose Z ladder CLAUDE.md flags as
+**nominal, not achieved** — the same reading error that produced the retracted
+G-WANAKA-FLIP. Re-opened as its own row (**G-AIRLADDER**, below) to be measured
+off emitted motion before anything is claimed about it.
+
+**Why this is a leftover rather than a design choice.** The heights/setup-frame
+audit of 2026-06-12 (finding 4) already moved `OpContext::stock_bbox` onto
+`heights_stock_bbox` for exactly this reason — `session/compute.rs` sets
+`emission_stock_bbox = ctx.heights_stock_bbox` and its comment says why.
+`safe_z` was not moved with it, so a single `HeightContext` anchored its depth
+ladder in the emission frame and floored its retract plane in the local one. The
+export path is not a second chance at this: `0bb38a2f` pins
+`identity.z.abs() < 1e-9`, so the datum shift is XY-only and the generated
+world-frame Z is what ships.
+
+**Blast radius: one test, fully attributed.**
+`crease_own_region_pr6b::production_unified_finish_output_is_byte_identical`.
+Its fixture is 9 mm stock at `origin_z = -9.0`, world top Z0, and its own
+`post.safe_z = 10` already cleared it — the local floor had been overriding that
+with `9 + 5 = 14`. Both arms were probed for their distinct-Z multiset before and
+after: **identical except the single retract plane, 14.000 → 10.000 mm**, move
+counts unchanged (1464 taper, 972 ball). Pins refreshed with that recorded. The
+in-loop `assert_eq!` was also converted to accumulate-then-assert, because the
+test's own comment records that aborting on the taper arm had left the ball pin
+unevaluated for an unknown number of commits.
+
+Non-identity setups cannot move: `heights_stock_bbox == local_stock_bbox` for
+them, pinned by the sentry's third arm. The simulator's dexel grid keeps its
+local rooting through `SetupEvalContext::sim_local_stock_bbox`, so the actual
+F-024 concern is untouched.
+
+## G-AIRLADDER — five depth levels reported above the material (UNVERIFIED)
+
+Split out of G-SAFEZ-LOCAL 2026-08-21 when the fix for that row was shown not to
+move `top_z`. The original observation was a `narrate_toolpath` Z ladder on
+wanaka200 toolpath 5 reading `25.8 / 21.6 / 17.4 / 13.2 / 9.0` with first
+material contact at `6.648`, alongside 42,667 mm of rapid and 1,626 retract
+round-trips.
+
+**Nothing here is confirmed.** Two candidate readings have to be separated before
+this is a defect at all:
+
+- Narration's ladder is **nominal**. `summarize_z_levels` prefers span payload
+  `z_level` over emitted moves (`narrate.rs:711-745`), so the ladder may never
+  have been a statement about motion.
+- A level above the *model* but inside the *stock* is not air — roughing must
+  clear the stock standing above the model. Only levels above the **stock top**
+  are wasted, and `top_z` resolves from `stock_top_z`, which has been in the
+  emission frame since the 2026-06-12 audit.
+
+First action: dump distinct cutting-Z from the emitted G-code against the world
+stock top, not from narration.
 
 ## Renderer defects the frame bug was sitting behind
 
@@ -982,8 +1053,10 @@ Kept because the process failure is more transferable than the bug.
    wrong physical place. Needs a frame decision for `selected_holes`.
 4. **G-PROFILE-FLIP** — a Bottom flip appears to invert outside/inside profile
    offset. Unverified beyond one measurement.
-5. **G-SAFEZ-LOCAL** — safe-Z uses the local zero-rooted stock top while emitting
-   in world Z; five air levels and ~42 m of rapid on one op.
+5. ~~**G-SAFEZ-LOCAL**~~ — **FIXED 2026-08-21.** Floor now reads the emission
+   frame. Was also a *safety* defect, not just waste: `origin_z > 5` put the
+   retract plane inside the stock. The "five air levels / ~42 m of rapid" half
+   was mis-attributed and is now **G-AIRLADDER**, unverified.
 6. Engine-side refusals: ramp/helix entry on drill-family ops
    (G-WANAKA-DRILL-RAMP), and `peck_depth >= depth` (G-WANAKA-PECK).
 7. Renderer: origin, panel mirror convention, anti-aliasing, labels.

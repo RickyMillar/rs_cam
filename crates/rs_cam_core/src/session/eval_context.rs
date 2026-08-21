@@ -37,11 +37,22 @@ use super::{ProjectSession, SetupData};
 ///   (F-028) and `== local_stock_bbox` for non-identity setups. This is
 ///   the frame `HeightContext::stock_top_z` and the dexel grid must
 ///   match for the engagement metric to read correctly (F-024).
-/// - `safe_z` is `effective_safe_z(post.safe_z, local_stock_bbox.max.z)`.
-///   Per F-024 the floor reads from the **local** bbox even for identity
-///   setups — a conservatively-higher floor (never below the world stock
-///   top for identity setups, never below the local stock top for
-///   non-identity setups) is always safe.
+/// - `safe_z` is `effective_safe_z(post.safe_z, heights_stock_bbox.max.z)`
+///   — the **emission** frame, the same one `stock_top_z` above uses.
+///   A retract plane and the depth ladder it retracts from have to be
+///   measured against the same stock top.
+///
+///   This read used to be `local_stock_bbox.max.z`, justified as
+///   "conservatively-higher … always safe". It is neither, because the
+///   local top is the stock *thickness* while the world top is
+///   `origin_z + thickness`: for `origin_z > SAFE_Z_CLEARANCE_MM` the
+///   floor lands **inside** the stock (12 mm stock at `origin_z = 20`
+///   floored rapids at Z17 under a world top of 32), and for
+///   `origin_z < 0` — the documented 2D convention — it sat needlessly
+///   high, which on wanaka200 put five whole depth levels in air ahead
+///   of the first cutting one. Non-identity setups are unaffected:
+///   `heights_stock_bbox == local_stock_bbox` for them. Sentried by
+///   `safe_z_emission_frame_g_safez_local.rs` (G-SAFEZ-LOCAL).
 #[derive(Clone)]
 pub struct SetupEvalContext {
     /// World-frame stock bbox. Honors origin + `auto_from_model`
@@ -64,8 +75,9 @@ pub struct SetupEvalContext {
     /// grid live in the same frame (F-024 + F-028).
     pub heights_stock_bbox: BoundingBox3,
 
-    /// Effective safe_z. Floored at `local_stock_bbox.max.z +
-    /// SAFE_Z_CLEARANCE_MM` (F-024).
+    /// Effective safe_z. Floored at `heights_stock_bbox.max.z +
+    /// SAFE_Z_CLEARANCE_MM` — the frame the toolpath emits in
+    /// (G-SAFEZ-LOCAL).
     pub safe_z: f64,
 
     /// Setup orientation. Kept here so consumers don't have to plumb
@@ -97,7 +109,7 @@ impl SetupEvalContext {
         } else {
             world_stock_bbox
         };
-        let safe_z = effective_safe_z(session.post_config().safe_z, local_stock_bbox.max.z);
+        let safe_z = effective_safe_z(session.post_config().safe_z, heights_stock_bbox.max.z);
         SetupEvalContext {
             world_stock_bbox,
             local_stock_bbox,
