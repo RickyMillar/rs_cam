@@ -778,7 +778,32 @@ pub(crate) fn generate_alignment_pin_drill(
     }
     let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
     // Stock alignment pins plus any extra targets picked from the model.
-    let mut holes = cfg.holes.clone();
+    //
+    // G-PINDRILL-FRAME (2026-08-21): `cfg.holes` snapshots
+    // `StockConfig::alignment_pins`, which are dimensioned STOCK-RELATIVE
+    // — X0Y0 at the stock's min corner, the frame `gcode`'s export datum
+    // converges on because it is what physically registers a flip. The
+    // toolpath, though, emits in the SETUP frame: world for an identity
+    // setup, zero-rooted local otherwise. Used verbatim, an identity setup
+    // with a non-zero stock origin drilled its registration pins off by
+    // exactly that origin (240x250 stock at origin (-20,-25): the exported
+    // pin landed at 22.5/27.5 where the stock says 2.5/2.5).
+    //
+    // `ctx.stock_bbox` IS the stock expressed in the emission frame, so its
+    // min corner is where stock-relative (0,0) sits and one translation
+    // serves both cases: world for identity, a no-op for non-identity
+    // (min == (0,0)), which is why non-identity was accidentally correct.
+    let stock_origin = ctx.stock_bbox.min;
+    let mut holes: Vec<[f64; 2]> = cfg
+        .holes
+        .iter()
+        .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
+        .collect();
+    // NOT translated: `selected_holes` are raw model/DXF coordinates (the
+    // viz picker maps `drill_targets` straight through), i.e. already the
+    // world frame. Correct as-is for identity setups; on a non-identity
+    // setup they are off by the setup transform, which is a SEPARATE and
+    // still-open defect shared with the `Drill` family — see G-DRILLPICK-FRAME.
     if let Some(selected) = &cfg.selected_holes {
         holes.extend_from_slice(selected);
     }
