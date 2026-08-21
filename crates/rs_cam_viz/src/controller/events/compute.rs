@@ -652,6 +652,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
 
         let submit_outcome = self.compute.submit_toolpath(ComputeRequest {
+            setup_transform: ctx.local_to_global,
             toolpath_id: tp_id,
             toolpath_index: tp_idx,
             toolpath_name,

@@ -173,6 +173,14 @@ struct ResolvedGenInputs {
     /// — never re-derived just for this field. `None` for every other
     /// boundary source (or when the boundary is disabled).
     pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
+    /// G-DRILLPICK-FRAME: the setup's local<->global transform, hoisted off
+    /// the `SetupEvalContext` alongside `emission_stock_bbox` above because
+    /// `generate_toolpath` needs it and the context is scoped to this
+    /// resolver. `None` == identity setup == no-op. Drill picks are the one
+    /// input class the geometry pipeline cannot pre-transform: meshes and
+    /// polygons are transformed on the way in, but `selected_holes` arrive
+    /// as raw model coordinates on the operation config.
+    setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
 }
 
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
@@ -1295,6 +1303,7 @@ impl ProjectSession {
         };
 
         Ok(ResolvedGenInputs {
+            setup_transform: ctx.local_to_global,
             tool,
             mesh,
             polygons,
@@ -1369,6 +1378,7 @@ impl ProjectSession {
         }
 
         let ResolvedGenInputs {
+            setup_transform,
             tool,
             mesh,
             polygons,
@@ -1462,6 +1472,7 @@ impl ProjectSession {
             pre_boundary_regions.as_deref(),
             Some(&tc.rest_analysis),
             link_kinematics,
+            setup_transform.as_ref(),
         );
 
         match tp_result {
@@ -1639,6 +1650,7 @@ impl ProjectSession {
                     &tool,
                     &emission_stock_bbox,
                     self.stock.material.clone(),
+                    setup_transform.as_ref(),
                 );
                 let annotated_arc = Arc::new(annotated);
                 let op_data = match drill_op {
