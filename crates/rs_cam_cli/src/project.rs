@@ -275,9 +275,23 @@ pub fn run_project_command(
         apply_suggested_feeds_to_session(&mut session)?;
     }
 
-    // 3. Generate all toolpaths
+    // 3. Generate all toolpaths — a manual pass instead of
+    // `generate_all` so ops that refuse are collected for the ladder
+    // below. `FromRemainingStock` ops fail hard here by design (F.4:
+    // no prior simulated stock yet — never fall back to fresh stock).
     let cancel = AtomicBool::new(false);
-    session.generate_all(&combined_skip, &cancel)?;
+    let mut pending: Vec<usize> = Vec::new();
+    for idx in 0..session.toolpath_count() {
+        let Some(tc) = session.get_toolpath_config(idx) else {
+            continue;
+        };
+        if !tc.enabled || combined_skip.contains(&tc.id) {
+            continue;
+        }
+        if session.generate_toolpath(idx, &cancel).is_err() {
+            pending.push(idx);
+        }
+    }
 
     // 4. Run simulation
     let sim_opts = SimulationOptions {
@@ -293,6 +307,44 @@ pub fn run_project_command(
         modulation_aggressiveness,
     };
     session.run_simulation(&sim_opts, &cancel)?;
+
+    // 4b. F.4 fixpoint ladder, mirroring MCP `generate_all`'s default:
+    // each simulation can unlock `FromRemainingStock` ops that were
+    // waiting on simulated prior stock, whose fresh toolpaths then need
+    // to be in the simulation themselves. Repeat until nothing new
+    // becomes generatable. Without this a flat pass silently exports a
+    // project minus its rest ops (wanaka200 loses 4 of 8).
+    let ladder_cap = session.toolpath_count() + 2;
+    let mut ladder_round = 0usize;
+    while !pending.is_empty() {
+        ladder_round += 1;
+        if ladder_round > ladder_cap {
+            tracing::warn!(
+                still_pending = ?pending,
+                "fixpoint ladder did not converge; exporting without these toolpaths"
+            );
+            break;
+        }
+        let before = pending.len();
+        pending.retain(|&i| session.generate_toolpath(i, &cancel).is_err());
+        if pending.len() >= before {
+            // Stalled: the remaining ops fail for reasons another
+            // simulation cannot fix (real errors). Their statuses are
+            // reported in the diagnostics below; do not loop on them.
+            tracing::warn!(
+                still_pending = ?pending,
+                "toolpaths still refusing after simulation; not a ladder dependency"
+            );
+            break;
+        }
+        tracing::info!(
+            round = ladder_round,
+            resolved = before - pending.len(),
+            remaining = pending.len(),
+            "fixpoint ladder round"
+        );
+        session.run_simulation(&sim_opts, &cancel)?;
+    }
 
     // 5. Run collision checks per toolpath and collect results
     let tp_count = session.toolpath_count();
