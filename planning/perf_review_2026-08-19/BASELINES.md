@@ -1067,6 +1067,46 @@ Full detail: `DELTA_w5b_f3_corpus.md`, harness `af8c1c48`. Headlines:
   detector-population check hasn't been done, so **do not re-cut the corpus
   baseline** until it is.
 
+## W5B-F4 — IMPLEMENTED (user-approved, 2026-08-21)
+
+`bfaf213d` (bands: 3D finish 30→45, ProjectCurve 97→60, GUI/MCP banner
+20→40 interim; 2.5D/2D 40 and drill `None` unchanged; CLI verified at 40) +
+`97166645` (narration marker reads the op's own band, flat 50 demoted to
+fallback). **No golden moved** — the package's prediction that the 3D
+golden's folded air-cut action survives on Waterline 54.3 held exactly.
+Package gap for the record: its inventory covered shipped consumers but not
+the five tests pinning the old bars, two of which were encoding retired
+readings as ground truth (a ProjectCurve at 92.1% asserted "normal", a
+DropCutter at 40% asserted "sloppy" — 40 is inside the measured defect-free
+cluster). `AI_MACHINIST_ANALYSIS_REFERENCE.md` also carried the 97/30 pair
+outside the inventory; fixed.
+
+## Post-wave sentries + two findings (2026-08-21, second lane)
+
+`ed31d789`: dynamic census sentry `retract_intent_move_type_census_w6` — 24
+op configs × 2 dressup profiles, 242,790 moves, 812 Retract-tagged, **zero**
+Retract-tagged Linear feeds; the stale `compute.rs` feed-modulation-default
+comment fixed in the same commit. CLAUDE.md mechanism sentence corrected
+`bed036fe`.
+
+**Finding: drill intent tags are erased downstream.** The census showed
+Drill/AlignmentPinDrill emitting zero Retract-tagged moves although
+`drill.rs` tags four sites — in the STORED toolpath every drill rapid reads
+`intent = Unknown`, and peck re-entry rapids land at full safe Z rather than
+`to_z + clearance`. Something rebuilds drill rapids and drops both the tag
+and, possibly, cheaper re-entry heights. Open follow-up (cycle-time smell on
+peck drilling); not chased.
+
+**Ledger #15 — the C9 bar was calibrated in a debug build.** `0c5fbaea`
+landed the approved median-of-3, which collapsed the variance and exposed
+the real shape: debug median **12.9×** (reproducing the landing commit's
+seconds-scale timings), release median **~4.3×** — the linear reference arm
+vectorises in release, the index's tree descent does not. The unmodified
+test already failed 4 of 5 release runs. The index is NOT regressed; the 5×
+release claim was never true. The test currently fails deterministically in
+release pending the user's bar decision (recommended: profile-aware ≥4×
+release / ≥10× debug).
+
 ## Ledger entries 12–14 — the campaign's own claims, refuted
 
 The first eleven were review prescriptions. These three are claims in this

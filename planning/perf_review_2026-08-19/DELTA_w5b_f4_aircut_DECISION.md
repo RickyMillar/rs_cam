@@ -586,3 +586,128 @@ cargo test -p rs_cam_core --release --test air_cut_family_calibration_w5bf4 -- -
 RS_CAM_STAMP_DISPATCH=whole_path \
   cargo test -p rs_cam_core --release --test air_cut_family_calibration_w5bf4 -- --nocapture
 ```
+
+---
+
+## 9. IMPLEMENTATION NOTES — landed 2026-08-21
+
+The user approved the package **in full**. What follows is the record of
+what the proposal met when it hit the code: what the package had right, what
+it had missed, and every number that moved.
+
+### 9.a What landed, site by site
+
+| # | Site | file | old → new | commit |
+|---|---|---|---|---|
+| P1 | 3D finish band | `compute/catalog.rs` | 30.0 → **45.0** | 1 |
+| P2 | `ProjectCurve` band | `compute/catalog.rs` | 97.0 → **60.0** | 1 |
+| P3/P4/P5 | 2.5D clearing / 2D contour / drill | `compute/catalog.rs` | unchanged (40 / 40 / `None`) | — |
+| P6a | GUI diagnostics banner | `viz/ui/sim_diagnostics.rs` | 20.0 → **40.0** (interim constant) | 1 |
+| P6b | MCP project verdict | `viz/controller/events/compute.rs` | 20.0 → **40.0** (interim constant) | 1 |
+| P7 | CLI `project` verdict | `cli/src/project.rs` | **40.0 — verified, unchanged** | — |
+| P8 | narration ⚠ marker | `core/src/narrate.rs` | flat 50.0 → **the op's own band**, 50.0 fallback | 2 |
+| P9 | per-sample `< 0.02` | `simulation_cut.rs` | unchanged | — |
+
+The package's §1 inventory was **accurate on every shipped site**: all eight
+constants were found where it said they were, carrying the values it said
+they carried. `cli/project.rs`'s 40.0 was verified in place and not touched.
+
+### 9.b Where the package's inventory was INCOMPLETE — one gap, five tests
+
+§1 inventoried *shipped* consumers. It did **not** inventory the tests that
+pin those constants, and five of them do. All five broke on the threshold
+move and had to be re-rooted:
+
+| Test | Where | Why it broke | What it became |
+|---|---|---|---|
+| `air_cut_threshold_permissive_for_project_curve` | `catalog.rs` (unit) | asserted `t >= 95.0` | now asserts `45 < t <= 70` — permissive but **reachable**; a band near 100 is the dead gate §5.2 argues against |
+| `air_cut_threshold_strict_for_finish_ops` | `catalog.rs` (unit) | asserted `t <= 30.0` | renamed `..._band_for_finish_ops`, asserts `43..=60` — must clear the measured defect-free cluster AND still catch SteepShallow 78 / RadialFinish 82 |
+| `air_cut_offenders_silent_on_sparse_project_curve` | `session/compute.rs` (unit) | fixture read **92.1** — the pre-swept artifact the old 97 was fitted to; under 60 it now offends | fixture re-rooted on the measured post-flip reading, **15.97** (§3.d wanaka tp3) |
+| `air_cut_offenders_warns_on_drop_cutter_above_threshold` | `session/compute.rs` (unit) | fixture read **40.0** against the 30 band; 40 is *inside* the measured defect-free cluster (34.3–42.5), so the test was pinning a **false alarm** | fixture → **55.0**, matching the real offenders (3D golden waterline 54.26, wanaka tp9 pencil 55.83) |
+| `air_cut_offenders_isolates_bad_tp_in_mixed_project` | `session/compute.rs` (unit) | ProjectCurve arm read **92.0**, same artifact | ProjectCurve arm → **15.97**; the Adaptive3d 60.0 signal arm untouched |
+
+The third and fourth rows are the substantive ones. **Two shipped unit tests
+were encoding the retired instrument's readings as ground truth** — one
+asserting that a 92 % project-curve is normal, one asserting that a 40 %
+drop-cutter is sloppy. Post-flip the repo cannot produce the first and calls
+the second defect-free. Neither was listed anywhere in the package, and
+neither would have been found by reading the shipped sites alone.
+
+### 9.c Golden fields that moved: **NONE**
+
+The package flagged (§5.1) that the 3D golden's `triage_action_count` might
+move because `[DropCutter]` at 34.283 crosses from over-30 to under-45. It
+predicted the count would **stay at 3** because `[Waterline]` at 54.261 keeps
+the single folded air-cut action alive. **That prediction held exactly.**
+
+Both goldens pass unregenerated:
+
+* `perf_golden_sim_metrics.json` — `triage_action_count` **1**, unchanged.
+* `perf_golden_sim_metrics_3d.json` — `triage_action_count` **3**, unchanged;
+  `project_air_cut_pct_of_total_runtime` 51.383… unchanged.
+
+`UPDATE_PERF_GOLDENS=1` was **not run and was not needed**. This is the
+expected shape for a threshold change: thresholds are read *downstream* of
+every number a golden pins, so a bar moving can only ever move a golden's
+*verdict-shaped* fields (`triage_*_count`), never its measurements. Had a
+field moved, it would have been classified a **threshold change, not an
+instrument change** — the measured quantity is bit-identical either way.
+
+### 9.d Doc-comment drift repaired alongside
+
+Six prose citations named a shipped constant that this change moved. Left
+alone they would each have become a citation to a retired value — the
+`feedback_instrument_integrity` failure mode:
+
+* `simulation_cut.rs` ×2 (the LH-1 denominator table's `>20%` rule; "the GUI's 20%")
+* `session/mod.rs` (`air_cut_pct_of_total_runtime`'s doc: "the GUI's 20% banner")
+* `sim_measurability.rs` (module header: "the GUI's 20% banner … the 30% finish band")
+* `narrate.rs` (the D7 comment's "the GUI's 20%")
+* `tests/air_cut_family_calibration_w5bf4.rs` + `tests/narration_denominator_and_hints_d7.rs` headers
+
+`CLAUDE.md`'s per-operation paragraph and `AI_MACHINIST_ANALYSIS_REFERENCE.md`
+§"Air cut ratio has no single fixed band" both carried the 97/30 pair and
+were updated to 60/45. **`AI_MACHINIST_ANALYSIS_REFERENCE.md` is not in the
+package's inventory** — it was found by grep, and it is the reference an
+agent reads when analysing a job.
+
+### 9.e P8: what the narration change actually is
+
+`AIR_CUT_WARNING_PERCENT` is renamed `AIR_CUT_WARNING_FALLBACK_PERCENT` and
+keeps its 50.0, but it is **no longer the marker's threshold** — it is what
+the marker falls back to when the caller names no `operation_kind`, or names
+one whose band is `None`. The marker itself now reads
+`context.operation_kind.and_then(OperationType::air_cut_high_threshold_pct)`.
+
+Three new tests pin it, and the first is the one worth keeping:
+
+* `the_air_cut_marker_reads_the_ops_own_band` — **one trace at 44 % of total
+  runtime, two op kinds, opposite markers**: ⚠ on a `Pocket` (band 40, the
+  gate fires) and ℹ on a `Scallop` (band 45, no gate fires). A flat 50 called
+  both of them ℹ, which is precisely the disagreement D7 set out to remove
+  and did not.
+* `a_defect_free_finish_reading_does_not_warn` — 35 % on a `DropCutter`.
+* `a_caller_with_no_operation_kind_falls_back_to_the_flat_bar` — guards
+  against "fixing" the marker by disabling it.
+
+The package's ordering constraint (§5.7) was honoured: P1 landed in commit 1,
+P8 in commit 2. Against the old 30, P8 alone would have flipped wanaka tp8
+(35.71) and the 3D golden's `[DropCutter]` (34.28) from ℹ to ⚠ — it would
+have *added* warnings.
+
+### 9.f Observations recorded, not acted on
+
+* **`measurability_abstention_r8.rs:124`** calls 40 % "the widest shipped
+  band". It was already wrong before this change (`ProjectCurve` was 97) and
+  is still wrong after (it is 60, and the finish band is 45). The assertion
+  itself is about the *fixture's* value, not about a band, so it passes
+  either way; the comment is the only defect. Left alone as another lane's
+  file-in-flight risk was not worth a comment.
+* **`air_cut_family_calibration_w5bf4.rs:43`** says "No threshold is read or
+  asserted here", but `:224` does read `air_cut_high_threshold_pct` to build
+  the `fires` column. Pre-existing, harmless, unchanged — the harness's
+  printed `fires` column now reflects the new bars, which is what makes it
+  re-runnable evidence rather than a frozen table.
+* No test anywhere in the workspace hard-codes the project verdict **string**,
+  so the GUI/MCP 20 → 40 move broke nothing. `swept_wanaka_ab_s1.rs` prints
+  air-cut numbers as instrument output and asserts no verdict.
