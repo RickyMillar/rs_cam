@@ -380,6 +380,283 @@ them, pinned by the sentry's third arm. The simulator's dexel grid keeps its
 local rooting through `SetupEvalContext::sim_local_stock_bbox`, so the actual
 F-024 concern is untouched.
 
+## Live validation session 2026-08-22 — first GUI run of the TD3 fixes
+
+GUI launched on a release binary built at `6ca2c7f2` (all ten TD3 commits).
+Project `wanaka.toml` loaded; corrected state saved to
+`wanaka_keyed_2026-08-22.toml` — the original is never written.
+
+### Confirmed live
+
+- **G-SAFEZ-LOCAL.** Setup 2 (identity) emits its retract plane at **Z31.02**
+  against a stock top of Z25. Post-fix the floor is `max(safe_z 10, world_top
+  5 + 5) = 10` → Z30 in exported coordinates; PRE-fix it would have been
+  `max(10, local_top 25 + 5) = 30` → **Z50**. Every one of 555 retracts is
+  20 mm shorter, ~22 m of rapid removed from that setup, and fed motion above
+  the stock top is **2.6 mm on one level with zero lateral** (the residual
+  G-PECKROOT rung).
+- **G-EXPORT-DATUM.** Both per-setup files carry an identical
+  `X0 Y0 = stock min corner` datum line.
+- **Pin holes** land at exactly the configured stock-relative XY. NOTE this
+  exercises the NON-identity arm (the pin drill is in Setup 1, `face_up=Bottom`)
+  — i.e. the case that was already correct, so it proves the fix's no-op arm
+  held, not the identity case it repaired. This project cannot exercise that.
+
+### Found in the project itself
+
+- **Toolpath 6 was unrunnable**: `3D Rough 6` used remaining stock while being
+  the first enabled op in its setup, so it could never receive any — blocking
+  the whole Setup 2 chain (op 8 waited on it). Set to fresh stock; the chain
+  then generated in 2 rounds.
+- **Alignment pins could not have registered a flip** — see G-PINAUTO.
+
+### `crosses_standing_material` — and why resolution changed the answer
+
+At cell 0.25 the check fired on ONE toolpath. At **0.1** it fires on three:
+
+| toolpath | tool | % samples over | peak bite |
+|---|---|---|---|
+| 3D Finish 6 | R0.5 tapered ball | 18.8% | 2.39 mm |
+| Lakes | 20° V-bit | 19.9% | **8.10 mm** |
+| Rivers | 20° V-bit | 12.3% | **7.42 mm** |
+
+The two V-bit rows are new to the REPORT, not to the toolpaths — at 0.25 the
+grid could not see them. Provisional reading: Rivers/Lakes are variable-depth
+carves into essentially fresh stock, and the check's bar is 3x *that pass's own
+median bite*, which any varying-depth carve trips by construction. The finish's
+2.39 mm on a Ø1 tip is the row that matters. NOT concluded — see the method
+caveat below.
+
+**Root cause on the finish side**: `3D Rough 6` ran with
+`mill_shallow_areas: false` and `detect_flat_areas: false` on a river/lake
+relief that is mostly shallow. Its total cutting distance was **4,541 mm**
+where a Ø6 tool at 2.2 stepover needs ~4,500 mm *per Z level* to cover
+100x100 — i.e. roughly a third of one level. The rough was cutting the steep
+incisions and skipping the shallow majority, leaving a Ø1-tip finish to meet
+up to 3 mm of untouched material.
+
+### METHOD CAVEAT — three variables changed at once
+
+`mill_shallow_areas` false->true, finish Unified->drop_cutter, and resolution
+0.25->0.1 were applied in ONE step. Runtime fell 10,782 s -> 7,304 s, air-cut
+12.7% -> 7.9%, engagement 0.209 -> 0.309, finish blind fraction 45.6% -> 21.3%,
+collisions 0 throughout. **Those gains are real and none of them is
+attributed.** This violates the project's own "ISOLATE THE VARIABLE" rule and
+any causal claim from this run should be treated as unproven.
+
+### The pre-sim feed heuristic and the post-sim gate DISAGREE
+
+`set_toolpath_param` returned, unprompted:
+
+- toolpath 15 (tapered ball): `Feed 3000 mm/min is 6.3x recommendation (473) —
+  tool breakage risk pre-sim`
+- toolpaths 4 and 10 (Ø6 end mill): `Feed 4000 mm/min is 5.3x recommendation
+  (750) — tool breakage risk`
+
+After simulation those are **superseded** by `load.chipload.within`. So the
+project's every major cutting feed is 5-6x the LUT recommendation, and the
+post-sim gate reports it as within limits.
+
+**Do not read that `within` as an exoneration.** The chipload gate compares
+advance-per-tooth against a VENDOR BAND, and for this tapered ball a direct
+probe of `feeds::calculate` returns **no band at any depth sampled** (the tool
+is Ø1.0 tip, well inside the sub-Ø2 provisional regime). A gate with no band
+has nothing to exceed. This is the fourth occurrence on this programme of a
+gate reading healthy because its population is empty, and the first where it
+does so while a heuristic on the same surface says "tool breakage risk".
+
+Severity is also arguably mis-set: "tool breakage risk" ships as `severity:
+hint`.
+
+### Export still refused, correctly
+
+`chipload=NoVendorData` on the two 20° V-bit ops. Not an exceedance — an
+absence of data. Left unexported: accepting it is an operator decision, not
+an agent's.
+
+## G-TIMEEST — the operator-facing cycle time is 7x optimistic
+
+Found 2026-08-22 by the operator, at the machine: the GUI timeline read **25
+min** for a job the simulator measured at **10,781.7 s (~3 h)**.
+
+**The simulator is right and the GUI is wrong.** Both surfaces compute a
+"total time"; only one of them models the machine.
+
+`ui/sim_timeline.rs::estimate_times` and `ui/readiness.rs::estimate_total_time`
+both do exactly this:
+
+```rust
+let feed = tc.operation.feed_rate();
+let op_time = (result.stats.cutting_distance / feed) * 60.0;
+```
+
+Three omissions, all optimistic:
+
+1. **No acceleration.** This is the whole gap on this project.
+2. **No rapids at all** — `cutting_distance` only. This job emits 33,320 mm of
+   rapid that the estimate cannot see.
+3. **Nominal feed, not emitted feed** — `operation.feed_rate()`, so any feed
+   modulation or per-move optimisation is invisible.
+
+**Why acceleration dominates here, arithmetically.** The Unified Finish pass
+emits **147,223 moves over 58,318 mm — a 0.40 mm mean segment**. Reaching its
+commanded F3000 (50 mm/s) from rest at ~500 mm/s² needs `v²/2a` = **2.5 mm** of
+runway, roughly six times the segment length. The machine never approaches the
+commanded feed on that pass, so `distance / feed` is not an approximation of
+the truth; it is a different quantity.
+
+Cross-checked by hand against the exported G-code: cutting distance ÷ its own
+feed, summed per section, is **~26 min**, and ~30 min once rapids are added at
+a plausible rate — i.e. the naive formula reproduces the GUI's 25 min almost
+exactly, which confirms the diagnosis rather than merely being consistent with
+it.
+
+**Severity is about WHERE it is shown.** `estimate_total_time` is consumed by
+`readiness_panel.rs:140` and `preflight.rs:120` — the readiness panel and the
+pre-flight screen, i.e. the number an operator reads immediately before
+starting a cut. Planning a shift around 25 minutes for a three-hour job is a
+material error, and on a hobby machine it is the difference between "watch it"
+and "leave it running".
+
+Note the docstring is already honest — "Estimated cutting-only cycle time" —
+so the defect is that the SURFACE does not say what the docstring says. Same
+shape as the two air-cut denominators and the three `issue_count` quantities:
+one name, more than one quantity, and the operator-facing surface carrying the
+one that flatters.
+
+**It also drives PLAYBACK SPEED** (operator question, 2026-08-22). The
+timeline's "1x = real time" baseline is
+`real_time_mv_s = total_moves / total_time` (`sim_timeline.rs:1122`) with
+`total_time` from the same naive estimator. Since that total is ~7x too small,
+the moves/sec baseline is ~7x too LARGE, and the tooltip's claim — "1x =
+real-time playback for this project" — is wrong by that factor. Watching a
+playback at 1x therefore *shows* you a 25-minute job.
+
+So ONE naive quantity reaches four surfaces: the timeline readout, the
+readiness panel, the pre-flight screen, and the playback speed baseline — while
+an accel-aware `total_runtime_s` already exists in the simulator. This is a
+single source of truth with four independent re-implementations, and the fix is
+consolidation, not four patches.
+
+**Fix shape**: publish the simulator's accel-aware `total_runtime_s` wherever a
+simulation exists, and where none does, label the estimate as what it is
+("cutting only, no accel") rather than as a cycle time. Do NOT quietly swap the
+formula without saying so — the two numbers differ by 7x on a real job and any
+saved expectation built on the old one is wrong.
+
+## G-PINAUTO — auto pin placement can key the flip, and today cannot
+
+Raised 2026-08-22 at the machine, before the first real cut. Three separate
+defects in one feature, found by checking the operator's actual project.
+
+### 1. The margin ignores the pin, and reads the wrong source
+
+`handle_setup_two_sided` (`viz/controller/events/model.rs:290-303`) places two
+pins at `(margin, y/2)` and `(x - margin, y/2)` with
+`margin = padding/2` (when `padding > 2`).
+
+Two things wrong with that margin:
+
+- **It never consults the pin diameter.** On wanaka (`padding = 5`, Ø6 pins)
+  it gives `margin = 2.5`, so a Ø6 hole spans −0.5..5.5 mm relative to the
+  stock edge — it **hangs 0.5 mm off the stock**. There is no material for the
+  dowel to bite. A 5 mm padding ring cannot hold a 6 mm pin at any offset, so
+  the correct behaviour is to REFUSE, not to emit a broken placement.
+- **`padding` is the wrong source.** On wanaka the real free area comes from
+  the stock being explicitly 140×150 around a 100×100 model — a **20 mm** clear
+  strip in X, 25 mm in Y — while `padding` says 5. Deriving the margin from the
+  MODEL BBOX gives the true room.
+
+### 2. Nothing validates that pins survive the flip
+
+`FaceUp::Bottom` is `(x, D-y, H-z)`: X preserved, **Y mirrored about y = D/2**.
+For a part to re-seat after the flip, the pin multiset must be invariant under
+that map. Nothing checks it.
+
+wanaka's stored pins were `(2.5, 2.5)` and `(137.5, 147.5)` — diagonal, i.e.
+symmetric under a 180° ROTATION, which is not a flip. Under `y -> 150 - y` they
+map to `(2.5, 147.5)` and `(137.5, 2.5)`: neither lands on a dowel. **The part
+could not have re-seated.** Note the X values (2.5 / 137.5) are exactly what
+auto-placement produces, so those pins began as auto output and had their Y
+hand-moved off the centreline; current auto (both pins at `y/2`) would have
+been flip-correct.
+
+### 3. Keying is achievable and is not being done
+
+A rectangular stock re-seats four ways: identity, `My` (flip about X,
+`y -> D-y`), `Mx` (flip about Y, `x -> W-x`), and `R180 = Mx∘My`. The CAM
+models exactly `My`. So the requirement is: **invariant under `My`, and under
+nothing else.**
+
+- On the mirror line (`y = D/2`) every pin maps to itself → the flip seats.
+- `Mx` and `R180` both send `x -> W - x`, so if the pin x-multiset is NOT
+  invariant under that, both wrong orientations are mechanically blocked.
+
+Two pins suffice: put both on the mirror line with `x1 + x2 != W`. The
+asymmetry must be much larger than hole slop (a few mm against ~0.1 mm fit),
+or the operator can force it.
+
+**Does an odd pin count help?** Not inherently — what keys the part is the
+x-multiset failing `x -> W-x` invariance, and a centre pin at `x = W/2` is
+self-symmetric, so it neither helps nor hurts. Three pins buy redundancy and
+resistance to rocking, not keying. On wanaka a third pin has nowhere to go: the
+only clear strips are `x ∈ 0..20` and `x ∈ 120..140`, and the middle is under
+the model.
+
+### Applied live on wanaka 2026-08-22
+
+`(2.5, 2.5) + (137.5, 147.5)` → **`(10, 75)` + `(126, 75)`**, Ø6.
+
+| seating | pin images | result |
+|---|---|---|
+| `My` (the modelled flip) | (10,75), (126,75) | seats |
+| `R180` | (130,75), (14,75) | blocked |
+| `Mx` | (130,75), (14,75) | blocked |
+
+Clearances: 11 mm to the stock edge, 3 mm to the model boundary, 4 mm of
+keying asymmetry. NOT saved over `wanaka.toml` (never-touch); live session only.
+
+### Proposed auto algorithm
+
+1. Read the flip from the setup's `face_up`. Only `Bottom` is the in-plane
+   two-sided case; `Front/Back/Left/Right` stand the part on its side and
+   change the footprint — refuse rather than guess.
+2. Derive the free strip from the **model bbox**, not `padding`.
+3. Place both pins ON the flip's mirror line.
+4. Offset one along that line so the pair is not centre-symmetric, by
+   `max(3 mm, 2 × expected hole slop)`.
+5. Require `margin >= pin_radius + wall`; **refuse with a stated reason** when
+   no valid placement exists (wanaka's Ø6-in-5 mm case).
+6. Warn or refuse on LOAD when a project's stored pins are not invariant under
+   its own flip — which is what would have caught this one.
+7. **Size the pin from the TOOL, not a constant** (operator instruction,
+   2026-08-22). `handle_setup_two_sided` hardcodes `AlignmentPin::new(.., 6.0)`.
+   The pin diameter should come from the tool the pin-drill op will actually
+   use, so the hole the operator gets matches the dowel the geometry assumed —
+   and so step 5's `margin >= pin_radius + wall` is computed against the real
+   radius rather than a guess. A hardcoded 6.0 against a Ø3 cutter is a hole
+   that never gets drilled at size; against a large cutter it is a margin
+   computed for the wrong pin.
+
+### Adjacent: `flip_axis` is decorative
+
+`StockConfig::flip_axis` is saved, loaded, defaulted to `Horizontal` by the
+two-sided button, and rendered in the stock panel — and is **read by nothing**
+in core. Its own doc contradicts itself ("mirror about the X centerline" flips
+Y; "Y stays" flips X). On wanaka it is `null` while a `Bottom` setup exists.
+Either wire it to the validation above or remove it; a control that means
+nothing is worse than no control.
+
+### Adjacent: a tool's display name can lie about its geometry
+
+wanaka tool id 2 is named "Tapered Ball 2mm tip / 7° / 6mm shank" and has
+`diameter: 1.0` — i.e. **R0.5 / Ø1.0 tip**, half the named size. For a tapered
+ball `diameter` IS the tip diameter (`TaperedBallEndmill::new(ball_diameter,..)`).
+Every feed decision follows the number, every human decision follows the name.
+Also present on that tool: `corner_radius_mm: 2.0` and `included_angle_deg: 90`,
+neither meaningful for a tapered ball — the type-agnostic `add_tool` defaults
+that `b0362626` fixed going forward but which persist in saved projects.
+
 ## G-SUGGEST-POWERSTALE — CLOSED 2026-08-21, does not reproduce
 
 Pass 9 (`rescale_feed_to_final_geometry`) re-solves the feed against the
