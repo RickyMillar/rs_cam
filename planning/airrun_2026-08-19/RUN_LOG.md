@@ -380,6 +380,48 @@ them, pinned by the sentry's third arm. The simulator's dexel grid keeps its
 local rooting through `SetupEvalContext::sim_local_stock_bbox`, so the actual
 F-024 concern is untouched.
 
+## G-SUGGEST-POWERSTALE — CLOSED 2026-08-21, does not reproduce
+
+Pass 9 (`rescale_feed_to_final_geometry`) re-solves the feed against the
+operation's FINAL geometry, and nothing between it and the write re-checks the
+Step 6 power ceiling — which was computed against the CALCULATOR's operating
+point. Power scales with `ap · ae · feed`, so on the face of it a rescale that
+raises the feed can leave the machine commanded beyond its envelope.
+
+**Searched, not sampled. It does not happen, and not by luck.** Pass 9 holds the
+operation's *implied chipload* fixed and re-multiplies at the final geometry —
+and that chipload came from the feed Step 6 had **already clamped**, so the
+power clamp rides through the rescale proportionally. `enforce_invariants`
+meanwhile clamps geometry downward, shrinking the cross-section.
+
+Measured on the synthetic under-powered spindle (the only place the power
+branch is reachable at all — no shipped preset ever engages it):
+
+| population | peak shipped load vs gate ceiling |
+|---|---|
+| single heaviest point | **59.9 %** |
+| 70 requested depths across every tier boundary, 69 power-limited | **75.0 %** |
+| all shipped presets × ten species | **26.6 %** |
+
+The sweep is the load-bearing arm. `depth_tier_multiplier` is **stepped**
+(1.0 / 0.75 / 0.50 / 0.45 at ap/D of 1 / 2 / 3), so a clamp crossing a boundary
+downward buys up to 1.33× feed for an arbitrarily small loss of cross-section —
+the one shape that could outrun a ceiling checked before the rescale. That
+regime was searched explicitly and stays inside the envelope.
+
+**Two non-vacuity arms are part of the result, not decoration.** At Ø6 the first
+fixture never reached the power branch at all: a full-width slot trips
+`SlottingDetected`, which cuts DOC to 1.5 mm *before* Step 6, and the collapsed
+cross-section left the load far under the ceiling — the headline arm passed
+while proving nothing. The guard caught it; the fixture moved to Ø12. This is
+the third time on this programme that a gate handed an empty population read as
+healthy, so the arms stay.
+
+Sentried by
+`crates/rs_cam_core/tests/suggest_power_ceiling_after_pass9_g_suggest_powerstale.rs`
+(5 arms). Kept rather than deleted: they fail if a future change makes pass 9
+re-solve from something other than the clamped feed.
+
 ## G-AIRLADDER — RESOLVED: it was G-SAFEZ-LOCAL after all
 
 > **My withdrawal of this claim was itself wrong, and is retracted 2026-08-21.**
