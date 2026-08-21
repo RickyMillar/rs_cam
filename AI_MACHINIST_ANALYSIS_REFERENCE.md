@@ -389,7 +389,7 @@ Reference benchmarks for 3-axis wood router analysis.
 
 ### Efficiency
 
-**Air cut ratio has no single fixed band — it requires naming a denominator, and the codebase publishes two.** `air_cut_time_s` becomes a percentage of either `air_cut_pct_of_total_runtime` (cutting + rapids) or `air_cut_pct_of_cutting_time` (rapids excluded, always ≥ the total-runtime reading) — see `AirCutRatios` and its doc comment at `crates/rs_cam_core/src/simulation_cut.rs:537-566, 592-595`. Every SHIPPED threshold uses the total-runtime reading, and it is set PER OPERATION TYPE, not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed) for Drill/AlignmentPinDrill, 97.0 for ProjectCurve, 30.0 for the 3D finish family, 40.0 for 2.5D clearing/rough and 2D contour ops.
+**Air cut ratio has no single fixed band — it requires naming a denominator, and the codebase publishes two.** `air_cut_time_s` becomes a percentage of either `air_cut_pct_of_total_runtime` (cutting + rapids) or `air_cut_pct_of_cutting_time` (rapids excluded, always ≥ the total-runtime reading) — see `AirCutRatios` and its doc comment at `crates/rs_cam_core/src/simulation_cut.rs:537-566, 592-595`. Every SHIPPED threshold uses the total-runtime reading, and it is set PER OPERATION TYPE, not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed) for Drill/AlignmentPinDrill, 60.0 for ProjectCurve, 45.0 for the 3D finish family, 40.0 for 2.5D clearing/rough and 2D contour ops.
 
 | Metric | Good | Warning | Bad |
 |--------|------|---------|-----|

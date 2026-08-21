@@ -5315,13 +5315,19 @@ mod tests {
 
     #[test]
     fn air_cut_offenders_silent_on_sparse_project_curve() {
-        // Wanaka TP3: 92% air-cut on ProjectCurve is intrinsic, not a defect.
+        // Wanaka TP3 rivers: sparse-by-construction air-cut is intrinsic, not
+        // a defect. W5B-F4: the fixture used to be 92.1, the pre-swept-kernel
+        // reading the old 97 band was fitted to. Under the shipped swept
+        // kernel the SAME project's rivers read 15.97 (lakes 10.90), so the
+        // fixture now carries the measured post-flip number and the band is 60
+        // (`DELTA_w5b_f4_aircut_DECISION.md` §3.d / §5.2). 92.1 is no longer a
+        // ProjectCurve baseline anywhere in the repo — it was the artifact.
         let tps = vec![make_tp(
             0,
             "Rivers (back)",
             OperationConfig::ProjectCurve(ProjectCurveConfig::default()),
         )];
-        let sums = vec![summary(0, 92.1)];
+        let sums = vec![summary(0, 15.97)];
         let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert!(
             offenders.is_empty(),
@@ -5521,15 +5527,21 @@ mod tests {
 
     #[test]
     fn air_cut_offenders_warns_on_drop_cutter_above_threshold() {
-        // 40% air-cut on DropCutter exceeds the 30% finish threshold.
+        // 55% air-cut on DropCutter exceeds the 45% finish threshold.
+        // W5B-F4: the fixture used to be 40.0 against a 30 band. 40 is now
+        // INSIDE the measured defect-free finish cluster (34.3–42.5 on clean
+        // geometry with the correct tool), so a test that called 40 "sloppy"
+        // was pinning a false alarm. 55 is above the cluster and matches the
+        // real offenders the band is for — the 3D golden's stacked waterline
+        // (54.26) and wanaka tp9 pencil (55.83).
         let tps = vec![make_tp(
             0,
             "Sloppy Finish",
             OperationConfig::DropCutter(DropCutterConfig::default()),
         )];
-        let sums = vec![summary(0, 40.0)];
+        let sums = vec![summary(0, 55.0)];
         let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
-        assert_eq!(offenders.len(), 1, "DropCutter at 40% should warn");
+        assert_eq!(offenders.len(), 1, "DropCutter at 55% should warn");
     }
 
     #[test]
@@ -5653,8 +5665,10 @@ mod tests {
 
     #[test]
     fn air_cut_offenders_isolates_bad_tp_in_mixed_project() {
-        // Wanaka-like mix: ProjectCurve at 92% (noise) + Adaptive3d at 60% (signal).
-        // Only the Adaptive3d should be flagged.
+        // Wanaka-like mix: ProjectCurve at its measured post-flip baseline
+        // (noise) + Adaptive3d at 60% (signal). Only the Adaptive3d should be
+        // flagged. W5B-F4: the ProjectCurve arm was 92.0 — the pre-swept
+        // artifact reading; the same project's rivers now read 15.97.
         let tps = vec![
             make_tp(
                 0,
@@ -5667,7 +5681,7 @@ mod tests {
                 OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
             ),
         ];
-        let sums = vec![summary(0, 92.0), summary(1, 60.0)];
+        let sums = vec![summary(0, 15.97), summary(1, 60.0)];
         let offenders = air_cut_offenders_for_toolpaths(&sums, &tps, &Default::default()).offenders;
         assert_eq!(offenders.len(), 1);
         assert_eq!(offenders[0].name, "Bad Rough");

@@ -218,12 +218,25 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
     }
     let collision_count = sim.checks.total_collision_count();
     // Roadmap C.6 — verdict mirrors the rule the MCP `run_simulation` response
-    // uses: collisions → ERROR; air cut > 20% → WARNING; otherwise SUCCESS.
-    // LH-1: this banner's 20% rule is on the TOTAL-runtime measure (cutting +
+    // uses: collisions → ERROR; air cut > 40% → WARNING; otherwise SUCCESS.
+    // LH-1: this banner's rule is on the TOTAL-runtime measure (cutting +
     // rapids) and always has been - the named accessor keeps it there, and the
     // banner text says which denominator it is showing. The cutting-time
     // reading of the same seconds is larger and is what the MCP narration
     // prints; see `MEASUREMENT_DOMAINS.md` LH-1.
+    //
+    // W5B-F4 (2026-08-21): the bar was **20**, while the CLI's verdict on the
+    // same quantity was **40** — the workspace shipped two different project
+    // numbers and which one an operator saw depended only on whether they
+    // opened the GUI or the CLI. 20 also fired on every reference project the
+    // repo has, before and after the swept-kernel flip (2.5D golden 50.03,
+    // 3D golden 51.38, wanaka 0D 44.09), and a warning that is always on
+    // carries no information. This is the package's **interim** answer: one
+    // constant instead of two. The recommended end state is to derive the
+    // banner from the per-op offender list (`air_cut_offenders_for_toolpaths`)
+    // so that zero offenders means zero banner —
+    // `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md` §5.6.
+    // Verdict flips from 20 → 40: none.
     let air_cut_pct = sim
         .results
         .as_ref()
@@ -241,7 +254,7 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &SimulationState, gui: &GuiState) 
             ),
             theme::ERROR,
         )
-    } else if air_cut_pct > 20.0 {
+    } else if air_cut_pct > 40.0 {
         (
             format!(
                 "⚠ High air cutting ({air_cut_pct:.0}% of total runtime) — toolpath may \

@@ -24,8 +24,8 @@
 //! The shallow arm removes real material, reports its removed *height*
 //! correctly, and reports zero engagement with 96% air cut. Nothing in any
 //! shipped surface said the number was unmeasurable: it printed as a
-//! precise-looking percentage and **cleared every bar** — the GUI's 20%
-//! banner, the CLI's 40% verdict, and the 30% finish band in
+//! precise-looking percentage and **cleared every bar** — the GUI's 40%
+//! banner, the CLI's 40% verdict, and the 45% finish band in
 //! [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`],
 //! which is exactly where sub-0.05 mm passes actually live.
 //!
