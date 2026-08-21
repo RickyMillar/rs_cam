@@ -166,24 +166,75 @@ pub fn run_smoke(input_csv: &Path, output: &Path, resolution: f64) -> Result<()>
     Ok(())
 }
 
+/// Outcome of a baseline diff. `regressions` drives the exit status;
+/// `changes` is the non-failing channel — movement that is legitimate (or
+/// at least not a regression) but must not pass unremarked.
+#[derive(Debug, Default)]
+pub struct DiffOutcome {
+    pub regressions: Vec<String>,
+    pub changes: Vec<String>,
+}
+
 /// Diff two baseline CSVs. Returns Ok(true) if any regression detected.
 pub fn run_diff(baseline_path: &Path, current_path: &Path) -> Result<bool> {
     let baseline = read_baseline(baseline_path)?;
     let current = read_baseline(current_path)?;
 
+    let outcome = diff_rows(&baseline, &current);
+
+    // Cases new to current run are informational, not regressions.
+    if !outcome.changes.is_empty() {
+        println!(
+            "smoke-diff: {} change(s) [not regressions]",
+            outcome.changes.len()
+        );
+        for c in &outcome.changes {
+            println!("  ~ {c}");
+        }
+    }
+    if outcome.regressions.is_empty() {
+        println!(
+            "smoke-diff: no regressions ({} cases checked)",
+            baseline.len()
+        );
+        Ok(false)
+    } else {
+        println!("smoke-diff: {} regression(s)", outcome.regressions.len());
+        for r in &outcome.regressions {
+            println!("  - {r}");
+        }
+        Ok(true)
+    }
+}
+
+/// The whole diff policy, file-free so it can be unit-tested against
+/// hand-built rows. Every column of `BaselineRow` is either compared here
+/// or explicitly excluded (`notes` — `param_warnings` churn is noise).
+fn diff_rows(baseline: &[BaselineRow], current: &[BaselineRow]) -> DiffOutcome {
     let base_by_case: BTreeMap<String, &BaselineRow> =
         baseline.iter().map(|r| (r.case_id.clone(), r)).collect();
     let curr_by_case: BTreeMap<String, &BaselineRow> =
         current.iter().map(|r| (r.case_id.clone(), r)).collect();
 
     let mut regressions: Vec<String> = Vec::new();
+    // Non-failing channel: movement that is not a regression but must not
+    // pass unremarked. Exit status is driven by `regressions` only.
+    let mut changes: Vec<String> = Vec::new();
 
     for (case_id, base_row) in &base_by_case {
         let Some(curr_row) = curr_by_case.get(case_id) else {
             regressions.push(format!("{case_id}: missing from current run"));
             continue;
         };
-        // Status regression: anything → harness_error/generation_failed/simulation_failed
+        // The join key is `case_id`; if the operation family behind it moved,
+        // every remaining column is comparing two different measurements.
+        if base_row.op_kind != curr_row.op_kind {
+            regressions.push(format!(
+                "{case_id}: op_kind {} → {} (rows are not comparable; re-cut the baseline)",
+                base_row.op_kind, curr_row.op_kind
+            ));
+        }
+        // Status regression: ok → anything else.
         if base_row.status == "ok" && curr_row.status != "ok" {
             regressions.push(format!(
                 "{case_id}: status {} → {}",
@@ -191,57 +242,189 @@ pub fn run_diff(baseline_path: &Path, current_path: &Path) -> Result<bool> {
             ));
             continue;
         }
-        // Per-criterion verdict regression: Within → Exceeds
-        if is_within(&base_row.chipload_kind) && is_exceeds(&curr_row.chipload_kind) {
-            regressions.push(format!(
-                "{case_id}: chipload {} → {}",
-                base_row.chipload_kind, curr_row.chipload_kind
+        // A slide between two failure classes (generation_failed →
+        // harness_error) is not a regression but is worth saying out loud.
+        if base_row.status != "ok" && base_row.status != curr_row.status {
+            changes.push(format!(
+                "{case_id}: status {} → {}",
+                base_row.status, curr_row.status
             ));
         }
-        if is_within(&base_row.deflection_kind) && is_exceeds(&curr_row.deflection_kind) {
-            regressions.push(format!(
-                "{case_id}: deflection {} → {}",
-                base_row.deflection_kind, curr_row.deflection_kind
-            ));
+
+        // ── Verdict columns ────────────────────────────────────────────
+        // One table, every emitter. `is_exceeds` covers the bare spelling
+        // (deflection, power), `exceeds_low`/`exceeds_high` (chipload) and
+        // `exceeds_elevated`/`exceeds_critical` (drill gates).
+        for (label, base_kind, curr_kind) in verdict_columns(base_row, curr_row) {
+            if is_within(base_kind) && is_exceeds(curr_kind) {
+                regressions.push(format!("{case_id}: {label} {base_kind} → {curr_kind}"));
+            } else if went_blind(base_kind, curr_kind) {
+                regressions.push(format!(
+                    "{case_id}: {label} STOPPED BEING MEASURED {base_kind} → {curr_kind}"
+                ));
+            } else if base_kind != curr_kind {
+                changes.push(format!("{case_id}: {label} {base_kind} → {curr_kind}"));
+            }
         }
-        if is_within(&base_row.power_kind) && is_exceeds(&curr_row.power_kind) {
-            regressions.push(format!(
-                "{case_id}: power {} → {}",
-                base_row.power_kind, curr_row.power_kind
-            ));
+
+        // ── Rapid collisions ───────────────────────────────────────────
+        // An increase is a regression; a decrease is an improvement that
+        // still has to be reported, because "211 → 0" passing unremarked is
+        // exactly how a baseline drifts away from its instrument.
+        match (
+            parse_count(&base_row.rapid_collision_count),
+            parse_count(&curr_row.rapid_collision_count),
+        ) {
+            (Some(base_collisions), Some(curr_collisions)) => {
+                if curr_collisions > base_collisions {
+                    regressions.push(format!(
+                        "{case_id}: rapid_collisions {base_collisions} → {curr_collisions}"
+                    ));
+                } else if curr_collisions < base_collisions {
+                    changes.push(format!(
+                        "{case_id}: rapid_collisions {base_collisions} → {curr_collisions} (decrease)"
+                    ));
+                }
+            }
+            (Some(base_collisions), None) => {
+                // Was counted, no longer is: the count went blind. The old
+                // `parse().unwrap_or(0)` read this as "zero collisions".
+                regressions.push(format!(
+                    "{case_id}: rapid_collisions STOPPED BEING COUNTED {base_collisions} → {:?}",
+                    curr_row.rapid_collision_count
+                ));
+            }
+            (None, _) => {}
         }
-        // Rapid collisions: anything → more collisions
-        let base_collisions: u32 = base_row.rapid_collision_count.parse().unwrap_or(0);
-        let curr_collisions: u32 = curr_row.rapid_collision_count.parse().unwrap_or(0);
-        if curr_collisions > base_collisions {
-            regressions.push(format!(
-                "{case_id}: rapid_collisions {base_collisions} → {curr_collisions}"
-            ));
+
+        // ── Numeric drift (informational) ──────────────────────────────
+        for (label, base_val, curr_val) in numeric_columns(base_row, curr_row) {
+            if let Some(msg) = numeric_drift(label, base_val, curr_val) {
+                changes.push(format!("{case_id}: {msg}"));
+            }
         }
     }
 
-    // Cases new to current run are informational, not regressions.
-    if regressions.is_empty() {
-        println!(
-            "smoke-diff: no regressions ({} cases checked)",
-            baseline.len()
-        );
-        Ok(false)
-    } else {
-        println!("smoke-diff: {} regression(s)", regressions.len());
-        for r in &regressions {
-            println!("  - {r}");
-        }
-        Ok(true)
+    DiffOutcome {
+        regressions,
+        changes,
     }
+}
+
+/// Every verdict column on the row, paired base-vs-current. Adding a gate
+/// to `BaselineRow` means adding it here — that is the point of the table.
+fn verdict_columns<'a>(
+    base: &'a BaselineRow,
+    curr: &'a BaselineRow,
+) -> [(&'static str, &'a str, &'a str); 6] {
+    [
+        ("chipload", &base.chipload_kind, &curr.chipload_kind),
+        ("deflection", &base.deflection_kind, &curr.deflection_kind),
+        ("power", &base.power_kind, &curr.power_kind),
+        (
+            "drill_chip_welding",
+            &base.drill_chip_welding_kind,
+            &curr.drill_chip_welding_kind,
+        ),
+        ("drill_peck", &base.drill_peck_kind, &curr.drill_peck_kind),
+        (
+            "drill_plunge",
+            &base.drill_plunge_kind,
+            &curr.drill_plunge_kind,
+        ),
+    ]
+}
+
+/// Every measured numeric on the row. These feed the non-failing drift
+/// channel: they move for legitimate reasons (a shortened rapid, a
+/// re-framed grid) far too often to gate CI on, but silence is worse.
+fn numeric_columns<'a>(
+    base: &'a BaselineRow,
+    curr: &'a BaselineRow,
+) -> [(&'static str, &'a str, &'a str); 6] {
+    [
+        (
+            "chipload_observed_mm_tooth",
+            &base.chipload_observed_mm_tooth,
+            &curr.chipload_observed_mm_tooth,
+        ),
+        (
+            "deflection_peak_mm",
+            &base.deflection_peak_mm,
+            &curr.deflection_peak_mm,
+        ),
+        ("power_peak_kw", &base.power_peak_kw, &curr.power_peak_kw),
+        ("avg_engagement", &base.avg_engagement, &curr.avg_engagement),
+        (
+            "peak_axial_doc_mm",
+            &base.peak_axial_doc_mm,
+            &curr.peak_axial_doc_mm,
+        ),
+        (
+            "drill_chip_welding_observed",
+            &base.drill_chip_welding_observed,
+            &curr.drill_chip_welding_observed,
+        ),
+    ]
+}
+
+/// Relative tolerance for the numeric drift channel. 5 % is loose enough
+/// that formatting noise on a 4-decimal column stays quiet.
+const NUMERIC_DRIFT_REL_TOL: f64 = 0.05;
+
+/// Describe how one numeric column moved, or `None` if it did not move
+/// meaningfully. Empty ↔ populated transitions are reported: a column that
+/// stops being written is the numeric face of `went_blind`.
+fn numeric_drift(label: &str, base: &str, curr: &str) -> Option<String> {
+    let b = base.trim();
+    let c = curr.trim();
+    match (b.parse::<f64>().ok(), c.parse::<f64>().ok()) {
+        (Some(bv), Some(cv)) => {
+            let moved = if bv == 0.0 {
+                cv != 0.0
+            } else {
+                ((cv - bv) / bv).abs() > NUMERIC_DRIFT_REL_TOL
+            };
+            if !moved {
+                return None;
+            }
+            let factor = if bv == 0.0 {
+                String::new()
+            } else {
+                format!(" ({:.2}×)", cv / bv)
+            };
+            Some(format!("{label} {bv} → {cv}{factor}"))
+        }
+        (Some(bv), None) if c.is_empty() => Some(format!("{label} {bv} → <empty> (not written)")),
+        (None, Some(cv)) if b.is_empty() => Some(format!("{label} <empty> → {cv} (now written)")),
+        _ => None,
+    }
+}
+
+/// `rapid_collision_count` as a number, or `None` when the cell is empty
+/// or unparseable. The distinction matters: the pre-2026-08-21 diff used
+/// `parse().unwrap_or(0)`, which read an unwritten cell as a clean zero.
+fn parse_count(s: &str) -> Option<u32> {
+    s.trim().parse::<u32>().ok()
 }
 
 fn is_within(kind: &str) -> bool {
     kind == "within"
 }
 
+/// All four verdict emitters spell exceedance differently: bare `exceeds`
+/// (deflection, power), `exceeds_low`/`exceeds_high` (chipload,
+/// `build_ok_row`), `exceeds_elevated`/`exceeds_critical` (drill gates,
+/// `extract_drill_gates`). One prefix covers the set.
 fn is_exceeds(kind: &str) -> bool {
-    kind == "exceeds"
+    kind.starts_with("exceeds")
+}
+
+/// A verdict that stopped being measured. `within → unmodeled_* / missing`
+/// is a regression of the INSTRUMENT even when the machining is fine — the
+/// "empty population passes and looks healthy" class.
+fn went_blind(base: &str, curr: &str) -> bool {
+    is_within(base) && (curr.starts_with("unmodeled") || curr == "missing" || curr.is_empty())
 }
 
 // ── Case execution ──────────────────────────────────────────────────────
@@ -840,5 +1023,286 @@ fn material_for_family(family: &str) -> Option<Material> {
             alloy: AluminumAlloy::Alloy7075T6,
         }),
         _ => None,
+    }
+}
+
+// ── Diff-policy tests ───────────────────────────────────────────────────
+//
+// The five rows below are the exact probe from
+// `planning/perf_review_2026-08-19/RESEARCH_corpus_instruments.md` §3.2,
+// which the pre-2026-08-21 `run_diff` scored **1 of 5**: only X03's bare
+// `exceeds` (deflection) matched `is_exceeds`, so a chipload flip, three
+// drill gates, a gate that went blind, a collapsed engagement, a 990×
+// peak and a changed `op_kind` were all silent.
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+
+    /// A row with everything measured and `within`, as the starting point
+    /// for injecting one deliberate regression at a time.
+    fn clean_row(case_id: &str, op_kind: &str) -> BaselineRow {
+        BaselineRow {
+            case_id: case_id.to_owned(),
+            op_kind: op_kind.to_owned(),
+            status: "ok".to_owned(),
+            chipload_kind: "within".to_owned(),
+            chipload_observed_mm_tooth: "0.010000".to_owned(),
+            deflection_kind: "within".to_owned(),
+            deflection_peak_mm: "0.0100".to_owned(),
+            power_kind: "within".to_owned(),
+            power_peak_kw: "0.0100".to_owned(),
+            rapid_collision_count: "0".to_owned(),
+            avg_engagement: "0.3000".to_owned(),
+            peak_axial_doc_mm: "2.000".to_owned(),
+            drill_chip_welding_kind: "within".to_owned(),
+            drill_chip_welding_observed: "4.000".to_owned(),
+            drill_peck_kind: "within".to_owned(),
+            drill_plunge_kind: "within".to_owned(),
+            notes: String::new(),
+        }
+    }
+
+    fn regressions_for(base: BaselineRow, curr: BaselineRow) -> Vec<String> {
+        diff_rows(&[base], &[curr]).regressions
+    }
+
+    fn changes_for(base: BaselineRow, curr: BaselineRow) -> Vec<String> {
+        diff_rows(&[base], &[curr]).changes
+    }
+
+    #[test]
+    fn x01_chipload_within_to_exceeds_high_is_a_regression() {
+        // The vacuous arm: `is_exceeds` used to be `== "exceeds"`, which
+        // `build_ok_row` never emits for chipload.
+        let base = clean_row("X01", "pocket");
+        let mut curr = clean_row("X01", "pocket");
+        curr.chipload_kind = "exceeds_high".to_owned();
+        curr.chipload_observed_mm_tooth = "0.500000".to_owned();
+
+        let regressions = regressions_for(base, curr);
+        assert!(
+            regressions
+                .iter()
+                .any(|r| r.contains("chipload within → exceeds_high")),
+            "chipload flip not flagged: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn x02_all_three_drill_gates_are_diffed() {
+        // Drill gates spell exceedance `exceeds_elevated` /
+        // `exceeds_critical` and were not read at all.
+        let base = clean_row("X02", "drill");
+        let mut curr = clean_row("X02", "drill");
+        curr.drill_chip_welding_kind = "exceeds_critical".to_owned();
+        curr.drill_chip_welding_observed = "99.000".to_owned();
+        curr.drill_peck_kind = "exceeds_critical".to_owned();
+        curr.drill_plunge_kind = "exceeds_critical".to_owned();
+
+        let regressions = regressions_for(base, curr);
+        for gate in ["drill_chip_welding", "drill_peck", "drill_plunge"] {
+            assert!(
+                regressions
+                    .iter()
+                    .any(|r| r.contains(gate) && r.contains("exceeds_critical")),
+                "{gate} not flagged: {regressions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn x03_deflection_positive_control_still_flags() {
+        // The one transition the old net caught; it must keep working.
+        let base = clean_row("X03", "profile");
+        let mut curr = clean_row("X03", "profile");
+        curr.deflection_kind = "exceeds".to_owned();
+
+        let regressions = regressions_for(base, curr);
+        assert!(
+            regressions
+                .iter()
+                .any(|r| r.contains("deflection within → exceeds")),
+            "positive control lost: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn x04_a_gate_that_stops_measuring_is_a_regression() {
+        // `within → unmodeled_*` — the "empty population passes and looks
+        // healthy" class. Not an exceedance, still an instrument failure.
+        let base = clean_row("X04", "zigzag");
+        let mut curr = clean_row("X04", "zigzag");
+        curr.chipload_kind = "unmodeled_novendordata".to_owned();
+        curr.chipload_observed_mm_tooth = String::new();
+
+        let regressions = regressions_for(base, curr);
+        assert!(
+            regressions
+                .iter()
+                .any(|r| r.contains("chipload STOPPED BEING MEASURED")),
+            "blind chipload gate not flagged: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn x05_op_kind_change_invalidates_the_join() {
+        let base = clean_row("X05", "zigzag");
+        let mut curr = clean_row("X05", "pocket");
+        curr.deflection_peak_mm = "9.9000".to_owned();
+        curr.power_peak_kw = "9.9000".to_owned();
+
+        let outcome = diff_rows(&[base], &[curr]);
+        assert!(
+            outcome
+                .regressions
+                .iter()
+                .any(|r| r.contains("op_kind zigzag → pocket")),
+            "op_kind change not flagged: {:?}",
+            outcome.regressions
+        );
+        // The 990× numeric moves land on the non-failing channel.
+        assert!(
+            outcome
+                .changes
+                .iter()
+                .any(|c| c.contains("deflection_peak_mm")),
+            "deflection drift not reported: {:?}",
+            outcome.changes
+        );
+    }
+
+    #[test]
+    fn collision_decrease_is_reported_but_does_not_fail() {
+        // The 211 → 0 case: an improvement nobody was told about.
+        let mut base = clean_row("AS010", "inlay");
+        base.rapid_collision_count = "104".to_owned();
+        let curr = clean_row("AS010", "inlay");
+
+        let outcome = diff_rows(&[base], &[curr]);
+        assert!(
+            outcome.regressions.is_empty(),
+            "a collision DECREASE must not fail the diff: {:?}",
+            outcome.regressions
+        );
+        assert!(
+            outcome
+                .changes
+                .iter()
+                .any(|c| c.contains("rapid_collisions 104 → 0")),
+            "collision decrease not reported: {:?}",
+            outcome.changes
+        );
+    }
+
+    #[test]
+    fn collision_increase_is_still_a_regression() {
+        let base = clean_row("AS010", "inlay");
+        let mut curr = clean_row("AS010", "inlay");
+        curr.rapid_collision_count = "7".to_owned();
+
+        let regressions = regressions_for(base, curr);
+        assert!(
+            regressions
+                .iter()
+                .any(|r| r.contains("rapid_collisions 0 → 7")),
+            "collision increase not flagged: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn an_uncounted_collision_cell_is_not_read_as_zero() {
+        // `parse().unwrap_or(0)` used to turn an empty cell into a clean
+        // zero — a count that stopped being taken looked like a fix.
+        let mut base = clean_row("AS017", "horizontal_finish");
+        base.rapid_collision_count = "100".to_owned();
+        let mut curr = clean_row("AS017", "horizontal_finish");
+        curr.rapid_collision_count = String::new();
+
+        let regressions = regressions_for(base, curr);
+        assert!(
+            regressions
+                .iter()
+                .any(|r| r.contains("STOPPED BEING COUNTED")),
+            "unreadable collision cell not flagged: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_row_is_silent_on_both_channels() {
+        let outcome = diff_rows(
+            &[clean_row("AS001", "pocket")],
+            &[clean_row("AS001", "pocket")],
+        );
+        assert!(outcome.regressions.is_empty(), "{:?}", outcome.regressions);
+        assert!(outcome.changes.is_empty(), "{:?}", outcome.changes);
+    }
+
+    #[test]
+    fn numeric_drift_is_relative_and_never_a_regression() {
+        // Within tolerance: silent.
+        assert!(numeric_drift("x", "1.0000", "1.0200").is_none());
+        // Outside it: reported, with the ratio spelled out.
+        let msg = numeric_drift("peak_axial_doc_mm", "14.766", "3.743").unwrap();
+        assert!(msg.contains("0.25×"), "{msg}");
+        // Zero base: any movement is movement.
+        assert!(numeric_drift("x", "0.0000", "0.0001").is_some());
+        assert!(numeric_drift("x", "0.0000", "0.0000").is_none());
+        // Stopped being written.
+        assert!(
+            numeric_drift("x", "0.3000", "")
+                .unwrap()
+                .contains("not written")
+        );
+    }
+
+    #[test]
+    fn exceeds_predicate_covers_every_emitted_spelling() {
+        for kind in [
+            "exceeds",
+            "exceeds_low",
+            "exceeds_high",
+            "exceeds_elevated",
+            "exceeds_critical",
+        ] {
+            assert!(is_exceeds(kind), "{kind} not recognised as an exceedance");
+        }
+        for kind in ["within", "unmodeled_novendordata", "missing", ""] {
+            assert!(!is_exceeds(kind), "{kind} wrongly read as an exceedance");
+        }
+    }
+
+    #[test]
+    fn a_recovered_verdict_is_not_a_regression() {
+        // unmodeled → within, and non-ok → ok, are improvements.
+        let mut base = clean_row("X06", "pocket");
+        base.chipload_kind = "unmodeled_novendordata".to_owned();
+        base.status = "generation_failed".to_owned();
+        let curr = clean_row("X06", "pocket");
+
+        let regressions = regressions_for(base, curr);
+        assert!(regressions.is_empty(), "{regressions:?}");
+    }
+
+    #[test]
+    fn a_failure_class_slide_is_reported_on_the_change_channel() {
+        let mut base = clean_row("X07", "scallop");
+        base.status = "generation_failed".to_owned();
+        let mut curr = clean_row("X07", "scallop");
+        curr.status = "harness_error".to_owned();
+
+        let changes = changes_for(base, curr);
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.contains("status generation_failed → harness_error")),
+            "failure-class slide not reported: {changes:?}"
+        );
     }
 }
