@@ -100,6 +100,14 @@ pub struct BaselineRow {
     pub case_id: String,
     pub op_kind: String,
     pub status: String,
+    /// Dexel cell size (mm) the row was measured at — the `--resolution`
+    /// argument of the run that produced it. Collision counts and
+    /// engagement both move with it, so a row cut at 0.5 and a row cut at
+    /// 0.25 are not comparable; without this column `run_diff` had no way
+    /// to know. `#[serde(default)]` keeps pre-2026-08-21 baselines
+    /// readable, where it deserialises empty = "cell size unrecorded".
+    #[serde(default)]
+    pub resolution_mm: String,
     pub chipload_kind: String,
     pub chipload_observed_mm_tooth: String,
     pub deflection_kind: String,
@@ -122,6 +130,9 @@ impl BaselineRow {
             case_id: case_id.to_owned(),
             op_kind: op_kind.to_owned(),
             status: status.to_owned(),
+            // Stamped by `run_single_case` on the way out, so every exit
+            // path records the cell size it ran at.
+            resolution_mm: String::new(),
             chipload_kind: String::new(),
             chipload_observed_mm_tooth: String::new(),
             deflection_kind: String::new(),
@@ -226,6 +237,22 @@ fn diff_rows(baseline: &[BaselineRow], current: &[BaselineRow]) -> DiffOutcome {
             regressions.push(format!("{case_id}: missing from current run"));
             continue;
         };
+        // Cell size is a property of the INSTRUMENT, not the machining.
+        // Collision counts and engagement both move with it, so a row cut
+        // at 0.5 and a row cut at 0.25 are not comparable — and before the
+        // column existed there was no way to notice. Reported loudly, but
+        // not as a regression: changing the cell size is a deliberate act.
+        match (base_row.resolution_mm.trim(), curr_row.resolution_mm.trim()) {
+            (b, c) if !b.is_empty() && !c.is_empty() && b != c => changes.push(format!(
+                "{case_id}: !! RESOLUTION MISMATCH {b} mm → {c} mm — \
+                 these rows were measured on different grids"
+            )),
+            ("", c) if !c.is_empty() => changes.push(format!(
+                "{case_id}: baseline predates the resolution column; \
+                 current run was {c} mm — comparability is ASSUMED, not checked"
+            )),
+            _ => {}
+        }
         // The join key is `case_id`; if the operation family behind it moved,
         // every remaining column is comparing two different measurements.
         if base_row.op_kind != curr_row.op_kind {
@@ -431,10 +458,17 @@ fn went_blind(base: &str, curr: &str) -> bool {
 
 /// Materializes one case's toolpath into an existing session: resolves
 /// op + tool, calls `suggest_params`, adds the `ToolpathConfig` with the
-/// caller-supplied `stock_source`, applies the case's baseline_params,
-/// and generates the toolpath. Used by `run_single_case` for both prior
-/// passes (`StockSource::Fresh`) and the measured case
-/// (`StockSource::FromRemainingStock` when chaining, else `Fresh`).
+/// caller-supplied `stock_source`, and applies the case's baseline_params.
+/// Used by `run_single_case` for both prior passes (`StockSource::Fresh`)
+/// and the measured case (`StockSource::FromRemainingStock` when chaining,
+/// else `Fresh`).
+///
+/// `generate` controls whether the toolpath is generated in the same call.
+/// It must be `false` for a `FromRemainingStock` measured case: that op
+/// cannot generate until a simulation has keyed a `prior_stocks` snapshot
+/// to its id, and the simulation cannot key one until the op EXISTS. See
+/// `run_single_case` for the add → simulate → generate order that resolves
+/// the catch-22.
 ///
 /// Returns `(tp_idx, op_type, param_warnings)` on success, or a
 /// `BaselineRow` describing the failure class so callers can short-
@@ -445,6 +479,7 @@ fn materialize_case_toolpath(
     case: &SmokeCase,
     stock_source: rs_cam_core::compute::config::StockSource,
     name_suffix: &str,
+    generate: bool,
 ) -> Result<(usize, OperationType, Vec<String>), BaselineRow> {
     let Some(op_type) = parse_op_type(&case.operation_kind) else {
         return Err(BaselineRow::failure(
@@ -552,20 +587,35 @@ fn materialize_case_toolpath(
         }
     }
 
-    let cancel = AtomicBool::new(false);
-    if let Err(e) = session.generate_toolpath(tp_idx, &cancel) {
-        return Err(BaselineRow::failure(
-            &case.case_id,
-            op_type.kind_str(),
-            "generation_failed",
-            &format!("{e}; param_warnings={}", param_warnings.join("|")),
-        ));
+    if generate {
+        let cancel = AtomicBool::new(false);
+        if let Err(e) = session.generate_toolpath(tp_idx, &cancel) {
+            return Err(BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "generation_failed",
+                &format!("{e}; param_warnings={}", param_warnings.join("|")),
+            ));
+        }
     }
 
     Ok((tp_idx, op_type, param_warnings))
 }
 
+/// Run one case and stamp the cell size it ran at onto whatever row comes
+/// back — success or any of the failure classes. A baseline row without its
+/// resolution is a measurement without its instrument setting.
 fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -> BaselineRow {
+    let mut row = run_single_case_inner(case, all_cases, resolution);
+    row.resolution_mm = format!("{resolution}");
+    row
+}
+
+fn run_single_case_inner(
+    case: &SmokeCase,
+    all_cases: &[SmokeCase],
+    resolution: f64,
+) -> BaselineRow {
     let Some(op_type) = parse_op_type(&case.operation_kind) else {
         return BaselineRow::failure(
             &case.case_id,
@@ -648,6 +698,8 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
             prior_case,
             rs_cam_core::compute::config::StockSource::Fresh,
             &format!("prior:{prior_id}"),
+            // Prior passes cut fresh stock: nothing blocks their generate.
+            true,
         ) {
             Ok((_, _, warns)) => {
                 for w in warns {
@@ -666,24 +718,84 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
         }
     }
 
-    let measured_stock_source = if prior_ids.is_empty() {
-        rs_cam_core::compute::config::StockSource::Fresh
-    } else {
+    let chained = !prior_ids.is_empty();
+    let measured_stock_source = if chained {
         rs_cam_core::compute::config::StockSource::FromRemainingStock
+    } else {
+        rs_cam_core::compute::config::StockSource::Fresh
     };
 
-    let (tp_idx, op_type, mut param_warnings) =
-        match materialize_case_toolpath(&mut session, case, measured_stock_source, "smoke") {
-            Ok(triple) => triple,
-            Err(row) => return row,
-        };
+    let cancel = AtomicBool::new(false);
+
+    // ONE `SimulationOptions` value serves both the priming pass and the
+    // measurement pass, so the two dexel grids are the same grid. Hoisted
+    // above the measured-case materialisation for exactly that reason.
+    let sim_opts = SimulationOptions {
+        resolution,
+        skip_ids: Vec::new(),
+        metrics_enabled: true,
+        auto_resolution: false,
+        // F-035: predicted-feed plumbing off — smoke baseline must
+        // continue exercising commanded-feed gates so the regression
+        // diff stays meaningful.
+        use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: false,
+        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_aggressiveness: 1.0,
+    };
+
+    // ADD the measured toolpath; generate it here only when it cuts fresh
+    // stock. A `FromRemainingStock` op cannot generate yet — see below.
+    let (tp_idx, op_type, mut param_warnings) = match materialize_case_toolpath(
+        &mut session,
+        case,
+        measured_stock_source,
+        "smoke",
+        /* generate = */ !chained,
+    ) {
+        Ok(triple) => triple,
+        Err(row) => return row,
+    };
 
     param_warnings.extend(combined_param_warnings);
 
-    // Simulation runs all enabled toolpaths in sequence; the dexel
-    // state carries from each prior toolpath into the measured one
-    // because `stock_source: FromRemainingStock` is set on the latter.
-    let cancel = AtomicBool::new(false);
+    if chained {
+        // The catch-22 this order resolves (AS015 had been
+        // `generation_failed` since 4b105dab made the fresh-stock fallback
+        // fail-hard): `generate_toolpath` refuses a `FromRemainingStock` op
+        // unless `simulation.prior_stocks` holds a snapshot keyed to THAT
+        // op's id, and `run_simulation` only keys one to an op that already
+        // exists in the plan. Simulating before the op is added therefore
+        // fixes nothing.
+        //
+        // The core already has the mechanism: `PhantomPriorStockScan`
+        // (`compute/simulate.rs`) locks onto the first
+        // enabled-but-ungenerated config in plan order and, when it is
+        // `FromRemainingStock`, takes its snapshot at that plan position.
+        // So the order must be add → simulate → generate. Chain depth is
+        // always 1 here — `prior_passes` is a flat list of ids, never
+        // transitive — so one priming pass is sufficient and no fixpoint
+        // loop is needed.
+        if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
+            return BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "simulation_failed",
+                &format!(
+                    "priming sim for prior-stock chain: {e}; param_warnings={}",
+                    param_warnings.join("|")
+                ),
+            );
+        }
+        if let Err(e) = session.generate_toolpath(tp_idx, &cancel) {
+            return BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "generation_failed",
+                &format!("{e}; param_warnings={}", param_warnings.join("|")),
+            );
+        }
+    }
 
     // Confirm non-empty toolpath
     let move_count = session
@@ -702,19 +814,10 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
         );
     }
 
-    let sim_opts = SimulationOptions {
-        resolution,
-        skip_ids: Vec::new(),
-        metrics_enabled: true,
-        auto_resolution: false,
-        // F-035: predicted-feed plumbing off — smoke baseline must
-        // continue exercising commanded-feed gates so the regression
-        // diff stays meaningful.
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy: rs_cam_core::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
-    };
+    // The measurement pass. Simulation runs all enabled toolpaths in
+    // sequence; the dexel state carries from each prior toolpath into the
+    // measured one because `stock_source: FromRemainingStock` is set on
+    // the latter.
     if let Err(e) = session.run_simulation(&sim_opts, &cancel) {
         return BaselineRow::failure(
             &case.case_id,
@@ -836,6 +939,7 @@ fn build_ok_row(
         case_id: case_id.to_owned(),
         op_kind: op_type.kind_str().to_owned(),
         status: "ok".to_owned(),
+        resolution_mm: String::new(),
         chipload_kind,
         chipload_observed_mm_tooth: chipload_observed,
         deflection_kind,
@@ -1052,6 +1156,7 @@ mod tests {
             case_id: case_id.to_owned(),
             op_kind: op_kind.to_owned(),
             status: "ok".to_owned(),
+            resolution_mm: "0.5".to_owned(),
             chipload_kind: "within".to_owned(),
             chipload_observed_mm_tooth: "0.010000".to_owned(),
             deflection_kind: "within".to_owned(),
@@ -1288,6 +1393,44 @@ mod tests {
 
         let regressions = regressions_for(base, curr);
         assert!(regressions.is_empty(), "{regressions:?}");
+    }
+
+    #[test]
+    fn a_resolution_change_is_reported_but_does_not_fail() {
+        let base = clean_row("X08", "pocket");
+        let mut curr = clean_row("X08", "pocket");
+        curr.resolution_mm = "0.25".to_owned();
+
+        let outcome = diff_rows(&[base], &[curr]);
+        assert!(outcome.regressions.is_empty(), "{:?}", outcome.regressions);
+        assert!(
+            outcome
+                .changes
+                .iter()
+                .any(|c| c.contains("RESOLUTION MISMATCH")),
+            "cell-size change not reported: {:?}",
+            outcome.changes
+        );
+    }
+
+    #[test]
+    fn a_baseline_without_the_resolution_column_says_so() {
+        // Every checked-in baseline through 2026-06-04 predates the column;
+        // its cell size is unrecorded, so comparability is assumed.
+        let mut base = clean_row("AS001", "pocket");
+        base.resolution_mm = String::new();
+        let curr = clean_row("AS001", "pocket");
+
+        let outcome = diff_rows(&[base], &[curr]);
+        assert!(outcome.regressions.is_empty(), "{:?}", outcome.regressions);
+        assert!(
+            outcome
+                .changes
+                .iter()
+                .any(|c| c.contains("predates the resolution column")),
+            "missing-column case not reported: {:?}",
+            outcome.changes
+        );
     }
 
     #[test]
