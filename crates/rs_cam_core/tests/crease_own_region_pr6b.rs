@@ -476,13 +476,25 @@ fn production_unified_finish_output_is_byte_identical() {
     // this fixture's numbers matter to a future reader, the −131 moves are
     // an open question with a known bracket: between `e3427f8` (the last
     // commit that touched this pin) and `88ce23a`.
+    // Re-pinned 2026-08-21 for G-SAFEZ-LOCAL, and this one IS attributed.
+    // This fixture's stock is 9 mm thick at `origin_z = -9.0`, so its world
+    // top is Z0 and the project's own `post.safe_z = 10` already clears it.
+    // The old local-rooted floor overrode that with `9 + 5 = 14`. Both arms
+    // were measured before and after with a distinct-Z probe: the two Z
+    // multisets are IDENTICAL except the single retract plane, 14.000 ->
+    // 10.000 mm, and both move counts are unchanged (1464, 972). No cutting
+    // Z moved, which is what makes this a pin refresh rather than a
+    // geometry change.
+    /// `(move count, geometry hash)` — what `fingerprint` returns.
+    type Fp = (usize, u64);
+    let mut drift: Vec<(&str, Fp, Fp)> = Vec::new();
     for (label, tool, expect) in [
         (
             "taper",
             tapered_ball_tool(),
-            (1464usize, 0x6558_6115_1ceb_aee4u64),
+            (1464usize, 0xadd9_39bf_5beb_02b0u64),
         ),
-        ("ball", ball_tool(), (972usize, 0x188f_c242_b6e9_9e5du64)),
+        ("ball", ball_tool(), (972usize, 0xaf85_0700_ffcd_0179u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
@@ -492,9 +504,26 @@ fn production_unified_finish_output_is_byte_identical() {
             got.0 > 0,
             "{label}: an empty toolpath fingerprints vacuously"
         );
-        assert_eq!(
-            got, expect,
-            "{label}: H2.4 must not move a single emitted move"
-        );
+        drift.push((label, got, expect));
     }
+
+    // Accumulate-then-assert. The comment above records that an in-loop
+    // `assert_eq!` aborted on the taper arm and left the ball pin
+    // unevaluated for however many commits the gap was open. Reporting
+    // both arms is the whole point of having two.
+    let stale: Vec<String> = drift
+        .iter()
+        .filter(|(_, got, expect)| got != expect)
+        .map(|(label, got, expect)| {
+            format!(
+                "{label}: got ({}, 0x{:016x}), pinned ({}, 0x{:016x})",
+                got.0, got.1, expect.0, expect.1
+            )
+        })
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "H2.4 must not move a single emitted move -- {}",
+        stale.join("; ")
+    );
 }

@@ -1123,11 +1123,11 @@ impl ProjectSession {
 
         // Resolve heights. `effective_safe_z` floors the user-configured
         // `post.safe_z` at `stock_top + clearance` so rapids clear the stock.
-        // F-024 invariant: floor reads from the local zero-rooted bbox even
-        // for identity setups — a conservatively-higher floor (never lower
-        // than the world stock top for identity setups, never lower than the
-        // local stock top for non-identity setups) is always safe. Provided
-        // by `SetupEvalContext::safe_z`.
+        // That floor reads the same emission-frame bbox as `stock_top_z`
+        // below; it used to read the zero-rooted local bbox, which for
+        // `origin_z > SAFE_Z_CLEARANCE_MM` put the retract plane inside the
+        // material and for `origin_z < 0` lifted it well above the stock
+        // (G-SAFEZ-LOCAL). Provided by `SetupEvalContext::safe_z`.
         let safe_z = ctx.safe_z;
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
