@@ -241,22 +241,69 @@ datum.
 
 ## G-PINDRILL-FRAME — the alignment-pin drill mixes two frames in one operation
 
-**Found while fixing the export datum. NOT fixed — deliberately out of scope.**
+> **HALF FIXED 2026-08-21.** The `cfg.holes` half is fixed and sentried by
+> `crates/rs_cam_core/tests/pindrill_emission_frame_g_pindrill.rs`. The
+> `selected_holes` half is measured and split out as **G-DRILLPICK-FRAME**
+> below, because it needs a decision about stored frame and it also affects
+> the plain `Drill` family.
 
-`generate_alignment_pin_drill` (`compute/execute.rs:781-790`) consumes `cfg.holes`
-— which are **stock-relative** pin coordinates — verbatim as XY, while taking Z
-from `ctx.stock_bbox`, which is **world** for an identity setup. In a
-*non-identity* setup the two happen to agree and the result is accidentally
-correct. In an **identity setup with a non-zero stock origin the pin holes are
-drilled at the wrong physical place** — 20 mm off on this project's numbers.
+`generate_alignment_pin_drill` consumed `cfg.holes` — **stock-relative** pin
+coordinates snapshotted from `StockConfig::alignment_pins` — verbatim as XY,
+while the toolpath emits in the **setup** frame: world for an identity setup,
+zero-rooted local otherwise. In a non-identity setup the two agree and the
+result was accidentally correct. In an identity setup with a non-zero stock
+origin the pins were drilled in the wrong physical place.
 
-Untangling it needs a decision the op doesn't currently make: `cfg.selected_holes`
-come from model picking and are **world** coordinates, so the operation already
-carries two frames in one `Vec`.
+**Measured on the wanaka geometry** (240×250 stock at origin (−20,−25), pin at
+stock-relative 2.5/2.5):
 
-**wanaka200 is not affected** — its pin drill lives in Setup 1, which is
+| stage | XY | should be |
+|---|---|---|
+| generated toolpath | `2.5, 2.5` | `-17.5, -22.5` (world) |
+| after export datum shift `(+20,+25)` | `22.5, 27.5` | `2.5, 2.5` |
+
+**Error is exactly the stock origin.** Registration pins 20/25 mm out is the
+whole part 20/25 mm out on the flip — this is the feature whose entire job is
+to make the two sides agree.
+
+**The fix needs no new plumbing.** `ctx.stock_bbox` IS the stock expressed in
+the emission frame, so its min corner is where stock-relative (0,0) sits. One
+translation serves both cases: world for identity, and a provable no-op for
+non-identity (`min == (0,0)`) — which is *why* non-identity was accidentally
+correct, now pinned by the sentry's second arm so the fix cannot "correct" the
+case that was already right. Verified red-first: without the fix the sentry
+reports `no move at the pin's world position (-17.5, -22.5)`.
+
+**wanaka200 itself was not affected** — its pin drill lives in Setup 1, which is
 non-identity. That is also why the export sentry deliberately does not assert on
-pin holes.
+pin holes. Core suite 3140 green, zero blast radius.
+
+## G-DRILLPICK-FRAME — picked drill targets are never setup-transformed (OPEN)
+
+Split out of G-PINDRILL-FRAME 2026-08-21. **Measured, not fixed — it needs a
+decision that changes what existing project files mean.**
+
+`selected_holes` are raw model/DXF coordinates: the viz picker maps
+`LoadedModel::drill_targets` straight through
+(`ui/properties/operations/drill.rs:47`). But model polygons **are**
+setup-transformed before generation (`session/compute.rs:1090`), and both drill
+families then consume `selected_holes` verbatim —
+`drill_holes_for_config` returns `selected.clone()` for `Drill`, and
+`generate_alignment_pin_drill` appends them unchanged.
+
+So on a non-identity setup the picks are off by the whole setup transform.
+Measured on a Bottom flip of 240×250 stock: a target picked at world `(30, 40)`
+transforms to setup-local `(50, 185)`, and the op drills it at `(30, 40)`.
+
+**Scope is wider than the pin drill** — this hits the ordinary `Drill` family
+too, which is the common case for DXF hole drilling.
+
+**The decision.** Either picks stay stored in world/model frame and are
+transformed into the emission frame at generation (a code-only fix, but it
+must not double-apply for identity setups), or they are stored stock-relative
+like `alignment_pins` (consistent with the export datum's chosen frame, but it
+changes the meaning of `selected_holes` in every saved project on load, so it
+needs a format migration). Not an agent's call.
 
 ## G-PROFILE-FLIP — a `Bottom` flip turns an outside Profile into an inside one
 
@@ -1049,8 +1096,11 @@ Kept because the process failure is more transferable than the bug.
 2. **G-SUGGEST-NOCLAMP** — drop_cutter's commanded feed is 1.63× the chipload
    band and passes only because the machine can't reach it. **Confirmed present in
    the emitted G-code (`F1260` × 559).** Not root-caused. Top priority.
-3. **G-PINDRILL-FRAME** — identity setup + non-zero origin drills pins in the
-   wrong physical place. Needs a frame decision for `selected_holes`.
+3. ~~**G-PINDRILL-FRAME**~~ — **HALF FIXED 2026-08-21.** Stock-relative pins are
+   now translated into the emission frame; exported pin XY was off by exactly
+   the stock origin. The `selected_holes` half is **G-DRILLPICK-FRAME**:
+   measured (world (30,40) drilled where local (50,185) was meant), affects the
+   plain `Drill` family too, and needs a stored-frame decision.
 4. **G-PROFILE-FLIP** — a Bottom flip appears to invert outside/inside profile
    offset. Unverified beyond one measurement.
 5. ~~**G-SAFEZ-LOCAL**~~ — **FIXED 2026-08-21.** Floor now reads the emission
