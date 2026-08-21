@@ -453,7 +453,15 @@ impl OperationType {
     /// should fire. `None` means "metric not applicable" (drill kinematics
     /// — dexel can't measure Z-only moves; see `planning/P1_AIR_CUT_THRESHOLDS_RCA.md`).
     ///
-    /// Calibrated from `WANAKA_ASSESSMENT_2026-05-19.md` expectation bands.
+    /// Originally calibrated from `WANAKA_ASSESSMENT_2026-05-19.md`
+    /// expectation bands; **recalibrated 2026-08-21 (W5B-F4)** against the
+    /// swept stamping kernel that became the `StampDispatch::Auto` resolution
+    /// at `a4ff2a8c`. The pre-flip readings these bands were fitted to were
+    /// largely a simulation-cell artifact (one unchanged toolpath read 0.31 %
+    /// at cell 0.25 and 89.61 % at cell 1.0); the evidence table, the flip
+    /// list and the rejected alternatives are in
+    /// `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md`.
+    ///
     /// Returning `Some(threshold)` means: a TP whose
     /// [`crate::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
     /// exceeds `threshold` is a real signal.
@@ -474,13 +482,27 @@ impl OperationType {
             // moves, so air-cut % is unusable. Suppress entirely (Priority 4).
             Drill | AlignmentPinDrill => None,
             // ProjectCurve is inherently sparse: rivers/curves are tiny features
-            // in big stock; rapids dominate by construction. Wanaka TPs read
-            // 78–92% air-cut at-baseline. Only flag near-total air (~97%+).
-            ProjectCurve => Some(97.0),
-            // 3D finish ops: close-contact passes expected; >30% indicates poor
-            // boundary or excess retraction.
+            // in big stock; rapids dominate by construction. The old 97 cited
+            // "Wanaka TPs read 78–92% at-baseline" — post-flip the same project's
+            // project-curve ops read 15.97 and 10.90, and an isolated river reads
+            // 13.2–28.7, so 97 had become unreachable (a dead gate reads as
+            // exoneration on `get_diagnostics`). 60 is ~2x the highest post-flip
+            // reading; deliberately loose because ProjectCurve is the ONE op that
+            // did not stabilise under swept (−15.6 pp across two cell sizes,
+            // DECISION §4.b), and a tight band on an unstable measure is the
+            // defect this review keeps finding.
+            ProjectCurve => Some(60.0),
+            // 3D finish ops: close-contact passes expected. The old 30 fired on
+            // EIGHT of the nine family members measured on clean, defect-free
+            // geometry with the correct tool — a bar that fires on essentially
+            // every well-formed instance distinguishes nothing. The defect-free
+            // cluster sits at 34.3–42.5 (DropCutter 34.3, SpiralFinish 40.5,
+            // Waterline 40.5, Scallop 41.6, RampFinish 42.5); 45 clears it by
+            // ~2.5 pp and still flags the two genuine outliers — SteepShallow 78
+            // and RadialFinish 82 — by 1.7–1.8x. Judgement on a cluster of nine,
+            // not a derived constant (DECISION §5.1).
             DropCutter | Scallop | UnifiedFinish | Waterline | Pencil | HorizontalFinish
-            | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(30.0),
+            | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(45.0),
             // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
             // make 40% the high-water mark.
             Pocket | Face | Adaptive | Rest | Zigzag | Adaptive3d => Some(40.0),
@@ -2879,14 +2901,24 @@ mod tests {
         let t = OperationType::ProjectCurve
             .air_cut_high_threshold_pct()
             .expect("ProjectCurve should have an air-cut threshold");
+        // W5B-F4: the band must stay the most permissive in the table (the op
+        // IS sparse by construction) without becoming unreachable. Post-flip
+        // readings are 10.9–28.7; the old 97 could not fire on anything the
+        // repo can produce, and a gate that cannot fire reads as exoneration.
         assert!(
-            t >= 95.0,
-            "ProjectCurve threshold must accept sparse-pattern baseline (Wanaka rivers read 78–92%); got {t}"
+            t > 45.0,
+            "ProjectCurve must stay above the 3D-finish band — rivers/curves \
+             are sparse by construction; got {t}"
+        );
+        assert!(
+            t <= 70.0,
+            "ProjectCurve threshold must stay reachable: post-flip readings top \
+             out at 28.7 (isolated river) and a band near 100 is a dead gate; got {t}"
         );
     }
 
     #[test]
-    fn air_cut_threshold_strict_for_finish_ops() {
+    fn air_cut_threshold_band_for_finish_ops() {
         for op in [
             OperationType::DropCutter,
             OperationType::Scallop,
@@ -2902,7 +2934,15 @@ mod tests {
             let t = op
                 .air_cut_high_threshold_pct()
                 .unwrap_or_else(|| panic!("{op:?} should have an air-cut threshold"));
-            assert!(t <= 30.0, "{op:?} finish threshold expected ≤30, got {t}");
+            // W5B-F4: the band must clear the measured defect-free cluster
+            // (34.3–42.5 on clean geometry with the correct tool) and still
+            // catch the genuine outliers (SteepShallow 78, RadialFinish 82).
+            // Below 43 it false-alarms on well-formed finishing; above 60 it
+            // stops distinguishing a bad strategy from a good one.
+            assert!(
+                (43.0..=60.0).contains(&t),
+                "{op:?} finish threshold expected ~45, got {t}"
+            );
         }
     }
 

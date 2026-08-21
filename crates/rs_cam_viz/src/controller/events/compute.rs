@@ -1885,10 +1885,18 @@ impl<B: ComputeBackend> AppController<B> {
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
 
+        // W5B-F4 (2026-08-21): 20 → 40. This bar and the GUI banner
+        // (`ui/sim_diagnostics.rs`) are the same number on two surfaces; the
+        // CLI shipped 40 on the same quantity, so the workspace carried two
+        // project constants at once. 20 fired on every reference project the
+        // repo has both before and after the swept-kernel flip, so it carried
+        // no information. Interim constant; the recommended end state is to
+        // derive this from the per-op offender list. Verdict flips: none.
+        // `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md` §5.6.
         let verdict = if rapid_collision_count > 0 {
             "WARNING: rapid collisions detected"
-        } else if air_cut_pct > 20.0 {
-            "WARNING: high air cutting (>20% of total runtime)"
+        } else if air_cut_pct > 40.0 {
+            "WARNING: high air cutting (>40% of total runtime)"
         } else {
             "OK"
         };

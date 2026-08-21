@@ -1095,7 +1095,7 @@ pub struct ProjectDiagnostics {
     /// at the call site (`MEASUREMENT_DOMAINS.md` LH-1).
     pub air_cut_percentage: f64,
     /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
-    /// The measure every shipped threshold is tuned against — the GUI's 20%
+    /// The measure every shipped threshold is tuned against — the GUI's 40%
     /// banner, the CLI's 40% verdict, and
     /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`].
     pub air_cut_pct_of_total_runtime: f64,

@@ -141,7 +141,7 @@ This workflow names a working subset — the embedded server registers roughly 6
 | Rapid collisions | 0 | 1-10 | > 10 |
 | Avg engagement | > 0.3 | 0.1-0.3 | < 0.1 |
 
-Air-cut thresholds are set PER OPERATION TYPE against the total-runtime denominator (`air_cut_pct_of_total_runtime`), not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed — dexel can't see Z-only moves) for `Drill`/`AlignmentPinDrill`; 97.0 for `ProjectCurve` (rivers/curves are inherently sparse); 30.0 for the 3D finish family (DropCutter, Scallop, UnifiedFinish, Waterline, Pencil, HorizontalFinish, SteepShallow, RampFinish, SpiralFinish, RadialFinish); 40.0 for 2.5D clearing/rough (Pocket, Face, Adaptive, Rest, Zigzag, Adaptive3d) and 2D contour ops (Profile, Chamfer, Inlay, VCarve, Trace).
+Air-cut thresholds are set PER OPERATION TYPE against the total-runtime denominator (`air_cut_pct_of_total_runtime`), not one fixed band — see `OperationType::air_cut_high_threshold_pct` (`crates/rs_cam_core/src/compute/catalog.rs:456-491`): `None` (suppressed — dexel can't see Z-only moves) for `Drill`/`AlignmentPinDrill`; 60.0 for `ProjectCurve` (rivers/curves are inherently sparse); 45.0 for the 3D finish family (DropCutter, Scallop, UnifiedFinish, Waterline, Pencil, HorizontalFinish, SteepShallow, RampFinish, SpiralFinish, RadialFinish); 40.0 for 2.5D clearing/rough (Pocket, Face, Adaptive, Rest, Zigzag, Adaptive3d) and 2D contour ops (Profile, Chamfer, Inlay, VCarve, Trace).
 
 **Drill-specific thresholds** — read from `cut_trace.drill_summaries` keyed by `toolpath_id`, gate verdicts from `get_tool_load_report().per_toolpath[].drill_gates`:
 

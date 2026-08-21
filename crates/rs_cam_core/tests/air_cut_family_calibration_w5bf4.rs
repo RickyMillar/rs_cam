@@ -5,7 +5,9 @@
 //! # Why this exists
 //!
 //! Every shipped air-cut bar — `OperationType::air_cut_high_threshold_pct`,
-//! the GUI's 20 % banner, the CLI's 40 % verdict — was fitted against the
+//! the GUI's banner (**20 %** when this harness was written; **40 %** since
+//! the recalibration this harness produced the evidence for), the CLI's 40 %
+//! verdict — was fitted against the
 //! per-stamp kernel's reading, and that reading was largely a **resolution
 //! artifact**: on one unchanged toolpath it moved 0.31 % → 89.61 % across
 //! cell sizes 0.25 → 1.0 mm while the swept kernel read a stable
