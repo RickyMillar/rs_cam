@@ -1122,9 +1122,14 @@ Kept because the process failure is more transferable than the bug.
 
 1. ~~Emit corrected G-code~~ — **DONE.** Both files re-exported on the fixed
    binary, datum verified, pre-fix files deleted.
-2. **G-SUGGEST-NOCLAMP** — drop_cutter's commanded feed is 1.63× the chipload
-   band and passes only because the machine can't reach it. **Confirmed present in
-   the emitted G-code (`F1260` × 559).** Not root-caused. Top priority.
+2. ~~**G-SUGGEST-NOCLAMP**~~ — **FIXED 2026-08-19** (`a1bb964b`, Suggest pass 9
+   `rescale_feed_to_final_geometry`). This row said "not root-caused, top
+   priority" long after the fix landed because only the detail section below
+   was updated — corrected 2026-08-21. Still open from that work: the seed
+   target (band-max seeding measured 56.3% in-band vs the 45.9% shipped, which
+   re-opens the v3.0c midpoint ruling — operator ruled 2026-08-21 to LEAVE IT
+   at midpoint), and the fact that 54% of banded points still command below the
+   vendor minimum, which is the derate stack, not the multiplier.
 3. ~~**G-PINDRILL-FRAME**~~ — **HALF FIXED 2026-08-21.** Stock-relative pins are
    now translated into the emission frame; exported pin XY was off by exactly
    the stock origin. The `selected_holes` half is **G-DRILLPICK-FRAME**:
@@ -1143,5 +1148,19 @@ Kept because the process failure is more transferable than the bug.
 7. Renderer: origin, panel mirror convention, anti-aliasing, labels.
 8. MCP surface: stock material/origin/rigidity setters, typed `value` on
    `set_toolpath_param` so arrays survive, and honest `add_tool` defaults.
-9. Commit decision on the two fixes; the viz half of the sim fix has had a
+9. **G-SIDEFACE-POLYCOLLAPSE** (new, 2026-08-21, unverified). `apply_to_polygons`
+   projects through `world_to_local(P3::new(p.x, p.y, 0.0))`, so on
+   `FaceUp::{Front, Back, Left, Right}` setups the local Y (or X) becomes a
+   constant and a 2D polygon collapses to a degenerate line rather than a
+   polygon. Found while fixing G-PROFILE-FLIP; that fix is a no-op here
+   (shoelace of a degenerate ring is 0). Needs a decision on whether 2D ops on
+   side-face setups are meant to work at all before it is worth fixing.
+10. **G-PECKROOT** (new, 2026-08-21, measured). `emit_peck_plunge` is rooted at
+   `safe_z` and knows nothing about the stock top, so while
+   `SAFE_Z_CLEARANCE_MM` (5.0) exceeds `depth_per_pass` the first entry rung
+   always lands above the stock — one wasted fed rung per entry, ~2 mm each.
+   Rooting at the stock top takes it to zero but changes adaptive3d entry
+   motion and moves fingerprints, so it needs an explicit go-ahead. Sentried at
+   the current residual by `air_ladder_emitted_z_levels_g_airladder.rs`.
+11. Commit decision on the two fixes; the viz half of the sim fix has had a
    partial line-by-line review only.
