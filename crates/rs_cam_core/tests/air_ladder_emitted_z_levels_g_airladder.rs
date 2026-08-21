@@ -242,7 +242,10 @@ fn profile_emitted_motion(tp: &Toolpath, plane_z: f64) -> EmittedZProfile {
         if lateral {
             lateral_cut_moves += 1;
         }
-        match levels.iter_mut().find(|l| (l.z - target.z).abs() <= Z_EPS_MM) {
+        match levels
+            .iter_mut()
+            .find(|l| (l.z - target.z).abs() <= Z_EPS_MM)
+        {
             Some(level) => {
                 level.fed_moves += 1;
                 level.lateral_moves += usize::from(lateral);

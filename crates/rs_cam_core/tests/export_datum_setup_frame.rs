@@ -74,8 +74,8 @@ use rs_cam_core::compute::operation_configs::TraceConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::ToolpathConfig;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::ToolpathConfig;
 use std::sync::atomic::AtomicBool;
 
 const STOCK_X: f64 = 60.0;
@@ -159,18 +159,12 @@ fn build_two_setup_session() -> ProjectSession {
 
     // Setup 0 is the identity setup `new_empty` already created.
     session
-        .add_toolpath(
-            0,
-            trace_toolpath(IDENTITY_LABEL, tool_id, model_id),
-        )
+        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
 
     let flipped = session.add_setup("Flip".to_owned(), FaceUp::Bottom);
     session
-        .add_toolpath(
-            flipped,
-            trace_toolpath(FLIPPED_LABEL, tool_id, model_id),
-        )
+        .add_toolpath(flipped, trace_toolpath(FLIPPED_LABEL, tool_id, model_id))
         .expect("add flipped-setup trace");
 
     session
@@ -411,10 +405,7 @@ fn zero_origin_stock_is_unchanged() {
     let tool_id = session.tools()[tool_idx].id.0;
     let model_id = session.add_model(polygon_model(vec![square_model_polygon()], "square30"));
     session
-        .add_toolpath(
-            0,
-            trace_toolpath(IDENTITY_LABEL, tool_id, model_id),
-        )
+        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
         .expect("add identity-setup trace");
 
     let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, 0);
