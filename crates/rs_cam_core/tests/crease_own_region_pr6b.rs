@@ -485,6 +485,36 @@ fn production_unified_finish_output_is_byte_identical() {
     // 10.000 mm, and both move counts are unchanged (1464, 972). No cutting
     // Z moved, which is what makes this a pin refresh rather than a
     // geometry change.
+    //
+    // Re-pinned 2026-08-21 a second time, for the TSP intent tagging
+    // (drill lane rung B: `rebuild_group` now tags the rapids it
+    // synthesizes `Retract` / `Linking` instead of leaving them
+    // `MoveIntent::Unknown`). Attributed, and NOT a geometry change —
+    // measured with a dual-hash probe on this exact fixture, through this
+    // exact `generate_through_session`, hashing geometry (`move_type` +
+    // `target`) and `intent` separately:
+    //
+    //   arm     moves  full                 geometry             intent
+    //   before  1464   0xadd939bf5beb02b0   0x53c044bb4d0b52bb   0x7c436e005171d7d6
+    //   after   1464   0xe5f1228e888f5d73   0x53c044bb4d0b52bb   0x41602de5dd64c8ef
+    //   before   972   0xaf850700ffcd0179   0x12aca12eafc92d8c   0x759ed36a15b44422
+    //   after    972   0x7990ae0c64dbba88   0x12aca12eafc92d8c   0x138b34624b6ac4f5
+    //
+    // The GEOMETRY hash is identical in both arms on both tools and the
+    // move counts are unchanged; only the intent hash moves. Corroborated
+    // independently: 1251 lines of emitted G-code across nine operation
+    // families are byte-identical before and after.
+    //
+    // READ THIS BEFORE BLAMING A FUTURE FAILURE ON GEOMETRY. This test's
+    // name and its assertion message both say "emitted move", but
+    // `fingerprint` is FNV-1a over `format!("{:?}", tp.moves)` — the
+    // `Debug` rendering of `Move`, which includes the `intent` field. So
+    // an intent-only change trips this pin and presents as a geometry
+    // regression. Two of the three refreshes recorded above are that
+    // class. The hash was deliberately left whole rather than split in
+    // the lane that found it; if a third intent-only refresh lands here,
+    // that is the signal to split it into a geometry pin and an intent
+    // pin.
     /// `(move count, geometry hash)` — what `fingerprint` returns.
     type Fp = (usize, u64);
     let mut drift: Vec<(&str, Fp, Fp)> = Vec::new();
@@ -492,9 +522,9 @@ fn production_unified_finish_output_is_byte_identical() {
         (
             "taper",
             tapered_ball_tool(),
-            (1464usize, 0xadd9_39bf_5beb_02b0u64),
+            (1464usize, 0xe5f1_228e_888f_5d73u64),
         ),
-        ("ball", ball_tool(), (972usize, 0xaf85_0700_ffcd_0179u64)),
+        ("ball", ball_tool(), (972usize, 0x7990_ae0c_64db_ba88u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
