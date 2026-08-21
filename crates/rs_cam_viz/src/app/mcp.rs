@@ -4457,13 +4457,23 @@ impl super::RsCamApp {
             let w = width.unwrap_or(1200);
             let h = height.unwrap_or(800);
             let cp_idx = checkpoint.unwrap_or_else(|| results.checkpoints.len().saturating_sub(1));
-            // Anchor every panel to the PROJECT's world stock bbox rather than
-            // to whatever bbox the checkpoint's own dexel grid carries. For a
-            // non-identity setup `cp.stock()`'s bbox is the zero-rooted
-            // effective one (the F-024 path), so anchoring to it re-hides the
-            // stock origin the composite is supposed to make visible — the
-            // very defect that let a frame bug sit unnoticed in these renders.
-            let world_frame = self.controller.state().session.stock_bbox();
+            // Anchor to the STOCK-RELATIVE ZERO-ROOTED frame, which is what
+            // the simulated stock is actually in: `compute::simulate` builds
+            // its global grid as `0..(max-min)` per axis precisely because
+            // `local_to_global` yields stock-relative coordinates, not world
+            // ones. Passing the WORLD bbox here (as this did briefly) unions
+            // two different frames — on a stock at origin (-20,-25) the footer
+            // read `X -20.0..140.1` for a 140 mm blank, i.e. the world bbox
+            // and the zero-rooted grid side by side.
+            let stock_bbox = self.controller.state().session.stock_bbox();
+            let world_frame = rs_cam_core::geo::BoundingBox3 {
+                min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+                max: rs_cam_core::geo::P3::new(
+                    stock_bbox.max.x - stock_bbox.min.x,
+                    stock_bbox.max.y - stock_bbox.min.y,
+                    stock_bbox.max.z - stock_bbox.min.z,
+                ),
+            };
             let pixels = if let Some(cp) = results.checkpoints.get(cp_idx) {
                 rs_cam_core::fingerprint::render_stock_composite_in_frame(
                     cp.stock(),
