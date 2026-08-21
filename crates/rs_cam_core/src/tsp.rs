@@ -10,13 +10,25 @@ use crate::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
 use crate::transform_provenance::{ReconcileSet, Transformed};
 
-/// A continuous sequence of cutting moves between rapids.
+/// Z tolerance for deciding whether a rapid reaches the group-framing
+/// ceiling. Both sides of that comparison are heights derived from the
+/// same [`crate::compute::config::HeightContext`], so this only has to
+/// absorb accumulated `f64` noise — it is not a clearance margin.
+const CEILING_EPS: f64 = 1e-9;
+
+/// One atomic unit of the reorder: a run of moves the pass may relocate as
+/// a whole, but must never take apart.
+///
+/// Historically this was exactly "a run of consecutive non-rapid moves",
+/// because every rapid was assumed to be framing. Under C1 a segment can
+/// also carry the operation's OWN internal linking rapids — see
+/// [`split_into_segments`].
 struct Segment {
     moves: Vec<Move>,
     start: P3,
     end: P3,
     /// Half-open range of move indices in the *input* toolpath that this
-    /// segment's cutting moves came from. Rapids around the segment are
+    /// segment's moves came from. Framing rapids around the segment are
     /// not included — they are regenerated during reassembly.
     src_range: Range<usize>,
 }
@@ -28,61 +40,101 @@ fn xy_distance(a: &P3, b: &P3) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Split a toolpath into segments of consecutive non-rapid moves.
+/// Close the run accumulated so far into a [`Segment`], or drop it.
 ///
-/// Each segment tracks the start and end positions of its cutting moves and
-/// the half-open `[start..end)` range of input move indices it covers.
-/// Rapids between segments are discarded (they will be regenerated).
-fn split_into_segments(toolpath: &Toolpath) -> Vec<Segment> {
+/// A run that holds no cutting move at all is not a segment: there is
+/// nothing to reorder and nothing to hang a remap entry on. That can only
+/// happen with C1 preservation on (a stretch of internal linking rapids
+/// with no cut between them), and such a run is dropped exactly the way a
+/// framing rapid is — its input indices stay unmapped and
+/// [`fill_group_rapids`] gives them a zero-width slot.
+fn flush_segment(
+    segments: &mut Vec<Segment>,
+    current_moves: &mut Vec<Move>,
+    current_start_idx: &mut Option<usize>,
+) {
+    let Some(src_start) = current_start_idx.take() else {
+        return;
+    };
+    let has_cut = current_moves
+        .iter()
+        .any(|m| !matches!(m.move_type, MoveType::Rapid));
+    if !has_cut {
+        current_moves.clear();
+        return;
+    }
+    let (Some(first), Some(last)) = (current_moves.first(), current_moves.last()) else {
+        return;
+    };
+    let start = first.target;
+    let end = last.target;
+    let n = current_moves.len();
+    segments.push(Segment {
+        moves: std::mem::take(current_moves),
+        start,
+        end,
+        src_range: src_start..src_start + n,
+    });
+}
+
+/// Split a toolpath into the segments the reorder may permute.
+///
+/// Each segment tracks the start and end positions of its moves and the
+/// half-open `[start..end)` range of input move indices it covers. The
+/// rapids that *frame* segments are discarded — they will be regenerated
+/// at `safe_z` by [`rebuild_group`].
+///
+/// # `internal_link_ceiling_z` — the C1 dial
+///
+/// `None` is the historical rule: **every** rapid frames a segment, so a
+/// segment is a run of consecutive non-rapid moves and every rapid in the
+/// group is thrown away and re-invented from one scalar.
+///
+/// `Some(c)` says the operation links its own cutting moves *below* `c`,
+/// and those links are not the reorderer's to re-plan. A rapid whose
+/// target sits below `c` then stays **inside** the segment and is carried
+/// through verbatim — position, `MoveType` and `MoveIntent` — while
+/// rapids at or above `c` still frame it.
+///
+/// This is what makes a peck cycle survive. A G83/G73 hole is five feeds
+/// separated by an R-plane retract and a re-entry rapid; with `None` those
+/// are five independently-reorderable segments whose framing is rebuilt at
+/// `safe_z`, which deletes the R-plane and turns every re-entry into a
+/// `G1` feed from full safe-Z (105 mm of fed distance per hole where the
+/// cycle describes 17 mm — see
+/// `planning/perf_review_2026-08-19/RESEARCH_drill_intent_erasure.md`).
+/// With `Some(safe_z)` the whole hole is **one** segment, so the cycle is
+/// relocated intact and the pass still reorders holes by XY — the
+/// optimisation `drill_capability_allows_tsp_reorder_reduces_rapid`
+/// defends is kept, unlike the "refuse to reorder drills" alternative.
+///
+/// The value is a *ceiling on internal linking*, not a height anything is
+/// emitted at; nothing here plants a rapid at `c`. (The C1 contract in the
+/// research doc calls it `rebuild_clearance_z`; it is named for what it
+/// does, because a single rebuild height cannot express a per-peck
+/// re-entry clearance and would leave the cycle 2.6x over-fed.)
+fn split_into_segments(toolpath: &Toolpath, internal_link_ceiling_z: Option<f64>) -> Vec<Segment> {
     let mut segments = Vec::new();
     let mut current_moves: Vec<Move> = Vec::new();
     let mut current_start_idx: Option<usize> = None;
 
     for (idx, m) in toolpath.moves.iter().enumerate() {
-        match m.move_type {
-            MoveType::Rapid => {
-                if let (Some(first), Some(last), Some(src_start)) = (
-                    current_moves.first(),
-                    current_moves.last(),
-                    current_start_idx,
-                ) {
-                    let start = first.target;
-                    let end = last.target;
-                    let n = current_moves.len();
-                    segments.push(Segment {
-                        moves: std::mem::take(&mut current_moves),
-                        start,
-                        end,
-                        src_range: src_start..src_start + n,
-                    });
-                    current_start_idx = None;
-                }
+        let frames_segment = matches!(m.move_type, MoveType::Rapid)
+            && match internal_link_ceiling_z {
+                None => true,
+                Some(ceiling) => m.target.z >= ceiling - CEILING_EPS,
+            };
+        if frames_segment {
+            flush_segment(&mut segments, &mut current_moves, &mut current_start_idx);
+        } else {
+            if current_start_idx.is_none() {
+                current_start_idx = Some(idx);
             }
-            _ => {
-                if current_start_idx.is_none() {
-                    current_start_idx = Some(idx);
-                }
-                current_moves.push(m.clone());
-            }
+            current_moves.push(m.clone());
         }
     }
 
-    if let (Some(first), Some(last), Some(src_start)) = (
-        current_moves.first(),
-        current_moves.last(),
-        current_start_idx,
-    ) {
-        let start = first.target;
-        let end = last.target;
-        let n = current_moves.len();
-        segments.push(Segment {
-            moves: current_moves,
-            start,
-            end,
-            src_range: src_start..src_start + n,
-        });
-    }
+    flush_segment(&mut segments, &mut current_moves, &mut current_start_idx);
 
     segments
 }
@@ -137,7 +189,7 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 // SAFETY: all indexing in this function is bounded by `n` (segment count)
 // and group_bounds, both built locally.
 pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> AnnotatedToolpath {
-    optimize_rapid_order_with_provenance(annotated, safe_z)
+    optimize_rapid_order_with_provenance(annotated, safe_z, None)
         .reconcile(&mut ReconcileSet::empty())
         .into_inner()
 }
@@ -157,6 +209,7 @@ pub fn optimize_rapid_order(annotated: AnnotatedToolpath, safe_z: f64) -> Annota
 pub fn optimize_rapid_order_with_provenance(
     annotated: AnnotatedToolpath,
     safe_z: f64,
+    internal_link_ceiling_z: Option<f64>,
 ) -> Transformed {
     let barriers = annotated.rapid_order_barriers();
     let AnnotatedToolpath {
@@ -216,6 +269,7 @@ pub fn optimize_rapid_order_with_provenance(
             &toolpath,
             group.clone(),
             safe_z,
+            internal_link_ceiling_z,
             &mut result,
             &mut old_to_new,
         );
@@ -258,13 +312,14 @@ fn optimize_one_group(
     toolpath: &Toolpath,
     group: Range<usize>,
     safe_z: f64,
+    internal_link_ceiling_z: Option<f64>,
     result: &mut Toolpath,
     old_to_new: &mut [Option<Range<usize>>],
 ) {
     let group_view = Toolpath {
         moves: toolpath.moves[group.clone()].to_vec(),
     };
-    let mut segments = split_into_segments(&group_view);
+    let mut segments = split_into_segments(&group_view, internal_link_ceiling_z);
     // Shift segment src_ranges back into input-toolpath coordinates.
     for s in &mut segments {
         s.src_range = s.src_range.start + group.start..s.src_range.end + group.start;
@@ -798,7 +853,7 @@ mod tests {
         tp.feed_to(P3::new(25.0, 0.0, -1.0), 1000.0);
         tp.rapid_to(P3::new(25.0, 0.0, 10.0));
 
-        let segments = split_into_segments(&tp);
+        let segments = split_into_segments(&tp, None);
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].moves.len(), 2);
         assert_eq!(segments[1].moves.len(), 2);
@@ -806,6 +861,65 @@ mod tests {
         assert!((segments[0].end.x - 5.0).abs() < 1e-10);
         assert!((segments[1].start.x - 20.0).abs() < 1e-10);
         assert!((segments[1].end.x - 25.0).abs() < 1e-10);
+    }
+
+    /// C1: with an internal-link ceiling, a rapid BELOW it does not split.
+    ///
+    /// The shape is a peck cycle in miniature — two feeds separated by a
+    /// retract to an R-plane and a re-entry, framed by safe-Z rapids. With
+    /// `None` that is two segments and the framing between them is thrown
+    /// away; with `Some(safe_z)` it is ONE segment carrying its own two
+    /// rapids, which is what makes the cycle survive the reorder intact.
+    #[test]
+    fn split_into_segments_keeps_internal_links_below_the_ceiling() {
+        let safe_z = 17.0;
+        let r_plane = 5.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, safe_z));
+        tp.rapid_to(P3::new(0.0, 0.0, r_plane));
+        tp.feed_to(P3::new(0.0, 0.0, 2.0), 300.0);
+        tp.rapid_to(P3::new(0.0, 0.0, r_plane));
+        tp.rapid_to(P3::new(0.0, 0.0, 2.5));
+        tp.feed_to(P3::new(0.0, 0.0, -1.0), 300.0);
+        tp.rapid_to(P3::new(0.0, 0.0, r_plane));
+
+        let split_at_every_rapid = split_into_segments(&tp, None);
+        assert_eq!(
+            split_at_every_rapid.len(),
+            2,
+            "without a ceiling every rapid frames a segment"
+        );
+        assert_eq!(split_at_every_rapid[0].moves.len(), 1);
+        assert_eq!(split_at_every_rapid[1].moves.len(), 1);
+
+        let preserved = split_into_segments(&tp, Some(safe_z));
+        assert_eq!(
+            preserved.len(),
+            1,
+            "with the ceiling at safe_z the whole cycle is one atomic segment"
+        );
+        // Everything but the leading safe-Z rapid: the R-plane approach,
+        // both feeds, the retract, the re-entry and the final retract.
+        assert_eq!(preserved[0].moves.len(), 6);
+        assert!((preserved[0].start.z - r_plane).abs() < 1e-10);
+        assert!((preserved[0].end.z - r_plane).abs() < 1e-10);
+        assert_eq!(preserved[0].src_range, 1..7);
+    }
+
+    /// A run of preserved internal rapids with no cut in it is not a
+    /// segment — there is nothing to reorder and nothing to remap.
+    #[test]
+    fn split_into_segments_drops_a_cutless_run_of_internal_rapids() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 17.0));
+        tp.rapid_to(P3::new(0.0, 0.0, 3.0));
+        tp.rapid_to(P3::new(1.0, 0.0, 3.0));
+        tp.rapid_to(P3::new(1.0, 0.0, 17.0));
+        tp.feed_to(P3::new(2.0, 0.0, -1.0), 300.0);
+
+        let segments = split_into_segments(&tp, Some(17.0));
+        assert_eq!(segments.len(), 1, "only the run holding the feed survives");
+        assert_eq!(segments[0].moves.len(), 1);
     }
 
     #[test]

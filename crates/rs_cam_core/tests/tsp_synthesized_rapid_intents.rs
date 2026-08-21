@@ -105,15 +105,13 @@ fn synthesized_rapids_are_tagged_retract_or_linking() {
         rapids.len()
     );
     assert!(
-        rapids.iter().all(|i| matches!(
-            i,
-            MoveIntent::Retract | MoveIntent::Linking
-        )),
+        rapids
+            .iter()
+            .all(|i| matches!(i, MoveIntent::Retract | MoveIntent::Linking)),
         "every synthesized rapid must be Retract or Linking, got {rapids:?}"
     );
     assert!(
-        rapids.iter().any(|i| *i == MoveIntent::Retract)
-            && rapids.iter().any(|i| *i == MoveIntent::Linking),
+        rapids.contains(&MoveIntent::Retract) && rapids.contains(&MoveIntent::Linking),
         "both roles must be represented — a pass that tagged everything the \
          same way would satisfy the bar above without saying anything, {rapids:?}"
     );
@@ -127,8 +125,7 @@ fn the_reorder_never_invents_a_drilling_move() {
         "precondition: the input carries no Drilling move"
     );
 
-    let out =
-        rs_cam_core::tsp::optimize_rapid_order(AnnotatedToolpath::new(input), 10.0).toolpath;
+    let out = rs_cam_core::tsp::optimize_rapid_order(AnnotatedToolpath::new(input), 10.0).toolpath;
 
     assert!(
         !out.moves.iter().any(|m| m.intent == MoveIntent::Drilling),
@@ -260,8 +257,7 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
                 tab_width: 6.0,
                 tab_height: 2.0,
                 finishing_passes: 0,
-                compensation:
-                    rs_cam_core::compute::operation_configs::CompensationType::InComputer,
+                compensation: rs_cam_core::compute::operation_configs::CompensationType::InComputer,
                 spindle_rpm: Some(18_000),
             }),
         ),
@@ -300,11 +296,12 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
         let unknown = tp
             .moves
             .iter()
-            .filter(|m| {
-                matches!(m.move_type, MoveType::Rapid) && m.intent == MoveIntent::Unknown
-            })
+            .filter(|m| matches!(m.move_type, MoveType::Rapid) && m.intent == MoveIntent::Unknown)
             .count();
-        println!("{label}: {} moves, {rapids} rapids, {unknown} untagged", tp.moves.len());
+        println!(
+            "{label}: {} moves, {rapids} rapids, {unknown} untagged",
+            tp.moves.len()
+        );
         assert_eq!(
             unknown, 0,
             "{label}: {unknown} of {rapids} rapids came out of the pipeline \

@@ -243,8 +243,15 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
     let expected = rs_cam_core::drill::fed_descents(cfg.cycle.to_core(&cfg), bottom_z, r_plane);
 
     println!("── {case}");
-    println!("   R-plane {r_plane:.3}  bottom {bottom_z:.3}  moves {}", toolpath.moves.len());
-    println!("   schedule ({}): {}", expected.len(), fmt_descents(&expected));
+    println!(
+        "   R-plane {r_plane:.3}  bottom {bottom_z:.3}  moves {}",
+        toolpath.moves.len()
+    );
+    println!(
+        "   schedule ({}): {}",
+        expected.len(),
+        fmt_descents(&expected)
+    );
 
     // Non-vacuity: the case must exercise a real multi-descent cycle, or
     // the comparison below could pass on a degenerate one-bite schedule.
@@ -319,7 +326,6 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
 /// G83, shipped defaults: depth 10, peck 3, `retract_z` 2 (floored to the
 /// R-plane at stock_top + 5), feed 300.
 #[test]
-#[ignore = "red until drill C1 (rebuild_clearance_z) lands — see RESEARCH_drill_intent_erasure.md"]
 fn peck_cycle_motion_matches_the_schedule_it_describes() {
     assert_motion_matches_schedule(
         "G83 shipped defaults",
@@ -337,7 +343,6 @@ fn peck_cycle_motion_matches_the_schedule_it_describes() {
 /// entire purpose, so a pass that re-plants it at safe-Z inverts the
 /// operator's choice (research §4a).
 #[test]
-#[ignore = "red until drill C1 (rebuild_clearance_z) lands — see RESEARCH_drill_intent_erasure.md"]
 fn chip_break_cycle_motion_matches_the_schedule_it_describes() {
     assert_motion_matches_schedule(
         "G73 shipped defaults",
@@ -358,7 +363,6 @@ fn chip_break_cycle_motion_matches_the_schedule_it_describes() {
 /// values. A reading that assumed "re-entry = previous depth + a small
 /// constant" gets this backwards; `fed_descents` is the only authority.
 #[test]
-#[ignore = "red until drill C1 (rebuild_clearance_z) lands — see RESEARCH_drill_intent_erasure.md"]
 fn chip_break_with_retract_larger_than_peck_matches_the_schedule() {
     assert_motion_matches_schedule(
         "G73 retract 4.0 > peck 2.0",

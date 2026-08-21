@@ -3117,6 +3117,65 @@ fn apply_dressup_traced(
 /// consumer-panic class). It is orthogonal to `semantic_ctx`, which only
 /// controls whether each step records an item of its own; a caller with no
 /// channels passes [`ReconcileSet::empty`] and says so.
+/// The height below which THIS operation's rapids are its own internal
+/// linking rather than group framing — the per-op value C1 threads into
+/// [`crate::tsp::optimize_rapid_order_with_provenance`], where it stops
+/// the reorder from taking a canned cycle apart.
+///
+/// Returns `None` for every family whose rapids already live at `safe_z`,
+/// which keeps their emitted motion byte-identical: with `None` the
+/// reorder splits at every rapid exactly as it always has.
+///
+/// # Why the drills, and why detected this way
+///
+/// Drill is the one shipped family that deliberately puts rapids *below*
+/// `safe_z`: `generate_drill` sets `retract_z` to
+/// `effective_safe_z(cfg.retract_z, stock_top)` — the R-plane, at least
+/// `stock_top + SAFE_Z_CLEARANCE_MM` — and `drill::fed_descents` roots the
+/// whole peck schedule there (Fanuc G83). Every one of those rapids was
+/// discarded by the reorder and re-planted at `safe_z`, which deleted the
+/// R-plane approach and turned each peck re-entry into a `G1` feed from
+/// full safe-Z. Nothing reported it: `DrillToolpathSummary::feed_time_s`
+/// is computed from the config, not the moves. See
+/// `planning/perf_review_2026-08-19/RESEARCH_drill_intent_erasure.md`.
+///
+/// The predicate is the presence of a `MoveIntent::Drilling` move, which
+/// is the same structural test the session's drill entry-strip uses, and
+/// it is read off the toolpath **as the reorder will see it** — after the
+/// dressups that run ahead of the unbarriered arm. An op config is not
+/// available here (`apply_dressups` is called from three crates and takes
+/// no `OperationConfig`), and inventing one would have meant a signature
+/// change in files this lane may not touch; more to the point, the
+/// question really is about the motion, not about the label on it.
+///
+/// The value returned is `safe_z` itself: "anything below the plane the
+/// group is framed at is the operation's own business". It is a ceiling
+/// on internal linking, never a height anything is emitted at.
+fn internal_link_ceiling_z(annotated: &AnnotatedToolpath, safe_z: f64) -> Option<f64> {
+    toolpath_is_drill_cycle(annotated).then_some(safe_z)
+}
+
+/// Does this toolpath's emitted motion make it a drill cycle?
+///
+/// ONE construction site for the predicate two independent decisions in
+/// this pipeline now depend on — the entry-dressup strip
+/// (G-WANAKA-DRILL-RAMP, whose full rationale is at its call site below)
+/// and the C1 internal-link ceiling above. They were written days apart
+/// and would otherwise be two identical `any(...)` scans free to drift;
+/// the same predicate also lives in `session::compute`.
+///
+/// It reads emitted motion rather than the op type on purpose: both
+/// decisions are about what the moves DO. Only `drill.rs` tags
+/// `MoveIntent::Drilling`, and it tags every fed descent of all four
+/// cycles, so no drill-family plunge escapes and no milling op is caught.
+fn toolpath_is_drill_cycle(annotated: &AnnotatedToolpath) -> bool {
+    annotated
+        .toolpath
+        .moves
+        .iter()
+        .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
@@ -3150,6 +3209,7 @@ pub fn apply_dressups(
         && transform_capabilities.allows_barriered_rapid_reorder()
     {
         let barrier_count = rapid_order_barriers.len();
+        let link_ceiling = internal_link_ceiling_z(&current, safe_z);
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -3165,7 +3225,7 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::SafeZ, safe_z);
                 scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
-            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling),
         );
     }
 
@@ -3217,11 +3277,7 @@ pub fn apply_dressups(
     // caught. A future generator that mixed drilling and milling in one
     // toolpath would lose entry styling for the whole op — none does, and
     // `narrate.rs` already names that hypothetical as the thing to watch.
-    let is_drill_cycle = current
-        .toolpath
-        .moves
-        .iter()
-        .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling));
+    let is_drill_cycle = toolpath_is_drill_cycle(&current);
     if is_drill_cycle && cfg.entry_style != DressupEntryStyle::None {
         tracing::warn!(
             entry_style = ?cfg.entry_style,
@@ -3431,6 +3487,7 @@ pub fn apply_dressups(
         && rapid_order_barriers.is_empty()
         && transform_capabilities.allows_unbarriered_rapid_reorder()
     {
+        let link_ceiling = internal_link_ceiling_z(&current, safe_z);
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -3445,7 +3502,7 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z),
+            |at| crate::tsp::optimize_rapid_order_with_provenance(at, safe_z, link_ceiling),
         );
     }
 
