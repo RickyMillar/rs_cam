@@ -454,8 +454,14 @@ fn build_wanaka_scale_fixture(rng: &mut Xorshift64) -> (MoveRemap, Vec<Span>) {
 /// `MoveRemap::foreign_intrusion`, both left byte-for-byte unchanged by
 /// C9) vs the `RemapIndex`-backed path, on a wanaka-scale fixture. Not
 /// `#[ignore]`d: the deliberately-slow old path (250 spans × one O(n) scan
-/// each, repeated `REPS` times) is a few seconds at most, nowhere near the
-/// ~20s budget; the indexed path is comfortably faster still.
+/// each, repeated `REPS` times per round × `ROUNDS` rounds) is a few
+/// seconds at most, nowhere near the ~20s budget; the indexed path is
+/// comfortably faster still.
+///
+/// The wall-clock claim is a **median of `ROUNDS` paired rounds** — see the
+/// comment at `ROUNDS` for why, and why it is median-of-ratios. The
+/// output-matching half of this test is not timing-dependent and runs on
+/// every round.
 #[test]
 fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
     let mut rng = Xorshift64::new(0xA5A5_1357_ABCD_EF01);
@@ -474,63 +480,133 @@ fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
     // timing signal.
     const REPS: u32 = 5;
 
-    let mut old_spans = Vec::new();
-    let old_start = std::time::Instant::now();
-    for _ in 0..REPS {
-        old_spans = spans
-            .iter()
-            .filter_map(|s| {
-                let new_span = remap.remap_span(s, new_n)?;
-                if !s.is_boundary() && s.kind != SpanKind::Operation {
-                    let bounds = new_span.start_move..new_span.end_move;
-                    if remap
-                        .foreign_intrusion(s.start_move, s.end_move, &bounds)
-                        .is_some()
-                    {
-                        return None;
-                    }
-                }
-                Some(new_span)
-            })
-            .collect();
-    }
-    let old_elapsed = old_start.elapsed();
+    // The ≥5× bar below used to compare two SINGLE measurements, and this
+    // test flaked on three separate sessions because of it — most recently
+    // `DELTA_sim_w6_playback.md` §3e, which recorded 4.66× then 5.3× on an
+    // immediate re-run, with the movement entirely in the LINEAR reference
+    // arm (158.9 → 190.5 ms) while the indexed arm held at ~35 ms.
+    //
+    // Change (user-approved 2026-08-21): keep the bar at 5×, take the
+    // MEDIAN of 3 full rounds. Median-**of-ratios**, not ratio-of-medians:
+    // each round measures both arms back-to-back under the same machine
+    // conditions, so a ratio is a paired measurement and the median throws
+    // away the whole contended round. Ratio-of-medians would happily divide
+    // a contended linear median by a clean indexed median (or the reverse)
+    // and manufacture a number no round actually observed. The output
+    // matching below is unchanged and still runs every round.
+    const ROUNDS: usize = 3;
 
-    let mut new_spans = Vec::new();
+    // WHAT THE MEDIAN THEN REVEALED, and it is not noise. Measured
+    // 2026-08-21 on this fixture, three process runs each:
+    //
+    // | profile | per-round speedups | median | vs the 5× bar |
+    // |---|---|---|---|
+    // | debug   | 12.68 – 12.94 | **12.9×** | passes, every run |
+    // | release |  3.92 –  4.75 |  **4.3×** | FAILS, every run |
+    //
+    // The bar was calibrated in DEBUG. The landing commit (`ef4011cc`,
+    // 2026-08-03) recorded "linear scan 4.44 s, indexed 324 ms, 13.7x" —
+    // seconds-scale timings this same fixture only produces unoptimised,
+    // and today's debug build reproduces them (3.08 s / 240 ms / 12.9×).
+    // 5× was a margin under 13.7×, and `cargo test -p rs_cam_core` without
+    // `--release` is what it was checked against.
+    //
+    // In release both arms get much faster but the LINEAR reference arm
+    // gains far more — a flat scan vectorises; the index's tree descent is
+    // pointer-chasing that does not — so the ratio collapses to ~4.3×. The
+    // "flake" was never machine noise: it is one bar being read under two
+    // build profiles whose honest answers differ by 3×, and the release
+    // answer sits just under it. Before the median, release passed
+    // occasionally on the tail (1 of 5 runs of the unmodified test today:
+    // 4.4, 4.9, 4.7, 5.3, 4.4); after it, release fails deterministically.
+    //
+    // The bar is DELIBERATELY LEFT AT 5×. Moving it is a decision about
+    // what this test claims, and it belongs to the operator, not to the
+    // lane that happened to measure it. The options on the table are: lower
+    // it to ~4× so one number holds in both profiles; make it
+    // profile-aware via `cfg!(debug_assertions)`; or pin the test to one
+    // profile. `RemapIndex` itself is NOT regressed — both arms are far
+    // faster than they were in August, and the index still wins by 4.3× in
+    // the profile that ships.
+
+    // Both arms stay INLINE in the round loop rather than being hoisted
+    // into two closures. A first draft used closures and read consistently
+    // lower (medians 4.13× vs 4.3×) — not cleanly attributable, since the
+    // two drafts were not measured under the same machine load, which is
+    // exactly why the number is not quoted as a result. The point is that
+    // the timed region should stay the straight-line body the original
+    // single-shot test timed, so the duplicated `mut` accumulators are the
+    // cheaper price.
+    let mut ratios: Vec<f64> = Vec::with_capacity(ROUNDS);
     let mut heap_bytes = 0usize;
-    let new_start = std::time::Instant::now();
-    for _ in 0..REPS {
-        let index = RemapIndex::build(&remap);
-        heap_bytes = index.heap_bytes();
-        new_spans = spans
-            .iter()
-            .filter_map(|s| {
-                let new_span = remap.remap_span_with_index(s, new_n, &index)?;
-                if !s.is_boundary() && s.kind != SpanKind::Operation {
-                    let bounds = new_span.start_move..new_span.end_move;
-                    if index
-                        .foreign_intrusion(s.start_move, s.end_move, &bounds)
-                        .is_some()
-                    {
-                        return None;
+    for round in 1..=ROUNDS {
+        let mut old_spans = Vec::new();
+        let old_start = std::time::Instant::now();
+        for _ in 0..REPS {
+            old_spans = spans
+                .iter()
+                .filter_map(|s| {
+                    let new_span = remap.remap_span(s, new_n)?;
+                    if !s.is_boundary() && s.kind != SpanKind::Operation {
+                        let bounds = new_span.start_move..new_span.end_move;
+                        if remap
+                            .foreign_intrusion(s.start_move, s.end_move, &bounds)
+                            .is_some()
+                        {
+                            return None;
+                        }
                     }
-                }
-                Some(new_span)
-            })
-            .collect();
+                    Some(new_span)
+                })
+                .collect();
+        }
+        let old_elapsed = old_start.elapsed();
+
+        let mut new_spans = Vec::new();
+        let new_start = std::time::Instant::now();
+        for _ in 0..REPS {
+            let index = RemapIndex::build(&remap);
+            heap_bytes = index.heap_bytes();
+            new_spans = spans
+                .iter()
+                .filter_map(|s| {
+                    let new_span = remap.remap_span_with_index(s, new_n, &index)?;
+                    if !s.is_boundary() && s.kind != SpanKind::Operation {
+                        let bounds = new_span.start_move..new_span.end_move;
+                        if index
+                            .foreign_intrusion(s.start_move, s.end_move, &bounds)
+                            .is_some()
+                        {
+                            return None;
+                        }
+                    }
+                    Some(new_span)
+                })
+                .collect();
+        }
+        let new_elapsed = new_start.elapsed();
+
+        assert_eq!(
+            old_spans, new_spans,
+            "indexed path must produce byte-for-byte the same spans as the linear scan"
+        );
+
+        let speedup = old_elapsed.as_secs_f64() / new_elapsed.as_secs_f64().max(1e-12);
+        println!(
+            "C9 remap interval index — round {round}/{ROUNDS}: linear scan = {old_elapsed:?}, \
+             indexed (incl. {REPS} index builds) = {new_elapsed:?}, speedup = {speedup:.2}x"
+        );
+        ratios.push(speedup);
     }
-    let new_elapsed = new_start.elapsed();
 
-    assert_eq!(
-        old_spans, new_spans,
-        "indexed path must produce byte-for-byte the same spans as the linear scan"
-    );
+    let mut sorted = ratios.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).expect("no NaN speedups"));
+    let speedup = sorted[ROUNDS / 2];
 
-    let speedup = old_elapsed.as_secs_f64() / new_elapsed.as_secs_f64().max(1e-12);
     println!(
-        "C9 remap interval index — wanaka-scale fixture ({} moves, {} spans, {REPS} reps): \
-         linear scan = {old_elapsed:?}, indexed (incl. {REPS} index builds) = {new_elapsed:?}, \
-         speedup = {speedup:.1}x, index heap footprint = {heap_bytes} bytes ({:.2} MB)",
+        "C9 remap interval index — wanaka-scale fixture ({} moves, {} spans, {REPS} reps × \
+         {ROUNDS} rounds): per-round speedups = {ratios:?}, MEDIAN speedup = {speedup:.1}x, \
+         index heap footprint = {heap_bytes} bytes ({:.2} MB)",
         remap.old_to_new.len(),
         spans.len(),
         heap_bytes as f64 / (1024.0 * 1024.0),
@@ -539,7 +615,7 @@ fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
     assert!(
         speedup >= 5.0,
         "indexed path should be at least 5x faster than the linear scan on a wanaka-scale \
-         fixture: linear={old_elapsed:?} indexed={new_elapsed:?} speedup={speedup:.2}x"
+         fixture: median-of-{ROUNDS} speedup={speedup:.2}x, per-round speedups={ratios:?}"
     );
 
     // Memory regression guard: an earlier revision of `RemapIndex` answered
