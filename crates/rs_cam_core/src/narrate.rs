@@ -35,7 +35,18 @@ const Z_EPSILON_MM: f64 = 0.05;
 /// the fitter legitimately accepted. Pinned by
 /// `tests/tool_scale_semantics_pr2.rs`.
 pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
-const AIR_CUT_WARNING_PERCENT: f64 = 50.0;
+/// Fallback air-cut ⚠ bar for narration when the caller names no operation
+/// kind, or names one whose band is `None`.
+///
+/// **This is no longer the marker's threshold.** W5B-F4 (P8, 2026-08-21): the
+/// marker reads the narrated op's OWN band from
+/// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`], so
+/// the ⚠ agrees with the gate that would actually fire — which is what the D7
+/// ruling said the marker was for, and what a flat 50 could not deliver
+/// (it warned on a clean `ProjectCurve` at 55 and stayed silent on a
+/// 45-%-air pocket the gate flagged). This constant survives only for the
+/// two cases where there is no band to read.
+const AIR_CUT_WARNING_FALLBACK_PERCENT: f64 = 50.0;
 const DEEP_DOC_MULTIPLIER: f64 = 1.5;
 const MAX_LEVEL_LINES: usize = 8;
 /// Distinct region LABELS listed by `append_region_mix` before it elides.
@@ -1897,7 +1908,7 @@ fn append_air_cut_anomaly(
     }
     // D7 (census §3.5), ruled at Checkpoint D D-5: the marker follows the
     // TOTAL-RUNTIME reading, like every other air-cut threshold in the
-    // workspace — the GUI's 20%, the CLI's 40%, and every per-operation band
+    // workspace — the GUI's 40%, the CLI's 40%, and every per-operation band
     // in `OperationType::air_cut_high_threshold_pct`. This line prints both
     // numbers and used to set its ⚠ from the un-thresholded one, so a
     // retract-heavy op could carry a warning marker that no shipped gate
@@ -1922,7 +1933,22 @@ fn append_air_cut_anomaly(
         ));
         return;
     }
-    let marker = if air_pct_of_total > AIR_CUT_WARNING_PERCENT {
+    // W5B-F4 P8 (2026-08-21): the marker reads the narrated op's OWN band
+    // instead of a flat 50. D7 moved this marker onto the total-runtime
+    // reading "like every other air-cut threshold in the workspace" but left
+    // it comparing against a number no gate used, so the ⚠ and the gate could
+    // still disagree in both directions on the same toolpath. `context` has
+    // always carried `operation_kind`; this reads it.
+    //
+    // Ordering note from the package (§5.7): P8 is only verdict-neutral
+    // BECAUSE the 3D-finish band moved 30 → 45 first. Against the old 30,
+    // wanaka tp8 (35.71) and the 3D golden's `[DropCutter]` (34.28) would
+    // have flipped ℹ → ⚠ — P8 alone would have ADDED warnings.
+    let air_cut_bar = context
+        .operation_kind
+        .and_then(crate::compute::catalog::OperationType::air_cut_high_threshold_pct)
+        .unwrap_or(AIR_CUT_WARNING_FALLBACK_PERCENT);
+    let marker = if air_pct_of_total > air_cut_bar {
         "⚠"
     } else {
         "ℹ"
