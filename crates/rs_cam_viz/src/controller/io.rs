@@ -227,7 +227,15 @@ impl<B: ComputeBackend> AppController<B> {
                             .warnings(),
                     );
                 }
-                warning_messages.dedup();
+                // NOT `dedup()` — that only collapses ADJACENT duplicates, and
+                // a two-setup project interleaves them: setup 1 contributes
+                // bounds + flip + keying, setup 2 contributes bounds again, so
+                // the two identical bounds lines are never neighbours. Keep
+                // first occurrence, drop later repeats, preserve order.
+                {
+                    let mut seen = std::collections::HashSet::new();
+                    warning_messages.retain(|m| seen.insert(m.clone()));
+                }
 
                 for message in &warning_messages {
                     tracing::warn!("{message}");

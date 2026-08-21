@@ -528,6 +528,58 @@ an agent's.
 > `io/setup_sheet.rs:88` and `:303` (the printed sheet the operator carries to
 > the machine), and `ui/toolpath_panel.rs:480`.
 
+## G-DRILLTIME — drill ops are outside the cycle-time model
+
+Found 2026-08-22 in the live validation of the G-TIMEEST consolidation, by
+reading the GUI rather than the code.
+
+**Symptom.** After a clean generate + simulate on a project that CARRIES machine
+kinematics, the readiness/timeline/diagnostics surfaces all read
+`2:02:34 (cutting only, no accel)` — the WEAKEST basis — where `wall clock` was
+expected.
+
+**The number is right and the label is honest.** 2:02:34 = 7,354 s against the
+simulator's `total_runtime_s` of 7,292 s; a true `distance / feed` total for
+this project is about 26 min, so the figure is plainly trace-derived. The gap is
+**61.66 s**, and it reconciles exactly:
+
+| op | cutting mm | feed | naive time |
+|---|---|---|---|
+| Pin Drill | 74.0 | 300 | 14.8 s |
+| Holes | 234.0 | 300 | 46.8 s |
+| | | | **61.6 s** |
+
+**Mechanism.** Drill toolpaths set `metrics_not_applicable` and produce
+`drill_summaries` rather than an entry in `SimulationCutTrace::toolpath_summaries`
+(confirmed: the run's `measurability` block lists toolpath ids 4, 5, 6, 10, 11 —
+the two drill ids, 14 and 7, are absent). `apply_kinematics_cycle_time` iterates
+`toolpath_summaries`, so a drill op is never integrated and never reaches the
+project total. `readiness::toolpath_cycle_time` then finds no summary, correctly
+falls back to `cutting_distance / feed` with basis `CuttingOnly`, and `worse()`
+correctly degrades the whole project.
+
+So every layer behaves as designed and the composite answer is unhelpful:
+**0.8% of the runtime being unmodelled drags a 99.2%-modelled estimate to the
+weakest label.**
+
+**`drill_summaries` is not a drop-in substitute.** `DrillToolpathSummary` carries
+`feed_time_s` and `dwell_time_s` and its own doc says it "excludes rapid …
+runtime accounting" — a cutting-only quantity, so sourcing the basis from it
+would claim modelling it does not have. That is the vacuous-substitute trap.
+
+**The real fix is to integrate drill toolpaths.** `machine_kinematics::compute_cycle_time`
+takes a `Toolpath` and a `MachineKinematics`; a drill cycle is ordinary linear
+motion and nothing about it resists integration. The only reason it is excluded
+is that the integrator is driven off the ENGAGEMENT summary list, which conflates
+"has no engagement metrics" with "was not simulated". Those are different facts
+and the code currently has one slot for both.
+
+**Interim options, if the full fix is deferred**: report the DOMINANT basis with
+the unmodelled fraction named ("wall clock — 0.8% of runtime not modelled, drill
+cycles"), which is more useful than a bare weakest-basis label and does not
+overclaim. Do NOT simply exempt drills from the fold — that would silently
+restore the overclaim the row exists to prevent.
+
 ## G-CHIPGATE-POPULATION — the chipload gate passes on an empty band
 
 Raised 2026-08-22. **Fourth occurrence on this programme of a gate reading
