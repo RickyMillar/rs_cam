@@ -528,6 +528,64 @@ an agent's.
 > `io/setup_sheet.rs:88` and `:303` (the printed sheet the operator carries to
 > the machine), and `ui/toolpath_panel.rs:480`.
 
+## G-DRILLFLIP — analytic drill removal does not survive a flipped setup
+
+Found 2026-08-22 by the OPERATOR watching the simulation: "I see the tool drill
+the pins but it's not showing in the sim stock — the other holes do."
+
+**Confirmed by render.** Checkpoint 0 (after Pin Drill) is a completely uncut
+blank. Checkpoint 2 (after Holes) shows all twelve holes plainly. Both ops are
+drills, in the SAME setup, sharing one removal path.
+
+**Mechanism.** `TriDexelStock::apply_drill_op` (`dexel_stock/mod.rs:399`) ends
+with, for a flat profile:
+
+```rust
+let z_cut = hole.bottom_z;
+self.clear_above_at(row, col, z_cut);   // -> ray_subtract_above
+```
+
+It uses **only `bottom_z`**, and `clear_above_at` removes material UPWARD from
+it. `top_z` never participates. That encodes "the hole was drilled from above" —
+an assumption that is true in the setup-local frame and FALSE after
+`group_drill_op_to_global` maps a `FaceUp::Bottom` group, because
+`local_to_global` inverts Z (`z -> H - z`).
+
+With H = 25 on the live project:
+
+| op | local bottom_z | global bottom_z | `clear_above_at` result |
+|---|---|---|---|
+| Holes (`Drill`) | 25 - 12 = 13 | 25 - 13 = **12** | clears 12..25 — a hole appears |
+| Pin Drill (`AlignmentPinDrill`) | 0 - 1 = **-1** | 25 - (-1) = **26** | clears 26..inf — ENTIRELY ABOVE a 25 mm stock, so nothing |
+
+The pin drill's whole point is that it goes THROUGH the stock and 1 mm into the
+spoilboard. That `-1` is what makes it vanish: inverted, it lands a millimetre
+above the top of the blank.
+
+**The regular Drill does not escape — it only looks like it does.** It clears
+the COMPLEMENTARY band. A 12 mm hole into the up-facing face of a flipped setup
+should occupy z 0..12 in the stock-relative frame; the code clears 12..25.
+Holes appear, so the render looks plausible, and the material removed is the
+wrong material. That is the more dangerous of the two, because the visible
+symptom is absent.
+
+**Not caused by G-PINDRILL-FRAME.** That fix corrected where the TOOLPATH puts
+the holes (verified in the exported G-code). This is the SIMULATOR's analytic
+removal, and it has been direction-blind for as long as it has existed; the pin
+drill simply never had a `bottom_z` below the stock before anyone looked.
+
+**Fix shape.** `apply_drill_op` needs the drilling DIRECTION, not just a floor.
+Either carry it on `DrillOp` (it is derivable at build time — `top_z` vs
+`bottom_z` ordering in the LOCAL frame, before any transform), or have
+`group_drill_op_to_global` re-order the pair and flip a direction flag when the
+transform's Z determinant is negative. Do NOT simply `min`/`max` the pair at
+removal time: that would make the pin hole appear while still removing from the
+wrong side on the regular drill, i.e. trade a visible bug for an invisible one.
+
+**Sentry it against BOTH symptoms**: pin drill on a flipped setup removes
+material at all, and regular drill on a flipped setup removes the band nearer
+the machined face rather than its complement.
+
 ## G-DRILLTIME — drill ops are outside the cycle-time model
 
 Found 2026-08-22 in the live validation of the G-TIMEEST consolidation, by
