@@ -6,7 +6,7 @@
 use std::ops::Range;
 
 use crate::geo::P3;
-use crate::toolpath::{Move, MoveType, Toolpath};
+use crate::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, RemapIndex, Span, SpanKind};
 use crate::transform_provenance::{ReconcileSet, Transformed};
 
@@ -383,6 +383,30 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
 /// Append the segments in `order` (with retract/rapid/plunge interstitial
 /// rapids) to `result`, recording each input cutting move's new slot in
 /// `old_to_new`.
+///
+/// # Intents on the synthesized rapids
+///
+/// Every rapid this function plants is one of two things, and it says
+/// which: the vertical lift off a segment's end is a
+/// [`MoveIntent::Retract`], the horizontal traverse onto the next
+/// segment's start is a [`MoveIntent::Linking`]. Both are what the
+/// generators mean by those moves, and `dressup.rs` sets the same
+/// precedent for its own synthesized linking rapid.
+///
+/// Before this they were all [`MoveIntent::Unknown`], because
+/// `Toolpath::rapid_to` is `rapid_to_with_intent(target,
+/// MoveIntent::Unknown)`. The consequence was not confined to drills —
+/// Pocket lost the intent on 66 of its 99 rapids under this pass — and it
+/// reached the transit classification that gate populations are filtered
+/// by (`toolpath_spans` falls back to the per-move intent union when a
+/// span is dropped) and the W6 retract census, which read zero
+/// Retract-tagged moves out of a drill toolpath that emits ten.
+///
+/// **Cutting moves are still only cloned.** No fed move is synthesized
+/// here and no fed move's intent is rewritten — `MoveIntent::Drilling`,
+/// `LeadIn`, `EntryPlunge` and `FinishingCut` survive the pass untouched,
+/// which is the invariant the session's drill entry-strip predicate
+/// depends on.
 #[allow(clippy::indexing_slicing)]
 fn rebuild_group(
     segments: &[Segment],
@@ -406,13 +430,25 @@ fn rebuild_group(
             if let Some(last) = result.moves.last()
                 && last.target.z < safe_z
             {
-                result.rapid_to(P3::new(last.target.x, last.target.y, safe_z));
+                result.rapid_to_with_intent(
+                    P3::new(last.target.x, last.target.y, safe_z),
+                    MoveIntent::Retract,
+                );
             }
-            result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
+            result.rapid_to_with_intent(
+                P3::new(seg.start.x, seg.start.y, safe_z),
+                MoveIntent::Linking,
+            );
         } else {
             let prev_seg = &segments[order[idx - 1]];
-            result.rapid_to(P3::new(prev_seg.end.x, prev_seg.end.y, safe_z));
-            result.rapid_to(P3::new(seg.start.x, seg.start.y, safe_z));
+            result.rapid_to_with_intent(
+                P3::new(prev_seg.end.x, prev_seg.end.y, safe_z),
+                MoveIntent::Retract,
+            );
+            result.rapid_to_with_intent(
+                P3::new(seg.start.x, seg.start.y, safe_z),
+                MoveIntent::Linking,
+            );
         }
 
         let src_start = seg.src_range.start;
@@ -425,7 +461,10 @@ fn rebuild_group(
 
     if let Some(last_seg_idx) = order.last() {
         let last_seg = &segments[*last_seg_idx];
-        result.rapid_to(P3::new(last_seg.end.x, last_seg.end.y, safe_z));
+        result.rapid_to_with_intent(
+            P3::new(last_seg.end.x, last_seg.end.y, safe_z),
+            MoveIntent::Retract,
+        );
     }
 }
 
