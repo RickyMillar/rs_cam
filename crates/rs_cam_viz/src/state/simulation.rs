@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use super::job::SetupId;
 use super::runtime::GuiState;
@@ -172,16 +172,52 @@ pub struct SimulationDebugState {
     runtime_profiles: HashMap<ToolpathId, SimulationRuntimeProfile>,
 }
 
+/// Liveness-checked pointer identity for a cache key.
+///
+/// **Pointer keys are `Weak`, never bare pointers.** A bare `Arc::as_ptr`
+/// key is ABA-unsound: the `Arc` can be dropped and a fresh allocation can
+/// land at the same address, so a later lookup is answered with the previous
+/// object's derived data. A live `Weak` keeps the *allocation* reserved even
+/// after the last strong reference drops (only the `T` inside it is dropped),
+/// so while a cache entry exists no other `Arc` can be handed that address —
+/// the collision is impossible, not merely unlikely. Lookup upgrades and
+/// compares with [`Arc::ptr_eq`], which additionally proves the cached entry's
+/// subject is still alive.
+///
+/// The doctrine and its full argument live in `rs_cam_core::geom_cache` (module
+/// doc) and `rs_cam_core::compute::sim_prefix` (`weak_matches`, copied here
+/// because the viz caches key on viz-side state). Pairing a bare pointer with
+/// an element count or an edit counter — what these four caches used to do —
+/// narrows the collision window rather than closing it; for the cut trace it
+/// narrows it barely at all, because every `ArcInner<SimulationCutTrace>` is
+/// the same fixed size (the sample `Vec`s hang off it), so every trace in the
+/// process shares one malloc size class.
+///
+/// The `(None, None) => true` arm is required: "no trace" is a legitimate
+/// cached state, and dropping the arm would rebuild every frame a project has
+/// no simulation.
+fn weak_matches<T>(stored: Option<&Weak<T>>, live: Option<&Arc<T>>) -> bool {
+    match (stored, live) {
+        (None, None) => true,
+        (Some(w), Some(a)) => w.upgrade().is_some_and(|up| Arc::ptr_eq(&up, a)),
+        _ => false,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct ToolLoadReportCache {
-    trace_ptr: Option<usize>,
+    /// Weak-pinned identity of the trace this report was built from. See
+    /// [`weak_matches`].
+    trace: Option<Weak<SimulationCutTrace>>,
     edit_counter: u64,
     report: Option<ToolLoadReport>,
 }
 
 #[derive(Default)]
 pub(crate) struct ChiploadEnvelopeCache {
-    trace_ptr: Option<usize>,
+    /// Weak-pinned identity of the trace these envelopes were built from.
+    /// See [`weak_matches`].
+    trace: Option<Weak<SimulationCutTrace>>,
     edit_counter: u64,
     envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
 }
@@ -189,13 +225,43 @@ pub(crate) struct ChiploadEnvelopeCache {
 /// Cached [`rs_cam_core::sim_triage::SimulationTriage`] for the inspector.
 ///
 /// `built` distinguishes "never built" from "built for a project with no cut
-/// trace", because `trace_ptr == None` is itself a legitimate cached state.
+/// trace", because `trace == None` is itself a legitimate cached state.
+///
+/// `evidence_fp` closes a second, larger staleness hole that is not ABA:
+/// [`SimulationState::project_evidence`] feeds the triage from collision and
+/// resolution state that is *not* the trace — and the holder-collision report
+/// in particular is written by a separate async job that bumps no counter and
+/// replaces no trace. The sibling `issue_cache_key` has folded a
+/// `collision_fingerprint` in since it was written; this cache had not, so a
+/// holder report arriving after the triage was cached left the panel showing
+/// safety findings built without it.
 #[derive(Default)]
 pub(crate) struct SimulationTriageCache {
     built: bool,
-    trace_ptr: Option<usize>,
+    /// Weak-pinned identity of the trace this triage was built from. See
+    /// [`weak_matches`].
+    trace: Option<Weak<SimulationCutTrace>>,
     edit_counter: u64,
+    /// Fingerprint over the non-trace [`rs_cam_core::session::ProjectEvidence`]
+    /// inputs — see [`SimulationState::evidence_fingerprint`].
+    evidence_fp: u64,
     triage: rs_cam_core::sim_triage::SimulationTriage,
+}
+
+impl SimulationTriageCache {
+    /// True when this entry answers for exactly this trace, edit version and
+    /// evidence fingerprint.
+    fn matches(
+        &self,
+        live: Option<&Arc<SimulationCutTrace>>,
+        edit_counter: u64,
+        evidence_fp: u64,
+    ) -> bool {
+        self.built
+            && weak_matches(self.trace.as_ref(), live)
+            && self.edit_counter == edit_counter
+            && self.evidence_fp == evidence_fp
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -352,10 +418,13 @@ impl SpanAggregate {
 /// lookups are O(1).
 #[derive(Default)]
 pub struct SpanAggregateCache {
-    /// `Arc::as_ptr(trace) as usize` of the trace this cache reflects.
-    /// `None` = no cache yet. We compare via the pointer rather than
-    /// content because the trace is large and immutable behind an Arc.
-    cached_trace_ptr: Option<usize>,
+    /// Weak-pinned identity of the trace this cache reflects. `None` = no
+    /// cache yet. We compare via object identity rather than content because
+    /// the trace is large and immutable behind an `Arc`; the identity is a
+    /// [`Weak`] and not a raw pointer for the reason [`weak_matches`] states
+    /// — this cache used to hold a bare `Option<usize>` with no edit counter
+    /// beside it, the strictest form of the hazard in the tree.
+    cached_trace: Option<Weak<SimulationCutTrace>>,
     aggregates: HashMap<(ToolpathId, u32), SpanAggregate>,
     /// Indices into `trace.samples` of cutting samples, partitioned by
     /// toolpath. Used by `draw_signal_spine` to avoid re-grouping
@@ -367,8 +436,7 @@ impl SpanAggregateCache {
     /// Rebuild caches from `trace` if this is a new (or first) trace.
     /// Cheap when the trace pointer matches the cached one.
     pub fn ensure_built(&mut self, trace: &Arc<SimulationCutTrace>) {
-        let ptr = Arc::as_ptr(trace) as usize;
-        if self.cached_trace_ptr == Some(ptr) {
+        if weak_matches(self.cached_trace.as_ref(), Some(trace)) {
             return;
         }
         self.aggregates.clear();
@@ -385,7 +453,7 @@ impl SpanAggregateCache {
                 self.cutting_indices.entry(key_tp).or_default().push(idx);
             }
         }
-        self.cached_trace_ptr = Some(ptr);
+        self.cached_trace = Some(Arc::downgrade(trace));
     }
 
     pub fn get(&self, toolpath_id: ToolpathId, span_id: u32) -> Option<&SpanAggregate> {
@@ -402,7 +470,7 @@ impl SpanAggregateCache {
     }
 
     pub fn invalidate(&mut self) {
-        self.cached_trace_ptr = None;
+        self.cached_trace = None;
         self.aggregates.clear();
         self.cutting_indices.clear();
     }
@@ -770,17 +838,17 @@ impl SimulationState {
         session: &ProjectSession,
         edit_counter: u64,
     ) -> ToolLoadReport {
-        let trace_ptr = self
+        let live = self
             .results
             .as_ref()
-            .and_then(|results| results.cut_trace.as_ref())
-            .map(|trace| Arc::as_ptr(trace) as usize);
-        if self.debug.load_report_cache.trace_ptr == trace_ptr
+            .and_then(|results| results.cut_trace.as_ref());
+        if weak_matches(self.debug.load_report_cache.trace.as_ref(), live)
             && self.debug.load_report_cache.edit_counter == edit_counter
             && let Some(report) = &self.debug.load_report_cache.report
         {
             return report.clone();
         }
+        let stored_trace = live.map(Arc::downgrade);
 
         let start = std::time::Instant::now();
         let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
@@ -792,7 +860,7 @@ impl SimulationState {
                 "slow simulation tool-load report build"
             );
         }
-        self.debug.load_report_cache.trace_ptr = trace_ptr;
+        self.debug.load_report_cache.trace = stored_trace;
         self.debug.load_report_cache.edit_counter = edit_counter;
         self.debug.load_report_cache.report = Some(report.clone());
         report
@@ -803,17 +871,17 @@ impl SimulationState {
         session: &ProjectSession,
         edit_counter: u64,
     ) -> HashMap<rs_cam_core::ToolpathId, Range<f64>> {
-        let trace_ptr = self
+        let live = self
             .results
             .as_ref()
-            .and_then(|results| results.cut_trace.as_ref())
-            .map(|trace| Arc::as_ptr(trace) as usize);
-        if self.debug.chipload_envelope_cache.trace_ptr == trace_ptr
+            .and_then(|results| results.cut_trace.as_ref());
+        if weak_matches(self.debug.chipload_envelope_cache.trace.as_ref(), live)
             && self.debug.chipload_envelope_cache.edit_counter == edit_counter
             && let Some(envelopes) = &self.debug.chipload_envelope_cache.envelopes
         {
             return envelopes.clone();
         }
+        let stored_trace = live.map(Arc::downgrade);
 
         let start = std::time::Instant::now();
         let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
@@ -826,15 +894,18 @@ impl SimulationState {
                 "slow chipload envelope build"
             );
         }
-        self.debug.chipload_envelope_cache.trace_ptr = trace_ptr;
+        self.debug.chipload_envelope_cache.trace = stored_trace;
         self.debug.chipload_envelope_cache.edit_counter = edit_counter;
         self.debug.chipload_envelope_cache.envelopes = Some(envelopes.clone());
         envelopes
     }
 
-    /// Simulation triage cached by simulation trace pointer and GUI edit
-    /// counter — the same staleness rule as [`Self::cached_load_report`] and
-    /// [`Self::cached_chipload_envelopes`].
+    /// Simulation triage cached by simulation trace identity, GUI edit
+    /// counter and evidence fingerprint — the trace and edit rule is the same
+    /// as [`Self::cached_load_report`] and [`Self::cached_chipload_envelopes`];
+    /// the fingerprint is this cache's alone, because it is the only one of
+    /// the three whose build reads state outside the trace
+    /// ([`Self::project_evidence`], and see [`Self::evidence_fingerprint`]).
     ///
     /// Building it is `O(samples × toolpaths)` with a per-toolpath sort (full
     /// `ProjectDiagnostics` + `MeasurabilityReport` + `SimulationTriage::build`,
@@ -847,15 +918,22 @@ impl SimulationState {
         session: &ProjectSession,
         edit_counter: u64,
     ) -> &rs_cam_core::sim_triage::SimulationTriage {
-        let trace_ptr = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref())
-            .map(|trace| Arc::as_ptr(trace) as usize);
-        let fresh = self.debug.triage_cache.built
-            && self.debug.triage_cache.trace_ptr == trace_ptr
-            && self.debug.triage_cache.edit_counter == edit_counter;
+        let evidence_fp = self.evidence_fingerprint();
+        let fresh = {
+            let live = self
+                .results
+                .as_ref()
+                .and_then(|results| results.cut_trace.as_ref());
+            self.debug
+                .triage_cache
+                .matches(live, edit_counter, evidence_fp)
+        };
         if !fresh {
+            let stored_trace = self
+                .results
+                .as_ref()
+                .and_then(|results| results.cut_trace.as_ref())
+                .map(Arc::downgrade);
             let start = std::time::Instant::now();
             // Scoped so the immutable `project_evidence` borrow of `self`
             // ends before the cache write below.
@@ -871,8 +949,9 @@ impl SimulationState {
                 );
             }
             self.debug.triage_cache.built = true;
-            self.debug.triage_cache.trace_ptr = trace_ptr;
+            self.debug.triage_cache.trace = stored_trace;
             self.debug.triage_cache.edit_counter = edit_counter;
+            self.debug.triage_cache.evidence_fp = evidence_fp;
             self.debug.triage_cache.triage = triage;
         }
         &self.debug.triage_cache.triage
@@ -1659,6 +1738,73 @@ impl SimulationState {
             // would have to change; it never decides a verdict.
             resolution_mm: Some(self.resolution),
         }
+    }
+
+    /// Fingerprint over every [`Self::project_evidence`] input that is **not**
+    /// the cut trace, for [`Self::cached_simulation_triage`]'s key.
+    ///
+    /// The trace is keyed by weak-pinned identity; these are the other four
+    /// evidence fields, none of which move the trace pointer and none of which
+    /// bump the GUI edit counter:
+    ///
+    /// - `boundaries` — the move ranges the triage attributes findings through;
+    /// - `rapid_collisions` and `rapid_collision_move_indices` — the
+    ///   through-stock rapids the triage reports as `safety` findings;
+    /// - the holder-collision report's move indices, which is the whole of
+    ///   what [`Self::holder_collision_counts_by_tp`] reads. That report is
+    ///   written by a *separate async job* (`controller::events::compute`),
+    ///   long after the trace lands and with no counter bump: without this
+    ///   fingerprint, a holder report arriving while the Diagnostics header is
+    ///   open is never reflected in the cached triage;
+    /// - `resolution_mm`, which enriches a measurability abstention's reason —
+    ///   the one field today's sole consumer (`ui::sim_diagnostics`'s
+    ///   `NOT MEASURED` strip) actually renders.
+    ///
+    /// Mirrors the `collision_fingerprint` the neighbouring `issue_cache_key`
+    /// has always folded in. `O(boundaries + collisions)` per frame, the same
+    /// order that key already pays.
+    fn evidence_fingerprint(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for boundary in self.boundaries() {
+            boundary.id.0.hash(&mut hasher);
+            boundary.start_move.hash(&mut hasher);
+            boundary.end_move.hash(&mut hasher);
+        }
+        self.checks.rapid_collisions.len().hash(&mut hasher);
+        for collision in &self.checks.rapid_collisions {
+            collision.move_index.hash(&mut hasher);
+            for coord in [
+                collision.start.x,
+                collision.start.y,
+                collision.start.z,
+                collision.end.x,
+                collision.end.y,
+                collision.end.z,
+            ] {
+                coord.to_bits().hash(&mut hasher);
+            }
+        }
+        self.checks
+            .rapid_collision_move_indices
+            .len()
+            .hash(&mut hasher);
+        for &move_index in &self.checks.rapid_collision_move_indices {
+            move_index.hash(&mut hasher);
+        }
+        match self.checks.collision_report.as_ref() {
+            Some(report) => {
+                report.collisions.len().hash(&mut hasher);
+                for collision in &report.collisions {
+                    collision.move_idx.hash(&mut hasher);
+                }
+            }
+            // Distinguish "no report yet" from "report with no collisions":
+            // the async holder job replacing the former with the latter is
+            // exactly the transition this fingerprint exists to catch.
+            None => u64::MAX.hash(&mut hasher),
+        }
+        self.resolution.to_bits().hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Sorted issue list for the current simulation.
@@ -2581,7 +2727,9 @@ mod tests {
         sim
     }
 
-    fn attach_cut_trace(sim: &mut SimulationState) {
+    /// Attach a fresh cut trace, returning the `Arc` that was stored so cache
+    /// sentries can compare identities.
+    fn attach_cut_trace(sim: &mut SimulationState) -> Arc<SimulationCutTrace> {
         let trace = rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
             0.5,
             vec![
@@ -2639,9 +2787,11 @@ mod tests {
                 },
             ],
         );
+        let trace = Arc::new(trace);
         if let Some(results) = sim.results.as_mut() {
-            results.cut_trace = Some(Arc::new(trace));
+            results.cut_trace = Some(Arc::clone(&trace));
         }
+        trace
     }
 
     #[test]
@@ -2830,6 +2980,294 @@ mod tests {
             issues
                 .iter()
                 .any(|issue| issue.kind == SimulationIssueKind::LowEngagement)
+        );
+    }
+
+    // ── Cache-key soundness (RESEARCH_f2_and_aba.md, Topic B) ─────────────
+
+    /// Sentinel poked into the cached triage. A cache **hit** returns the
+    /// same object and carries it out; a **rebuild** replaces `triage`
+    /// wholesale and wipes it. This is the hit/miss witness these sentries
+    /// use — the triage's own content cannot serve, because two different
+    /// traces may legitimately triage identically.
+    const POISON: usize = usize::MAX;
+
+    fn poison(sim: &mut SimulationState) {
+        sim.debug.triage_cache.triage.counts.samples_total = POISON;
+    }
+
+    //
+    // The four viz caches below used to key on `Arc::as_ptr(trace) as usize`
+    // — three of them paired with the GUI edit counter, `SpanAggregateCache`
+    // with nothing at all. Neither component closes the ABA window: the
+    // reachable gesture is `invalidate_simulation` (`controller::events::
+    // simulation`), which sets `results = None` — freeing the trace with
+    // nothing replacing it — and bumps no counter and clears no cache.
+    // Every `ArcInner<SimulationCutTrace>` is the same fixed size, so a
+    // re-simulate after that free is a same-size-class allocation and
+    // same-address reuse is likely rather than unlikely.
+
+    /// The property that makes the address question moot: while a cache holds
+    /// a `Weak`, the freed allocation stays reserved, so no replacement can
+    /// be handed that address and a stale key cannot false-hit.
+    ///
+    /// The `assert_ne!` is the load-bearing half — it is exactly the
+    /// comparison the old `usize` key performed, and it is guaranteed here
+    /// only *because* the `Weak` is still alive.
+    #[test]
+    fn a_weak_key_pins_the_freed_address_so_it_cannot_false_hit() {
+        let mut sim = simulation_for_toolpath();
+        let trace = attach_cut_trace(&mut sim);
+        let freed_addr = Arc::as_ptr(&trace) as usize;
+        let stored: Weak<SimulationCutTrace> = Arc::downgrade(&trace);
+        drop(trace);
+        sim.results = None; // the `invalidate_simulation` gesture
+
+        assert!(
+            stored.upgrade().is_none(),
+            "fixture must actually drop the trace"
+        );
+        let mut replacements: Vec<Arc<SimulationCutTrace>> = Vec::new();
+        for _ in 0..64 {
+            let mut next = simulation_for_toolpath();
+            let replacement = attach_cut_trace(&mut next);
+            assert_ne!(
+                Arc::as_ptr(&replacement) as usize,
+                freed_addr,
+                "a live Weak must reserve the freed allocation; the old \
+                 `Arc::as_ptr as usize` key had no such guarantee"
+            );
+            assert!(
+                !weak_matches(Some(&stored), Some(&replacement)),
+                "a dead Weak must never match a live Arc"
+            );
+            replacements.push(replacement);
+        }
+        // …and the arm that must survive: "no trace" is a cached state.
+        assert!(weak_matches(None::<&Weak<SimulationCutTrace>>, None));
+        assert!(!weak_matches(None, replacements.first()));
+    }
+
+    /// The ABA scenario end to end: cache the triage, invalidate the
+    /// simulation (no edit-counter bump, no cache clear), re-simulate, and
+    /// ask again at the *same* edit counter. The cache must miss.
+    ///
+    /// Witness of the miss is the stored key itself: `trace` is written only
+    /// on a rebuild, so a hit would have left the dead `Weak` in place.
+    #[test]
+    fn invalidate_then_resimulate_misses_the_triage_cache() {
+        let session = rs_cam_core::session::ProjectSession::new_empty();
+        let mut sim = simulation_for_toolpath();
+        let first = attach_cut_trace(&mut sim);
+        let first_addr = Arc::as_ptr(&first) as usize;
+        drop(first); // only `sim.results` holds the trace, as in the GUI
+
+        let _ = sim.cached_simulation_triage(&session, 7);
+        assert!(sim.debug.triage_cache.built);
+
+        // A second ask at the same version is a hit — the cache still earns
+        // its keep after the key change. Witnessed by a sentinel poked into
+        // the cached value: a rebuild replaces the whole `triage`.
+        poison(&mut sim);
+        assert_eq!(
+            sim.cached_simulation_triage(&session, 7)
+                .counts
+                .samples_total,
+            POISON,
+            "an unchanged project must still hit the cache"
+        );
+
+        // `invalidate_simulation`: results dropped, counter untouched.
+        sim.results = None;
+        let mut refreshed = simulation_for_toolpath();
+        let second = attach_cut_trace(&mut refreshed);
+        assert_ne!(
+            Arc::as_ptr(&second) as usize,
+            first_addr,
+            "the cache's Weak reserves the freed address"
+        );
+        sim.results = refreshed.results.take();
+
+        assert_ne!(
+            sim.cached_simulation_triage(&session, 7)
+                .counts
+                .samples_total,
+            POISON,
+            "the invalidate → re-simulate gesture must MISS the cache"
+        );
+        let stored_is_second = sim
+            .debug
+            .triage_cache
+            .trace
+            .as_ref()
+            .and_then(|w| w.upgrade())
+            .is_some_and(|up| Arc::ptr_eq(&up, &second));
+        assert!(
+            stored_is_second,
+            "the triage must have been rebuilt against the new trace"
+        );
+    }
+
+    /// §B.3 — the larger hole, and it is not ABA: the triage is built from
+    /// evidence that is not the trace, and the holder-collision report
+    /// arrives from a *separate async job* with the same trace, the same edit
+    /// counter and no cache invalidation. Each arm below moves one
+    /// `project_evidence` input and must invalidate.
+    #[test]
+    fn evidence_movement_invalidates_the_cached_triage() {
+        let session = rs_cam_core::session::ProjectSession::new_empty();
+        let mut sim = simulation_for_toolpath();
+        attach_cut_trace(&mut sim);
+
+        let _ = sim.cached_simulation_triage(&session, 3);
+        let baseline_fp = sim.debug.triage_cache.evidence_fp;
+        poison(&mut sim);
+        assert_eq!(
+            sim.cached_simulation_triage(&session, 3)
+                .counts
+                .samples_total,
+            POISON,
+            "an unchanged project must not rebuild"
+        );
+
+        // (a) the async holder-collision report lands.
+        sim.checks.collision_report = Some(CollisionReport {
+            collisions: vec![rs_cam_core::collision::CollisionEvent {
+                move_idx: 4,
+                position: P3::new(1.0, 1.0, -1.0),
+                penetration_depth: 0.8,
+                segment: "holder".to_owned(),
+                kind: rs_cam_core::collision::CollisionKind::Workpiece,
+            }],
+            min_safe_stickout: 42.0,
+        });
+        sim.checks.holder_collision_count = 1;
+        assert_ne!(
+            sim.cached_simulation_triage(&session, 3)
+                .counts
+                .samples_total,
+            POISON,
+            "the holder report must force a rebuild"
+        );
+        let after_holder = sim.debug.triage_cache.evidence_fp;
+        assert_ne!(
+            after_holder, baseline_fp,
+            "a holder report arriving must invalidate the triage — it feeds \
+             `ProjectEvidence::holder_collisions` and moves no other key part"
+        );
+
+        // (b) a rapid-through-stock collision list change.
+        sim.checks.rapid_collisions = vec![RapidCollision {
+            move_index: 5,
+            start: P3::new(0.0, 0.0, 5.0),
+            end: P3::new(9.0, 9.0, 5.0),
+        }];
+        sim.checks.rapid_collision_move_indices = vec![5];
+        let _ = sim.cached_simulation_triage(&session, 3);
+        let after_rapids = sim.debug.triage_cache.evidence_fp;
+        assert_ne!(after_rapids, after_holder, "rapid collisions must be keyed");
+
+        // (c) the simulated cell size, which enriches a measurability
+        // abstention's reason — the field today's sole consumer renders.
+        sim.resolution *= 2.0;
+        let _ = sim.cached_simulation_triage(&session, 3);
+        assert_ne!(
+            sim.debug.triage_cache.evidence_fp, after_rapids,
+            "resolution_mm must be keyed"
+        );
+    }
+
+    /// The sibling caches carry the same key shape, and `SpanAggregateCache`
+    /// carried the strictest form of the bug (bare pointer, no counter).
+    /// Rebuilding it against a *different* trace after the first was freed
+    /// must produce the new trace's aggregates, not the old ones.
+    #[test]
+    fn span_aggregate_cache_rebuilds_after_its_trace_is_freed() {
+        let mut sim = simulation_for_toolpath();
+        let first = attach_cut_trace(&mut sim);
+        sim.debug.span_aggregates.ensure_built(&first);
+        assert_eq!(
+            sim.debug
+                .span_aggregates
+                .cutting_indices_for(ToolpathId(1))
+                .len(),
+            2,
+            "fixture must have cutting samples to make the sentry non-vacuous"
+        );
+        drop(first);
+        sim.results = None;
+
+        // A shorter replacement: a false hit would keep the two-sample
+        // grouping of the freed trace.
+        let mut refreshed = simulation_for_toolpath();
+        let full = attach_cut_trace(&mut refreshed);
+        let short = Arc::new(
+            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(
+                0.5,
+                full.samples.iter().take(1).cloned().collect(),
+            ),
+        );
+        sim.debug.span_aggregates.ensure_built(&short);
+        assert_eq!(
+            sim.debug
+                .span_aggregates
+                .cutting_indices_for(ToolpathId(1))
+                .len(),
+            1,
+            "the cache must reflect the trace it was last given"
+        );
+    }
+
+    /// Load-report and chipload-envelope caches: a hit must still be a hit
+    /// (the key change is strictly narrowing, and both are per-frame paths),
+    /// and both must miss once their trace is replaced.
+    #[test]
+    fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
+        let session = rs_cam_core::session::ProjectSession::new_empty();
+        let mut sim = simulation_for_toolpath();
+        let first = attach_cut_trace(&mut sim);
+        drop(first);
+
+        let _ = sim.cached_load_report(&session, 1);
+        let _ = sim.cached_chipload_envelopes(&session, 1);
+        assert!(sim.debug.load_report_cache.report.is_some());
+        assert!(sim.debug.chipload_envelope_cache.envelopes.is_some());
+        let live = sim
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_ref())
+            .cloned();
+        assert!(
+            weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
+            "the stored key must match the trace it was built from"
+        );
+        drop(live);
+
+        sim.results = None;
+        let mut refreshed = simulation_for_toolpath();
+        attach_cut_trace(&mut refreshed);
+        sim.results = refreshed.results.take();
+        let live = sim
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_ref())
+            .cloned();
+        assert!(
+            !weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
+            "a freed trace's key must not answer for its replacement"
+        );
+        assert!(
+            !weak_matches(
+                sim.debug.chipload_envelope_cache.trace.as_ref(),
+                live.as_ref()
+            ),
+            "a freed trace's key must not answer for its replacement"
+        );
+
+        let _ = sim.cached_load_report(&session, 1);
+        assert!(
+            weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
+            "the rebuild must re-key against the live trace"
         );
     }
 }
