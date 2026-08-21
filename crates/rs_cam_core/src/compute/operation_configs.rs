@@ -60,15 +60,59 @@ pub enum DrillCycleType {
     ChipBreak,
 }
 
+/// Cap a configured peck depth at the depth of the hole it is drilling.
+///
+/// G-WANAKA-PECK (2026-08-19). Auto-applied feeds set `peck_depth = 15.0`
+/// on a hole whose `depth` was `12.0`. A peck bigger than the hole is not
+/// a peck: the cycle takes one oversized bite and the chip-evacuation the
+/// operator selected the cycle for never happens — in white oak with a
+/// 6 mm end mill that is the difference between a cleared hole and a
+/// welded one. Nothing flagged it. The peck-adequacy gate read `Within`,
+/// but that gate divides by the ENVELOPE radius (R-12) and is not
+/// evidence about anything here.
+///
+/// **Clamp, not refuse.** A refusal would fire on the product's own
+/// defaults: `DrillConfig::default()` ships `peck_depth = 3.0`, so every
+/// hole shallower than 3 mm — a perfectly ordinary shallow bore — would
+/// stop generating. And unlike a ramped drill hole (G-WANAKA-DRILL-RAMP,
+/// which asks for geometry that has no correct form) this request is
+/// coherent and has an obviously-correct reading: nothing may be deeper
+/// than the hole. So the request is honoured at the largest value that
+/// still means what it says.
+///
+/// The cap is `depth`, not something strictly below it, and that is
+/// enough because the cycle is **rooted at the R-plane**, not at the hole
+/// top (Fanuc G83 — see [`crate::drill::fed_descents`]). The R-plane sits
+/// at `effective_safe_z(retract_z, top_z) >= top_z + SAFE_Z_CLEARANCE_MM`,
+/// strictly above the stock, so the first descent of a `peck == depth`
+/// cycle stops at `R - depth > top_z - depth = bottom_z` and a second
+/// descent always follows. The cycle pecks.
+///
+/// A non-positive or non-finite `depth` is left alone: it is nonsense the
+/// emitter's own guard in `fed_descents` already degrades deliberately,
+/// and clamping to it would turn one degenerate value into another.
+pub(crate) fn clamp_peck_depth(peck_depth: f64, depth: f64) -> f64 {
+    if depth.is_finite() && depth > 0.0 {
+        peck_depth.min(depth)
+    } else {
+        peck_depth
+    }
+}
+
 impl DrillCycleType {
     /// Convert to core `DrillCycle` using parameters from the config struct.
+    ///
+    /// The peck depth passes through [`clamp_peck_depth`] so the emitted
+    /// cycle and the `DrillOp` summary built beside it (§6.E dual-rep)
+    /// describe the same cycle — both consumers go through here.
     pub fn to_core(self, cfg: &DrillConfig) -> crate::drill::DrillCycle {
         use crate::drill::DrillCycle;
+        let peck_depth = clamp_peck_depth(cfg.peck_depth, cfg.depth);
         match self {
             Self::Simple => DrillCycle::Simple,
             Self::Dwell => DrillCycle::Dwell(cfg.dwell_time),
-            Self::Peck => DrillCycle::Peck(cfg.peck_depth),
-            Self::ChipBreak => DrillCycle::ChipBreak(cfg.peck_depth, cfg.retract_amount),
+            Self::Peck => DrillCycle::Peck(peck_depth),
+            Self::ChipBreak => DrillCycle::ChipBreak(peck_depth, cfg.retract_amount),
         }
     }
 }
@@ -207,13 +251,21 @@ impl AlignmentPinDrillConfig {
     /// cycle, not a tunable drill op). T11 dedup: this conversion was
     /// previously inlined at both consumer sites in `execute.rs`
     /// (toolpath arm + `build_drill_op_for_config`).
-    pub fn drill_cycle(&self) -> crate::drill::DrillCycle {
+    ///
+    /// `depth` is the hole depth this cycle will drill — for pin holes
+    /// that is `stock height + spoilboard_penetration`, which this config
+    /// cannot compute on its own (it has no stock bbox), so the two
+    /// `execute.rs` consumers hand it in. It exists only to cap
+    /// `peck_depth`; see [`clamp_peck_depth`] for why the cap is a clamp
+    /// and not a refusal (G-WANAKA-PECK).
+    pub fn drill_cycle(&self, depth: f64) -> crate::drill::DrillCycle {
         use crate::drill::DrillCycle;
+        let peck_depth = clamp_peck_depth(self.peck_depth, depth);
         match self.cycle {
             DrillCycleType::Simple => DrillCycle::Simple,
             DrillCycleType::Dwell => DrillCycle::Dwell(0.5),
-            DrillCycleType::Peck => DrillCycle::Peck(self.peck_depth),
-            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(self.peck_depth, 0.5),
+            DrillCycleType::Peck => DrillCycle::Peck(peck_depth),
+            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(peck_depth, 0.5),
         }
     }
 }

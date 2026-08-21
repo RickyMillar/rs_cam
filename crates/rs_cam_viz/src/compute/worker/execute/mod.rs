@@ -238,6 +238,13 @@ fn generate_via_core(
         pre_boundary_regions.as_deref(),
         Some(&req.rest_analysis),
         req.link_kinematics.clone(),
+        // G-DRILLPICK-FRAME: the controller transforms mesh and polygons into
+        // the emission frame before submitting, but config-carried coordinates
+        // (drill `selected_holes`) ride along untransformed, so the generator
+        // needs the matrix itself. `ComputeRequest` now forwards it — this is
+        // the GUI/MCP path, i.e. the one a real job actually runs, so leaving
+        // it `None` would have meant the fix applied only to the CLI.
+        req.setup_transform.as_ref(),
     )
     .map_err(ComputeError::from)?;
     let (result, findings) = result;
@@ -885,6 +892,10 @@ pub(super) fn run_compute_with_phase_tracker(
             &req.tool,
             local_stock_bbox,
             req.material.clone(),
+            // Same transform the generate call above uses, and it has to be:
+            // the drill-op view must name the holes THIS path's toolpath
+            // actually drills (§6.E dual-rep).
+            req.setup_transform.as_ref(),
         )
         .map(Arc::new);
         Ok(ToolpathResult {
@@ -969,6 +980,8 @@ mod tests {
         let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 6.0));
         let cutting_levels = operation.cutting_levels(heights.top_z);
         ComputeRequest {
+            // Identity-setup fixture: no local<->global transform to apply.
+            setup_transform: None,
             toolpath_id: ToolpathId(1),
             toolpath_index: 0,
             toolpath_name: "Test".to_owned(),

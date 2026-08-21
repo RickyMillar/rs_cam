@@ -457,6 +457,13 @@ fn generated_with_drill_spans(toolpath: Toolpath) -> GeneratedToolpath {
 ///   (`HoleSource::ModelDerived`); re-resolved every regenerate.
 /// - `OperationConfig::AlignmentPinDrill`: holes are snapshotted in
 ///   `cfg.holes`; `HoleSource::Snapshot` round-trips through project IO.
+///
+/// `setup_transform` is the same value the generation pass was given (see
+/// [`ExecutionContext::setup_transform`]) and must stay that way: the
+/// dual-representation invariant is that this view names the holes the
+/// emitted toolpath actually drills, so a caller that transforms one and
+/// not the other has published two different sets of coordinates for one
+/// operation.
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
     polygons: Option<&[Polygon2]>,
@@ -464,6 +471,7 @@ pub fn build_drill_op_for_config(
     tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
     material: crate::material::Material,
+    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> Option<crate::drill_op::DrillOp> {
     use crate::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
@@ -474,7 +482,7 @@ pub fn build_drill_op_for_config(
         OperationConfig::Drill(cfg) => {
             // Selected targets (DXF picks) drill exactly those and round-trip
             // as a snapshot; otherwise fall back to polygon centroids.
-            let hole_xys = drill_holes_for_config(cfg, polygons).ok()?;
+            let hole_xys = drill_holes_for_config(cfg, polygons, setup_transform).ok()?;
             let hole_source = if cfg.selected_holes.is_some() {
                 HoleSource::Snapshot(hole_xys.clone())
             } else {
@@ -507,16 +515,16 @@ pub fn build_drill_op_for_config(
             })
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
-            let mut hole_xys = cfg.holes.clone();
-            if let Some(selected) = &cfg.selected_holes {
-                hole_xys.extend_from_slice(selected);
-            }
+            // Both frame corrections `generate_alignment_pin_drill` applies,
+            // applied identically here — this view has to name the holes
+            // that toolpath drills, not the raw config numbers.
+            let hole_xys = pin_holes_in_emission_frame(cfg, stock_bbox, setup_transform);
             if hole_xys.is_empty() {
                 return None;
             }
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
-            let cycle = cfg.drill_cycle();
+            let cycle = cfg.drill_cycle(top_z - bottom_z);
             let holes = hole_xys
                 .iter()
                 .map(|&xy| DrillHole {
@@ -527,7 +535,7 @@ pub fn build_drill_op_for_config(
                 .collect();
             Some(DrillOp {
                 holes,
-                hole_source: HoleSource::Snapshot(hole_xys.clone()),
+                hole_source: HoleSource::Snapshot(hole_xys),
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle,
@@ -614,6 +622,23 @@ pub struct ExecutionContext<'a> {
     pub heights: &'a ResolvedHeights,
     pub cutting_levels: &'a [f64],
     pub stock_bbox: &'a BoundingBox3,
+    /// The setup's world→local transform, or `None` for an identity setup.
+    ///
+    /// Everything else in this context arrives ALREADY in the emission
+    /// frame — `mesh`, `polygons` and `boundary` are transformed by the
+    /// driver before generation, `stock_bbox` is the emission-frame bbox.
+    /// The one class of input that cannot be pre-transformed that way is
+    /// config-carried geometry: coordinates that live inside the
+    /// `OperationConfig` and never pass through the driver's geometry
+    /// pipeline. Today that is the drill families' `selected_holes` —
+    /// world-frame picks off `LoadedModel::drill_targets`, consumed
+    /// verbatim and therefore off by the whole setup transform on any
+    /// non-identity setup (G-DRILLPICK-FRAME).
+    ///
+    /// `None` MUST be a no-op: identity setups already emit in world, so an
+    /// adapter that reaches for this has to leave world coordinates alone
+    /// rather than inventing an identity matrix to run them through.
+    pub setup_transform: Option<&'a crate::compute::transform::SetupTransformInfo>,
     pub prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved *real* reference tool config, when the pencil
     /// op's `reference_tool_id` names a library tool. Owned clone (small);
@@ -685,6 +710,78 @@ macro_rules! config_guard {
     };
 }
 
+/// Move a picked drill target from the world/model frame into the frame the
+/// toolpath emits in.
+///
+/// G-DRILLPICK-FRAME (2026-08-19). `selected_holes` are raw model/DXF
+/// coordinates — the viz picker maps `LoadedModel::drill_targets` straight
+/// through — but the model's *polygons* are setup-transformed before
+/// generation, and the toolpath emits in the setup frame: world for an
+/// identity setup, zero-rooted setup-local otherwise. Consumed verbatim,
+/// the picks were off by the whole setup transform on any non-identity
+/// setup: on a `Bottom` flip of 240x250 stock a target picked at world
+/// (30, 40) belongs at setup-local (50, 185), and the op drilled (30, 40).
+///
+/// The picks stay STORED in the world frame and are converted here, so no
+/// saved project changes meaning. `None` — an identity setup — is the
+/// no-op that keeps that true: world already IS the emission frame, so
+/// there is nothing to apply and nothing to double-apply.
+///
+/// This is [`crate::compute::transform::SetupTransformInfo::apply_to_polygons`]
+/// for a bare point, right down to lifting XY through `z = 0`; the polygons
+/// these picks were read off went through exactly that call.
+fn pick_to_emission_frame(
+    xy: [f64; 2],
+    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
+) -> [f64; 2] {
+    match setup_transform {
+        Some(info) => {
+            let local = info.world_to_local(crate::geo::P3::new(xy[0], xy[1], 0.0));
+            [local.x, local.y]
+        }
+        None => xy,
+    }
+}
+
+/// Every hole an [`crate::compute::operation_configs::AlignmentPinDrillConfig`]
+/// drills, expressed in the emission frame — the ONE place the pin-drill's
+/// two differently-framed hole sources are reconciled, shared by the
+/// generator and by [`build_drill_op_for_config`] so the two cannot drift.
+///
+/// The two sources genuinely are in different frames:
+///
+/// - `cfg.holes` snapshots `StockConfig::alignment_pins`, which are
+///   dimensioned STOCK-RELATIVE (X0Y0 at the stock's min corner) — the
+///   frame the export datum converges on, because the pins are what
+///   physically registers a flip. `ctx.stock_bbox` IS the stock in the
+///   emission frame, so translating by its min corner serves both cases:
+///   world for an identity setup, a provable no-op for a non-identity one
+///   (`min == (0,0)`), which is why non-identity was accidentally correct
+///   (G-PINDRILL-FRAME).
+/// - `cfg.selected_holes` are picks in the WORLD frame and take the setup
+///   transform instead, never the stock-relative translation
+///   (G-DRILLPICK-FRAME). Applying both would move them twice.
+fn pin_holes_in_emission_frame(
+    cfg: &crate::compute::operation_configs::AlignmentPinDrillConfig,
+    stock_bbox: &BoundingBox3,
+    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
+) -> Vec<[f64; 2]> {
+    let stock_origin = stock_bbox.min;
+    let mut holes: Vec<[f64; 2]> = cfg
+        .holes
+        .iter()
+        .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
+        .collect();
+    if let Some(selected) = &cfg.selected_holes {
+        holes.extend(
+            selected
+                .iter()
+                .map(|&xy| pick_to_emission_frame(xy, setup_transform)),
+        );
+    }
+    holes
+}
+
 /// Resolve the drill hole positions for a [`DrillConfig`].
 ///
 /// When `cfg.selected_holes` is set the user has explicitly picked targets
@@ -694,9 +791,15 @@ macro_rules! config_guard {
 ///
 /// When it is `None` (the legacy default), fall back to the centroid of every
 /// closed polygon in the model.
+///
+/// Only the picks take `setup_transform`: the centroids are computed from
+/// `polygons`, which the session already transformed into the setup frame
+/// before generation, so transforming them again would apply it twice
+/// (G-DRILLPICK-FRAME — see [`pick_to_emission_frame`]).
 fn drill_holes_for_config(
     cfg: &crate::compute::operation_configs::DrillConfig,
     polygons: Option<&[Polygon2]>,
+    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> Result<Vec<[f64; 2]>, OperationError> {
     if let Some(selected) = &cfg.selected_holes {
         if selected.is_empty() {
@@ -706,7 +809,10 @@ fn drill_holes_for_config(
                     .to_owned(),
             ));
         }
-        return Ok(selected.clone());
+        return Ok(selected
+            .iter()
+            .map(|&xy| pick_to_emission_frame(xy, setup_transform))
+            .collect());
     }
     let polys = require_polygons(polygons)?;
     let mut holes = Vec::new();
@@ -743,7 +849,7 @@ pub(crate) fn generate_drill(
     if ctx.cancel.load(Ordering::SeqCst) {
         return Err(OperationError::Cancelled);
     }
-    let holes = drill_holes_for_config(cfg, ctx.polygons)?;
+    let holes = drill_holes_for_config(cfg, ctx.polygons, ctx.setup_transform)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::drill::DrillParams {
         depth: cfg.depth,
@@ -777,36 +883,13 @@ pub(crate) fn generate_alignment_pin_drill(
         return Err(OperationError::Cancelled);
     }
     let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
-    // Stock alignment pins plus any extra targets picked from the model.
-    //
-    // G-PINDRILL-FRAME (2026-08-21): `cfg.holes` snapshots
-    // `StockConfig::alignment_pins`, which are dimensioned STOCK-RELATIVE
-    // — X0Y0 at the stock's min corner, the frame `gcode`'s export datum
-    // converges on because it is what physically registers a flip. The
-    // toolpath, though, emits in the SETUP frame: world for an identity
-    // setup, zero-rooted local otherwise. Used verbatim, an identity setup
-    // with a non-zero stock origin drilled its registration pins off by
-    // exactly that origin (240x250 stock at origin (-20,-25): the exported
-    // pin landed at 22.5/27.5 where the stock says 2.5/2.5).
-    //
-    // `ctx.stock_bbox` IS the stock expressed in the emission frame, so its
-    // min corner is where stock-relative (0,0) sits and one translation
-    // serves both cases: world for identity, a no-op for non-identity
-    // (min == (0,0)), which is why non-identity was accidentally correct.
-    let stock_origin = ctx.stock_bbox.min;
-    let mut holes: Vec<[f64; 2]> = cfg
-        .holes
-        .iter()
-        .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
-        .collect();
-    // NOT translated: `selected_holes` are raw model/DXF coordinates (the
-    // viz picker maps `drill_targets` straight through), i.e. already the
-    // world frame. Correct as-is for identity setups; on a non-identity
-    // setup they are off by the setup transform, which is a SEPARATE and
-    // still-open defect shared with the `Drill` family — see G-DRILLPICK-FRAME.
-    if let Some(selected) = &cfg.selected_holes {
-        holes.extend_from_slice(selected);
-    }
+    // Stock alignment pins plus any extra targets picked from the model —
+    // two sources in two different frames, reconciled in one place so this
+    // adapter and `build_drill_op_for_config` cannot disagree about where
+    // the op drills. See `pin_holes_in_emission_frame` for both frames and
+    // why neither correction may be applied to the other's holes
+    // (G-PINDRILL-FRAME, G-DRILLPICK-FRAME).
+    let holes = pin_holes_in_emission_frame(cfg, ctx.stock_bbox, ctx.setup_transform);
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
             "No alignment pin positions defined".to_owned(),
@@ -814,7 +897,7 @@ pub(crate) fn generate_alignment_pin_drill(
     }
     let stock_z = ctx.stock_bbox.max.z - ctx.stock_bbox.min.z;
     let depth = stock_z + cfg.spoilboard_penetration;
-    let cycle = cfg.drill_cycle();
+    let cycle = cfg.drill_cycle(depth);
     let params = crate::drill::DrillParams {
         depth,
         top_z: ctx.stock_bbox.max.z,
@@ -2616,6 +2699,12 @@ pub fn execute_operation_annotated(
         None,
         None,
         None,
+        // `setup_transform`: this wrapper's callers (tests, the strategy
+        // advisor) hand in geometry they already resolved themselves and
+        // carry no setup, so there is nothing to declare. `None` means
+        // "world is the emission frame" — which is what a caller with no
+        // setup is asserting anyway.
+        None,
     )
     .map(|(generated, _findings)| generated)
 }
@@ -2667,6 +2756,11 @@ pub fn execute_operation_annotated_with_regions(
     // candidates against. `None` is a byte-identical no-op — the
     // legacy distance-only hookup decision.
     link_kinematics: Option<crate::machine_kinematics::LinkKinematics>,
+    // G-DRILLPICK-FRAME: the setup's world→local transform, for the
+    // config-carried coordinates the driver's geometry pipeline never
+    // touches. `None` = identity setup = no-op. See
+    // [`ExecutionContext::setup_transform`].
+    setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> Result<(GeneratedToolpath, GenerationFindings), OperationError> {
     // Phase-5 (T11) family adapters: when the registry carries a
     // GenerateFn for this op's family, dispatch through it. The
@@ -2695,6 +2789,7 @@ pub fn execute_operation_annotated_with_regions(
         heights,
         cutting_levels,
         stock_bbox,
+        setup_transform,
         prev_tool_radius,
         reference_tool_cfg,
         debug_ctx,
@@ -3085,7 +3180,61 @@ pub fn apply_dressups(
         .unwrap_or(500.0);
 
     // 1. Entry style
-    match cfg.entry_style {
+    //
+    // G-WANAKA-DRILL-RAMP (2026-08-19, severity high): auto-applied
+    // dressups gave both of wanaka200's drill cycles `entry_style = ramp`,
+    // and `apply_entry` duly rewrote every peck descent as a ramp — the
+    // emitted pin-drill motion moved 19 mm laterally on its way down
+    // (`G1 X15.708 Y16.271 Z28.000` then `G1 X2.500 Y2.500 Z27.000` for a
+    // pin at X2.5 Y2.5). A ramped alignment-pin hole is an oval slot,
+    // which destroys the flip registration that is the op's entire
+    // purpose. Nothing flagged it; it was found by reading the G-code.
+    //
+    // The premise `apply_entry` is built on is that a straight plunge is a
+    // bad way to ENTER a cut. For a drill cycle the vertical descent IS
+    // the cut — end-cutting, which is exactly what a drill bit is for — so
+    // there is no ramped form of it to prefer. The dressup is dropped
+    // here, at the one place it is applied, rather than corrected in the
+    // config: `DressupConfig::normalize_for_op` already promises this for
+    // `Drill` (`FORCE_NO_ENTRY`) and the ramp reached the machine anyway,
+    // because `ProjectSession::add_toolpath` takes a fully-built
+    // `ToolpathConfig` and normalizes nothing. A guarantee that only holds
+    // when someone remembers to route through the right setter is not a
+    // guarantee.
+    //
+    // **Stripped, not refused.** A refusal would fire on the product's own
+    // defaults — `AlignmentPinDrill` carries `DressupPolicy::ANY_DRESSUP`
+    // and the Roughing role's `Ramp`, so every freshly-added pin drill
+    // would stop generating — and it would buy nothing: the dressup is a
+    // request to REWRITE the emitted geometry, so declining it leaves the
+    // commanded cycle whole and correct. Refusal is for the case where the
+    // engine cannot produce the commanded geometry at all.
+    //
+    // The predicate is the toolpath's own `MoveIntent::Drilling`, the same
+    // one `session::compute` uses to decide a result is a drill cycle.
+    // Only `drill.rs` emits it, and it tags every fed descent of all four
+    // cycles, so no drill-family plunge escapes and no milling op is
+    // caught. A future generator that mixed drilling and milling in one
+    // toolpath would lose entry styling for the whole op — none does, and
+    // `narrate.rs` already names that hypothetical as the thing to watch.
+    let is_drill_cycle = current
+        .toolpath
+        .moves
+        .iter()
+        .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling));
+    if is_drill_cycle && cfg.entry_style != DressupEntryStyle::None {
+        tracing::warn!(
+            entry_style = ?cfg.entry_style,
+            "Entry dressup dropped: a drill cycle's descent is the cut, and \
+             ramping it would cut an oval slot instead of a round hole"
+        );
+    }
+    let entry_style = if is_drill_cycle {
+        DressupEntryStyle::None
+    } else {
+        cfg.entry_style
+    };
+    match entry_style {
         DressupEntryStyle::Ramp => {
             let ramp_angle = cfg.ramp_angle;
             current = apply_dressup_traced(
@@ -3588,7 +3737,7 @@ mod tests {
 
         // None => legacy centroid behaviour.
         let legacy = DrillConfig::default();
-        let holes = drill_holes_for_config(&legacy, Some(&polys)).unwrap();
+        let holes = drill_holes_for_config(&legacy, Some(&polys), None).unwrap();
         assert_eq!(holes.len(), 1);
         assert!((holes[0][0] - 5.0).abs() < 1e-9 && (holes[0][1] - 5.0).abs() < 1e-9);
 
@@ -3597,7 +3746,7 @@ mod tests {
             selected_holes: Some(vec![[1.0, 2.0], [7.0, 8.0]]),
             ..DrillConfig::default()
         };
-        let holes = drill_holes_for_config(&picked, Some(&polys)).unwrap();
+        let holes = drill_holes_for_config(&picked, Some(&polys), None).unwrap();
         assert_eq!(holes, vec![[1.0, 2.0], [7.0, 8.0]]);
 
         // Some(empty) => explicit "nothing selected" error, not all-centroids.
@@ -3605,7 +3754,7 @@ mod tests {
             selected_holes: Some(Vec::new()),
             ..DrillConfig::default()
         };
-        assert!(drill_holes_for_config(&empty, Some(&polys)).is_err());
+        assert!(drill_holes_for_config(&empty, Some(&polys), None).is_err());
     }
 
     /// F-XXX regression: adaptive3d's planner only supports a vertical
@@ -5034,6 +5183,7 @@ mod tests {
             None,
             Some(&rest_analysis),
             None,
+            None,
         )
         .expect("scallop with rest_analysis enabled should succeed");
 
@@ -5081,6 +5231,7 @@ mod tests {
             None,
             Some(&rest_analysis),
             None,
+            None,
         )
         .expect("scallop should succeed");
 
@@ -5102,6 +5253,7 @@ mod tests {
             None,
             None,
             &cancel,
+            None,
             None,
             None,
             None,
@@ -5166,6 +5318,7 @@ mod tests {
             None,
             None,
             Some(&rest_analysis),
+            None,
             None,
         )
         .expect("pencil rest_depth should succeed");

@@ -47,6 +47,13 @@ pub struct ComputeRequest {
     pub toolpath_index: usize,
     pub toolpath_name: String,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
+    /// G-DRILLPICK-FRAME: the setup's local<->global transform, `None` for
+    /// identity setups. The controller transforms mesh and polygons into the
+    /// emission frame before submitting, but `selected_holes` ride along on
+    /// the operation config as raw model coordinates, so the generator needs
+    /// the matrix itself to put drill picks in the same frame as everything
+    /// else. Mirrors `ResolvedGenInputs::setup_transform` on the core path.
+    pub setup_transform: Option<rs_cam_core::compute::transform::SetupTransformInfo>,
     pub polygons: Option<Arc<Vec<Polygon2>>>,
     pub mesh: Option<Arc<TriangleMesh>>,
     pub enriched_mesh: Option<Arc<rs_cam_core::enriched_mesh::EnrichedMesh>>,

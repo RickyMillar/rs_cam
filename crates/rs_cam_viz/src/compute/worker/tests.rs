@@ -14,6 +14,8 @@ fn sample_request(operation: OperationConfig, stock_source: StockSource) -> Comp
     let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(1),
         toolpath_index: 0,
         toolpath_name: "Sample".to_owned(),
@@ -97,6 +99,8 @@ fn quick_pocket_request(id: usize) -> ComputeRequest {
     let heights = HeightsConfig::default().resolve(&HeightContext::simple(10.0, 5.0));
     let cutting_levels = operation.cutting_levels(heights.top_z);
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: id,
         toolpath_name: format!("Pocket {id}"),
@@ -141,6 +145,8 @@ fn heavy_dropcutter_request(id: usize) -> ComputeRequest {
     cfg.stepover = 0.25;
     cfg.min_z = -5.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: id,
         toolpath_name: format!("DropCutter {id}"),
@@ -183,6 +189,8 @@ fn waterline_request(id: usize) -> ComputeRequest {
     cfg.z_step = 1.0;
     cfg.sampling = 1.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Waterline {id}"),
@@ -226,6 +234,8 @@ fn adaptive3d_request(id: usize) -> ComputeRequest {
     cfg.detect_flat_areas = true;
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Adaptive3d {id}"),
@@ -286,6 +296,8 @@ fn drill_request(id: usize) -> ComputeRequest {
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Drill {id}"),
@@ -324,6 +336,8 @@ fn steep_shallow_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
     let mesh = make_test_hemisphere(20.0, 16);
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("SteepShallow {id}"),
@@ -372,6 +386,8 @@ fn make_v_groove_mesh(length: f64, depth: f64, width: f64) -> TriangleMesh {
 fn pencil_request(id: usize) -> ComputeRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Pencil {id}"),
@@ -413,6 +429,8 @@ fn scallop_request(id: usize) -> ComputeRequest {
     cfg.scallop_height = 0.2;
     cfg.tolerance = 0.2;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Scallop {id}"),
@@ -455,6 +473,8 @@ fn ramp_finish_request(id: usize) -> ComputeRequest {
     cfg.sampling = 2.0;
     cfg.tolerance = 0.2;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Ramp finish {id}"),
@@ -495,6 +515,8 @@ fn spiral_finish_request(id: usize) -> ComputeRequest {
     };
     cfg.stepover = 2.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Spiral finish {id}"),
@@ -536,6 +558,8 @@ fn radial_finish_request(id: usize) -> ComputeRequest {
     cfg.angular_step = 30.0;
     cfg.point_spacing = 2.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Radial finish {id}"),
@@ -576,6 +600,8 @@ fn horizontal_finish_request(id: usize) -> ComputeRequest {
     };
     cfg.stepover = 3.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Horizontal finish {id}"),
@@ -617,6 +643,8 @@ fn project_curve_request(id: usize) -> ComputeRequest {
     cfg.depth = 0.75;
     cfg.point_spacing = 1.0;
     ComputeRequest {
+        // Identity-setup fixtures: no local<->global transform to apply.
+        setup_transform: None,
         toolpath_id: ToolpathId(id),
         toolpath_index: 0,
         toolpath_name: format!("Project curve {id}"),
