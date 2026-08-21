@@ -476,73 +476,96 @@ an agent's.
 
 ## G-TIMEEST — the operator-facing cycle time is 7x optimistic
 
-Found 2026-08-22 by the operator, at the machine: the GUI timeline read **25
-min** for a job the simulator measured at **10,781.7 s (~3 h)**.
+> **CORRECTION, AND THEN ITS RETRACTION — 2026-08-22. Read the final position
+> first: the diagnosis below is CORRECT. `total_runtime_s` IS accel-aware.**
+>
+> Mid-session I claimed the opposite, on this reasoning: `segment_time_s` is
+> `(segment_len / params.feed_rate_mm_min) * 60.0`
+> (`dexel_stock/simulation.rs:738`, `:1085`), the trace accumulates it
+> (`simulation_cut.rs:1166`), and a grep for `runtime_by_intent:` found only
+> `None`. I concluded the accel integrator was unwired.
+>
+> **Both facts were true and the conclusion was wrong**, because F-034 throws
+> that total away. `compute/simulate.rs:1233` runs
+> `apply_kinematics_cycle_time` whenever `request.kinematics` is `Some`, and it
+> OVERWRITES the dexel sum with the integrated value:
+>
+> ```rust
+> tp_summary.total_runtime_s = b.total_s;
+> tp_summary.runtime_by_intent = Some(b);
+> trace.summary.total_runtime_s = project_total;
+> trace.summary.runtime_by_intent = Some(project_breakdown);
+> ```
+>
+> `session/compute.rs:2899` re-runs it after feed modulation.
+>
+> **The method error, which is the reusable part**: I grepped for the field's
+> INITIALISERS and never for its MUTATIONS. `runtime_by_intent: None` in
+> fixtures and unrelated constructors is not evidence that nothing writes it.
+> When asking "is this field populated", search for assignments to it, not
+> struct literals containing it. This is the same shape as the G-AIRLADDER
+> error earlier the same day — verifying the mechanism I went looking for and
+> stopping.
+>
+> **The 7x is acceleration, and falls out of arithmetic with no fitting.**
+> Finish pass mean segment 0.40 mm, commanded F3000 = 50 mm/s, wanaka's
+> `acceleration_mm_s2 = 350.0`: reaching commanded feed needs `v²/2a` = 3.6 mm
+> of runway against a 0.40 mm segment. Peak reachable is `√(a·L)` = 11.8 mm/s,
+> so a from-rest triangular profile averages 5.9 mm/s — 8.5x under commanded —
+> and junction deviation (0.01) lets corners carry a few mm/s, pulling the
+> effective ratio to the ~7x measured.
+>
+> **Load-bearing caveat discovered in the process**: every shipped
+> `MachineProfile` preset has `kinematics: None` (`machine.rs:178, 204, 226`).
+> A project on a stock preset therefore gets the NAIVE runtime from the
+> simulator too, with no signal saying so. Only a hand-authored or $$-imported
+> kinematics block gets the integrated number. So "the sim is accel-aware" is
+> conditional, and the condition is invisible on every surface.
+>
+> **Scope is larger than four surfaces**: there are SEVEN live copies of
+> `cutting_distance / feed_rate()`. Beyond the four named below, also
+> `ui/export_wizard.rs:937` (the final save step's "Estimated cycle time"),
+> `io/setup_sheet.rs:88` and `:303` (the printed sheet the operator carries to
+> the machine), and `ui/toolpath_panel.rs:480`.
 
-**The simulator is right and the GUI is wrong.** Both surfaces compute a
-"total time"; only one of them models the machine.
+## G-CHIPGATE-POPULATION — the chipload gate passes on an empty band
 
-`ui/sim_timeline.rs::estimate_times` and `ui/readiness.rs::estimate_total_time`
-both do exactly this:
+Raised 2026-08-22. **Fourth occurrence on this programme of a gate reading
+healthy because its population is empty, and the first where a heuristic on the
+same surface says the opposite.**
 
-```rust
-let feed = tc.operation.feed_rate();
-let op_time = (result.stats.cutting_distance / feed) * 60.0;
-```
+On the live project, `set_toolpath_param` returned, unprompted:
 
-Three omissions, all optimistic:
+- toolpath 15 (R0.5 tapered ball): `Feed 3000 mm/min is 6.3x recommendation
+  (473) — tool breakage risk pre-sim`
+- toolpaths 4 and 10 (Ø6 end mill): `Feed 4000 mm/min is 5.3x recommendation
+  (750) — tool breakage risk`
 
-1. **No acceleration.** This is the whole gap on this project.
-2. **No rapids at all** — `cutting_distance` only. This job emits 33,320 mm of
-   rapid that the estimate cannot see.
-3. **Nominal feed, not emitted feed** — `operation.feed_rate()`, so any feed
-   modulation or per-move optimisation is invisible.
+After simulation each of those is **superseded** by `load.chipload.within`.
 
-**Why acceleration dominates here, arithmetically.** The Unified Finish pass
-emits **147,223 moves over 58,318 mm — a 0.40 mm mean segment**. Reaching its
-commanded F3000 (50 mm/s) from rest at ~500 mm/s² needs `v²/2a` = **2.5 mm** of
-runway, roughly six times the segment length. The machine never approaches the
-commanded feed on that pass, so `distance / feed` is not an approximation of
-the truth; it is a different quantity.
+The `within` is not evidence. The chipload gate compares advance-per-tooth
+against a VENDOR BAND, and a direct probe of `feeds::calculate` for that
+tapered ball returns **no band at any sampled depth** — it is Ø1.0 at the tip,
+inside the sub-Ø2 regime where the LUT has no row and the scaling laws are
+repo-derived. A gate with no band has nothing to exceed, so it reports the same
+`within` it would report on a measured clean cut.
 
-Cross-checked by hand against the exported G-code: cutting distance ÷ its own
-feed, summed per section, is **~26 min**, and ~30 min once rapids are added at
-a plausible rate — i.e. the naive formula reproduces the GUI's 25 min almost
-exactly, which confirms the diagnosis rather than merely being consistent with
-it.
+**What to build**: the same population assertion the forced-dive sentry gives
+collisions — a gate must be able to say NOT MEASURABLE and abstain, rather than
+return a verdict computed over an empty set. `sim_measurability` already models
+exactly this vocabulary (`Measurability::NotMeasurable` with a stated reason)
+and the chipload gate should use it: no matched band => abstain with
+`NoVendorData`, never `Within`.
 
-**Severity is about WHERE it is shown.** `estimate_total_time` is consumed by
-`readiness_panel.rs:140` and `preflight.rs:120` — the readiness panel and the
-pre-flight screen, i.e. the number an operator reads immediately before
-starting a cut. Planning a shift around 25 minutes for a three-hour job is a
-material error, and on a hobby machine it is the difference between "watch it"
-and "leave it running".
+Note the export gate ALREADY does the right thing on the same fact — it refuses
+with `chipload=NoVendorData` rather than passing. So two consumers of the same
+missing data disagree: the exporter treats absence as a refusal, the diagnostic
+treats it as a pass. Making the gate abstain would align them.
 
-Note the docstring is already honest — "Estimated cutting-only cycle time" —
-so the defect is that the SURFACE does not say what the docstring says. Same
-shape as the two air-cut denominators and the three `issue_count` quantities:
-one name, more than one quantity, and the operator-facing surface carrying the
-one that flatters.
+**Severity note**: "tool breakage risk" currently ships as `severity: hint`.
 
-**It also drives PLAYBACK SPEED** (operator question, 2026-08-22). The
-timeline's "1x = real time" baseline is
-`real_time_mv_s = total_moves / total_time` (`sim_timeline.rs:1122`) with
-`total_time` from the same naive estimator. Since that total is ~7x too small,
-the moves/sec baseline is ~7x too LARGE, and the tooltip's claim — "1x =
-real-time playback for this project" — is wrong by that factor. Watching a
-playback at 1x therefore *shows* you a 25-minute job.
-
-So ONE naive quantity reaches four surfaces: the timeline readout, the
-readiness panel, the pre-flight screen, and the playback speed baseline — while
-an accel-aware `total_runtime_s` already exists in the simulator. This is a
-single source of truth with four independent re-implementations, and the fix is
-consolidation, not four patches.
-
-**Fix shape**: publish the simulator's accel-aware `total_runtime_s` wherever a
-simulation exists, and where none does, label the estimate as what it is
-("cutting only, no accel") rather than as a cycle time. Do NOT quietly swap the
-formula without saying so — the two numbers differ by 7x on a real job and any
-saved expectation built on the old one is wrong.
+Credit: the population-assertion framing is `rs-cam-2c`'s, from the wave's
+forced-dive sentry work.
 
 ## G-PINAUTO — auto pin placement can key the flip, and today cannot
 

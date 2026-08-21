@@ -80,7 +80,14 @@ Do not document or rely on crates that are not currently in those manifests.
 
 ## Lint policy — zero warnings enforced
 
-All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy must pass with zero warnings before committing.
+`Cargo.toml`'s `[workspace.lints.clippy]` denies **20** lints, plus
+`unsafe_code` at `[workspace.lints.rust]` — **21** in total. Clippy must pass
+with zero warnings before committing.
+
+This table listed 16 and said "all", which is how two agents in one day wrote
+code against an incomplete list and had to hand-check the remainder. The six
+that were missing are at the bottom; `Cargo.toml` is the source of truth if
+this drifts again.
 
 | Lint | What it catches |
 |------|-----------------|
@@ -95,11 +102,28 @@ All 16 clippy lints below are **deny** at workspace level (`Cargo.toml`). Clippy
 | `needless_pass_by_value` | Take `&[T]`/`&str` not `Vec<T>`/`String` when not consumed |
 | `large_enum_variant` / `result_large_err` | Keep enums and error types small |
 | `redundant_clone` | Don't `.clone()` what you already own |
-| `unsafe_code` | No `unsafe` in this codebase |
+| `unsafe_code` | No `unsafe` in this codebase (`[workspace.lints.rust]`, not clippy) |
+| `wildcard_imports` | No `use foo::*` |
+| `clone_on_ref_ptr` | `Arc::clone(&x)`, not `x.clone()`, on ref-counted pointers |
+| `implicit_clone` | Don't `.to_vec()` / `.to_owned()` where `.clone()` says it |
+| `str_to_string` | `.to_owned()` on a `&str`, not `.to_string()` |
+| `semicolon_if_nothing_returned` | Terminate unit-returning statements |
+| `manual_let_else` | Use `let ... else`, not a match that only diverges |
 
 **When you hit a lint:** run `/lint-fix` for approved fix patterns. Prefer fixing the code. If the pattern is provably safe (e.g. indexing bounded by a loop, `.expect()` after a `.is_some()` check), use `#[allow(clippy::the_lint)]` with a `// SAFETY:` comment on the specific line or block — never file-level.
 
-**Test code** is exempt: test modules carry `#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]`.
+**Test code** is exempt for FOUR of them: test modules carry
+`#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]`.
+Note what that does NOT cover — **`print_stdout` and `print_stderr` are denied
+in tests too**. An instrument that needs to report its measurement must opt in
+explicitly with `#![allow(clippy::print_stderr)]` at the top of the file, as
+`tests/power_ceiling_parity_f2.rs` does. A leftover debug `println!` in a test
+fails the gate.
+
+**`cargo fmt --all -- --check` is the format gate**, not per-file `rustfmt`.
+Running `rustfmt --check` over a file list captured from an earlier
+`git status` misses anything edited afterwards. Note the effective
+`fn_call_width` is 60, not 100.
 
 ## Dev workflow quick reference
 
