@@ -2,10 +2,16 @@
 //!
 //! - **D7** (ruled D-5): the air-cut ⚠ marker followed the CUTTING-time
 //!   percentage while every shipped threshold in the workspace — the GUI's
-//!   20%, the CLI's 40%, every band in `air_cut_high_threshold_pct` — reads
+//!   banner, the CLI's 40%, every band in `air_cut_high_threshold_pct` — reads
 //!   the TOTAL-runtime one. The line prints both numbers, so a retract-heavy
 //!   op could carry a warning marker that no gate agreed with. The marker
 //!   moves; the reported numbers do not.
+//! - **W5B-F4 P8**: D7 moved the marker onto the right *denominator* but left
+//!   it comparing against a flat 50 that no gate used, so the ⚠ and the gate
+//!   could still disagree in both directions on the same toolpath. The marker
+//!   now reads the narrated op's OWN band from
+//!   `OperationType::air_cut_high_threshold_pct`, falling back to 50 only when
+//!   there is no band to read.
 //! - **D8 / R-5**: `UnifiedFinish` was missing from the finish-op hint arm.
 //! - **R-13**: ops with no commanded axial step were told there was no
 //!   denominator and then handed a ratio to form anyway.
@@ -231,6 +237,93 @@ fn narration_still_publishes_the_percentage_when_it_is_measured() {
     let line = air_cut_line(&narrate(&context));
     assert!(line.contains('%'), "got: {line}");
     assert!(!line.contains("NOT MEASURED"), "got: {line}");
+}
+
+/// A trace whose air cut is exactly `air_samples` % of TOTAL runtime.
+///
+/// Every sample is cutting, so total runtime == cutting runtime and the two
+/// denominators agree — which is what isolates the *marker's bar* as the
+/// only variable.
+fn total_runtime_air_pct_trace(air_samples: usize) -> SimulationCutTrace {
+    let mut samples = Vec::new();
+    for i in 0..100 {
+        samples.push(SimulationCutSample {
+            toolpath_id: ToolpathId(0),
+            move_index: 1,
+            sample_index: i,
+            segment_time_s: 1.0,
+            cumulative_time_s: i as f64,
+            is_cutting: true,
+            engagement: Engagement::with_radial_woc(if i < air_samples { 0.0 } else { 0.5 }),
+            removed_volume_est_mm3: if i < air_samples { 0.0 } else { 1.0 },
+            ..SimulationCutSample::test_fixture()
+        });
+    }
+    SimulationCutTrace::from_samples(0.5, samples)
+}
+
+fn air_cut_line_for(op: Option<OperationType>, air_samples: usize) -> String {
+    let trace = total_runtime_air_pct_trace(air_samples);
+    let context = ToolpathNarrationContext {
+        toolpath_id: Some(ToolpathId(0)),
+        operation_kind: op,
+        ..Default::default()
+    };
+    let text =
+        narrate_toolpath_with_context(&annotated(), None, Some(&trace), None, &tool(), &context);
+    air_cut_line(&text)
+}
+
+/// **W5B-F4 P8**: the ⚠ marker reads the narrated op's OWN air-cut band, not
+/// a flat 50.
+///
+/// RED-FIRST shape: 44 % of total runtime is *over* the 2.5D clearing band
+/// (40) and *under* the 3D finish band (45). One trace, two op kinds,
+/// opposite markers — which the flat 50 could not produce, because it called
+/// both of them ℹ and disagreed with the gate that fires on the pocket.
+#[test]
+fn the_air_cut_marker_reads_the_ops_own_band() {
+    let pocket = air_cut_line_for(Some(OperationType::Pocket), 44);
+    assert!(
+        pocket.contains('⚠'),
+        "44% air on a Pocket is over its 40 band and the gate fires; the \
+         marker must agree. got: {pocket}"
+    );
+
+    let scallop = air_cut_line_for(Some(OperationType::Scallop), 44);
+    assert!(
+        !scallop.contains('⚠'),
+        "44% air on a Scallop is under its 45 band and no gate fires; the \
+         marker must not warn. got: {scallop}"
+    );
+}
+
+/// The other direction, and the reason P8 had to land AFTER the band moved
+/// 30 → 45: a defect-free 3D finish pass sits in the 34–43 cluster.
+#[test]
+fn a_defect_free_finish_reading_does_not_warn() {
+    let line = air_cut_line_for(Some(OperationType::DropCutter), 35);
+    assert!(
+        !line.contains('⚠'),
+        "35% is inside the measured defect-free finish cluster (34.3–42.5) \
+         and under the 45 band; got: {line}"
+    );
+}
+
+/// No op kind means no band to read — the fallback must still warn on a
+/// genuinely high reading rather than silently disabling the marker.
+#[test]
+fn a_caller_with_no_operation_kind_falls_back_to_the_flat_bar() {
+    let under = air_cut_line_for(None, 44);
+    assert!(
+        !under.contains('⚠'),
+        "44% is under the 50 fallback; got: {under}"
+    );
+    let over = air_cut_line_for(None, 90);
+    assert!(
+        over.contains('⚠'),
+        "90% must warn even with no band to read; got: {over}"
+    );
 }
 
 #[test]
