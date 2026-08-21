@@ -2350,9 +2350,21 @@ impl ProjectSession {
         // F-036a's emitter contract.
         //
         // Inert when:
-        //  - `opts.adaptive_feed_modulation == false` (the default; the
-        //    smoke baseline and every legacy test pass with this
-        //    branch skipped, byte-identical).
+        //  - `opts.adaptive_feed_modulation == false` — which is NOT the
+        //    default. `impl Default for SimulationOptions`
+        //    (`session/mod.rs:878`) sets it `true` (Checkpoint J-3,
+        //    2026-08-13, operator-binding; it was `false` before that).
+        //    So on the default sim path this post-pass RUNS: it re-solves
+        //    per-move feeds from the measured engagement and swaps the
+        //    modulated toolpath into `self.results`, which is what the
+        //    G-code emitter reads. Consequence a reader must not miss —
+        //    a change to the engagement instrument changes emitted
+        //    F-words, not just reported numbers. Callers that need the
+        //    unmodulated IR (measurement harnesses, byte-identity A/Bs)
+        //    must pass `adaptive_feed_modulation: false` explicitly.
+        //    Measured and written up in
+        //    `planning/perf_review_2026-08-19/DELTA_w5b_f3_corpus.md`
+        //    §5.c / §6.
         //  - The vendor LUT has no `chip_load_min_mm` /
         //    `chip_load_max_mm` row for the active
         //    `(tool family, material, op family, pass role, diameter)`
