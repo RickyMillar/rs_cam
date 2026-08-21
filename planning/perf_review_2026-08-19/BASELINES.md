@@ -1032,6 +1032,41 @@ sentence attributes the exclusion to intent-tagging when the moves being
 rapids is what does the work. CLAUDE.md wording fix + a "no Retract-tagged
 Linear feed ships" sentry are queued for the user.
 
+## W5B-F3 — CLOSED (corpus half, 2026-08-21)
+
+Full detail: `DELTA_w5b_f3_corpus.md`, harness `af8c1c48`. Headlines:
+
+* **Zero collisions everywhere**, every arm, every project — no stop items.
+* Smoke corpus, three-way paired (baseline → `whole_path` → swept, one
+  binary): 33 swept-attributable numeric cells across 11/18 cases, all in the
+  known golden classes; **two verdict flips**, both quieter
+  (`chipload exceeds_high → within` on the V-bit ops AS009/AS010 — the
+  *observation* is identical to six decimals, the **band** moved because
+  swept's deeper measured axial widens `lookup_diameter_at` under the
+  repo-derived `D^0.61` law). AS013 reads 3.743 mm vs commanded 3.0 — swept
+  can *over*-read too, inside the `dpp+1.0` ceiling with 6.4% margin.
+* Rest chains (8 rest ops, 2 projects, fresh ops as bit-identical controls):
+  everything benign or better. `wanaka200_unified_finish` tp6 reproduces the
+  tp8-style improvement on a different family (rapid −25.5%, removal +8.82%,
+  air −17.2 pp); `wanaka.toml` tp10 (adaptive3d rest) is **bit-identical**;
+  air moves *up* on some ops (9.1→28.6%), the (ii-b) caveat's other direction.
+* **Scope correction to the accepted risk:** with the F-036b adaptive feed
+  modulator (default **ON** — `session/mod.rs:878`, contra the stale comment
+  at `session/compute.rs:2352`), swept's changed engagement readings re-solve
+  feeds and the modulated toolpath is what the G-code emitter reads. So the
+  swept default changes **emitted F-words on every cutting toolpath**, not
+  only geometry on rest chains. Measured: `wanaka.toml` project cycle time
+  +0.81% entirely from this (raw-path A/B −0.11%). Not a defect; wider than
+  the landing doc's statement; now on record.
+* Corpus infrastructure defects found (predating swept): AS015, the corpus's
+  only rest-chain row, has been `generation_failed` since `4b105dab`
+  (2026-07-06) — no rest measurement for ~7 weeks; `smoke::run_diff`'s
+  chipload regression check is **vacuous** (`kind == "exceeds"` never matches
+  `exceeds_low/high`); 211 baseline rapid collisions are 0 today across ALL
+  arms — plausibly the identity-frame/export-datum fixes, but the
+  detector-population check hasn't been done, so **do not re-cut the corpus
+  baseline** until it is.
+
 ## Ledger entries 12–14 — the campaign's own claims, refuted
 
 The first eleven were review prescriptions. These three are claims in this
