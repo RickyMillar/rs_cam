@@ -221,26 +221,26 @@ impl RsCamApp {
         // bakes the selected/hovered face colours into its vertices, so those
         // two are in its key and nothing else's.
         //
-        // Geometry identity is `(Arc::as_ptr, element count)` rather than the
-        // pointer alone: the cache holds no strong reference, so a freed
-        // allocation could in principle be reused at the same address by a
-        // replacement mesh. Requiring the element count to match as well
-        // makes that coincidence require an identically sized replacement.
+        // Geometry identity is `upload_cache::ArcId` — a held `Weak`, not a
+        // raw address. The cache holds no strong reference, so a freed
+        // allocation could otherwise be reused at the same address by a
+        // replacement mesh; the earlier mitigation here paired the address
+        // with the element count, which only made that coincidence require an
+        // identically sized replacement. A `Weak` reserves the allocation
+        // outright, so the address cannot be reissued at all.
         let frame_key = upload_cache::FrameKey {
             setup: active_setup_ref
                 .as_ref()
                 .map(|s| (s.id, s.face_up, s.z_rotation)),
             stock: stock.clone(),
         };
-        let mut plain_mesh_ids: Vec<usize> = Vec::new();
-        let mut enriched_ids: Vec<usize> = Vec::new();
+        let mut plain_mesh_ids = Vec::new();
+        let mut enriched_ids = Vec::new();
         for model in self.controller.state().session.models() {
             if let Some(enriched) = &model.enriched_mesh {
-                enriched_ids.push(Arc::as_ptr(enriched) as usize);
-                enriched_ids.push(enriched.as_mesh().triangles.len());
+                enriched_ids.push(upload_cache::ArcId::new(enriched));
             } else if let Some(mesh) = &model.mesh {
-                plain_mesh_ids.push(Arc::as_ptr(mesh) as usize);
-                plain_mesh_ids.push(mesh.triangles.len());
+                plain_mesh_ids.push(upload_cache::ArcId::new(mesh));
             }
         }
         let mesh_key = upload_cache::MeshUploadKey {
@@ -946,18 +946,18 @@ impl RsCamApp {
             // is not the toolpath itself: the cut trace it measures, and the
             // session edit counter standing in for the tool/material config
             // the vendor band is matched from.
-            let advance_source: Option<(usize, u64)> = matches!(
+            let advance_source: Option<upload_cache::AdvanceSource> = matches!(
                 state.viewport.toolpath_color_mode,
                 crate::state::viewport::ToolpathColorMode::AdvancePerTooth
             )
-            .then(|| {
-                let trace_ptr = state
+            .then(|| upload_cache::AdvanceSource {
+                trace: state
                     .simulation
                     .results
                     .as_ref()
                     .and_then(|r| r.cut_trace.as_ref())
-                    .map_or(0, |trace| Arc::as_ptr(trace) as usize);
-                (trace_ptr, gui.edit_counter)
+                    .map(upload_cache::ArcId::new),
+                edit_counter: gui.edit_counter,
             });
 
             for (i, tc) in session.toolpath_configs().iter().enumerate() {
@@ -1028,14 +1028,14 @@ impl RsCamApp {
                     // not. Reuse the previous pass's buffers when nothing
                     // they were built from has moved.
                     let key = upload_cache::ToolpathUploadKey {
-                        annotated: Arc::as_ptr(&result.annotated) as usize,
+                        annotated: upload_cache::ArcId::new(&result.annotated),
                         palette_index: i,
                         selected,
                         color_mode,
                         span_filter: state.viewport.span_kind_filter,
                         shift: shift_arr,
                         feed_rate: tc.operation.feed_rate(),
-                        advance_source,
+                        advance_source: advance_source.clone(),
                         entry_preview: entry_config.clone(),
                         tool_profile: profile_tool.clone(),
                     };
@@ -1189,7 +1189,7 @@ impl RsCamApp {
                 .and_then(|rt| rt.result.as_ref())
                 .map(|result| upload_cache::RestHeatmapUploadKey {
                     toolpath: tp_id,
-                    annotated: Arc::as_ptr(&result.annotated) as usize,
+                    annotated: upload_cache::ArcId::new(&result.annotated),
                     shift: shift_arr,
                 })
         } else {

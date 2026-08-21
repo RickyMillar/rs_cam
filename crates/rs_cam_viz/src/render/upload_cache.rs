@@ -26,9 +26,20 @@
 //! consumes them; adding a new input to a builder means adding it here.
 //!
 //! Geometry that arrives behind an `Arc` (`TriangleMesh`, `EnrichedMesh`,
-//! `AnnotatedToolpath`) is keyed by `Arc::as_ptr` — pointer identity, which
-//! this codebase already uses as a staleness key for the simulation caches
-//! (`SimulationState::cached_simulation_triage`).
+//! `AnnotatedToolpath`, `SimulationCutTrace`) is keyed by object identity —
+//! see [`ArcId`], which pins the identity with a `Weak` rather than a raw
+//! address.
+//!
+//! This module used to justify a bare `Arc::as_ptr` key by citing
+//! `SimulationState::cached_simulation_triage` as the codebase's established
+//! precedent. That citation was wrong twice over: the workspace's *argued*
+//! doctrine is the opposite one (`rs_cam_core::geom_cache` module doc,
+//! `rs_cam_core::compute::sim_prefix` — "**pointer keys are `Weak`, never
+//! bare pointers**"), and the viz caches it named have since been converted
+//! to that doctrine too (`state::simulation`, `weak_matches`). Both key
+//! shapes are now the same one.
+
+use std::sync::{Arc, Weak};
 
 use rs_cam_core::enriched_mesh::FaceGroupId;
 
@@ -37,6 +48,55 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::{SpanKindFilter, ToolpathColorMode};
 
 use super::toolpath_render::EntryPreviewConfig;
+
+/// Liveness-pinned `Arc` identity — the identity half of every key below.
+///
+/// A bare `Arc::as_ptr as usize` is not a sound key: the `Arc` can be dropped
+/// and a fresh allocation can land at the same address, so the pass would
+/// reuse the previous object's GPU buffer for a different object (a model
+/// unloaded and reloaded, a toolpath regenerated after its predecessor was
+/// freed). Pairing the address with an element count — what the mesh keys did
+/// before — narrows that window rather than closing it, and requires only
+/// that the replacement have the same triangle count.
+///
+/// Holding a [`Weak`] closes it: the allocation stays reserved while the key
+/// lives, so **no other `Arc` can be handed that address**, and address
+/// equality therefore proves same-allocation. That is why [`PartialEq`] here
+/// is [`Weak::ptr_eq`] and needs no upgrade: a stored key whose object has
+/// been dropped can only compare equal to a `Weak` into that same reserved
+/// allocation, which no live replacement can be. (Where a cache must also
+/// know the subject is still *alive*, upgrade instead — see
+/// `rs_cam_core::geom_cache` and `state::simulation::weak_matches`.)
+///
+/// Cost: a dropped object's `Arc` header (tens of bytes, its `Vec`s already
+/// freed) is retained until the key is replaced on the next upload pass.
+pub struct ArcId<T>(Weak<T>);
+
+impl<T> ArcId<T> {
+    pub fn new(arc: &Arc<T>) -> Self {
+        Self(Arc::downgrade(arc))
+    }
+}
+
+// Hand-written so the impls carry no `T: Clone` / `T: PartialEq` / `T: Debug`
+// bound: an identity key never touches the value it identifies.
+impl<T> Clone for ArcId<T> {
+    fn clone(&self) -> Self {
+        Self(Weak::clone(&self.0))
+    }
+}
+
+impl<T> PartialEq for ArcId<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T> std::fmt::Debug for ArcId<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ArcId({:p})", self.0.as_ptr())
+    }
+}
 
 /// The display frame every viewport resource is drawn in: the active setup's
 /// orientation plus the stock it is measured against.
@@ -60,8 +120,8 @@ pub struct FrameKey {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeshUploadKey {
     pub frame: FrameKey,
-    /// `Arc::as_ptr` of each contributing `TriangleMesh`, in model order.
-    pub meshes: Vec<usize>,
+    /// Pinned identity of each contributing `TriangleMesh`, in model order.
+    pub meshes: Vec<ArcId<rs_cam_core::mesh::TriangleMesh>>,
 }
 
 /// Key for `RenderResources::enriched_mesh_data_list` — the per-face-coloured
@@ -74,8 +134,8 @@ pub struct MeshUploadKey {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnrichedUploadKey {
     pub frame: FrameKey,
-    /// `Arc::as_ptr` of each contributing `EnrichedMesh`, in model order.
-    pub meshes: Vec<usize>,
+    /// Pinned identity of each contributing `EnrichedMesh`, in model order.
+    pub meshes: Vec<ArcId<rs_cam_core::enriched_mesh::EnrichedMesh>>,
     pub selected_faces: Vec<FaceGroupId>,
     pub hovered_face: Option<FaceGroupId>,
 }
@@ -102,8 +162,8 @@ pub struct CollisionUploadKey {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RestHeatmapUploadKey {
     pub toolpath: ToolpathId,
-    /// `Arc::as_ptr` of the selected toolpath's `AnnotatedToolpath`.
-    pub annotated: usize,
+    /// Pinned identity of the selected toolpath's `AnnotatedToolpath`.
+    pub annotated: ArcId<rs_cam_core::toolpath_spans::AnnotatedToolpath>,
     pub shift: [f64; 3],
 }
 
@@ -134,16 +194,32 @@ pub struct RestHeatmapUploadKey {
 ///   inputs, `None` when the overlay is not drawn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolpathUploadKey {
-    pub annotated: usize,
+    pub annotated: ArcId<rs_cam_core::toolpath_spans::AnnotatedToolpath>,
     pub palette_index: usize,
     pub selected: bool,
     pub color_mode: ToolpathColorMode,
     pub span_filter: SpanKindFilter,
     pub shift: [f64; 3],
     pub feed_rate: f64,
-    pub advance_source: Option<(usize, u64)>,
+    pub advance_source: Option<AdvanceSource>,
     pub entry_preview: Option<EntryPreviewConfig>,
     pub tool_profile: Option<ToolConfig>,
+}
+
+/// Everything the AdvancePerTooth colouring reads that is not the toolpath.
+///
+/// Split out of `(usize, u64)` when the pointer became an [`ArcId`]: the
+/// old shape used `0` for "no simulation has run", which an identity type
+/// cannot express — and could not distinguish from a trace that happened to
+/// live at address 0.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdvanceSource {
+    /// Identity of the cut trace the per-move advance map is derived from;
+    /// `None` when there is no cut trace.
+    pub trace: Option<ArcId<rs_cam_core::simulation_cut::SimulationCutTrace>>,
+    /// Session edit counter — stands in for the tool/material config the
+    /// vendor band is matched from.
+    pub edit_counter: u64,
 }
 
 /// Running counts of what the upload pass actually rebuilt.
@@ -202,10 +278,21 @@ impl UploadStats {
 mod tests {
     use super::*;
     use crate::render::toolpath_render::EntryStyle;
+    use rs_cam_core::mesh::{TriangleMesh, make_test_flat};
+    use rs_cam_core::toolpath::Toolpath;
+    use rs_cam_core::toolpath_spans::AnnotatedToolpath;
 
-    fn key() -> ToolpathUploadKey {
+    fn annotated() -> Arc<AnnotatedToolpath> {
+        Arc::new(AnnotatedToolpath::new(Toolpath::new()))
+    }
+
+    fn mesh() -> Arc<TriangleMesh> {
+        Arc::new(make_test_flat(10.0))
+    }
+
+    fn key_for(annotated: &Arc<AnnotatedToolpath>) -> ToolpathUploadKey {
         ToolpathUploadKey {
-            annotated: 0x1000,
+            annotated: ArcId::new(annotated),
             palette_index: 3,
             selected: false,
             color_mode: ToolpathColorMode::Normal,
@@ -223,14 +310,17 @@ mod tests {
     /// and *only* that toolpath's key.
     #[test]
     fn new_result_generation_invalidates_only_its_own_key() {
-        let before = key();
+        let first = annotated();
+        let before = key_for(&first);
+        let regenerated = annotated();
         let mut after = before.clone();
-        after.annotated = 0x2000;
+        after.annotated = ArcId::new(&regenerated);
         assert_ne!(before, after);
 
         // A peer toolpath, untouched by the generate, keeps its key.
+        let peer_annotated = annotated();
         let peer = ToolpathUploadKey {
-            annotated: 0x9000,
+            annotated: ArcId::new(&peer_annotated),
             palette_index: 4,
             ..before
         };
@@ -238,23 +328,51 @@ mod tests {
         assert_ne!(peer, after);
     }
 
+    /// The ABA property, for the identity half of every key in this module:
+    /// while a stored key holds its `Weak`, the freed allocation stays
+    /// reserved, so a replacement cannot be handed that address and the
+    /// stored key cannot answer for it. The `assert_ne!` on the raw address
+    /// is precisely the comparison the old `usize` key made — and nothing
+    /// guaranteed it then.
+    #[test]
+    fn a_freed_toolpath_cannot_be_impersonated_by_its_replacement() {
+        let first = annotated();
+        let freed_addr = Arc::as_ptr(&first) as usize;
+        let stale = key_for(&first);
+        drop(first);
+
+        let mut replacements = Vec::new();
+        for _ in 0..64 {
+            let replacement = annotated();
+            assert_ne!(
+                Arc::as_ptr(&replacement) as usize,
+                freed_addr,
+                "the stored key's Weak must reserve the freed allocation"
+            );
+            assert_ne!(stale, key_for(&replacement));
+            replacements.push(replacement);
+        }
+    }
+
     /// A selection click flips `selected` on at most two toolpaths (the one
     /// losing selection and the one gaining it); every other key is
     /// unchanged, so the pass re-uploads nothing for them.
     #[test]
     fn selection_change_moves_only_the_selected_flag() {
-        let unselected = key();
+        let tp = annotated();
+        let unselected = key_for(&tp);
         let mut selected = unselected.clone();
         selected.selected = true;
         assert_ne!(unselected, selected);
         // Same toolpath, same generation, selection unchanged → reuse.
-        assert_eq!(unselected, key());
+        assert_eq!(unselected, key_for(&tp));
     }
 
     /// Viewport dials that change what the builder emits must be in the key.
     #[test]
     fn colour_mode_and_span_filter_are_keyed() {
-        let base = key();
+        let tp = annotated();
+        let base = key_for(&tp);
         let mut recoloured = base.clone();
         recoloured.color_mode = ToolpathColorMode::Engagement;
         assert_ne!(base, recoloured);
@@ -268,7 +386,8 @@ mod tests {
     /// dressup dials move, not merely when the toolpath is reselected.
     #[test]
     fn entry_preview_params_are_keyed() {
-        let mut a = key();
+        let tp = annotated();
+        let mut a = key_for(&tp);
         a.selected = true;
         a.entry_preview = Some(EntryPreviewConfig {
             entry_style: EntryStyle::Ramp,
@@ -292,15 +411,41 @@ mod tests {
     /// material config; both must move the key.
     #[test]
     fn advance_per_tooth_sources_are_keyed() {
-        let mut a = key();
+        let tp = annotated();
+        let trace = Arc::new(
+            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
+        );
+        let mut a = key_for(&tp);
         a.color_mode = ToolpathColorMode::AdvancePerTooth;
-        a.advance_source = Some((0x4000, 7));
+        a.advance_source = Some(AdvanceSource {
+            trace: Some(ArcId::new(&trace)),
+            edit_counter: 7,
+        });
+
+        let resimulated = Arc::new(
+            rs_cam_core::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
+        );
         let mut new_trace = a.clone();
-        new_trace.advance_source = Some((0x5000, 7));
+        new_trace.advance_source = Some(AdvanceSource {
+            trace: Some(ArcId::new(&resimulated)),
+            edit_counter: 7,
+        });
         assert_ne!(a, new_trace);
+
         let mut edited_session = a.clone();
-        edited_session.advance_source = Some((0x4000, 8));
+        edited_session.advance_source = Some(AdvanceSource {
+            trace: Some(ArcId::new(&trace)),
+            edit_counter: 8,
+        });
         assert_ne!(a, edited_session);
+
+        // "No simulation has run" is its own state, not address 0.
+        let mut unsimulated = a.clone();
+        unsimulated.advance_source = Some(AdvanceSource {
+            trace: None,
+            edit_counter: 7,
+        });
+        assert_ne!(a, unsimulated);
     }
 
     /// V13's hover input: the enriched key moves with the hovered face, and
@@ -312,13 +457,21 @@ mod tests {
             setup: None,
             stock: StockConfig::default(),
         };
+        let plain = mesh();
+        let enriched_mesh = Arc::new(rs_cam_core::enriched_mesh::EnrichedMesh {
+            mesh: mesh(),
+            face_groups: Vec::new(),
+            triangle_to_face: Vec::new(),
+            adjacency: Vec::new(),
+            edges: Vec::new(),
+        });
         let mesh = MeshUploadKey {
             frame: frame.clone(),
-            meshes: vec![0x10],
+            meshes: vec![ArcId::new(&plain)],
         };
         let enriched = EnrichedUploadKey {
             frame,
-            meshes: vec![0x20],
+            meshes: vec![ArcId::new(&enriched_mesh)],
             selected_faces: Vec::new(),
             hovered_face: None,
         };
