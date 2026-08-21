@@ -12,7 +12,9 @@ use rmcp::schemars;
 use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::tool_config::ToolType;
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::WorkholdingRigidity;
+use rs_cam_core::material::Material;
 
 // ── Parameter structs ─────────────────────────────────────────────────
 
@@ -30,6 +32,19 @@ pub struct SetSetupFaceParam {
     pub setup_index: usize,
     /// Face orientation: "top", "bottom", "front", "back", "left", "right"
     pub face_up: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetSetupRotationParam {
+    /// Setup index (0-based)
+    pub setup_index: usize,
+    /// In-plane rotation of the stock about Z for this setup. One of
+    /// "0", "90", "180", "270" (degrees). Note a 90-degree rotation
+    /// does not map a non-square stock onto itself — for a diagonal
+    /// alignment-pin pair on a rectangular board, 180 is usually the
+    /// physical flip.
+    pub z_rotation: String,
 }
 
 #[allow(dead_code)]
@@ -250,7 +265,13 @@ pub struct SetToolpathParamInput {
     /// Parameter name (e.g. "feed_rate", "stepover", "depth_per_pass", "plunge_rate",
     /// or any config-specific field like "angle", "min_z", "passes")
     pub param: String,
-    /// New value (numeric)
+    /// New value. **Any JSON type** — a number for scalar params, a
+    /// string for enum-valued params, `true`/`false` for flags, and an
+    /// ARRAY for list-valued params (e.g. a drill op's `holes`:
+    /// `[[2.5, 2.5], [237.5, 247.5]]`). Pass the array itself, not a
+    /// string containing one. See [`any_json_value_schema`] for why
+    /// this field carries an explicit type list.
+    #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
 }
 
@@ -283,10 +304,15 @@ pub struct SetToolpathHeightsParam {
 pub struct SetToolParamInput {
     /// Tool index (0-based)
     pub index: usize,
-    /// Parameter name (e.g. "diameter", "flute_count", "stickout", "corner_radius",
-    /// "cutting_length", "shaft_diameter", "shank_diameter", "shank_length", "holder_diameter")
+    /// Parameter name. The COMPLETE accepted set (anything else is
+    /// refused): "diameter", "flute_count", "stickout", "corner_radius"
+    /// (bull-nose corner), "cutting_length", "included_angle" (V-bit,
+    /// degrees), "taper_half_angle" (tapered ball nose, degrees),
+    /// "shaft_diameter", "shank_diameter", "shank_length",
+    /// "holder_diameter".
     pub param: String,
-    /// New value (numeric)
+    /// New value (numeric — `flute_count` must be a whole number).
+    #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
 }
 
@@ -424,14 +450,54 @@ pub struct RemoveToolpathParam {
     pub index: usize,
 }
 
-#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
 pub struct AddToolParam {
     /// Display name for the tool
     pub name: String,
     /// Tool type (e.g. "end_mill", "ball_nose", "bull_nose", "v_bit", "tapered_ball_nose")
     pub tool_type: String,
-    /// Tool diameter in mm
+    /// Tool diameter in mm. For `tapered_ball_nose` this is the BALL TIP
+    /// diameter (2 x tip radius) — the cone base is `shaft_diameter`.
     pub diameter: f64,
+    /// **Required for `v_bit`** — the full included angle in degrees
+    /// (a "20 degree V-bit" is 20.0). Must be > 0 and < 180. There is
+    /// no honest default: the angle IS the tool, so an omitted angle is
+    /// refused rather than guessed.
+    pub included_angle: Option<f64>,
+    /// **Required for `tapered_ball_nose`** — the cone HALF angle in
+    /// degrees (a "5.6 degree per side" taper is 5.6). Must be > 0 and
+    /// < 90. Refused when omitted, for the same reason as
+    /// `included_angle`.
+    pub taper_half_angle: Option<f64>,
+    /// **Required for `bull_nose`** — corner radius in mm. Must be > 0
+    /// and <= diameter / 2 (a corner radius of exactly diameter/2 is a
+    /// ball nose). Refused when omitted.
+    pub corner_radius: Option<f64>,
+    /// Flute count. Default 2.
+    pub flute_count: Option<u32>,
+    /// Usable cutting-edge length in mm. Default 25.0 — CHECK IT
+    /// against your real tool: it caps depth-of-cut and drives the
+    /// deflection model.
+    pub cutting_length: Option<f64>,
+    /// Cone-base / shaft diameter in mm — the cutting ENVELOPE for a
+    /// `tapered_ball_nose` (`envelope_diameter()` takes the larger of
+    /// this and `diameter`). Default 6.35.
+    pub shaft_diameter: Option<f64>,
+    /// Shank diameter in mm (collision + machine collet check).
+    /// Default 6.35.
+    pub shank_diameter: Option<f64>,
+    /// Shank length in mm. Default 20.0.
+    pub shank_length: Option<f64>,
+    /// Tool stickout from the holder in mm — drives the deflection
+    /// model. Default 45.0.
+    pub stickout: Option<f64>,
+    /// Holder diameter in mm (holder-collision check). Default 25.0.
+    pub holder_diameter: Option<f64>,
+    /// G-code tool number for M6 output. Omit to auto-allocate the
+    /// next free number in the project (distinct numbers are what make
+    /// an M6 tool change re-trigger — identical numbers silently
+    /// collapse the changes).
+    pub tool_number: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -457,14 +523,67 @@ pub struct AddToolFromLibraryParam {
     pub index: usize,
 }
 
-#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
 pub struct SetStockConfigParam {
-    /// Stock width (X) in mm
-    pub x: f64,
-    /// Stock depth (Y) in mm
-    pub y: f64,
-    /// Stock height (Z) in mm
-    pub z: f64,
+    /// Stock width (X) in mm. Omit to leave unchanged.
+    pub x: Option<f64>,
+    /// Stock depth (Y) in mm. Omit to leave unchanged.
+    pub y: Option<f64>,
+    /// Stock height (Z) in mm. Omit to leave unchanged.
+    pub z: Option<f64>,
+    /// Stock origin X in mm (the stock spans `origin_x ..= origin_x + x`).
+    /// Omit to leave unchanged.
+    pub origin_x: Option<f64>,
+    /// Stock origin Y in mm. Omit to leave unchanged.
+    pub origin_y: Option<f64>,
+    /// Stock origin Z in mm — the BOTTOM of the stock, so the stock top
+    /// sits at `origin_z + z`. 2D operations cut at negative Z relative
+    /// to the model plane, so a 2D job normally wants
+    /// `origin_z = -z` (top at Z = 0). This decides the Z frame the
+    /// whole job cuts in. Omit to leave unchanged.
+    pub origin_z: Option<f64>,
+    /// Stock material by name, e.g. "White Oak", "Baltic Birch Plywood",
+    /// "MDF", "Acrylic", "Aluminum 6061-T6". Matched case- and
+    /// punctuation-insensitively against the material catalog + wood
+    /// species library; an unrecognised or ambiguous name is REFUSED
+    /// with the candidate list rather than guessed. Load-bearing: every
+    /// feed, chipload band and power estimate depends on it.
+    pub material: Option<String>,
+    /// Workholding rigidity for the feeds calculation: "low", "medium"
+    /// or "high". Omit to leave unchanged.
+    pub workholding_rigidity: Option<String>,
+    /// Auto-fit the stock to the next imported model's bounding box.
+    ///
+    /// Setting any dimension or origin above CLEARS this flag
+    /// automatically (see the tool description) — pass `true` here only
+    /// if you deliberately want the next `import_model` to overwrite
+    /// what you just set. Passing `false` alone turns auto-fit off
+    /// without changing any number.
+    pub auto_from_model: Option<bool>,
+}
+
+/// `set_machine_kinematics` — typed write path for the accel /
+/// junction-deviation numbers that decide cycle time and the
+/// parallel-vs-spiral strategy verdict.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+pub struct SetMachineKinematicsParam {
+    /// X-axis acceleration limit in mm/s^2 (GRBL `$120`).
+    pub acceleration_x_mm_s2: Option<f64>,
+    /// Y-axis acceleration limit in mm/s^2 (GRBL `$121`).
+    pub acceleration_y_mm_s2: Option<f64>,
+    /// Z-axis acceleration limit in mm/s^2 (GRBL `$122`).
+    pub acceleration_z_mm_s2: Option<f64>,
+    /// Isotropic fallback acceleration in mm/s^2. Only used when the
+    /// per-axis triple is absent; when all three axes are given this is
+    /// set to their mean unless explicitly passed.
+    pub acceleration_mm_s2: Option<f64>,
+    /// GRBL junction deviation `$11` in mm (stock GRBL default 0.010).
+    pub junction_deviation_mm: Option<f64>,
+    /// Optional hard cap on junction velocity in mm/min. Omit to leave
+    /// unchanged.
+    pub max_junction_velocity_mm_min: Option<f64>,
+    /// Optional jerk limit in mm/s^3. Omit to leave unchanged.
+    pub jerk_mm_s3: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -533,6 +652,7 @@ pub struct SetDressupFieldParam {
     /// `true` / `false` or `0` / `1` (server coerces); pass numbers
     /// as JSON numbers OR numeric strings like `"7"` (server coerces
     /// when the existing field is numeric).
+    #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
 }
 
@@ -673,6 +793,273 @@ pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
     })
 }
 
+// ── Wire-value plumbing ───────────────────────────────────────────────
+
+/// JSON-Schema for a tool argument that accepts *any* JSON value.
+///
+/// `serde_json::Value`'s own `JsonSchema` impl emits the bare schema
+/// `true` — "anything goes", with no type information at all. Measured
+/// on a live job 2026-08-19: a client handed the untyped `value`
+/// argument of `set_toolpath_param` a nested array and the server
+/// received the *string* `"[[2.5,2.5],[237.5,247.5]]"`. serde then
+/// refused with `invalid type: string "...", expected a sequence`, and
+/// the drill hole list had to be hand-written into the project TOML.
+///
+/// Enumerating the permitted JSON types tells the client that an array
+/// is a legal argument shape, so it stops stringifying.
+/// [`coerce_json_container_string`] is the second layer, for clients
+/// that stringify anyway.
+pub fn any_json_value_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "type".to_owned(),
+        serde_json::json!(["number", "string", "boolean", "array", "object", "null"]),
+    );
+    schemars::Schema::from(map)
+}
+
+/// Recover an array/object argument that arrived as a JSON *string*.
+///
+/// Deliberately narrow: only strings whose first non-space byte is `[`
+/// or `{` are parsed, and only an array or object result is accepted.
+/// Scalars are left alone — `"climb"` must stay the string `"climb"`,
+/// and numeric strings are already handled type-aware downstream by
+/// `ProjectSession::set_toolpath_param` (which knows whether the target
+/// field is an integer). A string that merely *starts* like a container
+/// but does not parse is returned unchanged so the caller still sees
+/// the original text in the error.
+pub fn coerce_json_container_string(value: serde_json::Value) -> serde_json::Value {
+    let parsed = match &value {
+        serde_json::Value::String(s) => {
+            let trimmed = s.trim();
+            if matches!(trimmed.as_bytes().first(), Some(b'[' | b'{')) {
+                serde_json::from_str::<serde_json::Value>(trimmed).ok()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    match parsed {
+        Some(p) if p.is_array() || p.is_object() => p,
+        _ => value,
+    }
+}
+
+// ── Stock config vocabulary ───────────────────────────────────────────
+
+/// Parse a workholding-rigidity name. Unknown input is an explicit
+/// error — this feeds the feeds calculation, so a silent fallback to
+/// `Medium` would be a wrong number with no trace.
+pub fn parse_workholding_rigidity(s: &str) -> Result<WorkholdingRigidity, String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "low" => Ok(WorkholdingRigidity::Low),
+        "medium" | "med" => Ok(WorkholdingRigidity::Medium),
+        "high" => Ok(WorkholdingRigidity::High),
+        other => Err(format!(
+            "Unknown workholding rigidity '{other}'. Valid values: low, medium, high."
+        )),
+    }
+}
+
+/// Punctuation- and case-insensitive key for material-name matching.
+fn material_key(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+/// Resolve a material by name against the curated catalog plus the
+/// ~148-entry wood species library (the same list the GUI picker walks).
+///
+/// Matching is exact-first on either the picker label or the material's
+/// own `label()`, then a unique substring match in either direction. An
+/// unrecognised name, or an ambiguous one, is REFUSED with candidates —
+/// never resolved to a near-miss, because every feed in the project
+/// depends on the answer.
+pub fn resolve_material(name: &str) -> Result<Material, String> {
+    let want = material_key(name);
+    if want.is_empty() {
+        return Err(
+            "material must be a non-empty name, e.g. \"White Oak\" or \"Baltic Birch Plywood\"."
+                .to_owned(),
+        );
+    }
+
+    let mut near: Vec<(String, Material)> = Vec::new();
+    for (_category, entries) in Material::materials_by_category() {
+        for (picker_label, mat) in entries {
+            let own_label = mat.label();
+            let keys = [material_key(&own_label), material_key(picker_label)];
+            if keys.contains(&want) {
+                return Ok(mat.clone());
+            }
+            let touches = keys
+                .iter()
+                .any(|k| !k.is_empty() && (k.contains(&want) || want.contains(k.as_str())));
+            if touches && !near.iter().any(|(l, _)| *l == own_label) {
+                near.push((own_label, mat.clone()));
+            }
+        }
+    }
+
+    match near.len() {
+        1 => near
+            .into_iter()
+            .next()
+            .map(|(_, mat)| mat)
+            .ok_or_else(|| "material lookup lost its single candidate".to_owned()),
+        0 => Err(format!(
+            "Unknown material '{name}'. Names come from the material catalog + wood species \
+             library — e.g. \"White Oak\", \"Hard Maple\", \"Baltic Birch Plywood\", \"MDF\", \
+             \"Acrylic\", \"Aluminum 6061-T6\". Nothing matched, so nothing was written."
+        )),
+        n => {
+            let mut labels: Vec<String> = near.into_iter().map(|(l, _)| l).collect();
+            labels.sort();
+            labels.truncate(20);
+            Err(format!(
+                "Ambiguous material '{name}' — {n} candidates. Nothing was written. Did you mean \
+                 one of: {}",
+                labels.join(", ")
+            ))
+        }
+    }
+}
+
+// ── Tool geometry ─────────────────────────────────────────────────────
+
+/// A tool built from an [`AddToolParam`], plus the list of fields that
+/// were filled from a default rather than supplied by the caller.
+///
+/// The `defaulted` list is reported straight back on the wire. The
+/// defect it exists for (2026-08-19): `add_tool` filled type-agnostic
+/// defaults silently, so a 20-degree V-bit became a 90-degree V-bit —
+/// a different tool, with no signal anywhere that a number had been
+/// invented. Six tools needed ~30 corrections in one session.
+#[derive(Debug)]
+pub struct BuiltTool {
+    pub config: ToolConfig,
+    pub defaulted: Vec<&'static str>,
+}
+
+/// Build a [`ToolConfig`] from an `add_tool` request.
+///
+/// Three rules:
+///
+/// 1. The geometry that *defines* the tool for its type — V-bit
+///    included angle, tapered-ball half angle, bull-nose corner radius
+///    — is REQUIRED. No default is honest there.
+/// 2. Geometry belonging to another type is zeroed rather than left at
+///    the struct default, so a flat end mill stops reporting a 2 mm
+///    corner radius and a 90-degree point on the wire (`list_tools`
+///    publishes `corner_radius_mm.max(corner_radius)` for every type).
+///    Every consumer of those three fields dispatches on `tool_type`
+///    first, so zeroing changes no geometry.
+/// 3. Everything else keeps its documented default but is NAMED in
+///    `defaulted`.
+///
+/// `tool_number` is not assigned here — the caller allocates it against
+/// the project's existing tools (see the `add_tool` handler).
+pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
+    let tool_type = parse_tool_type(&spec.tool_type)?;
+    if !spec.diameter.is_finite() || spec.diameter <= 0.0 {
+        return Err(format!(
+            "diameter must be a positive number of mm (got {}).",
+            spec.diameter
+        ));
+    }
+
+    let mut config = ToolConfig::new_default(ToolId(0), tool_type);
+    config.name = spec.name.clone();
+    config.diameter = spec.diameter;
+
+    // Rule 2 — clear the geometry this type does not own.
+    config.corner_radius = 0.0;
+    config.included_angle = 0.0;
+    config.taper_half_angle = 0.0;
+
+    // Rule 1 — the defining geometry, per type.
+    match tool_type {
+        ToolType::VBit => {
+            let angle = spec.included_angle.ok_or_else(|| {
+                "v_bit requires `included_angle` (full included angle in degrees, e.g. 20 for a \
+                 20-degree V-bit). No tool was added: the angle IS the tool, so guessing one \
+                 would create a different cutter than the one you asked for."
+                    .to_owned()
+            })?;
+            if !angle.is_finite() || angle <= 0.0 || angle >= 180.0 {
+                return Err(format!(
+                    "included_angle must be > 0 and < 180 degrees (got {angle})."
+                ));
+            }
+            config.included_angle = angle;
+        }
+        ToolType::TaperedBallNose => {
+            let angle = spec.taper_half_angle.ok_or_else(|| {
+                "tapered_ball_nose requires `taper_half_angle` (cone HALF angle in degrees, e.g. \
+                 5.6). No tool was added: guessing the taper would create a different cutter."
+                    .to_owned()
+            })?;
+            if !angle.is_finite() || angle <= 0.0 || angle >= 90.0 {
+                return Err(format!(
+                    "taper_half_angle must be > 0 and < 90 degrees (got {angle})."
+                ));
+            }
+            config.taper_half_angle = angle;
+        }
+        ToolType::BullNose => {
+            let radius = spec.corner_radius.ok_or_else(|| {
+                "bull_nose requires `corner_radius` (mm). No tool was added: the corner radius \
+                 IS the difference between a bull nose, a flat end mill and a ball nose."
+                    .to_owned()
+            })?;
+            if !radius.is_finite() || radius <= 0.0 || radius > spec.diameter / 2.0 {
+                return Err(format!(
+                    "corner_radius must be > 0 and <= diameter/2 ({:.4} mm) (got {radius}).",
+                    spec.diameter / 2.0
+                ));
+            }
+            config.corner_radius = radius;
+        }
+        ToolType::EndMill | ToolType::BallNose => {}
+    }
+
+    // Rule 3 — everything else: honour the override, name the default.
+    let mut defaulted: Vec<&'static str> = Vec::new();
+
+    macro_rules! apply_f64 {
+        ($field:ident, $name:literal) => {
+            match spec.$field {
+                Some(v) if v.is_finite() && v > 0.0 => config.$field = v,
+                Some(v) => {
+                    return Err(format!(
+                        "{} must be a positive number of mm (got {}).",
+                        $name, v
+                    ));
+                }
+                None => defaulted.push($name),
+            }
+        };
+    }
+
+    apply_f64!(cutting_length, "cutting_length");
+    apply_f64!(shaft_diameter, "shaft_diameter");
+    apply_f64!(shank_diameter, "shank_diameter");
+    apply_f64!(shank_length, "shank_length");
+    apply_f64!(stickout, "stickout");
+    apply_f64!(holder_diameter, "holder_diameter");
+
+    match spec.flute_count {
+        Some(0) => return Err("flute_count must be at least 1.".to_owned()),
+        Some(n) => config.flute_count = n,
+        None => defaulted.push("flute_count"),
+    }
+
+    Ok(BuiltTool { config, defaulted })
+}
+
 pub fn text(msg: impl Into<String>) -> String {
     msg.into()
 }
@@ -754,6 +1141,26 @@ pub fn build_info() -> serde_json::Value {
             // missing `truncated_core_mm2` means "not measured": on a
             // binary without the flag it means "not published".
             "diagnostics_row_core_parity",
+            // MCP authoring surface (2026-08-21), closing the gaps the
+            // 2026-08-19 from-scratch run hit. Probe these before
+            // assuming a missing argument means "not supported":
+            // - `set_toolpath_param` / `set_tool_param` / `set_dressup_field`
+            //   declare a typed `value`, so ARRAYS survive the wire.
+            "typed_param_value",
+            // - `set_stock_config` carries origin, material and
+            //   workholding rigidity, and clears `auto_from_model` when
+            //   geometry is set explicitly.
+            "stock_config_origin_material",
+            // - `add_tool` takes per-type geometry, REFUSES the
+            //   type-defining angle/radius when it is missing, and
+            //   allocates distinct tool numbers.
+            "add_tool_type_aware",
+            // - `set_machine_kinematics` writes accel + junction
+            //   deviation without a GRBL `$$` dump.
+            "set_machine_kinematics",
+            // - `set_setup_rotation` writes a setup's in-plane Z
+            //   rotation (0/90/180/270).
+            "set_setup_rotation",
         ],
     })
 }
@@ -905,5 +1312,316 @@ mod tests {
         assert_eq!(p.toolpath_index, Some(2));
         assert_eq!(p.properties_tab.as_deref(), Some("heights"));
         assert_eq!(p.modal.as_deref(), Some("feeds_modal"));
+    }
+
+    // ── Gap 6 (2026-08-19 run log): typed `value` ─────────────────────
+
+    /// The blocker. `serde_json::Value`'s own schema is the bare `true`
+    /// — no type information at all — and a client handed that field an
+    /// array serialised it as a STRING, so the call failed outright:
+    /// `invalid type: string "[[2.5,2.5],[237.5,247.5]]", expected a
+    /// sequence`. The schema must now name the JSON types it accepts,
+    /// and `array` must be one of them.
+    #[test]
+    fn set_toolpath_param_value_schema_names_its_types_including_array() {
+        for schema in [
+            schemars::SchemaGenerator::default().into_root_schema_for::<SetToolpathParamInput>(),
+            schemars::SchemaGenerator::default().into_root_schema_for::<SetToolParamInput>(),
+            schemars::SchemaGenerator::default().into_root_schema_for::<SetDressupFieldParam>(),
+        ] {
+            let json = serde_json::to_value(&schema).expect("schema serialises");
+            let value_schema = json
+                .pointer("/properties/value")
+                .expect("the tool exposes a `value` property");
+            assert!(
+                value_schema.is_object(),
+                "`value` must carry a real schema, not the untyped `true`: {value_schema}"
+            );
+            let types = value_schema
+                .pointer("/type")
+                .and_then(|t| t.as_array())
+                .expect("`value` must declare a type list");
+            let types: Vec<&str> = types.iter().filter_map(|t| t.as_str()).collect();
+            for expected in ["array", "object", "number", "string", "boolean"] {
+                assert!(
+                    types.contains(&expected),
+                    "`value` must accept {expected}: {types:?}"
+                );
+            }
+        }
+    }
+
+    /// Second layer: a client that stringifies anyway. Only container
+    /// shapes are unwrapped — enum strings and numeric strings are left
+    /// for the type-aware coercion in `ProjectSession`.
+    #[test]
+    fn stringified_containers_are_unwrapped_and_nothing_else_is() {
+        let holes = coerce_json_container_string(serde_json::json!("[[2.5,2.5],[237.5,247.5]]"));
+        assert_eq!(holes, serde_json::json!([[2.5, 2.5], [237.5, 247.5]]));
+
+        let obj = coerce_json_container_string(serde_json::json!("{\"a\": 1}"));
+        assert_eq!(obj, serde_json::json!({"a": 1}));
+
+        // Leading whitespace is tolerated.
+        assert_eq!(
+            coerce_json_container_string(serde_json::json!("  [1, 2]")),
+            serde_json::json!([1, 2])
+        );
+
+        // Untouched: enum strings, numeric strings, already-typed values,
+        // and malformed container text (so the error still quotes what
+        // the caller actually sent).
+        for untouched in [
+            serde_json::json!("climb"),
+            serde_json::json!("7"),
+            serde_json::json!(7),
+            serde_json::json!(true),
+            serde_json::json!(null),
+            serde_json::json!([1, 2]),
+            serde_json::json!("[1, 2"),
+        ] {
+            assert_eq!(
+                coerce_json_container_string(untouched.clone()),
+                untouched,
+                "value must survive unchanged"
+            );
+        }
+    }
+
+    // ── Gap 4: type-aware, honest `add_tool` ─────────────────────────
+
+    fn add_tool_spec(tool_type: &str, diameter: f64) -> AddToolParam {
+        AddToolParam {
+            name: "T".to_owned(),
+            tool_type: tool_type.to_owned(),
+            diameter,
+            ..AddToolParam::default()
+        }
+    }
+
+    /// The headline defect: a 20-degree V-bit created as `included_angle
+    /// 90` is silently a different tool. There is no honest default, so
+    /// the call is refused — and the refusal says which field and why.
+    #[test]
+    fn defining_geometry_is_required_per_tool_type() {
+        let err = build_tool_config(&add_tool_spec("v_bit", 12.7)).unwrap_err();
+        assert!(err.contains("included_angle"), "{err}");
+        let err = build_tool_config(&add_tool_spec("tapered_ball_nose", 3.0)).unwrap_err();
+        assert!(err.contains("taper_half_angle"), "{err}");
+        let err = build_tool_config(&add_tool_spec("bull_nose", 12.7)).unwrap_err();
+        assert!(err.contains("corner_radius"), "{err}");
+
+        // …and supplying it keeps the number the caller asked for.
+        let spec = AddToolParam {
+            included_angle: Some(20.0),
+            ..add_tool_spec("v_bit", 12.7)
+        };
+        let built = build_tool_config(&spec).unwrap();
+        assert_eq!(built.config.included_angle, 20.0);
+        assert_eq!(built.config.tool_type, ToolType::VBit);
+    }
+
+    /// Out-of-domain geometry is refused rather than stored.
+    #[test]
+    fn defining_geometry_is_range_checked() {
+        let spec = AddToolParam {
+            included_angle: Some(180.0),
+            ..add_tool_spec("v_bit", 12.7)
+        };
+        assert!(build_tool_config(&spec).is_err());
+
+        // A bull-nose corner radius above diameter/2 is not a bull nose.
+        let spec = AddToolParam {
+            corner_radius: Some(7.0),
+            ..add_tool_spec("bull_nose", 12.0)
+        };
+        assert!(build_tool_config(&spec).is_err());
+        let spec = AddToolParam {
+            corner_radius: Some(6.0),
+            ..add_tool_spec("bull_nose", 12.0)
+        };
+        assert!(build_tool_config(&spec).is_ok());
+
+        assert!(build_tool_config(&add_tool_spec("end_mill", 0.0)).is_err());
+        assert!(build_tool_config(&add_tool_spec("not_a_tool", 6.0)).is_err());
+    }
+
+    /// A flat end mill used to be stored — and REPORTED, via
+    /// `list_tools`' `corner_radius_mm.max(corner_radius)` — carrying a
+    /// 2 mm corner radius and a 90-degree point it does not have.
+    #[test]
+    fn a_tool_does_not_carry_another_types_geometry() {
+        let built = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
+        assert_eq!(built.config.corner_radius, 0.0);
+        assert_eq!(built.config.included_angle, 0.0);
+        assert_eq!(built.config.taper_half_angle, 0.0);
+
+        let spec = AddToolParam {
+            taper_half_angle: Some(5.6),
+            ..add_tool_spec("tapered_ball_nose", 3.0)
+        };
+        let built = build_tool_config(&spec).unwrap();
+        assert_eq!(built.config.taper_half_angle, 5.6);
+        assert_eq!(built.config.included_angle, 0.0);
+        assert_eq!(built.config.corner_radius, 0.0);
+    }
+
+    /// Defaults that remain are NAMED, so "25 mm of cutting length" can
+    /// never again read as a measurement of the caller's tool.
+    #[test]
+    fn every_unsupplied_field_is_named_in_defaulted() {
+        let built = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
+        for field in [
+            "cutting_length",
+            "shaft_diameter",
+            "shank_diameter",
+            "shank_length",
+            "stickout",
+            "holder_diameter",
+            "flute_count",
+        ] {
+            assert!(
+                built.defaulted.contains(&field),
+                "`{field}` was defaulted but not reported: {:?}",
+                built.defaulted
+            );
+        }
+
+        let spec = AddToolParam {
+            cutting_length: Some(32.0),
+            flute_count: Some(3),
+            stickout: Some(28.0),
+            ..add_tool_spec("end_mill", 6.0)
+        };
+        let built = build_tool_config(&spec).unwrap();
+        assert_eq!(built.config.cutting_length, 32.0);
+        assert_eq!(built.config.flute_count, 3);
+        assert_eq!(built.config.stickout, 28.0);
+        for field in ["cutting_length", "flute_count", "stickout"] {
+            assert!(
+                !built.defaulted.contains(&field),
+                "`{field}` was supplied — it must not be reported as defaulted"
+            );
+        }
+        assert!(build_tool_config(&AddToolParam {
+            flute_count: Some(0),
+            ..add_tool_spec("end_mill", 6.0)
+        })
+        .is_err());
+    }
+
+    /// `add_tool` is all-optional beyond name/type/diameter, and the
+    /// old three-field call still deserializes unchanged.
+    #[test]
+    fn add_tool_param_deserializes_old_and_new_forms() {
+        let p: AddToolParam = serde_json::from_value(serde_json::json!({
+            "name": "6mm EM", "tool_type": "end_mill", "diameter": 6.0
+        }))
+        .unwrap();
+        assert!(p.included_angle.is_none());
+        assert!(p.tool_number.is_none());
+
+        let p: AddToolParam = serde_json::from_value(serde_json::json!({
+            "name": "20deg V", "tool_type": "v_bit", "diameter": 12.7,
+            "included_angle": 20.0, "flute_count": 1, "cutting_length": 12.0,
+            "tool_number": 4
+        }))
+        .unwrap();
+        assert_eq!(p.included_angle, Some(20.0));
+        assert_eq!(p.flute_count, Some(1));
+        assert_eq!(p.tool_number, Some(4));
+    }
+
+    // ── Gaps 1 + 2: stock config ─────────────────────────────────────
+
+    /// Every field optional — an omitted field means "leave unchanged",
+    /// so a caller can set material alone without restating dimensions.
+    #[test]
+    fn set_stock_config_param_is_an_all_optional_patch() {
+        let p: SetStockConfigParam = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(p.x.is_none() && p.material.is_none() && p.auto_from_model.is_none());
+
+        let p: SetStockConfigParam = serde_json::from_value(serde_json::json!({
+            "x": 240.0, "y": 250.0, "z": 25.0,
+            "origin_x": 0.0, "origin_y": 0.0, "origin_z": -25.0,
+            "material": "White Oak",
+            "workholding_rigidity": "high",
+            "auto_from_model": false
+        }))
+        .unwrap();
+        assert_eq!(p.x, Some(240.0));
+        assert_eq!(p.origin_z, Some(-25.0));
+        assert_eq!(p.material.as_deref(), Some("White Oak"));
+        assert_eq!(p.workholding_rigidity.as_deref(), Some("high"));
+        assert_eq!(p.auto_from_model, Some(false));
+
+        // The pre-existing three-field call still deserializes.
+        let p: SetStockConfigParam =
+            serde_json::from_value(serde_json::json!({"x": 100.0, "y": 100.0, "z": 20.0})).unwrap();
+        assert_eq!(p.z, Some(20.0));
+    }
+
+    /// Material is load-bearing for every feed in the project, so an
+    /// unrecognised or ambiguous name is refused with candidates rather
+    /// than resolved to a near-miss.
+    #[test]
+    fn material_resolves_exactly_or_refuses_with_candidates() {
+        for (query, expected) in [
+            ("White Oak", "White Oak"),
+            ("white oak", "White Oak"),
+            ("  WHITE-OAK ", "White Oak"),
+            ("MDF", "MDF"),
+            ("Aluminum 6061-T6", "Aluminum 6061-T6"),
+        ] {
+            let mat = resolve_material(query).unwrap_or_else(|e| panic!("{query}: {e}"));
+            assert_eq!(mat.label(), expected);
+        }
+
+        let err = resolve_material("unobtainium").unwrap_err();
+        assert!(err.contains("Unknown material"), "{err}");
+        assert!(err.contains("nothing was written"), "{err}");
+
+        // Two catalog aluminums — a bare "aluminum" must not pick one.
+        let err = resolve_material("aluminum").unwrap_err();
+        assert!(err.contains("Ambiguous"), "{err}");
+        assert!(err.contains("6061"), "{err}");
+
+        assert!(resolve_material("   ").is_err());
+    }
+
+    #[test]
+    fn workholding_rigidity_parses_or_refuses() {
+        assert_eq!(
+            parse_workholding_rigidity("Low"),
+            Ok(WorkholdingRigidity::Low)
+        );
+        assert_eq!(
+            parse_workholding_rigidity(" medium "),
+            Ok(WorkholdingRigidity::Medium)
+        );
+        assert_eq!(
+            parse_workholding_rigidity("HIGH"),
+            Ok(WorkholdingRigidity::High)
+        );
+        let err = parse_workholding_rigidity("rigid").unwrap_err();
+        assert!(err.contains("low, medium, high"), "{err}");
+    }
+
+    /// Machine kinematics: all-optional patch, so a caller can set
+    /// junction deviation without restating the accelerations.
+    #[test]
+    fn set_machine_kinematics_param_is_an_all_optional_patch() {
+        let p: SetMachineKinematicsParam = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(p.acceleration_x_mm_s2.is_none() && p.junction_deviation_mm.is_none());
+
+        let p: SetMachineKinematicsParam = serde_json::from_value(serde_json::json!({
+            "acceleration_x_mm_s2": 500.0,
+            "acceleration_y_mm_s2": 500.0,
+            "acceleration_z_mm_s2": 270.0,
+            "junction_deviation_mm": 0.02
+        }))
+        .unwrap();
+        assert_eq!(p.acceleration_z_mm_s2, Some(270.0));
+        assert_eq!(p.junction_deviation_mm, Some(0.02));
     }
 }
