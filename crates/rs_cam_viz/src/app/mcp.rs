@@ -7,7 +7,7 @@ use std::path::Path;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig,
 };
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
+use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::session::MutationKind;
 
 use crate::controller::Severity;
@@ -19,7 +19,11 @@ use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 
-use rs_cam_mcp::server::{json_str, no_project_error, parse_operation_type, parse_tool_type, text};
+use rs_cam_mcp::server::{
+    AddToolParam, BuiltTool, SetMachineKinematicsParam, SetStockConfigParam, build_tool_config,
+    coerce_json_container_string, json_str, no_project_error, parse_operation_type,
+    parse_workholding_rigidity, resolve_material, text,
+};
 
 /// The optional numeric dials `set_rest_analysis_config` accepts, grouped so
 /// the handler stays under the argument-count lint after PR-7 added the two
@@ -329,6 +333,22 @@ impl super::RsCamApp {
                 let resp = self.mcp_set_setup_face(setup_index, &face_up);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SetSetupRotation {
+                setup_index,
+                z_rotation,
+            } => {
+                self.controller.push_notification(
+                    format!("MCP: Set setup {setup_index} Z rotation to '{z_rotation}'"),
+                    Severity::Info,
+                );
+                self.controller
+                    .events_mut()
+                    .push(crate::ui::AppEvent::SwitchWorkspace(
+                        crate::state::Workspace::Setup,
+                    ));
+                let resp = self.mcp_set_setup_rotation(setup_index, &z_rotation);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::MoveToolpathToSetup {
                 toolpath_index,
                 target_setup_index,
@@ -487,7 +507,7 @@ impl super::RsCamApp {
                         .insert(key, std::time::Instant::now());
                     self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
                 }
-                let resp = self.mcp_set_tool_param(index, &param, &value);
+                let resp = self.mcp_set_tool_param(index, &param, value);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::AddToolpath {
@@ -527,14 +547,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_remove_toolpath(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::AddTool {
-                name,
-                tool_type,
-                diameter,
-            } => {
+            McpRequestKind::AddTool { spec } => {
                 self.controller
-                    .push_notification(format!("MCP: Added tool '{name}'"), Severity::Info);
-                let resp = self.mcp_add_tool(&name, &tool_type, diameter);
+                    .push_notification(format!("MCP: Added tool '{}'", spec.name), Severity::Info);
+                let resp = self.mcp_add_tool(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::AddToolFromLibrary { catalog, index } => {
@@ -549,7 +565,14 @@ impl super::RsCamApp {
                 let resp = self.mcp_remove_tool(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            McpRequestKind::SetStockConfig { x, y, z } => {
+            McpRequestKind::SetMachineKinematics { spec } => {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::SwitchWorkspace(Workspace::Setup));
+                let resp = self.mcp_set_machine_kinematics(&spec);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::SetStockConfig { spec } => {
                 self.controller
                     .events_mut()
                     .push(AppEvent::SwitchWorkspace(Workspace::Setup));
@@ -560,7 +583,7 @@ impl super::RsCamApp {
                     .gui
                     .mcp_highlights
                     .insert(key, std::time::Instant::now());
-                let resp = self.mcp_set_stock_config(x, y, z);
+                let resp = self.mcp_set_stock_config(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetBoundaryConfig {
@@ -1005,15 +1028,52 @@ impl super::RsCamApp {
         };
         let name = tool.name.clone();
         tool.id = ToolId(0); // session reassigns on insert
+
+        // Catalogs number their tools independently, so importing from
+        // two of them (or twice from one) lands duplicate `tool_number`s
+        // in the project — and an M6 tool change only re-triggers on a
+        // CHANGE of number, so duplicates silently collapse the changes
+        // on export. Reallocate on collision and say so.
+        let taken: Vec<u32> = self
+            .controller
+            .state()
+            .session
+            .tools()
+            .iter()
+            .map(|t| t.tool_number)
+            .collect();
+        let catalog_tool_number = tool.tool_number;
+        let renumbered = catalog_tool_number == 0 || taken.contains(&catalog_tool_number);
+        if renumbered {
+            tool.tool_number = taken.iter().copied().max().unwrap_or(0).saturating_add(1);
+        }
+        let tool_number = tool.tool_number;
+
         let idx = self.controller.state_mut().session.add_tool(tool);
         self.controller.state_mut().gui.mark_edited();
+        let renumbered_from = if renumbered {
+            serde_json::json!(catalog_tool_number)
+        } else {
+            serde_json::Value::Null
+        };
+        let summary = if renumbered {
+            format!(
+                "Imported '{name}' from {catalog} as tool {idx}, renumbered from \
+                 tool_number {catalog_tool_number} to {tool_number} (the catalog's number was \
+                 already in use — duplicate numbers collapse M6 tool changes on export)."
+            )
+        } else {
+            format!("Imported '{name}' from {catalog} as tool {idx} (tool_number {tool_number}).")
+        };
         self.mcp_mutation_result(
-            format!("Imported '{name}' from {catalog} as tool {idx}"),
+            summary,
             serde_json::json!({
                 "index": idx,
                 "name": name,
                 "source_catalog": catalog,
                 "source_index": index,
+                "tool_number": tool_number,
+                "tool_number_renumbered_from": renumbered_from,
             }),
             Vec::new(),
             &before,
@@ -2570,6 +2630,66 @@ impl super::RsCamApp {
         }
     }
 
+    /// Set a setup's in-plane Z rotation.
+    ///
+    /// The 2026-08-19 run log's gap 8: both halves of setup orientation
+    /// exist in the data model, but only `face_up` had an MCP setter, so
+    /// a rotated second setup could not be expressed at all.
+    fn mcp_set_setup_rotation(&mut self, setup_index: usize, z_rotation: &str) -> String {
+        use rs_cam_core::compute::transform::ZRotation;
+        let before = self.mcp_diagnostic_snapshot();
+        let setups = self.controller.state().session.list_setups();
+        let Some(setup) = setups.get(setup_index) else {
+            return self
+                .mcp_mutation_error(format!("Error: Setup index {setup_index} not found"), None);
+        };
+        let setup_id = setup.id;
+
+        let normalized = z_rotation.trim().trim_end_matches("deg").trim();
+        let rotation = match normalized {
+            "0" => ZRotation::Deg0,
+            "90" => ZRotation::Deg90,
+            "180" => ZRotation::Deg180,
+            "270" => ZRotation::Deg270,
+            other => {
+                return self.mcp_mutation_error(
+                    format!(
+                        "Error: Unknown Z rotation '{other}'. Use one of: 0, 90, 180, 270 \
+                         (degrees). Nothing was written."
+                    ),
+                    Some("z_rotation".to_owned()),
+                );
+            }
+        };
+
+        if let Some((_, sd)) = self
+            .controller
+            .state_mut()
+            .session
+            .find_setup_by_id_mut(setup_id)
+        {
+            sd.z_rotation = rotation;
+            self.controller.state_mut().gui.mark_edited();
+            self.controller.set_pending_upload();
+            let stale = self.mcp_apply_stale(MutationKind::SetupChanged { setup_id });
+            self.mcp_mutation_result(
+                format!(
+                    "Set setup {setup_index} Z rotation to {}. Regenerate the setup's toolpaths \
+                     to apply.",
+                    rotation.label()
+                ),
+                serde_json::json!({
+                    "setup_index": setup_index,
+                    "z_rotation": rotation.label(),
+                }),
+                stale,
+                &before,
+            )
+        } else {
+            self.mcp_mutation_error("Error: Setup not found".to_owned(), None)
+        }
+    }
+
     fn mcp_move_toolpath_to_setup(
         &mut self,
         toolpath_index: usize,
@@ -2984,6 +3104,11 @@ impl super::RsCamApp {
         param: &str,
         value: serde_json::Value,
     ) -> String {
+        // A client that stringifies an array argument would otherwise be
+        // met with `invalid type: string "[[2.5,2.5],...]", expected a
+        // sequence` (measured 2026-08-19 on a drill `holes` list). The
+        // declared schema is the primary fix; this is the fallback.
+        let value = coerce_json_container_string(value);
         let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
@@ -3090,14 +3215,15 @@ impl super::RsCamApp {
         &mut self,
         index: usize,
         param: &str,
-        value: &serde_json::Value,
+        value: serde_json::Value,
     ) -> String {
+        let value = coerce_json_container_string(value);
         let before = self.mcp_diagnostic_snapshot();
         match self
             .controller
             .state_mut()
             .session
-            .set_tool_param(index, param, value)
+            .set_tool_param(index, param, &value)
         {
             Ok(()) => {
                 self.controller.state_mut().gui.mark_edited();
@@ -3288,25 +3414,90 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_add_tool(&mut self, name: &str, tool_type: &str, diameter: f64) -> String {
+    /// Add a tool from an `add_tool` request.
+    ///
+    /// Closes two halves of the same defect (2026-08-19 run log, gap 4):
+    ///
+    /// - The defaults were type-AGNOSTIC. Every tool came out with
+    ///   `corner_radius 2.0`, `included_angle 90`, `taper_half_angle
+    ///   15`, so a 20-degree V-bit was silently a 90-degree V-bit —
+    ///   a different cutter. [`build_tool_config`] now REFUSES when the
+    ///   geometry that defines the type is missing, zeroes the geometry
+    ///   belonging to other types, and names every field it defaulted.
+    /// - Every tool got `tool_number = 1` (`ToolConfig::new_default`
+    ///   derives it from the `ToolId`, and this path always passed
+    ///   `ToolId(0)`; `Session::add_tool` assigns the real id afterwards
+    ///   and never revisits the number). An M6 tool change only
+    ///   re-triggers on a CHANGE of number, so a whole project's worth
+    ///   of tool changes collapsed into one. Numbers are now allocated
+    ///   against the tools already in the project.
+    fn mcp_add_tool(&mut self, spec: &AddToolParam) -> String {
         let before = self.mcp_diagnostic_snapshot();
-        let tt = match parse_tool_type(tool_type) {
-            Ok(t) => t,
+        let BuiltTool {
+            mut config,
+            defaulted,
+        } = match build_tool_config(spec) {
+            Ok(built) => built,
             Err(e) => return self.mcp_mutation_error(format!("Error: {e}"), None),
         };
 
-        let mut config = ToolConfig::new_default(ToolId(0), tt);
-        config.name = name.to_owned();
-        config.diameter = diameter;
+        let taken: Vec<u32> = self
+            .controller
+            .state()
+            .session
+            .tools()
+            .iter()
+            .map(|t| t.tool_number)
+            .collect();
+        let (tool_number, conflict) = match spec.tool_number {
+            Some(n) => (n, taken.contains(&n)),
+            None => (
+                taken.iter().copied().max().unwrap_or(0).saturating_add(1),
+                false,
+            ),
+        };
+        config.tool_number = tool_number;
 
         let idx = self.controller.state_mut().session.add_tool(config);
         self.controller.state_mut().gui.mark_edited();
+
+        let geometry = self
+            .controller
+            .state()
+            .session
+            .tools()
+            .get(idx)
+            .and_then(|tool| serde_json::to_value(tool).ok())
+            .unwrap_or(serde_json::Value::Null);
+
+        let name = &spec.name;
+        let summary = if conflict {
+            format!(
+                "Added tool '{name}' at index {idx}, but tool_number {tool_number} is ALREADY \
+                 USED by another tool in this project. An M6 tool change only re-triggers on a \
+                 change of number, so two tools sharing one collapse into a single change on \
+                 export. Pass a distinct tool_number, or omit it to auto-allocate."
+            )
+        } else if defaulted.is_empty() {
+            format!("Added tool '{name}' at index {idx} (tool_number {tool_number}).")
+        } else {
+            format!(
+                "Added tool '{name}' at index {idx} (tool_number {tool_number}). {} field(s) \
+                 came from generic defaults, not from your tool — see `defaulted`.",
+                defaulted.len()
+            )
+        };
+
         self.mcp_mutation_result(
-            format!("Added tool '{name}'"),
+            summary,
             serde_json::json!({
                 "index": idx,
-                "tool_type": tool_type,
-                "diameter": diameter,
+                "tool_type": spec.tool_type,
+                "diameter": spec.diameter,
+                "tool_number": tool_number,
+                "tool_number_conflict": conflict,
+                "defaulted": defaulted,
+                "geometry": geometry,
             }),
             Vec::new(),
             &before,
@@ -3329,23 +3520,300 @@ impl super::RsCamApp {
         }
     }
 
-    fn mcp_set_stock_config(&mut self, x: f64, y: f64, z: f64) -> String {
+    /// Set stock geometry / material / rigidity from an all-optional
+    /// patch.
+    ///
+    /// **Gap 2 (2026-08-19 run log): setting a dimension explicitly
+    /// clears `auto_from_model`.** Before this, a caller could set
+    /// 240x250x25 and have the *stored* origin be
+    /// `(2.23, 109.81, -14.81)` — re-derived by
+    /// `ProjectSession::add_model` from the bounding box of whatever was
+    /// imported next, with nothing on the wire saying so. Of the two
+    /// remedies (clear the flag, or report that it was not cleared) this
+    /// takes the first: an explicit dimension is an assertion about the
+    /// physical stock on the bed, and auto-fit is a *sizing* convenience
+    /// that has no business overwriting one. The reply reports the flag
+    /// either way, and `auto_from_model: true` may be passed explicitly
+    /// to keep auto-fit on — in which case the reply says plainly that
+    /// the numbers just written can be overwritten by the next import.
+    fn mcp_set_stock_config(&mut self, spec: &SetStockConfigParam) -> String {
+        // Resolve everything that can fail BEFORE writing anything: a
+        // half-applied stock config is worse than a refusal.
+        let material = match spec.material.as_deref() {
+            Some(name) => match resolve_material(name) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    return self
+                        .mcp_mutation_error(format!("Error: {e}"), Some("material".to_owned()));
+                }
+            },
+            None => None,
+        };
+        let rigidity = match spec.workholding_rigidity.as_deref() {
+            Some(name) => match parse_workholding_rigidity(name) {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    return self.mcp_mutation_error(
+                        format!("Error: {e}"),
+                        Some("workholding_rigidity".to_owned()),
+                    );
+                }
+            },
+            None => None,
+        };
+        for (label, value) in [("x", spec.x), ("y", spec.y), ("z", spec.z)] {
+            if let Some(v) = value
+                && (!v.is_finite() || v <= 0.0)
+            {
+                return self.mcp_mutation_error(
+                    format!("Error: stock {label} must be a positive number of mm (got {v})."),
+                    Some(label.to_owned()),
+                );
+            }
+        }
+        for (label, value) in [
+            ("origin_x", spec.origin_x),
+            ("origin_y", spec.origin_y),
+            ("origin_z", spec.origin_z),
+        ] {
+            if let Some(v) = value
+                && !v.is_finite()
+            {
+                return self.mcp_mutation_error(
+                    format!("Error: stock {label} must be a finite number of mm (got {v})."),
+                    Some(label.to_owned()),
+                );
+            }
+        }
+
         let before = self.mcp_diagnostic_snapshot();
         let mut stock = self.controller.state().session.stock_config().clone();
-        stock.x = x;
-        stock.y = y;
-        stock.z = z;
+        let auto_before = stock.auto_from_model;
+
+        let mut geometry_set: Vec<&'static str> = Vec::new();
+        if let Some(v) = spec.x {
+            stock.x = v;
+            geometry_set.push("x");
+        }
+        if let Some(v) = spec.y {
+            stock.y = v;
+            geometry_set.push("y");
+        }
+        if let Some(v) = spec.z {
+            stock.z = v;
+            geometry_set.push("z");
+        }
+        if let Some(v) = spec.origin_x {
+            stock.origin_x = v;
+            geometry_set.push("origin_x");
+        }
+        if let Some(v) = spec.origin_y {
+            stock.origin_y = v;
+            geometry_set.push("origin_y");
+        }
+        if let Some(v) = spec.origin_z {
+            stock.origin_z = v;
+            geometry_set.push("origin_z");
+        }
+        if let Some(m) = material {
+            stock.material = m;
+        }
+        if let Some(r) = rigidity {
+            stock.workholding_rigidity = r;
+        }
+
+        let auto_after = match spec.auto_from_model {
+            Some(explicit) => explicit,
+            None if !geometry_set.is_empty() => false,
+            None => auto_before,
+        };
+        stock.auto_from_model = auto_after;
+
         self.controller.state_mut().session.set_stock_config(stock);
         self.controller.state_mut().gui.mark_edited();
         let stale = self.mcp_apply_stale(MutationKind::StockChanged);
+
+        let (x, y, z, origin_x, origin_y, origin_z, material_label, rigidity_label) = {
+            let stock = self.controller.state().session.stock_config();
+            (
+                stock.x,
+                stock.y,
+                stock.z,
+                stock.origin_x,
+                stock.origin_y,
+                stock.origin_z,
+                stock.material.label(),
+                format!("{:?}", stock.workholding_rigidity),
+            )
+        };
+        let auto_note = if auto_before && !auto_after {
+            Some(
+                "auto_from_model was true and has been CLEARED: it would have re-derived the \
+                 stock size and origin from the next imported model's bounding box, silently \
+                 overwriting what you just set."
+                    .to_owned(),
+            )
+        } else if auto_after && !geometry_set.is_empty() {
+            Some(
+                "auto_from_model is TRUE and you set stock geometry explicitly: the next \
+                 import_model will re-derive size and origin from that model's bounding box and \
+                 overwrite the values just written."
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
+
+        let summary = format!(
+            "Stock: {x:.1} x {y:.1} x {z:.1} mm at origin ({origin_x:.2}, {origin_y:.2}, \
+             {origin_z:.2}), material {material_label}, workholding {rigidity_label}, \
+             auto_from_model {auto_after}. Regenerate toolpaths and simulation to apply."
+        );
+
         self.mcp_mutation_result(
-            format!(
-                "Stock set to {x:.1} x {y:.1} x {z:.1} mm. Regenerate toolpaths and simulation to apply."
-            ),
-            serde_json::json!({ "x": x, "y": y, "z": z }),
+            summary,
+            serde_json::json!({
+                "x": x,
+                "y": y,
+                "z": z,
+                "origin": { "x": origin_x, "y": origin_y, "z": origin_z },
+                "stock_top_z": origin_z + z,
+                "material": material_label,
+                "workholding_rigidity": rigidity_label,
+                "auto_from_model": auto_after,
+                "auto_from_model_was": auto_before,
+                "fields_set": geometry_set,
+                "note": auto_note,
+            }),
             stale,
             &before,
         )
+    }
+
+    /// Write machine kinematics directly (no GRBL dump).
+    ///
+    /// Sibling of [`Self::mcp_import_machine_settings`]: same target,
+    /// same library-link break, typed arguments instead of a `$$` paste.
+    /// The 2026-08-19 run log recorded the library's `shapeoko_pro_xxl`
+    /// carrying `acceleration_xyz_mm_s2: null` and a flat 350 where the
+    /// real machine is 500/500/270 with junction deviation 0.02 — and
+    /// acceleration decides the parallel-vs-spiral strategy verdict, so
+    /// this is not cosmetic.
+    fn mcp_set_machine_kinematics(&mut self, spec: &SetMachineKinematicsParam) -> String {
+        let mut kin = self
+            .controller
+            .state()
+            .session
+            .machine()
+            .effective_kinematics();
+        let had_per_axis = kin.acceleration_xyz_mm_s2.is_some();
+
+        for (label, value) in [
+            ("acceleration_x_mm_s2", spec.acceleration_x_mm_s2),
+            ("acceleration_y_mm_s2", spec.acceleration_y_mm_s2),
+            ("acceleration_z_mm_s2", spec.acceleration_z_mm_s2),
+            ("acceleration_mm_s2", spec.acceleration_mm_s2),
+            ("junction_deviation_mm", spec.junction_deviation_mm),
+            (
+                "max_junction_velocity_mm_min",
+                spec.max_junction_velocity_mm_min,
+            ),
+            ("jerk_mm_s3", spec.jerk_mm_s3),
+        ] {
+            if let Some(v) = value
+                && (!v.is_finite() || v <= 0.0)
+            {
+                return json_str(serde_json::json!({
+                    "ok": false,
+                    "error": format!("{label} must be a positive, finite number (got {v})."),
+                }));
+            }
+        }
+
+        let axes = (
+            spec.acceleration_x_mm_s2,
+            spec.acceleration_y_mm_s2,
+            spec.acceleration_z_mm_s2,
+        );
+        match axes {
+            (Some(ax), Some(ay), Some(az)) => {
+                kin.acceleration_xyz_mm_s2 = Some([ax, ay, az]);
+                if spec.acceleration_mm_s2.is_none() {
+                    kin.acceleration_mm_s2 = (ax + ay + az) / 3.0;
+                }
+            }
+            (None, None, None) => {}
+            (ax, ay, az) => {
+                let Some(existing) = kin.acceleration_xyz_mm_s2 else {
+                    return json_str(serde_json::json!({
+                        "ok": false,
+                        "error": "A partial per-axis acceleration set was given, but this machine \
+                                  has no per-axis limits yet to patch. Pass all three of \
+                                  acceleration_x_mm_s2 / _y_ / _z_, or set the isotropic \
+                                  acceleration_mm_s2 instead. Nothing was written.",
+                    }));
+                };
+                let [mut ex, mut ey, mut ez] = existing;
+                if let Some(v) = ax {
+                    ex = v;
+                }
+                if let Some(v) = ay {
+                    ey = v;
+                }
+                if let Some(v) = az {
+                    ez = v;
+                }
+                kin.acceleration_xyz_mm_s2 = Some([ex, ey, ez]);
+            }
+        }
+        if let Some(v) = spec.acceleration_mm_s2 {
+            kin.acceleration_mm_s2 = v;
+        }
+        if let Some(v) = spec.junction_deviation_mm {
+            kin.junction_deviation_mm = v;
+        }
+        if let Some(v) = spec.max_junction_velocity_mm_min {
+            kin.max_junction_velocity_mm_min = Some(v);
+        }
+        if let Some(v) = spec.jerk_mm_s3 {
+            kin.jerk_mm_s3 = Some(v);
+        }
+
+        let machine_ref_before = self
+            .controller
+            .state()
+            .session
+            .machine_ref()
+            .map(str::to_owned);
+        {
+            let session = &mut self.controller.state_mut().session;
+            session.machine_mut().kinematics = Some(kin);
+            // Inline values now — drop any machine-library link.
+            session.set_machine_ref(None);
+        }
+        self.controller.state_mut().gui.mark_edited();
+        self.controller.events_mut().push(AppEvent::MachineChanged);
+
+        let per_axis = match kin.acceleration_xyz_mm_s2 {
+            Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
+            None => serde_json::Value::Null,
+        };
+        json_str(serde_json::json!({
+            "ok": true,
+            "applied": {
+                "acceleration_xyz_mm_s2": per_axis,
+                "acceleration_mm_s2": kin.acceleration_mm_s2,
+                "junction_deviation_mm": kin.junction_deviation_mm,
+                "max_junction_velocity_mm_min": kin.max_junction_velocity_mm_min,
+                "jerk_mm_s3": kin.jerk_mm_s3,
+                "per_axis_was_set_before": had_per_axis,
+                "machine_library_link_cleared": machine_ref_before,
+            },
+            "note": "Kinematics applied inline; any machine-library link is cleared. \
+                     Acceleration feeds the cycle-time integrator and the \
+                     recommend_clearing_strategy verdict — re-run both if you relied on them. \
+                     Verify with inspect_machine.",
+        }))
     }
 
     fn mcp_set_boundary_config(
@@ -3989,10 +4457,27 @@ impl super::RsCamApp {
             let w = width.unwrap_or(1200);
             let h = height.unwrap_or(800);
             let cp_idx = checkpoint.unwrap_or_else(|| results.checkpoints.len().saturating_sub(1));
+            // Anchor every panel to the PROJECT's world stock bbox rather than
+            // to whatever bbox the checkpoint's own dexel grid carries. For a
+            // non-identity setup `cp.stock()`'s bbox is the zero-rooted
+            // effective one (the F-024 path), so anchoring to it re-hides the
+            // stock origin the composite is supposed to make visible — the
+            // very defect that let a frame bug sit unnoticed in these renders.
+            let world_frame = self.controller.state().session.stock_bbox();
             let pixels = if let Some(cp) = results.checkpoints.get(cp_idx) {
-                rs_cam_core::fingerprint::render_stock_composite(cp.stock(), w, h)
+                rs_cam_core::fingerprint::render_stock_composite_in_frame(
+                    cp.stock(),
+                    &world_frame,
+                    w,
+                    h,
+                )
             } else {
-                rs_cam_core::fingerprint::render_mesh_composite(&results.mesh, w, h)
+                rs_cam_core::fingerprint::render_mesh_composite_in_frame(
+                    &results.mesh,
+                    Some(&world_frame),
+                    w,
+                    h,
+                )
             };
             match image::save_buffer(Path::new(path), &pixels, w, h, image::ColorType::Rgba8) {
                 Ok(()) => text(format!(
