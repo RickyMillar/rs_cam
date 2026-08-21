@@ -210,6 +210,25 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 }
 
+                // Warn when the alignment pins cannot register the flip they
+                // are for. This is the check that would have caught a real
+                // project whose pins were centre-symmetric rather than
+                // mirror-symmetric: under `FaceUp::Bottom`'s `y -> D-y`
+                // neither hole landed on a dowel, so the part could not have
+                // re-seated — and nothing said so until the operator was at
+                // the machine. Deduped because a `Top` setup contributes only
+                // the bounds line, and a project with several setups would
+                // otherwise repeat it.
+                for setup in session.list_setups() {
+                    warning_messages.extend(
+                        session
+                            .stock_config()
+                            .validate_pins_for_flip(setup.face_up)
+                            .warnings(),
+                    );
+                }
+                warning_messages.dedup();
+
                 for message in &warning_messages {
                     tracing::warn!("{message}");
                 }
@@ -299,9 +318,18 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn export_setup_sheet_html(&self) -> String {
+        // G-TIMEEST — the sheet prints a cycle time and is carried to the
+        // machine, so it must be told what the on-screen surfaces are told:
+        // the trace decides whether that number is a machine-model wall clock
+        // or a cutting-only figure, and the sheet says which.
         crate::io::setup_sheet::generate_setup_sheet_from_session(
             &self.state.session,
             &self.state.gui,
+            self.state
+                .simulation
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_deref()),
         )
     }
 }

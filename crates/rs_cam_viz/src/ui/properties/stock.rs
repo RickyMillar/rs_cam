@@ -1,4 +1,8 @@
-use crate::state::job::{AlignmentPin, FlipAxis, StockConfig};
+use rs_cam_core::compute::stock_config::{
+    PIN_MATCH_TOL_MM, PIN_WALL_MM, PinPlacementError, PinPlacementRequest, place_keyed_pins,
+};
+
+use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
 
 pub fn draw(
@@ -178,9 +182,11 @@ fn draw_alignment_pins(
         .color(egui::Color32::from_rgb(180, 180, 195));
 
     // Pins only matter for two-sided work: open by default only when pins
-    // exist or a flip axis is set (density pass 2026-06-11).
+    // exist or a flip is programmed (density pass 2026-06-11). Keyed off
+    // the setups rather than the cached `flip_axis`, so a project whose
+    // stored cache is stale still opens the section.
     egui::CollapsingHeader::new(header)
-        .default_open(!stock.alignment_pins.is_empty() || stock.flip_axis.is_some())
+        .default_open(!stock.alignment_pins.is_empty() || has_flipped_setup)
         .show(ui, |ui| {
             let mut changed = false;
 
@@ -197,45 +203,71 @@ fn draw_alignment_pins(
                 ui.add_space(4.0);
             }
 
-            // Flip axis dropdown
-            let flip_label = match stock.flip_axis {
-                Some(fa) => fa.label(),
-                None => "None",
-            };
+            // Flip axis — DERIVED FOR DISPLAY, and never written here
+            // (G-PINAUTO, 2026-08-22).
+            //
+            // This used to be a free three-way dropdown that nothing in
+            // core read, whose own doc contradicted itself, and which on
+            // the live project sat at `null` beside a `FaceUp::Bottom`
+            // setup. A control that can disagree with the setups is worse
+            // than no control — so it now reports what the setups say,
+            // and every check below keys off the flip, not off the field.
+            //
+            // It does NOT write the corrected value back. Opening a panel
+            // is not an edit: a render-time write marks the project
+            // dirty, pushes an undo entry for something the user did not
+            // do, raises a save prompt after a pure inspection, and
+            // silently proposes to modify a project opened for reference.
+            // The stored cache is written by the explicit two-sided
+            // action; correcting a stale one on load is a migration and
+            // belongs in the load path.
+            //
+            // `Vertical` is unreachable on purpose: no `FaceUp` performs
+            // an X mirror. The variant survives only so older projects
+            // still load — and when one does, the mismatch is named
+            // rather than papered over.
+            let derived_axis = has_flipped_setup.then_some(FlipAxis::Horizontal);
             ui.horizontal(|ui| {
                 ui.label("Flip axis:");
-                egui::ComboBox::from_id_salt("flip_axis")
-                    .selected_text(flip_label)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(stock.flip_axis.is_none(), "None")
-                            .clicked()
-                        {
-                            stock.flip_axis = None;
-                            changed = true;
-                        }
-                        if ui
-                            .selectable_label(
-                                stock.flip_axis == Some(FlipAxis::Horizontal),
-                                "Horizontal",
-                            )
-                            .clicked()
-                        {
-                            stock.flip_axis = Some(FlipAxis::Horizontal);
-                            changed = true;
-                        }
-                        if ui
-                            .selectable_label(
-                                stock.flip_axis == Some(FlipAxis::Vertical),
-                                "Vertical",
-                            )
-                            .clicked()
-                        {
-                            stock.flip_axis = Some(FlipAxis::Vertical);
-                            changed = true;
-                        }
-                    });
+                ui.label(
+                    egui::RichText::new(match derived_axis {
+                        Some(fa) => fa.label(),
+                        None => "None (no flipped setup)",
+                    })
+                    .strong(),
+                )
+                .on_hover_text(
+                    "Derived from the setups, not set here. The CAM models one flip — Bottom, \
+                     which mirrors Y about the stock centre line — so pins must be invariant \
+                     under that and under nothing else.",
+                );
+                if stock.flip_axis != derived_axis {
+                    ui.label(
+                        egui::RichText::new("(derived)")
+                            .small()
+                            .color(egui::Color32::from_rgb(220, 180, 60)),
+                    );
+                }
             });
+            // Name the stored value rather than displaying the derived
+            // one as though it were what the file says.
+            if stock.flip_axis != derived_axis {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "This project stores {}. The stored value is a cache with no say in \
+                         whether the pins are correct; it is rewritten next time pins are \
+                         placed.",
+                        match stock.flip_axis {
+                            Some(FlipAxis::Vertical) =>
+                                "'Vertical', which no flip in this CAM performs",
+                            Some(FlipAxis::Horizontal) => "'Horizontal'",
+                            None => "no flip axis",
+                        }
+                    ))
+                    .small()
+                    .color(egui::Color32::from_rgb(220, 180, 60)),
+                );
+            }
 
             ui.add_space(4.0);
 
@@ -293,7 +325,7 @@ fn draw_alignment_pins(
                     });
                     ui.horizontal(|ui| {
                         ui.add_space(48.0);
-                        if stock.flip_axis.is_some() && ui.small_button("Mirror").clicked() {
+                        if derived_axis.is_some() && ui.small_button("Mirror").clicked() {
                             mirror_idx = Some(i);
                         }
                         if ui
@@ -311,7 +343,7 @@ fn draw_alignment_pins(
             }
 
             // Process deferred actions (borrow after mutable iteration is done)
-            if let Some((idx, axis)) = mirror_idx.zip(stock.flip_axis) {
+            if let Some((idx, axis)) = mirror_idx.zip(derived_axis) {
                 // SAFETY: idx from enumerate over alignment_pins
                 #[allow(clippy::indexing_slicing)]
                 let src = &stock.alignment_pins[idx];
@@ -332,68 +364,109 @@ fn draw_alignment_pins(
 
             if let Some(idx) = remove_idx {
                 stock.alignment_pins.remove(idx);
-                changed = true;
-            }
-
-            // Buttons row
-            ui.add_space(4.0);
-            if ui
-                .small_button("+ Add Pin")
-                .on_hover_text("Adds one pin and re-spreads them evenly (drag to fine-tune)")
-                .clicked()
-            {
-                // Re-distribute to (n+1) pins via the shared placer instead
-                // of stacking every new pin at the stock centre, which is
-                // what made multiple "+ Add Pin" clicks pile up.
-                auto_place_pins(stock, stock.alignment_pins.len() + 1);
-                changed = true;
-            }
-
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let pin_count_id = ui.id().with("auto_place_count");
-                let mut count: usize =
-                    ui.data_mut(|d| *d.get_persisted_mut_or(pin_count_id, 2_usize));
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut count)
-                            .prefix("Pins: ")
-                            .range(2..=8),
-                    )
-                    .changed()
-                {
-                    ui.data_mut(|d| d.insert_persisted(pin_count_id, count));
+                // Removing a pin IS an edit, so writing the cache here is
+                // legitimate. Keeping the invariant "flip_axis is Some
+                // only while pins exist" is what makes the setup panel
+                // offer "Add alignment pins for this flip" again once the
+                // last one is gone.
+                if stock.alignment_pins.is_empty() {
+                    stock.flip_axis = None;
                 }
-                if ui.small_button("Auto-place").clicked() {
-                    auto_place_pins(stock, count);
+                changed = true;
+            }
+
+            // Buttons row. The keyed pair is the whole product here: two
+            // pins on the mirror line whose x-multiset is not
+            // centre-symmetric. Extra pins buy redundancy against
+            // rocking, never keying — a pin at x = W/2 is its own image
+            // under x -> W - x — so "+ Add Pin" is deliberately dumb and
+            // "Auto-place" no longer takes a count.
+            ui.add_space(4.0);
+            let plan = panel_pin_plan(stock, derived_axis);
+            ui.horizontal(|ui| {
+                let can_place = plan.is_ok();
+                if ui
+                    .add_enabled(
+                        can_place,
+                        egui::Button::new("Auto-place keyed pair").small(),
+                    )
+                    .on_hover_text(
+                        "Two pins on the flip's mirror line, offset so the part cannot seat 180 \
+                         deg out. Clear strips are taken from the stock padding — the \
+                         'Two-sided setup' button uses the real model bbox and the pin-drill \
+                         tool's diameter instead.",
+                    )
+                    .clicked()
+                    && let Ok(pins) = plan.as_ref()
+                {
+                    stock.alignment_pins.clear();
+                    stock.alignment_pins.extend(pins.iter().cloned());
+                    // Explicit edit, so the cache is written here — and
+                    // now there are pins for it to describe.
+                    stock.flip_axis = derived_axis;
+                    changed = true;
+                }
+
+                let centre = (stock.x * 0.5, stock.y * 0.5);
+                // Guard the pile-up: repeated clicks used to stack pins
+                // at one point.
+                let centre_free = !stock.alignment_pins.iter().any(|p| {
+                    (p.x - centre.0).abs() < PIN_MATCH_TOL_MM
+                        && (p.y - centre.1).abs() < PIN_MATCH_TOL_MM
+                });
+                if ui
+                    .add_enabled(centre_free, egui::Button::new("+ Add Pin").small())
+                    .on_hover_text(
+                        "Adds one pin at the centre of the mirror line, then drag it. A centre \
+                         pin is self-symmetric, so it adds redundancy but no keying.",
+                    )
+                    .clicked()
+                {
+                    let diameter = panel_pin_diameter(stock);
+                    stock
+                        .alignment_pins
+                        .push(AlignmentPin::new(centre.0, centre.1, diameter));
+                    stock.flip_axis = derived_axis;
                     changed = true;
                 }
             });
 
-            // Symmetry warning
-            if let Some(axis) = stock.flip_axis
-                && !stock.alignment_pins.is_empty()
-                && !pins_are_symmetric(&stock.alignment_pins, axis, stock.x, stock.y)
+            // Standing refusal, not a transient toast: if no keyed pair
+            // exists for this blank the operator needs to see why every
+            // time they look, because the alternative is a placement that
+            // hangs off the stock (Ø6 pin in a 5 mm ring) or one that
+            // seats four ways.
+            // ...but only once a flip is actually programmed. With no
+            // flipped setup there is nothing to key, and "cannot place
+            // pins for a Top setup" would be noise.
+            if derived_axis.is_some()
+                && let Err(reason) = plan.as_ref()
             {
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("Pins are not symmetric about the flip axis")
+                    egui::RichText::new(reason.to_string())
                         .small()
-                        .color(egui::Color32::from_rgb(220, 180, 60)),
+                        .color(egui::Color32::from_rgb(220, 100, 100)),
                 );
             }
 
-            // Out-of-bounds warning
-            if stock
-                .alignment_pins
-                .iter()
-                .any(|p| p.x < 0.0 || p.x > stock.x || p.y < 0.0 || p.y > stock.y)
-            {
+            // Flip validation — the single core check, so the GUI and any
+            // load path say the same thing about the same pins. Replaces
+            // the old "not symmetric about the flip axis" label, which
+            // passed wanaka's diagonal pins: they were symmetric under a
+            // 180 deg ROTATION, which is not a flip, and neither hole
+            // would have landed on a dowel.
+            let flip_face = if derived_axis == Some(FlipAxis::Horizontal) {
+                FaceUp::Bottom
+            } else {
+                FaceUp::Top
+            };
+            for warning in stock.validate_pins_for_flip(flip_face).warnings() {
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("One or more pins are outside the stock bounds")
+                    egui::RichText::new(warning)
                         .small()
-                        .color(egui::Color32::from_rgb(220, 100, 100)),
+                        .color(egui::Color32::from_rgb(220, 180, 60)),
                 );
             }
 
@@ -403,144 +476,64 @@ fn draw_alignment_pins(
         });
 }
 
+/// Pin diameter the panel plans against.
+///
+/// The panel cannot see the tool list, so it can only honour a diameter
+/// the operator already chose. When there are no pins yet it falls back
+/// to a nominal dowel — the "Two-sided setup" button, which runs in the
+/// controller, sizes from the pin-drill tool instead and is the door to
+/// use when the drill matters.
+fn panel_pin_diameter(stock: &StockConfig) -> f64 {
+    const NOMINAL_DOWEL_MM: f64 = 6.0;
+    stock
+        .alignment_pins
+        .first()
+        .map(|p| p.diameter)
+        .unwrap_or(NOMINAL_DOWEL_MM)
+}
+
+/// The keyed pair for this blank, as far as the panel can see it.
+///
+/// **Known limitation.** `ui::properties::stock::draw` is handed only the
+/// `StockConfig`, so the clear strips are taken from `padding` rather
+/// than from the model bbox. When the stock is auto-sized that is exact;
+/// when it was sized by hand (140x150 around a 100x100 model) padding
+/// under-reports the free strip and this refuses a placement that is in
+/// fact available. A conservative refusal is the safe side of that error,
+/// and the controller's two-sided path uses the real bbox. Widening
+/// `draw`'s signature to carry the bbox is the follow-up.
+fn panel_pin_plan(
+    stock: &StockConfig,
+    derived_axis: Option<FlipAxis>,
+) -> Result<[AlignmentPin; 2], PinPlacementError> {
+    let face_up = match derived_axis {
+        Some(FlipAxis::Horizontal) => FaceUp::Bottom,
+        // No flipped setup, or a legacy Vertical axis no `FaceUp`
+        // performs: there is no in-plane flip to key.
+        _ => FaceUp::Top,
+    };
+    place_keyed_pins(PinPlacementRequest {
+        stock_w: stock.x,
+        stock_d: stock.y,
+        model_x_range: Some((stock.padding, stock.x - stock.padding)),
+        face_up,
+        pin_diameter: panel_pin_diameter(stock),
+        wall_mm: PIN_WALL_MM,
+    })
+}
+
 /// Create the mirror of a pin about the flip axis.
+///
+/// `Horizontal` is the map `FaceUp::Bottom` performs: `y -> stock_y - y`,
+/// X untouched. A pin already on `y = stock_y / 2` is its own mirror,
+/// which is why the auto-placed pair needs no partner.
 fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) -> AlignmentPin {
     match axis {
-        // Horizontal flip: mirror about the X centerline → Y is reflected
+        // Mirror about the X centre line → Y is reflected, X preserved.
         FlipAxis::Horizontal => AlignmentPin::new(pin.x, stock_y - pin.y, pin.diameter),
         // Vertical flip: mirror about the Y centerline → X is reflected
         FlipAxis::Vertical => AlignmentPin::new(stock_x - pin.x, pin.y, pin.diameter),
     }
-}
-
-/// Place `count` pins evenly distributed in the stock margin (padding area).
-// SAFETY: corners indexed by seg % 4 and (seg+1) % 4, always 0..3 into a 4-element array
-#[allow(clippy::indexing_slicing)]
-fn auto_place_pins(stock: &mut StockConfig, count: usize) {
-    // Place pins in the center of the padding margin so they hit excess
-    // stock, not the model. Fall back to 10mm if padding is too small.
-    let raw_margin = if stock.padding > 2.0 {
-        stock.padding / 2.0
-    } else {
-        10.0_f64.min(stock.x / 4.0).min(stock.y / 4.0)
-    };
-    let diameter = stock
-        .alignment_pins
-        .first()
-        .map(|p| p.diameter)
-        .unwrap_or(6.0);
-
-    // Pin position is its CENTER; the pin's physical edge sits one
-    // radius outside that. Ensure the centre is at least
-    // `radius + EDGE_CLEARANCE` inside the stock so the pin body
-    // doesn't clip the edge.
-    const EDGE_CLEARANCE: f64 = 2.0;
-    let radius = diameter * 0.5;
-    let min_margin = radius + EDGE_CLEARANCE;
-    // Don't push the margin past half the smaller stock dimension
-    // (would invert the placement on tiny stock).
-    let max_margin = (stock.x.min(stock.y) * 0.5).max(min_margin);
-    let margin = raw_margin.max(min_margin).min(max_margin);
-
-    stock.alignment_pins.clear();
-
-    match stock.flip_axis {
-        Some(FlipAxis::Horizontal) => {
-            // Pins along the flip axis centerline (Y = stock.y/2),
-            // evenly spaced from left margin to right margin.
-            let cy = stock.y / 2.0;
-            let x_start = margin;
-            let x_end = stock.x - margin;
-            if count == 1 {
-                stock
-                    .alignment_pins
-                    .push(AlignmentPin::new(stock.x / 2.0, cy, diameter));
-            } else {
-                let step = (x_end - x_start) / (count - 1) as f64;
-                for i in 0..count {
-                    stock.alignment_pins.push(AlignmentPin::new(
-                        x_start + step * i as f64,
-                        cy,
-                        diameter,
-                    ));
-                }
-            }
-        }
-        Some(FlipAxis::Vertical) => {
-            // Pins along the flip axis centerline (X = stock.x/2),
-            // evenly spaced from front margin to back margin.
-            let cx = stock.x / 2.0;
-            let y_start = margin;
-            let y_end = stock.y - margin;
-            if count == 1 {
-                stock
-                    .alignment_pins
-                    .push(AlignmentPin::new(cx, stock.y / 2.0, diameter));
-            } else {
-                let step = (y_end - y_start) / (count - 1) as f64;
-                for i in 0..count {
-                    stock.alignment_pins.push(AlignmentPin::new(
-                        cx,
-                        y_start + step * i as f64,
-                        diameter,
-                    ));
-                }
-            }
-        }
-        None => {
-            // No flip axis — distribute pins around the perimeter.
-            // 2 pins: diagonal corners. 3+: spread along edges.
-            if count <= 2 {
-                stock
-                    .alignment_pins
-                    .push(AlignmentPin::new(margin, margin, diameter));
-                if count == 2 {
-                    stock.alignment_pins.push(AlignmentPin::new(
-                        stock.x - margin,
-                        stock.y - margin,
-                        diameter,
-                    ));
-                }
-            } else {
-                // Place pins at evenly spaced positions around the perimeter
-                let corners: &[[f64; 2]] = &[
-                    [margin, margin],
-                    [stock.x - margin, margin],
-                    [stock.x - margin, stock.y - margin],
-                    [margin, stock.y - margin],
-                ];
-                for i in 0..count {
-                    let t = i as f64 / count as f64 * 4.0;
-                    let seg = t.floor() as usize % 4;
-                    let frac = t - seg as f64;
-                    let [x0, y0] = corners[seg];
-                    let [x1, y1] = corners[(seg + 1) % 4];
-                    stock.alignment_pins.push(AlignmentPin::new(
-                        x0 + (x1 - x0) * frac,
-                        y0 + (y1 - y0) * frac,
-                        diameter,
-                    ));
-                }
-            }
-        }
-    }
-}
-
-/// Check if pins are symmetric about the flip axis (within tolerance).
-fn pins_are_symmetric(pins: &[AlignmentPin], axis: FlipAxis, stock_x: f64, stock_y: f64) -> bool {
-    const TOL: f64 = 0.5; // mm tolerance
-
-    // For each pin, check that its mirror exists in the set
-    for pin in pins {
-        let m = mirror_pin(pin, axis, stock_x, stock_y);
-        let has_mirror = pins
-            .iter()
-            .any(|p| (p.x - m.x).abs() < TOL && (p.y - m.y).abs() < TOL);
-        if !has_mirror {
-            return false;
-        }
-    }
-    true
 }
 
 /// Hierarchical material picker: drills `Category ▶ → species`. Wood
@@ -700,7 +693,7 @@ fn draw_wood_subcategory(
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::unwrap_used)]
+#[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -711,56 +704,62 @@ mod tests {
             padding,
             ..StockConfig::default()
         };
-        // Seed an existing pin so auto_place_pins picks up the diameter.
+        // Seed a pin so the panel picks up the diameter it plans against.
         s.alignment_pins
             .push(AlignmentPin::new(0.0, 0.0, pin_diameter));
         s
     }
 
-    /// Auto-placed pins must keep their physical edge inside the stock,
-    /// not just their centre. Pre-fix, padding=5 with a 6mm pin set
-    /// margin=2.5 → pin edge clipped 0.5mm OUTSIDE the stock.
+    /// The live wanaka geometry. A 5 mm padding ring cannot hold a 6 mm
+    /// dowel at ANY offset — 6 mm of pin plus 2 mm of wall each side
+    /// needs 10 mm — so the only correct answer is a refusal. The
+    /// pre-2026-08-22 controller placed the pin at x = 2.5, spanning
+    /// -0.5..5.5 relative to the stock edge: hanging off the blank.
     #[test]
-    fn auto_place_pins_keeps_pin_edge_inside_stock() {
-        let mut s = stock(140.0, 150.0, 5.0, 6.0);
-        auto_place_pins(&mut s, 2);
-        for p in &s.alignment_pins {
-            let r = p.diameter * 0.5;
-            assert!(
-                p.x - r >= -1e-6 && p.x + r <= s.x + 1e-6,
-                "pin x={} r={} clips stock width {}",
-                p.x,
-                r,
-                s.x,
-            );
-            assert!(
-                p.y - r >= -1e-6 && p.y + r <= s.y + 1e-6,
-                "pin y={} r={} clips stock height {}",
-                p.y,
-                r,
-                s.y,
-            );
+    fn panel_refuses_o6_pin_in_a_5mm_padding_ring() {
+        let s = stock(140.0, 150.0, 5.0, 6.0);
+        match panel_pin_plan(&s, Some(FlipAxis::Horizontal)) {
+            Err(PinPlacementError::StripTooNarrow {
+                strip_mm,
+                required_mm,
+                ..
+            }) => {
+                assert!((strip_mm - 5.0).abs() < 1e-9);
+                assert!((required_mm - 10.0).abs() < 1e-9);
+            }
+            other => panic!("expected a strip-too-narrow refusal, got {other:?}"),
         }
     }
 
-    /// Edge-clearance: pin centre should sit at least
-    /// `radius + EDGE_CLEARANCE (2mm)` from each edge so the pin body
-    /// has 2mm of margin between the cutter side wall and the stock
-    /// boundary.
+    /// With room to work in, the pair sits on the mirror line and is
+    /// keyed: it survives the flip and blocks the other three seatings.
     #[test]
-    fn auto_place_pins_respects_edge_clearance() {
-        let mut s = stock(140.0, 150.0, 5.0, 6.0);
-        auto_place_pins(&mut s, 2);
-        // Diameter 6 → radius 3; min centre offset from any edge = 5.0.
-        for p in &s.alignment_pins {
-            let edge_distance = p.x.min(s.x - p.x).min(p.y).min(s.y - p.y);
+    fn panel_plan_seats_the_flip_and_keys_it() {
+        let s = stock(140.0, 150.0, 20.0, 6.0);
+        let pins = panel_pin_plan(&s, Some(FlipAxis::Horizontal)).unwrap();
+        for p in &pins {
             assert!(
-                edge_distance >= 5.0 - 1e-6,
-                "pin at ({}, {}) sits {} from nearest edge; expected >= 5.0",
-                p.x,
-                p.y,
-                edge_distance,
+                (p.y - s.y * 0.5).abs() < 1e-9,
+                "pin off the mirror line at y={}",
+                p.y
             );
         }
+        let mut placed = s;
+        placed.alignment_pins = pins.to_vec();
+        let report = placed.validate_pins_for_flip(FaceUp::Bottom);
+        assert!(report.seats(), "{report:?}");
+        assert!(report.keyed(), "{report:?}");
+        assert!(report.out_of_bounds.is_empty(), "{report:?}");
+    }
+
+    /// No flipped setup means no flip to key, and the panel says so
+    /// rather than inventing a pattern.
+    #[test]
+    fn panel_refuses_when_no_flip_is_programmed() {
+        let s = stock(140.0, 150.0, 20.0, 6.0);
+        assert!(matches!(
+            panel_pin_plan(&s, None),
+            Err(PinPlacementError::UnsupportedFlip { .. })
+        ));
     }
 }

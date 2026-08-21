@@ -1,4 +1,3 @@
-use rs_cam_core::compute::stock_config::AlignmentPin;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{Fixture, FixtureKind, KeepOutZone};
 
@@ -7,6 +6,16 @@ use crate::state::job::{FlipAxis, ModelId, SetupId, ToolConfig};
 use crate::state::selection::Selection;
 
 use super::super::AppController;
+
+/// Stated reason when the pin diameter cannot be sized from a tool.
+///
+/// The hole has to match the dowel the keying geometry assumed, and the
+/// hole is whatever the pin-drill cutter makes. With no tool in the
+/// project there is no honest diameter — and a guess is exactly what the
+/// old hardcoded `AlignmentPin::new(.., 6.0)` was.
+const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool is defined, so \
+     the pin diameter would be a guess. Add the drill you will use for the dowel holes, \
+     then try again.";
 
 impl<B: ComputeBackend> AppController<B> {
     // ── Tree / selection helpers ─────────────────────────────────────────
@@ -270,6 +279,51 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
+    /// Diameter of the tool the pin-drill operation will actually run.
+    ///
+    /// The pin geometry is planned against the dowel, the dowel is the
+    /// hole, and the hole is whatever this cutter makes. Before
+    /// G-PINAUTO the placer hardcoded 6.0: against a Ø3 cutter that is a
+    /// hole no 6 mm dowel ever sees, and against a large cutter it is a
+    /// wall clearance computed for the wrong pin.
+    ///
+    /// The tool choice mirrors [`Self::sync_alignment_pin_drill`]: the
+    /// existing pin-drill op's tool if there is one, else the first tool.
+    /// If those two ever diverge, the hole stops matching the plan.
+    fn pin_drill_tool_diameter(&self) -> Option<f64> {
+        use crate::state::toolpath::OperationConfig;
+
+        let tool_id = self
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
+            .map(|tc| tc.tool_id)
+            .or_else(|| self.state.session.tools().first().map(|t| t.id.0))?;
+        self.state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tool_id)
+            .map(|t| t.diameter)
+            .filter(|d| *d > 0.0)
+    }
+
+    /// World-frame bbox of the first model that has one.
+    ///
+    /// Prefers the mesh bbox for 3D models and falls back to the 2D
+    /// polygon bbox for SVG/DXF — see F-13 in the April review.
+    fn first_model_bbox(&self) -> Option<rs_cam_core::geo::BoundingBox3> {
+        self.state.session.models().iter().find_map(|m| {
+            m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
+                crate::state::job::session_polygons_bbox(
+                    m.polygons.as_deref().map(|v| v.as_slice()),
+                )
+            })
+        })
+    }
+
     pub(crate) fn handle_setup_two_sided(&mut self) {
         let has_flipped = self
             .state
@@ -282,27 +336,82 @@ impl<B: ComputeBackend> AppController<B> {
             let name = format!("Setup {next_id}");
             self.state.session.add_setup(name, FaceUp::Bottom);
         }
+
+        // Key the pins to the flip the project actually programs, not to
+        // an assumption. Only an in-plane flip keeps the XY footprint the
+        // pins are dimensioned in; the edge-up orientations are refused
+        // by the core placer rather than guessed at.
+        let flip_face = self
+            .state
+            .session
+            .list_setups()
+            .iter()
+            .map(|s| s.face_up)
+            .find(|f| *f != FaceUp::Top)
+            .unwrap_or(FaceUp::Bottom);
+
+        let pin_diameter = self.pin_drill_tool_diameter();
+        let model_bbox = self.first_model_bbox();
+        let plan = match pin_diameter {
+            Some(d) => self
+                .state
+                .session
+                .stock_config()
+                .plan_keyed_pins(flip_face, model_bbox.as_ref(), d)
+                .map_err(|e| e.to_string()),
+            // Sizing the pin from the tool is the point: with no tool
+            // there is no honest diameter, and a guess is exactly what
+            // the hardcoded 6.0 was.
+            None => Err(NO_PIN_TOOL_MESSAGE.to_owned()),
+        };
+
+        let mut refusal: Option<String> = None;
         {
             let stock = self.state.session.stock_mut();
-            if stock.flip_axis.is_none() {
-                stock.flip_axis = Some(FlipAxis::Horizontal);
-            }
             if stock.alignment_pins.is_empty() {
-                let margin = if stock.padding > 2.0 {
-                    stock.padding / 2.0
-                } else {
-                    10.0_f64.min(stock.x / 4.0).min(stock.y / 4.0)
-                };
-                let cy = stock.y / 2.0;
-                let x_size = stock.x;
-                stock
-                    .alignment_pins
-                    .push(AlignmentPin::new(margin, cy, 6.0));
-                stock
-                    .alignment_pins
-                    .push(AlignmentPin::new(x_size - margin, cy, 6.0));
+                match plan {
+                    Ok(pins) => stock.alignment_pins.extend(pins),
+                    // Refuse rather than emit a placement that hangs off
+                    // the blank or seats four ways: the operator would
+                    // find out at the flip, with the part already cut.
+                    Err(message) => refusal = Some(message),
+                }
             }
+            // `flip_axis` is a CACHE of the setup's face_up, never an
+            // independent control — a stored axis that disagrees with the
+            // setups is exactly how this shipped with a null axis beside a
+            // Bottom setup. Every validation reads `face_up` instead.
+            //
+            // It is cached ONLY once pins exist for it to describe. On a
+            // refusal it stays `None`, and that is load-bearing: the setup
+            // panel suppresses its "Add alignment pins for this flip"
+            // offer when a flip axis is set, so caching it here would
+            // leave a flipped setup with zero pins reading as configured
+            // and no affordance left to fix it.
+            stock.flip_axis = if stock.alignment_pins.is_empty() {
+                None
+            } else {
+                FlipAxis::from_face_up(flip_face)
+            };
         }
+
+        if let Some(message) = refusal {
+            self.push_notification(message, super::super::Severity::Error);
+        }
+
+        // Whatever pins are stored now — freshly placed or pre-existing —
+        // get judged against the flip they have to register.
+        for warning in self
+            .state
+            .session
+            .stock_config()
+            .validate_pins_for_flip(flip_face)
+            .warnings()
+        {
+            tracing::warn!("{warning}");
+            self.push_notification(warning, super::super::Severity::Warning);
+        }
+
         self.pending_upload = true;
         self.state.gui.mark_edited();
         self.sync_alignment_pin_drill();
@@ -520,19 +629,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_stock_changed(&mut self) {
         let auto_from_model = self.state.session.stock_config().auto_from_model;
-        if auto_from_model
-            && let Some(bbox) = self.state.session.models().iter().find_map(|m| {
-                // Prefer mesh bbox for 3D models; fall back to the 2D
-                // polygon bbox (zero-height) for SVG/DXF. Without this
-                // fallback, attaching an SVG/DXF left the stock at the
-                // pre-attach size — see F-13 in the April review.
-                m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                    crate::state::job::session_polygons_bbox(
-                        m.polygons.as_deref().map(|v| v.as_slice()),
-                    )
-                })
-            })
-        {
+        if auto_from_model && let Some(bbox) = self.first_model_bbox() {
             self.state.session.update_stock_from_bbox(&bbox);
         } else {
             // No bbox to apply, but stock fields may still have been mutated
