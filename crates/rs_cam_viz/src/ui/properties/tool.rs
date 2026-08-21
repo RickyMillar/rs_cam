@@ -121,7 +121,20 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
 
     ui.add_space(4.0);
 
-    // Tool type selector
+    // Tool type selector.
+    //
+    // Switching type IN PLACE has to fix up geometry, or it builds a tool
+    // the cutter constructors reject. `ToolConfig::new_default` normalises
+    // (cross-type geometry zeroed), so a tool switched EndMill -> VBit
+    // arrives with `included_angle = 0.0` while `VBitEndmill::new` asserts
+    // `0 < included_angle < 180` — a panic on the COMPUTE WORKER, reached
+    // from a combo box. Tapered ball is worse: it asserts on both
+    // `taper_half_angle` and `shaft_diameter >= diameter`.
+    //
+    // So on a change: drop the geometry the OLD type owned, then refill
+    // whatever the NEW type requires from that type's own defaults. Both
+    // halves live in core so this stays free of per-type knowledge.
+    let previous_type = tool.tool_type;
     ui.horizontal(|ui| {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("tool_type")
@@ -132,6 +145,13 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 }
             });
     });
+    if tool.tool_type != previous_type {
+        tool.normalize_geometry();
+        let defaults = ToolConfig::new_default(tool.id, tool.tool_type);
+        for field in tool.missing_defining_geometry() {
+            field.set_on(tool, field.value_of(&defaults));
+        }
+    }
 
     ui.add_space(8.0);
 
