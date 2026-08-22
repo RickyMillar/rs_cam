@@ -36,11 +36,54 @@ use super::{
 /// Without this, entries chosen at fresh-stock XYs on deep Z levels
 /// would carve a column from `start_z` down through full stock
 /// thickness in one shot ("punched hole" symptom).
+///
+/// # The ladder is rooted at the stock, not at `safe_z` — G-PECKROOT
+///
+/// Callers pass `params.safe_z` as `start_z`, which is
+/// `effective_safe_z(...) = max(raw, stock_top + SAFE_Z_CLEARANCE_MM)` and
+/// therefore at least 5 mm above the material. This function knew nothing
+/// about the stock top, so it began pecking from there: with
+/// `depth_per_pass` under 5 mm, the first rung — often the first two —
+/// lands entirely **in air**, fed at `plunge_rate`, each with its own
+/// retract rapid after it. Measured on the live project at 2.6 mm of fed
+/// air on one Z level, once per entry, plus the wasted moves.
+///
+/// Pecking is a chip-breaking schedule for descending through *material*;
+/// above the material there is nothing to break. So the ladder now starts
+/// at the stock, reached by a rapid.
+///
+/// **How far above the stock that rapid stops is not a new decision.**
+/// [`crate::dressup::emit_ramp`] and [`crate::dressup::emit_helix`] — the
+/// other two entry styles, facing the identical problem — already share one
+/// rule: rapid no lower than `stock_top + ENTRY_CLEARANCE`, then feed the
+/// rest. That margin exists because `stock_top_z` is a *nominal* flat value
+/// and real stock is over-thickness or cupped; rapiding to the nominal
+/// surface would meet material at rapid speed. Peck entry uses the same
+/// constant rather than inventing a second stock-top margin that could
+/// drift from it.
+///
+/// The consequence, stated so nobody reads this as "zero": a deliberate
+/// `ENTRY_CLEARANCE` (2 mm) of fed approach survives, in place of an
+/// accidental `SAFE_Z_CLEARANCE_MM` (5 mm) plus whatever rounding
+/// `depth_per_pass` added. What changed is that the residual is now a
+/// named, shared safety margin instead of a side effect of the retract
+/// plane's height.
 fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adaptive3dParams) {
     use crate::toolpath::MoveIntent;
     const PECK_CLEARANCE_MM: f64 = 0.5;
     let dpp = params.depth_per_pass.max(0.1);
-    let mut current_z = start_z;
+
+    // G-PECKROOT. Never rapid below the shared stock guard, never below the
+    // entry itself, and never *up* — `min(start_z)` keeps the
+    // `RapidWithFloor` caller (which has already rapided down through
+    // known-cleared air) from being lifted back to the stock top.
+    let safe_rapid_floor = params.stock_top_z + crate::dressup::ENTRY_CLEARANCE;
+    let ladder_start = entry.z.max(safe_rapid_floor).min(start_z);
+    if start_z - ladder_start > 0.1 {
+        tp.rapid_to_with_intent(P3::new(entry.x, entry.y, ladder_start), MoveIntent::Linking);
+    }
+
+    let mut current_z = ladder_start;
     while current_z - entry.z > dpp + 1e-6 {
         let next_z = current_z - dpp;
         tp.feed_to_with_intent(

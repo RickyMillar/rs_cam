@@ -22,9 +22,16 @@
 //!   1 mm into the spoilboard) arrives at global +26, above the blank, so the
 //!   clear is a no-op and no hole appears — the visible failure.
 //!
-//! The global stock is what `StockSource::FromRemainingStock` reads, so this
-//! is not only a display defect: a rest pass planned against it plans against
-//! fiction.
+//! **Scope, corrected 2026-08-22.** This header first claimed the global
+//! stock is what `StockSource::FromRemainingStock` reads, making the defect a
+//! planning one. It is not. Rest generation reads `prior_stocks`, which are
+//! clones of the per-setup **local** `group_stock`, and the local stock's
+//! drill removal was always correct because setup-local Z is always the tool
+//! axis. This is a checkpoint / playback / screenshot defect — what the
+//! operator sees. Still worth fixing (it is how the operator caught it), and
+//! still worth the sentries, but it never mis-planned a rest pass. The wrong
+//! claim came from a stale comment in `dexel_stock/mod.rs` that has also been
+//! corrected.
 //!
 //! # What is pinned here
 //!

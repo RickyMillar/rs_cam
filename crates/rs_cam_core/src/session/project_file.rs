@@ -579,6 +579,17 @@ pub(crate) fn load_model_geometry(
             detail: format!("Cannot determine file type for '{}'", full_path.display()),
         })?;
 
+    // G-UNITSRELOAD (2026-08-22). This scale must reach EVERY geometry kind,
+    // not just the mesh. `ModelUnits`' own doc still says "units of the
+    // imported STL" — it predates 2D import, and when the SVG/DXF arms were
+    // added below they simply never consumed it, while the interactive door
+    // (`io::load_model_file`) always did. A project file stores the model's
+    // *path* and its declared units, not its geometry, so both doors
+    // re-import the same file and must agree: an inch-authored DXF used to
+    // come back 25.4x smaller after a save/reload, silently, with the stock
+    // still at its saved size because `update_from_bbox` runs on import and
+    // not on load. Sentried by `model_units_survive_reload_g_unitsreload.rs`,
+    // which asserts the two doors agree rather than asserting a magic size.
     let scale = model
         .units
         .as_ref()
@@ -602,9 +613,13 @@ pub(crate) fn load_model_geometry(
                     detail: format!("DXF load failed: {e}"),
                 }
             })?;
+            let mut polygons = import.polygons;
+            let mut drill_targets = import.drill_targets;
+            crate::io::apply_uniform_scale_2d(&mut polygons, scale);
+            crate::io::apply_uniform_scale_targets(&mut drill_targets, scale);
             Ok(LoadedGeometry::Polygons(
-                import.polygons,
-                import.drill_targets,
+                polygons,
+                drill_targets,
                 import.layers,
             ))
         }
@@ -615,6 +630,8 @@ pub(crate) fn load_model_geometry(
                     detail: format!("SVG load failed: {e}"),
                 }
             })?;
+            let mut polys = polys;
+            crate::io::apply_uniform_scale_2d(&mut polys, scale);
             Ok(LoadedGeometry::Polygons(polys, Vec::new(), Vec::new()))
         }
         ModelKind::Step => {

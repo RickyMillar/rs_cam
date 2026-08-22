@@ -332,14 +332,49 @@ impl SetupTransformInfo {
     }
 
     /// Derive the stock cut direction for this setup (used by playback).
+    /// The direction the tool advances in, **in the stock-relative global
+    /// frame**, for a setup in this orientation.
+    ///
+    /// # The lateral arms are a negation, not an identity — G-LATERALSIGN
+    ///
+    /// Read the two names carefully, because they describe **opposite ends of
+    /// the same setup** and the obvious-looking identity mapping was wrong for
+    /// four years:
+    ///
+    /// * `FaceUp::Front` names *the face that is up* — pointing at the
+    ///   spindle.
+    /// * `StockCutDirection::FromFront` names *the side the tool arrives
+    ///   from*, and its own doc pins that as the −Y side.
+    ///
+    /// If the front face is up, the tool arrives from wherever that face now
+    /// points. `inverse_transform_point` sends local `+Z` to global `+Y` for
+    /// `FaceUp::Front`, so the tool arrives from **+Y**, which is `FromBack`.
+    /// Both lateral axes negate the same way.
+    ///
+    /// The two Z faces *are* an identity (`Top → FromTop`,
+    /// `Bottom → FromBottom`), which is exactly why the mapping read as
+    /// obviously right: the only two cases anyone had a fixture for both
+    /// passed. Pinned now by
+    /// `tests/cut_direction_matches_transform_g_lateralsign.rs`, which does
+    /// not transcribe a table of six answers — it pushes points through
+    /// `inverse_transform_point` and derives the required sign, with the two
+    /// Z faces as the control on the derivation itself.
+    ///
+    /// Scope of the pre-fix damage: this feeds only the **global playback
+    /// stock**. Metrics, gates, collisions and checkpoint meshes are computed
+    /// on the per-setup `group_stock`, which `compute/simulate.rs` stamps with
+    /// a hardcoded `FromTop` because setup-local Z always is the tool axis. So
+    /// the wrong sign never moved a number an operator reads; it removed
+    /// material from the far face instead of the near one in the live-scrub
+    /// viewport.
     pub fn cut_direction(&self) -> StockCutDirection {
         match self.face_up {
             FaceUp::Top => StockCutDirection::FromTop,
             FaceUp::Bottom => StockCutDirection::FromBottom,
-            FaceUp::Front => StockCutDirection::FromFront,
-            FaceUp::Back => StockCutDirection::FromBack,
-            FaceUp::Left => StockCutDirection::FromLeft,
-            FaceUp::Right => StockCutDirection::FromRight,
+            FaceUp::Front => StockCutDirection::FromBack,
+            FaceUp::Back => StockCutDirection::FromFront,
+            FaceUp::Left => StockCutDirection::FromRight,
+            FaceUp::Right => StockCutDirection::FromLeft,
         }
     }
 
