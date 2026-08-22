@@ -23,3 +23,5 @@ Baseline params (from wanaka200.toml as committed 90418330):
 |---|---|---|---|---|---|---|---|
 | E0 | baseline (as-committed) | 47412 (13.2h) | — | 12143 | 11133 | 0 | gates 8/8 Within; PENCIL = 23306s (49%!), of which 21366s ENTRY intent — fed descents at plunge 135 |
 | E1 | pencil hookup_distance 5→15 + plunge 135→150 (cap: tapered_ball_plunge 150 guard REFUSED 400) | 31282 (8.7h) | **−34%** | 12143 | 11133 | 0 | pencil 23306→7175s; entry 21366→5597s; valley CUTTING intact (300→292s); crosses-standing 19.1%→15.8%; links +232s only |
+| E2 | finish stepover 0.3→0.6 (scallop 7.5→30 µm) | 29365 (8.2h) | −38% | 6027 | 11133 | 0 | finish −6116s BUT pencil +4200s (rest detector chases coarser residuals at its 0.05 floor); mid-seq 44 rapid collisions = stale rest chain, cleared by pencil regen — the E-loop rule held |
+| E3 | pencil min_valley_depth 0.05→0.10 | 22921 (6.4h) | **−52%** | 6027 | 11133 | 0 | pencil ~4935s; tip_float 14711→6716; quality trade stated: crevice residuals <0.1mm now left (invisible in oak); finish+pencil SYSTEM now 11.0k→11.0k... total −6444s vs E2 |
