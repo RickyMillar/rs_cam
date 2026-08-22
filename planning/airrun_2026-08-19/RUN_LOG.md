@@ -528,7 +528,7 @@ an agent's.
 > `io/setup_sheet.rs:88` and `:303` (the printed sheet the operator carries to
 > the machine), and `ui/toolpath_panel.rs:480`.
 
-## G-DRILLFLIP — analytic drill removal does not survive a flipped setup
+## G-DRILLFLIP — CLOSED 2026-08-22 — analytic drill removal does not survive a flipped setup
 
 Found 2026-08-22 by the OPERATOR watching the simulation: "I see the tool drill
 the pins but it's not showing in the sim stock — the other holes do."
@@ -586,7 +586,98 @@ wrong side on the regular drill, i.e. trade a visible bug for an invisible one.
 material at all, and regular drill on a flipped setup removes the band nearer
 the machined face rather than its complement.
 
-## G-DRILLTIME — drill ops are outside the cycle-time model
+### CLOSED 2026-08-22
+
+**Shape chosen: neither of the two the entry proposed.** The direction is not a
+property of the operation — it is a property of the *frame the removal is being
+applied in*, and one `DrillOp` is applied to two different frames (the per-setup
+local stock and the global stock) within a single simulation. Putting a flag on
+`DrillOp` would have made one struct carry a fact that is true of one of its two
+consumers, which is how the field would eventually have been read in the wrong
+place. Re-ordering the pair in `group_drill_op_to_global` was rejected for the
+reason the entry already gives, plus one more: `top_z == bottom_z` is a legal
+zero-depth hole, so ordering is a degenerate signal.
+
+`StockCutDirection` already carries exactly this fact, already has
+`cuts_from_high_side()` documented in precisely these words ("High-side entry
+removes material via `subtract_above`; low-side entry via `subtract_below`"),
+and was **already in scope at every call site** — including
+`app/simulation.rs`, which destructures `direction` from `playback_data` and
+was ignoring it on the drill branch. So `apply_drill_op` takes it as a
+parameter. Three call sites, all of which knew the answer already.
+
+Changed:
+
+- `TriDexelStock::clear_below_at` — the mirror of `clear_above_at`. It leaves
+  `conservative_top` alone, deliberately: subtracting from below cannot raise a
+  ray's top, so the existing sliver-safe bound stays valid, and where the
+  subtraction empties a ray outright the bound is left loose — which
+  over-reports material and therefore costs work, never safety.
+- `apply_drill_op(&drill_op, direction) -> DrillRemovalReport`. The cone sign
+  follows the advance too: `bottom_z ± r/tan α`, because the cone opens *back
+  toward the tool*.
+- Lateral setups (`FaceUp::{Front,Back,Left,Right}`) **abstain** rather than
+  carve. `DrillHole` is an XY centre plus two Z values and simply cannot express
+  a hole whose axis is global X or Y; `group_drill_op_to_global` discards the
+  mapped bottom point's XY, so the axis is gone before the kernel sees it.
+  Filed as **G-DRILLLATERAL** below.
+- `DrillRemovalReport` exists so a test can assert the footprint was actually
+  walked. The whole reason this defect needed a person watching a viewport is
+  that "removed nothing" and "removed the wrong thing" are both silent.
+
+**Red-first, verified.** `tests/drill_flip_removal_g_drillflip.rs`, 5 tests.
+With `from_high` forced back to `true` (the pre-fix constant), three fail with
+exactly the reported symptoms — `a through-hole must clear the full 25 mm ray,
+25 mm left` (the pin drill the operator could not see) and `0..12 is the hole in
+the global frame and must be empty, found 12 mm` (the complementary band, the
+one that looked fine). Restored and green.
+
+**Both symptoms are asserted, and so is the complement.** The blind-hole test
+asserts the correct band is empty *and* that the band the old kernel removed is
+still standing — "material gone" and "material still there" fail in opposite
+directions, and a one-sided version of this test would have passed before the
+fix.
+
+**Scope note.** The global stock is what `StockSource::FromRemainingStock`
+reads, so this was never only a display defect: a rest pass planned against a
+flipped setup's post-drill stock was planning against the complement of the
+real material.
+
+## G-DRILLLATERAL — a drill on a side-face setup cannot be simulated (OPEN, filed 2026-08-22)
+
+Split out of G-DRILLFLIP rather than folded into it, because the fix is a data
+model change and not a sign.
+
+`FaceUp::{Front,Back,Left,Right}` are legitimate on a 3-axis router — stand the
+board on edge and machine what was its side — and milling handles them: the
+tri-dexel lazily allocates an X or Y grid (`grid_for_direction`) and
+`StockCutDirection::decompose` reorients the stamp. Drilling does not, and
+cannot as currently typed:
+
+- `DrillHole` is `{ xy: [f64; 2], top_z, bottom_z }`. It names an axis only
+  while that axis *is* Z.
+- `group_drill_op_to_global` maps the mouth and the tip through the transform
+  and then keeps `g_top.xy` and `g_bot.z`. For a lateral transform those two
+  points differ in X or Y, and that difference — the hole's actual axis — is
+  discarded.
+
+So `apply_drill_op` now reports `unrepresentable_axis` and removes nothing,
+rather than carving a fabricated Z-axis hole from coordinates that no longer
+mean what they are named. **Nothing else changes**: the toolpath is still
+emitted, still exported, still collision-checked. It is the analytic stock
+removal, and only that, which abstains.
+
+**Fix shape**: give `DrillHole` two 3-D endpoints (mouth and tip) instead of an
+XY pair plus two scalars, and let the kernel walk the footprint on
+`grid_for_direction(direction)` with `decompose`. That is a `DrillHole`
+signature change touching `drill_metrics`, the three drill gates and
+`append_drill_cylinders`, which is why it is filed rather than done here.
+
+**Priority: low, and stated why.** No shipped project in the repo uses a lateral
+`FaceUp`, and the operator's two-sided gate is Top/Bottom. It becomes real the
+first time someone drills an edge.
+
+## G-DRILLTIME — CLOSED 2026-08-22 — drill ops are now inside the cycle-time model
 
 Found 2026-08-22 in the live validation of the G-TIMEEST consolidation, by
 reading the GUI rather than the code.
@@ -638,7 +729,65 @@ cycles"), which is more useful than a bare weakest-basis label and does not
 overclaim. Do NOT simply exempt drills from the fold — that would silently
 restore the overclaim the row exists to prevent.
 
-## G-CHIPGATE-POPULATION — the chipload gate passes on an empty band
+### CLOSED 2026-08-22 — the full fix, not the interim
+
+The interim was not needed. The entry's own diagnosis pointed straight at the
+fix: *"the integrator is driven off the ENGAGEMENT summary list, which conflates
+'has no engagement metrics' with 'was not simulated'. Those are different facts
+and the code currently has one slot for both."*
+
+`apply_kinematics_cycle_time` was **already computing** a breakdown for every
+toolpath in the request, drills included — it built `per_toolpath_runtime` over
+`request.groups[].toolpaths` and then folded the project total over
+`trace.toolpath_summaries`, which drills have no row in. The drill's answer was
+computed and thrown away. So the change is small:
+
+- **`SimulationCutTrace::toolpath_runtimes`** — a new list,
+  `Vec<ToolpathKinematicRuntime>`, holding the integrator's answer for every
+  toolpath it walked. This is the second fact given its own slot.
+- **The project fold** now sums the integrated set, plus any engagement summary
+  the integrator did not reach (which keeps its own naive runtime rather than
+  being dropped). The two sets do not overlap by construction.
+- **`readiness::toolpath_cycle_time`** asks "was this integrated?" *before* "does
+  it have engagement metrics?", so a drill reads `MachineModel` instead of
+  falling through to `cutting_distance / feed`.
+
+**Neither shortcut was taken.** Drills are not exempted from the fold — that
+would restore the overclaim the basis exists to prevent; their time is still
+counted, just counted by the integrator. And `drill_summaries` was not used as a
+substitute basis: `DrillToolpathSummary` says in its own doc that it "excludes
+rapid … runtime accounting", so sourcing a `MachineModel` label from it would
+claim modelling it does not have.
+
+**Red-first, verified.** With the publication filtered back to
+summary-bearing toolpaths, `the_integrator_publishes_a_runtime_for_the_drill_toolpath`
+fails on exactly the original mechanism, and `the_project_total_includes_the_drill`
+prints the arithmetic: **14.624 s total against 5.512 s of milling** — the
+drill's ~9.1 s computed and discarded, in miniature.
+
+Sentries, split by what they can honestly test:
+
+- `rs_cam_core/tests/drill_cycle_time_integration_g_drilltime.rs` (4) — the
+  **simulator** populates the slot for a real drill toolpath and the project
+  total includes it. Opens with `the_fixture_really_is_the_defects_shape`,
+  which asserts the drill has **no** engagement summary and **does** publish a
+  `drill_summaries` row: without that, every later claim would be about a
+  fixture that had quietly stopped being the defect.
+- `rs_cam_viz/tests/cycle_time_basis_g_timeest.rs` (+3, beside the G-TIMEEST
+  sentries) — the **basis arithmetic**: a drill reads `MachineModel`, one drill
+  no longer drags a modelled project to `CuttingOnly`, and the control
+  (`without_integration_a_drill_still_degrades_the_basis`) confirms an
+  un-integrated toolpath still weakens the claim, so the middle test is
+  measuring the fix and not the absence of a fold.
+
+**Known limit, recorded rather than left to be discovered.** The integral is
+over stored motion, so a peck cycle's R-plane and re-entry moves are in it. G82
+**dwell is not motion and is not in it** — it is reported separately as
+`DrillToolpathSummary::dwell_time_s`, and no surface currently adds the two. On
+the shipped `DrillCycle::Peck` default that is zero; on a `Dwell` cycle it is
+not.
+
+## G-CHIPGATE-POPULATION — RE-DIAGNOSED 2026-08-22 — the reported mechanism was wrong
 
 Raised 2026-08-22. **Fourth occurrence on this programme of a gate reading
 healthy because its population is empty, and the first where a heuristic on the
@@ -676,6 +825,156 @@ treats it as a pass. Making the gate abstain would align them.
 
 Credit: the population-assertion framing is `rs-cam-2c`'s, from the wave's
 forced-dive sentry work.
+
+### RE-DIAGNOSED 2026-08-22 — the gate already abstains; two things above are wrong
+
+Investigated before building the fix, and the fix turned out not to be needed.
+Both errors are mine, and both are worth keeping because each is a mistake a
+reader of this log would otherwise repeat.
+
+**1. The gate does not pass on an empty band.**
+`tool_load::chipload::evaluate` returns `Unmodeled(NoVendorData)` when
+`matched_chip_envelope` finds no row (`chipload.rs:561`), and again when the
+matched row's bounds fail `derate_chipload_bounds` (`:592`). Every path that
+reaches `Within` has a band in hand. There is no empty-band `Within` to fix.
+
+**2. The probe that "showed no band at any sampled depth" asked the wrong
+resolver.** It called `feeds::calculate`, which resolves through
+`find_best_row_for_geometry` — the **recipe** resolver, which lets RPM-only
+anchors compete and then publishes no band. The gate resolves through
+`find_best_chip_envelope_row`, which excludes exactly those rows. The LUT ships
+**eight** tapered-ball rows and every one publishes a chipload band, so the
+gate almost certainly had one. *This is the same two-resolver asymmetry that P1
+fixes on the Suggest side* — which is how the misdiagnosis happened: the symptom
+is real and it is the recipe resolver's, not the gate's.
+
+**What was checked, since "the gate is fine" needs its own evidence.** The
+mechanism the report described — an abstention deleting the pre-sim caution —
+is genuinely one line away from being real. An abstention is published under
+the id `LOAD_CHIPLOAD_WITHIN`, the *same id a real pass uses*, and it carries a
+populated `supersedes` list naming the `feeds.*_vs_lut.*` heuristics. If
+`apply_supersession` keyed on the id it would fire. It keys on
+`state == Current`, and abstentions carry `NeedsSimulation` / `StaleEvidence` /
+`NotApplicable`. That is a **two-place invariant** — the adapter must not mark
+an abstention `Current` and the reducer must not stop checking — so it is now
+pinned at both ends by `tests/chipload_abstention_cannot_supersede_g_chipgate.rs`
+(3 tests, including the control arm that a *modelled* `Within` still supersedes,
+without which the main assertion would pass just as well if supersession were
+deleted entirely).
+
+**What is still open, and it is the operator's question, not this one.**
+Why does a commanded 3000 mm/min on a Ø1.0 tapered ball produce a genuine
+`Within`? The two surfaces measure different quantities:
+
+| surface | quantity |
+|---|---|
+| pre-sim heuristic | **commanded** feed vs LUT recommendation |
+| chipload gate | **achieved** advance per tooth, `effective_feed / (rpm · flutes)`, from the kinematics-predicted feed |
+
+On short finishing moves with a small tool the predicted feed can be a fraction
+of the commanded one, in which case both surfaces are right about different
+things and neither is a defect. **That is a hypothesis and has not been
+measured.** The probe is one call against the live project —
+`get_tool_load_report().per_toolpath[].chipload` carries the observed advance
+beside the band — and it needs the GUI. Until it is run, do not treat the
+`within` as clearance to cut at F3000 on that tool: an abstention was ruled out,
+an *agreement* was not established.
+
+**Not closed, re-pointed.** The population-assertion instinct that raised this
+was right in general; it was aimed at a gate that already had the property.
+
+## RUBBING-FLOOR P1 — LANDED 2026-08-22, and it does NOT explain the live symptom
+
+Not from the airrun itself but from the measurement it triggered
+(`tests/rubbing_floor_diameter_scaling_measurement.rs`, written 2026-08-21/22).
+Recorded here because the live symptom is one of this session's: the operator's
+Ø1.0 tapered ball had its finishing feed raised by a floor that was reading no
+band.
+
+**The rule was right; its input could be wrong.** `effective_rubbing_floor`
+subordinates `RUBBING_FLOOR_MM_TOOTH` (0.025) to the matched band's ceiling, so
+the clamp can never push a recipe past the window it exists to keep it inside.
+But the band it is handed is `chipload_bounds`, from the **recipe** resolver —
+the one that lets RPM-only anchors win. When one wins, `chipload_bounds` is
+`None`, the floor falls back to the bare constant, and the post-sim gate then
+judges the same cut against a *chipload-bearing* row it resolved separately.
+
+### The premise did not survive being probed
+
+The measurement file proposed P1 as the explanation for the live Ø1.0
+tapered-ball case, hedged with "plausibly". The hedge was doing real work. Probed
+directly, on the operator's exact tool:
+
+```text
+Ø1.0 tapered ball (tip r0.5, 7deg), 2F, white oak, ap 0.3
+  parallel/finish  recipe row = amana-tapered-hardwood-parallel-3175-2f
+                   envelope   = amana-tapered-hardwood-parallel-3175-2f   <- SAME ROW
+                   bounds = 0.00484 .. 0.00968     floor applied = 0.00968
+                   ChiploadClampedToFloor { requested 0.00581, floor 0.00968,
+                                            band_capped_from: Some(0.025) }
+  scallop/finish   same shape, band 0.00581 .. 0.01161, floor 0.01161
+  contour/finish   recipe = None, envelope = None, bounds = None
+                   ChiploadClampedToFloor { requested 0.01205, floor 0.025,
+                                            band_capped_from: None }
+```
+
+The two resolvers **agree** on that cut, the band was already in hand, and the
+floor was **0.0097, never 0.025**. The reported symptom — a ~0.012 request
+raised to a flat 0.025 — is the **third** row: a cut where *neither* resolver
+matches any row. No resolver fix can reach that; with no row there is no band to
+subordinate to. Only a floor that carries a diameter would (P2, still not
+adopted).
+
+`band_capped_from` is what tells the two shapes apart on a live surface:
+`Some(0.025)` = a band was found and beat the constant; `None` = the bare
+constant applied because nothing was found. **Read that field before concluding
+anything about a clamped feed.**
+
+### What P1 is worth, without inflation
+
+It aligns two resolvers that had no business disagreeing, introduces no number,
+and on the LUT as shipped **changes no recipe** — measured, not assumed: the
+cells where the resolvers disagree are the Ø6-and-up flat/bull ones, whose
+envelope bands sit above 0.025, so `min` returns the constant unchanged. Kept
+because a floor consulting the resolver that cannot see bands is wrong whether
+or not it currently costs anything. `the_fallback_does_not_lower_the_floor_on_todays_lut`
+is a tripwire that will report the day it starts costing something.
+
+**What changed**: when the recipe row publishes no chipload, `feeds::calculate`
+now resolves the **envelope** row — the gate's own resolver, same query, same
+DOC derate, same `RequireBoth` policy — and hands *that* band to the floor. The
+clamp reason is derived from the same band, so the warning and the explanation
+record cannot name a ceiling the floor did not use.
+
+**What deliberately did NOT change**, because it is a different claim needing
+different evidence:
+
+- `chipload_bounds` stays `None`. The recipe legitimately rests on the RPM
+  anchor; re-pointing Suggest's *target* at another row is not this fix.
+- No constant moved and no exponent was introduced. `p1_moved_no_constant`
+  pins that. The diameter-scaled floor (P2 in the measurement file) is
+  **not** adopted.
+
+**Disclosure**: `FeedsWarning::VendorRowPublishesNoChipload` gained
+`floor_band_from: Option<String>`, naming the row, rendered on all three
+surfaces (properties panel, feeds modal, diagnostics adapter). The adapter's
+message used to end "so its verdict is judged against bounds this recipe never
+saw" — after P1 the floor *did* see them, and saying which is what stops the
+operator reading the old sentence and assuming nothing did.
+
+Sentry: `tests/rubbing_floor_envelope_band_p1.rs` (5 tests), which
+**discovers** the affected inputs by sweeping shipped data rather than
+hard-coding a row id a LUT edit could retire, and fails naming the axis to widen
+if the population is empty. The first draft of that sweep hand-picked 20
+combinations and hit **zero** — A-6 measured this disagreement at 141 of 18 144
+queries, so a fixture list was the wrong instrument and the non-vacuity guard is
+what said so.
+
+**Still open, and now the sharper question**: the binding cases are the cuts
+with no vendor row at all. The quantity that governs them is cutting-edge
+radius, and `ChiploadSource::EdgeRadiusFloor` is a declared, rendered, wired-up
+variant that **nothing in the workspace ever constructs**. That is the empty
+slot for the model that would actually answer this.
 
 ## G-PINAUTO — auto pin placement can key the flip, and today cannot
 
@@ -1004,6 +1303,41 @@ These forced a save → hand-edit TOML → reload cycle, twice. For an
    blocking diagnostic reading "Add alignment pins to the stock before adding
    this op" — advice that was already satisfied. The message should say the op
    needs its own `holes` populated *from* the stock pins.
+
+## G-GEOMCACHE-FLAKE — a unit test asserts on a process-global others write to (OPEN, filed 2026-08-22)
+
+Not a product defect. Found while running the verification gate for the
+G-DRILLFLIP / G-DRILLTIME work: `cargo test -p rs_cam_core` failed once with
+
+```text
+geom_cache::tests::a_dropped_mesh_releases_its_entry
+  panicked at crates/rs_cam_core/src/geom_cache.rs:390
+test result: FAILED. 2363 passed; 1 failed; 12 ignored
+```
+
+and then passed **three consecutive full-lib runs** (2364/0 each) with no code
+change in between. Isolated (`--lib geom_cache`) it passes every time.
+
+**Mechanism.** `geom_cache` is a process-global. The test calls `clear()`,
+inserts one mesh, drops it, inserts a second to provoke the sweep, and asserts
+`cache_len() == 1`. Its two siblings — `second_lookup_reuses_the_same_allocation`
+and `distinct_meshes_get_distinct_indexes` — insert into that same global and
+run **concurrently** on other threads, so `cache_len()` observes their entries
+too. `clear()` at the top narrows the window; it does not close it.
+
+Not attributable to this session's changes: nothing here touches `geom_cache`,
+which came in with `2f94dd48` (`perf(gen-w4)`, the concurrent perf programme).
+Left for that programme's owner rather than edited from here.
+
+**Fix shape** (any one of): serialise the three with a test-local mutex; assert
+on the specific key's presence rather than the map's length; or give the test
+its own cache instance. The length assertion is the part that is unsound under
+`cargo test`'s default parallelism — a count over a shared global is not a
+statement about this test.
+
+**Why it matters beyond tidiness**: it fails roughly one run in four here, so
+it will fail CI intermittently, and an intermittent red gate is the thing that
+teaches people to re-run instead of read.
 
 ## Things that worked well
 
@@ -1570,6 +1904,24 @@ Kept because the process failure is more transferable than the bug.
 5. ~~drop_cutter vs unified_finish comparison~~ — done, and it surfaced
    G-SUGGEST-NOCLAMP.
 
+**DONE 2026-08-22 (second pass, this session):**
+
+- ~~**G-DRILLFLIP**~~ — CLOSED. `apply_drill_op` takes the frame's
+  `StockCutDirection`; flipped setups carve the right band and a break-through
+  pin hole appears at all. Split out **G-DRILLLATERAL** (below, item 9).
+- ~~**G-DRILLTIME**~~ — CLOSED. Drill toolpaths are integrated into the
+  cycle-time model via `SimulationCutTrace::toolpath_runtimes`; 0.8 % of
+  runtime no longer relabels 100 % of the estimate.
+- ~~**G-CHIPGATE-POPULATION**~~ — RE-DIAGNOSED, not a defect. The gate already
+  abstains on an empty band; the probe that said otherwise asked the recipe
+  resolver instead of the envelope one. The abstention-cannot-supersede
+  invariant is now pinned at both ends. **The operator question it raised is
+  still open** — why F3000 on the Ø1 tapered ball reads `Within` — and needs
+  one live `get_tool_load_report` call to settle.
+- ~~**Rubbing-floor P1**~~ — LANDED, and it does **not** explain the live
+  symptom; that was a no-vendor-row case, which no resolver fix reaches. P1
+  changes no recipe on today's LUT.
+
 **Outstanding, in rough priority order:**
 
 1. ~~Emit corrected G-code~~ — **DONE.** Both files re-exported on the fixed
@@ -1607,6 +1959,22 @@ Kept because the process failure is more transferable than the bug.
    polygon. Found while fixing G-PROFILE-FLIP; that fix is a no-op here
    (shoelace of a degenerate ring is 0). Needs a decision on whether 2D ops on
    side-face setups are meant to work at all before it is worth fixing.
+
+   **2026-08-22 — this is now the second lateral-setup defect, and they share
+   one question.** G-DRILLFLIP's fix surfaced **G-DRILLLATERAL**: `DrillHole`
+   cannot express a hole whose axis is global X or Y, so a drill on a side-face
+   setup abstains rather than carving. Milling, by contrast, *does* work on
+   those setups — `grid_for_direction` lazily allocates the X/Y dexel grid and
+   `StockCutDirection::decompose` reorients the stamp — so the support is
+   genuinely partial: **milling yes, 2D polygon ops no, drilling no.**
+
+   That makes "are lateral setups supported?" one operator decision covering
+   both rows, not two independent fixes. If the answer is no, the honest move
+   is to refuse the setup at the UI rather than ship three different silent
+   behaviours behind one dial. If yes, both are real work:
+   `apply_to_polygons` needs a projection plane rather than a hardcoded Z=0,
+   and `DrillHole` needs two 3-D endpoints instead of an XY pair plus two
+   scalars.
 10. **G-PECKROOT** (new, 2026-08-21, measured). `emit_peck_plunge` is rooted at
    `safe_z` and knows nothing about the stock top, so while
    `SAFE_Z_CLEARANCE_MM` (5.0) exceeds `depth_per_pass` the first entry rung
