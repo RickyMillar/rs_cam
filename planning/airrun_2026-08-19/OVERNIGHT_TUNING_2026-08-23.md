@@ -136,3 +136,8 @@ rapids through the never-roughed back; sim total misleadingly "improved" to
 report-only. Mechanism (tab-open commits a heights draft?) needs a code
 session to confirm; hypothesis strong. Workaround: never open the Heights
 tab on a healthy op; recover by project reload.
+
+**C6 (pencil hookup 15→30) — ACCEPTED: 17,588 → 16,793 s (−794 s).**
+0/0 collisions, back rough verified intact after the clean reload (7,672
+moves), pencil tip_float byte-identical (5,418) and cutting distance −3%
+(removed re-approach ramps only) — valley coverage untouched.
