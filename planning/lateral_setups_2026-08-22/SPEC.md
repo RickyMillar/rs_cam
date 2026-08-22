@@ -237,7 +237,29 @@ That is a live defect independent of lateral setups and should be closed by
 **deleting the viz copy** and routing it through core, not by patching both.
 Filed as **G-POLYTRANSFORM-DUP**.
 
-### 2c. Drilling — smaller than it looked
+### 2c. Drilling — **CLOSED-UNREACHABLE 2026-08-22**
+
+> **The stamping fallback below is moot and was not built.** G-LATERALSCRUB
+> (`3e951540`) removed the only shipped caller that ever handed
+> `TriDexelStock::apply_drill_op` a lateral direction: the global playback
+> stock's drill stamp now sits inside `if !lateral_playback`, and the viz
+> worker's `build_playback_data` gives a lateral group `FromTop` plus its own
+> setup-local frame. Every other call site passes `FromTop` literally or is
+> `cfg(test)`. So there is no live failure left to fall back *from* — a
+> fallback would be new machinery guarding a path nothing reaches, and its
+> only exercise would be its own test.
+>
+> What was done instead is a doc-pin, not a deletion: `apply_drill_op`'s
+> abstention arm and `DrillRemovalReport::unrepresentable_axis` **stay** (they
+> are the kernel's honesty contract — a caller handed an axis the kernel
+> cannot represent must be told, not shown a fabricated Z-axis hole), with the
+> reachability fact recorded at the code. The side-grid kernel stays too, for
+> the same reason: it is 3+2 / 5-axis capability, and the day something stamps
+> it for real the contract becomes load-bearing again. The `DrillHole`
+> two-3-D-endpoint redesign remains the better end state and remains off the
+> critical path.
+
+The original analysis, kept for the blast-radius numbers:
 
 The earlier plan was "give `DrillHole` two 3-D endpoints". Research says that is
 the wrong first move, for two reasons:
@@ -262,7 +284,13 @@ no serde and is rebuilt on every regenerate. What *is* persisted is XY-only
 (`DrillConfig.selected_holes`, `AlignmentPinDrillConfig.holes`,
 `StockConfig::alignment_pins`).
 
-### 2d. The live-scrub viewport mesh
+### 2d. The live-scrub viewport mesh — **DONE 2026-08-22**
+
+> Fixed in `3e951540` by the local-stock-then-map route the checkpoint meshes
+> already used. Sentried by `tests/lateral_scrub_playback_stock_g_lateralscrub.rs`,
+> which asserts **Z-grid solid volume** rather than a vertex probe — the
+> obvious probe passes against the broken code, because the buried side
+> surface really does contain the cut.
 
 `dexel_stock_to_mesh` builds a closed marching-cubes solid from the Z grid and
 then **appends** the X/Y grids as open per-segment heightmap surfaces
@@ -280,13 +308,42 @@ Cheapest honest fix: make the live-scrub path use the same local-stock-then-map
 route the checkpoints use, rather than teaching the side grids to boolean.
 Filed as **G-LATERALSCRUB**.
 
-### 2e. `SimGroupEntry.direction` is dead code
+### 2e. `SimGroupEntry.direction` — **NOT DEAD. Deletion blocked, 2026-08-22**
 
 Written by three producers (`session/compute.rs:955`, `:2170`,
-`viz/.../execute/mod.rs:329`) and read by nobody — `compute/simulate.rs` uses
-its own local `FromTop`. Notably the producers already collapse all four
-lateral faces to `FromTop`, so even if it were read it would be wrong. Delete
-it, or read it; do not leave it.
+`viz/.../execute/mod.rs:329`) and — the claim below said — read by nobody.
+**That is wrong, and the deletion was stopped on it.** There is one reader:
+
+```
+crates/rs_cam_core/src/compute/sim_prefix.rs:425
+    format!("{:?}", group.direction).hash(&mut hasher);
+```
+
+inside `hash_group_scalar(group: &SimGroupEntry)`, and the S5 memo's own
+soundness table names it (`sim_prefix.rs:51`, *"per-group `local_stock_bbox`,
+`local_to_global`, `direction` | group scalar"*). No *simulator* reads it —
+`compute/simulate.rs` still derives its own `FromTop` — so the original
+observation about the simulator holds. But the field is a **prefix-memo cache
+key input**, so deleting it is a cache-correctness change, not a dead-code
+sweep, and it needs the S5 owner's call plus a look at
+`tests/sim_prefix_memo_s5.rs`.
+
+Two further facts the earlier note did not have:
+
+* A **fourth** producer exists, in `crates/rs_cam_core/benches/hot_paths.rs:1203`
+  (`direction: StockCutDirection::FromTop`). Removing the field breaks that
+  bench's compile, and `clippy --workspace --all-targets` builds it — so the
+  deletion cannot be scoped to `src/` alone, and that file is the concurrent
+  perf programme's.
+* The producers *do* still collapse all four lateral faces to `FromTop`, so
+  the value is a constant in practice and the hash contribution is constant
+  with it. That is why nothing has ever gone wrong; it is also why the field
+  is worth removing eventually.
+
+Verdict: leave it, with this note, rather than delete it half-informed. The
+honest one-line alternative — read it where the simulator already derives the
+same answer — is worse, because the simulator's `FromTop` is *correct* and the
+field's value is not.
 
 ---
 
@@ -297,9 +354,12 @@ it, or read it; do not leave it.
 3. **G-POLYTRANSFORM-DUP** — delete the viz copy. Independent of the decision,
    and doing it first means 2a is a one-place change instead of two.
 4. **2a** — decided; implement the work-plane rule + no-mesh refusal.
-5. **G-LATERALSCRUB** — display only; do after 2a so it can be seen working.
-6. **G-DRILLLATERAL** via the stamping fallback (2c).
-7. `SimGroupEntry.direction` — delete.
+5. ~~**G-LATERALSCRUB**~~ — **done** 2026-08-22 (`3e951540`); see 2d.
+6. ~~**G-DRILLLATERAL**~~ — **closed unreachable** 2026-08-22, doc-pinned, no
+   stamping fallback built; see 2c.
+7. `SimGroupEntry.direction` — **blocked, not deleted.** It has a reader
+   (the S5 prefix memo's cache key) and a fourth producer in the perf
+   programme's bench; see 2e.
 
 ## 4. What must exist before any of 3–7 is called done
 
