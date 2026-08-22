@@ -2438,3 +2438,14 @@ what TOP/BOTTOM pin exactly.
   world −Y face, rendered in the composite's FRONT-LEFT/FRONT-RIGHT panels;
   REAR panels clean. (G-HOLESHADE still shades the hole as a peg — known,
   log-only.)
+
+## wanaka200 pins re-placed per the G-PINAUTO recipe — 2026-08-22 late
+
+`wanaka200.toml`'s stored pins had the same defect the section above
+documents on wanaka: `(2.5, 2.5) + (237.5, 247.5)` — diagonal, symmetric
+under R180 (not the flip), worst pin missing its hole by 235 mm after `My`,
+and 0 mm of keying. Re-placed on the mirror line: **`(10, 125)` +
+`(226, 125)`**, Ø6, on 240×250 stock with the model at 20..220 × 25..225 —
+flip-seats, R180/Mx blocked by 4 mm, 3 mm clear of the model, saved back to
+`wanaka200.toml` (a session artifact, not a never-touch). Load is now
+warning-free.

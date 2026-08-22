@@ -19,13 +19,13 @@ auto_from_model = false
 species = "WhiteOak"
 
 [[job.stock.alignment_pins]]
-x = 2.5
-y = 2.5
+x = 10.0
+y = 125.0
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 237.5
-y = 247.5
+x = 226.0
+y = 125.0
 diameter = 6.0
 
 [job.post]
