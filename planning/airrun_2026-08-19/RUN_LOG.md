@@ -2182,3 +2182,37 @@ Kept because the process failure is more transferable than the bug.
    the current residual by `air_ladder_emitted_z_levels_g_airladder.rs`.
 11. Commit decision on the two fixes; the viz half of the sim fix has had a
    partial line-by-line review only.
+
+---
+
+**2026-08-22 (evening) — the lateral question is answered and half the ledger
+above is closed.** Operator ruling: make lateral setups work, general single
+implementation; a 2D drawing is consumed in the **work plane of the setup
+that uses it** (`planning/lateral_setups_2026-08-22/SPEC.md`, decision
+recorded in §2a). Note the spec **retracts** the "milling works via lazy X/Y
+grids" mechanism claimed in the entry above — lateral milling works because
+each setup is simulated in its own local frame; the X/Y grids are reached
+only by the global playback stock. Landed today: G-POLYTRANSFORM-DUP
+(`c0dd694c` — the viz duplicate could reverse a river on a mirrored setup,
+and the existing G-PROFILE-FLIP open-path sentry was vacuous), the
+work-plane rule + no-mesh refusal + G-LATERALKEEPOUT refusal + the repo's
+first lateral end-to-end fixture (`dba9418a`). Still open: G-LATERALSCRUB
+(in progress), G-DRILLLATERAL (may close by dead-code deletion if the scrub
+fix makes the side-grid machinery unreachable — reachability report pending),
+`SimGroupEntry.direction` deletion.
+
+**Two test flakes filed while doing it, neither chased:**
+
+- **G-GEOMCACHE-FLAKE** (known since 2026-08-22 morning):
+  `geom_cache::tests::a_dropped_mesh_releases_its_entry` asserts on a
+  process-global cache that sibling tests write to concurrently; fails
+  intermittently under the parallel harness, passes alone. Peer perf
+  programme's area (2f94dd48) — deliberately not fixed here.
+- **G-VIZARTIFACT-FLAKE** (new): `compute::worker::tests::
+  simulation_metrics_capture_emits_cut_trace_and_artifact` — 
+  `write_simulation_cut_artifact` names files `{timestamp_ms}_simulation_
+  metrics.json`, and two tests (`tests.rs:2151`, `:2395`) write the same
+  stem to the same dir and `remove_file` on the way out, so a
+  same-millisecond collision under the parallel harness deletes the file
+  under the other test's feet. Passes alone and on rerun. Fix shape: per-test
+  temp dirs or a uniquified stem.
