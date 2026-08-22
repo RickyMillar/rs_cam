@@ -105,3 +105,34 @@ Files: `wanaka200_fast_unified.toml` + `~/Downloads/wanaka200/
 wanaka200_fast_unified_*.nc` (verified M30-complete, modulated F-words).
 Three programs now on disk: conservative 13.2h, drop_cutter 5.22h,
 unified 4.92h.
+
+## Efficiency campaign log — 2026-08-23 (C-series, plan in EFFICIENCY_CAMPAIGN_2026-08-23.md)
+
+**C0 baseline** (fresh GUI, unified candidate): 17,588 s, OK, 0/0. Per-op
+runtime_by_intent: finish 5,636 (cutting 4,616), back rough 4,422 (entries
+900), **pencil 4,126 (entries 3,244 — back on top as the #1 lever)**, front
+rough 2,570 (54% air), rivers 707 (cutting 158). Campaign re-ranked
+accordingly: C6-early → C2 → C5 → C3 → C4.
+
+**C1 height-ladder audit — the operator's "levels above the stock" SOLVED:**
+the Heights panel shows only the five reference planes (clearance/retract/
+feed/top/bottom), all expressed "above Stock Top" and drawn floating above
+the stock sketch; the actual cut ladder never appears there. Emitted motion
+has NO air levels (back rough first pass 19.54 = 25 − DPP, front 2.8 =
+7 − DPP). Presentation quirk, not waste. UI suggestion for later: show the
+resolved cut ladder in the panel, and label the planes as travel planes.
+
+**G-HEIGHTSTAB — filed (severity: part-state-destroying, silent).**
+Opening the Heights properties tab via `set_ui_view(toolpath_index=1,
+properties_tab="heights")` marked Back Rough stale and auto-regenerated it
+to **ZERO moves** — op params verified untouched (optimizer values intact),
+so the mutation went through the heights channel; the panel displayed
+`Bottom: −0.0 mm above Stock Top = 25.0` (the G-UNIFIEDBOTTOMZ family), and
+committing that pinned bottom at the stock top clips the whole op. Blast
+radius observed before recovery: 262 rapid collisions as every setup-1 op
+rapids through the never-roughed back; sim total misleadingly "improved" to
+12,362 s because 4.4k s of roughing vanished. **A gate that reads "generated
+0 moves" as Done is what let this sail** — `zero_removal`/generated-empty is
+report-only. Mechanism (tab-open commits a heights draft?) needs a code
+session to confirm; hypothesis strong. Workaround: never open the Heights
+tab on a healthy op; recover by project reload.
