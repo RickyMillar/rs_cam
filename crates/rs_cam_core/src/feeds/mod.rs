@@ -692,18 +692,37 @@ pub enum FeedsWarning {
     /// In those cases the operator sees a vendor row id beside a
     /// chipload the vendor never published, `chipload_bounds` is `None`
     /// (so `SuggestAggressiveness::target_chipload` has nothing to aim
-    /// at and `effective_rubbing_floor` falls back to the bare
-    /// [`RUBBING_FLOOR_MM_TOOTH`]), and the post-sim gate judges against
-    /// a *different* row's band. Nothing said so before this warning.
+    /// at), and the post-sim gate judges against a *different* row's
+    /// band. Nothing said so before this warning.
     ///
-    /// Report-only: no number moves and the RPM anchor is still used —
-    /// that is the point of keeping two resolvers (option a3, not a1).
+    /// **P1, 2026-08-22 — one of those consequences is now fixed.**
+    /// `effective_rubbing_floor` used to fall back to the bare
+    /// [`RUBBING_FLOOR_MM_TOOTH`] here; it now takes the envelope
+    /// resolver's band, so the floor and the gate quote the same row and
+    /// `floor_band_from` names it. What is deliberately NOT fixed is the
+    /// target: the recipe still rests on the RPM anchor and still carries
+    /// no band, because that is what having two resolvers is *for*.
+    ///
+    /// Otherwise report-only: the RPM anchor is still used — that is the
+    /// point of keeping two resolvers (option a3, not a1).
     VendorRowPublishesNoChipload {
         /// The RPM-anchor row the recipe resolver matched.
         observation_id: String,
         /// The empirical-formula advance per tooth used in place of the
         /// absent vendor column (mm/tooth).
         formula_chipload_mm: f64,
+        /// P1 (2026-08-22) — the row the **rubbing floor** was subordinated
+        /// to instead, from the envelope resolver, or `None` when that
+        /// resolver found nothing either and the bare
+        /// [`RUBBING_FLOOR_MM_TOOTH`] still applies.
+        ///
+        /// This is the one thing the recommendation now *does* take from a
+        /// chipload-bearing row. The target still comes from the formula and
+        /// `chipload_bounds` is still `None`, so this field is not a band —
+        /// it is provenance for a single clamp, and naming it is what keeps
+        /// "the floor" and "the gate's envelope" from being two different
+        /// rows the operator cannot tell apart.
+        floor_band_from: Option<String>,
     },
     /// **Checkpoint K (a4), 2026-08-13 — the vendor-LUT routing refused
     /// this operation × cutter pairing, so there is no vendor row at all
@@ -1154,6 +1173,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // existing tuple destructuring below consumes per-field values, so
     // the row clone lives here separately.
     let mut matched_lut_row: Option<vendor_lookup::LookupResult> = None;
+    // P1 sidecar (2026-08-22) — the band the RUBBING FLOOR is subordinated
+    // to when the recipe resolver's row publishes no chipload column.
+    //
+    // `chipload_bounds` below comes from the **recipe** resolver, which lets
+    // RPM-only anchors win. When one does, `bounds` is `None` and
+    // `effective_rubbing_floor` falls back to the bare
+    // `RUBBING_FLOOR_MM_TOOTH` — even where a chipload-bearing row exists and
+    // the post-sim gate is about to judge this very cut against it. Measured
+    // on a Ø1 tapered ball: Suggest's own model asked for 0.0093–0.0137
+    // mm/tooth and the bare constant overrode it to 0.025, while
+    // `amana-tapered-hardwood-parallel-3175-2f` sat underneath publishing
+    // 0.010–0.020.
+    //
+    // So the floor consults the **envelope** resolver — the gate's, same
+    // query, same DOC derate, same both-bounds policy — before falling back
+    // to the constant. This introduces no new constant and no new exponent;
+    // it hands an existing subordination rule the band it already had. It
+    // deliberately does NOT become `chipload_bounds`: the recipe legitimately
+    // rests on the RPM anchor, and re-pointing Suggest's *target* at another
+    // row is a different change with a different justification.
+    let mut floor_band_fallback: Option<ChiploadBounds> = None;
     let (chip_load, vendor_rpm, vendor_rpm_max, vendor_source, chipload_source, chipload_bounds) =
         if let Some(lut) = input.vendor_lut
             && let Some(query) = vendor_normalize::to_lookup_query(input).or_else(|| {
@@ -1257,9 +1297,30 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                     // formula's, and that this recommendation therefore
                     // carries no band while the gate will judge it
                     // against one.
+                    // P1: hand the floor the band the gate will use.
+                    let mut floor_band_row: Option<String> = None;
+                    if let Some(env) = vendor_lookup::find_best_chip_envelope_row(
+                        lut,
+                        &query,
+                        &input.tool_geometry,
+                    ) && let Some((min, max)) = geometry::derate_chipload_bounds(
+                        env.chip_load_min_mm,
+                        env.chip_load_max_mm,
+                        chipload_doc_ratio,
+                        geometry::ChiploadBoundPolicy::RequireBoth,
+                    )
+                    .and_then(geometry::DeratedChiploadBand::into_pair)
+                    {
+                        floor_band_fallback = Some(ChiploadBounds {
+                            min_mm_per_tooth: min,
+                            max_mm_per_tooth: max,
+                        });
+                        floor_band_row = Some(env.observation_id);
+                    }
                     warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
                         observation_id: observation_id.clone(),
                         formula_chipload_mm: formula_chipload,
+                        floor_band_from: floor_band_row,
                     });
                     (
                         formula_chipload,
@@ -1774,16 +1835,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // exists to keep the recipe inside. See that function for the
     // derivation and for what is given up when a whole band sits below
     // the global threshold (FEEDS_CENSUS C-12 / T3.3, ruled 2026-08-06).
+    //
+    // P1 (2026-08-22): the band handed to `effective_rubbing_floor` is the
+    // recipe resolver's when it published one, and otherwise the **envelope**
+    // resolver's — the gate's own row, resolved above with the same query and
+    // the same DOC derate. Before this, an RPM-only recipe anchor meant the
+    // floor saw no band at all and applied the bare constant, which on the
+    // shipped tapered-ball rows is above every chipload the vendor prints
+    // (all 8 of them; Ø6 → 0.018 against a 0.025 floor). The clamp reason is
+    // derived from the SAME band, so the warning and the explanation record
+    // cannot name a ceiling the floor did not use.
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;
-        let floor = effective_rubbing_floor(chipload_bounds);
+        let floor_band = chipload_bounds.or(floor_band_fallback);
+        let floor = effective_rubbing_floor(floor_band);
         if commanded_fpt > 0.0 && commanded_fpt < floor {
             // Checkpoint K (d2) — the warning's `band_capped_from` and
             // the explanation record's `clamped_to` are now derived from
             // ONE naming function, so the two surfaces cannot describe
             // this clamp differently.
-            let reason = rubbing_floor_clamp_reason(chipload_bounds);
+            let reason = rubbing_floor_clamp_reason(floor_band);
             warnings.push(FeedsWarning::ChiploadClampedToFloor {
                 requested: commanded_fpt,
                 floor,

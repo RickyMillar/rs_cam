@@ -2161,10 +2161,18 @@ fn draw_feeds_card(
                     rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
                         observation_id,
                         formula_chipload_mm,
-                    } => format!(
-                        "Vendor row {observation_id} publishes RPM only — \
-                         {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
-                    ),
+                        floor_band_from,
+                    } => match floor_band_from {
+                        Some(row) => format!(
+                            "Vendor row {observation_id} publishes RPM only — \
+                             {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor \
+                             band; rubbing floor from {row}"
+                        ),
+                        None => format!(
+                            "Vendor row {observation_id} publishes RPM only — \
+                             {formula_chipload_mm:.4} mm/tooth is the formula's, no vendor band"
+                        ),
+                    },
                     rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                         requested,
                         actual,
