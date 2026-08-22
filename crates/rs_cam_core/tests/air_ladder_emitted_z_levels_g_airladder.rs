@@ -354,29 +354,65 @@ fn wasted_fed_cutting_levels_above_the_world_stock_top() {
         .filter(|l| l.z > WORLD_STOCK_TOP_MM + Z_EPS_MM)
         .collect();
 
-    // Pinned at the KNOWN RESIDUAL, not at zero.
+    // Pinned at ZERO since G-PECKROOT (2026-08-22).
     //
-    // G-SAFEZ-LOCAL (889b1573) took this fixture from five wasted rungs to
-    // one, and the emitted air above the stock top from ~14,591 mm — measured
-    // off the shipped `wanaka200_2_Setup_2___front.nc`, five rungs of 231 fed
-    // moves each with ZERO lateral cutting — down to the ~27 mm below.
+    // The history, because the number moved twice and each move meant a
+    // different thing:
     //
-    // The survivor is structural, not a regression: `emit_peck_plunge` is
-    // rooted at `params.safe_z` and knows nothing about the stock top, so
-    // while `SAFE_Z_CLEARANCE_MM` (5.0) exceeds `depth_per_pass`, the first
-    // rung always lands above the stock — here 10.0 - 4.2 = 5.8 against a
-    // top of 5.0. Rooting the peck at the stock top instead of the retract
-    // plane would take it to zero, but that changes adaptive3d entry motion
-    // and moves fingerprints, so it is a deliberate open follow-up rather
-    // than something to smuggle in behind a measurement.
+    // 1. G-SAFEZ-LOCAL (889b1573) took this fixture from five wasted rungs to
+    //    one, and the emitted air above the stock top from ~14,591 mm —
+    //    measured off the shipped `wanaka200_2_Setup_2___front.nc`, five rungs
+    //    of 231 fed moves each with ZERO lateral cutting — down to ~27 mm.
+    // 2. The survivor was structural, not a regression: `emit_peck_plunge`
+    //    was rooted at `params.safe_z` and knew nothing about the stock top,
+    //    so while `SAFE_Z_CLEARANCE_MM` (5.0) exceeds `depth_per_pass` the
+    //    first rung always landed above the stock — here 10.0 - 4.2 = 5.8
+    //    against a top of 5.0. This assertion sat at `<= 1` level and
+    //    `<= 40 mm` for exactly as long as that was true, and said so.
+    // 3. G-PECKROOT roots the ladder at `stock_top_z + ENTRY_CLEARANCE`,
+    //    reached by a RAPID, reusing the same guard `dressup::emit_ramp` and
+    //    `emit_helix` already apply to the identical problem. Here that is
+    //    5.0 + 2.0 = 7.0, and the first fed rung lands at 7.0 - 4.2 = 2.8 —
+    //    below the stock top, i.e. in material where a peck belongs.
     //
-    // Asserting `<= 1` rather than `== 0` keeps this green while still
-    // failing the moment the residual GROWS — which is what a second
-    // safe-Z-frame regression would look like.
-    const KNOWN_RESIDUAL_LEVELS: usize = 1;
-    const KNOWN_RESIDUAL_FED_MM: f64 = 40.0;
+    // **The two bars now measure different things, and only one is zero.**
+    // Measured 2026-08-22 immediately after the fix:
+    //
+    //   wasted levels: 1 -> 0        fed mm above the plane: ~27 -> 26.282
+    //
+    // That is not a disappointing result, it is the two quantities coming
+    // apart, and reading them as one is how this would get "fixed" again by
+    // someone chasing the second number:
+    //
+    // * **Levels** counts rungs whose whole descent sits above the stock —
+    //   pure wasted motion, removing nothing. That is now genuinely **zero**,
+    //   and it is the sharp bar. A regression puts a rung back in the air.
+    // * **Fed mm above the plane** also counts the *upper portion of a move
+    //   that crosses the plane*. The first rung now starts at the guard
+    //   (5.0 + 2.0 = 7.0) and ends at 2.8, so 2 mm of it is above the top and
+    //   the rest is in material. Summed over this fixture's ~13 entries that
+    //   is the 26.282 mm below — i.e. **it is the guard band, once per entry,
+    //   and nothing else**.
+    //
+    // Driving that second number to zero means feeding from exactly the
+    // nominal stock top, which deletes the over-thickness allowance
+    // `dressup::emit_ramp` and `emit_helix` both keep for the same reason:
+    // `stock_top_z` is nominal and real timber is proud of it. That is a
+    // machine-safety trade, not a tidy-up, and it has not been made.
+    //
+    // Also legitimate and not yet seen: a `depth_per_pass` finer than
+    // `ENTRY_CLEARANCE` (2 mm) would put a whole rung inside the guard band
+    // and push `levels` back to 1. No shipped default does that (wanaka is
+    // 4.2). If one ever does, this failing is the correct signal to
+    // re-derive the bar, not to widen it.
+    const KNOWN_RESIDUAL_LEVELS: usize = 0;
+    /// The guard band, once per entry — see the note above. Sized just over
+    /// the measured 26.282 mm so ordinary planner jitter in the entry count
+    /// does not flap the gate, and far below the ~27 mm the pre-G-PECKROOT
+    /// wasted rung cost on top of it.
+    const KNOWN_RESIDUAL_FED_MM: f64 = 27.0;
     assert!(
-        wasted.len() <= KNOWN_RESIDUAL_LEVELS
+        wasted.len() == KNOWN_RESIDUAL_LEVELS
             && profile.fed_len_above_plane_mm <= KNOWN_RESIDUAL_FED_MM,
         "G-AIRLADDER: {} distinct cutting Z level(s) lie ABOVE the world stock \
          top ({WORLD_STOCK_TOP_MM:+.3} mm). Every move at these levels is \
@@ -389,8 +425,10 @@ fn wasted_fed_cutting_levels_above_the_world_stock_top() {
          `start_z = params.safe_z`), not the Z-level plan (`path.rs:448`, which \
          starts at `stock_top_z - depth_per_pass` and therefore cannot put a \
          level above the stock). It steps down by depth_per_pass from the \
-         RETRACT PLANE, so its topmost rungs sit above the stock whenever \
-         safe_z > stock top + depth_per_pass. Levels reporting 0 lateral moves \
+         stock guard `stock_top_z + ENTRY_CLEARANCE` (G-PECKROOT), reached by \
+         a rapid — so a fed level above the stock top means either that guard \
+         regressed or `depth_per_pass` is finer than ENTRY_CLEARANCE. Levels \
+         reporting 0 lateral moves \
          are pure vertical descents and remove nothing. Expected at most {KNOWN_RESIDUAL_LEVELS} level and {KNOWN_RESIDUAL_FED_MM:.1} mm.",
         wasted.len(),
         render_levels(&wasted),

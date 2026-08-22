@@ -72,8 +72,17 @@ pub struct TriDexelStock {
     /// How the **non-metric playback** replay schedules its stamp kernel
     /// (SIM w6). A schedule only — both shapes produce bit-identical grids, and
     /// that matters more here than on the metric side: this is the kernel that
-    /// builds `global_stock`, which `StockSource::FromRemainingStock`
-    /// generation reads. Defaults to [`PlaybackDispatch::Auto`].
+    /// builds `global_stock`.
+    ///
+    /// **Corrected 2026-08-22:** this sentence used to end "which
+    /// `StockSource::FromRemainingStock` generation reads". It does not.
+    /// Rest generation reads `SimulationResult::prior_stocks`, and those
+    /// snapshots are clones of the **per-setup local** `group_stock`
+    /// (`compute/simulate.rs:917`, consumed at `session/compute.rs:1434`).
+    /// `global_stock` feeds checkpoints, playback and the S5 prefix memo, and
+    /// nothing else. The old wording made this schedule look like it had
+    /// generation consequences it does not have — and it was cited as
+    /// evidence in a defect write-up before anyone checked it. Defaults to [`PlaybackDispatch::Auto`].
     pub playback_dispatch: PlaybackDispatch,
     /// What the last non-metric replay's dispatcher did. Diagnostics for the
     /// w6 non-vacuity sentries; reset at the start of every
@@ -465,9 +474,18 @@ impl TriDexelStock {
     ///   the clear is a no-op and no hole appears at all. This is the visible
     ///   face — it is how the defect was found, by watching the viewport.
     /// * A blind hole maps to a `bottom_z` still inside the blank, so a
-    ///   plausible-looking hole appears — in the wrong half of the stock. The
-    ///   global stock is what `StockSource::FromRemainingStock` reads, so a
-    ///   rest pass planned against it is planning against fiction.
+    ///   plausible-looking hole appears — in the wrong half of the stock.
+    ///
+    /// **Scope, corrected 2026-08-22.** The first version of this note said
+    /// the global stock is what `StockSource::FromRemainingStock` reads and
+    /// that a rest pass would therefore plan against fiction. **That is
+    /// wrong.** Rest generation reads `prior_stocks`, which are clones of the
+    /// per-setup **local** `group_stock` — and the local stock's drill removal
+    /// was always correct, because setup-local Z is always the tool axis.
+    /// G-DRILLFLIP was a checkpoint / playback / screenshot defect: what the
+    /// operator sees, not what the next operation plans against. The claim was
+    /// inherited from a stale comment on `playback_dispatch` above, repeated
+    /// without checking, and both are now fixed.
     ///
     /// So the axis has to be supplied by whoever knows the frame.
     /// [`StockCutDirection::cuts_from_high_side`] is exactly that fact and

@@ -139,7 +139,7 @@ pub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {
         })
 }
 
-fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64) {
+pub(crate) fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64) {
     if (scale - 1.0).abs() < 1e-9 {
         return;
     }
@@ -159,7 +159,10 @@ fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64)
     }
 }
 
-fn apply_uniform_scale_targets(targets: &mut [crate::dxf_input::DrillTarget], scale: f64) {
+pub(crate) fn apply_uniform_scale_targets(
+    targets: &mut [crate::dxf_input::DrillTarget],
+    scale: f64,
+) {
     if (scale - 1.0).abs() < 1e-9 {
         return;
     }
