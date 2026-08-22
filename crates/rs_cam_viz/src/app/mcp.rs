@@ -2862,13 +2862,22 @@ impl super::RsCamApp {
                 .wizard_mut()
                 .tool_change_override = Some(mode);
         }
-        // Route through the viz-side exporter so the gate sees viz worker
-        // results (`gui.toolpath_rt[id].result`) and the viz cut trace
-        // (`state.simulation.results.cut_trace`). The core-side
-        // `session.export_gcode_with_policy` reads `session.results` and
-        // `session.simulation`, which the GUI/MCP path never populates —
-        // that's the root cause of the 0-byte file + spurious
-        // SimulationRequired gate (UX_PAIN_POINTS_2026-05-11.md, Roadmap A).
+        // Route through the viz-side exporter so the gate sees the viz cut
+        // trace (`state.simulation.results.cut_trace`) — the async sim
+        // worker leaves its trace there, not on `session.simulation`, so
+        // the core-side `session.export_gcode_with_policy` would refuse
+        // with a spurious SimulationRequired (UX_PAIN_POINTS_2026-05-11.md,
+        // Roadmap A).
+        //
+        // The trace is the ONLY reason left. This comment used to also
+        // claim `session.results` "the GUI/MCP path never populates" —
+        // stale since the F1_RCA sync in
+        // `controller/events/compute.rs::drain_compute_results`, and while
+        // it stood it was the root of G-MODEXPORT: the viz exporter read
+        // the worker's pre-modulation IR out of `gui.toolpath_rt` while the
+        // gate graded the modulated trace. `io::export::emitted_toolpaths`
+        // now reads `session.results` — the store the feed-modulation
+        // post-pass writes — so bytes and verdict describe one schedule.
         let state = self.controller.state();
         let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
             accept_unmodeled: accept_unmodeled_tool_load,

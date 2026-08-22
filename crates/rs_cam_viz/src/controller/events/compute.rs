@@ -1022,7 +1022,14 @@ impl<B: ComputeBackend> AppController<B> {
                         // tool-load report populate — and swaps the modulated
                         // toolpaths into `session.results`, which G-code export
                         // reads, so exported feeds are the optimized per-move
-                        // schedule. Default-on in the GUI. Take the trace out
+                        // schedule. That last clause was aspirational until
+                        // 2026-08-22: the viz exporter read the worker's
+                        // pre-modulation IR out of `gui.toolpath_rt` instead
+                        // (G-MODEXPORT). `io::export::emitted_toolpaths` now
+                        // resolves from `session.results`, so the claim holds
+                        // on the GUI/MCP path as well as the CLI one — sentried
+                        // by `tests/modulated_feeds_reach_gcode_g_modexport.rs`.
+                        // Default-on in the GUI. Take the trace out
                         // and put it back so the session (results) and the
                         // viz-side cut_trace are borrowed disjointly.
                         {
