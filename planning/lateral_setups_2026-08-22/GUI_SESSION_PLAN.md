@@ -10,7 +10,15 @@ Context: the lateral-setups campaign closed at `fccd5968` (see
 unreachable, or blocked-with-evidence). Everything below needs a LIVE GUI and
 is ordered by value.
 
-## 1. Ø1 tapered-ball chipload `Within` — the open verdict question
+## 1. Ø1 tapered-ball chipload `Within` — ANSWERED 2026-08-22 (and it found G-MODEXPORT)
+
+> **DONE.** Population real (278k samples), band real (envelope resolver
+> extrapolates the Amana 3.175 tapered row to the 1.47 mm contact diameter),
+> and the verdict is `Within` because the F-039 modulator clamps ALL moves
+> to band max (median −85.2%). But the exported G-code carries commanded
+> F3000 — the modulated toolpaths live in `session.results`, every viz/MCP
+> export reads `gui.toolpath_rt`. Filed as **G-MODEXPORT** in
+> `planning/airrun_2026-08-19/RUN_LOG.md`. Do NOT cut at F3000 on that tool.
 
 F3000 on the Ø1 tapered ball reads chipload `Within` and must NOT be trusted
 as clearance to cut. Hypothesis (UNTESTED): the gate reads ACHIEVED advance
@@ -30,7 +38,12 @@ Probe the code path you are accusing: the gate is the ENVELOPE resolver, the
 pre-sim Suggest is the RECIPE resolver — two wrong diagnoses in one day came
 from conflating them (memory: feedback_probe_the_same_code_path).
 
-## 2. First human eyes on a lateral setup — nobody has ever SEEN one
+## 2. First human eyes on a lateral setup — DONE 2026-08-22
+
+> Cut visible + geometry measured correct on both routes; both refusals
+> legible in the GUI. Two log-only findings: G-HOLESHADE (peg illusion),
+> G-FRONTNAME (Front machines +Y; composite labels +Y "REAR" — needs an
+> operator ruling). Details + screenshots: RUN_LOG 2026-08-22 evening block.
 
 The scrub fix is sentried on Z-grid solid volume; no human has watched a
 Front-setup replay. Build a throwaway lateral demo via MCP:
@@ -50,7 +63,10 @@ Front-setup replay. Build a throwaway lateral demo via MCP:
   naming the workaround — check they surface legibly in the GUI (notification
   + failed-submit), not just in a log.
 
-## 3. Composite renderer eyeball (TD3 leftover)
+## 3. Composite renderer eyeball (TD3 leftover) — PASS 2026-08-22
+
+> Through-L chirality fixture, all six panels graded against emitted-motion
+> ground truth; TOP and BOTTOM pinned exactly. RUN_LOG has the evidence.
 
 TD3 fixed EVERY panel of the 6-view composite being mirrored. It has had a
 partial line-by-line review only — one human look at the composite PNGs
