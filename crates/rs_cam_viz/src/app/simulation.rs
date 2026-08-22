@@ -65,6 +65,26 @@ impl RsCamApp {
     ///
     /// On forward playback this simulates the new moves since last frame.
     /// On backward scrub it resets from the nearest checkpoint heightmap.
+    ///
+    /// # Two frames, never mixed (G-LATERALSCRUB)
+    ///
+    /// Most setups replay into ONE stock in the zero-rooted stock-relative
+    /// global frame, which is what keeps an earlier setup's cuts on screen
+    /// while a later one replays. A **lateral** setup cannot: its tool axis is
+    /// a global X/Y dexel axis, and `dexel_stock_to_mesh` turns only the Z
+    /// grid into a closed solid — the side grids are appended as open surfaces
+    /// with no boolean, so the cut is drawn inside an intact block and
+    /// occluded by it. Such a group therefore replays into a **setup-local**
+    /// stock, exactly as `compute/simulate.rs` simulates `group_stock`, and
+    /// its mesh is mapped back with `local_to_global` exactly as the
+    /// checkpoint meshes are — which is what makes live scrub and the
+    /// checkpoint mesh finally agree on a lateral setup.
+    ///
+    /// The price, stated plainly: a lateral group's stock starts fresh at the
+    /// group boundary, so cuts made by *earlier* setups are not shown while it
+    /// replays. That is already true of every checkpoint mesh and of the
+    /// per-setup stock every metric and gate is computed on — the simulator
+    /// has no cross-setup material carry-over anywhere.
     // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
     #[allow(clippy::indexing_slicing)]
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
@@ -119,14 +139,51 @@ impl RsCamApp {
             return;
         }
 
-        // If moving backward, reset from nearest checkpoint.
-        // Checkpoints store global-frame stocks (stamped in parallel with per-setup
-        // simulation), so they're compatible with the global-frame playback toolpaths.
-        if target_move < live_move {
+        // Which playback entry owns `target_move`, and in what frame does its
+        // group replay? Everything below keys off this: the live stock belongs
+        // to exactly one group at a time, because two groups need not share a
+        // frame.
+        let Some(active) = self
+            .controller
+            .state()
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| active_playback_group(&r.playback_data, target_move))
+        else {
+            return;
+        };
+
+        // Reset when scrubbing backward, and also when the playhead has
+        // crossed into a different setup group — the stock in hand may be in
+        // the wrong frame for the new group entirely.
+        let live_group = self.controller.state().simulation.playback.live_stock_group;
+        if target_move < live_move || live_group != Some(active.group) {
+            // Resume from the nearest checkpoint whose stock is in the frame
+            // this group replays in. For a global-frame group that is any
+            // global checkpoint at or before the playhead (the pre-existing
+            // rule); for a setup-local group it must additionally be a
+            // checkpoint from THIS group, since a local stock carries only its
+            // own group's cuts.
             let boundaries = self.controller.state().simulation.boundaries();
             let mut best_cp: Option<usize> = None;
             for (i, b) in boundaries.iter().enumerate() {
-                if b.end_move <= target_move {
+                if b.end_move > target_move {
+                    continue;
+                }
+                let cp_is_local = self
+                    .controller
+                    .state()
+                    .simulation
+                    .checkpoints()
+                    .get(i)
+                    .is_some_and(|cp| cp.stock_local_to_global().is_some());
+                let usable = if active.frame.is_some() {
+                    cp_is_local && b.end_move > active.start_move
+                } else {
+                    !cp_is_local
+                };
+                if usable {
                     best_cp = Some(i);
                 }
             }
@@ -140,21 +197,23 @@ impl RsCamApp {
                     pb.live_sim_move = cp_end;
                 }
             } else {
-                // Before any checkpoint — reset to fresh stock (global frame)
-                let bbox = self
-                    .controller
-                    .state()
-                    .simulation
-                    .results
-                    .as_ref()
-                    .map(|r| r.stock_bbox)
-                    .unwrap_or_else(|| self.controller.state().session.stock_bbox());
+                // Before any usable checkpoint — reset to fresh stock in the
+                // group's own frame, at the point that frame starts carving.
                 let res = self.controller.state().simulation.resolution;
-                let fresh = TriDexelStock::from_bounds(&bbox, res);
+                let fresh = TriDexelStock::from_bounds(&active.stock_bbox, res);
                 let pb = &mut self.controller.state_mut().simulation.playback;
                 pb.live_stock = Some(fresh);
-                pb.live_sim_move = 0;
+                pb.live_sim_move = if active.frame.is_some() {
+                    active.start_move
+                } else {
+                    0
+                };
             }
+            self.controller
+                .state_mut()
+                .simulation
+                .playback
+                .live_stock_group = Some(active.group);
         }
 
         // Now simulate forward from live_sim_move to target_move
@@ -177,12 +236,29 @@ impl RsCamApp {
                 && let Some(results) = self.controller.state().simulation.results.as_ref()
             {
                 let mut global_offset = 0;
-                for (toolpath, tool, direction, drill_op) in &results.playback_data {
+                for pb_tp in &results.playback_data {
+                    let (toolpath, tool, direction, drill_op) = (
+                        &pb_tp.toolpath,
+                        &pb_tp.tool,
+                        &pb_tp.direction,
+                        &pb_tp.drill_op,
+                    );
                     let tp_moves = toolpath.moves.len();
                     let tp_start = global_offset;
                     let tp_end = global_offset + tp_moves;
 
-                    if tp_end > current_live && tp_start < target_move {
+                    // Never stamp an entry into a stock of a different frame.
+                    // A setup-local stock takes only its own group's entries;
+                    // the global stock takes only global-frame entries, which
+                    // is what skips lateral groups rather than carving them
+                    // into a side grid nothing renders (G-LATERALSCRUB).
+                    let stampable = if active.frame.is_some() {
+                        pb_tp.group == active.group
+                    } else {
+                        pb_tp.frame.is_none()
+                    };
+
+                    if stampable && tp_end > current_live && tp_start < target_move {
                         if let Some(drill_op_arc) = drill_op {
                             // Drill ops use analytical removal (DEXEL Step 3 PR1).
                             // `simulate_toolpath_range`'s degenerate-Z dexel
@@ -248,14 +324,21 @@ impl RsCamApp {
             let total_start = Instant::now();
             let mesh_start = Instant::now();
             let use_preview_mesh = self.controller.state().simulation.playback.playing;
-            let preview_direction = self
-                .controller
-                .state()
-                .simulation
-                .current_boundary()
-                .map_or(rs_cam_core::dexel_stock::StockCutDirection::FromTop, |b| {
-                    b.direction
-                });
+            // Which face of the live stock the tool enters from — which is a
+            // question about the stock's own frame, not about the setup. In a
+            // setup-local frame the tool always comes down local +Z, whatever
+            // face is up in the world.
+            let preview_direction = if active.frame.is_some() {
+                rs_cam_core::dexel_stock::StockCutDirection::FromTop
+            } else {
+                self.controller
+                    .state()
+                    .simulation
+                    .current_boundary()
+                    .map_or(rs_cam_core::dexel_stock::StockCutDirection::FromTop, |b| {
+                        b.direction
+                    })
+            };
             let mut mesh = if use_preview_mesh {
                 dexel_stock_to_entry_surface_mesh(stock, preview_direction)
             } else {
@@ -273,11 +356,19 @@ impl RsCamApp {
                 let completed: Vec<&rs_cam_core::drill_op::DrillOp> = results
                     .playback_data
                     .iter()
-                    .filter_map(|(tp, _t, _d, drill_op)| {
+                    .filter_map(|pb_tp| {
                         let tp_start = offset;
-                        offset += tp.moves.len();
-                        if tp_start < target_move {
-                            drill_op.as_deref()
+                        offset += pb_tp.toolpath.moves.len();
+                        // Same frame rule as the stamping loop above: a
+                        // cylinder is in its entry's frame, and the mesh is
+                        // still in the live stock's.
+                        let same_frame = if active.frame.is_some() {
+                            pb_tp.group == active.group
+                        } else {
+                            pb_tp.frame.is_none()
+                        };
+                        if same_frame && tp_start < target_move {
+                            pb_tp.drill_op.as_deref()
                         } else {
                             None
                         }
@@ -286,6 +377,19 @@ impl RsCamApp {
                 if !completed.is_empty() {
                     rs_cam_core::dexel_mesh::append_drill_cylinders(&mut mesh, &completed);
                 }
+            }
+
+            // A setup-local stock's mesh reaches the shared zero-rooted global
+            // frame by the SAME core helper the checkpoint meshes use — which
+            // is what makes the two routes agree instead of drifting
+            // (G-LATERALSCRUB). A global-frame stock is already there.
+            if active.frame.is_some() {
+                let stock_min = self.controller.state().session.stock_bbox().min;
+                mesh = rs_cam_core::compute::simulate::transform_stock_mesh_to_global(
+                    &mesh,
+                    &active.frame,
+                    stock_min,
+                );
             }
 
             // Transform mesh from global stock frame to the active setup's
@@ -522,6 +626,54 @@ impl RsCamApp {
                 .tool_gpu_move = Some(current);
         }
     }
+}
+
+/// The setup group the live playback stock must belong to at `move_idx`, and
+/// the frame it replays in.
+struct ActivePlaybackGroup {
+    group: usize,
+    /// First move index of the group — where a setup-local stock starts from
+    /// fresh, because a local stock carries only its own group's cuts.
+    start_move: usize,
+    /// `None` = the zero-rooted global playback frame; `Some(info)` = the
+    /// setup-local frame (lateral setups — see
+    /// [`crate::compute::worker::PlaybackToolpath::frame`]).
+    frame: Option<rs_cam_core::compute::SetupTransformInfo>,
+    /// Bounding box a fresh stock for this group is built from, in `frame`.
+    stock_bbox: rs_cam_core::geo::BoundingBox3,
+}
+
+/// Resolve `move_idx` to the group that owns it. A playhead parked at the very
+/// end of the timeline belongs to the last group, not to nothing.
+fn active_playback_group(
+    data: &[crate::compute::worker::PlaybackToolpath],
+    move_idx: usize,
+) -> Option<ActivePlaybackGroup> {
+    let mut offset = 0usize;
+    let mut last: Option<ActivePlaybackGroup> = None;
+    let mut group_start: Option<(usize, usize)> = None;
+    for entry in data {
+        let start = offset;
+        offset += entry.toolpath.moves.len();
+        let start_move = match group_start {
+            Some((g, s)) if g == entry.group => s,
+            _ => {
+                group_start = Some((entry.group, start));
+                start
+            }
+        };
+        let here = ActivePlaybackGroup {
+            group: entry.group,
+            start_move,
+            frame: entry.frame.clone(),
+            stock_bbox: entry.stock_bbox,
+        };
+        if move_idx < offset {
+            return Some(here);
+        }
+        last = Some(here);
+    }
+    last
 }
 
 fn clear_playback_tool(playback: &mut crate::state::simulation::SimulationPlayback) {

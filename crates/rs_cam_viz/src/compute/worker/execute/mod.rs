@@ -372,38 +372,80 @@ fn build_core_simulation_request(
 /// analytical removal during forward scrub rather than relying on
 /// `simulate_toolpath_range`'s degenerate-Z dexel stamping for plunge moves.
 fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> {
+    use super::PlaybackToolpath;
     use rs_cam_core::compute::simulate::{group_drill_op_to_global, group_toolpath_to_global};
 
+    use rs_cam_core::dexel_stock::StockCutDirection;
+
+    // The zero-rooted stock-relative frame the global playback stock lives in.
+    let global_bbox = rs_cam_core::geo::BoundingBox3 {
+        min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
+        max: rs_cam_core::geo::P3::new(
+            req.stock_bbox.max.x - req.stock_bbox.min.x,
+            req.stock_bbox.max.y - req.stock_bbox.min.y,
+            req.stock_bbox.max.z - req.stock_bbox.min.z,
+        ),
+    };
+
     let mut playback = Vec::new();
-    for group in &req.groups {
-        let playback_direction = group.local_to_global.as_ref().map_or(
-            rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-            |info| info.cut_direction(),
+    for (group_ordinal, group) in req.groups.iter().enumerate() {
+        let playback_direction = group
+            .local_to_global
+            .as_ref()
+            .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
+        // G-LATERALSCRUB. A group whose tool axis is a global X or Y dexel
+        // axis is replayed in its OWN frame instead: the global stock turns
+        // only its Z grid into a closed solid, so a lateral stamp there
+        // removes nothing an operator can see. The core simulator makes the
+        // matching call — same predicate, same consequence — and publishes
+        // that group's checkpoints with the local stock.
+        let lateral = !matches!(
+            playback_direction,
+            StockCutDirection::FromTop | StockCutDirection::FromBottom
         );
+
         for tp in &group.toolpaths {
-            // Frame-map through the SAME core helpers the global stock is
-            // stamped with, so live playback and the checkpoint stocks can't
-            // drift apart. Identity groups emit in world frame and are
-            // shifted by `-stock_bbox.min`; carrying a private copy of this
-            // mapping is how G-SIM-IDENTITY-FRAME got a second home.
-            let global_tp = Arc::new(group_toolpath_to_global(
-                &tp.annotated.toolpath,
-                &group.local_to_global,
-                req.stock_bbox.min,
-            ));
-            let global_drill_op = tp.drill_op.as_ref().map(|drill_op_arc| {
-                Arc::new(group_drill_op_to_global(
-                    drill_op_arc,
-                    &group.local_to_global,
-                    req.stock_bbox.min,
-                ))
-            });
-            playback.push((
-                global_tp,
-                tp.tool.clone(),
-                playback_direction,
-                global_drill_op,
-            ));
+            let entry = if lateral {
+                PlaybackToolpath {
+                    // Setup-local coordinates verbatim — which is what the
+                    // group's toolpaths already are — stamped down local Z,
+                    // exactly as `compute/simulate.rs` stamps `group_stock`.
+                    toolpath: Arc::new(tp.annotated.toolpath.clone()),
+                    tool: tp.tool.clone(),
+                    direction: StockCutDirection::FromTop,
+                    drill_op: tp.drill_op.clone(),
+                    group: group_ordinal,
+                    frame: group.local_to_global.clone(),
+                    stock_bbox: group.local_stock_bbox,
+                }
+            } else {
+                // Frame-map through the SAME core helpers the global stock is
+                // stamped with, so live playback and the checkpoint stocks
+                // can't drift apart. Identity groups emit in world frame and
+                // are shifted by `-stock_bbox.min`; carrying a private copy
+                // of this mapping is how G-SIM-IDENTITY-FRAME got a second
+                // home.
+                PlaybackToolpath {
+                    toolpath: Arc::new(group_toolpath_to_global(
+                        &tp.annotated.toolpath,
+                        &group.local_to_global,
+                        req.stock_bbox.min,
+                    )),
+                    tool: tp.tool.clone(),
+                    direction: playback_direction,
+                    drill_op: tp.drill_op.as_ref().map(|drill_op_arc| {
+                        Arc::new(group_drill_op_to_global(
+                            drill_op_arc,
+                            &group.local_to_global,
+                            req.stock_bbox.min,
+                        ))
+                    }),
+                    group: group_ordinal,
+                    frame: None,
+                    stock_bbox: global_bbox,
+                }
+            };
+            playback.push(entry);
         }
     }
     playback

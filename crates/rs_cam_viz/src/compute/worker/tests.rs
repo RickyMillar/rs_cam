@@ -2247,7 +2247,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
     };
 
     assert_eq!(result.playback_data.len(), 1);
-    let (_tp, _tool, _direction, replay_drill_op) = &result.playback_data[0];
+    let replay_drill_op = &result.playback_data[0].drill_op;
     let replay_drill_op = replay_drill_op
         .as_ref()
         .expect("drill TP must carry a drill_op in playback_data so live-sim can apply it");
@@ -2348,7 +2348,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         panic!("expected successful simulation");
     };
 
-    let (_tp, _tool, _direction, replay_drill_op) = &result.playback_data[0];
+    let replay_drill_op = &result.playback_data[0].drill_op;
     let replay_drill_op = replay_drill_op
         .as_ref()
         .expect("drill TP must carry a drill_op");
@@ -2365,6 +2365,126 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         (h.bottom_z - 6.0).abs() < 1e-6,
         "global bottom_z after FaceUp::Bottom flip should be 6, got {}",
         h.bottom_z
+    );
+}
+
+// G-LATERALSCRUB. A lateral setup replays in its OWN frame, not the global
+// one: the global playback stock turns only its Z grid into a closed solid,
+// so a lateral stamp there lands in a side grid that is appended as an open
+// surface inside an intact block and removes nothing anyone can see.
+//
+// The two halves asserted here are the contract the viewport depends on —
+// the playback entry says which frame it is in, and the checkpoint the
+// viewport resets to is in that same frame and carries the cut.
+#[test]
+fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut() {
+    use rs_cam_core::dexel_stock::StockCutDirection;
+
+    // Stock 20 x 10 x 8; `FaceUp::Front` maps (w, d, h) -> (w, h, d), so the
+    // work plane is 20 by 8 and the tool axis runs the 10 mm depth.
+    let stock_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(20.0, 10.0, 8.0),
+    };
+    let local_bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(20.0, 8.0, 10.0),
+    };
+
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    // A groove in the Front work plane, 2 mm down from the lateral top (10).
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(5.0, 4.0, 12.0));
+    tp.feed_to(P3::new(5.0, 4.0, 8.0), 300.0);
+    tp.feed_to(P3::new(15.0, 4.0, 8.0), 600.0);
+    tp.rapid_to(P3::new(15.0, 4.0, 12.0));
+
+    let request = SimulationRequest {
+        groups: vec![SetupSimGroup {
+            toolpaths: vec![SetupSimToolpath {
+                id: ToolpathId(11),
+                name: "Front groove".to_owned(),
+                annotated: Arc::new(rs_cam_core::toolpath_spans::AnnotatedToolpath::new(tp)),
+                tool,
+                semantic_trace: None,
+                spindle_rpm: None,
+                metrics_not_applicable: false,
+                drill_op: None,
+                operation_config_hash: 0,
+            }],
+            local_stock_bbox: local_bbox,
+            local_to_global: Some(SetupTransformInfo {
+                face_up: crate::state::job::FaceUp::Front,
+                z_rotation: crate::state::job::ZRotation::Deg0,
+                stock_x: 20.0,
+                stock_y: 10.0,
+                stock_z: 8.0,
+                ..Default::default()
+            }),
+            phantom_prior_stock: None,
+        }],
+        stock_bbox,
+        stock_top_z: 8.0,
+        resolution: 0.5,
+        metric_options: rs_cam_core::simulation_cut::SimulationMetricOptions::default(),
+        spindle_rpm: 18_000,
+        rapid_feed_mm_min: 5_000.0,
+        model_mesh: None,
+        kinematics: None,
+        use_predicted_feed_in_gates: false,
+        max_feed_mm_min: 5_000.0,
+        memoize_prefix: false,
+    };
+
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(request);
+
+    let msg = wait_for(&mut backend, Duration::from_secs(30), |msg| {
+        matches!(msg, ComputeMessage::Simulation(Ok(_)))
+    })
+    .expect("simulation result");
+    let ComputeMessage::Simulation(Ok(result)) = msg else {
+        panic!("expected successful simulation");
+    };
+
+    let entry = &result.playback_data[0];
+    assert!(
+        entry.frame.is_some(),
+        "a lateral setup's playback entry must declare the setup-local frame; \
+         `None` means it would be stamped into the global stock, where the cut \
+         cannot be rendered at all"
+    );
+    assert_eq!(
+        entry.direction,
+        StockCutDirection::FromTop,
+        "setup-local Z is always the tool axis, so the local replay stamps FromTop"
+    );
+    assert_eq!(
+        entry.stock_bbox.max.z, local_bbox.max.z,
+        "the entry's stock bbox must be the LOCAL one (lateral top 10), not the \
+         global stock height"
+    );
+
+    let cp = result.checkpoints.last().expect("one checkpoint");
+    assert!(
+        cp.stock_local_to_global.is_some(),
+        "a lateral setup's checkpoint must publish its local stock, since that is \
+         the only object that carries the cut"
+    );
+    // The cut must be IN it: rays under the groove have lost material.
+    let grid = &cp.stock.z_grid;
+    let (row, col) = grid
+        .world_to_cell(10.0, 4.0)
+        .expect("groove midpoint is inside the local grid");
+    let top = grid
+        .top_z_at(row, col)
+        .expect("material remains below the cut");
+    assert!(
+        f64::from(top) < local_bbox.max.z - 1.0,
+        "G-LATERALSCRUB: the lateral groove did not reach the checkpoint stock's \
+         solid — top_z at the groove midpoint is {top}, still at the uncut lateral \
+         top {}",
+        local_bbox.max.z
     );
 }
 
