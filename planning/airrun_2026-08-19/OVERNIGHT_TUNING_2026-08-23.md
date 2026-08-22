@@ -59,3 +59,49 @@ Lessons the scoreboard pins:
 - Adaptive stepover alone loses to the chipload ceiling (E4); the optimizer's
   joint DPP+stepover+RPM+feed move wins where any single dial fails.
 
+
+## Morning A/B (operator asked): unified finish vs the tuned drop_cutter — 2026-08-23
+
+Question: "unified finish instead of a pencil, and a rougher first finish?"
+
+**Answer, measured**: unified replacing the DROP_CUTTER (pencil kept) wins
+modestly; unified replacing the PENCIL was not tested because the pencil is
+rest-targeted and unified is slope-targeted — on this terrain the steep band
+is far larger than the actual leftover, and the pencil's cost is already
+down 4.7×. "Rougher first finish" with the same tool is a wash (work moves
+between passes; total path for the final quality is conserved).
+
+| finish strategy | total | finish op | pencil after | gates |
+|---|---|---|---|---|
+| drop_cutter 0.6 (E5 candidate) | 18780s (5.22h) | 6027s | 14.2km cut | 8/8 Within |
+| unified 0.6/0.3/sc0.1 (bottom_z FIXED) | **17697s (4.92h)** | ~7000s incl. waterline | 12.0km cut | 8/8 Within |
+
+Why unified wins now (different reason than the airrun's comparison): at
+0.6-stepover the drop_cutter is no longer accel-bound, but unified matches a
+DIFFERENT vendor row (`amana-tapered-hardwood-scallop-3175-2f`, semi_finish,
+band max 0.0247 vs parallel row's 0.0201) → ~23% higher clamped feed, plus
+banding path savings, minus the waterline band it must now actually cut.
+
+**Two findings out of this A/B:**
+
+- **G-UNIFIEDCRASH**: unified_finish generation panics ("index out of
+  bounds: the len is 0 but the index is 1", caught by the worker) at
+  scallop_height 0.03 + z_step 0.6 (raster 0.6); identical input generates
+  fine at scallop 0.1 + z_step 0.3. Param isolation not yet done. Repro
+  TOMLs in the session scratchpad.
+- **G-UNIFIEDBOTTOMZ**: with heights AUTO, the resolved bottom_z = 7.0 (the
+  stock TOP in the emission frame) clips the VerySteep waterline band's Z
+  range to nothing — the band emits ZERO cutting, silently but for the
+  `unmachined_band` report (2,681.5 mm², the whole band). The narration
+  names the fix ("pin bottom_z"), which worked (bottom_z −3 → band cuts,
+  unmachined none). **This also invalidates the airrun's unified arm**: its
+  byte-identical 2,681.5 mm² means THAT unified never cut its steep band
+  either — its runtime was underpriced and its comparison to drop_cutter
+  was apples-to-broken. Auto-bottom_z resolving to the stock top for a
+  finish op that must ladder below it looks like a real heights-resolution
+  defect, not operator error.
+
+Files: `wanaka200_fast_unified.toml` + `~/Downloads/wanaka200/
+wanaka200_fast_unified_*.nc` (verified M30-complete, modulated F-words).
+Three programs now on disk: conservative 13.2h, drop_cutter 5.22h,
+unified 4.92h.
