@@ -21,4 +21,5 @@ Baseline params (from wanaka200.toml as committed 90418330):
 
 | run | change (one var) | total s | Δ vs base | finish s | roughs s | collisions | notes |
 |---|---|---|---|---|---|---|---|
-| E0 | baseline (as-committed) | 47412 (13.2h) | — | tbd | tbd | 0 | gates 8/8 Within |
+| E0 | baseline (as-committed) | 47412 (13.2h) | — | 12143 | 11133 | 0 | gates 8/8 Within; PENCIL = 23306s (49%!), of which 21366s ENTRY intent — fed descents at plunge 135 |
+| E1 | pencil hookup_distance 5→15 + plunge 135→150 (cap: tapered_ball_plunge 150 guard REFUSED 400) | 31282 (8.7h) | **−34%** | 12143 | 11133 | 0 | pencil 23306→7175s; entry 21366→5597s; valley CUTTING intact (300→292s); crosses-standing 19.1%→15.8%; links +232s only |
