@@ -61,7 +61,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{ProfileConfig, ProfileSide};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::MoveType;
@@ -238,6 +238,12 @@ fn flip_preserves_the_ccw_winding_convention() {
             .setup_transform_info(face_up, ZRotation::Deg0)
             .apply_to_polygons(&[with_hole.clone()]);
         assert!(
+            out[0].closed,
+            "{face_up:?}: the closed flag must survive the transform in this \
+             direction too — an exterior silently turned open would skip the \
+             re-wind below entirely"
+        );
+        assert!(
             out[0].has_correct_winding(),
             "{face_up:?}: apply_to_polygons returned exterior signed area \
              {:.3}, holes {:?} — the offset sign downstream is defined \
@@ -258,37 +264,80 @@ fn flip_preserves_the_ccw_winding_convention() {
 /// re-wind must not touch it. Reversing a river would machine it backwards,
 /// which is the failure the `closed` flag was already being preserved to
 /// avoid (see `apply_to_polygons`' open/closed note).
+///
+/// # The fixture was vacuous until G-POLYTRANSFORM-DUP (2026-08-22)
+///
+/// `ensure_winding` scores the ring it is handed, which here is the ring
+/// **after** the mirror — and the mirror flips the sign. The original fixture
+/// was authored CW and its comment reasoned from that, but the `FaceUp::Bottom`
+/// map sent it out at `+400` mm², i.e. CCW, which `ensure_winding` leaves
+/// alone. So the test passed either way and pinned nothing: the viz crate's
+/// (now deleted) copy of `apply_to_polygons` re-wound open paths
+/// unconditionally and no sentry anywhere noticed. The order is now chosen so
+/// the *transformed* ring is CW, and [`OPEN_PATH_MIRRORED`] states the answer
+/// as literal coordinates rather than re-deriving it from `world_to_local`,
+/// which would agree with a reversal that moved every point consistently.
 #[test]
 fn flip_leaves_open_path_direction_alone() {
     let mut session = ProjectSession::new_empty();
     session.set_stock_config(stock_under(STOCK_HALF, STOCK_HEIGHT));
 
-    // Wound CW as a closed ring would be scored, so a re-wind would visibly
-    // reverse it.
+    // Authored CCW so that the Bottom mirror (y -> stock_y - y) makes the
+    // transformed ring CW — the one case where a re-wind is not a no-op.
     let river = Polygon2::open_path(vec![
-        P2::new(-10.0, -10.0),
-        P2::new(-10.0, 10.0),
-        P2::new(10.0, 10.0),
         P2::new(10.0, -10.0),
+        P2::new(10.0, 10.0),
+        P2::new(-10.0, 10.0),
+        P2::new(-10.0, -10.0),
     ]);
 
     let info = session.setup_transform_info(FaceUp::Bottom, ZRotation::Deg0);
     let out = info.apply_to_polygons(std::slice::from_ref(&river));
 
+    // Precondition on the FIXTURE, scored on the expected constant rather
+    // than on the output — scoring the output would read the ring after any
+    // re-wind had already flipped its sign, which is the same circularity
+    // that made this test vacuous in the first place. If the mirrored ring
+    // were CCW, `ensure_winding` would be a no-op and the assertions below
+    // would pass against a broken transform.
+    let expected_ring = Polygon2::new(
+        OPEN_PATH_MIRRORED
+            .iter()
+            .map(|(x, y)| P2::new(*x, *y))
+            .collect(),
+    );
+    assert!(
+        expected_ring.signed_area() < 0.0,
+        "fixture precondition: the mirrored ring scores {:.1} mm², but the \
+         re-wind this test guards against only fires on a NEGATIVE area — a \
+         positive one makes the assertions below vacuous",
+        expected_ring.signed_area()
+    );
+
     assert!(
         !out[0].closed,
         "the open/closed flag must survive the transform"
     );
-    for (i, src) in river.exterior.iter().enumerate() {
-        let expect = info.world_to_local(P3::new(src.x, src.y, 0.0));
+    assert_eq!(
+        out[0].exterior.len(),
+        OPEN_PATH_MIRRORED.len(),
+        "the transform must neither add nor drop vertices"
+    );
+    for (i, (got, (ex, ey))) in out[0].exterior.iter().zip(OPEN_PATH_MIRRORED).enumerate() {
         assert!(
-            (out[0].exterior[i].x - expect.x).abs() < EPS
-                && (out[0].exterior[i].y - expect.y).abs() < EPS,
-            "open path vertex {i} moved to {:?}, expected {:?} — the point \
-             order of an open path is its machining direction and must not be \
-             re-wound",
-            out[0].exterior[i],
-            expect
+            (got.x - ex).abs() < EPS && (got.y - ey).abs() < EPS,
+            "open path vertex {i} came back at {got:?}, expected \
+             ({ex}, {ey}) — the mirrored coordinates in the SAME order. The \
+             point order of an open path is its machining direction and must \
+             not be re-wound; a reversal shows up here as the sequence read \
+             back to front."
         );
     }
 }
+
+/// [`flip_leaves_open_path_direction_alone`]'s river through the
+/// `FaceUp::Bottom` transform, stated rather than derived: `stock_under`
+/// puts the stock at origin `(-27, -27)` with `y = 54`, so the map is
+/// `(x, y) -> (x + 27, 54 - (y + 27))`. Same order as authored.
+const OPEN_PATH_MIRRORED: [(f64, f64); 4] =
+    [(37.0, 37.0), (37.0, 17.0), (17.0, 17.0), (17.0, 37.0)];

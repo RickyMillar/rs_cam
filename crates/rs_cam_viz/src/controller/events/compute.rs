@@ -320,6 +320,11 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         if let Some(transform_setup) = transform_setup.as_ref() {
+            // One descriptor for both geometry kinds. The polygon transform is
+            // core's `apply_to_polygons` — the viz crate used to carry its own
+            // copy which re-wound OPEN paths too, reversing a river's
+            // machining direction on any mirroring setup (G-POLYTRANSFORM-DUP).
+            let info = transform_setup.transform_info(&stock_snapshot);
             if let Some(raw_mesh) = mesh.as_ref() {
                 mesh = Some(Arc::new(crate::state::job::transform_mesh(
                     raw_mesh,
@@ -328,17 +333,9 @@ impl<B: ComputeBackend> AppController<B> {
                 )));
             }
             if let Some(raw_polygons) = polygons.as_ref() {
-                polygons = Some(Arc::new(crate::state::job::transform_polygons(
-                    raw_polygons,
-                    transform_setup,
-                    &stock_snapshot,
-                )));
+                polygons = Some(Arc::new(info.apply_to_polygons(raw_polygons)));
             }
-            keep_out_footprints = crate::state::job::transform_polygons(
-                &keep_out_footprints,
-                transform_setup,
-                &stock_snapshot,
-            );
+            keep_out_footprints = info.apply_to_polygons(&keep_out_footprints);
         }
 
         let is_3d = operation.is_3d();
