@@ -34,14 +34,20 @@ impl FaceUp {
     }
 
     /// Operator instruction for achieving this orientation from default (Top).
+    ///
+    /// These describe the **physical motion**, so they move with the
+    /// transform: the lateral four were swapped in pairs alongside
+    /// [`Self::transform_point`] under G-FRONTNAME. To bring the front (−Y)
+    /// face up you tip the blank *away* from you; the old text said
+    /// "forward", which was correct for the old arm that brought +Y up.
     pub fn flip_instruction(&self) -> &'static str {
         match self {
             FaceUp::Top => "No flip needed",
             FaceUp::Bottom => "Flip 180 deg on X axis",
-            FaceUp::Front => "Rotate 90 deg forward on X axis",
-            FaceUp::Back => "Rotate 90 deg backward on X axis",
-            FaceUp::Left => "Rotate 90 deg left on Y axis",
-            FaceUp::Right => "Rotate 90 deg right on Y axis",
+            FaceUp::Front => "Rotate 90 deg backward on X axis",
+            FaceUp::Back => "Rotate 90 deg forward on X axis",
+            FaceUp::Left => "Rotate 90 deg right on Y axis",
+            FaceUp::Right => "Rotate 90 deg left on Y axis",
         }
     }
 
@@ -68,31 +74,64 @@ impl FaceUp {
     }
 
     /// Transform a point from world coords to this orientation's local frame.
+    ///
+    /// # Which world face each name means — G-FRONTNAME
+    ///
+    /// The lateral four follow the **drafting convention**, ruled by the
+    /// operator on 2026-08-22 and pinned by
+    /// `tests/face_up_names_follow_drafting_convention_g_frontname.rs`:
+    ///
+    /// | variant | world face brought up |
+    /// |---|---|
+    /// | `Front` | −Y |
+    /// | `Back`  | +Y |
+    /// | `Left`  | −X |
+    /// | `Right` | +X |
+    ///
+    /// That is what every CAD package means by those words, and it is
+    /// already what the composite screenshot renderer's panel labels say
+    /// (front = the −Y eye, rear = +Y, left = −X, right = +X).
+    ///
+    /// Until 2026-08-22 all four arms picked the **opposite** face — a
+    /// `face_up = "front"` pocket landed on the +Y face and rendered in the
+    /// composite's REAR panels, which is how an operator caught it. The
+    /// four arms were swapped in pairs (Front↔Back, Left↔Right) in this
+    /// method and in [`Self::inverse_transform_point`] together;
+    /// [`Self::effective_stock`] is unaffected, because a pair shares its
+    /// axis permutation and differs only in which end of it is up.
     pub fn transform_point(&self, p: P3, stock_w: f64, stock_d: f64, stock_h: f64) -> P3 {
         match self {
             FaceUp::Top => p,
             FaceUp::Bottom => P3::new(p.x, stock_d - p.y, stock_h - p.z),
-            FaceUp::Front => P3::new(p.x, stock_h - p.z, p.y),
-            FaceUp::Back => P3::new(p.x, p.z, stock_d - p.y),
-            FaceUp::Left => P3::new(stock_h - p.z, p.y, p.x),
-            FaceUp::Right => P3::new(p.z, p.y, stock_w - p.x),
+            // Front: local +Z is world −Y, so the −Y face is up.
+            FaceUp::Front => P3::new(p.x, p.z, stock_d - p.y),
+            // Back: local +Z is world +Y.
+            FaceUp::Back => P3::new(p.x, stock_h - p.z, p.y),
+            // Left: local +Z is world −X, so the −X face is up.
+            FaceUp::Left => P3::new(p.z, p.y, stock_w - p.x),
+            // Right: local +Z is world +X.
+            FaceUp::Right => P3::new(stock_h - p.z, p.y, p.x),
         }
     }
 
     /// Inverse transform: from this orientation's local frame back to world coords.
+    ///
+    /// Each arm is the exact inverse of the same-named arm of
+    /// [`Self::transform_point`] — see the G-FRONTNAME note there for which
+    /// world face each name picks.
     pub fn inverse_transform_point(&self, p: P3, stock_w: f64, stock_d: f64, stock_h: f64) -> P3 {
         match self {
             FaceUp::Top => p,
             // Bottom: (x, D-y, H-z) is self-inverse
             FaceUp::Bottom => P3::new(p.x, stock_d - p.y, stock_h - p.z),
-            // Front forward: (x, H-z, y) -> inverse: (x, z, H-y)
-            FaceUp::Front => P3::new(p.x, p.z, stock_h - p.y),
-            // Back forward: (x, z, D-y) -> inverse: (x, D-z, y)
-            FaceUp::Back => P3::new(p.x, stock_d - p.z, p.y),
-            // Left forward: (H-z, y, x) -> inverse: (z, y, H-x)
-            FaceUp::Left => P3::new(p.z, p.y, stock_h - p.x),
-            // Right forward: (z, y, W-x) -> inverse: (W-z, y, x)
-            FaceUp::Right => P3::new(stock_w - p.z, p.y, p.x),
+            // Front forward: (x, z, D-y) -> inverse: (x, D-z, y)
+            FaceUp::Front => P3::new(p.x, stock_d - p.z, p.y),
+            // Back forward: (x, H-z, y) -> inverse: (x, z, H-y)
+            FaceUp::Back => P3::new(p.x, p.z, stock_h - p.y),
+            // Left forward: (z, y, W-x) -> inverse: (W-z, y, x)
+            FaceUp::Left => P3::new(stock_w - p.z, p.y, p.x),
+            // Right forward: (H-z, y, x) -> inverse: (z, y, H-x)
+            FaceUp::Right => P3::new(p.z, p.y, stock_h - p.x),
         }
     }
 
@@ -436,46 +475,60 @@ impl SetupTransformInfo {
     /// The direction the tool advances in, **in the stock-relative global
     /// frame**, for a setup in this orientation.
     ///
-    /// # The lateral arms are a negation, not an identity — G-LATERALSIGN
+    /// # Why this is an identity, and why that is not the same claim it was
     ///
-    /// Read the two names carefully, because they describe **opposite ends of
-    /// the same setup** and the obvious-looking identity mapping was wrong for
-    /// four years:
+    /// The two names still describe **opposite ends of the same setup**, and
+    /// that has not changed:
     ///
     /// * `FaceUp::Front` names *the face that is up* — pointing at the
     ///   spindle.
     /// * `StockCutDirection::FromFront` names *the side the tool arrives
     ///   from*, and its own doc pins that as the −Y side.
     ///
-    /// If the front face is up, the tool arrives from wherever that face now
-    /// points. `inverse_transform_point` sends local `+Z` to global `+Y` for
-    /// `FaceUp::Front`, so the tool arrives from **+Y**, which is `FromBack`.
-    /// Both lateral axes negate the same way.
+    /// The mapping between them is whatever `inverse_transform_point` makes
+    /// it, and nothing else. Today, with `FaceUp::Front` bringing the world
+    /// **−Y** face up, local `+Z` maps to global `−Y`: the tool arrives from
+    /// −Y, which is `FromFront`. All six arms come out as the identity.
     ///
-    /// The two Z faces *are* an identity (`Top → FromTop`,
-    /// `Bottom → FromBottom`), which is exactly why the mapping read as
-    /// obviously right: the only two cases anyone had a fixture for both
-    /// passed. Pinned now by
-    /// `tests/cut_direction_matches_transform_g_lateralsign.rs`, which does
-    /// not transcribe a table of six answers — it pushes points through
-    /// `inverse_transform_point` and derives the required sign, with the two
-    /// Z faces as the control on the derivation itself.
+    /// ## Two defects, in order — do not read this as "it was always fine"
     ///
-    /// Scope of the pre-fix damage: this feeds only the **global playback
-    /// stock**. Metrics, gates, collisions and checkpoint meshes are computed
-    /// on the per-setup `group_stock`, which `compute/simulate.rs` stamps with
-    /// a hardcoded `FromTop` because setup-local Z always is the tool axis. So
-    /// the wrong sign never moved a number an operator reads; it removed
-    /// material from the far face instead of the near one in the live-scrub
-    /// viewport.
+    /// **G-LATERALSIGN** (fixed first): the lateral arms *were* an identity,
+    /// written by assuming the names matched, against a transform for which
+    /// they did not. `FaceUp::Front` then brought the **+Y** face up, so the
+    /// tool arrived from +Y and the correct answer was `FromBack`. The arms
+    /// were changed to that negation, and it was right for the transform as
+    /// it stood.
+    ///
+    /// **G-FRONTNAME** (fixed second, 2026-08-22): the transform itself was
+    /// picking the wrong world face on all four laterals — `Front` machined
+    /// +Y, drafting's *back*, contradicting the composite renderer's panel
+    /// labels and every CAD package. The operator ruled that the drafting
+    /// convention wins, so [`FaceUp::transform_point`] swapped Front↔Back and
+    /// Left↔Right. That returned this mapping to the identity.
+    ///
+    /// So the identity is back, but it is not the identity that was here
+    /// before: that one was *assumed*, this one is *derived*.
+    /// `tests/cut_direction_matches_transform_g_lateralsign.rs` is what makes
+    /// the difference real — it transcribes no table, it pushes points
+    /// through `inverse_transform_point` and derives the required sign, with
+    /// the two Z faces as the control on the derivation. It went red between
+    /// the two halves of the G-FRONTNAME fix and is what dictated this table.
+    ///
+    /// Scope of the G-LATERALSIGN damage: this feeds only the **global
+    /// playback stock**. Metrics, gates, collisions and checkpoint meshes are
+    /// computed on the per-setup `group_stock`, which `compute/simulate.rs`
+    /// stamps with a hardcoded `FromTop` because setup-local Z always is the
+    /// tool axis. So the wrong sign never moved a number an operator reads;
+    /// it removed material from the far face instead of the near one in the
+    /// live-scrub viewport.
     pub fn cut_direction(&self) -> StockCutDirection {
         match self.face_up {
             FaceUp::Top => StockCutDirection::FromTop,
             FaceUp::Bottom => StockCutDirection::FromBottom,
-            FaceUp::Front => StockCutDirection::FromBack,
-            FaceUp::Back => StockCutDirection::FromFront,
-            FaceUp::Left => StockCutDirection::FromRight,
-            FaceUp::Right => StockCutDirection::FromLeft,
+            FaceUp::Front => StockCutDirection::FromFront,
+            FaceUp::Back => StockCutDirection::FromBack,
+            FaceUp::Left => StockCutDirection::FromLeft,
+            FaceUp::Right => StockCutDirection::FromRight,
         }
     }
 

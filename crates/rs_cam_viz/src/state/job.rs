@@ -1118,6 +1118,16 @@ mod tests {
     }
 
     /// Verify FaceUp::Front rotates Y and Z.
+    ///
+    /// Updated for **G-FRONTNAME** (2026-08-22). This test transcribed the
+    /// old arm `(x, H-z, y)`, whose local +Z is world +Y — i.e. it brought
+    /// the **+Y** face up, which drafting calls the *back*. The operator
+    /// ruled that the drafting convention wins, so `Front` now means the −Y
+    /// face and the arm is `(x, z, D-y)`. The world-face meaning itself is
+    /// pinned in core by
+    /// `tests/face_up_names_follow_drafting_convention_g_frontname.rs`; this
+    /// one stays as the viz-side check that `Setup::transform_point`
+    /// delegates to it rather than growing its own copy of the arithmetic.
     #[test]
     fn face_up_front_rotates_y_z() {
         let stock = stock_at_origin();
@@ -1127,7 +1137,7 @@ mod tests {
             ..Setup::new(SetupId(0), "Test".to_owned())
         };
 
-        // Front: new = (x, H-z, y) where H = stock.z
+        // Front: new = (x, z, D-y) where D = stock.y
         let point = P3::new(30.0, 20.0, 10.0);
         let transformed = setup.transform_point(point, &stock);
 
@@ -1136,14 +1146,14 @@ mod tests {
             "Front: x should be preserved"
         );
         assert!(
-            (transformed.y - (stock.z - 10.0)).abs() < 1e-10,
-            "Front: new_y should be H - old_z = {}, got {}",
-            stock.z - 10.0,
+            (transformed.y - 10.0).abs() < 1e-10,
+            "Front: new_y should be old_z = 10, got {}",
             transformed.y
         );
         assert!(
-            (transformed.z - 20.0).abs() < 1e-10,
-            "Front: new_z should be old_y = 20, got {}",
+            (transformed.z - (stock.y - 20.0)).abs() < 1e-10,
+            "Front: new_z should be D - old_y = {}, got {}",
+            stock.y - 20.0,
             transformed.z
         );
     }
