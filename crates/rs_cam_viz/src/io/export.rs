@@ -84,6 +84,37 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
 ///
 /// `indices` are indices into `session.toolpath_configs()`; the setup a
 /// toolpath belongs to (hence its emission frame) is resolved from there.
+///
+/// # Which store the program is built from — G-MODEXPORT (2026-08-22)
+///
+/// `session.results` is the owner. It is the store the F-036b/F-039
+/// adaptive feed-modulation post-pass writes
+/// ([`rs_cam_core::session::ProjectSession::modulate_simulation_trace`] →
+/// `apply_adaptive_feed_modulation` swaps the modulated
+/// `Arc<AnnotatedToolpath>` into it after every simulation, and into
+/// nothing else). Reading `gui.toolpath_rt[id].result` first — the compute
+/// worker's PRE-modulation output — is what made every GUI/MCP export
+/// carry commanded feeds while the export gate, which reads the
+/// (modulated) viz cut trace, graded a different schedule: measured live
+/// as a `Within` chipload verdict at ~443 mm/min over a file emitted at a
+/// flat F3000.
+///
+/// The viz store stays as a **fallback**, not as a second owner, because
+/// one divergence is genuinely reachable in the other direction:
+/// [`rs_cam_core::session::ProjectSession::invalidate_tool`] (a GUI tool
+/// param edit — `ui::properties::commit_tool_draft`) and
+/// `apply_toolpath_param_snapshot` drop `session.results` entries, while
+/// the viz store keeps its result so the UI can draw the stale toolpath.
+/// Nothing modulated exists for such a toolpath anyway, so falling back to
+/// the worker IR preserves the pre-fix behaviour exactly. Every other
+/// production write of `toolpath_rt[..].result` is immediately preceded by
+/// the F1_RCA sync into `session.results`
+/// (`controller/events/compute.rs::drain_compute_results`), so on the
+/// normal generate → simulate → export path the session slot is present
+/// and wins.
+///
+/// Sentried by `tests/modulated_feeds_reach_gcode_g_modexport.rs`, which
+/// asserts the emitted **F-words**, not the trace.
 fn emitted_toolpaths<'a>(
     session: &'a ProjectSession,
     gui: &'a GuiState,
@@ -95,11 +126,14 @@ fn emitted_toolpaths<'a>(
             if !tc.enabled {
                 return None;
             }
-            let result = gui.toolpath_rt.get(&tc.id)?.result.as_ref()?;
+            let toolpath = match session.get_result(idx) {
+                Some(result) => result.toolpath(),
+                None => gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath(),
+            };
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
             Some((
                 idx,
-                rs_cam_core::gcode::toolpath_in_export_datum(result.toolpath(), shift),
+                rs_cam_core::gcode::toolpath_in_export_datum(toolpath, shift),
             ))
         })
         .collect()
