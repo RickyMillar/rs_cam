@@ -170,3 +170,42 @@ measurability caveat at 0.15 mm cells. Front rough stands as-is.
 
 State: `wanaka200_fast2.toml` saved = unified candidate + pencil hookup 30
 (the C6 accept). 16,793 s pending re-verify after this rebuild.
+
+**C3a (R2.0 finish + Ø4 pencil ref) — NEGATIVE, and it answers the operator's
+tool-size question.** 20,162 s (+3,369 vs C6): the finish's −22% path was
+swamped by the pencil inheriting everything below R2.0's reach (11.1→26.9 km
+cutting, floats 5,418→12,297). **R1.5 is the right finishing ball for this
+terrain** — the operator's "3 mm ball" is exactly the R1.5's Ø3 tip. C3b/C3c
+closed by implication (bigger is worse; the cascade adds a tool change on top
+of the same coupling).
+
+**C4 (rivers/lakes linking) — INERT.** link_max_distance 30 +
+retract_strategy minimum on the project_curve produced a byte-identical
+toolpath — those dressups do not reach the op's intrinsic per-curve
+plunge/retract loop. "One move for rivers+lakes" is impossible (different
+cutters) and the real fix is an op-level curve-chaining feature (filed as a
+feature request, not a tune). Rivers' 549 s of entry+rapid overhead stands.
+
+**C7-finish (unified RPM 19k→22k, feed scaled) — ACCEPTED: −545 s.**
+Same chipload-ceiling lever as the back-rough optimizer win: the clamp is
+f/t × RPM × flutes, so RPM headroom converts directly to feed. Gate reads
+exactly the derated band max 0.0247 f/t (Within, 606k samples), deflection
+23 µm, power 0.7% of available.
+
+## Campaign final: 16,248 s = 4.51 h (from 13.2 h original: −66%)
+
+Candidate: `wanaka200_fast2.toml` = unified finish (bottom_z pinned, 22k RPM)
++ optimizer back rough + pencil hookup 30 / floor 0.10 / plunge 150 + keyed
+pins. Verdict OK, 0 collisions, 0 rapids, gates 8/8 Within (populations
+real), surface rendered clean, exports byte-verified
+(`wanaka200_fast2_*.nc`). Tool changes unchanged vs baseline.
+
+Findings ledger from the campaign: G-HEIGHTSTAB (browsing the Heights tab
+emptied an op — part-state-destroying), G-ENTRYEMPTY (helix entry → 0-move
+success), G-STICKYEMPTY (empty generation poisons the op until reload),
+plus the answered operator questions (heights UI, rivers merge, tool size)
+and two honest negatives (front-rough optimizer, C3a) with mechanisms.
+Remaining known headroom: pencil entries ~3.1 k s (blocked on the 150 mm/min
+flute-tip cap + rest-detector economics), front-rough air (structural),
+project_curve linking (feature request). Next stop below ~4.3 h is a code
+change, not a parameter.

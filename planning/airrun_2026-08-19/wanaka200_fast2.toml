@@ -559,7 +559,7 @@ dogbone_angle = 90.0
 lead_in_out = false
 lead_radius = 2.0
 link_moves = false
-link_max_distance = 10.0
+link_max_distance = 30.0
 link_feed_rate = 500.0
 arc_fitting = true
 arc_tolerance = 0.05
@@ -569,7 +569,7 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
+retract_strategy = "minimum"
 air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
@@ -825,9 +825,9 @@ raster_stepover = 0.6
 z_step = 0.3
 sampling = 0.5
 stock_to_leave = 0.0
-feed_rate = 1260.0
+feed_rate = 1460.0
 plunge_rate = 270.0
-spindle_rpm = 19000
+spindle_rpm = 22000
 pencil_claims = false
 min_rest_depth_mm = 0.02
 claims_reference = "auto"
@@ -884,16 +884,14 @@ offset = 0.0
 enabled = true
 
 [setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-tapered-hardwood-parallel-3175-2f"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
 source = "vendor_lut"
 reference = "amana-tapered-hardwood-parallel-3175-2f"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-tapered-hardwood-parallel-3175-2f"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.stepover]
 source = "manual"
