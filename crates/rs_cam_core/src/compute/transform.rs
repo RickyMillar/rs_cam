@@ -96,6 +96,20 @@ impl FaceUp {
         }
     }
 
+    /// `true` for the four side faces — the ones whose work plane is
+    /// **perpendicular** to the world XY plane a 2D drawing is authored in.
+    ///
+    /// `Top` and `Bottom` are parallel to it (identity and mirror
+    /// respectively), so a drawing has a mapping onto them. The lateral
+    /// four do not, which is the whole of the work-plane rule — see
+    /// [`SetupTransformInfo::drawing_to_local`].
+    pub fn is_lateral(&self) -> bool {
+        matches!(
+            self,
+            FaceUp::Front | FaceUp::Back | FaceUp::Left | FaceUp::Right
+        )
+    }
+
     /// Effective stock dimensions (W', D', H') after this face-up transform.
     pub fn effective_stock(&self, w: f64, d: f64, h: f64) -> (f64, f64, f64) {
         match self {
@@ -251,34 +265,115 @@ impl SetupTransformInfo {
         TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
     }
 
-    /// Transform 2D polygons from world coordinates to setup-local XY coordinates.
+    /// Move ONE point of a **drawing** — SVG/DXF artwork, or a target picked
+    /// off it — from the frame it was authored in into this setup's work
+    /// plane.
+    ///
+    /// # The rule (operator ruling, 2026-08-22)
+    ///
+    /// > A 2D drawing is consumed in the **work plane of the setup that
+    /// > uses it.**
+    ///
+    /// That is already what ships for the faces whose work plane is
+    /// parallel to the drawing plane, and this method is those cases
+    /// unchanged:
+    ///
+    /// | face | work plane vs drawing plane | what happens |
+    /// |---|---|---|
+    /// | `Top` / `Deg0` | same | identity — callers skip the transform entirely (`needs_transform()` is false) |
+    /// | `Top` / `Deg90` etc. | same, rotated | rotated in-plane |
+    /// | `Bottom` | same plane, other side | mirrored — how a feature registers to the same physical place |
+    /// | `Front`/`Back`/`Left`/`Right` | **perpendicular** | the lateral branch below |
+    ///
+    /// For the lateral four no mapping exists. `world_to_local` computes a
+    /// perfectly correct orthographic projection of a horizontal drawing
+    /// onto a vertical face — and that projection is a **line**. The
+    /// arithmetic was never wrong; the request was meaningless
+    /// (G-SIDEFACE-POLYCOLLAPSE). So the drawing's coordinates are taken
+    /// as the work plane's own coordinates: no origin subtraction, no face
+    /// projection.
+    ///
+    /// `z_rotation` still applies, in-plane, against the lateral face's
+    /// **effective** stock dimensions — exactly what `Top`/`Deg90` does to
+    /// a drawing in its plane, and the same `(eff_w, eff_d)` pair
+    /// [`Self::effective_stock_bbox`] reports, so a drawing inside the
+    /// work plane stays inside it.
+    ///
+    /// **This is for drawings only.** World-anchored geometry — fixture and
+    /// keep-out footprints, which describe hardware bolted to the table —
+    /// must NOT be reinterpreted this way; see [`Self::apply_to_polygons`].
+    pub fn drawing_to_local(&self, p: P2) -> P2 {
+        if self.face_up.is_lateral() {
+            let (eff_w, eff_d, _) =
+                self.face_up
+                    .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+            let rotated = self
+                .z_rotation
+                .transform_point(P3::new(p.x, p.y, 0.0), eff_w, eff_d);
+            P2::new(rotated.x, rotated.y)
+        } else {
+            let local = self.world_to_local(P3::new(p.x, p.y, 0.0));
+            P2::new(local.x, local.y)
+        }
+    }
+
+    /// Transform a model's **drawing** polygons into this setup's work
+    /// plane, per [`Self::drawing_to_local`].
+    ///
+    /// Use this for anything that came out of an SVG/DXF/STEP-face import
+    /// and describes the *part*. Use [`Self::apply_to_polygons`] for
+    /// world-frame footprints instead — the two differ only on lateral
+    /// setups, and that difference is the whole point.
+    ///
+    /// Closed rings come back **re-wound to the crate convention** (exterior
+    /// CCW, holes CW). Open paths keep their point order, because for them
+    /// the order is the machining direction.
+    pub fn apply_to_drawing_polygons(&self, polygons: &[Polygon2]) -> Vec<Polygon2> {
+        self.map_polygons(polygons, |p| self.drawing_to_local(p))
+    }
+
+    /// Transform **world-frame** 2D polygons to setup-local XY coordinates.
+    ///
+    /// This is the orthographic projection of a horizontal world-XY shape
+    /// into the setup frame, and it is the right answer for geometry that
+    /// is genuinely anchored in the world: fixture and keep-out footprints,
+    /// which describe clamps and no-go zones fixed to the machine table.
+    /// Their placement does not follow the part when the part is turned on
+    /// its side.
+    ///
+    /// It is the WRONG answer for a drawing — on a lateral setup the
+    /// projection is a degenerate line — which is why
+    /// [`Self::apply_to_drawing_polygons`] exists as a separate door. On
+    /// `Top` and `Bottom` the two doors agree exactly; they part company
+    /// only on `Front`/`Back`/`Left`/`Right`.
+    ///
+    /// Note that on a lateral setup this projection collapses a footprint
+    /// to a line too, which would silently DELETE a keep-out. Generation
+    /// refuses that combination upstream rather than letting it through —
+    /// see `ProjectSession::check_lateral_setup_support` (G-LATERALKEEPOUT).
     ///
     /// Closed rings come back **re-wound to the crate convention** (exterior
     /// CCW, holes CW) — see the winding note inside. Open paths keep their
     /// point order, because for them the order is the machining direction.
     pub fn apply_to_polygons(&self, polygons: &[Polygon2]) -> Vec<Polygon2> {
+        self.map_polygons(polygons, |p| {
+            let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
+            P2::new(p3.x, p3.y)
+        })
+    }
+
+    /// Shared body of the two polygon doors: per-point mapping plus the
+    /// open/closed and winding invariants, which are identical for both
+    /// and must stay that way.
+    fn map_polygons(&self, polygons: &[Polygon2], point: impl Fn(P2) -> P2) -> Vec<Polygon2> {
         polygons
             .iter()
             .map(|poly| {
-                let ext: Vec<P2> = poly
-                    .exterior
-                    .iter()
-                    .map(|p| {
-                        let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
-                        P2::new(p3.x, p3.y)
-                    })
-                    .collect();
+                let ext: Vec<P2> = poly.exterior.iter().map(|p| point(*p)).collect();
                 let holes: Vec<Vec<P2>> = poly
                     .holes
                     .iter()
-                    .map(|hole| {
-                        hole.iter()
-                            .map(|p| {
-                                let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
-                                P2::new(p3.x, p3.y)
-                            })
-                            .collect()
-                    })
+                    .map(|hole| hole.iter().map(|p| point(*p)).collect())
                     .collect();
                 // Preserve the open/closed flag: `Polygon2::with_holes` forces
                 // closed=true which would silently re-close open paths (rivers,
@@ -309,6 +404,12 @@ impl SetupTransformInfo {
                 // one invariant with one owner. Closed rings only: an open
                 // path (river, trace) has no winding to speak of and its
                 // point order IS the machining direction.
+                //
+                // The lateral DRAWING branch is a proper rotation
+                // (determinant +1), so it never flips a ring and this call
+                // is a no-op there. It stays unconditional anyway: the
+                // invariant has one owner, and an owner that only runs on
+                // the mappings someone remembered to list is not one.
                 if result.closed {
                     result.ensure_winding();
                 }

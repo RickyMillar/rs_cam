@@ -1056,6 +1056,13 @@ impl ProjectSession {
         // 5 historical sites that re-derived these ad hoc are now thin
         // wrappers over the same builder.
         let setup = self.find_setup_for_toolpath_index(index);
+        // The two lateral-setup preconditions (no mesh to register against;
+        // keep-outs that a vertical work plane cannot express). Checked
+        // BEFORE any geometry work so the refusal names the setup rather
+        // than whatever the collapsed geometry happened to break first.
+        // Single owner — the GUI controller calls the same method before it
+        // submits to the worker.
+        self.check_lateral_setup_support(setup, &tc.operation)?;
         let ctx = super::SetupEvalContext::build_for_setup(self, setup);
         let face_up = ctx.face_up;
         let z_rotation = ctx.z_rotation;
@@ -1096,16 +1103,22 @@ impl ProjectSession {
                 ));
             }
             if let Some(raw_polygons) = polygons.as_ref() {
-                polygons = Some(Arc::new(self.transform_polygons_to_setup(
+                // The model's DRAWING — consumed in the work plane of the
+                // setup that uses it. Distinct door from the footprints
+                // below; they differ only on lateral setups.
+                polygons = Some(Arc::new(self.transform_drawing_polygons_to_setup(
                     raw_polygons,
                     face_up,
                     z_rotation,
                 )));
             }
-            // Transform keep-out footprints into setup-local frame
+            // Keep-out footprints are world-anchored hardware, not drawings,
+            // so they keep the orthographic world→local projection.
+            // (Unreachable with a non-empty list on a lateral setup —
+            // `check_lateral_setup_support` refuses that above.)
             if !keep_out_footprints.is_empty() {
                 keep_out_footprints =
-                    self.transform_polygons_to_setup(&keep_out_footprints, face_up, z_rotation);
+                    self.transform_footprints_to_setup(&keep_out_footprints, face_up, z_rotation);
             }
         }
 
