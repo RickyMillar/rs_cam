@@ -114,7 +114,13 @@ the two doors **agree** rather than asserting a magic size — a test pinning
 
 ## 2. The remaining work
 
-### 2a. **DECISION NEEDED** — what does a 2D drawing mean on a side face?
+### 2a. **DECIDED 2026-08-22** — what does a 2D drawing mean on a side face?
+
+> **Operator ruling (2026-08-22): Reading B + the no-mesh precondition, as
+> recommended below.** Asked directly whether edge-authored artwork on a
+> mesh-less project is a real workflow; answer: no — that case is done as a
+> Top setup with the edge as the stock face. The refusal's error message
+> should name that workaround.
 
 This is the whole of G-SIDEFACE-POLYCOLLAPSE, and it is a product question, not
 a code question.
@@ -290,7 +296,7 @@ it, or read it; do not leave it.
 2. ~~G-LATERALSIGN~~ — **done.** Small, provable, unblocks everything below.
 3. **G-POLYTRANSFORM-DUP** — delete the viz copy. Independent of the decision,
    and doing it first means 2a is a one-place change instead of two.
-4. **2a** — pending the DECISION.
+4. **2a** — decided; implement the work-plane rule + no-mesh refusal.
 5. **G-LATERALSCRUB** — display only; do after 2a so it can be seen working.
 6. **G-DRILLLATERAL** via the stamping fallback (2c).
 7. `SimGroupEntry.direction` — delete.
