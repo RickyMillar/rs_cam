@@ -2261,7 +2261,7 @@ fix makes the side-grid machinery unreachable — reachability report pending),
   `planning/lateral_setups_2026-08-22/SPEC.md` §2e. Harmless meanwhile: all
   producers write `FromTop`, so the hashed value is constant.
 
-## G-MODEXPORT — modulated feeds never reach the exported G-code (OPEN, filed 2026-08-22 evening)
+## G-MODEXPORT — CLOSED 2026-08-22 late (83197d27) — modulated feeds never reached the exported G-code
 
 **Severity: silent pass on the export boundary — the gate exonerates a
 program the machine never receives.** Found while answering the still-open
@@ -2332,13 +2332,24 @@ tapered ball.** For the emitted program, the pre-sim "6.3× recommendation —
 tool breakage risk" heuristic is the truthful surface; the `hint` severity
 on it is still mis-set (noted 2026-08-22 above, unchanged).
 
-**Fix direction (not landed):** single owner for "the toolpath the program
-is built from" — either export reads `session.results` (unified-state
-direction; the mcp comment's stated blocker is stale) or the modulation
-pass re-syncs `gui.toolpath_rt`. Either way the sentry is an emitted-motion
-one: export after modulation, assert the F-words match the modulated
-per-move schedule — the F-036c-style test that would have caught this reads
-the trace, not the bytes.
+**FIXED (`83197d27`), the single-owner way.** `io/export.rs::emitted_toolpaths`
+now resolves each toolpath's IR from `session.results` — the store the
+modulation post-pass writes — with the viz worker store kept only as a
+fallback for the one reachable divergence in the other direction
+(`invalidate_tool` on a GUI tool-param edit drops the session slot while the
+viz store keeps the stale drawable; nothing modulated exists there to lose).
+Both stale comments corrected. Sentry
+`crates/rs_cam_viz/tests/modulated_feeds_reach_gcode_g_modexport.rs` asserts
+the emitted **F-words** — proven red first (`[600.0] != [300.0]`). Why the
+existing F-036b bytes test missed it: it exports through
+`rs_cam_core::gcode::export_gcode_checked`, the CLI path, which always read
+`session.results` and was always correct; nothing crossed the viz export
+boundary until now.
+
+Residual truth for past programs: every GUI/MCP export made before this
+commit carries commanded feeds. Re-export anything that matters before
+running it.
+
 
 ## Lateral setups seen by eyes for the first time — 2026-08-22 evening (GUI session)
 
