@@ -97,6 +97,15 @@ pub enum SessionError {
     InvalidParam(String),
     /// Parsed TOML doesn't look like an rs_cam project.
     NotACamProject(String),
+    /// The setup asks for something this build does not support, and the
+    /// honest answer is a refusal rather than a plausible-looking result.
+    ///
+    /// Introduced 2026-08-22 for the two lateral-setup preconditions (see
+    /// [`ProjectSession::check_lateral_setup_support`]). Distinct from
+    /// [`Self::MissingGeometry`] on purpose: "you did not import a mesh" is
+    /// a thing the operator can fix by importing one, whereas these say the
+    /// combination itself has no defined meaning.
+    UnsupportedSetup(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -123,6 +132,7 @@ impl std::fmt::Display for SessionError {
             Self::Export(msg) => write!(f, "Export error: {msg}"),
             Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
             Self::NotACamProject(detail) => write!(f, "Not an rs_cam project: {detail}"),
+            Self::UnsupportedSetup(msg) => write!(f, "Unsupported setup: {msg}"),
         }
     }
 }
@@ -1634,8 +1644,30 @@ impl ProjectSession {
     // remaining use. `setup_transform_info(..).apply_to_mesh(..)` is the
     // uncached spelling if one is ever needed again.
 
-    /// Transform 2D polygons from global to setup-local XY coordinates.
-    pub(crate) fn transform_polygons_to_setup(
+    /// Transform a model's **drawing** polygons into the setup's work plane.
+    ///
+    /// See
+    /// [`SetupTransformInfo::apply_to_drawing_polygons`](crate::compute::transform::SetupTransformInfo::apply_to_drawing_polygons)
+    /// — this is the door for SVG/DXF/STEP-face geometry that describes the
+    /// part. World-anchored footprints take
+    /// [`Self::transform_footprints_to_setup`] instead.
+    pub(crate) fn transform_drawing_polygons_to_setup(
+        &self,
+        polygons: &[Polygon2],
+        face_up: FaceUp,
+        z_rotation: ZRotation,
+    ) -> Vec<Polygon2> {
+        self.setup_transform_info(face_up, z_rotation)
+            .apply_to_drawing_polygons(polygons)
+    }
+
+    /// Transform **world-frame** footprints (fixtures, keep-out zones) from
+    /// global to setup-local XY coordinates.
+    ///
+    /// Clamps and no-go zones are bolted to the machine table; they do not
+    /// follow the part when it is turned on its side, so they keep the
+    /// orthographic world→local projection that drawings no longer take.
+    pub(crate) fn transform_footprints_to_setup(
         &self,
         polygons: &[Polygon2],
         face_up: FaceUp,
@@ -1643,6 +1675,85 @@ impl ProjectSession {
     ) -> Vec<Polygon2> {
         self.setup_transform_info(face_up, z_rotation)
             .apply_to_polygons(polygons)
+    }
+
+    /// The two lateral-setup preconditions, in ONE place — the single
+    /// source of both refusal messages, called by every generation door
+    /// (core `resolve_generation_inputs` for the session / CLI / headless
+    /// MCP path, and the GUI controller before it submits to the worker).
+    ///
+    /// # Why this is not in `compute::execute`
+    ///
+    /// `execute_operation_annotated_with_regions` is the narrower choke
+    /// point and would have covered both doors on its own — but it can only
+    /// see the mesh of the model *this toolpath references*. The case the
+    /// rule exists to serve is a mortise bounded by a DXF cut into an
+    /// STL-modelled part, where those are two different models, and a
+    /// per-op check would refuse exactly that. "Does the project have a
+    /// part?" is session-level knowledge, so the check is too.
+    ///
+    /// # The two refusals
+    ///
+    /// **No mesh.** `face_up` only means something when there is a 3D model
+    /// to register against. On a 2D-only project the drawing *is* the
+    /// design — there is no second face to turn to, because the part is
+    /// whatever the drawing cuts from a block — so a side face there is a
+    /// category error rather than an unimplemented feature. The operator
+    /// ruling (2026-08-22) confirmed edge-authored artwork on a mesh-less
+    /// project is not a real workflow: it is done as a Top setup with the
+    /// edge as the stock face, which is what the message says.
+    ///
+    /// **Keep-outs (G-LATERALKEEPOUT).** A fixture or keep-out footprint is
+    /// a world-XY rectangle. Projected into a vertical work plane it is a
+    /// line, and a line subtracts nothing — so the keep-out would silently
+    /// vanish and the tool would be free to drive through the clamp. That
+    /// is a safety regression, so a lateral setup carrying an ENABLED
+    /// fixture or keep-out zone refuses. Follow-up would be a proper 3D
+    /// prism projection; refusing is the honest interim.
+    pub fn check_lateral_setup_support(
+        &self,
+        setup: Option<&SetupData>,
+        operation: &crate::compute::OperationConfig,
+    ) -> Result<(), SessionError> {
+        let Some(setup) = setup else {
+            return Ok(());
+        };
+        if !setup.face_up.is_lateral() {
+            return Ok(());
+        }
+        let face = setup.face_up.label();
+
+        if setup.fixtures.iter().any(|f| f.enabled)
+            || setup.keep_out_zones.iter().any(|z| z.enabled)
+        {
+            return Err(SessionError::UnsupportedSetup(format!(
+                "setup '{}' is on the {face} face and carries a fixture or keep-out zone. \
+                 Keep-out footprints are world-XY rectangles with no extent in a vertical \
+                 work plane, so honouring them here would silently drop them and let the \
+                 tool drive through the clamp. Lateral keep-outs are not supported yet \
+                 (G-LATERALKEEPOUT) — disable them, or machine this face from a Top setup.",
+                setup.name
+            )));
+        }
+
+        // Only ops that actually consume a 2D drawing are affected; a 3D op
+        // already requires the mesh, and a stock-based op reads no drawing.
+        if operation.geometry_requirement()
+            == crate::compute::catalog::GeometryRequirement::Polygons
+            && self.models.iter().all(|m| m.mesh.is_none())
+        {
+            return Err(SessionError::UnsupportedSetup(format!(
+                "setup '{}' is on the {face} face, but this project has no 3D model. \
+                 A 2D drawing is consumed in the work plane of the setup that uses it, \
+                 and 'which face is up' only means something when there is a part to \
+                 register against — on a drawing-only project the drawing IS the design. \
+                 Author this as a Top setup with the edge as the stock face, which is \
+                 what you would physically do at the machine.",
+                setup.name
+            )));
+        }
+
+        Ok(())
     }
 }
 

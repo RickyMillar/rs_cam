@@ -202,6 +202,35 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
+        // The two lateral-setup preconditions (no 3D part to register the
+        // face against; keep-outs a vertical work plane cannot express).
+        //
+        // This door PRE-EMPTS core — it fails the submit before the worker
+        // ever builds a request — so the call is mirrored here, but the
+        // check and both message strings have exactly one owner,
+        // `ProjectSession::check_lateral_setup_support`. That is what stops
+        // the two doors drifting; the end-to-end sentry is
+        // `rs_cam_core/tests/lateral_setup_end_to_end.rs`.
+        //
+        // Scoped so the session borrow ends before `fail_toolpath_submit`
+        // takes `&mut self`.
+        let lateral_refusal = {
+            let session = &self.state.session;
+            let setup = session
+                .list_setups()
+                .iter()
+                .find(|s| s.toolpath_indices.contains(&tp_idx));
+            session
+                .check_lateral_setup_support(setup, &operation)
+                .err()
+                .map(|e| e.to_string())
+        };
+        if let Some(msg) = lateral_refusal {
+            self.push_notification(msg.clone(), super::super::Severity::Warning);
+            self.fail_toolpath_submit(tp_id, msg);
+            return;
+        }
+
         // Find the setup that contains this toolpath.
         // F-030: every frame-derived value below (transform, stock bbox,
         // heights, safe_z) reads from one `SetupEvalContext` so this
@@ -320,8 +349,8 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         if let Some(transform_setup) = transform_setup.as_ref() {
-            // One descriptor for both geometry kinds. The polygon transform is
-            // core's `apply_to_polygons` — the viz crate used to carry its own
+            // One descriptor for every geometry kind. Both polygon
+            // transforms are core's — the viz crate used to carry its own
             // copy which re-wound OPEN paths too, reversing a river's
             // machining direction on any mirroring setup (G-POLYTRANSFORM-DUP).
             let info = transform_setup.transform_info(&stock_snapshot);
@@ -333,7 +362,12 @@ impl<B: ComputeBackend> AppController<B> {
                 )));
             }
             if let Some(raw_polygons) = polygons.as_ref() {
-                polygons = Some(Arc::new(info.apply_to_polygons(raw_polygons)));
+                // The model's DRAWING: consumed in the work plane of the
+                // setup that uses it (2026-08-22 work-plane rule). The
+                // footprints below take the other door — they are
+                // world-anchored hardware, not part geometry, and the two
+                // differ only on lateral setups.
+                polygons = Some(Arc::new(info.apply_to_drawing_polygons(raw_polygons)));
             }
             keep_out_footprints = info.apply_to_polygons(&keep_out_footprints);
         }

@@ -727,16 +727,23 @@ macro_rules! config_guard {
 /// no-op that keeps that true: world already IS the emission frame, so
 /// there is nothing to apply and nothing to double-apply.
 ///
-/// This is [`crate::compute::transform::SetupTransformInfo::apply_to_polygons`]
-/// for a bare point, right down to lifting XY through `z = 0`; the polygons
-/// these picks were read off went through exactly that call.
+/// This is
+/// [`crate::compute::transform::SetupTransformInfo::apply_to_drawing_polygons`]
+/// for a bare point — deliberately the SAME door, because a pick is read off
+/// the drawing and must land wherever that drawing's own points land. If the
+/// two ever diverge, a drill and the feature that locates it end up in
+/// different places on the same part.
+///
+/// That is also why the 2026-08-22 work-plane rule reaches here: on a lateral
+/// setup a drawing is consumed verbatim in the work plane, so a target picked
+/// off it is too. Nothing about the identity/`Bottom` cases changed.
 fn pick_to_emission_frame(
     xy: [f64; 2],
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> [f64; 2] {
     match setup_transform {
         Some(info) => {
-            let local = info.world_to_local(crate::geo::P3::new(xy[0], xy[1], 0.0));
+            let local = info.drawing_to_local(crate::geo::P2::new(xy[0], xy[1]));
             [local.x, local.y]
         }
         None => xy,
