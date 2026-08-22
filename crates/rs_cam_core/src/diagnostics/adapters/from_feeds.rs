@@ -220,6 +220,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
         FeedsWarning::VendorRowPublishesNoChipload {
             observation_id,
             formula_chipload_mm,
+            floor_band_from,
         } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD),
             scope: Scope::Toolpath { id: tp_id },
@@ -233,7 +234,17 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                  column — the recommended {formula_chipload_mm:.4} mm/tooth is the \
                  empirical formula's, not this vendor's, and this recommendation carries \
                  no band. The post-simulation gate resolves a different, chipload-bearing \
-                 row, so its verdict is judged against bounds this recipe never saw."
+                 row, so its verdict is judged against bounds this recipe never saw.{}",
+                match floor_band_from {
+                    // P1: the floor is the one clamp that now DOES see that
+                    // row. Say which, or the operator reads the sentence
+                    // above and assumes nothing did.
+                    Some(row) => format!(
+                        " The rubbing floor was subordinated to that row ({row}) rather \
+                         than to the global constant."
+                    ),
+                    None => String::new(),
+                }
             ),
             evidence: None,
             fix: None,

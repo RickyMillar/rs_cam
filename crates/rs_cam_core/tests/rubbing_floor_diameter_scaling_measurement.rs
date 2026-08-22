@@ -132,6 +132,53 @@
 //! `feeds/mod.rs` already state. `report_a_band_the_floor_never_saw` measures how
 //! much of the binding population P1 alone would resolve.
 //!
+//! ### P1 WAS IMPLEMENTED, AND THIS PROPOSAL'S EXAMPLE WAS WRONG — 2026-08-22
+//!
+//! Read this before citing the paragraph above. P1 shipped (`feeds/mod.rs`,
+//! `floor_band_fallback`; sentries in `rubbing_floor_envelope_band_p1.rs`) and
+//! the live case it was written for turned out **not** to be a wrong-resolver
+//! case. The "plausibly" above was carrying real uncertainty, and probing the
+//! exact input resolved it against the guess:
+//!
+//! ```text
+//! Ø1.0 tapered ball (tip r0.5, 7°), 2F, white oak, ap 0.3, parallel/finish
+//!   recipe resolver   -> amana-tapered-hardwood-parallel-3175-2f
+//!   envelope resolver -> amana-tapered-hardwood-parallel-3175-2f    SAME ROW
+//!   chipload_bounds    = Some(0.00484 .. 0.00968)
+//!   floor applied      = 0.00968   (= min(0.025, band max), already correct)
+//! ```
+//!
+//! `whiteside-sc64-conical-ball-nose-…` does not win; no RPM-only anchor is in
+//! the way; `chipload_bounds` is `Some`; and the floor was **never** the bare
+//! 0.025 on this cut. The subordination rule was already doing its job.
+//!
+//! The live symptom this file opens with — a ~0.012 request raised to a flat
+//! 0.025 — reproduces on the same tool under `contour/finish`, where **neither**
+//! resolver matches any row. That is a no-vendor-data case, not a
+//! wrong-resolver one, and no resolver fix can reach it: with no row there is
+//! no band to subordinate to. Only a floor carrying a diameter would, which is
+//! **P2**, still not adopted. `band_capped_from` distinguishes the two shapes
+//! on a live surface — `Some(0.025)` means a band was found and beat the
+//! constant, `None` means the bare constant applied because nothing was found.
+//!
+//! Two consequences for anyone reading this file as evidence:
+//!
+//! 1. **The ranking argument stands; its example does not.** P1 is still the
+//!    right first move (a floor consulting the resolver that cannot see bands
+//!    is wrong regardless), and it is still true that any diameter-only law
+//!    leaves the Ø6 tapered-ball conflict untouched. What is withdrawn is the
+//!    claim that P1 reaches the observed Ø1 case.
+//! 2. **P1 changes no recipe on the LUT as shipped.** Measured, not assumed:
+//!    the cells where the two resolvers disagree are the Ø6-and-up flat/bull
+//!    ones, whose envelope bands sit above 0.025, so `min` returns the constant
+//!    unchanged. `the_fallback_does_not_lower_the_floor_on_todays_lut` is the
+//!    tripwire that reports the day that stops being true.
+//!
+//! So the question this file exists to answer is **not** closed by P1. It is
+//! sharper: the binding cases are the ones with no vendor row at all, and the
+//! quantity governing them is edge radius — which, as "What no source backs"
+//! below already says, nothing in this repo measures.
+//!
 //! **P2 — if a scaled floor is still wanted after P1, the form the evidence
 //! supports is a down-scale anchored at Ø6 and capped at the current constant:**
 //!

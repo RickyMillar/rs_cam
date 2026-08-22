@@ -1111,12 +1111,22 @@ fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
             rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload {
                 observation_id,
                 formula_chipload_mm,
-            } => format!(
-                "Vendor row {observation_id} publishes RPM only — the \
-                 {formula_chipload_mm:.4} mm/tooth shown is the empirical formula's, and \
-                 this recommendation carries no vendor band (the post-sim gate uses a \
-                 different, chipload-bearing row)"
-            ),
+                floor_band_from,
+            } => match floor_band_from {
+                Some(row) => format!(
+                    "Vendor row {observation_id} publishes RPM only — the \
+                     {formula_chipload_mm:.4} mm/tooth shown is the empirical formula's, \
+                     and this recommendation carries no vendor band. The rubbing floor \
+                     was taken from {row} instead, which is the chipload-bearing row the \
+                     post-sim gate also resolves"
+                ),
+                None => format!(
+                    "Vendor row {observation_id} publishes RPM only — the \
+                     {formula_chipload_mm:.4} mm/tooth shown is the empirical formula's, \
+                     and this recommendation carries no vendor band, and no \
+                     chipload-bearing row matched either"
+                ),
+            },
             rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,
                 actual,
