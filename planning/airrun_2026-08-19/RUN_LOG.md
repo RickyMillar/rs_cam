@@ -638,10 +638,29 @@ still standing — "material gone" and "material still there" fail in opposite
 directions, and a one-sided version of this test would have passed before the
 fix.
 
-**Scope note.** The global stock is what `StockSource::FromRemainingStock`
-reads, so this was never only a display defect: a rest pass planned against a
-flipped setup's post-drill stock was planning against the complement of the
-real material.
+**Scope note — CORRECTED 2026-08-22, same day.** This entry first said the
+global stock is what `StockSource::FromRemainingStock` reads, and therefore
+that a rest pass planned against a flipped setup was planning against the
+complement of the real material. **That is wrong.** Rest generation reads
+`SimulationResult::prior_stocks`, and those are clones of the **per-setup
+local** `group_stock` (`compute/simulate.rs:917`, consumed at
+`session/compute.rs:1434`). The local stock's drill removal was always correct,
+because setup-local Z is always the tool axis — the bug only ever existed in
+the global frame.
+
+So G-DRILLFLIP is a **checkpoint / playback / screenshot** defect: what the
+operator sees, not what the next operation plans against. Still real, still
+worth the five sentries, and still the reason the operator could not find their
+pin holes — but it did not mis-plan anything.
+
+**Where the wrong claim came from, because that is the reusable part.** A
+comment on `TriDexelStock::playback_dispatch` (`dexel_stock/mod.rs:75`) had said
+for a long time that the playback kernel "builds `global_stock`, which
+`StockSource::FromRemainingStock` generation reads". I read it, believed it, and
+repeated it into a commit message, this log, `CLAUDE.md` and a test header
+without checking. That is precisely the failure mode
+[[feedback_instrument_integrity]] names — a docstring that has become a lie you
+then cite. Both the source comment and all four repetitions are now fixed.
 
 ## G-DRILLLATERAL — a drill on a side-face setup cannot be simulated (OPEN, filed 2026-08-22)
 
@@ -1338,6 +1357,185 @@ statement about this test.
 **Why it matters beyond tidiness**: it fails roughly one run in four here, so
 it will fail CI intermittently, and an intermittent red gate is the thing that
 teaches people to re-run instead of read.
+
+## G-PECKROOT — CLOSED 2026-08-22 (operator go-ahead)
+
+The peck-plunge entry ladder was rooted at `params.safe_z` — the retract plane
+— and knew nothing about the stock top, so with `SAFE_Z_CLEARANCE_MM` (5.0)
+exceeding `depth_per_pass` the first rung, often the first two, landed entirely
+in air at plunge feed, each with its own retract rapid after it.
+
+**The root height was not a new decision.** `dressup::emit_ramp` and
+`emit_helix` — the other two entry styles, facing the identical problem —
+already share one rule: rapid no lower than `stock_top + ENTRY_CLEARANCE`, then
+feed. That 2 mm margin exists because `stock_top_z` is a *nominal* flat value
+and real timber is proud of it. Peck entry now uses the same constant rather
+than inventing a second stock-top margin that could drift from it.
+
+**Measured, and the two numbers came apart — which is the interesting part.**
+On the wanaka-shaped fixture:
+
+| quantity | before | after |
+|---|---|---|
+| cutting Z levels entirely above the stock top | 1 | **0** |
+| fed path length above the stock top | ~27 mm | 26.282 mm |
+
+That is not a disappointing second number, it is two different quantities:
+
+* **Levels** counts rungs whose whole descent is in air — pure waste. Zero now,
+  and that is the sharp bar.
+* **Fed mm** also counts the upper part of a move that *crosses* the plane. The
+  first rung now starts at the 2 mm guard and ends in material, so 2 mm of it
+  is above the top; over ~13 entries that is the 26.282 mm. **It is the guard
+  band, once per entry, and nothing else.**
+
+Driving the second to zero means feeding from the nominal stock top, deleting
+the over-thickness allowance both sibling entry styles keep. That is a
+machine-safety trade, not a tidy-up, and it has **not** been made. Both bars are
+now pinned in `air_ladder_emitted_z_levels_g_airladder.rs` with that written
+out, so nobody "finishes the job" by chasing the wrong one.
+
+Caveat recorded there too: a `depth_per_pass` finer than `ENTRY_CLEARANCE`
+(2 mm) would put a whole rung inside the guard band and push levels back to 1.
+No shipped default does that (wanaka is 4.2).
+
+## G-UNITSRELOAD — CLOSED 2026-08-22 — a 2D model's units are dropped on reload
+
+**Not lateral, not from the airrun, and more urgent than either**: it hits the
+ordinary Top workflow.
+
+A project file stores a model's **path** and its declared `ModelUnits`, not its
+geometry — both load doors re-import the same file, so both must apply the same
+scale. They did not:
+
+| door | STL | SVG | DXF polygons | DXF drill targets |
+|---|---|---|---|---|
+| `io::load_model_file` (interactive import) | scaled | scaled | scaled | scaled |
+| `project_file::load_model_geometry` (project load) | scaled | **dropped** | **dropped** | **dropped** |
+
+`load_model_geometry` computed `let scale = model.units…scale_factor()` and
+handed it only to `TriangleMesh::from_stl_scaled`. `ModelUnits`' own doc still
+reads *"Assumed units of the imported **STL**"* — it predates 2D import, and
+when the SVG/DXF arms were added they never consumed it. `save.rs:144` writes
+`units: m.units`, the original declared units, so the information was on disk
+and simply unread.
+
+**Effect**: an inch-authored DXF or SVG reloads **25.4x smaller**, silently,
+with the stock still at its saved size — `update_from_bbox` runs on import, not
+on load, so nothing re-fits and nothing complains. Measured on the repo's own
+fixture: import door 2538.02 mm, project door 99.92 mm, ratio exactly 25.4.
+Toolpaths then regenerate cleanly around a part a fortieth of its intended
+size.
+
+This is the **third** divergence found in this loader pair. The previous two
+closed 2026-06-08 with "nothing left to consolidate" — true of the divergences
+then known, and the reason the claim now has a test rather than a note.
+
+Sentry: `model_units_survive_reload_g_unitsreload.rs`, which asserts the two
+doors **agree** rather than asserting a size — a test pinning "254 mm wide"
+would pass just as well if both doors were wrong together. It also pins that
+the units dial is not inert, without which the agreement test could pass
+trivially.
+
+**Open for the operator**: whether any saved project already declares non-mm
+units on a 2D model, i.e. whether this has bitten a real job.
+
+## G-LATERALSIGN — CLOSED 2026-08-22 — `cut_direction()` inverted on all four lateral faces
+
+Found while researching the lateral-setup question, by an agent asked to
+**falsify** a claim of mine rather than confirm it.
+
+`SetupTransformInfo::cut_direction()` mapped `FaceUp::Front -> FromFront`,
+`Back -> FromBack`, `Left -> FromLeft`, `Right -> FromRight`. Every one is the
+wrong sign, because **the two names describe opposite ends of the same setup**:
+
+* `FaceUp::Front` = *the front face is up*, pointing at the spindle.
+* `StockCutDirection::FromFront` = *the tool arrives from the front side*, and
+  its own doc pins that as the -Y side.
+
+If the front face is up, the tool arrives from where that face now points.
+`inverse_transform_point` sends local `+Z` to global `+Y` for `FaceUp::Front`,
+so the tool arrives from **+Y** — which is `FromBack`. Both lateral axes negate.
+
+**Why it survived**: the two Z faces *are* an identity (`Top -> FromTop`,
+`Bottom -> FromBottom`), so the mapping reads as obviously right and the only
+two cases with fixtures both pass.
+
+**Effect**: on the global stock the kernel called `subtract_below` where it
+should call `subtract_above` — deleting everything from the far face up to the
+cut plane instead of the shallow layer at the near face. Confined to the
+live-scrub viewport; no number an operator reads moved, because every metric,
+gate, collision check and checkpoint mesh comes from the per-setup local stock.
+
+Sentry: `cut_direction_matches_transform_g_lateralsign.rs`. It deliberately does
+**not** transcribe a table of six expected answers — a hand-written table is the
+same kind of artefact as the mapping it checks and would have been written wrong
+by the same reasoning. It pushes points through `inverse_transform_point`,
+measures which global axis local `+Z` lands on and with what sign, and requires
+`cut_direction()` to agree. The two Z faces are the control on the derivation.
+
+## Lateral setups — the earlier framing was wrong, and the news is better
+
+The G-SIDEFACE-POLYCOLLAPSE note above said "milling works — `grid_for_direction`
+lazily allocates the X/Y dexel grid". **Retracted.** Lateral milling works, but
+not by that mechanism: a lateral setup is simulated **entirely in its own
+setup-local frame**, where Z is always the tool axis, with `direction`
+hardcoded to `FromTop` at `compute/simulate.rs:893`. Metrics, gates, collision
+checks, checkpoint meshes and `prior_stocks` all come from that local stock and
+are all correct. The X/Y grid machinery is reached by exactly one object, the
+global playback stock, where the sign was inverted (above).
+
+Corrected picture:
+
+| layer | lateral status |
+|---|---|
+| G-code emission | correct — emitted setup-local, where local Z *is* machine Z |
+| metrics / gates / engagement / collisions | correct — `group_stock`, `FromTop` |
+| checkpoint + composite mesh | correct — local mesh, then frame-mapped |
+| rest machining (`prior_stocks`) | correct — local stock clones |
+| global playback stock cut sign | **was inverted — fixed (G-LATERALSIGN)** |
+| live-scrub viewport mesh | **broken — G-LATERALSCRUB below** |
+| 2D polygon ops | **broken — G-SIDEFACE-POLYCOLLAPSE** |
+| analytic drill removal, global stock | abstains — G-DRILLLATERAL |
+
+So it was never "three silent behaviours behind one dial". Full spec, including
+the 2D semantics recommendation and the effort/impact argument, in
+`planning/lateral_setups_2026-08-22/SPEC.md`.
+
+## G-POLYTRANSFORM-DUP — two copies of the polygon transform, already divergent (OPEN)
+
+`apply_to_polygons` (`compute/transform.rs`) and `transform_polygons`
+(`rs_cam_viz/src/state/job.rs:519-557`) are the same algorithm written twice,
+both carrying the `Z=0` hardcode. **They already disagree on something else**:
+core calls `ensure_winding()` only when `result.closed`, the viz copy calls it
+unconditionally — so open paths (rivers, traces) can be reversed by the GUI
+path and not by the core path.
+
+Independent of lateral setups, and the reason to close it first: it makes the
+2D-semantics change a one-place edit instead of two. Fix by **deleting the viz
+copy** and routing it through core, not by patching both.
+
+## G-LATERALSCRUB — the live-scrub mesh cannot show a lateral cut (OPEN)
+
+`dexel_stock_to_mesh` builds a closed marching-cubes solid from the Z grid and
+then **appends** the X/Y grids as open per-segment heightmap surfaces. There is
+no boolean, and the three grids are never reconciled — `ensure_grid` allocates a
+pristine full-material X/Y grid at the first lateral stamp, knowing nothing
+about what the Z grid already lost (asserted as intended behaviour by
+`multi_grid_simulation_preserves_z_grid`).
+
+So a lateral cut can never remove material from the rendered solid on any
+surface fed by the global stock, and the checkpoint mesh and the live-scrub mesh
+**disagree** for a lateral setup.
+
+Cheapest honest fix: route the live-scrub path through the same
+local-stock-then-frame-map that checkpoints already use, rather than teaching
+the side grids to boolean.
+
+Also noted while there: `SimGroupEntry.direction` is **dead code** — written by
+three producers and read by nobody (`compute/simulate.rs` uses its own local
+`FromTop`), and the producers already collapse all four lateral faces to
+`FromTop`, so it would be wrong even if read. Delete it or read it.
 
 ## Things that worked well
 
