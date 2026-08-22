@@ -141,3 +141,32 @@ tab on a healthy op; recover by project reload.
 0/0 collisions, back rough verified intact after the clean reload (7,672
 moves), pencil tip_float byte-identical (5,418) and cutting distance −3%
 (removed re-approach ramps only) — valley coverage untouched.
+
+**C2 (front rough optimizer) — honest negative, mechanism understood.**
+`NoSafeImprovement`: every faster candidate tripped chipload LOW (commanded
+floor 0.025 f/t sits 24% under the LUT band min at 20k RPM with modulation
+off in candidate sims). The baseline is already modulation-optimal (+127%
+median to band max); the op's remaining cost is air structure, which
+feed/DOC search cannot reach, and its 54% air reading carries a degraded-
+measurability caveat at 0.15 mm cells. Front rough stands as-is.
+
+**C5 (back-rough entry style) — BLOCKED by two new core defects:**
+
+- **G-ENTRYEMPTY**: adaptive3d `entry_style=helix` on Back Rough generates
+  a **0-move toolpath with a success return** (clean-state reproducible;
+  ramp untested clean — see below why each arm costs a full reload).
+- **G-STICKYEMPTY**: after any empty generation, the op is POISONED — regen
+  with restored known-good params (plunge) still returns 0 moves; only a
+  project reload clears it. Discriminating sequence on record: clean plunge
+  7,672 moves → helix 0 → plunge 0 → reload → plunge 7,672 → helix 0 →
+  plunge 0. The earlier suspicion that `optimize_toolpath` poisoned the
+  session is RETRACTED — the poison follows empty generation itself.
+  Mechanism guess for the code session: an empty result contaminates a
+  cached generation input (claims/self-probe/boundary memo) that subsequent
+  runs consume. Both G-HEIGHTSTAB's silent emptying and this stickiness
+  share the underlying gap: **generated-empty returns success and no gate
+  blocks it** — the zero_removal finding is report-only by design, but an
+  op that emits 0 moves from a non-empty region deserves a refusal.
+
+State: `wanaka200_fast2.toml` saved = unified candidate + pencil hookup 30
+(the C6 accept). 16,793 s pending re-verify after this rebuild.
