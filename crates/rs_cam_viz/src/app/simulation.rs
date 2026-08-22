@@ -191,7 +191,12 @@ impl RsCamApp {
                             // checkpoint mesh during forward scrub. `apply_drill_op`
                             // is idempotent, so re-calling on each forward replay
                             // is safe.
-                            stock.apply_drill_op(drill_op_arc);
+                            // `*direction` is the group's `cut_direction()`,
+                            // and `drill_op_arc` is already frame-mapped into
+                            // the global stock by `build_playback_data` — so
+                            // a flipped setup carves upward here, matching the
+                            // checkpoint meshes (G-DRILLFLIP).
+                            stock.apply_drill_op(drill_op_arc, *direction);
                         } else {
                             let local_start = current_live.saturating_sub(tp_start);
                             let local_end = if target_move < tp_end {

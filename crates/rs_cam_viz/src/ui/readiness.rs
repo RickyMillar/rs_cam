@@ -324,8 +324,25 @@ pub fn toolpath_cycle_time(
     cutting_distance_mm: f64,
     nominal_feed_mm_min: f64,
 ) -> CycleTime {
+    // G-DRILLTIME (2026-08-22) — ask "was this INTEGRATED?" before asking "does
+    // it have engagement metrics?". A drill toolpath answers yes to the first
+    // and no to the second: it sets `metrics_not_applicable` and publishes
+    // `drill_summaries`, so it has no `toolpath_summaries` row at all. Reading
+    // only that list sent every drill down the `CuttingOnly` fallback below,
+    // and `worse()` then degraded the whole project — 0.8 % of runtime
+    // relabelling 100 % of the estimate. `toolpath_runtimes` is the slot that
+    // separates the two facts.
+    if let Some(rt) = trace.and_then(|t| t.toolpath_runtimes.iter().find(|r| r.toolpath_id == id)) {
+        return CycleTime::of(rt.breakdown.total_s, CycleTimeBasis::MachineModel);
+    }
     let summary = trace.and_then(|t| t.toolpath_summaries.iter().find(|s| s.toolpath_id == id));
     if let Some(summary) = summary {
+        // Reached when the integrator did not run (no machine kinematics on
+        // the profile), so the summary carries the simulator's naive segment
+        // timing. `runtime_by_intent` is stamped only by
+        // `apply_kinematics_cycle_time`, in the same pass that fills
+        // `toolpath_runtimes`, so in practice this arm is the no-kinematics
+        // one — the check is kept rather than assumed.
         let basis = if summary.runtime_by_intent.is_some() {
             CycleTimeBasis::MachineModel
         } else {

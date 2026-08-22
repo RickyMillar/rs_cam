@@ -21,7 +21,7 @@
 
 use rs_cam_core::dexel::ray_top;
 use rs_cam_core::dexel_mesh::{append_drill_cylinders, dexel_stock_to_mesh};
-use rs_cam_core::dexel_stock::TriDexelStock;
+use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::drill::DrillCycle;
 use rs_cam_core::drill_op::{DrillHole, DrillOp, HoleSource, OpData, ToolProfile};
 use rs_cam_core::geo::{BoundingBox3, P3};
@@ -67,7 +67,7 @@ fn flat_drill(diameter_mm: f64, xy: [f64; 2], top_z: f64, bottom_z: f64) -> Dril
 fn analytical_removal_sets_ray_top_to_bottom_z_inside_footprint() {
     let mut stock = stock_5x5x10();
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
-    stock.apply_drill_op(&drill);
+    stock.apply_drill_op(&drill, StockCutDirection::FromTop);
 
     // Center cell at (2.5, 2.5): ray top should equal bottom_z = 4.0.
     let (row, col) = stock.z_grid.world_to_cell(2.5, 2.5).unwrap();
@@ -82,7 +82,7 @@ fn analytical_removal_sets_ray_top_to_bottom_z_inside_footprint() {
 fn analytical_removal_leaves_outside_cells_untouched() {
     let mut stock = stock_5x5x10();
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
-    stock.apply_drill_op(&drill);
+    stock.apply_drill_op(&drill, StockCutDirection::FromTop);
 
     // Cell well outside the Ø2 footprint (>3mm from hole center):
     // ray_top must still be at the original stock top (10.0).
@@ -107,7 +107,7 @@ fn drill_does_not_raise_already_lower_cells() {
 
     // Now drill the same XY with bottom_z = 4.0 (above the pocket floor).
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
-    stock.apply_drill_op(&drill);
+    stock.apply_drill_op(&drill, StockCutDirection::FromTop);
 
     // Cell top must still be 2.0 (drill must not add material back).
     let after = ray_top(stock.z_grid.ray(row, col)).unwrap() as f64;
@@ -125,7 +125,7 @@ fn drill_then_pocket_composes_correctly() {
     // grid is the source of truth, drill is just an early removal.
     let mut stock = stock_5x5x10();
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 6.0);
-    stock.apply_drill_op(&drill);
+    stock.apply_drill_op(&drill, StockCutDirection::FromTop);
 
     // Simulate a pocket that clears the entire stock down to z=4.0.
     for r in 0..stock.z_grid.rows {
