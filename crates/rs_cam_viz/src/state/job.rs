@@ -243,6 +243,34 @@ impl Setup {
         }
     }
 
+    /// Core's setup-transform descriptor for this setup against `stock`.
+    ///
+    /// The setup-transform algorithm family (world→local point, mesh, and
+    /// polygon transforms) lives in
+    /// [`rs_cam_core::compute::transform::SetupTransformInfo`] and nowhere
+    /// else. This crate used to carry a second copy of all three, and they
+    /// had already diverged: the viz copy of the polygon transform re-wound
+    /// **open** paths as well as closed rings, so a mirroring setup
+    /// (`FaceUp::Bottom`) reversed a river's machining direction on the GUI
+    /// compute path while core left it alone (G-POLYTRANSFORM-DUP; the
+    /// closed-rings-only rule is G-PROFILE-FLIP, documented at
+    /// `SetupTransformInfo::apply_to_polygons`).
+    pub fn transform_info(
+        &self,
+        stock: &StockConfig,
+    ) -> rs_cam_core::compute::transform::SetupTransformInfo {
+        rs_cam_core::compute::transform::SetupTransformInfo {
+            face_up: self.face_up,
+            z_rotation: self.z_rotation,
+            stock_x: stock.x,
+            stock_y: stock.y,
+            stock_z: stock.z,
+            stock_origin_x: stock.origin_x,
+            stock_origin_y: stock.origin_y,
+            stock_origin_z: stock.origin_z,
+        }
+    }
+
     /// Transform a point from world coords to this setup's local frame.
     /// Translates to stock-relative coords first, then applies FaceUp + ZRotation.
     pub fn transform_point(
@@ -250,18 +278,7 @@ impl Setup {
         p: rs_cam_core::geo::P3,
         stock: &StockConfig,
     ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        // 1. Translate world → stock-relative (origin at 0,0,0)
-        let rel = P3::new(
-            p.x - stock.origin_x,
-            p.y - stock.origin_y,
-            p.z - stock.origin_z,
-        );
-        // 2. Apply FaceUp flip on stock-relative coords
-        let flipped = self.face_up.transform_point(rel, stock.x, stock.y, stock.z);
-        // 3. Apply ZRotation
-        let (eff_w, eff_d, _) = self.face_up.effective_stock(stock.x, stock.y, stock.z);
-        self.z_rotation.transform_point(flipped, eff_w, eff_d)
+        self.transform_info(stock).world_to_local(p)
     }
 
     /// Effective stock dimensions in this setup's local frame.
@@ -292,6 +309,14 @@ impl Setup {
 
     /// Inverse transform: from this setup's local frame back to world coords.
     /// Undoes ZRotation, then FaceUp, then translates back to world coords.
+    ///
+    /// **Not** a delegate to
+    /// [`rs_cam_core::compute::transform::SetupTransformInfo::local_to_global`],
+    /// which is a different function despite the matching name: it stops in
+    /// *stock-relative* coordinates and deliberately does not re-add the stock
+    /// origin (its own doc says so, and `transform_toolpath` depends on that).
+    /// This one closes the round trip with `transform_point` in world
+    /// coordinates, so the two agree only when the origin is zero.
     pub fn inverse_transform_point(
         &self,
         p: rs_cam_core::geo::P3,
@@ -481,17 +506,15 @@ pub fn session_keep_out_bbox(
 }
 
 /// Transform a mesh into a setup's local coordinate frame.
+///
+/// Thin delegate — the algorithm lives in
+/// [`rs_cam_core::compute::transform::SetupTransformInfo::apply_to_mesh`].
 pub fn transform_mesh(
     mesh: &rs_cam_core::mesh::TriangleMesh,
     setup: &Setup,
     stock: &StockConfig,
 ) -> rs_cam_core::mesh::TriangleMesh {
-    let new_verts: Vec<rs_cam_core::geo::P3> = mesh
-        .vertices
-        .iter()
-        .map(|v| setup.transform_point(*v, stock))
-        .collect();
-    rs_cam_core::mesh::TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
+    setup.transform_info(stock).apply_to_mesh(mesh)
 }
 
 /// Transform a StockMesh's vertices from global frame to a setup's local frame.
@@ -513,47 +536,6 @@ pub fn transform_heightmap_mesh(
         mesh.vertices[i + 1] = local.y as f32;
         mesh.vertices[i + 2] = local.z as f32;
     }
-}
-
-/// Transform 2D polygons into a setup's local frame (XY projection).
-pub fn transform_polygons(
-    polygons: &[rs_cam_core::polygon::Polygon2],
-    setup: &Setup,
-    stock: &StockConfig,
-) -> Vec<rs_cam_core::polygon::Polygon2> {
-    use rs_cam_core::geo::{P2, P3};
-
-    polygons
-        .iter()
-        .map(|poly| {
-            let ext: Vec<P2> = poly
-                .exterior
-                .iter()
-                .map(|p| {
-                    let p3 = setup.transform_point(P3::new(p.x, p.y, 0.0), stock);
-                    P2::new(p3.x, p3.y)
-                })
-                .collect();
-            let holes: Vec<Vec<P2>> = poly
-                .holes
-                .iter()
-                .map(|hole| {
-                    hole.iter()
-                        .map(|p| {
-                            let p3 = setup.transform_point(P3::new(p.x, p.y, 0.0), stock);
-                            P2::new(p3.x, p3.y)
-                        })
-                        .collect()
-                })
-                .collect();
-            let mut result = rs_cam_core::polygon::Polygon2::with_holes(ext, holes);
-            // Preserve open/closed so project_curve doesn't phantom-close
-            // rivers after the setup transform.
-            result.closed = poly.closed;
-            result.ensure_winding();
-            result
-        })
-        .collect()
 }
 
 /// The full job state.
@@ -684,16 +666,7 @@ impl JobState {
             .find(|s| s.toolpaths.iter().any(|t| t.id == tp.id));
         let mb = match (raw_mb, setup) {
             (Some(b), Some(s)) => {
-                let info = rs_cam_core::compute::transform::SetupTransformInfo {
-                    face_up: s.face_up,
-                    z_rotation: s.z_rotation,
-                    stock_x: self.stock.x,
-                    stock_y: self.stock.y,
-                    stock_z: self.stock.z,
-                    stock_origin_x: self.stock.origin_x,
-                    stock_origin_y: self.stock.origin_y,
-                    stock_origin_z: self.stock.origin_z,
-                };
+                let info = s.transform_info(&self.stock);
                 Some(setup_local_bbox(&b, &info))
             }
             (Some(b), None) => Some(b),
