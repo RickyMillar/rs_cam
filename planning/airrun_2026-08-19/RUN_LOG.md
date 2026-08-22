@@ -2386,7 +2386,7 @@ the end-to-end fixture's geometry, driven through the real product surface
   operator pattern-matched on G-DRILLFLIP (whose symptom was a real
   complement carve) would raise a false alarm, as this session briefly did.
   Worth a lighting/normal look someday; log-only.
-- **G-FRONTNAME (naming, needs operator ruling).** `FaceUp::Front` machines
+- **G-FRONTNAME — CLOSED same evening (`e43695e9`), operator ruled.** `FaceUp::Front` machines
   the world **+Y** face — deliberate since G-LATERALSIGN
   (`transform.rs:445-452` derives "tool arrives from +Y = FromBack") — but
   the composite renderer labels the +Y-eye views **REAR** (front = −Y,
@@ -2394,6 +2394,19 @@ the end-to-end fixture's geometry, driven through the real product surface
   labelled REAR-LEFT/REAR-RIGHT. Two internally-consistent conventions
   colliding on one surface; one ruling should pick which face "front" names,
   and the loser (FaceUp naming or composite labels) gets renamed.
+  **Ruling: the drafting convention wins** — front = −Y, back = +Y,
+  left = −X, right = +X; the composite labels stay. All four lateral
+  transform arms were swapped in pairs, `cut_direction()` came back to the
+  identity — dictated by the G-LATERALSIGN derivation sentry going red
+  between the two halves of the fix, not hand-written — and the ruling
+  itself is pinned by
+  `tests/face_up_names_follow_drafting_convention_g_frontname.rs`
+  (red-first, non-cubic blank, forward + inverse + round trip). No stored
+  project uses a lateral face, so nothing changed meaning on disk. Full
+  gates green: core 3257/0, viz 345/0, cli 31/0, mcp 24/0, clippy, fmt.
+  Follow-up flagged, not touched: `render/camera.rs` `ViewPreset::Front`
+  puts the camera eye at +X (and Left at +Y) — the viewport's own preset
+  table disagrees with drafting on its own terms; predates this change.
 
 ## Composite renderer chirality eyeball — PASS, 2026-08-22 evening (TD3 leftover closed)
 
