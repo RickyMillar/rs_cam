@@ -2260,3 +2260,82 @@ fix makes the side-grid machinery unreachable — reachability report pending),
   cannot be scoped to `src/`. Left in place with the evidence recorded in
   `planning/lateral_setups_2026-08-22/SPEC.md` §2e. Harmless meanwhile: all
   producers write `FromTop`, so the hashed value is constant.
+
+## G-MODEXPORT — modulated feeds never reach the exported G-code (OPEN, filed 2026-08-22 evening)
+
+**Severity: silent pass on the export boundary — the gate exonerates a
+program the machine never receives.** Found while answering the still-open
+`Within` question from G-CHIPGATE-POPULATION, on the live GUI (release at
+`769aea6c`, `wanaka_keyed_2026-08-22.toml`, sim + modulation at 0.1 mm).
+
+**The Ø1 question is answered first, and the answer is measured.** The
+chipload gate on `3D Finish 6` (toolpath id 11, R0.5-tip tapered ball,
+commanded F3000) is a genuine, populated `Within`:
+
+- population `contributing 278,406 / offered 321,362` samples — not vacuous;
+- the envelope resolver matched `amana-tapered-hardwood-parallel-3175-2f`,
+  extrapolated ×0.63 to `queried_diameter_mm 1.47` — the depth-dependent
+  contact diameter of the tapered flank, not the Ø1.0 tip;
+- band 0.00528–0.01056 mm/tooth (`vendor_lut_extrapolated`), observed
+  0.010559 = **exactly band max**, on both the median and peak statistics.
+
+The mechanism is not the kinematic-shortfall hypothesis. It is the F-039
+constrained-max feed modulator: `binding_constraint_distribution
+{chipload_max: 1.0}` — **all 98,279 moves clamped by the chipload ceiling**,
+median feed delta **−85.2%** (median achieved-feed ratio 0.148 → ~443 mm/min
+against the commanded 3000). The gate grades the modulated schedule (the
+post-pass stamps modulated feeds into `trace.predicted_feeds`), so `Within`
+is the truth *about that schedule*. Same shape on the two Ø6 roughs (ids
+4/10): commanded 0.164 mm/tooth, observed exactly band max 0.055,
+median delta −66.5%.
+
+**Then the emitted motion was measured, and the schedule is not in it.**
+`export_gcode` (split setups, this same live session) emits the finish pass
+at a flat **F3000** — 316 F-words in the section, all 3000, none of the
+per-move modulated values. F-histogram of the whole Setup-2 file: F3000,
+F4000, F500 — the *commanded* feeds only. So the machine would run the
+Ø1-tip tool at 0.0714 mm/tooth = **6.8× band max**, the exact overfeed the
+pre-sim heuristic calls "tool breakage risk", while every post-sim surface
+reports `Within`.
+
+**Root cause — two result stores, and export reads the one modulation
+doesn't touch.** `apply_adaptive_feed_modulation` swaps the modulated
+toolpaths into `session.results` (core, `session/compute.rs`) and its doc +
+the sim-complete handler's comment (`controller/events/compute.rs:1020`)
+both claim G-code export reads them. But every viz export surface — export
+wizard, `app/export.rs`, `controller/io.rs`, and MCP `export_gcode` — routes
+through `io/export.rs::emitted_toolpaths`, which reads
+`gui.toolpath_rt[id].result` (`io/export.rs:98`): the worker's
+pre-modulation output, synced to `session.results` at generation time
+(F1_RCA) and never re-synced after modulation. `mcp_export_gcode`'s own
+comment says it routes viz-side because "`session.results` ... the GUI/MCP
+path never populates" — stale since the F1_RCA sync, and now the root of
+this divergence. The export *gate* reads the viz trace (modulated), the
+export *bytes* read `toolpath_rt` (not) — verdict and program are about two
+different feed schedules.
+
+**Consequences:**
+
+- Every G-code file exported from the GUI/MCP since F-036b carries
+  commanded, un-modulated feeds — including the airrun's
+  `wanaka200_*.nc` files taken to the machine.
+- The modulated cycle time (7,329 s here; the airrun's 7,304 s) re-timed
+  onto the trace describes the modulated schedule, not the exported
+  program — the exported program is *faster and hotter* than every
+  operator-facing prediction.
+- The CLI path (`session.export_gcode*` reading `session.results`) would
+  emit the modulated feeds — the two exporters disagree byte-wise on the
+  same project state.
+
+**Do NOT read the post-sim `Within` as clearance to cut at F3000 on the Ø1
+tapered ball.** For the emitted program, the pre-sim "6.3× recommendation —
+tool breakage risk" heuristic is the truthful surface; the `hint` severity
+on it is still mis-set (noted 2026-08-22 above, unchanged).
+
+**Fix direction (not landed):** single owner for "the toolpath the program
+is built from" — either export reads `session.results` (unified-state
+direction; the mcp comment's stated blocker is stale) or the modulation
+pass re-syncs `gui.toolpath_rt`. Either way the sentry is an emitted-motion
+one: export after modulation, assert the F-words match the modulated
+per-move schedule — the F-036c-style test that would have caught this reads
+the trace, not the bytes.
