@@ -1,8 +1,35 @@
 //! Tri-dexel stock representation with tool stamping and toolpath simulation.
 //!
 //! Replaces the 2.5-D heightmap for volumetric material removal.  The Z-grid
-//! is always present; X and Y grids are created lazily when side-face cuts are
-//! needed (future work).
+//! is always present; X and Y grids are allocated lazily, at the first stamp
+//! whose cut direction resolves to that axis.
+//!
+//! # The side grids are kernel capability with no shipped caller
+//!
+//! They are **not** "future work" — they exist, they stamp, and the kernel
+//! unit tests in this module and in [`crate::dexel_mesh`] exercise them
+//! (`multi_grid_simulation_preserves_z_grid` is the one that pins the
+//! Z-grid-preserving contract). What no longer reaches them is production, as
+//! of 2026-08-22 (G-LATERALSCRUB).
+//!
+//! A lateral setup (`FaceUp::{Front,Back,Left,Right}`) is simulated entirely
+//! in its own setup-local frame, where the tool axis *is* local Z. The global
+//! playback stock was the only object that ever held a lateral
+//! [`StockCutDirection`], and it now skips lateral groups outright instead of
+//! stamping into a side grid: both producers of a lateral direction are
+//! guarded (`compute::simulate`'s `lateral_playback`, and the viz worker's
+//! `build_playback_data`, which hands a lateral group `FromTop` plus its own
+//! frame), and every other stamp site passes `FromTop` literally.
+//!
+//! The rendering consequence, stated so nobody reads the code as live:
+//! [`crate::dexel_mesh::dexel_stock_to_mesh`]'s two side-grid append branches
+//! are **dead in production**. They append OPEN per-segment heightmap surfaces
+//! to the Z grid's closed marching-cubes solid with no boolean, so a cut drawn
+//! there sits inside an intact block and is occluded by it — which is what
+//! G-LATERALSCRUB measured (a groove that removed ~1553 mm3 changed the
+//! playback solid by 0.0 mm3). The kernel is kept deliberately: reconciling
+//! the three grids is the actual job for 3+2 / 5-axis work, and deleting the
+//! grids would mean rebuilding them to do it.
 
 mod band;
 mod cut_direction;
@@ -82,7 +109,14 @@ pub struct TriDexelStock {
     /// `global_stock` feeds checkpoints, playback and the S5 prefix memo, and
     /// nothing else. The old wording made this schedule look like it had
     /// generation consequences it does not have — and it was cited as
-    /// evidence in a defect write-up before anyone checked it. Defaults to [`PlaybackDispatch::Auto`].
+    /// evidence in a defect write-up before anyone checked it.
+    ///
+    /// **Narrowed the same day (G-LATERALSCRUB):** and it no longer carries
+    /// *every* group. A group whose tool axis is a global X or Y dexel axis is
+    /// skipped here entirely — its checkpoint publishes the setup-local stock
+    /// plus the transform that frames it — so this schedule governs Z-axis
+    /// groups only, which is every group that ever produced a playback cut an
+    /// operator could see. Defaults to [`PlaybackDispatch::Auto`].
     pub playback_dispatch: PlaybackDispatch,
     /// What the last non-metric replay's dispatcher did. Diagnostics for the
     /// w6 non-vacuity sentries; reset at the start of every
@@ -502,8 +536,25 @@ impl TriDexelStock {
     /// lateral transform the hole's real axis is discarded before it ever
     /// reaches this kernel. Rather than carve a fabricated Z-axis hole, those
     /// directions remove nothing and report it in the returned
-    /// [`DrillRemovalReport`]. Tracked as G-DRILLLATERAL; fixing it means
-    /// giving `DrillHole` two 3-D endpoints, not patching this function.
+    /// [`DrillRemovalReport`].
+    ///
+    /// **G-DRILLLATERAL closed as unreachable, 2026-08-22 (G-LATERALSCRUB).**
+    /// No shipped path passes a lateral direction to this function any more.
+    /// A lateral setup's drilling is simulated in its setup-local frame, where
+    /// the axis is always Z and `direction` is the `FromTop` constant; the
+    /// global playback stock — the only caller that ever resolved a group's
+    /// `cut_direction()` here — now skips lateral groups outright, because its
+    /// side grids never reconcile with the Z-grid solid. Both producers of a
+    /// lateral direction are guarded, and every other call site passes
+    /// `FromTop` literally or is `cfg(test)`.
+    ///
+    /// The abstention arm **stays** regardless: it is this kernel's honesty
+    /// contract, not a workaround. A caller that hands it an axis it cannot
+    /// represent must be told, rather than shown a fabricated Z-axis hole —
+    /// and `drill_flip_removal_g_drillflip` keeps asserting exactly that. The
+    /// contract becomes load-bearing again the day a 3+2 / 5-axis path stamps
+    /// the side grids for real; the fix then is still to give `DrillHole` two
+    /// 3-D endpoints, not to patch this function.
     pub fn apply_drill_op(
         &mut self,
         drill_op: &crate::drill_op::DrillOp,

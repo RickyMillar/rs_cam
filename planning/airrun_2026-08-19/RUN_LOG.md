@@ -2216,3 +2216,47 @@ fix makes the side-grid machinery unreachable — reachability report pending),
   same-millisecond collision under the parallel harness deletes the file
   under the other test's feet. Passes alone and on rerun. Fix shape: per-test
   temp dirs or a uniquified stem.
+
+---
+
+**2026-08-22 (late) — the lateral tail, and one deletion that was not dead.**
+
+- **G-LATERALSCRUB — FIXED** (`3e951540`). Live scrub replayed every setup into
+  one global playback stock; for a lateral setup that stock cannot show the cut
+  at all — only the Z grid becomes a closed marching-cubes solid, and the X/Y
+  side grids are appended as OPEN per-segment surfaces with no boolean, so the
+  cut is drawn inside an intact block and occluded by it. Measured red-first: a
+  Front-setup groove that removed ~1553 mm3 changed the playback solid by
+  **0.0 mm3**, against 1562 mm3 on the checkpoint/local route. Fix is
+  local-stock-then-map — the route the checkpoint meshes always used. Sentried
+  by `tests/lateral_scrub_playback_stock_g_lateralscrub.rs`, asserting Z-grid
+  solid **volume**: the obvious vertex probe PASSES against the broken code,
+  because the buried side surface does contain the cut.
+
+- **G-DRILLLATERAL — CLOSED UNREACHABLE.** Evidence: after `3e951540` both
+  shipped producers of a lateral `StockCutDirection` are guarded — the core
+  global-stock drill stamp is inside `if !lateral_playback`
+  (`compute/simulate.rs`), and the viz worker's `build_playback_data` hands a
+  lateral group `FromTop` plus its own setup-local frame. Every other
+  `apply_drill_op` call site passes `FromTop` literally or is `cfg(test)`. A
+  lateral drill is simulated setup-locally, where the axis is always Z, so
+  nothing abstains any more. No stamping fallback was built — there is no live
+  failure left to fall back from. Doc-pin, not deletion: the abstention arm and
+  `DrillRemovalReport::unrepresentable_axis` stay (kernel honesty contract), the
+  side-grid kernel stays (3+2 / 5-axis capability), and
+  `dexel_stock/mod.rs`'s module doc now says the side grids are exercised only
+  by kernel unit tests and that `dexel_stock_to_mesh`'s two side-grid append
+  branches are dead in production. `FEATURE_CATALOG.md` updated; the one open
+  lateral gap is **G-LATERALKEEPOUT**.
+
+- **`SimGroupEntry.direction` — NOT DELETED. The "read by nobody" claim was
+  wrong.** One reader exists: `compute/sim_prefix.rs:425`,
+  `format!("{:?}", group.direction).hash(&mut hasher)` in
+  `hash_group_scalar(&SimGroupEntry)` — and the S5 memo's own soundness table
+  names the field (`sim_prefix.rs:51`). No *simulator* reads it, which is what
+  the original observation actually established. So this is a cache-key change,
+  not a dead-code sweep. A fourth producer also exists, in
+  `benches/hot_paths.rs:1203` — the perf programme's file — so the deletion
+  cannot be scoped to `src/`. Left in place with the evidence recorded in
+  `planning/lateral_setups_2026-08-22/SPEC.md` §2e. Harmless meanwhile: all
+  producers write `FromTop`, so the hashed value is constant.
