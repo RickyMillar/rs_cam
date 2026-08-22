@@ -54,6 +54,11 @@
 //!    (`unreachable!("loop_count exceeded max_loop_count …")`), the hard
 //!    `assert!`s at `pline_view.rs:316`/`:374`/`:438`, and the `unwrap` /
 //!    `expect` / raw-indexing sites in `CAVALIER_SHAPE_FAILURE.md` §3.3.
+//!    One of those raw-indexing sites is now named and contained here:
+//!    `polyline/traits.rs:776`'s `pl.at(1)`, read out of a result the line
+//!    above it may just have emptied — see [`remove_redundant_contained`]
+//!    (G-UNIFIEDCRASH). Being a raw index rather than a `debug_assert!`, it
+//!    is one of the classes that fires in BOTH builds.
 //! 3. `Cargo.toml`'s `panic = "unwind"` in `[profile.release]` is what keeps
 //!    every `catch_unwind` here from being dead code. Changing it to `abort`
 //!    turns a contained offset failure into a killed process.
@@ -622,6 +627,116 @@ fn dedupe_pline(pline: Polyline<f64>) -> Polyline<f64> {
         .unwrap_or(pline)
 }
 
+/// What [`remove_redundant_contained`] found. Three answers, because the
+/// library's own two cannot express the third.
+enum RedundantOutcome {
+    /// Nothing was redundant — the library's `None`. Keep the input.
+    Unchanged,
+    /// The tidied ring.
+    Reduced(Polyline<f64>),
+    /// The ring reduces to a POINT, and saying so cost a contained panic.
+    /// Carries the assertion text for the failure channel.
+    Collapsed { assertion: String },
+}
+
+/// `remove_redundant`, contained — the third chokepoint in this module, and
+/// the only one that is not an offset.
+///
+/// # The defect being contained (G-UNIFIEDCRASH, 2026-08-23)
+///
+/// `cavalier_contours` 0.7.0's closed-polyline tail
+/// (`polyline/traits.rs:772-778`) reads vertex **1** of its own result:
+///
+/// ```text
+/// let v3 = match result.as_ref() {
+///     Some(pl) => pl.at(1),
+///     None => self.at(1),
+/// };
+/// ```
+///
+/// and the block immediately above it can leave that result holding **zero**
+/// vertices. A result of one vertex trivially satisfies the wrap-around test
+/// `last().pos() ≈ at(0).pos()` — with one vertex those ARE the same vertex —
+/// so `pl.remove_last()` empties it. `PlineSource::at` is `self[index]`, a
+/// raw slice index, so the next line panics with *"index out of bounds: the
+/// len is 0 but the index is 1"*. Being a raw index and not a
+/// `debug_assert!`, it fires in release as well as in debug, unlike three of
+/// the four classes in this module's header.
+///
+/// A one-vertex result is exactly what a ring that has degenerated to a
+/// POINT reduces to, which is why an offset CASCADE finds it and the
+/// single-shot consumers never did: a cascade's terminal rings approach a
+/// point by construction, and the finer the stepover the more of them there
+/// are. G-UNIFIEDCRASH was a `unified_finish` at `scallop_height` 0.03 on a
+/// project that generates cleanly at 0.1 — same mesh, same boundary, same
+/// bands, roughly twice the ring count at half the ring spacing.
+///
+/// [`RedundantOutcome::Collapsed`] is a typed answer rather than a fold back
+/// into "nothing was removed", because those are not the same thing to a
+/// caller: a ring that reduces to a point is a COLLAPSED ring and belongs in
+/// the same bin as one that cannot keep three vertices, not in the bin of
+/// rings the cleanup left alone. Every caller here already had that bin.
+fn remove_redundant_contained(pline: &Polyline<f64>, pos_equal_eps: f64) -> RedundantOutcome {
+    // The closure borrows `pline` immutably and owns nothing observable, so
+    // there is no torn state a caught unwind could expose. `AssertUnwindSafe`
+    // matches the two offset chokepoints rather than leaning on the
+    // auto-trait derivation.
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pline.remove_redundant(pos_equal_eps)
+    }));
+    match caught {
+        Ok(Some(reduced)) => RedundantOutcome::Reduced(reduced),
+        Ok(None) => RedundantOutcome::Unchanged,
+        Err(payload) => {
+            let assertion = crate::panic_message::panic_payload_message(payload.as_ref());
+            tracing::warn!(
+                vertex_count = pline.vertex_count(),
+                assertion = %assertion,
+                "offset cascade: cavalier_contours panicked tidying a ring; \
+                 treating it as a ring that collapsed to a point"
+            );
+            RedundantOutcome::Collapsed { assertion }
+        }
+    }
+}
+
+/// Tidy one polyline the offset produced, or drop it.
+///
+/// The lossless companion in the ARC domain: `remove_redundant` merges two
+/// co-radial, co-centred arcs into one and drops collinear line vertices. It
+/// is what turns the cascade's vertex curve from flat into shrinking
+/// (−1.4%/ring, §6) and it costs nothing.
+///
+/// `None` means the ring did not survive, for either of the two reasons a
+/// ring does not survive a tidy: it cannot keep three vertices, or it reduces
+/// to a point (which is [`remove_redundant_contained`]'s
+/// [`RedundantOutcome::Collapsed`] — the same verdict, reached through a
+/// contained dependency panic instead of through a vertex count). The
+/// collapse is reported on `failure` so it reaches
+/// `ToolpathStats::offset_library_failures` rather than vanishing; the
+/// caller merges it with whatever the offset itself reported.
+///
+/// Shared by both of [`RingGroup::offset`]'s arms so the boundary and hole
+/// paths cannot drift.
+fn tidy_offset_ring(
+    pl: Polyline<f64>,
+    failure: &mut Option<OffsetFailure>,
+) -> Option<Polyline<f64>> {
+    let pl = match remove_redundant_contained(&pl, PLINE_POS_EQUAL_EPS) {
+        RedundantOutcome::Unchanged => pl,
+        RedundantOutcome::Reduced(reduced) => reduced,
+        RedundantOutcome::Collapsed { assertion } => {
+            let merged = OffsetFailure::merge(
+                failure.take(),
+                Some(OffsetFailure::LibraryFailure { assertion }),
+            );
+            *failure = merged;
+            return None;
+        }
+    };
+    (pl.vertex_count() >= 3).then_some(pl)
+}
+
 /// cavalier's own lossless cleanup, applied to a CHORD-FLATTENED ring.
 ///
 /// **Reachable only from the offset CASCADE ([`OffsetRingSet`]), never from
@@ -663,10 +778,14 @@ fn cleaned_flat_ring(pline: &Polyline<f64>) -> Vec<P2> {
     for p in &raw {
         flat.add(p.x, p.y, 0.0);
     }
-    let Some(cleaned) = flat.remove_redundant(PLINE_POS_EQUAL_EPS) else {
-        // `None` means nothing was redundant — the common case, and the
+    let cleaned = match remove_redundant_contained(&flat, PLINE_POS_EQUAL_EPS) {
+        // `Unchanged` means nothing was redundant — the common case, and the
         // reason single-shot consumers see byte-identical output.
-        return raw;
+        RedundantOutcome::Unchanged => return raw,
+        // A ring that reduces to a point is the `vertex_count() < 3` arm
+        // below reached by a different road; it gets the same answer.
+        RedundantOutcome::Collapsed { .. } => return raw,
+        RedundantOutcome::Reduced(cleaned) => cleaned,
     };
     if cleaned.vertex_count() < 3 {
         // A ring that only survives as a sliver keeps its raw form; the
@@ -1154,24 +1273,27 @@ impl RingGroup {
         };
         let (boundaries, holes) = out;
 
-        // The lossless companion, in the ARC domain: `remove_redundant`
-        // merges two co-radial, co-centred arcs into one and drops collinear
-        // line vertices. It is what turns the cascade's vertex curve from
-        // flat into shrinking (−1.4%/ring, §6) and it costs nothing.
-        let tidy = |pl: Polyline<f64>| -> Option<Polyline<f64>> {
-            let pl = pl.remove_redundant(PLINE_POS_EQUAL_EPS).unwrap_or(pl);
-            (pl.vertex_count() >= 3).then_some(pl)
-        };
-
-        let mut groups: Vec<RingGroup> = boundaries
-            .into_iter()
-            .filter_map(tidy)
-            .map(|boundary| RingGroup {
-                boundary,
-                holes: Vec::new(),
-            })
-            .collect();
-        for hole in holes.into_iter().filter_map(tidy) {
+        // The lossless companion, in the ARC domain — see `tidy_offset_ring`,
+        // which is also where the ring that COLLAPSES gets its answer
+        // (G-UNIFIEDCRASH).
+        //
+        // Written as two explicit loops rather than `filter_map(tidy)`
+        // because the tidy now has a failure to report and a closure that
+        // borrows it cannot be shared by both arms.
+        let mut tidy_failure: Option<OffsetFailure> = None;
+        let mut groups: Vec<RingGroup> = Vec::new();
+        for pl in boundaries {
+            if let Some(boundary) = tidy_offset_ring(pl, &mut tidy_failure) {
+                groups.push(RingGroup {
+                    boundary,
+                    holes: Vec::new(),
+                });
+            }
+        }
+        for pl in holes {
+            let Some(hole) = tidy_offset_ring(pl, &mut tidy_failure) else {
+                continue;
+            };
             let Some(test) = hole.iter_vertexes().next().map(|v| P2::new(v.x, v.y)) else {
                 continue;
             };
@@ -1185,7 +1307,7 @@ impl RingGroup {
                 first.holes.push(hole);
             }
         }
-        (groups, None)
+        (groups, tidy_failure)
     }
 
     /// Flatten to a `Polygon2` — the ONE place the arcs leave the cascade.
@@ -2756,5 +2878,89 @@ mod tests {
             "point should be excluded by strict containment"
         );
         assert!(poly.contains_point_eps(&p, eps));
+    }
+
+    // ── G-UNIFIEDCRASH: a ring that reduces to a point ───────────────────
+
+    /// The minimal witness for the panic [`remove_redundant_contained`]
+    /// contains, built so it cannot rot into a tautology.
+    ///
+    /// Three vertices on the X axis, all bulge-free, on a CLOSED polyline:
+    ///
+    /// * `p0`→`p1` are `1.5·eps` apart, so the library's leading
+    ///   repeat-strip does NOT fire and `result` enters the main loop as
+    ///   `None`;
+    /// * `p1`→`p2` are `0.9·eps` apart and `p2`→`p0` are `0.6·eps` apart, so
+    ///   BOTH main-loop iterations take the repeat-position `DiscardVertex`
+    ///   arm and `result` is left holding exactly the one vertex
+    ///   `copy_self()` seeded it with.
+    ///
+    /// The closed-polyline tail then finds `last() == at(0)` (they are the
+    /// same vertex), calls `remove_last()`, and reads `pl.at(1)` out of the
+    /// now-empty polyline. Pre-fix this test panicked with the live message
+    /// *"index out of bounds: the len is 0 but the index is 1"*.
+    #[test]
+    fn a_ring_that_reduces_to_a_point_does_not_panic_g_unifiedcrash() {
+        let eps = PLINE_POS_EQUAL_EPS;
+        let mut ring: Polyline<f64> = Polyline::with_capacity(3, true);
+        ring.add(0.0, 0.0, 0.0);
+        ring.add(1.5 * eps, 0.0, 0.0);
+        ring.add(0.6 * eps, 0.0, 0.0);
+
+        // The property under test is that this RETURNS at all.
+        let survivors = match remove_redundant_contained(&ring, eps) {
+            RedundantOutcome::Unchanged => ring.vertex_count(),
+            RedundantOutcome::Reduced(reduced) => reduced.vertex_count(),
+            RedundantOutcome::Collapsed { .. } => 0,
+        };
+        assert!(
+            survivors < 3,
+            "a ring whose three vertices all sit inside one epsilon is a \
+             POINT; the tidy must not hand it back as a usable ring \
+             (survivors = {survivors})"
+        );
+    }
+
+    /// The same witness through the production door: `tidy_offset_ring` is
+    /// what [`RingGroup::offset`] runs on every polyline cavalier hands back,
+    /// and a collapsed ring has to leave a trace rather than a hole in the
+    /// cascade.
+    #[test]
+    fn a_collapsed_ring_is_dropped_and_reported_g_unifiedcrash() {
+        let eps = PLINE_POS_EQUAL_EPS;
+        let mut ring: Polyline<f64> = Polyline::with_capacity(3, true);
+        ring.add(0.0, 0.0, 0.0);
+        ring.add(1.5 * eps, 0.0, 0.0);
+        ring.add(0.6 * eps, 0.0, 0.0);
+
+        let mut failure: Option<OffsetFailure> = None;
+        assert!(
+            tidy_offset_ring(ring, &mut failure).is_none(),
+            "a ring that reduces to a point must not survive the tidy"
+        );
+        assert!(
+            matches!(failure, Some(OffsetFailure::LibraryFailure { .. })),
+            "a contained dependency panic must reach the failure channel, \
+             got {failure:?}"
+        );
+    }
+
+    /// The containment is only allowed to trigger on the degenerate case: an
+    /// ordinary ring still goes through `remove_redundant` and still comes
+    /// back with its geometry, so nothing about the working parameter sets
+    /// moves.
+    #[test]
+    fn an_ordinary_ring_is_untouched_by_the_containment() {
+        let mut ring: Polyline<f64> = Polyline::with_capacity(4, true);
+        ring.add(0.0, 0.0, 0.0);
+        ring.add(10.0, 0.0, 0.0);
+        ring.add(10.0, 10.0, 0.0);
+        ring.add(0.0, 10.0, 0.0);
+
+        let mut failure: Option<OffsetFailure> = None;
+        let tidied = tidy_offset_ring(ring, &mut failure);
+        let tidied = tidied.expect("a square is not a collapsed ring");
+        assert_eq!(tidied.vertex_count(), 4);
+        assert!(failure.is_none(), "no panic, no failure: {failure:?}");
     }
 }
