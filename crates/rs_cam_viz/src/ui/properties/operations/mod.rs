@@ -39,8 +39,68 @@ use crate::state::toolpath::{
 
 // ── Heights panel ────────────────────────────────────────────────────────
 
+/// How one height row is *rendered*: every mode is shown as an offset from a
+/// named reference, including `Auto` and `Manual`.
+///
+/// This projection is a **pure read** — the signature takes `&HeightMode` so it
+/// cannot write, and that is the whole point.
+///
+/// G-HEIGHTSTAB (2026-08-23): the row used to promote `Auto` →
+/// `FromReference(default)` and `Manual` → `FromReference(nearest)` at the top
+/// of its *draw* function, so merely rendering the Heights tab rewrote the
+/// stored config. The panel's write-back (`write_entry_config_to_session`) then
+/// saw `tc.heights` change, set `stale_since`, and auto-regeneration took the
+/// op apart. On any operation whose `default_depth_for_heights()` is 0 — the
+/// entire 3D family, which reports `DepthSemantics::None` — the promoted bottom
+/// row became `FromReference { StockTop, -0.0 }`: bottom == stock top, and the
+/// promotion also flipped `ResolvedHeights::bottom_pinned` from false to true,
+/// so the operation honoured a floor at the stock top and regenerated to **zero
+/// moves**. Opening a read-only tab destroyed a healthy 7 672-move toolpath.
+///
+/// Nothing here may write to `mode`; see [`commit_height_row`] for the one
+/// place that does, and what gates it.
+fn height_row_display(
+    mode: &HeightMode,
+    default_ref: HeightReference,
+    default_z: f64,
+    ctx: &HeightContext,
+) -> ReferenceOffset {
+    match *mode {
+        HeightMode::FromReference(ref_offset) => ref_offset,
+        // `default_z` is the absolute Z the CORE resolver produces for this
+        // row, so the displayed value can never disagree with what generation
+        // actually does.
+        HeightMode::Auto => ReferenceOffset {
+            reference: default_ref,
+            offset: default_z - default_ref.resolve_z(ctx),
+        },
+        HeightMode::Manual(abs_z) => {
+            let best_ref = find_nearest_reference(abs_z, ctx);
+            ReferenceOffset {
+                reference: best_ref,
+                offset: abs_z - best_ref.resolve_z(ctx),
+            }
+        }
+    }
+}
+
+/// Write an edited row back to the stored mode.
+///
+/// `edited` must be true only when the user moved a widget **this frame**
+/// (a DragValue change or a reference pick). Rendering alone never sets it, so
+/// viewing the Heights tab leaves `Auto` as `Auto` — which is what keeps
+/// `bottom_pinned` false and the operation's own depth semantics in charge.
+fn commit_height_row(mode: &mut HeightMode, display: ReferenceOffset, edited: bool) {
+    if edited {
+        *mode = HeightMode::FromReference(display);
+    }
+}
+
 /// F360-style height row: [offset value] [from Reference ▾]
-/// Auto mode auto-converts to FromReference with sensible defaults.
+///
+/// `default_z` is the absolute Z the core resolver produces for this row (see
+/// [`height_row_display`]). An `Auto` row displays that value and stays `Auto`
+/// until the user actually edits the row.
 #[allow(clippy::too_many_arguments)]
 fn draw_height_row(
     ui: &mut egui::Ui,
@@ -48,55 +108,56 @@ fn draw_height_row(
     tooltip: &str,
     mode: &mut HeightMode,
     default_ref: HeightReference,
-    default_offset: f64,
+    default_z: f64,
     ctx: &HeightContext,
     id_salt: &str,
 ) {
-    // Auto-promote to FromReference with the pre-computed sensible default
-    if mode.is_auto() {
-        *mode = HeightMode::FromReference(ReferenceOffset {
-            reference: default_ref,
-            offset: default_offset,
-        });
-    }
-
-    // If Manual, convert to FromReference from the nearest reference
-    if let HeightMode::Manual(abs_z) = *mode {
-        let best_ref = find_nearest_reference(abs_z, ctx);
-        let base_z = best_ref.resolve_z(ctx);
-        *mode = HeightMode::FromReference(ReferenceOffset {
-            reference: best_ref,
-            offset: abs_z - base_z,
-        });
-    }
+    let was_auto = mode.is_auto();
+    let mut display = height_row_display(mode, default_ref, default_z, ctx);
 
     ui.label(label).on_hover_text(tooltip);
 
-    if let HeightMode::FromReference(ref_offset) = mode {
-        ui.add(
-            egui::DragValue::new(&mut ref_offset.offset)
+    let mut edited = ui
+        .add(
+            egui::DragValue::new(&mut display.offset)
                 .suffix(" mm")
                 .speed(0.5)
                 .range(-500.0..=500.0),
-        );
+        )
+        .changed();
 
-        egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
-            .width(105.0)
-            .selected_text(ref_label(ref_offset.reference, ref_offset.offset))
-            .show_ui(ui, |ui| {
-                for &href in HeightReference::ALL {
-                    ui.selectable_value(&mut ref_offset.reference, href, href.label());
-                }
-            });
+    let combo = egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
+        .width(105.0)
+        .selected_text(ref_label(display.reference, display.offset))
+        .show_ui(ui, |ui| {
+            let mut picked = false;
+            for &href in HeightReference::ALL {
+                // `.clicked()` rather than `.changed()`: re-picking the
+                // reference an Auto row is merely *displaying* is still an
+                // explicit "pin it here" from the operator.
+                picked |= ui
+                    .selectable_value(&mut display.reference, href, href.label())
+                    .clicked();
+            }
+            picked
+        });
+    edited |= combo.inner.unwrap_or(false);
 
-        // Show resolved absolute Z as a dim hint
-        let resolved = ref_offset.reference.resolve_z(ctx) + ref_offset.offset;
-        ui.label(
-            egui::RichText::new(format!("= {resolved:.1}"))
-                .small()
-                .color(egui::Color32::from_rgb(100, 100, 115)),
-        );
-    }
+    commit_height_row(mode, display, edited);
+
+    // Resolved absolute Z as a dim hint. "(auto)" marks a row that is still
+    // deferring to the resolver rather than carrying a pinned value.
+    let resolved = display.reference.resolve_z(ctx) + display.offset;
+    let hint = if was_auto && !edited {
+        format!("= {resolved:.1} (auto)")
+    } else {
+        format!("= {resolved:.1}")
+    };
+    ui.label(
+        egui::RichText::new(hint)
+            .small()
+            .color(egui::Color32::from_rgb(100, 100, 115)),
+    );
 
     ui.end_row();
 }
@@ -127,8 +188,14 @@ pub(super) fn draw_heights_params(
     heights: &mut HeightsConfig,
     ctx: &HeightContext,
 ) {
-    // Sensible default offsets (from the auto-resolve logic)
-    let safe_offset = ctx.safe_z - ctx.stock_top_z; // safe_z relative to stock top
+    // What an `Auto` row shows is the value the CORE resolver produces for
+    // THIS config — not a second set of defaults maintained here. The panel
+    // used to carry its own (feed_z defaulted to `stock_top + 2` while the
+    // resolver's is `retract - 2`), and because the panel then wrote its
+    // defaults into the config on render, the divergence was a silent edit
+    // rather than a visible disagreement. Rows other than `Auto` ignore this
+    // value and display their own stored offset / absolute Z.
+    let auto = heights.resolve(ctx);
 
     egui::Grid::new("heights_p")
         .num_columns(4)
@@ -140,7 +207,7 @@ pub(super) fn draw_heights_params(
                 "Highest safe height. Rapid moves between separate operations travel at this Z.",
                 &mut heights.clearance_z,
                 HeightReference::StockTop,
-                safe_offset + 10.0,
+                auto.clearance_z,
                 ctx,
                 "h_clear",
             );
@@ -150,7 +217,7 @@ pub(super) fn draw_heights_params(
                 "Rapid travel height within an operation. Tool retracts here between cutting passes.",
                 &mut heights.retract_z,
                 HeightReference::StockTop,
-                safe_offset,
+                auto.retract_z,
                 ctx,
                 "h_retract",
             );
@@ -160,7 +227,7 @@ pub(super) fn draw_heights_params(
                 "Approach height. Tool switches from rapid to feed rate here before plunging into material.",
                 &mut heights.feed_z,
                 HeightReference::StockTop,
-                2.0,
+                auto.feed_z,
                 ctx,
                 "h_feed",
             );
@@ -170,17 +237,19 @@ pub(super) fn draw_heights_params(
                 "Top of material. Cutting starts at this Z. Usually the stock top surface.",
                 &mut heights.top_z,
                 HeightReference::StockTop,
-                0.0,
+                auto.top_z,
                 ctx,
                 "h_top",
             );
             draw_height_row(
                 ui,
                 "Bottom:",
-                "Deepest cut depth. The tool will not cut below this Z.",
+                "Deepest cut depth. The tool will not cut below this Z. Left on \
+                 auto, the operation decides its own floor — 3D operations drive \
+                 it from the model, and pinning this row overrides that.",
                 &mut heights.bottom_z,
                 HeightReference::StockTop,
-                -ctx.op_depth.abs(),
+                auto.bottom_z,
                 ctx,
                 "h_bottom",
             );
@@ -1973,6 +2042,112 @@ mod tests {
     use super::*;
     use crate::state::job::{ModelId, ModelKind, ModelUnits, ToolConfig, ToolId, ToolType};
     use crate::state::toolpath::OperationType;
+
+    // ── G-HEIGHTSTAB: the Heights tab is a pure read ──────────────────
+    //
+    // These pin the two halves of the row contract: the display projection
+    // cannot write (it takes `&HeightMode`), and the commit is gated on a
+    // real user edit. See `height_row_display`'s doc comment for the defect.
+
+    /// Stock 0..25, and an operation with NO depth semantics — the whole 3D
+    /// family (`DepthSemantics::None` → `default_depth_for_heights() == 0`).
+    /// This is the exact shape that took the adaptive3d rough to zero moves.
+    fn zero_depth_3d_ctx() -> HeightContext {
+        HeightContext {
+            safe_z: 30.0,
+            op_depth: 0.0,
+            stock_top_z: 25.0,
+            stock_bottom_z: 0.0,
+            model_top_z: Some(24.0),
+            model_bottom_z: Some(2.0),
+        }
+    }
+
+    #[test]
+    fn heights_display_leaves_auto_rows_unpinned_g_heightstab() {
+        let heights = HeightsConfig::default();
+        let ctx = zero_depth_3d_ctx();
+        let auto = heights.resolve(&ctx);
+
+        // Pre-condition: an all-Auto config leaves the floor to the operation.
+        assert!(!auto.bottom_pinned);
+        assert!(!auto.top_pinned);
+        // …and on a zero-depth op the resolver's Auto bottom sits AT the stock
+        // top, which is exactly why committing it clipped the op to nothing.
+        assert!((auto.bottom_z - ctx.stock_top_z).abs() < 1e-9);
+
+        // Rendering projects each Auto row for display only.
+        for (mode, default_z) in [
+            (&heights.clearance_z, auto.clearance_z),
+            (&heights.retract_z, auto.retract_z),
+            (&heights.feed_z, auto.feed_z),
+            (&heights.top_z, auto.top_z),
+            (&heights.bottom_z, auto.bottom_z),
+        ] {
+            let display = height_row_display(mode, HeightReference::StockTop, default_z, &ctx);
+            assert_eq!(display.reference, HeightReference::StockTop);
+            // The displayed "= z" hint must equal what the core resolver
+            // produces — the panel must not carry its own defaults.
+            let shown = display.reference.resolve_z(&ctx) + display.offset;
+            assert!(
+                (shown - default_z).abs() < 1e-9,
+                "displayed {shown} != resolved {default_z}"
+            );
+        }
+
+        // The stored config is untouched, so nothing goes stale and the
+        // operation keeps deciding its own floor.
+        assert!(heights.clearance_z.is_auto());
+        assert!(heights.retract_z.is_auto());
+        assert!(heights.feed_z.is_auto());
+        assert!(heights.top_z.is_auto());
+        assert!(heights.bottom_z.is_auto());
+        assert!(!heights.resolve(&ctx).bottom_pinned);
+    }
+
+    #[test]
+    fn height_row_commits_only_on_a_user_edit_g_heightstab() {
+        let ctx = zero_depth_3d_ctx();
+        let mut heights = HeightsConfig::default();
+        let auto = heights.resolve(&ctx);
+        let display = height_row_display(
+            &heights.bottom_z,
+            HeightReference::StockTop,
+            auto.bottom_z,
+            &ctx,
+        );
+
+        // Viewing the tab: no widget moved.
+        commit_height_row(&mut heights.bottom_z, display, false);
+        assert!(heights.bottom_z.is_auto());
+        assert!(!heights.resolve(&ctx).bottom_pinned);
+
+        // The user drags the row: now it pins, and only now.
+        let edited = ReferenceOffset {
+            reference: HeightReference::StockTop,
+            offset: -6.0,
+        };
+        commit_height_row(&mut heights.bottom_z, edited, true);
+        assert!(matches!(
+            heights.bottom_z,
+            HeightMode::FromReference(r) if (r.offset + 6.0).abs() < 1e-9
+        ));
+        let resolved = heights.resolve(&ctx);
+        assert!(resolved.bottom_pinned);
+        assert!((resolved.bottom_z - 19.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn manual_height_rows_display_against_the_nearest_reference() {
+        let ctx = zero_depth_3d_ctx();
+        // 2.4 is nearest ModelBottom (2.0), not StockBottom (0.0).
+        let mode = HeightMode::Manual(2.4);
+        let display = height_row_display(&mode, HeightReference::StockTop, 0.0, &ctx);
+        assert_eq!(display.reference, HeightReference::ModelBottom);
+        assert!((display.offset - 0.4).abs() < 1e-9);
+        // Still Manual — projecting it for display does not rewrite it.
+        assert!(matches!(mode, HeightMode::Manual(v) if (v - 2.4).abs() < 1e-9));
+    }
 
     fn session_polygon_model(id: usize) -> rs_cam_core::session::LoadedModel {
         rs_cam_core::session::LoadedModel {

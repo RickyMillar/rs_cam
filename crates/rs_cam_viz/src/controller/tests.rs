@@ -418,6 +418,64 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
     assert!(snapshot.widgets.contains_key("properties_stock_to_leave"));
 }
 
+/// G-HEIGHTSTAB (observed live 2026-08-23): `set_ui_view(toolpath_index = 1,
+/// properties_tab = "heights")` on a healthy generated adaptive3d rough marked
+/// it stale and auto-regenerated it to ZERO moves.
+///
+/// The Heights rows promoted `Auto` → `FromReference(sensible default)` while
+/// *drawing*; `write_entry_config_to_session` wrote that into the session, and
+/// the heights-changed check below it set `stale_since` and dirtied the
+/// project. On a 3D operation (`DepthSemantics::None`, so
+/// `default_depth_for_heights() == 0`) the promoted bottom row was "0 mm above
+/// Stock Top" — a floor AT the stock top, plus `bottom_pinned` flipped true —
+/// which clipped the whole operation away.
+///
+/// Viewing the tab must change nothing: no commit, no stale mark, no dirty.
+#[test]
+fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
+    let mut controller = sample_controller();
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+
+    let heights_repr = |controller: &AppController<ScriptedBackend>| {
+        format!(
+            "{:?}",
+            controller
+                .state
+                .session
+                .find_toolpath_config_by_id(tp_id)
+                .expect("toolpath present")
+                .1
+                .heights
+        )
+    };
+    let before = heights_repr(&controller);
+    assert!(
+        before.contains("Auto"),
+        "fixture must start with auto heights, got {before}"
+    );
+    controller.state.gui.dirty = false;
+
+    // Exactly what MCP `set_ui_view(properties_tab = "heights")` sets.
+    controller.state.gui.pending_toolpath_tab = Some((tp_id, "heights".to_owned()));
+    let _ = render_snapshot(&mut controller);
+
+    assert_eq!(
+        before,
+        heights_repr(&controller),
+        "rendering the Heights tab rewrote the stored heights"
+    );
+    assert!(
+        controller.state.gui.toolpath_rt[&tp_id]
+            .stale_since
+            .is_none(),
+        "rendering the Heights tab marked the toolpath stale"
+    );
+    assert!(
+        !controller.state.gui.dirty,
+        "rendering the Heights tab dirtied the project"
+    );
+}
+
 #[test]
 fn load_warning_window_can_be_shown_and_dismissed() {
     let mut controller = sample_controller();
