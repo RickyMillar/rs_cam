@@ -2339,3 +2339,66 @@ pass re-syncs `gui.toolpath_rt`. Either way the sentry is an emitted-motion
 one: export after modulation, assert the F-words match the modulated
 per-move schedule — the F-036c-style test that would have caught this reads
 the trace, not the bytes.
+
+## Lateral setups seen by eyes for the first time — 2026-08-22 evening (GUI session)
+
+Worked `planning/lateral_setups_2026-08-22/GUI_SESSION_PLAN.md` §2 on the live
+GUI (release at `769aea6c`). Throwaway demo: 100×60×40 box mesh, `Front`
+setup, work-plane pocket (20,8)–(80,32)×4 mm + Ø6 drill at (50,20)×8 mm —
+the end-to-end fixture's geometry, driven through the real product surface
+(SVG import, project load, MCP generate/sim/scrub).
+
+**The lateral cut is VISIBLE and correct on every surface.**
+
+- Live scrub (mid-pocket and end): pocket carves progressively into the
+  setup-local top face, tool preview tracks, drill gates and playback UI all
+  live. The viewport deliberately shows the ACTIVE SETUP's local frame — the
+  part as fixtured on the machine, front face up — because after the
+  G-LATERALSCRUB global mapping, `transform_mesh_to_local_frame` re-frames
+  for display. Operator-truthful, reads as sane.
+- Checkpoint composite renders in the GLOBAL frame (frame line Z 0..40) with
+  the cut on the y=60 face. Geometry measured off the exported mesh, not
+  shading: pocket interior vertices all on the y=60 face, drill bottom disk
+  at y=52.0 = exactly the commanded 8 mm depth.
+- Both refusals surface legibly in the GUI: no-mesh (a8i 2D project +
+  `set_setup_face front` → red ERR badge, "1 uncomputed" tab warning, full
+  typed toast naming the Top-setup workaround) and G-LATERALKEEPOUT (fixture
+  variant → both ops ERR, full toast naming disable-or-Top). Screenshots in
+  the session scratchpad.
+
+**Two human-eyes findings, neither a geometry defect:**
+
+- **G-HOLESHADE (display observation).** A small blind hole (Ø6×8 at 0.5 mm
+  cells) reads as a PROTRUDING PEG in both the composite and the live
+  viewport — crater-illusion shading on the inner wall. A plug is physically
+  impossible from removal-only ops, and the mesh probe proves a hole; but an
+  operator pattern-matched on G-DRILLFLIP (whose symptom was a real
+  complement carve) would raise a false alarm, as this session briefly did.
+  Worth a lighting/normal look someday; log-only.
+- **G-FRONTNAME (naming, needs operator ruling).** `FaceUp::Front` machines
+  the world **+Y** face — deliberate since G-LATERALSIGN
+  (`transform.rs:445-452` derives "tool arrives from +Y = FromBack") — but
+  the composite renderer labels the +Y-eye views **REAR** (front = −Y,
+  drafting convention). So a "Front setup"'s cut appears in the panels
+  labelled REAR-LEFT/REAR-RIGHT. Two internally-consistent conventions
+  colliding on one surface; one ruling should pick which face "front" names,
+  and the loser (FaceUp naming or composite labels) gets renamed.
+
+## Composite renderer chirality eyeball — PASS, 2026-08-22 evening (TD3 leftover closed)
+
+GUI_SESSION_PLAN §3. Chirality-visible fixture: L-shaped through-pocket
+(bar at low X spanning y 13..47, arm at low Y out to x 67 — ground truth
+read from the emitted G-code, not the plan). All six panels graded:
+
+- TOP (+X right +Y up): bar left, arm bottom — matches emitted motion.
+- BOTTOM (+X right +Y down): arm flips to top, bar stays left — the correct
+  flip-over-X mirror, on a panel that TD3's fix list included and that a
+  blind-hole part cannot grade (first version of this check used a 4 mm
+  pocket and BOTTOM was featureless; the through-cut is what made it
+  gradeable).
+- All four isometrics consistent with their stated eyes and with each other.
+
+Artifacts `chirality_L_composite.png` / `chirality_L_through.png` in the
+session scratchpad. One line of caution stands: the eyeball grades panel
+labels vs geometry; it does not re-litigate the per-panel eye math beyond
+what TOP/BOTTOM pin exactly.
