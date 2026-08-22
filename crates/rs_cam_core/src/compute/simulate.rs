@@ -239,8 +239,38 @@ pub struct SimBoundary {
 #[derive(Clone)]
 pub struct SimCheckpointMesh {
     pub boundary_index: usize,
+    /// Display mesh, always in the ZERO-ROOTED stock-relative global frame:
+    /// extracted from the per-setup **local** stock and then mapped by
+    /// [`transform_stock_mesh_to_global`].
     pub mesh: StockMesh,
+    /// The stock the live-scrub viewport resets to and replays forward from.
+    ///
+    /// Read it together with [`Self::stock_local_to_global`], which names the
+    /// frame it is in — the two are not always the same frame, and which one
+    /// applies is a property of the setup, not of the reader.
     pub stock: TriDexelStock,
+    /// Frame of [`Self::stock`].
+    ///
+    /// * `None` — the zero-rooted stock-relative **global** playback frame.
+    ///   Every setup whose tool axis is global Z (`FaceUp::Top`/`Bottom`)
+    ///   lands here, which is every project that has ever shipped.
+    /// * `Some(info)` — the **setup-local** frame; map it with
+    ///   `info.local_to_global`. Lateral setups (`FaceUp::{Front,Back,Left,
+    ///   Right}`) only.
+    ///
+    /// **G-LATERALSCRUB.** A lateral cut cannot be represented in the global
+    /// playback stock at all: its tool axis is a global X/Y dexel axis, and
+    /// `dexel_stock_to_mesh` turns only the **Z** grid into a closed solid —
+    /// the X/Y grids are appended as open per-segment surfaces with no
+    /// boolean, so they are drawn inside an intact block and occluded by it.
+    /// Stamping such a group into the global stock therefore removed nothing
+    /// an operator could see, and the live-scrub mesh disagreed with the
+    /// checkpoint mesh (which has always come from the local stock). Rather
+    /// than teach the side grids to boolean, a lateral group's checkpoint
+    /// carries its **local** stock — the same object [`Self::mesh`] is
+    /// extracted from — and playback replays that group's setup-local
+    /// toolpaths into it with `StockCutDirection::FromTop`.
+    pub stock_local_to_global: Option<SetupTransformInfo>,
 }
 
 /// Per-dexel-column deviation: a column's material top vs the model
@@ -650,9 +680,18 @@ pub fn group_drill_op_to_global(
     out
 }
 
-/// Transform a stock mesh from setup-local to the stock-relative global
-/// frame. See [`group_point_to_global`] for the contract.
-fn transform_stock_mesh_to_global(
+/// Transform a stock mesh from setup-local into the ZERO-ROOTED
+/// stock-relative global frame every display surface shares. See
+/// [`group_point_to_global`] for the contract.
+///
+/// `transform` is the group's `local_to_global`: `Some(info)` for a
+/// non-identity setup, `None` for an identity one — whose toolpaths are
+/// emitted in world coordinates and so need only the `-stock_min` shift.
+///
+/// Public because the live-scrub playback path (viz) must reach the same
+/// frame by the same route as the checkpoint meshes. Carrying a private copy
+/// of this mapping is how G-SIM-IDENTITY-FRAME got a second home.
+pub fn transform_stock_mesh_to_global(
     mesh: &StockMesh,
     transform: &Option<SetupTransformInfo>,
     stock_min: P3,
@@ -898,6 +937,25 @@ where
             .as_ref()
             .map_or(StockCutDirection::FromTop, |info| info.cut_direction());
 
+        // G-LATERALSCRUB. A group whose tool axis is a global X or Y dexel
+        // axis cannot be carried by the global playback stock: only the Z
+        // grid becomes a closed solid, and the side grids are appended to it
+        // as open surfaces with no boolean, so a lateral stamp removes
+        // nothing an operator can see and allocates a full-material side grid
+        // that knows nothing of what the Z grid already lost. Such a group's
+        // checkpoint carries its LOCAL stock instead — the same object its
+        // mesh is extracted from — and the global stamp is skipped outright
+        // rather than done and discarded.
+        let lateral_playback = !matches!(
+            playback_direction,
+            StockCutDirection::FromTop | StockCutDirection::FromBottom
+        );
+        let checkpoint_frame = if lateral_playback {
+            group.local_to_global.clone()
+        } else {
+            None
+        };
+
         for (k, entry) in group.toolpaths.iter().enumerate() {
             // Already carved, and its whole contribution is in the restored
             // state (S5).
@@ -1035,46 +1093,54 @@ where
                 direction: playback_direction,
             });
 
-            // Frame-map the toolpath into the zero-rooted stock-relative
-            // global frame for the parallel global stock. Identity groups
-            // emit in world coords and are shifted by `-stock_bbox.min`;
-            // see `group_toolpath_to_global`.
-            let global_tp = Arc::new(group_toolpath_to_global(
-                entry_toolpath,
-                &group.local_to_global,
-                request.stock_bbox.min,
-            ));
-
-            // Stamp the global stock in parallel for checkpoint/playback support.
-            // This uses the same global-frame toolpath + direction as playback.
-            // For drill ops, apply analytical removal in the global frame
-            // — hole XYs are frame-mapped for every group, non-identity
-            // through `local_to_global` and identity by `-stock_bbox.min`.
-            if let Some(drill_op_arc) = entry.drill_op.as_ref() {
-                let global_drill_op = group_drill_op_to_global(
-                    drill_op_arc,
-                    &group.local_to_global,
-                    request.stock_bbox.min,
-                );
-                global_stock.apply_drill_op(&global_drill_op, playback_direction);
-                global_drill_ops.push(global_drill_op);
-            } else {
-                // S4a: this used to build a second `RadialProfileLUT` from
-                // `entry.tool` at `LUT_SAMPLES` — the same two arguments as
-                // `lut` above, i.e. a bit-for-bit duplicate of a 4096-entry
-                // table, rebuilt once per toolpath. The playback stamp is a
-                // different grid and a different frame, but it is the same
-                // cutter, so it takes the same profile.
-                let _ = global_stock.simulate_toolpath_with_lut_cancel(
-                    &global_tp,
-                    &lut,
-                    radius,
-                    playback_direction,
-                    &|| cancel.load(Ordering::SeqCst),
-                );
+            // Stamp the global stock in parallel for checkpoint/playback
+            // support, in the zero-rooted stock-relative global frame.
+            // Identity groups emit in world coords and are shifted by
+            // `-stock_bbox.min`; see `group_toolpath_to_global`.
+            //
+            // A LATERAL group is skipped entirely (G-LATERALSCRUB): its
+            // stamp would land in a side grid that never reconciles with the
+            // Z-grid solid, so it costs a full replay of every move and
+            // removes nothing anyone can see. Its removal is already in the
+            // local `group_stock` above — the frame where the tool axis IS
+            // the grid axis — and that is what the checkpoint below
+            // publishes.
+            if !lateral_playback {
+                if let Some(drill_op_arc) = entry.drill_op.as_ref() {
+                    // For drill ops, apply analytical removal in the global
+                    // frame — hole XYs are frame-mapped for every group,
+                    // non-identity through `local_to_global` and identity by
+                    // `-stock_bbox.min`.
+                    let global_drill_op = group_drill_op_to_global(
+                        drill_op_arc,
+                        &group.local_to_global,
+                        request.stock_bbox.min,
+                    );
+                    global_stock.apply_drill_op(&global_drill_op, playback_direction);
+                    global_drill_ops.push(global_drill_op);
+                } else {
+                    // S4a: this used to build a second `RadialProfileLUT` from
+                    // `entry.tool` at `LUT_SAMPLES` — the same two arguments as
+                    // `lut` above, i.e. a bit-for-bit duplicate of a 4096-entry
+                    // table, rebuilt once per toolpath. The playback stamp is a
+                    // different grid and a different frame, but it is the same
+                    // cutter, so it takes the same profile.
+                    let global_tp = Arc::new(group_toolpath_to_global(
+                        entry_toolpath,
+                        &group.local_to_global,
+                        request.stock_bbox.min,
+                    ));
+                    let _ = global_stock.simulate_toolpath_with_lut_cancel(
+                        &global_tp,
+                        &lut,
+                        radius,
+                        playback_direction,
+                        &|| cancel.load(Ordering::SeqCst),
+                    );
+                }
             }
 
-            // Checkpoint: composited mesh for display + global stock for playback resume.
+            // Checkpoint: composited mesh for display + playback stock resume.
             let mut local_mesh = dexel_stock_to_mesh(&group_stock);
             // §6.E append analytic drill cylinders so checkpoint frames
             // show clean circular hole walls even at low dexel resolution.
@@ -1090,10 +1156,20 @@ where
                 &group.local_to_global,
                 request.stock_bbox.min,
             );
+            // The playback stock. For every setup whose tool axis is global
+            // Z this is the global stock, exactly as it has always been. A
+            // lateral setup publishes its LOCAL stock plus the transform
+            // that frames it — see `SimCheckpointMesh::stock_local_to_global`.
+            let checkpoint_stock = if lateral_playback {
+                group_stock.checkpoint()
+            } else {
+                global_stock.checkpoint()
+            };
             checkpoints.push(Arc::new(SimCheckpointMesh {
                 boundary_index,
                 mesh: checkpoint_mesh,
-                stock: global_stock.checkpoint(),
+                stock: checkpoint_stock,
+                stock_local_to_global: checkpoint_frame.clone(),
             }));
 
             boundary_index += 1;

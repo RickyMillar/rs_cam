@@ -769,6 +769,7 @@ mod tests {
             boundary_index: 0,
             mesh: StockMesh::empty(),
             stock,
+            stock_local_to_global: None,
         })];
         // One pointer, not one grid.
         assert!(with_cp.estimated_bytes() - bare < 64);

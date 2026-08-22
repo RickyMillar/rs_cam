@@ -567,9 +567,20 @@ impl SimCheckpoint {
     }
 
     /// Tri-dexel stock at this boundary, for resuming incremental simulation.
+    ///
+    /// Read [`Self::stock_local_to_global`] alongside it — the frame is not
+    /// the same for every setup.
     #[must_use]
     pub fn stock(&self) -> &TriDexelStock {
         &self.core.stock
+    }
+
+    /// Frame of [`Self::stock`]: `None` for the zero-rooted global playback
+    /// frame, `Some(info)` for a setup-local one (lateral setups). See
+    /// `rs_cam_core::compute::simulate::SimCheckpointMesh::stock_local_to_global`.
+    #[must_use]
+    pub fn stock_local_to_global(&self) -> Option<&rs_cam_core::compute::SetupTransformInfo> {
+        self.core.stock_local_to_global.as_ref()
     }
 }
 
@@ -650,6 +661,15 @@ pub struct SimulationPlayback {
     pub tool_deflection_mm: Option<f64>,
     /// Live tri-dexel stock for incremental playback simulation.
     pub live_stock: Option<TriDexelStock>,
+    /// Setup group [`Self::live_stock`] belongs to, or `None` when it has not
+    /// been claimed by one yet.
+    ///
+    /// The live stock is not frame-agnostic: a lateral setup replays into a
+    /// SETUP-LOCAL stock (G-LATERALSCRUB) while every other setup replays into
+    /// the shared zero-rooted global one. Crossing a group boundary can
+    /// therefore mean the stock in hand is in the wrong frame entirely, which
+    /// a move-index comparison alone would never notice.
+    pub live_stock_group: Option<usize>,
     /// Move index the live heightmap has been simulated up to.
     pub live_sim_move: usize,
     /// Current display mesh (may differ from final mesh during scrubbing).
@@ -771,6 +791,7 @@ impl SimulationState {
                 tool_cutting_length: 0.0,
                 tool_deflection_mm: None,
                 live_stock: None,
+                live_stock_group: None,
                 live_sim_move: 0,
                 display_mesh: None,
                 display_mesh_move: None,
@@ -2516,6 +2537,7 @@ impl Default for SimulationPlayback {
             tool_cutting_length: 0.0,
             tool_deflection_mm: None,
             live_stock: None,
+            live_stock_group: None,
             live_sim_move: 0,
             display_mesh: None,
             display_mesh_move: None,

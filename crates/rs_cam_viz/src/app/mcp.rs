@@ -4474,10 +4474,32 @@ impl super::RsCamApp {
                     stock_bbox.max.z - stock_bbox.min.z,
                 ),
             };
-            let pixels = if let Some(cp) = results.checkpoints.get(cp_idx) {
+            // A checkpoint whose stock is SETUP-LOCAL (a lateral setup —
+            // G-LATERALSCRUB) cannot be rendered in the global frame this
+            // footer anchors to: its grid is in a different frame, and
+            // rendering it here would misregister the part exactly the way
+            // G-SIM-IDENTITY-FRAME did. Its `mesh` is already mapped into the
+            // global frame, so take that route instead — and it is the route
+            // that actually shows the lateral cut.
+            let local_framed_stock = results
+                .checkpoints
+                .get(cp_idx)
+                .is_some_and(|cp| cp.stock_local_to_global().is_some());
+            let pixels = if let Some(cp) = results
+                .checkpoints
+                .get(cp_idx)
+                .filter(|_| !local_framed_stock)
+            {
                 rs_cam_core::fingerprint::render_stock_composite_in_frame(
                     cp.stock(),
                     &world_frame,
+                    w,
+                    h,
+                )
+            } else if let Some(cp) = results.checkpoints.get(cp_idx) {
+                rs_cam_core::fingerprint::render_mesh_composite_in_frame(
+                    cp.mesh(),
+                    Some(&world_frame),
                     w,
                     h,
                 )

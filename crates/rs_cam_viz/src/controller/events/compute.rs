@@ -1072,6 +1072,15 @@ impl<B: ComputeBackend> AppController<B> {
                         );
                         self.state.simulation.playback.live_stock = Some(initial_stock);
                         self.state.simulation.playback.live_sim_move = 0;
+                        // Unclaimed: this stock is in the global frame, and
+                        // whether that is the right frame for the group the
+                        // playhead lands in is a question only the new
+                        // `playback_data` can answer (G-LATERALSCRUB). Leaving
+                        // a previous run's group id here would let a lateral
+                        // group inherit a global-frame stock unchallenged,
+                        // because the group ORDINAL can match across runs
+                        // while the frame does not.
+                        self.state.simulation.playback.live_stock_group = None;
 
                         let prev_gen = self
                             .state

@@ -227,20 +227,45 @@ pub struct SimBoundary {
 
 pub use rs_cam_core::compute::simulate::SimCheckpointMesh;
 
-/// One entry in the live-sim playback stream: pre-transformed toolpath in the
-/// global stock frame, the tool config, the cut direction for the toolpath's
-/// setup, and (for drill operations) the analytical `DrillOp` already
-/// re-expressed in the global frame.
+/// One entry in the live-sim playback stream: a pre-transformed toolpath, the
+/// tool config, the cut direction to stamp it with, and (for drill operations)
+/// the analytical `DrillOp` in the same frame.
 ///
 /// `drill_op = Some(...)` instructs `update_live_sim` to use
 /// `TriDexelStock::apply_drill_op` rather than `simulate_toolpath_range` —
 /// matching what the compute path applies to each checkpoint stock.
-pub type PlaybackToolpath = (
-    Arc<Toolpath>,
-    ToolConfig,
-    StockCutDirection,
-    Option<Arc<rs_cam_core::drill_op::DrillOp>>,
-);
+///
+/// **Frames.** Read [`Self::frame`] before reading anything else: it says
+/// which frame `toolpath`, `drill_op` and `stock_bbox` are in, and therefore
+/// which stock this entry may be stamped into. Entries of the two kinds must
+/// never be stamped into the same stock.
+pub struct PlaybackToolpath {
+    /// Moves, expressed in [`Self::frame`].
+    pub toolpath: Arc<Toolpath>,
+    pub tool: ToolConfig,
+    /// Direction to stamp with, in [`Self::frame`]. Always `FromTop` for a
+    /// setup-local entry, because setup-local Z is always the tool axis.
+    pub direction: StockCutDirection,
+    /// Analytic drill removal, expressed in [`Self::frame`].
+    pub drill_op: Option<Arc<rs_cam_core::drill_op::DrillOp>>,
+    /// Ordinal of the setup group this entry belongs to. Playback resets
+    /// whenever the playhead crosses into a different group, because the two
+    /// groups need not share a frame.
+    pub group: usize,
+    /// The frame `toolpath` / `drill_op` / `stock_bbox` are in.
+    ///
+    /// * `None` — the ZERO-ROOTED stock-relative **global** playback frame,
+    ///   shared by every group whose tool axis is global Z. This is what has
+    ///   always shipped, and it is what keeps a two-sided project's earlier
+    ///   cuts on screen while a later setup replays.
+    /// * `Some(info)` — the **setup-local** frame, for a lateral setup, whose
+    ///   cut the global stock cannot represent at all (G-LATERALSCRUB; see
+    ///   `rs_cam_core::compute::simulate::SimCheckpointMesh::stock_local_to_global`).
+    ///   The extracted mesh is mapped back with `info.local_to_global`.
+    pub frame: Option<rs_cam_core::compute::SetupTransformInfo>,
+    /// Bounding box of the stock this entry stamps into, in [`Self::frame`].
+    pub stock_bbox: rs_cam_core::geo::BoundingBox3,
+}
 
 pub struct SimulationResult {
     pub mesh: StockMesh,
