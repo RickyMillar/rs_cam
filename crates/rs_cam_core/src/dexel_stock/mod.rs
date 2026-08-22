@@ -30,6 +30,25 @@ use crate::dexel::{DexelAxis, DexelGrid};
 use crate::geo::{BoundingBox3, P3};
 use crate::radial_profile::RadialProfileLUT;
 
+/// What one [`TriDexelStock::apply_drill_op`] call actually removed.
+///
+/// Exists because the analytic drill kernel has three ways to remove nothing
+/// while returning normally — an off-grid hole centre, a zero-diameter tool,
+/// and a drill axis this kernel cannot represent — and G-DRILLFLIP showed
+/// that "the stock looks unchanged" is a symptom a person has to be watching
+/// the viewport to catch. A test can assert `holes_carved` instead, which is
+/// the non-vacuity handle the fix's own sentries use.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DrillRemovalReport {
+    /// Holes whose centre landed on the grid and whose footprint was walked.
+    pub holes_carved: usize,
+    /// Holes whose XY centre fell outside the grid entirely.
+    pub holes_off_grid: usize,
+    /// The drill axis was not this grid's Z axis (a lateral `FaceUp`), so
+    /// nothing was removed. See `apply_drill_op`'s "Lateral setups abstain".
+    pub unrepresentable_axis: bool,
+}
+
 // ── TriDexelStock ───────────────────────────────────────────────────────
 
 /// Volumetric stock representation using three orthogonal dexel grids.
@@ -382,24 +401,105 @@ impl TriDexelStock {
         self.z_grid.lower_conservative_top(idx, z);
     }
 
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// Clear all material **below** `z` at the given cell on the Z-grid.
+    ///
+    /// The mirror of [`Self::clear_above_at`], for a tool entering from the
+    /// low side of the ray axis (`StockCutDirection::cuts_from_high_side()`
+    /// is false). After this call, no material exists below `z` at
+    /// (row, col).
+    ///
+    /// # Why this does not touch `conservative_top`
+    ///
+    /// `conservative_top` is a sliver-safe **upper** bound on material height
+    /// anywhere in the cell. Subtracting from below cannot raise any ray's
+    /// top, so the existing bound stays valid without being rewritten. When
+    /// the subtraction empties the ray outright the bound is left loose — it
+    /// still reports the pre-clear height for a cell that now holds nothing.
+    /// That errs toward *more* material than is really there, which is the
+    /// safe direction for every consumer of the bound (the rapid-collision
+    /// scan and the air-skip test both treat a higher bound as "check this
+    /// cell"), so it costs work, never safety. Lowering it to the surviving
+    /// `ray_top` would be tighter but is **not** sliver-safe: that is a
+    /// cell-centre sample, and the bound's contract is over the whole cell.
+    pub fn clear_below_at(&mut self, row: usize, col: usize, z: f32) {
+        let idx = row * self.z_grid.cols + col;
+        let ray = &mut self.z_grid.rays[idx];
+        crate::dexel::ray_subtract_below(ray, z);
+    }
+
     /// Analytical drill removal — DEXEL roadmap §6.E Step 3.
     ///
     /// Bypasses per-segment stamping for drilling cycles. For each hole,
     /// walks cells inside the tool's XY footprint and clips each ray's
     /// material to the tip envelope:
     ///
-    /// `z_cut(r) = bottom_z + h(r)` where `h(r)` is the cone-tip
-    /// protrusion above the deepest point. `ToolProfile::Flat` uses
+    /// `z_cut(r) = bottom_z ± h(r)` where `h(r)` is the cone-tip
+    /// protrusion beyond the deepest point. `ToolProfile::Flat` uses
     /// `h(r) = 0`; coned profiles use `h(r) = r / tan(half_angle)`.
     ///
     /// Idempotent and composable with prior stamping: any cell whose
-    /// existing top is already at or below `z_cut(r)` is left untouched.
+    /// existing material is already clear of `z_cut(r)` is left untouched.
     /// A subsequent milling op sees the post-drill ray state because the
     /// kernel mutates the dexel in place.
-    pub fn apply_drill_op(&mut self, drill_op: &crate::drill_op::DrillOp) {
+    ///
+    /// # `direction` is not decoration — G-DRILLFLIP (2026-08-21)
+    ///
+    /// A [`crate::drill_op::DrillHole`] carries **no axis**: it is an XY
+    /// centre plus a `top_z`/`bottom_z` pair, which describes a hole only
+    /// relative to whatever frame the caller is holding. In setup-local
+    /// coordinates the tool always advances along −Z, so this kernel used to
+    /// hardcode "remove everything above the tip envelope" and take no
+    /// direction at all.
+    ///
+    /// That is wrong for the **global** stock. `group_drill_op_to_global`
+    /// maps a `FaceUp::Bottom` setup's holes through `z → H − z`, which
+    /// inverts them: a hole entered at local `top_z` 10 and bottomed at 4
+    /// arrives as `top_z` 0, `bottom_z` 6 in a 10 mm blank. Removing above
+    /// `bottom_z` then clears 6..10 — the exact **complement** of the 0..6
+    /// the hole occupies. The failure has two faces, and the quiet one is
+    /// worse:
+    ///
+    /// * A pin drill that breaks through (`bottom_z` below the far face, to
+    ///   penetrate the spoilboard) maps to a `bottom_z` *above* the blank, so
+    ///   the clear is a no-op and no hole appears at all. This is the visible
+    ///   face — it is how the defect was found, by watching the viewport.
+    /// * A blind hole maps to a `bottom_z` still inside the blank, so a
+    ///   plausible-looking hole appears — in the wrong half of the stock. The
+    ///   global stock is what `StockSource::FromRemainingStock` reads, so a
+    ///   rest pass planned against it is planning against fiction.
+    ///
+    /// So the axis has to be supplied by whoever knows the frame.
+    /// [`StockCutDirection::cuts_from_high_side`] is exactly that fact and
+    /// already rides along both call paths (the per-setup stock is always
+    /// `FromTop`; the global stock and playback both carry the group's
+    /// `cut_direction()`), so it is the parameter rather than a new field on
+    /// `DrillOp` — the direction belongs to the frame, not to the operation.
+    ///
+    /// # Lateral setups abstain
+    ///
+    /// `FaceUp::{Front,Back,Left,Right}` put the drill axis along global X or
+    /// Y, and `DrillHole` cannot express that: `group_drill_op_to_global`
+    /// keeps the mapped `top`'s XY and the mapped `bottom`'s Z, so for a
+    /// lateral transform the hole's real axis is discarded before it ever
+    /// reaches this kernel. Rather than carve a fabricated Z-axis hole, those
+    /// directions remove nothing and report it in the returned
+    /// [`DrillRemovalReport`]. Tracked as G-DRILLLATERAL; fixing it means
+    /// giving `DrillHole` two 3-D endpoints, not patching this function.
+    pub fn apply_drill_op(
+        &mut self,
+        drill_op: &crate::drill_op::DrillOp,
+        direction: StockCutDirection,
+    ) -> DrillRemovalReport {
+        let mut report = DrillRemovalReport::default();
+        if direction.grid_axis() != DexelAxis::Z {
+            report.unrepresentable_axis = true;
+            return report;
+        }
+        let from_high = direction.cuts_from_high_side();
         let radius_mm = drill_op.tool_diameter_mm * 0.5;
         if radius_mm <= 0.0 {
-            return;
+            return report;
         }
         let half_angle = drill_op.tool_profile.cone_half_angle_rad();
         let inv_tan = if matches!(drill_op.tool_profile, crate::drill_op::ToolProfile::Flat)
@@ -418,8 +518,10 @@ impl TriDexelStock {
         for hole in &drill_op.holes {
             let Some((center_row, center_col)) = self.z_grid.world_to_cell(hole.xy[0], hole.xy[1])
             else {
+                report.holes_off_grid += 1;
                 continue;
             };
+            report.holes_carved += 1;
             let center_row = center_row as isize;
             let center_col = center_col as isize;
 
@@ -440,17 +542,30 @@ impl TriDexelStock {
                     if r_sq > radius_sq {
                         continue;
                     }
+                    // The cone opens back toward the tool, so its
+                    // protrusion is measured *against* the advance
+                    // direction: above the tip when drilling down, below it
+                    // when drilling up.
                     let z_cut = match inv_tan {
                         None => hole.bottom_z,
                         Some(inv_tan) => {
                             let r = r_sq.sqrt();
-                            hole.bottom_z + r * inv_tan
+                            if from_high {
+                                hole.bottom_z + r * inv_tan
+                            } else {
+                                hole.bottom_z - r * inv_tan
+                            }
                         }
                     };
-                    self.clear_above_at(row as usize, col as usize, z_cut as f32);
+                    if from_high {
+                        self.clear_above_at(row as usize, col as usize, z_cut as f32);
+                    } else {
+                        self.clear_below_at(row as usize, col as usize, z_cut as f32);
+                    }
                 }
             }
         }
+        report
     }
 }
 

@@ -662,6 +662,15 @@ impl_air_cut_ratios!(
     SummaryAccumulator,
 );
 
+/// One toolpath's kinematics-integrated runtime — see
+/// [`SimulationCutTrace::toolpath_runtimes`] for why this is a separate list
+/// from `toolpath_summaries` rather than a field on it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ToolpathKinematicRuntime {
+    pub toolpath_id: crate::ids::ToolpathId,
+    pub breakdown: crate::machine_kinematics::CycleTimeBreakdown,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimulationCutTrace {
     pub schema_version: u32,
@@ -689,6 +698,38 @@ pub struct SimulationCutTrace {
     /// engagement-axis samples.
     #[serde(default)]
     pub drill_summaries: Vec<DrillToolpathSummary>,
+    /// **G-DRILLTIME (2026-08-22)** — the kinematics integrator's answer for
+    /// **every** toolpath it walked, whether or not that toolpath produced
+    /// engagement metrics.
+    ///
+    /// # Why this is not just a column on `toolpath_summaries`
+    ///
+    /// `toolpath_summaries` is the ENGAGEMENT summary list. A drill toolpath
+    /// sets `metrics_not_applicable` and publishes `drill_summaries` instead,
+    /// so it has no row there — and `apply_kinematics_cycle_time` used to fold
+    /// the project total over that list, which meant a drill's runtime was
+    /// computed and then thrown away. Downstream,
+    /// `readiness::toolpath_cycle_time` found no summary, correctly fell back
+    /// to `cutting_distance / feed` with basis `CuttingOnly`, and correctly
+    /// degraded the whole project to the weakest label. Every layer behaved as
+    /// designed; the composite answer was that **0.8 % of runtime being
+    /// unmodelled dragged a 99.2 %-modelled estimate to "cutting only, no
+    /// accel"** — measured live at `2:02:34` where wall clock was expected.
+    ///
+    /// The root cause is that one slot carried two different facts: "has no
+    /// engagement metrics" and "was not integrated". This field is the second
+    /// fact, given its own slot.
+    ///
+    /// # What it does and does not cover
+    ///
+    /// It is an integral of **stored motion** — the same `Toolpath` the
+    /// exporter emits — so a peck cycle's real R-plane and re-entry moves are
+    /// in it. It does **not** include G82 dwell, which is not motion; that is
+    /// reported separately as `DrillToolpathSummary::dwell_time_s`. A dwelling
+    /// cycle's true wall clock is this plus that, and no surface currently
+    /// adds them.
+    #[serde(default)]
+    pub toolpath_runtimes: Vec<ToolpathKinematicRuntime>,
     /// F-035 — per-`(toolpath_id, move_index)` predicted achieved
     /// feed (mm/min) under the active machine kinematics.
     ///
@@ -779,6 +820,7 @@ impl SimulationCutTrace {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            toolpath_runtimes: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
@@ -980,6 +1022,7 @@ impl SimulationCutTrace {
             provenance: None,
             drill_samples: Vec::new(),
             drill_summaries: Vec::new(),
+            toolpath_runtimes: Vec::new(),
             predicted_feeds: crate::machine_kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),

@@ -945,7 +945,11 @@ where
                 // to the dexel grid; the linearized toolpath remains
                 // available for rapid-collision checks, G-code, and
                 // wire-render.
-                group_stock.apply_drill_op(drill_op_arc);
+                // Per-setup stock is always simulated FromTop (`direction`
+                // above is that constant): setup-local Z always points at
+                // the spindle. The global stock below is the one that needs
+                // the group's real direction — see G-DRILLFLIP.
+                group_stock.apply_drill_op(drill_op_arc, direction);
                 group_drill_ops.push(Arc::clone(drill_op_arc));
                 // PR2: emit per-peck drill samples + per-toolpath summary
                 // (the analytical kernel doesn't produce
@@ -1052,7 +1056,7 @@ where
                     &group.local_to_global,
                     request.stock_bbox.min,
                 );
-                global_stock.apply_drill_op(&global_drill_op);
+                global_stock.apply_drill_op(&global_drill_op, playback_direction);
                 global_drill_ops.push(global_drill_op);
             } else {
                 // S4a: this used to build a second `RadialProfileLUT` from
@@ -1331,15 +1335,48 @@ fn apply_kinematics_cycle_time(
         }
     }
 
-    let mut project_total = 0.0;
+    // G-DRILLTIME (2026-08-22): publish the integrator's answer for EVERY
+    // toolpath it walked, not only those with an engagement summary. Drill
+    // toolpaths set `metrics_not_applicable` and produce `drill_summaries`
+    // instead of a `toolpath_summaries` row, so folding the project total over
+    // that list computed a drill's runtime above and then discarded it —
+    // 61.66 s of real motion on the live project, 0.8 % of runtime, which was
+    // enough to drag a 99.2 %-modelled estimate down to the `CuttingOnly`
+    // basis on every operator-facing surface.
+    //
+    // The list is written first and separately because it answers a different
+    // question from `toolpath_summaries`: "was this integrated?", not "does
+    // this have engagement metrics?". Conflating the two into one slot is what
+    // produced the defect.
+    trace.toolpath_runtimes = per_toolpath_runtime
+        .iter()
+        .map(
+            |(&toolpath_id, &breakdown)| crate::simulation_cut::ToolpathKinematicRuntime {
+                toolpath_id,
+                breakdown,
+            },
+        )
+        .collect();
+
     let mut project_breakdown = CycleTimeBreakdown::default();
     for tp_summary in &mut trace.toolpath_summaries {
         if let Some(&b) = per_toolpath_runtime.get(&tp_summary.toolpath_id) {
             tp_summary.total_runtime_s = b.total_s;
             tp_summary.runtime_by_intent = Some(b);
-            project_total += b.total_s;
-            project_breakdown += b;
-        } else {
+        }
+    }
+    // The project total folds over the INTEGRATED set, plus any engagement
+    // summary the integrator did not reach (which keeps its own naive runtime
+    // rather than being dropped). The two sets do not overlap by construction:
+    // the second arm is exactly the summaries missing from
+    // `per_toolpath_runtime`.
+    let mut project_total = 0.0;
+    for b in per_toolpath_runtime.values() {
+        project_total += b.total_s;
+        project_breakdown += *b;
+    }
+    for tp_summary in &trace.toolpath_summaries {
+        if !per_toolpath_runtime.contains_key(&tp_summary.toolpath_id) {
             project_total += tp_summary.total_runtime_s;
         }
     }

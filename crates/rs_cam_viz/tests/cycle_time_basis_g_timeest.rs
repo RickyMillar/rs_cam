@@ -38,7 +38,9 @@ use std::collections::BTreeMap;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine_kinematics::{CycleTimeBreakdown, MachineKinematics, compute_cycle_time};
-use rs_cam_core::simulation_cut::{SimulationCutTrace, SimulationToolpathCutSummary};
+use rs_cam_core::simulation_cut::{
+    SimulationCutTrace, SimulationToolpathCutSummary, ToolpathKinematicRuntime,
+};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_viz::ui::readiness::{
     CycleTime, CycleTimeBasis, format_cycle_time, toolpath_cycle_time,
@@ -83,6 +85,129 @@ fn trace(summaries: Vec<SimulationToolpathCutSummary>) -> SimulationCutTrace {
         toolpath_summaries: summaries,
         ..SimulationCutTrace::test_fixture()
     }
+}
+
+/// A trace where the integrator walked `runtimes` but only `summaries` have
+/// engagement metrics — the shape a project with drill toolpaths produces.
+fn trace_with_runtimes(
+    summaries: Vec<SimulationToolpathCutSummary>,
+    runtimes: Vec<(ToolpathId, f64)>,
+) -> SimulationCutTrace {
+    SimulationCutTrace {
+        toolpath_summaries: summaries,
+        toolpath_runtimes: runtimes
+            .into_iter()
+            .map(|(toolpath_id, total_s)| ToolpathKinematicRuntime {
+                toolpath_id,
+                breakdown: CycleTimeBreakdown {
+                    total_s,
+                    cutting_s: total_s,
+                    ..CycleTimeBreakdown::default()
+                },
+            })
+            .collect(),
+        ..SimulationCutTrace::test_fixture()
+    }
+}
+
+// ── G-DRILLTIME ─────────────────────────────────────────────────────────
+//
+// Found 2026-08-22 in the live validation of the G-TIMEEST consolidation
+// above, by reading the GUI rather than the code: a project that *carries*
+// machine kinematics still read `2:02:34 (cutting only, no accel)` — the
+// weakest basis — on every surface.
+//
+// Every layer behaved as designed. Drill toolpaths set
+// `metrics_not_applicable` and publish `drill_summaries` instead of a
+// `toolpath_summaries` row, `apply_kinematics_cycle_time` folded the project
+// total over `toolpath_summaries`, so a drill's runtime was computed and then
+// discarded; `toolpath_cycle_time` found no summary, correctly fell back to
+// `cutting_distance / feed`, and `worse()` correctly degraded the project.
+//
+// The composite answer was useless: **61.66 s of drill motion — 0.8 % of the
+// runtime — relabelled 100 % of the estimate.** The root cause is that one
+// slot carried two different facts, "has no engagement metrics" and "was not
+// integrated". `SimulationCutTrace::toolpath_runtimes` is the second fact
+// given its own slot.
+//
+// Note what is deliberately NOT done: drills are not *exempted* from the fold.
+// That would restore the overclaim the basis exists to prevent. They are
+// integrated, which is a different thing.
+
+/// A toolpath the integrator walked reads `MachineModel` even with no
+/// engagement summary — the drill case.
+#[test]
+fn an_integrated_toolpath_without_an_engagement_summary_is_machine_model() {
+    let drill = ToolpathId(7);
+    let t = trace_with_runtimes(Vec::new(), vec![(drill, 46.8)]);
+
+    let ct = toolpath_cycle_time(Some(&t), drill, 234.0, 300.0);
+    assert_eq!(
+        ct.basis,
+        Some(CycleTimeBasis::MachineModel),
+        "a drill toolpath has no `toolpath_summaries` row by design; reading \
+         only that list is what sent it down the CuttingOnly fallback"
+    );
+    assert!((ct.seconds - 46.8).abs() < 1e-9, "got {}", ct.seconds);
+
+    // Non-vacuity, and the pin on the actual defect: the fallback this
+    // replaces would have produced a *different, plausible* number from the
+    // same inputs — 234 mm / 300 mm/min = 46.8 s. Identical here on purpose,
+    // so the test above cannot pass by accidentally taking the old path.
+    // Re-ask with a runtime the fallback cannot produce.
+    let t2 = trace_with_runtimes(Vec::new(), vec![(drill, 61.66)]);
+    let ct2 = toolpath_cycle_time(Some(&t2), drill, 234.0, 300.0);
+    assert!(
+        (ct2.seconds - 61.66).abs() < 1e-9,
+        "the integrated runtime must win over `distance / feed`, got {}",
+        ct2.seconds
+    );
+}
+
+/// The operator-visible statement: one un-integrated drill no longer drags a
+/// fully-modelled project to the weakest label.
+#[test]
+fn drill_ops_no_longer_degrade_the_project_basis() {
+    let mill = ToolpathId(4);
+    let drill = ToolpathId(7);
+    let t = trace_with_runtimes(
+        vec![summary(mill, 7292.0, true)],
+        vec![(mill, 7292.0), (drill, 61.66)],
+    );
+
+    let mut total = CycleTime::NONE;
+    total.fold(toolpath_cycle_time(Some(&t), mill, 10_000.0, 1200.0));
+    total.fold(toolpath_cycle_time(Some(&t), drill, 234.0, 300.0));
+
+    assert_eq!(
+        total.basis,
+        Some(CycleTimeBasis::MachineModel),
+        "0.8 % of runtime must not relabel the other 99.2 %"
+    );
+    assert!(
+        (total.seconds - 7353.66).abs() < 1e-9,
+        "and the drill's time is still counted, not exempted: {}",
+        total.seconds
+    );
+}
+
+/// The control. Remove the integration and the old behaviour comes back — so
+/// the test above is measuring the fix and not the absence of a fold.
+#[test]
+fn without_integration_a_drill_still_degrades_the_basis() {
+    let mill = ToolpathId(4);
+    let drill = ToolpathId(7);
+    let t = trace(vec![summary(mill, 7292.0, true)]);
+
+    let mut total = CycleTime::NONE;
+    total.fold(toolpath_cycle_time(Some(&t), mill, 10_000.0, 1200.0));
+    total.fold(toolpath_cycle_time(Some(&t), drill, 234.0, 300.0));
+
+    assert_eq!(
+        total.basis,
+        Some(CycleTimeBasis::CuttingOnly),
+        "a toolpath the integrator never walked must still weaken the claim"
+    );
 }
 
 /// The mechanism, in isolation: a path of 0.40 mm segments commanded at F3000

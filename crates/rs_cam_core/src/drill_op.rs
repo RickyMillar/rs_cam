@@ -18,9 +18,24 @@ use std::sync::Arc;
 
 /// One hole in a drilling operation.
 ///
-/// All Z values are in setup-local coordinates. `top_z` is the entry
-/// surface, `bottom_z` is the deepest point reached by the tool tip.
-/// `top_z >= bottom_z` for drilling-from-top operations.
+/// `top_z` is the entry surface and `bottom_z` is the deepest point reached
+/// by the tool tip — "deepest" meaning *furthest along the tool's advance*,
+/// not "numerically smaller".
+///
+/// As constructed by the generators these are setup-local coordinates, where
+/// the tool always advances along −Z and so `top_z >= bottom_z`. That
+/// ordering is **not** an invariant of the type: `group_drill_op_to_global`
+/// maps holes into the stock-relative global frame, and a `FaceUp::Bottom`
+/// setup's `z → H − z` comes back with `top_z <= bottom_z`. Nothing is wrong
+/// with such a hole; it is entered from the low side. What consumes it has to
+/// know which, and the answer is the group's
+/// [`crate::dexel_stock::StockCutDirection`] — never the sign of
+/// `top_z - bottom_z`, which is degenerate at zero depth, and never a
+/// `min`/`max` of the pair, which silently re-points the tool. See
+/// `TriDexelStock::apply_drill_op` (G-DRILLFLIP).
+///
+/// The XY pair likewise names the axis only while the drill axis *is* Z; a
+/// lateral setup's hole cannot be expressed here at all (G-DRILLLATERAL).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DrillHole {
     pub xy: [f64; 2],
