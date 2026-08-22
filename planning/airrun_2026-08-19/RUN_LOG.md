@@ -2426,3 +2426,15 @@ Artifacts `chirality_L_composite.png` / `chirality_L_through.png` in the
 session scratchpad. One line of caution stands: the eyeball grades panel
 labels vs geometry; it does not re-litigate the per-panel eye math beyond
 what TOP/BOTTOM pin exactly.
+
+## Live verification of both evening fixes — 2026-08-22, fresh release binary
+
+- **G-MODEXPORT**: wanaka re-export off a fresh 0.1 mm sim now emits the
+  finish pass's cutting rows at **F443** (the modulated, band-max-clamped
+  feed) with F3000 remaining only on the per-row entry descents, which
+  modulation deliberately skips. Pre-fix the same section was flat F3000.
+  The schedule the gate grades is the schedule in the bytes.
+- **G-FRONTNAME**: the Front-setup demo re-run puts the pocket + hole on the
+  world −Y face, rendered in the composite's FRONT-LEFT/FRONT-RIGHT panels;
+  REAR panels clean. (G-HOLESHADE still shades the hole as a peg — known,
+  log-only.)
