@@ -1236,6 +1236,222 @@ fn plan_entry_ramp(
     })
 }
 
+/// Descend into `run`'s first point from `start_z` — a height the caller has
+/// already established is clear of standing material — and return the index
+/// the body pass resumes at.
+///
+/// Shared by both junction shapes that arrive from ABOVE the run: the retract
+/// (`start_z == params.safe_z`) and the stock-aware lifted link
+/// (`start_z ==` the link's own clearance height, see [`plan_link_lift`]).
+/// Factoring it out is what stops a lifted link from re-opening G-ENTRYLOAD at
+/// the junction it just made safe: the last thing a lifted link does is
+/// descend into the crease, and that descent has to be the same bite-budgeted
+/// ramp a retract entry gets, not a plunge.
+///
+/// The `start_z` guard is why this takes the height rather than assuming
+/// `safe_z`: the air-only descent is emitted only when the ramp's ceiling is
+/// genuinely below where the tool already is. A lifted link can arrive BELOW
+/// that ceiling (its clearance is read over the arrival point, the ramp's over
+/// the whole window), in which case the descent is skipped and the first lap
+/// starts from where the tool stands — still in air, because the lap Z ladder
+/// starts at that same ceiling.
+fn emit_entry_descent(
+    tp: &mut Toolpath,
+    run: &[P3],
+    first: P3,
+    start_z: f64,
+    entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    contact_radius: f64,
+    params: &PencilParams,
+) -> usize {
+    use crate::toolpath::MoveIntent;
+
+    match entry_stock.and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params)) {
+        Some(plan) => {
+            // Air only — the descent stops at the conservative stock ceiling,
+            // so the plunge-rate cap is paid on nothing but clearance (and
+            // `dressup::optimize_entry_descents` turns most of even that into
+            // a rapid).
+            if plan.air_descent_z < start_z - 1e-9 {
+                tp.feed_to_with_intent(
+                    P3::new(first.x, first.y, plan.air_descent_z),
+                    params.plunge_rate,
+                    MoveIntent::EntryPlunge,
+                );
+            }
+            for p in &plan.points {
+                tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::EntryRamp);
+            }
+            tracing::debug!(
+                window_end = plan.window_end,
+                step_mm = plan.step_mm,
+                ramp_points = plan.points.len(),
+                "pencil entry ramped along the crease"
+            );
+            plan.window_end + 1
+        }
+        None => {
+            tp.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
+            1
+        }
+    }
+}
+
+// ── Stock-aware surface links (G-LINKLOAD, 2026-08-23) ──────────────────
+//
+// [`build_surface_link`] follows the drop-cutter surface of the MESH. That is
+// the whole truth only when the mesh IS the material — true for a finishing
+// pass with everything above it already cleared, false for a
+// `FromRemainingStock` pencil, where material stands wherever the upstream op
+// could not reach. A link that rides the mesh there is a CUTTING feed through
+// whatever is standing above it: on wanaka200 the operator watched the pencil
+// "cut through some of the mountains in what looks like travel moves", up to
+// ~3 mm of standing material dragged through by an R0.5 tip mid-link.
+//
+// The entry half of the same defect is G-ENTRYLOAD (see the section above);
+// this is the transit half, and it reuses that section's bite budget as its
+// trigger so there is one number for "how much a pencil manoeuvre outside its
+// body cut may remove".
+
+/// What the emit loop decided to do at one junction between consecutive runs.
+enum PencilJunction {
+    /// Legacy stay-down surface link: feed along the mesh straight into the
+    /// next run's first point. Nothing along it stands more than a bite budget
+    /// above the link's own path, so riding the surface removes only what the
+    /// target shape says should go.
+    Surface(Vec<P3>),
+    /// Stock-aware link: the same XY route, every sample lifted clear of the
+    /// material standing under it, ENDING ABOVE the next run's first point.
+    /// The descent from there is an entry ([`emit_entry_descent`]), not a
+    /// link, so the manoeuvre that used to shave a ridge mid-transit becomes
+    /// an air hop plus a bite-budgeted entry.
+    Lifted(Vec<P3>),
+}
+
+impl PencilJunction {
+    fn points(&self) -> &[P3] {
+        match self {
+            Self::Surface(pts) | Self::Lifted(pts) => pts,
+        }
+    }
+}
+
+/// Outcome of asking whether a candidate surface link has to clear standing
+/// material.
+enum LinkLift {
+    /// Nothing along the link stands more than one entry bite budget above
+    /// the link's own path: keep the legacy stay-down link, byte for byte.
+    NotNeeded,
+    /// Lifted transit, ending above the next run's first point.
+    Lifted(Vec<P3>),
+    /// Clearing the standing material reaches `safe_z`. A fed link at retract
+    /// height is strictly worse than the rapid it would replace, so the
+    /// retract is kept — the same call
+    /// [`crate::surface_link::relink_fragments`] makes via
+    /// `RelinkReport::ceiling_above_safe_z`.
+    Refused,
+}
+
+/// Lift a candidate surface link clear of whatever stands above it.
+///
+/// # Why this is gated rather than unconditional
+///
+/// [`crate::surface_link::relink_fragments`] lifts every sample of every link
+/// it keeps, because its caller (project-curve engraving on raw or partly
+/// roughed stock) knows the mesh is never the material. A pencil pass has the
+/// opposite prior: it usually runs after a finish pass that already cut most
+/// of the surface to shape, and an unconditional lift would spend
+/// [`crate::toolpath::PLUNGE_CLEARANCE_MM`] of climb and descent per junction
+/// to clear nothing. So the lift engages only where material actually stands
+/// in the tool's WAY (see the measurement below), by more than
+/// [`entry_bite_budget_mm`] — the same per-manoeuvre bite allowance
+/// G-ENTRYLOAD grades entries against. Below it the link shaves finish-pass
+/// cusps, which is what a surface link has always done and what the finish
+/// op's own gates already grade.
+///
+/// # The measurement
+///
+/// All three dexel reads are `max_conservative_top_z_in_disc`, which may only
+/// ever err high, so anything derived from them is safe against a finer
+/// verification grid. The discs are the TIP's, exactly as
+/// [`plan_entry_ramp`] reads its ceiling — not the envelope's, which on a
+/// tapered ball reads the valley rim several millimetres away.
+///
+/// Two of the reads answer the TRIGGER, and it takes both, because one disc
+/// cannot say where in itself the material stands:
+///
+/// * **under the tip** — a zero-radius (i.e. sliver-safe single-column) read:
+///   material in the column the tip passes through, standing above the tip.
+///   This is precisely the bite a 1-D frontier measures and precisely what the
+///   operator saw.
+/// * **under the flank** — the tip disc, compared against the highest point of
+///   the tool's OWN envelope over that disc (`contact_rise`, i.e.
+///   `height_at_radius(contact_radius)` above the tip). Without the envelope
+///   term this test fires on every link that rides a crease: the valley wall
+///   half a tip-radius away is legitimately higher than the tip, and the tool
+///   is legitimately touching it. That is a pencil pass doing its job, not a
+///   link ploughing a ridge, and lifting for it would buy every junction in a
+///   groove a hop that clears nothing.
+///
+/// The third read is the CLEARANCE itself
+/// ([`crate::surface_link::LinkCeiling::clear_z`]), over the tip disc, once
+/// the trigger has fired.
+///
+/// The route sampled is the previous run's exit, the drop-cuttered interior
+/// samples (which already carry `stock_to_leave`), and the next run's entry.
+/// Both endpoints are cut positions, so their own commanded Z *is* the surface
+/// there and no second drop-cutter pass is needed. Lifting the endpoints too
+/// is what makes the transit's ends vertical: the tool leaves the cut straight
+/// up and arrives straight above the next one.
+fn plan_link_lift(
+    from: P3,
+    to: P3,
+    link_pts: &[P3],
+    stock: &crate::dexel_stock::TriDexelStock,
+    contact_radius: f64,
+    contact_rise: f64,
+    params: &PencilParams,
+) -> LinkLift {
+    let ceiling = crate::surface_link::LinkCeiling {
+        stock: Some(stock),
+        tool_radius: contact_radius,
+        // Off-grid the dexel has no answer; the analytic fresh-stock top is
+        // the fallback `dressup::optimize_entry_descents` takes, and it errs
+        // high, which is the safe direction for a clearance.
+        fallback_top_z: stock.stock_bbox.max.z,
+    };
+    // Same stock, same fallback, one column wide — `max_conservative_top_z_in_disc`
+    // dilates by half a cell, so radius 0 is "the cells the tip is over".
+    let tip_column = crate::surface_link::LinkCeiling {
+        tool_radius: 0.0,
+        ..ceiling
+    };
+    let budget = entry_bite_budget_mm(contact_radius.max(1e-6));
+
+    let mut route: Vec<P3> = Vec::with_capacity(link_pts.len() + 2);
+    route.push(from);
+    route.extend_from_slice(link_pts);
+    route.push(to);
+
+    let stands_in_the_way = |p: &P3| {
+        tip_column.material_top(p.x, p.y) > p.z + budget
+            || ceiling.material_top(p.x, p.y) > p.z + contact_rise + budget
+    };
+    if !route.iter().any(stands_in_the_way) {
+        return LinkLift::NotNeeded;
+    }
+
+    let mut lifted = Vec::with_capacity(route.len());
+    for p in &route {
+        let clear = ceiling.clear_z(p.x, p.y, p.z);
+        if clear >= params.safe_z - 1e-6 {
+            return LinkLift::Refused;
+        }
+        lifted.push(P3::new(p.x, p.y, clear));
+    }
+    LinkLift::Lifted(lifted)
+}
+
 /// Emit the ordered `PencilPath`s as toolpath moves. Consecutive passes whose
 /// endpoints are within `hookup_distance` are joined by a gouge-safe
 /// surface-following feed instead of a retract-rapid-replunge — on dense
@@ -1265,11 +1481,12 @@ fn plan_entry_ramp(
 /// pass produces two independent runs — each with its own rapid/plunge or
 /// surface link — rather than a single cutting move bridging the gap.
 ///
-/// Entries have no stock reading on this form, so they keep the legacy single
-/// fed descent. Every production caller — the pencil generator and
-/// [`crate::unified_finish`]'s pencil-claims pipeline — now holds the input
-/// stock and calls [`emit_paths_with_entry_stock`] directly (G-ENTRYLOAD), so
-/// this wrapper survives only as the tests' stock-less spelling.
+/// Entries and links have no stock reading on this form, so entries keep the
+/// legacy single fed descent and links keep riding the mesh surface. Every
+/// production caller — the pencil generator and [`crate::unified_finish`]'s
+/// pencil-claims pipeline — holds the input stock and calls
+/// [`emit_paths_with_entry_stock`] directly (G-ENTRYLOAD, G-LINKLOAD), so this
+/// wrapper survives only as the tests' stock-less spelling.
 #[cfg(test)]
 pub(crate) fn emit_paths(
     all_paths: &[PencilPath],
@@ -1281,12 +1498,21 @@ pub(crate) fn emit_paths(
     emit_paths_with_entry_stock(all_paths, mesh, index, cutter, params, None)
 }
 
-/// [`emit_paths`] with the input stock the entries are descending through.
+/// [`emit_paths`] with the input stock this pass is cutting into.
 ///
-/// `entry_stock` is only ever read to plan the entry manoeuvre
-/// ([`plan_entry_ramp`]); `None` reproduces the pre-G-ENTRYLOAD emission
-/// exactly, which is what makes the A/B in
-/// `tests/pencil_entry_ramp_g_entryload.rs` a controlled one.
+/// `entry_stock` is read by the two manoeuvres that move through material
+/// without being body cuts, and by nothing else:
+///
+/// * the ENTRY into a run that could not be linked to
+///   ([`plan_entry_ramp`], G-ENTRYLOAD), and
+/// * the LINK between two runs ([`plan_link_lift`], G-LINKLOAD) — lifted
+///   clear of standing material where any stands above its own path, and
+///   abandoned for a retract when clearing it would reach `safe_z`.
+///
+/// `None` reproduces the pre-G-ENTRYLOAD/pre-G-LINKLOAD emission exactly —
+/// neither manoeuvre can engage without a stock reading — which is what makes
+/// the A/Bs in `tests/pencil_entry_ramp_g_entryload.rs` and
+/// `tests/pencil_surface_link_g_linkload.rs` controlled ones.
 pub(crate) fn emit_paths_with_entry_stock(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
@@ -1298,6 +1524,10 @@ pub(crate) fn emit_paths_with_entry_stock(
     use crate::toolpath::MoveIntent;
 
     let contact_radius = tip_contact_radius(cutter);
+    // How high the tool's own envelope stands at the edge of that disc, above
+    // its tip. G-LINKLOAD's flank test needs it so a link riding a crease is
+    // not mistaken for one ploughing a ridge — see `plan_link_lift`.
+    let contact_rise = cutter.height_at_radius(contact_radius).unwrap_or(0.0);
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
     let mut prev_end: Option<P3> = None;
@@ -1321,8 +1551,9 @@ pub(crate) fn emit_paths_with_entry_stock(
             // Try to link from the previous run's end without retracting.
             // `hookup_distance` is only the candidate CAP (gap must be within
             // it, and the link must be gouge-safe via `build_surface_link`);
-            // when the caller supplied `link_kinematics`, the candidate is
-            // additionally costed against a retract-link candidate with the
+            // the candidate is then lifted clear of standing material
+            // (G-LINKLOAD), and when the caller supplied `link_kinematics` it
+            // is additionally costed against a retract-link candidate with the
             // F-034 integrator, and only kept when it's actually cheaper —
             // see the doc comment above.
             let link = prev_end.and_then(|end| {
@@ -1339,9 +1570,43 @@ pub(crate) fn emit_paths_with_entry_stock(
                     params.stock_to_leave,
                     params.sampling,
                 )?;
+                // G-LINKLOAD: the candidate rides the MESH, which is only the
+                // material when nothing stands above it. Lift it clear where
+                // something does, and keep the retract when clearing costs the
+                // whole retract anyway. `entry_stock: None` cannot reach this
+                // at all — no stock reading, no lift, no change.
+                let candidate = match entry_stock {
+                    None => PencilJunction::Surface(link_pts),
+                    Some(stock) => {
+                        // Bound rather than matched inline: the arms move
+                        // `link_pts`, and a scrutinee temporary would keep its
+                        // borrow alive across them.
+                        let lift = plan_link_lift(
+                            end,
+                            first,
+                            &link_pts,
+                            stock,
+                            contact_radius,
+                            contact_rise,
+                            params,
+                        );
+                        match lift {
+                            LinkLift::NotNeeded => PencilJunction::Surface(link_pts),
+                            LinkLift::Lifted(pts) => PencilJunction::Lifted(pts),
+                            LinkLift::Refused => return None,
+                        }
+                    }
+                };
                 match &params.link_kinematics {
                     Some(lk) => {
-                        let mut costed_path = link_pts.clone();
+                        // Costs the geometry that will actually be emitted —
+                        // the lift is applied BEFORE this, so a link that only
+                        // pays for itself while riding the surface loses here
+                        // once it has to climb. The descent is modelled as the
+                        // straight line into `first` that a legacy link ends
+                        // with; the emitted ramp is cheaper than that, so the
+                        // comparison errs against the link.
+                        let mut costed_path = candidate.points().to_vec();
                         costed_path.push(first);
                         let surface_t = crate::machine_kinematics::surface_link_time(
                             end,
@@ -1367,19 +1632,38 @@ pub(crate) fn emit_paths_with_entry_stock(
                             lk.max_feed_mm_min,
                             lk.rapid_feed_mm_min,
                         );
-                        (surface_t <= retract_t).then_some(link_pts)
+                        (surface_t <= retract_t).then_some(candidate)
                     }
-                    None => Some(link_pts),
+                    None => Some(candidate),
                 }
             });
 
             match link {
-                Some(link_pts) => {
+                Some(PencilJunction::Surface(link_pts)) => {
                     // Surface-following link (no retract / no re-plunge), then the body.
                     for lp in &link_pts {
                         tp.feed_to_with_intent(*lp, params.feed_rate, MoveIntent::Linking);
                     }
                     tp.feed_to_with_intent(first, params.feed_rate, MoveIntent::Linking);
+                }
+                Some(PencilJunction::Lifted(link_pts)) => {
+                    // Stock-aware link: the transit is entirely above the
+                    // standing material, so it ends ABOVE `first` rather than
+                    // on it. The way down is an entry, not a link — see
+                    // `emit_entry_descent`.
+                    for lp in &link_pts {
+                        tp.feed_to_with_intent(*lp, params.feed_rate, MoveIntent::Linking);
+                    }
+                    let start_z = link_pts.last().map_or(params.safe_z, |p| p.z);
+                    body_start = emit_entry_descent(
+                        &mut tp,
+                        run,
+                        first,
+                        start_z,
+                        entry_stock,
+                        contact_radius,
+                        params,
+                    );
                 }
                 None => {
                     // Too far (or unsafe) to link: retract the previous run, then a
@@ -1394,41 +1678,15 @@ pub(crate) fn emit_paths_with_entry_stock(
                         P3::new(first.x, first.y, params.safe_z),
                         MoveIntent::Linking,
                     );
-                    match entry_stock
-                        .and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params))
-                    {
-                        Some(plan) => {
-                            // Air only — the descent stops at the conservative
-                            // stock ceiling, so the plunge-rate cap is paid on
-                            // nothing but clearance (and `dressup::
-                            // optimize_entry_descents` turns most of even that
-                            // into a rapid).
-                            if plan.air_descent_z < params.safe_z - 1e-9 {
-                                tp.feed_to_with_intent(
-                                    P3::new(first.x, first.y, plan.air_descent_z),
-                                    params.plunge_rate,
-                                    MoveIntent::EntryPlunge,
-                                );
-                            }
-                            for p in &plan.points {
-                                tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::EntryRamp);
-                            }
-                            tracing::debug!(
-                                window_end = plan.window_end,
-                                step_mm = plan.step_mm,
-                                ramp_points = plan.points.len(),
-                                "pencil entry ramped along the crease"
-                            );
-                            body_start = plan.window_end + 1;
-                        }
-                        None => {
-                            tp.feed_to_with_intent(
-                                first,
-                                params.plunge_rate,
-                                MoveIntent::EntryPlunge,
-                            );
-                        }
-                    }
+                    body_start = emit_entry_descent(
+                        &mut tp,
+                        run,
+                        first,
+                        params.safe_z,
+                        entry_stock,
+                        contact_radius,
+                        params,
+                    );
                 }
             }
 
@@ -2862,5 +3120,149 @@ mod tests {
                 "stock_to_leave must shift every contacted cut Z by exactly 0.5mm: {z0} vs {zl}"
             );
         }
+    }
+
+    // ── G-LINKLOAD: the link-lift trigger ───────────────────────────────
+    //
+    // The end-to-end sentries live in
+    // `tests/pencil_surface_link_g_linkload.rs`. These two isolate the one
+    // decision those cannot separate cheaply: WHEN the lift fires. The
+    // discrimination they pin is the whole reason the flank test carries the
+    // tool's own envelope height — without it, a link riding a 45 degree
+    // crease reads its own valley wall as an obstruction and every junction
+    // in a groove buys a clearance hop that clears nothing.
+
+    /// Stock whose top follows a symmetric 45 degree V running along Y —
+    /// `top(x) = floor + |x|` — with an optional rib: a band of `y` left
+    /// standing at `rib_top` right across the valley.
+    fn v_valley_stock(
+        floor: f64,
+        rib: Option<(f64, f64, f64)>,
+    ) -> crate::dexel_stock::TriDexelStock {
+        let mut stock =
+            crate::dexel_stock::TriDexelStock::from_stock(-5.0, -5.0, 5.0, 5.0, -6.0, 2.0, 0.25);
+        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+        let (cs, ou, ov) = (
+            stock.z_grid.cell_size,
+            stock.z_grid.origin_u,
+            stock.z_grid.origin_v,
+        );
+        for row in 0..rows {
+            let y = ov + row as f64 * cs;
+            for col in 0..cols {
+                let x = ou + col as f64 * cs;
+                let top = match rib {
+                    Some((y0, y1, rib_top)) if y >= y0 && y <= y1 => rib_top,
+                    _ => floor + x.abs(),
+                };
+                stock.clear_above_at(row, col, top as f32);
+            }
+        }
+        stock
+    }
+
+    /// The link path a ball rests on down the middle of that V: a straight run
+    /// along Y at x = 0, tip at the closed-form rest height
+    /// `floor + r(1/cos 45 - 1)`.
+    fn v_valley_link(floor: f64, r: f64, y0: f64, y1: f64) -> (P3, Vec<P3>, P3) {
+        let z = floor + r * (std::f64::consts::SQRT_2 - 1.0);
+        let from = P3::new(0.0, y0, z);
+        let to = P3::new(0.0, y1, z);
+        let n = ((y1 - y0) / 0.5).round().max(1.0) as usize;
+        let pts = (1..n)
+            .map(|k| P3::new(0.0, y0 + (y1 - y0) * k as f64 / n as f64, z))
+            .collect();
+        (from, pts, to)
+    }
+
+    fn link_params() -> PencilParams {
+        PencilParams {
+            safe_z: 5.0,
+            sampling: 0.5,
+            ..PencilParams::default()
+        }
+    }
+
+    /// A link riding the bottom of a valley is NOT ploughing a ridge, even
+    /// though the walls half a tip-radius away stand well above the tip. The
+    /// tool is supposed to be touching them.
+    #[test]
+    fn link_lift_does_not_fire_on_a_link_riding_its_own_crease() {
+        let tool = BallEndmill::new(1.0, 25.0);
+        let r = tool.cusp_radius_mm();
+        let rise = tool.height_at_radius(r).unwrap_or(0.0);
+        let stock = v_valley_stock(-1.5, None);
+        let (from, pts, to) = v_valley_link(-1.5, r, -3.0, 3.0);
+
+        assert!(
+            matches!(
+                plan_link_lift(from, to, &pts, &stock, r, rise, &link_params()),
+                LinkLift::NotNeeded
+            ),
+            "the valley wall under the flank is the surface this pass is \
+             tracing, not standing material — lifting for it would cost every \
+             junction in a groove a clearance hop that clears nothing"
+        );
+    }
+
+    /// The same link with a rib left standing across it must lift, and every
+    /// lifted sample must clear the rib by the stated clearance.
+    #[test]
+    fn link_lift_fires_on_a_rib_standing_across_the_link() {
+        let tool = BallEndmill::new(1.0, 25.0);
+        let r = tool.cusp_radius_mm();
+        let rise = tool.height_at_radius(r).unwrap_or(0.0);
+        let rib_top = 1.0;
+        let stock = v_valley_stock(-1.5, Some((0.5, 1.5, rib_top)));
+        let (from, pts, to) = v_valley_link(-1.5, r, -3.0, 3.0);
+
+        let lifted = match plan_link_lift(from, to, &pts, &stock, r, rise, &link_params()) {
+            LinkLift::Lifted(v) => v,
+            LinkLift::NotNeeded => panic!("a rib standing 2.3mm over the link was ridden through"),
+            LinkLift::Refused => panic!("clearing a rib at z=1.0 does not reach safe_z=5.0"),
+        };
+        assert_eq!(
+            lifted.len(),
+            pts.len() + 2,
+            "the lift brackets the interior samples with both endpoints, so the \
+             transit leaves and re-enters vertically"
+        );
+        for p in &lifted {
+            let need = stock
+                .max_conservative_top_z_in_disc(p.x, p.y, r)
+                .unwrap_or(2.0)
+                + crate::toolpath::PLUNGE_CLEARANCE_MM;
+            assert!(
+                p.z >= need - 1e-9,
+                "lifted sample at y={:.3} sits at z={:.3}, under its {need:.3} \
+                 clearance",
+                p.y,
+                p.z
+            );
+        }
+    }
+
+    /// The refusal arm: a rib so tall that clearing it reaches the retract
+    /// plane leaves nothing for a fed link to save.
+    #[test]
+    fn link_lift_refuses_when_the_clearance_reaches_safe_z() {
+        let tool = BallEndmill::new(1.0, 25.0);
+        let r = tool.cusp_radius_mm();
+        let rise = tool.height_at_radius(r).unwrap_or(0.0);
+        let stock = v_valley_stock(-1.5, Some((0.5, 1.5, 2.0)));
+        let (from, pts, to) = v_valley_link(-1.5, r, -3.0, 3.0);
+        let params = PencilParams {
+            // 2.0 (rib) + 2.0 (clearance) = 4.0, at the retract plane.
+            safe_z: 4.0,
+            ..link_params()
+        };
+        assert!(
+            matches!(
+                plan_link_lift(from, to, &pts, &stock, r, rise, &params),
+                LinkLift::Refused
+            ),
+            "a fed link at retract height is strictly worse than the rapid it \
+             would replace"
+        );
     }
 }
