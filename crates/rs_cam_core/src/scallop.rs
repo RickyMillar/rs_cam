@@ -2486,6 +2486,11 @@ pub fn scallop_toolpath_research(
             // documents. On a dendritic rest island a straight line between
             // two rings of the SAME region leaves that region constantly.
             boundary: boundary_regions,
+            // Scallop is a FINISHING pass: everything above the mesh has
+            // already been cleared, so the mesh IS the material and a link
+            // that rides it is riding the workpiece. `None` keeps that
+            // behaviour byte-identical.
+            link_ceiling: None,
         };
         let (linked, rep) = crate::surface_link::relink_fragments(
             crate::toolpath_spans::AnnotatedToolpath::new(tp),

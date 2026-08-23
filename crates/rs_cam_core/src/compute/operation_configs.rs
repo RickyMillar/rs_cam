@@ -1409,6 +1409,32 @@ pub struct ProjectCurveConfig {
     pub setup_z_flipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Cap (mm) on the XY gap between two projected chains that may be
+    /// joined by a single clearance-height link instead of a full
+    /// `retract → rapid → replunge` round trip. `0.0` — the shipped
+    /// default — disables chaining entirely and keeps every existing
+    /// project byte-identical.
+    ///
+    /// A rivers/engraving DXF is hundreds of short chains, and each one
+    /// costs two safe-Z legs however short the hop between them is, so the
+    /// air on this family is COUNT-bound. See
+    /// [`crate::surface_link::relink_fragments`] for what the link does and
+    /// [`crate::surface_link::LinkCeiling`] for why it travels above the
+    /// standing material rather than on the mesh.
+    #[serde(default = "default_project_curve_chain_distance_mm")]
+    pub chain_distance_mm: f64,
+}
+
+/// `0.0` — chaining OFF.
+///
+/// Unlike scallop's ring relink (which ships on at 3.0 mm), project_curve
+/// runs on stock that has usually NOT been cleared down to the mesh, so
+/// every link is priced against a material ceiling the operator has not
+/// necessarily simulated yet. Shipping it off keeps every saved project and
+/// every emitted program byte-identical; an operator who wants the air back
+/// opts in per operation.
+fn default_project_curve_chain_distance_mm() -> f64 {
+    0.0
 }
 
 impl Default for ProjectCurveConfig {
@@ -1423,6 +1449,7 @@ impl Default for ProjectCurveConfig {
             side: ProjectCurveSide::Center,
             setup_z_flipped: false,
             spindle_rpm: None,
+            chain_distance_mm: default_project_curve_chain_distance_mm(),
         }
     }
 }

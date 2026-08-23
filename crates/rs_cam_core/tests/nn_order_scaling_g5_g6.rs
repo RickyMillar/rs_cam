@@ -130,6 +130,7 @@ fn relink_params(safe_z: f64, reorder: bool) -> RelinkParams<'static> {
         link_kinematics: None,
         reorder,
         boundary: None,
+        link_ceiling: None,
     }
 }
 

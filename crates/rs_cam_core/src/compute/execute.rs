@@ -1805,10 +1805,115 @@ pub(crate) fn generate_project_curve(
         .map_err(|_e| OperationError::Cancelled)?;
         combined.moves.extend(tp.moves);
     }
+    let combined = chain_project_curve(ctx, cfg, &params, &cutter, m, idx, combined);
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(combined, "Projected curve"),
         ctx.semantic_ctx,
     ))
+}
+
+/// Curve chaining for `project_curve` — the op's air is COUNT-bound.
+///
+/// `project_curve::emit_path_segment_with_intent` emits one
+/// `rapid → EntryPlunge → cut → Retract` unit per contiguous projected
+/// stretch, unconditionally, however short the hop to the next one. A rivers
+/// DXF is hundreds of those units across dozens of entities, and every hop
+/// pays two full safe-Z legs whatever its XY length. This runs across the
+/// WHOLE combined path (not per polygon), so chains from different DXF
+/// entities can join, and re-decides each junction on evidence:
+/// [`crate::surface_link::relink_fragments`] drop-cutter samples the link so
+/// it cannot gouge the mesh, refuses it if it would leave the operation's
+/// boundary, lifts it clear of anything standing in the input stock, refuses
+/// it outright when that clearance reaches safe Z, and (with kinematics in
+/// scope) keeps it only when it actually beats the retract on time.
+/// Fragment interiors are copied verbatim.
+///
+/// A no-op — the input returned untouched, the relinker never entered — at
+/// the shipped `chain_distance_mm` of `0.0`.
+fn chain_project_curve(
+    ctx: &ExecutionContext<'_>,
+    cfg: &crate::compute::operation_configs::ProjectCurveConfig,
+    params: &crate::project_curve::ProjectCurveParams,
+    cutter: &ToolDefinition,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    tp: Toolpath,
+) -> Toolpath {
+    if cfg.chain_distance_mm <= 0.0 {
+        return tp;
+    }
+    // Frame guard. The standalone `FromBelow` arm projects against a
+    // Z-FLIPPED copy of the mesh it builds internally and flips the result
+    // back, so the emitted cut Z lives in a frame `ctx.mesh` cannot answer
+    // for. A relink here would drop-cutter the un-flipped mesh and link
+    // through the workpiece. The GUI/session pipeline never reaches this
+    // (a bottom-facing setup sets `setup_z_flipped`), but a standalone
+    // caller can, so refuse rather than emit geometry from two frames.
+    if matches!(
+        cfg.direction,
+        crate::compute::operation_configs::ProjectCurveDirection::FromBelow
+    ) && !cfg.setup_z_flipped
+    {
+        tracing::info!(
+            chain_distance_mm = cfg.chain_distance_mm,
+            "Project-curve chaining skipped: standalone FromBelow projects \
+             against an internally Z-flipped mesh, so a link costed against \
+             the un-flipped mesh would be geometrically wrong"
+        );
+        return tp;
+    }
+    let rp = crate::surface_link::RelinkParams {
+        hookup_distance: cfg.chain_distance_mm,
+        // The link does not ride the surface at all — see `link_ceiling`
+        // below — so there is no crest to stand off from here.
+        stock_to_leave: 0.0,
+        sampling: cfg.point_spacing.max(0.01),
+        // Read off the SAME resolved params the generator emitted with, so
+        // a link and the cut it joins can never quote different rates.
+        feed_rate: params.feed_rate,
+        plunge_rate: params.plunge_rate,
+        safe_z: params.safe_z,
+        link_kinematics: ctx.link_kinematics.as_ref(),
+        // Chains arrive in DXF-entity order, which is authoring order, not
+        // travel order. Forward-only nearest-first: no chain is reversed,
+        // so no projected curve changes direction.
+        reorder: true,
+        // A link is a fed move over the workpiece; one that leaves the
+        // operation's territory travels over ground the boundary
+        // deliberately excluded.
+        boundary: ctx.boundary_regions,
+        // THE reason this op needs more than the finishing families do:
+        // project_curve engraves into stock that has usually NOT been
+        // cleared down to the mesh, so the mesh is not the material. Links
+        // travel above whatever the input stock still has standing.
+        link_ceiling: Some(crate::surface_link::LinkCeiling {
+            stock: ctx.initial_stock,
+            tool_radius: ctx.tool_def.radius(),
+            fallback_top_z: ctx.heights.top_z,
+        }),
+    };
+    let (linked, rep) =
+        crate::surface_link::relink_fragments(AnnotatedToolpath::new(tp), mesh, index, cutter, &rp);
+    tracing::info!(
+        chain_distance_mm = cfg.chain_distance_mm,
+        fragments = rep.fragments,
+        surface_links = rep.surface_links,
+        retract_links = rep.retract_links,
+        too_far = rep.too_far,
+        off_surface = rep.off_surface,
+        slower_than_retract = rep.slower_than_retract,
+        outside_boundary = rep.outside_boundary,
+        ceiling_above_safe_z = rep.ceiling_above_safe_z,
+        "Project-curve chaining"
+    );
+    // Spans are built from the RESULT (`generated_with_cut_run_spans` runs
+    // after this), and this adapter owns no other index-carrying channel,
+    // so there is nothing to reconcile — but the type still has to be told
+    // so, rather than the provenance being dropped by convention.
+    linked
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
+        .toolpath
 }
 
 /// Pencil family adapter (labeled-event spans + annotate_pencil).

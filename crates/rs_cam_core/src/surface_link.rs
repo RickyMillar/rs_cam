@@ -53,6 +53,69 @@ pub fn build_surface_link(
 
 // ── Fragment relinking ───────────────────────────────────────────────────
 
+/// Stock-aware ceiling for the points of a surface link.
+///
+/// A plain surface link rides the drop-cutter surface of the MESH, which is
+/// only the whole truth when the mesh IS the material — true for a finishing
+/// pass that has already had everything above it cleared, false for an
+/// engraving pass run on raw or partly-roughed stock, where material stands
+/// wherever nothing has cut yet. A link that rides the mesh there is a
+/// cutting feed straight through whatever is standing above it.
+///
+/// When a caller supplies one of these, every link sample is lifted to
+/// `max(mesh surface, material ceiling)` plus
+/// [`crate::toolpath::PLUNGE_CLEARANCE_MM`],
+/// the link is bracketed by a vertical exit and a vertical re-entry so the
+/// traverse itself is entirely at that height, and the whole link is REFUSED
+/// (the retract is kept) as soon as the ceiling reaches `safe_z` — at that
+/// point the "link" would be a fed move at retract height, which is strictly
+/// worse than the rapid it replaces.
+///
+/// `stock: None` inside a `Some(LinkCeiling)` is not the same as
+/// `link_ceiling: None`: it means "no dexel snapshot in scope, use
+/// [`Self::fallback_top_z`]" — the analytic fresh-stock top, the same
+/// fallback [`crate::dressup::optimize_entry_descents`] takes. Only
+/// `link_ceiling: None` disables the lift, and it is the byte-identical
+/// legacy behaviour the finishing families (scallop, unified finish) keep.
+#[derive(Clone, Copy)]
+pub struct LinkCeiling<'a> {
+    /// The op's INPUT stock, when a simulated snapshot is in scope.
+    pub stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// Radius of the disc the ceiling is read over — the tool's, because
+    /// material anywhere under the tool is material the tool will hit.
+    pub tool_radius: f64,
+    /// Ceiling to assume where the dexel query has no answer (off-grid, or
+    /// no snapshot at all). The analytic fresh-stock top.
+    pub fallback_top_z: f64,
+}
+
+// Hand-written: `TriDexelStock` is not `Debug`, and printing a whole dexel
+// grid into a relink log line would be useless anyway. Presence is the fact
+// worth reporting.
+impl std::fmt::Debug for LinkCeiling<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinkCeiling")
+            .field("stock", &self.stock.is_some())
+            .field("tool_radius", &self.tool_radius)
+            .field("fallback_top_z", &self.fallback_top_z)
+            .finish()
+    }
+}
+
+impl LinkCeiling<'_> {
+    /// Clearance height for a link sample at `(x, y)` whose mesh surface
+    /// sits at `surface_z`. Use `f64::NEG_INFINITY` for `surface_z` when the
+    /// drop cutter found no contact — the material ceiling then decides
+    /// alone.
+    fn clear_z(&self, x: f64, y: f64, surface_z: f64) -> f64 {
+        let material = self
+            .stock
+            .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
+            .unwrap_or(self.fallback_top_z);
+        surface_z.max(material) + crate::toolpath::PLUNGE_CLEARANCE_MM
+    }
+}
+
 /// Inputs for [`relink_fragments`].
 #[derive(Debug, Clone, Copy)]
 pub struct RelinkParams<'a> {
@@ -94,6 +157,12 @@ pub struct RelinkParams<'a> {
     /// `None` disables the check — only correct when the caller knows the
     /// fragments span no excluded territory.
     pub boundary: Option<&'a crate::region_set::RegionSet<'a>>,
+    /// Lift every link sample clear of standing material, and refuse the
+    /// link outright when that clearance reaches `safe_z`. See
+    /// [`LinkCeiling`]. `None` keeps the legacy surface-riding link — the
+    /// byte-identical behaviour the finishing families rely on, where the
+    /// mesh already IS the material.
+    pub link_ceiling: Option<LinkCeiling<'a>>,
 }
 
 /// What [`relink_fragments`] did.
@@ -112,6 +181,11 @@ pub struct RelinkReport {
     pub slower_than_retract: usize,
     /// Junctions where the link would have left `RelinkParams::boundary`.
     pub outside_boundary: usize,
+    /// Junctions refused because [`RelinkParams::link_ceiling`] put the
+    /// clearance height at or above `safe_z`: there is nothing left for a
+    /// fed link to save, so the retract is kept. Structurally always `0`
+    /// for a caller that passes `link_ceiling: None`.
+    pub ceiling_above_safe_z: usize,
 }
 
 /// Rewrite a toolpath's inter-fragment junctions, replacing
@@ -136,6 +210,14 @@ pub struct RelinkReport {
 /// `safe_z` — that fragment retracted with a FEED rather than a rapid, so
 /// its exit is not a point on the surface and a link from it would descend
 /// diagonally through material.
+///
+/// With [`RelinkParams::link_ceiling`] set, the link does not ride the
+/// surface at all: it leaves the cut vertically, traverses at
+/// `max(surface, standing material)` plus
+/// [`crate::toolpath::PLUNGE_CLEARANCE_MM`],
+/// and re-enters vertically — and is refused entirely once that clearance
+/// reaches `safe_z`. That is what makes the pass usable on an op whose mesh
+/// is NOT the material (engraving on raw stock); see [`LinkCeiling`].
 ///
 /// # Provenance (C1)
 ///
@@ -329,6 +411,51 @@ pub fn relink_fragments(
                 report.outside_boundary += 1;
                 return None;
             }
+            // Stock-aware ceiling. Applied AFTER the boundary check (which
+            // is an XY test, so lifting cannot change its answer) and
+            // BEFORE the kinematics costing, so the cost model prices the
+            // geometry that will actually be emitted.
+            let pts = match params.link_ceiling {
+                None => pts,
+                Some(ceiling) => {
+                    let surface_z_at = |x: f64, y: f64| {
+                        let cl = point_drop_cutter(x, y, mesh, index, cutter);
+                        if cl.contacted {
+                            cl.z
+                        } else {
+                            f64::NEG_INFINITY
+                        }
+                    };
+                    // Exit lift, then the interior samples, then the
+                    // re-entry lift: the traverse is entirely at clearance
+                    // and both ends of it are vertical, so nothing standing
+                    // between the two fragments is crossed at cut depth.
+                    // The degenerate case — a gap shorter than one sample
+                    // spacing, where `build_surface_link` yields no interior
+                    // points at all — is the same rule with an empty middle,
+                    // not a special case that feeds across at depth.
+                    let mut lifted: Vec<P3> = Vec::with_capacity(pts.len() + 2);
+                    let samples = std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
+                        .chain(pts.iter().map(|p| (p.x, p.y, p.z - params.stock_to_leave)))
+                        .chain(std::iter::once((
+                            entry.x,
+                            entry.y,
+                            surface_z_at(entry.x, entry.y),
+                        )));
+                    for (x, y, surface_z) in samples {
+                        let z = ceiling.clear_z(x, y, surface_z);
+                        if z >= params.safe_z - 1e-6 {
+                            // Clearing the standing material costs the whole
+                            // retract anyway — keep the rapid, which is
+                            // faster than feeding to the same height.
+                            report.ceiling_above_safe_z += 1;
+                            return None;
+                        }
+                        lifted.push(P3::new(x, y, z));
+                    }
+                    lifted
+                }
+            };
             match params.link_kinematics {
                 Some(lk) => {
                     let mut costed = pts.clone();
@@ -590,6 +717,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 5, "{report:?}");
@@ -643,6 +771,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (transformed, _) =
             relink_fragments(AnnotatedToolpath::new(tp), &mesh, &index, &tool, &params);
@@ -679,6 +808,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
 
@@ -738,6 +868,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 0, "5mm > 3mm hookup: {report:?}");
@@ -789,6 +920,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (_, unbounded) = relink(&tp, &mesh, &index, &tool, &base);
         assert_eq!(
@@ -852,6 +984,7 @@ mod tests {
             link_kinematics: None,
             reorder: false,
             boundary: None,
+            link_ceiling: None,
         };
         let (kept, _) = relink(&tp, &mesh, &index, &tool, &base);
         let reordered_params = RelinkParams {
