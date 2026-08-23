@@ -161,3 +161,72 @@ cells cannot resolve 100 µm cusps, so no render can show this; C4's A/B
 accepting gate remains the operator's eye on the physical cut / C2 vs C3
 timing. Suspect #2 (finish crosses-standing, peak 3.25 mm at
 (32.8, 83.8)) remains real but secondary.
+
+## Session 2 — 2026-08-23 — multi-tool island finishing investigation
+
+Ran `planning/multitool_2026-08-23/INVESTIGATION_PROMPT.md`: three
+read-only Opus agents (T1 reachability math, T2 island machinery, T3 UX
+— findings docs beside the prompt, every claim file:line) + the T4
+config-only two-tier arm measured live. Deliverable written:
+`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md`.
+
+**T4 arm 1 (`wanaka200_mt1.toml`, branched from C2): 36,892 s = 10.25 h
+vs C2's 17,088 s — LOSES by 5.5 h.** 0/0 collisions, verdict OK, gates
+9/9 Within with real populations (tier-A chipload 630k contributing
+samples, tier-B 334k). Config: tier-A = C2 finish retooled R1.5→R2.0 at
+equal 30 µm cusp (raster_stepover 0.6→0.69, same feeds); tier-B = new
+rest-driven R1.0 unified (claims_reference=machined_stock,
+min_rest_depth 0.03, Lakes' proven R1.0 feeds 1062/180/19000); pencil
+unchanged. Render `mt1_final_stock.png` (clean).
+
+Per-op attribution (cut-trace runtimes):
+
+- **Tier-A R2.0: 5,019 s.** C2's finish+pencil ≈ 9,334 s (total minus
+  shared ops) → tier-A + collapsed pencil (203 s) saves ~4.1k s. **The
+  big-tool-on-flats half of the operator's idea WORKS and defines the
+  budget: a fine tier has ≈ 4,100 s to spend.**
+- **Tier-B R1.0: 23,916 s — the killer.** 16,140 s of RAPIDS (19,137
+  retract round-trips at ~0.84 s, 19,132 of them *inside* routing nodes)
+  + 7,329 s cutting 89 km ≈ near-full re-coverage. narrate: MidSteep
+  scallop band was ONE region node of 146,872 moves — 14 region nodes
+  total, so the fragmentation is intra-region confetti, not
+  1000s-of-islands.
+
+Attribution of the eaten margin (the prompt's question): (1)
+**over-selection** — min_rest_depth 0.03 sits AT tier-A's own cusp
+height, and (T1's finding) the drop-cutter residual is a tool-CENTRE
+surface difference biased by R·(sec θ − 1): R2-vs-fine reads ~0.6 mm at
+45° on slopes both tools machine perfectly, so the whole mid-steep band
+qualified; (2) **fragmentation** — the rest filter punches passes into
+fragments that each pay a full retract. Same signature the July
+selective-finishing ledger measured (cutting −80%, rapids 12×). Tier
+overlap was NOT a factor. Measurability stated honestly: at 0.15 mm
+cells 58% of tier-B's removing samples read zero engagement (R1.0 tip
+below cell resolution) — time/collision verdicts stand, engagement
+grades on the fine tier do not; 0.1 OOMs this board.
+
+**T4 arm 2 (A/B sharpener, `wanaka200_mt1b.toml`: tier-B min_rest_depth
+0.03→0.05, above tier-A's cusp): PENDING — ladder in flight at time of
+writing, result appended below when measured.**
+
+Session note: the CLI session crashed mid-A/B (memory pressure, watcher
+logged 6G available at 14:39); the original GUI (held the arm-2
+generation, unsimulated) was orphaned by the dead MCP pipe and killed;
+arm 2 re-ran from `wanaka200_mt1b.toml` in a fresh GUI.
+
+Investigation headlines feeding the plan (details in T1/T2/T3 docs):
+the per-tool residual map already ships (`rest_field::detect_rest_valleys`
++ `attach_generic_rest_analysis` + `BoundarySource::DerivedRestRegions`,
+the ONLY pre-decompose boundary source); unified_finish already takes an
+external `machining_boundary` RegionSet ahead of decomposition; all
+morphology (hysteresis/close/min-area/merge) exists in `finish_planner`;
+the operator's dials (merge radius, min island area) exist un-exposed in
+`FinishPlannerParams`. Blockers: B1 slope bias on the residual mask
+(no sec θ compensation anywhere), B2 envelope-radius dilation welding
+tapered-tool masks solid (3.5 mm on a Ø1-tip taper), B3 intra-island
+routing (the 16.1k s measured above), plus MAX_REST_REGIONS=64 silent
+cap. UX verdict: op-chain (one op per tier), Optimize-project-style
+veto panel, tier-map preview through the rest-heatmap slot; the GUI
+lacks the MCP-only rest-chain fixpoint and must gain it. Costs: per-tool
+map ≈ 8 s @0.6 mm / ~31 s @0.3 per tool — planner-cheap; plan tiers at
+0.3–0.6 mm, never 0.15.
