@@ -103,16 +103,29 @@ impl std::fmt::Debug for LinkCeiling<'_> {
 }
 
 impl LinkCeiling<'_> {
+    /// Highest Z at which material may stand anywhere under the tool at
+    /// `(x, y)` — the raw dexel reading [`Self::clear_z`] is built on.
+    ///
+    /// Exposed separately because a caller may need to ask *whether* anything
+    /// stands above a candidate link before deciding to lift it.
+    /// [`crate::pencil`] does: its links are between valley runs on a surface
+    /// the finish pass has usually already cut to shape, so lifting every
+    /// junction unconditionally would buy a
+    /// [`crate::toolpath::PLUNGE_CLEARANCE_MM`] hop per junction and clear
+    /// nothing. `relink_fragments`' own caller (engraving on raw stock) has
+    /// the opposite prior and lifts unconditionally.
+    pub(crate) fn material_top(&self, x: f64, y: f64) -> f64 {
+        self.stock
+            .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
+            .unwrap_or(self.fallback_top_z)
+    }
+
     /// Clearance height for a link sample at `(x, y)` whose mesh surface
     /// sits at `surface_z`. Use `f64::NEG_INFINITY` for `surface_z` when the
     /// drop cutter found no contact — the material ceiling then decides
     /// alone.
-    fn clear_z(&self, x: f64, y: f64, surface_z: f64) -> f64 {
-        let material = self
-            .stock
-            .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
-            .unwrap_or(self.fallback_top_z);
-        surface_z.max(material) + crate::toolpath::PLUNGE_CLEARANCE_MM
+    pub(crate) fn clear_z(&self, x: f64, y: f64, surface_z: f64) -> f64 {
+        surface_z.max(self.material_top(x, y)) + crate::toolpath::PLUNGE_CLEARANCE_MM
     }
 }
 

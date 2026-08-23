@@ -548,6 +548,7 @@ surface_model_id = 0
 direction = "from_below"
 side = "center"
 spindle_rpm = 24000
+chain_distance_mm = 15.0
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -628,6 +629,7 @@ surface_model_id = 0
 direction = "from_below"
 side = "inside"
 spindle_rpm = 24000
+chain_distance_mm = 15.0
 
 [setups.toolpaths.dressups]
 entry_style = "none"
