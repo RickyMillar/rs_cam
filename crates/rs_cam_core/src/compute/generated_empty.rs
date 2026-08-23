@@ -186,9 +186,7 @@ impl LegitimateEmptyReason {
 pub fn feature_selective_exemption(op_type: OperationType) -> bool {
     matches!(
         op_type,
-        OperationType::Pencil
-            | OperationType::HorizontalFinish
-            | OperationType::Waterline
+        OperationType::Pencil | OperationType::HorizontalFinish | OperationType::Waterline
     )
 }
 

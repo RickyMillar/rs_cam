@@ -48,6 +48,14 @@ pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstain
 /// B4" investigation: the simulator's reading was correct all along, and what
 /// was missing was anyone saying what it meant.
 pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material";
+/// G-ENTRYLOAD (2026-08-23). A pass's ENTRY motion removes multiples of what
+/// the pass itself takes in steady cutting. The three load gates
+/// (chipload/deflection/power) filter their populations to steady-state
+/// samples and drop entry spans wholesale — correctly, but that left entry
+/// motion with no grader at all, and a pure-vertical entry's removal lands on
+/// `plunge_descent_mm`, which the crosses-standing rule above does not read.
+/// See [`crate::sim_triage::entry_load_observation`].
+pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
 
 // ── Feeds calculator warnings ───────────────────────────────────────
 pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
@@ -219,6 +227,7 @@ pub const ALL: &[&str] = &[
     PROJECT_GENERATED_EMPTY,
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
+    PROJECT_ENTRY_LOAD,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
     FEEDS_SHANK_TOO_LARGE,

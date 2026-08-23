@@ -1547,16 +1547,28 @@ pub fn write_simulation_cut_artifact(
     Ok(path)
 }
 
+/// Dumps younger than this are never pruned, whatever the count: concurrent
+/// writers (parallel test runs, a second session) share one directory, and a
+/// prune racing a write must not delete an artifact its writer is about to
+/// read back. The disk-fill scenario this exists for is dumps accumulating
+/// over days, which a 10-minute grace does not protect.
+const PRUNE_GRACE_MS: u128 = 10 * 60 * 1000;
+
 /// Delete the oldest artifacts in `dir` so at most `keep` remain (G-SIMDUMP).
 ///
 /// Every simulation writes a full cut-trace artifact; at fine resolutions on a
 /// large board one dump is multiple GB, and an unbounded directory filled a
 /// 935 GB disk (96 GB / 81 dumps observed 2026-08-23). Age is the numeric
 /// millisecond-timestamp prefix of the file name written by
-/// [`write_simulation_cut_artifact`]; files without one sort oldest. Removal
-/// failures are reported in the count of survivors, never as an error — the
+/// [`write_simulation_cut_artifact`]; files without one sort oldest. Files
+/// younger than [`PRUNE_GRACE_MS`] are always kept. Removal failures are
+/// reflected in the returned count of deletions, never as an error — the
 /// artifact write itself must not fail because housekeeping did.
 pub fn prune_simulation_cut_artifacts(dir: &Path, keep: usize) -> usize {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
@@ -1573,6 +1585,9 @@ pub fn prune_simulation_cut_artifacts(dir: &Path, keep: usize) -> usize {
                 .next()
                 .and_then(|prefix| prefix.parse::<u128>().ok())
                 .unwrap_or(0);
+            if now_ms.saturating_sub(stamp) < PRUNE_GRACE_MS {
+                return None;
+            }
             Some((stamp, path))
         })
         .collect();
