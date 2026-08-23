@@ -206,8 +206,23 @@ below cell resolution) — time/collision verdicts stand, engagement
 grades on the fine tier do not; 0.1 OOMs this board.
 
 **T4 arm 2 (A/B sharpener, `wanaka200_mt1b.toml`: tier-B min_rest_depth
-0.03→0.05, above tier-A's cusp): PENDING — ladder in flight at time of
-writing, result appended below when measured.**
+0.03→0.05, above tier-A's cusp): BYTE-IDENTICAL to arm 1** — tier-B
+232,226 moves / 89,201 mm cut / 396,249 mm rapid, total 36,891.85 s to
+the digit, full fresh ladder + sim @0.15. **`min_rest_depth_mm` is
+INERT for unified_finish emission when `territory_clip = false`** — the
+claims machinery computes a mask nothing applies (consistent with T2:
+`territory_clip` is the only in-op mask-AND, `DerivedRestRegions` the
+only pre-decompose boundary). This AMENDS arm 1's attribution: tier-B
+was never rest-confined at all — it ran a full-board R1.0 unified
+finish; "over-selection" is really "no selection", and the 19k
+intra-node retracts are unified's own emission over this terrain at
+R1.0/0.49 rather than a rest-filter artifact. The config-only rest
+levers that remain untested are `territory_clip = true` (with T2's
+envelope-welding trap) and the rest_analysis → DerivedRestRegions
+cascade — both are cheap first probes for the implementation session,
+and the plan's B1/B3 diagnosis (slope-biased selection once selection
+EXISTS, plus intra-region linking) stands on T1/T2 evidence + the July
+selective-finishing measurements rather than on arm 1's misread.
 
 Session note: the CLI session crashed mid-A/B (memory pressure, watcher
 logged 6G available at 14:39); the original GUI (held the arm-2

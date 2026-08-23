@@ -39,9 +39,19 @@ finishing ledger recorded (cutting −80% but rapids 12×,
    19k = the 16,140 s). Region count was NOT the problem (14 nodes, not
    1000s) — intra-region linking was.
 
-A/B sharpener (tier-B `min_rest_depth` 0.03→0.05, above tier-A's cusp):
-see `P2_RUN_LOG.md` for the measured number. <!-- filled after the
-background ladder completes -->
+A/B sharpener (tier-B `min_rest_depth` 0.03→0.05, above tier-A's cusp,
+`wanaka200_mt1b.toml`): **byte-identical toolpath** — the dial is INERT
+for unified_finish emission when `territory_clip = false`; the claims
+mask is computed and never applied. So arm 1's tier-B was a FULL-BOARD
+R1.0 finish, not a rest pass: "over-selection" was actually "no
+selection", and the 19k retracts are unified's own emission at R1.0/0.49
+on this terrain. Consequences for this plan: (a) the untested config-only
+confinement levers are `territory_clip = true` (B2's welding trap
+applies) and rest_analysis → `DerivedRestRegions` — run both as cheap
+probes at the START of Phase T before building anything; (b) Phase F
+gains a small F4: make `min_rest_depth_mm`/`claims_reference` either
+effective or refused on unified_finish when territory_clip is off — a
+dial that silently does nothing is the G-family pattern.
 
 **Go/no-go verdict: GO, with a defined margin.** Tier-A + pencil = 5,222 s
 against C2's 9,334 s leaves **≈ 4,100 s of budget** for a fine tier that
