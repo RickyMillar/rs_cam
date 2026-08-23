@@ -1008,6 +1008,234 @@ fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
         .collect()
 }
 
+// ── Entry ramp (G-ENTRYLOAD, 2026-08-23) ────────────────────────────────
+//
+// A pencil pass that cannot link to its predecessor used to enter every run
+// the same way: rapid to the run's first point at `safe_z`, then ONE straight
+// fed descent to that point's finished Z. On a `FromRemainingStock` pencil
+// that descent is a vertical carve through whatever the upstream op left
+// standing over the crease — on the wanaka200 measurement, up to 3.72 mm of
+// white oak taken by an R0.5 tapered-ball TIP, at the 150 mm/min flute-tip
+// plunge cap, and 2,412 s of the op's 3,332 s total.
+//
+// It was also invisible. A pure-vertical descent samples as
+// `CutKinematics::Plunge`, whose removal the simulator writes to
+// `plunge_descent_mm` and NOT to `axial_engagement_mm` — so the
+// crosses-standing caution (which reads the axial axis) never saw it, and the
+// chipload/deflection/power gates drop entry spans wholesale via
+// `tool_load::locality::is_steady_state_for_gate`. Nothing graded it. The
+// second half of that hole is closed by `sim_triage::entry_load_finding`.
+//
+// The fix here is geometric: descend ALONG the valley being entered instead
+// of into it, in bite-budgeted zig-zag laps, so no single lap can remove more
+// than the budget below.
+
+/// Fraction of the cutter's TIP (cusp) radius one entry lap may remove.
+///
+/// The budget is tool-scaled rather than pass-scaled because the generator
+/// cannot know the pass's median bite — that only exists after a simulation.
+/// The two are tied at the other end: `sim_triage::ENTRY_LOAD_MEDIAN_MULTIPLE`
+/// (k = 2x the pass's own median body bite) grades what the entry ACTUALLY
+/// removed, so a budget that is too generous for a given pass is reported
+/// rather than hidden. On the wanaka200 pencil (R0.5 tip, 0.20 mm median
+/// bite) this yields 0.25 mm = 1.25x the median, inside k.
+pub const ENTRY_RAMP_BITE_TIP_FRACTION: f64 = 0.5;
+/// Floor under the derived per-lap budget — a hair-thin tip must not be able
+/// to generate an unbounded lap count.
+pub const ENTRY_RAMP_MIN_BITE_MM: f64 = 0.10;
+/// Ceiling over the derived per-lap budget. A big ball entering a shallow
+/// crease still ramps rather than punching a full-diameter hole.
+pub const ENTRY_RAMP_MAX_BITE_MM: f64 = 0.50;
+/// Maximum ramp angle from horizontal, degrees.
+///
+/// This is deliberately NOT the plunge-rate cap. `stale.tapered_ball_plunge`
+/// exists because a tapered ball END-cutting at its tip has zero surface
+/// speed on the axis; a bounded-angle ramp is a peripheral cut, and the
+/// literature/CAM convention for ball-family ramp entry is an angle limit
+/// (a plunge is the 90 degree case). Vertical moves in the entry — only the
+/// air descent down to the stock ceiling survives as one — still use
+/// `params.plunge_rate`.
+pub const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 8.0;
+/// Shortest window (mm of path) worth ramping over. Below this the run is
+/// treated as too short to enter along and the legacy descent is kept.
+pub const ENTRY_RAMP_MIN_WINDOW_MM: f64 = 0.5;
+/// Hard cap on laps. When the stock standing over a crease is so deep that
+/// the budget would need more laps than this, the emission stays bounded and
+/// the per-lap step grows past the budget — which the post-simulation
+/// `project.entry_load` finding then reports. A silently unbounded ramp and a
+/// silent plunge are the same failure.
+pub const ENTRY_RAMP_MAX_LAPS: usize = 64;
+
+/// The tool radius that actually nestles into a crease: the corner radius for
+/// flat/bullnose cutters, the tip sphere (`cusp_radius_mm`) otherwise. For a
+/// tapered ball `radius()` is the SHANK, which is why this is not it.
+fn tip_contact_radius(cutter: &dyn MillingCutter) -> f64 {
+    let cr = cutter.corner_radius_mm();
+    if cr > 1e-6 {
+        cr
+    } else {
+        cutter.cusp_radius_mm()
+    }
+}
+
+/// Per-lap depth budget (mm) for a stepped entry ramp on a cutter with this
+/// tip radius. See [`ENTRY_RAMP_BITE_TIP_FRACTION`].
+pub fn entry_bite_budget_mm(tip_radius_mm: f64) -> f64 {
+    (tip_radius_mm * ENTRY_RAMP_BITE_TIP_FRACTION)
+        .clamp(ENTRY_RAMP_MIN_BITE_MM, ENTRY_RAMP_MAX_BITE_MM)
+}
+
+/// A planned entry manoeuvre for one run: an air-only vertical descent to the
+/// input stock's ceiling, then bite-budgeted zig-zag laps along the run's own
+/// first few millimetres.
+struct EntryRampPlan {
+    /// Z the vertical fed descent stops at — the conservative stock ceiling
+    /// over the ramp window, so everything below it is cut by the laps and
+    /// everything above it is air.
+    air_descent_z: f64,
+    /// Lap points in emission order. Every one is clamped to its own point's
+    /// finished Z, so no lap can ever cut below the surface.
+    points: Vec<P3>,
+    /// Index into the run of the window's LAST point. The body pass resumes
+    /// at `window_end + 1`; the final lap leaves every window point cut at
+    /// its finished Z, so coverage is unchanged.
+    window_end: usize,
+    /// The per-lap Z step actually used (>= the budget only in the
+    /// [`ENTRY_RAMP_MAX_LAPS`] clamp case).
+    step_mm: f64,
+}
+
+/// Plan a bite-budgeted entry ramp along the first few millimetres of `run`.
+///
+/// Returns `None` — keeping the legacy single descent — when there is no
+/// input stock reading, the run is too short to ramp along, or the stock over
+/// the window already sits within one bite budget of the finished surface (in
+/// which case the descent arrives in near-zero engagement and a ramp would
+/// only cost time).
+///
+/// # Shape
+///
+/// `laps` descending zig-zag laps, each a straight ramp from the previous
+/// level to the next across the whole window, then ONE flat lap at the floor.
+/// The flat lap is not optional: a zig-zag whose last lap ramps down leaves a
+/// wedge (up to one step) over the start of that lap, and coverage is sacred
+/// — the campaign that took pencil coverage from 0.137 to 0.80 is not being
+/// paid back a wedge per entry. A second flat lap is appended when parity
+/// needs it, so the manoeuvre always ends at the FAR end of the window and
+/// the body pass carries on forward from there.
+///
+/// # Why the worst bite is `2 x step`, not `step`
+///
+/// Two consecutive laps run in opposite directions, so their vertical gap is
+/// widest at the turn: `2 x step` at one end, zero at the other. The window
+/// is therefore sized so that `window_len x tan(angle) <= budget / 2`.
+fn plan_entry_ramp(
+    run: &[P3],
+    stock: &crate::dexel_stock::TriDexelStock,
+    contact_radius: f64,
+    params: &PencilParams,
+) -> Option<EntryRampPlan> {
+    if run.len() < 2 {
+        return None;
+    }
+    let tip = contact_radius.max(1e-6);
+    let budget = entry_bite_budget_mm(tip);
+    let tan_ramp = ENTRY_RAMP_MAX_ANGLE_DEG.to_radians().tan();
+    let window_target = (budget / (2.0 * tan_ramp)).max(ENTRY_RAMP_MIN_WINDOW_MM);
+
+    // The window: the prefix of the run out to `window_target` of XY travel,
+    // with its cumulative arclength (both truncated at the same point, so
+    // `arc` and the window slice index alike).
+    let mut arc: Vec<f64> = Vec::with_capacity(run.len());
+    let mut travelled = 0.0_f64;
+    let mut prev: Option<P3> = None;
+    for p in run {
+        if let Some(q) = prev {
+            travelled += ((p.x - q.x).powi(2) + (p.y - q.y).powi(2)).sqrt();
+        }
+        arc.push(travelled);
+        prev = Some(*p);
+        if travelled >= window_target {
+            break;
+        }
+    }
+    let window_end = arc.len().checked_sub(1)?;
+    if window_end < 1 {
+        return None;
+    }
+    let window = run.get(..=window_end)?;
+    let window_len = *arc.last()?;
+    if window_len <= 1e-6 {
+        return None;
+    }
+
+    // The ceiling: how high the INPUT stock can stand anywhere under the tip
+    // over the window. `max_conservative_top_z_in_disc` may only ever err
+    // high, so the vertical descent below it is air by construction. The disc
+    // is the TIP's, not the envelope's: an envelope-radius disc on a tapered
+    // ball would read the valley RIM several millimetres away and ramp
+    // through air that is not in the tool's way.
+    let mut ceiling = f64::NEG_INFINITY;
+    for p in window {
+        if let Some(top) = stock.max_conservative_top_z_in_disc(p.x, p.y, contact_radius) {
+            ceiling = ceiling.max(top);
+        }
+    }
+    if !ceiling.is_finite() {
+        return None;
+    }
+    let ceiling = ceiling.min(params.safe_z);
+    let floor = window.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
+    if !floor.is_finite() {
+        return None;
+    }
+    let depth = ceiling - floor;
+    if depth <= budget {
+        // Already inside the budget: the plain descent arrives in near-zero
+        // engagement and is the cheaper motion.
+        return None;
+    }
+
+    let per_lap = (window_len * tan_ramp).min(budget * 0.5).max(1e-6);
+    let laps_f = (depth / per_lap)
+        .ceil()
+        .clamp(1.0, ENTRY_RAMP_MAX_LAPS as f64);
+    let laps = laps_f as usize;
+    let step = depth / laps as f64;
+
+    let mut levels: Vec<(f64, f64)> = (0..laps)
+        .map(|i| (ceiling - step * i as f64, ceiling - step * (i + 1) as f64))
+        .collect();
+    levels.push((floor, floor));
+    if levels.len().is_multiple_of(2) {
+        levels.push((floor, floor));
+    }
+
+    let mut points: Vec<P3> = Vec::with_capacity(levels.len() * window.len());
+    for (lap, &(from_z, to_z)) in levels.iter().enumerate() {
+        let forward = lap % 2 == 0;
+        for k in 1..window.len() {
+            let idx = if forward { k } else { window.len() - 1 - k };
+            let p = window.get(idx)?;
+            let a = *arc.get(idx)?;
+            let frac = if forward {
+                a / window_len
+            } else {
+                1.0 - a / window_len
+            };
+            let z = from_z + (to_z - from_z) * frac;
+            points.push(P3::new(p.x, p.y, z.max(p.z)));
+        }
+    }
+
+    Some(EntryRampPlan {
+        air_descent_z: ceiling,
+        points,
+        window_end,
+        step_mm: step,
+    })
+}
+
 /// Emit the ordered `PencilPath`s as toolpath moves. Consecutive passes whose
 /// endpoints are within `hookup_distance` are joined by a gouge-safe
 /// surface-following feed instead of a retract-rapid-replunge — on dense
@@ -1037,10 +1265,12 @@ fn contact_runs(points: &[P3]) -> Vec<&[P3]> {
 /// pass produces two independent runs — each with its own rapid/plunge or
 /// surface link — rather than a single cutting move bridging the gap.
 ///
-/// `pub(crate)`: also used by [`crate::unified_finish`]'s pencil-claims
-/// pipeline (v3 S1) to emit a claimed-crease node from
-/// `crease_paths::centerline_cut_paths`'s output, reusing this exact
-/// link-costing/retract logic instead of a parallel emit loop.
+/// Entries have no stock reading on this form, so they keep the legacy single
+/// fed descent. Every production caller — the pencil generator and
+/// [`crate::unified_finish`]'s pencil-claims pipeline — now holds the input
+/// stock and calls [`emit_paths_with_entry_stock`] directly (G-ENTRYLOAD), so
+/// this wrapper survives only as the tests' stock-less spelling.
+#[cfg(test)]
 pub(crate) fn emit_paths(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
@@ -1048,7 +1278,26 @@ pub(crate) fn emit_paths(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
+    emit_paths_with_entry_stock(all_paths, mesh, index, cutter, params, None)
+}
+
+/// [`emit_paths`] with the input stock the entries are descending through.
+///
+/// `entry_stock` is only ever read to plan the entry manoeuvre
+/// ([`plan_entry_ramp`]); `None` reproduces the pre-G-ENTRYLOAD emission
+/// exactly, which is what makes the A/B in
+/// `tests/pencil_entry_ramp_g_entryload.rs` a controlled one.
+pub(crate) fn emit_paths_with_entry_stock(
+    all_paths: &[PencilPath],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+    entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
+) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
     use crate::toolpath::MoveIntent;
+
+    let contact_radius = tip_contact_radius(cutter);
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
     let mut prev_end: Option<P3> = None;
@@ -1065,6 +1314,9 @@ pub(crate) fn emit_paths(
 
             let move_index = tp.moves.len();
             let first = *run.first().unwrap_or(&P3::origin());
+            // Where the body pass starts. A ramped entry has already cut the
+            // window at its finished Z, so the body resumes past it.
+            let mut body_start = 1usize;
 
             // Try to link from the previous run's end without retracting.
             // `hookup_distance` is only the candidate CAP (gap must be within
@@ -1131,7 +1383,7 @@ pub(crate) fn emit_paths(
                 }
                 None => {
                     // Too far (or unsafe) to link: retract the previous run, then a
-                    // fresh rapid-over + plunge entry.
+                    // fresh rapid-over + entry.
                     if let Some(end) = prev_end {
                         tp.rapid_to_with_intent(
                             P3::new(end.x, end.y, params.safe_z),
@@ -1142,12 +1394,47 @@ pub(crate) fn emit_paths(
                         P3::new(first.x, first.y, params.safe_z),
                         MoveIntent::Linking,
                     );
-                    tp.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
+                    match entry_stock
+                        .and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params))
+                    {
+                        Some(plan) => {
+                            // Air only — the descent stops at the conservative
+                            // stock ceiling, so the plunge-rate cap is paid on
+                            // nothing but clearance (and `dressup::
+                            // optimize_entry_descents` turns most of even that
+                            // into a rapid).
+                            if plan.air_descent_z < params.safe_z - 1e-9 {
+                                tp.feed_to_with_intent(
+                                    P3::new(first.x, first.y, plan.air_descent_z),
+                                    params.plunge_rate,
+                                    MoveIntent::EntryPlunge,
+                                );
+                            }
+                            for p in &plan.points {
+                                tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::EntryRamp);
+                            }
+                            tracing::debug!(
+                                window_end = plan.window_end,
+                                step_mm = plan.step_mm,
+                                ramp_points = plan.points.len(),
+                                "pencil entry ramped along the crease"
+                            );
+                            body_start = plan.window_end + 1;
+                        }
+                        None => {
+                            tp.feed_to_with_intent(
+                                first,
+                                params.plunge_rate,
+                                MoveIntent::EntryPlunge,
+                            );
+                        }
+                    }
                 }
             }
 
-            // Feed the body (skip the first point — we're already positioned there).
-            for p in run.iter().skip(1) {
+            // Feed the body (skipping whatever the entry already cut — at
+            // minimum the first point, which we are already standing on).
+            for p in run.iter().skip(body_start) {
                 tp.feed_to_with_intent(*p, params.feed_rate, MoveIntent::FinishingCut);
             }
             prev_end = run.last().copied();
@@ -1614,14 +1901,8 @@ fn dihedral_arm(
     // the corner, six times wider than the tip that actually touches it.
     // `cusp_radius_mm()` is the tip sphere for tapered balls and identical
     // to `radius()` for every other cutter, so this is a no-op off the taper.
-    let contact_radius = {
-        let cr = cutter.corner_radius_mm();
-        if cr > 1e-6 {
-            cr
-        } else {
-            cutter.cusp_radius_mm()
-        }
-    };
+    // One definition, shared with the entry-ramp planner.
+    let contact_radius = tip_contact_radius(cutter);
 
     if chains.is_empty() {
         info!(
@@ -1725,8 +2006,10 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     order_paths_nearest(&mut all_paths);
     check_cancel(cancel)?;
 
-    // Step 7: Emit toolpath.
-    let (tp, annotations) = emit_paths(&all_paths, mesh, index, cutter, params);
+    // Step 7: Emit toolpath. The input stock goes in so entries can ramp
+    // along the crease instead of carving down into it (G-ENTRYLOAD).
+    let (tp, annotations) =
+        emit_paths_with_entry_stock(&all_paths, mesh, index, cutter, params, initial_stock);
 
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {

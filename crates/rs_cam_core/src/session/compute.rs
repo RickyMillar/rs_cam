@@ -3342,15 +3342,29 @@ impl ProjectSession {
             })
             .collect();
 
-        SimulationTriage::build(&TriageInputs {
-            trace,
-            measurability: &measurability,
-            diagnostics: &diagnostics,
-            rapid_collisions: evidence.rapid_collisions,
-            holder_collisions: &evidence.holder_collisions,
-            tool_diameters_mm: &tool_diameters_mm,
-            region_of: None,
-        })
+        // G-ENTRYLOAD scope: the same predicate that arms the pencil entry
+        // ramp (`gen_initial_stock`) — entries are graded only where they
+        // descend through rest material the entry planner had no stock
+        // reading for. Fresh-stock entry plunges are planned motion.
+        let rest_driven: std::collections::BTreeSet<crate::ids::ToolpathId> = self
+            .toolpath_configs
+            .iter()
+            .filter(|tc| tc.stock_source == crate::session::StockSource::FromRemainingStock)
+            .map(|tc| tc.id)
+            .collect();
+
+        SimulationTriage::build_with_rest_context(
+            &TriageInputs {
+                trace,
+                measurability: &measurability,
+                diagnostics: &diagnostics,
+                rapid_collisions: evidence.rapid_collisions,
+                holder_collisions: &evidence.holder_collisions,
+                tool_diameters_mm: &tool_diameters_mm,
+                region_of: None,
+            },
+            &rest_driven,
+        )
     }
 
     pub fn diagnostics_with_evidence(&self, evidence: &ProjectEvidence<'_>) -> ProjectDiagnostics {

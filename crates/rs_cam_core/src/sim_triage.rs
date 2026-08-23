@@ -55,7 +55,7 @@ use crate::sim_measurability::MeasurabilityReport;
 use crate::simulation_cut::SimulationCutTrace;
 use crate::toolpath_spans::{RegionSpanRole, SpanId};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Advisories retained per toolpath before truncation.
 pub const ADVISORY_CAP_PER_TOOLPATH: usize = 10;
@@ -268,7 +268,28 @@ pub struct TriageInputs<'a> {
 
 impl SimulationTriage {
     /// Build the page-one answer.
+    ///
+    /// Without rest context (this form), `project.entry_load` is never
+    /// emitted: a fresh-stock operation's entries descend through virgin
+    /// material the generator planned for, so grading them against the body
+    /// median flags normal plunge entries (measured on the Phase 0 perf
+    /// golden: a fresh-stock drop-cutter fixture tripped it). Callers that
+    /// know which toolpaths are rest-driven use
+    /// [`Self::build_with_rest_context`]; the session does.
     pub fn build(inputs: &TriageInputs<'_>) -> Self {
+        Self::build_with_rest_context(inputs, &BTreeSet::new())
+    }
+
+    /// [`Self::build`] plus the set of rest-driven toolpath ids
+    /// (`StockSource::FromRemainingStock` — the same predicate that arms the
+    /// pencil entry ramp, `session/compute.rs` `gen_initial_stock`).
+    /// `project.entry_load` (G-ENTRYLOAD) is graded only on these: an entry
+    /// carving rest material is the defect class the id names, while a
+    /// fresh-stock entry plunge is planned motion.
+    pub fn build_with_rest_context(
+        inputs: &TriageInputs<'_>,
+        rest_driven: &BTreeSet<ToolpathId>,
+    ) -> Self {
         let mut safety = Vec::new();
         let mut actions = Vec::new();
 
@@ -343,11 +364,18 @@ impl SimulationTriage {
         }
 
         // R-12 (census §6.4) — the actionable half of "Rivers B4".
+        // G-ENTRYLOAD — the same pass's ENTRY motion, graded against its own
+        // envelope because the load gates decline to look at it.
         for tp in &inputs.trace.toolpath_summaries {
             if tp.metrics_not_applicable {
                 continue;
             }
             if let Some(f) = standing_material_finding(inputs.trace, tp.toolpath_id) {
+                actions.push(f);
+            }
+            if rest_driven.contains(&tp.toolpath_id)
+                && let Some(f) = entry_load_finding(inputs.trace, tp.toolpath_id)
+            {
                 actions.push(f);
             }
         }
@@ -532,6 +560,295 @@ fn standing_material_finding(
             wasted_runtime_s: 0.0,
             min_radial_engagement: worst_sample.engagement.radial_woc_fraction,
             sample_count: over.len(),
+        },
+    })
+}
+
+// ── G-ENTRYLOAD: entries get their own envelope ─────────────────────────
+//
+// The load gates (chipload, deflection, power) filter their populations to
+// steady-state samples via `tool_load::locality::is_steady_state_for_gate`,
+// which drops entry and transit spans wholesale. That filter is correct and
+// is NOT weakened here: a dexel reading at a transit sample reports
+// `stock_top - cutter_z` over neighbouring stock, not steady-state
+// engagement, and gate verdicts built on it were exactly the P3 lift-bridge
+// artifact.
+//
+// The consequence, though, was that entry motion had NO grader at all:
+//
+//  * the three load gates exclude it by span;
+//  * `standing_material_finding` above reads `axial_engagement_mm`, and a
+//    pure-vertical descent samples as `CutKinematics::Plunge`, whose removal
+//    the simulator deliberately writes to `plunge_descent_mm` instead — so a
+//    3.72 mm bite taken by an R0.5 tapered-ball TIP at entry read as
+//    `axial_engagement_mm = 0.0` there;
+//  * nothing else reads `plunge_descent_mm` at all outside the drill gates.
+//
+// So the operator found it on the part ("ramp entries are cutting through the
+// stock, surprised this isn't flagged") before any surface did. This grades
+// entry-intent samples against their OWN envelope, on BOTH removal axes.
+
+/// How many times its own median BODY bite an entry-intent sample may remove
+/// before the entry is reported — the `k` of G-ENTRYLOAD, and the same `k`
+/// the pencil generator's entry ramp
+/// ([`crate::pencil::entry_bite_budget_mm`]) is budgeted to stay inside.
+pub const ENTRY_LOAD_MEDIAN_MULTIPLE: f64 = 2.0;
+
+/// Peak entry bite (mm) at which the finding escalates `Caution` ->
+/// `Critical` (visible as a red row; it does NOT block export — nothing about
+/// this rule is a refusal).
+///
+/// A fixed millimetre, deliberately NOT a tool fraction. The only per-toolpath
+/// tool figure this module has is [`TriageInputs::tool_diameters_mm`], which
+/// carries the ENVELOPE diameter — on a tapered ball that overstates the
+/// cutting tip by up to 14x (the radius programme's R-12), and an escalation
+/// floor built on it would go quiet on precisely the small-tip tools that
+/// break. A millimetre of unplanned axial engagement at entry is a
+/// broken-cutter event on any tool a pencil/finishing pass runs.
+pub const ENTRY_LOAD_SEVERE_PEAK_MM: f64 = 1.0;
+
+/// Body samples required before this pass's median is a reference rather than
+/// noise. Same bar, for the same reason, as `standing_material_finding`'s.
+pub const ENTRY_LOAD_MIN_BODY_SAMPLES: usize = 50;
+
+/// Noise floor (mm): a peak below this is not reported however large a
+/// multiple of the median it is.
+///
+/// This rule reports LOAD, not ratios. On a pass whose median bite is 0.02 mm
+/// — an ordinary fine finishing pass — a 0.06 mm entry is 3x the median and
+/// nothing at all in the spindle. The floor is
+/// [`crate::pencil::ENTRY_RAMP_MIN_BITE_MM`], the smallest per-lap budget any
+/// tool earns from the generator side: an entry that removes less than the
+/// least a ramp lap is allowed to take is, by that same standard, not an
+/// event. The case this rule exists for is 37x it.
+pub const ENTRY_LOAD_MIN_PEAK_MM: f64 = crate::pencil::ENTRY_RAMP_MIN_BITE_MM;
+
+/// What the entry-load rule measured — published whether or not it fires, so
+/// "no entry samples" and "entries were clean" can never be read as the same
+/// thing.
+///
+/// A gate handed an empty population passes and looks healthy (measured
+/// 2026-08-05: three gates returned `Within` with `sample_range 0..0`). This
+/// type is the answer to that: [`Self::is_measured`] is false when either
+/// population is missing, and no finding is ever built from an unmeasured
+/// reading.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct EntryLoadObservation {
+    /// Cutting samples whose generator intent was an entry
+    /// (`EntryPlunge` / `EntryRamp` / `EntryHelix`). **The population.**
+    pub entry_samples: usize,
+    /// Cutting samples that are NOT entries and removed material — the
+    /// denominator's population.
+    pub body_samples: usize,
+    /// Median body bite (mm). `None` = not measured, never 0.0.
+    pub median_body_bite_mm: Option<f64>,
+    /// Peak entry bite (mm), `max(axial_engagement_mm, plunge_descent_mm)`.
+    /// `None` = no entry samples, never 0.0.
+    pub peak_entry_bite_mm: Option<f64>,
+    /// `median x ENTRY_LOAD_MEDIAN_MULTIPLE`. `None` when not measured.
+    pub threshold_mm: Option<f64>,
+    /// Entry samples over the threshold.
+    pub over_threshold_samples: usize,
+    pub worst_position: Option<[f64; 3]>,
+    pub worst_move_index: Option<usize>,
+    pub worst_sample_index: Option<usize>,
+}
+
+impl EntryLoadObservation {
+    /// True only when BOTH populations were real. A false here means "not
+    /// measured" — it never means "clean".
+    pub fn is_measured(&self) -> bool {
+        self.entry_samples > 0
+            && self.body_samples >= ENTRY_LOAD_MIN_BODY_SAMPLES
+            && self.median_body_bite_mm.is_some()
+    }
+
+    /// True when a measured reading is over its own threshold AND over the
+    /// [`ENTRY_LOAD_MIN_PEAK_MM`] noise floor.
+    pub fn exceeds(&self) -> bool {
+        match (
+            self.is_measured(),
+            self.peak_entry_bite_mm,
+            self.threshold_mm,
+        ) {
+            (true, Some(peak), Some(bar)) => peak > bar && peak >= ENTRY_LOAD_MIN_PEAK_MM,
+            _ => false,
+        }
+    }
+}
+
+/// Removal at one sample, on whichever axis carried it.
+///
+/// **Both axes, by construction.** `axial_engagement_mm` is zeroed on
+/// plunge-kinematics samples and `plunge_descent_mm` is zeroed on every other
+/// kind (`dexel_stock::simulation::apply_subsegment_metrics`), so reading one
+/// of them is reading half the entries. Reading the axial axis alone is the
+/// specific mistake G-ENTRYLOAD is named after.
+fn entry_bite_mm(s: &crate::simulation_cut::SimulationCutSample) -> f64 {
+    s.axial_engagement_mm.max(s.plunge_descent_mm).max(0.0)
+}
+
+/// True when the generator tagged this sample's move as an entry.
+///
+/// Source-keyed (`source_intent`), so it survives arc-fitting and TSP
+/// reordering — programme rule 5. `Drilling` is deliberately NOT an entry
+/// here: drill cycles have their own three gates on
+/// `ToolpathLoadVerdict::drill_gates` and their own removal model.
+fn is_entry_intent(s: &crate::simulation_cut::SimulationCutSample) -> bool {
+    matches!(
+        s.source_intent,
+        Some(
+            crate::toolpath::MoveIntent::EntryPlunge
+                | crate::toolpath::MoveIntent::EntryRamp
+                | crate::toolpath::MoveIntent::EntryHelix
+        )
+    )
+}
+
+/// Measure one toolpath's entry motion against its own body.
+///
+/// The reference is the pass's OWN median body bite, for the same reason
+/// `standing_material_finding` uses its own median: no commanded axial step
+/// exists on a surface-following op to divide by. Entries are excluded from
+/// that denominator — grading a population against a median it is itself part
+/// of is how a pass made mostly of bad entries exonerates itself.
+pub fn entry_load_observation(
+    trace: &SimulationCutTrace,
+    toolpath_id: ToolpathId,
+) -> EntryLoadObservation {
+    let mut body: Vec<f64> = Vec::new();
+    let mut entry_samples = 0usize;
+    let mut peak: Option<f64> = None;
+    let mut worst: Option<&crate::simulation_cut::SimulationCutSample> = None;
+
+    for s in trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+    {
+        if is_entry_intent(s) {
+            entry_samples += 1;
+            let bite = entry_bite_mm(s);
+            if peak.is_none_or(|p| bite > p) {
+                peak = Some(bite);
+                worst = Some(s);
+            }
+        } else if s.axial_engagement_mm > 0.0 {
+            body.push(s.axial_engagement_mm);
+        }
+    }
+
+    let mut obs = EntryLoadObservation {
+        entry_samples,
+        body_samples: body.len(),
+        peak_entry_bite_mm: peak,
+        worst_position: worst.map(|s| s.position),
+        worst_move_index: worst.map(|s| s.move_index),
+        worst_sample_index: worst.map(|s| s.sample_index),
+        ..EntryLoadObservation::default()
+    };
+
+    if body.len() < ENTRY_LOAD_MIN_BODY_SAMPLES {
+        return obs;
+    }
+    body.sort_by(f64::total_cmp);
+    let Some(&median) = body.get(body.len() / 2) else {
+        return obs;
+    };
+    if median <= 0.0 {
+        return obs;
+    }
+    let bar = median * ENTRY_LOAD_MEDIAN_MULTIPLE;
+    obs.median_body_bite_mm = Some(median);
+    obs.threshold_mm = Some(bar);
+    obs.over_threshold_samples = trace
+        .samples
+        .iter()
+        .filter(|s| {
+            s.toolpath_id == toolpath_id
+                && s.is_cutting
+                && is_entry_intent(s)
+                && entry_bite_mm(s) > bar
+        })
+        .count();
+    obs
+}
+
+/// Report a pass whose ENTRY motion removes multiples of what the pass itself
+/// takes in steady cutting.
+///
+/// Fires only on a measured reading with a real population (see
+/// [`EntryLoadObservation::is_measured`]); an op with no entry samples is
+/// absent from the list, never reported clean.
+fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Option<Finding> {
+    let obs = entry_load_observation(trace, toolpath_id);
+    if !obs.exceeds() {
+        return None;
+    }
+    let peak = obs.peak_entry_bite_mm?;
+    let bar = obs.threshold_mm?;
+    let median = obs.median_body_bite_mm?;
+    let position = obs.worst_position.unwrap_or_default();
+    let move_index = obs.worst_move_index.unwrap_or_default();
+    let sample_index = obs.worst_sample_index.unwrap_or_default();
+    let severity = if peak >= ENTRY_LOAD_SEVERE_PEAK_MM {
+        Severity::Critical
+    } else {
+        Severity::Caution
+    };
+
+    Some(Finding {
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_ENTRY_LOAD),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_ENTRY_LOAD),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::ToolLoad,
+            severity,
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: format!(
+                "entry motion cuts far harder than the pass does: {} of {} entry samples \
+                 remove more than {:.2} mm ({:.0}x this pass's own {:.2} mm median body \
+                 bite), peaking at {:.2} mm at ({:.1}, {:.1}, {:.2}). The load gates skip \
+                 entry spans, so nothing else grades this.",
+                obs.over_threshold_samples,
+                obs.entry_samples,
+                bar,
+                ENTRY_LOAD_MEDIAN_MULTIPLE,
+                median,
+                peak,
+                position[0],
+                position[1],
+                position[2],
+            ),
+            evidence: Some(DiagnosticEvidence::SampleRange {
+                toolpath_id,
+                sample_start: sample_index,
+                sample_end: sample_index,
+                observed: peak,
+                threshold: Some(bar),
+                unit: "mm".to_owned(),
+                locality: Default::default(),
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: obs.over_threshold_samples,
+        worst: WorstEvidence {
+            position,
+            move_index,
+            duration_s: 0.0,
+            wasted_runtime_s: 0.0,
+            min_radial_engagement: 0.0,
+            sample_count: obs.over_threshold_samples,
         },
     })
 }
@@ -1041,5 +1358,258 @@ mod tests {
         ));
         assert!(t.actions.is_empty());
         assert!(t.is_clear());
+    }
+
+    // ── G-ENTRYLOAD ────────────────────────────────────────────────────
+    //
+    // The blind spot in one sentence: the three load gates filter to
+    // steady-state samples and drop entry spans, and a vertical entry's
+    // removal lands on `plunge_descent_mm`, which the crosses-standing rule
+    // does not read. So a 3.72 mm bite at entry was graded by nothing.
+
+    /// A pass body: 200 well-behaved surface-following samples at 0.20 mm.
+    fn body_samples(tp: usize) -> Vec<SimulationCutSample> {
+        (0..200)
+            .map(|i| SimulationCutSample {
+                toolpath_id: ToolpathId(tp),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: 0.2,
+                engagement: Engagement::with_radial_woc(0.3),
+                source_intent: Some(crate::toolpath::MoveIntent::FinishingCut),
+                removed_volume_est_mm3: 1.0,
+                ..SimulationCutSample::test_fixture()
+            })
+            .collect()
+    }
+
+    /// GATE — a vertical entry carving through standing material is
+    /// reported, and it is reported off the PLUNGE axis. This is the
+    /// wanaka200 shape in miniature: `axial_engagement_mm` reads 0.0 on
+    /// every one of these samples, exactly as the simulator writes it for
+    /// plunge kinematics, and the finding must still fire.
+    #[test]
+    fn g_entryload_a_vertical_entry_through_standing_material_is_reported() {
+        let mut samples = body_samples(1);
+        for i in 0..6 {
+            samples.push(SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: 500 + i,
+                sample_index: 500 + i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                // The axis the crosses-standing rule reads: silent.
+                axial_engagement_mm: 0.0,
+                // The axis that actually carried it.
+                plunge_descent_mm: 3.72,
+                position: [44.5, 92.1, 1.64],
+                source_intent: Some(crate::toolpath::MoveIntent::EntryPlunge),
+                ..SimulationCutSample::test_fixture()
+            });
+        }
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        // Control: the axial-only rule stays silent on exactly this trace —
+        // which is why the entry needed its own.
+        assert!(
+            standing_material_finding(&trace, ToolpathId(1)).is_none(),
+            "the crosses-standing rule reads the axial axis; if it fires here \
+             this sentry is no longer testing the blind spot it was written for"
+        );
+
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert!(obs.is_measured(), "both populations are real: {obs:?}");
+        assert_eq!(obs.entry_samples, 6, "the population must be stated");
+        assert_eq!(obs.body_samples, 200);
+        assert_eq!(obs.over_threshold_samples, 6);
+        assert_eq!(obs.median_body_bite_mm, Some(0.2));
+        assert_eq!(obs.threshold_mm, Some(0.4));
+        assert_eq!(obs.peak_entry_bite_mm, Some(3.72));
+
+        let m = MeasurabilityReport::default();
+        let d = BTreeMap::new();
+
+        // Without rest context the rule must NOT reach actions — a
+        // fresh-stock entry plunge is planned motion, and the perf golden's
+        // drop-cutter fixture pins that silence.
+        let plain = SimulationTriage::build(&inputs(&trace, &m, &[], &[], &[], &d));
+        assert!(
+            !plain
+                .actions
+                .iter()
+                .any(|f| f.diagnostic.id.as_str() == ids::PROJECT_ENTRY_LOAD),
+            "entry_load must stay silent without rest context"
+        );
+
+        let rest: BTreeSet<ToolpathId> = [ToolpathId(1)].into_iter().collect();
+        let t = SimulationTriage::build_with_rest_context(
+            &inputs(&trace, &m, &[], &[], &[], &d),
+            &rest,
+        );
+        let f = t
+            .actions
+            .iter()
+            .find(|f| f.diagnostic.id.as_str() == ids::PROJECT_ENTRY_LOAD)
+            .expect("the entry-load finding must reach triage actions");
+        assert_eq!(
+            f.diagnostic.severity,
+            Severity::Critical,
+            "3.72 mm is over the {ENTRY_LOAD_SEVERE_PEAK_MM} mm absolute floor"
+        );
+        assert_eq!(f.occurrences, 6);
+        assert_eq!(f.worst.position, [44.5, 92.1, 1.64]);
+        assert!(
+            f.diagnostic.message.contains("6 of 6 entry samples"),
+            "the payload must state its population: {}",
+            f.diagnostic.message
+        );
+    }
+
+    /// GATE — a ramped entry that stays inside its budget says nothing.
+    /// The half a stub that always fired would fail.
+    #[test]
+    fn g_entryload_a_budgeted_ramp_entry_stays_silent() {
+        let mut samples = body_samples(1);
+        for i in 0..40 {
+            samples.push(SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: 500 + i,
+                sample_index: 500 + i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                // 0.25 mm laps against a 0.20 mm median = 1.25x, inside k.
+                axial_engagement_mm: 0.25,
+                engagement: Engagement::with_radial_woc(0.3),
+                source_intent: Some(crate::toolpath::MoveIntent::EntryRamp),
+                ..SimulationCutSample::test_fixture()
+            });
+        }
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert!(obs.is_measured(), "a clean entry is still a MEASURED entry");
+        assert_eq!(obs.entry_samples, 40);
+        assert_eq!(obs.over_threshold_samples, 0);
+        assert!(!obs.exceeds());
+        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+    }
+
+    /// GATE — the empty-population trap. A pass with NO entry samples must
+    /// report not-measured, never "clean". Measured 2026-08-05: three gates
+    /// returned `Within` on `sample_range 0..0` and were indistinguishable
+    /// from a measured clean cut on every surface.
+    #[test]
+    fn g_entryload_an_op_with_no_entry_samples_is_not_measured_not_clean() {
+        let trace = SimulationCutTrace::from_samples(0.5, body_samples(1));
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert_eq!(obs.entry_samples, 0, "the fixture must have no entries");
+        assert!(
+            !obs.is_measured(),
+            "an empty entry population is NOT a clean verdict: {obs:?}"
+        );
+        assert_eq!(obs.peak_entry_bite_mm, None, "None, never 0.0");
+        assert!(!obs.exceeds());
+        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+    }
+
+    /// GATE — the noise floor. A fine pass whose entry is a large MULTIPLE of
+    /// a tiny median, but a small absolute bite, is not an event: this rule
+    /// reports load, not ratios.
+    #[test]
+    fn g_entryload_a_large_multiple_of_a_tiny_median_is_still_not_a_load_event() {
+        let mut samples: Vec<_> = (0..200)
+            .map(|i| SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: 0.02,
+                engagement: Engagement::with_radial_woc(0.3),
+                source_intent: Some(crate::toolpath::MoveIntent::FinishingCut),
+                ..SimulationCutSample::test_fixture()
+            })
+            .collect();
+        for i in 0..5 {
+            samples.push(SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: 700 + i,
+                sample_index: 700 + i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                // 3x the median, and 0.06 mm — nothing at all in the spindle.
+                plunge_descent_mm: 0.06,
+                source_intent: Some(crate::toolpath::MoveIntent::EntryPlunge),
+                ..SimulationCutSample::test_fixture()
+            });
+        }
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert!(
+            obs.is_measured(),
+            "it WAS measured — it just is not a fault"
+        );
+        assert_eq!(obs.over_threshold_samples, 5, "over the ratio bar");
+        assert!(
+            !obs.exceeds(),
+            "0.06 mm is under the {ENTRY_LOAD_MIN_PEAK_MM} mm floor"
+        );
+        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+    }
+
+    /// GATE — a pass with entries but too small a body population also
+    /// reports not-measured. The median is the whole reference; without one
+    /// there is no verdict to give.
+    #[test]
+    fn g_entryload_too_few_body_samples_is_not_measured() {
+        let mut samples: Vec<_> = body_samples(1).into_iter().take(10).collect();
+        samples.push(SimulationCutSample {
+            toolpath_id: ToolpathId(1),
+            move_index: 900,
+            sample_index: 900,
+            segment_time_s: 0.01,
+            is_cutting: true,
+            plunge_descent_mm: 9.0,
+            source_intent: Some(crate::toolpath::MoveIntent::EntryPlunge),
+            ..SimulationCutSample::test_fixture()
+        });
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert_eq!(obs.entry_samples, 1);
+        assert_eq!(obs.body_samples, 10);
+        assert_eq!(obs.median_body_bite_mm, None, "None, never 0.0");
+        assert!(!obs.is_measured());
+        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+    }
+
+    /// GATE — entries are not in their own denominator. A pass made mostly
+    /// of bad entries must not exonerate itself by dragging its own median
+    /// up.
+    #[test]
+    fn g_entryload_entries_are_excluded_from_their_own_reference() {
+        let mut samples = body_samples(1);
+        for i in 0..300 {
+            samples.push(SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: 1000 + i,
+                sample_index: 1000 + i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: 3.0,
+                engagement: Engagement::with_radial_woc(0.3),
+                source_intent: Some(crate::toolpath::MoveIntent::EntryRamp),
+                ..SimulationCutSample::test_fixture()
+            });
+        }
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let obs = entry_load_observation(&trace, ToolpathId(1));
+        assert_eq!(
+            obs.median_body_bite_mm,
+            Some(0.2),
+            "300 entry samples must not move the body median"
+        );
+        assert_eq!(obs.over_threshold_samples, 300);
+        assert!(obs.exceeds());
     }
 }
