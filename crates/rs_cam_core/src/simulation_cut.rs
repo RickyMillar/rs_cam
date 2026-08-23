@@ -1547,6 +1547,47 @@ pub fn write_simulation_cut_artifact(
     Ok(path)
 }
 
+/// Delete the oldest artifacts in `dir` so at most `keep` remain (G-SIMDUMP).
+///
+/// Every simulation writes a full cut-trace artifact; at fine resolutions on a
+/// large board one dump is multiple GB, and an unbounded directory filled a
+/// 935 GB disk (96 GB / 81 dumps observed 2026-08-23). Age is the numeric
+/// millisecond-timestamp prefix of the file name written by
+/// [`write_simulation_cut_artifact`]; files without one sort oldest. Removal
+/// failures are reported in the count of survivors, never as an error — the
+/// artifact write itself must not fail because housekeeping did.
+pub fn prune_simulation_cut_artifacts(dir: &Path, keep: usize) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut dumps: Vec<(u128, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            if !name.ends_with(".json") {
+                return None;
+            }
+            let stamp = name
+                .split('_')
+                .next()
+                .and_then(|prefix| prefix.parse::<u128>().ok())
+                .unwrap_or(0);
+            Some((stamp, path))
+        })
+        .collect();
+    if dumps.len() <= keep {
+        return 0;
+    }
+    dumps.sort_by_key(|(stamp, _)| *stamp);
+    let excess = dumps.len() - keep;
+    dumps
+        .iter()
+        .take(excess)
+        .filter(|(_, path)| std::fs::remove_file(path).is_ok())
+        .count()
+}
+
 fn sanitize_filename_component(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     for ch in input.chars() {

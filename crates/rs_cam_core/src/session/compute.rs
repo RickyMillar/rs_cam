@@ -1342,6 +1342,29 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<&ToolpathComputeResult, SessionError> {
+        // G-STICKYEMPTY: drop the cached result FIRST, on every path.
+        //
+        // [`Self::insert_result`] already states the invariant this restores
+        // — `results[idx]` is either absent (stale / never generated) or a
+        // result produced from the CURRENT config — but nothing enforced it
+        // for a generation that did not finish. Every failure exit below
+        // (the two preconditions, `resolve_generation_inputs`'s `?`, the
+        // generator's own `Err`, and the empty-generation refusal) used to
+        // leave the PREVIOUS parameter set's toolpath cached and readable
+        // as if it were this configuration's answer.
+        //
+        // That is not merely untidy: `PhantomPriorStockScan` asks only "has
+        // this been generated?", so a stale result makes a pending
+        // `FromRemainingStock` op look generated, which withholds the
+        // phantom prior-stock snapshot that is the only thing able to
+        // unblock it — the op then cannot regenerate until the project is
+        // reloaded, no matter what its parameters are put back to.
+        //
+        // The GUI worker path already did exactly this at submit time
+        // (`rt.result = None` in `submit_toolpath_compute`); this makes the
+        // core path agree rather than being the odd one out.
+        let _ = self.results.remove(&index);
+
         // Rest-machining precondition, checked BEFORE any geometry work so we fail
         // fast and NEVER fall back to fresh stock: a `FromRemainingStock` op must
         // have a simulated remaining-stock snapshot. Absent it (no prior simulation,
@@ -1430,6 +1453,12 @@ impl ProjectSession {
         let core_ctx = core_scope.context();
 
         let op_label = tc.operation.label().to_owned();
+        // G-ENTRYEMPTY: captured up here because the empty-generation gate
+        // below runs after the `tc` borrow has to have ended (the tail of
+        // this method takes `&mut self.results`), and because a refusal must
+        // name the toolpath the operator sees.
+        let tp_name = tc.name.clone();
+        let tc_stock_source = tc.stock_source;
 
         // Execute the operation via the shared compute::execute module (annotated variant)
         // Rest machining: when this toolpath cuts the stock previous ops left
@@ -1614,6 +1643,64 @@ impl ProjectSession {
                             tool_def.radius(),
                         );
                     annotated = transformed.reconcile(&mut channels).into_inner();
+                }
+
+                // ── G-ENTRYEMPTY: the empty-generation gate ───────────
+                // The pipeline is finished; `annotated` is exactly what
+                // would be cached, simulated and posted. An operation that
+                // reaches here with no cutting motion at all, from a region
+                // that was NOT empty, is a generation failure that used to
+                // be reported as `Done` — see `compute::generated_empty`'s
+                // module doc for the ruling and for every case that is
+                // legitimately empty (rest machining and the fixpoint
+                // chains that depend on it are exempt, so this cannot wedge
+                // `generate_all`).
+                //
+                // Placed HERE, before the result is built, so a refusal
+                // leaves `self.results` with no entry for this index. That
+                // is load-bearing for G-STICKYEMPTY: a cached empty result
+                // makes `PhantomPriorStockScan` treat the op as
+                // "generated", which withholds its phantom prior-stock
+                // snapshot on the next simulation and leaves a
+                // `FromRemainingStock` op unable to regenerate even after
+                // its parameters are put back — the empty generation
+                // poisoning itself.
+                let empty_verdict = crate::compute::generated_empty::classify(
+                    &annotated.toolpath,
+                    &crate::compute::generated_empty::EmptyGenerationInputs {
+                        toolpath_name: &tp_name,
+                        operation: &operation,
+                        stock_source: tc_stock_source,
+                        seeded_machined_stock: gen_initial_stock.is_some(),
+                        has_mesh: mesh.is_some(),
+                        polygon_count: polygons.as_deref().map_or(0, Vec::len),
+                        boundary_is_derived_rest_regions: matches!(
+                            boundary_config.source,
+                            crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                        ),
+                    },
+                );
+                match empty_verdict {
+                    crate::compute::generated_empty::EmptyGenerationVerdict::NotEmpty => {}
+                    crate::compute::generated_empty::EmptyGenerationVerdict::Legitimate(reason) => {
+                        tracing::info!(
+                            toolpath = %tp_name,
+                            operation = %op_label,
+                            reason = reason.describe(),
+                            "Generated an empty toolpath, and that is expected here"
+                        );
+                    }
+                    crate::compute::generated_empty::EmptyGenerationVerdict::Refuse(refusal) => {
+                        // No `results` entry is written, and the entry this
+                        // method removed on the way in stays removed — so a
+                        // refused generation leaves the operation with NO
+                        // cached result at all, which is what stops it
+                        // poisoning the next one (see the removal at the top
+                        // of this method).
+                        let _ = debug_recorder.finish();
+                        let _ = semantic_recorder.finish();
+                        return Err(SessionError::GeneratedEmpty(refusal.to_string()));
+                    }
                 }
 
                 // H2.1: ONE join, shared with the GUI compute worker. This
@@ -2198,10 +2285,27 @@ impl ProjectSession {
                     continue;
                 };
                 let result = self.results.get(&tp_idx);
+                // G-STICKYEMPTY: the scan's question is "will this op
+                // contribute a carve to the simulation being built", NOT
+                // "does a result object exist". This builder drops entries
+                // below `MIN_SIMULATED_MOVES` a few lines down, and a
+                // dropped entry never reaches
+                // `prior_stocks.insert(entry.id, ..)` — so answering
+                // `result.is_some()` here made an op that generated EMPTY
+                // ineligible for a prior-stock snapshot by both routes at
+                // once, and a `FromRemainingStock` op in that state can
+                // never regenerate again (its generate-time precondition
+                // refuses for want of the snapshot) until a project reload
+                // clears its result cache.
+                let contributes_carve = result.is_some_and(|r| {
+                    crate::compute::simulate::contributes_simulated_motion(
+                        r.annotated().toolpath.moves.len(),
+                    )
+                });
                 phantom_scan.visit(
                     entries.len(),
                     tc.enabled,
-                    result.is_some(),
+                    contributes_carve,
                     tc.id,
                     tc.stock_source,
                 );
@@ -2209,7 +2313,9 @@ impl ProjectSession {
                     if opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
-                    if result.annotated().toolpath.moves.len() < 2 {
+                    if !crate::compute::simulate::contributes_simulated_motion(
+                        result.annotated().toolpath.moves.len(),
+                    ) {
                         continue;
                     }
 

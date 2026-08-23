@@ -113,6 +113,36 @@ pub struct SimGroupEntry {
     pub phantom_prior_stock: Option<(usize, ToolpathId)>,
 }
 
+/// Fewest moves a toolpath needs before a simulation builder will carve it.
+///
+/// One move defines a position but no swept segment, so there is nothing to
+/// stamp; a builder that admits such an entry pays for a `SimBoundary`, a
+/// pre-carve stock clone and a checkpoint to remove nothing.
+pub const MIN_SIMULATED_MOVES: usize = 2;
+
+/// Whether a toolpath of `move_count` moves will be carved by a simulation
+/// builder that applies the [`MIN_SIMULATED_MOVES`] filter.
+///
+/// **G-STICKYEMPTY.** Exported because a builder that filters an entry out
+/// must answer [`PhantomPriorStockScan::visit`]'s `has_generated_result`
+/// with this same predicate, not with "a result exists". The two questions
+/// look alike and are not: an entry that is filtered out never reaches
+/// `prior_stocks.insert(entry.id, ..)`, so if the scan simultaneously counts
+/// it as *generated* — which withholds the phantom snapshot — the operation
+/// ends up with no prior-stock entry from either route. A
+/// `FromRemainingStock` op that generated empty once then cannot regenerate
+/// at all, whatever its parameters are put back to, until the project is
+/// reloaded and its result cache is cleared.
+///
+/// `ProjectSession::run_simulation` applies the filter and therefore must
+/// use this predicate. The GUI controller's `build_simulation_groups` does
+/// NOT filter — it pushes every result-bearing toolpath — so its plain
+/// "a result exists" answer is the correct one *there*. If that builder ever
+/// gains the filter, it gains this predicate with it.
+pub fn contributes_simulated_motion(move_count: usize) -> bool {
+    move_count >= MIN_SIMULATED_MOVES
+}
+
 /// Incremental scan for the single [`SimGroupEntry::phantom_prior_stock`]
 /// candidate within one simulation group.
 ///
@@ -138,6 +168,11 @@ impl PhantomPriorStockScan {
     /// Consider one toolpath config in plan order. A no-op once the scan
     /// has already resolved (found the first enabled-but-ungenerated
     /// config, whether or not it needed a phantom).
+    ///
+    /// `has_generated_result` must mean "this op will contribute a carve to
+    /// the simulation being built" — see
+    /// [`contributes_simulated_motion`] for why a builder that filters
+    /// short toolpaths out cannot answer it with `result.is_some()`.
     pub fn visit(
         &mut self,
         entries_so_far: usize,

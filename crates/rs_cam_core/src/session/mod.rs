@@ -106,6 +106,26 @@ pub enum SessionError {
     /// a thing the operator can fix by importing one, whereas these say the
     /// combination itself has no defined meaning.
     UnsupportedSetup(String),
+    /// G-ENTRYEMPTY — the generator emitted no cutting motion at all from a
+    /// non-empty input region.
+    ///
+    /// A **genuine** failure, deliberately distinct from every other variant
+    /// here so no consumer has to string-match for it:
+    ///
+    /// * not [`Self::MissingGeometry`] — the geometry was present and was
+    ///   handed to the generator; what came back was nothing.
+    /// * not [`Self::OperationFailed`] — the generator itself returned `Ok`.
+    ///   The failure is that its output cannot be machined, and it was
+    ///   invisible until this variant existed.
+    /// * not [`crate::compute::config::AwaitingPriorStock`], which is a
+    ///   *sequencing* state `generate_all`'s fixpoint loop retries. This one
+    ///   is terminal: re-running the same configuration produces the same
+    ///   nothing.
+    ///
+    /// Built by [`crate::compute::generated_empty::classify`], which also
+    /// owns every "an empty result is legitimate here" exemption — see that
+    /// module's doc.
+    GeneratedEmpty(String),
 }
 
 impl std::fmt::Display for SessionError {
@@ -133,6 +153,11 @@ impl std::fmt::Display for SessionError {
             Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
             Self::NotACamProject(detail) => write!(f, "Not an rs_cam project: {detail}"),
             Self::UnsupportedSetup(msg) => write!(f, "Unsupported setup: {msg}"),
+            // No prefix: the message is already a full operator-facing
+            // sentence naming the toolpath and the operation, and a
+            // "Generated empty: " prefix would only push the toolpath name
+            // further from the start of a truncated GUI badge.
+            Self::GeneratedEmpty(msg) => write!(f, "{msg}"),
         }
     }
 }

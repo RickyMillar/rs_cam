@@ -36,6 +36,9 @@ impl<B: ComputeBackend> AppController<B> {
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::Error(msg);
         rt.result = None;
+        // Keep the core cache in step with `rt.result` — see
+        // `forget_core_result`.
+        Self::forget_core_result(&mut self.state.session, tp_id);
         #[cfg(feature = "mcp")]
         self.notify_mcp_toolpath_complete(tp_id);
     }
@@ -54,6 +57,12 @@ impl<B: ComputeBackend> AppController<B> {
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::AwaitingPriorStock(block);
         rt.result = None;
+        // Keep the core cache in step with `rt.result` — see
+        // `forget_core_result`. Load-bearing for the A/M11 ladder: a
+        // blocked op that still had a stale core result would read as
+        // "generated" to `PhantomPriorStockScan` and never be offered the
+        // phantom prior-stock snapshot that unblocks it.
+        Self::forget_core_result(&mut self.state.session, tp_id);
         #[cfg(feature = "mcp")]
         self.notify_mcp_toolpath_complete(tp_id);
     }
@@ -152,6 +161,22 @@ impl<B: ComputeBackend> AppController<B> {
             blocking_toolpath_id: Some(blocker_id),
             blocking_toolpath_index: Some(blocker_idx),
             message,
+        }
+    }
+
+    /// Drop the CORE-side cached result for `tp_id`, keeping the two result
+    /// caches in step when a generation does not produce one.
+    ///
+    /// Free-standing (`&mut ProjectSession`, not `&mut self`) so it can be
+    /// called while `drain_compute_results` still holds a `&mut` borrow of
+    /// `self.state.gui`'s runtime row — the same field-disjoint shape the
+    /// `Ok` arm's `insert_result` call already relies on.
+    ///
+    /// Silent when there is nothing cached: "this toolpath has no result"
+    /// is the state being established, not a condition to report.
+    fn forget_core_result(session: &mut rs_cam_core::session::ProjectSession, tp_id: ToolpathId) {
+        if let Some((tp_index, _)) = session.find_toolpath_config_by_id(tp_id) {
+            let _ = session.remove_result(tp_index);
         }
     }
 
@@ -863,10 +888,23 @@ impl<B: ComputeBackend> AppController<B> {
                         Err(ComputeError::Cancelled) => {
                             rt.status = ComputeStatus::Pending;
                             rt.result = None;
+                            Self::forget_core_result(&mut self.state.session, tp_id);
                         }
                         Err(ComputeError::Message(error)) => {
                             rt.status = ComputeStatus::Error(error);
                             rt.result = None;
+                            // G-STICKYEMPTY: clear the CORE cache too, not
+                            // just `rt.result`. `Ok` writes both caches
+                            // (`insert_result`, above); a failure used to
+                            // clear only the viz one, so the previous
+                            // parameter set's toolpath stayed in
+                            // `session.results[idx]` — exportable,
+                            // simulatable, and counted as "generated" by
+                            // `PhantomPriorStockScan`, which is what
+                            // withholds a pending rest op's phantom
+                            // prior-stock snapshot and leaves it unable to
+                            // regenerate until the project is reloaded.
+                            Self::forget_core_result(&mut self.state.session, tp_id);
                         }
                     }
                     self.pending_upload = true;
