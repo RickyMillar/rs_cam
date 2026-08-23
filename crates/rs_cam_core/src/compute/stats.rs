@@ -75,6 +75,15 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // Same rule: a dropped boundary containment is a decision taken
         // after generation, invisible in the move list it produced.
         boundary_clip_dropped: None,
+        // F4: read off the operation's CONFIG at generation time. A move list
+        // carries no dials, so this helper can only honestly say "not told" —
+        // and the whole point of the finding is that the dial left no trace
+        // in the moves.
+        inert_claims_dial: None,
+        // F3: same rule — a rest-region extraction is a generation-time
+        // event and leaves no trace on the moves. `None` here means "this
+        // helper watched no extraction", never "nothing was truncated".
+        region_cap: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -166,6 +175,8 @@ pub fn stats_with_findings(
         zero_removal: _,
         offset_library_failures: _,
         boundary_clip_dropped: _,
+        inert_claims_dial: _,
+        region_cap: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
@@ -187,6 +198,8 @@ pub fn stats_with_findings(
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        inert_claims_dial,
+        region_cap,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -211,6 +224,8 @@ pub fn stats_with_findings(
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        inert_claims_dial,
+        region_cap,
         stock_snapshot,
     }
 }

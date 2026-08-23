@@ -203,6 +203,8 @@ fn narration_air_cut_line_names_its_denominators() {
         // Checkpoint C — the 2D failure contract's two report-only slots.
         offset_library_failures: None,
         boundary_clip_dropped: None,
+        // F4 — this fixture sets no rest-claims dial, inert or otherwise.
+        inert_claims_dial: None,
     };
 
     let report = narrate_toolpath_with_context(

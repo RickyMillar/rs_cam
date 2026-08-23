@@ -143,6 +143,16 @@ pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure";
 /// the path instead would break the case the contract was written for. What
 /// it is not is silent any more.
 pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped";
+/// F3 (2026-08-23): a rest-region extraction produced more islands than
+/// `region_mask::MAX_REST_REGIONS` and the list was TRUNCATED to the largest
+/// 64 by area. Every dropped island is territory a `DerivedRestRegions`
+/// consumer will never be allowed to cut, and until this existed the only
+/// trace was a `tracing::warn!` in a process that usually installs no
+/// subscriber.
+///
+/// A REPORT, not a refusal: the cap is a deliberate anti-sliver-storm guard
+/// and the kept regions are real. What it is not, any more, is silent.
+pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated";
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled
@@ -155,6 +165,18 @@ pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover";
 /// config field; and picking the analytic reference over a real machined
 /// prior makes a rest pass re-cut the whole part while looking plausible.
 pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference";
+/// F4 (2026-08-23): a rest-CLAIMS dial (`min_rest_depth_mm`,
+/// `claims_reference`) is set away from its default on a `UnifiedFinish`
+/// whose own configuration never applies it — `territory_clip` is off, so the
+/// S4 mask-AND that is those numbers' only consumer never runs. Measured on
+/// the T4 two-tier arm: moving `min_rest_depth_mm` 0.03 → 0.05 produced a
+/// BYTE-IDENTICAL toolpath, so the "rest tier" was a full-board finish
+/// wearing a rest pass's parameters.
+///
+/// A REPORT, not a fix and not a refusal: applying the dial would silently
+/// re-cut every shipped project that carries one, and refusing would black
+/// them out. The geometry is untouched; what changes is that somebody says so.
+pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial";
 
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
@@ -254,6 +276,8 @@ pub const ALL: &[&str] = &[
     GEOM_UNMACHINED_BAND,
     GEOM_TIP_FLOAT,
     GEOM_ZERO_REMOVAL,
+    GEOM_REGION_CAP_TRUNCATED,
+    CONFIG_INERT_CLAIMS_DIAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     QUALITY_STEPOVER_OVER_80_PCT,

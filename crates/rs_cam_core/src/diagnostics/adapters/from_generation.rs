@@ -20,6 +20,7 @@ use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
 };
 use crate::ids::ToolpathId;
+use crate::region_mask::RegionCapReport;
 
 /// Area (mm²) below which standing material is not worth a diagnostic.
 ///
@@ -46,7 +47,112 @@ pub fn diagnostics_from_generation(
     out.extend(zero_removal(toolpath_id, stats));
     out.extend(offset_library_failures(toolpath_id, stats));
     out.extend(boundary_clip_dropped(toolpath_id, stats));
+    out.extend(inert_claims_dial(toolpath_id, stats));
+    out.extend(region_cap_truncated(toolpath_id, stats));
     out
+}
+
+/// F3: the `MAX_REST_REGIONS` cap truncated this operation's rest-region
+/// list, so islands the mask found are absent from the artifacts a
+/// `DerivedRestRegions` consumer will be confined to.
+///
+/// `Caution`. Not `Blocking`: the cap is a deliberate guard and the kept
+/// regions are real geometry. Not `Info` either: the dropped islands are
+/// territory a downstream operation is now forbidden to cut, and nothing else
+/// on any operator surface says so — the pre-F3 trace was a `tracing::warn!`
+/// in a process that usually installs no subscriber.
+///
+/// Silent on a measured-clean extraction. `Some` with nothing truncated is a
+/// real measurement, but a per-toolpath notice that nothing happened is a
+/// notice nobody reads — the same rule [`deprecated_dial`] and
+/// [`offset_library_failures`] follow. `None` (no extraction ran) is silent
+/// for the A/M9 reason: an absence is not a claim.
+fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(r) = stats.region_cap.filter(RegionCapReport::truncated) else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_REGION_CAP_TRUNCATED),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Counted at extraction, from the grouped polygons themselves.
+        // A simulation cannot supersede it: the dropped islands are simply
+        // absent from every artifact downstream, so every later reading of
+        // them is clean and silent.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "Rest-region extraction found {total} islands and kept only the \
+             largest {kept} (cap {cap}); {dropped} were DROPPED. Anything \
+             using these regions as a `derived_rest_regions` boundary is \
+             confined to the {kept} that survived, so the dropped territory \
+             will not be cut by that operation and nothing else will mention \
+             it. The usual cause is a threshold below the prior pass's cusp \
+             height, which turns the cusp pattern itself into the mask — \
+             raise `min_valley_depth` / `min_rest_depth_mm` until the island \
+             count is a handful to a few dozen. [Count of grouped region \
+             polygons before truncation; extraction stage. Report-only — no \
+             gate consumes this.]",
+            total = r.total_before_cap,
+            kept = r.kept,
+            cap = r.cap,
+            dropped = r.dropped(),
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// F4: a rest-claims dial the operator set that this operation never applies.
+///
+/// `Caution`, not `Info` and not `Blocking` — the same call
+/// [`deprecated_dial`] makes, and for the same reason. Nothing is wrong with
+/// the geometry; what is wrong is that the operator's setting has no effect
+/// and only this says so. The measured cost of the silence is the T4 arm:
+/// `min_rest_depth_mm` 0.03 → 0.05 produced a byte-identical toolpath, and
+/// the "rest tier" it was configuring ran 23 916 s as a full-board finish.
+///
+/// It is deliberately NOT a refusal and the dial is deliberately still inert:
+/// making it apply would re-cut every shipped project that carries one.
+fn inert_claims_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    // `None` = nothing inert is set — the overwhelming default, and not a
+    // claim of any kind.
+    let Some(f) = stats.inert_claims_dial else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::CONFIG_INERT_CLAIMS_DIAL),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Read straight off the loaded config at generation time — nothing
+        // inferred, and no simulation can see it: the emitted path is exactly
+        // what it would be at the default, so a dexel run replays a perfectly
+        // healthy pass.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "Inert rest-claims dial: {dials} — but {why}. This operation \
+             therefore cut its FULL territory, not rest islands, and its \
+             emitted toolpath is byte-identical to what the default value \
+             would have produced. Set `territory_clip = true` (which also \
+             needs `pencil_claims = true` and a machined-stock reference in \
+             scope) to make the number live, or return it to its default. \
+             [Read from config at generation; report-only — no gate consumes \
+             this, and recording it changes no emitted motion.]",
+            dials = f.dials(),
+            why = f.why(),
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// Checkpoint C (Q2): a boundary containment that collapsed, so the path is

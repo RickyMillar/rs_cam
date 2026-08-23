@@ -6047,6 +6047,9 @@ mod tests {
                 zero_removal: None,
                 offset_library_failures: None,
                 boundary_clip_dropped: None,
+                inert_claims_dial: None,
+                // Nor did it run a rest-region extraction (F3).
+                region_cap: None,
                 retract_trips: None,
                 // Nor did it consume any machined stock.
                 stock_snapshot: None,

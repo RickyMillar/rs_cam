@@ -26,6 +26,63 @@ use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 /// diagnosis surfaced separately in the GUI.
 pub const MAX_REST_REGIONS: usize = 64;
 
+/// F3 (2026-08-23): what the [`MAX_REST_REGIONS`] cap did to one extraction.
+///
+/// The cap has always been a **silent** truncation: the only trace was a
+/// `tracing::warn!`, in a process that usually installs no subscriber — the
+/// same "a warning nobody sees is not a warning" shape that
+/// `diagnostics::adapters::from_generation` exists for. This makes the count
+/// a return value, so a consumer can say *"N regions found, capped to 64"*
+/// instead of reading a 64-long list as the whole answer.
+///
+/// **Not a three-valued channel.** Every extraction measures this, so there
+/// is no "not measured" state at this layer to preserve; the `Option` lives
+/// one level up, on
+/// [`crate::compute::config::ToolpathStats::region_cap`], where `None`
+/// genuinely means "no rest-region extraction ran".
+///
+/// Nothing here changes what is kept: the largest [`MAX_REST_REGIONS`] by
+/// area, in the same deterministic order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegionCapReport {
+    /// Grouped region count BEFORE truncation — the true number of islands
+    /// the mask produced.
+    pub total_before_cap: usize,
+    /// How many survived: `min(total_before_cap, cap)`.
+    pub kept: usize,
+    /// The cap in force ([`MAX_REST_REGIONS`]), carried so a renderer never
+    /// has to hard-code it.
+    pub cap: usize,
+}
+
+impl RegionCapReport {
+    /// `true` when the cap actually dropped regions.
+    #[must_use]
+    pub const fn truncated(&self) -> bool {
+        self.total_before_cap > self.kept
+    }
+
+    /// How many regions the cap dropped. `0` on a healthy set.
+    #[must_use]
+    pub const fn dropped(&self) -> usize {
+        self.total_before_cap.saturating_sub(self.kept)
+    }
+}
+
+/// An extraction plus what the [`MAX_REST_REGIONS`] cap did to it (F3).
+///
+/// Returned only by [`region_polygons_from_mask_reported`]; the two older
+/// names keep their `Vec<Polygon2>` signature and simply drop
+/// [`Self::cap`], so every existing caller is untouched.
+#[derive(Debug, Clone)]
+pub struct RegionExtraction {
+    /// The kept regions — identical to what
+    /// [`region_polygons_from_mask_clamped`] returns for the same inputs.
+    pub polygons: Vec<Polygon2>,
+    /// What the cap did. See [`RegionCapReport`].
+    pub cap: RegionCapReport,
+}
+
 /// Dilate a boolean mask by `dilate_mm` (via a whole-grid Euclidean distance
 /// transform, not a per-cell radius search) and extract the dilated region(s)
 /// as closed [`Polygon2`]s with holes grouped by even-odd containment depth
@@ -46,6 +103,11 @@ pub const MAX_REST_REGIONS: usize = 64;
 /// the cap: a genuine long thin stripe of real rest material is not
 /// distinguishable from a sliver by area alone, so the cap plus warning is
 /// the guard, not a per-region size filter.
+///
+/// **This return value cannot tell you whether the cap fired.** A 64-long
+/// list is the same shape whether the mask had 64 islands or 312. Call
+/// [`region_polygons_from_mask_reported`] when that distinction matters —
+/// it is the identical extraction with the pre-cap count returned (F3).
 pub fn region_polygons_from_mask(
     mask: &Grid2<bool>,
     origin_x: f64,
@@ -93,10 +155,36 @@ pub fn region_polygons_from_mask_clamped(
     dilate_mm: f64,
     clamp: Option<&[bool]>,
 ) -> Vec<Polygon2> {
+    region_polygons_from_mask_reported(mask, origin_x, origin_y, cell_mm, dilate_mm, clamp).polygons
+}
+
+/// [`region_polygons_from_mask_clamped`] plus the [`RegionCapReport`] (F3).
+///
+/// Byte-for-byte the same extraction — same dilation, same clamp, same
+/// deterministic largest-area-first ordering, same `tracing::warn!` — with
+/// the pre-cap region count returned instead of only logged. Use this
+/// wherever a consumer needs to distinguish *"64 islands"* from *"the
+/// largest 64 of 312 islands"*; the two older names remain the plain
+/// `Vec<Polygon2>` API.
+pub fn region_polygons_from_mask_reported(
+    mask: &Grid2<bool>,
+    origin_x: f64,
+    origin_y: f64,
+    cell_mm: f64,
+    dilate_mm: f64,
+    clamp: Option<&[bool]>,
+) -> RegionExtraction {
     let nx = mask.nx();
     let ny = mask.ny();
     if nx == 0 || ny == 0 || mask.as_slice().iter().all(|&v| !v) {
-        return Vec::new();
+        return RegionExtraction {
+            polygons: Vec::new(),
+            cap: RegionCapReport {
+                total_before_cap: 0,
+                kept: 0,
+                cap: MAX_REST_REGIONS,
+            },
+        };
     }
     let cell = cell_mm.max(1e-9);
 
@@ -179,6 +267,7 @@ pub fn region_polygons_from_mask_clamped(
         }
     });
 
+    let total_before_cap = grouped.len();
     if grouped.len() > MAX_REST_REGIONS {
         let total_count = grouped.len();
         let total_area: f64 = grouped.iter().map(Polygon2::signed_area).sum();
@@ -203,7 +292,14 @@ pub fn region_polygons_from_mask_clamped(
         grouped.truncate(MAX_REST_REGIONS);
     }
 
-    grouped
+    RegionExtraction {
+        cap: RegionCapReport {
+            total_before_cap,
+            kept: grouped.len(),
+            cap: MAX_REST_REGIONS,
+        },
+        polygons: grouped,
+    }
 }
 
 #[cfg(test)]
@@ -396,5 +492,46 @@ mod tests {
             max_area > 100.0,
             "the 15x15 giant block must survive the cap: max kept area = {max_area}"
         );
+    }
+
+    /// F3: the reported variant is the SAME extraction, with the pre-cap
+    /// count no longer thrown away. Locality check only — the full sentry
+    /// (including the >64-island storm) is
+    /// `tests/region_cap_honesty_f3.rs`.
+    #[test]
+    fn reported_extraction_matches_the_plain_one_and_carries_the_count() {
+        let cell = 1.0;
+        let mut mask = Grid2::new_fill(30, 30, false);
+        for (r0, c0) in [(4usize, 4usize), (4, 20), (20, 4)] {
+            for r in r0..r0 + 3 {
+                for c in c0..c0 + 3 {
+                    mask.set(r, c, true);
+                }
+            }
+        }
+        let plain = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        let reported = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None);
+
+        assert_eq!(plain.len(), reported.polygons.len());
+        for (a, b) in plain.iter().zip(reported.polygons.iter()) {
+            assert!((a.area() - b.area()).abs() < 1e-9, "same regions, in order");
+        }
+        assert_eq!(reported.cap.total_before_cap, 3);
+        assert_eq!(reported.cap.kept, 3);
+        assert_eq!(reported.cap.cap, MAX_REST_REGIONS);
+        assert!(!reported.cap.truncated(), "3 islands is not a storm");
+        assert_eq!(reported.cap.dropped(), 0);
+    }
+
+    /// An empty mask still answers the cap question — measured zero islands,
+    /// not truncated.
+    #[test]
+    fn reported_extraction_on_an_empty_mask_is_measured_zero_not_truncated() {
+        let mask = Grid2::new_fill(20, 20, false);
+        let reported = region_polygons_from_mask_reported(&mask, 0.0, 0.0, 1.0, 0.0, None);
+        assert!(reported.polygons.is_empty());
+        assert_eq!(reported.cap.total_before_cap, 0);
+        assert_eq!(reported.cap.kept, 0);
+        assert!(!reported.cap.truncated());
     }
 }

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::{DepthSemantics, OperationParams};
 use super::tool_config::ToolId;
+use crate::finish_planner::FinishPlannerParams;
 
 // Re-export operation parameter enums from core (single source of truth).
 pub use crate::face::FaceDirection;
@@ -1080,6 +1081,49 @@ pub struct UnifiedFinishConfig {
     /// `PencilParams::default()` value); `0.0` disables crease linking.
     #[serde(default = "default_unified_finish_crease_hookup_mm")]
     pub crease_hookup_mm: f64,
+    /// F2 (multi-tool island finishing): island **absorption floor** (mm²)
+    /// for [`crate::finish_planner::decompose`]'s min-area step — a
+    /// connected band island smaller than this is absorbed into its
+    /// surrounding band instead of becoming its own region.
+    ///
+    /// `None` (**the default, and byte-identical to every pre-F2 project**)
+    /// keeps the tool-derived value
+    /// [`crate::finish_planner::FinishPlannerParams::for_tool`] computes:
+    /// `(2 · cusp_radius)² · 4`, i.e. roughly four tool-diameters². `Some(v)`
+    /// overrides that ONE dial and leaves every other planner dial derived.
+    ///
+    /// Read `for_tool`'s doc before setting this: these are FEATURE SCALES
+    /// sized off the tool's CUSP (tip) radius, not its envelope. On a Ø1-tip
+    /// / Ø6-shank taper the derived value is 4 mm², not 144 mm².
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_region_area_mm2: Option<f64>,
+    /// F2: island **merge radius** (mm) — the morphological close radius
+    /// applied to each band mask before regions are extracted. Larger values
+    /// merge neighbouring islands into one region; smaller values keep them
+    /// apart.
+    ///
+    /// `None` (**the default, byte-identical to every pre-F2 project**) keeps
+    /// the tool-derived `cusp_radius · 0.5` from
+    /// [`crate::finish_planner::FinishPlannerParams::for_tool`]. `Some(v)`
+    /// overrides that one dial only.
+    ///
+    /// Cusp radius, not envelope radius — same footgun as
+    /// [`Self::min_region_area_mm2`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_radius_mm: Option<f64>,
+    /// F2: band **hysteresis width** (degrees) — a cell leaves a band only
+    /// once its slope falls below `enter − hysteresis_deg`, which is what
+    /// stops the raw slope masks from storming into O(100) speckled islands.
+    ///
+    /// `None` (**the default, byte-identical to every pre-F2 project**) keeps
+    /// [`crate::finish_planner::FinishPlannerParams::for_tool`]'s fixed
+    /// `10.0` — the only one of the three that is a constant rather than a
+    /// tool-derived scale. `Some(v)` overrides it.
+    ///
+    /// It is load-bearing: `for_tool`'s own doc records that `0` makes the
+    /// masks storm to O(100) islands. Lower it deliberately or not at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hysteresis_deg: Option<f64>,
     /// Which sampler builds this op's classification grid (M3 wave 7b —
     /// `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`).
     ///
@@ -1125,8 +1169,59 @@ impl Default for UnifiedFinishConfig {
             territory_clip: default_unified_finish_territory_clip(),
             intra_region_hookup_mm: default_unified_finish_intra_region_hookup_mm(),
             crease_hookup_mm: default_unified_finish_crease_hookup_mm(),
+            // F2: absent = derive from the tool, which is what every project
+            // written before F2 asks for by construction (the keys are
+            // skipped while `None`, so a round-trip adds no noise either).
+            min_region_area_mm2: None,
+            close_radius_mm: None,
+            hysteresis_deg: None,
             classification_sampler: crate::classify_probe::ClassificationSampler::PRODUCTION,
         }
+    }
+}
+
+impl UnifiedFinishConfig {
+    /// Build the [`crate::finish_planner::FinishPlannerParams`] this
+    /// operation decomposes with — the ONE construction site, shared by the
+    /// generator (`compute::execute::generate_unified_finish`) and by the F2
+    /// sentries.
+    ///
+    /// Two layers, in order:
+    ///
+    /// 1. [`crate::finish_planner::FinishPlannerParams::for_tool`] derives
+    ///    every dial from `cusp_radius_mm`. **`cusp_radius_mm` must be the
+    ///    tool's cusp-forming (TIP) radius** — `MillingCutter::cusp_radius`,
+    ///    never `radius()`. Every dial `for_tool` derives is a feature scale,
+    ///    and on a tapered ball `radius()` reports the SHANK: a Ø1 tip on a
+    ///    6 mm shank made `min_region_area_mm2` 144 mm² instead of 4 and
+    ///    `close_radius_mm` 1.5 mm instead of 0.25, which closed and absorbed
+    ///    every steep ribbon (design doc §14q).
+    /// 2. The op's own dials are written over that. The three band
+    ///    thresholds (`steep_threshold_deg`, `waterline_threshold_deg`,
+    ///    `overlap_mm`) always apply; the three F2 island-filter dials
+    ///    ([`Self::min_region_area_mm2`], [`Self::close_radius_mm`],
+    ///    [`Self::hysteresis_deg`]) apply only when `Some`, so `None` leaves
+    ///    the derivation of that single field untouched.
+    ///
+    /// An all-`None` config therefore reproduces the pre-F2 planner params
+    /// exactly — byte-identical output, which is what
+    /// `unified_finish_planner_dials_f2.rs` pins.
+    #[must_use]
+    pub fn planner_params(&self, cusp_radius_mm: f64) -> FinishPlannerParams {
+        let mut planner = FinishPlannerParams::for_tool(cusp_radius_mm);
+        planner.steep_threshold_deg = self.steep_threshold_deg;
+        planner.waterline_threshold_deg = self.waterline_threshold_deg;
+        planner.overlap_mm = self.overlap_mm;
+        if let Some(v) = self.min_region_area_mm2 {
+            planner.min_region_area_mm2 = v;
+        }
+        if let Some(v) = self.close_radius_mm {
+            planner.close_radius_mm = v;
+        }
+        if let Some(v) = self.hysteresis_deg {
+            planner.hysteresis_deg = v;
+        }
+        planner
     }
 }
 

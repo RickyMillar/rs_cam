@@ -20,7 +20,7 @@
 //!
 //! Three things are pinned here:
 //!
-//! (a) every one of the eleven findings survives the join, asserted through
+//! (a) every one of the findings survives the join, asserted through
 //!     an EXHAUSTIVE destructure of the result — so a new `ToolpathStats`
 //!     field fails this sentry as well as the join;
 //! (b) the join changes nothing about the move-derived half: it is
@@ -41,16 +41,17 @@
 
 use rs_cam_core::compute::config::{
     BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding, ClippedBandFinding,
-    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, TipFloatFinding,
-    ToolpathStats, ZeroRemovalFinding,
+    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding,
+    TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use rs_cam_core::ramp_finish::RampReachClamp;
+use rs_cam_core::region_mask::RegionCapReport;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::unified_finish::ClaimsReferenceResolution;
+use rs_cam_core::unified_finish::{ClaimsReference, ClaimsReferenceResolution};
 
 /// A hand-traced move list with a known move count, cutting distance, rapid
 /// distance and retract-trip total, so the move-derived half of the join can
@@ -161,6 +162,23 @@ fn every_finding_recorded() -> GenerationFindings {
             tool_diameter_mm: 6.0,
             source_region_count: 3,
         }),
+        // F4. Recorded from the operation's CONFIG rather than from anything
+        // measured, and the join must carry it like any other finding.
+        inert_claims_dial: Some(InertClaimsDialFinding {
+            min_rest_depth_mm: 0.05,
+            default_min_rest_depth_mm: 0.02,
+            min_rest_depth_inert: true,
+            claims_reference: ClaimsReference::MachinedStock,
+            claims_reference_inert: true,
+            pencil_claims: false,
+        }),
+        // F3. A truncating extraction, so a dropped channel reads as `None`
+        // rather than coincidentally matching a clean one.
+        region_cap: Some(RegionCapReport {
+            total_before_cap: 312,
+            kept: 64,
+            cap: 64,
+        }),
     }
 }
 
@@ -199,6 +217,8 @@ fn every_recorded_finding_survives_the_single_join() {
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        inert_claims_dial,
+        region_cap,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -240,6 +260,8 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(zero_removal, findings.zero_removal);
     assert_eq!(offset_library_failures, findings.offset_library_failures);
     assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
+    assert_eq!(inert_claims_dial, findings.inert_claims_dial);
+    assert_eq!(region_cap, findings.region_cap);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -300,6 +322,15 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
          `Some(0)` here would claim every offset was clean"
     );
     assert_eq!(stats.boundary_clip_dropped, None);
+    assert_eq!(
+        stats.inert_claims_dial, None,
+        "F4: a generation that recorded nothing must not claim a dial is inert"
+    );
+    assert_eq!(
+        stats.region_cap, None,
+        "F3: a generation that ran no rest-region extraction has measured \
+         nothing — `Some` here would claim the cap was checked and clean"
+    );
     assert!(
         stats.retract_trips.is_some(),
         "retract trips are computed after generation from the move list, so \

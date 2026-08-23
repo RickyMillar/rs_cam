@@ -436,6 +436,23 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it. The toolpath is real and runnable;
     /// what it is not is contained.
     pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
+    /// F4 (multi-tool island finishing, 2026-08-23): this operation carries a
+    /// non-default rest-CLAIMS dial that its own configuration never applies.
+    /// See [`InertClaimsDialFinding`].
+    ///
+    /// `None` = **nothing inert is set**. Like [`Self::deprecated_dial`] this
+    /// is not a measurement of the part, it is a statement about the config,
+    /// so the two-valued reading is the honest one — there is no "measured
+    /// zero" for "the operator set nothing unusual".
+    ///
+    /// NOT boxed: five words, the same call [`Self::claims_reference`] makes.
+    ///
+    /// Report-only, and deliberately so: emitting it must not change the
+    /// emitted toolpath by one byte. The dial is left inert — making it
+    /// suddenly apply would silently re-cut every shipped project that
+    /// carries one — and refusing would black them out. What changes is that
+    /// somebody says so.
+    pub inert_claims_dial: Option<InertClaimsDialFinding>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///
@@ -459,6 +476,33 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it, nothing branches on it, and
     /// generation is byte-identical whether or not it is populated.
     pub stock_snapshot: Option<StockSnapshotStamp>,
+    /// F3 (2026-08-23): what the
+    /// [`crate::region_mask::MAX_REST_REGIONS`] cap did to this operation's
+    /// rest-region extraction. See [`crate::region_mask::RegionCapReport`].
+    ///
+    /// **Three-valued, the A/M9 X-19 contract:**
+    ///
+    /// * `None` — **not measured**. This operation ran no rest-region
+    ///   extraction (anything without `rest_analysis.enabled`, and every
+    ///   stats struct that never went through a real generation). Do NOT
+    ///   read it as "nothing was truncated".
+    /// * `Some(r)` with `r.truncated() == false` — **measured clean**: an
+    ///   extraction ran and every island it found survived.
+    /// * `Some(r)` with `r.truncated() == true` — `r.dropped()` islands were
+    ///   discarded; `r.total_before_cap` is what the mask actually produced.
+    ///
+    /// Why it needs a channel: the cap's only trace was a `tracing::warn!`,
+    /// and a 64-long region list is indistinguishable from a complete one at
+    /// every consumer. A tier/rest map on real terrain is exactly the input
+    /// that breaches it (`planning/multitool_2026-08-23/T2_FINDINGS.md`
+    /// §3.4).
+    ///
+    /// NOT boxed: three words, the same call [`Self::claims_reference`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, and the cap's behaviour is
+    /// unchanged — largest-by-area first, exactly as before.
+    pub region_cap: Option<crate::region_mask::RegionCapReport>,
 }
 
 /// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.
@@ -750,6 +794,105 @@ impl ClaimsReferenceFinding {
                 self.resolution.reference(),
                 crate::unified_finish::CreaseReference::SelfProbe
             )
+    }
+}
+
+/// F4 (2026-08-23): a rest-CLAIMS dial set away from its default on a
+/// `UnifiedFinish` whose own configuration never applies it.
+///
+/// # The measurement this exists for
+///
+/// The multi-tool T4 arm branched the shipped C2 keeper into a two-tier
+/// ladder and moved the fine tier's `min_rest_depth_mm` from 0.03 to 0.05 —
+/// above the coarse tier's own cusp height, which should have shrunk the fine
+/// tier's territory sharply. The emitted toolpath came back **byte-identical**.
+///
+/// The reason is structural: `min_rest_depth_mm` is only ever consumed by the
+/// S4 mask-AND (`unified_finish`'s step 2.6), and that block is guarded on
+/// `territory_clip`. With `territory_clip = false` the keep-mask is never
+/// built, so the dial steers nothing at all — the "rest tier" was a full-board
+/// finish wearing a rest pass's parameters, and 23 916 s of runtime was spent
+/// before anything said so.
+///
+/// # Why this is a REPORT and not a fix or a refusal
+///
+/// Both alternatives break shipped projects. Making the dial suddenly apply
+/// would re-cut every project that carries a non-default value with
+/// `territory_clip` off — including the C2 keeper's own neighbours — and
+/// refusing would black them out at generate time. Neither is a change an
+/// operator asked for. So the emitted geometry is untouched, byte for byte,
+/// and what changes is that the operator is told which dial is inert and
+/// which switch would make it live.
+///
+/// # What "inert" means per dial (read the flags, not the values)
+///
+/// The two dials fail differently, and the finding says which:
+///
+/// * [`Self::min_rest_depth_mm`] is inert whenever `territory_clip` is
+///   `false` — unconditionally, because the mask-AND is its only consumer.
+/// * [`Self::claims_reference`] is inert only when `pencil_claims` is ALSO
+///   `false`. With claims on it still chooses which field the crease detector
+///   reads, which is a real effect even with no confinement — so a
+///   non-default reference alone is NOT reported on a claims-running op.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InertClaimsDialFinding {
+    /// The value the operator dialled (mm).
+    pub min_rest_depth_mm: f64,
+    /// What it would have been left at — `UnifiedFinishConfig`'s shipped
+    /// default. Carried so a reader can see the size of the intent rather
+    /// than having to look the default up.
+    pub default_min_rest_depth_mm: f64,
+    /// `true` when [`Self::min_rest_depth_mm`] differs from its default and
+    /// therefore steered nothing.
+    pub min_rest_depth_inert: bool,
+    /// The reference the operator pinned.
+    pub claims_reference: crate::unified_finish::ClaimsReference,
+    /// `true` when [`Self::claims_reference`] is non-default AND the claims
+    /// pipeline is off, so it too steered nothing.
+    pub claims_reference_inert: bool,
+    /// Whether this operation's claims pipeline ran at all. `false` is the
+    /// stronger cause and is named separately in the message: with claims off
+    /// there is no rest field to threshold in the first place.
+    pub pencil_claims: bool,
+}
+
+impl InertClaimsDialFinding {
+    /// The inert dials, named with their values, for a one-line report.
+    ///
+    /// Never empty on a recorded finding: the finding is only constructed
+    /// when at least one flag is set.
+    #[must_use]
+    pub fn dials(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if self.min_rest_depth_inert {
+            parts.push(format!(
+                "`min_rest_depth_mm` = {value:.4} (default {default:.4})",
+                value = self.min_rest_depth_mm,
+                default = self.default_min_rest_depth_mm,
+            ));
+        }
+        if self.claims_reference_inert {
+            let reference = self.claims_reference;
+            parts.push(format!("`claims_reference` = {reference:?}"));
+        }
+        parts.join(" and ")
+    }
+
+    /// Why those dials did nothing, naming the switch that would make them
+    /// live. Always names `territory_clip`, because that is the gate on the
+    /// only consumer either dial has for confinement.
+    #[must_use]
+    pub const fn why(&self) -> &'static str {
+        if self.pencil_claims {
+            "`territory_clip = false`, and the S4 mask-AND it gates is the \
+             only thing that reads these numbers, so no rest-territory \
+             confinement was applied and this pass covered its full territory"
+        } else {
+            "`territory_clip = false` AND `pencil_claims = false`: the claims \
+             pipeline never ran, so no rest field was even built, and the S4 \
+             mask-AND that `territory_clip` gates — the only consumer of these \
+             numbers — never ran either. This pass covered its full territory"
+        }
     }
 }
 
@@ -1530,8 +1673,13 @@ pub struct RestAnalysisConfig {
     /// reference floats more than this above the true surface.
     pub min_valley_depth: f64,
     /// Extra clearance (mm) added around detected rest regions beyond the
-    /// generating toolpath's own tool radius, when dilating the mask into
-    /// region polygons.
+    /// generating toolpath's own **CUSP (tip-sphere) radius**, when dilating
+    /// the mask into region polygons.
+    ///
+    /// F1 (2026-08-23): the base was the ENVELOPE radius until then, which
+    /// on a tapered ball is the shank — 3.5 mm of dilation on the shipped
+    /// Ø1-tip / Ø6-shank taper, enough to weld dendritic islands into one
+    /// region. See [`crate::rest_field::RestFieldParams::region_margin_mm`].
     pub region_margin_mm: f64,
     /// PR-7 (H2.5): offset stepover (mm) the ROUTING criterion assumes a
     /// downstream pencil fan would emit — `pencil ⟺ X_reach ≤ cap ×

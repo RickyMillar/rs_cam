@@ -1641,6 +1641,34 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // ClaimsConfig::crease_hookup_mm`).
     ParamDef::required("intra_region_hookup_mm", "f64"),
     ParamDef::required("crease_hookup_mm", "f64"),
+    // F2 island-filter overrides on `FinishPlannerParams`. All three are
+    // `null` by default and are OMITTED from a saved project while null, so
+    // an existing file round-trips byte-identically. `null` = derive from the
+    // tool (`FinishPlannerParams::for_tool`); a number overrides that ONE
+    // dial and leaves the rest derived.
+    ParamDef::optional_desc(
+        "min_region_area_mm2",
+        "option<f64>",
+        "Island absorption floor (mm^2) for the finish planner's min-area step: a connected \
+         band island smaller than this is absorbed into its surrounding band. null = derive \
+         from the tool as (2 * cusp_radius)^2 * 4 (roughly four tool-diameters^2). CUSP \
+         radius, not envelope: on a 1 mm-tip / 6 mm-shank taper the derived value is 4 mm^2, \
+         not 144 mm^2.",
+    ),
+    ParamDef::optional_desc(
+        "close_radius_mm",
+        "option<f64>",
+        "Island merge radius (mm) — the morphological close radius applied to each band mask \
+         before regions are extracted. Larger merges neighbouring islands into one region. \
+         null = derive from the tool as cusp_radius * 0.5 (cusp radius, not envelope).",
+    ),
+    ParamDef::optional_desc(
+        "hysteresis_deg",
+        "option<f64>",
+        "Band hysteresis width (deg): a cell leaves a band only once its slope falls below \
+         (enter - hysteresis_deg). null = the planner's fixed 10.0. Load-bearing — at 0 the \
+         raw slope masks storm to O(100) speckled islands.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 

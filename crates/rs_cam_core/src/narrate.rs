@@ -161,6 +161,12 @@ pub struct ToolpathNarrationContext<'a> {
     /// present — an unclipped path where a containment was requested is not
     /// a routine event.
     pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+    /// F4: a non-default rest-claims dial this operation never applied, off
+    /// [`crate::compute::config::ToolpathStats::inert_claims_dial`]. `None` =
+    /// nothing inert is set. Narration prints the line ONLY when the finding
+    /// is present — it is a statement about the config, and the vast majority
+    /// of toolpaths have nothing to say about it.
+    pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -256,6 +262,7 @@ impl<'a> ToolpathNarrationContext<'a> {
             zero_removal,
             offset_library_failures,
             boundary_clip_dropped,
+            inert_claims_dial,
 
             // NOT rendered by narration. Deliberate, and listed so the
             // omission is a decision on the record rather than an oversight:
@@ -272,6 +279,14 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    narration in front of them has nothing to compare it to.
             //    Read it off `ToolpathStats` directly.
             stock_snapshot: _,
+            //  - region_cap (F3):   surfaced as a diagnostic notice
+            //    (`geom.region_cap_truncated`), on the same rule as
+            //    `deprecated_dial`. It is a statement about the rest-region
+            //    ARTIFACTS a downstream boundary consumer will read, not
+            //    about the moves this narration walks — and the healthy case
+            //    is a line on every rest-analysis toolpath saying nothing
+            //    happened.
+            region_cap: _,
         } = stats;
 
         self.truncated_core_mm2 = *truncated_core_mm2;
@@ -285,6 +300,7 @@ impl<'a> ToolpathNarrationContext<'a> {
         self.zero_removal = *zero_removal;
         self.offset_library_failures = *offset_library_failures;
         self.boundary_clip_dropped = *boundary_clip_dropped;
+        self.inert_claims_dial = *inert_claims_dial;
     }
 }
 
@@ -498,6 +514,7 @@ pub fn narrate_toolpath_with_context(
     append_zero_removal(&mut output, context.zero_removal);
     append_offset_library_failures(&mut output, context.offset_library_failures);
     append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
+    append_inert_claims_dial(&mut output, context.inert_claims_dial);
     append_retract_trips(&mut output, context.retract_trips);
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
@@ -1118,6 +1135,36 @@ fn append_boundary_clip_dropped(
         containment = f.containment,
         regions = f.source_region_count,
         dia = f.tool_diameter_mm,
+    ));
+}
+
+/// F4: one line when a rest-claims dial the operator set steers nothing.
+///
+/// Printed only when the finding is present — it is a statement about the
+/// configuration, not a measurement of the part, and the overwhelming
+/// majority of operations set nothing unusual. Silence here means "nothing
+/// inert", which is the same two-valued reading the finding itself carries.
+///
+/// The line leads with the DIAL and names `territory_clip`, because the whole
+/// defect is an operator dialling a rest threshold and getting a full-board
+/// pass with no signal. The T4 arm moved `min_rest_depth_mm` 0.03 → 0.05 and
+/// got a byte-identical toolpath.
+fn append_inert_claims_dial(
+    output: &mut String,
+    finding: Option<crate::compute::config::InertClaimsDialFinding>,
+) {
+    let Some(f) = finding else { return };
+    output.push_str(&format!(
+        "Inert claims dial: {dials} — but {why}. The emitted toolpath is \
+         exactly what it would be at the default, so nothing else will ever \
+         mention this. To make the number live, set `territory_clip = true` \
+         (which additionally needs `pencil_claims = true` and a machined-stock \
+         reference in scope); to stop paying attention to it, put it back at \
+         its default. [Read from this operation's config at generation; \
+         report-only — no gate consumes this, and recording it changes no \
+         emitted motion.]\n",
+        dials = f.dials(),
+        why = f.why(),
     ));
 }
 
@@ -2122,6 +2169,7 @@ mod tests {
             zero_removal: None,
             offset_library_failures: None,
             boundary_clip_dropped: None,
+            inert_claims_dial: None,
             retract_trips: None,
         };
 

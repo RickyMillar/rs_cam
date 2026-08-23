@@ -155,6 +155,16 @@ pub struct GenerationFindings {
     /// [`ExecutionContext::findings`]. Both writers hold the findings by then;
     /// the join has not run yet.
     pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+    /// F4: a non-default rest-claims dial this operation's own configuration
+    /// never applies. `None` = nothing inert is set.
+    /// See [`crate::compute::config::InertClaimsDialFinding`].
+    pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
+    /// F3: what the [`crate::region_mask::MAX_REST_REGIONS`] cap did to this
+    /// operation's rest-region extraction. `None` = no extraction ran, so
+    /// nothing was measured — never "nothing was truncated". Written by the
+    /// rest-analysis attach; see
+    /// [`crate::compute::config::ToolpathStats::region_cap`].
+    pub region_cap: Option<crate::region_mask::RegionCapReport>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -279,6 +289,65 @@ fn record_claims_reference(
     finding: crate::compute::config::ClaimsReferenceFinding,
 ) {
     cell.borrow_mut().claims_reference = Some(finding);
+}
+
+/// F4: record that a non-default rest-claims dial steered nothing.
+///
+/// A no-op at the defaults, on the same rule [`record_deprecated_dial`]
+/// follows: an operator who never touched these has nothing to be told, and a
+/// notice on every unified-finish toolpath is a notice nobody reads. The C2
+/// keeper — `min_rest_depth_mm = 0.02`, `claims_reference = auto`,
+/// `territory_clip = false` — is silent by that rule, and must stay silent.
+///
+/// **Emitting this changes no geometry.** It is recorded from the config
+/// alone, before anything is planned, and nothing downstream branches on it.
+/// The dial stays inert deliberately — see
+/// [`crate::compute::config::InertClaimsDialFinding`] for why applying it or
+/// refusing would both break shipped projects.
+///
+/// The per-dial inertness rules are the finding's, restated here as the
+/// construction: `min_rest_depth_mm` needs only `territory_clip == false`
+/// (the S4 mask-AND is its sole consumer); `claims_reference` additionally
+/// needs `pencil_claims == false`, because with claims running it still
+/// chooses which field the crease detector reads.
+fn record_inert_claims_dial(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    cfg: &crate::compute::operation_configs::UnifiedFinishConfig,
+) {
+    if cfg.territory_clip {
+        return;
+    }
+    let defaults = crate::compute::operation_configs::UnifiedFinishConfig::default();
+    let min_rest_depth_inert = (cfg.min_rest_depth_mm - defaults.min_rest_depth_mm).abs() > 1e-9;
+    let claims_reference_inert =
+        !cfg.pencil_claims && cfg.claims_reference != defaults.claims_reference;
+    if !min_rest_depth_inert && !claims_reference_inert {
+        return;
+    }
+    cell.borrow_mut().inert_claims_dial = Some(crate::compute::config::InertClaimsDialFinding {
+        min_rest_depth_mm: cfg.min_rest_depth_mm,
+        default_min_rest_depth_mm: defaults.min_rest_depth_mm,
+        min_rest_depth_inert,
+        claims_reference: cfg.claims_reference,
+        claims_reference_inert,
+        pencil_claims: cfg.pencil_claims,
+    });
+}
+
+/// F3: record what the [`crate::region_mask::MAX_REST_REGIONS`] cap did to a
+/// rest-region extraction.
+///
+/// **Call this even when nothing was truncated.** Like
+/// [`record_offset_library_failures`] and unlike the defect-only recorders,
+/// this is a MEASUREMENT: `Some` with `truncated() == false` is the honest
+/// "an extraction ran and kept everything it found", and it is what stops a
+/// later reader taking silence for a complete island list. Only call it from
+/// a path that actually ran an extraction.
+fn record_region_cap(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    report: crate::region_mask::RegionCapReport,
+) {
+    cell.borrow_mut().region_cap = Some(report);
 }
 
 /// Record how many 2D offset calls this generation made that came back with
@@ -2126,20 +2195,18 @@ pub(crate) fn generate_unified_finish(
         intra_region_hookup_mm: cfg.intra_region_hookup_mm,
         classification_sampler: cfg.classification_sampler,
     };
-    // `cusp_radius()`, NOT `radius()`: on a tapered ball the latter is the
+    // F2: the `for_tool` derivation plus this op's own dials, built in ONE
+    // place — `UnifiedFinishConfig::planner_params`, whose doc carries the
+    // cusp-vs-envelope rule this line used to carry and the `None` =
+    // derive contract of the three island-filter overrides.
+    //
+    // `cusp_radius_mm()`, NOT `radius()`: on a tapered ball the latter is the
     // SHAFT radius, and every dial `for_tool` derives is a feature scale.
-    // This previously passed `radius()` — 3.0 mm for a Ø1 tip on a 6 mm
-    // shank — making `min_region_area_mm2` 144 mm² instead of 4 and
-    // `close_radius_mm` 1.5 mm instead of 0.25, which closed and absorbed
-    // every steep ribbon on terrain measured at 25% steeper than 55°
-    // (design doc §14q). The claim-floor line below used to "correct" this
-    // with the same wrong radius — a no-op that read as a fix — and is now
-    // redundant because `for_tool` gets the right value.
-    let mut planner =
-        crate::finish_planner::FinishPlannerParams::for_tool(ctx.tool_def.cusp_radius_mm());
-    planner.steep_threshold_deg = cfg.steep_threshold_deg;
-    planner.waterline_threshold_deg = cfg.waterline_threshold_deg;
-    planner.overlap_mm = cfg.overlap_mm;
+    let planner = cfg.planner_params(ctx.tool_def.cusp_radius_mm());
+    // F4: the claims dials are read from here down. Report — do not refuse,
+    // do not start applying — when the operator dialled a rest-territory
+    // number that this configuration never applies.
+    record_inert_claims_dial(ctx.findings, cfg);
 
     let claims_cfg = cfg.pencil_claims.then(|| {
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease
@@ -3086,6 +3153,11 @@ fn attach_generic_rest_analysis(
         );
     }
     let rf = crate::rest_field::detect_rest_valleys(mesh, index, tool_def, reference, &rf_params);
+    // F3: the regions these artifacts carry are what a `DerivedRestRegions`
+    // consumer will be confined to, and the MAX_REST_REGIONS cap can have
+    // silently dropped some of them. Record the pre-cap count alongside —
+    // always, so `Some` with nothing truncated reads as measured-clean.
+    record_region_cap(findings, rf.region_cap);
     generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
     generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
 }

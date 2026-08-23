@@ -75,9 +75,19 @@ impl RestReference<'_> {
     /// overhangs the part edge. A cutter's ball hangs off and reads false-high
     /// rest; stock has no overhanging ball, so it contributes nothing (the
     /// pencil radius still erodes via the caller's `max`).
+    ///
+    /// **F1 (2026-08-23): the TIP sphere, not the envelope.**
+    /// [`MillingCutter::cusp_radius`] is the feature scale the reference
+    /// actually forms; [`MillingCutter::radius`] is the SHANK on a tapered
+    /// ball, and reading it here blanked a **3 mm rim** of genuinely
+    /// trustworthy rest data on the Ø1-tip / Ø6-shank taper this project
+    /// finishes with (T1 finding G6,
+    /// `planning/multitool_2026-08-23/T1_FINDINGS.md`). The two are the same
+    /// number for every non-tapered shape (`cusp_radius`'s own `match`
+    /// falls through to `radius()`), so nothing but the tapered arm moves.
     fn erosion_radius(&self) -> f64 {
         match self {
-            RestReference::Cutter { tool, .. } => tool.radius(),
+            RestReference::Cutter { tool, .. } => tool.cusp_radius(),
             RestReference::Stock(_) => 0.0,
         }
     }
@@ -137,11 +147,23 @@ pub struct RestFieldParams {
     /// Extra clearance (mm) added around detected rest regions, beyond the
     /// fine (pencil) tool radius, when dilating the mask into
     /// [`RestFieldResult::region_polygons`]. Dilation radius is the fine
-    /// (pencil) cutter's own ENVELOPE radius plus this margin — enough that a
+    /// (pencil) cutter's own **CUSP (tip-sphere) radius**
+    /// ([`MillingCutter::cusp_radius`]) plus this margin — enough that a
     /// boundary-clipped fine-tool op can actually reach the true region edge
-    /// rather than stopping exactly at the pencil-radius-eroded mask
-    /// boundary. Read off the cutter, never off
-    /// any routing dial (plan H2.1 rule 4).
+    /// rather than stopping exactly at the eroded mask boundary. Read off the
+    /// cutter, never off any routing dial (plan H2.1 rule 4).
+    ///
+    /// **F1 (2026-08-23): the tip, not the envelope.** This used to read
+    /// [`MillingCutter::radius`], which for a tapered ball is the SHANK: on
+    /// the Ø1-tip / Ø6-shank taper this project finishes with, the dilation
+    /// came out `3.0 + 0.5 = 3.5 mm`, which bridges gaps of up to 7 mm and
+    /// welds a dendritic island map into one near-full-coverage region. That
+    /// is the same number `unified_finish`'s `territory_clip` measured and
+    /// deliberately avoided (`unified_finish.rs`: "a 3.5 mm dilation welds a
+    /// dendritic keep-mask into full coverage"), and it is what the tip must
+    /// reach at depth — not what the shank sweeps. `cusp_radius` is
+    /// identical to `radius` for every non-tapered shape, so flat, ball,
+    /// bullnose and v-bit cutters keep the dilation they had.
     pub region_margin_mm: f64,
 }
 
@@ -274,7 +296,7 @@ impl RestGrid {
     /// The numerator it partners — a region polygon from
     /// [`RestFieldResult::region_polygons`] — is extracted from the *same*
     /// grid but at [`crate::measurement::MeasurementStage::PolygonExtraction`]
-    /// and dilated by the cutter envelope + `region_margin_mm`, so the fraction is a
+    /// and dilated by the cutter's cusp radius + `region_margin_mm`, so the fraction is a
     /// same-domain, same-grid, **later-stage** ratio: it can exceed 1.0 on a
     /// region that fills the part. That is intended — the pathology it feeds
     /// only asks "is one region most of the part".
@@ -372,13 +394,27 @@ pub struct RestFieldResult {
     /// The continuous rest-depth grid, for visualisation (heatmap overlay).
     pub rest_grid: RestGrid,
     /// Machining-region polygons derived from the (thresholded + component-
-    /// cleaned) rest mask, dilated by the cutter envelope + `region_margin_mm` so a
-    /// boundary-clipped fine-tool op can actually reach the region edge. This
-    /// is the derived-boundary source for selective finishing (P2.2's
-    /// `BoundarySource::DerivedRestRegions`) — grouped into outer/hole rings
-    /// via [`crate::polygon::detect_containment`] and winding-normalised.
+    /// cleaned) rest mask, dilated by the cutter's CUSP (tip-sphere) radius +
+    /// `region_margin_mm` so a boundary-clipped fine-tool op can actually
+    /// reach the region edge. This is the derived-boundary source for
+    /// selective finishing (P2.2's `BoundarySource::DerivedRestRegions`) —
+    /// grouped into outer/hole rings via
+    /// [`crate::polygon::detect_containment`] and winding-normalised.
     /// Empty when the mask has no surviving components.
+    ///
+    /// **This list may be SHORT.** It is capped at
+    /// [`crate::region_mask::MAX_REST_REGIONS`]; read [`Self::region_cap`]
+    /// before treating its length as the number of islands the mask had.
     pub region_polygons: Vec<Polygon2>,
+    /// F3 (2026-08-23): how many regions the mask produced BEFORE the
+    /// [`crate::region_mask::MAX_REST_REGIONS`] cap truncated
+    /// [`Self::region_polygons`], and how many survived.
+    ///
+    /// Always measured — extraction always ran — so this is a plain value,
+    /// not an `Option`. `RegionCapReport::truncated()` is `false` on the
+    /// overwhelmingly common healthy set. The cap itself is unchanged:
+    /// largest-by-area first, exactly as before.
+    pub region_cap: crate::region_mask::RegionCapReport,
 }
 
 /// True set-cells with 8-neighbourhood bounds handling (out of bounds = unset).
@@ -712,7 +748,13 @@ pub fn detect_rest_valleys(
     // and rests on it, reading a false-high `rest` that is not real material —
     // it would otherwise ring the part in a spurious rest "moat". The reading is
     // only trustworthy where the overhanging tool is fully supported.
-    let erode_cells = (pencil.radius().max(reference.erosion_radius()) / cell).ceil();
+    //
+    // F1 (2026-08-23): sized off the TIP sphere (`cusp_radius`), not the
+    // envelope. On the Ø1-tip / Ø6-shank taper the envelope blanked a 3 mm
+    // rim of trustworthy readings — ~4% of a 240×250 board, and at the edge,
+    // where the operator cares (T1 finding G6). Identical for every
+    // non-tapered shape; see `RestReference::erosion_radius`.
+    let erode_cells = (pencil.cusp_radius().max(reference.erosion_radius()) / cell).ceil();
     let boundary_dt = chamfer_distance(&contact);
     let mask_data: Vec<bool> = contact
         .as_slice()
@@ -824,16 +866,25 @@ pub fn detect_rest_valleys(
     }
 
     // --- 2b. Machining-region polygons: dilate the cleaned mask by the fine
-    // tool's radius + margin so a boundary-clipped op can reach the region
-    // edge, then extract closed loops via marching squares. See P2.2
-    // `BoundarySource::DerivedRestRegions`.
-    let region_polygons = region_polygons_from_mask(
+    // tool's CUSP (tip-sphere) radius + margin so a boundary-clipped op can
+    // reach the region edge, then extract closed loops via marching squares.
+    // See P2.2 `BoundarySource::DerivedRestRegions`.
+    //
+    // F1 (2026-08-23): `cusp_radius()`, not `radius()`. The tip is what has
+    // to reach the region edge at depth; the shank is what the ENVELOPE
+    // describes, and on a Ø1-tip / Ø6-shank taper that is a 3.5 mm dilation
+    // that welds dendritic islands into one region. Same number on every
+    // non-tapered shape — see `RestFieldParams::region_margin_mm`.
+    let region_extraction = crate::region_mask::region_polygons_from_mask_reported(
         &mask,
         origin_x,
         origin_y,
         cell,
-        pencil.radius() + params.region_margin_mm,
+        pencil.cusp_radius() + params.region_margin_mm,
+        None,
     );
+    let region_cap = region_extraction.cap;
+    let region_polygons = region_extraction.polygons;
 
     // Total rest volume over the (cleaned) mask.
     let cell_area = cell * cell;
@@ -1048,6 +1099,7 @@ pub fn detect_rest_valleys(
         report,
         rest_grid,
         region_polygons,
+        region_cap,
     }
 }
 
