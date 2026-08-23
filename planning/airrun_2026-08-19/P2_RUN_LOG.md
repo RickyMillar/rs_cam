@@ -92,6 +92,65 @@ cutting samples > 0.61 mm (3× median 0.20), peak 3.72 mm at
 caution IS the evidence, B2's sentry gates on it). Pencil entry_s still
 2,412 of 3,332 total.
 
+## Session 1, part 2 — code landed + live validation (new binary 13:28)
+
+All P2-0 + A2 + B2/B3 committed and pushed (ba7c6188 heights, dc2988ec
+unified crash, 1015881e empty/sticky/simdump, 3ef08d32 chaining,
+4346cb7b pencil ramp + entry gate). Gates: fmt/clippy/core/viz/cli/mcp
+ALL GREEN. Two gate iterations worth recording: (1) the Waterline op
+joined the feature-selective empty exemption (a no-steep-walls model is
+a legitimate empty — in-tree fixture proved it); (2) `project.entry_load`
+was scoped to REST-DRIVEN toolpaths via
+`SimulationTriage::build_with_rest_context` after it fired on the perf
+golden's fresh-stock drop-cutter (a fresh-stock entry plunge is planned
+motion; the golden stayed untouched at 3 actions, benches/hot_paths.rs
+kept compiling); plus a 10-min prune grace so concurrent sim-artifact
+writers can't delete each other's fresh dumps.
+
+**Live repro validation on the rebuilt binary (wanaka200_p2 loaded):**
+- G-HEIGHTSTAB: heights tab opened on healthy Back Rough (7,672 moves)
+  → still Done, not stale, move count intact. FIXED.
+- G-ENTRYEMPTY/G-STICKYEMPTY: helix entry now GENERATES (7,659 moves,
+  66,189 mm cutting — the campaign's 0-move result was poisoned state,
+  per the agent's emission analysis) → plunge back → 7,672 exactly, no
+  reload. FIXED. Side finding: helix cutting distance is 3,247 mm
+  SHORTER than plunge — the blocked C5 entry-style A/B is now runnable.
+
+`chain_distance_mm = 15.0` dialed into Rivers + Lakes; full ladder
+(fixpoint @0.15) launched for the A3 + pencil-ramp measurement.
+
+## Session 1, part 3 — measurement results + operator direction
+
+**Post-fix ladder (chaining 15 mm + ramped entries): 15,376 s = 4.27 h**,
+0/0, verdict OK. Pencil −792 s (entries 2,412 → 1,575 s; worst entry bite
+3.72 → 2.25 mm — entry_load still grades Critical, but the residual is
+wall-column semantics: entries now cut like the pass body, whose own peak
+is 2.83). Chaining honest result: rivers entries 211 → 36 s but links cost
+166 s at feed — net −32 s combined (762 s vs target ≤350; the
+entries+rapids "prize" was mostly cheap rapids, not slow plunges; the
+feature is correct and cost-gated, just modest HERE). Live confirms on the
+new binary: heights tab pure read, sticky dead, helix generates (7,659
+moves, cutting 3.2 km SHORTER than plunge — C5 A/B unblocked), scallop
+0.03 + raster 0.6 generates without panic on the real project.
+
+**C2 arm measured: 17,088 s = 4.75 h (+28.5 min)** — whole surface ~30 µm
+cusps (finish 113k → 169k moves, 74 → 101 km). Saved as
+`wanaka200_p2_c2.toml`; render `p2_c2_final_stock.png`. C3 (rest-only
+detail) argued structurally worse for THIS defect (uniform cusps ⇒ a
+rest pass re-cuts the same area plus overhead) — offered, not run.
+Recommendation to operator: C2 is the keeper.
+
+**Operator follow-ups (2026-08-23 evening):**
+1. Pencil "cutting through mountains on travel moves" — REAL: surface
+   links (hookup 30) follow the MESH, not stock; fix = LinkCeiling on
+   pencil links (machinery landed with chaining) — agent dispatched.
+2. Multi-tool island finishing idea (fine balls scallop the mountains,
+   big balls the flats, island filtering to avoid 1000s of islands) —
+   investigation prompt written:
+   `planning/multitool_2026-08-23/INVESTIGATION_PROMPT.md`. Next session
+   investigates code/UX/math + runs the config-only two-tier arm, and
+   writes the orchestration plan for the session after.
+
 **C1 diagnosis — the hills roughness is the mid-steep scallop band.**
 narrate(finish): MidSteep scallop band = 59,994 of 113,260 moves (53%),
 still at scallop_height 0.1 (100 µm cusps, the G-UNIFIEDCRASH
