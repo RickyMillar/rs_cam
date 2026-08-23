@@ -99,5 +99,16 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 0.1,
                 0.1..=5.0,
             );
+            // Chaining is OFF at 0.0 and ships that way — the hover text
+            // (registered on the label in `properties::tooltip_for`, which is
+            // where every `dv` row's tooltip lives) says so.
+            dv(
+                ui,
+                "Chain Distance:",
+                &mut cfg.chain_distance_mm,
+                " mm",
+                0.1,
+                0.0..=25.0,
+            );
         });
 }

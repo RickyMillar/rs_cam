@@ -4749,6 +4749,13 @@ fn tooltip_for(label: &str) -> Option<&'static str> {
         }
         "Angular Step" => "Degrees between radial spokes. Smaller = more passes, finer finish.",
         "Point Spacing" => "Distance between sample points along curves. Smaller = smoother.",
+        "Chain Distance" => {
+            "Max gap between two projected chains to join with one clearance-height link \
+             instead of retracting to safe Z and re-plunging. 0 = off. A cap, not a target: \
+             each link is gouge-checked against the surface, kept inside the machining \
+             boundary, lifted clear of standing stock, and dropped back to a retract when \
+             that clearance reaches safe Z."
+        }
         "Angle Threshold" => "Max slope angle (degrees) to consider a surface flat/horizontal.",
         // F3 / D-16.2: one label, shared by every finish op that exposes the
         // dial — so the caveat here is the repo-wide one (a vertical offset,

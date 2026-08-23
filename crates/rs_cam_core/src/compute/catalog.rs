@@ -1063,6 +1063,18 @@ impl ParamRange {
         }
     }
 
+    /// `min` INCLUSIVE, no ceiling — the shape of a dial whose floor is a
+    /// meaningful setting rather than a degenerate one. A cap that switches
+    /// its own feature off at `0.0` needs this and not
+    /// [`Self::greater_than`], which would refuse the off position.
+    const fn at_least(min: f64) -> Self {
+        Self {
+            min: Some(min),
+            max: None,
+            min_exclusive: false,
+        }
+    }
+
     /// Whether `value` is inside the declared domain. Non-finite is
     /// ALWAYS outside: a range says a quantity is numeric, and `NaN`
     /// compares false against every bound, so an unguarded comparison
@@ -1697,6 +1709,19 @@ const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
     ParamDef::required("direction", "enum:from_above|from_below"),
     ParamDef::required("side", "enum:center|inside|outside"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    ParamDef::required_ranged(
+        "chain_distance_mm",
+        "f64",
+        ParamRange::at_least(0.0),
+        "Cap (mm) on the XY gap between two projected chains that may be \
+         joined by one clearance-height link instead of a full \
+         retract/rapid/replunge round trip. `0.0` (the default) disables \
+         chaining and emits exactly what this operation always did. The \
+         value is a CAP, not a target: every candidate inside it is still \
+         drop-cutter sampled for gouge, refused if it would leave the \
+         operation's boundary, lifted clear of standing material, and \
+         refused outright when that clearance reaches safe Z.",
+    ),
 ];
 
 const ALIGNMENT_PIN_DRILL_PARAMS: &[ParamDef] = &[

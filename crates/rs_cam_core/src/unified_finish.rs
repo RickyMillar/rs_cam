@@ -106,7 +106,7 @@ use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine_kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::pencil::{PencilParams, emit_paths};
+use crate::pencil::PencilParams;
 use crate::polygon::Polygon2;
 use crate::region_set::RegionSet;
 #[cfg(test)]
@@ -1704,7 +1704,17 @@ pub fn unified_finish_toolpath_with_cancel(
             hookup_distance: claims.map_or(0.0, |c| c.crease_hookup_mm),
             ..PencilParams::default()
         };
-        let (tp, _anns) = emit_paths(&claims_paths, mesh, index, cutter, &pencil_params);
+        // G-ENTRYLOAD: give crease entries the same bite-budgeted ramp the
+        // standalone pencil gets; the claims territory stock is the input
+        // stock the entries descend through.
+        let (tp, _anns) = crate::pencil::emit_paths_with_entry_stock(
+            &claims_paths,
+            mesh,
+            index,
+            cutter,
+            &pencil_params,
+            claims.and_then(|c| c.territory_stock),
+        );
         crease_tp = tp;
     }
     if let Some(report) = claims_report.as_mut() {
@@ -2006,6 +2016,10 @@ pub fn unified_finish_toolpath_with_cancel(
                 // leaves it cuts territory the decomposition (and, under
                 // `territory_clip`, the rest mask) deliberately excluded.
                 boundary: Some(&region_set),
+                // Finishing pass: the mesh IS the material here, so the
+                // legacy surface-riding link is correct. `None` keeps this
+                // site byte-identical.
+                link_ceiling: None,
             };
             let (linked, rep) = crate::surface_link::relink_fragments(
                 crate::toolpath_spans::AnnotatedToolpath::new(tp),
