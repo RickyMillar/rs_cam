@@ -10,6 +10,7 @@ pub mod collision_check;
 pub mod config;
 pub mod cutter;
 pub mod execute;
+pub mod generated_empty;
 pub mod operation_configs;
 pub mod semantic_helpers;
 pub mod sim_prefix;
@@ -60,6 +61,9 @@ pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 
 pub use cutter::build_cutter;
 pub use execute::{GeneratedToolpath, OperationError};
+pub use generated_empty::{
+    EmptyGenerationInputs, EmptyGenerationVerdict, GeneratedEmptyRefusal, LegitimateEmptyReason,
+};
 pub use semantic_helpers::{
     CutRun, append_toolpath, bind_scope_to_run, contour_toolpath, cutting_runs, line_toolpath,
 };

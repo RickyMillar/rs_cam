@@ -1100,6 +1100,26 @@ impl ProjectSession {
         Ok(())
     }
 
+    /// Drop a toolpath's cached `ToolpathComputeResult`.
+    ///
+    /// The other half of [`Self::insert_result`]'s contract, for the case
+    /// that used to have no half at all: a generation that **failed**. The
+    /// viz-side worker path sets `gui.toolpath_rt[id].result = None` on a
+    /// compute error, but before this existed nothing cleared the core-side
+    /// `session.results[idx]`, so a previous parameter set's toolpath stayed
+    /// cached and readable as if it were this configuration's answer —
+    /// exported, simulated, and (via
+    /// [`crate::compute::simulate::PhantomPriorStockScan`], which asks only
+    /// "has this been generated?") counted as generated, which withholds a
+    /// pending rest op's phantom prior-stock snapshot.
+    ///
+    /// Returns `true` when a cached result was actually removed. Never an
+    /// error: removing the result of an index that has none is the
+    /// no-op the callers want.
+    pub fn remove_result(&mut self, index: usize) -> bool {
+        self.results.remove(&index).is_some()
+    }
+
     /// Wholesale replace all setups and toolpath configs from an external
     /// source (e.g. GUI's `JobState`).  This is the bulk-sync path used by
     /// `sync_session_from_job`.

@@ -136,6 +136,16 @@ impl<B: ComputeBackend> AppController<B> {
                 };
                 let rt = self.state.gui.toolpath_rt.get(&tc.id);
                 let result = rt.and_then(|rt| rt.result.as_ref());
+                // G-STICKYEMPTY: `result.is_some()` is the RIGHT answer here
+                // and the wrong one in core's `ProjectSession::run_simulation`
+                // — the difference is that this builder pushes every
+                // result-bearing toolpath, filtering none, so even a
+                // zero-move entry reaches `prior_stocks.insert(entry.id, ..)`
+                // in the simulator. Core's builder drops entries below
+                // `MIN_SIMULATED_MOVES` and must therefore answer with
+                // `contributes_simulated_motion`. If a short-toolpath filter
+                // is ever added HERE, this call has to change with it; see
+                // that function's doc for the failure it prevents.
                 phantom_scan.visit(
                     toolpaths.len(),
                     tc.enabled,

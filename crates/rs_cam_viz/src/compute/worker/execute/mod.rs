@@ -25,6 +25,10 @@ use rs_cam_core::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 #[cfg(test)]
 use rs_cam_core::toolpath::MoveType;
 
+/// How many simulation cut artifacts to retain in `target/simulation_metrics`
+/// (G-SIMDUMP: each dump can be multiple GB at fine resolutions).
+const SIM_CUT_ARTIFACT_RETAIN: usize = 5;
+
 pub(super) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
@@ -496,7 +500,18 @@ where
             "simulation_metrics",
             &artifact,
         ) {
-            Ok(p) => Some(p),
+            Ok(p) => {
+                // G-SIMDUMP: unbounded dumps filled the disk (96 GB observed);
+                // keep only the newest few — each can be multiple GB.
+                let pruned = rs_cam_core::simulation_cut::prune_simulation_cut_artifacts(
+                    &simulation_metric_artifact_dir(),
+                    SIM_CUT_ARTIFACT_RETAIN,
+                );
+                if pruned > 0 {
+                    tracing::info!("Pruned {pruned} old simulation cut artifact(s)");
+                }
+                Some(p)
+            }
             Err(error) => {
                 tracing::warn!("Failed to write simulation cut artifact: {error}");
                 None
@@ -883,6 +898,47 @@ pub(super) fn run_compute_with_phase_tracker(
                     req.tool.envelope_diameter() / 2.0,
                 );
             current = transformed.reconcile(&mut channels).into_inner();
+        }
+
+        // ── G-ENTRYEMPTY: the empty-generation gate ───────────────────
+        // The live GUI worker's copy of the same gate
+        // `ProjectSession::generate_toolpath` applies, calling the same
+        // single-owner classifier in core so the two paths cannot drift.
+        // `current` is the finished toolpath — everything downstream of
+        // here only measures it.
+        //
+        // An `Err` from this closure reaches `drain_compute_results`'s
+        // `ComputeError::Message` arm, which sets the toolpath to `Error`
+        // and clears BOTH result caches — so, unlike the pre-fix
+        // `Ok`-with-0-moves, an empty generation leaves nothing behind for
+        // a later generation, simulation or export to consume.
+        match rs_cam_core::compute::generated_empty::classify(
+            &current.toolpath,
+            &rs_cam_core::compute::generated_empty::EmptyGenerationInputs {
+                toolpath_name: &req.toolpath_name,
+                operation: &req.operation,
+                stock_source: req.stock_source,
+                seeded_machined_stock: req.prior_stock.is_some(),
+                has_mesh: req.mesh.is_some(),
+                polygon_count: req.polygons.as_deref().map_or(0, Vec::len),
+                boundary_is_derived_rest_regions: matches!(
+                    req.boundary.source,
+                    rs_cam_core::compute::config::BoundarySource::DerivedRestRegions { .. }
+                ),
+            },
+        ) {
+            rs_cam_core::compute::generated_empty::EmptyGenerationVerdict::NotEmpty => {}
+            rs_cam_core::compute::generated_empty::EmptyGenerationVerdict::Legitimate(reason) => {
+                tracing::info!(
+                    toolpath = %req.toolpath_name,
+                    operation = %req.operation.label(),
+                    reason = reason.describe(),
+                    "Generated an empty toolpath, and that is expected here"
+                );
+            }
+            rs_cam_core::compute::generated_empty::EmptyGenerationVerdict::Refuse(refusal) => {
+                return Err(ComputeError::Message(refusal.to_string()));
+            }
         }
 
         let stats = {
