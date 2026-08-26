@@ -69,19 +69,67 @@
 //!   [`TierMap::covered_mask`], and the erosion belongs to the consumer
 //!   (Phase I) so that the map itself stays a measurement rather than a
 //!   policy.
-//! * **No slope-bias compensation.** The drop-cutter Z is the tool-CENTRE
-//!   offset surface, so on a plain sloped plane — which any ball machines
-//!   perfectly — the residual is `(R_ref − R_fine)·(sec θ − 1)`: 0.62 mm at
-//!   45° for R2 against R0.5, i.e. one to two orders of magnitude above any
-//!   sane tolerance (T1 §3.4). Untreated, **every slope on a terrain reads as
-//!   fine-tier**. The treatment is task T2's A/B (analytic compensation vs a
-//!   stock-referenced residual) and is NOT decided here; the seam it plugs
-//!   into is [`ResidualTreatment`], which is part of the cache key precisely
-//!   so a compensated map can never be served from a raw one's entry.
+//! * **No slope-bias compensation by DEFAULT.** [`ResidualTreatment::Raw`] is
+//!   the default and is deliberately untreated — see the next section for the
+//!   bias, and for the opt-in analytic treatment that removes it.
+//!
+//! # The slope bias, and the analytic treatment (T2)
+//!
+//! The drop-cutter Z is the tool-CENTRE offset surface, not the machined
+//! surface. A tip sphere of radius `R` resting on a plane of slope θ leaves
+//! its reference point `R·(sec θ − 1)` above that plane, so the residual
+//! between two ladder tools on a plain sloped plane — which **either** ball
+//! machines perfectly — is
+//!
+//! ```text
+//! bias_k(θ) = (R_k − R_finest) · (sec θ − 1)
+//! ```
+//!
+//! **0.62 mm at 45°** for R2 against R0.5 and 1.5 mm at 60° (T1 §3.4): one to
+//! two orders of magnitude above any sane tolerance. Untreated, *every slope
+//! on a terrain reads as fine-tier*, which is the measured cause of the T4
+//! two-tier arm losing 5.5 h — the fine tool was charged for the whole
+//! mid-steep band (plan §0, `T1_FINDINGS.md` §3.4).
+//!
+//! [`ResidualTreatment::SlopeCompensated`] subtracts that term before the
+//! tolerance comparison. Four things it is, and is not:
+//!
+//! 1. **θ is measured on the REFERENCE tool's own drop surface**, by central
+//!    finite difference over the [`TierMap::finest_z`] plane the walk already
+//!    computes — not from probe triangle normals and not from a second
+//!    `SurfaceHeightmap`. The offset surface of a plane is parallel to that
+//!    plane, so on the fixture the law is written for the two agree exactly;
+//!    on curvature the CL surface is the smoother of the two, which
+//!    under-states θ and therefore under-compensates — erring toward the fine
+//!    tier, the safe direction. It also costs no extra drops, no extra
+//!    allocation per cell and no trig in the hot loop
+//!    (`slope_bias_scale` compares `|∇z|²` against a squared cap).
+//!    Its failure modes are stated at `reference_gradient`.
+//! 2. **The law is the SPHERICAL-tip law.** A flat or bull tip on a slope
+//!    carries an extra `(R_envelope − R_cusp)·tan θ` term this treatment does
+//!    not model, and a tapered ball past its half-angle contacts the cone
+//!    rather than the tip sphere and sits LOWER than the sphere law predicts.
+//!    Both mismatches are under-compensations while the finest tool is the
+//!    non-spherical one (the shipped case — the Ø1-tip taper is the fine
+//!    tool), i.e. they err toward the fine tier. A ladder with a flat or
+//!    tapered tool in a COARSE slot is the arm that could over-compensate;
+//!    that is not a shipped ladder and is not covered.
+//! 3. **Above [`MAX_COMPENSATED_SLOPE_DEG`] it abstains** and the raw residual
+//!    is compared, rather than clamping `sec θ`. See that constant.
+//! 4. **It is not free.** The compensated arm is a two-pass walk (reference
+//!    plane, then verdicts), because a central difference needs the row below
+//!    a cell before that cell can be judged. Same total drop-cutter work as
+//!    [`ResidualTreatment::Raw`], one extra `SpatialIndex::query` per *owned*
+//!    cell, and a transient `f64` reference plane (8 B/cell, released before
+//!    the map is returned) on top of the 5 B/cell the map itself costs.
+//!    [`ResidualTreatment::Raw`] keeps its single-pass, one-query-per-cell
+//!    shape untouched.
 //!
 //! # Cancellation
 //!
-//! The walk polls the cancel token **once per grid row**.
+//! The walk polls the cancel token **once per grid row**, in *both* passes —
+//! `walk_rows` is the one site that does it, so the granularity cannot
+//! drift between the two arms or between the parallel and serial builds.
 //! `rest_field`'s walk has no polling at all, which is why a rest analysis on
 //! a big board cannot be interrupted; this one can.
 
@@ -134,18 +182,107 @@ pub fn reset_drop_call_count() {
 /// the same mesh, ladder and grid are different answers, and a memo that
 /// could not tell them apart would serve one for the other.
 ///
-/// **T2 seam.** The slope-bias treatment (T1 §3.4 / plan blocker B1) adds its
-/// variant here and its arm in [`compute_tier_map`]'s cell classifier, which
-/// is the single site that turns a residual into a verdict. A variant that
-/// needs per-cell surface slope will also need the walk to carry it — the
-/// contact normal is available from the drop, and `crate::slope::SlopeMap` is
-/// the shipped alternative.
+/// Both variants are payload-free on purpose: every dial they could carry
+/// would have to be `to_bits`-keyed in [`crate::tier_map_cache`], and a
+/// discriminant cannot be got wrong. The compensation cap is therefore a
+/// module constant ([`MAX_COMPENSATED_SLOPE_DEG`]), not a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResidualTreatment {
     /// `drop_z(tool_k) − drop_z(finest)`, untreated. Honest, and biased on
     /// slopes by `(R_k − R_finest)·(sec θ − 1)` — see the module doc.
     #[default]
     Raw,
+    /// [`Self::Raw`] minus the analytic tool-centre-offset bias
+    /// `(R_k − R_finest)·(sec θ − 1)`, with `R` the tip-sphere
+    /// ([`MillingCutter::cusp_radius_mm`]) radius and θ the slope of the
+    /// reference tool's own drop surface at the cell.
+    ///
+    /// This is the arm the plan calls "analytic compensation"
+    /// (`ORCHESTRATION_PLAN.md` Phase T task T2 (a), blocker B1); the
+    /// alternative arm is a stock-referenced residual, which needs the coarse
+    /// tier generated and simulated first and is therefore a cascade rather
+    /// than a plan-time oracle. Read the module doc's T2 section for what the
+    /// compensation models, what it does not, and which direction each
+    /// mismatch errs in.
+    ///
+    /// On a plane of any slope inside the cap this reads ~0 for every ladder
+    /// tool, so the plane is claimed by the coarsest — which is the point.
+    SlopeCompensated,
+}
+
+/// Slope (degrees from horizontal) above which
+/// [`ResidualTreatment::SlopeCompensated`] **abstains**: the cell is judged on
+/// its raw residual instead, exactly as [`ResidualTreatment::Raw`] would. The
+/// comparison is strict (`>`), so the cap angle itself is still compensated.
+///
+/// The number is the shipped `waterline_threshold_deg` default — the slope at
+/// which `finish_planner` hands a surface to the very-steep waterline band
+/// (`FinishPlannerParams::for_tool`, `compute/operation_configs.rs`). Three
+/// reasons the treatment stops there rather than clamping `sec θ`:
+///
+/// 1. **`sec` is unusable as an estimator near vertical.** `d(sec θ)/dθ =
+///    sec θ · tan θ` is 0.25 per degree at 75° but 2.3 per degree at 85°, so a
+///    one-degree slope error there moves the subtracted term by `2.3·ΔR` mm.
+///    A compensated residual on a near-vertical wall is not a measurement.
+/// 2. **Clamping would hand walls to the COARSE tool.** A clamped `sec θ` still
+///    subtracts its full capped term — 15.7 mm for `ΔR = 1.5` at 85° — which
+///    drives the compared residual arbitrarily negative and passes *any* cell.
+///    Abstaining leaves the raw (large) residual in place, so a wall stays
+///    fine-tier: the safe direction for surface quality.
+/// 3. **It is not this map's territory anyway.** Above this slope the
+///    consumer's band split gives the surface to waterline, whose Z-level
+///    contours are not decided by a drop-cutter residual.
+///
+/// The cost is a deliberate **discontinuity at the cap** — just below it a
+/// large term is subtracted, just above it none is. The tier map is a
+/// classifier input, not a continuous field, and Phase I's morphology
+/// (hysteresis / close / min-area) is what smooths label boundaries.
+pub const MAX_COMPENSATED_SLOPE_DEG: f64 = 75.0;
+
+/// `tan²(MAX_COMPENSATED_SLOPE_DEG)` = `(2 + √3)²` = `7 + 4√3`.
+///
+/// The cap is applied in the **gradient** domain so the walk needs no trig:
+/// `sec θ = √(1 + |∇z|²)`, and `θ ≥ cap ⟺ |∇z|² ≥ tan²(cap)`. `f64::tan` is
+/// not a `const fn`, so the value is written out; `the_gradient_cap_matches_
+/// its_documented_angle` pins the pair so the two cannot drift apart.
+const MAX_COMPENSATED_GRADIENT_SQ: f64 = 13.928_203_230_275_509;
+
+/// `sec θ − 1` from a surface gradient, or `None` where the treatment
+/// abstains (above [`MAX_COMPENSATED_SLOPE_DEG`], or a non-finite gradient).
+///
+/// The single site the cap is applied at, shared by the walk and by
+/// [`cl_offset_bias_mm`] — two spellings of one law is the instrument-integrity
+/// trap this repo has paid for before.
+fn slope_bias_scale(dz_dx: f64, dz_dy: f64) -> Option<f64> {
+    let gradient_sq = dz_dx * dz_dx + dz_dy * dz_dy;
+    if gradient_sq.is_nan() || gradient_sq > MAX_COMPENSATED_GRADIENT_SQ {
+        return None;
+    }
+    Some((1.0 + gradient_sq).sqrt() - 1.0)
+}
+
+/// The analytic tool-centre-offset bias between two tip spheres on a plane of
+/// slope `slope_deg`: `cusp_excess_mm · (sec θ − 1)`.
+///
+/// `cusp_excess_mm` is `R_coarse − R_fine` in
+/// [`MillingCutter::cusp_radius_mm`] terms — non-negative for any ladder
+/// [`TierLadder::new`] accepts.
+///
+/// `None` where [`ResidualTreatment::SlopeCompensated`] abstains: above
+/// [`MAX_COMPENSATED_SLOPE_DEG`], or outside `0..=90` degrees, or `NaN`.
+/// Exactly at the cap the answer is whichever side `tan(75°)` lands on in
+/// binary floating point — do not build anything on the boundary cell itself.
+///
+/// This is the law the walk applies, reachable so a harness can state the
+/// expected bias in the units the finding does (`T1_FINDINGS.md` §3.4:
+/// **0.62 mm at 45° for R2 against R0.5**) rather than re-deriving it.
+#[must_use]
+pub fn cl_offset_bias_mm(cusp_excess_mm: f64, slope_deg: f64) -> Option<f64> {
+    if !(0.0..=90.0).contains(&slope_deg) {
+        return None;
+    }
+    let scale = slope_bias_scale(slope_deg.to_radians().tan(), 0.0)?;
+    Some(cusp_excess_mm * scale)
 }
 
 /// Why a tier map could not be produced.
@@ -484,7 +621,89 @@ fn drop_against_candidates(
     cl
 }
 
-/// One cell's verdict: `(label, finest drop Z, drop-cutter calls made)`.
+/// The reference (finest) tool's drop at `(x, y)`, together with the shared
+/// candidate set it was taken from (G1) and the drop-cutter calls made.
+///
+/// `None` means the cell has no owner, for either of two independent reasons.
+/// `contacted` answers "did any triangle hold the tool up";
+/// [`point_is_over_mesh_xy`] answers "is there surface under this XY at all" —
+/// the cutter has a radius, so it reports contact while merely hanging off the
+/// rim, and only the second predicate separates surface from no surface
+/// (`dropcutter`'s own doc).
+fn reference_drop(
+    x: f64,
+    y: f64,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    ladder: &TierLadder<'_>,
+) -> (Option<f64>, Vec<usize>, u64) {
+    let candidates = index.query(x, y, ladder.max_envelope_radius_mm());
+    let Some(finest) = ladder.finest() else {
+        return (None, candidates, 0);
+    };
+    let cl = drop_against_candidates(x, y, mesh, &candidates, finest);
+    if !cl.contacted || !point_is_over_mesh_xy(x, y, mesh, index) {
+        return (None, candidates, 1);
+    }
+    (Some(cl.z), candidates, 1)
+}
+
+/// Everything the tolerance comparison needs beyond the cell's own drops.
+struct ResidualRule<'a> {
+    /// The ladder minus its reference entry, coarse first.
+    coarser: &'a [&'a dyn MillingCutter],
+    /// `R_k − R_finest` (mm) in cusp-radius terms, indexed like `coarser`.
+    /// Empty is legal and means "no compensation available".
+    cusp_excess_mm: &'a [f64],
+    /// Residual at or below which a tool claims the cell (mm).
+    tolerance_mm: f64,
+    /// `sec θ − 1` at this cell — the slope-bias scale. Exactly `0.0` for
+    /// [`ResidualTreatment::Raw`] *and* wherever
+    /// [`ResidualTreatment::SlopeCompensated`] abstains, which is what makes
+    /// those two cases bit-identical to an uncompensated comparison rather
+    /// than merely close to it.
+    bias_scale: f64,
+}
+
+/// One cell's tier verdict: `(label, drop-cutter calls made)`.
+///
+/// **The single site that turns a residual into a verdict** — both treatments
+/// and both passes come through here, so a compensated map and a raw one
+/// differ by exactly one term.
+fn tier_for(
+    x: f64,
+    y: f64,
+    mesh: &TriangleMesh,
+    candidates: &[usize],
+    reference_z: f64,
+    rule: &ResidualRule<'_>,
+) -> (u8, u64) {
+    let mut drops = 0u64;
+    for (k, tool) in rule.coarser.iter().enumerate() {
+        let cl = drop_against_candidates(x, y, mesh, candidates, *tool);
+        drops += 1;
+        if !cl.contacted {
+            continue;
+        }
+        let raw_residual = cl.z - reference_z;
+        let bias = rule.cusp_excess_mm.get(k).copied().unwrap_or(0.0) * rule.bias_scale;
+        if raw_residual - bias <= rule.tolerance_mm {
+            // `k` indexes `coarser`, which is the ladder minus its last
+            // entry, so it is already the ladder index.
+            let label = u8::try_from(k).unwrap_or(NO_TIER);
+            return (label, drops);
+        }
+    }
+
+    // Nothing coarser held it: the reference tool owns the cell. The ladder
+    // length is bounded by MAX_TIERS at construction, so this cannot collide
+    // with NO_TIER.
+    let label = u8::try_from(rule.coarser.len()).unwrap_or(NO_TIER);
+    (label, drops)
+}
+
+/// One cell of the untreated ([`ResidualTreatment::Raw`]) single-pass walk:
+/// `(label, finest drop Z, drop-cutter calls made)`, one index query.
 fn classify_cell(
     x: f64,
     y: f64,
@@ -493,52 +712,278 @@ fn classify_cell(
     ladder: &TierLadder<'_>,
     params: &TierMapParams,
 ) -> (u8, f32, u64) {
-    let Some((finest, coarser)) = ladder.tools().split_last() else {
+    let Some((_, coarser)) = ladder.tools().split_last() else {
         return (NO_TIER, f32::NAN, 0);
     };
-    let candidates = index.query(x, y, ladder.max_envelope_radius_mm());
-    let finest_cl = drop_against_candidates(x, y, mesh, &candidates, *finest);
-    let mut drops = 1u64;
-
-    // Two independent reasons a cell has no owner. `contacted` answers "did
-    // any triangle hold the tool up"; `point_is_over_mesh_xy` answers "is
-    // there surface under this XY at all" — the cutter has a radius, so it
-    // reports contact while merely hanging off the rim, and only the second
-    // predicate separates surface from no surface (`dropcutter`'s own doc).
-    if !finest_cl.contacted || !point_is_over_mesh_xy(x, y, mesh, index) {
+    let (reference_z, candidates, mut drops) = reference_drop(x, y, mesh, index, ladder);
+    let Some(reference_z) = reference_z else {
         return (NO_TIER, f32::NAN, drops);
+    };
+    let rule = ResidualRule {
+        coarser,
+        cusp_excess_mm: &[],
+        tolerance_mm: params.tolerance_mm,
+        bias_scale: 0.0,
+    };
+    let (label, verdict_drops) = tier_for(x, y, mesh, &candidates, reference_z, &rule);
+    drops += verdict_drops;
+    (label, reference_z as f32, drops)
+}
+
+/// The grid a walk lays over the mesh bbox. Same row-major convention as
+/// [`TierMap`], which it becomes.
+#[derive(Debug, Clone, Copy)]
+struct GridSpec {
+    nx: usize,
+    ny: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell_mm: f64,
+}
+
+impl GridSpec {
+    /// Pad past the mesh bbox by the finest tool's envelope plus the margin,
+    /// so the outer ring of cells is genuinely non-contact and a consumer's
+    /// distance transform has somewhere to start. Same rule as
+    /// `rest_field::detect_rest_valleys`.
+    fn new(mesh: &TriangleMesh, ladder: &TierLadder<'_>, params: &TierMapParams) -> Self {
+        let cell_mm = params.cell_mm.max(1e-3);
+        let finest_envelope = ladder.finest().map_or(0.0, |t| t.envelope_radius_mm());
+        let pad_mm = finest_envelope + params.margin_mm.max(0.0);
+        let margin_cells = (pad_mm / cell_mm).ceil().max(0.0) as usize + 1;
+        let bbox = &mesh.bbox;
+        let cols = (bbox.max.x - bbox.min.x) / cell_mm;
+        let rows = (bbox.max.y - bbox.min.y) / cell_mm;
+        let padding = 2 * margin_cells + 1;
+        Self {
+            nx: cols.ceil().max(0.0) as usize + padding,
+            ny: rows.ceil().max(0.0) as usize + padding,
+            origin_x: bbox.min.x - margin_cells as f64 * cell_mm,
+            origin_y: bbox.min.y - margin_cells as f64 * cell_mm,
+            cell_mm,
+        }
     }
 
-    for (k, tool) in coarser.iter().enumerate() {
-        let cl = drop_against_candidates(x, y, mesh, &candidates, *tool);
-        drops += 1;
-        if !cl.contacted {
-            continue;
-        }
-        let raw_residual = cl.z - finest_cl.z;
-        // T2 SEAM — the single site that turns a residual into a verdict.
-        // A slope-compensated arm subtracts `(R_k − R_finest)·(sec θ − 1)`
-        // here; see `ResidualTreatment`.
-        let observed = match params.treatment {
-            ResidualTreatment::Raw => raw_residual,
-        };
-        if observed <= params.tolerance_mm {
-            // `k` indexes `coarser`, which is the ladder minus its last
-            // entry, so it is already the ladder index.
-            let label = u8::try_from(k).unwrap_or(NO_TIER);
-            return (label, finest_cl.z as f32, drops);
-        }
+    fn cell_count(&self) -> usize {
+        self.nx * self.ny
     }
 
-    // Nothing coarser held it: the reference tool owns the cell. The ladder
-    // length is bounded by MAX_TIERS at construction, so this cannot collide
-    // with NO_TIER.
-    let label = u8::try_from(coarser.len()).unwrap_or(NO_TIER);
-    (label, finest_cl.z as f32, drops)
+    fn x_of(&self, col: usize) -> f64 {
+        self.origin_x + col as f64 * self.cell_mm
+    }
+
+    fn y_of(&self, row: usize) -> f64 {
+        self.origin_y + row as f64 * self.cell_mm
+    }
+}
+
+/// Run `row_fn` over every grid row and concatenate the results, polling
+/// `cancel` **once per row** and folding each row's drop count into
+/// [`DROP_CALLS`].
+///
+/// The one site both passes and both build configurations share, so the
+/// cancellation granularity the module doc promises cannot drift between them.
+fn walk_rows<T: Send>(
+    grid: &GridSpec,
+    cancel: &(dyn CancelCheck + Sync),
+    row_fn: impl Fn(usize) -> (Vec<T>, u64) + Sync,
+) -> Result<Vec<T>, TierMapError> {
+    let cells: Vec<T> = {
+        #[cfg(feature = "parallel")]
+        {
+            use std::sync::atomic::AtomicBool;
+            let cancelled = AtomicBool::new(false);
+            let collected: Vec<T> = (0..grid.ny)
+                .into_par_iter()
+                .flat_map(|row| {
+                    // One poll per row — the granularity `rest_field`'s
+                    // walk lacks entirely.
+                    if cancelled.load(Ordering::Relaxed) || cancel.cancelled() {
+                        cancelled.store(true, Ordering::Relaxed);
+                        return Vec::new();
+                    }
+                    let (cells, drops) = row_fn(row);
+                    DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
+                    cells
+                })
+                .collect();
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(TierMapError::Cancelled);
+            }
+            collected
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            let mut collected: Vec<T> = Vec::with_capacity(grid.cell_count());
+            for row in 0..grid.ny {
+                check_cancel(cancel)?;
+                let (cells, drops) = row_fn(row);
+                DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
+                collected.extend(cells);
+            }
+            collected
+        }
+    };
+    Ok(cells)
+}
+
+/// [`ResidualTreatment::Raw`]: one pass, one index query per cell.
+fn raw_walk(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    ladder: &TierLadder<'_>,
+    params: &TierMapParams,
+    grid: &GridSpec,
+    cancel: &(dyn CancelCheck + Sync),
+) -> Result<(Vec<u8>, Vec<f32>), TierMapError> {
+    let row_cells = |row: usize| -> (Vec<(u8, f32)>, u64) {
+        let y = grid.y_of(row);
+        let mut drops = 0u64;
+        let cells = (0..grid.nx)
+            .map(|col| {
+                let x = grid.x_of(col);
+                let (label, z, d) = classify_cell(x, y, mesh, index, ladder, params);
+                drops += d;
+                (label, z)
+            })
+            .collect();
+        (cells, drops)
+    };
+    Ok(walk_rows(grid, cancel, row_cells)?.into_iter().unzip())
+}
+
+/// Central finite difference of the reference-drop plane at `(row, col)`,
+/// in mm per mm.
+///
+/// Failure modes, all of which degrade toward "no compensation" and therefore
+/// toward the FINE tier — never toward silently handing territory to a coarse
+/// tool:
+///
+/// * **Grid edge.** A missing neighbour drops out of the stencil and the
+///   difference becomes one-sided; with neither neighbour usable on an axis
+///   that axis reads zero gradient. In practice the outer ring is padding and
+///   carries no owned cell, so this is reachable only on a degenerate grid.
+/// * **`NO_TIER` neighbour.** An unowned neighbour is `NaN` and is treated
+///   exactly like a missing one — never averaged in, which would poison the
+///   whole cell to `NaN` and abstain. So a cell on the part rim measures its
+///   slope from the inward side alone. That rim already reads false-high
+///   residuals from the coarse tool hanging off the edge (see the module doc
+///   on boundary erosion), and the consumer erodes it; the one-sided gradient
+///   does not make that band worse.
+/// * **Curvature.** A central difference over a `cell_mm` stencil smooths, so
+///   a ridge or a valley floor narrower than two cells under-reads its slope
+///   and is under-compensated.
+fn reference_gradient(reference: &[f64], grid: &GridSpec, row: usize, col: usize) -> (f64, f64) {
+    let at = |r: usize, c: usize| -> Option<f64> {
+        if r >= grid.ny || c >= grid.nx {
+            return None;
+        }
+        let z = *reference.get(r * grid.nx + c)?;
+        // An unowned neighbour is NaN and must leave the stencil, not enter
+        // it — averaging one in poisons the whole cell.
+        z.is_finite().then_some(z)
+    };
+    let here = at(row, col).unwrap_or(f64::NAN);
+    let axis = |back: Option<f64>, forward: Option<f64>| -> f64 {
+        match (back, forward) {
+            (Some(b), Some(f)) => (f - b) / (2.0 * grid.cell_mm),
+            (Some(b), None) => (here - b) / grid.cell_mm,
+            (None, Some(f)) => (f - here) / grid.cell_mm,
+            (None, None) => 0.0,
+        }
+    };
+    let west = col.checked_sub(1).and_then(|c| at(row, c));
+    let east = at(row, col + 1);
+    let south = row.checked_sub(1).and_then(|r| at(r, col));
+    let north = at(row + 1, col);
+    (axis(west, east), axis(south, north))
+}
+
+/// [`ResidualTreatment::SlopeCompensated`]: two passes over the same grid.
+///
+/// Pass 1 lays down the reference tool's drop plane (one drop and one index
+/// query per cell). Pass 2 differentiates that plane per cell for θ and then
+/// takes the coarse-tool drops, so the verdict costs one further index query
+/// on cells the reference owns. Total drop-cutter work is identical to
+/// [`raw_walk`]'s — the extra pass buys slope, not drops.
+fn compensated_walk(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    ladder: &TierLadder<'_>,
+    params: &TierMapParams,
+    grid: &GridSpec,
+    cancel: &(dyn CancelCheck + Sync),
+) -> Result<(Vec<u8>, Vec<f32>), TierMapError> {
+    let Some((finest, coarser)) = ladder.tools().split_last() else {
+        return Ok((
+            vec![NO_TIER; grid.cell_count()],
+            vec![f32::NAN; grid.cell_count()],
+        ));
+    };
+    // Hoisted out of the cell loop: these are `dyn` calls, and the ladder
+    // ordering invariant makes every entry non-negative. `max` also absorbs a
+    // NaN cusp radius into "no compensation for that tier".
+    let finest_cusp_mm = finest.cusp_radius_mm();
+    let cusp_excess_mm: Vec<f64> = coarser
+        .iter()
+        .map(|tool| (tool.cusp_radius_mm() - finest_cusp_mm).max(0.0))
+        .collect();
+
+    let reference_row = |row: usize| -> (Vec<f64>, u64) {
+        let y = grid.y_of(row);
+        let mut drops = 0u64;
+        let cells = (0..grid.nx)
+            .map(|col| {
+                let x = grid.x_of(col);
+                let (z, _candidates, d) = reference_drop(x, y, mesh, index, ladder);
+                drops += d;
+                z.unwrap_or(f64::NAN)
+            })
+            .collect();
+        (cells, drops)
+    };
+    let reference = walk_rows(grid, cancel, reference_row)?;
+
+    let tier_row = |row: usize| -> (Vec<u8>, u64) {
+        let y = grid.y_of(row);
+        let mut drops = 0u64;
+        let cells = (0..grid.nx)
+            .map(|col| {
+                let cell = row * grid.nx + col;
+                let reference_z = reference.get(cell).copied().unwrap_or(f64::NAN);
+                if !reference_z.is_finite() {
+                    return NO_TIER;
+                }
+                let (dz_dx, dz_dy) = reference_gradient(&reference, grid, row, col);
+                let rule = ResidualRule {
+                    coarser,
+                    cusp_excess_mm: &cusp_excess_mm,
+                    tolerance_mm: params.tolerance_mm,
+                    // Abstain (above the cap) compares the raw residual.
+                    bias_scale: slope_bias_scale(dz_dx, dz_dy).unwrap_or(0.0),
+                };
+                let x = grid.x_of(col);
+                let candidates = index.query(x, y, ladder.max_envelope_radius_mm());
+                let (label, d) = tier_for(x, y, mesh, &candidates, reference_z, &rule);
+                drops += d;
+                label
+            })
+            .collect();
+        (cells, drops)
+    };
+    let labels = walk_rows(grid, cancel, tier_row)?;
+
+    let finest_z = reference.iter().map(|z| *z as f32).collect();
+    Ok((labels, finest_z))
 }
 
 /// Walk the grid once and label every cell with the coarsest ladder tool that
 /// holds it.
+///
+/// [`TierMapParams::treatment`] selects the walk: [`ResidualTreatment::Raw`]
+/// is single-pass, [`ResidualTreatment::SlopeCompensated`] is two-pass. Both
+/// produce the same shape of [`TierMap`] and take the same number of
+/// drop-cutter calls.
 ///
 /// # Errors
 ///
@@ -551,84 +996,20 @@ pub fn compute_tier_map(
     params: &TierMapParams,
     cancel: &(dyn CancelCheck + Sync),
 ) -> Result<TierMap, TierMapError> {
-    let cell = params.cell_mm.max(1e-3);
-    let finest_envelope = ladder.finest().map_or(0.0, |t| t.envelope_radius_mm());
-
-    // Pad past the mesh bbox by the finest tool's envelope plus the margin, so
-    // the outer ring of cells is genuinely non-contact and a consumer's
-    // distance transform has somewhere to start. Same rule as
-    // `rest_field::detect_rest_valleys`.
-    let pad_mm = finest_envelope + params.margin_mm.max(0.0);
-    let margin_cells = (pad_mm / cell).ceil().max(0.0) as usize + 1;
-    let bbox = &mesh.bbox;
-    let origin_x = bbox.min.x - margin_cells as f64 * cell;
-    let origin_y = bbox.min.y - margin_cells as f64 * cell;
-    let nx = ((bbox.max.x - bbox.min.x) / cell).ceil().max(0.0) as usize + 2 * margin_cells + 1;
-    let ny = ((bbox.max.y - bbox.min.y) / cell).ceil().max(0.0) as usize + 2 * margin_cells + 1;
-
-    let row_cells = |row: usize| -> (Vec<(u8, f32)>, u64) {
-        let y = origin_y + row as f64 * cell;
-        let mut drops = 0u64;
-        let cells = (0..nx)
-            .map(|col| {
-                let x = origin_x + col as f64 * cell;
-                let (label, z, d) = classify_cell(x, y, mesh, index, ladder, params);
-                drops += d;
-                (label, z)
-            })
-            .collect();
-        (cells, drops)
-    };
-
-    let (labels, finest_z): (Vec<u8>, Vec<f32>) = {
-        #[cfg(feature = "parallel")]
-        {
-            use std::sync::atomic::AtomicBool;
-            let cancelled = AtomicBool::new(false);
-            let collected: (Vec<u8>, Vec<f32>) = (0..ny)
-                .into_par_iter()
-                .flat_map(|row| {
-                    // One poll per row — the granularity `rest_field`'s
-                    // walk lacks entirely.
-                    if cancelled.load(Ordering::Relaxed) || cancel.cancelled() {
-                        cancelled.store(true, Ordering::Relaxed);
-                        return Vec::new();
-                    }
-                    let (cells, drops) = row_cells(row);
-                    DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
-                    cells
-                })
-                .unzip();
-            if cancelled.load(Ordering::Relaxed) {
-                return Err(TierMapError::Cancelled);
-            }
-            collected
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
-            let mut labels = Vec::with_capacity(nx * ny);
-            let mut finest_z = Vec::with_capacity(nx * ny);
-            let mut drops = 0u64;
-            for row in 0..ny {
-                check_cancel(cancel)?;
-                let (cells, row_drops) = row_cells(row);
-                drops += row_drops;
-                for (label, z) in cells {
-                    labels.push(label);
-                    finest_z.push(z);
-                }
-            }
-            DROP_CALLS.fetch_add(drops, Ordering::Relaxed);
-            (labels, finest_z)
+    let grid = GridSpec::new(mesh, ladder, params);
+    let (labels, finest_z) = match params.treatment {
+        ResidualTreatment::Raw => raw_walk(mesh, index, ladder, params, &grid, cancel)?,
+        ResidualTreatment::SlopeCompensated => {
+            compensated_walk(mesh, index, ladder, params, &grid, cancel)?
         }
     };
 
     Ok(TierMap {
-        nx,
-        ny,
-        origin_x,
-        origin_y,
-        cell_mm: cell,
+        nx: grid.nx,
+        ny: grid.ny,
+        origin_x: grid.origin_x,
+        origin_y: grid.origin_y,
+        cell_mm: grid.cell_mm,
         labels,
         finest_z,
         tier_count: ladder.len(),
@@ -646,13 +1027,60 @@ pub fn compute_tier_map(
 )]
 mod tests {
     use super::{
-        NO_TIER, ResidualTreatment, TierLadder, TierMapError, TierMapParams, compute_tier_map,
+        MAX_COMPENSATED_GRADIENT_SQ, MAX_COMPENSATED_SLOPE_DEG, NO_TIER, ResidualTreatment,
+        TierLadder, TierMapError, TierMapParams, cl_offset_bias_mm, compute_tier_map,
+        slope_bias_scale,
     };
     use crate::mesh::{SpatialIndex, make_test_flat};
     use crate::tool::{BallEndmill, MillingCutter};
 
     fn never_cancel() -> impl Fn() -> bool + Send + Sync {
         || false
+    }
+
+    #[test]
+    fn the_gradient_cap_matches_its_documented_angle() {
+        // The walk compares |∇z|² against a written-out constant because
+        // `f64::tan` is not const. If someone edits the degrees and not the
+        // constant, the cap silently moves; this is the tie.
+        let from_degrees = MAX_COMPENSATED_SLOPE_DEG.to_radians().tan().powi(2);
+        assert!(
+            (from_degrees - MAX_COMPENSATED_GRADIENT_SQ).abs() < 1e-9,
+            "tan^2({MAX_COMPENSATED_SLOPE_DEG}) = {from_degrees}, constant says \
+             {MAX_COMPENSATED_GRADIENT_SQ}"
+        );
+        // 7 + 4√3, stated independently of `tan`.
+        assert!((MAX_COMPENSATED_GRADIENT_SQ - (7.0 + 4.0 * 3.0f64.sqrt())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_bias_law_reproduces_the_finding_number() {
+        // `T1_FINDINGS.md` §3.4: R2 against R0.5 reads 0.62 mm at 45° and
+        // 1.5 mm at 60° on a plane BOTH tools machine perfectly.
+        let excess = 2.0 - 0.5;
+        let at_45 = cl_offset_bias_mm(excess, 45.0).expect("45 deg is inside the cap");
+        let at_60 = cl_offset_bias_mm(excess, 60.0).expect("60 deg is inside the cap");
+        assert!((at_45 - 0.6213).abs() < 5e-4, "45 deg read {at_45}");
+        assert!((at_60 - 1.5).abs() < 5e-4, "60 deg read {at_60}");
+        // Flat ground is exactly zero, so the treatment is a no-op there.
+        assert_eq!(cl_offset_bias_mm(excess, 0.0), Some(0.0));
+    }
+
+    #[test]
+    fn the_law_abstains_rather_than_clamping_above_the_cap() {
+        let excess = 1.5;
+        assert!(cl_offset_bias_mm(excess, 74.0).is_some());
+        assert_eq!(cl_offset_bias_mm(excess, 80.0), None);
+        assert_eq!(cl_offset_bias_mm(excess, 89.999), None);
+        assert_eq!(cl_offset_bias_mm(excess, 90.0), None);
+        // Nonsense in, abstention out — never a number.
+        assert_eq!(cl_offset_bias_mm(excess, -1.0), None);
+        assert_eq!(cl_offset_bias_mm(excess, f64::NAN), None);
+        // The gradient-domain entry point agrees with the degree one.
+        assert_eq!(slope_bias_scale(f64::NAN, 0.0), None);
+        assert_eq!(slope_bias_scale(0.0, 0.0), Some(0.0));
+        let diagonal = slope_bias_scale(1.0, 0.0).expect("45 deg along X");
+        assert!((diagonal - (2.0f64.sqrt() - 1.0)).abs() < 1e-12);
     }
 
     #[test]
@@ -734,5 +1162,19 @@ mod tests {
         let map = compute_tier_map(&mesh, &index, &ladder, &params, &never_cancel()).unwrap();
         assert_eq!(map.treatment, ResidualTreatment::Raw);
         assert!((map.tolerance_mm - 0.04).abs() < 1e-12);
+
+        // The compensated arm is a different walk (two-pass) and must publish
+        // the same grid, so a consumer cannot tell them apart by shape — only
+        // by the tag, which is what keeps the cache honest.
+        let compensated = TierMapParams {
+            treatment: ResidualTreatment::SlopeCompensated,
+            ..params
+        };
+        let cancel = never_cancel();
+        let other = compute_tier_map(&mesh, &index, &ladder, &compensated, &cancel).unwrap();
+        assert_eq!(other.treatment, ResidualTreatment::SlopeCompensated);
+        assert_eq!((other.nx, other.ny), (map.nx, map.ny));
+        assert!((other.origin_x - map.origin_x).abs() < 1e-12);
+        assert!((other.origin_y - map.origin_y).abs() < 1e-12);
     }
 }
