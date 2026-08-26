@@ -177,8 +177,14 @@ fn the_floor_costs_the_ribbon_no_cutting_length() {
     let segments = cutting_segments(&ribbon_waterline());
     let total: f64 = segments.iter().sum();
     // MEASURED 2026-08-02: 1224.9001 mm before the floor, and after.
+    // Re-pinned 2026-08-26 to 1224.9053 mm when the shared height-field
+    // fixture's winding was corrected (normals were DOWN, so every drop
+    // rested on vertex point-supports and read low by a radius-dependent
+    // sagitta — see `common/meshes.rs`). A 5.2 µm move over 1.2 m of
+    // ribbon; the floor-costs-nothing property this test pins is about
+    // the DELTA, which the fixture change does not touch.
     assert!(
-        (total - 1224.9001).abs() < 1e-3,
+        (total - 1224.9053).abs() < 1e-3,
         "ribbon waterline cutting length moved: {total:.4} mm"
     );
     assert_eq!(

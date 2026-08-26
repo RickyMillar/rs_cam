@@ -288,6 +288,28 @@ per fixture below.
 
 ### 5.3 The divergence is the probe, measured
 
+> **CORRECTION 2026-08-26 — the region-TOPOLOGY half of this attribution
+> was fixture-borne.** The shared test height-field builder
+> (`tests/common/meshes.rs::height_field_grid`) wound every triangle
+> clockwise, so `facet_drop` (signed-normal convention) never contacted and
+> every drop rested on vertex point-supports — reading LOW by the
+> ball-between-vertices sagitta `R − sqrt(R² − d²)`, a radius-dependent
+> phantom gradient at every cell junction. Found 2026-08-26 when it pushed
+> a two-ball tier-map residual past its 30 µm tolerance on flat ground.
+> After correcting the winding: the shipped Ø0.05 probe **fabricates zero
+> regions** on every fixture (wave 7b's mixed-slope 6→8 was the sagitta
+> noise, not the CL offset), and the direct arm **loses zero mid-steep
+> regions** (wave 7a's "2 lost regions / not a free swap" likewise). The
+> restated sentries are `production_loses_no_region_against_the_true_surface`
+> (now asserts `fabricated == 0`) and
+> `the_mixed_slope_divergence_was_fixture_borne`. What this correction does
+> NOT touch: the per-label CL-offset law `R·(1 − n.z)/n.z` below and its
+> 10×-per-10× scaling — that is facet geometry, verified independently —
+> nor the label-disagreement counts' probe attribution, which still
+> converges to zero as the probe shrinks. The classifier-switch decision
+> keeps its correctness-and-cost grounds; it loses the "the probe
+> fabricates topology" ground.
+
 Two candidate causes: sampling error in the candidates, or the oracle's own
 slope-dependent CL offset. Shrinking the probe discriminates —
 `direct_arm_divergence_is_the_probe_offset`:

@@ -639,11 +639,23 @@ fn production_loses_no_region_against_the_true_surface() {
         .flat_map(|r| r.topology.iter())
         .map(|&(_, _, truth_big, shipped_big)| shipped_big.saturating_sub(truth_big))
         .sum();
-    assert!(
-        fabricated > 0,
-        "the shipped probe no longer fabricates any region against the true surface; \
-         `CLASSIFICATION_PERF_STUDY.md` §5.3's attribution — and therefore the reason M3 \
-         switched classifiers — would need re-deriving"
+    // RESTATED 2026-08-26, and the tripwire this replaces did its job: it
+    // asserted `fabricated > 0`, pinning wave 7b's observation that the
+    // shipped probe FABRICATES regions (mixed-slope's 6 real mid-steep
+    // components read as 8), which `CLASSIFICATION_PERF_STUDY.md` §5.3
+    // attributed to the probe's slope-dependent CL offset. When the shared
+    // height-field fixture's winding was corrected (normals were DOWN, so
+    // every drop rested on vertex point-supports and read low by a
+    // radius-dependent sagitta — high-frequency phantom gradient at every
+    // cell junction), the fabrication vanished: it was FIXTURE-BORNE, not a
+    // probe property. §5.3 carries the correction note. The reference still
+    // discriminates (`shipped_disagreement > 0` above), so the gate is not
+    // vacuous without it.
+    assert_eq!(
+        fabricated, 0,
+        "the shipped probe fabricates {fabricated} region(s) against the true surface on the \
+         CORRECTED (upward-normal) fixtures — wave 7b saw fabrication only on the down-wound \
+         meshes, so a recurrence here is a new phenomenon, not the old one"
     );
     // And the production sampler must be the surface, not merely close to it.
     for row in &production_rows {
@@ -1082,16 +1094,19 @@ fn narrow_steep_regions_survive_on_the_answer_preserving_arm() {
 }
 
 #[test]
-fn direct_arms_redistribute_steep_territory_on_the_mixed_slope_fixture() {
-    // Characterisation, red-first in wave 7a and pinned here: on the fixture
-    // with a one-cell terrace step, the direct arms do NOT merely perturb the
-    // labels — they drop whole mid-steep regions the shipped classifier
-    // reports. The shipped grid over-reports mid-steep there because the
-    // probe's CL offset grows with slope and so adds gradient of its own.
-    //
-    // The number is asserted so that a future change which makes the direct
-    // arms MORE divergent is caught, and so that the study's "this is not a
-    // free swap" claim has a committed measurement behind it.
+fn the_mixed_slope_divergence_was_fixture_borne() {
+    // RESTATED 2026-08-26 (was `direct_arms_redistribute_steep_territory_
+    // on_the_mixed_slope_fixture`). Wave 7a measured the direct arm dropping
+    // 2 mid-steep regions the shipped classifier reported on mixed-slope,
+    // and attributed the shipped grid's over-report to the probe's
+    // slope-dependent CL offset. Correcting the shared height-field
+    // fixture's winding (normals were DOWN; drops rested on vertex
+    // point-supports, injecting radius-dependent sagitta gradient at every
+    // cell junction) made that divergence disappear — its own vacuity
+    // tripwire fired. The divergence was a property of the broken fixture,
+    // not of the arms; this restatement pins the corrected regime so a
+    // RETURN of the redistribution is caught as a new phenomenon.
+    // `CLASSIFICATION_PERF_STUDY.md` §5.3 carries the correction note.
     let cutter = common::tools::wanaka_taper();
     let fx = &analytic_fixtures()[2];
     let index = SpatialIndex::build_auto(&fx.mesh);
@@ -1104,18 +1119,15 @@ fn direct_arms_redistribute_steep_territory_on_the_mixed_slope_fixture() {
     );
     let arm = ClassificationSampler::VerticalRay;
     let cmp = compare(arm, fx.name, &oracle, &run(&fx.mesh, &index, spec, arm));
-    assert!(
-        cmp.vanished[1] > 0,
-        "the mixed-slope divergence has disappeared; this characterisation is now vacuous"
-    );
-    assert!(
-        cmp.vanished[1] <= 4,
-        "the direct arm now loses {} mid-steep regions on mixed-slope; wave 7a measured 2",
+    assert_eq!(
+        cmp.vanished[1], 0,
+        "the direct arm loses {} mid-steep region(s) on the CORRECTED mixed-slope fixture — \
+         wave 7a's redistribution was fixture-borne, so any loss here is a new phenomenon",
         cmp.vanished[1]
     );
     assert_eq!(
         cmp.vanished[2], 0,
-        "the direct arm has started losing VERY-steep regions, which wave 7a did not see"
+        "the direct arm has started losing VERY-steep regions, which no wave has seen"
     );
     println!(
         "mixed-slope: direct arm loses {} mid-steep region(s) ≥{} cells, \

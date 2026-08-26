@@ -62,8 +62,18 @@ pub fn height_field_grid(
             let b = a + 1;
             let c = ((j + 1) * nx + i) as u32;
             let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
+            // Counter-clockwise seen from +Z, so `Triangle::new`'s
+            // winding-derived normal points UP. The original [a, c, b] /
+            // [b, c, d] winding pointed every normal DOWN, which
+            // `facet_drop` (OpenCAMLib convention, signed normal) never
+            // contacts — every drop then rested on vertex point-supports,
+            // reading LOW by the ball-between-vertices sagitta
+            // (R − sqrt(R² − d²), ~44 µm for an R0.25 ball on a 0.2 mm
+            // grid) — a tool-radius-DEPENDENT bias, found when it pushed a
+            // two-ball tier-map residual past its 30 µm tolerance on flat
+            // ground (T1 sentry, 2026-08-26).
+            triangles.push([a, b, c]);
+            triangles.push([b, d, c]);
         }
     }
     TriangleMesh::from_raw(vertices, triangles)

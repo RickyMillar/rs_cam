@@ -236,6 +236,21 @@ untouched (byte-identical golden).
    checkbox + "Apply selected" pattern (`ui/optimize_project.rs:222-236`)
    is the veto shape to copy (T3 §8; the strategy advisor is the named
    anti-pattern — MCP-only, zero GUI surface, no apply path).
+   **Operator-requested (2026-08-27): a single "region coarseness" slider**
+   spanning "lots of small regions" ↔ "a few large ones" — one knob that
+   scales `close_radius_mm` and `min_region_area_mm2` together from their
+   `for_tool` baselines, with the three raw dials under an advanced flyout.
+   The preview overlay re-renders live as it moves: a tier map at planning
+   resolution is seconds to compute and re-tweaks hit the T3 cache, so
+   drag → recompute → overlay is an interactive loop, not a batch one.
+   **Operator-requested (2026-08-27): tier-overlap is a visible dial too**
+   — "overlap between regions to meld the transitions", an `overlap_mm`
+   control in the same dialog (default 2.0, the number unified-finish
+   already uses between its own slope bands), rendered in the preview as
+   the blend strip along each seam so the operator sees how far the fine
+   tool reaches past its boundary. Phase I's mechanics are unchanged
+   (finer tier dilated into coarser territory; `stock_to_leave` held equal
+   across tiers so the seam blends cusps, never a height step).
 2. Island preview VETO (operator decision point #1): render the tier map
    pre-generation through the rest-heatmap slot
    (`rest_heatmap_mesh.rs:52` → `gpu_upload.rs:1222-1230` → render) with

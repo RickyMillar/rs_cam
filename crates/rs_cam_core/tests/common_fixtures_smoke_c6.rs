@@ -206,8 +206,13 @@ fn donor_sawtooth_plate(half: f64, period: f64, amplitude: f64) -> TriangleMesh 
             let b = a + 1;
             let c = ((j + 1) * nx + i) as u32;
             let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
+            // Winding corrected 2026-08-26 alongside the shared helper:
+            // the original [a,c,b]/[b,c,d] order wound every normal DOWN,
+            // which facet_drop never contacts (drops then rest on vertex
+            // point-supports, reading low by a radius-dependent sagitta).
+            // The donor pins provenance, so it carries the same fix.
+            triangles.push([a, b, c]);
+            triangles.push([b, d, c]);
         }
     }
     TriangleMesh::from_raw(vertices, triangles)
@@ -233,8 +238,13 @@ fn donor_height_field(z: impl Fn(f64, f64) -> f64) -> TriangleMesh {
             let b = a + 1;
             let c = ((j + 1) * n + i) as u32;
             let d = c + 1;
-            triangles.push([a, c, b]);
-            triangles.push([b, c, d]);
+            // Winding corrected 2026-08-26 alongside the shared helper:
+            // the original [a,c,b]/[b,c,d] order wound every normal DOWN,
+            // which facet_drop never contacts (drops then rest on vertex
+            // point-supports, reading low by a radius-dependent sagitta).
+            // The donor pins provenance, so it carries the same fix.
+            triangles.push([a, b, c]);
+            triangles.push([b, d, c]);
         }
     }
     TriangleMesh::from_raw(vertices, triangles)

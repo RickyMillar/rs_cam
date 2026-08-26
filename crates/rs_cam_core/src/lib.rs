@@ -113,6 +113,8 @@ pub mod stock_mesh;
 pub mod strategy_advisor;
 pub mod surface_link;
 pub mod svg_input;
+pub mod tier_map;
+pub mod tier_map_cache;
 pub mod tool;
 pub mod tool_library;
 pub mod tool_load;
