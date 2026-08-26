@@ -3158,6 +3158,23 @@ fn attach_generic_rest_analysis(
     // silently dropped some of them. Record the pre-cap count alongside —
     // always, so `Some` with nothing truncated reads as measured-clean.
     record_region_cap(findings, rf.region_cap);
+    // The region set is the tier-map / derived-boundary planning surface,
+    // and no headless output carries its polygons — this line is the one
+    // place the numbers are observable off the GUI (multitool Phase T).
+    tracing::info!(
+        regions = rf.region_polygons.len(),
+        pre_cap = rf.region_cap.total_before_cap,
+        total_area_mm2 = format!(
+            "{:.1}",
+            rf.region_polygons
+                .iter()
+                .map(|p| p.area().abs())
+                .sum::<f64>()
+        ),
+        cell_mm = rf_params.cell_mm,
+        min_valley_depth = rf_params.min_valley_depth,
+        "generic rest analysis attached region set"
+    );
     generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
     generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
 }
