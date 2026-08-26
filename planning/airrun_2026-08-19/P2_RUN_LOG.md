@@ -263,6 +263,17 @@ Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
 (ratified), region-coarseness slider, visible overlap_mm dial with blend
 strip rendered in the preview.
 
+**Phase T COMPLETE (5c1f07fb) — the B1 A/B is decided.** On the real
+wanaka mesh @0.3 mm / tolerance 0.05, R2.0→R1.0 ladder: Raw residual
+assigns **71.6%** of covered cells to the fine tier (the sec θ bias,
+live); SlopeCompensated assigns **22.0% / 8,815 mm²** — within 3% of the
+stock-referenced truth (9,096 mm²), under the plan's 25% bar, computed
+in **4.6 s** for 445k cells (preview-interactive; Raw 4.2 s). Ruling:
+analytic compensation is the PLANNING/preview arm; the stock-referenced
+field remains the generation-time refinement. Cap policy: compensation
+abstains above 75° (waterline territory) rather than clamping. Suite
+3,363/0 after T2. Overlay eyeball ratification still pending Phase U.
+
 Investigation headlines feeding the plan (details in T1/T2/T3 docs):
 the per-tool residual map already ships (`rest_field::detect_rest_valleys`
 + `attach_generic_rest_analysis` + `BoundarySource::DerivedRestRegions`,
