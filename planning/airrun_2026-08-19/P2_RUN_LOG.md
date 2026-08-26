@@ -229,6 +229,40 @@ logged 6G available at 14:39); the original GUI (held the arm-2
 generation, unsimulated) was orphaned by the dead MCP pipe and killed;
 arm 2 re-ran from `wanaka200_mt1b.toml` in a fresh GUI.
 
+## Session 3 — 2026-08-26/27 — Phases F + T-core implemented
+
+Phase F landed (b16b042d): F1 tip-radius rest dilation/erosion (the
+envelope-welding fix), F2 planner dials on UnifiedFinishConfig, F3
+RegionCapReport, F4 inert-claims-dial finding. Phase T core landed
+(b0ebadf5): tier_map.rs n-tool residual walk (one query/cell, 5 B/cell,
+T2 slope seam as a cache-keyed enum) + tier_map_cache.rs. Gates green
+across all four crates at every step.
+
+**The T1 flat-plane sentry caught a 2-month-old test-instrument defect**:
+`tests/common/meshes.rs::height_field_grid` wound every triangle CW
+(normals down) → facet_drop never contacted in its 22 consumer files;
+drops rested on vertex point-supports, low by a radius-dependent sagitta
+(~44 µm, R0.25 @0.2 mm grid). Fixed; 5 tests re-pinned honestly — the
+big one: classification_strategy_m3's "probe fabricates regions" and
+"direct arm loses mid-steep territory" were FIXTURE-BORNE (their own
+vacuity tripwires fired); CLASSIFICATION_PERF_STUDY.md §5.3 carries the
+correction. The CL-offset law and label-convergence attribution stand.
+
+**First real tier-map measurement (mt1c probe, headless CLI, new
+binary, sim @0.3)**: tier-B stock-referenced rest analysis @0.05 after
+the F1 fix → **566 regions pre-cap (silently truncated to 64 —
+MAX_REST_REGIONS demonstrated live), total 9,096 mm² ≈ 23% of the
+mesh**. Selection quality is in-budget (23% of a full R1.0 pass ≈ 2.9k s
+cutting vs the 4.1k s margin); the missing layers are exactly Phase I
+(morphology + operator coarseness slider vs 566 raw islands) and Phase O
+(routing). This is the truth baseline for T2's analytic-vs-stock A/B —
+the analytic arm is still wanted because the interactive preview cannot
+re-simulate tier-A per slider drag.
+
+Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
+(ratified), region-coarseness slider, visible overlap_mm dial with blend
+strip rendered in the preview.
+
 Investigation headlines feeding the plan (details in T1/T2/T3 docs):
 the per-tool residual map already ships (`rest_field::detect_rest_valleys`
 + `attach_generic_rest_analysis` + `BoundarySource::DerivedRestRegions`,
