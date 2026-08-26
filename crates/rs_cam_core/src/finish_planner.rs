@@ -667,7 +667,10 @@ fn for_each_neighbor(i: usize, rows: usize, cols: usize, mut visit: impl FnMut(u
     }
 }
 
-fn and_masks_in_place(a: &mut [bool], b: &[bool]) {
+/// `a &= b`, elementwise. `pub(crate)` for [`crate::tier_islands`], which
+/// clips a closed tier mask back to the cells the tier is allowed to own —
+/// the same "close, then re-clamp" pairing [`decompose`]'s step 2 uses.
+pub(crate) fn and_masks_in_place(a: &mut [bool], b: &[bool]) {
     for (av, &bv) in a.iter_mut().zip(b.iter()) {
         *av = *av && bv;
     }
@@ -677,7 +680,16 @@ fn and_masks_in_place(a: &mut [bool], b: &[bool]) {
 
 /// 8-connected components of `in_mask`, each a `Vec` of flat indices, in
 /// row-major discovery order.
-fn label_components(rows: usize, cols: usize, in_mask: impl Fn(usize) -> bool) -> Vec<Vec<usize>> {
+///
+/// `pub(crate)` for [`crate::tier_islands`] (Phase I), which labels tier
+/// masks with the same connectivity and the same discovery order — the order
+/// is load-bearing for determinism there, so the two must not diverge into
+/// separate implementations.
+pub(crate) fn label_components(
+    rows: usize,
+    cols: usize,
+    in_mask: impl Fn(usize) -> bool,
+) -> Vec<Vec<usize>> {
     let total = rows * cols;
     let mut visited = vec![false; total];
     let mut out = Vec::new();
@@ -737,7 +749,18 @@ fn banded_components(
 /// `close(mask) = erode(dilate(mask))`, both via whole-grid Euclidean
 /// distance transforms (O(cells)) rather than the per-ring dilation loop
 /// `steep_shallow::dilate_grid` uses.
-fn morphological_close(mask: &[bool], rows: usize, cols: usize, radius_cells: f64) -> Vec<bool> {
+///
+/// `pub(crate)` for [`crate::tier_islands`] (Phase I): the tier planner's
+/// island-merge step IS this operation, and re-implementing it there would
+/// give two "close" functions that could drift on the erosion convention
+/// (`> radius` vs `>= radius`) — a one-cell difference that shows up as
+/// islands appearing or vanishing.
+pub(crate) fn morphological_close(
+    mask: &[bool],
+    rows: usize,
+    cols: usize,
+    radius_cells: f64,
+) -> Vec<bool> {
     if radius_cells <= 0.0 {
         return mask.to_vec();
     }

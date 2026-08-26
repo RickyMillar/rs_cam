@@ -357,8 +357,21 @@ mod tests {
     use super::*;
     use crate::mesh::{make_test_flat, make_test_hemisphere};
 
+    /// The cache is one process-global table, and libtest runs this module's
+    /// tests in PARALLEL — `a_dropped_mesh_releases_its_entry` clears it and
+    /// counts entries while its siblings insert. The race was latent until
+    /// 2026-08-27, when new unrelated lib tests shifted the schedule enough
+    /// to interleave them. Same serialization device as
+    /// `tier_map_cache::tests` / `tests/geometry_cache_g8.rs`.
+    fn cache_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn second_lookup_reuses_the_same_allocation() {
+        let _guard = cache_test_lock();
         let mesh = Arc::new(make_test_hemisphere(20.0, 10));
         let a = cached_auto_index(&mesh);
         let b = cached_auto_index(&mesh);
@@ -367,6 +380,7 @@ mod tests {
 
     #[test]
     fn distinct_meshes_get_distinct_indexes() {
+        let _guard = cache_test_lock();
         let a = Arc::new(make_test_hemisphere(20.0, 10));
         let b = Arc::new(make_test_flat(40.0));
         let ia = cached_auto_index(&a);
@@ -378,6 +392,7 @@ mod tests {
 
     #[test]
     fn a_dropped_mesh_releases_its_entry() {
+        let _guard = cache_test_lock();
         clear();
         {
             let m = Arc::new(make_test_hemisphere(20.0, 8));
