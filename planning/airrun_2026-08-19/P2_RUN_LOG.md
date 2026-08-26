@@ -263,6 +263,27 @@ Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
 (ratified), region-coarseness slider, visible overlap_mm dial with blend
 strip rendered in the preview.
 
+**Phase I COMPLETE (b1a63fc0).** `tier_islands.rs`: TierMap → per-tier
+island sets — close + min-area with dials derived from each tier's cusp
+× the operator coarseness slider (monotone by sentry), `owned` (strict
+partition, finer wins) vs `machining` (overlap blend, count-stable),
+bounded cap loop typed on TierCapReport. 16 sentries + 10 unit tests.
+Also: geom_cache in-module tests raced on the process-global table
+(latent; exposed by schedule shift) — serialized. Suite 3,389/0.
+
+**Test-time profile (operator-requested, from the b1a63fc0 gate run,
+profilable format):** 227 binaries, 1,663 s serial-equivalent; the top
+12 binaries (44 tests) are 75%: feed_modulation_cycle_time_f036c 256 s,
+scallop_isofield_gouge_m4 237 s, scallop_candidates_m4 143 s,
+machine_kinematics_cycle_time_f034 91 s, offset_growth_m5 88 s,
+checkpoint_b_resolution_ab 86 s, scallop_oracle_validation_m4 79 s,
+air_cut_family_calibration_w5bf4 62 s, adaptive3d_planner_stock_xy_f027
+58 s, offset_candidates_m5 54 s, adaptive3d_interior_cell_parity_f029
+48 s, strategy_advisor_smoke 43 s. Approved follow-up (queued after
+Phase O): tag these behind --ignored for the dev loop + evaluate
+cargo-nextest. Also learned: two OVERLAPPED cargo test runs flake
+doctests — one cargo job, always.
+
 **Phase T COMPLETE (5c1f07fb) — the B1 A/B is decided.** On the real
 wanaka mesh @0.3 mm / tolerance 0.05, R2.0→R1.0 ladder: Raw residual
 assigns **71.6%** of covered cells to the fine tier (the sec θ bias,

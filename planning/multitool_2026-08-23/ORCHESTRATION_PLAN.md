@@ -321,24 +321,47 @@ binary before MCP connect.
 ## 6. Post-compact continuation prompt (paste after /compact)
 
 Continue rs_cam in /home/ricky/personal_repos/rs_cam (branch master).
-Read planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md FIRST — it is
-the whole agenda; evidence in T1/T2/T3_FINDINGS.md beside it and the T4
-measurement in planning/airrun_2026-08-19/P2_RUN_LOG.md (mt1 arm:
-two-tier loses 36,892 s vs C2 17,088 s; tier-A R2.0 alone SAVES ~4.1k s;
-the losses are slope-biased over-selection + 19k intra-region retracts =
-16.1k s rapids — the plan's B1/B3). Candidates on disk:
-planning/airrun_2026-08-19/wanaka200_p2_c2.toml (C2 keeper, 17,088 s,
-0/0) and planning/multitool_2026-08-23/wanaka200_mt1.toml (the losing
-two-tier arm, kept as the A/B baseline). Standing constraints: never-touch
-(.mcp.json, wanaka.toml, workspace Cargo.toml, benches/hot_paths.rs,
-tests/perf_golden_*, planning/perf_review_2026-08-19/), one cargo job
-machine-wide (pgrep -x cargo + /proc cwd, never pgrep -f), no history
-rewriting, don't pipe cargo test through head, sims @0.15 (0.1 OOMs this
-board), Fable orchestrates + Opus implementation agents (editors
-no-cargo, ONE verify lane), op-inventory check after every generation,
-reload after any empty generation, pre-built release binary before MCP
-connect, memory watcher for GUI work. Start with Phase F (foundation
-seams — red-first sentries, then F1 tip-radius dilation, F2 planner-dial
-exposure, F3 region-cap finding), then Phase T with the B1 A/B. The
-operator decision points are listed in §3 — surface the tier-map preview
-veto before any full-board generation.
+Read planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md FIRST, then the
+Session 3 section of planning/airrun_2026-08-19/P2_RUN_LOG.md (the
+implementation ledger). STATUS as of 2026-08-27 (through b1a63fc0):
+**Phases F, T and I are COMPLETE and committed** — F: tip-radius rest
+dilation (b16b042d, envelope-welding fixed), planner dials exposed,
+region-cap + inert-claims findings; T: `tier_map.rs` n-tool residual
+walk + `tier_map_cache.rs` (b0ebadf5) and
+`ResidualTreatment::SlopeCompensated` (5c1f07fb) — **B1 is DECIDED**:
+analytic slope compensation for planning/preview (wanaka A/B: raw 71.6%
+fine-tier vs compensated 22.0%/8,815 mm², within 3% of the
+stock-referenced truth 9,096 mm², 4.6 s per 445k-cell map); I:
+`tier_islands.rs` (b1a63fc0) — per-tier island sets, operator coarseness
+slider (linear radius/quadratic area), `owned` (strict partition) vs
+`machining` (overlap_mm blend) region sets, bounded cap loop, all typed.
+Also landed: the test height-field WINDING fix (all 22 consumer files;
+classification study §5.3 corrected — fabricated-regions attribution was
+fixture-borne) and a geom_cache unit-test race fix.
+
+**NEXT: Phase O** (§2 Phase O — the first toolpath-changing phase, two
+editors: core boundary+routing / viz reconciler+fixpoint-parity):
+emitted op chain with `planner_origin` provenance, tier islands into the
+pre-decompose `machining_boundary` seam, stay-down intra-island links
+under `max_conservative_top_z_in_disc` (T4 measured 19,137 retracts =
+16,140 s to kill), GUI Generate All wired to the MCP-only fixpoint. Then
+Phase U (§2 — operator-ruled: coarseness slider + overlap dial + preview
+veto through the rest-heatmap slot) and Phase V validation vs C2
+(17,088 s bar; tier-A + pencil measured 5,222 s → ~4.1k s budget for the
+fine tier). QUEUED after Phase O (operator-approved): tag the 12 heavy
+test binaries (75% of the 1,663 s suite — ranked table in the ledger)
+behind --ignored + evaluate cargo-nextest; run full suites as
+`cargo test --no-fail-fast -- -q` (profilable), targeted files during
+iteration, full suite once per phase commit.
+
+Standing constraints: never-touch (.mcp.json, wanaka.toml, workspace
+Cargo.toml, benches/hot_paths.rs, tests/perf_golden_*,
+planning/perf_review_2026-08-19/), ONE cargo job machine-wide (pgrep -x
+cargo + /proc cwd; never overlap two cargo test runs — it flakes
+doctests), no history rewriting, don't pipe cargo test through head or
+tail, sims @0.15 (0.1 OOMs this board), Fable orchestrates + Opus
+implementation agents (editors no-cargo, ONE verify lane), op-inventory
+check after every generation, reload after any empty generation,
+pre-built release binary before MCP connect, memory watcher for GUI
+work. Operator decision points remaining: preview-veto eyeball (§3.1),
+pencil's fate (§3.4), merge call (§3.5).
