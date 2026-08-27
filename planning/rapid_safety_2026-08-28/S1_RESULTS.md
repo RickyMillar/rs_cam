@@ -85,13 +85,33 @@ finishing ops of this one job.
    clearance and no awareness of remaining stock. S3's emitter work should
    target this site FIRST — it is the one with 634 measured strikes — with
    `clearing.rs` second.
-3. **S-b/S-d get a concrete falsification target for S2**: whatever the
-   shipped pipeline's `rapid_collision_count` consulted, it reported these
-   programs as reviewable-clean while 601/601 of op 7's descents enter
-   material by up to 1.3 mm — far above the 0.3 mm sim cell. The S2 detector
-   fix must make exactly this class visible (candidate explanations to rule
-   in/out: mesh-vs-remaining-stock frame (S-d), point-probe timing, or a
-   tolerance eating the depth).
+3. **S-b/S-d get a concrete falsification target for S2** — and the shipped
+   record is now cited, not assumed. The airrun reported **zero collisions on
+   all 8 ops** (`planning/airrun_2026-08-19/RUN_LOG.md:16`), and the RUN_LOG
+   itself already called `rapid_collision_count` "**vacuous for Setup 2** …
+   the collision test ran against a misplaced volume" (`RUN_LOG.md:1243-1245`)
+   — while `:130` claims collision checks read the correctly-framed
+   `group_stock`. Those two statements conflict; S2 resolves them. More: **the
+   operator suspected rapid gouging at the time**, and the ad-hoc audit that
+   cleared it (`RUN_LOG.md:1230-1247`) counted only **lateral** rapids below
+   stock top (found 0) — a Z-only descent has no lateral travel, so the
+   entire striking class was structurally invisible to that check. The
+   suspicion was right; the instrument was blind.
+
+   S2's diagnosis priority also shifts: these strikes are **near-axis**
+   (margin@env == margin@shaved on the big ones — material under the tip),
+   so even a zero-radius point probe at the descent endpoint would see
+   1.3 mm of standing material. Point-probe blindness (S-b's original
+   theory) cannot explain the silence. Lead hypotheses, in order: (1)
+   **timing/stock-state** — if rapids are checked against the op's *final*
+   stock, this class vanishes, because the feed move immediately after each
+   descent cuts exactly the material the rapid plunged through; (2) the
+   misplaced-volume frame defect named at `RUN_LOG.md:1243`; (3) S-d
+   (mesh, not remaining stock); (4) a tolerance eating the depth. The fixed
+   detector must evaluate each rapid against the stock state **at the time
+   of the rapid** — the semantics this instrument just demonstrated — and
+   the falsification test is that a normal pipeline run of wanaka200.toml
+   then flags ops 7/8.
 4. **Convergence with the finishing programme**: these striking links are the
    same retract-hop links Track G's detour observation and the ceiling work
    (§0g/§0h) are about. The links that cost TIME are the links that plunge.
@@ -106,6 +126,15 @@ finishing ops of this one job.
   a strict subset of the column; holder strikes are Phase S4 scope, out of
   this instrument's question). STRIKE now means descent or traverse only.
 - Every number above is v2, full adjudication (budget 20,000, 0 dropped).
+- **Self-calibration**: op 1's peck re-entries adjudicate at margin@shaved =
+  **+0.500 exactly** — the replayed hole floor matches the G-code peck floor
+  to sub-cell precision, verifying fine-tier stamping on vertical plunges.
+  The op-7/8 strikes show margin@env == margin@shaved, proving near-axis
+  material rather than a rim artefact of the conservative disc; and op 8's
+  strike/near/clean mix tracks where op 7 finished vs. where rest material
+  stands, which a systematic under-removal bug could not produce. (Setup 1
+  and op 6 being clean came mostly from the early-out, so the +0.500
+  calibration is what carries the stamping-fidelity weight.)
 - Setup 2 replayed on conservative fresh stock (its op 6 IS fresh per
   `wanaka200.toml:711`, so this is exact, not conservative, for ops 6–8's
   chain).
