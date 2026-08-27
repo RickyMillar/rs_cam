@@ -414,6 +414,73 @@ region) is measured above at 1.10× for a parameter that already exists.
 
 ---
 
+## 0f. Is the best angle PREDICTABLE? Only where the shape has a real axis.
+
+§0e proved sweep angle is worth 1.10×, but found it by brute force — 12 grid
+builds plus 12 relinks per region, ~2 minutes. Far too expensive to run per
+region at plan time. So: can a free geometric predictor find it?
+
+Stage F takes each region's interior second moments (one covariance matrix) and
+costs the predicted angle against 0°.
+
+| region | elongation | PCA minor | t(0°) | t(pred) | gain |
+|---|---|---|---|---|---|
+| 3104 mm² | **4.15** | 119.6° | 1053.7 s | 974.2 s | **1.08×** |
+| 1788 mm² | 1.65 | 155.4° | 478.0 s | 496.9 s | 0.96× |
+| 1621 mm² | 1.78 | 43.1° | 483.7 s | 479.8 s | 1.01× |
+| **total** | | | **2015.4 s** | **1950.9 s** | **1.03×** |
+
+Blanket PCA captures only 1.03× of the 1.10× ceiling. **But the failure is not
+random — it tracks elongation**, and the per-angle curves say why.
+
+**Region 1 (elongation 4.15) has a genuine plateau**, not a spike:
+
+```
+120° 1.08×   135° 1.13×   150° 1.12×     ~45° wide
+```
+
+PCA-minor predicted 119.6°, the plateau's leading edge, and delivered 1.08×.
+The predictor *works* here.
+
+**Region 3 (elongation 1.78) has a 1.9°-wide spike**: 43.1° costs 1.01× while
+45.0° costs 1.15×. A gain that evaporates within two degrees — and sitting
+exactly on the grid diagonal — is not a property to build a dial on. Treated as
+an artifact, not a signal.
+
+### The implementable rule
+
+**Compute PCA; sweep along the MINOR axis only when elongation exceeds ~3;
+otherwise leave the angle at 0°.**
+
+| | |
+|---|---|
+| gated heuristic (elongation > 3) | **1.04×**, free, no search |
+| full 12-angle search | 1.10×, ~2 min per region |
+
+The gated rule captures the largest region's whole plateau, skips the two where
+no axis exists, and costs one covariance matrix.
+
+Note the direction, which is the opposite of the textbook rule and worth stating
+so nobody "fixes" it later: passes run along the **minor** axis, i.e. *across*
+the narrow dimension. The classical "sweep along the long axis" minimises pass
+COUNT; this workload is bound by kept RETRACTS, and stepping along the long axis
+keeps consecutive passes adjacent so the relinker can chain them. `§0e`'s table
+is the evidence: fragments span 471–597 while time spans 933–1155 s, and
+retracts track time.
+
+### Honest value
+
+The three regions measured are 6,513 mm² of a ~9,000 mm² shallow band, which is
+itself ~30% of tier 1's covered area (MidSteep is 27,488 mm² and already
+contoured). So a 1.04–1.10× gain on the shallow band is **low single-digit
+percent of the operation**. Real, cheap in the gated form, and not a campaign.
+
+That is the honest ceiling for *any* sweep-direction work here, and it is why
+the next real step is cell decomposition (§0e) rather than a better angle
+heuristic: one angle per region cannot beat a region that needs three.
+
+---
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

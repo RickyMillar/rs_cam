@@ -517,6 +517,7 @@ fn wanaka_tier_and_band_region_widths() {
     }
     stage_d(&mesh, &index, &r10, &planned, stepover);
     stage_e(&mesh, &index, &r10, &planned, stepover);
+    stage_f(&mesh, &index, &r10, &planned, stepover, surface.cell_size());
 
     println!(
         "SHALLOW+MIDSTEEP TOTAL: {grand_frag} raster fragments vs {grand_rings} rings.\n\
@@ -903,5 +904,210 @@ fn stage_e(
          a branching web has no single long axis, which is what Morse /\n\
          boustrophedon cell decomposition exists to solve.\n",
         base_total / best_total
+    );
+}
+
+// ── STAGE F ─────────────────────────────────────────────────────────────
+//
+// Stage E proved sweep angle is worth ~1.10x, but it FOUND that angle by brute
+// force: 12 grid builds + 12 relinks per region, ~2 minutes. That is far too
+// expensive to do at plan time for every region.
+//
+// So: is the winning angle PREDICTABLE from the polygon alone? If the region's
+// principal axis (second moments of its interior, free to compute) lands near
+// the measured optimum, Lever 2 collapses from "sweep and cost 12 candidates"
+// to "compute one number" — and becomes a small change rather than a campaign.
+//
+// This prints the prediction against Stage E's measured winners so the two can
+// be compared directly. It asserts nothing: three regions is not a law.
+fn stage_f(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    stepover: f64,
+    cell: f64,
+) {
+    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::toolpath::raster_toolpath_from_grid;
+
+    println!("========== STAGE F — is the best angle PREDICTABLE from the polygon? ==========\n");
+
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::Shallow)
+        .map(|r| &r.polygon)
+        .collect();
+    shallow.sort_by(|a, b| {
+        b.area()
+            .partial_cmp(&a.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut minors: Vec<f64> = Vec::new();
+    println!(
+        "     {:>10}  {:>12}  {:>12}  {:>10}",
+        "area mm²", "PCA major", "PCA minor", "elongation"
+    );
+    for poly in shallow.iter().take(3) {
+        // Rasterise the interior and take second moments. Area-weighted by
+        // construction (every interior cell counts once), which is what makes
+        // this the shape's axis rather than its outline's.
+        let [x0, y0, x1, y1] = poly.bbox();
+        let nx = (((x1 - x0) / cell).ceil() as usize).saturating_add(2);
+        let ny = (((y1 - y0) / cell).ceil() as usize).saturating_add(2);
+        let (mut n, mut sx, mut sy) = (0.0_f64, 0.0_f64, 0.0_f64);
+        let mut pts: Vec<(f64, f64)> = Vec::new();
+        for r in 0..ny {
+            for c in 0..nx {
+                let x = x0 + c as f64 * cell;
+                let y = y0 + r as f64 * cell;
+                if poly.contains_point(&P2::new(x, y)) {
+                    n += 1.0;
+                    sx += x;
+                    sy += y;
+                    pts.push((x, y));
+                }
+            }
+        }
+        if n < 3.0 {
+            println!("     {:>10.1}  (too small to fit an axis)", poly.area());
+            minors.push(0.0);
+            continue;
+        }
+        let (cx, cy) = (sx / n, sy / n);
+        let (mut sxx, mut syy, mut sxy) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for (x, y) in &pts {
+            let (dx, dy) = (x - cx, y - cy);
+            sxx += dx * dx;
+            syy += dy * dy;
+            sxy += dx * dy;
+        }
+        sxx /= n;
+        syy /= n;
+        sxy /= n;
+        // Major-axis angle of the covariance matrix.
+        let theta = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+        let mut major_deg = theta.to_degrees();
+        while major_deg < 0.0 {
+            major_deg += 180.0;
+        }
+        while major_deg >= 180.0 {
+            major_deg -= 180.0;
+        }
+        let minor_deg = (major_deg + 90.0) % 180.0;
+        minors.push(minor_deg);
+        // Eigenvalues -> how elongated the shape is (1.0 = isotropic blob).
+        let tr = sxx + syy;
+        let det = sxx * syy - sxy * sxy;
+        let disc = ((tr * tr / 4.0) - det).max(0.0).sqrt();
+        let (l1, l2) = (tr / 2.0 + disc, (tr / 2.0 - disc).max(1e-12));
+        println!(
+            "     {:>10.1}  {major_deg:>11.1}°  {minor_deg:>11.1}°  {:>9.2}",
+            poly.area(),
+            (l1 / l2).sqrt()
+        );
+    }
+    // Now COST the predicted angle rather than eyeballing it. The prediction
+    // under test is the MINOR axis: Stage E's winners (135deg, 0deg, 45deg) sit
+    // near minor, not major — the opposite of the classical "sweep along the
+    // long axis" rule. The reason is that this workload is bound by kept
+    // RETRACTS, i.e. whether consecutive passes land close enough to relink,
+    // not by pass length.
+    println!("\n     --- costing the PCA-minor prediction against 0deg ---");
+    let kin = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let lk = LinkKinematics {
+        kinematics: kin,
+        max_feed_mm_min: MAX_FEED_MM_MIN,
+        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let (mut tot_base, mut tot_pred) = (0.0_f64, 0.0_f64);
+    println!(
+        "     {:>10}  {:>10}  {:>10}  {:>10}  {:>9}",
+        "area mm2", "minor deg", "t(0deg) s", "t(pred) s", "gain"
+    );
+    for (poly, minor) in shallow.iter().take(3).zip(minors.iter()) {
+        let region = RegionSet::new(vec![(*poly).clone()]);
+        let mut times = Vec::new();
+        for angle in [0.0_f64, *minor] {
+            // 0/90/180/360 take dropcutter's axis-aligned fast path; nudge so a
+            // predicted 90deg really does get a rotated grid.
+            let a = if (angle - 90.0).abs() < 0.05 {
+                89.9
+            } else {
+                angle
+            };
+            let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+                mesh,
+                index,
+                cutter,
+                stepover,
+                a,
+                effective_min_z,
+            );
+            let raster = raster_toolpath_from_grid(
+                &grid,
+                FEED_MM_MIN,
+                PLUNGE_MM_MIN,
+                safe_z,
+                Some(effective_min_z),
+                Some(&region),
+            );
+            let rp = rs_cam_core::surface_link::RelinkParams {
+                hookup_distance: 25.0,
+                stock_to_leave: 0.0,
+                sampling: 0.5,
+                feed_rate: FEED_MM_MIN,
+                plunge_rate: PLUNGE_MM_MIN,
+                safe_z,
+                link_kinematics: Some(&lk),
+                reorder: true,
+                boundary: Some(&region),
+                link_ceiling: None,
+                flush_ride: false,
+                airborne_links_may_leave_territory: false,
+            };
+            let (linked, _rep) = rs_cam_core::surface_link::relink_fragments(
+                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                mesh,
+                index,
+                cutter,
+                &rp,
+            );
+            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let tp = linked.reconcile(&mut ch).into_inner().toolpath;
+            times.push(compute_cycle_time(
+                &tp,
+                &kin,
+                MAX_FEED_MM_MIN,
+                RAPID_FEED_MM_MIN,
+            ));
+        }
+        let (t0, tpred) = (times[0], times[1]);
+        tot_base += t0;
+        tot_pred += tpred;
+        println!(
+            "     {:>10.1}  {minor:>10.1}  {t0:>10.1}  {tpred:>10.1}  {:>8.2}x",
+            poly.area(),
+            t0 / tpred
+        );
+    }
+    println!(
+        "\n     PCA-MINOR PREDICTION: 0deg {tot_base:.1} s -> predicted {tot_pred:.1} s = {:.2}x",
+        tot_base / tot_pred
+    );
+    println!(
+        "     (swept-best ceiling from Stage E was 1.10x)\n\
+         If the prediction captures most of that ceiling, Lever 2 is one\n\
+         covariance matrix per region - a small change, not a campaign.\n"
     );
 }
