@@ -2,30 +2,30 @@ format_version = 3
 toolpaths = []
 
 [job]
-name = "wanaka_full_tuned"
+name = "wanaka200"
 
 [job.stock]
-x = 140.0
-y = 150.0
+x = 240.0
+y = 250.0
 z = 25.0
 origin_x = -20.0
 origin_y = -25.0
-origin_z = -20.0
+origin_z = -18.0
 padding = 5.0
 workholding_rigidity = "Medium"
 auto_from_model = false
 
 [job.stock.material.SolidWood]
-species = "GenericHardwood"
+species = "WhiteOak"
 
 [[job.stock.alignment_pins]]
-x = 2.5
-y = 2.5
+x = 10.0
+y = 125.0
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 137.5
-y = 147.5
+x = 226.0
+y = 125.0
 diameter = 6.0
 
 [job.post]
@@ -46,8 +46,9 @@ safety_factor = 0.75
 min_rpm = 8000.0
 max_rpm = 24000.0
 
-[job.machine.power.ConstantPower]
-power_kw = 0.8
+[job.machine.power.VfdConstantTorque]
+rated_power_kw = 1.5
+rated_rpm = 24000.0
 
 [job.machine.chip_load]
 k0 = 0.024
@@ -64,41 +65,23 @@ adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
 
 [job.machine.kinematics]
-acceleration_mm_s2 = 350.0
-junction_deviation_mm = 0.01
+acceleration_mm_s2 = 423.3333333333333
+acceleration_xyz_mm_s2 = [
+    500.0,
+    500.0,
+    270.0,
+]
+junction_deviation_mm = 0.02
 
 [[tools]]
-id = 2
-name = "Tapered Ball 2mm tip / 7° / 6mm shank"
-type = "tapered_ball_nose"
-diameter = 1.0
-cutting_length = 25.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 2.0
-included_angle = 90.0
-taper_half_angle = 7.0
-shaft_diameter = 6.0
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 35.0
-flute_count = 2
-tool_number = 2
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 3
-name = "End Mill"
+id = 0
+name = "6mm 2F Carbide End Mill"
 type = "end_mill"
 diameter = 6.0
 cutting_length = 25.0
 helix_deg = 30.0
 corner_radius_mm = 0.0
-corner_radius = 2.0
+corner_radius = 0.0
 included_angle = 90.0
 taper_half_angle = 15.0
 shaft_diameter = 6.35
@@ -107,83 +90,14 @@ shank_diameter = 6.35
 shank_length = 20.0
 stickout = 45.0
 flute_count = 2
-tool_number = 3
+tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
 
 [[tools]]
-id = 4
-name = '1" (25.4mm)'
-type = "end_mill"
-diameter = 25.4
-cutting_length = 5.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 90.0
-taper_half_angle = 15.0
-shaft_diameter = 6.0
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 20.0
-flute_count = 3
-tool_number = 4
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 5
-name = "R2.0mm x 6mm x 20mm 2F Tapered Ball"
-type = "tapered_ball_nose"
-diameter = 4.0
-cutting_length = 20.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 90.0
-taper_half_angle = 2.9
-shaft_diameter = 6.026312585724034
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 35.0
-flute_count = 2
-tool_number = 5
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = "endmill.com.au"
-product_id = "TBN-R2.0-6-20"
-
-[[tools]]
-id = 6
-name = "R1.0mm x 6mm x 20mm 2F Tapered Ball"
-type = "tapered_ball_nose"
-diameter = 2.0
-cutting_length = 20.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 90.0
-taper_half_angle = 5.7
-shaft_diameter = 6.0
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 35.0
-flute_count = 2
-tool_number = 6
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = "endmill.com.au"
-product_id = "TBN-R1.0-6-20"
-
-[[tools]]
-id = 7
+id = 1
 name = "R0.5mm x 6mm x 20mm 2F Tapered Ball"
 type = "tapered_ball_nose"
 diameter = 1.0
@@ -199,14 +113,37 @@ shank_diameter = 6.0
 shank_length = 20.0
 stickout = 35.0
 flute_count = 2
-tool_number = 7
+tool_number = 6
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R0.5-6-20"
 
 [[tools]]
-id = 8
+id = 2
+name = "R1.0mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 2.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 5.7
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 8
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R1.0-6-20"
+
+[[tools]]
+id = 3
 name = "R1.5mm x 6mm x 30.5mm 2F Tapered Ball"
 type = "tapered_ball_nose"
 diameter = 3.0
@@ -222,61 +159,38 @@ shank_diameter = 6.0
 shank_length = 20.0
 stickout = 45.5
 flute_count = 2
-tool_number = 8
+tool_number = 15
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.5-6-30.5"
 
 [[tools]]
-id = 9
-name = "90deg V-Bit 12.7mm 2F"
-type = "v_bit"
-diameter = 12.7
-cutting_length = 12.7
+id = 4
+name = "R2.0mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 4.0
+cutting_length = 20.0
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 90.0
-taper_half_angle = 45.0
-shaft_diameter = 6.35
+taper_half_angle = 2.9
+shaft_diameter = 6.0
 holder_diameter = 25.0
-shank_diameter = 6.35
+shank_diameter = 6.0
 shank_length = 20.0
-stickout = 27.7
-flute_count = 2
-tool_number = 9
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 10
-name = "60deg V-Bit 12.7mm 2F"
-type = "v_bit"
-diameter = 12.7
-cutting_length = 12.7
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 60.0
-taper_half_angle = 30.0
-shaft_diameter = 6.35
-holder_diameter = 25.0
-shank_diameter = 6.35
-shank_length = 20.0
-stickout = 27.7
+stickout = 35.0
 flute_count = 2
 tool_number = 10
 tool_material = "carbide"
 cut_direction = "up_cut"
-vendor = ""
-product_id = ""
+vendor = "endmill.com.au"
+product_id = "TBN-R2.0-6-20"
 
 [[tools]]
-id = 11
-name = "20° V-bit"
+id = 5
+name = "20 deg V-bit 5.5mm 2F"
 type = "v_bit"
 diameter = 5.5
 cutting_length = 15.0
@@ -291,61 +205,15 @@ shank_diameter = 6.0
 shank_length = 20.0
 stickout = 30.0
 flute_count = 2
-tool_number = 11
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 12
-name = "6mm Ball Nose 2F"
-type = "ball_nose"
-diameter = 6.0
-cutting_length = 25.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 90.0
-taper_half_angle = 15.0
-shaft_diameter = 6.0
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 40.0
-flute_count = 2
-tool_number = 12
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 13
-name = "3mm Ball Endmill"
-type = "ball_nose"
-diameter = 3.0
-cutting_length = 12.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 90.0
-taper_half_angle = 15.0
-shaft_diameter = 6.0
-holder_diameter = 25.0
-shank_diameter = 6.0
-shank_length = 20.0
-stickout = 27.0
-flute_count = 3
-tool_number = 13
+tool_number = 20
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
 
 [[models]]
-id = 1
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl"
+id = 0
+path = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl"
 name = "terrain.stl"
 kind = "stl"
 
@@ -353,8 +221,17 @@ kind = "stl"
 kind = "millimeters"
 
 [[models]]
+id = 1
+path = "/home/ricky/Downloads/wanaka200/rivmap_export/rivers_aligned.dxf"
+name = "rivers_aligned.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
 id = 2
-path = "/home/ricky/Downloads/wanaka100/lakes.dxf"
+path = "/home/ricky/Downloads/wanaka200/rivmap_export/lakes.dxf"
 name = "lakes.dxf"
 kind = "dxf"
 
@@ -363,17 +240,8 @@ kind = "millimeters"
 
 [[models]]
 id = 3
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/holes.dxf"
+path = "/home/ricky/Downloads/wanaka200/rivmap_export/holes.dxf"
 name = "holes.dxf"
-kind = "dxf"
-
-[models.units]
-kind = "millimeters"
-
-[[models]]
-id = 5
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/rivers.dxf"
-name = "rivers.dxf"
 kind = "dxf"
 
 [models.units]
@@ -388,12 +256,12 @@ fixtures = []
 keep_out_zones = []
 
 [[setups.toolpaths]]
-id = 14
-name = "Pin Drill"
+id = 0
+name = "1 Pin Drill"
 type = "alignment_pin_drill"
 enabled = true
-tool_id = 3
-model_id = 1
+tool_id = 0
+model_id = 0
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -408,15 +276,16 @@ holes = [
     2.5,
 ],
     [
-    137.5,
-    147.5,
+    237.5,
+    247.5,
 ],
 ]
 spoilboard_penetration = 2.0
 cycle = "peck"
 peck_depth = 3.0
-feed_rate = 300.0
+feed_rate = 2400.0
 retract_z = 2.0
+spindle_rpm = 8000
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -427,18 +296,19 @@ dogbone = false
 dogbone_angle = 90.0
 lead_in_out = false
 lead_radius = 2.0
-link_moves = false
+link_moves = true
 link_max_distance = 10.0
 link_feed_rate = 500.0
-arc_fitting = false
+arc_fitting = true
 arc_tolerance = 0.05
-segment_merge = false
+segment_merge = true
 segment_merge_tolerance = 0.3
-feed_optimization = false
+feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
-optimize_rapid_order = false
+optimize_rapid_order = true
 retract_strategy = "full"
+air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -462,16 +332,25 @@ containment = "center"
 offset = 0.0
 
 [setups.toolpaths.debug_options]
-enabled = false
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
 
 [[setups.toolpaths]]
-id = 4
-name = "Back Rough"
+id = 1
+name = "2 Back Rough"
 type = "adaptive3d"
 enabled = true
-tool_id = 3
-model_id = 1
-boundary_inherit = false
+tool_id = 0
+model_id = 0
+boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
 
@@ -479,12 +358,12 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 2.53
-depth_per_pass = 3.0
+stepover = 2.0
+depth_per_pass = 5.46
 stock_to_leave_radial = 0.5
 stock_to_leave_axial = 4.0
-feed_rate = 4000.0
-plunge_rate = 750.0
+feed_rate = 1000.0
+plunge_rate = 541.0
 tolerance = 0.1
 min_cutting_radius = 0.0
 entry_style = "plunge"
@@ -494,11 +373,11 @@ helix_pitch = 2.0
 fine_stepdown = 0.0
 detect_flat_areas = false
 region_ordering = "global"
-clearing_strategy = "agent_search"
+clearing_strategy = "contour_parallel"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
 z_blend = false
-spindle_rpm = 12194
+spindle_rpm = 20000
 mill_shallow_areas = false
 min_region_cut_length_mm = 15.0
 stay_down_clearance_mm = 0.5
@@ -517,48 +396,29 @@ link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = true
 arc_tolerance = 0.05
-segment_merge = false
+segment_merge = true
 segment_merge_tolerance = 0.3
-feed_optimization = false
+feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
+air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.clearance_z.value]
-reference = "stock_top"
-offset = 16.02068018913269
+mode = "auto"
 
 [setups.toolpaths.heights.retract_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.retract_z.value]
-reference = "stock_top"
-offset = 6.02068018913269
+mode = "auto"
 
 [setups.toolpaths.heights.feed_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.feed_z.value]
-reference = "stock_top"
-offset = 2.0
+mode = "auto"
 
 [setups.toolpaths.heights.top_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.top_z.value]
-reference = "model_top"
-offset = 0.0
+mode = "auto"
 
 [setups.toolpaths.heights.bottom_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.bottom_z.value]
-reference = "model_bottom"
-offset = -0.0
+mode = "auto"
 
 [setups.toolpaths.boundary]
 enabled = true
@@ -567,14 +427,30 @@ containment = "inside"
 offset = 0.0
 
 [setups.toolpaths.debug_options]
-enabled = false
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "manual"
 
 [[setups.toolpaths]]
-id = 7
-name = "Holes"
+id = 2
+name = "3 Holes (6mm pilot)"
 type = "drill"
 enabled = true
-tool_id = 3
+tool_id = 0
 model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
@@ -589,8 +465,9 @@ cycle = "peck"
 peck_depth = 3.0
 dwell_time = 0.5
 retract_amount = 0.5
-feed_rate = 300.0
+feed_rate = 2400.0
 retract_z = 2.0
+spindle_rpm = 8000
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -606,13 +483,14 @@ link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = true
 arc_tolerance = 0.05
-segment_merge = false
+segment_merge = true
 segment_merge_tolerance = 0.3
-feed_optimization = false
+feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
+air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -636,427 +514,122 @@ containment = "center"
 offset = 0.0
 
 [setups.toolpaths.debug_options]
-enabled = false
-
-[[setups.toolpaths]]
-id = 12
-name = "Rivers (back) (copy)"
-type = "project_curve"
-enabled = false
-tool_id = 3
-model_id = 5
-boundary_inherit = false
-stock_source = "from_remaining_stock"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "project_curve"
-
-[setups.toolpaths.operation.params]
-depth = 1.0
-point_spacing = 0.5
-feed_rate = 1500.0
-plunge_rate = 527.0
-surface_model_id = 1
-direction = "from_below"
-side = "center"
-spindle_rpm = 10610
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_radius = 2.0
-helix_pitch = 1.0
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-retract_strategy = "full"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
 enabled = true
-source = "model_silhouette"
-containment = "inside"
-offset = 0.0
 
-[setups.toolpaths.debug_options]
-enabled = false
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
 
 [[setups.toolpaths]]
-id = 5
-name = "Rivers (back)"
+id = 3
+name = "4 Rivers (back, V-bit)"
 type = "project_curve"
 enabled = true
-tool_id = 11
-model_id = 5
-boundary_inherit = false
-stock_source = "from_remaining_stock"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "project_curve"
-
-[setups.toolpaths.operation.params]
-depth = 0.4
-point_spacing = 0.5
-feed_rate = 2500.0
-plunge_rate = 150.0
-surface_model_id = 1
-direction = "from_below"
-side = "center"
-spindle_rpm = 18000
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_radius = 2.0
-helix_pitch = 1.0
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-retract_strategy = "full"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = true
-source = "model_silhouette"
-containment = "inside"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = true
-
-[[setups.toolpaths]]
-id = 6
-name = "Lakes (back, inside)"
-type = "project_curve"
-enabled = true
-tool_id = 11
-model_id = 2
-boundary_inherit = false
-stock_source = "from_remaining_stock"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "project_curve"
-
-[setups.toolpaths.operation.params]
-depth = 0.5
-point_spacing = 0.5
-feed_rate = 3000.0
-plunge_rate = 150.0
-surface_model_id = 1
-direction = "from_below"
-side = "inside"
-spindle_rpm = 18000
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_radius = 2.0
-helix_pitch = 1.0
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-retract_strategy = "full"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = true
-source = "model_silhouette"
-containment = "inside"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = true
-
-[[setups]]
-id = 1
-name = "Setup 2"
-face_up = "top"
-z_rotation = "90"
-fixtures = []
-keep_out_zones = []
-
-[[setups.toolpaths]]
-id = 10
-name = "3D Rough 6"
-type = "adaptive3d"
-enabled = true
-tool_id = 3
-model_id = 1
-boundary_inherit = false
-stock_source = "from_remaining_stock"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "adaptive3d"
-
-[setups.toolpaths.operation.params]
-stepover = 2.2
-depth_per_pass = 2.6
-stock_to_leave_radial = 0.5
-stock_to_leave_axial = 0.5
-feed_rate = 4000.0
-plunge_rate = 500.0
-tolerance = 0.1
-min_cutting_radius = 0.0
-entry_style = "plunge"
-ramp_angle_deg = 10.0
-helix_radius_factor = 0.3
-helix_pitch = 2.0
-fine_stepdown = 0.0
-detect_flat_areas = false
-region_ordering = "global"
-clearing_strategy = "agent_search"
-trochoid_cap_mult = 1.6
-engagement_measure = "DiskArea"
-z_blend = false
-spindle_rpm = 12194
-mill_shallow_areas = false
-min_region_cut_length_mm = 15.0
-stay_down_clearance_mm = 0.5
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_radius = 2.0
-helix_pitch = 1.0
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = true
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-retract_strategy = "minimum"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = true
-source = "model_silhouette"
-containment = "inside"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = true
-
-[[setups.toolpaths]]
-id = 11
-name = "3D Finish 6"
-type = "drop_cutter"
-enabled = false
-tool_id = 2
-model_id = 1
-boundary_inherit = false
-stock_source = "from_remaining_stock"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "drop_cutter"
-
-[setups.toolpaths.operation.params]
-stepover = 0.3
-feed_rate = 3000.0
-plunge_rate = 150.0
-min_z = -20.0
-slope_from = 0.0
-slope_to = 90.0
-spindle_rpm = 21000
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_radius = 2.0
-helix_pitch = 1.0
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = true
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-retract_strategy = "minimum"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.clearance_z.value]
-reference = "stock_top"
-offset = 16.02068018913269
-
-[setups.toolpaths.heights.retract_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.retract_z.value]
-reference = "stock_top"
-offset = 6.02068018913269
-
-[setups.toolpaths.heights.feed_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.feed_z.value]
-reference = "stock_top"
-offset = 2.0
-
-[setups.toolpaths.heights.top_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.top_z.value]
-reference = "stock_top"
-offset = 0.0
-
-[setups.toolpaths.heights.bottom_z]
-mode = "from_reference"
-
-[setups.toolpaths.heights.bottom_z.value]
-reference = "stock_top"
-offset = -50.0
-
-[setups.toolpaths.boundary]
-enabled = true
-source = "model_silhouette"
-containment = "inside"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = false
-
-[[setups.toolpaths]]
-id = 15
-name = "Unified Finish 6 (live v2)"
-type = "unified_finish"
-enabled = true
-tool_id = 2
+tool_id = 5
 model_id = 1
 boundary_inherit = true
 stock_source = "from_remaining_stock"
 coolant = "off"
 
 [setups.toolpaths.operation]
-kind = "unified_finish"
+kind = "project_curve"
 
 [setups.toolpaths.operation.params]
-steep_threshold_deg = 45.0
-waterline_threshold_deg = 75.0
-overlap_mm = 2.0
-scallop_height = 0.011
-tolerance = 0.05
-raster_stepover = 0.3
-z_step = 0.3
-sampling = 0.5
-stock_to_leave = 0.0
-feed_rate = 3000.0
-plunge_rate = 150.0
-spindle_rpm = 21000
+depth = 0.1
+point_spacing = 0.5
+feed_rate = 1200.0
+plunge_rate = 496.0
+surface_model_id = 0
+direction = "from_below"
+side = "center"
+spindle_rpm = 24000
+chain_distance_mm = 15.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 30.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "minimum"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[[setups.toolpaths]]
+id = 4
+name = "5 Lakes (back, V-bit)"
+type = "project_curve"
+enabled = true
+tool_id = 5
+model_id = 2
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = 0.3
+point_spacing = 0.5
+feed_rate = 1200.0
+plunge_rate = 496.0
+surface_model_id = 0
+direction = "from_below"
+side = "inside"
+spindle_rpm = 24000
+chain_distance_mm = 15.0
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -1079,41 +652,380 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
+air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
-mode = "manual"
-value = 41.02068018913269
+mode = "auto"
 
 [setups.toolpaths.heights.retract_z]
-mode = "manual"
-value = 31.02068018913269
+mode = "auto"
 
 [setups.toolpaths.heights.feed_z]
-mode = "manual"
-value = 27.0
+mode = "auto"
 
 [setups.toolpaths.heights.top_z]
-mode = "manual"
-value = 25.0
+mode = "auto"
 
 [setups.toolpaths.heights.bottom_z]
-mode = "manual"
-value = -25.0
+mode = "auto"
 
 [setups.toolpaths.boundary]
 enabled = true
 source = "model_silhouette"
-containment = "inside"
+containment = "center"
 offset = 0.0
 
 [setups.toolpaths.debug_options]
 enabled = true
 
 [setups.toolpaths.feeds_provenance.feed_rate]
-source = "manual"
+source = "formula"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "manual"
+source = "formula"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[[setups]]
+id = 1
+name = "Setup 2 — front"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 5
+name = "6 3D Rough (front)"
+type = "adaptive3d"
+enabled = true
+tool_id = 0
+model_id = 0
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.2
+depth_per_pass = 4.199999999999999
+stock_to_leave_radial = 0.3
+stock_to_leave_axial = 0.5
+feed_rate = 750.0
+plunge_rate = 541.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 15000
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.stepover]
 source = "manual"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f"
+
+[[setups.toolpaths]]
+id = 16
+name = "Finish tier 0 (R1.5)"
+type = "unified_finish"
+enabled = true
+tool_id = 3
+model_id = 0
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "unified_finish"
+
+[setups.toolpaths.operation.params]
+steep_threshold_deg = 45.0
+waterline_threshold_deg = 75.0
+overlap_mm = 2.0
+scallop_height = 0.03
+tolerance = 0.05
+raster_stepover = 0.596992462263972
+z_step = 0.596992462263972
+sampling = 0.5
+stock_to_leave = 0.0
+feed_rate = 913.0
+plunge_rate = 270.0
+spindle_rpm = 18500
+pencil_claims = false
+min_rest_depth_mm = 0.02
+claims_reference = "auto"
+territory_clip = false
+intra_region_hookup_mm = 25.0
+crease_hookup_mm = 5.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "manual"
+value = -3.013947677612305
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.planned_tier_regions]
+tool_ids = [
+    3,
+    2,
+]
+tier = 0
+cell_mm = 0.3
+tolerance_mm = 0.05
+margin_mm = 0.5
+treatment = "slope_compensated"
+
+[setups.toolpaths.boundary.source.planned_tier_regions.islands]
+coarseness = 1.0
+overlap_mm = 2.0
+max_regions_per_tier = 24
+rim_erosion_mm = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.planner_origin]
+plan_id = 2
+tier = 0
+tier_count = 2
+
+[[setups.toolpaths]]
+id = 17
+name = "Finish tier 1 (R1.0)"
+type = "unified_finish"
+enabled = true
+tool_id = 2
+model_id = 0
+boundary_inherit = false
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "unified_finish"
+
+[setups.toolpaths.operation.params]
+steep_threshold_deg = 45.0
+waterline_threshold_deg = 75.0
+overlap_mm = 2.0
+scallop_height = 0.03
+tolerance = 0.05
+raster_stepover = 0.4862098312457287
+z_step = 0.4862098312457287
+sampling = 0.5
+stock_to_leave = 0.0
+feed_rate = 735.0
+plunge_rate = 180.0
+spindle_rpm = 18500
+pencil_claims = false
+min_rest_depth_mm = 0.02
+claims_reference = "auto"
+territory_clip = false
+intra_region_hookup_mm = 25.0
+crease_hookup_mm = 5.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+retract_strategy = "full"
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "manual"
+value = -3.013947677612305
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.planned_tier_regions]
+tool_ids = [
+    3,
+    2,
+]
+tier = 1
+cell_mm = 0.3
+tolerance_mm = 0.05
+margin_mm = 0.5
+treatment = "slope_compensated"
+
+[setups.toolpaths.boundary.source.planned_tier_regions.islands]
+coarseness = 1.0
+overlap_mm = 2.0
+max_regions_per_tier = 24
+rim_erosion_mm = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-scallop-3175-2f"
+
+[setups.toolpaths.planner_origin]
+plan_id = 2
+tier = 1
+tier_count = 2

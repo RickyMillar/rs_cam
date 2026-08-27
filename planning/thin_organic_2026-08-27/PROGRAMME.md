@@ -11,6 +11,31 @@
 > is building on an unmeasured premise — this investigation already refuted its
 > own top-ranked lever that way (`FINDINGS.md` §0d).
 
+## OUT OF PROGRAMME — split to `planning/rapid_safety_2026-08-28/PLAN.md`
+
+**Operator ruling, 2026-08-28:** *"it does sound very critical, but a separate
+path. It should be a separate phase."*
+
+The audit came back after this programme was drafted, and Track B briefly became
+a bucket for everything it found. Two groups do not belong in a *finishing
+efficiency* programme and now have their own phase:
+
+- **Phase S — rapid-descent blind spot.** `adaptive3d` picks a rapid-descent
+  floor from a zero-radius point probe, and `collision.rs` — sole producer of
+  `rapid_collision_count` — uses one too, so the detector cannot see the class
+  of event the emitter can produce. Roughing, not finishing; safety, not
+  efficiency; verified by replaying emitted G-code against a fine dexel, not by
+  the F-034 integrator every track here uses.
+- **Phase M — load-lane engagement normalised by the shank.** Empties gates
+  through the `< 0.02` filter and poisons `air_cut_pct`. It is a gate/metric
+  integrity problem, and it will turn currently-green verdicts red on tapers.
+
+Neither blocks any track below. **Phase M must land before Track F**, or Track F
+validates against a poisoned metric — and note that some measurements in
+`FINDINGS.md` used air-cut readings on a taper and inherit that caveat.
+
+---
+
 ## What is already settled (do not re-litigate)
 
 | claim | evidence |
@@ -60,7 +85,7 @@ These are not a track. Anything that fails one of these is not done.
 
 ---
 
-## Track A — Tool-profile clearance *(IN FLIGHT)*
+## Track A — Tool-profile clearance *(A1 LANDED 994996b7)*
 
 **The measured prize, and the only one that is not confined to one band.**
 
@@ -71,7 +96,7 @@ touch the cutter while the code reached 3.0 mm — a 2× over-reach that lifted
 every link to the height of ridges it could never hit. Those lifted links are
 the "huge walls" the operator sees; they are not retracts.
 
-**A1** *(in flight)* — profile-aware ceiling: `max over r of [material_top(r) −
+**A1 — DONE 2026-08-28** (`994996b7`, gate 237 binaries / 3453 passed) — profile-aware ceiling: `max over r of [material_top(r) −
 height_at_radius(r)]`, replacing the flat disc. Contained: one production
 caller.
 **A2** — promote it to the shared primitive X2 demands: *given a heightfield, a
@@ -87,7 +112,7 @@ viewport should stop drawing walls, which is the operator-visible acceptance.
 
 ---
 
-## Track B — Radius/profile audit and fix wave *(AUDIT IN FLIGHT)*
+## Track B — Profile adoption in the finishing path *(B1 DONE)*
 
 Track A found one instance. The question is how many more there are.
 
@@ -99,13 +124,42 @@ diameter up to 14× on a tapered ball, where two of the gates block export so th
 failure mode is a **silent pass**. Track A's find is the same class, live, after
 that programme closed.
 
-**B1** *(in flight)* — read-only sweep for scalar-radius-where-profile-belongs.
-Ranked UNSAFE (silent gouge / silently-passing gate) before SAFE-but-costly.
-**B2** — fix wave, ordered by that ranking. Unsafe first, always.
-**B3** — decide R-12's fate with the evidence in hand.
-**B4** — a sentry class that makes the defect hard to reintroduce: for a
+**B1 — DONE 2026-08-28.** `RADIUS_AUDIT_2026-08-28.md`. It found more than this
+track should own: the two heaviest groups are now **Phases S and M** in
+`planning/rapid_safety_2026-08-28/PLAN.md`.
+What follows is the finishing-scoped remainder.
+
+**B2 — adopt the profile primitive where it is finishing work.**
+`optimize_entry_descents` (S1) is the direct sibling of the ceiling fix already
+landed — same flat-disc-at-envelope defect, and the surplus is spent as *fed
+plunge*, up to ~9 mm per entry on this board. Note it is currently ledgered
+"DO NOT TOUCH" (`TOOL_SCALE_SEMANTICS.md` §8 item 9, assigned to A/M10); that
+ruling predates the primitive and should be revisited rather than obeyed by
+reflex. Then S5 (pencil's search bound under-reaches at the tip — widening to
+the envelope is now strictly better and free) and S3 (`scallop.rs:1826`,
+`steep_shallow.rs:559`, the two consumers never migrated off
+`legacy_envelope_quarter`).
+
+**B3 — display correctness (X3).** U11: the engagement diagram draws a taper as
+a **cylinder** under a "Show the math" label, and the vendor-LUT viewer
+green-highlights a different row than the recommendation used. S6: the adaptive3d
+"Optimal load" slider maps on the tip while the engine uses
+`engagement_radius_mm(dpp)`, so the displayed % is over-stated (20% low at
+DPP 3, 90% at DPP 10). S7: `PlannerToolRow` carries no envelope, so
+`rim_erosion_mm` can never be seeded from the dialog its own tooltip points at.
+These are operator-trusted surfaces showing the wrong number — cheap, and
+squarely X3.
+
+**B4 — a sentry class that makes the defect hard to reintroduce:** for a
 non-cylindrical cutter, assert profile-derived and radius-derived answers
-DIFFER where they should, so a future scalar substitution fails loudly.
+DIFFER where they should, so a future scalar substitution fails loudly instead
+of reading plausibly.
+
+**B5 — two ledger corrections** the audit established:
+`TOOL_SCALE_SEMANTICS.md` §8 item 7's "keep the envelope" ruling is **wrong** for
+two immersion-angle sites (width-at-depth questions wearing a force-lane badge);
+and CLAUDE.md is **stale** where it says the chipload heat-map still carries the
+F-HEATMAP mismatch — that is closed.
 
 *GUI (X3):* none — invisible correctness. Unsafe findings may need an operator
 warning surface if any currently passes silently.
