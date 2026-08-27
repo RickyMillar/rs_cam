@@ -515,11 +515,226 @@ fn wanaka_tier_and_band_region_widths() {
         grand_frag += band_frag;
         grand_rings += band_rings;
     }
+    stage_d(&mesh, &index, &r10, &planned, stepover);
+
     println!(
         "SHALLOW+MIDSTEEP TOTAL: {grand_frag} raster fragments vs {grand_rings} rings.\n\
          Read against FINDINGS.md: the width-based routing rule (§1.1) is dead — \
          Stage B measured 0% of shallow area under 8 stepovers. If Stage C's \
          fragment ratio is large anyway, the LEVER survives and only its \
          TRIGGER needs replacing (elongation/crossings, not width)."
+    );
+}
+
+// ── STAGE D ─────────────────────────────────────────────────────────────
+//
+// The one question Stage C cannot answer: **fewer junctions is not less
+// time.** `STRATEGY_ADVISOR_2026-06-17.md` measured parallel 446 s vs spiral
+// 828 s on this very board at the load limit, because contour paths chain
+// short chords and the Grbl junction-deviation model crawls every corner. A
+// 20x junction win can still lose the wall clock.
+//
+// So generate BOTH patterns over the SAME region with the SAME tool, feeds and
+// machine, and cost each through the F-034 integrator. No production code is
+// written to do this — the two generators already exist and `unified_finish`
+// already calls both, just on different bands.
+
+/// Shapeoko Pro XXL, read from `wanaka200_mt2.toml`'s `[job.machine]` /
+/// `[job.machine.kinematics]`, so the integrator sees the operator's real
+/// envelope rather than a default.
+const MACHINE_ACCEL_XYZ: [f64; 3] = [500.0, 500.0, 270.0];
+const MACHINE_ACCEL_SCALAR: f64 = 423.333_333_333_333_3;
+const JUNCTION_DEVIATION_MM: f64 = 0.02;
+const MAX_FEED_MM_MIN: f64 = 10_000.0;
+const RAPID_FEED_MM_MIN: f64 = 5_000.0;
+/// Tier-1 op feeds from the same file.
+const FEED_MM_MIN: f64 = 735.0;
+const PLUNGE_MM_MIN: f64 = 180.0;
+
+fn stage_d(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    stepover: f64,
+) {
+    use rs_cam_core::machine_kinematics::{MachineKinematics, compute_cycle_time};
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::scallop::{
+        ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
+    };
+    use rs_cam_core::toolpath::raster_toolpath_from_grid;
+
+    println!("========== STAGE D — integrated TIME, raster vs cascade (same region) ==========\n");
+
+    let kin = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let never_cancel = || false;
+
+    // One mesh-global raster grid, exactly as the Shallow band builds it
+    // (`direction_deg = 0.0`), shared across the regions below.
+    let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        cutter,
+        stepover,
+        0.0,
+        effective_min_z,
+    );
+
+    // The three largest Shallow regions — where the time actually is.
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::Shallow)
+        .map(|r| &r.polygon)
+        .collect();
+    shallow.sort_by(|a, b| {
+        b.area()
+            .partial_cmp(&a.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    println!(
+        "   machine: accel [{:.0},{:.0},{:.0}] mm/s², junction dev {JUNCTION_DEVIATION_MM} mm, \
+         rapid {RAPID_FEED_MM_MIN:.0}; feed {FEED_MM_MIN:.0}, plunge {PLUNGE_MM_MIN:.0} mm/min\n",
+        MACHINE_ACCEL_XYZ[0], MACHINE_ACCEL_XYZ[1], MACHINE_ACCEL_XYZ[2]
+    );
+    println!(
+        "     {:>9}  {:>8} {:>9} {:>9}  {:>8} {:>9} {:>9}  {:>7}",
+        "area mm²", "R moves", "R cut mm", "R time s", "C moves", "C cut mm", "C time s", "speedup"
+    );
+
+    let (mut tot_r, mut tot_c) = (0.0_f64, 0.0_f64);
+    for poly in shallow.iter().take(3) {
+        let region = RegionSet::new(vec![(*poly).clone()]);
+
+        // (a) RASTER — the exact call the Shallow band makes today.
+        let raster = raster_toolpath_from_grid(
+            &grid,
+            FEED_MM_MIN,
+            PLUNGE_MM_MIN,
+            safe_z,
+            Some(effective_min_z),
+            Some(&region),
+        );
+        // FAIR COMPARISON: production does NOT ship the bare raster — every
+        // region's toolpath goes through `relink_fragments` at
+        // `intra_region_hookup_mm = 25.0` (unified_finish's Step 4). Comparing
+        // an unrelinked raster against a natively-chained cascade would be
+        // rigged in the cascade's favour, so relink the raster the same way.
+        let lk = rs_cam_core::machine_kinematics::LinkKinematics {
+            kinematics: kin,
+            max_feed_mm_min: MAX_FEED_MM_MIN,
+            rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+        };
+        let rp = rs_cam_core::surface_link::RelinkParams {
+            hookup_distance: 25.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: FEED_MM_MIN,
+            plunge_rate: PLUNGE_MM_MIN,
+            safe_z,
+            link_kinematics: Some(&lk),
+            reorder: true,
+            boundary: Some(&region),
+            link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
+        };
+        let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+            mesh,
+            index,
+            cutter,
+            &rp,
+        );
+        let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+        let raster = linked.reconcile(&mut channels).into_inner().toolpath;
+        let r_time = compute_cycle_time(&raster, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+        let r_cut = raster.total_cutting_distance();
+        println!(
+            "       (raster relinked: {} fragments, {} linked, {} kept retracts)",
+            rep.fragments, rep.surface_links, rep.retract_links
+        );
+
+        // (b) CASCADE — the exact call the MidSteep band makes, same region.
+        let sp = ScallopParams {
+            scallop_height: CUSP_HEIGHT_MM,
+            tolerance: OP_TOLERANCE_MM,
+            direction: ScallopDirection::default(),
+            continuous: true,
+            slope_from: 0.0,
+            slope_to: 90.0,
+            feed_rate: FEED_MM_MIN,
+            plunge_rate: PLUNGE_MM_MIN,
+            safe_z,
+            stock_to_leave: 0.0,
+            intra_pass_hookup_mm: 0.0,
+            link_kinematics: None,
+        };
+        let Ok((cascade, _, _)) = scallop_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            &sp,
+            None,
+            Some(&region),
+            &never_cancel,
+        ) else {
+            println!("     (cascade cancelled)");
+            continue;
+        };
+        // Same treatment for the cascade — production relinks every region's
+        // toolpath regardless of which generator produced it, so anything less
+        // here would rig the comparison the other way.
+        let (clinked, crep) = rs_cam_core::surface_link::relink_fragments(
+            rs_cam_core::toolpath_spans::AnnotatedToolpath::new(cascade),
+            mesh,
+            index,
+            cutter,
+            &rp,
+        );
+        let mut cchannels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+        let cascade = clinked.reconcile(&mut cchannels).into_inner().toolpath;
+        println!(
+            "       (cascade relinked: {} fragments, {} linked, {} kept retracts)",
+            crep.fragments, crep.surface_links, crep.retract_links
+        );
+        let c_time = compute_cycle_time(&cascade, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+        let c_cut = cascade.total_cutting_distance();
+
+        tot_r += r_time;
+        tot_c += c_time;
+        let speedup = if c_time > 0.0 {
+            r_time / c_time
+        } else {
+            f64::NAN
+        };
+        println!(
+            "     {:>9.1}  {:>8} {:>9.0} {:>9.1}  {:>8} {:>9.0} {:>9.1}  {:>6.2}x",
+            poly.area(),
+            raster.moves.len(),
+            r_cut,
+            r_time,
+            cascade.moves.len(),
+            c_cut,
+            c_time,
+            speedup
+        );
+    }
+    let overall = if tot_c > 0.0 { tot_r / tot_c } else { f64::NAN };
+    println!(
+        "\n     TOP-3 TOTAL: raster {tot_r:.1} s vs cascade {tot_c:.1} s = {overall:.2}x\n\
+         \n     This is the accel-aware answer STRATEGY_ADVISOR warns about: a >1.0x\n\
+         speedup means contour wins on THIS machine's envelope despite chaining\n\
+         short chords; <1.0x means the junction crawl eats the junction saving\n\
+         and Lever 1 should NOT ship on wall-clock grounds.\n"
     );
 }

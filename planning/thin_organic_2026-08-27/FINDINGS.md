@@ -270,6 +270,81 @@ under the C4 rule.
 
 ---
 
+## 0d. THE ANSWER (2026-08-27) — Lever 1 is REFUTED. The raster already wins.
+
+Stage D generates **both** patterns over the **same** regions with the same
+tool, feeds and machine envelope (Shapeoko Pro XXL: accel [500, 500, 270]
+mm/s², junction deviation 0.02, rapid 5000; feed 735, plunge 180), and costs
+each through the F-034 integrator. No production code was written to do it —
+both generators already ship, and `unified_finish` already calls both, just on
+different bands.
+
+**Both paths are relinked**, because production relinks every region's toolpath
+regardless of which generator produced it. Comparing a bare raster against a
+natively-chained cascade would have been rigged, and the first run of this
+experiment made exactly that mistake — it reported the cascade *winning* 1.05×
+until the raster got the relink pass production actually gives it.
+
+| region | raster time | cascade time | ratio |
+|---|---|---|---|
+| 3104 mm² | 1053.7 s | 1203.3 s | 0.88× |
+| 1788 mm² | 478.0 s | 517.0 s | 0.92× |
+| 1621 mm² | 483.7 s | 505.0 s | 0.96× |
+| **total** | **2015.4 s** | **2225.3 s** | **0.91×** |
+
+**The contour cascade is ~10% SLOWER, consistently.** It also cuts 29% further
+(11,174 mm vs 8,687 mm) and emits 3.2× the moves (44,315 vs 14,027) — short
+chords the junction-deviation model then crawls through. This is the
+`STRATEGY_ADVISOR_2026-06-17.md` result reproduced on a different band: on this
+low-accel belt router, contour is the exception, not the default.
+
+### Why the 20.1× junction win did not translate
+
+Because **the relink pass had already solved fragmentation** — for both
+patterns:
+
+| | fragments | linked | kept retracts |
+|---|---|---|---|
+| raster, region 1 | 564 | 466 | **97** |
+| cascade, region 1 | 483 | 411 | **71** |
+
+The raster's 757 scan-line crossings collapse to **97 actual retracts**. Once
+that is true, junction *count* stops being the binding constraint and cutting
+*distance* plus chord density decide — and there the raster is ahead.
+
+So the operator-visible defect that started this investigation (17,092 retract
+round trips) was real, and it was fixed by **tonight's G-LINKVETO + hookup-25
+link work**, not by anything topological. Lever 1 was solving a problem that no
+longer exists.
+
+### Standing recommendation
+
+**Do not build Lever 1.** Do not build Lever 2 either on this evidence: its
+whole rationale was reducing the same crossings, whose cost the relink already
+absorbs, and its measured ceiling was 1.3–2× on a quantity that is no longer
+binding.
+
+If finishing time is attacked again on this fixture, the evidence points at
+**cutting distance and chord density**, not path topology — the raster spends
+8,687 mm at 735 mm/min ≈ 709 s of pure feed against a 1,054 s total, so ~33% is
+still overhead worth attributing before anything is redesigned.
+
+### What this does NOT establish
+
+- **Three regions, one tier, one fixture.** The top three shallow regions by
+  area, not the whole band, and nothing about other boards.
+- **Fresh-stock links.** `link_ceiling: None` here; the live tier 1 is a rest
+  op whose ceiling declines more links, which would narrow the raster's margin.
+  Direction of the effect is known, magnitude is not.
+- **Cusp quality is assumed equal, not measured.** Both were dialled to the
+  same 30 µm target by the same law, but `CHECKPOINT_C_EVIDENCE.md` records the
+  cascade's *achieved* cusp running 2.0–4.9× its dial. If that holds here the
+  cascade is not only slower but coarser — which would strengthen this
+  conclusion, not weaken it.
+- **Inter-region routing is excluded.** Each region was costed in isolation.
+
+---
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**
