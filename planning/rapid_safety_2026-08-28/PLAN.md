@@ -70,6 +70,16 @@ tested.
 All four are **NEW** — they survived the radius programme that closed
 2026-08-04.
 
+> **S1 OUTCOME (2026-08-28): STRIKES FOUND — but in the finishing link
+> descents (ops 7/8: 982 descent strikes, 634 beyond discretisation, worst
+> −1.30 mm; op 7 struck on 601/601 links), NOT in adaptive3d, whose suspect
+> path emitted no below-top descent on this job (untested, not exonerated).
+> Setup 1 fully clean. See `S1_RESULTS.md`; instrument
+> `tests/rapid_replay_shipped_gcode_s1.rs` (v2 — v1's 651 strikes were
+> retract-start artefacts, exempted on a monotone-profile proof). S3 should
+> target the finish link planner first; S2's detector fix must make this
+> exact class visible.
+
 ## S1 — MEASURE FIRST, and not with the broken instrument
 
 The whole phase hinges on one question: *has this ever put a rapid into

@@ -140,3 +140,49 @@ the text above; each says why.
 
 7. **Run it `--release`.** The coarse pass stamps ~460k segments for setup 2
    and the fine tier rebuilds a windowed 0.05 mm grid per adjudication.
+
+## v2 — retract exemption (2026-08-28)
+
+**The first run's 651 STRIKEs were retract-start artefacts.** The orchestrator
+read the raw G-code around the ten worst (setup 2 nc:9610/2361/2119/2720/2929/
+10083/10479/4976, setup 1 nc:12882/5193) and **all ten** were the same shape: a
+Z-only *ascending* `G0 X.. Y.. Z12` / `Z30` straight up out of the position the
+preceding fed move had just cut. The along-segment sweep's minimum margin was
+landing on the retract's **buried start point** — a point the cutter was
+already legitimately occupying.
+
+**Why the exemption is a proof, not a tolerance.** Every tool in this job has a
+radius-monotone profile (`height_at_radius` non-decreasing in `r`: flat is
+constant 0, the V-bit is `r/tan(half)`, the three tapered balls are ball-then-
+cone). For such a profile the tool body at tip `z1` occupies, at each radius
+`r`, the column `[z1 + h(r), ∞)`. With the same XY and `z1 > z0` that is a
+strict **subset** of `[z0 + h(r), ∞)` — the space the cutter already occupied
+at the start of the move, which the preceding fed move validly occupied. A pure
+ascent can therefore only ever vacate material, never enter it. This covers the
+CUTTER; a holder or shank strike above the cutting length on a retract is real
+and is Phase S4's question (`PLAN.md` S-c), deliberately outside this
+instrument's.
+
+**Consequences for reading the report.**
+
+- `RapidKind::RetractAscent` (fixed XY, rising tip) is counted per op and in the
+  headline, and is **never probed**. **`STRIKE` now means a DESCENDING or
+  TRAVERSING rapid only.** Descents keep the existing evaluation — for a pure
+  descent the min-margin sample IS the destination, which is the right
+  question. A rapid that changes XY *and* rises still sweeps as a traverse
+  (the census says none exist; the monotonicity argument does not cover
+  lateral motion).
+- `MAX_FINE_ADJUDICATIONS` raised 400 → 20,000. The budget was being spent on
+  retract artefacts; with those exempt the real population fits and nothing
+  that could be a strike is dropped. The cap and its drop-count reporting are
+  unchanged.
+- The headline now prints a **STRIKE depth histogram** over `margin@shaved`,
+  binned `(-0.05, 0]`, `(-0.15, -0.05]`, `(-0.5, -0.15]`, `(-1.0, -0.5]`,
+  `<= -1.0`, labelled against the instrument's own conservatism budget
+  (~0.10–0.15 mm at the fine tier: cell half-diagonal 0.035 + half-cell disc
+  dilation 0.025 + `conservative_top` sub-cell over-read up to one 0.05 mm
+  cell). A strike in the first band is at the noise floor; only the last two
+  bands are deeper than anything discretisation can manufacture.
+- Every strike / near-miss detail line and every per-op worst-rapid line now
+  states its kind (`DESCENT` / `TRAVERSE`), and the per-op table carries a
+  `retract` column.

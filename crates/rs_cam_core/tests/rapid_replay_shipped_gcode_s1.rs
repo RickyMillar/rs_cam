@@ -34,6 +34,17 @@
 //! Never fix a false positive by globally shrinking the probe radius: that
 //! deletes the sub-tool-radius sliver sensitivity the instrument exists for.
 //!
+//! # v2 — the retract exemption
+//!
+//! v1 reported 651 STRIKEs and all ten hand-inspected worst cases were the
+//! same artefact: an ascending Z-only rapid out of the position the previous
+//! fed move had just cut, with the sweep's minimum margin landing on the
+//! retract's own buried START point. Such a move is **provably** safe on every
+//! tool in this job — the proof is on [`rapid_kind`] — so it is now classified
+//! `RETRACT` and never probed. **STRIKE therefore means a DESCENDING or
+//! TRAVERSING rapid**, which is the only shape the question was ever about.
+//! Holder strikes on a retract are real, and are Phase S4's question.
+//!
 //! # Tripwires, not eyeballs
 //!
 //! A wrong Z anchor or a wrong export frame reads as all-air or all-buried,
@@ -128,7 +139,11 @@ const MIN_SHAVED_RADIUS_MM: f64 = 0.05;
 /// Fine-tier budget. Flagged rapids are sorted worst-coarse-margin-first, so
 /// the cap keeps the strongest candidates; the number dropped and the best
 /// dropped margin are both reported (no silent caps).
-const MAX_FINE_ADJUDICATIONS: usize = 400;
+///
+/// Raised from 400 to 20,000 in v2. The first run spent the whole budget on
+/// retract-ascent artefacts; with those exempt (see [`RapidKind`]) the real
+/// population fits, and nothing that could be a strike is dropped.
+const MAX_FINE_ADJUDICATIONS: usize = 20_000;
 /// Refuse to build a fine window bigger than this many cells. `DexelGrid`
 /// silently coarsens past 16 M (`dexel.rs:318`), and a silently-coarsened
 /// fine tier would adjudicate at the wrong conservatism.
@@ -494,6 +509,70 @@ fn move_xy_bbox(mv: &Move) -> [f64; 4] {
     ]
 }
 
+/// What kind of motion a rapid is, which decides whether it is a question at
+/// all.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RapidKind {
+    /// Fixed XY, rising tip: a retract out of the position the previous fed
+    /// move just cut. **Exempt — provably safe, not merely unlikely.**
+    RetractAscent,
+    /// Fixed XY, tip level or falling. The min-margin sample is the
+    /// destination, which is exactly the right question.
+    Descent,
+    /// XY travel. Swept along its length.
+    Traverse,
+}
+
+/// Classify one rapid.
+///
+/// # Why an ascending Z-only rapid is exempt
+///
+/// v1 reported 651 STRIKEs and all ten hand-inspected worst cases were the
+/// same artefact: a `G0 X.. Y.. Z12` retract straight up out of the position
+/// the preceding feed had just cut. The along-segment sweep's minimum margin
+/// landed on the retract's **buried start point** — a point the cutter was
+/// already legitimately occupying.
+///
+/// The exemption is a proof, not a heuristic. Every tool in this job has a
+/// radius-monotone profile (`height_at_radius` non-decreasing in `r`: flat is
+/// constant 0, the V-bit is `r/tan(half)`, the tapered balls are ball-then-
+/// cone). For such a profile the tool body at tip `z1` occupies, at each
+/// radius `r`, the column `[z1 + h(r), ∞)`. With `z1 > z0` and the same XY,
+/// that is a strict subset of `[z0 + h(r), ∞)` — the space the cutter already
+/// occupied at the start of the move, which the preceding fed move validly
+/// occupied. A pure ascent can therefore only ever vacate material, never
+/// enter it.
+///
+/// Scope note: this covers the CUTTER. A holder or shank strike above the
+/// cutting length on a retract is real but is Phase S4's question
+/// (`PLAN.md` S-c), deliberately outside this instrument's.
+///
+/// Defensive: a rapid that changes XY **and** rises is still swept as a
+/// traverse — the census found zero combined XY+Z rapids in either file, but
+/// the monotonicity argument does not cover lateral motion.
+fn rapid_kind(mv: &Move) -> RapidKind {
+    let dx = mv.to[0] - mv.from[0];
+    let dy = mv.to[1] - mv.from[1];
+    if (dx * dx + dy * dy).sqrt() > XY_STATIONARY_MM {
+        return RapidKind::Traverse;
+    }
+    if mv.to[2] > mv.from[2] {
+        RapidKind::RetractAscent
+    } else {
+        RapidKind::Descent
+    }
+}
+
+impl RapidKind {
+    fn tag(self) -> &'static str {
+        match self {
+            RapidKind::RetractAscent => "RETRACT",
+            RapidKind::Descent => "DESCENT",
+            RapidKind::Traverse => "TRAVERSE",
+        }
+    }
+}
+
 /// The along-segment sample plan for one rapid: `(sample_count, spacing_mm)`.
 ///
 /// A pure vertical drop needs ONE disc query — the XY is constant, so the
@@ -643,6 +722,8 @@ struct RapidFlag {
     op: usize,
     tool: usize,
     line: usize,
+    /// `Descent` or `Traverse` — a `RetractAscent` is never flagged.
+    kind: RapidKind,
     coarse_margin: f64,
     at: [f64; 3],
 }
@@ -662,6 +743,8 @@ struct FineRow {
 #[derive(Clone, Copy, Default)]
 struct OpCounters {
     rapids: usize,
+    /// Ascending Z-only rapids, exempt by the [`RapidKind`] proof.
+    retract_exempt: usize,
     early_out: usize,
     origin_unknown: usize,
     probed: usize,
@@ -676,11 +759,38 @@ struct OpCounters {
     worst_fine: Option<FineRow>,
 }
 
+/// Shaved-margin bins for fine-tier strikes, most-marginal first. Read
+/// against the instrument's own conservatism budget — see
+/// [`STRIKE_HISTOGRAM_LABELS`].
+const STRIKE_HISTOGRAM_EDGES: [f64; 4] = [-0.05, -0.15, -0.5, -1.0];
+/// Row labels for [`STRIKE_HISTOGRAM_EDGES`]. The first two bands sit inside
+/// or near the instrument's stacked conservatism, which totals roughly
+/// **0.10–0.15 mm** at the fine tier: cell half-diagonal 0.035 mm
+/// (`r_near = dist − half_diag`), half-cell disc dilation 0.025 mm
+/// (`reach = radius + cs*0.5`), and `conservative_top`'s sub-cell over-read of
+/// up to one full fine cell (0.05 mm). A strike in the first band is at or
+/// below the noise floor; only the last two bands are unambiguously deeper
+/// than anything discretisation can manufacture.
+const STRIKE_HISTOGRAM_LABELS: [&str; 5] = [
+    "(-0.05,  0.00]  at/below the conservatism floor",
+    "(-0.15, -0.05]  inside the stacked conservatism budget",
+    "(-0.50, -0.15]  beyond discretisation",
+    "(-1.00, -0.50]  beyond discretisation",
+    "      <= -1.00  beyond discretisation",
+];
+
 #[derive(Default)]
 struct Totals {
     flagged: usize,
     adjudicated: usize,
     dropped: usize,
+    retract_exempt: usize,
+    /// Fine-tier strikes binned on `margin_shaved` by
+    /// [`STRIKE_HISTOGRAM_EDGES`].
+    strike_histogram: [usize; 5],
+    /// Fine-tier strikes split by [`RapidKind`]: descents, then traverses.
+    strike_descents: usize,
+    strike_traverses: usize,
     strikes: usize,
     grazes: usize,
     near_misses: usize,
@@ -989,6 +1099,18 @@ fn run_setup(spec: &SetupSpec, tools: &[ToolEntry], totals: &mut Totals) {
                 c.origin_unknown += 1;
                 continue;
             }
+            // Retract exemption (v2). A pure ascent at fixed XY can only
+            // vacate material, never enter it, for every radius-monotone
+            // profile in this job — the proof is on `rapid_kind`. Probing it
+            // measures the buried START point the previous fed move had
+            // already legitimately occupied, which is what produced v1's 651
+            // false strikes.
+            let kind = rapid_kind(mv);
+            if kind == RapidKind::RetractAscent {
+                c.retract_exempt += 1;
+                totals.retract_exempt += 1;
+                continue;
+            }
             // Exact early-out: required clearance can never exceed the
             // analytic stock top, so a tip this high cannot be flagged.
             if mv.from[2].min(mv.to[2]) - stock_top >= FLAG_MM {
@@ -1012,6 +1134,7 @@ fn run_setup(spec: &SetupSpec, tools: &[ToolEntry], totals: &mut Totals) {
                 op: mv.op,
                 tool: mv.tool,
                 line: mv.line,
+                kind,
                 coarse_margin: reading.min_margin,
                 at: reading.at,
             };
@@ -1098,6 +1221,17 @@ fn run_setup(spec: &SetupSpec, tools: &[ToolEntry], totals: &mut Totals) {
             Verdict::Strike => {
                 c.strikes += 1;
                 totals.strikes += 1;
+                match row.flag.kind {
+                    RapidKind::Descent => totals.strike_descents += 1,
+                    RapidKind::Traverse => totals.strike_traverses += 1,
+                    // Unreachable: a retract ascent is exempt before probing.
+                    RapidKind::RetractAscent => {}
+                }
+                let bin = STRIKE_HISTOGRAM_EDGES
+                    .iter()
+                    .position(|edge| row.margin_shaved > *edge)
+                    .unwrap_or(STRIKE_HISTOGRAM_EDGES.len());
+                totals.strike_histogram[bin] += 1;
             }
             Verdict::KerfGraze => {
                 c.grazes += 1;
@@ -1158,12 +1292,14 @@ fn report_setup(
 ) {
     eprintln!("\n  per-op replay — {}", spec.label);
     eprintln!(
-        "    {:>3} {:<22} {:<5} {:>11} {:>7} {:>6} {:>6} {:>5} {:>5} | {:>4} {:>5} {:>4} {:>5}",
+        "    {:>3} {:<22} {:<5} {:>11} {:>7} {:>8} {:>6} {:>6} {:>5} {:>5} | {:>4} {:>5} {:>4} \
+         {:>5}",
         "op",
         "name",
         "tool",
         "removed mm³",
         "rapids",
+        "retract",
         "early",
         "probed",
         "flag",
@@ -1176,13 +1312,14 @@ fn report_setup(
     for (oi, op) in prog.ops.iter().enumerate() {
         let c = counters[oi];
         eprintln!(
-            "    {:>3} {:<22} {:<5} {:>11.1} {:>7} {:>6} {:>6} {:>5} {:>5} | {:>4} {:>5} {:>4} \
-             {:>5}",
+            "    {:>3} {:<22} {:<5} {:>11.1} {:>7} {:>8} {:>6} {:>6} {:>5} {:>5} | {:>4} {:>5} \
+             {:>4} {:>5}",
             op.index,
             short(&op.name, 22),
             tools[op.tool].tag,
             removed[oi],
             c.rapids,
+            c.retract_exempt,
             c.early_out,
             c.probed,
             c.flagged,
@@ -1193,17 +1330,22 @@ fn report_setup(
             c.clean
         );
     }
+    eprintln!(
+        "    (`retract` = ascending Z-only rapids, exempt by the monotone-profile proof; they \
+         are never probed)"
+    );
     eprintln!("\n    worst rapid per op (fine tier where adjudicated, else coarse):");
     for (oi, op) in prog.ops.iter().enumerate() {
         let c = counters[oi];
         match c.worst_fine {
             Some(row) => eprintln!(
-                "      op {:>2} {:<22} nc:{:<7} {:<5} margin@env {:>9.4}  margin@shaved {:>9.4} \
-                 at ({:.3}, {:.3}, {:.3})  [{}] {} prior moves re-stamped",
+                "      op {:>2} {:<22} nc:{:<7} {:<5} {:<8} margin@env {:>9.4}  margin@shaved \
+                 {:>9.4} at ({:.3}, {:.3}, {:.3})  [{}] {} prior moves re-stamped",
                 op.index,
                 short(&op.name, 22),
                 row.flag.line,
                 tools[row.flag.tool].tag,
+                row.flag.kind.tag(),
                 row.margin_env,
                 row.margin_shaved,
                 row.flag.at[0],
@@ -1214,12 +1356,13 @@ fn report_setup(
             ),
             None => match c.worst_coarse {
                 Some(flag) => eprintln!(
-                    "      op {:>2} {:<22} nc:{:<7} {:<5} coarse margin {:>9.4} (not \
+                    "      op {:>2} {:<22} nc:{:<7} {:<5} {:<8} coarse margin {:>9.4} (not \
                      adjudicated)",
                     op.index,
                     short(&op.name, 22),
                     flag.line,
                     tools[flag.tool].tag,
+                    flag.kind.tag(),
                     flag.coarse_margin
                 ),
                 None => eprintln!(
@@ -1257,9 +1400,10 @@ fn report_worst_rows(rows: &[FineRow]) {
     eprintln!("\n    fine-tier STRIKE / NEAR-MISS detail (worst first, up to 20):");
     for row in interesting.iter().take(20) {
         eprintln!(
-            "      nc:{:<7} margin@env {:>9.4}  margin@shaved {:>9.4}  at ({:.3}, {:.3}, {:.3}) \
-             [{}]  {} prior moves re-stamped, {} None sample(s)",
+            "      nc:{:<7} {:<8} margin@env {:>9.4}  margin@shaved {:>9.4}  at ({:.3}, {:.3}, \
+             {:.3}) [{}]  {} prior moves re-stamped, {} None sample(s)",
             row.flag.line,
+            row.flag.kind.tag(),
             row.margin_env,
             row.margin_shaved,
             row.flag.at[0],
@@ -1306,8 +1450,9 @@ fn replay_shipped_wanaka_rapids_s1() {
 
     eprintln!("\n══════════ S1 HEADLINE ══════════");
     eprintln!(
-        "  flagged (coarse)  {:>6}\n  adjudicated (fine){:>6}\n  budgeted out      {:>6}",
-        totals.flagged, totals.adjudicated, totals.dropped
+        "  retract-exempt    {:>6}  (ascending Z-only rapids; never probed — see `rapid_kind`)\n  \
+         flagged (coarse)  {:>6}\n  adjudicated (fine){:>6}\n  budgeted out      {:>6}",
+        totals.retract_exempt, totals.flagged, totals.adjudicated, totals.dropped
     );
     if totals.dropped > 0 {
         eprintln!(
@@ -1316,11 +1461,27 @@ fn replay_shipped_wanaka_rapids_s1() {
         );
     }
     eprintln!(
-        "  STRIKES           {:>6}\n  kerf-grazes       {:>6}  (benign by construction)\n  \
-         near-misses       {:>6}  (< {NEAR_MISS_MM} mm envelope clearance)\n  clean             \
-         {:>6}",
-        totals.strikes, totals.grazes, totals.near_misses, totals.clean
+        "  STRIKES           {:>6}  ({} descent / {} traverse)\n  kerf-grazes       {:>6}  \
+         (benign by construction)\n  near-misses       {:>6}  (< {NEAR_MISS_MM} mm envelope \
+         clearance)\n  clean             {:>6}",
+        totals.strikes,
+        totals.strike_descents,
+        totals.strike_traverses,
+        totals.grazes,
+        totals.near_misses,
+        totals.clean
     );
+    if totals.strikes > 0 {
+        eprintln!(
+            "\n  STRIKE depth histogram, binned on margin@shaved. The instrument's own \
+             conservatism at the fine tier stacks to roughly 0.10–0.15 mm (cell half-diagonal \
+             0.035 + half-cell disc dilation 0.025 + conservative_top sub-cell over-read up to \
+             one 0.05 mm cell), so read the top rows as noise-floor and the bottom rows as real:"
+        );
+        for (bin, label) in STRIKE_HISTOGRAM_LABELS.iter().enumerate() {
+            eprintln!("    {label}  {:>6}", totals.strike_histogram[bin]);
+        }
+    }
     eprintln!(
         "  window off-stock  {:>6}\n  window too large  {:>6}\n  disc probes       {:>6}\n  \
          None samples      {:>6} coarse / {:>6} fine  (RECON Q3: off-grid or past-envelope, NOT \
@@ -1346,7 +1507,8 @@ fn replay_shipped_wanaka_rapids_s1() {
     }
 
     let headline = if totals.strikes > 0 {
-        "STRIKES FOUND — live safety defect; the shipped .nc files need review"
+        "STRIKES FOUND — a DESCENDING or TRAVERSING rapid entered material; live safety defect, \
+         and the shipped .nc files need review"
     } else if totals.near_misses > 0 {
         "LATENT NEAR-MISSES — no strike, but material sits inside the blind radius; fix on merit"
     } else {
@@ -1367,8 +1529,8 @@ fn replay_shipped_wanaka_rapids_s1() {
 #[cfg(test)]
 mod parser_tests {
     use super::{
-        Move, MoveKind, linearize_arc_into, op_header, p3, parse_program, rapid_sample_plan,
-        tool_tag_in_comment, wanaka_tools,
+        Move, MoveKind, RapidKind, linearize_arc_into, op_header, p3, parse_program, rapid_kind,
+        rapid_sample_plan, tool_tag_in_comment, wanaka_tools,
     };
     use rs_cam_core::geo::P3;
 
@@ -1566,5 +1728,49 @@ G3 X0.000 Y10.000 Z2.000 I-10.000 J0.000 F1000
         let (count, spacing) = rapid_sample_plan(&diagonal, 0.15);
         assert!(count > 2);
         assert!(spacing <= 0.15 + 1e-12);
+    }
+
+    /// v2. The retract out of a just-cut position is exempt; the descent back
+    /// into the SAME XY is not. Both shapes appear in the shipped files
+    /// around every peck, and v1 conflated them.
+    #[test]
+    fn an_ascending_z_only_rapid_is_retract_exempt_but_a_descent_is_probed() {
+        const PECK: &str = "\
+(LOAD: 6mm 2F Carbide End Mill [T1])
+(1 Pin Drill)
+G0 X2.500 Y2.500 Z30.000
+G1 X2.500 Y2.500 Z27.000 F2400
+G0 X2.500 Y2.500 Z30.000
+G0 X2.500 Y2.500 Z27.500
+G1 X2.500 Y2.500 Z24.000
+";
+        let tools = wanaka_tools();
+        let prog = parse_program(PECK, &tools);
+        let rapids: Vec<&Move> = prog
+            .moves
+            .iter()
+            .filter(|m| m.kind == MoveKind::Rapid)
+            .collect();
+        assert_eq!(rapids.len(), 3);
+
+        // The retract out of the Z27 cut, at the drill's own XY.
+        let retract = rapids[1];
+        assert_eq!(retract.from, [2.5, 2.5, 27.0]);
+        assert_eq!(retract.to, [2.5, 2.5, 30.0]);
+        assert_eq!(rapid_kind(retract), RapidKind::RetractAscent);
+
+        // The peck re-entry: same XY, falling. This one is the question.
+        let reentry = rapids[2];
+        assert_eq!(reentry.from, [2.5, 2.5, 30.0]);
+        assert_eq!(reentry.to, [2.5, 2.5, 27.5]);
+        assert_eq!(rapid_kind(reentry), RapidKind::Descent);
+
+        // A rapid that rises AND moves laterally is still swept — the
+        // monotonicity proof does not cover lateral motion.
+        let lateral_rise = Move {
+            to: [40.0, 2.5, 30.0],
+            ..*retract
+        };
+        assert_eq!(rapid_kind(&lateral_rise), RapidKind::Traverse);
     }
 }
