@@ -1057,8 +1057,31 @@ fn ball_control_collapses_the_two_named_arms() {
 /// (A code census, not a runtime probe: there is no API through which a
 /// generation resolution could be handed to the waterline or raster band,
 /// which is precisely the claim.)
+///
+/// # Two doors since the surface memo (2026-08-27)
+///
+/// `finish_surface_cache::cached_finish_surface` memoises the policy builder,
+/// and the three consumers go through it rather than calling the builder
+/// directly. That is a second DOOR to the same room, not a fourth consumer, so
+/// the census matches either spelling and skips the two plumbing modules —
+/// `finish_setup.rs` (the builder) and `finish_surface_cache.rs` (the memo) —
+/// exactly as it always skipped the first. Matching only the direct builder
+/// would have quietly emptied this control: `ramp_finish.rs` and
+/// `steep_shallow.rs` would have dropped off the list while still consuming a
+/// generation resolution, and the sentry would have gone green on a claim it
+/// was no longer testing.
 #[test]
 fn only_three_consumers_can_see_the_generation_resolution() {
+    /// Modules that BUILD or memoise the surface. A hit here is plumbing, not
+    /// a consumer.
+    const PLUMBING: [&str; 2] = ["finish_setup.rs", "finish_surface_cache.rs"];
+    /// Every spelling through which a caller can obtain a generation surface.
+    const DOORS: [&str; 3] = [
+        "build_finish_surface_with_policy_and_cancel(",
+        "build_finish_surface_with_cell_size_and_cancel(",
+        "cached_finish_surface(",
+    ];
+
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut consumers: Vec<String> = Vec::new();
     let mut stack = vec![src.clone()];
@@ -1068,13 +1091,14 @@ fn only_three_consumers_can_see_the_generation_resolution() {
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs") {
-                let text = std::fs::read_to_string(&path).expect("read rs");
-                if path.file_name().is_some_and(|f| f == "finish_setup.rs") {
+                if path
+                    .file_name()
+                    .is_some_and(|f| PLUMBING.iter().any(|p| f == *p))
+                {
                     continue;
                 }
-                if text.contains("build_finish_surface_with_policy_and_cancel(")
-                    || text.contains("build_finish_surface_with_cell_size_and_cancel(")
-                {
+                let text = std::fs::read_to_string(&path).expect("read rs");
+                if DOORS.iter().any(|door| text.contains(door)) {
                     consumers.push(
                         path.strip_prefix(&src)
                             .expect("under src")

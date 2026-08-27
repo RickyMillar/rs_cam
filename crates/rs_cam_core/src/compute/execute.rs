@@ -1970,10 +1970,21 @@ fn chain_project_curve(
         // operation's territory travels over ground the boundary
         // deliberately excluded.
         boundary: ctx.boundary_regions,
+        // …and being AIRBORNE does not buy an exemption here. This op's
+        // boundary is machining territory, which the operator may have drawn
+        // around a clamp or a keep-out; the ceiling below reads its clearance
+        // from the dexel stock, which does not model workholding at all. The
+        // finishing families waive this for their region polygons (see the
+        // field); an engraving pass must not.
+        airborne_links_may_leave_territory: false,
         // THE reason this op needs more than the finishing families do:
         // project_curve engraves into stock that has usually NOT been
         // cleared down to the mesh, so the mesh is not the material. Links
         // travel above whatever the input stock still has standing.
+        // Engraving prior: flush ground is the RAW workpiece face — a fed
+        // slide across it drags the cutter over stock this op must not
+        // touch (`stock_safety_links_clear_standing_material` pins it).
+        flush_ride: false,
         link_ceiling: Some(crate::surface_link::LinkCeiling {
             stock: ctx.initial_stock,
             tool_radius: ctx.tool_def.radius(),

@@ -240,6 +240,36 @@ impl AppState {
         }
     }
 
+    /// Index of the setup whose local frame the viewport is displaying —
+    /// the selection's setup, or the FIRST setup when nothing
+    /// setup-scoped is selected (the same rule `ui::setup_panel` and the
+    /// GPU upload pass apply from the selection). `None` only for a
+    /// project with no setups.
+    ///
+    /// The tier preview gates on this: a preview describes ONE setup's
+    /// plan, and in any other setup's display frame it is not merely
+    /// irrelevant but wrongly shifted — the operator-observed defect was
+    /// the front setup's tier map floating offset beside the flipped
+    /// back-setup stock.
+    pub fn active_setup_index(&self) -> Option<usize> {
+        let setups = self.session.list_setups();
+        let by_id =
+            |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id.0) };
+        match &self.selection {
+            Selection::Setup(id) | Selection::Fixture(id, _) | Selection::KeepOut(id, _) => {
+                by_id(*id)
+            }
+            Selection::Toolpath(tp_id) => self.session.setup_of_toolpath_id(*tp_id),
+            _ => {
+                if setups.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                }
+            }
+        }
+    }
+
     /// Modal exclusivity (density pass Batch 2): every modal-open path
     /// calls this first, so opening one modal closes the others — the
     /// 2026-06-11 capture sweep produced a 3-deep stack (Optimize

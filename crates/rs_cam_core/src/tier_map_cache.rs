@@ -48,14 +48,17 @@
 //!   tool's shape dials — is compared through [`f64::to_bits`], so `-0.0` and
 //!   `0.0` are distinct and `NaN` is an exact bit pattern rather than a value
 //!   that never equals itself.
-//! * **Tool geometry** is keyed on the shape-defining accessors the drop
+//! * **Tool geometry** is keyed by `tool_shape_key::ToolShapeKey`, which is
+//!   that module's subject: the shape-defining accessors the drop
 //!   cutter itself reads (diameter, length, corner radius, flat-tip diameter,
 //!   cusp and envelope radii) *plus the cutter's own
 //!   [`crate::feeds::ToolGeometryHint`] discriminant and its dials*. The hint
 //!   is what separates shapes that agree on every scalar: a Ø6 ball and the
 //!   shipped Ø1-tip/Ø6-shank taper both report `radius() == 3.0`, and a key
 //!   that read only the envelope would collide on them — which is exactly the
-//!   radius-semantics defect class this repo has been paying down.
+//!   radius-semantics defect class this repo has been paying down. That key
+//!   lived here until [`crate::finish_surface_cache`] needed the same answer;
+//!   it was moved rather than copied.
 //! * **[`ResidualTreatment`]** is in the key, so a slope-compensated map (T2)
 //!   can never be served out of a raw map's entry.
 //!
@@ -82,13 +85,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
-use crate::feeds::ToolGeometryHint;
 use crate::interrupt::CancelCheck;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tier_map::{
     ResidualTreatment, TierLadder, TierMap, TierMapError, TierMapParams, compute_tier_map,
 };
-use crate::tool::MillingCutter;
+use crate::tool_shape_key::ToolShapeKey;
 
 /// Maximum number of distinct (mesh, ladder, params) tier maps held at once.
 ///
@@ -96,63 +98,6 @@ use crate::tool::MillingCutter;
 /// the one it is being compared against. A project that cycles past this
 /// still plans correctly — it rebuilds.
 pub const CAPACITY: usize = 2;
-
-/// Bit-exact identity of a cutter's *shape*, in the terms the drop cutter
-/// reads it. Every field is a bit pattern; see the module doc for why the
-/// geometry hint is carried alongside the scalars.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ToolShapeKey {
-    diameter: u64,
-    length: u64,
-    corner_radius: u64,
-    flat_tip_diameter: u64,
-    cusp_radius: u64,
-    envelope_radius: u64,
-    hint: HintKey,
-}
-
-/// [`ToolGeometryHint`] reduced to something `Eq`: the discriminant plus its
-/// dials as bit patterns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HintKey {
-    Flat,
-    Ball,
-    Bull(u64),
-    VBit(u64, u64),
-    TaperedBall(u64, u64),
-}
-
-impl HintKey {
-    fn new(hint: ToolGeometryHint) -> Self {
-        match hint {
-            ToolGeometryHint::Flat => Self::Flat,
-            ToolGeometryHint::Ball => Self::Ball,
-            ToolGeometryHint::Bull { corner_radius } => Self::Bull(corner_radius.to_bits()),
-            ToolGeometryHint::VBit {
-                included_angle,
-                tip_diameter,
-            } => Self::VBit(included_angle.to_bits(), tip_diameter.to_bits()),
-            ToolGeometryHint::TaperedBall {
-                tip_radius,
-                taper_angle_deg,
-            } => Self::TaperedBall(tip_radius.to_bits(), taper_angle_deg.to_bits()),
-        }
-    }
-}
-
-impl ToolShapeKey {
-    fn new(tool: &dyn MillingCutter) -> Self {
-        Self {
-            diameter: tool.diameter().to_bits(),
-            length: tool.length().to_bits(),
-            corner_radius: tool.corner_radius_mm().to_bits(),
-            flat_tip_diameter: tool.flat_tip_diameter().to_bits(),
-            cusp_radius: tool.cusp_radius_mm().to_bits(),
-            envelope_radius: tool.envelope_radius_mm().to_bits(),
-            hint: HintKey::new(tool.geometry_hint()),
-        }
-    }
-}
 
 /// Everything a tier map depends on except the mesh, which is keyed by
 /// identity on the entry itself.
@@ -324,19 +269,12 @@ fn put(mesh: &Arc<TriangleMesh>, key: TierMapKey, map: Arc<TierMap>) {
     clippy::indexing_slicing
 )]
 mod tests {
-    use super::{TierMapKey, ToolShapeKey};
+    use super::TierMapKey;
     use crate::tier_map::{TierLadder, TierMapParams};
-    use crate::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
+    use crate::tool::{BallEndmill, MillingCutter};
 
-    #[test]
-    fn a_ball_and_a_taper_of_equal_envelope_have_different_shape_keys() {
-        // Both report radius() == 3.0; only the hint and the cusp separate
-        // them. A key that read the envelope alone would collide here.
-        let ball = BallEndmill::new(6.0, 25.0);
-        let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
-        assert!((ball.envelope_radius_mm() - taper.envelope_radius_mm()).abs() < 1e-12);
-        assert_ne!(ToolShapeKey::new(&ball), ToolShapeKey::new(&taper));
-    }
+    // The ball-vs-taper shape-key test moved to `tool_shape_key::tests` with
+    // the struct it exercises; it was never about the tier map.
 
     #[test]
     fn negative_zero_margin_is_a_distinct_key() {

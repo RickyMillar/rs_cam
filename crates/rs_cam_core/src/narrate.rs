@@ -167,6 +167,15 @@ pub struct ToolpathNarrationContext<'a> {
     /// is present — it is a statement about the config, and the vast majority
     /// of toolpaths have nothing to say about it.
     pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
+    /// Phase O: the intra-region relinker's decline attribution, off
+    /// [`crate::compute::config::ToolpathStats::relink`]. `None` = the
+    /// relink pass never ran (hookup 0, or a family that has no relink).
+    /// Narration prints the line only when junctions were DECLINED —
+    /// `retract_trips` above already counts the retracts themselves; this
+    /// says WHY, which is exactly the number whoever is tuning
+    /// `intra_region_hookup_mm` needs on the agent surface (G-LINKVETO was
+    /// diagnosed blind for want of it).
+    pub relink: Option<crate::unified_finish::RelinkTotals>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -287,13 +296,7 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    is a line on every rest-analysis toolpath saying nothing
             //    happened.
             region_cap: _,
-            //  - relink (Phase O):  an eight-counter attribution of why the
-            //    intra-region relinker declined junctions. Narration already
-            //    reports the retracts themselves (`retract_trips`, walked
-            //    off the move list); this says WHY, which is a tuning
-            //    question for whoever is moving `intra_region_hookup_mm`,
-            //    not a description of the part. Read it off `ToolpathStats`.
-            relink: _,
+            relink,
         } = stats;
 
         self.truncated_core_mm2 = *truncated_core_mm2;
@@ -308,6 +311,7 @@ impl<'a> ToolpathNarrationContext<'a> {
         self.offset_library_failures = *offset_library_failures;
         self.boundary_clip_dropped = *boundary_clip_dropped;
         self.inert_claims_dial = *inert_claims_dial;
+        self.relink = *relink;
     }
 }
 
@@ -523,6 +527,7 @@ pub fn narrate_toolpath_with_context(
     append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
     append_inert_claims_dial(&mut output, context.inert_claims_dial);
     append_retract_trips(&mut output, context.retract_trips);
+    append_relink_declines(&mut output, context.relink.as_ref());
     output.push_str("Z-level source: ");
     output.push_str(z_level_source_label(annotated));
     output.push_str(".\n");
@@ -1375,6 +1380,41 @@ fn append_retract_trips(
     }
 }
 
+/// Phase O: WHY the intra-region relinker declined junctions — the
+/// attribution behind `retract_trips` above. Printed only when something was
+/// declined: a fully-linked toolpath's story is already told by a low trip
+/// count, and an op with no relink pass has nothing to attribute.
+fn append_relink_declines(
+    output: &mut String,
+    relink: Option<&crate::unified_finish::RelinkTotals>,
+) {
+    let Some(r) = relink else {
+        return;
+    };
+    let declined = r.too_far
+        + r.off_surface
+        + r.slower_than_retract
+        + r.outside_boundary
+        + r.ceiling_above_safe_z;
+    if declined == 0 {
+        return;
+    }
+    output.push_str(&format!(
+        "Relink declines: {declined} junction(s) kept their retract — too_far \
+         (gap > hookup): {}, off_surface: {}, slower_than_retract: {}, \
+         outside_boundary (surface-riding links only): {}, \
+         ceiling_above_safe_z: {}. {} fragment(s), {} linked. Tuning lever: \
+         `intra_region_hookup_mm`. Report-only — no gate consumes this.\n",
+        r.too_far,
+        r.off_surface,
+        r.slower_than_retract,
+        r.outside_boundary,
+        r.ceiling_above_safe_z,
+        r.fragments,
+        r.surface_links,
+    ));
+}
+
 fn apply_semantic_level_metrics(level: &mut ZLevelSummary, trace: &ToolpathSemanticTrace) {
     if let Some(item) = trace
         .items
@@ -2178,6 +2218,7 @@ mod tests {
             boundary_clip_dropped: None,
             inert_claims_dial: None,
             retract_trips: None,
+            relink: None,
         };
 
         let report = narrate_toolpath_with_context(

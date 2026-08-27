@@ -2056,11 +2056,21 @@ pub fn scallop_toolpath_research(
     // The RESOLUTION is scallop's own choice (H3 step 2) — see
     // `scallop_generation_resolution`, which the shipped wrapper above passes
     // in.
-    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
+    //
+    // MEMOISED (`planning/thin_organic_2026-08-27/FINDINGS.md` §1.4). This
+    // build is mesh-GLOBAL — one drop-cutter query per grid cell over the whole
+    // board — and `unified_finish` calls this function once per REGION, so a
+    // tier whose mid-steep band decomposes into k islands used to pay k
+    // identical whole-board walks. `cached_finish_surface` returns the SAME
+    // `Arc` on a hit, never a recomputed-equal surface; the borrows below read
+    // the identical grid the previous region read. The uncached builder is
+    // still the one that runs on a miss, so a cached surface and a fresh one
+    // cannot diverge.
+    let surface = crate::finish_surface_cache::cached_finish_surface(
         mesh, index, cutter, resolution, cancel,
     )?;
-    let surface_hm = surface.heightmap;
-    let slope_map = surface.slope_map;
+    let surface_hm = &surface.heightmap;
+    let slope_map = &surface.slope_map;
 
     // Kept alongside the shared heightmap builder above (which derives the
     // same values internally) because `max_rings` below still needs the raw
@@ -2200,8 +2210,8 @@ pub fn scallop_toolpath_research(
             mesh,
             index,
             cutter,
-            &slope_map,
-            &surface_hm,
+            slope_map,
+            surface_hm,
             cusp_r,
             params.scallop_height,
             params.stock_to_leave,
@@ -2491,6 +2501,12 @@ pub fn scallop_toolpath_research(
             // that rides it is riding the workpiece. `None` keeps that
             // behaviour byte-identical.
             link_ceiling: None,
+            flush_ride: false,
+            // Inert while `link_ceiling` is `None` (the exemption is
+            // conjunctive), and `false` is the conservative value regardless:
+            // every link this pass emits rides the surface and is a cutting
+            // feed, so the territory veto stands.
+            airborne_links_may_leave_territory: false,
         };
         let (linked, rep) = crate::surface_link::relink_fragments(
             crate::toolpath_spans::AnnotatedToolpath::new(tp),

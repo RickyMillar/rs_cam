@@ -161,6 +161,17 @@ pub struct MultitoolPlanSpec {
     /// Target cusp height (mm) every tier is dialled to. See the module doc
     /// and [`equal_cusp_stepover_mm`].
     pub cusp_height_mm: f64,
+    /// When true, tier 0 does NOT sweep the whole board: it carries an
+    /// INVERTED planned-tier boundary — everything except the fine tiers'
+    /// `owned` islands — so the coarse tool skips ground a finer tool will
+    /// re-finish anyway (operator-requested 2026-08-27). The seam still
+    /// blends: fine tiers machine `owned + overlap_mm`, so the blend band
+    /// lands on coarse-finished ground either way. The trade, stated: the
+    /// fine tools then meet the ROUGHING pass's terraces inside their
+    /// islands instead of a coarse-finished surface — higher load on small
+    /// cutters, measurable by the load gates, which is why this is a dial
+    /// and not the default.
+    pub coarse_skips_fine_islands: bool,
 }
 
 impl Default for MultitoolPlanSpec {
@@ -176,6 +187,7 @@ impl Default for MultitoolPlanSpec {
             treatment: ResidualTreatment::SlopeCompensated,
             islands: TierIslandParams::default(),
             cusp_height_mm: DEFAULT_PLAN_CUSP_HEIGHT_MM,
+            coarse_skips_fine_islands: false,
         }
     }
 }
@@ -257,6 +269,23 @@ impl ProjectSession {
         let ordered_ids: Vec<usize> = ladder_tools.iter().map(|t| t.id.0).collect();
         let cusp_radii: Vec<f64> = cutters.iter().map(MillingCutter::cusp_radius_mm).collect();
 
+        // Pinned bottom_z, derived once for the whole ladder. Unified's
+        // `DepthSemantics::None` makes an Auto `bottom_z` resolve to the
+        // STOCK TOP (the Wave-D1 mechanism, `DroppedBandFinding`), which
+        // clips the very-steep band's entire Z range away — measured live on
+        // wanaka: 702 mm² of steep walls left at full stock across two
+        // regions. Hand-built wanaka tiers pin bottom_z manually just below
+        // the mesh floor; the planner does the same, from the same
+        // setup-frame mesh the tier map walks. `validate_multitool_spec`
+        // already guaranteed the mesh exists.
+        let heights = match self.plan_mesh(spec.model_id, spec.setup_index) {
+            Some(mesh) => HeightsConfig {
+                bottom_z: crate::compute::config::HeightMode::Manual(mesh.bbox.min.z - 0.2),
+                ..HeightsConfig::default()
+            },
+            None => HeightsConfig::default(),
+        };
+
         let plan_id = self.next_plan_id();
         let replaced = self.remove_planned_toolpaths(spec.setup_index);
 
@@ -276,7 +305,7 @@ impl ProjectSession {
                 name: format!("Finish tier {tier} (R{cusp:.1})"),
                 enabled: true,
                 dressups: DressupConfig::for_op(OperationType::UnifiedFinish),
-                heights: HeightsConfig::default(),
+                heights: heights.clone(),
                 tool_id: tool.id.0,
                 model_id: spec.model_id,
                 pre_gcode: None,
@@ -372,25 +401,34 @@ impl ProjectSession {
     /// SAME cached object rather than two walks that happen to agree: the
     /// tier-map memo keys on mesh identity, so a preview built off a private
     /// copy of the mesh would miss on every generate.
-    fn plan_geometry(
-        &self,
-        spec: &MultitoolPlanSpec,
-    ) -> (Option<Arc<TriangleMesh>>, Option<Arc<SpatialIndex>>) {
-        let Some(mut mesh) = self
+    /// The model's mesh in `setup_index`'s emission frame — the SAME cached
+    /// object generation resolves against. No spatial index: emission-time
+    /// callers (pinned heights) need only the bbox, and a cold index build
+    /// on a large mesh would make the "planning is CHEAP" contract a lie.
+    fn plan_mesh(&self, model_id: usize, setup_index: usize) -> Option<Arc<TriangleMesh>> {
+        let mut mesh = self
             .models
             .iter()
-            .find(|m| m.id == spec.model_id)
-            .and_then(|m| m.mesh.clone())
-        else {
-            return (None, None);
-        };
-        let ctx = SetupEvalContext::build_for_setup(self, self.setups.get(spec.setup_index));
+            .find(|m| m.id == model_id)
+            .and_then(|m| m.mesh.clone())?;
+        let ctx = SetupEvalContext::build_for_setup(self, self.setups.get(setup_index));
         if ctx.needs_transform() {
             mesh = crate::geom_cache::cached_transform(
                 &mesh,
                 &self.setup_transform_info(ctx.face_up, ctx.z_rotation),
             );
         }
+        Some(mesh)
+    }
+
+    fn plan_geometry(
+        &self,
+        model_id: usize,
+        setup_index: usize,
+    ) -> (Option<Arc<TriangleMesh>>, Option<Arc<SpatialIndex>>) {
+        let Some(mesh) = self.plan_mesh(model_id, setup_index) else {
+            return (None, None);
+        };
         let index = crate::geom_cache::cached_auto_index(&mesh);
         (Some(mesh), Some(index))
     }
@@ -424,7 +462,7 @@ impl ProjectSession {
         cancel: &AtomicBool,
     ) -> Result<MultitoolPreview, SessionError> {
         self.validate_multitool_spec(spec)?;
-        let (mesh, index) = self.plan_geometry(spec);
+        let (mesh, index) = self.plan_geometry(spec.model_id, spec.setup_index);
         let recipe = PlannedTierRecipe {
             tool_ids: &spec.tool_ids,
             // Ignored: `require_fine_tier` is false, so no tier is selected.
@@ -452,6 +490,76 @@ impl ProjectSession {
             tool_names: resolved.tools.iter().map(|t| t.name.clone()).collect(),
             tool_ids: resolved.tools.iter().map(|t| t.id.0).collect(),
         })
+    }
+
+    /// Resolve the RAW machining polygons for a toolpath whose enabled
+    /// boundary is [`BoundarySource::PlannedTierRegions`] — the GUI worker
+    /// path's twin of the arm `resolve_generation_inputs` runs in
+    /// `session/compute.rs`. `Ok(None)` when the toolpath's boundary is
+    /// disabled or any other source; `Ok(Some(vec![]))` when the tier is
+    /// legitimately EMPTY (the coarse tool holds the whole board — the op
+    /// must then generate nothing, **never** fall back to an unconfined
+    /// board; G-TIERWORKER, operator-observed 2026-08-27: the worker path
+    /// lacked this resolution entirely and a fine tier re-finished the
+    /// flats full-board).
+    ///
+    /// RAW means keep-outs and the user boundary offset are NOT applied —
+    /// the caller's clip pipeline applies them, exactly as it does for the
+    /// polygons a `DerivedRestRegions` source supplies.
+    ///
+    /// One pipeline: this goes through the same [`Self::resolve_tier_plan`]
+    /// the core generation path and the preview use, so the GUI worker, the
+    /// CLI and the operator's veto all describe the same islands.
+    pub fn planned_tier_boundary_polys(
+        &self,
+        toolpath_id: ToolpathId,
+        cancel: &AtomicBool,
+    ) -> Result<Option<Vec<Polygon2>>, SessionError> {
+        let Some((_, tc)) = self.find_toolpath_config_by_id(toolpath_id) else {
+            return Err(SessionError::OperationFailed(format!(
+                "no toolpath with id {} while resolving its planned-tier boundary",
+                toolpath_id.0
+            )));
+        };
+        if !tc.boundary.enabled {
+            return Ok(None);
+        }
+        let crate::compute::config::BoundarySource::PlannedTierRegions {
+            ref tool_ids,
+            tier,
+            cell_mm,
+            tolerance_mm,
+            margin_mm,
+            treatment,
+            islands,
+        } = tc.boundary.source
+        else {
+            return Ok(None);
+        };
+        let op_name = tc.name.clone();
+        let Some(setup_index) = self.setup_of_toolpath_id(toolpath_id) else {
+            return Err(SessionError::OperationFailed(format!(
+                "'{op_name}': toolpath belongs to no setup"
+            )));
+        };
+        let (mesh, index) = self.plan_geometry(tc.model_id, setup_index);
+        let recipe = PlannedTierRecipe {
+            tool_ids,
+            tier,
+            cell_mm,
+            tolerance_mm,
+            margin_mm,
+            treatment,
+            islands,
+        };
+        self.resolve_planned_tier_region_polys(
+            &op_name,
+            mesh.as_ref(),
+            index.as_ref(),
+            &recipe,
+            cancel,
+        )
+        .map(Some)
     }
 
     /// Resolve `tool_ids` to real tools, ordered coarse → fine on cusp
@@ -597,10 +705,30 @@ fn plan_tier_operation(cusp_radius_mm: f64, spec: &MultitoolPlanSpec) -> Operati
         } else {
             defaults.raster_stepover
         },
+        // The very-steep band's contour spacing IS its cusp spacing: on a
+        // near-vertical wall the ball's cusps stack vertically, so the same
+        // equal-cusp law sizes `z_step`. The type default (1.0 mm) is a
+        // generic dial — against a 10–30 µm cusp everywhere else it reads
+        // as the steep walls being abandoned (operator-observed 2026-08-27).
+        z_step: if stepover > 0.0 {
+            stepover
+        } else {
+            defaults.z_step
+        },
         // Held EQUAL across tiers (T2 §7): any non-zero value prints a
         // `stock_to_leave · Δcos θ` step at a tier seam that crosses a slope
         // change.
         stock_to_leave: 0.0,
+        // A generous link-permission cap for planner tiers. The 6 mm type
+        // default was tuned for compact regions; on dendritic islands the
+        // finger-to-finger hops routinely exceed it, and every candidate is
+        // still gouge-checked against standing stock AND integrator-costed
+        // against the retract it replaces, so a longer candidate only ever
+        // wins when it is actually faster — the cap is permission, not
+        // safety. (Measured 2026-08-27: the confined wanaka tier 1 kept
+        // 1,263 intra-node retracts under the 6 mm cap even after
+        // G-LINKVETO.)
+        intra_region_hookup_mm: 25.0,
         ..defaults
     })
 }
@@ -619,11 +747,15 @@ fn restore_planned_geometry(operation: &mut OperationConfig, planned: &Operation
 
 /// The boundary one tier carries.
 ///
-/// Tier 0 gets the type default (disabled): its cusp target holds everywhere
-/// by construction, so the coarse tool sweeps the whole board as one pass and
-/// needs no confinement. Only fine tiers carry islands.
+/// Tier 0 gets the type default (disabled) unless
+/// [`MultitoolPlanSpec::coarse_skips_fine_islands`] is on: its cusp target
+/// holds everywhere by construction, so by default the coarse tool sweeps
+/// the whole board as one pass. With the skip dial on, tier 0 carries the
+/// SAME variant with `tier: 0`, which the resolver reads as the COMPLEMENT
+/// of every fine tier's owned islands (see
+/// `resolve_planned_tier_region_polys`).
 fn tier_boundary(tier: u8, ordered_ids: &[usize], spec: &MultitoolPlanSpec) -> BoundaryConfig {
-    if tier == 0 {
+    if tier == 0 && !spec.coarse_skips_fine_islands {
         return BoundaryConfig::default();
     }
     BoundaryConfig {
@@ -781,9 +913,12 @@ impl ProjectSession {
     /// operator vetoed and what the fine tier is confined to are one
     /// computation, not two that agree.
     ///
-    /// Returns the tier's `machining` set — the islands grown by
-    /// `overlap_mm` — not `owned`. The blend band is the point: the fine
-    /// tool's first pass must land on ground the coarse tool already cut.
+    /// For a FINE tier (≥ 1), returns the tier's `machining` set — the
+    /// islands grown by `overlap_mm` — not `owned`. The blend band is the
+    /// point: the fine tool's first pass must land on ground the coarse
+    /// tool already cut. For `tier: 0`, returns the COMPLEMENT of every
+    /// fine tier's `owned` set (the coarse-skips-fine-islands arm — see the
+    /// inline comment).
     ///
     /// An **empty** result is not an error: it means the coarse tool holds
     /// the whole board at this tolerance, which is a planning outcome, not a
@@ -812,6 +947,64 @@ impl ProjectSession {
         recipe: &PlannedTierRecipe<'_>,
         cancel: &AtomicBool,
     ) -> Result<Vec<Polygon2>, SessionError> {
+        // `tier: 0` is the COMPLEMENT arm (coarse-skips-fine-islands,
+        // operator-requested 2026-08-27): everything except the fine tiers'
+        // `owned` islands — including NO_TIER cells, whose steep walls only
+        // tier 0's waterline band ever touches. Complement of `owned`, not
+        // of `machining`: the fine tiers cut `owned + overlap`, so the
+        // overlap band is machined by BOTH sides and the seam still blends.
+        // Holes ride the polygons natively (`region_polygons_from_mask`
+        // groups loops by even-odd depth), which is what makes "a board
+        // with nine island-shaped holes" one honest region set.
+        if recipe.tier == 0 {
+            let resolved = self.resolve_tier_plan(
+                op_name,
+                TierPlanGeometry { mesh, index },
+                recipe,
+                false,
+                cancel,
+            )?;
+            let map = resolved.map.as_ref();
+            let total = map.nx.saturating_mul(map.ny);
+            let mut complement = vec![true; total];
+            for set in &resolved.islands.per_tier {
+                for (i, &owned) in set.owned_mask.iter().enumerate() {
+                    if owned && let Some(cell) = complement.get_mut(i) {
+                        *cell = false;
+                    }
+                }
+            }
+            // Clear the border ring: marching squares treats cells as
+            // CORNERS, so a mask that is true along the grid border has no
+            // closable outer ring — the tracer then emits only the island
+            // hole-loops, and even-odd grouping returns them as depth-0
+            // polygons: the exact INVERSE of this arm's answer (measured on
+            // the bowl fixture: one 5 mm² polygon containing the origin).
+            // The border cells sit inside the `margin_mm` band past the
+            // mesh, so the territory lost is off-part; at `cell_mm >
+            // margin_mm` the bite reaches at most one cell of real edge,
+            // below the coarse tool's own cusp scale.
+            if map.nx > 0 && map.ny > 0 {
+                for (i, cell) in complement.iter_mut().enumerate() {
+                    let (r, c) = (i / map.nx, i % map.nx);
+                    if r == 0 || r == map.ny - 1 || c == 0 || c == map.nx - 1 {
+                        *cell = false;
+                    }
+                }
+            }
+            let grid = crate::grid2::Grid2::from_vec(map.nx, map.ny, complement).map_err(|e| {
+                SessionError::OperationFailed(format!(
+                    "'{op_name}': complement mask shape mismatch — {e}"
+                ))
+            })?;
+            return Ok(crate::region_mask::region_polygons_from_mask(
+                &grid,
+                map.origin_x,
+                map.origin_y,
+                map.cell_mm,
+                0.0,
+            ));
+        }
         let resolved = self.resolve_tier_plan(
             op_name,
             TierPlanGeometry { mesh, index },
@@ -891,5 +1084,51 @@ mod tests {
             }
             ref other => panic!("expected PlannedTierRegions, got {other:?}"),
         }
+    }
+
+    /// The skip dial flips ONLY tier 0's boundary — from the type default
+    /// (sweep everything) to the same variant with `tier: 0`, which the
+    /// resolver reads as the complement of the fine tiers' owned islands.
+    #[test]
+    fn the_skip_dial_gives_tier_zero_an_inverted_boundary() {
+        let spec = MultitoolPlanSpec {
+            tool_ids: vec![0, 1],
+            coarse_skips_fine_islands: true,
+            ..MultitoolPlanSpec::default()
+        };
+        let coarse = tier_boundary(0, &[0, 1], &spec);
+        assert!(coarse.enabled);
+        match coarse.source {
+            BoundarySource::PlannedTierRegions {
+                ref tool_ids, tier, ..
+            } => {
+                assert_eq!(tool_ids, &vec![0, 1]);
+                assert_eq!(tier, 0, "tier 0 IS the complement arm's address");
+            }
+            ref other => panic!("expected PlannedTierRegions, got {other:?}"),
+        }
+        // The fine tier is unchanged by the dial.
+        let fine = tier_boundary(1, &[0, 1], &spec);
+        assert!(fine.enabled);
+        assert!(matches!(
+            fine.source,
+            BoundarySource::PlannedTierRegions { tier: 1, .. }
+        ));
+    }
+
+    /// The very-steep band's contour spacing derives from the same
+    /// equal-cusp law as the stepover — the generic 1.0 mm z_step default
+    /// against a 10–30 µm cusp elsewhere reads as the steep walls being
+    /// abandoned (operator-observed 2026-08-27).
+    #[test]
+    fn the_planner_sizes_z_step_by_the_equal_cusp_law() {
+        let spec = MultitoolPlanSpec::default();
+        let op = plan_tier_operation(2.0, &spec);
+        let OperationConfig::UnifiedFinish(cfg) = op else {
+            panic!("planner emits unified_finish");
+        };
+        let expected = equal_cusp_stepover_mm(2.0, spec.cusp_height_mm);
+        assert!((cfg.z_step - expected).abs() < 1e-12);
+        assert!((cfg.raster_stepover - expected).abs() < 1e-12);
     }
 }

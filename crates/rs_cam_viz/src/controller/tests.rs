@@ -3566,3 +3566,34 @@ fn a_one_tool_ladder_never_reaches_the_worker() {
     assert!(controller.compute.optimize_requests.is_empty());
     assert!(!controller.state.is_optimizing);
 }
+
+/// The tier preview's setup gate (operator-observed 2026-08-27): the map is
+/// in its own setup's emission frame, so viewing ANY other setup must read
+/// as "not the previewed setup" — the overlay otherwise renders wrongly
+/// shifted beside the flipped stock. `active_setup_index` is the predicate
+/// both the callback gate and the GPU upload key share.
+#[test]
+fn active_setup_index_follows_the_selection() {
+    let mut controller = sample_controller();
+    let second = controller.state.session.add_setup(
+        "Back".to_owned(),
+        rs_cam_core::compute::transform::FaceUp::default(),
+    );
+
+    // Nothing setup-scoped selected: the first setup's frame is displayed.
+    controller.state.selection = Selection::None;
+    assert_eq!(controller.state.active_setup_index(), Some(0));
+
+    // Selecting the second setup moves the display frame with it.
+    let second_id = controller.state.session.list_setups()[second].id;
+    controller.state.selection = Selection::Setup(crate::state::job::SetupId(second_id));
+    assert_eq!(controller.state.active_setup_index(), Some(second));
+
+    // A toolpath selection resolves through its owning setup.
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    controller.state.selection = Selection::Toolpath(tp_id);
+    assert_eq!(
+        controller.state.active_setup_index(),
+        controller.state.session.setup_of_toolpath_id(tp_id)
+    );
+}

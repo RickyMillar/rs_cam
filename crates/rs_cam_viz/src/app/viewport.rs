@@ -476,12 +476,16 @@ impl RsCamApp {
             // Parallel to the rest heatmap and independent of it — both can
             // be up at once. Gated on the Toolpaths workspace for the same
             // reason: it is a planning overlay, not a verification one.
+            // ALSO gated on the previewed setup being the ACTIVE one: the
+            // tier map lives in its own setup's emission frame, so in any
+            // other setup's display frame it renders wrongly shifted
+            // (operator-observed: the front tier map floating offset beside
+            // the flipped back-setup stock).
             show_tier_preview: state.viewport.show_tier_preview
                 && state.workspace == Workspace::Toolpaths
-                && state
-                    .multitool_planner
-                    .as_ref()
-                    .is_some_and(|p| p.ready_preview().is_some()),
+                && state.multitool_planner.as_ref().is_some_and(|p| {
+                    p.ready_preview().is_some() && state.active_setup_index() == Some(p.setup_index)
+                }),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

@@ -341,6 +341,33 @@ impl FinishSurface {
     }
 }
 
+/// How many whole-board surface builds
+/// [`build_finish_surface_with_policy_and_cancel`] has STARTED since process
+/// start. Incremented on entry, so a build cancelled part-way still counts —
+/// the question this answers is "did the walk run", not "did it finish".
+///
+/// The measurement instrument for the [`crate::finish_surface_cache`] memo, and
+/// deliberately **inside the builder** rather than on the cache: the bar that
+/// memo is written against is "the second call does no surface-build work", and
+/// a counter kept by the cache could report a hit while something else rebuilt.
+/// This one cannot — every whole-board drop-cutter walk this module performs
+/// increments it. `tests/finish_surface_cache.rs` reads it.
+static SURFACE_BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Read the whole-board surface-build counter. See its own doc for why the
+/// counter lives in the builder rather than on the memo.
+#[must_use]
+pub fn surface_build_count() -> u64 {
+    SURFACE_BUILDS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Zero the whole-board surface-build counter. For harnesses that want a
+/// per-run delta; no cached or computed value is touched, so this cannot
+/// change any result.
+pub fn reset_surface_build_count() {
+    SURFACE_BUILDS.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Build a [`FinishSurface`] over `mesh`'s own bounding box, expanded by one
 /// cutter radius on every side (so the cutter's full extent has heightmap
 /// coverage right up to the model boundary), at the resolution `resolution`
@@ -351,6 +378,12 @@ impl FinishSurface {
 /// function honours it, tagging the surface with the policy's provenance. The
 /// two older entry points below are thin adapters that select a policy on the
 /// caller's behalf.
+///
+/// This entry point is **uncached** and stays that way: it is what the
+/// resolution A/B harnesses and the parity sentries drive, and they need a
+/// fresh build every time. Production finishing consumers go through
+/// [`crate::finish_surface_cache::cached_finish_surface`], which memoises
+/// *this* function — so the two can never disagree about what a surface is.
 pub fn build_finish_surface_with_policy_and_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -358,6 +391,7 @@ pub fn build_finish_surface_with_policy_and_cancel(
     resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
 ) -> Result<FinishSurface, Cancelled> {
+    SURFACE_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let cell_size = resolution.cell_mm();
     // Grid PADDING is physical sweep, so it is ENVELOPE by contract
     // (`TOOL_SCALE_SEMANTICS.md` §8 row 2 — must stay envelope), regardless

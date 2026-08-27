@@ -559,11 +559,17 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     // The RESOLUTION is ramp_finish's own choice (H3 step 2) — see
     // `ramp_finish_generation_resolution`, which the shipped wrapper above
     // passes in.
-    let surface = crate::finish_setup::build_finish_surface_with_policy_and_cancel(
+    //
+    // MEMOISED — see `finish_surface_cache`'s module doc. This op builds one
+    // surface per call rather than per region, so it is not the hot path the
+    // memo was written for; it goes through the same door anyway so that every
+    // generation consumer shares one entry, and so a second op run back-to-back
+    // against the same mesh and tool does not repeat the walk.
+    let surface = crate::finish_surface_cache::cached_finish_surface(
         mesh, index, cutter, resolution, cancel,
     )?;
-    let surface_hm = surface.heightmap;
-    let slope_map = surface.slope_map;
+    let surface_hm = &surface.heightmap;
+    let slope_map = &surface.slope_map;
     let cell_size = surface_hm.cell_size;
 
     // ── Compute Z range, reach-clamped (PR-8b) ───────────────────────────

@@ -1236,12 +1236,22 @@ impl RsCamApp {
         // new preview lands, so dragging the coarseness slider rebuilds once
         // per landed preview and toggling the visibility checkbox rebuilds
         // nothing at all.
+        // Gated on the previewed setup being the ACTIVE one, same predicate
+        // as the `show_tier_preview` callback gate: the map is in its own
+        // setup's emission frame, and `shift_arr` here belongs to the active
+        // setup — baking the wrong frame's shift into the mesh is exactly
+        // the operator-observed offset defect. On any other setup the key
+        // goes `None`, the data drops, and returning to the planned setup
+        // rebuilds once.
+        let active_setup = self.controller.state().active_setup_index();
         let tier_key = self
             .controller
             .state()
             .multitool_planner
             .as_ref()
-            .filter(|planner| planner.ready_preview().is_some())
+            .filter(|planner| {
+                planner.ready_preview().is_some() && active_setup == Some(planner.setup_index)
+            })
             .map(|planner| upload_cache::TierPreviewUploadKey {
                 generation: planner.preview_generation,
                 shift: shift_arr,
@@ -1253,6 +1263,9 @@ impl RsCamApp {
                 .state()
                 .multitool_planner
                 .as_ref()
+                .filter(|planner| {
+                    planner.ready_preview().is_some() && active_setup == Some(planner.setup_index)
+                })
                 .and_then(|planner| planner.ready_preview())
                 .and_then(|preview| {
                     rs_cam_core::rest_heatmap_mesh::tier_map_to_heatmap_mesh(

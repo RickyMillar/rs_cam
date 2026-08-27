@@ -275,3 +275,49 @@ fn the_preview_refuses_what_the_plan_refuses() {
     };
     assert!(session.preview_multitool_plan(&bad_model, &cancel).is_err());
 }
+
+/// G-TIERWORKER follow-on (operator-requested skip dial): `tier: 0` on the
+/// planned-tier boundary resolves to the COMPLEMENT of the fine tiers'
+/// owned islands — the plane stays tier 0's territory, the bowl does not,
+/// and an emitted skip-dial plan resolves through the same public seam the
+/// GUI worker path uses (`planned_tier_boundary_polys`).
+#[test]
+fn the_skip_dial_resolves_tier_zero_to_the_complement() {
+    let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
+    let plan_spec = MultitoolPlanSpec {
+        coarse_skips_fine_islands: true,
+        ..spec(coarse_id, fine_id, model_id)
+    };
+    let outcome = session
+        .plan_multitool_finishing(&plan_spec)
+        .expect("skip-dial plan emits");
+
+    let cancel = AtomicBool::new(false);
+    let tier0_id = outcome.toolpath_ids[0];
+    let polys = session
+        .planned_tier_boundary_polys(tier0_id, &cancel)
+        .expect("tier 0 boundary resolves")
+        .expect("tier 0 carries a planned boundary under the skip dial");
+    assert!(!polys.is_empty(), "the complement is most of the board");
+
+    let region = rs_cam_core::region_set::RegionSet::from_slice(&polys);
+    use rs_cam_core::geo::P2;
+    assert!(
+        !region.contains(&P2::new(0.0, 0.0)),
+        "the bowl centre is fine-tier territory — tier 0 must skip it"
+    );
+    assert!(
+        region.contains(&P2::new(6.0, 6.0)),
+        "the flat plane stays tier 0's"
+    );
+
+    // The fine tier still resolves to its islands through the same seam,
+    // and the two are complementary at the bowl centre.
+    let tier1_id = outcome.toolpath_ids[1];
+    let fine_polys = session
+        .planned_tier_boundary_polys(tier1_id, &cancel)
+        .expect("tier 1 boundary resolves")
+        .expect("tier 1 carries a planned boundary");
+    let fine_region = rs_cam_core::region_set::RegionSet::from_slice(&fine_polys);
+    assert!(fine_region.contains(&P2::new(0.0, 0.0)));
+}

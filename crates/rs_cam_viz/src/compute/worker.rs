@@ -92,9 +92,16 @@ pub struct ComputeRequest {
     /// The controller fails the toolpath hard (see
     /// `submit_toolpath_compute`) rather than submitting a request when
     /// the source is missing, self-referential, ungenerated, or has no
-    /// rest regions — so a worker that receives `Some` here can assume
-    /// the `Vec` is non-empty. `None` only when the boundary source isn't
-    /// `DerivedRestRegions`.
+    /// rest regions — so a worker that receives `Some` here for THAT
+    /// source can assume the `Vec` is non-empty.
+    ///
+    /// G-TIERWORKER: a `PlannedTierRegions` boundary rides this same slot
+    /// (the controller resolves the tier's machining polygons through the
+    /// session's single tier pipeline before submitting). For that source
+    /// `Some(vec![])` is a REAL answer — a legitimately empty tier that
+    /// must confine the op to nothing — so only the `DerivedRestRegions`
+    /// non-empty assumption above applies. `None` when the boundary source
+    /// is neither variant.
     ///
     /// The real enforcement clip (further down in `run_compute_with_phase_tracker`)
     /// uses every region in this set via `ProjectSession::apply_boundary_clip_multi`

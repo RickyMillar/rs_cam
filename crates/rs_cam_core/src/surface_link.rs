@@ -176,6 +176,56 @@ pub struct RelinkParams<'a> {
     /// byte-identical behaviour the finishing families rely on, where the
     /// mesh already IS the material.
     pub link_ceiling: Option<LinkCeiling<'a>>,
+    /// In ceiling mode, permit a junction whose whole hop reads FLUSH
+    /// (dexel material at the mesh surface) to ride the surface instead of
+    /// taking the lifted shape. This is an OP PRIOR, not a geometry fact —
+    /// the dexel cannot distinguish "machined down to the surface" from
+    /// "raw stock that happens to sit at surface height":
+    ///
+    /// - A FromRemainingStock FINISHING pass sets `true`: flush ground is
+    ///   the prior pass's machined output, and riding it is a harmless
+    ///   sub-cusp skim (the staple hedge this removes: 2,569 lifted links
+    ///   on one wanaka raster, two clearance legs each for sub-mm hops).
+    /// - An ENGRAVING pass (project_curve, the original ceiling caller)
+    ///   sets `false`: its flush ground is the RAW WORKPIECE FACE, and a
+    ///   fed slide across it drags the cutter over stock the op must not
+    ///   touch — the exact contract `stock_safety_links_clear_standing_material`
+    ///   pins (ceiling + clearance everywhere, flats included).
+    ///
+    /// Ignored when `link_ceiling` is `None`.
+    pub flush_ride: bool,
+    /// Let a LIFTED (ceiling-mode) link cross ground [`Self::boundary`]
+    /// excludes. Like [`Self::flush_ride`] this is an OP PRIOR, and for the
+    /// same reason it cannot be inferred from the geometry: being airborne
+    /// answers the GOUGE question ("does this link cut anything?"), and the
+    /// boundary asks a second, independent TERRITORY question ("may the tool
+    /// be over there at all?"). A machining boundary also encodes keep-outs
+    /// and fixtures, and [`LinkCeiling`] reads its clearance from the dexel
+    /// stock, which need not model a clamp at all — so "it clears the
+    /// material the dexel knows about" is not "it clears the workholding".
+    /// Only the op knows which of the two its boundary means.
+    ///
+    /// - A FINISHING pass over a decomposed region sets `true`: its boundary
+    ///   is the region polygon, whose only job is to keep CUTTING confined.
+    ///   On a dendritic rest island the straight line between two fragments
+    ///   of the same region leaves that region constantly, and vetoing those
+    ///   airborne hops turned nearly every finger-to-finger junction into a
+    ///   full safe-Z retract (measured on the confined wanaka tier 1: 17,083
+    ///   intra-node retract trips, 363.8 m of rapids against 86.8 m of
+    ///   cutting).
+    /// - An ENGRAVING pass (project_curve, the original ceiling caller) sets
+    ///   `false`: its boundary is the operation's machining territory, which
+    ///   the operator may have drawn around a clamp or a keep-out, so an
+    ///   airborne traverse across it is still a refusal
+    ///   (`project_curve_chaining::a_link_may_not_leave_the_machining_boundary`
+    ///   pins it). This is the conservative value; a caller with no opinion
+    ///   sets `false`.
+    ///
+    /// The exemption is conjunctive with the link's actual shape: a
+    /// SURFACE-RIDING link (`link_ceiling: None`, or a ceiling link that took
+    /// the [`Self::flush_ride`] arm) is a CUTTING feed and stays vetoed
+    /// everywhere, whatever this flag says.
+    pub airborne_links_may_leave_territory: bool,
 }
 
 /// What [`relink_fragments`] did.
@@ -412,11 +462,33 @@ pub fn relink_fragments(
                 report.off_surface += 1;
                 return None;
             };
-            // Mirrors `unified_finish::choose_link`: a surface link is a
-            // CUTTING feed, so it must not leave the territory this op is
+            // Mirrors `unified_finish::choose_link`: a SURFACE-RIDING link is
+            // a CUTTING feed, so it must not leave the territory this op is
             // confined to. Endpoints are cut positions and trivially
             // inside; the interior samples carry the test.
-            if let Some(boundary) = params.boundary
+            //
+            // A CEILING link MAY be exempt (G-LINKVETO, operator-observed
+            // 2026-08-27): it does not ride the surface — it exits
+            // vertically, traverses at `max(surface, standing stock) +
+            // clearance` sampled along the whole hop, and re-enters
+            // vertically, so it cuts nothing whatever territory it crosses.
+            // On a dendritic island the straight line between two fragments
+            // of the SAME region leaves that region constantly, and this
+            // veto was turning nearly every short finger-to-finger hop into
+            // a full safe-Z retract round trip (measured on the confined
+            // wanaka tier 1: 17,083 intra-node retract trips, 363.8 m of
+            // rapids against 86.8 m of cutting).
+            //
+            // BOTH halves are required, and the second one cannot be read
+            // off the geometry: airborne answers the GOUGE question, not the
+            // TERRITORY one, so the op has to declare whether its boundary
+            // is a cut-confinement polygon (exempt) or a keep-out/fixture
+            // envelope (never exempt). See
+            // `RelinkParams::airborne_links_may_leave_territory`.
+            let airborne_exempt =
+                params.link_ceiling.is_some() && params.airborne_links_may_leave_territory;
+            if !airborne_exempt
+                && let Some(boundary) = params.boundary
                 && !pts
                     .iter()
                     .all(|p| boundary.contains(&crate::geo::P2::new(p.x, p.y)))
@@ -439,34 +511,74 @@ pub fn relink_fragments(
                             f64::NEG_INFINITY
                         }
                     };
-                    // Exit lift, then the interior samples, then the
-                    // re-entry lift: the traverse is entirely at clearance
-                    // and both ends of it are vertical, so nothing standing
-                    // between the two fragments is crossed at cut depth.
-                    // The degenerate case — a gap shorter than one sample
-                    // spacing, where `build_surface_link` yields no interior
-                    // points at all — is the same rule with an empty middle,
-                    // not a special case that feeds across at depth.
-                    let mut lifted: Vec<P3> = Vec::with_capacity(pts.len() + 2);
-                    let samples = std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
-                        .chain(pts.iter().map(|p| (p.x, p.y, p.z - params.stock_to_leave)))
-                        .chain(std::iter::once((
-                            entry.x,
-                            entry.y,
-                            surface_z_at(entry.x, entry.y),
-                        )));
-                    for (x, y, surface_z) in samples {
-                        let z = ceiling.clear_z(x, y, surface_z);
-                        if z >= params.safe_z - 1e-6 {
-                            // Clearing the standing material costs the whole
-                            // retract anyway — keep the rapid, which is
-                            // faster than feeding to the same height.
-                            report.ceiling_above_safe_z += 1;
+                    let samples: Vec<(f64, f64, f64)> =
+                        std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
+                            .chain(pts.iter().map(|p| (p.x, p.y, p.z - params.stock_to_leave)))
+                            .chain(std::iter::once((
+                                entry.x,
+                                entry.y,
+                                surface_z_at(entry.x, entry.y),
+                            )))
+                            .collect();
+                    // Pencil's prior, applied PER JUNCTION (operator-observed
+                    // 2026-08-27): where the dexel says the stock is already
+                    // AT the surface along the whole hop, the mesh IS the
+                    // material — the legacy surface-riding link is correct
+                    // and strictly cheaper than a lift (on the wanaka tier-1
+                    // raster, 2,569 links each paid two clearance legs for a
+                    // sub-millimetre row hop: a hedge of staples along every
+                    // raster edge). A surface-riding link is a CUTTING feed,
+                    // so the territory veto — which
+                    // `airborne_links_may_leave_territory` can waive only for
+                    // LIFTED links — applies here after all, and is re-run
+                    // below because the exemption above may have skipped it.
+                    //
+                    // `material_top` is a conservative MAX over the tool
+                    // disc, so on sloped ground it reads above the centre
+                    // surface even with zero standing stock — there the test
+                    // fails and the safe lifted shape stays. Deliberate: the
+                    // flush ride is a flat-ground optimisation, never a
+                    // slope gamble.
+                    const FLUSH_EPS_MM: f64 = 0.15;
+                    let flush = params.flush_ride
+                        && samples.iter().all(|&(x, y, sz)| {
+                            sz.is_finite() && ceiling.material_top(x, y) <= sz + FLUSH_EPS_MM
+                        });
+                    if flush {
+                        if let Some(boundary) = params.boundary
+                            && !pts
+                                .iter()
+                                .all(|p| boundary.contains(&crate::geo::P2::new(p.x, p.y)))
+                        {
+                            report.outside_boundary += 1;
                             return None;
                         }
-                        lifted.push(P3::new(x, y, z));
+                        pts
+                    } else {
+                        // Exit lift, then the interior samples, then the
+                        // re-entry lift: the traverse is entirely at
+                        // clearance and both ends of it are vertical, so
+                        // nothing standing between the two fragments is
+                        // crossed at cut depth. The degenerate case — a gap
+                        // shorter than one sample spacing, where
+                        // `build_surface_link` yields no interior points at
+                        // all — is the same rule with an empty middle, not a
+                        // special case that feeds across at depth.
+                        let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
+                        for &(x, y, surface_z) in &samples {
+                            let z = ceiling.clear_z(x, y, surface_z);
+                            if z >= params.safe_z - 1e-6 {
+                                // Clearing the standing material costs the
+                                // whole retract anyway — keep the rapid,
+                                // which is faster than feeding to the same
+                                // height.
+                                report.ceiling_above_safe_z += 1;
+                                return None;
+                            }
+                            lifted.push(P3::new(x, y, z));
+                        }
+                        lifted
                     }
-                    lifted
                 }
             };
             match params.link_kinematics {
@@ -731,6 +843,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 5, "{report:?}");
@@ -785,6 +899,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (transformed, _) =
             relink_fragments(AnnotatedToolpath::new(tp), &mesh, &index, &tool, &params);
@@ -822,6 +938,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
 
@@ -882,6 +1000,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (out, report) = relink(&tp, &mesh, &index, &tool, &params);
         assert_eq!(report.surface_links, 0, "5mm > 3mm hookup: {report:?}");
@@ -934,6 +1054,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (_, unbounded) = relink(&tp, &mesh, &index, &tool, &base);
         assert_eq!(
@@ -970,6 +1092,267 @@ mod tests {
         assert_eq!(bounded.retract_links, 5, "{bounded:?}");
     }
 
+    /// G-LINKVETO: the territory veto exists for SURFACE-RIDING links, which
+    /// are cutting feeds. A CEILING link is airborne by construction — it
+    /// traverses at `max(surface, standing stock) + clearance` — so an op
+    /// whose boundary only confines CUTTING may let it cross excluded
+    /// territory. Same fixture as
+    /// [`relink_refuses_links_that_leave_the_boundary`]: the only variable
+    /// is the ceiling (plus the op prior that goes with it), so the tests
+    /// pin that the veto keys on the LINK KIND **and** the op's declared
+    /// prior — never on the boundary's presence, and never on the link
+    /// shape alone. The third member of the family,
+    /// [`an_airborne_link_still_answers_a_territory_boundary`], holds the
+    /// prior at `false` with everything else identical. (Measured cost of the
+    /// veto firing in ceiling mode on the confined wanaka tier 1: 17,083
+    /// intra-node safe-Z retract trips — 363.8 m of rapids for 86.8 m of
+    /// cutting.)
+    #[test]
+    fn a_ceiling_link_may_cross_excluded_territory() {
+        use crate::geo::P2;
+        use crate::polygon::Polygon2;
+        use crate::region_set::RegionSet;
+
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+
+        let mut rings: Vec<Polygon2> = Vec::new();
+        let mut x = 1.0;
+        for _ in 0..6 {
+            rings.push(Polygon2::new(vec![
+                P2::new(x - 0.2, -1.0),
+                P2::new(x + 4.2, -1.0),
+                P2::new(x + 4.2, 1.0),
+                P2::new(x - 0.2, 1.0),
+            ]));
+            x += 4.0 + 1.5;
+        }
+        let region = RegionSet::new(rings);
+        let params = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: Some(&region),
+            link_ceiling: Some(LinkCeiling {
+                stock: None,
+                tool_radius: 1.0,
+                fallback_top_z: 0.0,
+            }),
+            flush_ride: false,
+            // The op prior half of the exemption. Without it the veto stands
+            // even for an airborne link — that is the other sentry,
+            // `an_airborne_link_still_answers_a_territory_boundary`.
+            airborne_links_may_leave_territory: true,
+        };
+        let (linked, report) = relink(&tp, &mesh, &index, &tool, &params);
+        assert_eq!(
+            report.surface_links, 5,
+            "airborne links cross excluded territory: {report:?}"
+        );
+        assert_eq!(report.outside_boundary, 0, "{report:?}");
+
+        // And they really are airborne: every HORIZONTALLY travelling
+        // Linking move clears the ceiling's material top by the plunge
+        // clearance. The vertical exit and re-entry legs end AT the cut by
+        // design, so the XY filter — not a special case — exempts them,
+        // same as `island_stay_down_links_o3`.
+        let floor = 0.0 + crate::toolpath::PLUNGE_CLEARANCE_MM - 1e-6;
+        for w in linked.moves.windows(2) {
+            let (prev, mv) = (&w[0], &w[1]);
+            let travels_xy =
+                (mv.target.x - prev.target.x).hypot(mv.target.y - prev.target.y) > 1e-6;
+            if travels_xy
+                && mv.intent == crate::toolpath::MoveIntent::Linking
+                && !matches!(mv.move_type, crate::toolpath::MoveType::Rapid)
+            {
+                assert!(
+                    mv.target.z >= floor.min(safe_z),
+                    "a ceiling link sample at z={} sits below the material \
+                     clearance {floor}",
+                    mv.target.z
+                );
+            }
+        }
+    }
+
+    /// The other half of G-LINKVETO, and the property `project_curve`
+    /// depends on: being airborne is NOT on its own a licence to leave the
+    /// machining boundary. A boundary can encode a keep-out or a fixture,
+    /// and [`LinkCeiling`] reads its clearance from the dexel stock, which
+    /// need not model a clamp at all — so an op that has not declared
+    /// [`RelinkParams::airborne_links_may_leave_territory`] keeps the veto
+    /// even in ceiling mode.
+    ///
+    /// Same fixture and the same ceiling as
+    /// [`a_ceiling_link_may_cross_excluded_territory`]; the ONLY variable is
+    /// the flag. Written after the exemption was briefly inferred from
+    /// `link_ceiling.is_some()`, which made this refusal — and with it
+    /// project_curve's boundary contract — unreachable.
+    #[test]
+    fn an_airborne_link_still_answers_a_territory_boundary() {
+        use crate::geo::P2;
+        use crate::polygon::Polygon2;
+        use crate::region_set::RegionSet;
+
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+
+        // A boundary that covers the cut runs but NOT the 1.5mm gaps between
+        // them, so every junction crosses excluded territory.
+        let mut rings: Vec<Polygon2> = Vec::new();
+        let mut x = 1.0;
+        for _ in 0..6 {
+            rings.push(Polygon2::new(vec![
+                P2::new(x - 0.2, -1.0),
+                P2::new(x + 4.2, -1.0),
+                P2::new(x + 4.2, 1.0),
+                P2::new(x - 0.2, 1.0),
+            ]));
+            x += 4.0 + 1.5;
+        }
+        let region = RegionSet::new(rings);
+        let params = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: Some(&region),
+            link_ceiling: Some(LinkCeiling {
+                stock: None,
+                tool_radius: 1.0,
+                fallback_top_z: 0.0,
+            }),
+            flush_ride: false,
+            // The whole variable. `true` here is the sibling test.
+            airborne_links_may_leave_territory: false,
+        };
+        let (_, report) = relink(&tp, &mesh, &index, &tool, &params);
+        assert!(
+            report.outside_boundary > 0,
+            "the territory veto must FIRE on an airborne link whose op did \
+             not declare the exemption — not merely coincide with a path \
+             that had no links to lose: {report:?}"
+        );
+        assert_eq!(
+            report.outside_boundary, 5,
+            "all five junctions cross excluded territory: {report:?}"
+        );
+        assert_eq!(
+            report.surface_links, 0,
+            "…and nothing may have slipped past it: {report:?}"
+        );
+        assert_eq!(
+            report.retract_links, 5,
+            "every refused link falls back to the retract it replaced: \
+             {report:?}"
+        );
+    }
+
+    /// The flush arm of the pencil prior: where the dexel says the stock is
+    /// already AT the surface along the hop, a ceiling-mode link rides the
+    /// surface — no clearance staple — and, being a CUTTING feed again,
+    /// answers to the territory veto like any surface link. Fixture: the
+    /// ceiling's fallback top sits far BELOW the mesh, so material never
+    /// stands above the surface and every hop reads flush.
+    #[test]
+    fn a_flush_ceiling_link_rides_the_surface_and_answers_the_veto() {
+        use crate::geo::P2;
+        use crate::polygon::Polygon2;
+        use crate::region_set::RegionSet;
+
+        let mesh = make_v_valley(60.0, 6.0, 0.5, 60, 24);
+        let index = SpatialIndex::build(&mesh, 5.0);
+        let tool = BallEndmill::new(2.0, 25.0);
+        let safe_z = 20.0;
+        let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
+
+        let flush_ceiling = LinkCeiling {
+            stock: None,
+            tool_radius: 1.0,
+            fallback_top_z: -50.0,
+        };
+        let base = RelinkParams {
+            hookup_distance: 3.0,
+            stock_to_leave: 0.0,
+            sampling: 0.5,
+            feed_rate: 500.0,
+            plunge_rate: 100.0,
+            safe_z,
+            link_kinematics: None,
+            reorder: false,
+            boundary: None,
+            link_ceiling: Some(flush_ceiling),
+            flush_ride: true,
+            // Exemption GRANTED at the op level, so what refuses the bounded
+            // arm below can only be the flush link's own cutting shape — the
+            // property this test is about.
+            airborne_links_may_leave_territory: true,
+        };
+        let (linked, report) = relink(&tp, &mesh, &index, &tool, &base);
+        assert_eq!(report.surface_links, 5, "flush hops link: {report:?}");
+        // Surface-riding, not stapled: no horizontally-travelling link
+        // sample sits a clearance above the surface (the staple's signature
+        // height); the ride stays at cut depth.
+        let staple_floor = crate::toolpath::PLUNGE_CLEARANCE_MM - 1e-6;
+        for w in linked.moves.windows(2) {
+            let (prev, mv) = (&w[0], &w[1]);
+            let travels_xy =
+                (mv.target.x - prev.target.x).hypot(mv.target.y - prev.target.y) > 1e-6;
+            if travels_xy
+                && mv.intent == crate::toolpath::MoveIntent::Linking
+                && !matches!(mv.move_type, crate::toolpath::MoveType::Rapid)
+            {
+                assert!(
+                    mv.target.z < staple_floor,
+                    "a flush link sample at z={} carries the staple shape the \
+                     flush arm exists to remove",
+                    mv.target.z
+                );
+            }
+        }
+
+        // And the veto is back in force for the flush (cutting) shape: the
+        // same excluded-gap boundary that a LIFTED link may cross refuses a
+        // flush one.
+        let mut rings: Vec<Polygon2> = Vec::new();
+        let mut x = 1.0;
+        for _ in 0..6 {
+            rings.push(Polygon2::new(vec![
+                P2::new(x - 0.2, -1.0),
+                P2::new(x + 4.2, -1.0),
+                P2::new(x + 4.2, 1.0),
+                P2::new(x - 0.2, 1.0),
+            ]));
+            x += 4.0 + 1.5;
+        }
+        let region = RegionSet::new(rings);
+        let bounded = RelinkParams {
+            boundary: Some(&region),
+            ..base
+        };
+        let (_, bounded_report) = relink(&tp, &mesh, &index, &tool, &bounded);
+        assert_eq!(
+            bounded_report.outside_boundary, 5,
+            "a flush link is a cutting feed and answers the territory veto: \
+             {bounded_report:?}"
+        );
+    }
+
     #[test]
     fn relink_reorder_visits_nearest_first() {
         use crate::toolpath::{MoveIntent, Toolpath};
@@ -998,6 +1381,8 @@ mod tests {
             reorder: false,
             boundary: None,
             link_ceiling: None,
+            flush_ride: false,
+            airborne_links_may_leave_territory: false,
         };
         let (kept, _) = relink(&tp, &mesh, &index, &tool, &base);
         let reordered_params = RelinkParams {

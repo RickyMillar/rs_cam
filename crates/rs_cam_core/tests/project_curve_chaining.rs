@@ -704,6 +704,11 @@ fn a_link_may_not_leave_the_machining_boundary() {
             tool_radius: tool_def.radius(),
             fallback_top_z: 0.0,
         }),
+        flush_ride: false,
+        // project_curve's own prior, mirrored: its boundary is machining
+        // territory (keep-outs, fixtures), not a cut-confinement polygon, so
+        // an airborne link gets no exemption from it.
+        airborne_links_may_leave_territory: false,
     };
     let (_, report) = rs_cam_core::surface_link::relink_fragments(
         AnnotatedToolpath::new(unbounded_baseline()),

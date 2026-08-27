@@ -200,6 +200,7 @@ fn narration_air_cut_line_names_its_denominators() {
         ramp_reach_clamp: None,
         tip_float: None,
         retract_trips: None,
+        relink: None,
         // Checkpoint C — the 2D failure contract's two report-only slots.
         offset_library_failures: None,
         boundary_clip_dropped: None,

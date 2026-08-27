@@ -2116,6 +2116,15 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // leaves it cuts territory the decomposition (and, under
                 // `territory_clip`, the rest mask) deliberately excluded.
                 boundary: Some(&region_set),
+                // …but a LIFTED link may cross it: this boundary is the
+                // decomposition's own region polygon, whose job is to confine
+                // CUTTING, not to fence the tool out of a keep-out. Vetoing
+                // airborne hops on a dendritic island cost 17,083 intra-node
+                // retract trips on the confined wanaka tier 1 (363.8 m of
+                // rapids for 86.8 m of cutting). A surface-riding link — the
+                // fresh-stock arm below, and the `flush_ride` arm — still
+                // answers the veto.
+                airborne_links_may_leave_territory: true,
                 // `None` on a fresh-stock pass, where the mesh IS the
                 // material and the legacy surface-riding link is correct;
                 // `Some` whenever the caller holds this op's INPUT stock,
@@ -2123,6 +2132,11 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // wherever nothing has cut yet and a surface-riding link
                 // feeds straight through it (G-LINKLOAD).
                 link_ceiling,
+                // Finishing prior: flush ground under a ceiling is the
+                // PRIOR pass's machined output, so riding it is a sub-cusp
+                // skim — the anti-staple arm. Engraving's opposite prior
+                // (raw face at surface height) keeps this false there.
+                flush_ride: true,
             };
             let (linked, rep) = crate::surface_link::relink_fragments(
                 crate::toolpath_spans::AnnotatedToolpath::new(tp),

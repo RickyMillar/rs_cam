@@ -255,6 +255,21 @@ fn draw_main_dials(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
              tier's own cusp. Changing it is a fresh grid walk.",
         );
     });
+
+    ui.horizontal(|ui| {
+        ui.checkbox(
+            &mut planner.coarse_skips_fine_islands,
+            egui::RichText::new("Coarse tool skips fine islands").small(),
+        )
+        .on_hover_text(
+            "Tier 0 leaves the fine tiers' islands uncut instead of sweeping the whole \
+             board — a finer tool re-finishes them anyway. Saves the coarse pass that \
+             share of its runtime, but the fine tools then meet the ROUGHING terraces \
+             inside their islands instead of a coarse-finished surface: more load on \
+             small cutters. The load gates measure it either way. Emission-only: the \
+             preview's islands are unchanged by this.",
+        );
+    });
 }
 
 fn draw_advanced(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {

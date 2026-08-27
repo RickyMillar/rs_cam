@@ -157,6 +157,10 @@ pub struct MultitoolPlannerState {
     pub max_regions_per_tier: usize,
     pub rim_erosion_mm: f64,
     pub treatment: ResidualTreatment,
+    /// Tier 0 skips the fine tiers' owned islands instead of sweeping the
+    /// whole board. Mirrors `MultitoolPlanSpec::coarse_skips_fine_islands`
+    /// (the trade-off is documented there).
+    pub coarse_skips_fine_islands: bool,
 
     // ── Preview lifecycle ───────────────────────────────────────────
     pub status: MultitoolPreviewStatus,
@@ -206,6 +210,7 @@ impl MultitoolPlannerState {
             max_regions_per_tier: defaults.islands.max_regions_per_tier,
             rim_erosion_mm: defaults.islands.rim_erosion_mm,
             treatment: defaults.treatment,
+            coarse_skips_fine_islands: defaults.coarse_skips_fine_islands,
             status: MultitoolPreviewStatus::Idle,
             previewed_key: None,
             requested_key: None,
@@ -318,6 +323,7 @@ impl MultitoolPlannerState {
                 rim_erosion_mm: self.rim_erosion_mm.max(0.0),
             },
             cusp_height_mm: self.cusp_height_mm,
+            coarse_skips_fine_islands: self.coarse_skips_fine_islands,
         }
     }
 

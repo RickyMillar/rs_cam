@@ -695,6 +695,53 @@ impl<B: ComputeBackend> AppController<B> {
             None
         };
 
+        // G-TIERWORKER (operator-observed 2026-08-27): the worker resolves
+        // boundary regions from this request alone, so a `PlannedTierRegions`
+        // boundary must be resolved HERE, like `DerivedRestRegions` above —
+        // this arm was missing, and a planner-emitted fine tier generated
+        // with NO boundary at all on the GUI/MCP path (a full-board R1.0
+        // re-finishing the flats, watched live by the operator) while the
+        // core session path confined correctly. Resolution goes through the
+        // session's single tier pipeline and is memoised (`tier_map_cache`):
+        // after a dialog preview — or after the first sibling tier of the
+        // same plan — this is a cache hit; only a cold first call pays the
+        // grid walk on the frame loop. `Some(vec![])` is a legitimately
+        // EMPTY tier and must stay empty (the op generates nothing), never
+        // fall back to an unconfined board.
+        let planned_tier_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if boundary.enabled
+            && matches!(
+                boundary.source,
+                crate::state::toolpath::BoundarySource::PlannedTierRegions { .. }
+            ) {
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            match self
+                .state
+                .session
+                .planned_tier_boundary_polys(tp_id, &cancel)
+            {
+                Ok(polys) => polys,
+                Err(e) => {
+                    self.fail_toolpath_submit(
+                        tp_id,
+                        format!("Planned tier boundary could not be resolved: {e}"),
+                    );
+                    self.push_notification(
+                        format!(
+                            "'{toolpath_name}': planned tier boundary could not be resolved \
+                             — {e}"
+                        ),
+                        super::super::Severity::Error,
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        // Mutually exclusive by construction — a boundary has ONE source —
+        // so the two resolutions share the request slot the worker reads.
+        let derived_rest_regions = derived_rest_regions.or(planned_tier_regions);
+
         // P1 quantitative linker: mirror core's `session::compute::generate_toolpath`,
         // which builds `LinkKinematics` from `self.machine` (see the comment there
         // for why each accessor is used).

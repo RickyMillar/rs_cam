@@ -102,13 +102,25 @@ fn generate_via_core(
     // (`ProjectSession::generate_toolpath`). Computed before `pre_boundary`
     // below so the single-polygon collapse for adaptive3d's pre-clip can
     // reuse this exact processed set instead of re-deriving it.
+    // G-TIERWORKER: `PlannedTierRegions` rides the same request slot and the
+    // same per-region processing — the controller resolves either variant's
+    // polygons before submitting. The empty-set handling DIFFERS on purpose:
+    // an empty derived-rest set is treated as unresolved (`None` — the
+    // controller fail-hard-validates it away in production), while an empty
+    // planned tier is a real answer ("the coarse tool holds the whole
+    // board") and must confine the op to NOTHING, never silently widen.
     let pre_boundary_regions: Option<Vec<rs_cam_core::polygon::Polygon2>> = if req.boundary.enabled
         && matches!(
             req.boundary.source,
             rs_cam_core::compute::config::BoundarySource::DerivedRestRegions { .. }
+                | rs_cam_core::compute::config::BoundarySource::PlannedTierRegions { .. }
         ) {
+        let keep_empty = matches!(
+            req.boundary.source,
+            rs_cam_core::compute::config::BoundarySource::PlannedTierRegions { .. }
+        );
         req.derived_rest_regions.as_deref().and_then(|regions| {
-            (!regions.is_empty()).then(|| {
+            (keep_empty || !regions.is_empty()).then(|| {
                 rs_cam_core::region_set::RegionSet::from_slice(regions)
                     .processed(&req.keep_out_footprints, req.boundary.offset)
                     .as_slice()
@@ -138,7 +150,7 @@ fn generate_via_core(
         };
         if matches!(
             req.boundary.source,
-            BoundarySource::DerivedRestRegions { .. }
+            BoundarySource::DerivedRestRegions { .. } | BoundarySource::PlannedTierRegions { .. }
         ) {
             // P2.2/P2.3/RegionSet: adaptive3d's internal-stock pre-clip
             // wants a single containment polygon — reuse the
@@ -689,6 +701,7 @@ pub(super) fn run_compute_with_phase_tracker(
             if matches!(
                 req.boundary.source,
                 BoundarySource::DerivedRestRegions { .. }
+                    | BoundarySource::PlannedTierRegions { .. }
             ) {
                 // P2.2/P2.3: this is the real enforcement clip for the GUI
                 // worker path — mirrors `ProjectSession::generate_toolpath`'s
@@ -697,16 +710,23 @@ pub(super) fn run_compute_with_phase_tracker(
                 // approximation, which silently degraded multi-region rest
                 // analysis down to "clip against nothing" whenever the
                 // regions didn't union to exactly one polygon). The
-                // controller fail-hard-validates this boundary before
-                // submitting (see `submit_toolpath_compute`), so
-                // `req.derived_rest_regions` is `Some` with a non-empty
-                // `Vec` in production; the stock-rectangle fallback below
-                // only matters for hand-built test requests that bypass
-                // the controller.
+                // controller fail-hard-validates a DerivedRestRegions
+                // boundary before submitting (see `submit_toolpath_compute`),
+                // so for that source `req.derived_rest_regions` is `Some`
+                // with a non-empty `Vec` in production and the
+                // stock-rectangle fallback below only matters for hand-built
+                // test requests. G-TIERWORKER: an empty PLANNED tier is a
+                // real answer and must clip to nothing — it never takes the
+                // fallback (the pre-decompose seam already confined the
+                // emission to zero moves, so this clip is a no-op there).
+                let keep_empty = matches!(
+                    req.boundary.source,
+                    BoundarySource::PlannedTierRegions { .. }
+                );
                 let regions: Vec<rs_cam_core::polygon::Polygon2> = req
                     .derived_rest_regions
                     .clone()
-                    .filter(|regions| !regions.is_empty())
+                    .filter(|regions| keep_empty || !regions.is_empty())
                     .unwrap_or_else(|| vec![stock_rect()]);
                 let semantic_ctx = semantic_root.clone().unwrap_or_else(|| {
                     rs_cam_core::semantic_trace::ToolpathSemanticRecorder::new(

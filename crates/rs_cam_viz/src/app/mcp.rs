@@ -59,6 +59,7 @@ pub(crate) struct MultitoolDials {
     pub coarseness: Option<f64>,
     pub overlap_mm: Option<f64>,
     pub max_regions_per_tier: Option<usize>,
+    pub coarse_skips_fine_islands: Option<bool>,
 }
 
 impl super::RsCamApp {
@@ -4079,6 +4080,7 @@ impl super::RsCamApp {
                 coarseness: spec.coarseness,
                 overlap_mm: spec.overlap_mm,
                 max_regions_per_tier: spec.max_regions_per_tier,
+                coarse_skips_fine_islands: spec.coarse_skips_fine_islands,
             },
         ) {
             Ok(plan_spec) => plan_spec,
@@ -4238,6 +4240,9 @@ impl super::RsCamApp {
             // change to the core default cannot silently move this surface.
             treatment: rs_cam_core::tier_map::ResidualTreatment::SlopeCompensated,
             islands,
+            coarse_skips_fine_islands: dials
+                .coarse_skips_fine_islands
+                .unwrap_or(plan_defaults.coarse_skips_fine_islands),
         })
     }
 
@@ -4260,6 +4265,11 @@ impl super::RsCamApp {
                 coarseness: spec.coarseness,
                 overlap_mm: spec.overlap_mm,
                 max_regions_per_tier: spec.max_regions_per_tier,
+                // The preview shows the tier map's islands; the skip dial
+                // moves tier 0's BOUNDARY, not the islands, so the preview
+                // has nothing to show for it. Resolved to the core default
+                // for spec-parity with the planner.
+                coarse_skips_fine_islands: None,
             },
         ) {
             Ok(plan_spec) => plan_spec,

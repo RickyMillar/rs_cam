@@ -131,6 +131,14 @@ fn relink_params(safe_z: f64, reorder: bool) -> RelinkParams<'static> {
         reorder,
         boundary: None,
         link_ceiling: None,
+        // Inert here by the field's own contract ("Ignored when `link_ceiling`
+        // is `None`"), and `false` is the pre-flush-link behaviour either way —
+        // this harness measures nearest-neighbour ORDERING cost, not link
+        // shape, so it must not acquire an opinion on the new op prior.
+        flush_ride: false,
+        // Same reasoning, same inertness: the airborne exemption is
+        // conjunctive with `link_ceiling`, which is `None` here.
+        airborne_links_may_leave_territory: false,
     }
 }
 
