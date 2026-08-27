@@ -1536,9 +1536,20 @@ pub fn write_simulation_cut_artifact(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    // A millisecond stamp alone is NOT unique: two writers in the same
+    // process (parallel tests; a busy worker) can finish in the same
+    // millisecond, silently share one path, and then one owner's cleanup
+    // deletes the other's artifact. Pid + per-process sequence make the
+    // name unique across concurrent sessions too;
+    // `prune_simulation_cut_artifacts` reads only the first `_`-field, so
+    // its age parse is unaffected.
+    static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let file_name = format!(
-        "{}_{}.json",
+        "{}_{}-{}_{}.json",
         timestamp_ms,
+        std::process::id(),
+        seq,
         sanitize_filename_component(file_stem)
     );
     let path = dir.join(file_name);
@@ -1940,7 +1951,16 @@ mod tests {
             .expect("write sim cut artifact");
         let text = std::fs::read_to_string(&path).expect("read sim cut artifact");
         assert!(text.contains("\"included_toolpath_ids\""));
+        // Two writes in the same millisecond must not share a path: ten viz
+        // worker tests write-then-delete through one shared directory, and a
+        // shared path hands one file two owners — the second owner's cleanup
+        // deletes the first owner's artifact out from under its own
+        // existence assert (observed 2026-08-27, schedule-dependent).
+        let second = write_simulation_cut_artifact(&dir, "Adaptive 3D", &artifact)
+            .expect("write second sim cut artifact");
+        assert_ne!(path, second, "artifact paths must be unique per write");
         std::fs::remove_file(path).ok();
+        std::fs::remove_file(second).ok();
         std::fs::remove_dir(dir).ok();
     }
 
