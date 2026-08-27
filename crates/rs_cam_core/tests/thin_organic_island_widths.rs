@@ -516,6 +516,7 @@ fn wanaka_tier_and_band_region_widths() {
         grand_rings += band_rings;
     }
     stage_d(&mesh, &index, &r10, &planned, stepover);
+    stage_e(&mesh, &index, &r10, &planned, stepover);
 
     println!(
         "SHALLOW+MIDSTEEP TOTAL: {grand_frag} raster fragments vs {grand_rings} rings.\n\
@@ -736,5 +737,171 @@ fn stage_d(
          speedup means contour wins on THIS machine's envelope despite chaining\n\
          short chords; <1.0x means the junction crawl eats the junction saving\n\
          and Lever 1 should NOT ship on wall-clock grounds.\n"
+    );
+}
+
+// ── STAGE E ─────────────────────────────────────────────────────────────
+//
+// Stage D showed contour losing to the raster. That is NOT the same as the
+// raster being optimal — it rules out one alternative, nothing more. The
+// operator's own read (2026-08-28): "orienting the paths down the longer
+// sections of narrow paths" should be faster.
+//
+// That is Lever 2, which §0d dismissed on the grounds that crossings stopped
+// binding once relink absorbs them. But relink does not DELETE a junction, it
+// converts a retract into a feed move — region 1 keeps 466 of them — and every
+// row turnaround still costs a deceleration the integrator charges for. So the
+// dismissal was an assertion, not a measurement.
+//
+// `batch_drop_cutter` already takes `direction_deg`, so this needs no
+// production code either: sweep the angle, raster + relink + cost each, and
+// let the integrator say whether orientation matters.
+//
+// TRAP, found earlier and worked around here: `dropcutter.rs` sends 0/90/180/
+// 360 down the AXIS-ALIGNED fast path, so a literal 90.0 silently returns the
+// 0° grid rather than a rotated one. 89.9 is used instead.
+fn stage_e(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    stepover: f64,
+) {
+    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::toolpath::raster_toolpath_from_grid;
+
+    println!("========== STAGE E — does SWEEP ANGLE matter? (the operator's read) ==========\n");
+
+    let kin = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let lk = LinkKinematics {
+        kinematics: kin,
+        max_feed_mm_min: MAX_FEED_MM_MIN,
+        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::Shallow)
+        .map(|r| &r.polygon)
+        .collect();
+    shallow.sort_by(|a, b| {
+        b.area()
+            .partial_cmp(&a.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let regions: Vec<&Polygon2> = shallow.into_iter().take(3).collect();
+
+    const ANGLES: [f64; 12] = [
+        0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 89.9, 105.0, 120.0, 135.0, 150.0, 165.0,
+    ];
+    // [region][angle] -> (time_s, fragments, kept_retracts, cut_mm)
+    let mut table: Vec<Vec<(f64, usize, usize, f64)>> = vec![Vec::new(); regions.len()];
+
+    for angle in ANGLES {
+        let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+            mesh,
+            index,
+            cutter,
+            stepover,
+            angle,
+            effective_min_z,
+        );
+        for (ri, poly) in regions.iter().enumerate() {
+            let region = RegionSet::new(vec![(*poly).clone()]);
+            let raster = raster_toolpath_from_grid(
+                &grid,
+                FEED_MM_MIN,
+                PLUNGE_MM_MIN,
+                safe_z,
+                Some(effective_min_z),
+                Some(&region),
+            );
+            let rp = rs_cam_core::surface_link::RelinkParams {
+                hookup_distance: 25.0,
+                stock_to_leave: 0.0,
+                sampling: 0.5,
+                feed_rate: FEED_MM_MIN,
+                plunge_rate: PLUNGE_MM_MIN,
+                safe_z,
+                link_kinematics: Some(&lk),
+                reorder: true,
+                boundary: Some(&region),
+                link_ceiling: None,
+                flush_ride: false,
+                airborne_links_may_leave_territory: false,
+            };
+            let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                mesh,
+                index,
+                cutter,
+                &rp,
+            );
+            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let tp = linked.reconcile(&mut ch).into_inner().toolpath;
+            let t = compute_cycle_time(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+            if let Some(row) = table.get_mut(ri) {
+                row.push((
+                    t,
+                    rep.fragments,
+                    rep.retract_links,
+                    tp.total_cutting_distance(),
+                ));
+            }
+        }
+    }
+
+    let mut base_total = 0.0_f64;
+    let mut best_total = 0.0_f64;
+    for (ri, poly) in regions.iter().enumerate() {
+        let Some(row) = table.get(ri) else { continue };
+        let Some(&(base_t, base_f, base_r, _)) = row.first() else {
+            continue;
+        };
+        println!("── region {:.0} mm² ──", poly.area());
+        println!(
+            "     {:>7}  {:>9}  {:>10}  {:>9}  {:>9}",
+            "angle", "time s", "fragments", "retracts", "vs 0deg"
+        );
+        let mut best = (0.0_f64, f64::INFINITY);
+        for (ai, &(t, f, r, _)) in row.iter().enumerate() {
+            let angle = ANGLES.get(ai).copied().unwrap_or(0.0);
+            if t < best.1 {
+                best = (angle, t);
+            }
+            println!(
+                "     {angle:>7.1}  {t:>9.1}  {f:>10}  {r:>9}  {:>8.2}x",
+                base_t / t
+            );
+        }
+        println!(
+            "     BEST {:.1}deg at {:.1} s vs 0deg {:.1} s ({:.0} fragments, {:.0} retracts at 0deg) = {:.2}x\n",
+            best.0,
+            best.1,
+            base_t,
+            base_f as f64,
+            base_r as f64,
+            base_t / best.1
+        );
+        base_total += base_t;
+        best_total += best.1;
+    }
+    println!(
+        "     TOP-3 TOTAL: 0deg {base_total:.1} s vs per-region BEST angle {best_total:.1} s = {:.2}x\n\
+         \n     If this ratio is materially above 1.0, sweep direction IS a real\n\
+         lever on this geometry and FINDINGS.md \u{a7}0d's dismissal of Lever 2 was\n\
+         wrong. Note the ceiling: one angle per region is still a heuristic —\n\
+         a branching web has no single long axis, which is what Morse /\n\
+         boustrophedon cell decomposition exists to solve.\n",
+        base_total / best_total
     );
 }

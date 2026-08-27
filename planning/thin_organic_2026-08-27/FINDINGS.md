@@ -345,6 +345,75 @@ still overhead worth attributing before anything is redesigned.
 
 ---
 
+## 0e. CORRECTION (2026-08-28) — §0d was wrong about Lever 2. Angle matters.
+
+§0d recommended building neither lever, and dismissed Lever 2 on the reasoning
+that crossings stop binding once relink absorbs them. **That was an assertion,
+not a measurement, and the operator was right to push back on it.** Relink does
+not delete a junction; it converts a retract into a feed move, and region 1
+keeps 466 of them.
+
+Stage E sweeps `direction_deg` (which `batch_drop_cutter` has always taken) and
+costs raster + relink at each angle through the same integrator:
+
+| region | best angle | time at 0° | time at best | gain |
+|---|---|---|---|---|
+| 3104 mm² | 135° | 1053.7 s | 932.9 s | **1.13×** |
+| 1788 mm² | 0° | 478.0 s | 478.0 s | 1.00× |
+| 1621 mm² | 45° | 483.7 s | 422.2 s | **1.15×** |
+| **total** | | **2015.4 s** | **1833.1 s** | **1.10×** |
+
+**Sweep direction is worth ~10% on this geometry**, and it needs no new
+generator — only a per-region angle handed to a parameter that already exists.
+
+### The predictor is KEPT RETRACTS, not fragment count
+
+The best angle is not the one that fragments least. Region 1:
+
+| angle | fragments | kept retracts | time |
+|---|---|---|---|
+| 75° | 488 (fewest) | 124 | 1155.4 s (**worst**) |
+| 0° | 564 | 97 | 1053.7 s |
+| 135° | 502 | **68** | 932.9 s (**best**) |
+
+Fragment count spans 471–597 while time spans 933–1155 s. Retracts track time;
+fragments do not. A relinked fragment is cheap; a kept retract pays the full
+safe-Z round trip. So the quantity to minimise is **fragment adjacency** — do
+consecutive pieces land within `hookup_distance` of each other — not crossings.
+
+This also retires §1.2's framing: Lever 2's benefit was described there as
+"bounded by how anisotropic the island happens to be", predicted at 1.3–2× on
+fragments. Fragments were the wrong instrument; the measured time gain is 1.10×.
+
+### Ceiling, and where the rest of the overhead is
+
+One angle per region is a heuristic with a low ceiling: a branching web has no
+single long axis. Even at its best angle region 1 runs 932.9 s against ~709 s
+of pure cutting feed at 735 mm/min — **~24% is still overhead**.
+
+The principled next rung is **boustrophedon / Morse cell decomposition**
+(Choset & Pignon 1997; Acar & Choset 2002, both verified in §5): split a region
+into cells each monotone in some direction, sweep each cell along its own axis,
+order cells by a TSP over the adjacency graph. That is precisely the operator's
+"down the longer sections of narrow paths", applied per section rather than per
+region.
+
+And the general problem really is hard — the milling problem of Arkin, Fekete &
+Mitchell (2000) is NP-hard with constant-factor approximations only, and
+Fekete et al. 2023 state that *"the number of turns in a tour is of crucial
+importance for the overall cost"*. Hard in general does not mean unavailable in
+practice: the decomposition above is standard, and the cheap 80% (one angle per
+region) is measured above at 1.10× for a parameter that already exists.
+
+### Revised recommendation
+
+- **Lever 1 (contour): still refuted.** §0d's measurement stands — 0.91×.
+- **Lever 2 (sweep angle): REINSTATED**, at a measured 1.10×, with the trigger
+  keyed on retracts rather than crossings.
+- Beyond that, cell decomposition is the honest next step, not a bigger dial.
+
+---
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**
