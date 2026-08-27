@@ -38,6 +38,9 @@
 //! (no pathological cycle blowup) rather than the original "≥ 20 %
 //! reduction" bar. A future opt-in "speed-priority" mode that ignores
 //! the band ceiling would land as F-036d.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test feed_modulation_cycle_time_f036c`.
 
 #![allow(
     clippy::unwrap_used,

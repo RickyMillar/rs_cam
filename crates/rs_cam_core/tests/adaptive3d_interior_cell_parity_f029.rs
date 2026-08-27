@@ -66,6 +66,9 @@
 //! Pre-fix on AS013: max axial ≈ 44.8 mm (transit sample), steady-state
 //! max axial = 3.13 mm, deflection peak = 0.66 mm.
 //! Post-fix on AS013: max steady-state axial ≤ 3.5, deflection ≤ 0.13.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test adaptive3d_interior_cell_parity_f029`.
 
 #![allow(
     clippy::unwrap_used,

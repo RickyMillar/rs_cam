@@ -21,10 +21,10 @@ jobs:
         run: cargo fmt --check
 
       - name: Test
-        run: cargo test -q
+        run: cargo test -q --features rs_cam_core/heavy-tests
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings
 
       - name: Demo job smoke test
         run: |

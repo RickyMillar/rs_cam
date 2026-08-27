@@ -22,6 +22,9 @@
 //! ```
 //!
 //! The non-ignored tests are the reproduction pins and run in seconds.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test offset_growth_m5`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![allow(clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]

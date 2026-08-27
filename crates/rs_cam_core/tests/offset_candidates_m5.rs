@@ -39,6 +39,9 @@
 //! * **3D** — M4's `EnvelopeOracle`, driven through the `RingCleanup`
 //!   research seam on scallop's own cascade, so achieved cusp and gouge are
 //!   read off the same instrument Checkpoint C used.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test offset_candidates_m5`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![allow(clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]

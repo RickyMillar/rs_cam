@@ -263,6 +263,32 @@ Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
 (ratified), region-coarseness slider, visible overlap_mm dial with blend
 strip rendered in the preview.
 
+**Test-speed task COMPLETE (operator-approved, queued after Phase O).**
+Design changed mid-flight by a verify-lane catch: the first cut tagged
+the 12 heavy binaries' tests `#[ignore]` with the gate running
+`--include-ignored` — but rs_cam_core already carries **283** ignores
+with a DIFFERENT meaning (95 gcode-emulator tests needing an external
+validator, 56 param sweeps, WANAKA evidence runs), so that gate would
+have run them all: hours + spurious failures, and CI's own separately
+isolated `--ignored` emulator job double-run. Reverted; heaviness is now
+a CARGO FEATURE: `heavy-tests` in the crate manifest with
+`required-features` on the 12 `[[test]]` targets — the dev loop doesn't
+even COMPILE them, `#[ignore]` keeps its single meaning. Measured:
+dev loop `cargo test -p rs_cam_core -q` = **431 s wall** (219 binaries,
+3,357/0; delta exactly the 12, test math exact at 3,404−47); full gate
+= `--features heavy-tests` (CLAUDE.md + /verify + /dev + ci.yml all
+updated, clippy carries the feature too so the 12 stay linted).
+**cargo-nextest 0.9.143 evaluated: 130.6 s wall (3.3×)** via per-test
+process parallelism — but NOT gate-ready: `adversarial_2d_campaign_r2::
+every_2d_operation_survives_its_worst_fixtures` fails under nextest's
+full load (74 s, double-panic in static_aabb2d_index's NaN assert →
+abort) and passes solo (9.4 s) and under cargo test — load-dependent,
+worth its own investigation (possible latent race in the offset path's
+panic handling, the class CLAUDE.md's offset caveat already documents).
+Canonical gate stays cargo test; nextest is a fast pre-check option.
+Also flagged: machine_kinematics_cycle_time_f034.rs line ~23 doc claims
+an `#[ignore]` that was never on the test (pre-existing drift).
+
 **Phase O COMPLETE.** The first toolpath-changing phase; two parallel
 Opus editors (core / viz+mcp) against a frozen API contract, joint build
 compiled first try. Core: `session/multitool.rs` —

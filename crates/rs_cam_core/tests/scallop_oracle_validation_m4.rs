@@ -24,6 +24,9 @@
 //! "min-across-ring is the culprit" hypothesis into a testable competition,
 //! because `scallop_math::variable_stepover` scales the stepover the OTHER
 //! way (`R/cos θ`, i.e. wider on slope). See `scallop_candidates_m4.rs`.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test scallop_oracle_validation_m4`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![allow(clippy::indexing_slicing, clippy::print_stdout)]

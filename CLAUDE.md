@@ -131,10 +131,19 @@ Running `rustfmt --check` over a file list captured from an earlier
 |------|---------|
 | Run GUI | `cargo run -p rs_cam_viz --bin rs_cam_gui` |
 | Run CLI | `cargo run -p rs_cam_cli -- <subcommand>` |
-| Test (per-crate) | `cargo test -p rs_cam_core -q` (also `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) — avoid workspace-wide `cargo test`, it can loop on this repo |
-| Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Test — dev loop | `cargo test -p rs_cam_core -q` (also `-p rs_cam_cli`, `-p rs_cam_viz`, `-p rs_cam_mcp`) — avoid workspace-wide `cargo test`, it can loop on this repo |
+| Test — FULL gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
+| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
 | Format | `cargo fmt --check` |
 | Bench | `cargo bench -p rs_cam_core` |
+
+The 12 heaviest core test binaries sit behind the `heavy-tests` feature — they
+were 75% of the 1,663 s serial suite (2026-08-27 profile), and the dev loop does
+not even compile them. The FULL gate runs them and is required once per phase /
+commit-gate run; lint with the feature too, or those 12 never get linted.
+`#[ignore]` keeps its existing meaning here — instrument and evidence runs, 283
+of them, invoked explicitly and never by a gate — so heaviness is the feature's
+job, not the attribute's, and the two must not be conflated.
 
 Run `/dev` for the full reference. Run `/verify` before committing.
 

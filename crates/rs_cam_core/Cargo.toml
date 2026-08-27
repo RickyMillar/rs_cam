@@ -9,6 +9,13 @@ description = "Core CAM library for 3-axis wood router toolpath generation"
 default = ["parallel"]
 parallel = ["rayon"]
 step = ["truck-stepio", "truck-topology", "truck-meshalgo", "truck-geometry", "truck-polymesh"]
+# Gates the twelve heaviest test binaries (the `[[test]]` sections at the
+# bottom of this file). They were 75% of the 1,663 s serial rs_cam_core suite
+# on the 2026-08-27 profile, so the dev loop neither compiles nor runs them.
+# They are load-bearing sentries, NOT instruments: the commit gate and CI must
+# pass `--features heavy-tests` (or `--features rs_cam_core/heavy-tests` from
+# the workspace root) for both `cargo test` and `cargo clippy`.
+heavy-tests = []
 
 [dependencies]
 nalgebra = { workspace = true }
@@ -62,3 +69,56 @@ harness = false
 [[bench]]
 name = "hot_paths"
 harness = false
+
+# The twelve heaviest test binaries, gated behind `heavy-tests` (see the
+# comment on that feature). Naming a target explicitly does not disable
+# autodiscovery of the rest of `tests/` — `autotests` stays true — so these
+# sections add a required-features condition and change nothing else. The
+# trailing comment on each is its 2026-08-27 serial wall-clock.
+[[test]]
+name = "feed_modulation_cycle_time_f036c" # 256 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "scallop_isofield_gouge_m4" # 237 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "scallop_candidates_m4" # 143 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "machine_kinematics_cycle_time_f034" # 91 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "offset_growth_m5" # 88 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "checkpoint_b_resolution_ab" # 86 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "scallop_oracle_validation_m4" # 79 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "air_cut_family_calibration_w5bf4" # 62 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "adaptive3d_planner_stock_xy_f027" # 58 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "offset_candidates_m5" # 54 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "adaptive3d_interior_cell_parity_f029" # 48 s
+required-features = ["heavy-tests"]
+
+[[test]]
+name = "strategy_advisor_smoke" # 43 s
+required-features = ["heavy-tests"]

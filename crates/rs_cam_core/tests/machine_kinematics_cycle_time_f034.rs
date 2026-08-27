@@ -27,6 +27,9 @@
 //! 4. `flag_off_byte_identical_to_pre_f034` — same project run with
 //!    `kinematics = None` (the default for every preset) produces the
 //!    exact pre-F-034 `total_runtime_s` from the dexel-sample sum.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test machine_kinematics_cycle_time_f034`.
 
 #![allow(
     clippy::unwrap_used,

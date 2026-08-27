@@ -48,6 +48,9 @@
 //! ```text
 //! cargo test -p rs_cam_core --release --test air_cut_family_calibration_w5bf4 -- --nocapture
 //! ```
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test air_cut_family_calibration_w5bf4`.
 
 #![allow(
     clippy::unwrap_used,

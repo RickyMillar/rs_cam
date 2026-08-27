@@ -10,6 +10,9 @@
 //! populated) rather than a specific winner — the winner depends on the
 //! fixture machine's acceleration, which the `strategy_advisor` unit sentry
 //! (`winner_flips_with_machine_acceleration`) pins directly.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test strategy_advisor_smoke`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

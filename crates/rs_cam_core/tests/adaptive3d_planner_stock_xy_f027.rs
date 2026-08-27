@@ -50,6 +50,9 @@
 //!    read 30–47 mm at the model-edge cells.
 //! 2. `deflection.peak_mm` on the tool-load verdict must be < 0.2 mm.
 //!    Pre-fix it sat at ~0.576 mm.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test adaptive3d_planner_stock_xy_f027`.
 
 #![allow(
     clippy::unwrap_used,

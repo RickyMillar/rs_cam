@@ -65,6 +65,9 @@
 //! Default CI runs a fast representative subset (one fixture, scallop, two
 //! arms, plus the ball control and the determinism guard). The FULL grid is
 //! `#[ignore]`d and printed as markdown; its numbers are the evidence file's.
+//!
+//! Behind the `heavy-tests` feature to keep the dev loop fast:
+//! `cargo test -p rs_cam_core --features heavy-tests --test checkpoint_b_resolution_ab`.
 
 #![allow(
     clippy::unwrap_used,

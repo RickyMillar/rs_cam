@@ -20,7 +20,8 @@ disable-model-invocation: true
 | What | Command |
 |------|---------|
 | Per-crate (recommended) | `cargo test -p rs_cam_core -q && cargo test -p rs_cam_cli -q && cargo test -p rs_cam_viz -q && cargo test -p rs_cam_mcp -q` |
-| Core only | `cargo test -p rs_cam_core -q` |
+| Core only (dev loop) | `cargo test -p rs_cam_core -q` |
+| Core FULL gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
 | CLI integration | `cargo test -p rs_cam_cli --test integration` |
 | Viz regression | `cargo test -p rs_cam_viz controller::tests::` |
 | Compute worker | `cargo test -p rs_cam_viz compute::worker::tests::` |
@@ -29,11 +30,13 @@ disable-model-invocation: true
 
 Note: avoid workspace-wide `cargo test` from the repo root — it can loop / thrash on this repo. Run per-crate instead.
 
+Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of the serial suite, 2026-08-27 profile), so the dev-loop row does not compile or run them. Use the FULL gate row once per phase / before committing; one binary alone runs as `cargo test -p rs_cam_core --features heavy-tests --test <name>`. This is separate from `#[ignore]`, which stays what it has always been here — instruments and evidence runs you invoke by name.
+
 ## Quality
 
 | What | Command |
 |------|---------|
-| Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
 | Format check | `cargo fmt --check` |
 | Format fix | `cargo fmt` |
 | Benchmark | `cargo bench -p rs_cam_core` |
