@@ -193,6 +193,83 @@ by design, so the loss is invisible to every instrument.
 
 ---
 
+## 0c. MEASURED (2026-08-27, late) — the lever survives, the trigger does not
+
+`tests/thin_organic_island_widths.rs`, real wanaka mesh (661,212 triangles,
+200 × 200 mm), live mt2 dials, R1.5 → R1.0 ladder at 30 µm cusp. Tier map
+694² @ 0.30 mm in 4.2 s; classification grid 825² @ 0.25 mm.
+
+**The width-based routing rule proposed in §1.1 is DEAD.** Shallow band,
+Stage B (the polygons the generator actually receives, post-`overlap_mm = 2.0`
+dilation):
+
+| | |
+|---|---|
+| widths | min 0.50, p25 5.15, **median 7.38**, p75 8.56, max 13.00 mm |
+| area under 8·s (3.89 mm) | **0.0 %** |
+| area under 16·s (7.78 mm) | 13.4 % |
+
+At `THIN_K = 8` the rule fires on **nothing**. Building it would have been
+300–400 production lines that never trigger. This is why C2 said measure first.
+
+**But the territory really is a dendritic web, and the LEVER survives.**
+Stage A (the raw tier-1 ownership mask, upstream of dilation): the dominant
+component is **7,553 mm² at 3.84 mm wide** — 7.9 stepovers — inside a
+1,337-component mask that the extractor merges down to 16 shallow polygons.
+The dilation adds ~4 mm of width and welds fingers closer than 4 mm together.
+So the *shape* premise in §1 was right; the *metric* was measuring the wrong
+object.
+
+**Stage C measures the defect itself** — scan rows at the tier's own stepover,
+counting maximal inside-runs per row, which is exactly what
+`raster_toolpath_from_grid` emits as separate fragments — against the ring
+count an offset cascade needs for the same polygon:
+
+| band | raster fragments | cascade rings | ratio |
+|---|---|---|---|
+| Shallow | 2,406 | 120 | **20.1×** |
+| MidSteep | 1,547 | 91 | 17.0× |
+
+**20.1× fewer junctions**, at the bottom of §1.1's predicted 20–100×.
+
+A calibration check that was not designed in and is worth more than the
+headline: **MidSteep already runs the ring cascade**, and this instrument —
+which knows nothing about that — independently scores contouring 17× better
+there. The metric reproduces a decision the codebase already made, rather than
+merely flattering the hypothesis it was built to test.
+
+### What this changes
+
+1. **Keep Lever 1. Replace its trigger.** Not `min_width <= THIN_K · s`, which
+   measures width; use **elongation / crossings**, which measures what actually
+   fragments a raster. A 10 mm-wide, 300 mm-long branching snake is "wide" and
+   still shreds a raster because one scan row enters and leaves it repeatedly.
+   The cheapest honest trigger is the Stage C computation itself — rasterise
+   the region polygon at the op's own stepover, count runs, compare to
+   `⌈width / 2s⌉`, route to the cascade above a ratio (≈ 4). It is milliseconds
+   per region and it measures the real quantity instead of proxying it.
+2. **Lever 1's reach is smaller than §1 assumed.** Tier 1's covered area is
+   29,148 mm², of which **MidSteep is 27,488 mm² and already contoured**.
+   Lever 1 can only address the Shallow band, ~9,000 mm². The 20.1× applies to
+   that share, not to the op.
+3. **Stage C's 2,406 is a LOWER BOUND** on real shallow fragments: it counts
+   crossings of the decompose polygons only, and the shipped raster also
+   fragments on `min_z` clamping and coverage holes. It is not comparable
+   like-for-like with the ledger's ~17k figure, which was measured on a
+   different config and over the whole op.
+
+### What is still not answered
+
+The **accel-aware wall-clock** question, and it is the one that could still
+invert this. `STRATEGY_ADVISOR_2026-06-17.md` measured parallel 446 s vs spiral
+828 s on this very board at the load limit, because contour paths chain short
+chords and the Grbl junction-deviation model crawls corners. Fewer junctions is
+not the same as less time. Only the A/B in §2, costed through the F-034
+integrator, settles it — and the cusp-pattern change remains an operator gate
+under the C4 rule.
+
+---
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

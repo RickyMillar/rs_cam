@@ -193,16 +193,23 @@ fn percentile(sorted: &[f64], q: f64) -> f64 {
 }
 
 /// Print the width/area distribution and the area-share decision line.
-fn report_widths(label: &str, rows: &mut Vec<(f64, f64)>, stepover: f64) {
+fn report_widths(label: &str, rows: &mut [(f64, f64)], stepover: f64) {
     if rows.is_empty() {
         println!("   {label}: (empty)\n");
         return;
     }
     rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     println!("   {label}: {} region(s)", rows.len());
-    println!("     {:>10}  {:>10}  {:>12}", "area mm²", "width mm", "stepovers");
+    println!(
+        "     {:>10}  {:>10}  {:>12}",
+        "area mm²", "width mm", "stepovers"
+    );
     for (w, a) in rows.iter().take(10) {
-        let so = if stepover > 0.0 { w / stepover } else { f64::NAN };
+        let so = if stepover > 0.0 {
+            w / stepover
+        } else {
+            f64::NAN
+        };
         println!("     {a:>10.1}  {w:>10.2}  {so:>12.1}");
     }
     let mut widths: Vec<f64> = rows.iter().map(|(w, _)| *w).collect();
@@ -219,8 +226,16 @@ fn report_widths(label: &str, rows: &mut Vec<(f64, f64)>, stepover: f64) {
     print!("     AREA in regions narrower than:");
     for k in [4.0_f64, 8.0, 16.0] {
         let bar = k * stepover;
-        let share: f64 = rows.iter().filter(|(w, _)| *w <= bar).map(|(_, a)| *a).sum();
-        let pct = if total > 0.0 { 100.0 * share / total } else { 0.0 };
+        let share: f64 = rows
+            .iter()
+            .filter(|(w, _)| *w <= bar)
+            .map(|(_, a)| *a)
+            .sum();
+        let pct = if total > 0.0 {
+            100.0 * share / total
+        } else {
+            0.0
+        };
         print!("  {k:.0}·s ({bar:.2}mm): {pct:.1}%");
     }
     println!("\n");
@@ -320,7 +335,9 @@ fn wanaka_tier_and_band_region_widths() {
     // op's own resolution, coverage ANDed with the tier's `machining` region
     // set, then `decompose`. This is the population Lever 1's routing rule
     // would actually be applied to.
-    println!("========== STAGE B — decompose regions inside tier 1 (what the generator sees) ==========\n");
+    println!(
+        "========== STAGE B — decompose regions inside tier 1 (what the generator sees) ==========\n"
+    );
     let Some(fine) = islands.per_tier.iter().find(|s| s.tier == 1) else {
         println!("no tier 1; nothing to decompose");
         return;
@@ -388,7 +405,11 @@ fn wanaka_tier_and_band_region_widths() {
         planned.stats.absorbed_regions
     );
 
-    for band in [FinishBand::Shallow, FinishBand::MidSteep, FinishBand::VerySteep] {
+    for band in [
+        FinishBand::Shallow,
+        FinishBand::MidSteep,
+        FinishBand::VerySteep,
+    ] {
         let mut rows: Vec<(f64, f64)> = planned
             .regions
             .iter()
@@ -401,13 +422,104 @@ fn wanaka_tier_and_band_region_widths() {
             })
             .collect();
         println!("── band {band:?} ──");
-        report_widths("planned regions (post overlap dilation)", &mut rows, stepover);
+        report_widths(
+            "planned regions (post overlap dilation)",
+            &mut rows,
+            stepover,
+        );
     }
 
+    // ── STAGE C: the defect itself, measured ──
+    //
+    // Stage B killed the width-based routing rule (0% of shallow area under 8
+    // stepovers). But width was never the thing that fragments a raster —
+    // CROSSINGS PER SCAN LINE is. A 10 mm-wide, 300 mm-long branching snake is
+    // "wide" and still shreds a raster, because one scan row enters and leaves
+    // it many times.
+    //
+    // So measure the defect directly, on the real polygons, with no production
+    // code written: walk scan rows at the tier's own stepover, count maximal
+    // inside-runs per row (that IS what `raster_toolpath_from_grid` emits as
+    // separate fragments), and compare against the ring count an offset
+    // cascade would need for the same region (`⌈width / 2s⌉`).
+    println!("========== STAGE C — raster fragments vs cascade rings (the defect) ==========\n");
     println!(
-        "DECISION: Lever 1 is worth building only if the SHALLOW band's area is \
-         dominated by regions under ~8 stepovers wide. Stage B is the honest \
-         test — Stage A is upstream of the overlap dilation and of decompose's \
-         own close/min-area, both of which fatten and merge."
+        "   Scan rows at s = {stepover:.4} mm, axis-aligned (direction_deg = 0), \
+         exactly as the Shallow band emits today.\n"
+    );
+    let mut grand_frag = 0usize;
+    let mut grand_rings = 0usize;
+    for band in [FinishBand::Shallow, FinishBand::MidSteep] {
+        let regions: Vec<&Polygon2> = planned
+            .regions
+            .iter()
+            .filter(|r| r.band == band)
+            .map(|r| &r.polygon)
+            .collect();
+        if regions.is_empty() {
+            continue;
+        }
+        println!("── band {band:?} ──");
+        println!(
+            "     {:>10}  {:>10}  {:>10}  {:>8}",
+            "area mm²", "fragments", "rings", "ratio"
+        );
+        let (mut band_frag, mut band_rings) = (0usize, 0usize);
+        let mut rows: Vec<(f64, usize, usize)> = Vec::new();
+        for poly in &regions {
+            let [x0, y0, x1, y1] = poly.bbox();
+            let mut frags = 0usize;
+            // Sample along each row finely enough that a finger narrower than
+            // one sample cannot be missed: quarter-stepover sampling.
+            let sample = stepover * 0.25;
+            let mut y = y0;
+            while y <= y1 {
+                let mut inside_run = false;
+                let mut x = x0;
+                while x <= x1 {
+                    let inside = poly.contains_point(&P2::new(x, y));
+                    if inside && !inside_run {
+                        frags += 1;
+                        inside_run = true;
+                    } else if !inside {
+                        inside_run = false;
+                    }
+                    x += sample;
+                }
+                y += stepover;
+            }
+            let width = polygon_width_mm(poly, surface.cell_size());
+            let rings = ((width / (2.0 * stepover)).ceil() as usize).max(1);
+            band_frag += frags;
+            band_rings += rings;
+            rows.push((poly.area(), frags, rings));
+        }
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        for (a, f, r) in rows.iter().take(8) {
+            let ratio = if *r > 0 {
+                *f as f64 / *r as f64
+            } else {
+                f64::NAN
+            };
+            println!("     {a:>10.1}  {f:>10}  {r:>10}  {ratio:>8.1}x");
+        }
+        println!(
+            "     BAND TOTAL: {band_frag} raster fragments vs {band_rings} cascade rings \
+             = {:.1}x fewer junctions if contoured\n",
+            if band_rings > 0 {
+                band_frag as f64 / band_rings as f64
+            } else {
+                f64::NAN
+            }
+        );
+        grand_frag += band_frag;
+        grand_rings += band_rings;
+    }
+    println!(
+        "SHALLOW+MIDSTEEP TOTAL: {grand_frag} raster fragments vs {grand_rings} rings.\n\
+         Read against FINDINGS.md: the width-based routing rule (§1.1) is dead — \
+         Stage B measured 0% of shallow area under 8 stepovers. If Stage C's \
+         fragment ratio is large anyway, the LEVER survives and only its \
+         TRIGGER needs replacing (elongation/crossings, not width)."
     );
 }
