@@ -278,6 +278,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id = controller.state.session.toolpath_configs()[0].id;
@@ -327,6 +328,7 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller.state.session.add_toolpath(0, cfg).unwrap();
     ToolpathId(next)
@@ -593,6 +595,7 @@ fn simulation_results_capture_setup_boundaries() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller
         .state
@@ -1269,6 +1272,7 @@ fn add_derived_rest_dependent(
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller
         .state
@@ -1390,6 +1394,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     let consumer_index = controller
         .state
@@ -2236,6 +2241,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     let tp_idx = controller
         .state

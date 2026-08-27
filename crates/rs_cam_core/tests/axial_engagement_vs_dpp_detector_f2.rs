@@ -130,6 +130,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         };
         session.add_toolpath(0, tc).expect("add detector toolpath");
     }

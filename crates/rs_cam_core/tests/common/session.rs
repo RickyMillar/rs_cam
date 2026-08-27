@@ -1,4 +1,4 @@
-//! `ProjectSession` wiring — models, stock, the 17-field `ToolpathConfig`,
+//! `ProjectSession` wiring — models, stock, the 18-field `ToolpathConfig`,
 //! and the one-operation session the end-to-end sentries all build.
 //!
 //! `standing_material_channel_am9.rs` became the de-facto template for this
@@ -8,7 +8,7 @@
 //!
 //! # The `ToolpathConfig` problem this exists to solve
 //!
-//! [`rs_cam_core::session::ToolpathConfig`] has 17 fields and no `Default`,
+//! [`rs_cam_core::session::ToolpathConfig`] has 18 fields and no `Default`,
 //! so ~30 test files spell out a full struct literal. Every field added to it
 //! breaks all of them at once — exactly the audit `CLAUDE.md` asks for under
 //! "if GUI state adds a field, audit test initializers". [`toolpath_config`]
@@ -135,7 +135,7 @@ pub fn stock_under(half: f64, height: f64) -> StockConfig {
 
 // ── Toolpaths ───────────────────────────────────────────────────────────
 
-/// The 17-field `ToolpathConfig` literal, once.
+/// The 18-field `ToolpathConfig` literal, once.
 ///
 /// Everything not named here is the type's own default; `dressups` follows
 /// the operation's registry role (`DressupConfig::for_op`) rather than being
@@ -167,6 +167,7 @@ pub fn toolpath_config(
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     }
 }
 

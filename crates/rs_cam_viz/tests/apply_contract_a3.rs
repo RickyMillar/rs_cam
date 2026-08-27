@@ -94,6 +94,7 @@ fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
         face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
+        planner_origin: None,
     }
 }
 

@@ -104,6 +104,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;
@@ -401,6 +402,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session.add_toolpath(0, tp2).expect("add second toolpath");
     let tp2_id = session.toolpath_configs()[1].id;
@@ -563,6 +565,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session
         .add_toolpath(bottom_idx, tp_bottom)
@@ -697,6 +700,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session
         .add_toolpath(bottom_idx, tp_bottom)

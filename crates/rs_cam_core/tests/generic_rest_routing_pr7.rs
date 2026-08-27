@@ -200,6 +200,7 @@ fn toolpath(tool_id: usize, model_id: usize, rest_analysis: RestAnalysisConfig) 
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis,
+        planner_origin: None,
     }
 }
 

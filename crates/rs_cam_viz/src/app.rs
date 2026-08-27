@@ -556,13 +556,7 @@ impl RsCamApp {
     /// Armed only while something is genuinely outstanding, so an idle session
     /// still sleeps.
     pub(crate) fn needs_pump_tick(&self) -> bool {
-        #[cfg(feature = "mcp")]
-        if self
-            .controller
-            .pending_mcp
-            .as_ref()
-            .is_some_and(|pending| pending.awaiting_gui() > 0)
-        {
+        if self.controller.awaiting_deferred_completions() > 0 {
             return true;
         }
         self.controller
@@ -904,14 +898,10 @@ impl RsCamApp {
         // channel, and nothing has yet asked for the frame that would pick it
         // up. Stated once here rather than at each handoff site: a per-site
         // request is one refactor away from being forgotten, and this
-        // condition is exactly "an MCP caller is still owed something".
-        #[cfg(feature = "mcp")]
-        if self
-            .controller
-            .pending_mcp
-            .as_ref()
-            .is_some_and(|pending| pending.awaiting_gui() > 0)
-        {
+        // condition is exactly "someone is still owed something". Phase O made
+        // it ungated: a GUI-started `generate_all` ladder needs those same
+        // frames and has no MCP slot at all.
+        if self.controller.awaiting_deferred_completions() > 0 {
             ctx.request_repaint();
         }
 

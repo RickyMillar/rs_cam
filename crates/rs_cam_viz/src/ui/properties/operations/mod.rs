@@ -2216,6 +2216,7 @@ mod tests {
             debug_options: Default::default(),
             feeds_provenance: Default::default(),
             rest_analysis: Default::default(),
+            planner_origin: None,
         }
     }
 

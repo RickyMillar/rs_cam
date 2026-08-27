@@ -114,6 +114,7 @@ fn parity_controller() -> AppController<InertBackend> {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     controller

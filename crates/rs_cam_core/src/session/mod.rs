@@ -13,6 +13,7 @@
 
 mod compute;
 mod eval_context;
+pub mod multitool;
 mod mutation;
 pub mod project_file;
 mod save;
@@ -20,6 +21,7 @@ pub mod wizard;
 
 pub use compute::{MutationKind, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
+pub use multitool::{MultitoolPlanOutcome, MultitoolPlanSpec, equal_cusp_stepover_mm};
 pub use wizard::{OutputLayout, WizardState};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -657,6 +659,28 @@ pub struct SetupData {
     pub pause_message: Option<String>,
 }
 
+/// Provenance stamp for a toolpath the multi-tool finishing planner emitted
+/// (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` Phase O item 1).
+///
+/// Without it a planner-emitted tier is **indistinguishable from a hand-built
+/// op** (T3 finding C1), which makes re-planning either impossible or
+/// destructive: the reconciler cannot tell which ops it owns and may delete
+/// the operator's own work, or leave a stale ladder accumulating beside a new
+/// one. `None` — the default, and what every project written before this
+/// existed deserializes to — means "the operator built this".
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PlannerOrigin {
+    /// Which plan run emitted this op. Monotonic within a session; a
+    /// re-plan allocates a fresh id so two ladders can never be conflated
+    /// even if one survived a removal.
+    pub plan_id: u64,
+    /// Ladder index, coarse → fine. `0` is the coarsest tool.
+    pub tier: u8,
+    /// Ladder length the plan was built with, carried so a reader can say
+    /// "tier 1 of 2" without holding the rest of the chain.
+    pub tier_count: u8,
+}
+
 /// Configuration for a single toolpath within the session.
 pub struct ToolpathConfig {
     pub id: ToolpathId,
@@ -694,6 +718,10 @@ pub struct ToolpathConfig {
     /// auto-correct). Stamped at write time and read back by the UI instead of
     /// recomputing a fresh lookup. Defaults to all-`None` ("config default").
     pub feeds_provenance: crate::feeds::FeedsProvenance,
+    /// `Some` when the multi-tool finishing planner emitted this op. See
+    /// [`PlannerOrigin`]; `None` means the operator built it, and is what
+    /// every pre-Phase-O project file loads as.
+    pub planner_origin: Option<PlannerOrigin>,
 }
 
 /// Result of generating a single toolpath.
@@ -2009,6 +2037,7 @@ mod tests {
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+                    planner_origin: None,
                 }],
             }],
             toolpaths: Vec::new(),
@@ -2206,6 +2235,7 @@ mod tests {
                     debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+                    planner_origin: None,
                 }],
             }],
             toolpaths: Vec::new(),
@@ -2335,6 +2365,7 @@ mod tests {
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         };
 
         let idx = session.add_toolpath(0, new_tp).unwrap();

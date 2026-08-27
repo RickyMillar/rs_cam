@@ -392,6 +392,7 @@ mod tests {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         }
     }
 

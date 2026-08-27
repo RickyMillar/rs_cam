@@ -506,6 +506,7 @@ fn pencil_toolpath(cfg: PencilConfig, tool_id: usize, model_id: usize) -> Toolpa
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     }
 }
 

@@ -388,6 +388,10 @@ fn build_session_from_legacy_job(job: &crate::state::job::JobState) -> ProjectSe
                 face_selection: tp.face_selection.clone(),
                 debug_options: tp.debug_options,
                 feeds_provenance: tp.feeds_provenance.clone(),
+                // Carried the same way `feeds_provenance` is: the fallback
+                // loader sets it on the entry when the file has one, so a
+                // legacy-rescued plan keeps its tier provenance.
+                planner_origin: tp.planner_origin.clone(),
             });
         }
 

@@ -172,6 +172,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
                 debug_options: ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 rest_analysis: RestAnalysisConfig::default(),
+                planner_origin: None,
             },
         )
         .expect("add toolpath");

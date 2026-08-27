@@ -178,6 +178,7 @@ fn toolpath_config(
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),
+        planner_origin: None,
     }
 }
 

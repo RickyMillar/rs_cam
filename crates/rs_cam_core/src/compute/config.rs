@@ -503,6 +503,32 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it, and the cap's behaviour is
     /// unchanged — largest-by-area first, exactly as before.
     pub region_cap: Option<crate::region_mask::RegionCapReport>,
+    /// Phase O item 3 (2026-08-27): what the INTRA-REGION stay-down relink
+    /// did, and — the reason this channel exists — why it declined.
+    ///
+    /// T4 measured **19,132 intra-node retract round trips** (16,140 s of
+    /// rapids) on a `unified_finish` op whose relink was ON at a 6.0 mm
+    /// hookup (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` §0).
+    /// The relinker already counted every refusal reason separately, but the
+    /// totals reached nothing but a `tracing::info!` line, so no measurement
+    /// could attribute those retracts to `too_far` versus `off_surface`
+    /// versus `outside_boundary` versus a ceiling that reached `safe_z`.
+    ///
+    /// **Three-valued, the A/M9 X-19 contract:**
+    ///
+    /// * `None` — **not measured**. The operation runs no intra-region
+    ///   relink (anything that is not a `UnifiedFinish`, and a
+    ///   `UnifiedFinish` whose `intra_region_hookup_mm` is `0.0`, which
+    ///   disables the pass). Do NOT read it as "nothing retracted".
+    /// * `Some(t)` with `t.surface_links > 0` — the pass ran and kept
+    ///   junctions down.
+    /// * `Some(t)` with every counter zero — the pass ran and found no
+    ///   junction to act on (one fragment per region).
+    ///
+    /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub relink: Option<crate::unified_finish::RelinkTotals>,
 }
 
 /// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.
@@ -1597,13 +1623,57 @@ pub enum BoundarySource {
     DerivedRestRegions {
         source_toolpath_id: crate::ids::ToolpathId,
     },
+    /// One tier's islands from a multi-tool **tier map**
+    /// (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` Phase O item 2).
+    ///
+    /// This variant carries the **recipe**, never the geometry — the same
+    /// call [`Self::DerivedRestRegions`] makes, and for the same two reasons:
+    /// a project file must store what to compute rather than a snapshot of a
+    /// computation, and the regions must reflect the mesh and the ladder as
+    /// they are at generation time. The islands are re-derived through
+    /// [`crate::tier_map_cache::cached_tier_map`], so the `k` sibling ops one
+    /// plan emits share a single grid walk rather than paying `k` of them.
+    ///
+    /// Unlike `DerivedRestRegions` this has **no source-toolpath
+    /// dependency**: it derives from the mesh and the ladder alone, so an op
+    /// carrying it never waits on a prior generation and never enters the
+    /// `AwaitingPriorStock` arms. (Such an op is normally *also*
+    /// `StockSource::FromRemainingStock`, which is a separate dependency on
+    /// simulated stock and is enforced separately.)
+    ///
+    /// `tier` is always ≥ 1. Tier 0 is the complement — the coarse tool
+    /// sweeps its territory as one pass and needs no boundary — so
+    /// [`crate::tier_islands::TierIslands`] publishes no set for it and this
+    /// variant is never emitted with `tier: 0`.
+    PlannedTierRegions {
+        /// The FULL ladder, coarse → fine, as session tool ids. The whole
+        /// ladder is needed even to resolve one tier: a tier label is "the
+        /// coarsest tool on THIS ladder that holds this cell", which is not
+        /// a statement any subset can reproduce.
+        tool_ids: Vec<usize>,
+        /// Which tier's islands bound this op (≥ 1).
+        tier: u8,
+        /// Tier-map planning resolution (mm). Plan at 0.3–0.6; a full-grid
+        /// drop-cutter map at 0.15 costs ~125 s per tool on a 200 mm board
+        /// (`crate::tier_map`'s module doc).
+        cell_mm: f64,
+        /// Residual tolerance (mm) — see [`crate::tier_map::TierMapParams`].
+        tolerance_mm: f64,
+        /// Grid padding (mm) beyond the finest tool's envelope.
+        margin_mm: f64,
+        /// How the raw residual is treated before the tolerance comparison.
+        treatment: crate::tier_map::ResidualTreatment,
+        /// Island close / min-area / overlap / cap dials.
+        islands: crate::tier_islands::TierIslandParams,
+    },
 }
 
 impl BoundarySource {
     /// Sources with no extra configuration beyond picking them — safe for a
     /// simple combo box. `Geometry` needs a polygon-index picker,
-    /// `FaceSelection` a face picker, and `DerivedRestRegions` a
-    /// source-toolpath picker, so none of those three are listed here.
+    /// `FaceSelection` a face picker, `DerivedRestRegions` a source-toolpath
+    /// picker and `PlannedTierRegions` a whole ladder + tier, so none of
+    /// those four are listed here.
     pub const ALL_SIMPLE: &[BoundarySource] =
         &[BoundarySource::Stock, BoundarySource::ModelSilhouette];
 
@@ -1614,6 +1684,7 @@ impl BoundarySource {
             BoundarySource::Geometry { .. } => "Imported Geometry",
             BoundarySource::FaceSelection => "Face Selection",
             BoundarySource::DerivedRestRegions { .. } => "Rest Regions",
+            BoundarySource::PlannedTierRegions { .. } => "Planned Tier Regions",
         }
     }
 }

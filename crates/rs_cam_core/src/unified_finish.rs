@@ -1149,7 +1149,14 @@ pub struct UnifiedFinishReport {
 }
 
 /// Summed [`crate::surface_link::RelinkReport`] counters across regions.
-#[derive(Debug, Clone, Copy, Default)]
+///
+/// Every DECLINE reason the relinker distinguishes is carried, because the
+/// question this record has to answer is not "did linking happen" but "why
+/// didn't it": T4 measured **19,132 intra-node retract round trips** on an op
+/// whose relink was ON at 6.0 mm hookup
+/// (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` §0), and nothing
+/// on any surface said which of the five refusals produced them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RelinkTotals {
     pub fragments: usize,
     pub surface_links: usize,
@@ -1158,6 +1165,11 @@ pub struct RelinkTotals {
     pub off_surface: usize,
     pub slower_than_retract: usize,
     pub outside_boundary: usize,
+    /// Junctions where a [`crate::surface_link::LinkCeiling`] put the
+    /// clearance at or above `safe_z`, so the retract was kept. Structurally
+    /// `0` for every op generated without a ceiling — see
+    /// [`crate::surface_link::RelinkReport::ceiling_above_safe_z`].
+    pub ceiling_above_safe_z: usize,
 }
 
 impl RelinkTotals {
@@ -1166,6 +1178,33 @@ impl RelinkTotals {
     pub fn link_rate(&self) -> Option<f64> {
         let junctions = self.surface_links + self.retract_links;
         (junctions > 0).then(|| self.surface_links as f64 / junctions as f64)
+    }
+
+    /// Junctions the relinker considered and declined, by any reason. Equal
+    /// to [`Self::retract_links`] on a pass whose every retract was a
+    /// considered junction; smaller when some retracts were structural (the
+    /// first fragment's approach and the closing retract are not junctions).
+    #[must_use]
+    pub const fn declined(&self) -> usize {
+        self.too_far
+            + self.off_surface
+            + self.slower_than_retract
+            + self.outside_boundary
+            + self.ceiling_above_safe_z
+    }
+
+    /// Fold one region's report into the running totals. One site, so a new
+    /// counter on [`crate::surface_link::RelinkReport`] is added here rather
+    /// than in however many hand-written `+=` blocks exist.
+    pub fn add(&mut self, rep: &crate::surface_link::RelinkReport) {
+        self.fragments += rep.fragments;
+        self.surface_links += rep.surface_links;
+        self.retract_links += rep.retract_links;
+        self.too_far += rep.too_far;
+        self.off_surface += rep.off_surface;
+        self.slower_than_retract += rep.slower_than_retract;
+        self.outside_boundary += rep.outside_boundary;
+        self.ceiling_above_safe_z += rep.ceiling_above_safe_z;
     }
 }
 
@@ -1293,6 +1332,14 @@ pub fn unified_finish_mid_steep_generation_resolution(
 /// nearest-by-integrated-link-time when `link_kinematics` is `Some`;
 /// steep-first band-major otherwise), and stitch them with the winning
 /// link candidate emitted at each junction.
+///
+/// The intra-region relink rides the mesh surface. That is only correct when
+/// the mesh IS the material; a `FromRemainingStock` op has standing stock
+/// above it wherever nothing has cut yet. Callers that hold that op's input
+/// stock snapshot must use
+/// [`unified_finish_toolpath_with_cancel_and_ceiling`] — this entry point is
+/// the fresh-stock arm, and is defined as that one with no ceiling so the two
+/// cannot drift.
 #[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
 pub fn unified_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
@@ -1307,6 +1354,59 @@ pub fn unified_finish_toolpath_with_cancel(
     // v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
     claims: Option<&ClaimsConfig<'_>>,
     debug: Option<&ToolpathDebugContext>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
+    unified_finish_toolpath_with_cancel_and_ceiling(
+        mesh,
+        index,
+        cutter,
+        top_z,
+        bottom_z,
+        params,
+        planner,
+        machining_boundary,
+        link_kinematics,
+        claims,
+        debug,
+        None,
+        cancel,
+    )
+}
+
+/// [`unified_finish_toolpath_with_cancel`] plus a stock-aware ceiling for the
+/// INTRA-REGION relink (Phase O item 3, `ORCHESTRATION_PLAN.md`).
+///
+/// `link_ceiling: None` is the fresh-stock arm and is byte-identical to the
+/// entry point above — `tests/island_stay_down_links_o3.rs` asserts that
+/// rather than leaving it to the delegation's shape.
+///
+/// `Some(ceiling)` makes every intra-region link leave the cut vertically,
+/// traverse at `max(mesh surface, standing material) + PLUNGE_CLEARANCE_MM`,
+/// and re-enter vertically — and refuses the link outright (keeping the
+/// retract) once that clearance reaches `safe_z`, counted on
+/// [`RelinkTotals::ceiling_above_safe_z`]. See [`crate::surface_link::LinkCeiling`]
+/// for why a surface-riding link on standing stock is a cutting feed through
+/// material (the G-LINKLOAD class).
+///
+/// The ceiling is deliberately NOT threaded through [`ClaimsConfig`], which
+/// also carries a stock: that one is `Some` only when `pencil_claims` is on,
+/// and whether a link cuts through standing material has nothing to do with
+/// whether the crease detector ran.
+#[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
+pub fn unified_finish_toolpath_with_cancel_and_ceiling(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    top_z: f64,
+    bottom_z: f64,
+    params: &UnifiedFinishParams,
+    planner: &FinishPlannerParams,
+    machining_boundary: Option<&RegionSet<'_>>,
+    link_kinematics: Option<&LinkKinematics>,
+    // v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
+    claims: Option<&ClaimsConfig<'_>>,
+    debug: Option<&ToolpathDebugContext>,
+    link_ceiling: Option<crate::surface_link::LinkCeiling<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
     check_cancel(cancel)?;
@@ -2016,10 +2116,13 @@ pub fn unified_finish_toolpath_with_cancel(
                 // leaves it cuts territory the decomposition (and, under
                 // `territory_clip`, the rest mask) deliberately excluded.
                 boundary: Some(&region_set),
-                // Finishing pass: the mesh IS the material here, so the
-                // legacy surface-riding link is correct. `None` keeps this
-                // site byte-identical.
-                link_ceiling: None,
+                // `None` on a fresh-stock pass, where the mesh IS the
+                // material and the legacy surface-riding link is correct;
+                // `Some` whenever the caller holds this op's INPUT stock,
+                // because then material stands above the design surface
+                // wherever nothing has cut yet and a surface-riding link
+                // feeds straight through it (G-LINKLOAD).
+                link_ceiling,
             };
             let (linked, rep) = crate::surface_link::relink_fragments(
                 crate::toolpath_spans::AnnotatedToolpath::new(tp),
@@ -2028,13 +2131,7 @@ pub fn unified_finish_toolpath_with_cancel(
                 cutter,
                 &rp,
             );
-            report.relink.fragments += rep.fragments;
-            report.relink.surface_links += rep.surface_links;
-            report.relink.retract_links += rep.retract_links;
-            report.relink.too_far += rep.too_far;
-            report.relink.off_surface += rep.off_surface;
-            report.relink.slower_than_retract += rep.slower_than_retract;
-            report.relink.outside_boundary += rep.outside_boundary;
+            report.relink.add(&rep);
             // C1: this band's ring annotations are the index-carrying
             // channel this site owns; declared, not hand-remapped.
             let mut anns = anns;
@@ -2312,6 +2409,7 @@ pub fn unified_finish_toolpath_with_cancel(
             off_surface = report.relink.off_surface,
             outside_boundary = report.relink.outside_boundary,
             slower_than_retract = report.relink.slower_than_retract,
+            ceiling_above_safe_z = report.relink.ceiling_above_safe_z,
             link_rate = report.relink.link_rate().unwrap_or(0.0),
             "unified_finish: intra-region stay-down linking"
         );

@@ -263,6 +263,48 @@ Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
 (ratified), region-coarseness slider, visible overlap_mm dial with blend
 strip rendered in the preview.
 
+**Phase O COMPLETE.** The first toolpath-changing phase; two parallel
+Opus editors (core / viz+mcp) against a frozen API contract, joint build
+compiled first try. Core: `session/multitool.rs` —
+`plan_multitool_finishing` emits k unified_finish ops coarse→fine (all
+`FromRemainingStock`, tier 0 unbounded, suggest-funnel feeds with
+planner-owned geometry re-applied, equal-cusp law
+`s = 2·√(2Rh − h²)` in ONE site, re-plan = replace via PlannerOrigin);
+`BoundarySource::PlannedTierRegions` stores the RECIPE, resolved lazily
+at generation through cached_tier_map (k siblings share one walk;
+pre-clip and post-clip agree structurally, the P2.3 lesson); planning
+itself computes NO tier map. An EMPTY tier resolves to an empty op via
+`LegitimateEmptyReason::RestMachining` — deliberate divergence from
+DerivedRestRegions' hard error, documented at the resolver. B3: unified's
+intra-region relink was hardcoded `link_ceiling: None` ("the mesh IS the
+material" — false for rest ops); now built from `ctx.initial_stock` at
+the ENVELOPE radius, fresh-stock arm byte-identical (golden asserts
+move-for-move equality of the two entry points). RelinkTotals gained
+`ceiling_above_safe_z` + per-op report-only findings row so Phase V can
+attribute declines. `invalidate_tool` stales ops whose ladder CONTAINS
+the tool (second dependency door). Viz: fixpoint re-homed to
+unconditional `controller/generate_all.rs` with `GenerateAllSink
+{Gui, Mcp}`; GUI Generate All now runs the same ladder off the
+operator's pinned sim resolution — auto-resolution is REFUSED, not
+guessed (it re-derives between rounds of one ladder = A/M10 in slow
+motion); MCP behaviour byte-equivalent minus one deliberate delta (the
+debug-trace sweep is now MCP-only). New MCP tool
+`plan_multitool_finishing` (build-info flag
+`multitool_finishing_planner`); reconciler shared as
+`apply_multitool_plan` for the Phase U dialog. Provenance rides project
+IO through BOTH loader doors incl. the viz legacy fallback
+(feeds_provenance treatment mirrored). The o3 red-first sentry went
+red→green honestly and caught its own fixture first: the scallop
+cascade links rings natively, so the fixture reached relink as 2
+fragments whose junction exceeded the 6 mm hookup — declined `too_far`
+before the ceiling was consulted; the anti-vacuousness guard fired,
+hookup raised above the plate diagonal. Two never-touch files took ONE
+mechanical `planner_origin: None` line each (required field breaks the
+build; no measured quantity can move) — flagged for operator. Suites:
+core 3,404/0, cli 31/0, mcp 25/0, viz 357/0; fmt+clippy clean.
+Remaining for Phase V: B3's budget target (tier-B rapid_s 16,140 →
+O(1,000)) is measured there, not here.
+
 **Phase I COMPLETE (b1a63fc0).** `tier_islands.rs`: TierMap → per-tier
 island sets — close + min-area with dials derived from each tier's cusp
 × the operator coarseness slider (monotone by sentry), `owned` (strict

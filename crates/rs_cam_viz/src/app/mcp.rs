@@ -106,13 +106,8 @@ impl super::RsCamApp {
         if self.mcp_receiver.is_none() {
             return;
         }
-        let (awaiting, awaiting_generate_all) = self
-            .controller
-            .pending_mcp
-            .as_ref()
-            .map_or((0, false), |pending| {
-                (pending.awaiting_gui(), pending.awaiting_generate_all())
-            });
+        let awaiting = self.controller.awaiting_deferred_completions();
+        let awaiting_generate_all = self.controller.awaiting_generate_all();
         self.mcp_reads
             .frame_loop()
             .beat(awaiting, awaiting_generate_all);
@@ -124,13 +119,8 @@ impl super::RsCamApp {
         if self.mcp_receiver.is_none() {
             return;
         }
-        let (awaiting, awaiting_generate_all) = self
-            .controller
-            .pending_mcp
-            .as_ref()
-            .map_or((0, false), |pending| {
-                (pending.awaiting_gui(), pending.awaiting_generate_all())
-            });
+        let awaiting = self.controller.awaiting_deferred_completions();
+        let awaiting_generate_all = self.controller.awaiting_generate_all();
         self.mcp_reads
             .frame_loop()
             .pump_beat(awaiting, awaiting_generate_all);
@@ -626,6 +616,10 @@ impl super::RsCamApp {
                         num_offset_passes,
                     },
                 );
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::PlanMultitoolFinishing { spec } => {
+                let resp = self.mcp_plan_multitool_finishing(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetDressupConfig { index, dressup } => {
@@ -3354,6 +3348,7 @@ impl super::RsCamApp {
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
+            planner_origin: None,
         };
 
         match self
@@ -4038,6 +4033,145 @@ impl super::RsCamApp {
             }
             Err(e) => self.mcp_mutation_error(format!("Error: {e}"), None),
         }
+    }
+
+    /// Phase O — the machine-readable planner trigger. Validates, resolves the
+    /// model, then hands off to the controller reconciler Phase U's dialog
+    /// will share.
+    fn mcp_plan_multitool_finishing(
+        &mut self,
+        spec: &rs_cam_mcp::server::PlanMultitoolFinishingParam,
+    ) -> String {
+        let session = &self.controller.state().session;
+
+        if spec.setup_index >= session.list_setups().len() {
+            return Self::mcp_plan_error(&format!(
+                "setup_index {} does not exist — the project has {} setup(s).",
+                spec.setup_index,
+                session.list_setups().len()
+            ));
+        }
+        if spec.tool_ids.is_empty() {
+            return Self::mcp_plan_error(
+                "tool_ids is empty — the ladder needs at least one tool, coarsest first.",
+            );
+        }
+        let known: Vec<usize> = session.tools().iter().map(|t| t.id.0).collect();
+        if let Some(missing) = spec.tool_ids.iter().copied().find(|id| !known.contains(id)) {
+            return Self::mcp_plan_error(&format!(
+                "tool_id {missing} does not match any tool in this project (have {known:?}). \
+                 These are library tool ids, not indices."
+            ));
+        }
+
+        // The setup names no model of its own, so "the setup's model" is the
+        // project's model when there is exactly one. Two is ambiguous and is
+        // refused rather than resolved by position.
+        let model_id = match spec.model_id {
+            Some(id) => {
+                if !session.models().iter().any(|m| m.id == id) {
+                    let available: Vec<usize> = session.models().iter().map(|m| m.id).collect();
+                    return Self::mcp_plan_error(&format!(
+                        "model_id {id} does not exist — the project has {available:?}."
+                    ));
+                }
+                id
+            }
+            None => match session.models() {
+                [] => {
+                    return Self::mcp_plan_error(
+                        "no model imported — the tier map is measured against one.",
+                    );
+                }
+                [only] => only.id,
+                models => {
+                    let available: Vec<usize> = models.iter().map(|m| m.id).collect();
+                    return Self::mcp_plan_error(&format!(
+                        "this project has {} models ({available:?}), so `model_id` is required \
+                         — it is not guessed.",
+                        models.len()
+                    ));
+                }
+            },
+        };
+
+        // The remaining fields (raw close radius / min island area, rim
+        // erosion) stay at their core derivation; `coarseness` is the one
+        // knob the operator turns and it scales both.
+        let island_defaults = rs_cam_core::tier_islands::TierIslandParams::default();
+        let islands = rs_cam_core::tier_islands::TierIslandParams {
+            coarseness: spec.coarseness.unwrap_or(island_defaults.coarseness),
+            overlap_mm: spec.overlap_mm.unwrap_or(island_defaults.overlap_mm),
+            max_regions_per_tier: spec
+                .max_regions_per_tier
+                .unwrap_or(island_defaults.max_regions_per_tier),
+            ..island_defaults
+        };
+
+        // Unset dials fall back to the CORE's own defaults, never to numbers
+        // copied here: a second copy is a second thing to drift.
+        let plan_defaults = rs_cam_core::session::MultitoolPlanSpec::default();
+        let plan_spec = rs_cam_core::session::MultitoolPlanSpec {
+            setup_index: spec.setup_index,
+            model_id,
+            tool_ids: spec.tool_ids.clone(),
+            cell_mm: spec.cell_mm.unwrap_or(plan_defaults.cell_mm),
+            tolerance_mm: spec.tolerance_mm.unwrap_or(plan_defaults.tolerance_mm),
+            margin_mm: spec.margin_mm.unwrap_or(plan_defaults.margin_mm),
+            cusp_height_mm: spec.cusp_height_mm.unwrap_or(plan_defaults.cusp_height_mm),
+            // B1 decision, not a dial: the raw drop-cutter residual is a
+            // tool-CENTRE difference biased by R*(sec theta - 1), so a slope
+            // both tools machine perfectly still reads as fine-tier
+            // territory. Measured on wanaka200: raw claimed 71.6% of the
+            // board for the fine tiers, compensated 22.0% — within 3% of the
+            // stock-referenced truth. Stated here rather than inherited so a
+            // change to the core default cannot silently move this surface.
+            treatment: rs_cam_core::tier_map::ResidualTreatment::SlopeCompensated,
+            islands,
+        };
+
+        let outcome = match self.controller.apply_multitool_plan(&plan_spec) {
+            Ok(outcome) => outcome,
+            Err(e) => return Self::mcp_plan_error(&e),
+        };
+
+        let session = &self.controller.state().session;
+        let emitted: Vec<serde_json::Value> = outcome
+            .toolpath_ids
+            .iter()
+            .filter_map(|id| {
+                session
+                    .find_toolpath_config_by_id(*id)
+                    .map(|(index, tc)| (index, tc, *id))
+            })
+            .map(|(index, tc, id)| {
+                serde_json::json!({
+                    "index": index,
+                    "id": id.0,
+                    "name": tc.name,
+                    "tier": tc.planner_origin.as_ref().map(|o| o.tier),
+                    "tool_id": tc.tool_id,
+                })
+            })
+            .collect();
+        let replaced: Vec<usize> = outcome.replaced.iter().map(|id| id.0).collect();
+
+        json_str(serde_json::json!({
+            "ok": true,
+            "plan_id": outcome.plan_id,
+            "emitted": emitted,
+            "replaced": replaced,
+            "note": "Nothing is generated yet — each tier resolves its islands lazily. Call \
+                     generate_all with fixpoint on and a simulation_resolution_mm to run the \
+                     whole coarse-to-fine rest-stock chain in one call.",
+        }))
+    }
+
+    fn mcp_plan_error(message: &str) -> String {
+        json_str(serde_json::json!({
+            "ok": false,
+            "error": format!("plan_multitool_finishing: {message}"),
+        }))
     }
 
     fn mcp_set_dressup_config(&mut self, index: usize, dressup: serde_json::Value) -> String {
@@ -6232,6 +6366,7 @@ mod tests {
                 debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
+                planner_origin: None,
             };
             let index = state
                 .session

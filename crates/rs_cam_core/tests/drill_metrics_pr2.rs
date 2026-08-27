@@ -66,6 +66,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     }
 }
 

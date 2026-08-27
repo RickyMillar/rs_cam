@@ -456,6 +456,12 @@ pub struct ProjectToolpathSection {
     /// config existed — defaults to disabled.
     #[serde(default, skip_serializing_if = "rest_analysis_is_default")]
     pub rest_analysis: crate::compute::config::RestAnalysisConfig,
+    /// Multi-tool planner provenance (Phase O item 1). Absent in every
+    /// project written before the planner existed — and absent on every
+    /// hand-built op forever after, which is why it is skipped when `None`
+    /// rather than written as an empty table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_origin: Option<crate::session::PlannerOrigin>,
 }
 
 fn rest_analysis_is_default(r: &crate::compute::config::RestAnalysisConfig) -> bool {
@@ -701,6 +707,7 @@ fn toolpath_config_from_section(
         debug_options: tp.debug_options,
         feeds_provenance: tp.feeds_provenance.clone(),
         rest_analysis: tp.rest_analysis.clone(),
+        planner_origin: tp.planner_origin.clone(),
     }
 }
 

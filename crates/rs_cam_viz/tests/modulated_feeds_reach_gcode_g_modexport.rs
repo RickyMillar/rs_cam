@@ -140,6 +140,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session.add_toolpath(0, tp).expect("add toolpath");
     let tp_id = session.toolpath_configs()[0].id;

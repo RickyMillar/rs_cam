@@ -178,6 +178,7 @@ impl ProjectSession {
                         debug_options: tc.debug_options,
                         feeds_provenance: tc.feeds_provenance.clone(),
                         rest_analysis: tc.rest_analysis.clone(),
+                        planner_origin: tc.planner_origin.clone(),
                     })
                     .collect();
 
@@ -293,6 +294,7 @@ mod tests {
             debug_options: crate::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         }
     }
 

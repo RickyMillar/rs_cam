@@ -33,7 +33,7 @@
 //! | [`offset_lab`] | M5's 2D-offset bench: fixtures, cascade runner, per-ring attribution, erosion oracle |
 //! | [`reference_plate`] | **ARP-1**, the analytic reference plate: 16 non-blending closed-form zones with exact normals, curvatures, band areas and tool-reach floors, tessellated per zone in its own natural parameter |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
-//! | [`session`] | `LoadedModel` / `StockConfig` / the 17-field `ToolpathConfig` / one-op `ProjectSession` builders |
+//! | [`session`] | `LoadedModel` / `StockConfig` / the 18-field `ToolpathConfig` / one-op `ProjectSession` builders |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
 //! | [`scallop_oracle`] | M4's analytic tool-envelope surface scorer + its ground-truth validation helpers |
 //! | [`zladder`] | the commanded Z ladder read from `SpanKind::DepthPass` spans, plus the sample→`pass_index` join — and the measured record that the AS013 ladder has a SHORT FINAL PASS, which is why the F-027/F-031 bars were NOT converted to per-pass ratios |

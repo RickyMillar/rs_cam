@@ -924,10 +924,30 @@ impl ProjectSession {
     /// Invalidate cached results for all toolpaths that reference a given tool.
     #[instrument(skip(self))]
     pub fn invalidate_tool(&mut self, tool_id: usize) {
-        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
-            if tc.tool_id == tool_id {
-                self.results.remove(&idx);
-            }
+        // A toolpath depends on a tool through TWO doors, not one. The
+        // obvious door is `tool_id` — the cutter that machines it. The
+        // second is a `PlannedTierRegions` boundary, whose islands are
+        // "the coarsest tool on THIS LADDER that holds each cell": re-dial
+        // any ladder member and the fine tier's territory moves, even
+        // though the fine tier's own cutter is untouched. Missing that
+        // door leaves a generated tier bounded by a map that no longer
+        // exists.
+        let stale: Vec<usize> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| {
+                tc.tool_id == tool_id
+                    || matches!(
+                        &tc.boundary.source,
+                        BoundarySource::PlannedTierRegions { tool_ids, .. }
+                            if tc.boundary.enabled && tool_ids.contains(&tool_id)
+                    )
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+        for idx in stale {
+            self.results.remove(&idx);
         }
         self.simulation = None;
     }
@@ -1193,6 +1213,7 @@ mod tests {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         }
     }
 

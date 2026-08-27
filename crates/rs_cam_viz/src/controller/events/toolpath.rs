@@ -159,6 +159,7 @@ impl<B: ComputeBackend> AppController<B> {
             face_selection: None,
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
+            planner_origin: None,
         };
 
         if let Some(setup_idx) = target_setup_idx
@@ -210,6 +211,7 @@ impl<B: ComputeBackend> AppController<B> {
                     face_selection: src.face_selection.clone(),
                     debug_options: src.debug_options,
                     feeds_provenance: src.feeds_provenance.clone(),
+                    planner_origin: None,
                 }
             });
 
@@ -336,17 +338,78 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
+    /// Generate every toolpath, running the rest-stock fixpoint ladder when
+    /// the project needs one (Phase O, plan §2 item 4).
+    ///
+    /// A project with no enabled `FromRemainingStock` op takes the pre-Phase-O
+    /// path unchanged — every config submitted once, enabled or not, no ladder
+    /// state, no notification.
     pub(crate) fn handle_generate_all(&mut self) {
-        let ids: Vec<_> = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .map(|tc| tc.id)
-            .collect();
-        for id in ids {
-            self.submit_toolpath_compute(id);
+        use crate::controller::generate_all::{GenerateAllSink, generate_all_scope, plan_fixpoint};
+
+        let scope = generate_all_scope(self.state.session.toolpath_configs());
+        if scope.rest_op_indices.is_empty() {
+            let ids: Vec<_> = self
+                .state
+                .session
+                .toolpath_configs()
+                .iter()
+                .map(|tc| tc.id)
+                .collect();
+            for id in ids {
+                self.submit_toolpath_compute(id);
+            }
+            return;
         }
+
+        if scope.enabled.is_empty() {
+            self.push_notification(
+                "No enabled toolpaths to generate".into(),
+                super::super::Severity::Warning,
+            );
+            return;
+        }
+
+        let plan = match plan_fixpoint(
+            true,
+            &scope.rest_op_indices,
+            self.pinned_simulation_resolution(),
+        ) {
+            Ok(plan) => plan,
+            Err(missing) => {
+                self.push_notification(
+                    format!(
+                        "Generate All needs a pinned simulation resolution: {} enabled \
+                         operation(s) take their stock from a simulation, so the ladder has \
+                         to simulate between generate rounds. Untick \"Auto from tool size\" \
+                         in the Simulation panel and set a resolution well below the \
+                         finishing tool's TIP radius (e.g. 0.1 mm for a 1 mm ball). It is \
+                         not guessed — collision counts and engagement both move with cell \
+                         size.",
+                        missing.rest_op_indices.len()
+                    ),
+                    super::super::Severity::Warning,
+                );
+                return;
+            }
+        };
+
+        self.start_generate_all(scope.enabled, plan, GenerateAllSink::Gui);
+    }
+
+    /// The cell size the ladder's own simulations will use, when the operator
+    /// has pinned one.
+    ///
+    /// `auto_resolution` is deliberately NOT accepted: it is re-derived per
+    /// simulation from the tools of whatever has generated so far
+    /// (`submit_simulation_for_groups` -> `auto_resolution_for_tools`), so it
+    /// can move between rounds of one ladder. A/M10's rule is that the cell
+    /// size is never chosen silently, and a value that changes under the run
+    /// is the same defect in slower motion.
+    fn pinned_simulation_resolution(&self) -> Option<f64> {
+        let sim = &self.state.simulation;
+        (!sim.auto_resolution && sim.resolution.is_finite() && sim.resolution > 0.0)
+            .then_some(sim.resolution)
     }
 
     pub(crate) fn handle_toggle_isolate_toolpath(&mut self) {

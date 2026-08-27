@@ -275,6 +275,12 @@ pub struct ProjectToolpathSection {
     /// Per-dimension feeds provenance (W2.1). Absent in pre-provenance projects.
     #[serde(default, skip_serializing_if = "feeds_provenance_is_empty")]
     pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
+    /// Multi-tool planner provenance (Phase O). Absent in every project
+    /// written before the planner existed and on every hand-built op after;
+    /// carried so the legacy fallback loader does not strip a plan's
+    /// provenance from a file the session loader could not parse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_origin: Option<rs_cam_core::session::PlannerOrigin>,
 }
 
 fn feeds_provenance_is_empty(p: &rs_cam_core::feeds::FeedsProvenance) -> bool {
@@ -597,6 +603,7 @@ impl ProjectToolpathSection {
                 .map(|faces| faces.iter().map(|f| f.0).collect()),
             debug_options: toolpath.debug_options,
             feeds_provenance: toolpath.feeds_provenance.clone(),
+            planner_origin: toolpath.planner_origin.clone(),
         }
     }
 }
@@ -1231,6 +1238,7 @@ fn restore_project_toolpath(
     init.rest_analysis = section.rest_analysis;
     let mut toolpath = ToolpathEntry::from_init(init);
     toolpath.feeds_provenance = section.feeds_provenance;
+    toolpath.planner_origin = section.planner_origin;
     toolpath.clear_runtime_state();
     toolpath.stale_since = Some(loaded_at);
 

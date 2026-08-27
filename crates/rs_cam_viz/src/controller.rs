@@ -1,6 +1,7 @@
 #![deny(clippy::indexing_slicing)]
 
 mod events;
+pub mod generate_all;
 mod io;
 #[cfg(test)]
 #[allow(
@@ -93,6 +94,11 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// which had already finished (the one narrow TOCTOU the lane can
     /// produce) self-heals on the very next drain instead of persisting.
     superseded_toolpaths: std::collections::HashSet<crate::state::toolpath::ToolpathId>,
+    /// Phase O — the in-flight `generate_all`, from whichever surface started
+    /// it. Unconditional on purpose: the GUI's Generate All runs the same
+    /// fixpoint ladder the MCP tool does, and `pending_mcp` is `None` outside
+    /// `--mcp`. Only [`generate_all::GenerateAllSink`] differs.
+    generate_all: Option<generate_all::PendingGenerateAll>,
     /// Pending MCP compute operations awaiting async results.
     /// `Some` when MCP mode is enabled, `None` otherwise.
     #[cfg(feature = "mcp")]
@@ -124,9 +130,35 @@ impl<B: ComputeBackend> AppController<B> {
             status_message: None,
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
+            generate_all: None,
             #[cfg(feature = "mcp")]
             pending_mcp: None,
         }
+    }
+
+    /// Completions this controller still owes a **future frame**.
+    ///
+    /// G-LV.1: the compute drain, `generate_all`'s fixpoint round handoff and
+    /// the MCP screenshot pump all live in `RsCamApp::update`, so a non-zero
+    /// count is a standing reason to keep repainting. The ladder term is
+    /// counted here rather than on `PendingMcpCompute` because a GUI-started
+    /// ladder needs those frames just as much and has no MCP slot at all.
+    #[must_use]
+    pub fn awaiting_deferred_completions(&self) -> u64 {
+        let ladder = u64::from(self.generate_all.is_some());
+        #[cfg(feature = "mcp")]
+        let ladder = ladder
+            + self
+                .pending_mcp
+                .as_ref()
+                .map_or(0, crate::mcp_bridge::PendingMcpCompute::awaiting_gui);
+        ladder
+    }
+
+    /// Whether a `generate_all` ladder is among them.
+    #[must_use]
+    pub fn awaiting_generate_all(&self) -> bool {
+        self.generate_all.is_some()
     }
 
     pub fn state(&self) -> &AppState {

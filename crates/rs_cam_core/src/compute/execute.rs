@@ -165,6 +165,11 @@ pub struct GenerationFindings {
     /// rest-analysis attach; see
     /// [`crate::compute::config::ToolpathStats::region_cap`].
     pub region_cap: Option<crate::region_mask::RegionCapReport>,
+    /// Phase O item 3: what the intra-region stay-down relink did, and why
+    /// it declined. `None` = the pass never ran (not a `UnifiedFinish`, or
+    /// its `intra_region_hookup_mm` is `0.0`, which disables it). See
+    /// [`crate::compute::config::ToolpathStats::relink`].
+    pub relink: Option<crate::unified_finish::RelinkTotals>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -348,6 +353,20 @@ fn record_region_cap(
     report: crate::region_mask::RegionCapReport,
 ) {
     cell.borrow_mut().region_cap = Some(report);
+}
+
+/// Record what the intra-region stay-down relink did (Phase O item 3).
+///
+/// **Call this even when every counter is zero.** Like
+/// [`record_region_cap`], this is a MEASUREMENT, not a defect report: the
+/// question it answers is *why* junctions retracted, and "the pass ran and
+/// had no junction to act on" is a different answer from "the pass never
+/// ran". Only call it from a path that actually ran the relink.
+fn record_relink_totals(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    totals: crate::unified_finish::RelinkTotals,
+) {
+    cell.borrow_mut().relink = Some(totals);
 }
 
 /// Record how many 2D offset calls this generation made that came back with
@@ -2300,23 +2319,51 @@ pub(crate) fn generate_unified_finish(
         }
     });
 
-    let (tp, annotations, report) = crate::unified_finish::unified_finish_toolpath_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        ctx.heights.top_z,
-        ctx.heights.bottom_z,
-        &params,
-        &planner,
-        ctx.boundary_regions,
-        // P2.d: cost the region route against the real machine envelope
-        // when one is in scope (same plumbing as pencil's P1 W4a hookup).
-        ctx.link_kinematics.as_ref(),
-        claims_cfg.as_ref(),
-        ctx.debug_ctx,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+    // B3 / G-LINKLOAD (Phase O item 3): an intra-region link rides the MESH,
+    // which is the material only on a fresh-stock pass. This op is handed
+    // `ctx.initial_stock` exactly when it cuts what a prior op left — there,
+    // material stands above the design surface wherever nothing has cut yet,
+    // and a surface-riding link is a cutting feed straight through it.
+    //
+    // `None` when no snapshot is in scope, which is the byte-identical
+    // fresh-stock arm (`tests/island_stay_down_links_o3.rs` pins that the
+    // two entry points agree). The disc is read at the ENVELOPE radius, not
+    // the cusp radius: material anywhere under the tool is material the tool
+    // will hit, and on a tapered ball the shank is what would strike it.
+    let link_ceiling = ctx
+        .initial_stock
+        .map(|stock| crate::surface_link::LinkCeiling {
+            stock: Some(stock),
+            tool_radius: ctx.tool_def.envelope_radius_mm(),
+            // The analytic stock top in the emission frame — the same
+            // fallback `optimize_entry_descents` takes where the dexel
+            // query has no answer.
+            fallback_top_z: ctx.stock_bbox.max.z,
+        });
+    let (tp, annotations, report) =
+        crate::unified_finish::unified_finish_toolpath_with_cancel_and_ceiling(
+            m,
+            idx,
+            ctx.tool_def,
+            ctx.heights.top_z,
+            ctx.heights.bottom_z,
+            &params,
+            &planner,
+            ctx.boundary_regions,
+            // P2.d: cost the region route against the real machine envelope
+            // when one is in scope (same plumbing as pencil's P1 W4a hookup).
+            ctx.link_kinematics.as_ref(),
+            claims_cfg.as_ref(),
+            ctx.debug_ctx,
+            link_ceiling,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+    // Report-only, and only when the pass actually ran — `None` on the
+    // stats side means "not measured", never "nothing retracted".
+    if cfg.intra_region_hookup_mm > 0.0 {
+        record_relink_totals(ctx.findings, report.relink);
+    }
     record_truncated_core(
         ctx.findings,
         report.uncut_core_mm2,

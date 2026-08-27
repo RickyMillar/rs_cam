@@ -200,6 +200,7 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     controller.state.session.add_toolpath(0, tp_config).unwrap();
     let tp_id_raw = controller
@@ -533,6 +534,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),
+        planner_origin: None,
     };
     session.add_toolpath(0, tp_config).unwrap();
 

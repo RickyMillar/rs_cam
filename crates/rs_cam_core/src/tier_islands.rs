@@ -223,16 +223,35 @@ impl std::error::Error for TierIslandError {}
 /// its square. A dial the operator typed explicitly is taken **verbatim** at
 /// every coarseness; otherwise the number showing in the advanced flyout would
 /// not be the number in force.
-#[derive(Debug, Clone, Copy, PartialEq)]
+///
+/// # Serialization
+///
+/// `Serialize`/`Deserialize` because
+/// [`crate::compute::config::BoundarySource::PlannedTierRegions`] stores this
+/// whole dial set in the project file as part of the tier-map recipe.
+/// `#[serde(default)]` at the STRUCT level, not per field: it fills every
+/// absent key from [`Default`] itself, so the file format's defaults and the
+/// type's defaults cannot drift — the divergence class this repo has already
+/// paid for twice (`intra_region_hookup_mm`'s core default vs its serde
+/// default).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct TierIslandParams {
     /// Morphological close radius (mm), or `None` to derive
     /// (`cusp_radius · `[`CLOSE_RADIUS_PER_CUSP_RADIUS`]`· coarseness`).
     /// Merges islands whose gap is inside the radius.
+    ///
+    /// Skipped when `None`: TOML has no null, and `toml` refuses to
+    /// serialize one rather than inventing a spelling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_radius_mm: Option<f64>,
     /// Minimum island area (mm²) worth giving this tier, or `None` to derive
     /// (`(2·cusp_radius)² · `[`MIN_REGION_AREA_TOOL_DIAMETERS_SQ`]`·
     /// coarseness²`). Measured on CELL COUNT, not polygon area — it is a
     /// population test on the mask, applied before extraction.
+    ///
+    /// Skipped when `None`; see [`Self::close_radius_mm`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_region_area_mm2: Option<f64>,
     /// 1.0 = neutral. Scales both derived dials together; see the struct doc.
     /// Clamped to [`COARSENESS_MIN`]..=[`COARSENESS_MAX`]; non-finite reads as

@@ -204,6 +204,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
                 debug_options: ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 rest_analysis: RestAnalysisConfig::default(),
+                planner_origin: None,
             },
         )
         .expect("add toolpath");

@@ -558,6 +558,7 @@ fn materialize_case_toolpath(
         face_selection: None,
         debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        planner_origin: None,
     };
 
     let tp_idx = match session.add_toolpath(0, tc) {

@@ -764,6 +764,7 @@ impl<B: ComputeBackend> AppController<B> {
                     face_selection: None,
                     debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance,
+                    planner_origin: None,
                 };
                 let _ = self.state.session.add_toolpath(setup_idx, tc);
             }

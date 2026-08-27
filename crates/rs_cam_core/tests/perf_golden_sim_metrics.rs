@@ -336,7 +336,7 @@ fn fixture_session_2d() -> ProjectSession {
     session
 }
 
-/// The 19-field `ToolpathConfig` literal, once, shared by both arms.
+/// The 20-field `ToolpathConfig` literal, once, shared by both arms.
 fn toolpath_config(
     name: &str,
     op: OperationConfig,
@@ -363,6 +363,7 @@ fn toolpath_config(
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),
+        planner_origin: None,
     }
 }
 

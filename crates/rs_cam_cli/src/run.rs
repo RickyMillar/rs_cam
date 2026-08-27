@@ -123,6 +123,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
                 face_selection: None,
                 debug_options: ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+                planner_origin: None,
             },
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;

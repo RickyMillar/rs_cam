@@ -3366,6 +3366,7 @@ fn build_entry_from_session_and_gui(
         face_selection: tc.face_selection.clone(),
         feeds_result: rt.feeds_result.clone(),
         feeds_provenance: tc.feeds_provenance.clone(),
+        planner_origin: tc.planner_origin.clone(),
         debug_options: tc.debug_options,
         debug_trace: rt.debug_trace.clone(),
         semantic_trace: rt.semantic_trace.clone(),

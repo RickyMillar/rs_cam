@@ -186,7 +186,12 @@ pub fn reset_drop_call_count() {
 /// would have to be `to_bits`-keyed in [`crate::tier_map_cache`], and a
 /// discriminant cannot be got wrong. The compensation cap is therefore a
 /// module constant ([`MAX_COMPENSATED_SLOPE_DEG`]), not a field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// It is `Serialize`/`Deserialize` because
+/// [`crate::compute::config::BoundarySource::PlannedTierRegions`] stores the
+/// tier-map RECIPE in the project file, and a recipe that omitted the
+/// treatment would silently re-plan a slope-compensated boundary as a raw one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResidualTreatment {
     /// `drop_z(tool_k) − drop_z(finest)`, untreated. Honest, and biased on
     /// slopes by `(R_k − R_finest)·(sec θ − 1)` — see the module doc.

@@ -136,6 +136,7 @@ fn build_as004_face_session() -> ProjectSession {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     };
 
     // The fixture loads with one setup at index 0 (identity / face_up=Top).
@@ -397,6 +398,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     };
 
     session

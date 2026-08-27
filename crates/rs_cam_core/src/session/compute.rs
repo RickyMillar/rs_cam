@@ -698,7 +698,7 @@ impl ProjectSession {
     ) -> Result<Option<crate::strategy_advisor::StrategyRecommendation>, SessionError> {
         use crate::strategy_advisor::{StrategyCandidate, recommend_strategy};
 
-        let resolved = self.resolve_generation_inputs(index)?;
+        let resolved = self.resolve_generation_inputs(index, cancel)?;
         // Only Adaptive3d carries a clearing strategy.
         if !matches!(
             resolved.operation,
@@ -1011,7 +1011,18 @@ impl ProjectSession {
     /// then owns the per-generation recorders + dressup/persist tail; the
     /// extraction keeps that pipeline byte-identical (the recorders simply
     /// move after the resolution, which never depended on them).
-    fn resolve_generation_inputs(&self, index: usize) -> Result<ResolvedGenInputs, SessionError> {
+    ///
+    /// `cancel` is threaded because one boundary source does real geometric
+    /// work HERE rather than inside the generator:
+    /// [`BoundarySource::PlannedTierRegions`](crate::compute::config::BoundarySource::PlannedTierRegions)
+    /// walks a full-grid drop-cutter tier map (seconds to tens of seconds on
+    /// a real board), and a resolution that could not be interrupted would
+    /// make Cancel a lie for the whole of it. Every other source ignores it.
+    fn resolve_generation_inputs(
+        &self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<ResolvedGenInputs, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -1258,7 +1269,50 @@ impl ProjectSession {
         // pre-clearing, not correctness).
         let mut pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>> = None;
         let pre_boundary: Option<crate::polygon::Polygon2> = if boundary_config.enabled {
-            if let crate::compute::config::BoundarySource::DerivedRestRegions {
+            if let crate::compute::config::BoundarySource::PlannedTierRegions {
+                tool_ids,
+                tier,
+                cell_mm,
+                tolerance_mm,
+                margin_mm,
+                treatment,
+                islands,
+            } = &boundary_config.source
+            {
+                // Unlike the `DerivedRestRegions` arm below, a failure here
+                // is PROPAGATED rather than logged-and-skipped. That arm can
+                // afford to fall back because its post-generation clip
+                // re-resolves the same regions and refuses there; this one
+                // resolves the boundary the mesh-finish family DECOMPOSES
+                // against (`unified_finish`'s pre-decompose seam), so
+                // continuing without it would silently run the fine tier
+                // over the whole board — the exact un-confinement the
+                // variant exists to prevent.
+                let regions = self.resolve_planned_tier_region_polys(
+                    &tc.name,
+                    mesh.as_ref(),
+                    spatial_index.as_ref(),
+                    &super::multitool::PlannedTierRecipe {
+                        tool_ids,
+                        tier: *tier,
+                        cell_mm: *cell_mm,
+                        tolerance_mm: *tolerance_mm,
+                        margin_mm: *margin_mm,
+                        treatment: *treatment,
+                        islands: *islands,
+                    },
+                    cancel,
+                )?;
+                // Same processed pipeline as `DerivedRestRegions`, so the
+                // keep-out subtraction and the user offset are applied once,
+                // here, and the post-generation clip re-derives the same set
+                // off the same memoised map.
+                let processed_set = crate::region_set::RegionSet::from_slice(&regions)
+                    .processed(&keep_out_footprints, boundary_config.offset);
+                let single = processed_set.single_union();
+                pre_boundary_regions = Some(processed_set.as_slice().to_vec());
+                single
+            } else if let crate::compute::config::BoundarySource::DerivedRestRegions {
                 source_toolpath_id,
             } = &boundary_config.source
             {
@@ -1430,7 +1484,7 @@ impl ProjectSession {
             operation,
             pre_boundary,
             pre_boundary_regions,
-        } = self.resolve_generation_inputs(index)?;
+        } = self.resolve_generation_inputs(index, cancel)?;
 
         // Re-borrow the config for the per-generation recorder labels and the
         // dressup/persist tail below. The resolved bundle owns everything
@@ -1578,7 +1632,51 @@ impl ProjectSession {
                 // map (S83) so spans_valid stays true.
                 if boundary_config.enabled {
                     annotated =
-                        if let crate::compute::config::BoundarySource::DerivedRestRegions {
+                        if let crate::compute::config::BoundarySource::PlannedTierRegions {
+                            tool_ids,
+                            tier,
+                            cell_mm,
+                            tolerance_mm,
+                            margin_mm,
+                            treatment,
+                            islands,
+                        } = &boundary_config.source
+                        {
+                            // Re-resolved, never carried over from the
+                            // pre-clip: the tier map is memoised on (mesh
+                            // identity, ladder, params), so this is a cache
+                            // hit on the exact map that produced the
+                            // pre-decompose boundary. Agreement between the
+                            // two clips is therefore structural — the P2.3
+                            // rule that made `DerivedRestRegions` safe.
+                            let regions = self.resolve_planned_tier_region_polys(
+                                &tp_name,
+                                mesh.as_ref(),
+                                spatial_index.as_ref(),
+                                &super::multitool::PlannedTierRecipe {
+                                    tool_ids,
+                                    tier: *tier,
+                                    cell_mm: *cell_mm,
+                                    tolerance_mm: *tolerance_mm,
+                                    margin_mm: *margin_mm,
+                                    treatment: *treatment,
+                                    islands: *islands,
+                                },
+                                cancel,
+                            )?;
+                            Self::apply_boundary_clip_multi(
+                                annotated,
+                                &boundary_config,
+                                &regions,
+                                &keep_out_footprints,
+                                tool_def.diameter(),
+                                heights.retract_z,
+                                &semantic_root,
+                                &mut channels,
+                                &mut findings,
+                            )
+                            .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                        } else if let crate::compute::config::BoundarySource::DerivedRestRegions {
                             source_toolpath_id,
                         } = &boundary_config.source
                         {
@@ -4315,6 +4413,7 @@ mod tests {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         }
     }
 
@@ -5433,6 +5532,7 @@ mod tests {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         }
     }
 
@@ -5905,6 +6005,7 @@ mod tests {
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         };
         session
             .add_toolpath(0, tc)
@@ -5931,7 +6032,7 @@ mod tests {
         let session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
         let cancel = AtomicBool::new(false);
         let resolved = session
-            .resolve_generation_inputs(0)
+            .resolve_generation_inputs(0, &cancel)
             .expect("resolve generation inputs for the adaptive3d op");
 
         // Build the raw candidate path exactly as `recommend_clearing_strategy`
@@ -6050,6 +6151,8 @@ mod tests {
                 inert_claims_dial: None,
                 // Nor did it run a rest-region extraction (F3).
                 region_cap: None,
+                // Nor an intra-region relink (Phase O).
+                relink: None,
                 retract_trips: None,
                 // Nor did it consume any machined stock.
                 stock_snapshot: None,

@@ -633,6 +633,52 @@ pub struct SetRestAnalysisConfigParam {
     pub num_offset_passes: Option<usize>,
 }
 
+/// Phase O — the machine-readable trigger for the multi-tool island
+/// finishing planner. Every dial is optional; unset means the campaign
+/// default named in that field's doc.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct PlanMultitoolFinishingParam {
+    /// Setup index (0-based) the emitted finishing chain belongs to.
+    pub setup_index: usize,
+    /// Model id the tier map is measured against. Unset = the project's
+    /// only model; the call REFUSES rather than picking when there is
+    /// more than one.
+    pub model_id: Option<usize>,
+    /// Library tool ids taking part in the ladder. Order is irrelevant —
+    /// the planner sorts coarse to fine on tip-sphere (cusp) radius, never
+    /// on envelope radius. Each becomes one emitted `unified_finish`
+    /// operation carrying its tier's islands; tier 0 cuts fresh stock and
+    /// every later tier takes the remaining stock of the one before it.
+    pub tool_ids: Vec<usize>,
+    /// Planning-grid cell size (mm) for the residual walk. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_CELL_MM` (0.4). Plan in the
+    /// 0.3-0.6 band, NEVER 0.15 — the map is O(cells) in both time and
+    /// memory, and 0.15 mm costs ~125 s per ladder tool on a 200 mm board.
+    pub cell_mm: Option<f64>,
+    /// Residual (mm) above which a cell is handed to a finer tier. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_TOLERANCE_MM` (0.05).
+    pub tolerance_mm: Option<f64>,
+    /// Grid padding (mm) beyond the finest tool's envelope. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_MARGIN_MM` (0.5).
+    pub margin_mm: Option<f64>,
+    /// Cusp height (mm) every tier is dialled to. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_CUSP_HEIGHT_MM` (0.03). It is one
+    /// number for the whole ladder on purpose: an equal cusp is what makes a
+    /// tier seam blend instead of printing a height step.
+    pub cusp_height_mm: Option<f64>,
+    /// Region coarseness. 1.0 = neutral; below 1 gives many small
+    /// islands, above 1 a few large ones. Scales the derived merge radius
+    /// and minimum island area together. Default 1.0.
+    pub coarseness: Option<f64>,
+    /// Seam-blend band (mm) each finer tier's islands are grown by, into
+    /// the coarser tier's territory. Default 2.0. `0.0` turns it off.
+    pub overlap_mm: Option<f64>,
+    /// Per-tier island cap. When filtering leaves more islands than this,
+    /// the merge radius is raised and the close re-run (bounded), and what
+    /// merged is reported. Default 24.
+    pub max_regions_per_tier: Option<usize>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetDressupConfigParam {
     /// Toolpath index (0-based)
@@ -1161,6 +1207,11 @@ pub fn build_info() -> serde_json::Value {
             // - `set_setup_rotation` writes a setup's in-plane Z
             //   rotation (0/90/180/270).
             "set_setup_rotation",
+            // Phase O (2026-08-27): `plan_multitool_finishing` emits a
+            // coarse->fine `unified_finish` chain with `planner_origin`
+            // provenance, and GUI Generate All runs the same rest-stock
+            // fixpoint ladder the MCP tool does.
+            "multitool_finishing_planner",
         ],
     })
 }
@@ -1229,12 +1280,65 @@ mod tests {
             "tool_library_mcp",
             "gui_screenshot",
             "set_ui_view",
+            "multitool_finishing_planner",
         ] {
             assert!(
                 features.contains(&flag),
                 "build_info dropped published feature flag `{flag}` — agents probe these"
             );
         }
+    }
+
+    /// Phase O — the planner trigger's wire contract. Only `setup_index`
+    /// and `tool_ids` are required; every dial deserialises to `None`,
+    /// which is what lets "unset" mean the campaign default instead of a
+    /// zero the caller never asked for.
+    #[test]
+    fn plan_multitool_finishing_param_round_trips_with_dials_omitted() {
+        let minimal: PlanMultitoolFinishingParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 0,
+            "tool_ids": [3, 7, 11],
+        }))
+        .expect("setup_index + tool_ids alone must deserialise");
+        assert_eq!(minimal.setup_index, 0);
+        assert_eq!(minimal.tool_ids, vec![3, 7, 11]);
+        assert!(minimal.model_id.is_none());
+        for (name, unset) in [
+            ("cell_mm", minimal.cell_mm.is_none()),
+            ("tolerance_mm", minimal.tolerance_mm.is_none()),
+            ("margin_mm", minimal.margin_mm.is_none()),
+            ("cusp_height_mm", minimal.cusp_height_mm.is_none()),
+            ("coarseness", minimal.coarseness.is_none()),
+            ("overlap_mm", minimal.overlap_mm.is_none()),
+            (
+                "max_regions_per_tier",
+                minimal.max_regions_per_tier.is_none(),
+            ),
+        ] {
+            assert!(unset, "`{name}` must be None when omitted, not defaulted");
+        }
+
+        let full: PlanMultitoolFinishingParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 2,
+            "model_id": 5,
+            "tool_ids": [1],
+            "cell_mm": 0.4,
+            "tolerance_mm": 0.02,
+            "margin_mm": 0.75,
+            "cusp_height_mm": 0.05,
+            "coarseness": 1.5,
+            "overlap_mm": 3.0,
+            "max_regions_per_tier": 8,
+        }))
+        .expect("every dial must be accepted");
+        assert_eq!(full.model_id, Some(5));
+        assert_eq!(full.cell_mm, Some(0.4));
+        assert_eq!(full.tolerance_mm, Some(0.02));
+        assert_eq!(full.margin_mm, Some(0.75));
+        assert_eq!(full.cusp_height_mm, Some(0.05));
+        assert_eq!(full.coarseness, Some(1.5));
+        assert_eq!(full.overlap_mm, Some(3.0));
+        assert_eq!(full.max_regions_per_tier, Some(8));
     }
 
     /// Parity freeze (architectural refactor §7.2): the MCP parse

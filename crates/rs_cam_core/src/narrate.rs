@@ -287,6 +287,13 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    is a line on every rest-analysis toolpath saying nothing
             //    happened.
             region_cap: _,
+            //  - relink (Phase O):  an eight-counter attribution of why the
+            //    intra-region relinker declined junctions. Narration already
+            //    reports the retracts themselves (`retract_trips`, walked
+            //    off the move list); this says WHY, which is a tuning
+            //    question for whoever is moving `intra_region_hookup_mm`,
+            //    not a description of the part. Read it off `ToolpathStats`.
+            relink: _,
         } = stats;
 
         self.truncated_core_mm2 = *truncated_core_mm2;

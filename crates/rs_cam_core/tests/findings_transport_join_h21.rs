@@ -51,7 +51,7 @@ use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, Measure
 use rs_cam_core::ramp_finish::RampReachClamp;
 use rs_cam_core::region_mask::RegionCapReport;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::unified_finish::{ClaimsReference, ClaimsReferenceResolution};
+use rs_cam_core::unified_finish::{ClaimsReference, ClaimsReferenceResolution, RelinkTotals};
 
 /// A hand-traced move list with a known move count, cutting distance, rapid
 /// distance and retract-trip total, so the move-derived half of the join can
@@ -179,6 +179,18 @@ fn every_finding_recorded() -> GenerationFindings {
             kept: 64,
             cap: 64,
         }),
+        // Phase O. A pass that ran and DECLINED, so a dropped channel reads
+        // as `None` rather than coincidentally matching a healthy zero.
+        relink: Some(RelinkTotals {
+            fragments: 9,
+            surface_links: 3,
+            retract_links: 5,
+            too_far: 2,
+            off_surface: 1,
+            slower_than_retract: 1,
+            outside_boundary: 1,
+            ceiling_above_safe_z: 1,
+        }),
     }
 }
 
@@ -219,6 +231,7 @@ fn every_recorded_finding_survives_the_single_join() {
         boundary_clip_dropped,
         inert_claims_dial,
         region_cap,
+        relink,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -262,6 +275,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
     assert_eq!(inert_claims_dial, findings.inert_claims_dial);
     assert_eq!(region_cap, findings.region_cap);
+    assert_eq!(relink, findings.relink);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -330,6 +344,12 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
         stats.region_cap, None,
         "F3: a generation that ran no rest-region extraction has measured \
          nothing — `Some` here would claim the cap was checked and clean"
+    );
+    assert_eq!(
+        stats.relink, None,
+        "Phase O: a generation that ran no intra-region relink has measured \
+         nothing — `Some(default)` here would claim every junction was \
+         considered and none declined"
     );
     assert!(
         stats.retract_trips.is_some(),

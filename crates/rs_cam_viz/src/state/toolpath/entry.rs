@@ -154,6 +154,13 @@ pub struct ToolpathEntry {
     /// `ToolpathConfig::feeds_provenance`; round-trips via
     /// `build_entry_from_session_and_gui` / `write_entry_config_to_session`.
     pub feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
+    /// Multi-tool planner provenance (Phase O). Mirrors
+    /// `ToolpathConfig::planner_origin` so the legacy fallback loader can
+    /// carry it into the session; `write_entry_config_to_session`
+    /// deliberately never writes it back — the session copy is
+    /// authoritative, and a duplicate (`duplicate_from` → `from_init`)
+    /// starts hand-owned at `None` so a re-plan cannot delete the copy.
+    pub planner_origin: Option<rs_cam_core::session::PlannerOrigin>,
     pub debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions,
     pub debug_trace: Option<Arc<rs_cam_core::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::semantic_trace::ToolpathSemanticTrace>>,
@@ -218,6 +225,7 @@ impl ToolpathEntry {
             face_selection: init.face_selection,
             feeds_result: None,
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+            planner_origin: None,
             debug_options: init.debug_options,
             debug_trace: None,
             semantic_trace: None,

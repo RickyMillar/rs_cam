@@ -1046,6 +1046,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
             debug_options: rs_cam_core::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+            planner_origin: None,
         };
         session.add_toolpath(0, cfg).expect("add toolpath");
     };

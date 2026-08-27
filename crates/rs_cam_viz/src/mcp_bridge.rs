@@ -674,6 +674,13 @@ pub enum McpRequestKind {
         offset_stepover_mm: Option<f64>,
         num_offset_passes: Option<usize>,
     },
+    /// Phase O — plan a multi-tool island finishing chain. Emits k enabled
+    /// `unified_finish` ops, coarse to fine, each carrying its tier's islands
+    /// and a `planner_origin` provenance stamp. Cheap: no tier map is built
+    /// here, so it is answered on the frame loop like any other mutation.
+    PlanMultitoolFinishing {
+        spec: rs_cam_mcp::server::PlanMultitoolFinishingParam,
+    },
     SetDressupConfig {
         index: usize,
         dressup: serde_json::Value,
@@ -1005,8 +1012,6 @@ pub struct PendingMcpCompute {
     pub simulation: Option<tokio::sync::oneshot::Sender<McpResponse>>,
     /// Oneshot sender for when collision check finishes.
     pub collision: Option<tokio::sync::oneshot::Sender<McpResponse>>,
-    /// For generate_all: track pending toolpaths and a final response sender.
-    pub generate_all: Option<PendingGenerateAll>,
     /// For screenshot_gui: the in-flight full-window capture. The GUI
     /// pumps this every frame (`pump_mcp_gui_screenshot`) until the
     /// `egui::Event::Screenshot` result lands and the response is sent.
@@ -1022,18 +1027,17 @@ impl PendingMcpCompute {
     /// `RsCamApp::update`. A non-zero count is therefore a standing reason to
     /// keep repainting, and (published through [`FrameLoopBeat`]) the only
     /// evidence available off-thread that a parked loop is stranding work.
+    ///
+    /// The `generate_all` ladder is **not** in this count: Phase O moved it to
+    /// `AppController`, because a GUI-started ladder owes frames without any
+    /// MCP slot existing. Read it through
+    /// `AppController::awaiting_deferred_completions`, which sums both.
     pub fn awaiting_gui(&self) -> u64 {
         let count = self.toolpath.len()
             + usize::from(self.simulation.is_some())
             + usize::from(self.collision.is_some())
-            + usize::from(self.generate_all.is_some())
             + usize::from(self.gui_screenshot.is_some());
         count as u64
-    }
-
-    /// Whether a `generate_all` is among them.
-    pub fn awaiting_generate_all(&self) -> bool {
-        self.generate_all.is_some()
     }
 }
 
@@ -1132,152 +1136,21 @@ impl PendingGuiScreenshot {
     }
 }
 
-/// State for tracking a "generate all" MCP request.
-pub struct PendingGenerateAll {
-    pub remaining: Vec<ToolpathId>,
-    pub completed: usize,
-    pub failed: usize,
-    /// Per-toolpath error messages for genuinely failed generations.
-    pub errors: Vec<(usize, String)>,
-    /// A/M11 — ops that could not generate *yet* because their upstream
-    /// simulated stock does not exist. Deliberately NOT counted in `failed`:
-    /// "cannot yet" and "cannot ever" are different states, and only the
-    /// former is worth retrying.
-    pub blocked: Vec<(ToolpathId, String)>,
-    /// A/M11 — the fixpoint loop's own state.
-    pub fixpoint: FixpointPlan,
-    /// Set when the loop itself failed (e.g. its simulation errored), as
-    /// distinct from any individual toolpath failing.
-    pub loop_error: Option<String>,
-    pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
-    /// Optional channel for streaming per-toolpath progress back to the MCP client.
-    pub progress_tx: Option<tokio::sync::mpsc::Sender<ProgressUpdate>>,
-}
-
-/// A/M11 — `generate_all` iterating to a fixpoint over the rest-stock chain.
-///
-/// The ladder: generate everything, simulate, regenerate whatever was blocked
-/// only on missing upstream stock, repeat. Before this, a chain of `k`
-/// dependent rest ops needed `k` manual sim->generate rounds and nothing told
-/// the operator what `k` was.
-///
-/// **Termination.** A round only continues when (a) at least one op is
-/// blocked *purely* on sequencing and (b) the previous round generated at
-/// least one new op. Genuine failures record `Error` and are never retried,
-/// so they cannot keep (a) true. An op reaches `Done` at most once per call,
-/// so (b) can hold at most `enabled_count` times. On top of that the loop is
-/// hard-bounded by [`Self::max_rounds`] = the number of rest-dependent ops
-/// plus one, because a stock chain cannot be longer than that.
-pub struct FixpointPlan {
-    /// `false` = the pre-A/M11 single pass. The caller can always opt out.
-    pub enabled: bool,
-    /// Simulation cell size for the loop's own simulations, in mm.
-    ///
-    /// **Caller-specified, never defaulted** (A/M10). A silently chosen
-    /// resolution is the resolution-mismatch trap: collision counts and
-    /// engagement change with cell size, so a loop that picked its own would
-    /// hand back verdicts nobody asked for. `None` is only legal alongside
-    /// `enabled: false`; otherwise the call refuses at request time.
-    pub resolution_mm: Option<f64>,
-    /// 1-based; the first generate pass is round 1.
-    pub round: usize,
-    pub max_rounds: usize,
-    /// Ops that reached `Done` in the current round — condition (b).
-    pub completed_this_round: usize,
-    /// How many simulations the loop ran.
-    pub simulations: usize,
-    /// True between submitting the loop's simulation and its completion.
-    pub awaiting_simulation: bool,
-}
-
-impl FixpointPlan {
-    /// A plan that does exactly what `generate_all` did before A/M11.
-    pub fn single_pass() -> Self {
-        Self {
-            enabled: false,
-            resolution_mm: None,
-            round: 1,
-            max_rounds: 1,
-            completed_this_round: 0,
-            simulations: 0,
-            awaiting_simulation: false,
-        }
-    }
-
-    pub fn looping(resolution_mm: f64, rest_dependent_ops: usize) -> Self {
-        Self {
-            enabled: true,
-            resolution_mm: Some(resolution_mm),
-            round: 1,
-            max_rounds: rest_dependent_ops.saturating_add(1),
-            completed_this_round: 0,
-            simulations: 0,
-            awaiting_simulation: false,
-        }
-    }
-}
-
-impl PendingGenerateAll {
-    /// Freeze this run into the shape the response builder consumes.
-    pub fn completed_summary(&self) -> GenerateAllSummary {
-        GenerateAllSummary {
-            generated: self.completed,
-            failed: self.failed,
-            errors: self.errors.clone(),
-            blocked: self
-                .blocked
-                .iter()
-                .map(|(id, msg)| (id.0, msg.clone()))
-                .collect(),
-            rounds: self.fixpoint.round,
-            simulations: self.fixpoint.simulations,
-            loop_error: self.loop_error.clone(),
-        }
-    }
-}
-
-/// The outcome of one `generate_all` call, ready to render.
-pub struct GenerateAllSummary {
-    pub generated: usize,
-    pub failed: usize,
-    /// `(toolpath id, message)` for genuine failures.
-    pub errors: Vec<(usize, String)>,
-    /// A/M11 — `(toolpath id, message)` for ops still waiting on upstream
-    /// simulated stock. Separate from `errors` on purpose: an agent must be
-    /// able to tell "cannot yet" from "cannot ever" without parsing prose.
-    pub blocked: Vec<(usize, String)>,
-    /// How many internal generate rounds it took. 1 = no ladder was needed.
-    pub rounds: usize,
-    /// How many simulations the loop ran on the caller's behalf.
-    pub simulations: usize,
-    /// The loop itself failed (not an individual toolpath).
-    pub loop_error: Option<String>,
-}
+// A/M11's `PendingGenerateAll` / `FixpointPlan` / `GenerateAllSummary` moved
+// to `controller::generate_all` in Phase O so the GUI's Generate All can run
+// the same ladder. Re-exported here because every existing `use
+// crate::mcp_bridge::...` site names them from this module.
+pub use crate::controller::generate_all::{
+    FixpointPlan, GenerateAllSink, GenerateAllSummary, PendingGenerateAll, generate_all_headline,
+};
 
 /// Render the `generate_all` reply.
 ///
 /// A/M11: reports blocked ops on their own channel, and never as failures.
 pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
-    let mut headline = format!("Generated {} toolpaths", summary.generated);
-    if summary.failed > 0 {
-        headline.push_str(&format!(", {} failed", summary.failed));
-    }
-    if !summary.blocked.is_empty() {
-        headline.push_str(&format!(
-            ", {} still waiting on upstream simulated stock",
-            summary.blocked.len()
-        ));
-    }
-    headline.push_str(&format!(
-        " (in {} generate round{}, {} simulation{})",
-        summary.rounds,
-        if summary.rounds == 1 { "" } else { "s" },
-        summary.simulations,
-        if summary.simulations == 1 { "" } else { "s" },
-    ));
-    if let Some(err) = &summary.loop_error {
-        headline.push_str(&format!(". The fixpoint loop stopped early: {err}"));
-    }
+    // Phase O: shared with the GUI ladder's toast, so the two surfaces cannot
+    // drift into telling the operator different stories about one run.
+    let headline = generate_all_headline(summary);
 
     let render = |rows: &[(usize, String)]| -> Vec<serde_json::Value> {
         rows.iter()
@@ -1488,33 +1361,25 @@ mod tests {
     }
 
     /// The count the beat publishes has to come from the pending struct, not
-    /// from the channel: a `generate_all` is dispatched once and then waits
-    /// for frames it never queued a request for.
+    /// from the channel: work is dispatched once and then waits for frames it
+    /// never queued a request for.
+    ///
+    /// Phase O moved the `generate_all` term to
+    /// `AppController::awaiting_deferred_completions` (a GUI-started ladder
+    /// owes frames with no MCP slot in existence); that half is asserted in
+    /// `tests/generate_all_fixpoint_parity.rs`.
     #[test]
     fn awaiting_gui_counts_deferred_completions() {
         let mut pending = PendingMcpCompute::new();
         assert_eq!(pending.awaiting_gui(), 0);
-        assert!(!pending.awaiting_generate_all());
 
         let (tx, _rx) = tokio::sync::oneshot::channel();
         pending.simulation = Some(tx);
         assert_eq!(pending.awaiting_gui(), 1);
-        assert!(!pending.awaiting_generate_all());
 
         let (tx, _rx) = tokio::sync::oneshot::channel();
-        pending.generate_all = Some(PendingGenerateAll {
-            remaining: Vec::new(),
-            completed: 0,
-            failed: 0,
-            errors: Vec::new(),
-            blocked: Vec::new(),
-            fixpoint: FixpointPlan::single_pass(),
-            loop_error: None,
-            response_tx: tx,
-            progress_tx: None,
-        });
+        pending.collision = Some(tx);
         assert_eq!(pending.awaiting_gui(), 2);
-        assert!(pending.awaiting_generate_all());
     }
 
     /// MCP `cancel_generation` on an idle toolpath lane must report a

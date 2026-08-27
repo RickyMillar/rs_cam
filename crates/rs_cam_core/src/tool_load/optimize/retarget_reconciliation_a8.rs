@@ -196,6 +196,7 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
                 debug_options: ToolpathDebugOptions::default(),
                 feeds_provenance: crate::feeds::FeedsProvenance::default(),
                 rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+                planner_origin: None,
             },
         )
         .expect("add toolpath");

@@ -385,7 +385,7 @@ fn fingerprint_is_the_pinned_fnv1a() {
 
 // ── The builders wire up a session that really generates ────────────────
 
-/// The 17-field `ToolpathConfig` builder, the model/stock helpers and the
+/// The 18-field `ToolpathConfig` builder, the model/stock helpers and the
 /// one-op session builder produce something the REAL generation entry point
 /// accepts — and the struct-update override idiom keeps working.
 #[test]

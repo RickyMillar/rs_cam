@@ -102,6 +102,7 @@ fn build_terrain_adaptive3d_session() -> ProjectSession {
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+        planner_origin: None,
     };
     session
         .add_toolpath(0, tc)
