@@ -521,6 +521,8 @@ fn stock_safety_links_clear_standing_material() {
     let mut violations = 0usize;
     let mut worst = 0.0f64;
     let mut highest_link_z = f64::NEG_INFINITY;
+    let radius = TOOL_DIAMETER_MM * 0.5;
+    let flat_cutter = FlatEndmill::new(TOOL_DIAMETER_MM, 25.0);
     for m in &links {
         // A link ENDS on the next chain's entry — a cut position, below the
         // ceiling by construction. Everything else is traverse geometry.
@@ -531,6 +533,21 @@ fn stock_safety_links_clear_standing_material() {
         // The contract is the ceiling PLUS the plunge clearance, not merely
         // "not inside the material" — a link grazing the top of a rib is a
         // cutting feed too.
+        // The production ceiling is PROFILE-AWARE since the link-ceiling
+        // change: `max over r of [material_top(r) - height_at_radius(r)]`
+        // rather than `max over the disc of material_top`. This op runs a FLAT
+        // endmill, whose `height_at_radius` is `Some(0.0)` throughout its
+        // envelope, so the two must be BYTE-IDENTICAL here — that is the
+        // safety anchor, asserted on the very samples this gate grades rather
+        // than argued in a comment.
+        assert_eq!(
+            stock.max_clearance_tip_z_for_profile(m.target.x, m.target.y, radius, &flat_cutter),
+            stock.max_conservative_top_z_in_disc(m.target.x, m.target.y, radius),
+            "the profile-aware ceiling moved for a FLAT endmill at ({:.3}, \
+             {:.3}) — it must reduce to the flat disc exactly",
+            m.target.x,
+            m.target.y
+        );
         let required = ceiling_at(&stock, m.target.x, m.target.y) + PLUNGE_CLEARANCE_MM;
         if m.target.z < required - 1e-9 {
             violations += 1;

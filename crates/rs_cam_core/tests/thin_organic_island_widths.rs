@@ -518,6 +518,8 @@ fn wanaka_tier_and_band_region_widths() {
     stage_d(&mesh, &index, &r10, &planned, stepover);
     stage_e(&mesh, &index, &r10, &planned, stepover);
     stage_f(&mesh, &index, &r10, &planned, stepover, surface.cell_size());
+    stage_g(&mesh, &index, &r10, &planned, stepover);
+    stage_h(&r10, &mesh);
 
     println!(
         "SHALLOW+MIDSTEEP TOTAL: {grand_frag} raster fragments vs {grand_rings} rings.\n\
@@ -1109,5 +1111,224 @@ fn stage_f(
         "     (swept-best ceiling from Stage E was 1.10x)\n\
          If the prediction captures most of that ceiling, Lever 2 is one\n\
          covariance matrix per region - a small change, not a campaign.\n"
+    );
+}
+
+// ── STAGE G ─────────────────────────────────────────────────────────────
+//
+// Every number in Stages D-F used `link_ceiling: None` — the FRESH-STOCK arm,
+// where a link may ride the mesh surface directly. The live tier 1 is a REST
+// op, which passes `Some(LinkCeiling)`, and that changes link behaviour twice
+// over (`surface_link.rs`):
+//
+//   * every kept link is LIFTED to `max(surface, material) + PLUNGE_CLEARANCE`
+//     and bracketed by a vertical exit and re-entry — one link becomes three
+//     moves with two vertical legs, which is what "walls" look like in the
+//     viewport; and
+//   * a link is REFUSED outright once that ceiling reaches `safe_z`, because
+//     feeding to retract height is strictly worse than the rapid it replaces.
+//
+// Operator report (2026-08-28): the parallel band still shows "huge walls of
+// retracts" after the link fixes. If that is real, it should appear here as a
+// large jump in kept retracts the moment a ceiling is in scope.
+fn stage_g(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    stepover: f64,
+) {
+    use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::surface_link::LinkCeiling;
+    use rs_cam_core::toolpath::raster_toolpath_from_grid;
+
+    println!("========== STAGE G — what a REST op's link ceiling costs (the walls) ==========\n");
+
+    let kin = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let lk = LinkKinematics {
+        kinematics: kin,
+        max_feed_mm_min: MAX_FEED_MM_MIN,
+        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let tool_r = cutter.envelope_radius_mm();
+
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|r| r.band == FinishBand::Shallow)
+        .map(|r| &r.polygon)
+        .collect();
+    shallow.sort_by(|a, b| {
+        b.area()
+            .partial_cmp(&a.area())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        cutter,
+        stepover,
+        0.0,
+        effective_min_z,
+    );
+
+    // Three ceiling regimes, worst to best:
+    //   none            - fresh stock, what Stages D-F measured
+    //   mesh-top        - the analytic fresh-stock fallback the code uses when
+    //                     no dexel snapshot is in scope (`fallback_top_z`)
+    //   surface-hugging - a prior finishing tier has already cut to near the
+    //                     design surface, so material stands just above it
+    let regimes: [(&str, Option<f64>); 3] = [
+        ("no ceiling", None),
+        ("ceiling @ mesh top", Some(mesh.bbox.max.z)),
+        ("ceiling @ surface+0.1", Some(mesh.bbox.min.z)),
+    ];
+
+    println!(
+        "     {:>10}  {:>22}  {:>9}  {:>9}  {:>9}  {:>10}",
+        "area mm²", "regime", "linked", "retracts", "time s", "vs none"
+    );
+    for poly in shallow.iter().take(3) {
+        let region = RegionSet::new(vec![(*poly).clone()]);
+        let mut base = 0.0_f64;
+        for (label, fallback) in regimes {
+            let raster = raster_toolpath_from_grid(
+                &grid,
+                FEED_MM_MIN,
+                PLUNGE_MM_MIN,
+                safe_z,
+                Some(effective_min_z),
+                Some(&region),
+            );
+            let ceiling = fallback.map(|top| LinkCeiling {
+                stock: None,
+                tool_radius: tool_r,
+                fallback_top_z: top,
+            });
+            let rp = rs_cam_core::surface_link::RelinkParams {
+                hookup_distance: 25.0,
+                stock_to_leave: 0.0,
+                sampling: 0.5,
+                feed_rate: FEED_MM_MIN,
+                plunge_rate: PLUNGE_MM_MIN,
+                safe_z,
+                link_kinematics: Some(&lk),
+                reorder: true,
+                boundary: Some(&region),
+                link_ceiling: ceiling,
+                flush_ride: false,
+                // Tier ops set this true (unified_finish); it only matters when
+                // a ceiling is present, which is the whole point here.
+                airborne_links_may_leave_territory: ceiling.is_some(),
+            };
+            let (linked, rep) = rs_cam_core::surface_link::relink_fragments(
+                rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raster),
+                mesh,
+                index,
+                cutter,
+                &rp,
+            );
+            let mut ch = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+            let tp = linked.reconcile(&mut ch).into_inner().toolpath;
+            let t = compute_cycle_time(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+            if label == "no ceiling" {
+                base = t;
+            }
+            println!(
+                "     {:>10.1}  {label:>22}  {:>9}  {:>9}  {t:>9.1}  {:>9.2}x",
+                poly.area(),
+                rep.surface_links,
+                rep.retract_links,
+                base / t
+            );
+        }
+        println!();
+    }
+    println!(
+        "     If 'ceiling @ mesh top' shows retracts jumping and time rising, the\n\
+         operator's 'walls of retracts' are the ceiling REFUSING links, not the\n\
+         raster fragmenting — and the lever is the ceiling's height source, not\n\
+         the path pattern. Stages D-F all measured the 'no ceiling' row, so\n\
+         their margins are optimistic for a rest op by whatever this gap is.\n"
+    );
+}
+
+// ── STAGE H ─────────────────────────────────────────────────────────────
+//
+// Stage G showed the ceiling's HEIGHT dominates (1.57x swing, same path). So
+// what sets it in production? `compute/execute.rs` builds the ceiling with
+// `tool_radius: ctx.tool_def.envelope_radius_mm()` and
+// `max_conservative_top_z_in_disc` takes the MAX over that whole disc, with a
+// half-cell dilation on top ("may only ever err high").
+//
+// For a TAPERED ball that flat-disc model is the wrong shape. The tool is not a
+// cylinder: past the ball it climbs at 1/tan(alpha). Material at lateral offset
+// r can only strike the tool if it stands HIGHER than `height_at_radius(r)`
+// above the tip. So the honest clearance is
+//     tip_z >= max over r of [ material_top(r) - height_at_radius(r) ]
+// and the flat disc over-lifts by exactly the `height_at_radius(r)` it ignores.
+//
+// This prints the profile against the board's own relief, so the over-reach is
+// a measured number rather than an argument.
+fn stage_h(cutter: &TaperedBallEndmill, mesh: &TriangleMesh) {
+    println!(
+        "========== STAGE H — is the ceiling's disc radius physically justified? ==========\n"
+    );
+    let relief = mesh.bbox.max.z - mesh.bbox.min.z;
+    let env = cutter.envelope_radius_mm();
+    let cusp = cutter.cusp_radius_mm();
+    println!("   board relief (max possible standing material): {relief:.2} mm");
+    println!("   tool: cusp/tip radius {cusp:.2} mm, ENVELOPE radius {env:.2} mm");
+    println!("   production reads the ceiling over a disc of the ENVELOPE radius.\n");
+    println!(
+        "     {:>10}  {:>16}  {:>34}",
+        "offset r", "tool height", "can material at r reach the tool?"
+    );
+    let mut relevant = 0.0_f64;
+    let mut r = 0.0_f64;
+    while r <= env + 1e-9 {
+        match cutter.height_at_radius(r) {
+            Some(h) => {
+                let reachable = h <= relief;
+                if reachable {
+                    relevant = r;
+                }
+                println!(
+                    "     {r:>9.2}mm  {h:>14.2}mm  {:>34}",
+                    if reachable {
+                        "YES - within the board's relief"
+                    } else {
+                        "no - tool is above any material"
+                    }
+                );
+            }
+            None => println!("     {r:>9.2}mm  {:>16}  {:>34}", "(past shaft)", "-"),
+        }
+        r += env / 6.0;
+    }
+    println!(
+        "\n   Only material within ~{relevant:.2} mm laterally can physically strike this\n\
+       tool on this board, but the ceiling is read over {env:.2} mm — a {:.1}x\n\
+       over-reach in RADIUS, which on terrain pulls in ridges that cannot touch\n\
+       the cutter and lifts every link to their height.\n\
+       \n   This is the same radius-semantics class the repo's radius programme\n\
+       tracks (envelope where a tip/profile scale belongs). The fix is to read\n\
+       the ceiling against the tool PROFILE, not a flat disc; Stage G bounds the\n\
+       prize at up to 1.57x on the shallow band, and it would apply to EVERY\n\
+       relinked op, not just this one.\n",
+        if relevant > 1e-9 {
+            env / relevant
+        } else {
+            f64::INFINITY
+        }
     );
 }

@@ -81,8 +81,14 @@ pub fn build_surface_link(
 pub struct LinkCeiling<'a> {
     /// The op's INPUT stock, when a simulated snapshot is in scope.
     pub stock: Option<&'a crate::dexel_stock::TriDexelStock>,
-    /// Radius of the disc the ceiling is read over — the tool's, because
-    /// material anywhere under the tool is material the tool will hit.
+    /// SEARCH BOUND for the ceiling: the furthest lateral offset at which
+    /// material could reach the tool at all — the tool's ENVELOPE radius.
+    ///
+    /// It is a bound, not the shape. Within it the cutter's own profile
+    /// decides how high material has to stand before it can touch
+    /// ([`Self::required_tip_z`]); only [`Self::material_top`] still reads the
+    /// whole disc as a flat cylinder, and it is used where that cruder,
+    /// strictly higher answer is the safe one.
     pub tool_radius: f64,
     /// Ceiling to assume where the dexel query has no answer (off-grid, or
     /// no snapshot at all). The analytic fresh-stock top.
@@ -104,7 +110,7 @@ impl std::fmt::Debug for LinkCeiling<'_> {
 
 impl LinkCeiling<'_> {
     /// Highest Z at which material may stand anywhere under the tool at
-    /// `(x, y)` — the raw dexel reading [`Self::clear_z`] is built on.
+    /// `(x, y)` — the raw dexel reading, over the whole disc.
     ///
     /// Exposed separately because a caller may need to ask *whether* anything
     /// stands above a candidate link before deciding to lift it.
@@ -114,9 +120,51 @@ impl LinkCeiling<'_> {
     /// [`crate::toolpath::PLUNGE_CLEARANCE_MM`] hop per junction and clear
     /// nothing. `relink_fragments`' own caller (engraving on raw stock) has
     /// the opposite prior and lifts unconditionally.
+    ///
+    /// This is the FLAT-CYLINDER reading: it asks only "how high does
+    /// material stand under the tool disc", never "could the tool be there".
+    /// It is therefore an upper bound on [`Self::required_tip_z`] and is kept
+    /// deliberately for the two places where the cruder answer is the safe
+    /// one — the flush-ride test below (a lower reading would ride the
+    /// surface more often) and [`crate::pencil`]'s lift TRIGGER (a lower
+    /// reading would lift less often).
     pub(crate) fn material_top(&self, x: f64, y: f64) -> f64 {
         self.stock
             .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
+            .unwrap_or(self.fallback_top_z)
+    }
+
+    /// Lowest tool TIP Z at `(x, y)` that nothing standing under the cutter
+    /// can reach — the PROFILE-AWARE ceiling [`Self::clear_z`] is built on.
+    ///
+    /// [`Self::material_top`] models the cutter as a flat cylinder of
+    /// [`Self::tool_radius`]. Past its tip a real cutter RISES, so material
+    /// at lateral offset `r` can only strike it if it stands more than
+    /// `height_at_radius(r)` above the tip:
+    ///
+    /// ```text
+    /// tip_z >= max over r in [0, tool_radius] of
+    ///            [ material_top_at(r) - height_at_radius(r) ]
+    /// ```
+    ///
+    /// Measured on the operator's 200×200×9.81 mm relief with the shipped R1.0
+    /// tapered ball (ball Ø2.0, 5.7° half-angle, Ø6 shank, envelope radius
+    /// 3.0): the tool stands 10.97 mm above its tip at r = 2.0, above the
+    /// board's ENTIRE relief, so only material within ~1.5 mm laterally can
+    /// touch it — the flat disc over-reached by 2× in radius and lifted every
+    /// link to the height of ridges that cannot contact the cutter. Holding
+    /// the path identical and varying only this height moved one region from
+    /// 898 s to 1411 s (1.57×).
+    ///
+    /// **Safety anchor:** for a FLAT endmill `height_at_radius` is `Some(0.0)`
+    /// everywhere inside the envelope, so this is byte-identical to
+    /// [`Self::material_top`]. The generalisation can only ever RELAX the lift
+    /// where the tool genuinely rises above its own tip, and never for a flat
+    /// cutter. See
+    /// [`crate::dexel_stock::TriDexelStock::max_clearance_tip_z_for_profile`].
+    pub(crate) fn required_tip_z(&self, cutter: &dyn MillingCutter, x: f64, y: f64) -> f64 {
+        self.stock
+            .and_then(|s| s.max_clearance_tip_z_for_profile(x, y, self.tool_radius, cutter))
             .unwrap_or(self.fallback_top_z)
     }
 
@@ -124,8 +172,17 @@ impl LinkCeiling<'_> {
     /// sits at `surface_z`. Use `f64::NEG_INFINITY` for `surface_z` when the
     /// drop cutter found no contact — the material ceiling then decides
     /// alone.
-    pub(crate) fn clear_z(&self, x: f64, y: f64, surface_z: f64) -> f64 {
-        surface_z.max(self.material_top(x, y)) + crate::toolpath::PLUNGE_CLEARANCE_MM
+    ///
+    /// The cutter is an ARGUMENT rather than a field so [`LinkCeiling`] stays
+    /// `Copy`; every caller already holds the cutter it is planning for.
+    pub(crate) fn clear_z(
+        &self,
+        cutter: &dyn MillingCutter,
+        x: f64,
+        y: f64,
+        surface_z: f64,
+    ) -> f64 {
+        surface_z.max(self.required_tip_z(cutter, x, y)) + crate::toolpath::PLUNGE_CLEARANCE_MM
     }
 }
 
@@ -539,6 +596,14 @@ pub fn relink_fragments(
                     // fails and the safe lifted shape stays. Deliberate: the
                     // flush ride is a flat-ground optimisation, never a
                     // slope gamble.
+                    //
+                    // This one stays the FLAT-CYLINDER read on purpose. The
+                    // profile-aware ceiling (`required_tip_z`, used by
+                    // `clear_z` below) reads LOWER wherever the tool rises
+                    // above its tip, and a lower reading here would widen the
+                    // flush arm — i.e. ride the surface more often. Relaxing
+                    // the LIFT HEIGHT is provably safe; relaxing the decision
+                    // to lift at all is not the same question.
                     const FLUSH_EPS_MM: f64 = 0.15;
                     let flush = params.flush_ride
                         && samples.iter().all(|&(x, y, sz)| {
@@ -566,7 +631,7 @@ pub fn relink_fragments(
                         // special case that feeds across at depth.
                         let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
                         for &(x, y, surface_z) in &samples {
-                            let z = ceiling.clear_z(x, y, surface_z);
+                            let z = ceiling.clear_z(cutter, x, y, surface_z);
                             if z >= params.safe_z - 1e-6 {
                                 // Clearing the standing material costs the
                                 // whole retract anyway — keep the rapid,

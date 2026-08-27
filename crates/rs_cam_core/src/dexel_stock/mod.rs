@@ -429,6 +429,120 @@ impl TriDexelStock {
         max_top
     }
 
+    /// **Profile-aware clearance.** Lowest tool TIP Z at `(cx, cy)` from which
+    /// nothing standing under the cutter can touch it — the reading a
+    /// clearance ceiling should use once the tool's SHAPE is known.
+    ///
+    /// [`Self::max_conservative_top_z_in_disc`] answers the same question for
+    /// a flat cylinder of `radius`: it takes the highest material anywhere in
+    /// the disc and requires the tip to clear THAT. That is exact for a flat
+    /// endmill and wrong for every other profile, because past its tip the
+    /// cutter RISES: material at lateral offset `r` can only strike it if it
+    /// stands higher than `height_at_radius(r)` above the tip. So the honest
+    /// rule is
+    ///
+    /// ```text
+    /// tip_z >= max over r in [0, radius] of
+    ///            [ material_top_at(r) - height_at_radius(r) ]
+    /// ```
+    ///
+    /// which this evaluates cell by cell over exactly the cells
+    /// [`Self::max_conservative_top_z_in_disc`] visits.
+    ///
+    /// # Safety anchor
+    ///
+    /// For a FLAT endmill `height_at_radius(r) == Some(0.0)` for every `r`
+    /// inside its envelope, so every visited cell contributes `cell_top - 0`
+    /// and the result is **byte-identical** to
+    /// [`Self::max_conservative_top_z_in_disc`] at the same radius. The
+    /// generalisation can only ever LOWER the required tip Z, and only where
+    /// the tool genuinely rises above its own tip. It is pinned by
+    /// `tests/profile_link_ceiling.rs::flat_endmill_profile_ceiling_is_byte_identical`.
+    ///
+    /// # Cells past the shaft
+    ///
+    /// `height_at_radius` returns `None` when `r` exceeds the whole envelope
+    /// — that radius has no cutter over it at all, so nothing there can
+    /// contact, and the cell is SKIPPED rather than clamped. With the search
+    /// bound at the envelope radius this can only ever reach the half-cell
+    /// dilation ring.
+    ///
+    /// # Conservatism
+    ///
+    /// Two deliberate over-reaches are carried through unchanged from
+    /// [`Self::max_conservative_top_z_in_disc`]: the sliver-safe
+    /// `conservative_top` reading, and the half-cell dilation of the disc.
+    /// A third is added here: a cell's material may stand anywhere inside its
+    /// square, so the closest it can be to the tool axis is the cell-centre
+    /// distance minus the cell's HALF-DIAGONAL. Evaluating the profile at
+    /// that lower bound picks the smallest tool height the cell could see,
+    /// and therefore the largest lift. This query may only ever err high.
+    ///
+    /// Returns `None` under exactly the same conditions as
+    /// [`Self::max_conservative_top_z_in_disc`] (disc entirely off-grid), plus
+    /// the degenerate case where every visited cell lay past the envelope. The
+    /// caller then has no usable stock information and should fall back to the
+    /// analytic fresh-stock top.
+    pub fn max_clearance_tip_z_for_profile(
+        &self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> Option<f64> {
+        let grid = &self.z_grid;
+        let cs = grid.cell_size;
+        // Same dilation, same `ceil`, same cell set as the flat-disc query —
+        // the profile decides WITHIN the disc, it does not resize it.
+        let reach = radius + cs * 0.5;
+        let r_cells = (reach / cs).ceil() as isize;
+
+        let center_col = ((cx - grid.origin_u) / cs).round() as isize;
+        let center_row = ((cy - grid.origin_v) / cs).round() as isize;
+
+        let (col_min, col_max, row_min, row_max) = stamping::clamped_cell_bbox(
+            center_col - r_cells,
+            center_col + r_cells,
+            center_row - r_cells,
+            center_row + r_cells,
+            grid.cols,
+            grid.rows,
+        )?;
+
+        let reach_sq = reach * reach;
+        // Half the diagonal of one cell: how far inside its own square a
+        // cell's material may sit toward the tool axis.
+        let half_diag = cs * std::f64::consts::FRAC_1_SQRT_2;
+        let mut max_tip_z: Option<f64> = None;
+
+        for row in row_min..=row_max {
+            let cell_y = grid.origin_v + row as f64 * cs;
+            let dy = cell_y - cy;
+            let dy_sq = dy * dy;
+            if dy_sq > reach_sq {
+                continue;
+            }
+            for col in col_min..=col_max {
+                let cell_x = grid.origin_u + col as f64 * cs;
+                let dx = cell_x - cx;
+                let dist_sq = dx * dx + dy_sq;
+                if dist_sq > reach_sq {
+                    continue;
+                }
+                let r_near = (dist_sq.sqrt() - half_diag).max(0.0);
+                // `None` = past the whole envelope: no cutter over this cell,
+                // so nothing in it can contact. Skip, never clamp.
+                let Some(h) = cutter.height_at_radius(r_near) else {
+                    continue;
+                };
+                let top = f64::from(grid.conservative_top_at(row, col));
+                let need = top - h;
+                max_tip_z = Some(max_tip_z.map_or(need, |m: f64| m.max(need)));
+            }
+        }
+        max_tip_z
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///

@@ -2338,9 +2338,24 @@ pub(crate) fn generate_unified_finish(
     //
     // `None` when no snapshot is in scope, which is the byte-identical
     // fresh-stock arm (`tests/island_stay_down_links_o3.rs` pins that the
-    // two entry points agree). The disc is read at the ENVELOPE radius, not
-    // the cusp radius: material anywhere under the tool is material the tool
-    // will hit, and on a tapered ball the shank is what would strike it.
+    // two entry points agree).
+    //
+    // The ENVELOPE radius is the SEARCH BOUND — the furthest lateral offset at
+    // which material could reach this cutter at all — and it is no longer the
+    // whole answer. Inside it the tool's own profile decides
+    // (`LinkCeiling::required_tip_z`): past its tip a cutter RISES, so material
+    // at offset `r` can only strike it if it stands more than
+    // `height_at_radius(r)` above the tip. This comment used to justify a flat
+    // disc with "material anywhere under the tool is material the tool will
+    // hit, and on a tapered ball the shank is what would strike it" — that is
+    // the reasoning the profile rule corrects. Measured on the operator's
+    // 200x200x9.81 relief with the shipped R1.0 tapered ball, the shank stands
+    // 10.97 mm above the tip at r = 2.0, above the board's entire relief: only
+    // material within ~1.5 mm laterally can touch it, so the flat disc
+    // over-reached 2x in radius and lifted every link to the height of ridges
+    // that cannot contact the cutter (one region 898 s -> 1411 s, 1.57x, with
+    // the path held identical). For a FLAT endmill the profile rule is
+    // byte-identical to the flat disc, which is the safety anchor.
     let link_ceiling = ctx
         .initial_stock
         .map(|stock| crate::surface_link::LinkCeiling {

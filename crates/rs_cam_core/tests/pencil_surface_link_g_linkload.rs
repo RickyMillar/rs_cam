@@ -302,10 +302,27 @@ fn link_runs(tp: &Toolpath) -> Vec<(P3, Vec<P3>)> {
     runs
 }
 
-/// The ceiling contract, recomputed from the stock the generator was handed.
+/// The FLAT-DISC ceiling, recomputed from the stock the generator was handed.
+///
+/// Still the right bar for this fixture even though the production ceiling is
+/// now PROFILE-AWARE ([`profile_required_tip_z`]): `fresh_stock` is uncut, so
+/// its conservative top is `STOCK_TOP_Z` in every column, and the column
+/// directly under the tip (`r = 0`, where every profile has height 0) already
+/// reads that maximum. The profile rule can only relax where the material's
+/// max sits OFF-AXIS and the near ground is lower — which never happens on a
+/// plane. So the two agree here, and this stays the stricter of the two.
+/// `g_linkload_the_profile_rule_does_not_relax_a_flat_stock_top` pins that.
 fn material_top(stock: &TriDexelStock, x: f64, y: f64) -> f64 {
     stock
         .max_conservative_top_z_in_disc(x, y, tip_radius())
+        .unwrap_or(stock.stock_bbox.max.z)
+}
+
+/// The PROFILE-AWARE ceiling the production lift now reads: the lowest tip Z
+/// at which nothing under the cutter can touch it.
+fn profile_required_tip_z(stock: &TriDexelStock, x: f64, y: f64) -> f64 {
+    stock
+        .max_clearance_tip_z_for_profile(x, y, tip_radius(), &ball_cutter(TOOL_DIAMETER_MM))
         .unwrap_or(stock.stock_bbox.max.z)
 }
 
@@ -387,6 +404,65 @@ fn g_linkload_a_stock_aware_link_clears_the_material_under_it() {
     assert!(
         worst <= 1e-9,
         "a link feed still removed {worst:.3} mm of standing material"
+    );
+}
+
+/// GATE 2b — the ceiling went PROFILE-AWARE; this fixture must not move.
+///
+/// The lift height is now `max over r of [material_top(r) - height_at_radius(r)]`
+/// rather than `max over the disc of material_top`. That relaxation is real on
+/// terrain — a ridge the cutter's rising flank cannot reach no longer raises
+/// the transit — and it must be exactly ZERO here, because `fresh_stock` is a
+/// PLANE: the column under the tip is already the maximum, and `r = 0` is where
+/// every profile has height 0.
+///
+/// Stating it as an assertion is what keeps GATE 2 honest. GATE 2 grades the
+/// emission against the flat-disc bar; if the profile rule ever started
+/// relaxing on flat ground, GATE 2 would go red with no explanation and this
+/// gate names the reason first.
+#[test]
+fn g_linkload_the_profile_rule_does_not_relax_a_flat_stock_top() {
+    let stock = fresh_stock();
+    let tp = generate(Some(&stock));
+
+    let link_moves: Vec<_> = tp.moves.iter().filter(|m| is_link_feed(m)).collect();
+    assert!(!link_moves.is_empty(), "control: no link to grade");
+
+    let mut worst_gap = 0.0f64;
+    for m in &link_moves {
+        let flat = material_top(&stock, m.target.x, m.target.y);
+        let profile = profile_required_tip_z(&stock, m.target.x, m.target.y);
+        assert!(
+            profile <= flat + 1e-12,
+            "the profile rule RAISED the ceiling at ({:.3}, {:.3}): {profile:.6} \
+             vs {flat:.6}. It may only ever relax.",
+            m.target.x,
+            m.target.y
+        );
+        worst_gap = worst_gap.max(flat - profile);
+
+        // ...and on this plane it must not relax at all, so the emission is
+        // graded by the same number it was before the change.
+        assert!(
+            m.target.z >= profile + PLUNGE_CLEARANCE_MM - 1e-6,
+            "a link feed at ({:.3}, {:.3}) sits at z={:.3}, under the \
+             profile-aware clearance {:.3}",
+            m.target.x,
+            m.target.y,
+            m.target.z,
+            profile + PLUNGE_CLEARANCE_MM
+        );
+    }
+    assert!(
+        worst_gap <= 1e-9,
+        "the profile rule relaxed by up to {worst_gap:.6} mm on an UNCUT, FLAT \
+         stock top. There is nothing off-axis to relax for on a plane — this is \
+         the rule reaching material the tool can hit"
+    );
+    println!(
+        "G-LINKLOAD profile rule: {} link feeds, worst flat-vs-profile gap \
+         {worst_gap:.9} mm (must be 0 on a plane)",
+        link_moves.len()
     );
 }
 

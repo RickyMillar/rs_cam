@@ -1395,7 +1395,13 @@ enum LinkLift {
 ///
 /// The third read is the CLEARANCE itself
 /// ([`crate::surface_link::LinkCeiling::clear_z`]), over the tip disc, once
-/// the trigger has fired.
+/// the trigger has fired. That one is PROFILE-AWARE: it lifts only as far as
+/// the material the cutter can actually reach at each lateral offset requires,
+/// so a ridge standing under the far edge of the disc — where the tool's own
+/// flank has already risen well clear of it — no longer raises the
+/// transit. The two TRIGGER reads above deliberately stay on the cruder
+/// flat-cylinder `material_top`: relaxing the lift HEIGHT is provably safe,
+/// relaxing the decision to lift at all is a different question.
 ///
 /// The route sampled is the previous run's exit, the drop-cuttered interior
 /// samples (which already carry `stock_to_leave`), and the next run's entry.
@@ -1403,11 +1409,13 @@ enum LinkLift {
 /// there and no second drop-cutter pass is needed. Lifting the endpoints too
 /// is what makes the transit's ends vertical: the tool leaves the cut straight
 /// up and arrives straight above the next one.
+#[allow(clippy::too_many_arguments)]
 fn plan_link_lift(
     from: P3,
     to: P3,
     link_pts: &[P3],
     stock: &crate::dexel_stock::TriDexelStock,
+    cutter: &dyn MillingCutter,
     contact_radius: f64,
     contact_rise: f64,
     params: &PencilParams,
@@ -1433,6 +1441,10 @@ fn plan_link_lift(
     route.extend_from_slice(link_pts);
     route.push(to);
 
+    // TRIGGER: both reads stay on the FLAT-CYLINDER `material_top`, unchanged.
+    // The profile-aware ceiling reads at or below this, so wiring it in here
+    // would make the trigger fire LESS often — the wrong direction for a
+    // gouge guard. Only the LIFT HEIGHT below is profile-aware.
     let stands_in_the_way = |p: &P3| {
         tip_column.material_top(p.x, p.y) > p.z + budget
             || ceiling.material_top(p.x, p.y) > p.z + contact_rise + budget
@@ -1443,7 +1455,10 @@ fn plan_link_lift(
 
     let mut lifted = Vec::with_capacity(route.len());
     for p in &route {
-        let clear = ceiling.clear_z(p.x, p.y, p.z);
+        // Profile-aware: on a tapered ball the shank stands many millimetres
+        // above the tip at the edge of the disc, so material out there cannot
+        // touch the cutter and must not raise the transit.
+        let clear = ceiling.clear_z(cutter, p.x, p.y, p.z);
         if clear >= params.safe_z - 1e-6 {
             return LinkLift::Refused;
         }
@@ -1586,6 +1601,7 @@ pub(crate) fn emit_paths_with_entry_stock(
                             first,
                             &link_pts,
                             stock,
+                            cutter,
                             contact_radius,
                             contact_rise,
                             params,
@@ -3196,7 +3212,7 @@ mod tests {
 
         assert!(
             matches!(
-                plan_link_lift(from, to, &pts, &stock, r, rise, &link_params()),
+                plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &link_params()),
                 LinkLift::NotNeeded
             ),
             "the valley wall under the flank is the surface this pass is \
@@ -3216,7 +3232,7 @@ mod tests {
         let stock = v_valley_stock(-1.5, Some((0.5, 1.5, rib_top)));
         let (from, pts, to) = v_valley_link(-1.5, r, -3.0, 3.0);
 
-        let lifted = match plan_link_lift(from, to, &pts, &stock, r, rise, &link_params()) {
+        let lifted = match plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &link_params()) {
             LinkLift::Lifted(v) => v,
             LinkLift::NotNeeded => panic!("a rib standing 2.3mm over the link was ridden through"),
             LinkLift::Refused => panic!("clearing a rib at z=1.0 does not reach safe_z=5.0"),
@@ -3227,9 +3243,14 @@ mod tests {
             "the lift brackets the interior samples with both endpoints, so the \
              transit leaves and re-enters vertically"
         );
+        // The clearance contract is PROFILE-AWARE: a sample only has to clear
+        // what its cutter can actually reach at each lateral offset. On a ball
+        // that is strictly less than the flat-disc max wherever the obstacle
+        // sits off-axis — and exactly equal wherever the tip is over it, which
+        // is the case that matters here.
         for p in &lifted {
             let need = stock
-                .max_conservative_top_z_in_disc(p.x, p.y, r)
+                .max_clearance_tip_z_for_profile(p.x, p.y, r, &tool)
                 .unwrap_or(2.0)
                 + crate::toolpath::PLUNGE_CLEARANCE_MM;
             assert!(
@@ -3237,6 +3258,22 @@ mod tests {
                 "lifted sample at y={:.3} sits at z={:.3}, under its {need:.3} \
                  clearance",
                 p.y,
+                p.z
+            );
+        }
+        // Non-vacuity, and the half the profile rule must NOT relax: every
+        // sample whose tip passes over the rib band clears the rib itself by
+        // the full clearance, exactly as before this became profile-aware.
+        let over_rib: Vec<&P3> = lifted.iter().filter(|p| p.y >= 0.5 && p.y <= 1.5).collect();
+        assert!(
+            !over_rib.is_empty(),
+            "the sampled link must actually pass over the rib band"
+        );
+        for p in over_rib {
+            assert!(
+                p.z >= rib_top + crate::toolpath::PLUNGE_CLEARANCE_MM - 1e-9,
+                "a sample with its TIP over the rib sits at z={:.3}, under the \
+                 rib top {rib_top:.3} plus clearance",
                 p.z
             );
         }
@@ -3258,7 +3295,7 @@ mod tests {
         };
         assert!(
             matches!(
-                plan_link_lift(from, to, &pts, &stock, r, rise, &params),
+                plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &params),
                 LinkLift::Refused
             ),
             "a fed link at retract height is strictly worse than the rapid it \
