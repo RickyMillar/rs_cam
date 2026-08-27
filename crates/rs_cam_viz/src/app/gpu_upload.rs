@@ -1230,6 +1230,46 @@ impl RsCamApp {
             });
         }
 
+        // Upload the multi-tool tier-map preview overlay (Phase U). Its own
+        // slot beside the rest heatmap above, keyed on the planner's preview
+        // GENERATION rather than on any dial: the mesh changes exactly when a
+        // new preview lands, so dragging the coarseness slider rebuilds once
+        // per landed preview and toggling the visibility checkbox rebuilds
+        // nothing at all.
+        let tier_key = self
+            .controller
+            .state()
+            .multitool_planner
+            .as_ref()
+            .filter(|planner| planner.ready_preview().is_some())
+            .map(|planner| upload_cache::TierPreviewUploadKey {
+                generation: planner.preview_generation,
+                shift: shift_arr,
+            });
+        if resources.tier_preview_upload_key != tier_key {
+            resources.tier_preview_upload_key = tier_key;
+            resources.tier_preview_data = self
+                .controller
+                .state()
+                .multitool_planner
+                .as_ref()
+                .and_then(|planner| planner.ready_preview())
+                .and_then(|preview| {
+                    rs_cam_core::rest_heatmap_mesh::tier_map_to_heatmap_mesh(
+                        &preview.map,
+                        &preview.islands,
+                    )
+                })
+                .map(|hm| shift_stock_mesh(hm, display_shift))
+                .and_then(|hm| {
+                    SimMeshGpuData::from_heightmap_mesh(
+                        &render_state.device,
+                        &resources.gpu_limits,
+                        &hm,
+                    )
+                });
+        }
+
         // V8 instrument. There is no criterion harness for the GUI loop, so
         // the pass reports what it actually rebuilt; `RUST_LOG=rs_cam_viz=debug`
         // turns an 8-op `generate_all` into eight lines that each name one
@@ -1261,6 +1301,29 @@ fn translate_annotated(
     shift: rs_cam_core::geo::P3,
 ) -> rs_cam_core::toolpath_spans::AnnotatedToolpath {
     annotated.translated(shift)
+}
+
+/// The same display-frame adapter for a bare overlay mesh.
+///
+/// The tier map is built in the EMISSION frame — world for an identity setup,
+/// setup-local otherwise — which is the frame a `rest_grid` arrives in too, so
+/// it needs the same re-framing before it can sit on the drawn model. A
+/// no-shift call is left untouched rather than walked, which is the common
+/// case (`stock.origin == 0`).
+fn shift_stock_mesh(
+    mut mesh: rs_cam_core::stock_mesh::StockMesh,
+    shift: rs_cam_core::geo::P3,
+) -> rs_cam_core::stock_mesh::StockMesh {
+    if shift.x == 0.0 && shift.y == 0.0 && shift.z == 0.0 {
+        return mesh;
+    }
+    let delta = [shift.x as f32, shift.y as f32, shift.z as f32];
+    for vertex in mesh.vertices.chunks_exact_mut(3) {
+        for (component, offset) in vertex.iter_mut().zip(delta) {
+            *component += offset;
+        }
+    }
+    mesh
 }
 
 /// Build a `toolpath_id -> vendor chipload band` map from the matched LUT

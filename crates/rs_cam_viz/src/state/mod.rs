@@ -1,5 +1,6 @@
 pub mod history;
 pub mod job;
+pub mod multitool_planner;
 pub mod runtime;
 pub mod selection;
 pub mod simulation;
@@ -93,6 +94,12 @@ pub struct AppState {
     /// one-file-per-machine library directly each frame (cheap), so a bool
     /// is enough.
     pub machine_library_open: bool,
+    /// Multi-tool finishing planner dialog (Phase U). `None` until it is
+    /// first opened, and then **never dropped**: closing sets
+    /// `open = false` and keeps the ladder, the dials and any held preview,
+    /// because rejecting a preview has to re-open onto the same dialog
+    /// (`ORCHESTRATION_PLAN.md` §3.1) rather than a fresh one.
+    pub multitool_planner: Option<multitool_planner::MultitoolPlannerState>,
 }
 
 /// Persistent state for the Tool Library modal. The `catalogs` snapshot
@@ -229,6 +236,7 @@ impl AppState {
             feeds_modal: None,
             tool_library_modal: None,
             machine_library_open: false,
+            multitool_planner: None,
         }
     }
 
@@ -249,6 +257,13 @@ impl AppState {
         if !self.is_optimizing {
             self.optimize_modal = None;
             self.optimize_project = None;
+            // Closed, not discarded — see the field doc. A planner whose
+            // preview is in flight is spared for the same reason a running
+            // Optimize is: closing it would throw away a walk the operator
+            // is waiting on.
+            if let Some(planner) = self.multitool_planner.as_mut() {
+                planner.open = false;
+            }
         }
     }
 }

@@ -93,10 +93,12 @@
 //! worth a tool change here", and the coarse tool's own cusp is what remains.
 
 use std::fmt;
+use std::fmt::Write as _;
 
 use tracing::warn;
 
 use crate::finish_planner::{and_masks_in_place, label_components, morphological_close};
+use crate::geo::P2;
 use crate::grid_field::distance_transform_2d;
 use crate::grid2::Grid2;
 use crate::polygon::Polygon2;
@@ -776,6 +778,191 @@ pub fn extract_tier_islands(
     })
 }
 
+// ── SVG preview ─────────────────────────────────────────────────────────
+
+/// Per-tier fill colours, cycled by ladder index. A fixed table rather than a
+/// generated hue ramp so two renders of the same plan carry the same colours
+/// and an operator can compare two previews by eye.
+const TIER_SVG_COLORS: [&str; 6] = [
+    "#ff9800", "#42a5f5", "#66bb6a", "#ab47bc", "#ef5350", "#ffee58",
+];
+
+/// Background, matching `finish_planner::planned_regions_to_svg`.
+const TIER_SVG_BACKGROUND: &str = "#1a1a2e";
+
+/// Decimal places every coordinate is written at. Three is one micron on a
+/// millimetre grid — below the cell size any plan resolution is allowed to
+/// use, and fixed so the output is byte-stable across runs.
+const TIER_SVG_DECIMALS: usize = 3;
+
+fn tier_svg_color(tier: u8) -> &'static str {
+    let n = TIER_SVG_COLORS.len();
+    TIER_SVG_COLORS
+        .get(usize::from(tier) % n)
+        .copied()
+        .unwrap_or("#ffffff")
+}
+
+/// Compact SVG of the per-tier islands: one `<g>` per fine tier with a fill
+/// per tier, `owned` polygons filled, the `machining` outline stroked so the
+/// overlap band is visible; `viewBox` = the tier map's XY extent, in
+/// millimetres.
+///
+/// # Why this and not the interactive HTML path
+///
+/// This is the agent-visible twin of the GUI preview overlay (plan Phase U
+/// item 2). The existing interactive HTML dump measured **948 MB** on this
+/// board (T3 §7), because it carries geometry per sample. This carries
+/// POLYGONS ONLY — never a rect per cell — so a 64-island board renders in
+/// tens of KB and the file can be read back by the agent that asked for it.
+///
+/// # Conventions
+///
+/// Follows [`crate::finish_planner::planned_regions_to_svg`]: same header
+/// shape, same background, `evenodd` so holes render, and the Y axis flipped
+/// so north is up. It DIVERGES in one place — the viewBox is the map's own
+/// millimetre extent rather than a pixel canvas, so stroke widths and dash
+/// lengths below are in mm and a reader can measure the picture.
+///
+/// The extent is the map's **areal** extent: cell centres span
+/// `(nx − 1) · cell`, and a half cell is added on each side because a cell is
+/// an area, not a point. Marching-squares vertices sit at cell-edge midpoints,
+/// which is exactly that boundary.
+///
+/// Deterministic: fixed colour table, fixed decimal count, `per_tier` order
+/// as published (coarse first), polygons in extraction order.
+///
+/// A tier that kept no island emits no group — an empty
+/// [`TierIslands`] therefore renders a valid, group-less SVG rather than
+/// nothing at all, because "the coarse tool holds the whole board" is a
+/// planning outcome an operator needs to SEE.
+#[must_use]
+pub fn tier_islands_to_svg(map: &TierMap, islands: &TierIslands) -> String {
+    const EMPTY: &str = "<svg xmlns='http://www.w3.org/2000/svg'/>";
+    let d = TIER_SVG_DECIMALS;
+    let cell = map.cell_mm;
+    if !cell.is_finite() || cell <= 0.0 || map.nx == 0 || map.ny == 0 {
+        return String::from(EMPTY);
+    }
+    let half = cell * 0.5;
+    let minx = map.origin_x - half;
+    let miny = map.origin_y - half;
+    let w = map.nx as f64 * cell;
+    let h = map.ny as f64 * cell;
+    if !minx.is_finite() || !miny.is_finite() || !w.is_finite() || !h.is_finite() {
+        return String::from(EMPTY);
+    }
+    // SVG Y grows downward, world Y grows upward: `flip - y` reflects the
+    // picture about the viewBox's own mid-line, which puts north at the top
+    // without a transform a reader would have to unwind.
+    let flip = 2.0 * miny + h;
+    // Hairlines in mm: half a cell reads as a line at any plan resolution.
+    let stroke = (cell * 0.5).max(0.05);
+    let dash = cell * 2.0;
+
+    let mut svg = String::new();
+    let _ = writeln!(
+        svg,
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{w:.d$}mm' height='{h:.d$}mm' \
+         viewBox='{minx:.d$} {miny:.d$} {w:.d$} {h:.d$}'>"
+    );
+    let _ = writeln!(
+        svg,
+        "<title>Multi-tool tier preview: {} tiers, {} islands, {:.1} mm2 fine territory, \
+         cell {:.d$} mm</title>",
+        islands.tier_count,
+        islands.total_islands(),
+        islands.total_owned_area_mm2(),
+        islands.cell_mm,
+    );
+    let _ = writeln!(
+        svg,
+        "<rect x='{minx:.d$}' y='{miny:.d$}' width='{w:.d$}' height='{h:.d$}' \
+         fill='{TIER_SVG_BACKGROUND}'/>"
+    );
+
+    for set in &islands.per_tier {
+        if set.owned.is_empty() && set.machining.is_empty() {
+            continue;
+        }
+        let color = tier_svg_color(set.tier);
+        let tier = set.tier;
+        let _ = writeln!(svg, "<g id='tier-{tier}' fill='{color}' stroke='{color}'>");
+        let _ = writeln!(
+            svg,
+            "<title>Tier {tier}: {} islands of {} raw, {:.1} mm2 owned, close radius \
+             {:.d$} mm, min island {:.1} mm2{}</title>",
+            set.islands,
+            set.raw_island_count,
+            set.owned_area_mm2,
+            set.close_radius_mm,
+            set.min_region_area_mm2,
+            if set.cap.acted() { ", CAP ACTED" } else { "" },
+        );
+        for poly in set.owned.as_slice() {
+            let path = tier_polygon_svg_path(poly, flip);
+            if path.is_empty() {
+                continue;
+            }
+            let _ = writeln!(
+                svg,
+                "<path d='{path}' fill-opacity='0.35' fill-rule='evenodd' \
+                 stroke-width='{stroke:.d$}'/>"
+            );
+        }
+        // Dashed and unfilled: the band between this and the solid fill IS
+        // the overlap reaching into coarser territory. Identical to the
+        // owned outline when `overlap_mm` is 0.0, which is the honest
+        // rendering of a dial that is off.
+        for poly in set.machining.as_slice() {
+            let path = tier_polygon_svg_path(poly, flip);
+            if path.is_empty() {
+                continue;
+            }
+            let _ = writeln!(
+                svg,
+                "<path d='{path}' fill='none' stroke-width='{stroke:.d$}' \
+                 stroke-dasharray='{dash:.d$} {dash:.d$}'/>"
+            );
+        }
+        let _ = writeln!(svg, "</g>");
+    }
+
+    let _ = writeln!(svg, "</svg>");
+    svg
+}
+
+/// Exterior + hole subpaths of one polygon, Y-flipped about `flip`.
+fn tier_polygon_svg_path(poly: &Polygon2, flip: f64) -> String {
+    let mut d = String::new();
+    tier_ring_svg_subpath(&poly.exterior, flip, &mut d);
+    for hole in &poly.holes {
+        tier_ring_svg_subpath(hole, flip, &mut d);
+    }
+    d
+}
+
+/// One closed subpath. Rings under three vertices enclose no area and are
+/// skipped: a renderer draws nothing for them either way, and emitting them
+/// would put bytes in the file that say nothing.
+fn tier_ring_svg_subpath(ring: &[P2], flip: f64, out: &mut String) {
+    if ring.len() < 3 {
+        return;
+    }
+    let d = TIER_SVG_DECIMALS;
+    for (i, p) in ring.iter().enumerate() {
+        let (x, y) = (p.x, flip - p.y);
+        // No separator after the command letter: the letter IS one, and on a
+        // marching-squares ring that saves a byte per vertex.
+        if i == 0 {
+            let _ = write!(out, "M{x:.d$} {y:.d$}");
+        } else {
+            let _ = write!(out, "L{x:.d$} {y:.d$}");
+        }
+    }
+    out.push('Z');
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -897,6 +1084,140 @@ mod tests {
         let out = extract_tier_islands(&map, &params, &radii).unwrap();
         let tiers: Vec<u8> = out.per_tier.iter().map(|s| s.tier).collect();
         assert_eq!(tiers, vec![1, 2, 3], "ascending, and never tier 0");
+    }
+
+    /// A 40x40 grid at 0.5 mm with one tier-2 blob and one tier-1 blob, both
+    /// clear of the grid-edge ring the extractor drops.
+    fn two_fine_tier_map() -> TierMap {
+        let (nx, ny) = (40usize, 40usize);
+        let labels: Vec<u8> = (0..nx * ny)
+            .map(|i| {
+                let (r, c) = (i / nx, i % nx);
+                if (5..12).contains(&r) && (5..12).contains(&c) {
+                    2
+                } else if (25..35).contains(&r) && (25..35).contains(&c) {
+                    1
+                } else {
+                    0
+                }
+            })
+            .collect();
+        map_with(labels, nx, ny, 3)
+    }
+
+    fn svg_fixture_params() -> TierIslandParams {
+        TierIslandParams {
+            // Explicit so the fixture's islands survive verbatim: the
+            // derivation from a 1.0 mm cusp radius would floor a 12 mm2 blob
+            // out of existence.
+            close_radius_mm: Some(0.0),
+            min_region_area_mm2: Some(0.0),
+            overlap_mm: 1.0,
+            ..TierIslandParams::default()
+        }
+    }
+
+    #[test]
+    fn tier_islands_to_svg_smoke() {
+        let map = two_fine_tier_map();
+        let params = svg_fixture_params();
+        let islands = extract_tier_islands(&map, &params, &[2.0, 1.0, 0.5]).unwrap();
+        assert_eq!(islands.total_islands(), 2, "one blob per fine tier");
+
+        let svg = tier_islands_to_svg(&map, &islands);
+        assert!(!svg.is_empty());
+        assert!(svg.starts_with("<svg xmlns="));
+        assert!(svg.ends_with("</svg>\n"));
+        assert_eq!(
+            svg.matches("<g ").count(),
+            2,
+            "one group per fine tier that kept an island"
+        );
+        assert!(svg.contains("<g id='tier-1'"));
+        assert!(svg.contains("<g id='tier-2'"));
+        // Self-describing: a per-group title carrying tier + area.
+        assert_eq!(svg.matches("<title>Tier ").count(), 2);
+        assert!(svg.contains("mm2 owned"));
+        // The viewBox is the map's areal extent (40 cells x 0.5 mm), not a
+        // pixel canvas.
+        assert!(svg.contains("viewBox='-0.250 -0.250 20.000 20.000'"));
+        // Overlap band visible as a stroked, unfilled outline.
+        assert!(svg.contains("stroke-dasharray="));
+        assert!(svg.contains("fill='none'"));
+        // Polygons only — never a rect per cell. One background rect.
+        assert_eq!(svg.matches("<rect").count(), 1);
+        assert!(
+            svg.len() < 64 * 1024,
+            "a 2-island preview must be KB, not MB: {} bytes",
+            svg.len()
+        );
+    }
+
+    #[test]
+    fn tier_islands_to_svg_is_byte_stable_across_runs() {
+        let map = two_fine_tier_map();
+        let params = svg_fixture_params();
+        let a = extract_tier_islands(&map, &params, &[2.0, 1.0, 0.5]).unwrap();
+        let b = extract_tier_islands(&map, &params, &[2.0, 1.0, 0.5]).unwrap();
+        assert_eq!(tier_islands_to_svg(&map, &a), tier_islands_to_svg(&map, &b));
+    }
+
+    #[test]
+    fn empty_islands_render_a_valid_svg_with_no_groups() {
+        // "The coarse tool holds the whole board" is a planning outcome, not
+        // an error, and the operator has to be able to see it.
+        let map = map_with(vec![0u8; 400], 20, 20, 2);
+        let params = TierIslandParams::default();
+        let islands = extract_tier_islands(&map, &params, &[2.0, 1.0]).unwrap();
+        assert!(islands.is_empty());
+
+        let svg = tier_islands_to_svg(&map, &islands);
+        assert!(svg.starts_with("<svg xmlns="));
+        assert!(svg.ends_with("</svg>\n"));
+        assert_eq!(svg.matches("<g ").count(), 0);
+        assert!(svg.contains("<rect"), "the extent still renders");
+
+        // And a `TierIslands` carrying no tier rows at all.
+        let none = TierIslands {
+            per_tier: Vec::new(),
+            cell_mm: map.cell_mm,
+            tier_count: 2,
+        };
+        let svg = tier_islands_to_svg(&map, &none);
+        assert!(svg.starts_with("<svg xmlns="));
+        assert_eq!(svg.matches("<g ").count(), 0);
+    }
+
+    #[test]
+    fn a_degenerate_map_renders_an_empty_svg_rather_than_nan_coordinates() {
+        let islands = TierIslands {
+            per_tier: Vec::new(),
+            cell_mm: 0.5,
+            tier_count: 2,
+        };
+        let mut zero_cell = map_with(vec![0u8; 400], 20, 20, 2);
+        zero_cell.cell_mm = 0.0;
+        assert_eq!(
+            tier_islands_to_svg(&zero_cell, &islands),
+            "<svg xmlns='http://www.w3.org/2000/svg'/>"
+        );
+
+        let no_cells = map_with(Vec::new(), 0, 0, 2);
+        assert_eq!(
+            tier_islands_to_svg(&no_cells, &islands),
+            "<svg xmlns='http://www.w3.org/2000/svg'/>"
+        );
+    }
+
+    #[test]
+    fn tier_colors_are_stable_and_cycle() {
+        assert_eq!(tier_svg_color(0), TIER_SVG_COLORS[0]);
+        assert_eq!(tier_svg_color(1), TIER_SVG_COLORS[1]);
+        assert_eq!(
+            tier_svg_color(6),
+            TIER_SVG_COLORS[0],
+            "the table cycles rather than falling off the end"
+        );
     }
 
     #[test]

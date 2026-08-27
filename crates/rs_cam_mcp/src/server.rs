@@ -679,6 +679,56 @@ pub struct PlanMultitoolFinishingParam {
     pub max_regions_per_tier: Option<usize>,
 }
 
+/// Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].
+/// Every dial is spelled and defaulted identically, so a preview and the
+/// plan that follows it describe the same territory; the only extra field is
+/// where to write the SVG.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct PreviewTierMapParam {
+    /// Setup index (0-based) the ladder would be planned into.
+    pub setup_index: usize,
+    /// Model id the tier map is measured against. Unset = the project's
+    /// only model; the call REFUSES rather than picking when there is
+    /// more than one.
+    pub model_id: Option<usize>,
+    /// Library tool ids taking part in the ladder. Order is irrelevant —
+    /// the planner sorts coarse to fine on tip-sphere (cusp) radius, never
+    /// on envelope radius.
+    pub tool_ids: Vec<usize>,
+    /// Planning-grid cell size (mm) for the residual walk. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_CELL_MM` (0.4). Plan in the
+    /// 0.3-0.6 band, NEVER 0.15 — the map is O(cells) in both time and
+    /// memory, and 0.15 mm costs ~125 s per ladder tool on a 200 mm board.
+    pub cell_mm: Option<f64>,
+    /// Residual (mm) above which a cell is handed to a finer tier. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_TOLERANCE_MM` (0.05).
+    pub tolerance_mm: Option<f64>,
+    /// Grid padding (mm) beyond the finest tool's envelope. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_MARGIN_MM` (0.5).
+    pub margin_mm: Option<f64>,
+    /// Cusp height (mm) every tier would be dialled to. Unset =
+    /// `rs_cam_core::session::DEFAULT_PLAN_CUSP_HEIGHT_MM` (0.03). Carried
+    /// on the preview so the dial set matches the planner's exactly; it
+    /// sizes the emitted stepover, not the tier territory.
+    pub cusp_height_mm: Option<f64>,
+    /// Region coarseness. 1.0 = neutral; below 1 gives many small
+    /// islands, above 1 a few large ones. Scales the derived merge radius
+    /// and minimum island area together. Default 1.0.
+    pub coarseness: Option<f64>,
+    /// Seam-blend band (mm) each finer tier's islands are grown by, into
+    /// the coarser tier's territory. Default 2.0. `0.0` turns it off.
+    pub overlap_mm: Option<f64>,
+    /// Per-tier island cap. When filtering leaves more islands than this,
+    /// the merge radius is raised and the close re-run (bounded), and what
+    /// merged is reported. Default 24.
+    pub max_regions_per_tier: Option<usize>,
+    /// Absolute path ending in `.svg` to write the island preview to.
+    /// Unset = numbers only. The parent directory must already exist —
+    /// the call refuses rather than creating one. Polygons only, so a
+    /// 64-island board is tens of KB.
+    pub svg_path: Option<String>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetDressupConfigParam {
     /// Toolpath index (0-based)
@@ -1212,6 +1262,12 @@ pub fn build_info() -> serde_json::Value {
             // provenance, and GUI Generate All runs the same rest-stock
             // fixpoint ladder the MCP tool does.
             "multitool_finishing_planner",
+            // Phase U (2026-08-27): `preview_tier_map` answers "what
+            // territory would each tool get?" WITHOUT emitting or
+            // generating anything — compact SVG + numeric rows, never an
+            // HTML dump (the interactive path measured 948 MB on the
+            // reference board).
+            "preview_tier_map",
         ],
     })
 }
@@ -1281,6 +1337,7 @@ mod tests {
             "gui_screenshot",
             "set_ui_view",
             "multitool_finishing_planner",
+            "preview_tier_map",
         ] {
             assert!(
                 features.contains(&flag),
@@ -1339,6 +1396,64 @@ mod tests {
         assert_eq!(full.coarseness, Some(1.5));
         assert_eq!(full.overlap_mm, Some(3.0));
         assert_eq!(full.max_regions_per_tier, Some(8));
+    }
+
+    /// Phase U — the preview's wire contract, and the reason it is a
+    /// separate test rather than a parametrised one: the two structs must
+    /// agree field for field, and a test that shared a body could not fail
+    /// when one of them grew a dial the other did not.
+    #[test]
+    fn preview_tier_map_param_round_trips_with_dials_omitted() {
+        let minimal: PreviewTierMapParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 1,
+            "tool_ids": [4, 9],
+        }))
+        .expect("setup_index + tool_ids alone must deserialise");
+        assert_eq!(minimal.setup_index, 1);
+        assert_eq!(minimal.tool_ids, vec![4, 9]);
+        assert!(minimal.model_id.is_none());
+        assert!(
+            minimal.svg_path.is_none(),
+            "an omitted svg_path means numbers only, never a guessed file"
+        );
+        for (name, unset) in [
+            ("cell_mm", minimal.cell_mm.is_none()),
+            ("tolerance_mm", minimal.tolerance_mm.is_none()),
+            ("margin_mm", minimal.margin_mm.is_none()),
+            ("cusp_height_mm", minimal.cusp_height_mm.is_none()),
+            ("coarseness", minimal.coarseness.is_none()),
+            ("overlap_mm", minimal.overlap_mm.is_none()),
+            (
+                "max_regions_per_tier",
+                minimal.max_regions_per_tier.is_none(),
+            ),
+        ] {
+            assert!(unset, "`{name}` must be None when omitted, not defaulted");
+        }
+
+        let full: PreviewTierMapParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 2,
+            "model_id": 5,
+            "tool_ids": [1],
+            "cell_mm": 0.4,
+            "tolerance_mm": 0.02,
+            "margin_mm": 0.75,
+            "cusp_height_mm": 0.05,
+            "coarseness": 1.5,
+            "overlap_mm": 3.0,
+            "max_regions_per_tier": 8,
+            "svg_path": "/tmp/tiers.svg",
+        }))
+        .expect("every dial must be accepted");
+        assert_eq!(full.model_id, Some(5));
+        assert_eq!(full.cell_mm, Some(0.4));
+        assert_eq!(full.tolerance_mm, Some(0.02));
+        assert_eq!(full.margin_mm, Some(0.75));
+        assert_eq!(full.cusp_height_mm, Some(0.05));
+        assert_eq!(full.coarseness, Some(1.5));
+        assert_eq!(full.overlap_mm, Some(3.0));
+        assert_eq!(full.max_regions_per_tier, Some(8));
+        assert_eq!(full.svg_path.as_deref(), Some("/tmp/tiers.svg"));
     }
 
     /// Parity freeze (architectural refactor §7.2): the MCP parse

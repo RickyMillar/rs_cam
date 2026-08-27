@@ -6,6 +6,7 @@ pub mod export_wizard;
 pub mod feeds_modal;
 pub mod machine_library_modal;
 pub mod menu_bar;
+pub mod multitool_planner;
 pub mod optimize_modal;
 pub mod optimize_project;
 pub mod preflight;
@@ -359,6 +360,23 @@ pub enum AppEvent {
     /// applied candidate is the first-safe recommendation from that
     /// row's outcome. Routes through `apply_toolpath_param_snapshot`.
     ApplyOptimizeProject,
+
+    // Multi-tool finishing planner (Phase U of the multi-tool plan)
+    /// Open the planner dialog, snapshotting the drawer's tools. Cheap —
+    /// nothing is computed until Preview.
+    OpenMultitoolPlanner,
+    /// Run `preview_multitool_plan` on the Optimize worker lane. The
+    /// session moves into the request and comes back on the result, the
+    /// same shape `OpenOptimizeProject` uses.
+    PreviewMultitoolPlan,
+    /// Emit the previewed ladder through `apply_multitool_plan`. Enabled
+    /// only on a Ready preview: applying something the operator has not
+    /// been shown is the thing the veto exists to prevent.
+    ApplyMultitoolPlan,
+    /// Veto. Closes the dialog, drops the overlay, cancels an in-flight
+    /// walk — and leaves the project untouched. The dials and the held
+    /// preview survive so re-opening resumes rather than restarts.
+    CloseMultitoolPlanner,
 
     // Collision
     RunCollisionCheck,

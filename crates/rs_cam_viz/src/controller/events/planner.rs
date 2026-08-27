@@ -8,10 +8,27 @@
 //!
 //! Reconciler precedent: `events::model::sync_alignment_pin_drill`, extended
 //! to many ops at once.
+//!
+//! # Phase U — the dialog's four verbs
+//!
+//! Open / Preview / Apply / Close also live here, because they are the same
+//! seam: the dialog edits a [`MultitoolPlanSpec`], the preview computes what
+//! that spec would claim, and Apply hands it to [`AppController::apply_multitool_plan`]
+//! above. The threading is copied verbatim from `open_optimize_project`: the
+//! session is `mem::replace`d into an Optimize-lane request, the main thread
+//! holds an empty placeholder behind `is_optimizing`, and the session comes
+//! back attached to the result. Cancel is that lane's own flag, which the tier
+//! walk polls once per grid row — so closing the dialog mid-walk actually
+//! stops it rather than merely hiding it.
 
+use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::session::{MultitoolPlanOutcome, MultitoolPlanSpec};
+use rs_cam_core::tool::MillingCutter;
 
 use crate::compute::ComputeBackend;
+use crate::state::multitool_planner::{
+    MultitoolPlannerState, MultitoolPreviewStatus, PlannerToolRow,
+};
 use crate::state::selection::Selection;
 
 use super::super::AppController;
@@ -73,4 +90,258 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
         Ok(outcome)
     }
+
+    // ── Phase U: the planner dialog ─────────────────────────────────────
+
+    /// Open the planner, snapshotting the drawer.
+    ///
+    /// Re-opening a dialog that was vetoed restores it whole — ladder, dials
+    /// and any held preview — rather than building a fresh one, which is what
+    /// makes "reject re-opens the ladder dialog" (§3.1) a cheap loop. Only the
+    /// tool ROWS are refreshed, because a tool may have been re-dialled or
+    /// removed in between; ticks survive by id.
+    pub(crate) fn open_multitool_planner(&mut self) {
+        let rows = self.planner_tool_rows();
+        if rows.len() < 2 {
+            self.push_notification(
+                "Multi-tool finishing needs at least two tools in the drawer.".to_owned(),
+                crate::controller::Severity::Warning,
+            );
+            return;
+        }
+        let Some((model_id, model_name)) = self.planner_model() else {
+            self.push_notification(
+                "Multi-tool finishing needs a 3D model — the tier map is a drop-cutter \
+                 residual over a surface."
+                    .to_owned(),
+                crate::controller::Severity::Warning,
+            );
+            return;
+        };
+        let setup_index = self.planner_setup_index();
+
+        self.state.close_modals_for_exclusivity();
+        if self.state.multitool_planner.is_none() {
+            self.state.multitool_planner = Some(MultitoolPlannerState::new(
+                rows,
+                setup_index,
+                model_id,
+                model_name,
+            ));
+            return;
+        }
+        let mut restore_overlay = false;
+        if let Some(existing) = self.state.multitool_planner.as_mut() {
+            let merged = merge_tool_ticks(&existing.tools, rows);
+            existing.open = true;
+            existing.apply_error = None;
+            existing.tools = merged;
+            existing.setup_index = setup_index;
+            existing.model_id = model_id;
+            existing.model_name = model_name;
+            restore_overlay = existing.ready_preview().is_some();
+        }
+        // A held preview comes back with its overlay, so a re-opened veto
+        // shows the operator the same territory they rejected.
+        if restore_overlay {
+            self.state.viewport.show_tier_preview = true;
+            self.pending_upload = true;
+        }
+    }
+
+    /// Submit a tier-map preview to the Optimize lane.
+    ///
+    /// The session moves into the request; the main thread renders a
+    /// placeholder until it returns. Identical in shape to
+    /// `open_optimize_project`, deliberately: two ways to lend the session out
+    /// would be two ways to lose it.
+    pub(crate) fn request_multitool_preview(&mut self) {
+        if self.state.is_optimizing {
+            tracing::warn!("Ignored PreviewMultitoolPlan — the Optimize lane is already busy");
+            return;
+        }
+        let Some(planner) = self.state.multitool_planner.as_mut() else {
+            return;
+        };
+        if planner.blocking_reason().is_some() {
+            return;
+        }
+        let spec = planner.to_spec();
+        let key = planner.map_key();
+        planner.requested_key = Some(key);
+        planner.status = MultitoolPreviewStatus::Loading;
+        planner.dirty_since = None;
+        planner.apply_error = None;
+
+        let session = std::mem::replace(
+            &mut self.state.session,
+            rs_cam_core::session::ProjectSession::new_empty(),
+        );
+        self.state.is_optimizing = true;
+        self.compute
+            .submit_optimize(crate::compute::OptimizeRequest::MultitoolPreview { session, spec });
+    }
+
+    /// Emit the previewed ladder.
+    ///
+    /// Routes through [`Self::apply_multitool_plan`] — never
+    /// `session.plan_multitool_finishing` directly — because that method owns
+    /// the GUI-side bookkeeping (runtime entries for the emitted ops, teardown
+    /// for the replaced ones, selection and isolation).
+    ///
+    /// On success the dialog closes but the overlay **stays up**: it is now a
+    /// picture of what was planned, and dropping it at the moment the ops
+    /// appear is the moment it is most useful.
+    pub(crate) fn apply_multitool_planner(&mut self) {
+        let Some(planner) = self.state.multitool_planner.as_ref() else {
+            return;
+        };
+        if planner.ready_preview().is_none() {
+            return;
+        }
+        let spec = planner.to_spec();
+        match self.apply_multitool_plan(&spec) {
+            Ok(outcome) => {
+                let names: Vec<String> = outcome
+                    .toolpath_ids
+                    .iter()
+                    .filter_map(|id| {
+                        self.state
+                            .session
+                            .find_toolpath_config_by_id(*id)
+                            .map(|(_, tc)| tc.name.clone())
+                    })
+                    .collect();
+                let replaced = outcome.replaced.len();
+                if let Some(planner) = self.state.multitool_planner.as_mut() {
+                    planner.open = false;
+                    planner.apply_error = None;
+                }
+                let suffix = if replaced == 0 {
+                    String::new()
+                } else {
+                    format!(" (replaced {replaced} prior planner op(s))")
+                };
+                self.push_notification(
+                    format!("Planned {}{suffix}", names.join(", ")),
+                    crate::controller::Severity::Info,
+                );
+            }
+            Err(e) => {
+                if let Some(planner) = self.state.multitool_planner.as_mut() {
+                    planner.apply_error = Some(e);
+                }
+            }
+        }
+    }
+
+    /// The veto. Closes the dialog, drops the overlay, cancels an in-flight
+    /// walk — and touches no toolpath.
+    pub(crate) fn close_multitool_planner(&mut self) {
+        let loading = self
+            .state
+            .multitool_planner
+            .as_ref()
+            .is_some_and(MultitoolPlannerState::is_loading);
+        if loading && self.state.is_optimizing {
+            // The walk polls this once per grid row; the result still lands
+            // (carrying the session), and the drain handler restores it.
+            self.compute
+                .cancel_lane(crate::compute::ComputeLane::Optimize);
+        }
+        if let Some(planner) = self.state.multitool_planner.as_mut() {
+            planner.open = false;
+            planner.dirty_since = None;
+        }
+        self.state.viewport.show_tier_preview = false;
+        self.pending_upload = true;
+    }
+
+    /// One row per drawer tool, sorted coarse → fine on **cusp** radius —
+    /// the same ordering the core ladder uses, so the dialog reads in the
+    /// order the chain will run. Nothing is pre-ticked: which tools take part
+    /// is the operator's call (§3.2).
+    fn planner_tool_rows(&self) -> Vec<PlannerToolRow> {
+        let mut rows: Vec<PlannerToolRow> = self
+            .state
+            .session
+            .tools()
+            .iter()
+            .map(|tool| PlannerToolRow {
+                tool_id: tool.id.0,
+                name: tool.name.clone(),
+                cusp_radius_mm: build_cutter(tool).cusp_radius_mm(),
+                selected: false,
+            })
+            .collect();
+        rows.sort_by(|a, b| {
+            b.cusp_radius_mm
+                .total_cmp(&a.cusp_radius_mm)
+                .then_with(|| a.tool_id.cmp(&b.tool_id))
+        });
+        rows
+    }
+
+    /// The model the chain targets: the selected toolpath's, when that model
+    /// carries a 3D mesh, else the first mesh model in the project.
+    ///
+    /// Selection first so the model and the setup below come from the SAME
+    /// toolpath — a plan whose setup came from the selection and whose model
+    /// came from the project's first entry is a plan for a pairing the
+    /// operator never chose.
+    fn planner_model(&self) -> Option<(usize, String)> {
+        let mesh_model = |id: usize| {
+            self.state
+                .session
+                .models()
+                .iter()
+                .find(|m| m.id == id && m.mesh.is_some())
+                .map(|m| (m.id, m.name.clone()))
+        };
+        if let Selection::Toolpath(tp_id) = self.state.selection
+            && let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id)
+            && let Some(found) = mesh_model(tc.model_id)
+        {
+            return Some(found);
+        }
+        self.state
+            .session
+            .models()
+            .iter()
+            .find(|m| m.mesh.is_some())
+            .map(|m| (m.id, m.name.clone()))
+    }
+
+    /// The setup the chain is emitted into: the one owning the current
+    /// selection when there is one, else the first.
+    fn planner_setup_index(&self) -> usize {
+        let Selection::Toolpath(id) = self.state.selection else {
+            return 0;
+        };
+        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(id) else {
+            return 0;
+        };
+        self.state
+            .session
+            .list_setups()
+            .iter()
+            .position(|s| s.toolpath_indices.contains(&index))
+            .unwrap_or(0)
+    }
+}
+
+/// Refresh the tool list against the drawer while keeping the operator's
+/// ticks. Ticks follow the tool **id**, so a tool that was re-dialled stays
+/// ticked with its new radius and one that was removed simply disappears.
+fn merge_tool_ticks(
+    previous: &[PlannerToolRow],
+    mut fresh: Vec<PlannerToolRow>,
+) -> Vec<PlannerToolRow> {
+    for row in &mut fresh {
+        row.selected = previous
+            .iter()
+            .find(|old| old.tool_id == row.tool_id)
+            .is_some_and(|old| old.selected);
+    }
+    fresh
 }

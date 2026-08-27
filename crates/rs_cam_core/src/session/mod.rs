@@ -21,7 +21,9 @@ pub mod wizard;
 
 pub use compute::{MutationKind, StaleSet, compute_stale_set};
 pub use eval_context::SetupEvalContext;
-pub use multitool::{MultitoolPlanOutcome, MultitoolPlanSpec, equal_cusp_stepover_mm};
+pub use multitool::{
+    MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, equal_cusp_stepover_mm,
+};
 pub use wizard::{OutputLayout, WizardState};
 
 // Re-export all public project_file types so external crates see no path change.

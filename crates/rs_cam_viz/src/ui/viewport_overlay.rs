@@ -26,6 +26,9 @@ pub fn draw(
     // populates one) — used both to grey out the "Rest heatmap" checkbox and
     // to draw the gradient legend when the overlay is actually showing.
     selected_rest_grid_info: Option<(f64, f32)>,
+    // `true` when the planner is holding a Ready tier-map preview — used to
+    // grey out the "Tier preview" checkbox when there is nothing to draw.
+    has_tier_preview: bool,
 ) {
     let has_rest_grid = selected_rest_grid_info.is_some();
     ui.horizontal_wrapped(|ui| {
@@ -166,6 +169,21 @@ pub fn draw(
                 "Rest-depth heatmap from the pencil rest-depth detector (detector #4)"
             } else {
                 "Select a pencil rest-depth toolpath to enable"
+            });
+
+            // Its own flag and its own GPU slot beside the rest heatmap, not
+            // multiplexed onto it: a selected toolpath's rest grid and a plan
+            // preview are different questions and may both be wanted.
+            ui.add_enabled(
+                has_tier_preview,
+                egui::Checkbox::new(&mut viewport.show_tier_preview, "Tier preview"),
+            )
+            .on_hover_text(if has_tier_preview {
+                "Multi-tool plan preview: one colour per tier over the territory that \
+                 tier owns, with each fine tier's overlap band in a lighter tint of its \
+                 own colour."
+            } else {
+                "Run a preview from Toolpath ▸ Plan multi-tool finishing… to enable"
             });
 
             ui.separator();

@@ -180,6 +180,26 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close();
                     events.push(AppEvent::OpenOptimizeProject);
                 }
+                // Beside Optimize because it is the same kind of action: a
+                // whole-project proposal the operator inspects and then
+                // accepts or rejects.
+                let planner_enabled = state.session.tools().len() >= 2
+                    && state.session.models().iter().any(|m| m.mesh.is_some())
+                    && !state.is_optimizing;
+                if ui
+                    .add_enabled(
+                        planner_enabled,
+                        egui::Button::new("Plan multi-tool finishing…"),
+                    )
+                    .on_disabled_hover_text(
+                        "Needs a 3D model and at least two tools in the drawer — the tier \
+                         map is a drop-cutter residual between two cutters over a surface.",
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    events.push(AppEvent::OpenMultitoolPlanner);
+                }
             });
 
             ui.menu_button("Tools", |ui| {

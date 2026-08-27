@@ -23,7 +23,7 @@ use rs_cam_mcp::server::{
     CollisionCheckParam, CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
     GenerateToolpathParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
     ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
-    OperationSchemaParam, OptimizeToolpathInput, PlanMultitoolFinishingParam,
+    OperationSchemaParam, OptimizeToolpathInput, PlanMultitoolFinishingParam, PreviewTierMapParam,
     RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
     ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
     SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
@@ -1077,7 +1077,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "plan_multitool_finishing",
-        description = "Plan a multi-tool island finishing chain. Takes a ladder of library tool ids (order irrelevant — the planner sorts coarse to fine on TIP-sphere radius, never envelope radius) and emits one enabled unified_finish operation per tier into `setup_index`, each confined to the islands that tier's tool is the smallest one able to reach at `tolerance_mm`, each stamped with a `planner_origin` provenance so an emitted tier is distinguishable from a hand-authored op. Tier 0 cuts fresh stock; every later tier takes the remaining stock of the one before it. Re-planning the same setup REPLACES the previous chain (its ids come back under `replaced`) and leaves hand-authored ops alone. Slope-compensated residuals are used unconditionally — the raw tool-centre difference is biased by R*(sec(theta)-1) and hands every mid-steep slope to the fine tool (measured 71.6% of a board vs 22.0% compensated), so there is no dial for it. Dials, all optional, defaulting to the core planner constants: cell_mm 0.4 (plan in the 0.3-0.6 band, NEVER 0.15 — the map is O(cells) in time and memory, ~125 s per tool at that cell), tolerance_mm 0.05, margin_mm 0.5, cusp_height_mm 0.03 (ONE number for the whole ladder — an equal cusp is what makes a tier seam blend instead of stepping), coarseness 1.0 (below 1 = many small islands, above 1 = few large), overlap_mm 2.0 (seam blend band), max_regions_per_tier 24. model_id may be omitted only when the project has exactly one model. Planning is CHEAP: no tier map is built here, boundaries resolve lazily at generation. The emitted chain is NOT generated — call generate_all with fixpoint on and a simulation_resolution_mm to run the whole rest-stock ladder in one call."
+        description = "Plan a multi-tool island finishing chain. Takes a ladder of library tool ids (order irrelevant — the planner sorts coarse to fine on TIP-sphere radius, never envelope radius) and emits one enabled unified_finish operation per tier into `setup_index`, each confined to the islands that tier's tool is the smallest one able to reach at `tolerance_mm`, each stamped with a `planner_origin` provenance so an emitted tier is distinguishable from a hand-authored op. Tier 0 cuts fresh stock; every later tier takes the remaining stock of the one before it. Re-planning the same setup REPLACES the previous chain (its ids come back under `replaced`) and leaves hand-authored ops alone. Slope-compensated residuals are used unconditionally — the raw tool-centre difference is biased by R*(sec(theta)-1) and hands every mid-steep slope to the fine tool (measured 71.6% of a board vs 22.0% compensated), so there is no dial for it. Dials, all optional, defaulting to the core planner constants: cell_mm 0.4 (plan in the 0.3-0.6 band, NEVER 0.15 — the map is O(cells) in time and memory, ~125 s per tool at that cell), tolerance_mm 0.05, margin_mm 0.5, cusp_height_mm 0.03 (ONE number for the whole ladder — an equal cusp is what makes a tier seam blend instead of stepping), coarseness 1.0 (below 1 = many small islands, above 1 = few large), overlap_mm 2.0 (seam blend band), max_regions_per_tier 24. model_id may be omitted only when the project has exactly one model. Planning is CHEAP: no tier map is built here, boundaries resolve lazily at generation. The emitted chain is NOT generated — call generate_all with fixpoint on and a simulation_resolution_mm to run the whole rest-stock ladder in one call. To SEE which tool would get which territory before anything is emitted, call `preview_tier_map` first with the same dials — it takes the identical argument set, modifies nothing, and can write a compact SVG."
     )]
     async fn plan_multitool_finishing(
         &self,
@@ -1087,6 +1087,20 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::PlanMultitoolFinishing { spec })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "preview_tier_map",
+        description = "Look before you emit: build the multi-tool tier map and its per-tier islands for a ladder of library tool ids and REPORT the territory, without emitting an operation, changing a parameter, or generating anything — the reply's `modified` is always false. Takes the same dial set as plan_multitool_finishing (cell_mm 0.4, tolerance_mm 0.05, margin_mm 0.5, cusp_height_mm 0.03, coarseness 1.0, overlap_mm 2.0, max_regions_per_tier 24, slope-compensated residuals unconditionally), so a preview and the plan that follows describe the same job. Replies with per-tier rows — tool, cusp radius, island count, raw island count before filtering, owned area mm2, and what the island cap did — plus map stats (cell size, grid size, tier count, cells no tool reaches). Pass `svg_path` (absolute, ending .svg, parent directory must already exist — it is not created) to also write a compact top-down SVG: one group per fine tier, owned islands filled, the overlap band stroked, POLYGONS ONLY so a 64-island board is tens of KB rather than the 948 MB the interactive HTML path produced. UNLIKE the planner this does real work — a full-grid drop-cutter residual walk, roughly 8 s at 0.6 mm cells and 31 s at 0.3 mm on a 200 mm board, faster when the tier-map cache is warm; never preview at 0.15 mm."
+    )]
+    async fn preview_tier_map(
+        &self,
+        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<PreviewTierMapParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::PreviewTierMap { spec })
                 .await,
         )
     }

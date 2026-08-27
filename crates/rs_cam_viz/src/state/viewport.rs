@@ -65,6 +65,17 @@ pub struct ViewportState {
     /// defaulting to `true` doesn't clutter unrelated workspaces — see the
     /// derived gate on `ViewportCallback::show_rest_heatmap`.
     pub show_rest_heatmap: bool,
+    /// Multi-tool tier-map preview overlay (Phase U). Its own flag, its own
+    /// upload key and its own GPU slot alongside the rest heatmap rather than
+    /// multiplexed onto it: a selected toolpath's rest grid and a plan
+    /// preview are different questions and can be wanted at once.
+    ///
+    /// Defaults **off**, unlike `show_rest_heatmap`. The rest overlay is
+    /// self-gating (nothing draws unless the selection carries a `rest_grid`);
+    /// this one is switched on by the planner when a preview lands and off
+    /// again when the operator vetoes it, so a default-on flag would just be
+    /// a checkbox the planner keeps overwriting.
+    pub show_tier_preview: bool,
     /// When set, only this toolpath is visible (isolation mode, toggle with I).
     pub isolate_toolpath: Option<ToolpathId>,
     /// Color mode for toolpath lines.
@@ -118,6 +129,7 @@ impl ViewportState {
             show_collisions: true,
             show_tool_profile_preview: false,
             show_rest_heatmap: true,
+            show_tier_preview: false,
             isolate_toolpath: None,
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),

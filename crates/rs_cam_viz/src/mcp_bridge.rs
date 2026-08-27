@@ -681,6 +681,15 @@ pub enum McpRequestKind {
     PlanMultitoolFinishing {
         spec: rs_cam_mcp::server::PlanMultitoolFinishingParam,
     },
+    /// Phase U — the look-before-emit twin of
+    /// [`Self::PlanMultitoolFinishing`]: build the tier map and its islands,
+    /// report the territory, and modify NOTHING. Answered on the frame loop
+    /// like the planner, but unlike it this one does real work — a full-grid
+    /// residual walk, ~8 s at 0.6 mm and ~31 s at 0.3 mm on a 200 mm board,
+    /// less on a cache hit.
+    PreviewTierMap {
+        spec: rs_cam_mcp::server::PreviewTierMapParam,
+    },
     SetDressupConfig {
         index: usize,
         dressup: serde_json::Value,

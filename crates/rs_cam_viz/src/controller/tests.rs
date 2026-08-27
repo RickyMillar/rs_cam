@@ -31,6 +31,11 @@ struct ScriptedBackend {
     /// under test makes the same decision the real lane makes.
     active_toolpath_id: Option<ToolpathId>,
     submitted: Vec<ToolpathId>,
+    /// Optimize-lane submissions, kept WHOLE rather than counted. The Phase U
+    /// tier preview rides this lane and carries the spec the dialog built, so
+    /// a test can witness what was actually asked for instead of only that
+    /// something was.
+    optimize_requests: Vec<OptimizeRequest>,
 }
 
 impl ScriptedBackend {
@@ -42,6 +47,7 @@ impl ScriptedBackend {
             drained: Vec::new(),
             active_toolpath_id: None,
             submitted: Vec::new(),
+            optimize_requests: Vec::new(),
         }
     }
 }
@@ -58,7 +64,9 @@ impl ComputeBackend for ScriptedBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+    fn submit_optimize(&mut self, request: OptimizeRequest) {
+        self.optimize_requests.push(request);
+    }
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
         match lane {
@@ -366,6 +374,11 @@ fn render_snapshot(
                 &lanes,
                 events,
                 None,
+                controller
+                    .state
+                    .multitool_planner
+                    .as_ref()
+                    .is_some_and(|p| p.ready_preview().is_some()),
             );
         });
 
@@ -3326,4 +3339,230 @@ fn a_param_edit_mid_generate_regenerates_without_a_pending_flicker() {
         rt.stale_since.is_none(),
         "the submit clears the staleness it satisfies"
     );
+}
+
+// ── Phase U: the multi-tool finishing planner dialog ─────────────────────
+//
+// The claim these carry is the VETO: opening the dialog and rejecting it must
+// leave the project exactly as it was. The core sentry
+// (`multitool_preview_u1.rs`) makes the byte-identical version of that claim
+// about `preview_multitool_plan` itself; these make it about the GUI path,
+// where the session is lent to a worker and handed back.
+
+/// The sample project plus a two-ball ladder with distinct tip radii.
+fn planner_controller() -> AppController<ScriptedBackend> {
+    let mut controller = sample_controller();
+    for (raw_id, diameter) in [(2usize, 4.0f64), (3, 2.0)] {
+        let mut tool = ToolConfig::new_default(ToolId(raw_id), ToolType::BallNose);
+        tool.name = format!("Ball {diameter}");
+        tool.diameter = diameter;
+        controller.state.session.tools_mut().push(tool);
+    }
+    controller
+}
+
+/// Tick every ball-nose row, which is the two-radius ladder the dialog needs.
+fn tick_ball_tools(controller: &mut AppController<ScriptedBackend>) {
+    let planner = controller
+        .state
+        .multitool_planner
+        .as_mut()
+        .expect("the dialog is open");
+    for row in &mut planner.tools {
+        row.selected = row.name.starts_with("Ball ");
+    }
+}
+
+/// A fingerprint of everything the planner is allowed to leave alone.
+fn project_fingerprint(controller: &AppController<ScriptedBackend>) -> Vec<String> {
+    controller
+        .state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| {
+            format!(
+                "{}|{}|{}|{:?}",
+                tc.name,
+                tc.tool_id,
+                tc.enabled,
+                tc.planner_origin.as_ref().map(|o| (o.plan_id, o.tier))
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn opening_the_planner_emits_nothing_and_pre_ticks_nothing() {
+    let mut controller = planner_controller();
+    let before = project_fingerprint(&controller);
+
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+
+    let planner = controller
+        .state
+        .multitool_planner
+        .as_ref()
+        .expect("the dialog opened");
+    assert!(planner.open);
+    assert!(
+        planner.tools.iter().all(|row| !row.selected),
+        "which tools take part is the operator's call — nothing is pre-ticked"
+    );
+    assert!(
+        planner.blocking_reason().is_some(),
+        "and with nothing ticked, Preview and Apply say why they are refused"
+    );
+    // Coarse -> fine on TIP radius, the ordering the core ladder uses.
+    let radii: Vec<f64> = planner.tools.iter().map(|r| r.cusp_radius_mm).collect();
+    assert!(
+        radii.windows(2).all(|pair| pair[0] >= pair[1]),
+        "rows read in the order the chain runs, got {radii:?}"
+    );
+    assert_eq!(
+        project_fingerprint(&controller),
+        before,
+        "no op was touched"
+    );
+}
+
+#[test]
+fn the_dialogs_dials_reach_the_submitted_spec() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    tick_ball_tools(&mut controller);
+    {
+        let planner = controller.state.multitool_planner.as_mut().expect("open");
+        planner.coarseness = 4.0;
+        planner.overlap_mm = 1.5;
+        planner.cusp_height_mm = 0.02;
+        planner.tolerance_mm = 0.08;
+        planner.cell_mm = 0.6;
+        planner.margin_mm = 0.75;
+        planner.close_radius_mm = Some(0.9);
+        planner.min_region_area_mm2 = Some(12.0);
+        planner.max_regions_per_tier = 8;
+        planner.rim_erosion_mm = 3.0;
+    }
+
+    let before_ops = controller.state.session.toolpath_configs().len();
+    controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
+
+    assert!(
+        controller.state.is_optimizing,
+        "the session is lent to the worker for the walk"
+    );
+    assert!(
+        controller
+            .state
+            .multitool_planner
+            .as_ref()
+            .is_some_and(|p| p.is_loading())
+    );
+    let request = controller
+        .compute
+        .optimize_requests
+        .first()
+        .expect("a preview was submitted");
+    let OptimizeRequest::MultitoolPreview { spec, session } = request else {
+        panic!("the planner must submit a MultitoolPreview, not an Optimize run");
+    };
+    assert_eq!(
+        session.toolpath_configs().len(),
+        before_ops,
+        "the session is LENT whole — the worker reads it and hands it back"
+    );
+    assert_eq!(spec.tool_ids.len(), 2);
+    assert!((spec.cell_mm - 0.6).abs() < 1e-12);
+    assert!((spec.tolerance_mm - 0.08).abs() < 1e-12);
+    assert!((spec.margin_mm - 0.75).abs() < 1e-12);
+    assert!((spec.cusp_height_mm - 0.02).abs() < 1e-12);
+    assert!((spec.islands.coarseness - 4.0).abs() < 1e-12);
+    assert!((spec.islands.overlap_mm - 1.5).abs() < 1e-12);
+    assert!((spec.islands.rim_erosion_mm - 3.0).abs() < 1e-12);
+    assert_eq!(spec.islands.max_regions_per_tier, 8);
+    assert_eq!(spec.islands.close_radius_mm, Some(0.9));
+    assert_eq!(spec.islands.min_region_area_mm2, Some(12.0));
+}
+
+/// THE VETO. Close leaves the project alone, drops the overlay, and keeps the
+/// dials so re-opening resumes rather than restarts (§3.1).
+#[test]
+fn vetoing_the_planner_leaves_the_project_alone_and_drops_the_overlay() {
+    let mut controller = planner_controller();
+    let before = project_fingerprint(&controller);
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    tick_ball_tools(&mut controller);
+    controller
+        .state
+        .multitool_planner
+        .as_mut()
+        .expect("open")
+        .coarseness = 6.5;
+    controller.state.viewport.show_tier_preview = true;
+
+    controller.handle_internal_event(crate::ui::AppEvent::CloseMultitoolPlanner);
+
+    assert!(!controller.state.viewport.show_tier_preview);
+    assert_eq!(project_fingerprint(&controller), before);
+    let planner = controller
+        .state
+        .multitool_planner
+        .as_ref()
+        .expect("the dials survive a veto");
+    assert!(!planner.open);
+    assert!((planner.coarseness - 6.5).abs() < 1e-12, "dials survive");
+    assert_eq!(planner.selected_tool_ids().len(), 2, "ticks survive");
+
+    // Re-opening resumes the same dialog rather than a fresh one.
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    let planner = controller.state.multitool_planner.as_ref().expect("open");
+    assert!(planner.open);
+    assert!((planner.coarseness - 6.5).abs() < 1e-12);
+    assert_eq!(planner.selected_tool_ids().len(), 2);
+}
+
+/// Apply with nothing previewed is a no-op, not a plan. The whole point of
+/// the veto is that the operator sees the territory first.
+#[test]
+fn applying_without_a_preview_plans_nothing() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    tick_ball_tools(&mut controller);
+    let before = project_fingerprint(&controller);
+
+    controller.handle_internal_event(crate::ui::AppEvent::ApplyMultitoolPlan);
+
+    assert_eq!(project_fingerprint(&controller), before);
+    assert!(
+        controller
+            .state
+            .multitool_planner
+            .as_ref()
+            .is_some_and(|p| p.open),
+        "and the dialog stays up rather than silently closing"
+    );
+}
+
+/// A ladder the core would refuse never reaches the lane — the dialog says
+/// why instead of submitting a walk that ends in an error dialog.
+#[test]
+fn a_one_tool_ladder_never_reaches_the_worker() {
+    let mut controller = planner_controller();
+    controller.handle_internal_event(crate::ui::AppEvent::OpenMultitoolPlanner);
+    if let Some(row) = controller
+        .state
+        .multitool_planner
+        .as_mut()
+        .expect("open")
+        .tools
+        .first_mut()
+    {
+        row.selected = true;
+    }
+
+    controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
+
+    assert!(controller.compute.optimize_requests.is_empty());
+    assert!(!controller.state.is_optimizing);
 }

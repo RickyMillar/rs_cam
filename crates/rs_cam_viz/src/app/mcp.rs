@@ -40,6 +40,27 @@ pub(crate) struct RestAnalysisDials {
     pub num_offset_passes: Option<usize>,
 }
 
+/// The dial half of a multi-tool planner request — the fields
+/// `plan_multitool_finishing` and `preview_tier_map` accept identically.
+///
+/// Grouped into one struct so `RsCamApp::multitool_plan_spec` is the ONE
+/// place either tool's defaults are resolved. Two tools with two copies of
+/// the same seven fallbacks is two things to drift, and the failure would be
+/// silent: a preview and the plan that followed it would describe different
+/// territory with nothing on either surface saying so.
+///
+/// Every field is `Option` with the same meaning throughout: `None` = "the
+/// caller did not say", resolved to the CORE's default, never to zero.
+pub(crate) struct MultitoolDials {
+    pub cell_mm: Option<f64>,
+    pub tolerance_mm: Option<f64>,
+    pub margin_mm: Option<f64>,
+    pub cusp_height_mm: Option<f64>,
+    pub coarseness: Option<f64>,
+    pub overlap_mm: Option<f64>,
+    pub max_regions_per_tier: Option<usize>,
+}
+
 impl super::RsCamApp {
     /// Non-blocking drain of MCP requests from the channel.
     /// Called once per frame from `update()`.
@@ -620,6 +641,10 @@ impl super::RsCamApp {
             }
             McpRequestKind::PlanMultitoolFinishing { spec } => {
                 let resp = self.mcp_plan_multitool_finishing(&spec);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::PreviewTierMap { spec } => {
+                let resp = self.mcp_preview_tier_map(&spec);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::SetDressupConfig { index, dressup } => {
@@ -4042,92 +4067,22 @@ impl super::RsCamApp {
         &mut self,
         spec: &rs_cam_mcp::server::PlanMultitoolFinishingParam,
     ) -> String {
-        let session = &self.controller.state().session;
-
-        if spec.setup_index >= session.list_setups().len() {
-            return Self::mcp_plan_error(&format!(
-                "setup_index {} does not exist — the project has {} setup(s).",
-                spec.setup_index,
-                session.list_setups().len()
-            ));
-        }
-        if spec.tool_ids.is_empty() {
-            return Self::mcp_plan_error(
-                "tool_ids is empty — the ladder needs at least one tool, coarsest first.",
-            );
-        }
-        let known: Vec<usize> = session.tools().iter().map(|t| t.id.0).collect();
-        if let Some(missing) = spec.tool_ids.iter().copied().find(|id| !known.contains(id)) {
-            return Self::mcp_plan_error(&format!(
-                "tool_id {missing} does not match any tool in this project (have {known:?}). \
-                 These are library tool ids, not indices."
-            ));
-        }
-
-        // The setup names no model of its own, so "the setup's model" is the
-        // project's model when there is exactly one. Two is ambiguous and is
-        // refused rather than resolved by position.
-        let model_id = match spec.model_id {
-            Some(id) => {
-                if !session.models().iter().any(|m| m.id == id) {
-                    let available: Vec<usize> = session.models().iter().map(|m| m.id).collect();
-                    return Self::mcp_plan_error(&format!(
-                        "model_id {id} does not exist — the project has {available:?}."
-                    ));
-                }
-                id
-            }
-            None => match session.models() {
-                [] => {
-                    return Self::mcp_plan_error(
-                        "no model imported — the tier map is measured against one.",
-                    );
-                }
-                [only] => only.id,
-                models => {
-                    let available: Vec<usize> = models.iter().map(|m| m.id).collect();
-                    return Self::mcp_plan_error(&format!(
-                        "this project has {} models ({available:?}), so `model_id` is required \
-                         — it is not guessed.",
-                        models.len()
-                    ));
-                }
+        let plan_spec = match self.multitool_plan_spec(
+            spec.setup_index,
+            spec.model_id,
+            &spec.tool_ids,
+            &MultitoolDials {
+                cell_mm: spec.cell_mm,
+                tolerance_mm: spec.tolerance_mm,
+                margin_mm: spec.margin_mm,
+                cusp_height_mm: spec.cusp_height_mm,
+                coarseness: spec.coarseness,
+                overlap_mm: spec.overlap_mm,
+                max_regions_per_tier: spec.max_regions_per_tier,
             },
-        };
-
-        // The remaining fields (raw close radius / min island area, rim
-        // erosion) stay at their core derivation; `coarseness` is the one
-        // knob the operator turns and it scales both.
-        let island_defaults = rs_cam_core::tier_islands::TierIslandParams::default();
-        let islands = rs_cam_core::tier_islands::TierIslandParams {
-            coarseness: spec.coarseness.unwrap_or(island_defaults.coarseness),
-            overlap_mm: spec.overlap_mm.unwrap_or(island_defaults.overlap_mm),
-            max_regions_per_tier: spec
-                .max_regions_per_tier
-                .unwrap_or(island_defaults.max_regions_per_tier),
-            ..island_defaults
-        };
-
-        // Unset dials fall back to the CORE's own defaults, never to numbers
-        // copied here: a second copy is a second thing to drift.
-        let plan_defaults = rs_cam_core::session::MultitoolPlanSpec::default();
-        let plan_spec = rs_cam_core::session::MultitoolPlanSpec {
-            setup_index: spec.setup_index,
-            model_id,
-            tool_ids: spec.tool_ids.clone(),
-            cell_mm: spec.cell_mm.unwrap_or(plan_defaults.cell_mm),
-            tolerance_mm: spec.tolerance_mm.unwrap_or(plan_defaults.tolerance_mm),
-            margin_mm: spec.margin_mm.unwrap_or(plan_defaults.margin_mm),
-            cusp_height_mm: spec.cusp_height_mm.unwrap_or(plan_defaults.cusp_height_mm),
-            // B1 decision, not a dial: the raw drop-cutter residual is a
-            // tool-CENTRE difference biased by R*(sec theta - 1), so a slope
-            // both tools machine perfectly still reads as fine-tier
-            // territory. Measured on wanaka200: raw claimed 71.6% of the
-            // board for the fine tiers, compensated 22.0% — within 3% of the
-            // stock-referenced truth. Stated here rather than inherited so a
-            // change to the core default cannot silently move this surface.
-            treatment: rs_cam_core::tier_map::ResidualTreatment::SlopeCompensated,
-            islands,
+        ) {
+            Ok(plan_spec) => plan_spec,
+            Err(message) => return Self::mcp_plan_error(&message),
         };
 
         let outcome = match self.controller.apply_multitool_plan(&plan_spec) {
@@ -4172,6 +4127,271 @@ impl super::RsCamApp {
             "ok": false,
             "error": format!("plan_multitool_finishing: {message}"),
         }))
+    }
+
+    fn mcp_preview_error(message: &str) -> String {
+        json_str(serde_json::json!({
+            "ok": false,
+            "modified": false,
+            "error": format!("preview_tier_map: {message}"),
+        }))
+    }
+
+    /// The validation + dial resolution `plan_multitool_finishing` and
+    /// `preview_tier_map` share.
+    ///
+    /// ONE site, because the two tools exist to describe the SAME job: an
+    /// agent that previews at one set of defaults and plans at another is
+    /// looking at a picture of a different job, and nothing on either surface
+    /// would say so. The error strings carry no tool name — each caller
+    /// prefixes its own.
+    fn multitool_plan_spec(
+        &self,
+        setup_index: usize,
+        model_id: Option<usize>,
+        tool_ids: &[usize],
+        dials: &MultitoolDials,
+    ) -> Result<rs_cam_core::session::MultitoolPlanSpec, String> {
+        let session = &self.controller.state().session;
+
+        if setup_index >= session.list_setups().len() {
+            return Err(format!(
+                "setup_index {setup_index} does not exist — the project has {} setup(s).",
+                session.list_setups().len()
+            ));
+        }
+        if tool_ids.is_empty() {
+            return Err(
+                "tool_ids is empty — the ladder needs at least one tool, coarsest first."
+                    .to_owned(),
+            );
+        }
+        let known: Vec<usize> = session.tools().iter().map(|t| t.id.0).collect();
+        if let Some(missing) = tool_ids.iter().copied().find(|id| !known.contains(id)) {
+            return Err(format!(
+                "tool_id {missing} does not match any tool in this project (have {known:?}). \
+                 These are library tool ids, not indices."
+            ));
+        }
+
+        // The setup names no model of its own, so "the setup's model" is the
+        // project's model when there is exactly one. Two is ambiguous and is
+        // refused rather than resolved by position.
+        let model_id = match model_id {
+            Some(id) => {
+                if !session.models().iter().any(|m| m.id == id) {
+                    let available: Vec<usize> = session.models().iter().map(|m| m.id).collect();
+                    return Err(format!(
+                        "model_id {id} does not exist — the project has {available:?}."
+                    ));
+                }
+                id
+            }
+            None => match session.models() {
+                [] => {
+                    return Err(
+                        "no model imported — the tier map is measured against one.".to_owned()
+                    );
+                }
+                [only] => only.id,
+                models => {
+                    let available: Vec<usize> = models.iter().map(|m| m.id).collect();
+                    return Err(format!(
+                        "this project has {} models ({available:?}), so `model_id` is required \
+                         — it is not guessed.",
+                        models.len()
+                    ));
+                }
+            },
+        };
+
+        // The remaining fields (raw close radius / min island area, rim
+        // erosion) stay at their core derivation; `coarseness` is the one
+        // knob the operator turns and it scales both.
+        let island_defaults = rs_cam_core::tier_islands::TierIslandParams::default();
+        let islands = rs_cam_core::tier_islands::TierIslandParams {
+            coarseness: dials.coarseness.unwrap_or(island_defaults.coarseness),
+            overlap_mm: dials.overlap_mm.unwrap_or(island_defaults.overlap_mm),
+            max_regions_per_tier: dials
+                .max_regions_per_tier
+                .unwrap_or(island_defaults.max_regions_per_tier),
+            ..island_defaults
+        };
+
+        // Unset dials fall back to the CORE's own defaults, never to numbers
+        // copied here: a second copy is a second thing to drift.
+        let plan_defaults = rs_cam_core::session::MultitoolPlanSpec::default();
+        Ok(rs_cam_core::session::MultitoolPlanSpec {
+            setup_index,
+            model_id,
+            tool_ids: tool_ids.to_vec(),
+            cell_mm: dials.cell_mm.unwrap_or(plan_defaults.cell_mm),
+            tolerance_mm: dials.tolerance_mm.unwrap_or(plan_defaults.tolerance_mm),
+            margin_mm: dials.margin_mm.unwrap_or(plan_defaults.margin_mm),
+            cusp_height_mm: dials.cusp_height_mm.unwrap_or(plan_defaults.cusp_height_mm),
+            // B1 decision, not a dial: the raw drop-cutter residual is a
+            // tool-CENTRE difference biased by R*(sec theta - 1), so a slope
+            // both tools machine perfectly still reads as fine-tier
+            // territory. Measured on wanaka200: raw claimed 71.6% of the
+            // board for the fine tiers, compensated 22.0% — within 3% of the
+            // stock-referenced truth. Stated here rather than inherited so a
+            // change to the core default cannot silently move this surface.
+            treatment: rs_cam_core::tier_map::ResidualTreatment::SlopeCompensated,
+            islands,
+        })
+    }
+
+    /// Phase U item 2 — the agent-visible preview twin of the planner.
+    ///
+    /// A pure READ: it builds the tier map and its islands and reports them.
+    /// Nothing is emitted, no parameter moves, no result is invalidated — the
+    /// reply says `modified: false` and that is a statement about this
+    /// function, not a hope. It takes `&self` so that stays true by type.
+    fn mcp_preview_tier_map(&self, spec: &rs_cam_mcp::server::PreviewTierMapParam) -> String {
+        let plan_spec = match self.multitool_plan_spec(
+            spec.setup_index,
+            spec.model_id,
+            &spec.tool_ids,
+            &MultitoolDials {
+                cell_mm: spec.cell_mm,
+                tolerance_mm: spec.tolerance_mm,
+                margin_mm: spec.margin_mm,
+                cusp_height_mm: spec.cusp_height_mm,
+                coarseness: spec.coarseness,
+                overlap_mm: spec.overlap_mm,
+                max_regions_per_tier: spec.max_regions_per_tier,
+            },
+        ) {
+            Ok(plan_spec) => plan_spec,
+            Err(message) => return Self::mcp_preview_error(&message),
+        };
+
+        // Checked BEFORE the walk: a residual map is tens of seconds of work,
+        // and finding out afterwards that the destination does not exist
+        // spends all of it to produce an error.
+        if let Some(path) = spec.svg_path.as_deref()
+            && let Err(message) = Self::validate_svg_out_path(path)
+        {
+            return Self::mcp_preview_error(&message);
+        }
+
+        // Fresh flag, never armed: `generation_status` / `cancel_generation`
+        // drive the generate lane, and this call is not on it.
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let preview = match self
+            .controller
+            .state()
+            .session
+            .preview_multitool_plan(&plan_spec, &cancel)
+        {
+            Ok(preview) => preview,
+            Err(e) => return Self::mcp_preview_error(&e.to_string()),
+        };
+
+        // Hoisted: the counter walks every label, and calling it per tier
+        // would re-walk a 445 k-cell map once per rung.
+        let cells_per_tier = preview.map.tier_cell_counts();
+        let ladder: Vec<serde_json::Value> = (0..preview.map.tier_count)
+            .map(|k| {
+                serde_json::json!({
+                    "tier": k,
+                    "tool_id": preview.tool_ids.get(k),
+                    "tool_name": preview.tool_names.get(k),
+                    "cusp_radius_mm": preview.cusp_radii_mm.get(k),
+                    "map_cells": cells_per_tier.get(k),
+                })
+            })
+            .collect();
+
+        let per_tier: Vec<serde_json::Value> = preview
+            .islands
+            .per_tier
+            .iter()
+            .map(|set| {
+                let k = usize::from(set.tier);
+                serde_json::json!({
+                    "tier": set.tier,
+                    "tool_id": preview.tool_ids.get(k),
+                    "tool_name": preview.tool_names.get(k),
+                    "cusp_radius_mm": preview.cusp_radii_mm.get(k),
+                    "islands": set.islands,
+                    "raw_island_count": set.raw_island_count,
+                    "owned_area_mm2": set.owned_area_mm2,
+                    "cap": {
+                        "acted": set.cap.acted(),
+                        "total_before_cap": set.cap.islands_after_min_area,
+                        "kept": set.cap.kept,
+                        "final_close_radius_mm": set.cap.final_close_radius_mm,
+                    },
+                })
+            })
+            .collect();
+
+        let svg_written = match spec.svg_path.as_deref() {
+            None => None,
+            Some(path) => {
+                let svg =
+                    rs_cam_core::tier_islands::tier_islands_to_svg(&preview.map, &preview.islands);
+                if let Err(e) = std::fs::write(path, &svg) {
+                    return Self::mcp_preview_error(&format!("could not write {path}: {e}"));
+                }
+                Some(path.to_owned())
+            }
+        };
+
+        json_str(serde_json::json!({
+            "ok": true,
+            // Plan-time preview: this handler takes `&self`.
+            "modified": false,
+            "setup_index": plan_spec.setup_index,
+            "model_id": plan_spec.model_id,
+            "ladder": ladder,
+            "per_tier": per_tier,
+            "map": {
+                "cell_mm": preview.map.cell_mm,
+                "nx": preview.map.nx,
+                "ny": preview.map.ny,
+                "tier_count": preview.map.tier_count,
+                "unassigned_cells": preview.map.unassigned_cells(),
+            },
+            "svg_written": svg_written,
+            "note": "Plan-time preview — nothing was generated and the project was not \
+                     modified. `plan_multitool_finishing` emits the op chain; `generate_all` \
+                     runs it.",
+        }))
+    }
+
+    /// Refuse an SVG destination rather than creating a directory tree the
+    /// operator did not ask for, or writing a `.svg` that is not one.
+    fn validate_svg_out_path(path: &str) -> Result<(), String> {
+        if path.is_empty() {
+            return Err("svg_path is empty.".to_owned());
+        }
+        if !path.ends_with(".svg") {
+            return Err(format!(
+                "svg_path must end in `.svg` — got `{path}`. This writes an SVG, not a PNG or \
+                 an HTML dump."
+            ));
+        }
+        // A bare filename resolves against the GUI process's working
+        // directory, which is rarely where the caller means.
+        let Some(dir) = Path::new(path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        else {
+            return Err(format!(
+                "svg_path `{path}` names no directory. Pass an absolute path — a bare \
+                 filename lands in the GUI process's working directory."
+            ));
+        };
+        if !dir.is_dir() {
+            return Err(format!(
+                "svg_path's directory `{}` does not exist. It is not created — pass a \
+                 directory that is already there.",
+                dir.display()
+            ));
+        }
+        Ok(())
     }
 
     fn mcp_set_dressup_config(&mut self, index: usize, dressup: serde_json::Value) -> String {

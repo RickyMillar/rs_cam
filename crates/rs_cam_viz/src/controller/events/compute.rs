@@ -1288,6 +1288,48 @@ impl<B: ComputeBackend> AppController<B> {
                     );
                 }
             }
+            OptimizeResultKind::MultitoolPreview { result } => {
+                self.handle_multitool_preview_result(result);
+            }
+        }
+    }
+
+    /// Land a tier-map preview on the planner dialog.
+    ///
+    /// A result that arrives after the dialog was vetoed is DISCARDED, not
+    /// applied to a closed dialog: the operator already said no, and quietly
+    /// re-arming the overlay behind them would be the veto failing. The
+    /// session has already been restored by the caller either way — that is
+    /// the whole reason the lane returns it on the result rather than on
+    /// success.
+    fn handle_multitool_preview_result(
+        &mut self,
+        result: Result<Box<rs_cam_core::session::MultitoolPreview>, String>,
+    ) {
+        let Some(planner) = self.state.multitool_planner.as_mut() else {
+            tracing::debug!("Tier-map preview arrived with no planner state — discarded");
+            return;
+        };
+        if !planner.open {
+            planner.status = crate::state::multitool_planner::MultitoolPreviewStatus::Idle;
+            tracing::debug!("Tier-map preview arrived after the dialog was closed — discarded");
+            return;
+        }
+        match result {
+            Ok(preview) => {
+                let key = planner.requested_key.take();
+                planner.previewed_key = key;
+                planner.preview_generation = planner.preview_generation.saturating_add(1);
+                planner.status =
+                    crate::state::multitool_planner::MultitoolPreviewStatus::Ready(preview);
+                self.state.viewport.show_tier_preview = true;
+                self.pending_upload = true;
+            }
+            Err(message) => {
+                planner.requested_key = None;
+                planner.status =
+                    crate::state::multitool_planner::MultitoolPreviewStatus::Failed(message);
+            }
         }
     }
 

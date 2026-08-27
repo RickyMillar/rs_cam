@@ -263,6 +263,39 @@ Operator UX rulings (2026-08-27, in plan §Phase U): separate op per tier
 (ratified), region-coarseness slider, visible overlap_mm dial with blend
 strip rendered in the preview.
 
+**Phase U COMPLETE.** Two parallel Opus editors (viz-UI / MCP), frozen
+`MultitoolPreview` contract, verify-lane residuals: one arity miss, three
+clippy lints. GUI: **Toolpath ▸ "Plan multi-tool finishing…"** dialog
+(beside Optimize project) — tool checkboxes with TIP radii, the
+operator-ruled coarseness slider (COARSENESS_MIN..MAX, "many small
+regions" ↔ "few large regions") + visible overlap_mm dial +
+cusp_height/tolerance, advanced flyout for cell/margin/raw island
+overrides (explicit value disables slider scaling, tooltip says so).
+Preview runs on the Optimize lane (session lent whole, walk cancelled by
+the lane's AtomicBool polled per grid row; map key captured at submit so
+a mid-walk dial change can't mark a stale map cached); coarseness/overlap
+re-cuts go through the FULL preview call — "only extraction re-runs" is
+enforced by tier_map_cache structurally, not by a second code path.
+Overlay: parallel tier_preview_* slot beside the rest heatmap (both can
+be on at once), per-tier fills + overlap band tinted halfway to white
+(collision-pinned), same display_shift as rest grids, gated
+show_tier_preview default OFF. Ready panel: per-tier table + LOUD amber
+cap-acted rows from TierCapReport. Veto is `&self`-enforced + sentried
+(serialized configs byte-identical across preview). Core:
+`preview_multitool_plan` + `tier_map_to_heatmap_mesh`; resolve_tier_plan
+is now the ONE pipeline both preview and boundary resolution use. MCP:
+`preview_tier_map` (build-info flag) — mm-viewBox SVG (owned filled,
+machining dashed, tens-of-KB class, NEVER the 948 MB HTML) + per-tier
+JSON with cap reports; shares dial resolution with
+plan_multitool_finishing via one `multitool_plan_spec` site (registration
+test pins no-treatment-field on both tools). Bonus find: the viz suite
+exposed a REAL latent race — sim-cut artifact names were
+millisecond-stamped only, two same-ms writers shared one path and one
+owner's cleanup deleted the other's file (fixed 188a53a7, pid+seq).
+Suites: core 3,372/0, cli 31/0, mcp 26/0, viz 375/0. Remaining §3
+decision points: preview-veto eyeball on wanaka (needs release build +
+GUI lane), pencil's fate, merge call. NEXT: Phase V.
+
 **Test-speed task COMPLETE (operator-approved, queued after Phase O).**
 Design changed mid-flight by a verify-lane catch: the first cut tagged
 the 12 heavy binaries' tests `#[ignore]` with the gate running

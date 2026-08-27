@@ -264,6 +264,12 @@ impl RsCamApp {
                 _ => None,
             }
         };
+        let has_tier_preview = self
+            .controller
+            .state()
+            .multitool_planner
+            .as_ref()
+            .is_some_and(|p| p.ready_preview().is_some());
         {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::viewport_overlay::draw(
@@ -276,6 +282,7 @@ impl RsCamApp {
                 &lane_snapshots,
                 events,
                 selected_rest_grid_info,
+                has_tier_preview,
             );
         }
 
@@ -466,6 +473,15 @@ impl RsCamApp {
             show_rest_heatmap: state.viewport.show_rest_heatmap
                 && state.workspace == Workspace::Toolpaths
                 && selected_rest_grid_info.is_some(),
+            // Parallel to the rest heatmap and independent of it — both can
+            // be up at once. Gated on the Toolpaths workspace for the same
+            // reason: it is a planning overlay, not a verification one.
+            show_tier_preview: state.viewport.show_tier_preview
+                && state.workspace == Workspace::Toolpaths
+                && state
+                    .multitool_planner
+                    .as_ref()
+                    .is_some_and(|p| p.ready_preview().is_some()),
             show_sim_mesh: state.workspace == Workspace::Simulation
                 && state.simulation.has_results(),
             sim_mesh_opacity: state.simulation.stock_opacity,

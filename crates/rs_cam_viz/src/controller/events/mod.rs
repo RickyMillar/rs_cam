@@ -290,6 +290,20 @@ impl<B: ComputeBackend> AppController<B> {
                 self.apply_optimize_project();
             }
 
+            // --- Multi-tool finishing planner (Phase U) ---
+            AppEvent::OpenMultitoolPlanner => {
+                self.open_multitool_planner();
+            }
+            AppEvent::PreviewMultitoolPlan => {
+                self.request_multitool_preview();
+            }
+            AppEvent::ApplyMultitoolPlan => {
+                self.apply_multitool_planner();
+            }
+            AppEvent::CloseMultitoolPlanner => {
+                self.close_multitool_planner();
+            }
+
             // --- Feeds & Speeds modal (redesigned Feeds tab) ---
             AppEvent::OpenFeedsModal(toolpath_id) => {
                 self.open_feeds_modal(toolpath_id);

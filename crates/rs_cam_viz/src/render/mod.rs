@@ -50,6 +50,13 @@ pub struct ColoredMeshUniforms {
 /// stay clearly visible rather than blend into the surface.
 const REST_HEATMAP_OPACITY: f32 = 0.6;
 
+/// Fixed opacity for the multi-tool tier-preview overlay (Phase U). Its own
+/// constant beside [`REST_HEATMAP_OPACITY`] rather than a shared one: this
+/// overlay answers "which tool owns this ground" and is meant to be read as
+/// flat territory, so it sits slightly more opaque than the rest heatmap while
+/// still letting the surface it drapes read through.
+const TIER_PREVIEW_OPACITY: f32 = 0.7;
+
 /// GPU uniform data for line rendering.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -151,6 +158,12 @@ pub struct RenderResources {
     /// clearly-visible opacity.
     rest_heatmap_uniform_buffer: wgpu::Buffer,
     rest_heatmap_bind_group: wgpu::BindGroup,
+    /// The multi-tool tier preview's own uniform buffer + bind group, for the
+    /// same reason the rest heatmap has its own: a shared opacity slot is how
+    /// one overlay ends up wearing another's translucency. Both overlays can
+    /// be visible in one frame, so they cannot take turns writing one buffer.
+    tier_preview_uniform_buffer: wgpu::Buffer,
+    tier_preview_bind_group: wgpu::BindGroup,
 
     // Blit pipeline (copy offscreen to egui render pass)
     blit_pipeline: wgpu::RenderPipeline,
@@ -178,6 +191,12 @@ pub struct RenderResources {
     /// `height_plane_pipeline` (depth-read-only, alpha-blended) so it drapes
     /// over the model without z-fighting or occluding it.
     pub rest_heatmap_data: Option<SimMeshGpuData>,
+    /// Multi-tool tier-map preview overlay (Phase U). Its own slot, not a
+    /// second tenant of `rest_heatmap_data` — a selected toolpath's rest grid
+    /// and a plan preview are different answers to different questions and can
+    /// be on screen together. Same `SimMeshGpuData` machinery and same
+    /// depth-read-only pipeline.
+    pub tier_preview_data: Option<SimMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
@@ -204,6 +223,10 @@ pub struct RenderResources {
     /// Inputs `rest_heatmap_data` was last built from. `None` means the
     /// overlay is (correctly) absent, which is also a cacheable state.
     pub rest_heatmap_upload_key: Option<upload_cache::RestHeatmapUploadKey>,
+    /// Inputs `tier_preview_data` was last built from. `None` means no
+    /// preview is held, which is also a cacheable state — so toggling the
+    /// overlay's visibility checkbox rebuilds nothing.
+    pub tier_preview_upload_key: Option<upload_cache::TierPreviewUploadKey>,
     /// Lifetime counts of upload passes and per-resource buffer builds.
     pub upload_stats: upload_cache::UploadStats,
 }
@@ -336,6 +359,24 @@ impl RenderResources {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: rest_heatmap_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // --- Tier-preview uniform buffer + bind group (own opacity; see the
+        // `tier_preview_uniform_buffer` field doc) ---
+        let tier_preview_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("tier_preview_uniforms"),
+            size: std::mem::size_of::<ColoredMeshUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let tier_preview_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("tier_preview_bg"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: tier_preview_uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -624,6 +665,8 @@ impl RenderResources {
             line_bind_group,
             rest_heatmap_uniform_buffer,
             rest_heatmap_bind_group,
+            tier_preview_uniform_buffer,
+            tier_preview_bind_group,
             blit_pipeline,
             blit_bind_group_layout,
             blit_sampler,
@@ -640,6 +683,7 @@ impl RenderResources {
             sim_mesh_data: None,
             height_planes_data: None,
             rest_heatmap_data: None,
+            tier_preview_data: None,
             tool_model_data: None,
             collision_vertex_buffer: None,
             collision_vertex_count: 0,
@@ -650,6 +694,7 @@ impl RenderResources {
             enriched_upload_key: None,
             collision_upload_key: None,
             rest_heatmap_upload_key: None,
+            tier_preview_upload_key: None,
             upload_stats: upload_cache::UploadStats::default(),
         }
     }
@@ -738,6 +783,11 @@ pub struct ViewportCallback {
     /// `viewport.show_rest_heatmap && workspace == Toolpaths && <selected
     /// toolpath has a rest_grid>` — see `app/viewport.rs`.
     pub show_rest_heatmap: bool,
+    /// Multi-tool tier-map preview overlay (Phase U). Derived as
+    /// `viewport.show_tier_preview && workspace == Toolpaths && <the planner
+    /// holds a Ready preview>` — see `app/viewport.rs`. Independent of
+    /// `show_rest_heatmap`: both may be true in one frame.
+    pub show_tier_preview: bool,
     pub show_sim_mesh: bool,
     pub sim_mesh_opacity: f32,
     pub show_cutting: bool,
@@ -823,6 +873,22 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 &resources.rest_heatmap_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&heatmap_uniforms),
+            );
+        }
+        // Multi-tool tier preview: its own buffer for the same reason, so
+        // the two overlays can be up together without sharing an opacity.
+        if self.show_tier_preview {
+            let tier_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: TIER_PREVIEW_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.tier_preview_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&tier_uniforms),
             );
         }
         queue.write_buffer(
@@ -990,6 +1056,21 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_pipeline(&resources.height_plane_pipeline);
                 pass.set_bind_group(0, &resources.rest_heatmap_bind_group, &[]);
                 for chunk in &heatmap.chunks {
+                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+                }
+            }
+
+            // Draw the multi-tool tier preview — same treatment again, and
+            // drawn after the rest heatmap so that when both are up the plan
+            // preview is the one on top: it is the thing being decided on.
+            if self.show_tier_preview
+                && let Some(preview) = &resources.tier_preview_data
+            {
+                pass.set_pipeline(&resources.height_plane_pipeline);
+                pass.set_bind_group(0, &resources.tier_preview_bind_group, &[]);
+                for chunk in &preview.chunks {
                     pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
                     pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..chunk.index_count, 0, 0..1);

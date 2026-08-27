@@ -167,6 +167,24 @@ pub struct RestHeatmapUploadKey {
     pub shift: [f64; 3],
 }
 
+/// Key for the multi-tool tier-map preview overlay (Phase U).
+///
+/// A **generation counter**, not the dials that produced the preview: the
+/// planner bumps it on every landed preview, and nothing else can change the
+/// mesh. Keying on the dials instead would rebuild on every frame of a
+/// coarseness drag — before the debounced re-preview has produced anything
+/// new to draw.
+///
+/// `shift` is the same emission → display adapter every other overlay carries.
+/// The tier map is built in the emission frame (world for an identity setup,
+/// setup-local otherwise), exactly like a `rest_grid`, so it needs the same
+/// re-framing before it can sit on the drawn model.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TierPreviewUploadKey {
+    pub generation: u64,
+    pub shift: [f64; 3],
+}
+
 /// Key for one toolpath's line buffers (`ToolpathGpuData`).
 ///
 /// This is the key the review's "per-toolpath GPU data keyed by result

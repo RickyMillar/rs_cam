@@ -307,4 +307,67 @@ fn plan_multitool_finishing_is_registered_with_its_dials() {
         description.contains("0.15"),
         "the planning-resolution trap (never plan at 0.15 mm) must be stated: {description}"
     );
+    assert!(
+        description.contains("preview_tier_map"),
+        "the planner must point at its look-before-emit twin: {description}"
+    );
+}
+
+/// U-B2 — the preview twin. It must offer the SAME dials as the planner (an
+/// agent that previews at one coarseness and plans at another is looking at a
+/// picture of a different job), plus `svg_path`, and its description must say
+/// the two things that are not inferable from the schema: that it modifies
+/// nothing, and that unlike the planner it is NOT cheap.
+#[cfg(feature = "mcp")]
+#[test]
+fn preview_tier_map_is_registered_with_the_planners_dials() {
+    let router = rs_cam_viz::mcp_server::EmbeddedCamServer::into_tool_router();
+    let tools = router.list_all();
+    let preview = tools
+        .iter()
+        .find(|t| t.name == "preview_tier_map")
+        .expect("the embedded server must register `preview_tier_map`");
+    let plan = tools
+        .iter()
+        .find(|t| t.name == "plan_multitool_finishing")
+        .expect("the embedded server must register `plan_multitool_finishing`");
+
+    fn property_names(schema: &serde_json::Value) -> Vec<String> {
+        let mut names: Vec<String> = schema
+            .pointer("/properties")
+            .and_then(|p| p.as_object())
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    let preview_schema = serde_json::Value::Object((*preview.input_schema).clone());
+    let plan_schema = serde_json::Value::Object((*plan.input_schema).clone());
+    let mut preview_fields = property_names(&preview_schema);
+    assert!(
+        preview_fields.contains(&"svg_path".to_owned()),
+        "{preview_fields:?}"
+    );
+    preview_fields.retain(|n| n != "svg_path");
+    assert_eq!(
+        preview_fields,
+        property_names(&plan_schema),
+        "preview and plan must take the same dials"
+    );
+
+    let description = preview
+        .description
+        .clone()
+        .map(|d| d.into_owned())
+        .unwrap_or_default();
+    assert!(
+        description.contains("without emitting"),
+        "the preview's whole contract is that it changes nothing: {description}"
+    );
+    assert!(
+        description.contains("0.15"),
+        "the resolution trap applies here too — this one actually walks the grid: \
+         {description}"
+    );
 }

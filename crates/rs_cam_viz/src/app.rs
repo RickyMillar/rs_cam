@@ -700,23 +700,41 @@ impl RsCamApp {
         // "Optimize running…" placeholder instead and let the
         // modal/rollup window be the only interactive surface.
         if self.controller.state().is_optimizing {
+            // The lane is shared, so name what is actually on it: an operator
+            // told "Optimize is running" while waiting on a tier-map preview
+            // would reasonably think they had clicked the wrong thing.
+            let previewing = self
+                .controller
+                .state()
+                .multitool_planner
+                .as_ref()
+                .is_some_and(crate::state::multitool_planner::MultitoolPlannerState::is_loading);
+            let (heading, hint) = if previewing {
+                (
+                    "Building the tier map…",
+                    "Use the planner window to cancel or wait for the preview.",
+                )
+            } else {
+                (
+                    "Optimize is running…",
+                    "Use the Optimize window to cancel or wait for the result.",
+                )
+            };
             egui::CentralPanel::default().show_inside(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(80.0);
                     ui.spinner();
                     ui.add_space(8.0);
                     ui.label(
-                        egui::RichText::new("Optimize is running…")
+                        egui::RichText::new(heading)
                             .heading()
                             .color(crate::ui::theme::TEXT_MUTED),
                     );
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(
-                            "Use the Optimize window to cancel or wait for the result.",
-                        )
-                        .small()
-                        .color(crate::ui::theme::TEXT_DIM),
+                        egui::RichText::new(hint)
+                            .small()
+                            .color(crate::ui::theme::TEXT_DIM),
                     );
                 });
             });
@@ -753,6 +771,16 @@ impl RsCamApp {
         if self.controller.state().optimize_project.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::optimize_project::draw(ctx, state, events);
+        }
+
+        // Multi-tool finishing planner (Phase U). Takes `&mut AppState`
+        // because it edits its own dials in place — the same shape
+        // `viewport_overlay` uses for the viewport toggles. Only the four
+        // ACTIONS (open / preview / apply / close) go through events, and
+        // nothing it does touches the project.
+        {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::multitool_planner::draw(ctx, state, events);
         }
 
         // Feeds & Speeds modal (redesigned Feeds tab)

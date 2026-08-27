@@ -351,6 +351,19 @@ pub enum OptimizeRequest {
         session: rs_cam_core::session::ProjectSession,
         baseline_trace: Arc<rs_cam_core::simulation_cut::SimulationCutTrace>,
     },
+    /// Build the multi-tool planner's tier-map preview (Phase U). Rides
+    /// this lane rather than growing a fourth one because it has the same
+    /// two properties the lane exists for: it owns the session for the run,
+    /// and it is a minutes-scale walk that must not block the frame loop.
+    ///
+    /// Unlike the two Optimize arms it takes the session **immutably** —
+    /// `preview_multitool_plan` is `&self`, which is the operator's veto
+    /// guarantee — and it is cancellable at grid-row granularity through
+    /// this lane's own `cancel` flag.
+    MultitoolPreview {
+        session: rs_cam_core::session::ProjectSession,
+        spec: rs_cam_core::session::MultitoolPlanSpec,
+    },
 }
 
 /// Result from the Optimize worker. Always carries the session back
@@ -370,6 +383,12 @@ pub enum OptimizeResultKind {
     },
     Project {
         report: rs_cam_core::tool_load::optimize::ProjectOptimizeReport,
+    },
+    /// Boxed: a `MultitoolPreview` carries a whole tier map (5 B/cell) and
+    /// its island masks, which would make this enum's size the map's size.
+    /// A cancelled walk arrives here as `Err`, not as a lost session.
+    MultitoolPreview {
+        result: Result<Box<rs_cam_core::session::MultitoolPreview>, String>,
     },
 }
 
@@ -771,6 +790,9 @@ fn optimize_job_label(request: &OptimizeRequest) -> String {
             format!("Optimize toolpath #{toolpath_index}")
         }
         OptimizeRequest::Project { .. } => "Optimize project".to_owned(),
+        OptimizeRequest::MultitoolPreview { spec, .. } => {
+            format!("Tier map preview ({} tools)", spec.tool_ids.len())
+        }
     }
 }
 
@@ -1127,6 +1149,20 @@ fn spawn_optimize_lane(
                     OptimizeResult {
                         session,
                         kind: OptimizeResultKind::Project { report },
+                    }
+                }
+                OptimizeRequest::MultitoolPreview { session, spec } => {
+                    // `&self`: the preview cannot touch a toolpath, which is
+                    // what makes rejecting it free. The session comes back
+                    // unchanged either way — a cancelled walk is an `Err`
+                    // inside the kind, never a dropped session.
+                    let result = session
+                        .preview_multitool_plan(&spec, &lane.cancel)
+                        .map(Box::new)
+                        .map_err(|e| e.to_string());
+                    OptimizeResult {
+                        session,
+                        kind: OptimizeResultKind::MultitoolPreview { result },
                     }
                 }
             };
