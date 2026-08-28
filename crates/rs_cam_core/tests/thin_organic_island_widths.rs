@@ -57,8 +57,11 @@
 //!   wanaka_tier_and_band_region_widths -- --ignored --nocapture
 //!
 //! # Focused C1+E1 cell/retract evidence (Stages I/J):
+//! THIN_ORGANIC_SVG_DIR=/home/ricky/Downloads/svg \
 //! cargo test -p rs_cam_core --test thin_organic_island_widths \
 //!   wanaka_monotone_cells_kept_retracts -- --ignored --nocapture
+//! The environment override writes one coloured-cell overlay SVG for each of
+//! the three measured regions; without it, they land in `target/thin_organic/`.
 //! ```
 //!
 //! `#[ignore]` because it needs the operator's wanaka mesh, which is not in the
@@ -74,7 +77,10 @@
     clippy::print_stdout
 )]
 
-use std::path::Path;
+use std::{
+    fmt::Write as _,
+    path::{Path, PathBuf},
+};
 
 use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::contour_extract::marching_squares_bool_grid;
@@ -627,6 +633,7 @@ fn wanaka_monotone_cells_kept_retracts() {
     );
     let grid = grid_for_stage_i(&mesh, &index, &r10, stepover);
     let cells = stage_i(&grid, &planned, stepover, mesh.bbox.min.z - 0.1);
+    write_cell_svg_comparisons(&cells);
     stage_j(&mesh, &index, &r10, &grid, &cells);
 }
 
@@ -1689,6 +1696,84 @@ fn stage_i(
         });
     }
     out
+}
+
+/// Where Stage I's operator-facing debug SVGs land.  The environment override
+/// lets an evidence run put the artifacts straight where the operator asked,
+/// while the default remains a disposable build artifact.
+fn cell_svg_output_dir() -> PathBuf {
+    std::env::var_os("THIN_ORGANIC_SVG_DIR").map_or_else(
+        || {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("target")
+                .join("thin_organic")
+        },
+        PathBuf::from,
+    )
+}
+
+fn svg_path(poly: &Polygon2) -> String {
+    fn append_ring(path: &mut String, ring: &[P2]) {
+        let Some(first) = ring.first() else { return };
+        write!(path, "M {:.3} {:.3}", first.x, first.y).expect("write SVG path");
+        for point in &ring[1..] {
+            write!(path, " L {:.3} {:.3}", point.x, point.y).expect("write SVG path");
+        }
+        path.push_str(" Z");
+    }
+
+    let mut path = String::new();
+    append_ring(&mut path, &poly.exterior);
+    for hole in &poly.holes {
+        append_ring(&mut path, hole);
+    }
+    path
+}
+
+/// Write one comparison SVG per measured region: a black original boundary
+/// below the emitted-lattice monotone cells, colour-cycled by cell identity.
+/// The overlay makes splits/merges and tiny one-row cells directly inspectable
+/// without pretending it is a production preview.
+fn write_cell_svg_comparisons(regions: &[RegionCells]) {
+    const COLOURS: [&str; 12] = [
+        "#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffff33", "#a65628", "#f781bf",
+        "#999999", "#66c2a5", "#fc8d62", "#8da0cb",
+    ];
+    let output_dir = cell_svg_output_dir();
+    std::fs::create_dir_all(&output_dir).expect("create cell SVG output directory");
+    for (index, region) in regions.iter().enumerate() {
+        let [x0, y0, x1, y1] = region.boundary.bbox();
+        let padding = 2.0;
+        let (view_x, view_y) = (x0 - padding, y0 - padding);
+        let (view_w, view_h) = (x1 - x0 + 2.0 * padding, y1 - y0 + 2.0 * padding);
+        let mut svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{view_x:.3} {view_y:.3} {view_w:.3} {view_h:.3}\" width=\"1000\" height=\"1000\">\n\
+             <title>Wanaka shallow region {}: original boundary and {} monotone cells</title>\n\
+             <rect x=\"{view_x:.3}\" y=\"{view_y:.3}\" width=\"{view_w:.3}\" height=\"{view_h:.3}\" fill=\"white\"/>\n",
+            index + 1,
+            region.cells.len()
+        );
+        for (cell_index, cell) in region.cells.iter().enumerate() {
+            let colour = COLOURS[cell_index % COLOURS.len()];
+            writeln!(
+                svg,
+                "<path d=\"{}\" fill=\"{colour}\" fill-opacity=\"0.45\" stroke=\"{colour}\" stroke-width=\"0.08\" fill-rule=\"evenodd\"/>",
+                svg_path(cell)
+            )
+            .expect("write SVG cell");
+        }
+        writeln!(
+            svg,
+            "<path d=\"{}\" fill=\"none\" stroke=\"black\" stroke-width=\"0.20\" fill-rule=\"evenodd\"/>\n</svg>",
+            svg_path(&region.boundary)
+        )
+        .expect("write SVG boundary");
+        let path = output_dir.join(format!("wanaka_monotone_cells_region_{}.svg", index + 1));
+        std::fs::write(&path, svg).expect("write cell comparison SVG");
+        println!("cell comparison SVG: {}", path.display());
+    }
 }
 
 // ── STAGE J ─────────────────────────────────────────────────────────────
