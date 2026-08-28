@@ -481,6 +481,62 @@ heuristic: one angle per region cannot beat a region that needs three.
 
 ---
 
+## 0g. C1+E1 MEASURED (2026-08-28) — cells reduce kept retracts, but only 9.6% on the top three regions.
+
+Stages I/J in `tests/thin_organic_island_widths.rs` ran a **measurement-only,
+emitted-lattice** boustrophedon decomposition of the same three Wanaka Shallow
+regions used in §0d–§0f.  A cell is continued only across a one-to-one overlap
+of consecutive raster scan-row runs; a split or merge closes the old cell(s)
+and starts new one(s).  Thus every cell is Y-monotone for the shipped 0° grid
+(paths run X).  This is not production `Polygon2` decomposition.
+
+The candidate is deliberately costed fairly: both the undivided and cell arms
+use the same 0° drop-cutter grid, feeds, Shapeoko Pro XXL F-034 kinematics,
+full original-region boundary, `reorder: true`, `link_ceiling: None`, and
+**both go through `relink_fragments`** before costing.  The candidate is
+refused unless its reconstructed cell polygons select exactly the baseline's
+emitted raster lattice points.  This is the §0d lesson applied mechanically.
+
+| region | area | lattice cells | baseline kept retracts | cells kept retracts | F-034 baseline → cells |
+|---|---:|---:|---:|---:|---:|
+| 1 | 3104 mm² | 86 | 97 | **83** | 1053.7 → **999.9 s** |
+| 2 | 1788 mm² | 35 | 30 | **33** | 478.0 → **492.5 s** |
+| 3 | 1621 mm² | 58 | 40 | **35** | 483.7 → **463.0 s** |
+| **top-three total** | **6513 mm²** | **179** | **167** | **151** | **2015.4 → 1955.4 s (1.03×)** |
+
+So the predictor moves in the expected aggregate direction: **16 fewer kept
+retracts (−9.6%) buys 60.0 s (−3.0%)**.  But it is not universal — region 2
+regresses by three retracts and 14.5 s — and this is far below the pre-measure
+intuition that decomposition would erase the remaining topology cost.  The
+cell arm has fewer input fragments (985 → 342) and links (815 → 188), but the
+relinker had already eliminated most of the original junctions.
+
+### What this establishes, and what it does not
+
+- **C1 is answered for the baseline direction:** the largest three regions are
+  not three cells; they contain 86 / 35 / 58 emitted-lattice monotone cells.
+  Stage I also prints every cell's area, PCA-minor diagnostic and monotone
+  direction for inspection.
+- **E1 exists as a reusable evidence kernel:** `relink_and_cost` accepts a raw
+  candidate toolpath, relinks it with the real production parameters, and
+  returns F-034 time, cutting distance, fragments, links and kept retracts.
+  Future C/D candidates must use it, not compare raw generators.
+- This is **not C2/C3**.  There is no production cell geometry, cell adjacency
+  graph, cell TSP, per-cell direction or GUI overlay.  The candidate's global
+  relink is intentionally optimistic relative to an eventual cell router.
+- Matching raster lattice points does **not** prove identical connecting-feed
+  geometry: cutting distance changed 17,544 → 17,394 mm (−0.9%).  The C4
+  rendered-surface review still binds any implementation.
+- These are still the fresh-stock (`link_ceiling: None`) arms.  A3 must
+  re-baseline against the corrected live ceiling before turning this 1.03×
+  measurement into an operator-time claim.
+
+**Decision:** cell decomposition survives its cheapest falsifier, but as a
+modest / conditional C-track investment, not the prior headline lever.  Do
+not build C2 solely to chase retracts; first price a C3 cell order and D1
+per-cell directions against this rig, where a material gain must beat the
+measured 1.03× baseline.
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

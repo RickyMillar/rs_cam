@@ -52,7 +52,13 @@
 //! # Running it
 //!
 //! ```text
-//! cargo test -p rs_cam_core --test thin_organic_island_widths -- --ignored --nocapture
+//! # Historic Stages A–H (all evidence):
+//! cargo test -p rs_cam_core --test thin_organic_island_widths \
+//!   wanaka_tier_and_band_region_widths -- --ignored --nocapture
+//!
+//! # Focused C1+E1 cell/retract evidence (Stages I/J):
+//! cargo test -p rs_cam_core --test thin_organic_island_widths \
+//!   wanaka_monotone_cells_kept_retracts -- --ignored --nocapture
 //! ```
 //!
 //! `#[ignore]` because it needs the operator's wanaka mesh, which is not in the
@@ -71,12 +77,13 @@
 use std::path::Path;
 
 use rs_cam_core::classify_probe::ClassificationSampler;
+use rs_cam_core::contour_extract::marching_squares_bool_grid;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::P2;
 use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::polygon::{Polygon2, detect_containment, shoelace_area};
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
@@ -528,6 +535,99 @@ fn wanaka_tier_and_band_region_widths() {
          fragment ratio is large anyway, the LEVER survives and only its \
          TRIGGER needs replacing (elongation/crossings, not width)."
     );
+}
+
+/// Focused C1+E1 evidence run.  The historic A–H instrument also sweeps 12
+/// angles and two unrelated strategies, so running the whole file to price
+/// the cell hypothesis is needlessly expensive.  This setup intentionally
+/// stops once the real Wanaka Shallow regions exist, then runs only I/J.
+#[test]
+#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+fn wanaka_monotone_cells_kept_retracts() {
+    let path = Path::new(WANAKA_MESH);
+    if !path.exists() {
+        println!("SKIP: {WANAKA_MESH} not present on this machine.");
+        return;
+    }
+
+    let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
+    let index = SpatialIndex::build_auto(&mesh);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
+    let ladder = TierLadder::new(&tools).expect("ladder");
+    let never_cancel = || false;
+    let map = compute_tier_map(
+        &mesh,
+        &index,
+        &ladder,
+        &TierMapParams {
+            cell_mm: CELL_MM,
+            tolerance_mm: TOLERANCE_MM,
+            margin_mm: MARGIN_MM,
+            treatment: ResidualTreatment::SlopeCompensated,
+        },
+        &never_cancel,
+    )
+    .expect("tier map");
+    let cusp_radii: Vec<f64> = tools.iter().map(|tool| tool.cusp_radius_mm()).collect();
+    let islands = extract_tier_islands(
+        &map,
+        &TierIslandParams {
+            coarseness: COARSENESS,
+            overlap_mm: OVERLAP_MM,
+            max_regions_per_tier: MAX_REGIONS_PER_TIER,
+            ..TierIslandParams::default()
+        },
+        &cusp_radii,
+    )
+    .expect("islands");
+    let Some(fine) = islands.per_tier.iter().find(|set| set.tier == 1) else {
+        println!("SKIP: no tier 1 machining region.");
+        return;
+    };
+    if fine.machining.is_empty() {
+        println!("SKIP: tier 1 machining region is empty.");
+        return;
+    }
+
+    let surface = build_classification_surface_with_sampler_and_cancel(
+        &mesh,
+        &index,
+        &r10,
+        unified_finish_classification_resolution(&r10, OP_TOLERANCE_MM),
+        ClassificationSampler::PRODUCTION,
+        &never_cancel,
+    )
+    .expect("classification surface");
+    let heightmap = &surface.heightmap;
+    let covered: Vec<bool> = heightmap
+        .covered_flags()
+        .iter()
+        .enumerate()
+        .map(|(i, &covered)| {
+            if !covered {
+                return false;
+            }
+            let row = i / heightmap.cols;
+            let col = i % heightmap.cols;
+            fine.machining.contains(&P2::new(
+                heightmap.origin_x + col as f64 * heightmap.cell_size,
+                heightmap.origin_y + row as f64 * heightmap.cell_size,
+            ))
+        })
+        .collect();
+    let mut planner = FinishPlannerParams::for_tool(cusp_radii[1]);
+    planner.overlap_mm = OVERLAP_MM;
+    let planned = decompose(&surface.slope_map, &covered, &[], &planner);
+    let stepover = equal_cusp_stepover_mm(cusp_radii[1], CUSP_HEIGHT_MM);
+    println!(
+        "focused C1+E1 setup: {} planned regions, Shallow raster stepover {stepover:.4} mm\n",
+        planned.regions.len()
+    );
+    let grid = grid_for_stage_i(&mesh, &index, &r10, stepover);
+    let cells = stage_i(&grid, &planned, stepover, mesh.bbox.min.z - 0.1);
+    stage_j(&mesh, &index, &r10, &grid, &cells);
 }
 
 // ── STAGE D ─────────────────────────────────────────────────────────────
@@ -1330,5 +1430,486 @@ fn stage_h(cutter: &TaperedBallEndmill, mesh: &TriangleMesh) {
         } else {
             f64::INFINITY
         }
+    );
+}
+
+// ── STAGE I ─────────────────────────────────────────────────────────────
+//
+// C1 asks a deliberately narrow question before any production decomposition:
+// on the lattice the Shallow raster actually emits, how many y-monotone
+// boustrophedon cells are present?  A cell owns one contiguous run per scan
+// row.  At a split or merge both sides start new cells; otherwise the sole
+// overlapping run continues its cell.  This is the standard sweep-line cell
+// event rule, sampled at the emitted raster lattice rather than pretending
+// that a test-local mask is an exact `Polygon2` implementation.
+//
+// The output cells are reconstructed as polygons only to feed the existing
+// raster generator in Stage J.  Stage J verifies their union selects exactly
+// the same emitted grid points as the parent region before it costs anything.
+
+struct RegionCells {
+    boundary: Polygon2,
+    cells: Vec<Polygon2>,
+    topology_cells: usize,
+}
+
+struct GridRun {
+    start: usize,
+    end: usize,
+    cell: usize,
+}
+
+fn grid_for_stage_i(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    stepover: f64,
+) -> rs_cam_core::dropcutter::DropCutterGrid {
+    rs_cam_core::dropcutter::batch_drop_cutter(
+        mesh,
+        index,
+        cutter,
+        stepover,
+        0.0,
+        mesh.bbox.min.z - 0.1,
+    )
+}
+
+fn runs_in_row(mask: &[bool], row: usize, cols: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for col in 0..cols {
+        let inside = mask[row * cols + col];
+        if inside && start.is_none() {
+            start = Some(col);
+        } else if !inside && let Some(first) = start.take() {
+            out.push((first, col - 1));
+        }
+    }
+    if let Some(first) = start {
+        out.push((first, cols - 1));
+    }
+    out
+}
+
+fn runs_overlap(a: (usize, usize), b: (usize, usize)) -> bool {
+    a.0 <= b.1 && b.0 <= a.1
+}
+
+fn polygons_for_lattice_cell(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    positions: &[usize],
+) -> Vec<Polygon2> {
+    let rows = grid.rows.saturating_add(2);
+    let cols = grid.cols.saturating_add(2);
+    let mut mask = vec![false; rows * cols];
+    for &position in positions {
+        let row = position / grid.cols;
+        let col = position % grid.cols;
+        mask[(row + 1) * cols + col + 1] = true;
+    }
+    let origin = grid.get(0, 0);
+    let loops = marching_squares_bool_grid(
+        &mask,
+        rows,
+        cols,
+        origin.x - grid.x_step,
+        origin.y - grid.y_step,
+        grid.x_step,
+    );
+    // Keep one-lattice-point cells too: Stage J rejects any reconstructed
+    // candidate that loses a baseline emitted point, so an area floor would
+    // hide a comparison error rather than make the cell set healthier.
+    let candidates = loops
+        .into_iter()
+        .filter(|points| points.len() >= 3 && shoelace_area(points).abs() > 1e-12)
+        .map(Polygon2::new)
+        .collect();
+    let mut polygons = detect_containment(candidates);
+    for polygon in &mut polygons {
+        polygon.ensure_winding();
+    }
+    polygons
+}
+
+fn lattice_boustrophedon_cells(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    boundary: &Polygon2,
+    min_z: f64,
+) -> (Vec<Polygon2>, usize) {
+    const CLAMP_EPS: f64 = 0.001;
+    let mut inside = vec![false; grid.rows * grid.cols];
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let point = grid.get(row, col);
+            inside[row * grid.cols + col] =
+                point.z > min_z + CLAMP_EPS && boundary.contains_point(&P2::new(point.x, point.y));
+        }
+    }
+
+    let mut positions: Vec<Vec<usize>> = Vec::new();
+    let mut previous: Vec<GridRun> = Vec::new();
+    for row in 0..grid.rows {
+        let current_runs = runs_in_row(&inside, row, grid.cols);
+        let old_to_new: Vec<usize> = previous
+            .iter()
+            .map(|old| {
+                current_runs
+                    .iter()
+                    .filter(|run| runs_overlap((old.start, old.end), **run))
+                    .count()
+            })
+            .collect();
+        let mut current = Vec::new();
+        for run in current_runs {
+            let connected: Vec<usize> = previous
+                .iter()
+                .enumerate()
+                .filter(|(_, old)| runs_overlap((old.start, old.end), run))
+                .map(|(i, _)| i)
+                .collect();
+            let cell = if connected.len() == 1 && old_to_new.get(connected[0]).copied() == Some(1) {
+                previous[connected[0]].cell
+            } else {
+                positions.push(Vec::new());
+                positions.len() - 1
+            };
+            for col in run.0..=run.1 {
+                let position = row * grid.cols + col;
+                if let Some(cell_positions) = positions.get_mut(cell) {
+                    cell_positions.push(position);
+                }
+            }
+            current.push(GridRun {
+                start: run.0,
+                end: run.1,
+                cell,
+            });
+        }
+        previous = current;
+    }
+
+    let topology_cells = positions.len();
+    let cells = positions
+        .iter()
+        .flat_map(|positions| polygons_for_lattice_cell(grid, positions))
+        .collect();
+    (cells, topology_cells)
+}
+
+fn pca_minor_and_elongation(poly: &Polygon2, cell: f64) -> Option<(f64, f64)> {
+    let [x0, y0, x1, y1] = poly.bbox();
+    let nx = (((x1 - x0) / cell).ceil() as usize).saturating_add(2);
+    let ny = (((y1 - y0) / cell).ceil() as usize).saturating_add(2);
+    let mut points = Vec::new();
+    for row in 0..ny {
+        for col in 0..nx {
+            let point = P2::new(x0 + col as f64 * cell, y0 + row as f64 * cell);
+            if poly.contains_point(&point) {
+                points.push(point);
+            }
+        }
+    }
+    if points.len() < 3 {
+        return None;
+    }
+    let n = points.len() as f64;
+    let (sum_x, sum_y) = points.iter().fold((0.0_f64, 0.0_f64), |(sx, sy), point| {
+        (sx + point.x, sy + point.y)
+    });
+    let (cx, cy) = (sum_x / n, sum_y / n);
+    let (sxx, syy, sxy) = points
+        .iter()
+        .fold((0.0_f64, 0.0_f64, 0.0_f64), |(xx, yy, xy), point| {
+            let (dx, dy) = (point.x - cx, point.y - cy);
+            (xx + dx * dx, yy + dy * dy, xy + dx * dy)
+        });
+    let (sxx, syy, sxy) = (sxx / n, syy / n, sxy / n);
+    let major = 0.5 * (2.0 * sxy).atan2(sxx - syy).to_degrees();
+    let minor = (major + 90.0).rem_euclid(180.0);
+    let trace = sxx + syy;
+    let determinant = sxx * syy - sxy * sxy;
+    let spread = ((trace * trace / 4.0) - determinant).max(0.0).sqrt();
+    let large = trace / 2.0 + spread;
+    let small = trace / 2.0 - spread;
+    if small <= 1e-9 {
+        return Some((minor, f64::INFINITY));
+    }
+    Some((minor, (large / small).sqrt()))
+}
+
+fn stage_i(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    planned: &rs_cam_core::finish_planner::PlannedRegions,
+    stepover: f64,
+    effective_min_z: f64,
+) -> Vec<RegionCells> {
+    println!("========== STAGE I — C1 lattice boustrophedon cells (0° raster) ==========\n");
+    println!(
+        "   Cell rule: y-monotone in the 0° raster's scan direction; paths run X.\n\
+         This is a measurement-only lattice decomposition, not production Polygon2 code.\n"
+    );
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|region| region.band == FinishBand::Shallow)
+        .map(|region| &region.polygon)
+        .collect();
+    shallow.sort_by(|a, b| b.area().total_cmp(&a.area()));
+
+    let mut out = Vec::new();
+    for (region_index, boundary) in shallow.into_iter().take(3).enumerate() {
+        let (cells, topology_cells) = lattice_boustrophedon_cells(grid, boundary, effective_min_z);
+        println!(
+            "── region {} ({:.0} mm²): {} topology cells, {} extracted polygons ──",
+            region_index + 1,
+            boundary.area(),
+            topology_cells,
+            cells.len()
+        );
+        println!(
+            "     {:>9}  {:>10}  {:>15}  {:>15}",
+            "area mm²", "elongation", "PCA minor", "monotone axis"
+        );
+        for cell in &cells {
+            let (minor, elongation) =
+                pca_minor_and_elongation(cell, stepover).unwrap_or((f64::NAN, f64::NAN));
+            println!(
+                "     {:>9.1}  {:>10.2}  {minor:>13.1}°  {:>15}",
+                cell.area(),
+                elongation,
+                "Y (paths X)"
+            );
+        }
+        println!();
+        out.push(RegionCells {
+            boundary: boundary.clone(),
+            cells,
+            topology_cells,
+        });
+    }
+    out
+}
+
+// ── STAGE J ─────────────────────────────────────────────────────────────
+//
+// E1's reusable comparison kernel.  Candidate constructors hand it raw
+// toolpaths; it applies the SAME production relink to every arm and then the
+// F-034 integrator.  A cell candidate may only be compared after the emitted
+// lattice membership check below proves it has the baseline's cut population.
+
+struct CandidateCost {
+    moves: usize,
+    cutting_mm: f64,
+    time_s: f64,
+    fragments: usize,
+    linked: usize,
+    kept_retracts: usize,
+}
+
+fn relink_and_cost(
+    raw: rs_cam_core::toolpath::Toolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    safe_z: f64,
+) -> CandidateCost {
+    use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
+
+    let link_kinematics = LinkKinematics {
+        kinematics: *kinematics,
+        max_feed_mm_min: MAX_FEED_MM_MIN,
+        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+    };
+    let params = rs_cam_core::surface_link::RelinkParams {
+        hookup_distance: 25.0,
+        stock_to_leave: 0.0,
+        sampling: 0.5,
+        feed_rate: FEED_MM_MIN,
+        plunge_rate: PLUNGE_MM_MIN,
+        safe_z,
+        link_kinematics: Some(&link_kinematics),
+        reorder: true,
+        boundary: Some(boundary),
+        link_ceiling: None,
+        flush_ride: false,
+        airborne_links_may_leave_territory: false,
+    };
+    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
+        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
+        mesh,
+        index,
+        cutter,
+        &params,
+    );
+    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
+    let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
+    CandidateCost {
+        moves: toolpath.moves.len(),
+        cutting_mm: toolpath.total_cutting_distance(),
+        time_s: compute_cycle_time(&toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN),
+        fragments: report.fragments,
+        linked: report.surface_links,
+        kept_retracts: report.retract_links,
+    }
+}
+
+fn raster_candidate(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    regions: &[Polygon2],
+    safe_z: f64,
+    effective_min_z: f64,
+) -> rs_cam_core::toolpath::Toolpath {
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
+
+    let mut out = Toolpath::new();
+    for polygon in regions {
+        let region = RegionSet::new(vec![polygon.clone()]);
+        let toolpath = raster_toolpath_from_grid(
+            grid,
+            FEED_MM_MIN,
+            PLUNGE_MM_MIN,
+            safe_z,
+            Some(effective_min_z),
+            Some(&region),
+        );
+        out.moves.extend(toolpath.moves);
+    }
+    out
+}
+
+fn cell_membership_matches(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    boundary: &Polygon2,
+    cells: &[Polygon2],
+    effective_min_z: f64,
+) -> bool {
+    use rs_cam_core::region_set::RegionSet;
+
+    let cells = RegionSet::new(cells.to_vec());
+    let mut mismatches = 0usize;
+    for point in &grid.points {
+        let baseline = point.z > effective_min_z + 0.001
+            && boundary.contains_point(&P2::new(point.x, point.y));
+        let candidate =
+            point.z > effective_min_z + 0.001 && cells.contains(&P2::new(point.x, point.y));
+        if baseline != candidate {
+            mismatches += 1;
+        }
+    }
+    if mismatches > 0 {
+        println!(
+            "     REFUSE comparison: cell polygons disagree with baseline on {mismatches} emitted points"
+        );
+    }
+    mismatches == 0
+}
+
+fn stage_j(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    regions: &[RegionCells],
+) {
+    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::region_set::RegionSet;
+
+    println!("========== STAGE J — E1 fair A/B: undivided vs monotone cells ==========\n");
+    println!(
+        "   Both arms: same 0° grid, feeds, Shapeoko kinematics, full-region boundary,\n\
+         `reorder: true`, `link_ceiling: None`, production relink, then F-034 costing.\n\
+         The only candidate difference is the cell ownership/order before BOTH arms relink.\n"
+    );
+    let kinematics = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    println!(
+        "     {:>9}  {:>7}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "area mm²", "arm", "fragments", "linked", "retracts", "time s", "cut mm"
+    );
+
+    let (mut baseline_retracts, mut cell_retracts) = (0usize, 0usize);
+    let (mut baseline_time, mut cell_time) = (0.0_f64, 0.0_f64);
+    let mut compared = 0usize;
+    for region in regions {
+        if region.cells.is_empty() {
+            println!("     REFUSE comparison: no extracted cell polygons");
+            continue;
+        }
+        if !cell_membership_matches(grid, &region.boundary, &region.cells, effective_min_z) {
+            continue;
+        }
+        let boundary = RegionSet::new(vec![region.boundary.clone()]);
+        let baseline = relink_and_cost(
+            raster_candidate(
+                grid,
+                std::slice::from_ref(&region.boundary),
+                safe_z,
+                effective_min_z,
+            ),
+            mesh,
+            index,
+            cutter,
+            &boundary,
+            &kinematics,
+            safe_z,
+        );
+        let cells = relink_and_cost(
+            raster_candidate(grid, &region.cells, safe_z, effective_min_z),
+            mesh,
+            index,
+            cutter,
+            &boundary,
+            &kinematics,
+            safe_z,
+        );
+        println!(
+            "     {:>9.1}  {:>7}  {:>9}  {:>9}  {:>9}  {:>9.1}  {:>9.0}",
+            region.boundary.area(),
+            "base",
+            baseline.fragments,
+            baseline.linked,
+            baseline.kept_retracts,
+            baseline.time_s,
+            baseline.cutting_mm
+        );
+        println!(
+            "     {:>9}  {:>7}  {:>9}  {:>9}  {:>9}  {:>9.1}  {:>9.0}  ({:>3} cells, {} moves)",
+            "",
+            "cells",
+            cells.fragments,
+            cells.linked,
+            cells.kept_retracts,
+            cells.time_s,
+            cells.cutting_mm,
+            region.topology_cells,
+            cells.moves
+        );
+        baseline_retracts += baseline.kept_retracts;
+        cell_retracts += cells.kept_retracts;
+        baseline_time += baseline.time_s;
+        cell_time += cells.time_s;
+        compared += 1;
+    }
+    if compared == 0 {
+        println!("\n     REFUSE total: no cell arm preserved the baseline cut population.\n");
+        return;
+    }
+    println!(
+        "\n     TOP-{compared} TOTAL: kept retracts {baseline_retracts} -> {cell_retracts};
+         time {baseline_time:.1} s -> {cell_time:.1} s ({:.2}x).\n\
+         A reduction is only a C-track premise, not a feature verdict: cells still need\n\
+         C2/C3 production geometry/routing and the C4 surface-quality review.  No reduction\n\
+         means the relinker already absorbed the cell topology and C2 has no time case.\n",
+        baseline_time / cell_time
     );
 }
