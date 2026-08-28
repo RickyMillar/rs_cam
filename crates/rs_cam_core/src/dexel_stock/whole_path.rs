@@ -65,6 +65,7 @@ use super::tile_mip::TileMaxTop;
 use crate::dexel::DexelGrid;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
+use crate::tool::MillingCutter;
 
 /// Which dispatch shape the metric simulator uses for its stamp kernel.
 ///
@@ -425,6 +426,11 @@ impl BandDispatch {
         &mut self,
         grid: &mut DexelGrid,
         lut: &RadialProfileLUT,
+        // The stamp bbox and the engagement denominator are two different
+        // questions; `radius` below still answers the first (envelope), and
+        // this answers the second at each partial's own axial DOC. See
+        // `StampPartial::finish` (U3 / Phase M3).
+        cutter: &dyn MillingCutter,
         radius: f64,
         from_high: bool,
         capture_arc_engagement: bool,
@@ -547,7 +553,7 @@ impl BandDispatch {
             if let Some(m) = air_mip.as_mut() {
                 m.absorb(r);
             }
-            patch(job.sample_slot, r.finish(radius, capture_arc_engagement));
+            patch(job.sample_slot, r.finish(cutter, capture_arc_engagement));
         }
 
         self.clear_batch();

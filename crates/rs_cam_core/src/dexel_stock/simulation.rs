@@ -956,6 +956,7 @@ impl TriDexelStock {
                 None => {
                     let metrics = self.estimate_and_stamp_cutting_subsegment(
                         lut,
+                        cutter,
                         radius,
                         seg_start,
                         seg_end,
@@ -1148,6 +1149,7 @@ fn run_batch_into_samples(
     queue.run_batch(
         grid,
         lut,
+        cutter,
         radius,
         from_high,
         capture_arc_engagement,
@@ -1182,6 +1184,7 @@ fn run_swept_batch_into_samples(
     queue.run_batch(
         grid,
         lut,
+        cutter,
         radius,
         from_high,
         capture_arc_engagement,
@@ -1395,6 +1398,7 @@ impl TriDexelStock {
     fn estimate_and_stamp_cutting_subsegment(
         &mut self,
         lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
         radius: f64,
         seg_start: P3,
         seg_end: P3,
@@ -1460,7 +1464,7 @@ impl TriDexelStock {
         if let Some(m) = air_mip.as_mut() {
             m.absorb(&reduced);
         }
-        reduced.finish(radius, capture_arc_engagement)
+        reduced.finish(cutter, capture_arc_engagement)
     }
 }
 

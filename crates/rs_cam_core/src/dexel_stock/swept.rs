@@ -58,6 +58,7 @@ use crate::dexel::{
 };
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
+use crate::tool::MillingCutter;
 
 use super::whole_path::StampDispatchStats;
 
@@ -933,6 +934,10 @@ impl SweptDispatch {
         &mut self,
         grid: &mut DexelGrid,
         lut: &RadialProfileLUT,
+        // Envelope for the bbox (`radius`), engaged width at the partial's own
+        // axial DOC for the engagement denominator. See `StampPartial::finish`
+        // (U3 / Phase M3).
+        cutter: &dyn MillingCutter,
         radius: f64,
         from_high: bool,
         capture_arc_engagement: bool,
@@ -1060,7 +1065,7 @@ impl SweptDispatch {
                 {
                     m.absorb(r);
                 }
-                patch(job.first_slot + b, r.finish(radius, capture_arc_engagement));
+                patch(job.first_slot + b, r.finish(cutter, capture_arc_engagement));
             }
         }
 
@@ -1224,7 +1229,12 @@ mod tests {
                     b.merge(&out[0]);
                 }
 
-                let (fa, fb) = (a.finish(radius, true), b.finish(radius, true));
+                // Both sides get the SAME cutter, so this stays a claim about
+                // the two kernels rather than about the denominator.
+                let (fa, fb) = (
+                    a.finish(cutter.as_ref(), true),
+                    b.finish(cutter.as_ref(), true),
+                );
                 assert_eq!(
                     (fa.0.to_bits(), fa.1.to_bits(), fa.3.to_bits()),
                     (fb.0.to_bits(), fb.1.to_bits(), fb.3.to_bits()),

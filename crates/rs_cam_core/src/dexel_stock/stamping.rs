@@ -19,6 +19,7 @@ use crate::ids::ToolpathId;
 use crate::radial_profile::RadialProfileLUT;
 use crate::semantic_trace::ToolpathSemanticTrace;
 use crate::simulation_cut::{CutKinematics, SimulationCutSample};
+use crate::tool::MillingCutter;
 use crate::toolpath_spans::SpanId;
 
 // ── Sub-cell coverage helpers (F.a, see DEXEL_Z_ONLY_INVESTIGATION.md §6.F) ─
@@ -1104,19 +1105,88 @@ impl StampPartial {
         self.stamp_skipped &= other.stamp_skipped;
     }
 
-    /// Form the four published numbers. Byte-for-byte the pre-S3 expressions.
+    /// Form the four published numbers.
+    ///
+    /// # The engagement denominator is WIDTH(d), not ENV (U3 / Phase M3)
+    ///
+    /// This used to divide by `2.0 * radius`, where `radius` was the caller's
+    /// `envelope_radius_mm()` — the same scalar that sizes the stamp's
+    /// bounding box. One scalar answered two different questions: the bbox
+    /// wants the envelope (still does, and that argument is unchanged), while
+    /// the engagement fraction wants the diameter that is actually **cutting**
+    /// at this stamp's own axial DOC. On the shipped R1.0 tapered ball at
+    /// 0.5 mm DOC the shank is `3.0 / 0.8660 = 3.464×` too wide, so every
+    /// engagement reading on a tapered tool was normalised by a part of the
+    /// cutter that was nowhere near the material. Measured exposure:
+    /// `planning/rapid_safety_2026-08-28/M1_RESULTS.md` (time-weighted mean
+    /// engagement 3.69× and 5.74× low on the two wanaka taper finish ops).
+    ///
+    /// The correction is deliberately **local**: the cutter is evaluated at a
+    /// depth this partial already carries, with no stock query. It is *not*
+    /// routed through `max_clearance_tip_z_for_profile`, which answers a
+    /// different question (`PLAN.md` M3).
+    ///
+    /// **The correction is monotone.** `width_at_height` is capped at
+    /// `radius()` for every shipped shape, so `engagement_radius_mm(d) <=
+    /// envelope_radius_mm()` always and no reading can come out LOWER than it
+    /// did before. Engagement, the derived arc and everything downstream of
+    /// them rise or stay put; air-cut time can only fall. A fixture that moves
+    /// the other way is a finding about the patch, not about the tool — which
+    /// includes the transit spans whose dexel axial DOC reads high (P3): there
+    /// the engaged radius saturates at the envelope and the fraction is simply
+    /// unchanged.
+    ///
+    /// The depth is `max_penetration`, which is the same `f64` this function
+    /// publishes as element 0 of the tuple and hence as
+    /// `SimulationCutSample::axial_doc_mm`. That identity is what makes
+    /// `tool_load::power`'s `engagement_radius(s.axial_doc_mm) × (arc / π)`
+    /// self-consistent: after this fix the arc it multiplies is derived from a
+    /// fraction taken over the same engaged width, so `power.rs` needs no
+    /// change of its own.
     pub(super) fn finish(
         &self,
-        radius: f64,
+        cutter: &dyn MillingCutter,
         capture_arc_engagement: bool,
     ) -> (f64, f64, Option<f64>, f64) {
         if self.degenerate {
             let radial = if self.removed_volume > 1e-9 { 1.0 } else { 0.0 };
             return (self.descent, radial, None, self.removed_volume);
         }
-        // Width of cut perpendicular to motion / tool diameter.
+        // Width of cut perpendicular to motion / ENGAGED tool diameter.
+        //
+        // Identity on a flat endmill by construction, not by branching on tool
+        // type: `FlatEndmill::width_at_height` returns `self.radius()` at every
+        // height — the same `diameter() / 2.0` the old `radius` argument came
+        // from — so both operands of the division are bit-identical to the
+        // pre-fix ones. `flat_endmill_denominator_is_the_envelope_radius`
+        // pins that.
+        //
+        // The `> 0.0` guard is defensive, not reachable on any shipped shape:
+        // `perp_min`/`perp_max` are only recorded for a cell carrying
+        // `pre_fresh > FRESH_MATERIAL_THRESHOLD_MM` at coverage >= 0.95
+        // (see `stamp_segment_with_metrics`), which forces a removal well
+        // above the `1e-6` bar that sets `max_penetration`, and every cutter
+        // shape has a strictly positive `width_at_height` for a positive
+        // height. Reading full immersion is nevertheless the right answer if
+        // it ever fired: a measured perpendicular extent against a vanishing
+        // engaged width IS a full slot.
+        //
+        // The clamp to 1.0 is pre-existing and deliberately kept: the metric
+        // is CENSORED at full immersion, not extrapolated past it. M1 §8 L1
+        // measured 203,360 samples project-wide that saturate under the
+        // corrected denominator, and L2 records that the raw metric was
+        // already censored for 80,656 of them.
+        //
+        // Evaluated INSIDE the guard: M1 measured ~48 % of cutting samples
+        // (2,391,921 of 4,987,734) reading a hard zero here, and none of them
+        // need a profile lookup.
         let radial_engagement = if self.perp_max > self.perp_min {
-            ((self.perp_max - self.perp_min) / (2.0 * radius)).clamp(0.0, 1.0)
+            let engaged_radius = cutter.engagement_radius_mm(self.max_penetration.max(0.0));
+            if engaged_radius > 0.0 {
+                ((self.perp_max - self.perp_min) / (2.0 * engaged_radius)).clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
         } else {
             0.0
         };
@@ -1125,7 +1195,9 @@ impl StampPartial {
         // radial_engagement on a cutter of diameter D): arc = arccos(1 − 2 ·
         // radial). Reads π/2 at half-immersion (RWoC=0.5) and π at full slot
         // (RWoC=1.0) — matching the tooth-load arc convention the chipload
-        // formula expects.
+        // formula expects. Since M3 the `D` in that relationship is the
+        // ENGAGED diameter, which is what makes the arc a real immersion angle
+        // on a tapered tool rather than an immersion angle of the shank.
         //
         // Computing this from radial rather than per-cell bearing binning
         // avoids the dense-sample lune artifact: a per-cell scan over engaged
@@ -1738,7 +1810,7 @@ mod tests {
             let Some((row_lo, row_hi)) =
                 crate::dexel_stock::band::stamp_row_span(grid, radius, s, e)
             else {
-                out.push(reduced.finish(radius, true));
+                out.push(reduced.finish(cutter, true));
                 return;
             };
             for mut band in grid.serial_bands(row_lo, row_hi) {
@@ -1757,7 +1829,7 @@ mod tests {
             if let Some(m) = mip.as_mut() {
                 m.absorb(&reduced);
             }
-            out.push(reduced.finish(radius, true));
+            out.push(reduced.finish(cutter, true));
         };
 
         // Three depth ladders. The third REPEATS the second, which is the
@@ -2067,8 +2139,8 @@ mod tests {
                     Some(&mip),
                 ));
             }
-            let got = reduced.finish(radius, true);
-            let never = StampPartial::empty().finish(radius, true);
+            let got = reduced.finish(&cutter, true);
+            let never = StampPartial::empty().finish(&cutter, true);
             assert_eq!(got.0.to_bits(), never.0.to_bits(), "{name}: axial");
             assert_eq!(got.1.to_bits(), never.1.to_bits(), "{name}: radial");
             assert_eq!(
