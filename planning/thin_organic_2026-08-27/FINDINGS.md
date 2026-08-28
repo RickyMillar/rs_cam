@@ -537,6 +537,50 @@ not build C2 solely to chase retracts; first price a C3 cell order and D1
 per-cell directions against this rig, where a material gain must beat the
 measured 1.03× baseline.
 
+## 0h. Rotated-cell precursor (2026-08-28) — the visual objection was right on region 1.
+
+The 0° overlay in §0g made the limitation visible: all cells were aligned to
+one arbitrary board axis.  Stage K therefore took **only region 1** — the sole
+region whose PCA predictor passed §0f's elongation gate (4.15) — rebuilt the
+raster lattice at its measured PCA-minor pass direction (**119.6°**), and
+re-decomposed it.  This is a fresh decomposition in the rotated grid, not the
+invalid operation of merely rotating the 0° cells.
+
+| candidate, region 1 | cells | fragments | kept retracts | F-034 time | cutting distance |
+|---|---:|---:|---:|---:|---:|
+| 0° undivided | — | 564 | 97 | 1053.7 s | 8687 mm |
+| 0° cells | 86 | 191 | 83 | 999.9 s | 8553 mm |
+| PCA-minor undivided | — | 491 | 74 | 963.0 s | 8501 mm |
+| **PCA-minor cells** | **69** | **141** | **53** | **875.9 s** | **8279 mm** |
+
+Within the rotated direction, decomposition removes **21 / 74** remaining
+retracts (−28.4%) and **87.1 s** (−9.0%).  Against the 0° undivided baseline,
+the combined direction + cells candidate is **44 fewer retracts** and **177.8
+s faster (1.20×)**.  Unlike §0g's aggregate 1.03× result, that is a material
+single-region signal.
+
+The visual companion makes the mechanism legible:
+
+```text
+/home/ricky/Downloads/svg/wanaka_monotone_cells_region_1.svg
+/home/ricky/Downloads/svg/wanaka_monotone_cells_region_1_pca_minor.svg
+```
+
+The rotated view is qualitatively less like parallel slices imposed on a
+branching map: several long fingers become single or few cells.  That is an
+operator sanity check, **not** a quality acceptance — rotating a raster
+changes the cusp pattern, and the 8279 mm versus 8687 mm cutting distance also
+proves its connecting-feed geometry differs.  Both arms of each same-direction
+comparison still select the same emitted lattice population, pass the same
+production relink, and use the F-034 integrator; the cross-direction comparison
+requires C4 rendered/simulated surface review.
+
+**Decision:** this is enough evidence to price C2/C3 + D1 as one constrained
+prototype, starting with the PCA-gated region-level direction rather than
+trying to assign 179 independent angles.  It is not evidence to ship a
+per-cell strategy yet: one region, fresh-stock ceiling, no cell adjacency
+router, no GUI preview and no C4 visual-quality acceptance.
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

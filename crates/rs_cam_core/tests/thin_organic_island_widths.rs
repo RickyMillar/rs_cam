@@ -635,6 +635,7 @@ fn wanaka_monotone_cells_kept_retracts() {
     let cells = stage_i(&grid, &planned, stepover, mesh.bbox.min.z - 0.1);
     write_cell_svg_comparisons(&cells);
     stage_j(&mesh, &index, &r10, &grid, &cells);
+    stage_k(&mesh, &index, &r10, &grid, &cells, stepover);
 }
 
 // ── STAGE D ─────────────────────────────────────────────────────────────
@@ -1466,20 +1467,30 @@ struct GridRun {
     cell: usize,
 }
 
-fn grid_for_stage_i(
+fn grid_for_direction(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &TaperedBallEndmill,
     stepover: f64,
+    direction_deg: f64,
 ) -> rs_cam_core::dropcutter::DropCutterGrid {
     rs_cam_core::dropcutter::batch_drop_cutter(
         mesh,
         index,
         cutter,
         stepover,
-        0.0,
+        direction_deg,
         mesh.bbox.min.z - 0.1,
     )
+}
+
+fn grid_for_stage_i(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    stepover: f64,
+) -> rs_cam_core::dropcutter::DropCutterGrid {
+    grid_for_direction(mesh, index, cutter, stepover, 0.0)
 }
 
 fn runs_in_row(mask: &[bool], row: usize, cols: usize) -> Vec<(usize, usize)> {
@@ -1503,6 +1514,15 @@ fn runs_overlap(a: (usize, usize), b: (usize, usize)) -> bool {
     a.0 <= b.1 && b.0 <= a.1
 }
 
+fn grid_frame_to_world(grid: &rs_cam_core::dropcutter::DropCutterGrid, point: P2) -> P2 {
+    let angle = grid.direction_deg.to_radians();
+    let (cosine, sine) = (angle.cos(), angle.sin());
+    P2::new(
+        point.x * cosine - point.y * sine,
+        point.x * sine + point.y * cosine,
+    )
+}
+
 fn polygons_for_lattice_cell(
     grid: &rs_cam_core::dropcutter::DropCutterGrid,
     positions: &[usize],
@@ -1515,13 +1535,15 @@ fn polygons_for_lattice_cell(
         let col = position % grid.cols;
         mask[(row + 1) * cols + col + 1] = true;
     }
-    let origin = grid.get(0, 0);
+    // Marching squares works in the grid's U/V sampling frame.  The grid is
+    // world-aligned at 0°, but a Stage-K candidate is rotated, so map its
+    // loops back to world XY before using them as `RegionSet` boundaries.
     let loops = marching_squares_bool_grid(
         &mask,
         rows,
         cols,
-        origin.x - grid.x_step,
-        origin.y - grid.y_step,
+        grid.u_start - grid.x_step,
+        grid.v_start - grid.y_step,
         grid.x_step,
     );
     // Keep one-lattice-point cells too: Stage J rejects any reconstructed
@@ -1530,7 +1552,14 @@ fn polygons_for_lattice_cell(
     let candidates = loops
         .into_iter()
         .filter(|points| points.len() >= 3 && shoelace_area(points).abs() > 1e-12)
-        .map(Polygon2::new)
+        .map(|points| {
+            Polygon2::new(
+                points
+                    .into_iter()
+                    .map(|point| grid_frame_to_world(grid, point))
+                    .collect(),
+            )
+        })
         .collect();
     let mut polygons = detect_containment(candidates);
     for polygon in &mut polygons {
@@ -1776,6 +1805,44 @@ fn write_cell_svg_comparisons(regions: &[RegionCells]) {
     }
 }
 
+/// Same overlay as [`write_cell_svg_comparisons`], but named for a candidate
+/// direction so it can sit next to the 0° baseline without overwriting it.
+fn write_named_cell_svg(region: &RegionCells, filename: &str, title: &str) {
+    const COLOURS: [&str; 12] = [
+        "#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffff33", "#a65628", "#f781bf",
+        "#999999", "#66c2a5", "#fc8d62", "#8da0cb",
+    ];
+    let [x0, y0, x1, y1] = region.boundary.bbox();
+    let padding = 2.0;
+    let (view_x, view_y) = (x0 - padding, y0 - padding);
+    let (view_w, view_h) = (x1 - x0 + 2.0 * padding, y1 - y0 + 2.0 * padding);
+    let mut svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{view_x:.3} {view_y:.3} {view_w:.3} {view_h:.3}\" width=\"1000\" height=\"1000\">\n\
+         <title>{title}</title>\n\
+         <rect x=\"{view_x:.3}\" y=\"{view_y:.3}\" width=\"{view_w:.3}\" height=\"{view_h:.3}\" fill=\"white\"/>\n"
+    );
+    for (cell_index, cell) in region.cells.iter().enumerate() {
+        let colour = COLOURS[cell_index % COLOURS.len()];
+        writeln!(
+            svg,
+            "<path d=\"{}\" fill=\"{colour}\" fill-opacity=\"0.45\" stroke=\"{colour}\" stroke-width=\"0.08\" fill-rule=\"evenodd\"/>",
+            svg_path(cell)
+        )
+        .expect("write SVG cell");
+    }
+    writeln!(
+        svg,
+        "<path d=\"{}\" fill=\"none\" stroke=\"black\" stroke-width=\"0.20\" fill-rule=\"evenodd\"/>\n</svg>",
+        svg_path(&region.boundary)
+    )
+    .expect("write SVG boundary");
+    let path = cell_svg_output_dir().join(filename);
+    std::fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))
+        .expect("create cell SVG output directory");
+    std::fs::write(&path, svg).expect("write named cell comparison SVG");
+    println!("cell comparison SVG: {}", path.display());
+}
+
 // ── STAGE J ─────────────────────────────────────────────────────────────
 //
 // E1's reusable comparison kernel.  Candidate constructors hand it raw
@@ -1996,5 +2063,145 @@ fn stage_j(
          C2/C3 production geometry/routing and the C4 surface-quality review.  No reduction\n\
          means the relinker already absorbed the cell topology and C2 has no time case.\n",
         baseline_time / cell_time
+    );
+}
+
+// ── STAGE K ─────────────────────────────────────────────────────────────
+//
+// The visual objection to Stage I is correct: its cells are optimal only for
+// the fixed 0° scan direction.  Before even considering per-cell D1, test the
+// cheapest non-global alternative: re-decompose the one region whose PCA
+// predictor was actually credible (region 1, elongation > 3) at its PCA-minor
+// pass direction.  This creates a new lattice and therefore a new cell map;
+// it is not a claim that the old cells can simply be rotated.
+fn stage_k(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    zero_grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    zero_regions: &[RegionCells],
+    stepover: f64,
+) {
+    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::region_set::RegionSet;
+
+    let Some(zero) = zero_regions.first() else {
+        println!("========== STAGE K — SKIP: no Shallow region 1 ==========\n");
+        return;
+    };
+    let Some((pca_minor_deg, elongation)) = pca_minor_and_elongation(&zero.boundary, stepover)
+    else {
+        println!("========== STAGE K — SKIP: region 1 has no PCA axis ==========\n");
+        return;
+    };
+    println!("========== STAGE K — rotated PCA-minor cell candidate (region 1) ==========\n");
+    println!(
+        "   Region 1: elongation {elongation:.2}; pass direction {pca_minor_deg:.1}°.\n\
+         This is one region-level direction candidate, NOT per-cell D1.\n"
+    );
+
+    let rotated_grid = grid_for_direction(mesh, index, cutter, stepover, pca_minor_deg);
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let (cells, topology_cells) =
+        lattice_boustrophedon_cells(&rotated_grid, &zero.boundary, effective_min_z);
+    let rotated = RegionCells {
+        boundary: zero.boundary.clone(),
+        cells,
+        topology_cells,
+    };
+    println!(
+        "   rotated lattice: {} topology cells, {} extracted polygons",
+        rotated.topology_cells,
+        rotated.cells.len()
+    );
+    write_named_cell_svg(
+        &rotated,
+        "wanaka_monotone_cells_region_1_pca_minor.svg",
+        &format!("Wanaka shallow region 1: PCA-minor {pca_minor_deg:.1}° monotone cells"),
+    );
+    if rotated.cells.is_empty()
+        || !cell_membership_matches(
+            &rotated_grid,
+            &rotated.boundary,
+            &rotated.cells,
+            effective_min_z,
+        )
+    {
+        println!("     REFUSE rotated cost: cell polygons do not preserve the PCA lattice.");
+        return;
+    }
+
+    let kinematics = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let boundary = RegionSet::new(vec![zero.boundary.clone()]);
+    let zero_base = relink_and_cost(
+        raster_candidate(
+            zero_grid,
+            std::slice::from_ref(&zero.boundary),
+            safe_z,
+            effective_min_z,
+        ),
+        mesh,
+        index,
+        cutter,
+        &boundary,
+        &kinematics,
+        safe_z,
+    );
+    let zero_cells = relink_and_cost(
+        raster_candidate(zero_grid, &zero.cells, safe_z, effective_min_z),
+        mesh,
+        index,
+        cutter,
+        &boundary,
+        &kinematics,
+        safe_z,
+    );
+    let rotated_base = relink_and_cost(
+        raster_candidate(
+            &rotated_grid,
+            std::slice::from_ref(&rotated.boundary),
+            safe_z,
+            effective_min_z,
+        ),
+        mesh,
+        index,
+        cutter,
+        &boundary,
+        &kinematics,
+        safe_z,
+    );
+    let rotated_cells = relink_and_cost(
+        raster_candidate(&rotated_grid, &rotated.cells, safe_z, effective_min_z),
+        mesh,
+        index,
+        cutter,
+        &boundary,
+        &kinematics,
+        safe_z,
+    );
+    println!(
+        "     {:>16}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "candidate", "fragments", "retracts", "time s", "cut mm"
+    );
+    for (label, cost) in [
+        ("0° region", &zero_base),
+        ("0° cells", &zero_cells),
+        ("PCA region", &rotated_base),
+        ("PCA cells", &rotated_cells),
+    ] {
+        println!(
+            "     {label:>16}  {:>9}  {:>9}  {:>9.1}  {:>9.0}",
+            cost.fragments, cost.kept_retracts, cost.time_s, cost.cutting_mm
+        );
+    }
+    println!(
+        "\n     Read the two within-direction A/Bs first: 0° region → cells and PCA region → cells.\n\
+         The 0° ↔ PCA rows deliberately change the raster lattice and require C4 surface review.\n"
     );
 }
