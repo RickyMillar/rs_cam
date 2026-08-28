@@ -581,6 +581,226 @@ trying to assign 179 independent angles.  It is not evidence to ship a
 per-cell strategy yet: one region, fresh-stock ceiling, no cell adjacency
 router, no GUI preview and no C4 visual-quality acceptance.
 
+## 0i. A3 — the decision table re-baselined under a REALISTIC link ceiling
+
+> **STATUS: MEASURED 2026-08-29.** Stage L
+> (`tests/thin_organic_island_widths.rs`) and its runner
+> `wanaka_ceiling_rebaseline_a3` exist and are additive; the tables below are
+> written with their columns and their reading rules, and the measurement
+> cells are filled from the 2026-08-29 run; verdict below.
+>
+> ```text
+> cargo test -p rs_cam_core --test thin_organic_island_widths \
+>   wanaka_ceiling_rebaseline_a3 -- --ignored --nocapture
+> ```
+>
+> Nothing in this section may be cited as a measurement until those cells
+> carry numbers. That is the same rule §0d enforced on itself, and the reason
+> it is enforced here is that A3 exists *because* §0d–§0h quoted margins from
+> an arm the live op does not run.
+
+### Why the earlier numbers needed re-baselining
+
+Every number in §0d–§0h — contour refuted at 0.91×, sweep angle 1.10×, the
+gated PCA rule 1.04×, §0g's cells 1.03× and §0h's rotation-plus-cells 1.20× —
+was measured with `link_ceiling: None`. That is the **fresh-stock** arm: a link
+rides the mesh surface directly and costs only its own XY hop.
+
+The live tier does not run that arm. Both finish tiers in `wanaka200_mt2.toml`
+carry `stock_source = "from_remaining_stock"` (ids 16 and 17), so
+`compute/execute.rs:2359-2368` hands `unified_finish` a `Some(LinkCeiling)` and
+every kept link (`surface_link.rs`, `unified_finish.rs:2101-2140`):
+
+- leaves the cut **vertically**, traverses at
+  `max(surface, standing material) + PLUNGE_CLEARANCE_MM` (2.0 mm,
+  `toolpath.rs:26`) and re-enters **vertically** — two plunge-rate legs per
+  link, at 180 mm/min on this tier;
+- is **refused outright** once that clearance reaches `safe_z`;
+- and is costed against the retract it replaces by the same F-034 gate, so a
+  taller ceiling converts kept links into kept retracts *before* any of the
+  above is paid.
+
+**Stage G** of the same instrument measured the ceiling's HEIGHT moving one
+region 898 s → 1411 s (**1.57×**) with the path held identical — a larger lever
+than any path-topology effect in this document. (That figure is the one
+`PROGRAMME.md`'s settled table carries as "ceiling HEIGHT dominates
+everything measured"; it is Stage G's regime sweep, **not** §0g's 1.03× cell
+result, and the two must not be conflated because they sit under adjacent
+labels.) So the §0d–§0h margins were provisional by construction.
+
+### The ceiling this uses, and why
+
+**Ceiling source: MACHINED STOCK**, not a flat top — preferred exactly as A3
+asks, because a rest op's links fly over what the *prior ops left*, not over a
+block. Stage L builds a dexel at 0.3 mm (the project's own `cell_mm` on both
+tier ops' `planned_tier_regions` boundary) and carves it the way the operator's
+own op chain does, per column:
+
+1. **rough layer** — the Ø6 flat endmill's drop-cutter surface plus its
+   `stock_to_leave_axial = 0.5 mm` (`id = 5`, the front `adaptive3d` rough). A
+   drop-cutter surface *is* a flat mill's achieved surface, so this layer has
+   the least modelling slack in it.
+2. **coarse layer** — the R1.5's drop-cutter surface, applied only where the
+   **tier map** labels the column tier 0, or within `overlap_mm + tip radius`
+   of a tier-0 cell (`containment = "center"`, so the tool centre may sit on
+   the island boundary and the ball sweeps one tip radius further). Inside
+   tier 1's own territory the coarse op is boundary-excluded — and that
+   exclusion is precisely why material stands there at all.
+
+The ceiling then enters through the production parameters and no others:
+`LinkCeiling { stock, tool_radius = R1.0 envelope 3.0, fallback_top_z = block
+top }`, `flush_ride: true` and `airborne_links_may_leave_territory: true` (the
+G-LINKVETO op prior), `hookup_distance = 25.0` (`intra_region_hookup_mm` in the
+toml), `reorder: true`. The clearance itself is the **profile-aware** one A1
+landed (`dexel_stock::max_clearance_tip_z_for_profile`, `994996b7`), not the
+flat disc that produced the 1.57× swing.
+
+**Known biases, all in one direction.** The rough's toolpath is not replayed
+(its drop-cutter surface stands in, so stepover cusps and un-entered pockets
+are missing); the coarse layer is likewise a per-column surface rather than a
+stamped sweep; the back-face ops are not modelled. Each of those omits standing
+material, so **the machined arm is the optimistic end of a bracket**. The
+pessimistic end is the flat-top arm (`stock: None`, `fallback_top_z` = mesh
+top — Stage G's regime, now with the production priors), run on region 1.
+Production sits between them.
+
+**The refusal channel is near-dead by construction here, and that is a
+statement about the regime, not an absence of evidence:** the machined stock's
+top is bounded by the block top and `safe_z` sits 5 mm above it, so
+`ceiling_above_safe_z` cannot fire in the machined arm. The ceiling's cost in
+this regime is the two vertical legs per kept link plus the links the F-034
+gate then declines as `slower_than_retract` — which is why Stage L prints both
+of those columns per row.
+
+### Ceiling population (read this before any row below)
+
+A gate handed an empty population passes and looks healthy; so does a ceiling
+that never lifts anything. Stage L therefore prints the ceiling's own
+distribution over region 1's emitted lattice first.
+
+| quantity | value |
+|---|---|
+| lattice points sampled | 13,136 (region 1 emitted lattice) |
+| link height above the cut surface — mean / p50 / p90 / max | 2.558 / 2.485 / 3.157 / 4.288 mm |
+| of which standing material (rest is the fixed 2.00 mm clearance) — p50 / p90 / max | 0.485 / 1.157 / 2.288 mm |
+| clearances at or above `safe_z` (link refused outright) | 0 of 13,136 (near-structurally zero here — see mechanism note above) |
+
+### Table 1 — 0° undivided vs 0° monotone cells, top three regions
+
+Both arms of every row share the grid, feeds, Shapeoko envelope, full-region
+boundary, production relink and F-034 costing; the **only** difference is the
+link regime. Both arms are relinked (E1/§0d discipline) and the cell arm is
+refused unless its polygons select exactly the baseline's emitted lattice.
+
+| region | candidate | arm | cells | fragments | linked | kept retracts | F-034 s | cutting mm | slower_than_retract | refused |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0° undivided | fresh | — | 564 | 466 | 97 | 1053.7 | 8687 | — | 0 |
+| 1 | 0° undivided | ceiling | — | 564 | 559 | 4 | 917.5 | 10523 | 0 | 0 |
+| 1 | 0° cells | fresh | 86 | 191 | — | 83 | 999.9 | 8553 | — | 0 |
+| 1 | 0° cells | ceiling | 86 | 191 | 186 | 4 | 772.6 | 8945 | 0 | 0 |
+| 2 | 0° undivided | fresh | — | — | — | 30 | 478.0 | — | — | 0 |
+| 2 | 0° undivided | ceiling | — | 247 | 243 | 3 | 484.2 | 5552 | 0 | 0 |
+| 2 | 0° cells | fresh | 35 | — | — | 33 | 492.5 | — | — | 0 |
+| 2 | 0° cells | ceiling | 35 | 64 | 60 | 3 | 419.0 | 4832 | 0 | 0 |
+| 3 | 0° undivided | fresh | — | — | — | 40 | 483.7 | — | — | 0 |
+| 3 | 0° undivided | ceiling | — | 174 | 170 | 3 | 419.2 | 4807 | 0 | 0 |
+| 3 | 0° cells | fresh | 58 | — | — | 35 | 463.0 | — | — | 0 |
+| 3 | 0° cells | ceiling | 58 | 87 | 83 | 3 | 384.4 | 4424 | 0 | 0 |
+
+The fresh rows are §0g's recorded values; Stage L **recomputes** them in the
+same binary and prints `= FINDINGS …` beside each one. A `MISMATCH` there means
+the setup drifted and invalidates the ceiling rows with it — reconcile before
+reading anything else.
+
+One benign exception, on the PCA rows only: Stage L recomputes the pass
+direction from region 1's covariance rather than hard-coding §0h's 119.6°, so a
+MISMATCH there can mean *the angle moved*, not that the setup rotted. The stage
+prints the computed angle in its section banner — **check that against 119.6°
+first**; only a MISMATCH at the same angle is evidence of drift.
+
+| top-three total | fresh | ceiling |
+|---|---|---|
+| 0° undivided → 0° cells, F-034 s | 2015.4 → 1955.4 (1.03×) | 1820.9 → 1576.0 (**1.155×**) |
+| kept retracts | 167 → 151 | 10 → 10 (retracts stop discriminating — see verdict) |
+| ceiling cost on the undivided arm alone (path unchanged) | — | **−194.5 s (0.903×)** — the realistic regime is FASTER than fresh; the ceiling keeps 559/564 links airborne instead of retracting |
+
+### Table 2 — region 1, §0h's PCA-minor direction, and the bracket
+
+| candidate | arm | cells | fragments | kept retracts | F-034 s | cutting mm |
+|---|---|---:|---:|---:|---:|---:|
+| 0° undivided | fresh | — | 564 | 97 | 1053.7 | 8687 |
+| 0° cells | fresh | 86 | 191 | 83 | 999.9 | 8553 |
+| PCA undivided | fresh | — | 491 | 74 | 963.0 | 8501 |
+| PCA cells | fresh | 69 | 141 | 53 | 875.9 | 8279 |
+| 0° undivided | ceiling | — | 564 | 4 | 917.5 | 10523 |
+| 0° cells | ceiling | 86 | 191 | 4 | 772.6 | 8945 |
+| PCA undivided | ceiling | — | 491 | 4 | 887.6 | 10152 |
+| PCA cells | ceiling | 69 | 141 | 6 | **755.3** | 8645 |
+| 0° undivided | flat-top bracket | — | 564 | 4 | 1411.4 | 16566 |
+| 0° cells | flat-top bracket | 86 | 191 | 4 | 953.3 | 11158 |
+
+**§0h's headline in its operator-honest form:** the 1.20× was
+1053.7 s → 875.9 s on the fresh arm. Its ceiling-arm equivalent is
+`917.5 → 755.3 s (1.215×)`, and the absolute seconds — not the ratio — are what an
+operator experiences.
+
+### The A3 question, and how each row answers it
+
+The decisive column is **`ceiling delta ÷ fresh delta`**, printed per pair:
+
+- **> 1.00 — the ceiling AMPLIFIES the candidate's advantage.** Mechanism: the
+  undivided arm's long inter-fragment hops are the ones a ceiling punishes
+  hardest (two vertical legs, and a higher chance the F-034 gate declines the
+  link outright), so cutting them out is worth more under a ceiling than
+  without one.
+- **< 1.00 — the ceiling COMPRESSES it.** Mechanism: a realistic ceiling is
+  low (the prior tiers already cut most of the material away), the lift cost is
+  nearly a constant per link, and the arm with fewer links banks a smaller
+  share of a smaller prize.
+
+Measure it, do not argue it — that is the whole point of the stage.
+
+### What survives A3
+
+Written from the 2026-08-29 run (44 s, all six `= FINDINGS` reproduction
+checks matched; log preserved in the session scratchpad, tables above):
+
+- **§0g's 1.03× cell aggregate SURVIVES and is AMPLIFIED to 1.155×** under
+  the machined-stock ceiling (per-region ceiling/fresh ratios 1.127 / 1.191 /
+  1.044), and to **1.481×** under the pessimistic flat-top bracket — the
+  advantage is robust across the entire ceiling range production can occupy.
+- **§0g's region-2 regression REVERSES**: cells lost 0.971× on fresh stock
+  and win **1.156×** under the ceiling. The "not universal" caveat §0g
+  recorded was an artefact of the fresh-stock regime.
+- **§0h's 1.20× rotation-plus-cells claim HOLDS in operator-honest form:
+  917.5 → 755.3 s (1.215×)** against the 0° undivided ceiling arm. Within
+  that, the two levers moved oppositely: **decomposition strengthened**
+  (cells delta 1.099× → 1.175× in the PCA direction) while **direction
+  weakened** (undivided 0° → PCA is 1.09× fresh but only 1.034× under the
+  ceiling). D1's per-cell direction pricing should expect the smaller
+  direction dividend.
+- **The mechanism moved, and a §0g lesson is now regime-bound.** Under the
+  ceiling the relinker keeps nearly every link airborne (region 1: 559 of
+  564 linked; kept retracts collapse 97 → 4 in BOTH arms), so kept-retract
+  count stops discriminating between candidates — the win is carried by hop
+  LENGTH (cutting-distance deltas) and the two plunge legs per link. "Kept
+  retracts predict time" was true of the fresh regime only.
+- **The realistic regime is also absolutely faster**: the ceiling arm beats
+  the fresh arm by 194.5 s (0.903×) on the undivided top-3 with the path
+  unchanged. The fresh numbers were pessimistic in absolute terms AND
+  understated the decomposition deltas — being wrong in both directions is
+  exactly why A3 existed.
+- **RANKING: unchanged at the top, strengthened.** PCA-cells > 0°-cells >
+  PCA-undivided > 0°-undivided in both regimes for region 1; no candidate
+  crosses another. The C/D build decision stands on firmer ground than
+  §0g's "modest / conditional" — **C2/C3 and D1 are now a justified
+  investment**, with D1's direction component expected to contribute less
+  than the fresh numbers suggested.
+- NOT re-baselined here, still fresh-stock results: §0d's contour-cascade
+  refutation (0.91× — Stage L does not run the cascade) and §0e/§0f's
+  1.10×/1.04× sweep-angle aggregates (only region 1's PCA direction was
+  re-run). Neither is load-bearing for the C/D decision.
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

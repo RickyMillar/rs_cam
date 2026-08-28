@@ -102,10 +102,22 @@ caller.
 **A2** — promote it to the shared primitive X2 demands: *given a heightfield, a
 point and a cutter, the lowest tip Z that clears everything the cutter can
 touch.* Name and convert the other adopters.
-**A3** — re-baseline `FINDINGS.md` §0d–§0f. **Every number there used
+**A3** — re-baseline `FINDINGS.md` §0d–§0h. **Every number there used
 `link_ceiling: None`**, the fresh-stock arm; the live tier is a rest op. The
 ceiling regime moves times by more than any path-topology effect measured, so
 those margins are provisional until re-run against a realistic ceiling.
+**A3 DONE 2026-08-29** — measured, §0i filled: the cell advantage SURVIVES
+and is AMPLIFIED under the realistic ceiling (top-3 1.03× → 1.155×; region-2
+regression reverses; §0h's headline holds at 917.5 → 755.3 s = 1.215×
+operator-honest; direction lever compresses to 1.034×, decomposition lever
+strengthens; ranking unchanged). C2/C3/D1 are a justified investment.
+*Instrument:* Stage L +
+`wanaka_ceiling_rebaseline_a3` in `tests/thin_organic_island_widths.rs` re-run
+§0g/§0h's table under a machined-stock ceiling (rough + tier-0, production
+`flush_ride`/airborne/hookup settings, A1's profile-aware clearance) with a
+flat-top pessimistic bracket; **done when that test has been run once and
+`FINDINGS.md` §0i's `PENDING` cells and its "what survives A3" paragraph are
+filled from its output.**
 
 *GUI (X3):* none directly — this is a correctness fix, not a dial. But the
 viewport should stop drawing walls, which is the operator-visible acceptance.

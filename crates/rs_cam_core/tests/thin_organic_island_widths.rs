@@ -62,6 +62,10 @@
 //!   wanaka_monotone_cells_kept_retracts -- --ignored --nocapture
 //! The environment override writes one coloured-cell overlay SVG for each of
 //! the three measured regions; without it, they land in `target/thin_organic/`.
+//!
+//! # A3 re-baseline under a realistic link ceiling (Stage L):
+//! cargo test -p rs_cam_core --test thin_organic_island_widths \
+//!   wanaka_ceiling_rebaseline_a3 -- --ignored --nocapture
 //! ```
 //!
 //! `#[ignore]` because it needs the operator's wanaka mesh, which is not in the
@@ -1857,6 +1861,75 @@ struct CandidateCost {
     fragments: usize,
     linked: usize,
     kept_retracts: usize,
+    /// Junctions the F-034 link/retract cost gate declined because the link
+    /// was gouge-safe but SLOWER than the retract it would replace. Read by
+    /// Stage L: under a ceiling every kept link grows two vertical legs, so
+    /// this is the channel through which ceiling HEIGHT turns into retracts.
+    slower_than_retract: usize,
+    /// Junctions refused outright because the ceiling reached `safe_z`.
+    /// **Structurally `0`** for any arm with `link_ceiling: None`
+    /// (`surface_link.rs:302-308`), so a zero here is only evidence when a
+    /// ceiling was actually in scope.
+    ceiling_above_safe_z: usize,
+}
+
+/// Which LINK REGIME an arm is costed in.
+///
+/// [`relink_and_cost`] keeps its fresh-stock behaviour and its signature;
+/// this exists so Stage L can cost the SAME candidate under the ceiling the
+/// live rest op passes, through the same relink site. `safe_z` rides here
+/// rather than as an eighth parameter of the kernel — clippy's
+/// `too_many_arguments` fires at eight.
+#[derive(Clone, Copy)]
+struct LinkRegime<'a> {
+    label: &'static str,
+    safe_z: f64,
+    ceiling: Option<rs_cam_core::surface_link::LinkCeiling<'a>>,
+    flush_ride: bool,
+    airborne: bool,
+}
+
+impl<'a> LinkRegime<'a> {
+    /// The arm every number in FINDINGS §0d–§0h was measured in: no ceiling,
+    /// so a link rides the mesh surface directly.
+    ///
+    /// `flush_ride` and `airborne_links_may_leave_territory` are `false`
+    /// here where production's finishing site sets both `true`
+    /// (`unified_finish.rs:2127`, `:2139`) — and that is **not** a
+    /// divergence: both flags are inert without a ceiling. `flush_ride` is
+    /// documented "Ignored when `link_ceiling` is `None`", and the airborne
+    /// exemption is conjunctive with the link's shape, so a surface-riding
+    /// link "stays vetoed everywhere, whatever this flag says"
+    /// (`surface_link.rs:252`, `:281-285`).
+    fn fresh_stock(safe_z: f64) -> Self {
+        Self {
+            label: "fresh",
+            safe_z,
+            ceiling: None,
+            flush_ride: false,
+            airborne: false,
+        }
+    }
+
+    /// The arm the LIVE tier runs in: a rest op's ceiling, with the two op
+    /// priors production's finishing site sets — `flush_ride: true` (flush
+    /// ground under a ceiling is the PRIOR pass's machined output, so riding
+    /// it is a sub-cusp skim) and `airborne_links_may_leave_territory: true`
+    /// (G-LINKVETO: the region polygon confines CUTTING, not an airborne
+    /// hop). Both read from `unified_finish.rs:2101-2140`.
+    fn rest_op(
+        label: &'static str,
+        safe_z: f64,
+        ceiling: rs_cam_core::surface_link::LinkCeiling<'a>,
+    ) -> Self {
+        Self {
+            label,
+            safe_z,
+            ceiling: Some(ceiling),
+            flush_ride: true,
+            airborne: true,
+        }
+    }
 }
 
 fn relink_and_cost(
@@ -1867,6 +1940,31 @@ fn relink_and_cost(
     boundary: &rs_cam_core::region_set::RegionSet<'_>,
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
     safe_z: f64,
+) -> CandidateCost {
+    relink_and_cost_under(
+        raw,
+        mesh,
+        index,
+        cutter,
+        boundary,
+        kinematics,
+        LinkRegime::fresh_stock(safe_z),
+    )
+}
+
+/// [`relink_and_cost`] with the link regime as a parameter. The relink
+/// parameters that are NOT the regime are the production ones and are
+/// identical in every arm — `hookup_distance` 25.0 (the operator's
+/// `intra_region_hookup_mm`, `wanaka200_mt2.toml:949`), `sampling` 0.5,
+/// tier-1 feeds, `reorder: true`, and the region's own polygon as boundary.
+fn relink_and_cost_under(
+    raw: rs_cam_core::toolpath::Toolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &TaperedBallEndmill,
+    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    regime: LinkRegime<'_>,
 ) -> CandidateCost {
     use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
 
@@ -1881,13 +1979,13 @@ fn relink_and_cost(
         sampling: 0.5,
         feed_rate: FEED_MM_MIN,
         plunge_rate: PLUNGE_MM_MIN,
-        safe_z,
+        safe_z: regime.safe_z,
         link_kinematics: Some(&link_kinematics),
         reorder: true,
         boundary: Some(boundary),
-        link_ceiling: None,
-        flush_ride: false,
-        airborne_links_may_leave_territory: false,
+        link_ceiling: regime.ceiling,
+        flush_ride: regime.flush_ride,
+        airborne_links_may_leave_territory: regime.airborne,
     };
     let (linked, report) = rs_cam_core::surface_link::relink_fragments(
         rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
@@ -1905,6 +2003,8 @@ fn relink_and_cost(
         fragments: report.fragments,
         linked: report.surface_links,
         kept_retracts: report.retract_links,
+        slower_than_retract: report.slower_than_retract,
+        ceiling_above_safe_z: report.ceiling_above_safe_z,
     }
 }
 
@@ -2204,4 +2304,852 @@ fn stage_k(
         "\n     Read the two within-direction A/Bs first: 0° region → cells and PCA region → cells.\n\
          The 0° ↔ PCA rows deliberately change the raster lattice and require C4 surface review.\n"
     );
+}
+
+// ── STAGE L ─────────────────────────────────────────────────────────────
+//
+// **A3** (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track A).
+//
+// Every number in FINDINGS §0d–§0h — the refuted contour cascade (0.91×), the
+// 1.10× angle sweep, the gated PCA rule, §0g's 1.03× cells and §0h's 1.20×
+// rotation-plus-cells — was measured with `link_ceiling: None`. That is the
+// FRESH-STOCK arm, where a link rides the mesh directly and pays only its own
+// XY hop.
+//
+// The live tier is a REST op: `wanaka200_mt2.toml` sets `stock_source =
+// "from_remaining_stock"` on BOTH finish tiers (ids 16 and 17), so production
+// hands `unified_finish` a `Some(LinkCeiling)` (`compute/execute.rs:2359-2368`)
+// and every kept link leaves the cut vertically, traverses at
+// `max(surface, standing material) + PLUNGE_CLEARANCE_MM` (2.0 mm,
+// `toolpath.rs:26`) and re-enters vertically. Stage G measured the ceiling's
+// HEIGHT moving one region 898 s → 1411 s (1.57×) with the path held
+// identical — a bigger lever than any path topology in this file. So the
+// §0g/§0h margins are provisional until the same decision table is re-run
+// under a ceiling, and that is all this stage does.
+//
+// It is additive: no existing stage changes. The E1 kernel keeps its signature
+// and its fresh-stock behaviour and gains `relink_and_cost_under`, so BOTH arms
+// relink through one site — §0d's lesson, applied to the ceiling comparison.
+
+/// Dexel cell (mm) for the A3 ceiling stock.
+///
+/// `0.3` is the project's own `cell_mm` on both tier ops' `planned_tier_regions`
+/// boundary source (`wanaka200_mt2.toml`), and the cell this instrument already
+/// builds its tier map at ([`CELL_MM`]) — so the ceiling is read at the
+/// resolution the tier decision itself was made at. The operator's simulation
+/// rule (tip Ø ÷ 10, PROGRAMME F1) would ask 0.2 mm for the R1.0; the direction
+/// of that difference is known and stated rather than assumed away:
+/// `max_clearance_tip_z_for_profile` dilates its disc by half a cell and reads a
+/// sliver-safe per-cell upper bound, so a coarser cell can only read the ceiling
+/// HIGHER, never lower.
+const CEILING_CELL_MM: f64 = CELL_MM;
+
+/// `6mm 2F Carbide End Mill` — tool id 0 in `wanaka200_mt2.toml`, the tool the
+/// front rough (`id = 5`, `adaptive3d`, `stock_source = "fresh"`) runs.
+const ROUGH_DIAMETER_MM: f64 = 6.0;
+/// `cutting_length` of that same tool row.
+const ROUGH_CUTTING_LENGTH_MM: f64 = 25.0;
+/// `stock_to_leave_axial` on the front rough. The rough's radial leave (0.3) is
+/// deliberately NOT modelled: it stands on walls, and a dexel column reads the
+/// axial one.
+const ROUGH_STOCK_TO_LEAVE_AXIAL_MM: f64 = 0.5;
+
+/// XY margin (mm) the ceiling stock must carry around the measured regions: a
+/// link may reach `hookup_distance` = 25.0 mm away from the region, and the
+/// ceiling is then read over the R1.0's 3.0 mm envelope radius on top of that
+/// — 28.0 mm, rounded up to 30.0 so the bound is not exactly the reach.
+const CEILING_STOCK_MARGIN_MM: f64 = 30.0;
+
+/// FINDINGS §0g's recorded FRESH-STOCK arm for the 0° undivided baseline
+/// (regions 1–3): `(kept retracts, F-034 seconds)`. Stage L recomputes the
+/// fresh arm in the same binary and prints itself against these — if the fresh
+/// arm does not reproduce, the setup drifted and no ceiling number in this
+/// stage is trustworthy. Printed, never asserted: the mesh is the operator's.
+const RECORDED_FRESH_UNDIVIDED: [(usize, f64); 3] = [(97, 1053.7), (30, 478.0), (40, 483.7)];
+/// The same for §0g's 0° monotone-cell arm.
+const RECORDED_FRESH_CELLS: [(usize, f64); 3] = [(83, 999.9), (33, 492.5), (35, 463.0)];
+/// §0h's region-1 PCA-minor pair: undivided, then cells.
+const RECORDED_FRESH_PCA: [(usize, f64); 2] = [(74, 963.0), (53, 875.9)];
+
+/// Everything Stage L needs that is not a candidate. A struct rather than
+/// parameters because the stage would otherwise cross clippy's
+/// `too_many_arguments` bound.
+struct A3Inputs<'a> {
+    mesh: &'a TriangleMesh,
+    index: &'a SpatialIndex,
+    /// The tier-1 tool — the one whose links this stage costs (R1.0).
+    fine: &'a TaperedBallEndmill,
+    /// The tier-0 tool (R1.5), whose achieved surface is most of the ceiling.
+    coarse: &'a TaperedBallEndmill,
+    /// Production's own ownership field, at `cell_mm`. Used to decide, per
+    /// dexel column, WHICH prior op last cut there.
+    tier_map: &'a rs_cam_core::tier_map::TierMap,
+    zero_grid: &'a rs_cam_core::dropcutter::DropCutterGrid,
+    stepover: f64,
+}
+
+/// How far past its own tier-map territory the tier-0 op's ball actually
+/// sweeps: the island dilation it is handed as a machining boundary
+/// (`overlap_mm = 2.0`, [`OVERLAP_MM`]) plus one tip radius, because
+/// `containment = "center"` in the toml puts the tool CENTRE on that boundary.
+fn coarse_sweep_reach_mm(coarse: &TaperedBallEndmill) -> f64 {
+    OVERLAP_MM + coarse.cusp_radius_mm()
+}
+
+/// Nearest sample of an **axis-aligned** (`direction_deg == 0.0`) drop-cutter
+/// grid to `(x, y)`, or `None` where that sample found no contact — the
+/// clamped-to-`min_z` convention every other stage in this file uses.
+///
+/// Only valid at 0°: `u_start`/`v_start` are world X/Y only there
+/// (`dropcutter.rs:45-56`).
+fn nearest_contact_z(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    x: f64,
+    y: f64,
+    min_z: f64,
+) -> Option<f64> {
+    if grid.rows == 0 || grid.cols == 0 {
+        return None;
+    }
+    let col = ((x - grid.u_start) / grid.x_step)
+        .round()
+        .clamp(0.0, (grid.cols - 1) as f64) as usize;
+    let row = ((y - grid.v_start) / grid.y_step)
+        .round()
+        .clamp(0.0, (grid.rows - 1) as f64) as usize;
+    let z = grid.get(row, col).z;
+    (z > min_z + 0.001).then_some(z)
+}
+
+/// The XY window the ceiling stock has to cover: the measured regions plus
+/// [`CEILING_STOCK_MARGIN_MM`], clamped to the mesh footprint. Outside it the
+/// dexel query returns `None` and `LinkCeiling` falls back to `fallback_top_z`,
+/// which is the conservative (higher) reading — never a silent zero.
+fn ceiling_stock_bounds(mesh: &TriangleMesh, regions: &[RegionCells]) -> [f64; 4] {
+    let mut x0 = f64::INFINITY;
+    let mut y0 = f64::INFINITY;
+    let mut x1 = f64::NEG_INFINITY;
+    let mut y1 = f64::NEG_INFINITY;
+    for region in regions {
+        let [rx0, ry0, rx1, ry1] = region.boundary.bbox();
+        x0 = x0.min(rx0 - CEILING_STOCK_MARGIN_MM);
+        y0 = y0.min(ry0 - CEILING_STOCK_MARGIN_MM);
+        x1 = x1.max(rx1 + CEILING_STOCK_MARGIN_MM);
+        y1 = y1.max(ry1 + CEILING_STOCK_MARGIN_MM);
+    }
+    [
+        x0.max(mesh.bbox.min.x),
+        y0.max(mesh.bbox.min.y),
+        x1.min(mesh.bbox.max.x),
+        y1.min(mesh.bbox.max.y),
+    ]
+}
+
+/// **The realistic ceiling: MACHINED STOCK**, built as the two ops that
+/// actually precede tier 1 in the operator's project left it.
+///
+/// The chain in `wanaka200_mt2.toml`'s front setup is `id 5` (adaptive3d rough,
+/// Ø6 flat, `stock_to_leave_axial = 0.5`) → `id 16` (tier 0, R1.5) → `id 17`
+/// (tier 1, R1.0 — the op this instrument measures). So per dexel column:
+///
+/// 1. **rough layer, everywhere the mesh is under it:** the Ø6 flat endmill's
+///    drop-cutter surface plus its axial leave. A drop-cutter surface IS a
+///    flat mill's achieved surface, so this is the modelling step with the
+///    least slack in it.
+/// 2. **coarse layer, where tier 0 machines:** the R1.5's drop-cutter surface,
+///    applied where the tier map labels the column tier 0 **or** it lies within
+///    [`coarse_sweep_reach_mm`] of a tier-0 cell (the island overlap plus the
+///    tool's own tip radius). Inside tier 1's own territory the coarse op is
+///    boundary-excluded, which is exactly why standing material is left there —
+///    that residual is the reason tier 1 exists at all.
+///
+/// Three honest departures from the live chain, all stated rather than hidden:
+/// the rough's *toolpath* is not replayed (its drop-cutter surface is used, so
+/// stepover cusps and un-entered pockets are missing, both of which would raise
+/// the ceiling); the coarse layer likewise uses a per-column surface rather
+/// than a stamped sweep (a per-column reading under-reports inter-pass cusps by
+/// at most the 30 µm dial, and the ceiling query takes a max over a 3 mm disc
+/// which recovers most of the envelope anyway); and the alignment-pin drill and
+/// the two back-face V-bit ops are not modelled because they are on the other
+/// face. All three biases point the SAME way — this ceiling is the optimistic
+/// end of the bracket. The pessimistic end is the flat-top arm Stage L also
+/// runs.
+fn a3_machined_stock(
+    input: &A3Inputs<'_>,
+    bounds: [f64; 4],
+) -> rs_cam_core::dexel_stock::TriDexelStock {
+    use rs_cam_core::dexel_stock::TriDexelStock;
+    use rs_cam_core::tool::FlatEndmill;
+
+    let mesh = input.mesh;
+    let min_z = mesh.bbox.min.z - 0.1;
+    let block_top_z = mesh.bbox.max.z;
+    let [x0, y0, x1, y1] = bounds;
+    let mut stock = TriDexelStock::from_stock(
+        x0,
+        y0,
+        x1,
+        y1,
+        mesh.bbox.min.z - 1.0,
+        block_top_z,
+        CEILING_CELL_MM,
+    );
+
+    let rough_tool = FlatEndmill::new(ROUGH_DIAMETER_MM, ROUGH_CUTTING_LENGTH_MM);
+    let rough_grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        mesh,
+        input.index,
+        &rough_tool,
+        CEILING_CELL_MM,
+        0.0,
+        min_z,
+    );
+    let coarse_grid = rs_cam_core::dropcutter::batch_drop_cutter(
+        mesh,
+        input.index,
+        input.coarse,
+        CEILING_CELL_MM,
+        0.0,
+        min_z,
+    );
+
+    // Distance (in cells) from every tier-map cell to the nearest tier-0 cell.
+    // One EDT beats a per-column point-in-polygon test against the island set
+    // by orders of magnitude, and it reads the SAME ownership field the tier
+    // ops' boundaries are derived from.
+    let map = input.tier_map;
+    let tier_zero: Vec<bool> = map.labels.iter().map(|&label| label == 0).collect();
+    let distance_to_tier_zero = distance_transform_2d(&tier_zero, map.ny, map.nx);
+    let reach = coarse_sweep_reach_mm(input.coarse);
+
+    let rows = stock.z_grid.rows;
+    let cols = stock.z_grid.cols;
+    let origin_x = stock.z_grid.origin_u;
+    let origin_y = stock.z_grid.origin_v;
+    let cell = stock.z_grid.cell_size;
+    let mut machined = 0usize;
+    let mut coarse_columns = 0usize;
+    for row in 0..rows {
+        let y = origin_y + row as f64 * cell;
+        for col in 0..cols {
+            let x = origin_x + col as f64 * cell;
+            // No mesh under this column: nothing machined it, so it keeps the
+            // full block. That is material, not an absence of information.
+            let Some(rough_z) = nearest_contact_z(&rough_grid, x, y, min_z) else {
+                continue;
+            };
+            let mut top = rough_z + ROUGH_STOCK_TO_LEAVE_AXIAL_MM;
+            let coarse_here = map.nearest_cell(x, y).is_some_and(|(map_row, map_col)| {
+                distance_to_tier_zero[map_row * map.nx + map_col] * map.cell_mm <= reach
+            });
+            if coarse_here && let Some(coarse_z) = nearest_contact_z(&coarse_grid, x, y, min_z) {
+                top = top.min(coarse_z);
+                coarse_columns += 1;
+            }
+            if top < block_top_z {
+                stock.clear_above_at(row, col, top as f32);
+                machined += 1;
+            }
+        }
+    }
+    println!(
+        "   ceiling stock: {rows} x {cols} columns at {cell:.2} mm, block top {block_top_z:.3} mm;\n\
+         {machined} columns machined, of which {coarse_columns} were reached by the tier-0 pass."
+    );
+    stock
+}
+
+/// Print the CEILING'S OWN POPULATION before any candidate is costed.
+///
+/// CLAUDE.md's standing rule: a gate handed an empty population passes and
+/// looks healthy. The same applies to a ceiling — an arm whose ceiling never
+/// lifts anything is not evidence that ceilings are cheap, it is evidence the
+/// ceiling was not built. This prints, over region 1's emitted lattice, how far
+/// above the cut surface a link would have to fly, and how often that clearance
+/// reaches `safe_z` (the refusal condition).
+fn report_ceiling_population(
+    stock: &rs_cam_core::dexel_stock::TriDexelStock,
+    input: &A3Inputs<'_>,
+    region: &Polygon2,
+    safe_z: f64,
+) {
+    let min_z = input.mesh.bbox.min.z - 0.1;
+    let envelope = input.fine.envelope_radius_mm();
+    let fallback_top_z = input.mesh.bbox.max.z;
+    let mut lifts = Vec::new();
+    let mut standing = Vec::new();
+    let mut refusals = 0usize;
+    for point in &input.zero_grid.points {
+        if point.z <= min_z + 0.001 || !region.contains_point(&P2::new(point.x, point.y)) {
+            continue;
+        }
+        let tip = stock
+            .max_clearance_tip_z_for_profile(point.x, point.y, envelope, input.fine)
+            .unwrap_or(fallback_top_z);
+        let clear = point.z.max(tip) + rs_cam_core::toolpath::PLUNGE_CLEARANCE_MM;
+        if clear >= safe_z {
+            refusals += 1;
+        }
+        lifts.push(clear - point.z);
+        standing.push((tip - point.z).max(0.0));
+    }
+    if lifts.is_empty() {
+        println!("     REFUSE ceiling population: no emitted lattice point inside region 1.\n");
+        return;
+    }
+    lifts.sort_by(f64::total_cmp);
+    standing.sort_by(f64::total_cmp);
+    let n = lifts.len();
+    let mean = lifts.iter().sum::<f64>() / n as f64;
+    println!(
+        "   ceiling population over region 1's emitted lattice ({n} points):\n\
+         \x20    link height above the cut surface: mean {mean:.3}, p50 {:.3}, p90 {:.3}, max {:.3} mm\n\
+         \x20    of which STANDING MATERIAL (the rest is the fixed 2.00 mm PLUNGE_CLEARANCE):\n\
+         \x20      p50 {:.3}, p90 {:.3}, max {:.3} mm\n\
+         \x20    clearance at or above safe_z (link refused outright): {refusals} of {n}",
+        percentile(&lifts, 0.5),
+        percentile(&lifts, 0.9),
+        lifts.last().copied().unwrap_or(f64::NAN),
+        percentile(&standing, 0.5),
+        percentile(&standing, 0.9),
+        standing.last().copied().unwrap_or(f64::NAN),
+    );
+    println!(
+        "     Read the refusal count with its mechanism: this stock's top is bounded by the\n\
+         block top (mesh max Z) and safe_z sits 5 mm above that, so `ceiling_above_safe_z`\n\
+         is near-structurally 0 here. The ceiling's cost in this regime is NOT refusal — it\n\
+         is the two vertical legs per kept link (plunge {PLUNGE_MM_MIN:.0} mm/min) and the\n\
+         links the F-034 gate then declines as slower_than_retract.\n"
+    );
+}
+
+/// Cost one candidate toolpath under several link regimes, through the E1
+/// kernel. The candidate is rebuilt per arm so no arm sees another's toolpath.
+fn cost_under_arms(
+    input: &A3Inputs<'_>,
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    polygons: &[Polygon2],
+    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    arms: &[LinkRegime<'_>],
+) -> Vec<CandidateCost> {
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    arms.iter()
+        .map(|arm| {
+            let raw = raster_candidate(grid, polygons, arm.safe_z, effective_min_z);
+            relink_and_cost_under(
+                raw,
+                input.mesh,
+                input.index,
+                input.fine,
+                boundary,
+                kinematics,
+                *arm,
+            )
+        })
+        .collect()
+}
+
+/// One printed row: a candidate under one regime.
+fn print_a3_row(
+    candidate: &str,
+    arm: &LinkRegime<'_>,
+    cells: Option<usize>,
+    cost: &CandidateCost,
+    recorded: Option<(usize, f64)>,
+) {
+    let cell_text = cells.map_or_else(|| "-".to_owned(), |count| count.to_string());
+    let check = match recorded {
+        None => String::new(),
+        Some((retracts, seconds)) => {
+            let reproduces = cost.kept_retracts == retracts
+                && (cost.time_s - seconds).abs() <= 0.01 * seconds.max(1.0);
+            if reproduces {
+                format!("  = FINDINGS {retracts} / {seconds:.1} s")
+            } else {
+                format!("  MISMATCH vs FINDINGS {retracts} / {seconds:.1} s")
+            }
+        }
+    };
+    println!(
+        "     {candidate:>16}  {:>8}  {cell_text:>5}  {:>9}  {:>7}  {:>8}  {:>9.1}  {:>8.0}  {:>7}  {:>7}{check}",
+        arm.label,
+        cost.fragments,
+        cost.linked,
+        cost.kept_retracts,
+        cost.time_s,
+        cost.cutting_mm,
+        cost.slower_than_retract,
+        cost.ceiling_above_safe_z,
+    );
+}
+
+fn print_a3_header() {
+    println!(
+        "     {:>16}  {:>8}  {:>5}  {:>9}  {:>7}  {:>8}  {:>9}  {:>8}  {:>7}  {:>7}",
+        "candidate",
+        "arm",
+        "cells",
+        "fragments",
+        "linked",
+        "retracts",
+        "time s",
+        "cut mm",
+        "slower",
+        "refused"
+    );
+}
+
+/// `undivided / celled` — the delta the C-track candidate buys in one arm.
+fn delta(undivided: &CandidateCost, celled: &CandidateCost) -> f64 {
+    if celled.time_s > 0.0 {
+        undivided.time_s / celled.time_s
+    } else {
+        f64::NAN
+    }
+}
+
+fn stage_l(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::surface_link::LinkCeiling;
+
+    println!("========== STAGE L — A3: the §0g/§0h decision table under a REAL ceiling ==========");
+    if regions.is_empty() {
+        println!("\n     SKIP: no Shallow regions to re-baseline.\n");
+        return;
+    }
+    let mesh = input.mesh;
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let block_top_z = mesh.bbox.max.z;
+    let kinematics = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    println!(
+        "\n   CEILING SOURCE: MACHINED STOCK — the rough (Ø{ROUGH_DIAMETER_MM:.0} flat, axial \
+         leave {ROUGH_STOCK_TO_LEAVE_AXIAL_MM:.1} mm)\n\
+         \x20  then the tier-0 R1.5 where tier 0 machines. Preferred over the flat-top source\n\
+         \x20  because a rest op's links fly over what the PRIOR OPS left, not over a block.\n\
+         \x20  The flat-top arm is still run on region 1, as the pessimistic bracket.\n\
+         \x20  Production settings mirrored on the ceiling arm: link_ceiling Some{{stock, \
+         tool_radius = envelope {:.2} mm, fallback_top_z = {block_top_z:.3}}},\n\
+         \x20  flush_ride true, airborne_links_may_leave_territory true (unified_finish.rs:2101-2140;\n\
+         \x20  ceiling shape from compute/execute.rs:2359-2368), hookup 25.0, reorder true.\n",
+        input.fine.envelope_radius_mm()
+    );
+
+    let bounds = ceiling_stock_bounds(mesh, regions);
+    let stock = a3_machined_stock(input, bounds);
+    report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
+
+    let machined_ceiling = LinkCeiling {
+        stock: Some(&stock),
+        tool_radius: input.fine.envelope_radius_mm(),
+        fallback_top_z: block_top_z,
+    };
+    let fresh = LinkRegime::fresh_stock(safe_z);
+    let ceiling = LinkRegime::rest_op("ceiling", safe_z, machined_ceiling);
+    let arms = [fresh, ceiling];
+
+    println!(
+        "   Both arms of every row: same grid, same feeds, same Shapeoko envelope, same\n\
+         full-region boundary, production relink, F-034 costing. The ONLY difference is\n\
+         the link regime. The `= FINDINGS` marks are the fresh arm reproducing §0g/§0h\n\
+         in this binary; a MISMATCH there invalidates the ceiling rows above it too.\n"
+    );
+    print_a3_header();
+
+    let mut fresh_total = [0.0_f64; 2];
+    let mut ceiling_total = [0.0_f64; 2];
+    let mut fresh_retracts = [0usize; 2];
+    let mut ceiling_retracts = [0usize; 2];
+    let mut compared = 0usize;
+    for (region_index, region) in regions.iter().enumerate() {
+        if region.cells.is_empty() {
+            println!(
+                "     REFUSE region {}: no extracted cell polygons",
+                region_index + 1
+            );
+            continue;
+        }
+        if !cell_membership_matches(
+            input.zero_grid,
+            &region.boundary,
+            &region.cells,
+            effective_min_z,
+        ) {
+            continue;
+        }
+        let boundary = RegionSet::new(vec![region.boundary.clone()]);
+        let undivided = cost_under_arms(
+            input,
+            input.zero_grid,
+            std::slice::from_ref(&region.boundary),
+            &boundary,
+            &kinematics,
+            &arms,
+        );
+        let celled = cost_under_arms(
+            input,
+            input.zero_grid,
+            &region.cells,
+            &boundary,
+            &kinematics,
+            &arms,
+        );
+        println!(
+            "   ── region {} ({:.0} mm², {} cells) ──",
+            region_index + 1,
+            region.boundary.area(),
+            region.topology_cells
+        );
+        print_a3_row(
+            "0° undivided",
+            &arms[0],
+            None,
+            &undivided[0],
+            RECORDED_FRESH_UNDIVIDED.get(region_index).copied(),
+        );
+        print_a3_row("0° undivided", &arms[1], None, &undivided[1], None);
+        print_a3_row(
+            "0° cells",
+            &arms[0],
+            Some(region.cells.len()),
+            &celled[0],
+            RECORDED_FRESH_CELLS.get(region_index).copied(),
+        );
+        print_a3_row(
+            "0° cells",
+            &arms[1],
+            Some(region.cells.len()),
+            &celled[1],
+            None,
+        );
+        println!(
+            "       cells delta: fresh {:.3}x, ceiling {:.3}x  (ceiling / fresh = {:.3})",
+            delta(&undivided[0], &celled[0]),
+            delta(&undivided[1], &celled[1]),
+            delta(&undivided[1], &celled[1]) / delta(&undivided[0], &celled[0])
+        );
+        fresh_total[0] += undivided[0].time_s;
+        fresh_total[1] += celled[0].time_s;
+        ceiling_total[0] += undivided[1].time_s;
+        ceiling_total[1] += celled[1].time_s;
+        fresh_retracts[0] += undivided[0].kept_retracts;
+        fresh_retracts[1] += celled[0].kept_retracts;
+        ceiling_retracts[0] += undivided[1].kept_retracts;
+        ceiling_retracts[1] += celled[1].kept_retracts;
+        compared += 1;
+    }
+    if compared == 0 {
+        println!("\n     REFUSE total: no cell arm preserved the baseline cut population.\n");
+        return;
+    }
+    println!(
+        "\n   TOP-{compared} TOTAL, 0° undivided → 0° cells:\n\
+         \x20    fresh   {:.1} s → {:.1} s ({:.3}x), kept retracts {} → {}\n\
+         \x20    ceiling {:.1} s → {:.1} s ({:.3}x), kept retracts {} → {}\n\
+         \x20    the ceiling costs the undivided arm {:.1} s ({:.3}x) on its own, path unchanged.\n",
+        fresh_total[0],
+        fresh_total[1],
+        fresh_total[0] / fresh_total[1],
+        fresh_retracts[0],
+        fresh_retracts[1],
+        ceiling_total[0],
+        ceiling_total[1],
+        ceiling_total[0] / ceiling_total[1],
+        ceiling_retracts[0],
+        ceiling_retracts[1],
+        ceiling_total[0] - fresh_total[0],
+        ceiling_total[0] / fresh_total[0],
+    );
+
+    stage_l_region_one(input, regions, &arms, &kinematics);
+}
+
+/// §0h's region-1 rows — the PCA-minor direction, and the flat-top bracket —
+/// re-run under the same two arms.
+///
+/// The rotated cells are re-derived here rather than borrowed from Stage K:
+/// Stage K does not return them, and rotating 0° cells is the invalid operation
+/// §0h explicitly refuses. Same grid, same rule, same membership guard.
+fn stage_l_region_one(
+    input: &A3Inputs<'_>,
+    regions: &[RegionCells],
+    arms: &[LinkRegime<'_>; 2],
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+) {
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::surface_link::LinkCeiling;
+
+    let Some(region) = regions.first() else {
+        return;
+    };
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    let safe_z = input.mesh.bbox.max.z + 5.0;
+    let Some((pca_minor_deg, elongation)) =
+        pca_minor_and_elongation(&region.boundary, input.stepover)
+    else {
+        println!("     SKIP region-1 PCA rows: no PCA axis.\n");
+        return;
+    };
+    println!(
+        "   ── region 1, §0h's PCA-minor direction {pca_minor_deg:.1}° (elongation \
+         {elongation:.2}) ──"
+    );
+    let rotated_grid = grid_for_direction(
+        input.mesh,
+        input.index,
+        input.fine,
+        input.stepover,
+        pca_minor_deg,
+    );
+    let (rotated_cells, rotated_topology) =
+        lattice_boustrophedon_cells(&rotated_grid, &region.boundary, effective_min_z);
+    let boundary = RegionSet::new(vec![region.boundary.clone()]);
+    if rotated_cells.is_empty()
+        || !cell_membership_matches(
+            &rotated_grid,
+            &region.boundary,
+            &rotated_cells,
+            effective_min_z,
+        )
+    {
+        println!("     REFUSE rotated rows: cell polygons do not preserve the PCA lattice.\n");
+    } else {
+        let undivided = cost_under_arms(
+            input,
+            &rotated_grid,
+            std::slice::from_ref(&region.boundary),
+            &boundary,
+            kinematics,
+            arms,
+        );
+        let celled = cost_under_arms(
+            input,
+            &rotated_grid,
+            &rotated_cells,
+            &boundary,
+            kinematics,
+            arms,
+        );
+        print_a3_row(
+            "PCA undivided",
+            &arms[0],
+            None,
+            &undivided[0],
+            RECORDED_FRESH_PCA.first().copied(),
+        );
+        print_a3_row("PCA undivided", &arms[1], None, &undivided[1], None);
+        print_a3_row(
+            "PCA cells",
+            &arms[0],
+            Some(rotated_cells.len()),
+            &celled[0],
+            RECORDED_FRESH_PCA.get(1).copied(),
+        );
+        print_a3_row(
+            "PCA cells",
+            &arms[1],
+            Some(rotated_cells.len()),
+            &celled[1],
+            None,
+        );
+        println!(
+            "       ({rotated_topology} topology cells)  cells delta: fresh {:.3}x, ceiling \
+             {:.3}x  (ceiling / fresh = {:.3})",
+            delta(&undivided[0], &celled[0]),
+            delta(&undivided[1], &celled[1]),
+            delta(&undivided[1], &celled[1]) / delta(&undivided[0], &celled[0])
+        );
+    }
+
+    // The pessimistic bracket: no dexel at all, the analytic fresh-stock top —
+    // Stage G's "ceiling @ mesh top" regime, but now with the production
+    // flush_ride / airborne priors and the profile-aware clearance A1 landed.
+    // Production sits BETWEEN this and the machined arm above.
+    let flat = LinkRegime::rest_op(
+        "flat-top",
+        safe_z,
+        LinkCeiling {
+            stock: None,
+            tool_radius: input.fine.envelope_radius_mm(),
+            fallback_top_z: input.mesh.bbox.max.z,
+        },
+    );
+    println!("   ── region 1, flat-top ceiling (pessimistic bracket) ──");
+    if region.cells.is_empty() {
+        println!("     REFUSE flat-top bracket: region 1 has no extracted 0° cell polygons.\n");
+        return;
+    }
+    let flat_arms = [flat];
+    let undivided = cost_under_arms(
+        input,
+        input.zero_grid,
+        std::slice::from_ref(&region.boundary),
+        &boundary,
+        kinematics,
+        &flat_arms,
+    );
+    let celled = cost_under_arms(
+        input,
+        input.zero_grid,
+        &region.cells,
+        &boundary,
+        kinematics,
+        &flat_arms,
+    );
+    print_a3_row("0° undivided", &flat, None, &undivided[0], None);
+    print_a3_row(
+        "0° cells",
+        &flat,
+        Some(region.cells.len()),
+        &celled[0],
+        None,
+    );
+    println!(
+        "       cells delta under the flat-top bracket: {:.3}x\n",
+        delta(&undivided[0], &celled[0])
+    );
+    println!(
+        "   A3 reads the `ceiling / fresh` column: > 1.00 means the ceiling AMPLIFIES the\n\
+         cell candidate's advantage (the undivided arm's long hops are penalised harder),\n\
+         < 1.00 means it COMPRESSES it. The absolute ceiling-arm seconds are the\n\
+         operator-honest figures; the fresh-arm ones never were, on a rest tier.\n"
+    );
+}
+
+/// A3 re-baseline (`PROGRAMME.md` Track A3). Same focused setup as
+/// [`wanaka_monotone_cells_kept_retracts`] — deliberately duplicated rather
+/// than factored out, so Stage L is additive and cannot move an existing
+/// stage's numbers — then Stage L only.
+///
+/// ```text
+/// cargo test -p rs_cam_core --test thin_organic_island_widths \
+///   wanaka_ceiling_rebaseline_a3 -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+fn wanaka_ceiling_rebaseline_a3() {
+    let path = Path::new(WANAKA_MESH);
+    if !path.exists() {
+        println!("SKIP: {WANAKA_MESH} not present on this machine.");
+        return;
+    }
+
+    let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
+    let index = SpatialIndex::build_auto(&mesh);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
+    let ladder = TierLadder::new(&tools).expect("ladder");
+    let never_cancel = || false;
+    let map = compute_tier_map(
+        &mesh,
+        &index,
+        &ladder,
+        &TierMapParams {
+            cell_mm: CELL_MM,
+            tolerance_mm: TOLERANCE_MM,
+            margin_mm: MARGIN_MM,
+            treatment: ResidualTreatment::SlopeCompensated,
+        },
+        &never_cancel,
+    )
+    .expect("tier map");
+    let cusp_radii: Vec<f64> = tools.iter().map(|tool| tool.cusp_radius_mm()).collect();
+    let islands = extract_tier_islands(
+        &map,
+        &TierIslandParams {
+            coarseness: COARSENESS,
+            overlap_mm: OVERLAP_MM,
+            max_regions_per_tier: MAX_REGIONS_PER_TIER,
+            ..TierIslandParams::default()
+        },
+        &cusp_radii,
+    )
+    .expect("islands");
+    let Some(fine) = islands.per_tier.iter().find(|set| set.tier == 1) else {
+        println!("SKIP: no tier 1 machining region.");
+        return;
+    };
+    if fine.machining.is_empty() {
+        println!("SKIP: tier 1 machining region is empty.");
+        return;
+    }
+
+    let surface = build_classification_surface_with_sampler_and_cancel(
+        &mesh,
+        &index,
+        &r10,
+        unified_finish_classification_resolution(&r10, OP_TOLERANCE_MM),
+        ClassificationSampler::PRODUCTION,
+        &never_cancel,
+    )
+    .expect("classification surface");
+    let heightmap = &surface.heightmap;
+    let covered: Vec<bool> = heightmap
+        .covered_flags()
+        .iter()
+        .enumerate()
+        .map(|(i, &covered)| {
+            if !covered {
+                return false;
+            }
+            let row = i / heightmap.cols;
+            let col = i % heightmap.cols;
+            fine.machining.contains(&P2::new(
+                heightmap.origin_x + col as f64 * heightmap.cell_size,
+                heightmap.origin_y + row as f64 * heightmap.cell_size,
+            ))
+        })
+        .collect();
+    let mut planner = FinishPlannerParams::for_tool(cusp_radii[1]);
+    planner.overlap_mm = OVERLAP_MM;
+    let planned = decompose(&surface.slope_map, &covered, &[], &planner);
+    let stepover = equal_cusp_stepover_mm(cusp_radii[1], CUSP_HEIGHT_MM);
+    println!(
+        "A3 setup: {} planned regions, Shallow raster stepover {stepover:.4} mm\n",
+        planned.regions.len()
+    );
+
+    let grid = grid_for_stage_i(&mesh, &index, &r10, stepover);
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|region| region.band == FinishBand::Shallow)
+        .map(|region| &region.polygon)
+        .collect();
+    shallow.sort_by(|a, b| b.area().total_cmp(&a.area()));
+    // Same three regions, same cell rule as Stage I — recomputed rather than
+    // re-printed, because Stage L compares arms and not cells.
+    let regions: Vec<RegionCells> = shallow
+        .into_iter()
+        .take(3)
+        .map(|boundary| {
+            let (cells, topology_cells) =
+                lattice_boustrophedon_cells(&grid, boundary, effective_min_z);
+            RegionCells {
+                boundary: boundary.clone(),
+                cells,
+                topology_cells,
+            }
+        })
+        .collect();
+
+    let input = A3Inputs {
+        mesh: &mesh,
+        index: &index,
+        fine: &r10,
+        coarse: &r15,
+        tier_map: &map,
+        zero_grid: &grid,
+        stepover,
+    };
+    stage_l(&input, &regions);
 }
