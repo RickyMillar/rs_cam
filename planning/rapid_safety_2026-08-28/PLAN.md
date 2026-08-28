@@ -228,6 +228,30 @@ made unconditional.
 
 ---
 
+> **PHASE M OUTCOME (2026-08-28, commits `fa8ee8d3` + evidence docs):**
+> M1 measured first and REFUTED part of this phase's own framing: the
+> sub-0.02 discard population is 48% of cutting samples but 99.75% hard
+> zeros, so the denominator fix moves MAGNITUDE (3.69×/5.74× time-weighted
+> mean engagement on the wanaka taper ops), not population, and M-c's
+> "air-cut % zero set by the shank" is NOT supported at 0.3 mm (−0.26 pp).
+> M3 landed the local fix (engaged-width denominator at
+> `StampPartial::finish`; power.rs self-consistent via the corrected input,
+> unchanged). M2 evidence: 3D BallNose golden moved on all 24 predicted
+> fields (regenerated via its own mechanism, before-diff preserved), 2.5D
+> flat golden byte-identical through the run; smoke matrix 6 upward metric
+> moves, zero verdict flips, flats bit-stable. M4: CLAUDE.md F-HEATMAP line
+> corrected; U6 ledger deferred until U6 is fixed. Pending: the wanaka
+> after-arm rerun (lane was reclaimed); U4–U8 siblings open.
+>
+> **RESIDUAL — Track F's caveat does NOT fully lift.** M1's largest single
+> number — 703k air-classified samples removing real material, 6.8% of
+> runtime — is a SECOND mechanism (hard zeros: fresh-material threshold +
+> resolution), not U3, and M3 does not touch it. Post-M3 the denominator
+> class is fixed; **air-cut % on fine tools remains misattributed at
+> 0.3 mm** and is resolution-conditional (M1 §L3). Track F may now grade
+> engagement/power/deflection magnitudes, but must not treat air-cut % on
+> fine tools as clean.
+
 # Phase M — load-lane engagement is normalised by the shank
 
 ## The defect

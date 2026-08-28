@@ -302,6 +302,17 @@ fewer walls in the viewport.
 
 ## Track F — Validation and operator surface
 
+> **Phase M gate status (2026-08-28): PARTIALLY LIFTED.** The engagement
+> denominator is fixed (`fa8ee8d3` — engaged width, not shank), so Track F
+> may grade engagement / power / deflection magnitudes on tapers. BUT
+> air-cut % on fine tools remains misattributed by a SECOND mechanism
+> (hard-zero samples: fresh-material threshold + resolution; 6.8% of
+> runtime on the M1 trace, resolution-conditional) that M3 does not touch —
+> see `planning/rapid_safety_2026-08-28/PLAN.md` Phase M outcome. Track F
+> must not treat air-cut % on fine tools as clean. F1's tip÷10 resolution
+> rule helps here (finer cells shrink the hard-zero class) but does not
+> erase the caveat — verify on the trace, don't assume.
+
 **F1** — the real wanaka A/B, sim at tool-appropriate resolution (operator rule:
 ≈ tip diameter ÷ 10, bound by the smallest tool in the run — which is why the
 R0.5 pencil forced 0.1 mm).
