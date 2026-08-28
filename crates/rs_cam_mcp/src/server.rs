@@ -730,6 +730,13 @@ pub struct PreviewTierMapParam {
     /// the merge radius is raised and the close re-run (bounded), and what
     /// merged is reported. Default 24.
     pub max_regions_per_tier: Option<usize>,
+    /// When true, tier 0 SKIPS the fine tiers' owned islands instead of
+    /// sweeping the whole board — spelled identically to the planner's
+    /// dial so one dial set drives both calls. The island preview itself
+    /// does not change (the dial moves tier 0's boundary, not the island
+    /// map), but the value is threaded through so the previewed spec IS
+    /// the planned spec. Default false.
+    pub coarse_skips_fine_islands: Option<bool>,
     /// Absolute path ending in `.svg` to write the island preview to.
     /// Unset = numbers only. The parent directory must already exist —
     /// the call refuses rather than creating one. Polygons only, so a
