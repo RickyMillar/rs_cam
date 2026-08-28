@@ -83,18 +83,34 @@ supply a shipped algorithm, parameter, implementation, or product claim.
 
 - Qiang Zou, Charlie C. L. Wang & Hsi-Yung Feng, *Length-optimal tool path
   planning for freeform surfaces with preferred feed directions* (2020),
-  arXiv:2009.02660, <https://arxiv.org/abs/2009.02660> (abstract retrieved and
-  read 2026-08-28). The paper describes a Poisson formulation trading a
-  preferred feed-direction field against constant scallop height and total
-  path length. Its full numerical method and any repo adaptation remain to be
-  source-read and attributed at the implementation site.
+  arXiv:2009.02660, <https://arxiv.org/abs/2009.02660> (full text of v1 read
+  2026-08-29; the abs page lists no journal reference — do not cite a
+  published version from memory). Iso-level tool paths from a single Poisson
+  solve (Eqs. 14–15, cotangent-Laplacian FEM): confirmed against the full
+  text, with the caveat that the global optimality attaches to the surrogate
+  vector-field fit, not the stated alignment+scallop bicriteria objective,
+  and the paper does not compute the preferred-direction field it consumes.
+  Full extraction with all 14 implementation gaps:
+  `planning/conformal_finish_2026-08-28/paper_2009.02660_extraction.md`. Any
+  repo adaptation must be attributed at the implementation site; the
+  planned t₁ (max-curvature) feed-direction field is repo-authored, not the
+  paper's.
 - Changqing Shen, BingZhou Xu, Xiaojian Zhang, Sijie Yan & Han Ding,
   *Conformal Slit Mapping Based Spiral Tool Trajectory Planning for Ball-end
   Milling on Complex Freeform Surfaces* (2025), arXiv:2504.06310,
-  <https://arxiv.org/abs/2504.06310> (preprint abstract retrieved and read
-  2026-08-28). It is a candidate source for a conformal-map continuous-spiral
-  feasibility study, not evidence that rs_cam can yet make the paper's
-  performance or quality claims.
+  <https://arxiv.org/abs/2504.06310> (full text of v2 read 2026-08-29; no
+  journal reference on the abs page). The conformal slit map itself is NOT
+  constructed in this paper — it is consumed from M. M. S. Nasser,
+  J. Sci. Comput. 78 (2019) 582–606, Yunus/Murid/Nasser, Proc. R. Soc. A 470
+  (2014), and Shen et al., Int. J. Robot. Res. 43 (2024) 2183–2203 (DOI
+  10.1177/02783649241251385), with mesh flattening by Sawhney & Crane's
+  Boundary First Flattening. Those become attribution-required sources in
+  their own right if the hole/island phases are implemented. Full extraction
+  with all 15 gaps (including the dimensionally inconsistent printed scallop
+  formula and absent gouge handling):
+  `planning/conformal_finish_2026-08-28/paper_2504.06310_extraction.md`.
+  Not evidence that rs_cam can yet make the paper's performance or quality
+  claims.
 
 ### Tri-dexel volumetric simulation
 
