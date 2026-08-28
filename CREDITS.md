@@ -75,6 +75,27 @@ Primary upstream:
 
 - Kiri:Moto: <https://github.com/GridSpace/grid-apps>
 
+### Direction-field and conformal-spiral finishing research
+
+The following papers are recorded as **research references only** for the
+`planning/conformal_finish_2026-08-28/` feasibility programme. They do not yet
+supply a shipped algorithm, parameter, implementation, or product claim.
+
+- Qiang Zou, Charlie C. L. Wang & Hsi-Yung Feng, *Length-optimal tool path
+  planning for freeform surfaces with preferred feed directions* (2020),
+  arXiv:2009.02660, <https://arxiv.org/abs/2009.02660> (abstract retrieved and
+  read 2026-08-28). The paper describes a Poisson formulation trading a
+  preferred feed-direction field against constant scallop height and total
+  path length. Its full numerical method and any repo adaptation remain to be
+  source-read and attributed at the implementation site.
+- Changqing Shen, BingZhou Xu, Xiaojian Zhang, Sijie Yan & Han Ding,
+  *Conformal Slit Mapping Based Spiral Tool Trajectory Planning for Ball-end
+  Milling on Complex Freeform Surfaces* (2025), arXiv:2504.06310,
+  <https://arxiv.org/abs/2504.06310> (preprint abstract retrieved and read
+  2026-08-28). It is a candidate source for a conformal-map continuous-spiral
+  feasibility study, not evidence that rs_cam can yet make the paper's
+  performance or quality claims.
+
 ### Tri-dexel volumetric simulation
 
 The stock simulation in `rs_cam` uses a tri-dexel approach: three orthogonal grids of ray segment lists that represent material presence along the Z, X, and Y axes. This is the industry-standard technique for 3-axis CNC simulation, used by commercial engines including ModuleWorks (Mastercam, Siemens NX) and MecSoft (RhinoCAM, VisualCAD/CAM).
