@@ -45,13 +45,14 @@ flips, 0 regressions. All on V-bit/ball cases, all upward: AS008 v_carve
 engagement 5.00×, AS009 chamfer 3.32× (power 2.20×), AS010 inlay 4.69×
 (power 1.46×), AS015 scallop 1.68×. Every flat case bit-stable.
 
-**Wanaka (the M1 trace's project):** PENDING — the after-run was stopped
-mid-flight (machine lane reclaimed); M1's measured factors (3.69× / 5.74×
-time-weighted mean engagement on ops 7/8) are the predicted movement.
-Rerun `cargo run -p rs_cam_cli --release -- project
-planning/airrun_2026-08-19/wanaka200.toml --resolution 0.3 --summary` when
-the lane is free and diff its trace summary against
-`falsify_s3/simulation.json`'s (the pre-M3 arm, preserved).
+**Wanaka (the M1 trace's project, rerun 2026-08-29):** lands exactly on
+M1's predictions — `average_engagement` 0.0557 → 0.1688 (3.03×
+project-wide; the per-op taper factors are M1's 3.69×/5.74× diluted by the
+flat ops), `air_cut_pct_of_total_runtime` 60.617 → 60.357 (**−0.26 pp —
+the precise number M1's streaming pass predicted**), rapid collisions 0 on
+all 8 ops (S3 holding under M3). A measurement predicted to three decimals
+by an independent analysis of the prior trace is the strongest
+cross-validation this phase has produced.
 
 ## What M1 predicted vs what M2 measured
 
