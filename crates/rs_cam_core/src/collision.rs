@@ -428,6 +428,12 @@ pub struct RapidCollision {
 
 /// Check for rapid (G0) moves that pass through remaining stock material.
 ///
+/// **Scope since Phase S2**: this is the pre-pass for entries whose removal is
+/// ANALYTIC (drill / alignment-pin drill via `apply_drill_op`) and which
+/// therefore never enter a replay walk. Stamped entries are checked by
+/// [`RapidClearanceCheck`] inside their own walk, against live stock and with
+/// the cutter's profile. Behaviour here is unchanged.
+///
 /// Samples points along each rapid move and queries the dexel Z-grid to
 /// determine whether material exists at that height. The grid passed in
 /// is a *snapshot* — it is not updated as the toolpath progresses, so
@@ -541,6 +547,135 @@ pub fn check_rapid_collisions_against_stock(
     }
 
     collisions
+}
+
+/// Clearance slack the live rapid check allows, expressed in dexel cells.
+///
+/// [`crate::dexel_stock::TriDexelStock::max_clearance_tip_z_for_profile`] errs
+/// HIGH by construction, and its own docs name the three over-reaches that
+/// stack into that error. Each is a fixed multiple of the cell size:
+///
+/// * the cell **half-diagonal** (`FRAC_1_SQRT_2`), because the profile is
+///   evaluated at the closest point the cell's material could occupy;
+/// * the **half-cell dilation** of the probe disc (`0.5`);
+/// * one cell of `conservative_top` **sub-cell over-read** (`1.0`) — the
+///   channel reports how high material may stand ANYWHERE in the cell, so a
+///   cell the cutter grazed reads at its pre-cut height until it is covered
+///   completely.
+///
+/// Total ≈ 2.207 cells. The measured strike class this check exists to see
+/// (Phase S1: −0.5 to −4 mm at 0.3 mm cells) sits far above it; benign
+/// own-kerf rides and discretisation residue sit below.
+///
+/// It scales with the grid, so it is never hardcoded to one resolution —
+/// see [`rapid_clearance_tolerance_mm`].
+pub const RAPID_CLEARANCE_TOLERANCE_CELLS: f64 = std::f64::consts::FRAC_1_SQRT_2 + 0.5 + 1.0;
+
+/// [`RAPID_CLEARANCE_TOLERANCE_CELLS`] in millimetres, for a grid of
+/// `cell_size`.
+pub fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
+    cell_size * RAPID_CLEARANCE_TOLERANCE_CELLS
+}
+
+/// Live-stock, profile-aware rapid clearance check (Phase S2).
+///
+/// [`check_rapid_collisions_against_stock`] asks a **zero-radius point** of a
+/// **frozen** pre-op snapshot. That pair is why the measured strike class was
+/// invisible: the strikes are 0.5–2.9 mm off-axis (inter-pass crests at rough
+/// swath edges), where the cutter's flank meets material the axis never passes
+/// over (`planning/rapid_safety_2026-08-28/S1_RESULTS.md` §3).
+///
+/// This one rides the simulator's own walk instead, so each rapid is evaluated
+/// against the stock **as it exists at that moment of playback** — which is
+/// what lets the query be a profile-aware disc without over-flagging the rows
+/// the same toolpath has already cut. It has no F3-style same-XY walk-back and
+/// needs none: the live stock already knows a just-cut column is empty.
+///
+/// One [`RapidCollision`] per rapid MOVE (first striking sample wins), so the
+/// count keeps its established meaning — *rapids that collide*, not strike
+/// points.
+pub struct RapidClearanceCheck<'a> {
+    cutter: &'a dyn crate::tool::MillingCutter,
+    hits: Vec<RapidCollision>,
+}
+
+impl<'a> RapidClearanceCheck<'a> {
+    /// A check that will probe with `cutter`'s profile.
+    pub fn new(cutter: &'a dyn crate::tool::MillingCutter) -> Self {
+        Self {
+            cutter,
+            hits: Vec::new(),
+        }
+    }
+
+    /// Does this rapid enter material standing in `stock` right now?
+    ///
+    /// `radius` is the ENVELOPE radius the walk stamps with, so the probe disc
+    /// and the removal it is checked against are the same size.
+    ///
+    /// Sampling matches the pre-pass: every ≤ 1 mm along the segment, both
+    /// endpoints included. `None` from the clearance primitive means the disc
+    /// is off-grid or the cells lie past the envelope — no constraint at that
+    /// sample, the same silence an out-of-grid rapid has always had.
+    pub fn strikes(
+        &self,
+        stock: &crate::dexel_stock::TriDexelStock,
+        start: P3,
+        end: P3,
+        radius: f64,
+    ) -> bool {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let dz = end.z - start.z;
+
+        // Ascending Z-only rapids are exempt, and this is a proof rather than
+        // an assertion: every shipped cutter's `height_at_radius` is
+        // non-decreasing in r, so the solid a cutter occupies at a higher tip
+        // Z is a strict subset — in the column sense — of the one it occupied
+        // below. The tool just came up through this material; it cannot meet
+        // anything on the way out. (Holder and shank strikes are a different
+        // question, and Phase S4's.)
+        let xy_dist_sq = dx * dx + dy * dy;
+        if dz > 0.0 && xy_dist_sq < 0.01 {
+            return false;
+        }
+
+        let tolerance = rapid_clearance_tolerance_mm(stock.z_grid.cell_size);
+        let dist = (xy_dist_sq + dz * dz).sqrt();
+        let n_steps = (dist / 1.0).ceil().max(1.0) as usize;
+        for step in 0..=n_steps {
+            let t = step as f64 / n_steps as f64;
+            let px = start.x + t * dx;
+            let py = start.y + t * dy;
+            let pz = start.z + t * dz;
+            if stock
+                .max_clearance_tip_z_for_profile(px, py, radius, self.cutter)
+                .is_some_and(|clearance| pz < clearance - tolerance)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Record a struck rapid.
+    pub fn record(&mut self, move_index: usize, start: P3, end: P3) {
+        self.hits.push(RapidCollision {
+            move_index,
+            start,
+            end,
+        });
+    }
+
+    /// The rapids recorded so far.
+    pub fn hits(&self) -> &[RapidCollision] {
+        &self.hits
+    }
+
+    /// Consume the check and take its findings.
+    pub fn into_hits(self) -> Vec<RapidCollision> {
+        self.hits
+    }
 }
 
 #[cfg(test)]

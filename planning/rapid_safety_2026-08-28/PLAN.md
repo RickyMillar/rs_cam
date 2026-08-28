@@ -113,6 +113,12 @@ Outcome decides everything downstream:
 > walk with `max_clearance_tip_z_for_profile` (a disc upgrade on the frozen
 > snapshot would over-flag the op's own already-cut rows). Drill entries
 > (analytic path) keep the pre-pass.
+>
+> **S2 LANDED (2026-08-28, see S2_RESULTS.md):** live-walk profile-aware
+> rapid check; falsification PASSED — the wanaka run went 0 → 202
+> rapid-through-stock collisions (op 7: 179, op 8: 22, drills 0), dev loop
+> green. Known limits ledgered: kerf-rim √-over-read on vertical flanks,
+> no traverse early-out, S5 prefix restores pre-fix counts.
 
 ## S2 — fix the detector before the emitter
 

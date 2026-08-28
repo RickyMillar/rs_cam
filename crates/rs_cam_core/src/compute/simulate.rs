@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::collision::{RapidCollision, check_rapid_collisions_against_stock};
+use crate::collision::{RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock};
 use crate::compute::sim_prefix::{PrefixState, SimMemo};
 use crate::compute::transform::SetupTransformInfo;
 use crate::dexel_mesh::dexel_stock_to_mesh;
@@ -745,6 +745,24 @@ pub fn transform_stock_mesh_to_global(
     out
 }
 
+/// Move one entry's live-walk rapid findings onto the project-wide vectors.
+///
+/// `total_moves` is the entry's base in the project-wide move numbering, so the
+/// published index stays global — the same arithmetic the drill pre-pass above
+/// uses, kept in one place because two call sites now need it.
+fn collect_rapid_hits(
+    check: RapidClearanceCheck<'_>,
+    total_moves: usize,
+    collisions: &mut Vec<RapidCollision>,
+    move_indices: &mut Vec<usize>,
+) {
+    let hits = check.into_hits();
+    for rc in &hits {
+        move_indices.push(total_moves + rc.move_index);
+    }
+    collisions.extend(hits);
+}
+
 /// Run a full stock simulation over one or more setup groups.
 ///
 /// This is the headless (no GUI) version of the simulation pipeline:
@@ -1015,9 +1033,14 @@ where
             }
             prior_stocks.insert(entry.id, pre_carve_stock);
 
-            // Check rapid collisions against the *current* stock state
-            // (after all previous toolpaths, before this one carves).
-            {
+            // Rapid collisions, split by removal kernel (S2). An entry whose
+            // material is removed ANALYTICALLY never enters a replay walk, so
+            // it keeps the pre-pass against the *current* stock state (after
+            // all previous toolpaths, before this one carves). Stamped entries
+            // are checked inside their own walk below, against live stock and
+            // with the cutter's profile — the frozen snapshot cannot carry a
+            // disc query without over-flagging the op's own already-cut rows.
+            if entry.drill_op.is_some() {
                 let rapids =
                     check_rapid_collisions_against_stock(entry_toolpath, &group_stock.z_grid);
                 for rc in &rapids {
@@ -1086,8 +1109,9 @@ where
                         intent_transits,
                     )
                 };
+                let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
                 let mut samples = group_stock
-                    .simulate_toolpath_with_lut_metrics_cancel(
+                    .simulate_toolpath_with_lut_metrics_rapid_checked(
                         entry_toolpath,
                         &lut,
                         &entry.tool,
@@ -1103,19 +1127,34 @@ where
                         &transit_moves,
                         request.metric_options.capture_arc_engagement,
                         &|| cancel.load(Ordering::SeqCst),
+                        Some(&mut rapid_check),
                     )
                     .map_err(|_cancelled| SimulationError::Cancelled)?;
                 cut_samples.append(&mut samples);
+                collect_rapid_hits(
+                    rapid_check,
+                    total_moves,
+                    &mut rapid_collisions,
+                    &mut rapid_collision_move_indices,
+                );
             } else {
+                let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
                 group_stock
-                    .simulate_toolpath_with_lut_cancel(
+                    .simulate_toolpath_with_lut_cancel_rapid_checked(
                         entry_toolpath,
                         &lut,
                         radius,
                         direction,
                         &|| cancel.load(Ordering::SeqCst),
+                        Some(&mut rapid_check),
                     )
                     .map_err(|_cancelled| SimulationError::Cancelled)?;
+                collect_rapid_hits(
+                    rapid_check,
+                    total_moves,
+                    &mut rapid_collisions,
+                    &mut rapid_collision_move_indices,
+                );
             }
             total_moves += entry_toolpath.moves.len();
 

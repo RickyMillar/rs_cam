@@ -19,6 +19,7 @@ use crate::dexel::DexelGrid;
 use crate::ids::ToolpathId;
 
 use crate::arc_util::linearize_arc_into;
+use crate::collision::RapidClearanceCheck;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::radial_profile::RadialProfileLUT;
@@ -64,6 +65,26 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
+        self.simulate_toolpath_with_lut_cancel_rapid_checked(
+            toolpath, lut, radius, direction, cancel, None,
+        )
+    }
+
+    /// [`Self::simulate_toolpath_with_lut_cancel`] with the Phase S2 live-stock
+    /// rapid clearance check ridden along the walk.
+    ///
+    /// The sibling exists rather than a widened signature so every other caller
+    /// — playback, the adaptive3d probes, the benches — keeps its call site and
+    /// its cost.
+    pub fn simulate_toolpath_with_lut_cancel_rapid_checked(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        cancel: &dyn CancelCheck,
+        rapid_check: Option<&mut RapidClearanceCheck<'_>>,
+    ) -> Result<(), Cancelled> {
         if toolpath.moves.is_empty() {
             return Ok(());
         }
@@ -75,6 +96,7 @@ impl TriDexelStock {
             1,
             toolpath.moves.len(),
             cancel,
+            rapid_check,
         )
     }
 
@@ -105,12 +127,22 @@ impl TriDexelStock {
         first_move: usize,
         end_move: usize,
         cancel: &dyn CancelCheck,
+        rapid_check: Option<&mut RapidClearanceCheck<'_>>,
     ) -> Result<(), Cancelled> {
         if toolpath.moves.len() < 2 {
             return Ok(());
         }
         let first = first_move.max(1);
         let last = end_move.min(toolpath.moves.len());
+        // The clearance query reads the Z grid's high-side `conservative_top`
+        // channel, which is the tool-axis grid only for top-down removal.
+        // Every per-setup stock is simulated `FromTop` (`compute/simulate.rs`);
+        // anything else is checked by nothing rather than by the wrong grid.
+        let mut rapid_check = if matches!(direction, StockCutDirection::FromTop) {
+            rapid_check
+        } else {
+            None
+        };
 
         let mut arc_buf = Vec::new();
         // S2 — same air-skip as the metric path. This is the playback stamp
@@ -134,7 +166,29 @@ impl TriDexelStock {
             let end = toolpath.moves[i].target;
 
             match toolpath.moves[i].move_type {
-                MoveType::Rapid => {}
+                MoveType::Rapid => {
+                    // S2, same contract as the metric walk: judge the rapid
+                    // against live stock, and flush the queued stamps only when
+                    // one looks like a strike (a stamp can only remove
+                    // material, so the un-flushed grid over-reports, never
+                    // under-reports).
+                    if rapid_check
+                        .as_deref()
+                        .is_some_and(|check| check.strikes(self, start, end, radius))
+                    {
+                        if let Some(queue) = dispatch.as_mut()
+                            && !queue.is_empty()
+                        {
+                            let grid = self.ensure_grid(direction);
+                            queue.run_batch(grid, lut, radius, from_high, &mut air_mip, cancel)?;
+                        }
+                        if let Some(check) = rapid_check.as_deref_mut()
+                            && check.strikes(self, start, end, radius)
+                        {
+                            check.record(i, start, end);
+                        }
+                    }
+                }
                 // NOTE: `MoveIntent::Retract` linear feeds are stamped here like
                 // any other cut, exactly as they always have been. The metric
                 // path excludes them (§6.C); this one does not, and changing
@@ -297,7 +351,6 @@ impl TriDexelStock {
     }
 
     /// Simulate with metrics using a pre-built LUT.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     #[allow(clippy::too_many_arguments)]
     pub fn simulate_toolpath_with_lut_metrics_cancel(
         &mut self,
@@ -317,9 +370,64 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
+        self.simulate_toolpath_with_lut_metrics_rapid_checked(
+            toolpath,
+            lut,
+            cutter,
+            radius,
+            direction,
+            toolpath_id,
+            spindle_rpm,
+            flute_count,
+            rapid_feed_mm_min,
+            sample_step_mm,
+            semantic_trace,
+            span_paths_by_move,
+            transit_moves,
+            capture_arc_engagement,
+            cancel,
+            None,
+        )
+    }
+
+    /// [`Self::simulate_toolpath_with_lut_metrics_cancel`] with the Phase S2
+    /// live-stock rapid clearance check ridden along the walk.
+    ///
+    /// This is the production seam: `compute/simulate.rs` carves `group_stock`
+    /// here, so a rapid is judged against the stock every prior toolpath AND
+    /// every prior move of this one has left behind — which is what makes a
+    /// profile-aware disc query usable without over-flagging the op's own
+    /// already-cut rows.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[allow(clippy::too_many_arguments)]
+    pub fn simulate_toolpath_with_lut_metrics_rapid_checked(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
+        radius: f64,
+        direction: StockCutDirection,
+        toolpath_id: ToolpathId,
+        spindle_rpm: u32,
+        flute_count: u32,
+        rapid_feed_mm_min: f64,
+        sample_step_mm: f64,
+        semantic_trace: Option<&ToolpathSemanticTrace>,
+        span_paths_by_move: &[Vec<SpanId>],
+        transit_moves: &[bool],
+        capture_arc_engagement: bool,
+        cancel: &dyn CancelCheck,
+        rapid_check: Option<&mut RapidClearanceCheck<'_>>,
+    ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         if toolpath.moves.len() < 2 {
             return Ok(Vec::new());
         }
+        // Same grid precondition as the playback walk — see `replay_moves`.
+        let mut rapid_check = if matches!(direction, StockCutDirection::FromTop) {
+            rapid_check
+        } else {
+            None
+        };
         let sample_step_mm = sample_step_mm.max(1e-3);
         let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
         let empty_span_path: Vec<SpanId> = Vec::new();
@@ -421,6 +529,33 @@ impl TriDexelStock {
                         &mut next_sample_index,
                         &mut samples,
                     );
+                    // S2: the rapid is judged against the stock as it stands
+                    // HERE, mid-walk. Queued stamps can only REMOVE material,
+                    // so a rapid that clears the un-flushed grid clears the
+                    // flushed one too — the flush is paid only on a candidate.
+                    if rapid_check
+                        .as_deref()
+                        .is_some_and(|check| check.strikes(self, start, end, radius))
+                    {
+                        self.flush_pending_stamps(
+                            lut,
+                            radius,
+                            direction,
+                            capture_arc_engagement,
+                            &mut air_mip,
+                            &mut dispatch,
+                            &mut swept,
+                            &mut samples,
+                            cutter,
+                            flute_length,
+                            cancel,
+                        )?;
+                        if let Some(check) = rapid_check.as_deref_mut()
+                            && check.strikes(self, start, end, radius)
+                        {
+                            check.record(move_index, start, end);
+                        }
+                    }
                 }
                 MoveType::Linear { feed_rate } if is_retract_feed => {
                     sample_segment_runtime(
@@ -612,6 +747,69 @@ impl TriDexelStock {
         Ok(samples)
     }
 
+    /// Drain both stamp queues into the grid so the stock reflects every move
+    /// walked so far.
+    ///
+    /// Same two blocks as the metric walk's tail, and deliberately so: the S2
+    /// rapid check needs the LIVE stock, and under the default (queued)
+    /// dispatch the moves preceding a rapid may still be sitting in a batch.
+    /// Splitting a batch earlier cannot move a result — job order within a band
+    /// is preserved either way — so this is a schedule change only.
+    #[allow(clippy::too_many_arguments)]
+    fn flush_pending_stamps(
+        &mut self,
+        lut: &RadialProfileLUT,
+        radius: f64,
+        direction: StockCutDirection,
+        capture_arc_engagement: bool,
+        air_mip: &mut Option<TileMaxTop>,
+        dispatch: &mut Option<BandDispatch>,
+        swept: &mut Option<SweptDispatch>,
+        samples: &mut [SimulationCutSample],
+        cutter: &dyn MillingCutter,
+        flute_length: f64,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(), Cancelled> {
+        let from_high = direction.cuts_from_high_side();
+        if let Some(queue) = dispatch.as_mut()
+            && !queue.is_empty()
+        {
+            let grid = self.ensure_grid(direction);
+            run_batch_into_samples(
+                queue,
+                grid,
+                lut,
+                radius,
+                from_high,
+                capture_arc_engagement,
+                air_mip,
+                cancel,
+                samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        if let Some(queue) = swept.as_mut()
+            && !queue.is_empty()
+        {
+            let grid = self.ensure_grid(direction);
+            run_swept_batch_into_samples(
+                queue,
+                grid,
+                lut,
+                radius,
+                from_high,
+                capture_arc_engagement,
+                air_mip,
+                cancel,
+                samples,
+                cutter,
+                flute_length,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Simulate only moves `start_move..end_move` (for incremental playback).
     pub fn simulate_toolpath_range(
         &mut self,
@@ -654,6 +852,7 @@ impl TriDexelStock {
             start_move,
             end_move,
             &never_cancel,
+            None,
         );
     }
 
