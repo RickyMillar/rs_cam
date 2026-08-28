@@ -98,20 +98,46 @@ finishing ops of this one job.
    entire striking class was structurally invisible to that check. The
    suspicion was right; the instrument was blind.
 
-   S2's diagnosis priority also shifts: these strikes are **near-axis**
-   (margin@env == margin@shaved on the big ones — material under the tip),
-   so even a zero-radius point probe at the descent endpoint would see
-   1.3 mm of standing material. Point-probe blindness (S-b's original
-   theory) cannot explain the silence. Lead hypotheses, in order: (1)
-   **timing/stock-state** — if rapids are checked against the op's *final*
-   stock, this class vanishes, because the feed move immediately after each
-   descent cuts exactly the material the rapid plunged through; (2) the
-   misplaced-volume frame defect named at `RUN_LOG.md:1243`; (3) S-d
-   (mesh, not remaining stock); (4) a tolerance eating the depth. The fixed
-   detector must evaluate each rapid against the stock state **at the time
-   of the rapid** — the semantics this instrument just demonstrated — and
-   the falsification test is that a normal pipeline run of wanaka200.toml
-   then flags ops 7/8.
+   **RESOLVED 2026-08-28 (same day, S2 probe runs).** The near-axis
+   inference above was wrong — `margin@env == margin@shaved` only places the
+   binding material inside r = 2.954 mm, not under the tip — and the timing
+   hypothesis it motivated was refuted by direct measurement. The chain of
+   probe results:
+
+   - A fresh CLI run at HEAD (`project`, 0.3 mm) reproduces the identical
+     zero-clearance link descents in its own emitted G-code AND still
+     reports 0 rapid collisions — the silence is live, not historical.
+   - A synthetic test (`tests/rapid_check_wanaka_link_shape.rs`) proves the
+     checker DOES flag this exact stored shape when the stock stands above
+     the descent — the function, its F3 walk-back, timing and frame are all
+     healthy.
+   - Temporary tracing at the check seam: op 7's stored motion holds 2,278
+     rapids and **every one clears the pipeline's own stock at its end
+     point** — worst point margin **+0.100 mm**. The pipeline is
+     self-consistent at the exact XY.
+   - The raw op-6 motion arbitrates: near the worst strike, op 6's last
+     rough pass runs along Y=217 (floor ≈ 2.09) and there is **no op-6 pass
+     between Y=217 and Y=232** in that X band. The strike point (Y=220)
+     sits exactly at the Ø6 swath's edge, with un-roughed crest material
+     standing just north of it — up to a full 4.2 mm Z-level taller.
+
+   **Mechanism: S-b's original point-probe theory, reinstated.** The
+   descents are clear at their exact XY; the standing material is 0.5–2.9 mm
+   OFF-AXIS inside the tool envelope (inter-pass crests at rough swath
+   edges), where the taper's flank strikes it and a zero-radius point probe
+   cannot see it. S1's profile-aware disc query and the pipeline's point
+   probe are both correct instruments answering different questions; only
+   the disc question is the physical one.
+
+   **Fix shape this dictates (S2):** a naive disc upgrade on today's FROZEN
+   pre-op snapshot would over-flag the op's own already-cut rows (the same
+   artefact class as S1 v1's retracts), so the check must evaluate each
+   rapid against the **live stock mid-replay** — ride the replay walk
+   (`dexel_stock/simulation.rs replay_moves`) with
+   `max_clearance_tip_z_for_profile`, making the F3/ascent carve-outs
+   perf-only. Falsification: a normal pipeline run of wanaka200.toml then
+   flags ops 7/8; the drill ops (analytic path, no replay walk) keep the
+   existing pre-pass and must stay at zero.
 4. **Convergence with the finishing programme**: these striking links are the
    same retract-hop links Track G's detour observation and the ceiling work
    (§0g/§0h) are about. The links that cost TIME are the links that plunge.

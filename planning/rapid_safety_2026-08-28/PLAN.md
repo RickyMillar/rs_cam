@@ -104,6 +104,16 @@ Outcome decides everything downstream:
 - **Nothing close** → the geometry has been protecting us; fix still correct but
   drops to ordinary priority. Say so plainly rather than inflating it.
 
+> **S2 MECHANISM RESOLVED (2026-08-28, see S1_RESULTS.md §3):** the checker's
+> timing, frame and F3 logic are healthy (proven by
+> `tests/rapid_check_wanaka_link_shape.rs` + a traced pipeline run); the
+> silence is S-b proper — the strikes are 0.5–2.9 mm off-axis (inter-pass
+> crests at rough swath edges) and the zero-radius point probe cannot see
+> them. Fix shape: evaluate rapids against the LIVE stock inside the replay
+> walk with `max_clearance_tip_z_for_profile` (a disc upgrade on the frozen
+> snapshot would over-flag the op's own already-cut rows). Drill entries
+> (analytic path) keep the pre-pass.
+
 ## S2 — fix the detector before the emitter
 
 Deliberate ordering. If the emitter is fixed first, the detector still cannot
