@@ -77,6 +77,13 @@ full heavy gate run before commit (result in the commit message).
 - The S5 prefix cache still restores collision results computed when the
   prefix was first simulated (`sim_prefix.rs`) — a resumed prefix is not
   re-checked. Pre-existing behaviour, unchanged by S2; ledgered for S4/S5.
+  **In-memory only, so it cannot restore a pre-S2 result across a binary
+  upgrade** (checked 2026-08-28 for S3): `crates/rs_cam_core/src/compute/
+  sim_prefix.rs` keys entries on `Weak<AnnotatedToolpath>` pointer identity
+  (`EntryKey`, `Arc::ptr_eq` on lookup) and does no file I/O at all — its own
+  module doc records that `Box<dyn MillingCutter>` is not `Serialize`, which
+  is why the tool had to be keyed by its observable surface. The staleness
+  window is one process. No schema stamp needed.
 
 ## What this does NOT fix
 

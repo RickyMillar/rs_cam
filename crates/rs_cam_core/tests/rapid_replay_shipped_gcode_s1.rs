@@ -813,7 +813,7 @@ struct Totals {
 
 struct SetupSpec {
     label: &'static str,
-    path: &'static str,
+    path: String,
     /// Stock box **in exported coordinates**. The frame comes from the
     /// exporter's own contract (RECON Q1), not from a run-log table.
     stock: BoundingBox3,
@@ -823,11 +823,20 @@ struct SetupSpec {
     pin_probe: Option<(usize, &'static [[f64; 2]])>,
 }
 
+/// S3 falsification hook: `S1_SETUP1_NC` / `S1_SETUP2_NC` point the replay
+/// at a freshly regenerated program (e.g. a split of the CLI's
+/// `--emit-gcode` output) instead of the shipped artifacts. The shipped
+/// paths stay the default so the instrument's original evidence run is
+/// reproducible unchanged.
+fn nc_path(env_key: &str, default: &str) -> String {
+    std::env::var(env_key).unwrap_or_else(|_| default.to_owned())
+}
+
 fn setups() -> Vec<SetupSpec> {
     vec![
         SetupSpec {
             label: "Setup 1 (back, face_up=bottom)",
-            path: SETUP1_NC,
+            path: nc_path("S1_SETUP1_NC", SETUP1_NC),
             // RECON Q1: non-identity setup, shift is zero, toolpath is
             // generated AND exported in the zero-rooted setup-local frame:
             // exported = (x_w + 20, 225 − y_w, 7 − z_w). Stock top at Z=25.
@@ -845,7 +854,7 @@ fn setups() -> Vec<SetupSpec> {
         },
         SetupSpec {
             label: "Setup 2 (front, face_up=top, identity)",
-            path: SETUP2_NC,
+            path: nc_path("S1_SETUP2_NC", SETUP2_NC),
             // RECON Q1: identity setup, exported = world + (+20, +25, 0);
             // Z is never shifted, so the box is [-18, 7] and the top is Z=7.
             stock: BoundingBox3 {
@@ -989,7 +998,7 @@ fn adjudicate_fine(ctx: &ReplayContext<'_>, flag: &RapidFlag, totals: &mut Total
 #[allow(clippy::too_many_lines)] // one instrument, one linear narrative
 fn run_setup(spec: &SetupSpec, tools: &[ToolEntry], totals: &mut Totals) {
     let started = Instant::now();
-    let src = std::fs::read_to_string(spec.path).expect("read shipped .nc");
+    let src = std::fs::read_to_string(&spec.path).expect("read shipped .nc");
     let prog = parse_program(&src, tools);
     assert!(
         prog.unknown_tool_tags.is_empty(),
@@ -1423,7 +1432,8 @@ fn report_worst_rows(rows: &[FineRow]) {
 #[test]
 #[ignore = "evidence run — replays two shipped .nc programs against fine dexels; build --release"]
 fn replay_shipped_wanaka_rapids_s1() {
-    for path in [SETUP1_NC, SETUP2_NC, WANAKA_TOML] {
+    let specs = setups();
+    for path in specs.iter().map(|s| s.path.as_str()).chain([WANAKA_TOML]) {
         if !Path::new(path).exists() {
             eprintln!("SKIP: {path} not present on this machine.");
             return;
@@ -1444,7 +1454,7 @@ fn replay_shipped_wanaka_rapids_s1() {
         ..Totals::default()
     };
     let started = Instant::now();
-    for spec in setups() {
+    for spec in specs {
         run_setup(&spec, &tools, &mut totals);
     }
 

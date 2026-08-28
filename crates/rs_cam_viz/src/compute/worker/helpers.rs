@@ -50,7 +50,12 @@ pub(super) fn apply_dressups(
             }
         }
     }
-    let cutter = feed_opt_stock.as_ref().map(|_| build_cutter(tool));
+    // Built unconditionally since S3: the air-cut filter needs the cutter to
+    // classify a sample for the whole tool, and it runs off `prior_stock`,
+    // not off feed optimisation. Feed optimisation stays gated on
+    // `feed_opt_stock` inside core, so handing the cutter over cannot switch
+    // it on.
+    let cutter = build_cutter(tool);
 
     rs_cam_core::compute::execute::apply_dressups(
         annotated,
@@ -61,9 +66,7 @@ pub(super) fn apply_dressups(
         req.heights.top_z,
         req.prior_stock.as_ref(),
         feed_opt_stock.as_mut(),
-        cutter
-            .as_ref()
-            .map(|c| c as &dyn rs_cam_core::tool::MillingCutter),
+        Some(&cutter as &dyn rs_cam_core::tool::MillingCutter),
         transform_capabilities,
         debug,
         semantic,

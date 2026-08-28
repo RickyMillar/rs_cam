@@ -1652,9 +1652,68 @@ fn tip_depth_below_surface(stock: &TriDexelStock, x: f64, y: f64, z: f64) -> Opt
 }
 
 /// Check if position (x, y, z) is in air (no material above z at this XY).
+///
+/// ZERO-RADIUS: the tool's centerline column only. It is the cheap first
+/// stage of [`sample_is_air_for_tool`], never a clearance answer on its own —
+/// see that function for why.
 fn is_in_air(stock: &TriDexelStock, x: f64, y: f64, z: f64, tolerance: f64) -> bool {
     // Empty ray or off-grid = definitely air.
     tip_depth_below_surface(stock, x, y, z).is_none_or(|depth| depth < -tolerance)
+}
+
+/// Is a tip at `(x, y, z)` in air **for this cutter** — nothing under its
+/// whole envelope that its own profile does not clear?
+///
+/// S3 (`planning/rapid_safety_2026-08-28/`). The question the air-cut filter
+/// has to answer is whether the TOOL passes through air, and the tool is not
+/// a point. S1 measured the consequence of asking the centerline instead: on
+/// wanaka the exact-XY column of a finish plunge read clear by +0.1 mm while
+/// the taper's flank stood −1.3 mm inside an inter-pass crest 0.5–2.9 mm
+/// off-axis, so the filter reclassified a safe fed plunge as all-air and
+/// [`filter_air_cuts`] replaced it with a rapid descending to the resume Z.
+/// 982 such descents shipped in two G-code programs, counted by nothing.
+///
+/// The clearance question is the same one S2 gave the detector, asked of the
+/// same primitive: `max_clearance_tip_z_for_profile` returns the lowest tip Z
+/// that clears every cell under the envelope disc, evaluating the cutter's
+/// own height at each cell's nearest possible material. `None` = no cell
+/// under the disc constrains the tip = air.
+///
+/// # Two stages, and why the cheap one is sound
+///
+/// Stage 1 is the centerline point test; stage 2 (the disc) runs ONLY when
+/// stage 1 says air. Skipping stage 2 on a material verdict does not change
+/// the answer: the sample's own cell (the same `round()` on both sides) sits
+/// at a cell-centre distance ≤ one half-diagonal, so the dilated disc visits
+/// it, evaluates it at `r_near = 0` where `height_at_radius(0) = 0` for every
+/// shipped shape, and reads `conservative_top ≥ ray_top`. So
+/// `clearance ≥ ray_top`, and `clearance + tolerance <= z` therefore implies
+/// `ray_top + tolerance <= z` — stage-1 air. Contrapositive: stage-1 material
+/// ⟹ stage-2 material.
+///
+/// The one place the identity could fail is a cutter so small the dilated
+/// disc no longer reaches its own centre cell — `envelope_radius` below
+/// 0.21 × the cell — and there the early return is the CONSERVATIVE side
+/// ("material"), so the safety claim holds for every radius.
+///
+/// Cost follows from that implication: every sample that touches material at
+/// the centerline — most samples of a finishing pass — pays one grid lookup,
+/// and only the airborne minority pays the disc.
+fn sample_is_air_for_tool(
+    stock: &TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
+    x: f64,
+    y: f64,
+    z: f64,
+    tolerance: f64,
+) -> bool {
+    if !is_in_air(stock, x, y, z, tolerance) {
+        return false;
+    }
+    let radius = cutter.envelope_radius_mm();
+    stock
+        .max_clearance_tip_z_for_profile(x, y, radius, cutter)
+        .is_none_or(|clearance| clearance + tolerance <= z)
 }
 
 /// A4: how far material at the sampled column rises ABOVE the cutter's own
@@ -1819,15 +1878,19 @@ pub fn reference_engagement_of_cutting_moves(
 /// Cost: sampling is at grid resolution, so a finishing move shorter than
 /// one cell costs the same two lookups it always did; only long roughing
 /// moves sample more, and those are the ones that can hide an island.
+///
+/// Each sample is judged for the whole CUTTER, not its centerline — see
+/// [`sample_is_air_for_tool`].
 fn swept_path_is_all_air(
     stock: &TriDexelStock,
+    cutter: &dyn crate::tool::MillingCutter,
     prev: P3,
     m: &Move,
     tolerance: f64,
     arc_buf: &mut Vec<P3>,
 ) -> bool {
     let step = stock.z_grid.cell_size.max(1.0e-6);
-    let air_at = |p: &P3| is_in_air(stock, p.x, p.y, p.z, tolerance);
+    let air_at = |p: &P3| sample_is_air_for_tool(stock, cutter, p.x, p.y, p.z, tolerance);
 
     match m.move_type {
         MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
@@ -1857,19 +1920,6 @@ fn swept_path_is_all_air(
     }
 }
 
-/// Remove cutting moves that pass through empty stock (no remaining material).
-///
-/// For each cutting move, checks whether material exists anywhere along the
-/// swept path in the prior stock — see [`swept_path_is_all_air`]. Only moves
-/// that are in air for their WHOLE length become rapids, so a move that
-/// contacts material at any point is preserved.
-///
-/// `tool_radius` is currently reserved for future per-cell radius checks.
-///
-/// Span behavior: dropped air moves remap to `None`. Each inserted
-/// retract/rapid/plunge that bridges across a dropped run is tagged with
-/// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
-/// bridges and should not block downstream link/TSP passes).
 /// Should a run of in-air cutting moves be replaced by a retract bridge?
 ///
 /// MEASURED CONTEXT (2026-08-03, `planning/unified_v3_design.md` §10): the
@@ -1901,24 +1951,47 @@ pub enum AirBridgePolicy {
     ShorterThanAirPath,
 }
 
+/// Remove cutting moves that pass through empty stock (no remaining material).
+///
+/// For each cutting move, checks whether material exists anywhere along the
+/// swept path in the prior stock — see [`swept_path_is_all_air`]. Only moves
+/// that are in air for their WHOLE length become rapids, so a move that
+/// contacts material at any point is preserved, entire.
+///
+/// # The cutter is not optional (S3)
+///
+/// Each sample is judged for the whole tool by
+/// [`sample_is_air_for_tool`]: cheap centerline test first, envelope-disc
+/// profile clearance to confirm any air verdict. Until 2026-08-28 the
+/// parameter in `cutter`'s place was a `tool_radius: f64` documented as
+/// "reserved for future per-cell radius checks" and never read, so the
+/// classifier was a zero-radius point probe. That is the emitter S1 measured:
+/// a fed `EntryPlunge` whose exact-XY column reads clear but whose flank
+/// stands inside an off-axis crest was reclassified all-air, dropped, and
+/// replaced below by a rapid descending to the resume Z — 982 rapid descents
+/// into standing hardwood on one shipped job
+/// (`planning/rapid_safety_2026-08-28/S1_RESULTS.md`, S3).
+///
+/// The all-or-nothing whole-move rule is what turns that classifier fix into
+/// a safe path: a plunge whose tail strikes crest material stays fed for its
+/// whole length. `session::compute`'s `optimize_entry_descents` then re-splits
+/// the airborne top of such a plunge against its own envelope-disc ceiling.
+///
+/// Span behavior: dropped air moves remap to `None`. Each inserted
+/// retract/rapid/plunge that bridges across a dropped run is tagged with
+/// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
+/// bridges and should not block downstream link/TSP passes).
 pub fn filter_air_cuts(
     annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,
-    tool_radius: f64,
+    cutter: &dyn crate::tool::MillingCutter,
     safe_z: f64,
     tolerance: f64,
     policy: AirBridgePolicy,
 ) -> AnnotatedToolpath {
-    filter_air_cuts_with_provenance(
-        annotated,
-        prior_stock,
-        tool_radius,
-        safe_z,
-        tolerance,
-        policy,
-    )
-    .reconcile(&mut ReconcileSet::empty())
-    .into_inner()
+    filter_air_cuts_with_provenance(annotated, prior_stock, cutter, safe_z, tolerance, policy)
+        .reconcile(&mut ReconcileSet::empty())
+        .into_inner()
 }
 
 /// [`filter_air_cuts`] under the C1 provenance contract.
@@ -1930,7 +2003,7 @@ pub fn filter_air_cuts(
 pub fn filter_air_cuts_with_provenance(
     annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,
-    _tool_radius: f64,
+    cutter: &dyn crate::tool::MillingCutter,
     safe_z: f64,
     tolerance: f64,
     policy: AirBridgePolicy,
@@ -1971,8 +2044,9 @@ pub fn filter_air_cuts_with_provenance(
             .map(|p| p.target)
         else {
             // No predecessor: only the target is knowable.
-            air_flags.push(is_in_air(
+            air_flags.push(sample_is_air_for_tool(
                 prior_stock,
+                cutter,
                 m.target.x,
                 m.target.y,
                 m.target.z,
@@ -1983,6 +2057,7 @@ pub fn filter_air_cuts_with_provenance(
 
         air_flags.push(swept_path_is_all_air(
             prior_stock,
+            cutter,
             prev,
             m,
             tolerance,
@@ -2947,39 +3022,44 @@ mod tests {
 
     use crate::dexel_stock::TriDexelStock;
 
+    /// The cutter these fixtures probe with: Ø6 flat, the shape the old
+    /// `tool_radius: f64` argument of 3.0 described. Flat is deliberate — its
+    /// `height_at_radius` is 0 across the envelope, so the disc query reduces
+    /// to "is any material under the tool above the tip" and each fixture's
+    /// verdict can be read off the cell layout.
+    fn probe_cutter() -> crate::tool::FlatEndmill {
+        crate::tool::FlatEndmill::new(6.0, 25.0)
+    }
+
     /// Build a stock where x < 50 has material (top_z = 5.0) and x >= 50 is
     /// cleared (top_z lowered to -10.0 by simulating a cut).  The stock spans
     /// x: 0..100, y: 0..100, z: -10..5 with 5mm cells.
+    ///
+    /// Cleared through [`TriDexelStock::clear_above_at`], not a raw
+    /// `ray_subtract_above`: the latter empties the ray but leaves
+    /// `conservative_top` at the original stock top, a state no production
+    /// path can produce (every stamping route lowers the bound with the ray),
+    /// and one the S3 disc query would read as standing material.
     fn half_cleared_stock() -> TriDexelStock {
-        use crate::dexel::ray_subtract_above;
-        let stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, -10.0, 5.0, 5.0);
-        // Clear material above z=-10 for columns where x >= 50.
-        // This effectively removes all material in the right half.
-        let grid = &stock.z_grid;
-        let cols = grid.cols;
-        let rows = grid.rows;
-        // We need mutable access, so rebuild with cleared rays.
-        let mut cleared = stock;
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, -10.0, 5.0, 5.0);
+        let rows = stock.z_grid.rows;
+        let cols = stock.z_grid.cols;
         for row in 0..rows {
             for col in 0..cols {
-                let (world_x, _world_y) = {
-                    let u = cleared.z_grid.origin_u + col as f64 * cleared.z_grid.cell_size;
-                    let v = cleared.z_grid.origin_v + row as f64 * cleared.z_grid.cell_size;
-                    (u, v)
-                };
+                let world_x = stock.z_grid.origin_u + col as f64 * stock.z_grid.cell_size;
                 if world_x >= 50.0 {
-                    ray_subtract_above(cleared.z_grid.ray_mut(row, col), -10.0);
+                    stock.clear_above_at(row, col, -10.0);
                 }
             }
         }
-        cleared
+        stock
     }
 
     /// Build a stock cleared at BOTH ends with a band of material left
     /// standing in the middle (45 <= x < 55). Stock spans x/y 0..100,
-    /// z -10..5, 5 mm cells.
+    /// z -10..5, 5 mm cells. Same clearing rule as
+    /// [`half_cleared_stock`], for the same reason.
     fn island_stock() -> TriDexelStock {
-        use crate::dexel::ray_subtract_above;
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 100.0, 100.0, -10.0, 5.0, 5.0);
         let rows = stock.z_grid.rows;
         let cols = stock.z_grid.cols;
@@ -2987,7 +3067,7 @@ mod tests {
             for col in 0..cols {
                 let world_x = stock.z_grid.origin_u + col as f64 * stock.z_grid.cell_size;
                 if !(45.0..55.0).contains(&world_x) {
-                    ray_subtract_above(stock.z_grid.ray_mut(row, col), -10.0);
+                    stock.clear_above_at(row, col, -10.0);
                 }
             }
         }
@@ -3018,7 +3098,7 @@ mod tests {
         let result = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &stock,
-            3.0,
+            &probe_cutter(),
             10.0,
             0.1,
             AirBridgePolicy::Always,
@@ -3058,7 +3138,7 @@ mod tests {
         let result = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &stock,
-            3.0,
+            &probe_cutter(),
             10.0,
             0.1,
             AirBridgePolicy::Always,
@@ -3111,7 +3191,7 @@ mod tests {
         let result = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &stock,
-            3.0,
+            &probe_cutter(),
             10.0,
             0.1,
             AirBridgePolicy::Always,
@@ -3203,7 +3283,7 @@ mod tests {
         let result = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &stock,
-            3.0,
+            &probe_cutter(),
             10.0,
             0.1,
             AirBridgePolicy::Always,
@@ -3436,7 +3516,13 @@ mod tests {
             },
             0.5,
         );
-        // Carve a narrow trench so a 2mm stretch mid-pass reads as air.
+        // Carve a trench so a short stretch mid-pass reads as air. The carving
+        // tool (Ø10) is wider than the probing tool (Ø3) by more than the
+        // probe's envelope: S3 judges a sample against the whole cutter, so a
+        // trench of exactly the probe's own width would put its uncut walls
+        // inside the query's disc and no sample would read air at all. That
+        // over-read is real and deliberate (S2's kerf-rim note); this test is
+        // about the bridge-cost policy, so it stays clear of it.
         let mut carved = stock.clone();
         let mut cut = Toolpath::new();
         cut.rapid_to(P3::new(29.0, 10.0, 10.0));
@@ -3444,9 +3530,10 @@ mod tests {
         cut.feed_to(P3::new(31.0, 10.0, -5.0), 500.0);
         carved.simulate_toolpath(
             &cut,
-            &FlatEndmill::new(3.0, 25.0),
+            &FlatEndmill::new(10.0, 25.0),
             StockCutDirection::FromTop,
         );
+        let probe = FlatEndmill::new(3.0, 25.0);
 
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(5.0, 10.0, 10.0));
@@ -3459,7 +3546,7 @@ mod tests {
         let always = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &carved,
-            3.0,
+            &probe,
             10.0,
             0.1,
             AirBridgePolicy::Always,
@@ -3468,7 +3555,7 @@ mod tests {
         let costed = filter_air_cuts(
             AnnotatedToolpath::new(tp.clone()),
             &carved,
-            3.0,
+            &probe,
             10.0,
             0.1,
             AirBridgePolicy::ShorterThanAirPath,
@@ -3527,7 +3614,14 @@ mod tests {
         ];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
+        let result = filter_air_cuts(
+            annotated,
+            &stock,
+            &probe_cutter(),
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        );
         result
             .check_invariants()
             .expect("post-filter spans pass invariants");
@@ -3555,7 +3649,14 @@ mod tests {
         let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
         let annotated = AnnotatedToolpath::with_spans(tp, spans);
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
+        let result = filter_air_cuts(
+            annotated,
+            &stock,
+            &probe_cutter(),
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        );
         let bridges: Vec<&Span> = result
             .spans
             .iter()
@@ -3584,7 +3685,14 @@ mod tests {
         annotated.spans_valid = false;
         annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
         let stock = half_cleared_stock();
-        let result = filter_air_cuts(annotated, &stock, 3.0, 10.0, 0.1, AirBridgePolicy::Always);
+        let result = filter_air_cuts(
+            annotated,
+            &stock,
+            &probe_cutter(),
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        );
         assert!(!result.spans_valid);
         assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
     }

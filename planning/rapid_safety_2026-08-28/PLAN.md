@@ -133,6 +133,57 @@ strikes if there are any. **That is the phase's own falsification test.**
 
 ## S3 — fix the emitter
 
+> **S3 FALSIFIED CLEAN (2026-08-28, see S3_RESULTS.md): pipeline 202 → 0
+> with the live detector watching; independent S1 replay on the fresh
+> emission 982 strikes → 2, both sub-noise, zero beyond discretisation;
+> S2 crest sentries stay green. Cost: +9.6% cycle estimate (fed plunges
+> returned). Below, "IMPLEMENTATION LANDED" was this note's pre-run state.**
+>
+> **S3 IMPLEMENTATION LANDED (2026-08-28) — FALSIFICATION PENDING.** The
+> emitter S1 measured is **not** `sample_stock_top_at`: it is
+> `dressup::filter_air_cuts`. The generators emit a safe fed `EntryPlunge` at
+> every raster link (`toolpath.rs::raster_toolpath_from_grid`); the filter
+> then classified that plunge "all air" with a **zero-radius centerline
+> probe** — its `tool_radius: f64` parameter was documented "reserved for
+> future per-cell radius checks" and never read — dropped it, and emitted the
+> retract/hop/**rapid-descend-to-resume-Z** triple S1 read out of the shipped
+> `.nc`. The filter runs only when `prior_stock` is present
+> (`compute/execute.rs` step 7), which is exactly the four
+> `FromRemainingStock` ops where every measured strike lives. Emitter and
+> pre-S2 detector shared one blindness, which is how they masked each other.
+>
+> The fix: each sample is judged for the whole cutter by
+> `dressup::sample_is_air_for_tool` — cheap centerline test first, then
+> `max_clearance_tip_z_for_profile` over the envelope disc to CONFIRM any air
+> verdict (stage-1 material implies stage-2 material, so the short-circuit is
+> exact; the argument is at the function). `filter_air_cuts`,
+> `filter_air_cuts_with_provenance` and `swept_path_is_all_air` now take
+> `&dyn MillingCutter` in the dead radius's place; `apply_dressups` gates step
+> 7 on `prior_stock` **and** `cutter`, and both production callers
+> (`session::compute`, the viz worker's `helpers::apply_dressups`) now pass
+> one unconditionally. The all-or-nothing whole-move rule then restores the
+> fed plunge entire, and `optimize_entry_descents` re-splits its airborne top
+> as before — that pass is untouched.
+>
+> Sentries: `tests/air_filter_tool_aware_s3.rs` — the measured class stays
+> fed, a link the whole tool clears still converts, a taper and a flat endmill
+> of the same envelope radius give opposite verdicts on one ridge (profile,
+> not envelope), and the filtered link replays through S2's detector with zero
+> collisions while the hand-rebuilt pre-S3 emission flags.
+>
+> **Still to run (orchestrator):** the CLI falsification (202 →
+> ~0 rapid-through-stock collisions on wanaka200 at 0.3 mm) and S1's replay
+> against regenerated G-code. Expect air-cut % and rapid/cutting distance
+> splits to move on `FromRemainingStock` fixtures — plunges that return to fed
+> are the fix working. `tests/perf_golden_*` build every op with
+> `StockSource::default()` (= `Fresh`), so no prior stock reaches the filter
+> and the goldens should not move; if one does, that is a finding, not a
+> re-baseline.
+>
+> Deferred, unchanged by this work: `sample_stock_top_at` and
+> `RAPID_DESCENT_BUFFER_MM` below — S1 did not exercise that path, so it is
+> still a code-read finding.
+
 `sample_stock_top_at` reads the disc with the profile, and switches
 `ray_top` → `conservative_top`. `ctx.lut` and `ctx.tool_radius` are already
 threaded for stamping, so this is the natural first adopter of the LUT variant

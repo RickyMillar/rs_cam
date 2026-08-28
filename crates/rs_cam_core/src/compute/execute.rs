@@ -3376,7 +3376,9 @@ fn apply_dressup_traced(
 /// (`RapidOrderBarrier` + `DepthPass` span starts) — see
 /// [`AnnotatedToolpath::rapid_order_barriers`].
 ///
-/// `prior_stock` enables the air-cut filter step. `feed_opt_stock` + `cutter`
+/// `prior_stock` + `cutter` enable the air-cut filter step (S3: the filter
+/// judges air for the whole cutter, so it refuses to run without one — see
+/// [`crate::dressup::filter_air_cuts`]). `feed_opt_stock` + `cutter`
 /// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
 /// per-step tracing scopes — the GUI passes them through to populate the
 /// sim-tree view; CLI / session callers pass `None` and pay zero overhead.
@@ -3780,8 +3782,12 @@ pub fn apply_dressups(
         );
     }
 
-    // 7. Air-cut filter
-    if let Some(stock) = prior_stock {
+    // 7. Air-cut filter. S3: the filter classifies each sample for the whole
+    // cutter, so it needs the cutter — a `prior_stock` without one cannot be
+    // served. Skipping is the conservative arm (nothing becomes a rapid that
+    // was not one), and it is unreachable from the two production callers,
+    // which both pass a cutter unconditionally.
+    if let (Some(stock), Some(cut)) = (prior_stock, cutter) {
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -3801,12 +3807,17 @@ pub fn apply_dressups(
                 crate::dressup::filter_air_cuts_with_provenance(
                     at,
                     stock,
-                    tool_radius,
+                    cut,
                     safe_z,
                     0.1,
                     cfg.air_bridge_policy,
                 )
             },
+        );
+    } else if prior_stock.is_some() {
+        tracing::warn!(
+            "air-cut filter skipped: prior stock present but no cutter was \
+             supplied to apply_dressups"
         );
     }
 

@@ -1614,7 +1614,12 @@ impl ProjectSession {
                     emission_stock_bbox.max.z,
                     prior_stock_ref,
                     None,
-                    None,
+                    // S3: the air-cut filter classifies each sample for the
+                    // whole cutter, so this op's tool rides in even though
+                    // feed optimisation (the other consumer) is off on this
+                    // path — `feed_opt_stock` above stays `None` and keeps it
+                    // off.
+                    Some(&tool_def as &dyn crate::tool::MillingCutter),
                     tc.operation.transform_capabilities(),
                     None,
                     None,
