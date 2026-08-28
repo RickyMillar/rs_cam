@@ -1516,9 +1516,20 @@ fn replay_shipped_wanaka_rapids_s1() {
         );
     }
 
-    let headline = if totals.strikes > 0 {
-        "STRIKES FOUND — a DESCENDING or TRAVERSING rapid entered material; live safety defect, \
-         and the shipped .nc files need review"
+    // The verdict tri-classifies on the BEYOND-DISCRETISATION strike count
+    // (histogram bins deeper than 0.15 mm), not the raw strike total: the
+    // first two bins sit inside the instrument's own conservatism budget,
+    // and a banner that shouts "live safety defect" over sub-noise readings
+    // violates the histogram discipline the report itself states (the S3
+    // falsification run printed exactly that over 2 sub-noise strikes).
+    // Sub-budget strikes are still reported on their own line.
+    let real_strikes: usize = totals.strike_histogram[2..].iter().sum();
+    let headline = if real_strikes > 0 {
+        "STRIKES FOUND — a DESCENDING or TRAVERSING rapid entered material beyond the \
+         conservatism budget; live safety defect, and the programs need review"
+    } else if totals.strikes > 0 {
+        "SUB-BUDGET STRIKES ONLY — every strike sits inside the instrument's ~0.15 mm \
+         conservatism floor; treat as clean, watch the histogram"
     } else if totals.near_misses > 0 {
         "LATENT NEAR-MISSES — no strike, but material sits inside the blind radius; fix on merit"
     } else {

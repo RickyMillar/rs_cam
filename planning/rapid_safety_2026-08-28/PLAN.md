@@ -193,6 +193,19 @@ Then delete `RAPID_DESCENT_BUFFER_MM`, or justify it in writing as something
 other than the pad `dressup.rs` already rejected. Keeping an unexplained pad
 next to a correct query is how the next reader concludes the query is untrusted.
 
+> **S4 STATUS (2026-08-28): OPEN, deliberately deferred behind Phase M.**
+> S1–S3 are done and falsified; the phase's severity driver (silent rapid
+> strikes) is closed from both sides — the live profile-aware detector
+> (S2) would now catch any emitter in this class, including the unexercised
+> adaptive3d floor (S-a). S-c (rapids exempt from holder/fixture checks)
+> and S-d (mesh-only `check_collisions*`) remain real but are rarer
+> geometry classes, and this plan already calls them "scope decisions, not
+> obvious wins" needing cost measurement first. Phase M outranks them: its
+> poisoned metric is being quoted today (S3's own air-cut% figures carry
+> the caveat) and it blocks the finishing programme's Track F. The S5
+> sliver case is likely already caught by the live check
+> (`conservative_top` errs high); pin it with a green sentry when S4 opens.
+
 ## S4 — close S-c and S-d
 
 Rapids get the holder/fixture check; `check_collisions*` gets an
