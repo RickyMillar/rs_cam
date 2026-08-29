@@ -111,6 +111,24 @@ supply a shipped algorithm, parameter, implementation, or product claim.
   `planning/conformal_finish_2026-08-28/paper_2504.06310_extraction.md`.
   Not evidence that rs_cam can yet make the paper's performance or quality
   claims.
+- **F2 reading set** (full texts read 2026-08-29, extractions in
+  `planning/conformal_finish_2026-08-28/`, gate status in
+  `reading_set_gate_status.md`): Changqing Shen et al., *Spiral complete
+  coverage path planning based on conformal slit mapping in multi-connected
+  domains*, IJRR 43 (2024) 2183–2203, read as its preprint arXiv:2309.10655v2
+  — Appendix A carries the slit-map construction (σ(t) blend A-11, boundary
+  assembly A-1…A-14, Neumann-kernel equation and Nyström discretisation);
+  Mohamed M. S. Nasser, *Fast solution of boundary integral equations with
+  the generalized Neumann kernel*, ETNA 44 (2015) 189–229, read as
+  arXiv:1308.5351v5 — the solver Shen 2024 defers to, including the
+  singularity-subtracted discretisation an implementation must prefer over
+  Shen's raw A-31; A. A. M. Yunus, A. H. M. Murid & M. M. S. Nasser,
+  Proc. R. Soc. A 470 (2014) 20130514 — corroboration (different domain
+  class/kernel; not the pipeline's solver). Nasser 2019 (J. Sci. Comput. 78)
+  — cited as [11] by arXiv:2504.06310 — remains ABSTRACT-ONLY (paywalled, no
+  OA copy); it is the preimage/radial-slit problem, is never cited by
+  Shen 2024, and is not needed by the pipeline. Research references only;
+  any implementation must attribute at the implementation site.
 
 ### Tri-dexel volumetric simulation
 

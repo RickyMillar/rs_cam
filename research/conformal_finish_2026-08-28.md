@@ -86,7 +86,7 @@ Ordered by the extraction's gap list (14 gaps; the load-bearing ones):
 | 3. Extraction schedule unspecified ("a certain number of points") | Evaluate the increment at **every** triangle-edge crossing of the current iso-curve (not a sample subset); take the minimum, per the paper's own conservative rule. Start level l₁ = min φ on the region + half-increment. | **[REPO]** |
 | 4. No ordering/linking/machining direction | Not invented at all: emit raw fragments and hand them to the existing `surface_link::relink_fragments` + `compute_cycle_time` harness — the same treatment every other candidate in the thin-organic evidence got. Ordering quality is then measured, not assumed. | **[REPO]** (existing machinery) |
 | 5. √(k_s + 1/r) undefined where k_s + 1/r ≤ 0 | For a ball-end this coincides with the local gouge condition (concave radius ≤ r). Guard: clamp the magnitude to the smallest positive value present in the region and **count clamped triangles as a report-only finding**. Additionally rs_cam CL points come from drop-cutter (below), which is gouge-free against the mesh by construction. | **[REPO]** |
-| 6. k_s estimator unnamed | Rusinkiewicz 2004 tensor (already implemented, private in `crest_lines.rs`) — lift to test-local code for F1. | **[REPO]** |
+| 6. k_s estimator unnamed | Rusinkiewicz 2004 tensor (already implemented in `crest_lines.rs`) — exposed `pub(crate)` to the research module. | **[REPO]** |
 | 7–9. Segmentation dof / smoothing params / singular-region test | **Avoided in F1**: run on a single Wanaka region where the field varies smoothly; if orientation propagation detects an inconsistency loop, record it and stop rather than segment. Segmentation (with its admitted border defect) is out of F1 scope. | **[REPO]** (scope cut) |
 | 10. Eq. 17 index typo (sums over k, uses V_j) | Read as the standard cotan divergence from Botsch et al. (the paper's own ref [27]) — flagged inference, the obvious intent. | **[REPO]** |
 | 12. No outer-boundary / hole treatment in the paper | Use the repo's own boundary machinery: solve on the region's triangles, clip emitted curves with `clip_annotated_to_boundary_set`, prove containment with `RegionSet::contains`. `Polygon2` holes are first-class here, so multiply-connected regions cost us nothing even though the paper never mentions them. | **[REPO]** |
@@ -100,7 +100,13 @@ primitive); F-034 integrator + test-local `relink_and_cost`;
 `equal_cusp_stepover_mm` / `scallop_math`; marching squares (2D);
 per-vertex curvature (private); edge→face adjacency (`pencil_dihedral`).
 
-Must build (all test-local for F1):
+Must build (**placement decided at implementation, 2026-08-29**: these live in
+a `src/` research module, `crates/rs_cam_core/src/direction_field.rs`, on the
+`scallop_isofield.rs` precedent — an unshipped research candidate with no
+production caller — because integration tests cannot see `crest_lines`'
+private curvature tensor and duplicating it would be worse; the module carries
+the full 21-lint gate. The *evidence instrument* consuming it stays
+test-local):
 
 1. **Triangle-neighbour walking** on top of `build_edge_adjacency` — needed by
    both orientation BFS and marching triangles.
@@ -110,7 +116,10 @@ Must build (all test-local for F1):
    `crossings.len() != 2` triangles). Ours must **handle or at least count
    saddles** — contract item 4 requires singularity/termination findings.
 3. **Cotan Laplacian + divergence assembly and a solver** — see §C.1.
-4. **Per-vertex curvature, public/test-local lift** from `crest_lines`.
+4. **Per-vertex curvature, `pub(crate)` lift** from `crest_lines` (t₁ added
+   to the `Curvature` struct; `diagonalize` orders by **signed** value, so t₁
+   is the max-signed-curvature direction the field derivation needs — no
+   re-sort).
 
 ## A.4 Risks the evidence must retire
 
@@ -202,12 +211,21 @@ The slit map is a *material method step* that is *absent from this paper*.
 The charter says: record the gap; do not make up a production rule. The gap
 is recoverable because the step exists in named primary sources, so:
 
-- **F2's hole/island phases are gated** on source-reading Shen et al. 2024
-  (IJRR 43, DOI 10.1177/02783649241251385) and Nasser 2019
-  (J. Sci. Comput. 78:582–606) — at minimum the boundary parameterization
-  (A-14), the blend σ(t) (A-11), the integral equation + kernel +
-  discretisation, and interior evaluation. If neither is retrievable in
-  full, F2 stops at the simply-connected phase and says so.
+- **F2's hole/island phases are gated** on source-reading the slit-map
+  construction. **GATE OPEN 2026-08-29** — see
+  `planning/conformal_finish_2026-08-28/reading_set_gate_status.md`:
+  Shen 2024 retrieved in full as its own preprint arXiv:2309.10655v2
+  (Appendix A = the whole construction; σ(t) A-11 and boundary assembly
+  A-1…A-14 verbatim), plus **Nasser 2015 (ETNA 44, arXiv:1308.5351v5)** —
+  the solver Shen 2024 actually cites — and Yunus 2014 as corroboration.
+  Citation correction: the 2025 paper's [11] (Nasser 2019) is paywalled,
+  but Shen 2024 never cites it and it addresses a different problem
+  (preimage/radial slits); the gate is satisfied without it. Prototype-scale
+  system is dense (m+1)n×(m+1)n (≈384² at n=128, two holes): **dense
+  `nalgebra` suffices — the §C.1 F2 dependency question dissolves at this
+  scale.** Slit-radii/R_A recovery appears in no source → must be derived
+  and labelled [REPO]; interior inversion via the 2025 paper's barycentric
+  transfer (Shen A-39 is defective as printed).
 - **F2's simply-connected phase is NOT gated.** For a simply-connected
   region there are no slits; the load-bearing, fully-extracted parts of the
   paper — coverage-driven ring spacing (Eqs. 1–4) and log-rectangle bridging
@@ -226,7 +244,7 @@ is recoverable because the step exists in named primary sources, so:
 
 - **F1 (arm A): no new dependency.** The Poisson system (cotan Laplacian,
   SPD after pinning) is solved with a **hand-rolled matrix-free
-  Jacobi-preconditioned conjugate gradient** in test-local code. This
+  Jacobi-preconditioned conjugate gradient** in the research module. This
   follows the repo's own precedent (`scallop_isofield.rs` chose matrix-free
   fast sweeping for its Eikonal solve for exactly these reasons:
   deterministic, no heap surprises, no dependency). Region-scale vertex
@@ -267,7 +285,16 @@ comparison is refused if the candidate's measured residual exceeds the
 reference's. The lattice gate stays authoritative for lattice candidates.
 `link_ceiling: None` stays allowed only for the first fresh-stock geometry
 run, labelled, per the charter — the 875.9 s reference itself carries that
-caveat.
+caveat. **Update 2026-08-29:** the thin-organic campaign closed its evidence
+phase with `relink_and_cost_under` (its Stage E1 ceiling kernel,
+`tests/thin_organic_island_widths.rs` Stages A–N) declared **mandatory for
+all future path candidates including conformal experiments** — both arms of
+any comparison relink through it, never raw generators. F1's ceiling re-run
+therefore restates that kernel, not just `relink_and_cost`; note the regime
+lesson that under a realistic ceiling retract COUNTS stop discriminating
+(~99% of links stay airborne in both arms) and hop LENGTH carries the cost —
+so the direction-field arm's pitch must be shorter/better-ordered hops, not
+merely fewer retracts.
 
 ## C.4 Tooling note
 

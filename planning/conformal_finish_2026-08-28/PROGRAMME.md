@@ -105,7 +105,10 @@ simply-connected phase is not gated. Three findings from the primitives
 inventory shape the phases below:
 
 1. **No sparse solver exists in the tree** (dense `nalgebra` only). F1 uses
-   a test-local matrix-free preconditioned CG on the cotan Laplacian — no
+   a matrix-free preconditioned CG on the cotan Laplacian (implemented
+   2026-08-29 in the `src/` research module
+   `crates/rs_cam_core/src/direction_field.rs`, `scallop_isofield` precedent —
+   see the design note §A.3 for why not test-local) — no
    new dependency; the repo precedent is `scallop_isofield.rs`'s matrix-free
    fast sweeping. Any manifest change (e.g. `faer` for F2's flattening) is
    an operator decision raised at the F2 gate.
@@ -139,7 +142,8 @@ Concretised from F0 (design note §A; every [REPO] fill is labelled there):
    detected inconsistency loop is recorded, not segmented around).
 2. Build V (direction D⊥, magnitude √((k_s + 1/r)/8), clamped where
    k_s + 1/r ≤ 0 with a clamp count reported); solve Δφ = ∇·V with a
-   test-local matrix-free Jacobi-CG on the cotan Laplacian, one pinned
+   matrix-free Jacobi-CG (research module `direction_field.rs`) on the
+   cotan Laplacian, one pinned
    vertex. **Cheap falsifier before any toolpath is built**: count level-set
    components and saddles — if iso-curves fragment worse than the PCA-cell
    evidence (141 fragments), stop here.
@@ -182,14 +186,24 @@ is external to the paper, so:
    12%, treat that as the expected floor.
 2. Prove continuous path, no self-intersection, bounded curvature, and spacing
    before bringing Wanaka into the loop.
-3. **READING-SET GATE** before any hole/island work: source-read Shen et
-   al. 2024 (IJRR 43, DOI 10.1177/02783649241251385 — boundary
-   parameterization A-14, blend σ(t) A-11) and Nasser 2019 (J. Sci.
-   Comput. 78:582–606 — the generalized Neumann kernel integral equation,
-   discretisation, and interior evaluation). If neither is retrievable in
-   full, F2 stops at the simply-connected phase and records that. Any new
-   sparse/linear-algebra dependency (e.g. `faer`) is proposed to the
-   operator here, not added silently.
+3. **READING-SET GATE — OPEN as of 2026-08-29** (see
+   `reading_set_gate_status.md` and the three new extractions in this
+   directory). Retrieved in full: Shen et al. 2024 as its own preprint
+   **arXiv:2309.10655v2** (Appendix A carries the ENTIRE slit-map
+   construction, σ(t) = A-11 and the boundary assembly A-1…A-14 recovered
+   verbatim); **Nasser 2015 (ETNA 44, arXiv:1308.5351v5)** — the solver
+   Shen 2024 actually defers to; Yunus et al. 2014 as corroboration.
+   **Citation correction:** the 2025 paper's [11] (Nasser 2019, J. Sci.
+   Comput. 78) is paywalled with no OA copy, but Shen 2024 never cites it —
+   it is the *preimage/radial-slit* problem, not this pipeline's solver; the
+   gate is satisfied without it. Implementer notes that survive to F2:
+   discretise Nasser 2015's singularity-subtracted Eq (37)→(42), not
+   Shen's raw A-31; the linear system is dense nonsymmetric
+   (m+1)n×(m+1)n (≈384² for two holes at n=128), so **no new dependency
+   at prototype scale** — dense `nalgebra` suffices; invert interior
+   points by the 2025 paper's barycentric transfer (Shen A-39 is defective
+   as printed); slit radii / annulus R_A recovery is written down in NO
+   source and must be derived + labelled [REPO].
 4. Move to one Wanaka region **without holes**, then a region with one hole;
    capture failure classes instead of silently splitting or reconnecting.
 5. Compare integrated time, turn/retract count, cutting distance, simulation,
