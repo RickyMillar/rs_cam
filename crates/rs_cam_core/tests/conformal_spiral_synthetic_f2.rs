@@ -41,6 +41,58 @@
 //! hole-free, well-inside-the-mesh region — chosen so every triangle-centroid
 //! test is clean, which is exactly the geometry a raster is *good* at.
 //!
+//! # Two arms — envelope probe, then envelope-inside test
+//!
+//! The staged evidence above runs on **one** of two arms, and the structure
+//! mirrors what made F1's verdict clean: probe the edge of the envelope, then
+//! test inside it, and attribute the difference.
+//!
+//! * **ARM STEEP** — the whole inset ellipse, spanning this fixture's full
+//!   52.6 mm of relief. It is a **probe**. Its expected outcome is a
+//!   *diagnosed* `RingSearchStalled`, and that is a **result, not a failure**:
+//!   `plan_spiral` now returns `(SpiralReport, Result<…>)`, so the report
+//!   survives the refusal and the stall can be attributed. This arm fails the
+//!   test only when a refusal arrives with **nothing to attribute it by**.
+//! * **ARM FLAT** — a low-relief window found by census (see
+//!   [`flattest_window`]). This is the **envelope-inside test**, and the full
+//!   stage machinery runs here. A refusal on this arm is a hard failure:
+//!   inside the envelope — low relief, hole-free, cleaned, simply connected —
+//!   the mechanism has no excuse.
+//!
+//! Between the two, the instrument prints both arms' **radial
+//! area-distortion profiles side by side**. That pair is the attribution
+//! evidence for the phase: if the steep profile climbs and the flat one is
+//! level, what separates the arms is the **map** — the harmonic substitution
+//! standing in for the paper's conformal slit map — and the repair is Phase
+//! F2 step 3, not the ring search.
+//!
+//! Stage E's sampling sensitivity runs on the FLAT arm **only**. On a stalled
+//! arm every row would refuse for the same reason and the sampling dial would
+//! explain none of it.
+//!
+//! # Selection hygiene — and why the module's refusals stay authoritative
+//!
+//! "The ellipse is friendly geometry" describes the *polygon*. Turning it
+//! into a triangle set is not friendly at all, and two operator runs proved
+//! it before this file planned anything:
+//!
+//! * **run 1** — `fixtures/terrain_small.stl` is a CLOSED solid (terrain
+//!   top plus skirt plus floor), so a bare XY centroid test selects the top
+//!   sheet AND the floor plate under it. `NotSimplyConnected { 2 }`, at every
+//!   ellipse size. Fixed by the up-facing normal filter ([`MIN_UP_NORMAL_Z`]);
+//! * **run 2** — with that filter at a 0.1 threshold, every ellipse size
+//!   refused `NonManifoldBoundary { BoundaryPinch }`: the ragged fringe of a
+//!   per-triangle centroid test leaves bowtie vertices, and a 0.1 threshold
+//!   additionally excludes steep *interior* triangles, which punches holes.
+//!
+//! Both are artefacts of **selection**, not facts about the surface, so
+//! [`clean_selection`] repairs them here, in the test, and **nothing in
+//! `src/` was touched**. The module's checks are not weakened, relaxed or
+//! bypassed: the cleanup only ever *removes* triangles, and whatever survives
+//! is still put to `plan_spiral` to accept or refuse on its own terms. A
+//! refusal on a cleaned selection is a fact about the region and is reported
+//! as one.
+//!
 //! # Cross-arm comparability with F1
 //!
 //! `BALL_RADIUS_MM = 1.0` and `CUSP_HEIGHT_MM = 0.03` are F1's
@@ -88,13 +140,13 @@
     clippy::print_stderr
 )]
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::f64::consts::{PI, TAU};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::conformal_spiral::{
-    self, PAPER_START_ANGLE_STEP, SpiralParams, SpiralReport, SpiralResult,
+    self, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport, SpiralResult,
 };
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -651,16 +703,63 @@ fn curvature_census(mesh: &TriangleMesh, region: &[u32]) -> CurvatureCensus {
 /// The region polygon plus the triangles selected by centroid containment,
 /// after any topology-driven shrink.
 struct Region {
+    /// The ellipse. Note this stays the **containment and drawing**
+    /// reference even though `triangles` is a cleaned subset of what it
+    /// selected: the ellipse is what the escape count in Stage D is measured
+    /// against and what Stage B draws, so a cleanup that shaved a fringe
+    /// triangle makes the drawn outline slightly generous, never tight.
     polygon: Polygon2,
+    /// The triangles actually planned on — post-cleanup.
     triangles: Vec<u32>,
     /// Semi-axes actually used (mm).
     semi_axes: (f64, f64),
     /// How many 2 mm shrinks were needed.
     shrinks: usize,
+    /// What selection hygiene did to get from the raw centroid selection to
+    /// `triangles`.
+    cleanup: CleanupReport,
 }
 
-/// Build the region and plan on it, shrinking the ellipse on a topology
-/// refusal.
+/// Where one arm's ellipse sits and how big it starts.
+#[derive(Clone, Copy)]
+struct EllipseSpec {
+    cx: f64,
+    cy: f64,
+    ax: f64,
+    ay: f64,
+}
+
+impl EllipseSpec {
+    /// The whole-region arm: the mesh's XY bounding box, inset.
+    fn steep(mesh: &TriangleMesh) -> Self {
+        let bb = &mesh.bbox;
+        Self {
+            cx: 0.5 * (bb.min.x + bb.max.x),
+            cy: 0.5 * (bb.min.y + bb.max.y),
+            ax: 0.5 * (bb.max.x - bb.min.x) - REGION_INSET_MM,
+            ay: 0.5 * (bb.max.y - bb.min.y) - REGION_INSET_MM,
+        }
+    }
+
+    /// Is `(x, y)` inside? Analytic, so the census never builds a polygon.
+    fn contains(&self, x: f64, y: f64) -> bool {
+        let (dx, dy) = ((x - self.cx) / self.ax, (y - self.cy) / self.ay);
+        dx * dx + dy * dy <= 1.0
+    }
+}
+
+/// One planned arm. The report is **always** present — that is the whole
+/// point of the module's new `(report, outcome)` shape — so a refusal can be
+/// attributed instead of vanishing with the error.
+struct Arm {
+    label: &'static str,
+    region: Region,
+    report: SpiralReport,
+    outcome: Result<SpiralResult, SpiralRefusal>,
+}
+
+/// Build the region for one arm and plan on it, shrinking the ellipse on a
+/// topology refusal.
 ///
 /// **Spec resolution (2026-08-30).** The brief named `NotSimplyConnected` /
 /// `NotADisk` as the shrink triggers. `NonManifoldBoundary` is added: a
@@ -669,82 +768,850 @@ struct Region {
 /// produces a second loop, and both are the same "the fringe is ragged"
 /// symptom. Every other refusal arm — `EmptyRegion`, `FlattenDidNotConverge`,
 /// `NoSurfaceSamples`, `RingSearchStalled`, `RingLimitReached` — is a
-/// *mechanism* failure that a smaller ellipse would only hide, so those are
-/// reported and returned, not retried.
-fn plan_with_shrink(
+/// *mechanism or geometry* finding that a smaller ellipse would only hide, so
+/// those are **returned with their report** rather than retried. Under the
+/// old `Result`-only signature that path could only return `None`; it now
+/// carries the evidence out, which is what makes the STEEP arm a result
+/// instead of a dead end.
+///
+/// `None` means no region could be produced at all — an empty selection, or
+/// every shrink refused on topology.
+fn plan_arm(
+    label: &'static str,
+    spec: EllipseSpec,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     params: &SpiralParams,
-) -> Option<(Region, SpiralResult, SpiralReport)> {
-    use rs_cam_core::conformal_spiral::SpiralRefusal;
-
-    let bb = &mesh.bbox;
-    let (cx, cy) = (0.5 * (bb.min.x + bb.max.x), 0.5 * (bb.min.y + bb.max.y));
-    let ax0 = 0.5 * (bb.max.x - bb.min.x) - REGION_INSET_MM;
-    let ay0 = 0.5 * (bb.max.y - bb.min.y) - REGION_INSET_MM;
+) -> Option<Arm> {
+    let (cx, cy) = (spec.cx, spec.cy);
 
     for shrink in 0..=MAX_SHRINKS {
         let shrink_mm = shrink as f64 * SHRINK_STEP_MM;
-        let (ax, ay) = (ax0 - shrink_mm, ay0 - shrink_mm);
+        let (ax, ay) = (spec.ax - shrink_mm, spec.ay - shrink_mm);
         if ax <= 0.0 || ay <= 0.0 {
             eprintln!("   REFUSE: ellipse shrank to nothing at step {shrink}.");
             return None;
         }
         let polygon = ellipse_polygon(cx, cy, ax, ay, ELLIPSE_VERTICES);
-        let triangles = conformal_spiral_region(mesh, &polygon);
+        let raw = conformal_spiral_region(mesh, &polygon);
         eprintln!(
             "   region try {shrink}: ellipse centre ({cx:.3}, {cy:.3}), semi-axes \
              ({ax:.3}, {ay:.3}) mm, {ELLIPSE_VERTICES} vertices, \
-             polygon area {:.1} mm², {} triangles selected",
+             polygon area {:.1} mm², {} triangles selected raw \
+             (centroid inside AND normal.z > {MIN_UP_NORMAL_Z})",
             polygon.area(),
-            triangles.len()
+            raw.len()
         );
-        if triangles.is_empty() {
+        if raw.is_empty() {
             eprintln!("     no triangle centroid inside — shrinking.");
             continue;
         }
-        match conformal_spiral::plan_spiral(mesh, index, &triangles, params) {
-            Ok((result, report)) => {
-                return Some((
-                    Region {
-                        polygon,
-                        triangles,
-                        semi_axes: (ax, ay),
-                        shrinks: shrink,
-                    },
-                    result,
-                    report,
-                ));
-            }
+        let (triangles, cleanup) = clean_selection(mesh, &raw);
+        eprintln!(
+            "     cleanup: {} -> {} triangles ({} dropped, {:.2}%); \
+             components on first pass {}, components dropped {}; \
+             pinch passes {}{}, pinch vertices shaved {}, over-used edges {}, \
+             triangles shaved {}",
+            cleanup.before,
+            cleanup.after,
+            cleanup.before.saturating_sub(cleanup.after),
+            100.0 * (cleanup.before.saturating_sub(cleanup.after)) as f64
+                / cleanup.before.max(1) as f64,
+            cleanup.components_first_pass,
+            cleanup.components_dropped,
+            cleanup.pinch_iterations,
+            if cleanup.hit_iteration_cap {
+                " (HIT THE CAP — the selection was still non-manifold when the loop stopped)"
+            } else {
+                ""
+            },
+            cleanup.pinch_vertices_shaved,
+            cleanup.over_used_edges,
+            cleanup.triangles_shaved_by_pinch
+        );
+        if triangles.is_empty() {
+            eprintln!("     cleanup consumed the whole selection — shrinking.");
+            continue;
+        }
+        // The module returns the report FIRST and unconditionally; the
+        // outcome is second. Everything measured before a refusal survives in
+        // that report, which is what `diagnose_refusal` reads.
+        let (report, outcome) = conformal_spiral::plan_spiral(mesh, index, &triangles, params);
+        let retryable = match &outcome {
+            Ok(_) => false,
             Err(refusal) => {
-                let retryable = matches!(
+                eprintln!("     REFUSAL: {refusal:?}");
+                matches!(
                     refusal,
                     SpiralRefusal::NotSimplyConnected { .. }
                         | SpiralRefusal::NotADisk { .. }
                         | SpiralRefusal::NonManifoldBoundary { .. }
-                );
-                eprintln!("     REFUSAL: {refusal:?}");
-                if !retryable {
-                    eprintln!(
-                        "     NOT a topology refusal — a smaller ellipse would hide a \
-                         mechanism failure, so this is reported, not retried."
-                    );
-                    return None;
-                }
-                eprintln!("     topology refusal — shrinking by {SHRINK_STEP_MM} mm and retrying.");
+                )
             }
+        };
+        if retryable {
+            eprintln!("     topology refusal — shrinking by {SHRINK_STEP_MM} mm and retrying.");
+            continue;
         }
+        return Some(Arm {
+            label,
+            region: Region {
+                polygon,
+                triangles,
+                semi_axes: (ax, ay),
+                shrinks: shrink,
+                cleanup,
+            },
+            report,
+            outcome,
+        });
     }
     eprintln!("   REFUSE: {MAX_SHRINKS} shrinks exhausted without a disk-topology region.");
     None
 }
 
-/// Triangles whose centroid is inside the region polygon.
-/// `Polygon2::contains_point` honours holes; this polygon has none.
+// ── the FLAT arm's region: a low-relief window, found by census ─────────
+
+/// Candidate-centre lattice for the flat-window search.
+const FLAT_SEARCH_COLS: usize = 10;
+/// See [`FLAT_SEARCH_COLS`].
+const FLAT_SEARCH_ROWS: usize = 8;
+
+/// Flat-arm ellipse semi-axes (mm) — a 24 × 18 mm window, small enough that a
+/// terrain of this relief plausibly contains a quiet patch of that size, big
+/// enough that the equal-cusp stepover still lays down ~10² rings.
+const FLAT_SEMI_AXIS_X_MM: f64 = 12.0;
+/// See [`FLAT_SEMI_AXIS_X_MM`].
+const FLAT_SEMI_AXIS_Y_MM: f64 = 9.0;
+
+/// A candidate window is only considered if it holds at least this many
+/// up-facing triangles. Without a floor the flattest window would be whichever
+/// one happens to hold two triangles — the "gate handed an empty population"
+/// failure, in census form.
+const FLAT_MIN_TRIANGLES: usize = 200;
+
+/// The relief the FLAT arm aims for. **Not a bar**: the census reports the
+/// flattest window it actually found and says how that compares, because
+/// whether this fixture contains an 8 mm-relief 24 × 18 window is a fact about
+/// the fixture, not something to assert.
+const FLAT_RELIEF_TARGET_MM: f64 = 8.0;
+
+/// What the flat-window census found.
+struct FlatCensus {
+    /// The chosen window, or `None` when no candidate met
+    /// [`FLAT_MIN_TRIANGLES`].
+    best: Option<EllipseSpec>,
+    best_relief_mm: f64,
+    best_triangles: usize,
+    /// Candidates that met the triangle floor.
+    qualifying: usize,
+    /// Candidate centres evaluated in total.
+    evaluated: usize,
+    relief_min_mm: f64,
+    relief_median_mm: f64,
+    relief_max_mm: f64,
+}
+
+/// Census the mesh's up-facing triangles for Z relief and pick the flattest
+/// window the FLAT arm can sit in.
+///
+/// **[REPO], and the shape matters.** The relief is measured over the
+/// **candidate ellipse's own footprint**, not over a grid cell: a 10 × 8 cell
+/// on this fixture is ~10 × 9 mm, while the flat ellipse spans 24 × 18 mm, so
+/// a per-cell relief would systematically understate what the arm actually
+/// machines. Evaluating the real footprint costs `COLS × ROWS × triangles`
+/// analytic point-in-ellipse tests — ~3 × 10⁶ here, milliseconds — and is
+/// exact rather than approximate.
+///
+/// Relief is `max − min` of up-facing triangle **centroid** Z, which is the
+/// same quantity the region selection tests, so the census and the selection
+/// cannot disagree about which triangles they mean.
+///
+/// Candidate centres are constrained so the window stays [`REGION_INSET_MM`]
+/// inside the mesh bounding box — the same clearance the STEEP arm has, so
+/// the two arms differ in relief and size, not in edge proximity.
+///
+/// Deterministic: centres are scanned row-major and the comparison is
+/// strictly-less, so the first (lowest row, then lowest column) of any tie
+/// wins.
+fn flattest_window(mesh: &TriangleMesh) -> FlatCensus {
+    let mut up: Vec<(f64, f64, f64)> = Vec::new();
+    for face in &mesh.faces {
+        if face.normal.z <= MIN_UP_NORMAL_Z {
+            continue;
+        }
+        let c = (face.v[0].coords + face.v[1].coords + face.v[2].coords) / 3.0;
+        up.push((c.x, c.y, c.z));
+    }
+
+    let bb = &mesh.bbox;
+    let (ax, ay) = (FLAT_SEMI_AXIS_X_MM, FLAT_SEMI_AXIS_Y_MM);
+    let (x_lo, x_hi) = (
+        bb.min.x + REGION_INSET_MM + ax,
+        bb.max.x - REGION_INSET_MM - ax,
+    );
+    let (y_lo, y_hi) = (
+        bb.min.y + REGION_INSET_MM + ay,
+        bb.max.y - REGION_INSET_MM - ay,
+    );
+
+    let mut census = FlatCensus {
+        best: None,
+        best_relief_mm: f64::INFINITY,
+        best_triangles: 0,
+        qualifying: 0,
+        evaluated: 0,
+        relief_min_mm: f64::NAN,
+        relief_median_mm: f64::NAN,
+        relief_max_mm: f64::NAN,
+    };
+    if x_hi < x_lo || y_hi < y_lo || up.is_empty() {
+        return census;
+    }
+
+    let step = |lo: f64, hi: f64, n: usize| -> f64 {
+        if n <= 1 {
+            0.0
+        } else {
+            (hi - lo) / (n - 1) as f64
+        }
+    };
+    let dx = step(x_lo, x_hi, FLAT_SEARCH_COLS);
+    let dy = step(y_lo, y_hi, FLAT_SEARCH_ROWS);
+
+    let mut reliefs: Vec<f64> = Vec::new();
+    for row in 0..FLAT_SEARCH_ROWS {
+        for col in 0..FLAT_SEARCH_COLS {
+            let spec = EllipseSpec {
+                cx: x_lo + dx * col as f64,
+                cy: y_lo + dy * row as f64,
+                ax,
+                ay,
+            };
+            census.evaluated += 1;
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            let mut count = 0usize;
+            for &(x, y, z) in &up {
+                if spec.contains(x, y) {
+                    count += 1;
+                    lo = lo.min(z);
+                    hi = hi.max(z);
+                }
+            }
+            if count < FLAT_MIN_TRIANGLES {
+                continue;
+            }
+            census.qualifying += 1;
+            let relief = hi - lo;
+            reliefs.push(relief);
+            if relief < census.best_relief_mm {
+                census.best_relief_mm = relief;
+                census.best_triangles = count;
+                census.best = Some(spec);
+            }
+        }
+    }
+
+    reliefs.sort_by(f64::total_cmp);
+    census.relief_min_mm = percentile(&reliefs, 0.0);
+    census.relief_median_mm = percentile(&reliefs, 0.50);
+    census.relief_max_mm = percentile(&reliefs, 1.0);
+    census
+}
+
+/// Strictly-positive normal Z is the up-facing test.
+///
+/// **Moved from 0.1 to 0.0 on 2026-08-30, deliberately.** The two conditions
+/// are not interchangeable, and which one is right is decided by *where* each
+/// one cuts:
+///
+/// * `> 0.0` excludes exactly the floor plate and any underside — surfaces
+///   whose outward normal points down. Every triangle it removes is on a
+///   sheet the selection must not have, and it removes nothing from the top
+///   sheet, because a heightfield's triangles all have strictly positive
+///   normal Z.
+/// * `> 0.1` additionally excludes up-facing terrain steeper than ~84°.
+///   Those triangles sit in the **interior** of the region, so removing them
+///   punches holes in the selected patch — and a hole is a second boundary
+///   loop, which is the `NotSimplyConnected` refusal this filter exists to
+///   avoid, reintroduced from the other side. It also multiplies the ragged
+///   fringe that produces boundary pinches.
+///
+/// The 0.1 band was chosen to drop the vertical skirt walls, but the skirt
+/// lives on the mesh's XY perimeter and the region ellipse is 8 mm inside it,
+/// so no skirt triangle was ever selectable. The threshold was buying
+/// nothing and costing interior connectivity.
+const MIN_UP_NORMAL_Z: f64 = 0.0;
+
+/// Triangles whose centroid is inside the region polygon AND whose normal
+/// faces up. `Polygon2::contains_point` honours holes; this polygon has none.
+///
+/// The up-facing filter is load-bearing, discovered on the first run:
+/// `fixtures/terrain_small.stl` is a CLOSED solid (terrain top + skirt +
+/// floor), so a pure XY centroid test selects the top surface AND the floor
+/// plate directly beneath it — two disconnected patches, which
+/// `region_topology` correctly refuses as `NotSimplyConnected { 2 }`. The
+/// machinable surface of a 3-axis terrain job is the up-facing sheet, so the
+/// filter matches the machining semantics, not just the topology check. See
+/// [`MIN_UP_NORMAL_Z`] for why the threshold is 0.0 and not 0.1.
+///
+/// This is a **raw** selection: it is per-triangle and therefore says nothing
+/// about connectivity or manifoldness. [`clean_selection`] is what makes it a
+/// candidate disk.
 fn conformal_spiral_region(mesh: &TriangleMesh, polygon: &Polygon2) -> Vec<u32> {
-    rs_cam_core::direction_field::triangles_where(mesh, |_, centroid| {
-        polygon.contains_point(&P2::new(centroid.x, centroid.y))
+    rs_cam_core::direction_field::triangles_where(mesh, |i, centroid| {
+        mesh.faces
+            .get(i)
+            .is_some_and(|f| f.normal.z > MIN_UP_NORMAL_Z)
+            && polygon.contains_point(&P2::new(centroid.x, centroid.y))
     })
+}
+
+// ── selection hygiene: [REPO], test-local, no `src/` change ─────────────
+
+/// Iteration cap on the pinch-shaving loop. Each pass removes at least one
+/// triangle, so this only bounds a pathological selection; the count is
+/// reported so a run that hits it is visible rather than silently truncated.
+const MAX_PINCH_ITERATIONS: usize = 20;
+
+/// Canonical undirected edge key.
+fn edge_key(a: u32, b: u32) -> (u32, u32) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// What [`clean_selection`] did, so the run can be read rather than trusted.
+#[derive(Debug, Default, Clone, Copy)]
+struct CleanupReport {
+    before: usize,
+    after: usize,
+    /// Edge-connected components found on the FIRST pass.
+    components_first_pass: usize,
+    /// Components discarded across every pass.
+    components_dropped: usize,
+    /// Pinch-shaving passes actually run.
+    pinch_iterations: usize,
+    /// Boundary-pinch vertices shaved, summed over passes.
+    pinch_vertices_shaved: usize,
+    /// Over-used (three-or-more-triangle) edges seen, summed over passes.
+    /// Counted separately because it is an EDGE count, not a vertex count —
+    /// the two must not be added together under one name.
+    over_used_edges: usize,
+    /// Triangles removed by shaving (as opposed to component pruning).
+    triangles_shaved_by_pinch: usize,
+    /// True when the loop stopped on [`MAX_PINCH_ITERATIONS`] rather than on
+    /// a clean selection.
+    hit_iteration_cap: bool,
+}
+
+/// Keep only the largest **edge**-connected component of `selected`.
+///
+/// Edge adjacency, not vertex adjacency: two triangles that meet at a single
+/// vertex are exactly the bowtie `region_topology` refuses as a
+/// `BoundaryPinch`, so treating them as connected would defeat the purpose.
+///
+/// Returns the kept triangles (ascending, as `selected` was) and the number
+/// of components seen. Deterministic: components are discovered by scanning
+/// `selected` in order, and the largest wins with the lowest component id
+/// breaking a tie — neither depends on `HashMap` iteration order.
+fn largest_edge_component(mesh: &TriangleMesh, selected: &[u32]) -> (Vec<u32>, usize) {
+    let n = selected.len();
+    if n == 0 {
+        return (Vec::new(), 0);
+    }
+    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (i, &t) in selected.iter().enumerate() {
+        let Some(tri) = mesh.triangles.get(t as usize) else {
+            continue;
+        };
+        for k in 0..3 {
+            by_edge
+                .entry(edge_key(tri[k], tri[(k + 1) % 3]))
+                .or_default()
+                .push(i);
+        }
+    }
+
+    let mut component: Vec<Option<usize>> = vec![None; n];
+    let mut sizes: Vec<usize> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    for start in 0..n {
+        if component[start].is_some() {
+            continue;
+        }
+        let id = sizes.len();
+        component[start] = Some(id);
+        stack.push(start);
+        let mut size = 0usize;
+        while let Some(i) = stack.pop() {
+            size += 1;
+            let Some(&t) = selected.get(i) else { continue };
+            let Some(tri) = mesh.triangles.get(t as usize) else {
+                continue;
+            };
+            for k in 0..3 {
+                let Some(list) = by_edge.get(&edge_key(tri[k], tri[(k + 1) % 3])) else {
+                    continue;
+                };
+                for &j in list {
+                    if component[j].is_none() {
+                        component[j] = Some(id);
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        sizes.push(size);
+    }
+
+    // Largest size wins; STRICTLY greater, so the lowest component id breaks
+    // a tie — and component ids are assigned by scanning `selected` in order,
+    // which is why nothing here depends on `HashMap` iteration order.
+    let mut best = 0usize;
+    let mut best_size = 0usize;
+    for (id, &size) in sizes.iter().enumerate() {
+        if size > best_size {
+            best_size = size;
+            best = id;
+        }
+    }
+    let mut kept: Vec<u32> = Vec::with_capacity(best_size);
+    for (i, &t) in selected.iter().enumerate() {
+        if component.get(i).copied().flatten() == Some(best) {
+            kept.push(t);
+        }
+    }
+    (kept, sizes.len())
+}
+
+/// Vertices of `selected` that make its boundary non-manifold.
+///
+/// The edge bookkeeping is built the way `conformal_spiral::region_topology`
+/// builds it, on the mesh's **global** vertex ids: `build_region_mesh` maps
+/// global ids to local ones without reordering a triangle's corners, so the
+/// winding — and therefore every directed half-edge — is identical.
+///
+/// * an undirected edge used **once** is a boundary edge; the directed
+///   half-edge `(a, b)` sitting on one is an **outgoing boundary half-edge**
+///   of `a`. A vertex with more than one of those is a `BoundaryPinch`;
+/// * an undirected edge used **three or more** times is `EdgeOverUsed`. That
+///   is the other arm of the same `NonManifoldBoundary` refusal, so both its
+///   endpoints go into the same shave set — folded in here because it costs
+///   nothing and leaving it out would let the cleanup declare success on a
+///   selection the module still refuses.
+///
+/// Returns `(vertices to shave, pinch vertices, over-used edges)`. The set is
+/// a `BTreeSet`, so the shaving order is deterministic.
+fn nonmanifold_vertices(mesh: &TriangleMesh, selected: &[u32]) -> (BTreeSet<u32>, usize, usize) {
+    let mut undirected: HashMap<(u32, u32), usize> = HashMap::new();
+    let mut directed: HashSet<(u32, u32)> = HashSet::new();
+    for &t in selected {
+        let Some(tri) = mesh.triangles.get(t as usize) else {
+            continue;
+        };
+        for k in 0..3 {
+            let (a, b) = (tri[k], tri[(k + 1) % 3]);
+            if a == b {
+                continue;
+            }
+            *undirected.entry(edge_key(a, b)).or_insert(0) += 1;
+            directed.insert((a, b));
+        }
+    }
+
+    let mut out_degree: HashMap<u32, usize> = HashMap::new();
+    for &(a, b) in &directed {
+        if undirected.get(&edge_key(a, b)).copied().unwrap_or(0) == 1 {
+            *out_degree.entry(a).or_insert(0) += 1;
+        }
+    }
+    let mut bad: BTreeSet<u32> = BTreeSet::new();
+    for (&v, &degree) in &out_degree {
+        if degree > 1 {
+            bad.insert(v);
+        }
+    }
+    let pinches = bad.len();
+
+    let mut over_used = 0usize;
+    for (&(a, b), &count) in &undirected {
+        if count > 2 {
+            over_used += 1;
+            bad.insert(a);
+            bad.insert(b);
+        }
+    }
+    (bad, pinches, over_used)
+}
+
+/// Turn a raw per-triangle selection into something `plan_spiral` can be
+/// asked about honestly.
+///
+/// **[REPO], test-local, and deliberately NOT a `src/` change.** The module's
+/// refusals stay authoritative: this pass does not weaken a single check, it
+/// only stops handing `plan_spiral` a selection whose defects are artefacts
+/// of *centroid-in-polygon selection* rather than facts about the surface.
+/// Two artefacts, in this order:
+///
+/// 1. **Islands.** A per-triangle test can strand triangles the ellipse
+///    clipped away from the main patch. Only the largest edge-connected
+///    component survives.
+/// 2. **Bowtie vertices.** A ragged fringe routinely leaves a vertex whose
+///    selected triangles form two disjoint fans — a `BoundaryPinch`. Every
+///    selected triangle incident to such a vertex is removed. Shaving can
+///    orphan new pinches (and new islands), so step 1 is re-run and the whole
+///    thing loops to a fixed point, capped at [`MAX_PINCH_ITERATIONS`].
+///
+/// What it does NOT do: it never adds a triangle, never re-triangulates, and
+/// never touches a hole. If the cleaned patch is still not a disk —
+/// `NotSimplyConnected` from a genuine interior hole, say — `plan_spiral`
+/// refuses and that refusal is a fact about the region, which is the point.
+fn clean_selection(mesh: &TriangleMesh, selected: &[u32]) -> (Vec<u32>, CleanupReport) {
+    let mut report = CleanupReport {
+        before: selected.len(),
+        ..CleanupReport::default()
+    };
+    let (mut current, components) = largest_edge_component(mesh, selected);
+    report.components_first_pass = components;
+    report.components_dropped += components.saturating_sub(1);
+
+    loop {
+        let (bad, pinches, over_used) = nonmanifold_vertices(mesh, &current);
+        if bad.is_empty() {
+            break;
+        }
+        if report.pinch_iterations >= MAX_PINCH_ITERATIONS {
+            report.hit_iteration_cap = true;
+            break;
+        }
+        report.pinch_iterations += 1;
+        report.pinch_vertices_shaved += pinches;
+        report.over_used_edges += over_used;
+
+        let before = current.len();
+        current.retain(|&t| {
+            mesh.triangles
+                .get(t as usize)
+                .is_some_and(|tri| !tri.iter().any(|v| bad.contains(v)))
+        });
+        report.triangles_shaved_by_pinch += before - current.len();
+        if current.is_empty() {
+            break;
+        }
+        // Shaving can disconnect the patch; re-prune before re-testing.
+        let (kept, components) = largest_edge_component(mesh, &current);
+        report.components_dropped += components.saturating_sub(1);
+        current = kept;
+    }
+
+    report.after = current.len();
+    (current, report)
+}
+
+/// What an arm's region turned out to be. Shared by both arms so the two are
+/// described in identical terms.
+fn print_region_acceptance(region: &Region) {
+    eprintln!(
+        "   region ACCEPTED after {} shrink(s): semi-axes ({:.3}, {:.3}) mm, \
+         {} triangles after cleanup (from {} raw), polygon area {:.1} mm²",
+        region.shrinks,
+        region.semi_axes.0,
+        region.semi_axes.1,
+        region.triangles.len(),
+        region.cleanup.before,
+        region.polygon.area()
+    );
+    eprintln!(
+        "   The planned region is the CLEANED triangle set; the ellipse stays the reference the\n\
+         \x20  Stage D escape count is measured against and the outline Stage B draws, so that\n\
+         \x20  outline is slightly generous where the cleanup shaved a fringe triangle.\n"
+    );
+}
+
+// ── shared report printers (Stage A AND the refusal diagnosis) ──────────
+
+/// The flatten metrics table.
+///
+/// Factored out of Stage A because a **refusal** that got past the flattening
+/// carries exactly these rows — the module now measures them before anything
+/// downstream can refuse, precisely so they survive — and they are what
+/// attributes the refusal to a bad map rather than a bad mechanism. Printing
+/// two different tables on the two paths would have made the steep arm's
+/// numbers unquotable next to the flat arm's.
+fn print_flatten_block(report: &SpiralReport) {
+    eprintln!("\n   -- flattening: the BAD-MAP vs BAD-MECHANISM table --");
+    if report.area_distortion_by_disk_radius.is_empty() && report.flatten_interior_vertices == 0 {
+        eprintln!("     NOT REACHED: the pipeline refused before the flattening ran.");
+        return;
+    }
+    eprintln!(
+        "     interior vertices (solve size){:>12}",
+        report.flatten_interior_vertices
+    );
+    eprintln!(
+        "     CG iterations u / v           {:>12} / {}",
+        report.flatten_cg_iterations[0], report.flatten_cg_iterations[1]
+    );
+    eprintln!(
+        "     CG residual u / v             {:>12.3e} / {:.3e}",
+        report.flatten_residual[0], report.flatten_residual[1]
+    );
+    eprintln!(
+        "     flipped triangles (want 0)    {:>12}",
+        report.flipped_triangles
+    );
+    eprintln!(
+        "     orientation sign              {:>12.1}",
+        report.orientation_sign
+    );
+    eprintln!(
+        "     area distortion min/med/max   {:>12.6e} / {:.6e} / {:.6e}   (1/mm²)",
+        report.area_distortion_min, report.area_distortion_median, report.area_distortion_max
+    );
+    eprintln!(
+        "     angle distortion med/max      {:>12.4} / {:.4}   (deg)",
+        report.angle_distortion_median_deg, report.angle_distortion_max_deg
+    );
+    eprintln!(
+        "     READ THIS FIRST if anything below disappoints: a HARMONIC map is a labelled\n\
+         \x20    [REPO] substitution for the paper's conformal slit map (PROGRAMME.md §F2 step 1).\n\
+         \x20    Nonzero flips are a DISCRETISATION symptom (obtuse triangles, negative cotangent\n\
+         \x20    weights), not a mechanism verdict; a wide area-distortion spread is expected and\n\
+         \x20    is what the sampled coverage check exists to compensate."
+    );
+}
+
+/// `bucket[0].median / bucket[last].median`, folded so it reads ≥ 1 whichever
+/// way the profile leans.
+///
+/// **The fold is deliberate.** Area distortion here is `flat area / 3D area`,
+/// and whether a high-relief region makes that grow or shrink toward the disk
+/// centre is not something this instrument can assert without measuring it —
+/// so "climbing steeply" is defined as *far from unity in either direction*
+/// rather than as a signed inequality that could be silently backwards. The
+/// raw per-bucket medians are printed beside it so the direction is visible.
+///
+/// `None` when the profile was never measured, or a bucket is empty/zero.
+fn radial_climb(report: &SpiralReport) -> Option<f64> {
+    let first = report.area_distortion_by_disk_radius.first()?;
+    let last = report.area_distortion_by_disk_radius.last()?;
+    if first.triangles == 0 || last.triangles == 0 {
+        return None;
+    }
+    let (a, b) = (first.area_distortion_median, last.area_distortion_median);
+    if !(a.is_finite() && b.is_finite()) || a <= 0.0 || b <= 0.0 {
+        return None;
+    }
+    let ratio = a / b;
+    Some(ratio.max(1.0 / ratio))
+}
+
+/// The radial area-distortion profile — five buckets outward from the disk
+/// centre. Printed per arm, and again side by side, because the STEEP-vs-FLAT
+/// comparison of this profile is the attribution evidence for the whole
+/// phase.
+fn print_radial_profile(label: &str, report: &SpiralReport) {
+    eprintln!("   -- radial area-distortion profile — {label} --");
+    if report.area_distortion_by_disk_radius.is_empty() {
+        eprintln!("     NOT MEASURED: the flattening never ran.");
+        return;
+    }
+    eprintln!(
+        "     {:>10} {:>10} {:>12} {:>14} {:>14} {:>14}",
+        "r_lo", "r_hi", "triangles", "distort min", "distort med", "distort max"
+    );
+    for bucket in &report.area_distortion_by_disk_radius {
+        eprintln!(
+            "     {:>10.3} {:>10.3} {:>12} {:>14.6e} {:>14.6e} {:>14.6e}",
+            bucket.r_lo,
+            bucket.r_hi,
+            bucket.triangles,
+            bucket.area_distortion_min,
+            bucket.area_distortion_median,
+            bucket.area_distortion_max
+        );
+    }
+    match radial_climb(report) {
+        Some(climb) => eprintln!(
+            "     climb |median(bucket 0) / median(bucket 4)|, folded to >= 1: {climb:.3}"
+        ),
+        None => eprintln!("     climb: NOT COMPUTABLE (an end bucket is empty or non-positive)"),
+    }
+}
+
+// ── the refusal diagnosis (pre-registered, printed in the output) ───────
+
+/// `uncovered_distance_median_mm` above this multiple of `2·K_c` is the
+/// module's own "far larger than 2·K_c".
+const STALL_FAR_MULTIPLE: f64 = 2.0;
+
+/// `uncovered_distance_median_mm` at or below this multiple of `K_c` is
+/// "near K_c" — the reading that says the search, not the geometry, gave up.
+const STALL_NEAR_MULTIPLE: f64 = 1.5;
+
+/// Folded radial climb at or above this is "climbing steeply".
+const RADIAL_CLIMB_STEEP: f64 = 10.0;
+
+/// Folded radial climb at or below this is "flat".
+const RADIAL_CLIMB_FLAT: f64 = 2.0;
+
+/// Diagnose a refusal from the report that survived it, and print the
+/// pre-registered verdict logic **in the output** so the reasoning is in the
+/// artifact rather than in someone's head afterwards.
+///
+/// Returns whether the refusal was **diagnosable** — whether the report
+/// carried the rows needed to attribute it. That, not the refusal itself, is
+/// what the STEEP arm is allowed to fail on.
+fn diagnose_refusal(
+    label: &str,
+    report: &SpiralReport,
+    refusal: &SpiralRefusal,
+    params: &SpiralParams,
+) -> bool {
+    eprintln!("\n========== REFUSAL DIAGNOSIS — {label} ==========\n");
+    eprintln!("   refusal: {refusal:?}");
+    eprintln!(
+        "   region: {} triangles, {} vertices, {} edges, Euler {}, boundary loop {} verts / \
+         {:.3} mm",
+        report.region_triangles,
+        report.region_vertices,
+        report.region_edges,
+        report.euler_characteristic,
+        report.boundary_loop_vertices,
+        report.boundary_loop_length_mm
+    );
+
+    print_flatten_block(report);
+    eprintln!();
+    print_radial_profile(label, report);
+
+    let stall_class = matches!(
+        refusal,
+        SpiralRefusal::RingSearchStalled { .. } | SpiralRefusal::RingLimitReached { .. }
+    );
+
+    let Some(stall) = report.stall.as_ref() else {
+        eprintln!("\n   -- stall context --");
+        eprintln!("     ABSENT. The ring search either never ran or closed coverage.");
+        // A non-stall refusal is diagnosable as long as the report survived
+        // far enough to say what the region was.
+        let diagnosable = !stall_class && report.region_triangles > 0;
+        eprintln!(
+            "     DIAGNOSABLE: {diagnosable} (a stall-class refusal with no stall block is \
+             NOT diagnosable)"
+        );
+        return diagnosable;
+    };
+
+    // Both sides of every ratio below come from the STALL BLOCK's own K_c,
+    // not from the params this file passed in — a bar and its observation
+    // must be the same measure. The params value is printed beside it purely
+    // as a cross-check that the two agree.
+    let k_c = stall.coverage_radius_mm;
+    eprintln!("\n   -- stall context --");
+    eprintln!(
+        "     rings placed before the stall  {:>12}",
+        stall.rings_placed
+    );
+    eprintln!(
+        "     ring radii (first / last)      {:>12.6} / {:.6}",
+        stall.ring_radii.first().copied().unwrap_or(f64::NAN),
+        stall.ring_radii.last().copied().unwrap_or(f64::NAN)
+    );
+    eprintln!(
+        "     binary-search interval lo / hi {:>12.6} / {:.6}",
+        stall.search_lo, stall.search_hi
+    );
+    eprintln!(
+        "     ANY interior radius feasible?  {:>12}   (false = the search never lowered its\n\
+         \x20                                                bound: no circle strictly inside the\n\
+         \x20                                                previous ring can sweep everything\n\
+         \x20                                                outside it)",
+        stall.interior_radius_feasible
+    );
+    eprintln!(
+        "     S^h points still uncovered     {:>12}",
+        stall.uncovered
+    );
+    eprintln!(
+        "     distances measured on          {:>12}   samples, against {:?}",
+        stall.distance_samples, stall.distance_reference
+    );
+    eprintln!(
+        "     coverage radius K_c (mm)       {:>12.4}   (params.ball_radius_mm {:.4} — these \
+         must agree)",
+        stall.coverage_radius_mm, params.ball_radius_mm
+    );
+    eprintln!(
+        "     uncovered distance min/med/max {:>12.4} / {:.4} / {:.4} mm",
+        stall.uncovered_distance_min_mm,
+        stall.uncovered_distance_median_mm,
+        stall.uncovered_distance_max_mm
+    );
+
+    // -- the pre-registered verdict --
+    let median = stall.uncovered_distance_median_mm;
+    let far_bar = STALL_FAR_MULTIPLE * 2.0 * k_c;
+    let near_bar = STALL_NEAR_MULTIPLE * k_c;
+    let climb = radial_climb(report);
+    let far = median > far_bar;
+    let near = median <= near_bar;
+    let steep_profile = climb.is_some_and(|c| c >= RADIAL_CLIMB_STEEP);
+    let flat_profile = climb.is_some_and(|c| c <= RADIAL_CLIMB_FLAT);
+
+    eprintln!("\n   -- PRE-REGISTERED VERDICT LOGIC (stated before the run, evaluated here) --");
+    eprintln!(
+        "     A. interior_radius_feasible == false     -> {}",
+        !stall.interior_radius_feasible
+    );
+    eprintln!(
+        "     B. median {median:.4} > {STALL_FAR_MULTIPLE} x 2*K_c = {far_bar:.4} mm  \
+         (\"far larger\") -> {far}"
+    );
+    eprintln!(
+        "     C. radial climb >= {RADIAL_CLIMB_STEEP:.1} (\"climbing steeply\")   -> \
+         {steep_profile}  (climb {})",
+        climb.map_or("n/a".to_owned(), |c| format!("{c:.3}"))
+    );
+    eprintln!(
+        "     D. median {median:.4} <= {STALL_NEAR_MULTIPLE} x K_c = {near_bar:.4} mm  \
+         (\"near K_c\")   -> {near}"
+    );
+    eprintln!(
+        "     E. radial climb <= {RADIAL_CLIMB_FLAT:.1} (\"flat profile\")        -> {flat_profile}"
+    );
+    if !stall.interior_radius_feasible && far && steep_profile {
+        eprintln!(
+            "\n     VERDICT (A and B and C): GEOMETRY UNCOVERABLE RING-BY-RING AT THIS\n\
+             \x20    DISTORTION — a **MAP** finding. The refusal is correct, not a bug in the\n\
+             \x20    search: no interior circle was ever feasible, the still-uncovered points sit\n\
+             \x20    far beyond a tool diameter from the last ring, and the map is compressing\n\
+             \x20    hard toward one end of the disk. The repair is the front-end (a conformal\n\
+             \x20    slit map, Phase F2 step 3), not the ring search."
+        );
+    } else if near && flat_profile {
+        eprintln!(
+            "\n     VERDICT (D and E): SEARCH AT FAULT — a **MECHANISM** finding. The\n\
+             \x20    uncovered points are within reach of the last ring and the map is not\n\
+             \x20    distorting the radius, so a correct search should have placed another ring.\n\
+             \x20    The repair is in the Eqs. 1-4 binary search (its monotonicity assumption is\n\
+             \x20    the module's stated, unproved premise)."
+        );
+    } else {
+        eprintln!(
+            "\n     VERDICT: INCONCLUSIVE — the conditions above do not form either\n\
+             \x20    pre-registered pattern. Report the rows; do NOT pick a story to fit them.\n\
+             \x20    (This branch exists so a mixed reading cannot be quietly rounded to\n\
+             \x20    whichever verdict was expected.)"
+        );
+    }
+
+    let diagnosable = !report.area_distortion_by_disk_radius.is_empty();
+    eprintln!(
+        "\n     DIAGNOSABLE: {diagnosable} (stall block present, radial profile {})",
+        if diagnosable { "present" } else { "MISSING" }
+    );
+    diagnosable
 }
 
 // ── STAGE F2-A — plan, report, falsifier ────────────────────────────────
@@ -854,42 +1721,7 @@ fn stage_a(
         report.boundary_loop_length_mm
     );
 
-    eprintln!("\n   -- flattening: the BAD-MAP vs BAD-MECHANISM table --");
-    eprintln!(
-        "     interior vertices (solve size){:>12}",
-        report.flatten_interior_vertices
-    );
-    eprintln!(
-        "     CG iterations u / v           {:>12} / {}",
-        report.flatten_cg_iterations[0], report.flatten_cg_iterations[1]
-    );
-    eprintln!(
-        "     CG residual u / v             {:>12.3e} / {:.3e}",
-        report.flatten_residual[0], report.flatten_residual[1]
-    );
-    eprintln!(
-        "     flipped triangles (want 0)    {:>12}",
-        report.flipped_triangles
-    );
-    eprintln!(
-        "     orientation sign              {:>12.1}",
-        report.orientation_sign
-    );
-    eprintln!(
-        "     area distortion min/med/max   {:>12.6e} / {:.6e} / {:.6e}   (1/mm²)",
-        report.area_distortion_min, report.area_distortion_median, report.area_distortion_max
-    );
-    eprintln!(
-        "     angle distortion med/max      {:>12.4} / {:.4}   (deg)",
-        report.angle_distortion_median_deg, report.angle_distortion_max_deg
-    );
-    eprintln!(
-        "     READ THIS FIRST if anything below disappoints: a HARMONIC map is a labelled\n\
-         \x20    [REPO] substitution for the paper's conformal slit map (PROGRAMME.md §F2 step 1).\n\
-         \x20    Nonzero flips are a DISCRETISATION symptom (obtuse triangles, negative cotangent\n\
-         \x20    weights), not a mechanism verdict; a wide area-distortion spread is expected and\n\
-         \x20    is what the sampled coverage check exists to compensate."
-    );
+    print_flatten_block(report);
 
     eprintln!("\n   -- S^h sampling + coverage-driven rings (Eqs. 1-4) --");
     eprintln!(
@@ -1116,7 +1948,11 @@ fn stage_b(region: &Region, result: &SpiralResult, report: &SpiralReport) {
         .expect("write disk spiral element");
     }
     disk.push_str("</svg>\n");
-    let disk_path = output_dir.join("terrain_small_conformal_spiral_disk_f2.svg");
+    // `_flat_` in the name, not a generic one: Stage B only ever runs on the
+    // FLAT arm, and a file called "terrain_small_conformal_spiral_disk" would
+    // be read later as the whole region's spiral rather than the low-relief
+    // window's.
+    let disk_path = output_dir.join("terrain_small_conformal_spiral_flat_disk_f2.svg");
     std::fs::write(&disk_path, disk).expect("write F2 disk SVG");
 
     // ---- (2) the XY world view ----------------------------------------
@@ -1175,7 +2011,7 @@ fn stage_b(region: &Region, result: &SpiralResult, report: &SpiralReport) {
     )
     .expect("write region boundary");
     world.push_str("</svg>\n");
-    let world_path = output_dir.join("terrain_small_conformal_spiral_xy_f2.svg");
+    let world_path = output_dir.join("terrain_small_conformal_spiral_flat_xy_f2.svg");
     std::fs::write(&world_path, world).expect("write F2 world SVG");
 
     eprintln!(
@@ -1555,7 +2391,7 @@ fn stage_e(
         label: String,
         n_s: usize,
         n_c: usize,
-        outcome: Result<SpiralReport, rs_cam_core::conformal_spiral::SpiralRefusal>,
+        outcome: Result<SpiralReport, SpiralRefusal>,
     }
 
     // The baseline row's params were printed in Stage A, three screens up.
@@ -1589,10 +2425,25 @@ fn stage_e(
         params.n_angular_samples = n_c;
         eprintln!("   re-running plan_spiral:");
         print_params(label, &params);
-        let outcome = match conformal_spiral::plan_spiral(mesh, index, &region.triangles, &params) {
-            Ok((_, report)) => Ok(report),
+        // Report first, always; outcome second. On a refusal the report is
+        // still the row's evidence, which is why the refusal arm carries the
+        // reason rather than a bare "REFUSED".
+        let (row_report, row_outcome) =
+            conformal_spiral::plan_spiral(mesh, index, &region.triangles, &params);
+        let outcome = match row_outcome {
+            Ok(_) => Ok(row_report),
             Err(refusal) => {
                 eprintln!("     REFUSAL: {refusal:?}");
+                if let Some(stall) = row_report.stall.as_ref() {
+                    eprintln!(
+                        "       stall: {} rings placed, {} uncovered, median distance {:.4} mm \
+                         against K_c {:.4}",
+                        stall.rings_placed,
+                        stall.uncovered,
+                        stall.uncovered_distance_median_mm,
+                        stall.coverage_radius_mm
+                    );
+                }
                 Err(refusal)
             }
         };
@@ -1703,24 +2554,147 @@ fn terrain_small_conformal_spiral_f2() {
     let mut params = SpiralParams::new(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
     params.start_angle_step = SWEEP_START_ANGLE_STEP;
 
+    // ═══ ARM 1 — STEEP: the whole inset region ══════════════════════════
+    //
+    // The envelope PROBE. Its expected outcome is a diagnosed
+    // RingSearchStalled, and that is a RESULT, not a test failure: the report
+    // now survives the refusal, so the stall can be attributed to the map or
+    // to the search. The arm fails only if a refusal arrives with nothing to
+    // attribute it by.
+    eprintln!(
+        "\n══════════ ARM STEEP — whole inset region (envelope PROBE) ══════════\n\
+         \x20  Expected: a DIAGNOSED refusal. A refusal here is a finding; an\n\
+         \x20  UNDIAGNOSABLE refusal is the failure.\n"
+    );
     eprintln!("   -- region selection (inset {REGION_INSET_MM} mm, ellipse, centroid test) --");
-    let Some((region, result, report)) = plan_with_shrink(&mesh, &index, &params) else {
-        panic!(
-            "plan_spiral produced no plan on any of the {} ellipses tried — see the refusals \
+    let steep = plan_arm(
+        "ARM STEEP",
+        EllipseSpec::steep(&mesh),
+        &mesh,
+        &index,
+        &params,
+    );
+    let steep = match steep {
+        Some(arm) => {
+            print_region_acceptance(&arm.region);
+            arm
+        }
+        None => panic!(
+            "STEEP arm produced no region at all on any of the {} ellipses — see the refusals \
              printed above",
             MAX_SHRINKS + 1
-        );
+        ),
+    };
+    match &steep.outcome {
+        Ok(_) => eprintln!(
+            "   ARM STEEP PLANNED. The probe's expectation (a stall on the high-relief region)\n\
+             \x20  was WRONG on this fixture — say so in the write-up rather than quietly\n\
+             \x20  dropping the prediction. The full staged evidence below still runs on the\n\
+             \x20  FLAT arm, which is the controlled one.\n"
+        ),
+        Err(refusal) => {
+            let diagnosable = diagnose_refusal(steep.label, &steep.report, refusal, &params);
+            assert!(
+                diagnosable,
+                "{} refused with {refusal:?} but the surviving report carried nothing to \
+                 attribute it by. A refusal is a result; an unattributable one is a defect in \
+                 this instrument or in the module's report plumbing.",
+                steep.label
+            );
+        }
+    }
+
+    // ═══ ARM 2 — FLAT: a low-relief window, found by census ══════════════
+    //
+    // The envelope-INSIDE test. Inside the envelope the mechanism has no
+    // excuse, so a refusal here is a hard failure.
+    eprintln!("\n══════════ ARM FLAT — low-relief window (envelope-INSIDE test) ══════════\n");
+    let census = flattest_window(&mesh);
+    eprintln!(
+        "   flat-window census: {} candidate centres on a {FLAT_SEARCH_COLS}x{FLAT_SEARCH_ROWS} \
+         lattice, {} met the {FLAT_MIN_TRIANGLES}-triangle floor.",
+        census.evaluated, census.qualifying
+    );
+    eprintln!(
+        "   relief over the WINDOW footprint ({:.0} x {:.0} mm), up-facing centroid Z:\n\
+         \x20    across qualifying candidates  min {:.3} / median {:.3} / max {:.3} mm",
+        2.0 * FLAT_SEMI_AXIS_X_MM,
+        2.0 * FLAT_SEMI_AXIS_Y_MM,
+        census.relief_min_mm,
+        census.relief_median_mm,
+        census.relief_max_mm
+    );
+    let Some(flat_spec) = census.best else {
+        panic!(
+            "no candidate window held {FLAT_MIN_TRIANGLES} up-facing triangles — the FLAT arm \
+             cannot be placed on this fixture"
+        )
     };
     eprintln!(
-        "   region ACCEPTED after {} shrink(s): semi-axes ({:.3}, {:.3}) mm, \
-         {} triangles, polygon area {:.1} mm²\n",
-        region.shrinks,
-        region.semi_axes.0,
-        region.semi_axes.1,
-        region.triangles.len(),
-        region.polygon.area()
+        "   CHOSEN: centre ({:.3}, {:.3}), semi-axes ({:.1}, {:.1}) mm, relief {:.3} mm over \
+         {} up-facing triangles.",
+        flat_spec.cx,
+        flat_spec.cy,
+        flat_spec.ax,
+        flat_spec.ay,
+        census.best_relief_mm,
+        census.best_triangles
+    );
+    eprintln!(
+        "   Target was < ~{FLAT_RELIEF_TARGET_MM} mm of relief: {}. That target is NOT a bar —\n\
+         \x20  whether this fixture contains a window that quiet is a fact about the fixture, and\n\
+         \x20  the census reports the flattest one available either way.\n",
+        if census.best_relief_mm < FLAT_RELIEF_TARGET_MM {
+            "MET"
+        } else {
+            "NOT met — the flattest available window is quoted above; read every FLAT-arm number \
+             against that relief, not against the target"
+        }
     );
 
+    let flat = match plan_arm("ARM FLAT", flat_spec, &mesh, &index, &params) {
+        Some(arm) => {
+            print_region_acceptance(&arm.region);
+            arm
+        }
+        None => panic!(
+            "ARM FLAT produced no region at all — see the refusals printed above. Inside the \
+             envelope this is a hard failure."
+        ),
+    };
+    let Arm {
+        label: flat_label,
+        region,
+        report,
+        outcome: flat_outcome,
+    } = flat;
+
+    // ═══ THE MONEY TABLE — the two arms' radial profiles, side by side ═══
+    eprintln!(
+        "\n══════════ RADIAL DISTORTION: STEEP vs FLAT ══════════\n\
+         \x20  This pair is the attribution evidence for the whole phase. The harmonic map is a\n\
+         \x20  labelled [REPO] substitution for the paper's conformal slit map; if the steep\n\
+         \x20  arm's profile climbs and the flat arm's is level, the difference between the two\n\
+         \x20  arms is the MAP, not the mechanism, and the repair is Phase F2 step 3.\n"
+    );
+    print_radial_profile(steep.label, &steep.report);
+    eprintln!();
+    print_radial_profile(flat_label, &report);
+    eprintln!();
+
+    let result = match flat_outcome {
+        Ok(result) => result,
+        Err(refusal) => {
+            diagnose_refusal(flat_label, &report, &refusal, &params);
+            panic!(
+                "{flat_label} refused with {refusal:?}. Inside the envelope — a low-relief, \
+                 hole-free, cleaned, simply-connected window — the mechanism has no excuse. \
+                 The diagnosis is printed above."
+            );
+        }
+    };
+
+    eprintln!("\n══════════ STAGED EVIDENCE — {flat_label} ══════════\n");
     let region_area_3d = region_area_mm2(&mesh, &region.triangles);
     let proceed = stage_a(&report, &params, stepover_mm, region_area_3d);
     stage_b(&region, &result, &report);
@@ -1750,8 +2724,9 @@ fn terrain_small_conformal_spiral_f2() {
         eprintln!("########## Stages C and D SKIPPED by the Stage A falsifier. ##########\n");
     }
 
-    // Stage E runs on BOTH paths, deliberately: if the falsifier tripped, the
-    // sampling sensitivity rows are the evidence for WHY it tripped.
+    // Stage E runs on the FLAT arm only. The steep arm's stall makes a
+    // sensitivity sweep there meaningless — every row would refuse for the
+    // same reason and the sampling dial would explain none of it.
     stage_e(&mesh, &index, &region, &params, &report);
 
     eprintln!("########## PHASE F2 evidence run complete. ##########\n");
@@ -1822,6 +2797,102 @@ fn ellipse_region_selects_a_substantial_triangle_population() {
     }
 }
 
+/// The analytic containment test the census uses must agree with the polygon
+/// the arm is actually selected with, or the census would be measuring relief
+/// over a different footprint from the one that gets machined.
+#[test]
+fn ellipse_spec_containment_matches_the_polygon() {
+    let spec = EllipseSpec {
+        cx: 50.0,
+        cy: 30.0,
+        ax: 12.0,
+        ay: 9.0,
+    };
+    let poly = ellipse_polygon(spec.cx, spec.cy, spec.ax, spec.ay, ELLIPSE_VERTICES);
+    assert!(spec.contains(spec.cx, spec.cy), "the centre is inside");
+    assert!(spec.contains(spec.cx + 11.9, spec.cy), "just inside on x");
+    assert!(!spec.contains(spec.cx + 12.1, spec.cy), "just outside on x");
+    assert!(!spec.contains(spec.cx, spec.cy + 9.1), "just outside on y");
+
+    // The polygon is INSCRIBED in the ellipse, so the analytic test is the
+    // slightly more generous of the two. Anything the polygon accepts, the
+    // analytic test must accept as well — that is the direction that matters,
+    // because it means the census never measures relief over less ground than
+    // the arm machines.
+    let mut checked = 0usize;
+    for i in 0..400 {
+        let t = TAU * (i as f64) / 400.0;
+        for r in [0.1_f64, 0.5, 0.9, 0.99] {
+            let (x, y) = (
+                spec.cx + spec.ax * r * t.cos(),
+                spec.cy + spec.ay * r * t.sin(),
+            );
+            if poly.contains_point(&P2::new(x, y)) {
+                checked += 1;
+                assert!(
+                    spec.contains(x, y),
+                    "polygon accepted ({x}, {y}) but the analytic test rejected it"
+                );
+            }
+        }
+    }
+    assert!(checked > 1000, "the sweep must exercise a real population");
+}
+
+/// The flat-window census on the real fixture. Non-ignored on purpose: the
+/// relief it finds is a fact about `terrain_small.stl` that the write-up needs
+/// and that nobody should have to run a multi-minute evidence test to learn.
+#[test]
+fn flat_window_census_finds_a_window_on_the_fixture() {
+    let path = fixture_path();
+    assert!(path.exists(), "fixture missing: {}", path.display());
+    let mesh = TriangleMesh::from_stl(&path).expect("load terrain_small.stl");
+    let census = flattest_window(&mesh);
+
+    eprintln!(
+        "flat-window census on terrain_small.stl: {} centres evaluated, {} qualifying; \
+         relief min {:.3} / median {:.3} / max {:.3} mm (target < {FLAT_RELIEF_TARGET_MM})",
+        census.evaluated,
+        census.qualifying,
+        census.relief_min_mm,
+        census.relief_median_mm,
+        census.relief_max_mm
+    );
+    let spec = census
+        .best
+        .expect("the fixture must contain at least one qualifying window");
+    eprintln!(
+        "  chosen centre ({:.3}, {:.3}), relief {:.3} mm over {} up-facing triangles",
+        spec.cx, spec.cy, census.best_relief_mm, census.best_triangles
+    );
+
+    assert!(census.qualifying > 0);
+    assert!(
+        census.best_triangles >= FLAT_MIN_TRIANGLES,
+        "the chosen window must clear the triangle floor"
+    );
+    // The winner is the minimum, so it must sit at the bottom of the spread.
+    assert!(
+        (census.best_relief_mm - census.relief_min_mm).abs() < 1e-9,
+        "the chosen window must be the flattest qualifying one: {} vs {}",
+        census.best_relief_mm,
+        census.relief_min_mm
+    );
+    assert!(
+        census.best_relief_mm <= census.relief_median_mm,
+        "the minimum cannot exceed the median"
+    );
+    // And it must sit the same distance inside the mesh as the STEEP arm.
+    let bb = &mesh.bbox;
+    assert!(
+        spec.cx - spec.ax >= bb.min.x + REGION_INSET_MM - 1e-9
+            && spec.cx + spec.ax <= bb.max.x - REGION_INSET_MM + 1e-9
+            && spec.cy - spec.ay >= bb.min.y + REGION_INSET_MM - 1e-9
+            && spec.cy + spec.ay <= bb.max.y - REGION_INSET_MM + 1e-9,
+        "the chosen window must stay {REGION_INSET_MM} mm inside the mesh bbox"
+    );
+}
+
 /// The ellipse helper's own geometry: area within 0.5 % of `π·a·b` at 256
 /// vertices, and the semi-axis endpoints on the boundary.
 #[test]
@@ -1868,6 +2939,167 @@ fn equal_cusp_stepover_at_r1_h003_is_0_4862() {
     );
     assert_eq!(equal_cusp_stepover_mm(1.0, 0.0), 0.0);
     assert_eq!(equal_cusp_stepover_mm(1.0, 1.0), 0.0);
+}
+
+/// A 2×2 grid of quads (8 triangles, consistently wound) as a clean disk
+/// fixture for the cleanup tests: one edge-connected component, one boundary
+/// loop, no pinches.
+fn clean_grid_mesh() -> TriangleMesh {
+    let mut verts: Vec<P3> = Vec::with_capacity(9);
+    for row in 0..3 {
+        for col in 0..3 {
+            verts.push(P3::new(col as f64, row as f64, 0.0));
+        }
+    }
+    let mut tris: Vec<[u32; 3]> = Vec::with_capacity(8);
+    for row in 0..2u32 {
+        for col in 0..2u32 {
+            let (a, b) = (row * 3 + col, row * 3 + col + 1);
+            let (c, d) = ((row + 1) * 3 + col, (row + 1) * 3 + col + 1);
+            tris.push([a, b, d]);
+            tris.push([a, d, c]);
+        }
+    }
+    TriangleMesh::from_raw(verts, tris)
+}
+
+/// [`clean_grid_mesh`] with one extra triangle hung off the grid's far corner
+/// (vertex 8) by that vertex alone — the bowtie `region_topology` refuses as
+/// a `BoundaryPinch`.
+fn bowtie_mesh() -> TriangleMesh {
+    let grid = clean_grid_mesh();
+    let mut verts = grid.vertices.clone();
+    let mut tris = grid.triangles;
+    verts.push(P3::new(3.0, 2.0, 0.0));
+    verts.push(P3::new(3.0, 3.0, 0.0));
+    tris.push([8, 9, 10]);
+    TriangleMesh::from_raw(verts, tris)
+}
+
+/// A clean patch must pass through the cleanup untouched. If this ever starts
+/// removing triangles, the pass is shaving real surface, not artefacts.
+#[test]
+fn cleanup_leaves_a_clean_patch_alone() {
+    let mesh = clean_grid_mesh();
+    let selected: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
+    let (bad, pinches, over_used) = nonmanifold_vertices(&mesh, &selected);
+    assert!(
+        bad.is_empty(),
+        "the grid fixture must be manifold to be a valid control: {pinches} pinches, \
+         {over_used} over-used edges"
+    );
+
+    let (kept, report) = clean_selection(&mesh, &selected);
+    assert_eq!(kept, selected, "a clean patch must survive intact");
+    assert_eq!(report.before, 8);
+    assert_eq!(report.after, 8);
+    assert_eq!(report.components_first_pass, 1);
+    assert_eq!(report.components_dropped, 0);
+    assert_eq!(report.pinch_iterations, 0);
+    assert_eq!(report.triangles_shaved_by_pinch, 0);
+    assert!(!report.hit_iteration_cap);
+}
+
+/// The bowtie the module refuses as `BoundaryPinch`: a triangle attached to
+/// the patch at a single VERTEX. Edge-connectivity must see it as its own
+/// component and drop it — which is why step 1 uses edge adjacency and not
+/// vertex adjacency.
+#[test]
+fn cleanup_drops_a_vertex_only_bowtie_component() {
+    let mesh = bowtie_mesh();
+    let selected: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
+
+    // Precondition: this really is the pinch the module would refuse.
+    let (bad, pinches, _) = nonmanifold_vertices(&mesh, &selected);
+    assert!(
+        bad.contains(&8) && pinches >= 1,
+        "vertex 8 must read as a boundary pinch before cleanup, got {bad:?}"
+    );
+
+    let (kept, report) = clean_selection(&mesh, &selected);
+    assert_eq!(
+        kept.len(),
+        8,
+        "the 8-triangle patch must win over the lone one"
+    );
+    assert!(
+        !kept.contains(&8),
+        "the bowtie triangle (index 8) must be gone"
+    );
+    assert_eq!(report.components_first_pass, 2);
+    assert_eq!(report.components_dropped, 1);
+    // Component pruning alone fixed it — no shaving was needed.
+    assert_eq!(report.pinch_iterations, 0);
+    assert_eq!(report.triangles_shaved_by_pinch, 0);
+
+    // And the postcondition the whole pass exists for.
+    let (after_bad, _, _) = nonmanifold_vertices(&mesh, &kept);
+    assert!(
+        after_bad.is_empty(),
+        "cleanup must leave no non-manifold vertex, got {after_bad:?}"
+    );
+}
+
+/// The invariants that hold for EVERY input, pinned on the fixtures above:
+/// the output is a subset of the input in the input's own order, it is
+/// manifold or empty, and the pass is idempotent.
+///
+/// Idempotence is the one that matters operationally. The loop re-runs
+/// component pruning after each shave precisely because shaving can orphan
+/// new islands and new pinches; if a second call could still remove
+/// something, that fixed point was not reached and the reported
+/// `pinch_iterations` would be understating the work.
+///
+/// Note what is deliberately NOT asserted here: a pinch that survives
+/// component pruning — a genuine wedge-sum patch, edge-connected yet visiting
+/// one vertex twice on its boundary. Constructing one takes a specific
+/// ~8-triangle arrangement whose winding cannot be checked by reading, and a
+/// fixture that turns out to be an ordinary disk would assert nothing while
+/// looking like it asserted something. The shave path is justified by the
+/// mechanism (and by the operator's run 2, where `BoundaryPinch` survived at
+/// every ellipse size), not by a fixture this file cannot verify.
+#[test]
+fn cleanup_is_idempotent_and_never_adds_a_triangle() {
+    for (label, mesh) in [("clean grid", clean_grid_mesh()), ("bowtie", bowtie_mesh())] {
+        let selected: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
+        let (first, report) = clean_selection(&mesh, &selected);
+
+        assert!(
+            first.iter().all(|t| selected.contains(t)),
+            "{label}: cleanup must never invent a triangle"
+        );
+        assert!(
+            first.windows(2).all(|w| w[0] < w[1]),
+            "{label}: cleanup must preserve the input's ascending order"
+        );
+        assert_eq!(
+            report.after,
+            first.len(),
+            "{label}: report.after must match"
+        );
+        assert!(
+            report.after <= report.before,
+            "{label}: cleanup must never grow the selection"
+        );
+        assert!(!report.hit_iteration_cap, "{label}: must converge");
+
+        let (after_bad, _, _) = nonmanifold_vertices(&mesh, &first);
+        assert!(
+            after_bad.is_empty(),
+            "{label}: cleanup must leave a manifold selection, got {after_bad:?}"
+        );
+
+        let (second, second_report) = clean_selection(&mesh, &first);
+        assert_eq!(second, first, "{label}: cleanup must be idempotent");
+        assert_eq!(
+            second_report.pinch_iterations, 0,
+            "{label}: a cleaned selection needs no further shaving"
+        );
+        assert_eq!(
+            second_report.components_dropped, 0,
+            "{label}: a cleaned selection is one component"
+        );
+    }
 }
 
 /// The point-to-segment distance Stage C depends on: a point abreast of a

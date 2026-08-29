@@ -227,6 +227,19 @@ const PULLBACK_LADDER: [f64; 6] = [1e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1];
 /// Upper bound on either axis of an internal bucket grid.
 const MAX_GRID_AXIS: usize = 512;
 
+/// **[REPO]** Radial buckets for the area-distortion profile. Five is enough
+/// to see whether distortion explodes toward the disk centre — the shape the
+/// ring-stall hypothesis predicts on a high-relief region — without turning a
+/// report row into a histogram nobody reads.
+const RADIAL_BUCKETS: usize = 5;
+
+/// **[REPO]** Cap on how many still-uncovered samples the stall diagnostic
+/// measures distances for. The measurement is brute-force point-to-polyline
+/// (the bucket grid can only answer "within `K_c`?", not "how far?"), so it is
+/// strided rather than exhaustive; [`StallContext::distance_samples`] reports
+/// how many were actually taken.
+const STALL_DISTANCE_SAMPLE_CAP: usize = 2_000;
+
 // ---------------------------------------------------------------------------
 // Parameters
 // ---------------------------------------------------------------------------
@@ -415,11 +428,93 @@ pub struct SpiralResult {
     pub rings_contact: Vec<Vec<P3>>,
 }
 
+/// Area distortion over one band of disk radius.
+///
+/// **[REPO]** The scalar min/median/max on [`SpiralReport`] cannot tell a
+/// uniformly stretched map from one that is near-isometric at the rim and
+/// exploding at the centre — and those two have completely different
+/// consequences for ring spacing, because a disk circle at small `R` is what
+/// pulls back to a razor-thin 3D band. This is the same measurement bucketed
+/// by the disk radius of each triangle's flattened centroid.
+#[derive(Debug, Clone, Default)]
+pub struct RadialDistortion {
+    /// Inclusive lower bound of the disk-radius band.
+    pub r_lo: f64,
+    /// Exclusive upper bound (inclusive in the outermost bucket).
+    pub r_hi: f64,
+    /// Triangles whose flattened centroid landed in this band.
+    pub triangles: usize,
+    /// `flat area / 3D area` (1/mm²) over this band.
+    pub area_distortion_min: f64,
+    /// See [`RadialDistortion::area_distortion_min`].
+    pub area_distortion_median: f64,
+    /// See [`RadialDistortion::area_distortion_min`].
+    pub area_distortion_max: f64,
+}
+
+/// Which curve the stall distances were measured against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StallDistanceReference {
+    /// The centre curve of the last ring that was successfully placed,
+    /// identified by its index in [`SpiralReport::ring_radii`].
+    LastPlacedRing(usize),
+    /// No ring was ever placed, so the distances are against the centre curve
+    /// of the candidate that failed.
+    FailedCandidate,
+}
+
+/// Why the Eqs. 1–4 ring search could not empty the uncovered set, in enough
+/// detail to attribute the failure from the report alone.
+///
+/// **[REPO]** The paper reports no such thing: its Table 1 records two
+/// sampling failure modes with no k value and no diagnosis. The load-bearing
+/// row is the distance distribution — if the median distance from the
+/// still-uncovered points to the last placed ring's centre curve is far
+/// larger than `2·K_c`, the surface genuinely cannot be covered ring-by-ring
+/// at this map's distortion, and the refusal is correct rather than a bug in
+/// the search.
+#[derive(Debug, Clone)]
+pub struct StallContext {
+    /// Rings successfully placed before the stall.
+    pub rings_placed: usize,
+    /// Their disk radii, outermost first (duplicated here so the stall block
+    /// is self-contained).
+    pub ring_radii: Vec<f64>,
+    /// Lower bound of the binary-search interval when the search gave up.
+    pub search_lo: f64,
+    /// Upper bound of that interval — for a stalled ring this equals the
+    /// previous ring's radius, which is the signature of the failure.
+    pub search_hi: f64,
+    /// Whether **any** radius strictly inside the previous ring was ever
+    /// feasible. `false` means the search never lowered its bound at all: no
+    /// interior circle can sweep everything outside it, so the returned
+    /// radius is the previous ring's own and the "new" ring is a duplicate.
+    pub interior_radius_feasible: bool,
+    /// `S^h` points still uncovered at the stall.
+    pub uncovered: usize,
+    /// How many of those the distances below were measured on (strided to
+    /// the module's `STALL_DISTANCE_SAMPLE_CAP`).
+    pub distance_samples: usize,
+    /// Which curve the distances are against.
+    pub distance_reference: StallDistanceReference,
+    /// The coverage radius the distances should be compared to (`K_c`, mm).
+    pub coverage_radius_mm: f64,
+    /// Minimum 3D distance (mm) from a measured uncovered point to that curve.
+    pub uncovered_distance_min_mm: f64,
+    /// Median 3D distance (mm).
+    pub uncovered_distance_median_mm: f64,
+    /// Maximum 3D distance (mm).
+    pub uncovered_distance_max_mm: f64,
+}
+
 /// Everything the F2 contract wants **counted rather than assumed**.
 ///
-/// A count of zero here means *measured zero*: every field is computed on
-/// every successful call, so there is no "not measured" arm to conflate with
-/// clean.
+/// A count of zero here means *measured zero*: every row is computed on every
+/// call that reaches it, so there is no "not measured" arm to conflate with
+/// clean. **The report survives a refusal** — [`plan_spiral`] returns it
+/// alongside the `Result`, filled as far as the pipeline got, precisely so a
+/// refusal can be attributed to a bad map or a bad mechanism instead of
+/// vanishing with the error.
 #[derive(Debug, Clone, Default)]
 pub struct SpiralReport {
     // --- region ---------------------------------------------------------
@@ -467,6 +562,9 @@ pub struct SpiralReport {
     pub angle_distortion_median_deg: f64,
     /// See [`SpiralReport::angle_distortion_median_deg`].
     pub angle_distortion_max_deg: f64,
+    /// Area distortion bucketed by disk radius, `RADIAL_BUCKETS` (5) entries
+    /// outward from the centre. Empty means the flattening never ran.
+    pub area_distortion_by_disk_radius: Vec<RadialDistortion>,
 
     // --- sampling + rings ------------------------------------------------
     /// `N_S` actually placed on `S^h`.
@@ -484,8 +582,8 @@ pub struct SpiralReport {
     pub total_ring_length_mm: f64,
     /// Binary-search iterations summed over every ring.
     pub binary_search_iterations: usize,
-    /// Disk→3D queries that needed the [`PULLBACK_LADDER`], summed over the
-    /// ring search **and** the spiral construction.
+    /// Disk→3D queries that needed the radial `PULLBACK_LADDER`, summed over
+    /// the ring search **and** the spiral construction.
     pub ring_points_pulled_back: usize,
     /// Disk→3D queries that found no triangle even after the ladder and were
     /// dropped from their polyline, summed over the ring search **and** the
@@ -530,6 +628,14 @@ pub struct SpiralReport {
     pub max_consecutive_step_mm: f64,
     /// Median 3D gap between consecutive spiral points (mm).
     pub median_consecutive_step_mm: f64,
+
+    // --- refusal context -------------------------------------------------
+    /// Present exactly when the ring search finished with `S^h` points still
+    /// uncovered — whether that ended in a refusal
+    /// ([`SpiralRefusal::RingSearchStalled`],
+    /// [`SpiralRefusal::RingLimitReached`]) or in the search reaching the disk
+    /// centre. `None` means the rings closed coverage.
+    pub stall: Option<StallContext>,
 }
 
 // ---------------------------------------------------------------------------
@@ -539,15 +645,20 @@ pub struct SpiralReport {
 /// Plan one continuous conformal-style spiral over a **simply connected**
 /// mesh region for a 3-axis ball-end cutter.
 ///
-/// Returns the spiral plus the measured [`SpiralReport`], or a typed
-/// [`SpiralRefusal`] when a precondition fails.
+/// **Always returns a [`SpiralReport`]**, filled as far as the pipeline got,
+/// plus a `Result` carrying either the spiral or a typed [`SpiralRefusal`].
 ///
 /// # Deviation from the F2.1 spec, recorded
 ///
 /// The spec shape was `Option<(SpiralResult, SpiralReport)>` with a typed
-/// reason. A bare `Option` cannot carry a reason, so this returns a `Result`
-/// whose error arm *is* the typed reason. `SpiralRefusal` is small, so
-/// `clippy::result_large_err` is satisfied.
+/// reason. Two things are wrong with that: an `Option` cannot carry a reason,
+/// and — the one measurement showed — a `Result<(result, report), refusal>`
+/// **discards the report on the path where it is most needed**. A refusal is
+/// exactly the moment someone has to decide whether the map was bad or the
+/// mechanism was, and the flatten-metrics table exists to answer that. So the
+/// report comes out of the tuple's first slot on every path, and the refusal
+/// lives in the second. `SpiralRefusal` is small, so nothing here trips
+/// `clippy::result_large_err`, and no boxing is needed.
 ///
 /// # The `index` parameter
 ///
@@ -557,21 +668,31 @@ pub struct SpiralReport {
 /// the input mesh's index for the drop-cutter CL conversion that supersedes
 /// this module's normal-offset centre curve, and the two should not disagree
 /// about which index they mean.
-#[allow(clippy::result_large_err)]
 pub fn plan_spiral(
     mesh: &TriangleMesh,
     _index: &SpatialIndex,
     region_triangles: &[u32],
     params: &SpiralParams,
-) -> Result<(SpiralResult, SpiralReport), SpiralRefusal> {
+) -> (SpiralReport, Result<SpiralResult, SpiralRefusal>) {
+    let mut report = SpiralReport::default();
+    let outcome = plan_into(mesh, region_triangles, params, &mut report);
+    (report, outcome)
+}
+
+/// The pipeline itself, writing into a caller-owned report so that every
+/// early return leaves behind whatever was measured before it.
+#[allow(clippy::result_large_err)]
+fn plan_into(
+    mesh: &TriangleMesh,
+    region_triangles: &[u32],
+    params: &SpiralParams,
+    report: &mut SpiralReport,
+) -> Result<SpiralResult, SpiralRefusal> {
     let Some(region) = build_region_mesh(mesh, region_triangles) else {
         return Err(SpiralRefusal::EmptyRegion);
     };
-    let mut report = SpiralReport {
-        region_triangles: region.tris.len(),
-        region_vertices: region.verts.len(),
-        ..SpiralReport::default()
-    };
+    report.region_triangles = region.tris.len();
+    report.region_vertices = region.verts.len();
 
     // 1. Topology: one boundary loop, disk Euler characteristic.
     let topo = region_topology(&region)?;
@@ -581,11 +702,12 @@ pub fn plan_spiral(
     report.boundary_loop_length_mm = topo.loop_length_mm;
 
     // 2. Harmonic disk map with arc-length boundary correspondence.
-    let flat = flatten_to_disk(&region, &topo, params, &mut report)?;
+    let flat = flatten_to_disk(&region, &topo, params, report)?;
 
     // 3. Flatten metrics — the table that separates "bad map" from "bad
-    //    mechanism" if the mechanism turns out to disappoint.
-    measure_flattening(&region, &flat, &mut report);
+    //    mechanism" if the mechanism turns out to disappoint. Measured before
+    //    anything can refuse downstream of it, so a refusal still carries it.
+    measure_flattening(&region, &flat, report);
 
     // 4. Locator over the flattened mesh (z = 0), and per-vertex normals.
     let locator = FlatLocator::build(&region, &flat);
@@ -601,14 +723,7 @@ pub fn plan_spiral(
     report.surface_samples = samples.len();
 
     // 6. Coverage-driven ring spacing (Eqs. 1–4).
-    let rings = search_rings(
-        &locator,
-        &vertex_normals,
-        &region,
-        &samples,
-        params,
-        &mut report,
-    )?;
+    let rings = search_rings(&locator, &vertex_normals, &region, &samples, params, report)?;
 
     // 7. Bridge into one spiral (Eqs. 7–9 + A-11), with the start-angle sweep.
     let (result, spiral_meta) = build_best_spiral(
@@ -618,10 +733,10 @@ pub fn plan_spiral(
         &rings,
         &samples,
         params,
-        &mut report,
+        report,
     );
-    finish_report(&result, &rings, &spiral_meta, params, &mut report);
-    Ok((result, report))
+    finish_report(&result, &rings, &spiral_meta, params, report);
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -935,11 +1050,16 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
 
     let mut ratios: Vec<f64> = Vec::with_capacity(region.tris.len());
     let mut angle_err: Vec<f64> = Vec::with_capacity(region.tris.len() * 3);
+    let mut radial: Vec<Vec<f64>> = vec![Vec::new(); RADIAL_BUCKETS];
     for (t, &s) in signed.iter().enumerate() {
         let area3 = region.area(t);
-        if area3 > MIN_TRIANGLE_AREA_MM2 {
-            ratios.push(s.abs() / area3);
-        }
+        let ratio = if area3 > MIN_TRIANGLE_AREA_MM2 {
+            let r = s.abs() / area3;
+            ratios.push(r);
+            Some(r)
+        } else {
+            None
+        };
         let c = region.corners(t);
         let p3: [P3; 3] = [
             region.point(c.first().copied().unwrap_or_default()),
@@ -959,6 +1079,16 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
                 angle_err.push((a3 - a2).abs().to_degrees());
             }
         }
+        // Radial bucket, keyed on the disk radius of the flattened centroid.
+        if let Some(r) = ratio {
+            let cx = p2.iter().map(|q| q.0).sum::<f64>() / 3.0;
+            let cy = p2.iter().map(|q| q.1).sum::<f64>() / 3.0;
+            let rad = cx.hypot(cy).clamp(0.0, 1.0);
+            let b = ((rad * RADIAL_BUCKETS as f64).floor() as usize).min(RADIAL_BUCKETS - 1);
+            if let Some(slot) = radial.get_mut(b) {
+                slot.push(r);
+            }
+        }
     }
     ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     report.area_distortion_min = ratios.first().copied().unwrap_or(0.0);
@@ -967,6 +1097,23 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
     angle_err.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     report.angle_distortion_max_deg = angle_err.last().copied().unwrap_or(0.0);
     report.angle_distortion_median_deg = median_sorted(&angle_err);
+
+    let width = 1.0 / RADIAL_BUCKETS as f64;
+    report.area_distortion_by_disk_radius = radial
+        .into_iter()
+        .enumerate()
+        .map(|(b, mut vals)| {
+            vals.sort_by(|a, c| a.partial_cmp(c).unwrap_or(std::cmp::Ordering::Equal));
+            RadialDistortion {
+                r_lo: b as f64 * width,
+                r_hi: (b + 1) as f64 * width,
+                triangles: vals.len(),
+                area_distortion_min: vals.first().copied().unwrap_or(0.0),
+                area_distortion_median: median_sorted(&vals),
+                area_distortion_max: vals.last().copied().unwrap_or(0.0),
+            }
+        })
+        .collect();
 }
 
 /// Interior angle at corner `i` of a 3D triangle.
@@ -1528,6 +1675,114 @@ fn polyline_length(p: &[P3]) -> f64 {
         .sum()
 }
 
+/// Brute-force 3D distance from a point to a polyline.
+///
+/// [`CentreCurve::covers`] answers "within `K_c`?" through a bucket grid; it
+/// cannot answer "how far?", because a point outside every padded cell has no
+/// candidates at all. The stall diagnostic needs the actual distance, so it
+/// walks every segment. Strided sampling keeps that affordable — see
+/// [`STALL_DISTANCE_SAMPLE_CAP`].
+fn distance_to_polyline_mm(p: P3, pts: &[P3]) -> f64 {
+    let mut best = f64::INFINITY;
+    for w in pts.windows(2) {
+        let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
+            continue;
+        };
+        best = best.min(dist2_point_segment(p, a, b));
+    }
+    if best.is_finite() {
+        best.sqrt()
+    } else {
+        f64::INFINITY
+    }
+}
+
+/// Min / median / max distance from a stride-sampled subset of `uncovered` to
+/// `reference`, plus how many samples were taken.
+fn uncovered_distance_summary(
+    uncovered: &[usize],
+    samples: &[Sample],
+    reference: &[P3],
+) -> (usize, f64, f64, f64) {
+    if uncovered.is_empty() || reference.len() < 2 {
+        return (0, 0.0, 0.0, 0.0);
+    }
+    let stride = uncovered.len().div_ceil(STALL_DISTANCE_SAMPLE_CAP).max(1);
+    let mut d: Vec<f64> = uncovered
+        .iter()
+        .step_by(stride)
+        .filter_map(|&s| samples.get(s))
+        .map(|s| distance_to_polyline_mm(s.at, reference))
+        .filter(|v| v.is_finite())
+        .collect();
+    d.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    (
+        d.len(),
+        d.first().copied().unwrap_or(0.0),
+        median_sorted(&d),
+        d.last().copied().unwrap_or(0.0),
+    )
+}
+
+/// Everything the ring loop must publish on **every** exit path, successful
+/// or not, so a refusal is diagnosable from the report alone.
+struct RingLoopState {
+    iterations: usize,
+    search_lo: f64,
+    search_hi: f64,
+    interior_feasible: bool,
+}
+
+/// Write the ring rows, and the stall block when coverage did not close.
+#[allow(clippy::too_many_arguments)]
+fn publish_ring_rows(
+    rings: &[Ring],
+    uncovered: &[usize],
+    samples: &[Sample],
+    last_centre: &[P3],
+    failed_centre: &[P3],
+    state: &RingLoopState,
+    stats: &LiftStats,
+    params: &SpiralParams,
+    report: &mut SpiralReport,
+) {
+    report.binary_search_iterations = state.iterations;
+    report.ring_points_pulled_back = stats.pulled_back;
+    report.ring_points_unlocated = stats.unlocated;
+    report.uncovered_after_rings = uncovered.len();
+    report.ring_count = rings.len();
+    report.ring_radii = rings.iter().map(|r| r.radius).collect();
+    report.ring_lengths_mm = rings.iter().map(|r| polyline_length(&r.contact)).collect();
+    report.ring_newly_covered = rings.iter().map(|r| r.band.len()).collect();
+    report.total_ring_length_mm = report.ring_lengths_mm.iter().sum();
+    if uncovered.is_empty() {
+        return;
+    }
+    let (reference, which) = if last_centre.len() >= 2 {
+        (
+            last_centre,
+            StallDistanceReference::LastPlacedRing(rings.len().saturating_sub(1)),
+        )
+    } else {
+        (failed_centre, StallDistanceReference::FailedCandidate)
+    };
+    let (taken, dmin, dmed, dmax) = uncovered_distance_summary(uncovered, samples, reference);
+    report.stall = Some(StallContext {
+        rings_placed: rings.len(),
+        ring_radii: rings.iter().map(|r| r.radius).collect(),
+        search_lo: state.search_lo,
+        search_hi: state.search_hi,
+        interior_radius_feasible: state.interior_feasible,
+        uncovered: uncovered.len(),
+        distance_samples: taken,
+        distance_reference: which,
+        coverage_radius_mm: params.ball_radius_mm,
+        uncovered_distance_min_mm: dmin,
+        uncovered_distance_median_mm: dmed,
+        uncovered_distance_max_mm: dmax,
+    });
+}
+
 /// Place rings by the paper's binary search until every `S^h` sample is swept.
 ///
 /// **[SOURCE-2025 Eqs. 1–4]** For ring `i`, search `R` in `[0, R_{i−1}]` for
@@ -1538,7 +1793,13 @@ fn polyline_length(p: &[P3]) -> f64 {
 /// upper end of every search; `R = 1` anchors the first.
 ///
 /// Monotonicity of that predicate in `R` is **assumed**, as it is in the
-/// paper — see the module header's limitations.
+/// paper — see the module header's limitations. Two effects fight as `R`
+/// grows: more points fall inside `R` and are excused, but the ring moves and
+/// can *drop* a point it used to sweep. When no interior radius is feasible at
+/// all, the search returns its upper anchor unchanged, the "new" ring is the
+/// previous one, and it covers nothing — which is the
+/// [`SpiralRefusal::RingSearchStalled`] path.
+/// [`StallContext::interior_radius_feasible`] is `false` exactly then.
 #[allow(clippy::result_large_err)]
 fn search_rings(
     locator: &FlatLocator,
@@ -1555,11 +1816,17 @@ fn search_rings(
 
     let mut uncovered: Vec<usize> = (0..samples.len()).collect();
     let mut rings: Vec<Ring> = Vec::new();
+    let mut last_centre: Vec<P3> = Vec::new();
     let mut hi = 1.0_f64;
-    let mut iterations = 0usize;
+    let mut state = RingLoopState {
+        iterations: 0,
+        search_lo: 0.0,
+        search_hi: 1.0,
+        interior_feasible: false,
+    };
 
-    // A ring's centre curve, given a candidate radius.
-    let mut curve_at = |r: f64, stats: &mut LiftStats| -> (Vec<P3>, CentreCurve) {
+    // A ring's contact polyline, its centre polyline and the query structure.
+    let mut curve_at = |r: f64, stats: &mut LiftStats| -> (Vec<P3>, Vec<P3>, CentreCurve) {
         let disk = circle_disk_points(r, 0.0, params.n_angular_samples);
         let (contact, centre) = lift_polyline(
             locator,
@@ -1571,25 +1838,39 @@ fn search_rings(
             &mut hits,
             stats,
         );
-        (contact, CentreCurve::new(&centre, radius))
+        let cc = CentreCurve::new(&centre, radius);
+        (contact, centre, cc)
     };
 
     while !uncovered.is_empty() {
         if rings.len() >= params.max_rings {
-            return Err(SpiralRefusal::RingLimitReached {
+            let err = SpiralRefusal::RingLimitReached {
                 rings: rings.len(),
                 uncovered: uncovered.len(),
-            });
+            };
+            publish_ring_rows(
+                &rings,
+                &uncovered,
+                samples,
+                &last_centre,
+                &[],
+                &state,
+                &stats,
+                params,
+                report,
+            );
+            return Err(err);
         }
         // Binary search for the smallest feasible R in [lo, hi].
         let mut lo = 0.0_f64;
         let mut best_hi = hi;
+        let mut interior_feasible = false;
         let mut guard = 0usize;
         while best_hi - lo > params.ring_eps && guard < 4096 {
             guard += 1;
-            iterations += 1;
+            state.iterations += 1;
             let mid = 0.5 * (lo + best_hi);
-            let (_, cc) = curve_at(mid, &mut stats);
+            let (_, _, cc) = curve_at(mid, &mut stats);
             let feasible = uncovered.iter().all(|&s| {
                 let Some(sample) = samples.get(s) else {
                     return true;
@@ -1598,12 +1879,16 @@ fn search_rings(
             });
             if feasible {
                 best_hi = mid;
+                interior_feasible = true;
             } else {
                 lo = mid;
             }
         }
+        state.search_lo = lo;
+        state.search_hi = best_hi;
+        state.interior_feasible = interior_feasible;
 
-        let (contact, cc) = curve_at(best_hi, &mut stats);
+        let (contact, centre, cc) = curve_at(best_hi, &mut stats);
         let mut band: Vec<usize> = Vec::new();
         let mut still: Vec<usize> = Vec::with_capacity(uncovered.len());
         for &s in &uncovered {
@@ -1617,16 +1902,29 @@ fn search_rings(
             }
         }
         if band.is_empty() {
-            return Err(SpiralRefusal::RingSearchStalled {
+            let err = SpiralRefusal::RingSearchStalled {
                 rings: rings.len(),
                 uncovered: uncovered.len(),
-            });
+            };
+            publish_ring_rows(
+                &rings,
+                &uncovered,
+                samples,
+                &last_centre,
+                &centre,
+                &state,
+                &stats,
+                params,
+                report,
+            );
+            return Err(err);
         }
         rings.push(Ring {
             radius: best_hi,
             contact,
             band,
         });
+        last_centre = centre;
         uncovered = still;
         hi = best_hi;
         if hi <= params.ring_eps && !uncovered.is_empty() {
@@ -1636,15 +1934,17 @@ fn search_rings(
         }
     }
 
-    report.binary_search_iterations = iterations;
-    report.ring_points_pulled_back = stats.pulled_back;
-    report.ring_points_unlocated = stats.unlocated;
-    report.uncovered_after_rings = uncovered.len();
-    report.ring_count = rings.len();
-    report.ring_radii = rings.iter().map(|r| r.radius).collect();
-    report.ring_lengths_mm = rings.iter().map(|r| polyline_length(&r.contact)).collect();
-    report.ring_newly_covered = rings.iter().map(|r| r.band.len()).collect();
-    report.total_ring_length_mm = report.ring_lengths_mm.iter().sum();
+    publish_ring_rows(
+        &rings,
+        &uncovered,
+        samples,
+        &last_centre,
+        &[],
+        &state,
+        &stats,
+        params,
+        report,
+    );
     Ok(rings)
 }
 
@@ -2140,8 +2440,9 @@ fn finish_report(
 )]
 mod tests {
     use super::{
-        Flattening, SpiralParams, SpiralRefusal, SpiralReport, Topology, blend_sigma,
-        build_region_mesh, flatten_to_disk, measure_flattening, plan_spiral, region_topology,
+        Flattening, SpiralParams, SpiralRefusal, SpiralReport, StallDistanceReference, Topology,
+        blend_sigma, build_region_mesh, flatten_to_disk, measure_flattening, plan_spiral,
+        region_topology,
     };
     use crate::direction_field::all_triangles;
     use crate::geo::P3;
@@ -2326,12 +2627,18 @@ mod tests {
         // leave one loop, which is why the punch must be interior.
         let holed: Vec<u32> = all.iter().copied().filter(|&t| t != 0).collect();
         let params = SpiralParams::new(2.0, 0.15);
-        let err = plan_spiral(&mesh, &index, &holed, &params).unwrap_err();
+        let (report, outcome) = plan_spiral(&mesh, &index, &holed, &params);
         assert_eq!(
-            err,
+            outcome.unwrap_err(),
             SpiralRefusal::NotSimplyConnected { boundary_loops: 2 },
             "an annulus must be refused, not approximated: the slit map is F2 step 3"
         );
+        // The report survives the refusal, filled as far as the pipeline got:
+        // the submesh was built, so its rows are there; the flattening never
+        // ran, so its rows are not.
+        assert_eq!(report.region_triangles, all.len() - 1);
+        assert!(report.area_distortion_by_disk_radius.is_empty());
+        assert!(report.stall.is_none());
     }
 
     // -----------------------------------------------------------------
@@ -2355,13 +2662,28 @@ mod tests {
             start_angle_step: TAU / 2.0,
             ..SpiralParams::new(ball, h)
         };
-        let (result, report) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params).unwrap();
+        let (report, outcome) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params);
+        let result = outcome.expect("simply-connected fixture must plan");
 
         // Map quality first: if the map were bad, every spacing number below
         // would be measuring the wrong thing.
         assert_eq!(report.flipped_triangles, 0);
         assert!(report.angle_distortion_max_deg < 1e-3);
         assert_eq!(report.ring_points_unlocated, 0);
+        // Affine map ⇒ the radial profile is flat: every bucket carries the
+        // same 1/ρ² distortion. This is the control reading for the profile
+        // that a high-relief region is expected to make explode.
+        assert_eq!(report.area_distortion_by_disk_radius.len(), 5);
+        for b in &report.area_distortion_by_disk_radius {
+            assert!(
+                b.triangles > 0,
+                "empty radial bucket {}..{}",
+                b.r_lo,
+                b.r_hi
+            );
+            assert!((b.area_distortion_median - 1.0 / (radius * radius)).abs() < 1e-7);
+        }
+        assert!(report.stall.is_none(), "coverage closed, so no stall block");
 
         // Coverage closed on both sides of the bridging step.
         assert_eq!(
@@ -2460,7 +2782,8 @@ mod tests {
             start_angle_step: TAU / 2.0,
             ..SpiralParams::new(ball, h)
         };
-        let (result, report) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params).unwrap();
+        let (report, outcome) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params);
+        let result = outcome.expect("simply-connected fixture must plan");
 
         // One boundary loop — the equator — and disk topology.
         assert_eq!(report.boundary_loop_vertices, 80);
@@ -2479,6 +2802,8 @@ mod tests {
         assert!(report.area_distortion_max >= report.area_distortion_min);
 
         assert_eq!(report.uncovered_after_rings, 0);
+        assert!(report.stall.is_none());
+        assert_eq!(report.area_distortion_by_disk_radius.len(), 5);
         assert_eq!(report.uncovered_after_bridging, 0);
         assert!(!result.spiral_contact.is_empty());
         assert_eq!(result.spiral_contact.len(), result.spiral_disk.len());
@@ -2517,14 +2842,82 @@ mod tests {
         assert!(checked >= 2, "only {checked} spacings were in range");
     }
 
+    /// The stall diagnostic is itself an instrument, so it gets measured on a
+    /// case whose answer is known in closed form rather than only on the
+    /// terrain run that motivated it.
+    ///
+    /// `max_rings: 1` forces the ring loop to give up after one ring on the
+    /// exact-affine flat disk. Every remaining uncovered sample is, by
+    /// definition, farther than `K_c` from that ring's centre curve — so the
+    /// measured minimum distance must be at least `K_c`, and the distribution
+    /// must widen from there toward the disk centre.
+    #[test]
+    fn a_forced_ring_limit_publishes_a_measurable_stall_block() {
+        let radius = 10.0_f64;
+        let ball = 2.0_f64;
+        let mesh = disk_mesh(radius, 10, 48);
+        let index = SpatialIndex::build_auto(&mesh);
+        let params = SpiralParams {
+            n_surface_samples: 1500,
+            n_angular_samples: 90,
+            ring_eps: 0.005,
+            max_rings: 1,
+            start_angle_step: TAU,
+            ..SpiralParams::new(ball, 0.15)
+        };
+        let (report, outcome) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params);
+
+        match outcome.unwrap_err() {
+            SpiralRefusal::RingLimitReached { rings, uncovered } => {
+                assert_eq!(rings, 1);
+                assert!(uncovered > 0);
+            }
+            other => panic!("expected RingLimitReached, got {other:?}"),
+        }
+
+        // The report survived, with the ring rows the refusal was about.
+        assert_eq!(report.ring_count, 1);
+        assert_eq!(report.ring_radii.len(), 1);
+        assert_eq!(report.ring_lengths_mm.len(), 1);
+        assert!(report.uncovered_after_rings > 0);
+        assert_eq!(report.area_distortion_by_disk_radius.len(), 5);
+
+        let stall = report.stall.expect("an unfinished ring search must say so");
+        assert_eq!(stall.rings_placed, 1);
+        assert_eq!(stall.ring_radii.len(), 1);
+        assert_eq!(stall.uncovered, report.uncovered_after_rings);
+        assert_eq!(
+            stall.distance_reference,
+            StallDistanceReference::LastPlacedRing(0)
+        );
+        assert!((stall.coverage_radius_mm - ball).abs() < 1e-12);
+        assert!(stall.distance_samples > 0);
+        assert!(stall.distance_samples <= 2000, "sample cap not honoured");
+        // Uncovered means farther than K_c, by construction.
+        assert!(
+            stall.uncovered_distance_min_mm >= ball - 1e-6,
+            "min distance {} should be at least K_c {ball}",
+            stall.uncovered_distance_min_mm
+        );
+        assert!(stall.uncovered_distance_median_mm >= stall.uncovered_distance_min_mm);
+        assert!(stall.uncovered_distance_max_mm >= stall.uncovered_distance_median_mm);
+        // The farthest uncovered point is the disk centre: its distance to a
+        // ring at 3D radius ρR₁ ≈ 9.24, whose centre curve sits K_c above the
+        // plane, is √(9.24² + (K_c − h)²) ≈ 9.4 mm. Nothing can exceed that.
+        assert!(
+            stall.uncovered_distance_max_mm < radius + ball,
+            "max distance {} mm",
+            stall.uncovered_distance_max_mm
+        );
+    }
+
     #[test]
     fn an_empty_region_is_refused() {
         let mesh = disk_mesh(10.0, 3, 12);
         let index = SpatialIndex::build_auto(&mesh);
         let params = SpiralParams::default();
-        assert_eq!(
-            plan_spiral(&mesh, &index, &[], &params).unwrap_err(),
-            SpiralRefusal::EmptyRegion
-        );
+        let (report, outcome) = plan_spiral(&mesh, &index, &[], &params);
+        assert_eq!(outcome.unwrap_err(), SpiralRefusal::EmptyRegion);
+        assert_eq!(report.region_triangles, 0);
     }
 }
