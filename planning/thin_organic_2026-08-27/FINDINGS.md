@@ -2041,3 +2041,33 @@ measured the mixed-frame candidate (decompose at 0°, sweep at an angle) as a
 **What is still not built:** the cell OVERLAY in the tier-map preview (the
 see-before-generate veto Track C asked for). Until it exists, C4 is an
 after-the-fact surface review rather than a preview veto.
+
+
+### §7 acceptance result (2026-08-30)
+
+Production A/B on `wanaka200_mt2.toml` (CLI `project`, 0.3 mm, full chain,
+dial off vs on in `[setups.toolpaths.operation.params]`):
+
+| | dial off | dial on | delta |
+|---|---:|---:|---|
+| Finish tier 0 (R1.5) | 5,581.4 s | 5,137.3 s | **1.086×** |
+| Finish tier 1 (R1.0) | 12,270.6 s | 11,234.7 s | **1.092×** |
+| finish total | 17,852.0 s | 16,372.0 s | **1.090× (−24.7 min)** |
+| whole project | 25,938.8 s | 24,447.9 s | 1.061× |
+| rapid distance | 134,877 mm | 114,876 mm | −14.8% |
+| rapid collisions | 0 | 0 | S2 live check clean |
+
+Every non-finish op's integrated runtime is identical to the decimal — the
+dial touched nothing else. 1.090× vs the rig's 1.155×/1.215× ceilings is the
+expected relationship (§7's own caveat: rig relinks are idealized; production
+regions include gate-failing ones). **ACCEPTANCE BAR MET (beats undivided
+baseline); C4 operator surface review PENDING — the dial stays default-off
+until the operator has eyeballed a dial-on surface** (cell seams change the
+cusp pattern; §0h's ruling that time alone cannot accept a pattern change).
+
+Follow-ups filed: (1) generation cost — a gate-passing region builds a
+whole-mesh lattice (phase-preserving but expensive at 192 regions); clip the
+SAMPLED WINDOW to the region while keeping the lattice origin mesh-anchored
+— preserves phase, cuts sampling. (2) the CLI per-toolpath JSON does not yet
+surface `ToolpathStats::monotone_cells`; add it so fallback counts are
+visible on this wire.

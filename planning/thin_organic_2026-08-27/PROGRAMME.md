@@ -192,7 +192,7 @@ drew unprompted.
 **C1** — measure first (X4): how many cells does the wanaka shallow band
 actually decompose into, and what is each cell's elongation and monotone
 direction? Cheap: pure 2D on polygons already in hand, no generation.
-**C2 — BUILT, NOT VALIDATED (2026-08-29).** The production build of §0k's
+**C2 — VALIDATED 2026-08-30 (C4 eyeball pending) (2026-08-29).** The production build of §0k's
 measured winner: **shared-lattice monotone decomposition + ONE
 elongation-gated global PCA-minor rotation per region, raster everywhere.**
 Shipped **default-OFF** behind `monotone_cell_decomposition` (X5).
