@@ -1314,6 +1314,15 @@ compare. Two figures stand in, and they are not interchangeable:
 
 ## 1. Ranked plan
 
+> **⚠ SUPERSEDED BY MEASUREMENT — do not act on this section.** The ranking
+> below is the ORIGINAL pre-measurement plan, kept for the record. Its Rank 1
+> (contour-parallel) was refuted on whole regions (§0d, 0.91×) and again on
+> monotone cells (§0k, 0.686×). The measured build spec is §0k's verdict:
+> shared-lattice monotone decomposition + one elongation-gated global
+> PCA-minor rotation per region, raster everywhere. Anyone researching
+> stay-down/conformal paths: read §0k's D3 bound first — a per-cell mix of
+> shipped patterns is break-even at best.
+
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**
 **Rank 2 — Lever 2: per-region sweep direction.**
 Lever 2 is genuinely cheaper to build but its ceiling is much lower on *this*
