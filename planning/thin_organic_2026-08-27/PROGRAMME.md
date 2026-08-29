@@ -115,9 +115,7 @@ strengthens; ranking unchanged). C2/C3/D1 are a justified investment.
 `wanaka_ceiling_rebaseline_a3` in `tests/thin_organic_island_widths.rs` re-run
 §0g/§0h's table under a machined-stock ceiling (rough + tier-0, production
 `flush_ride`/airborne/hookup settings, A1's profile-aware clearance) with a
-flat-top pessimistic bracket; **done when that test has been run once and
-`FINDINGS.md` §0i's `PENDING` cells and its "what survives A3" paragraph are
-filled from its output.**
+flat-top pessimistic bracket. Run 2026-08-29; §0i filled.
 
 *GUI (X3):* none directly — this is a correctness fix, not a dial. But the
 viewport should stop drawing walls, which is the operator-visible acceptance.
@@ -217,7 +215,30 @@ Once cells exist, each gets its own decision. This is where the operator's
 **D1** — per-cell sweep DIRECTION. Cheapest form of Track C's payoff and
 partially measured already: gated PCA gives 1.04× at region scale (§0f), and a
 monotone cell is exactly the shape where a single axis is meaningful, so it
-should do better per cell than per region.
+should do better per cell than per region. **A3 lowered the prior**: under the
+realistic ceiling the region-level direction lever compressed to 1.034× while
+decomposition strengthened (§0i), so expect the direction dividend to be small.
+**D1 BUILT, NOT RUN 2026-08-29.** *Instrument:* Stage M +
+`wanaka_per_cell_direction_d1` in `tests/thin_organic_island_widths.rs` gives
+each 0°-decomposition cell its own lattice at its own PCA-minor axis,
+concatenates the cells' rasters, and costs the candidate through the E1 kernel
+in BOTH link regimes against §0i's four recorded candidates — with a per-cell
+0° **phase control** that separates the lattice-re-phasing effect from the
+direction effect, a nearest-neighbour cell-order variant that is a greedy
+BOUND on C3 rather than a router, a per-cell angle-divergence distribution
+(the structural explanation for a null), and a coverage proxy standing in for
+Stage J's membership guard, which is undefined across lattices. The bar is
+region 1's ceiling-arm global `PCA cells` row, **755.3 s**.
+
+**D1 DONE 2026-08-29 — REFUTED.** §0j measured per-cell direction as a COST
+(direction factor 0.917×/0.921× under the ceiling vs 1.034× for one global
+rotation; not structurally excused — 86–95% of cells genuinely diverge >15°;
+mechanism: misaligned per-cell lattices break cross-cell serpentine chords,
++9% cutting distance). NN cell order was byte-identical to emission order,
+bounding **C3's upside at ~zero** (the relinker's `reorder` already owns it).
+Consequence for the build: **C2 = shared-lattice monotone decomposition +
+one elongation-gated global rotation per region** — no per-cell directions,
+no cell TSP. D2 (per-cell PATTERN) remains open and untested.
 **D2** — per-cell PATTERN: raster vs contour vs spiral. §0d refuted contour on
 undivided regions; on a monotone cell its perimeter is short and well-behaved,
 so the refutation does not carry over. **Re-test, do not assume either way.**

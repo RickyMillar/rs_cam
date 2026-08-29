@@ -801,6 +801,206 @@ checks matched; log preserved in the session scratchpad, tables above):
   1.10×/1.04× sweep-angle aggregates (only region 1's PCA direction was
   re-run). Neither is load-bearing for the C/D decision.
 
+## 0j. D1 — does EACH CELL want its own sweep direction?
+
+> **STATUS: NOT MEASURED.** Stage M
+> (`tests/thin_organic_island_widths.rs`) and its runner
+> `wanaka_per_cell_direction_d1` exist and are additive; the tables below are
+> written with the stage's own columns and its reading rules, and every
+> measurement cells are filled from the 2026-08-29 run; verdict below.
+>
+> ```text
+> cargo test -p rs_cam_core --test thin_organic_island_widths \
+>   wanaka_per_cell_direction_d1 -- --ignored --nocapture
+> ```
+>
+> **Nothing in this section may be cited as a measurement until those cells
+> carry numbers.** Same rule §0d imposed on itself and §0i inherited, for the
+> same reason: this document's whole cost to date has been margins quoted from
+> arms that were never run.
+
+### The question, and the prior A3 already put on it
+
+§0i left region 1 ranked under the machined-stock ceiling — the only
+operator-honest regime — as **PCA-cells 755.3 s > 0°-cells 772.6 >
+PCA-undivided 887.6 > 0°-undivided 917.5**. Inside that result the two levers
+moved in opposite directions: decomposition STRENGTHENED under the ceiling
+(cells delta 1.099× → 1.175× in the PCA direction) while ONE global rotation
+COMPRESSED to **1.034×**. D1 asks whether per-CELL direction recovers any of
+what the global rotation lost — a monotone cell being exactly the shape for
+which a single axis is meaningful — and A3's prior is that it will not recover
+much.
+
+**The bar is 755.3 s**, the ceiling arm's global `PCA cells` row on region 1.
+Stage M recomputes it in the same binary rather than reading it from here.
+
+### Three limitations that are structural, not incidental
+
+1. **Every cell gets its own LATTICE, so Stage J's membership guard is not
+   weakened — it is UNDEFINED.** There is no common grid for a cross-lattice
+   candidate to be guarded against. What replaces it is a **coverage proxy**:
+   `emitted lattice points × stepover²` as a share of the cell's own polygon
+   area. A candidate that leaves a strip uncut at a cell seam reads low; one
+   that double-covers a seam reads high. That detects gaps, and nothing else —
+   **C4's rendered-surface review still binds**, exactly as §0h says of its own
+   cross-direction rows.
+2. **A per-cell grid changes the lattice ORIGIN as well as its angle**, so a
+   raw `0° cells → per-cell PCA` reading confounds phase with direction. Stage
+   M therefore runs a **phase control**: the identical per-cell rig with every
+   cell held at 0°. The delta then decomposes —
+   `shared 0° cells → per-cell 0°` is phase/origin alone,
+   `per-cell 0° → per-cell PCA` is **direction alone**, and their product is
+   the total.
+3. **The "recorded monotone direction" rule is degenerate on this
+   decomposition.** Stage I's cells are monotone in the SHIPPED 0° raster, so
+   every cell's monotone direction *is* 0°. It is not a second direction
+   candidate; it is the phase control of point 2, and is reported as such
+   rather than dressed up as two rules.
+
+### Table 1 — per-cell angle distribution (the structural answer)
+
+If few cells want a direction far from the region's own, a null cost result is
+**explained** rather than merely observed. Divergence is an AXIS difference
+(mod 180°): 179° and 1° differ by 2°, not 178°.
+
+| region | cells | no PCA axis (fell back to 0°) | divergence p50 | p90 | max | cells > 15° from the region axis | elongation p50 / p90 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 86 | 2 | 29.6° | 35.0° | 80.5° | 78 (91%) | 3.60 / 15.30 |
+| 2 | 35 | 5 | 65.2° | 67.0° | 83.4° | 30 (86%) | 3.79 / 11.84 |
+| 3 | 58 | 5 | 46.9° | 50.3° | 70.7° | 55 (95%) | 3.64 / 19.49 |
+
+The region's own global axis is **recomputed from its covariance**, not read
+from §0h's 119.6° — so a divergence figure quoted against a different global
+angle means the angle moved, not that the rig drifted. Stage M prints the
+computed angle on the same line.
+
+**Regions 2 and 3's global axis is BELOW §0f's elongation gate (3.0).** Their
+divergence column therefore characterises the cells; it does not license
+quoting their region axis as a credible direction — §0f already refused one
+there, which is why those regions get no global-direction bar rows below.
+
+### Table 2 — region 1, all candidates, both regimes
+
+Columns are §0i's. Both arms of every row share the grid rule, feeds, Shapeoko
+envelope, full-region boundary, production relink and F-034 costing; the only
+difference between arms is the link regime. The shared-lattice rows keep Stage
+J's real membership guard; only the `per-cell` rows fall back to the coverage
+proxy.
+
+| candidate | arm | cells | fragments | linked | kept retracts | F-034 s | cutting mm | slower | refused |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0° undivided | fresh | — | 564 | 466 | 97 | 1053.7 | 8687 | — | 0 |
+| 0° undivided | ceiling | — | 564 | 559 | 4 | 917.5 | 10523 | 0 | 0 |
+| 0° cells | fresh | 86 | 191 | — | 83 | 999.9 | 8553 | — | 0 |
+| 0° cells | ceiling | 86 | 191 | 186 | 4 | 772.6 | 8945 | 0 | 0 |
+| PCA undivided | fresh | — | 491 | — | 74 | 963.0 | 8501 | — | 0 |
+| PCA undivided | ceiling | — | 491 | — | 4 | 887.6 | 10152 | 0 | 0 |
+| PCA cells (**the bar**) | fresh | 69 | 141 | — | 53 | 875.9 | 8279 | — | 0 |
+| PCA cells (**the bar**) | ceiling | 69 | 141 | — | 6 | **755.3** | 8645 | 0 | 0 |
+| per-cell 0° (phase control) | fresh | 86 | 172 | 89 | 82 | 1019.5 | 8794 | 0 | 0 |
+| per-cell 0° (phase control) | ceiling | 86 | 172 | 165 | 6 | 810.0 | 9306 | 0 | 0 |
+| per-cell PCA (**D1**) | fresh | 86 | 180 | 101 | 78 | 1050.8 | 9044 | 0 | 0 |
+| per-cell PCA (**D1**) | ceiling | 86 | 180 | 170 | 9 | 883.2 | 9785 | 0 | 0 |
+| per-cell PCA, NN cell order | fresh | 86 | 180 | 101 | 78 | 1050.8 | 9044 | 0 | 0 |
+| per-cell PCA, NN cell order | ceiling | 86 | 180 | 170 | 9 | 883.2 | 9785 | 0 | 0 |
+
+The eight non-PENDING rows are §0i's, and Stage M **recomputes** the fresh ones
+in the same binary with `= FINDINGS` beside each. A `MISMATCH` there
+invalidates every PENDING row filled in the same run — reconcile before
+reading anything else. The one benign exception is §0i's: on the PCA rows a
+MISMATCH can mean *the computed angle moved*, so check the printed angle
+against 119.6° first.
+
+Regions 2 and 3 get the same candidate set **minus** the `PCA undivided` /
+`PCA cells` rows: §0f's elongation gate (3.0) refuses a region-level axis
+there, so there is no global-direction bar to price against, only the
+`0° cells` row.
+
+| region | 0° undivided | 0° cells | per-cell 0° | per-cell PCA | per-cell PCA NN | *(all ceiling arm, seconds)* |
+|---|---:|---:|---:|---:|---:|---|
+| 2 | 484.2 | 419.0 | 424.9 | 453.3 | 453.3 | |
+| 3 | 419.2 | 384.4 | 402.8 | 441.1 | 441.1 | |
+| **top-three total** | 1820.9 | 1576.0 | 1637.8 | 1777.6 | 1777.6 | |
+
+### Table 3 — the delta decomposition (this is D1's actual answer)
+
+| factor | what it isolates | region 1 | top-three |
+|---|---|---:|---:|
+| phase / origin — `0° cells → per-cell 0°` | the per-cell rig's own lattice re-phasing, direction held at 0° | 0.954× | 0.962× |
+| **direction — `per-cell 0° → per-cell PCA`** | **D1's lever, clean of phase** | **0.917× (a COST)** | **0.921× (a COST)** |
+| total — `0° cells → per-cell PCA` | product of the two above | 0.875× | 0.887× |
+| cell order — `emission → nearest-neighbour` | a GREEDY BOUND on C3, not a router | 1.000× (identical output) | 1.000× |
+| vs the bar — `global PCA cells ÷ per-cell PCA` | does per-cell beat one global direction at all? | 0.855× — NO | — |
+
+**Read the `direction` row against §0i's 1.034×**, the global direction lever
+under the same ceiling. Above it, per-cell direction adds something a single
+rotation could not; at or below it, D1 is a null and Table 1 should say why.
+
+### Coverage proxy (read before any cost row above)
+
+| region | shared 0° lattice pts / % of area | per-cell 0° pts / % | per-cell PCA pts / % |
+|---|---|---|---|
+| 1 | 13,136 / 100.0% | 13,391 / 102.0% | 13,086 / 99.7% |
+| 2 | 7,549 / 99.8% | 7,763 / 102.6% | 7,524 / 99.5% |
+| 3 | 6,853 / 99.9% | 7,090 / 103.4% | 6,768 / 98.7% |
+
+A per-cell figure well below the shared one means **seam gaps** — uncut strips
+where two cells with different lattices meet — and would make the per-cell
+seconds cheap for the wrong reason. Well above means double coverage at seams.
+Either reading is a finding about the rig, not about D1, and must be resolved
+before the cost rows are quoted.
+
+### What this establishes, and what it does not
+
+*(To be written from the run, in §0i's shape. The following bind whatever the
+numbers say.)*
+
+- **This is still not a production router.** No production cell geometry
+  (C2), no cell adjacency graph and no cell TSP (C3), no per-cell strategy in
+  any generator, no GUI overlay. The cell VISIT ORDER is the decomposition's
+  own emission order plus a greedy nearest-neighbour variant that has no
+  adjacency information, no choice of where a cell is entered or left, no
+  2-opt, and sits under a relinker already running `reorder: true`. A win on
+  the NN row is an **upper hint** for C3; a null on it is evidence that cell
+  order is not the lever.
+- **The per-cell rows carry the coverage proxy, not Stage J's guard.** They
+  are cross-lattice by construction. C4's rendered/simulated surface review
+  binds anything built on them — a per-cell direction field changes the cusp
+  pattern at every cell seam, which is precisely the class of change §0h
+  refused to accept on time alone.
+- **The angles are unGATED.** Stage M assigns every cell its PCA-minor axis
+  regardless of that cell's elongation, and prints the elongation distribution
+  beside the divergence so a *gated* per-cell rule (§0f's shape, applied per
+  cell) can be priced later from the same run. Building that gate was
+  deliberately not done here: the ungated arm is the upper bound on what
+  gating could buy.
+- **Nothing here re-baselines §0d's contour refutation or §0e/§0f's angle
+  sweep.** Those remain fresh-stock results, as §0i left them.
+
+**Decision: D1 is REFUTED — per-cell direction is a measured COST, and the
+D-track collapses to what A3 already validated.**
+
+- The direction factor, clean of phase, is **0.917× region 1 / 0.921×
+  top-three** — a 8–9% SLOWDOWN, against §0i's 1.034× for one global
+  rotation. Per-cell local optimality loses to shared-lattice continuity:
+  the cells are small (mean ~36 mm²), and misaligned neighbouring lattices
+  break the cross-cell serpentine chords the relinker stitches on a shared
+  lattice (visible as +9% cutting distance in the per-cell arms).
+- Table 1 rules out the structural excuse: 86–95% of cells genuinely want
+  an axis >15° from the region's — their local angles simply do not pay.
+- The phase/origin control itself costs 3.8–4.6%, so even a hypothetical
+  zero-cost direction assignment starts from behind on a per-cell rig.
+- **C3's upside is bounded at ~zero**: greedy NN cell ordering produced
+  byte-identical output to emission order (the production relinker's
+  `reorder: true` already owns inter-fragment order).
+- What the C/D tracks should BUILD, on the combined A3+D1 evidence:
+  **C2 = monotone decomposition on the region's shared lattice + ONE
+  elongation-gated global rotation per region** (the §0i winner, 755.3 s /
+  1.215×). No per-cell direction assignment. No cell TSP. D2's
+  contour-per-cell question remains open and untested by this stage.
+- Coverage proxies sit within ±3.4% everywhere, so the cost readings are
+  not seam artefacts; C4 (rendered-surface review) still binds any build.
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

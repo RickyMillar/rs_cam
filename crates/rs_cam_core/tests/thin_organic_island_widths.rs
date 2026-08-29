@@ -66,6 +66,10 @@
 //! # A3 re-baseline under a realistic link ceiling (Stage L):
 //! cargo test -p rs_cam_core --test thin_organic_island_widths \
 //!   wanaka_ceiling_rebaseline_a3 -- --ignored --nocapture
+//!
+//! # D1 per-cell sweep direction, priced against A3's table (Stage M):
+//! cargo test -p rs_cam_core --test thin_organic_island_widths \
+//!   wanaka_per_cell_direction_d1 -- --ignored --nocapture
 //! ```
 //!
 //! `#[ignore]` because it needs the operator's wanaka mesh, which is not in the
@@ -3152,4 +3156,1017 @@ fn wanaka_ceiling_rebaseline_a3() {
         stepover,
     };
     stage_l(&input, &regions);
+}
+
+// ── STAGE M ─────────────────────────────────────────────────────────────
+//
+// **D1** (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track D).
+//
+// A3 (§0i) left region 1's ranking with ONE global direction per region, on
+// the machined-stock ceiling arm — the only operator-honest regime: PCA-cells
+// 755.3 s > 0°-cells 772.6 > PCA-undivided 887.6 > 0°-undivided 917.5. Within
+// that result the two levers moved OPPOSITELY: decomposition STRENGTHENED
+// under the ceiling (cells delta 1.099× → 1.175× in the PCA direction) while
+// the single global rotation COMPRESSED to 1.034×. So the prior going into D1
+// is that a direction lever is worth little here, and the question is whether
+// per-CELL direction — where a monotone cell is exactly the shape a single
+// axis describes — recovers any of it.
+//
+// Three things separate this stage from K/L, and all three are limitations
+// rather than features:
+//
+// 1. **Every cell gets its OWN LATTICE.** There is no common grid left, so
+//    Stage J's membership guard — the candidate must select exactly the
+//    baseline's emitted lattice points — is not merely weaker here, it is
+//    UNDEFINED. What stands in its place is a COVERAGE PROXY: emitted lattice
+//    points × stepover² against the cell's own polygon area. A candidate that
+//    leaves a strip uncut at a cell seam reads low; one that double-covers a
+//    seam reads high. That is a gap detector, not a surface-quality
+//    acceptance — the C4 rendered/simulated review still binds anything built
+//    on this, exactly as §0h says for its cross-direction rows.
+// 2. **The per-cell rig changes the lattice ORIGIN as well as its angle.**
+//    Each per-cell grid is phased to its own cell, not to the region, so a
+//    raw `shared 0° cells → per-cell PCA` comparison confounds phase with
+//    direction. The stage therefore runs a PHASE CONTROL — the same per-cell
+//    rig with every cell held at 0°. The delta then decomposes:
+//    `shared 0° cells → per-cell 0°` is phase/origin alone, `per-cell 0° →
+//    per-cell PCA` is direction alone, and their product is the total.
+// 3. **The "recorded monotone direction" rule is degenerate on this
+//    decomposition.** Stage I's cells are monotone in the SHIPPED 0° raster,
+//    so every cell's monotone direction is 0°; that rule is not a second
+//    direction candidate, it IS the phase control of point 2. Said plainly
+//    rather than dressed up as two rules.
+//
+// Still NOT a production router: no production cell geometry, no cell
+// adjacency graph, no C3 cell TSP, no GUI overlay. Cell VISIT ORDER is the
+// decomposition's own emission order, plus a greedy nearest-neighbour variant
+// that is a BOUND on what C3 could buy — it has no adjacency information, no
+// choice of cell entry/exit point, and the relinker's own `reorder: true` may
+// re-sort the fragments underneath it anyway.
+
+/// Rows/columns of margin a per-cell grid carries beyond its own polygon's
+/// rotated extent, so a cell's first and last engaging raster row is never the
+/// grid's own edge row.
+const PER_CELL_GRID_MARGIN_STEPS: usize = 2;
+
+/// The bar D1 asks for: how many cells want a direction more than this far
+/// from the region's single global one. An AXIS difference, so it is measured
+/// mod 180°.
+const D1_ANGLE_DIVERGENCE_DEG: f64 = 15.0;
+
+/// §0f's elongation gate. A region-level PCA direction is only credible above
+/// it, and region 1 (4.15) was the only Wanaka Shallow region to pass — so
+/// Stage M prints §0i's global-PCA reference rows (region 1's 755.3 s bar)
+/// only for a region that clears it, rather than inventing a bar where §0f
+/// already refused one.
+const PCA_ELONGATION_GATE: f64 = 3.0;
+
+/// Which direction rule a per-cell candidate assigns to each cell.
+#[derive(Clone, Copy)]
+enum CellDirectionRule {
+    /// The cell's recorded MONOTONE direction. Stage I's cells are monotone in
+    /// the shipped 0° raster, so this is 0° for every one of them: the rule is
+    /// degenerate on this decomposition and the arm it produces is the
+    /// per-cell rig's PHASE CONTROL, not a second direction candidate.
+    Monotone,
+    /// The cell's own PCA-minor axis — §0f's region-level predictor applied
+    /// per cell. A cell too small to have one (fewer than three lattice
+    /// samples inside it) falls back to 0°, and the count of those is printed
+    /// rather than absorbed.
+    PcaMinor,
+}
+
+/// One cell, its assigned sweep direction, and the lattice that direction
+/// implies for it.
+struct CellPlan {
+    polygon: Polygon2,
+    angle_deg: f64,
+    /// The cell's own PCA elongation, or NaN when the rule did not ask for an
+    /// axis. Printed beside the divergence because it is the datum that would
+    /// justify (or kill) a *gated* per-cell rule later — Stage M deliberately
+    /// does not build one.
+    elongation: f64,
+    grid: rs_cam_core::dropcutter::DropCutterGrid,
+    /// Points of this cell's own grid that engage the surface inside this
+    /// cell's own polygon — the coverage proxy's numerator.
+    lattice_points: usize,
+}
+
+/// Build ONE cell's drop-cutter lattice at `angle_deg`, covering only that
+/// cell.
+///
+/// Deliberately not `batch_drop_cutter`: that builder covers the whole MESH
+/// bbox (179 whole-mesh grids would be absurd), and its per-cell equivalent
+/// `batch_sample_grid` is `pub(crate)`. Two consequences, both stated:
+///
+/// * **the 89.9°-not-90° trap does not apply here.** `batch_drop_cutter`
+///   skips its rotation entirely within 0.01° of 0/90/180/360 and returns an
+///   AXIS-ALIGNED grid still labelled with the requested angle
+///   (`dropcutter.rs:118-165`), which would make `u_start`/`v_start` lie at
+///   90°. This builder always applies the honest rotation — at 0° that IS the
+///   identity — so `u_start`/`v_start` are true rotated-frame minima at every
+///   angle and `points[i].x/.y` are world coordinates at every angle. Nothing
+///   downstream of here reads the frame anyway: `raster_toolpath_from_grid`
+///   uses only `rows`/`cols`/`get()`/`x_step`/`y_step`
+///   (`toolpath.rs:607-748`), and Stage M never re-extracts polygons from a
+///   per-cell grid — it uses Stage I's existing cell polygons.
+/// * **it samples only inside the polygon.** A lattice point outside the cell
+///   would be excluded by the very `RegionSet` this candidate is emitted
+///   through, and `RegionSet::contains` is exactly `Polygon2::contains_point`
+///   (`region_set.rs:71-73`) — the same predicate, no epsilon — so an
+///   unsampled point parked at `min_z` is behaviourally identical to a
+///   sampled one that is region-excluded. That turns the sampling cost from
+///   "cell bbox" into "cell", which is what makes 179 per-cell grids
+///   affordable in a sequential test binary.
+fn cell_lattice_grid(
+    input: &A3Inputs<'_>,
+    polygon: &Polygon2,
+    angle_deg: f64,
+    min_z: f64,
+) -> (rs_cam_core::dropcutter::DropCutterGrid, usize) {
+    use rs_cam_core::dropcutter::{DropCutterGrid, point_drop_cutter};
+    use rs_cam_core::tool::CLPoint;
+
+    let radians = angle_deg.to_radians();
+    let (cosine, sine) = (radians.cos(), radians.sin());
+    let step = input.stepover;
+    let (mut u_min, mut u_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut v_min, mut v_max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for point in &polygon.exterior {
+        let u = point.x * cosine + point.y * sine;
+        let v = -point.x * sine + point.y * cosine;
+        u_min = u_min.min(u);
+        u_max = u_max.max(u);
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+    }
+    if !u_min.is_finite() || !v_min.is_finite() {
+        return (
+            DropCutterGrid {
+                points: Vec::new(),
+                rows: 0,
+                cols: 0,
+                u_start: 0.0,
+                v_start: 0.0,
+                x_step: step,
+                y_step: step,
+                direction_deg: angle_deg,
+            },
+            0,
+        );
+    }
+    let margin = PER_CELL_GRID_MARGIN_STEPS as f64 * step;
+    let u_start = u_min - margin;
+    let v_start = v_min - margin;
+    let cols = ((u_max + margin - u_start) / step).ceil() as usize + 1;
+    let rows = ((v_max + margin - v_start) / step).ceil() as usize + 1;
+    let mut points = Vec::with_capacity(rows * cols);
+    let mut lattice_points = 0usize;
+    for row in 0..rows {
+        let v = v_start + row as f64 * step;
+        for col in 0..cols {
+            let u = u_start + col as f64 * step;
+            let x = u * cosine - v * sine;
+            let y = u * sine + v * cosine;
+            if polygon.contains_point(&P2::new(x, y)) {
+                let mut cl = point_drop_cutter(x, y, input.mesh, input.index, input.fine);
+                if cl.z < min_z {
+                    cl.z = min_z;
+                }
+                if cl.z > min_z + 0.001 {
+                    lattice_points += 1;
+                }
+                points.push(cl);
+            } else {
+                let mut cl = CLPoint::new(x, y);
+                cl.z = min_z;
+                points.push(cl);
+            }
+        }
+    }
+    (
+        DropCutterGrid {
+            points,
+            rows,
+            cols,
+            u_start,
+            v_start,
+            x_step: step,
+            y_step: step,
+            direction_deg: angle_deg,
+        },
+        lattice_points,
+    )
+}
+
+/// Assign every cell a direction under `rule` and build its lattice. Returns
+/// the plans and the number of cells that had NO PCA axis and fell back to 0°.
+fn plan_cells(
+    input: &A3Inputs<'_>,
+    cells: &[Polygon2],
+    rule: CellDirectionRule,
+    min_z: f64,
+) -> (Vec<CellPlan>, usize) {
+    let mut fallbacks = 0usize;
+    let plans = cells
+        .iter()
+        .map(|cell| {
+            let axis = match rule {
+                CellDirectionRule::Monotone => None,
+                CellDirectionRule::PcaMinor => pca_minor_and_elongation(cell, input.stepover),
+            };
+            let angle_deg = match (rule, axis) {
+                (CellDirectionRule::Monotone, _) => 0.0,
+                (CellDirectionRule::PcaMinor, Some((minor, _))) => minor,
+                (CellDirectionRule::PcaMinor, None) => {
+                    fallbacks += 1;
+                    0.0
+                }
+            };
+            let (grid, lattice_points) = cell_lattice_grid(input, cell, angle_deg, min_z);
+            CellPlan {
+                polygon: cell.clone(),
+                angle_deg,
+                elongation: axis.map_or(f64::NAN, |(_, elongation)| elongation),
+                grid,
+                lattice_points,
+            }
+        })
+        .collect();
+    (plans, fallbacks)
+}
+
+/// Vertex centroid of a cell — the mean of its exterior vertices, NOT the area
+/// centroid. Adequate for an ordering heuristic, and named so it cannot be
+/// mistaken for a geometric claim.
+fn cell_vertex_centroid(polygon: &Polygon2) -> P2 {
+    let count = polygon.exterior.len().max(1) as f64;
+    let (sum_x, sum_y) = polygon
+        .exterior
+        .iter()
+        .fold((0.0_f64, 0.0_f64), |(sx, sy), point| {
+            (sx + point.x, sy + point.y)
+        });
+    P2::new(sum_x / count, sum_y / count)
+}
+
+/// Greedy nearest-neighbour cell order over vertex centroids, starting from
+/// the cell the decomposition emitted first.
+///
+/// **A GREEDY BOUND ON WHAT C3 COULD BUY, NOT A ROUTER.** No adjacency graph,
+/// no choice of where a cell is entered or left, no 2-opt, and the production
+/// relinker runs with `reorder: true` on top of it — so a null result here is
+/// evidence that cell ORDER is not the lever, and a positive one is only an
+/// upper hint for C3.
+fn nearest_neighbour_cell_order(plans: &[CellPlan]) -> Vec<usize> {
+    let mut order = Vec::with_capacity(plans.len());
+    if plans.is_empty() {
+        return order;
+    }
+    let centroids: Vec<P2> = plans
+        .iter()
+        .map(|plan| cell_vertex_centroid(&plan.polygon))
+        .collect();
+    let mut visited = vec![false; plans.len()];
+    let mut current = 0usize;
+    visited[0] = true;
+    order.push(0);
+    for _ in 1..plans.len() {
+        let here = centroids[current];
+        let mut best: Option<(usize, f64)> = None;
+        for (index, centroid) in centroids.iter().enumerate() {
+            if visited[index] {
+                continue;
+            }
+            let distance = (centroid.x - here.x).hypot(centroid.y - here.y);
+            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                best = Some((index, distance));
+            }
+        }
+        let Some((next, _)) = best else { break };
+        visited[next] = true;
+        order.push(next);
+        current = next;
+    }
+    order
+}
+
+/// Concatenate every cell's own raster, in `order`, into one candidate.
+fn per_cell_raster_candidate(
+    plans: &[CellPlan],
+    order: &[usize],
+    safe_z: f64,
+    effective_min_z: f64,
+) -> rs_cam_core::toolpath::Toolpath {
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
+
+    let mut out = Toolpath::new();
+    for &index in order {
+        let Some(plan) = plans.get(index) else {
+            continue;
+        };
+        let region = RegionSet::new(vec![plan.polygon.clone()]);
+        let toolpath = raster_toolpath_from_grid(
+            &plan.grid,
+            FEED_MM_MIN,
+            PLUNGE_MM_MIN,
+            safe_z,
+            Some(effective_min_z),
+            Some(&region),
+        );
+        out.moves.extend(toolpath.moves);
+    }
+    out
+}
+
+/// [`cost_under_arms`] for a per-cell candidate: same E1 kernel, same
+/// production relink parameters, rebuilt per arm so no arm sees another's
+/// toolpath.
+fn cost_plans_under_arms(
+    input: &A3Inputs<'_>,
+    plans: &[CellPlan],
+    order: &[usize],
+    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    arms: &[LinkRegime<'_>],
+) -> Vec<CandidateCost> {
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    arms.iter()
+        .map(|arm| {
+            let raw = per_cell_raster_candidate(plans, order, arm.safe_z, effective_min_z);
+            relink_and_cost_under(
+                raw,
+                input.mesh,
+                input.index,
+                input.fine,
+                boundary,
+                kinematics,
+                *arm,
+            )
+        })
+        .collect()
+}
+
+/// AXIS difference (mod 180°) between two sweep directions, in degrees. A
+/// raster at 179° and one at 1° differ by 2°, not 178° — they sweep the same
+/// family of lines.
+fn axis_difference_deg(a: f64, b: f64) -> f64 {
+    let difference = (a - b).rem_euclid(180.0);
+    difference.min(180.0 - difference)
+}
+
+/// D1's structural question, printed before any cost: how far do the cells'
+/// own preferred axes actually sit from the region's single global one? If
+/// few of them diverge, a null result on the cost rows is EXPLAINED rather
+/// than merely observed.
+fn report_cell_angle_distribution(plans: &[CellPlan], global_deg: Option<f64>, fallbacks: usize) {
+    if plans.is_empty() {
+        println!("     per-cell angles: no cells.");
+        return;
+    }
+    let mut bins = [0usize; 6];
+    for plan in plans {
+        let bin = ((plan.angle_deg.rem_euclid(180.0)) / 30.0).floor() as usize;
+        bins[bin.min(5)] += 1;
+    }
+    let mut elongations: Vec<f64> = plans
+        .iter()
+        .map(|plan| plan.elongation)
+        .filter(|value| value.is_finite())
+        .collect();
+    elongations.sort_by(f64::total_cmp);
+    let gated = elongations
+        .iter()
+        .filter(|value| **value > PCA_ELONGATION_GATE)
+        .count();
+    println!(
+        "     per-cell PCA-minor angles over {} cells ({fallbacks} had no axis and fell back to 0°):\n\
+         \x20      0-30° {}, 30-60° {}, 60-90° {}, 90-120° {}, 120-150° {}, 150-180° {}",
+        plans.len(),
+        bins[0],
+        bins[1],
+        bins[2],
+        bins[3],
+        bins[4],
+        bins[5],
+    );
+    if !elongations.is_empty() {
+        println!(
+            "     per-cell elongation: p50 {:.2}, p90 {:.2}, max {:.2}; {gated} of {} cells clear \
+             §0f's gate ({PCA_ELONGATION_GATE:.1})",
+            percentile(&elongations, 0.5),
+            percentile(&elongations, 0.9),
+            elongations.last().copied().unwrap_or(f64::NAN),
+            elongations.len(),
+        );
+    }
+    let Some(global) = global_deg else {
+        println!(
+            "     the region itself has no PCA axis, so there is no global direction to diverge \
+             from."
+        );
+        return;
+    };
+    let mut divergences: Vec<f64> = plans
+        .iter()
+        .map(|plan| axis_difference_deg(plan.angle_deg, global))
+        .collect();
+    let diverging = divergences
+        .iter()
+        .filter(|value| **value > D1_ANGLE_DIVERGENCE_DEG)
+        .count();
+    divergences.sort_by(f64::total_cmp);
+    println!(
+        "     divergence from the region's own {global:.1}°: p50 {:.1}°, p90 {:.1}°, max {:.1}°;\n\
+         \x20      {diverging} of {} cells differ by more than {D1_ANGLE_DIVERGENCE_DEG:.0}° \
+         ({:.0}%). Few divergences would EXPLAIN a null D1 result structurally.",
+        percentile(&divergences, 0.5),
+        percentile(&divergences, 0.9),
+        divergences.last().copied().unwrap_or(f64::NAN),
+        plans.len(),
+        100.0 * diverging as f64 / plans.len() as f64,
+    );
+}
+
+/// Points of a SHARED grid that engage the surface inside `polygon` — the
+/// denominator the per-cell coverage proxy is read against.
+fn shared_lattice_points(
+    grid: &rs_cam_core::dropcutter::DropCutterGrid,
+    polygon: &Polygon2,
+    min_z: f64,
+) -> usize {
+    grid.points
+        .iter()
+        .filter(|point| {
+            point.z > min_z + 0.001 && polygon.contains_point(&P2::new(point.x, point.y))
+        })
+        .count()
+}
+
+/// `points × stepover²`, as a percentage of a polygon's own area — the
+/// cross-lattice stand-in for Stage J's membership guard. Not a quality
+/// acceptance: it detects seam gaps and double coverage, nothing else.
+fn coverage_pct(points: usize, stepover: f64, area: f64) -> f64 {
+    if area <= 0.0 {
+        return f64::NAN;
+    }
+    100.0 * points as f64 * stepover * stepover / area
+}
+
+/// §0i's bar, recomputed in this binary: the region's ONE global PCA-minor
+/// direction, re-decomposed in that rotated lattice (rotating 0° cells is the
+/// invalid operation §0h refuses). Returns the CEILING-arm cell time — region
+/// 1's 755.3 s — or `None` when the rotated arm refuses its own guard.
+fn print_global_pca_rows(
+    input: &A3Inputs<'_>,
+    region: &RegionCells,
+    arms: &[LinkRegime<'_>],
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    recorded: Option<[(usize, f64); 2]>,
+) -> Option<f64> {
+    use rs_cam_core::region_set::RegionSet;
+
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    let (global_deg, elongation) = pca_minor_and_elongation(&region.boundary, input.stepover)?;
+    let rotated_grid = grid_for_direction(
+        input.mesh,
+        input.index,
+        input.fine,
+        input.stepover,
+        global_deg,
+    );
+    let (rotated_cells, rotated_topology) =
+        lattice_boustrophedon_cells(&rotated_grid, &region.boundary, effective_min_z);
+    if rotated_cells.is_empty()
+        || !cell_membership_matches(
+            &rotated_grid,
+            &region.boundary,
+            &rotated_cells,
+            effective_min_z,
+        )
+    {
+        println!("     REFUSE global-PCA rows: cell polygons do not preserve the PCA lattice.");
+        return None;
+    }
+    let boundary = RegionSet::new(vec![region.boundary.clone()]);
+    let undivided = cost_under_arms(
+        input,
+        &rotated_grid,
+        std::slice::from_ref(&region.boundary),
+        &boundary,
+        kinematics,
+        arms,
+    );
+    let celled = cost_under_arms(
+        input,
+        &rotated_grid,
+        &rotated_cells,
+        &boundary,
+        kinematics,
+        arms,
+    );
+    println!(
+        "     (global PCA-minor {global_deg:.1}°, elongation {elongation:.2}, \
+         {rotated_topology} rotated topology cells)"
+    );
+    print_a3_row(
+        "PCA undivided",
+        &arms[0],
+        None,
+        &undivided[0],
+        recorded.map(|pair| pair[0]),
+    );
+    print_a3_row("PCA undivided", &arms[1], None, &undivided[1], None);
+    print_a3_row(
+        "PCA cells",
+        &arms[0],
+        Some(rotated_cells.len()),
+        &celled[0],
+        recorded.map(|pair| pair[1]),
+    );
+    print_a3_row(
+        "PCA cells",
+        &arms[1],
+        Some(rotated_cells.len()),
+        &celled[1],
+        None,
+    );
+    Some(celled[1].time_s)
+}
+
+/// Ceiling-arm seconds for one region's D1 candidate set — what the top-N
+/// summary folds. The global-PCA bar is deliberately NOT here: §0f's gate
+/// refuses a region-level axis on regions 2 and 3, so there is no top-3 total
+/// to fold it into and it stays a per-region row.
+#[derive(Clone, Copy)]
+struct StageMTotals {
+    undivided: f64,
+    shared_cells: f64,
+    per_cell_zero: f64,
+    per_cell_pca: f64,
+    per_cell_pca_nn: f64,
+}
+
+fn stage_m_region(
+    input: &A3Inputs<'_>,
+    region: &RegionCells,
+    region_index: usize,
+    arms: &[LinkRegime<'_>; 2],
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+) -> Option<StageMTotals> {
+    use rs_cam_core::region_set::RegionSet;
+
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    if region.cells.is_empty() {
+        println!(
+            "     REFUSE region {}: no extracted cell polygons",
+            region_index + 1
+        );
+        return None;
+    }
+    // The SHARED-lattice rows still get the real guard — only the per-cell
+    // rows fall back to the coverage proxy, because only they have no common
+    // lattice to be guarded against.
+    if !cell_membership_matches(
+        input.zero_grid,
+        &region.boundary,
+        &region.cells,
+        effective_min_z,
+    ) {
+        return None;
+    }
+    println!(
+        "\n   ── region {} ({:.0} mm², {} cells) ──",
+        region_index + 1,
+        region.boundary.area(),
+        region.topology_cells
+    );
+
+    let region_axis = pca_minor_and_elongation(&region.boundary, input.stepover);
+    let (zero_plans, zero_fallbacks) = plan_cells(
+        input,
+        &region.cells,
+        CellDirectionRule::Monotone,
+        effective_min_z,
+    );
+    let (pca_plans, pca_fallbacks) = plan_cells(
+        input,
+        &region.cells,
+        CellDirectionRule::PcaMinor,
+        effective_min_z,
+    );
+    report_cell_angle_distribution(
+        &pca_plans,
+        region_axis.map(|(minor, _)| minor),
+        pca_fallbacks,
+    );
+
+    let emission: Vec<usize> = (0..pca_plans.len()).collect();
+    let nearest = nearest_neighbour_cell_order(&pca_plans);
+    let boundary = RegionSet::new(vec![region.boundary.clone()]);
+
+    let undivided = cost_under_arms(
+        input,
+        input.zero_grid,
+        std::slice::from_ref(&region.boundary),
+        &boundary,
+        kinematics,
+        arms,
+    );
+    let shared_cells = cost_under_arms(
+        input,
+        input.zero_grid,
+        &region.cells,
+        &boundary,
+        kinematics,
+        arms,
+    );
+    print_a3_row(
+        "0° undivided",
+        &arms[0],
+        None,
+        &undivided[0],
+        RECORDED_FRESH_UNDIVIDED.get(region_index).copied(),
+    );
+    print_a3_row("0° undivided", &arms[1], None, &undivided[1], None);
+    print_a3_row(
+        "0° cells",
+        &arms[0],
+        Some(region.cells.len()),
+        &shared_cells[0],
+        RECORDED_FRESH_CELLS.get(region_index).copied(),
+    );
+    print_a3_row(
+        "0° cells",
+        &arms[1],
+        Some(region.cells.len()),
+        &shared_cells[1],
+        None,
+    );
+
+    // §0f's gate: only a region elongated enough for a global axis to mean
+    // anything gets the §0i bar rows. Region 1 is the only one that passed it.
+    let gate_cleared = region_axis.is_some_and(|(_, elongation)| elongation > PCA_ELONGATION_GATE);
+    let global_pca_cells = if gate_cleared {
+        print_global_pca_rows(
+            input,
+            region,
+            arms,
+            kinematics,
+            (region_index == 0).then_some(RECORDED_FRESH_PCA),
+        )
+    } else {
+        println!(
+            "     (no global-PCA bar: region elongation is at or below §0f's gate \
+             {PCA_ELONGATION_GATE:.1}, so §0f refuses a region-level axis here)"
+        );
+        None
+    };
+
+    let per_cell_zero =
+        cost_plans_under_arms(input, &zero_plans, &emission, &boundary, kinematics, arms);
+    let per_cell_pca =
+        cost_plans_under_arms(input, &pca_plans, &emission, &boundary, kinematics, arms);
+    let per_cell_pca_nn =
+        cost_plans_under_arms(input, &pca_plans, &nearest, &boundary, kinematics, arms);
+    print_a3_row(
+        "per-cell 0°",
+        &arms[0],
+        Some(zero_plans.len()),
+        &per_cell_zero[0],
+        None,
+    );
+    print_a3_row(
+        "per-cell 0°",
+        &arms[1],
+        Some(zero_plans.len()),
+        &per_cell_zero[1],
+        None,
+    );
+    print_a3_row(
+        "per-cell PCA",
+        &arms[0],
+        Some(pca_plans.len()),
+        &per_cell_pca[0],
+        None,
+    );
+    print_a3_row(
+        "per-cell PCA",
+        &arms[1],
+        Some(pca_plans.len()),
+        &per_cell_pca[1],
+        None,
+    );
+    print_a3_row(
+        "per-cell PCA NN",
+        &arms[0],
+        Some(pca_plans.len()),
+        &per_cell_pca_nn[0],
+        None,
+    );
+    print_a3_row(
+        "per-cell PCA NN",
+        &arms[1],
+        Some(pca_plans.len()),
+        &per_cell_pca_nn[1],
+        None,
+    );
+
+    let area = region.boundary.area();
+    let shared_points = shared_lattice_points(input.zero_grid, &region.boundary, effective_min_z);
+    let zero_points: usize = zero_plans.iter().map(|plan| plan.lattice_points).sum();
+    let pca_points: usize = pca_plans.iter().map(|plan| plan.lattice_points).sum();
+    println!(
+        "     COVERAGE PROXY (points × stepover² ÷ region area): shared 0° {shared_points} pts \
+         = {:.1}%,\n\
+         \x20      per-cell 0° {zero_points} pts = {:.1}%, per-cell PCA {pca_points} pts = \
+         {:.1}%.\n\
+         \x20      This REPLACES Stage J's membership guard on the per-cell rows — there is no\n\
+         \x20      common lattice to guard against. A per-cell figure well below the shared one\n\
+         \x20      means seam gaps; well above means double coverage at seams. Either way C4\n\
+         \x20      binds before any of this is built.",
+        coverage_pct(shared_points, input.stepover, area),
+        coverage_pct(zero_points, input.stepover, area),
+        coverage_pct(pca_points, input.stepover, area),
+    );
+    println!(
+        "     DELTA DECOMPOSITION (ceiling arm): phase/origin {:.3}x (shared 0° cells → \
+         per-cell 0°),\n\
+         \x20      direction {:.3}x (per-cell 0° → per-cell PCA), total {:.3}x, cell order \
+         {:.3}x (emission → NN).\n\
+         \x20      Against the §0i bar (global PCA cells): {:.3}x.",
+        delta(&shared_cells[1], &per_cell_zero[1]),
+        delta(&per_cell_zero[1], &per_cell_pca[1]),
+        delta(&shared_cells[1], &per_cell_pca[1]),
+        delta(&per_cell_pca[1], &per_cell_pca_nn[1]),
+        global_pca_cells.map_or(f64::NAN, |bar| bar / per_cell_pca[1].time_s),
+    );
+    println!(
+        "     (phase control: all {} cells held at 0° — Stage I's monotone direction IS 0° by\n\
+         \x20      construction, so its own no-axis fallback count is {zero_fallbacks} and the\n\
+         \x20      two per-cell arms differ ONLY in the angle each cell's lattice is built at.)",
+        zero_plans.len()
+    );
+
+    Some(StageMTotals {
+        undivided: undivided[1].time_s,
+        shared_cells: shared_cells[1].time_s,
+        per_cell_zero: per_cell_zero[1].time_s,
+        per_cell_pca: per_cell_pca[1].time_s,
+        per_cell_pca_nn: per_cell_pca_nn[1].time_s,
+    })
+}
+
+fn stage_m(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::surface_link::LinkCeiling;
+
+    println!(
+        "========== STAGE M — D1: PER-CELL sweep direction vs one global direction =========="
+    );
+    if regions.is_empty() {
+        println!("\n     SKIP: no Shallow regions to price.\n");
+        return;
+    }
+    let mesh = input.mesh;
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let block_top_z = mesh.bbox.max.z;
+    let kinematics = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    println!(
+        "\n   Same ceiling as Stage L / §0i (MACHINED STOCK: the Ø{ROUGH_DIAMETER_MM:.0} rough at \
+         axial leave\n\
+         \x20  {ROUGH_STOCK_TO_LEAVE_AXIAL_MM:.1} mm, then the tier-0 R1.5 where tier 0 machines), \
+         same production relink\n\
+         \x20  parameters, same F-034 integrator, BOTH regimes on every row (E1 discipline).\n\
+         \x20  The operator-honest bar is the CEILING arm's global `PCA cells` row — 755.3 s on\n\
+         \x20  region 1 in the 2026-08-29 A3 run. The fresh arm is kept only because §0g/§0h are\n\
+         \x20  recorded there and its `= FINDINGS` marks are what prove the setup did not drift.\n"
+    );
+
+    let bounds = ceiling_stock_bounds(mesh, regions);
+    let stock = a3_machined_stock(input, bounds);
+    report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
+
+    let machined_ceiling = LinkCeiling {
+        stock: Some(&stock),
+        tool_radius: input.fine.envelope_radius_mm(),
+        fallback_top_z: block_top_z,
+    };
+    let arms = [
+        LinkRegime::fresh_stock(safe_z),
+        LinkRegime::rest_op("ceiling", safe_z, machined_ceiling),
+    ];
+    print_a3_header();
+
+    let mut totals: Vec<StageMTotals> = Vec::new();
+    for (region_index, region) in regions.iter().enumerate() {
+        if let Some(row) = stage_m_region(input, region, region_index, &arms, &kinematics) {
+            totals.push(row);
+        }
+    }
+    if totals.is_empty() {
+        println!("\n     REFUSE total: no region produced a comparable candidate set.\n");
+        return;
+    }
+    let mut undivided = 0.0_f64;
+    let mut shared_cells = 0.0_f64;
+    let mut per_cell_zero = 0.0_f64;
+    let mut per_cell_pca = 0.0_f64;
+    let mut per_cell_pca_nn = 0.0_f64;
+    for row in &totals {
+        undivided += row.undivided;
+        shared_cells += row.shared_cells;
+        per_cell_zero += row.per_cell_zero;
+        per_cell_pca += row.per_cell_pca;
+        per_cell_pca_nn += row.per_cell_pca_nn;
+    }
+    println!(
+        "\n   TOP-{} TOTAL, CEILING ARM (the operator-honest regime):\n\
+         \x20    0° undivided     {undivided:.1} s\n\
+         \x20    0° cells         {shared_cells:.1} s\n\
+         \x20    per-cell 0°      {per_cell_zero:.1} s   (phase/origin control)\n\
+         \x20    per-cell PCA     {per_cell_pca:.1} s   (D1 candidate)\n\
+         \x20    per-cell PCA NN  {per_cell_pca_nn:.1} s   (greedy cell order, a BOUND on C3)\n\
+         \x20    phase {:.3}x, direction {:.3}x, total vs 0° cells {:.3}x, cell order {:.3}x\n",
+        totals.len(),
+        shared_cells / per_cell_zero,
+        per_cell_zero / per_cell_pca,
+        shared_cells / per_cell_pca,
+        per_cell_pca / per_cell_pca_nn,
+    );
+    println!(
+        "   D1's verdict is the `direction` factor, read against §0i's global direction lever\n\
+         (1.034× under this ceiling). It is priced on a MEASUREMENT rig: no production cell\n\
+         geometry, no cell adjacency graph, no C3 cell TSP, no GUI overlay, and the per-cell\n\
+         rows carry the coverage proxy in place of Stage J's membership guard. A win here is\n\
+         a reason to build C2/C3 further, never a reason to ship a per-cell strategy.\n"
+    );
+}
+
+/// Everything the D1 runner needs, owned. Deliberately a third copy of the A3
+/// setup rather than a refactor of Stage L's runner: Stage M must be additive
+/// and must not be able to move an existing stage's numbers.
+struct D1Setup {
+    mesh: TriangleMesh,
+    index: SpatialIndex,
+    coarse: TaperedBallEndmill,
+    fine: TaperedBallEndmill,
+    tier_map: rs_cam_core::tier_map::TierMap,
+    zero_grid: rs_cam_core::dropcutter::DropCutterGrid,
+    stepover: f64,
+    regions: Vec<RegionCells>,
+}
+
+fn d1_setup() -> Option<D1Setup> {
+    let path = Path::new(WANAKA_MESH);
+    if !path.exists() {
+        println!("SKIP: {WANAKA_MESH} not present on this machine.");
+        return None;
+    }
+
+    let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
+    let index = SpatialIndex::build_auto(&mesh);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let never_cancel = || false;
+    // The ladder borrows both tools, and this setup MOVES both of them into
+    // `D1Setup` at the end. Scoping that borrow explicitly is cheaper than
+    // relying on NLL to prove the ladder is dead by then.
+    let (map, cusp_radii) = {
+        let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
+        let ladder = TierLadder::new(&tools).expect("ladder");
+        let map = compute_tier_map(
+            &mesh,
+            &index,
+            &ladder,
+            &TierMapParams {
+                cell_mm: CELL_MM,
+                tolerance_mm: TOLERANCE_MM,
+                margin_mm: MARGIN_MM,
+                treatment: ResidualTreatment::SlopeCompensated,
+            },
+            &never_cancel,
+        )
+        .expect("tier map");
+        let cusp_radii: Vec<f64> = tools.iter().map(|tool| tool.cusp_radius_mm()).collect();
+        (map, cusp_radii)
+    };
+    let islands = extract_tier_islands(
+        &map,
+        &TierIslandParams {
+            coarseness: COARSENESS,
+            overlap_mm: OVERLAP_MM,
+            max_regions_per_tier: MAX_REGIONS_PER_TIER,
+            ..TierIslandParams::default()
+        },
+        &cusp_radii,
+    )
+    .expect("islands");
+    let Some(fine) = islands.per_tier.iter().find(|set| set.tier == 1) else {
+        println!("SKIP: no tier 1 machining region.");
+        return None;
+    };
+    if fine.machining.is_empty() {
+        println!("SKIP: tier 1 machining region is empty.");
+        return None;
+    }
+
+    let surface = build_classification_surface_with_sampler_and_cancel(
+        &mesh,
+        &index,
+        &r10,
+        unified_finish_classification_resolution(&r10, OP_TOLERANCE_MM),
+        ClassificationSampler::PRODUCTION,
+        &never_cancel,
+    )
+    .expect("classification surface");
+    let heightmap = &surface.heightmap;
+    let covered: Vec<bool> = heightmap
+        .covered_flags()
+        .iter()
+        .enumerate()
+        .map(|(i, &covered)| {
+            if !covered {
+                return false;
+            }
+            let row = i / heightmap.cols;
+            let col = i % heightmap.cols;
+            fine.machining.contains(&P2::new(
+                heightmap.origin_x + col as f64 * heightmap.cell_size,
+                heightmap.origin_y + row as f64 * heightmap.cell_size,
+            ))
+        })
+        .collect();
+    let mut planner = FinishPlannerParams::for_tool(cusp_radii[1]);
+    planner.overlap_mm = OVERLAP_MM;
+    let planned = decompose(&surface.slope_map, &covered, &[], &planner);
+    let stepover = equal_cusp_stepover_mm(cusp_radii[1], CUSP_HEIGHT_MM);
+    println!(
+        "D1 setup: {} planned regions, Shallow raster stepover {stepover:.4} mm\n",
+        planned.regions.len()
+    );
+
+    let grid = grid_for_stage_i(&mesh, &index, &r10, stepover);
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    let mut shallow: Vec<&Polygon2> = planned
+        .regions
+        .iter()
+        .filter(|region| region.band == FinishBand::Shallow)
+        .map(|region| &region.polygon)
+        .collect();
+    shallow.sort_by(|a, b| b.area().total_cmp(&a.area()));
+    let regions: Vec<RegionCells> = shallow
+        .into_iter()
+        .take(3)
+        .map(|boundary| {
+            let (cells, topology_cells) =
+                lattice_boustrophedon_cells(&grid, boundary, effective_min_z);
+            RegionCells {
+                boundary: boundary.clone(),
+                cells,
+                topology_cells,
+            }
+        })
+        .collect();
+
+    Some(D1Setup {
+        mesh,
+        index,
+        coarse: r15,
+        fine: r10,
+        tier_map: map,
+        zero_grid: grid,
+        stepover,
+        regions,
+    })
+}
+
+/// D1 — per-cell sweep direction (`PROGRAMME.md` Track D, D1).
+///
+/// ```text
+/// cargo test -p rs_cam_core --test thin_organic_island_widths \
+///   wanaka_per_cell_direction_d1 -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+fn wanaka_per_cell_direction_d1() {
+    let Some(setup) = d1_setup() else {
+        return;
+    };
+    let input = A3Inputs {
+        mesh: &setup.mesh,
+        index: &setup.index,
+        fine: &setup.fine,
+        coarse: &setup.coarse,
+        tier_map: &setup.tier_map,
+        zero_grid: &setup.zero_grid,
+        stepover: setup.stepover,
+    };
+    stage_m(&input, &setup.regions);
 }
