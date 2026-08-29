@@ -182,21 +182,52 @@ pub fn apply_entry_with_provenance(
 ///
 /// Scans for the pattern `[Rapid to (x,y, safe-ish z)]` -> `[Linear feed
 /// tagged EntryPlunge, same XY (within eps), descending]`. For each, the
-/// material ceiling is `stock.max_top_z_in_disc(x, y, tool_radius)` when a
-/// stock dexel is available (falling back to `fresh_stock_top_z` when the
-/// disc has no intersecting column), else `fresh_stock_top_z` directly. When
-/// `ceiling + PLUNGE_CLEARANCE_MM` sits at least 0.5mm below the rapid's z
-/// AND above the plunge target z, the plunge is split: a new
-/// `Rapid(Linking)` down to `ceiling + PLUNGE_CLEARANCE_MM`, then the
+/// split is DECIDED on the flat-disc material ceiling
+/// `stock.max_conservative_top_z_in_disc(x, y, tool_radius)` (falling back to
+/// `fresh_stock_top_z` when the disc has no intersecting column, or when
+/// there is no stock at all). When `ceiling + PLUNGE_CLEARANCE_MM` sits at
+/// least 0.5mm below the rapid's z AND above the plunge target z, the plunge
+/// is split: a new `Rapid(Linking)` down to the descent TARGET, then the
 /// original `EntryPlunge` feed for the remainder. Never touches plunges
 /// whose XY differs from the preceding rapid (not a vertical entry) or
 /// whose intent is not `EntryPlunge`.
 ///
-/// SAFETY: material cannot exist above the input stock's ceiling, so the
-/// inserted rapid is collision-free by construction — unlike any
-/// mesh-derived height, which understates remaining stock on
-/// `FromRemainingStock` ops (the 151-collision Rivers lesson,
-/// `planning/unified_finishing_pass_plan.md` P1 notes).
+/// # Descent target — profile-aware (B2)
+///
+/// `tool_radius` is a SEARCH BOUND, not the tool's shape: it is the furthest
+/// lateral offset at which material could reach the cutter at all (the
+/// envelope radius). Within it the cutter's own profile decides how high
+/// material has to stand before it can touch, so the target height is
+/// [`crate::dexel_stock::TriDexelStock::max_clearance_tip_z_for_profile`]
+/// `+ PLUNGE_CLEARANCE_MM` — the same primitive
+/// [`crate::surface_link::LinkCeiling`] adopted for stay-down links (Track A1).
+/// The flat disc demanded clearance over ridges a tapered flank physically
+/// clears, so descents stopped higher than needed and the surplus was spent
+/// as fed air at plunge rate.
+///
+/// **HEIGHT, not DECISION.** The gate above is evaluated on the flat-disc
+/// answer exactly as it was before B2, so the pass fires on precisely the
+/// same entries it always did; only the inserted rapid's Z moves, and only
+/// ever DOWNWARD (`height_at_radius >= 0` for every profile, so the profile
+/// answer is bounded above by the flat one — and it is `min`-clamped to it
+/// regardless). The one exception is the near-unreachable case where the
+/// profile ceiling falls at or below the plunge's own target: `h(0) = 0`
+/// means a plunge that ends in material at its own XY always has a profile
+/// ceiling above that column's top, so only a whole-tool-air plunge can
+/// reach it, and those are the air-cut filter's business (S3). There the
+/// flat target stands rather than emitting a zero-length or inverted feed.
+///
+/// SAFETY: the profile query errs HIGH by construction (sliver-safe
+/// `conservative_top`, half-cell disc dilation, and the profile evaluated at
+/// the cell's nearest possible approach), so the inserted rapid is
+/// collision-free — unlike any mesh-derived height, which understates
+/// remaining stock on `FromRemainingStock` ops (the 151-collision Rivers
+/// lesson, `planning/unified_finishing_pass_plan.md` P1 notes). For a FLAT
+/// endmill `height_at_radius(r) == Some(0.0)` throughout the envelope, so
+/// the emitted toolpath is byte-identical to the pre-B2 one. Pinned by
+/// `tests/entry_descent_profile_b2.rs` (byte-identity, the taper relaxation,
+/// the non-relaxation where the flank would strike, and a live
+/// `RapidClearanceCheck` replay asserting zero strikes).
 ///
 /// This is a thin wrapper over
 /// [`optimize_entry_descents_with_provenance`] that discards the
@@ -211,8 +242,9 @@ pub fn optimize_entry_descents(
     stock: Option<&TriDexelStock>,
     fresh_stock_top_z: f64,
     tool_radius: f64,
+    cutter: &dyn crate::tool::MillingCutter,
 ) -> usize {
-    optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius).0
+    optimize_entry_descents_with_provenance(tp, stock, fresh_stock_top_z, tool_radius, cutter).0
 }
 
 /// [`optimize_entry_descents`] at the [`AnnotatedToolpath`] level, under the
@@ -233,6 +265,7 @@ pub fn optimize_entry_descents_annotated(
     stock: Option<&TriDexelStock>,
     fresh_stock_top_z: f64,
     tool_radius: f64,
+    cutter: &dyn crate::tool::MillingCutter,
 ) -> (Transformed, usize) {
     let AnnotatedToolpath {
         mut toolpath,
@@ -248,6 +281,7 @@ pub fn optimize_entry_descents_annotated(
         stock,
         fresh_stock_top_z,
         tool_radius,
+        cutter,
     );
 
     let spans = if split_count > 0 {
@@ -285,6 +319,7 @@ pub fn optimize_entry_descents_with_provenance(
     stock: Option<&TriDexelStock>,
     fresh_stock_top_z: f64,
     tool_radius: f64,
+    cutter: &dyn crate::tool::MillingCutter,
 ) -> (usize, Vec<usize>) {
     use crate::toolpath::MoveIntent;
 
@@ -334,13 +369,58 @@ pub fn optimize_entry_descents_with_provenance(
                 // bound that refining the grid can only lower. So the pad is
                 // gone: the bound is already conservative, and stacking a
                 // heuristic on top of a bound just buys air time back.
-                let ceiling = stock
+                //
+                // B2 (2026-08-29, PROGRAMME.md Track B) — *how high can
+                // material be* is still the right question for the DECISION,
+                // and the wrong one for the HEIGHT. The flat disc models the
+                // cutter as a cylinder of `tool_radius`; past its tip a real
+                // cutter RISES, so material at lateral offset `r` can only
+                // strike it if it stands more than `height_at_radius(r)`
+                // above the tip. Reading the disc flat demanded clearance
+                // over ridges a tapered flank physically clears, and every
+                // millimetre of that surplus was then spent as fed air at
+                // plunge rate. Same defect Track A1 fixed for stay-down
+                // links, same primitive.
+                //
+                // The split gate stays on the flat answer verbatim, so the
+                // pass fires on exactly the entries it always did; only the
+                // target moves, and only downward.
+                let flat_ceiling = stock
                     .and_then(|s| {
                         s.max_conservative_top_z_in_disc(rapid_xy.0, rapid_xy.1, tool_radius)
                     })
                     .unwrap_or(fresh_stock_top_z);
-                let z = ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM;
-                (z <= rapid_z - MIN_SPLIT_MM && z > plunge.target.z).then_some(z)
+                let z_flat = flat_ceiling + crate::toolpath::PLUNGE_CLEARANCE_MM;
+                (z_flat <= rapid_z - MIN_SPLIT_MM && z_flat > plunge.target.z).then(|| {
+                    // `min(z_flat)` is belt-and-braces: the profile query is
+                    // bounded above by the flat one whenever both have an
+                    // answer, and this also covers the case where the
+                    // profile query abstains (every visited cell past the
+                    // envelope) while the flat one did not.
+                    let z_profile = stock
+                        .and_then(|s| {
+                            s.max_clearance_tip_z_for_profile(
+                                rapid_xy.0,
+                                rapid_xy.1,
+                                tool_radius,
+                                cutter,
+                            )
+                        })
+                        .map_or(z_flat, |c| {
+                            (c + crate::toolpath::PLUNGE_CLEARANCE_MM).min(z_flat)
+                        });
+                    // Never rapid to or below the plunge's own target: that
+                    // would emit a zero-length or inverted feed. Near-dead
+                    // arm (`h(0) = 0` puts the profile ceiling above the
+                    // column the plunge lands in whenever it lands in
+                    // material at all), and the flat target — shipped
+                    // behaviour — is what stands there.
+                    if z_profile > plunge.target.z {
+                        z_profile
+                    } else {
+                        z_flat
+                    }
+                })
             });
 
         new_moves.push(rapid);
@@ -2411,7 +2491,7 @@ mod tests {
     #[test]
     fn optimize_entry_descents_splits_on_fresh_stock_top() {
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
 
         assert_eq!(split_count, 1, "expected exactly one split");
         assert_eq!(tp.moves.len(), 3, "moves: {:?}", tp.moves);
@@ -2450,7 +2530,7 @@ mod tests {
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 5.0, 1.0);
 
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0);
+        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter());
 
         assert_eq!(split_count, 1, "expected exactly one split");
         let inserted = &tp.moves[1];
@@ -2469,7 +2549,7 @@ mod tests {
         // stock top at 9.0 + 2.0 clearance = 11.0 > safe_z=10.0 — no room.
         let stock = TriDexelStock::from_stock(0.0, 0.0, 10.0, 10.0, 0.0, 9.0, 1.0);
         let mut tp = entry_toolpath(5.0, 5.0, 10.0, -1.0);
-        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0);
+        let split_count = optimize_entry_descents(&mut tp, Some(&stock), 0.0, 3.0, &probe_cutter());
 
         assert_eq!(split_count, 0, "no split expected when there's no headroom");
         assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
@@ -2488,7 +2568,7 @@ mod tests {
             500.0,
             crate::toolpath::MoveIntent::EntryPlunge,
         );
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
 
         assert_eq!(split_count, 0, "no split expected on XY mismatch");
         assert_eq!(tp.moves.len(), 2, "moves unchanged: {:?}", tp.moves);
@@ -2507,7 +2587,7 @@ mod tests {
             500.0,
             crate::toolpath::MoveIntent::FinishingCut,
         );
-        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0);
+        let split_count = optimize_entry_descents(&mut tp, None, 0.0, 3.0, &probe_cutter());
 
         assert_eq!(
             split_count, 0,

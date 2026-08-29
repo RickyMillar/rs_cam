@@ -178,7 +178,11 @@ impl ProjectSession {
     ///
     /// Dependency closure (2026-07-09, the live-v2 staleness collision
     /// class): a `FromRemainingStock` toolpath's geometry — including the
-    /// `optimize_entry_descents` rapids lowered to `prior stock top + 2 mm`
+    /// `optimize_entry_descents` rapids lowered to `prior stock clearance
+    /// ceiling + 2 mm` (that ceiling was the flat-disc material top until
+    /// B2 made it profile-aware, so a descent may now sit legitimately
+    /// BELOW the prior stock top; the invalidation below keys on the stock
+    /// CHAIN, never on a height, and is unaffected)
     /// — is generated against the stock its UPSTREAM ops leave. When an
     /// upstream op's material-removal contribution changes (param edit,
     /// enable/disable, reorder, removal) and the downstream result is kept,

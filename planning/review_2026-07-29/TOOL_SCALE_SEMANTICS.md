@@ -904,6 +904,14 @@ Plan rule 4 made enforceable. Every site in this list keeps `radius()` (or
 9. **Simulation resolution and descent planning** — `session/compute.rs:1529`,
    `:3655`. These are A/M10's, not H1's; touching them here would confound
    two programmes.
+   **Revisited 2026-08-29 under B2** (`planning/thin_organic_2026-08-27/PROGRAMME.md`
+   Track B). The ruling above still holds *as written*: the descent site keeps
+   `radius()` as its SEARCH BOUND, unchanged. What B2 added is the tool's
+   SHAPE inside that bound — `max_clearance_tip_z_for_profile` decides the
+   descent TARGET, the flat disc still decides whether to split at all — so a
+   flat endmill is byte-identical and the "must not touch" contract is not
+   broken, it is satisfied by a site that now asks the shape question with the
+   shape. See `crates/rs_cam_core/tests/entry_descent_profile_b2.rs`.
 10. **The narration threshold's numeric value** — §5. Documentation and a
     parity sentry only.
 

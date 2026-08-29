@@ -1744,6 +1744,7 @@ impl ProjectSession {
                             gen_initial_stock,
                             heights.top_z,
                             tool_def.radius(),
+                            &tool_def,
                         );
                     annotated = transformed.reconcile(&mut channels).into_inner();
                 }

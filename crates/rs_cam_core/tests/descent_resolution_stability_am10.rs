@@ -89,6 +89,14 @@ const SAFE_Z: f64 = 25.0;
 /// nothing.
 const DESCENT_TOOL_RADIUS: f64 = 1.0;
 
+/// The descent tool as a SHAPE, not just a radius (B2). A flat endmill of
+/// exactly [`DESCENT_TOOL_RADIUS`]: `height_at_radius` is `Some(0.0)`
+/// throughout its envelope, so the profile-aware descent target this file
+/// measures is byte-identical to the flat-disc one it was written against.
+fn descent_tool(radius: f64) -> FlatEndmill {
+    FlatEndmill::new(radius * 2.0, 30.0)
+}
+
 fn stock_at(cell: f64) -> TriDexelStock {
     let mut stock = TriDexelStock::from_stock(0.0, 0.0, 24.0, 24.0, 0.0, STOCK_TOP_Z, cell);
     let cutter = FlatEndmill::new(SWATH_RADIUS * 2.0, 30.0);
@@ -183,6 +191,7 @@ fn descent_planned_coarse_does_not_collide_at_any_verification_resolution() {
         Some(&planning_stock),
         STOCK_TOP_Z,
         DESCENT_TOOL_RADIUS,
+        &descent_tool(DESCENT_TOOL_RADIUS),
     );
     assert_eq!(
         splits, 1,
@@ -233,7 +242,13 @@ fn a_descent_over_swept_ground_still_descends() {
     );
 
     let planning_stock = stock_at(PLANNING_CELL);
-    let splits = optimize_entry_descents(&mut tp, Some(&planning_stock), STOCK_TOP_Z, 0.5);
+    let splits = optimize_entry_descents(
+        &mut tp,
+        Some(&planning_stock),
+        STOCK_TOP_Z,
+        0.5,
+        &descent_tool(0.5),
+    );
     assert_eq!(splits, 1, "a descent over swept ground must still be split");
 
     let descent_z = inserted_descent_z(&tp);

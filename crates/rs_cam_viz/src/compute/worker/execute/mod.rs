@@ -909,13 +909,23 @@ pub(super) fn run_compute_with_phase_tracker(
         // Inserts moves after span construction, so spans are remapped
         // through the same provenance-map contract the boundary clip uses
         // above, rather than invalidated.
+        //
+        // B2: the descent TARGET is profile-aware (the split decision is
+        // not — see `optimize_entry_descents`' doc), so the pass needs the
+        // cutter's shape and not just its envelope radius. Built here rather
+        // than threaded: `generate_via_core` already builds one of its own
+        // and the call is cheap, and a cutter that only exists on some arm
+        // is exactly the shape S3 had to go back and fix on the air-cut
+        // filter.
         {
+            let entry_descent_tool = build_cutter(&req.tool);
             let (transformed, _split_count) =
                 rs_cam_core::dressup::optimize_entry_descents_annotated(
                     current,
                     req.prior_stock.as_ref(),
                     req.heights.top_z,
                     req.tool.envelope_diameter() / 2.0,
+                    &entry_descent_tool,
                 );
             current = transformed.reconcile(&mut channels).into_inner();
         }

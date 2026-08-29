@@ -436,7 +436,18 @@ fn face_full_chain_fingerprint() {
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
     // the ceiling, which is what the session passes for a first op).
-    let (transformed, split_count) = optimize_entry_descents_annotated(current, None, 0.0, 3.0);
+    //
+    // B2: the cutter is a FLAT endmill of exactly the 3.0 mm search radius,
+    // so `height_at_radius` is `Some(0.0)` throughout the envelope and the
+    // profile-aware descent target reduces to the flat-disc one these
+    // constants were pinned against. They must not move.
+    let (transformed, split_count) = optimize_entry_descents_annotated(
+        current,
+        None,
+        0.0,
+        3.0,
+        &rs_cam_core::tool::FlatEndmill::new(6.0, 25.0),
+    );
     current = transformed
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
