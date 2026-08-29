@@ -96,7 +96,7 @@ use std::ops::Range;
 use crate::classify_probe::ClassificationSampler;
 use crate::crease_paths::centerline_cut_paths;
 use crate::debug_trace::ToolpathDebugContext;
-use crate::dropcutter::{DropCutterGrid, batch_drop_cutter_with_cancel};
+use crate::dropcutter::{DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel};
 use crate::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish_setup::{
     FinishResolutionPolicy, FinishSurface, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
@@ -1182,7 +1182,12 @@ pub struct UnifiedFinishReport {
 /// region of one operation.
 ///
 /// Report-only: no gate consumes it, and recording it changes no geometry.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// `Serialize` because this whole struct travels on the diagnostic wires
+/// (CLI `tp_*.json`, MCP `get_diagnostics`) as ONE object rather than being
+/// flattened into loose counters — the five numbers are only interpretable
+/// together, and `regions` is the denominator of the other four.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct MonotoneCellTotals {
     /// Shallow regions the decomposition was attempted on.
     pub regions: usize,
@@ -2068,9 +2073,19 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // (§0j measured the mixed-frame candidate as a cost).
                 //
                 // The lattice deliberately keeps `batch_drop_cutter`'s
-                // whole-mesh extent rather than being trimmed to the region
-                // bbox — that would move the lattice ORIGIN, and §0j priced
-                // phase/origin alone at 0.954–0.962×, a cost on its own.
+                // whole-mesh origin/phase/step rather than being trimmed to
+                // the region bbox — trimming would move the lattice ORIGIN,
+                // and §0j priced phase/origin alone at 0.954–0.962×, a cost
+                // on its own.
+                //
+                // What IS clipped to the region is the set of lattice points
+                // actually sampled (`region_sampling_window`). Same lattice,
+                // same phase, fewer points computed — and fewer points then
+                // swept by the decomposition, the membership check and the
+                // per-cell rasters, all three of which are O(grid × polygon
+                // containment). A whole-mesh lattice per gate-passing region
+                // measured ~35 min of generation on the 192-region mt2
+                // board against ~2 min dial-off (§7 follow-up 1).
                 let rotated_grid = match frame {
                     Some(f) if f.rotated => Some(build_shallow_raster_grid(
                         mesh,
@@ -2078,6 +2093,10 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                         cutter,
                         params,
                         f.direction_deg,
+                        Some(region_sampling_window(
+                            &region.polygon,
+                            params.raster_stepover,
+                        )),
                         cancel,
                     )?),
                     _ => None,
@@ -2087,8 +2106,12 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 } else {
                     match shallow_grid.as_ref() {
                         Some(grid) => grid,
+                        // NO window: this lattice is the memo SHARED by every
+                        // non-rotated Shallow region, so it must cover all of
+                        // them. Windowing it to whichever region happened to
+                        // build it first would blind the rest.
                         None => shallow_grid.insert(build_shallow_raster_grid(
-                            mesh, index, cutter, params, 0.0, cancel,
+                            mesh, index, cutter, params, 0.0, None, cancel,
                         )?),
                     }
                 };
@@ -2570,14 +2593,24 @@ struct RegionPath {
 ///
 /// `direction_deg` must already have been through
 /// [`crate::monotone_cells::honest_raster_direction_deg`] when it comes
-/// from a measured axis — `batch_drop_cutter_with_cancel` returns an
-/// axis-aligned grid still labelled 90°/180° for those inputs.
+/// from a measured axis — `batch_drop_cutter_windowed_with_cancel` returns
+/// an axis-aligned grid still labelled 90°/180° for those inputs.
+///
+/// `window` is a world-frame `[x0, y0, x1, y1]` box restricting which of the
+/// whole-mesh lattice's points are SAMPLED. The lattice itself — its origin,
+/// its phase, its step — is unchanged, so this is not the bbox-trimmed
+/// lattice §0j priced at 0.954–0.962×; it is the same lattice with fewer of
+/// its points computed. `None` samples the whole mesh (what the shared 0°
+/// memo needs, since it serves every region). Build the box with
+/// [`region_sampling_window`], which carries the proof that it is a superset
+/// of everything the band can emit for that region.
 fn build_shallow_raster_grid(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &UnifiedFinishParams,
     direction_deg: f64,
+    window: Option<[f64; 4]>,
     cancel: &dyn CancelCheck,
 ) -> Result<DropCutterGrid, Cancelled> {
     // Mesh-bottom floor, mirroring `generate_drop_cutter`'s
@@ -2587,23 +2620,26 @@ fn build_shallow_raster_grid(
     // needing that extra floor should pre-max it into `bottom_z` before
     // calling in.
     let effective_min_z = mesh.bbox.min.z - 0.1;
-    // `batch_drop_cutter_with_cancel` requires `&(dyn CancelCheck + Sync)`
-    // for its rayon closures; the orchestrator only receives a plain
-    // `&dyn CancelCheck`, matching every finish-op call site up this chain
-    // (see the identical constraint documented on
+    // The batch sampler requires `&(dyn CancelCheck + Sync)` for its rayon
+    // closures; the orchestrator only receives a plain `&dyn CancelCheck`,
+    // matching every finish-op call site up this chain (see the identical
+    // constraint documented on
     // `slope::SurfaceHeightmap::from_mesh_with_cancel`). Widening the
     // signature to `+ Sync` would ripple through every future caller for the
     // sake of one internal call, so this builder checks cancellation
     // immediately after the batch call instead of threading `cancel` through
     // it.
     let never_cancel = || false;
-    let mut grid = batch_drop_cutter_with_cancel(
+    let mut grid = batch_drop_cutter_windowed_with_cancel(
         mesh,
         index,
         cutter,
-        params.raster_stepover,
-        direction_deg,
-        effective_min_z,
+        &LatticeSampling {
+            step_over: params.raster_stepover,
+            direction_deg,
+            min_z: effective_min_z,
+            window,
+        },
         &never_cancel,
     )?;
     // Drop grid points whose vertical ray misses every triangle in the mesh.
@@ -2656,6 +2692,43 @@ fn build_shallow_raster_grid(
     }
     check_cancel(cancel)?;
     Ok(grid)
+}
+
+/// The world-frame box of whole-mesh lattice points ONE Shallow region can
+/// ever emit — the sampling window for its private PCA-minor lattice.
+///
+/// # Why a bbox pad is enough, and why exactly one stepover
+///
+/// Two filters stand between the lattice and an emitted move, and both are
+/// strict containment tests (`RegionSet::contains` → `Polygon2::
+/// contains_point`, no tolerance):
+///
+/// * the **undivided** arm filters on the region polygon itself, so every
+///   point it can emit is inside `polygon.bbox()`;
+/// * the **cell** arm filters on a cell polygon that
+///   `monotone_cells::polygons_for_lattice_cell` reconstructs by marching
+///   squares over lattice points that are themselves inside the region. That
+///   contour runs at the mid-point between a selected point and its
+///   unselected neighbour — `0.5 · stepover` outside the outermost selected
+///   point — and the next lattice point out is a full step away, so no
+///   lattice point outside the region bbox can fall inside a cell.
+///
+/// One stepover of pad therefore covers the cell arm's reach with a
+/// half-step to spare, and the window is a strict superset of both
+/// populations. It is **not** an offset of the region: moving the lattice is
+/// the thing this whole design refuses to do.
+///
+/// There is deliberately no extra "conditioning margin" term. The shallow
+/// band's region polygons carry none of their own — `region_margin_mm` is
+/// the REST-mask dilation, applied on the rest grid before `decompose`, so
+/// whatever it added is already inside `polygon`.
+fn region_sampling_window(polygon: &Polygon2, raster_stepover: f64) -> [f64; 4] {
+    let [x0, y0, x1, y1] = polygon.bbox();
+    // A non-finite stepover makes the whole window non-finite, and
+    // `dropcutter::lattice_index_window` answers that with the UNWINDOWED
+    // lattice — the correct answer, just the expensive one.
+    let pad = raster_stepover.abs();
+    [x0 - pad, y0 - pad, x1 + pad, y1 + pad]
 }
 
 /// A costed junction between two consecutive regions in the route.
@@ -2997,6 +3070,249 @@ mod tests {
     use crate::polygon::Polygon2;
     use crate::tool::BallEndmill;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    // ── C2 follow-up 1: window-clipped, phase-preserving lattices ───────
+    //
+    // ACCEPTANCE BAR. Clipping the SAMPLED window to a region must not move
+    // one byte of emitted motion: the cells only ever select points inside
+    // the region polygon, so sampling outside its padded bbox is pure waste.
+    // Anything else — a re-phased lattice, a flipped serpentine row, a
+    // dropped boundary point — shows up here as a move-list difference.
+    //
+    // Both windowed frames are covered, because they window in DIFFERENT
+    // coordinate systems: `direction_deg == 0.0` (which a gate-PASSING
+    // region reaches whenever its PCA-minor axis folds to 0 — a shape
+    // elongated along Y) takes `batch_drop_cutter`'s axis-aligned path and
+    // windows in world XY; a rotated frame windows on forward-rotated
+    // corners.
+
+    /// Byte-comparable fingerprint of a move list. Every `f64` travels as
+    /// its BIT pattern: `PartialEq` would let a `-0.0`/`0.0` divergence —
+    /// exactly what a re-derived lattice origin produces — pass as equal.
+    fn move_bits(tp: &Toolpath) -> Vec<String> {
+        tp.moves
+            .iter()
+            .map(|m| {
+                let (kind, i, j, feed) = match m.move_type {
+                    crate::toolpath::MoveType::Rapid => ("rapid", 0.0, 0.0, 0.0),
+                    crate::toolpath::MoveType::Linear { feed_rate } => {
+                        ("linear", 0.0, 0.0, feed_rate)
+                    }
+                    crate::toolpath::MoveType::ArcCW { i, j, feed_rate } => ("cw", i, j, feed_rate),
+                    crate::toolpath::MoveType::ArcCCW { i, j, feed_rate } => {
+                        ("ccw", i, j, feed_rate)
+                    }
+                };
+                format!(
+                    "{kind}|{:016x}|{:016x}|{:016x}|{:016x}|{:016x}|{:016x}|{:?}",
+                    m.target.x.to_bits(),
+                    m.target.y.to_bits(),
+                    m.target.z.to_bits(),
+                    i.to_bits(),
+                    j.to_bits(),
+                    feed.to_bits(),
+                    m.intent
+                )
+            })
+            .collect()
+    }
+
+    /// A "U" region on a flat plate: joined along the base, two legs above
+    /// the notch. Swept at 0° that is the canonical boustrophedon SPLIT, so
+    /// the cell arm below emits more than one cell rather than degenerating
+    /// to the undivided case.
+    fn u_region() -> Polygon2 {
+        Polygon2::new(vec![
+            P2::new(-20.0, -10.0),
+            P2::new(20.0, -10.0),
+            P2::new(20.0, 10.0),
+            P2::new(7.0, 10.0),
+            P2::new(7.0, -2.0),
+            P2::new(-7.0, -2.0),
+            P2::new(-7.0, 10.0),
+            P2::new(-20.0, 10.0),
+        ])
+    }
+
+    /// What one region emits on one lattice: the undivided raster, the
+    /// per-cell rasters, the cell count and the membership-mismatch count —
+    /// exactly the four things the band arm derives from a grid.
+    struct ShallowEmission {
+        undivided: Toolpath,
+        cellwise: Toolpath,
+        cells: usize,
+        mismatches: usize,
+    }
+
+    fn shallow_emission_on(
+        grid: &DropCutterGrid,
+        region: &Polygon2,
+        params: &UnifiedFinishParams,
+        min_z: f64,
+    ) -> ShallowEmission {
+        let region_set = RegionSet::new(vec![region.clone()]);
+        let undivided = raster_toolpath_from_grid(
+            grid,
+            params.feed_rate,
+            params.plunge_rate,
+            params.safe_z,
+            Some(min_z),
+            Some(&region_set),
+        );
+        let decomposed = crate::monotone_cells::lattice_monotone_cells(grid, region, min_z);
+        let mismatches = crate::monotone_cells::cells_select_same_lattice(
+            grid,
+            region,
+            &decomposed.cells,
+            min_z,
+        );
+        let mut cellwise = Toolpath::new();
+        for cell in &decomposed.cells {
+            let cell_set = RegionSet::new(vec![cell.clone()]);
+            let cell_tp = raster_toolpath_from_grid(
+                grid,
+                params.feed_rate,
+                params.plunge_rate,
+                params.safe_z,
+                Some(min_z),
+                Some(&cell_set),
+            );
+            cellwise.moves.extend(cell_tp.moves);
+        }
+        ShallowEmission {
+            undivided,
+            cellwise,
+            cells: decomposed.cells.len(),
+            mismatches,
+        }
+    }
+
+    /// Compare two move lists bit-for-bit, reporting the FIRST divergence
+    /// rather than dumping two multi-thousand-entry vectors.
+    fn assert_same_moves(want: &Toolpath, got: &Toolpath, what: &str) {
+        let (want_bits, got_bits) = (move_bits(want), move_bits(got));
+        assert_eq!(
+            want_bits.len(),
+            got_bits.len(),
+            "{what}: move COUNT diverged ({} vs {})",
+            want_bits.len(),
+            got_bits.len()
+        );
+        for (i, (a, b)) in want_bits.iter().zip(got_bits.iter()).enumerate() {
+            assert_eq!(a, b, "{what}: move {i} of {} diverged", want_bits.len());
+        }
+    }
+
+    fn windowed_lattice_is_byte_identical_at(direction_deg: f64) {
+        let mesh = make_test_flat(60.0);
+        let index = SpatialIndex::build(&mesh, 10.0);
+        let cutter = ball(3.0);
+        let params = UnifiedFinishParams {
+            raster_stepover: 0.8,
+            ..UnifiedFinishParams::default()
+        };
+        let never_cancel = || false;
+        let region = u_region();
+        let min_z = mesh.bbox.min.z - 0.1 + params.stock_to_leave;
+
+        let whole = build_shallow_raster_grid(
+            &mesh,
+            &index,
+            &cutter,
+            &params,
+            direction_deg,
+            None,
+            &never_cancel,
+        )
+        .unwrap();
+        let windowed = build_shallow_raster_grid(
+            &mesh,
+            &index,
+            &cutter,
+            &params,
+            direction_deg,
+            Some(region_sampling_window(&region, params.raster_stepover)),
+            &never_cancel,
+        )
+        .unwrap();
+
+        // Non-vacuity: without this the equalities below would pass for
+        // free if the window ever degenerated to the whole lattice.
+        assert!(
+            windowed.points.len() < whole.points.len(),
+            "window sampled {} of {} points at {direction_deg}° — no saving, \
+             so the byte-identity assertions below prove nothing",
+            windowed.points.len(),
+            whole.points.len()
+        );
+        // The lattice did not move: local (0,0) is a PARENT lattice point.
+        let col_off = (windowed.u_start - whole.u_start) / whole.x_step;
+        let row_off = (windowed.v_start - whole.v_start) / whole.y_step;
+        assert!(
+            (col_off - col_off.round()).abs() < 1e-9,
+            "u_start off-lattice"
+        );
+        assert!(
+            (row_off - row_off.round()).abs() < 1e-9,
+            "v_start off-lattice"
+        );
+        assert_eq!(
+            row_off.round() as usize % 2,
+            0,
+            "serpentine phase: v_start must sit on an EVEN parent row"
+        );
+
+        let want = shallow_emission_on(&whole, &region, &params, min_z);
+        let got = shallow_emission_on(&windowed, &region, &params, min_z);
+
+        // The fixture must actually reach the CELL arm — a membership
+        // fallback would leave the per-cell comparison below testing two
+        // copies of the undivided raster.
+        assert_eq!(
+            want.mismatches, 0,
+            "fixture fell back to the undivided raster at {direction_deg}°"
+        );
+        assert_eq!(
+            want.mismatches, got.mismatches,
+            "the window changed the membership VERDICT at {direction_deg}° \
+             ({} vs {}) — the fallback decision must be window-invariant too",
+            want.mismatches, got.mismatches
+        );
+        assert!(
+            !want.undivided.moves.is_empty(),
+            "fixture emitted nothing at {direction_deg}°"
+        );
+        assert_eq!(
+            want.cells, got.cells,
+            "cell count diverged at {direction_deg}°"
+        );
+        assert_same_moves(
+            &want.undivided,
+            &got.undivided,
+            &format!("undivided raster at {direction_deg}°"),
+        );
+        assert_same_moves(
+            &want.cellwise,
+            &got.cellwise,
+            &format!("per-cell raster at {direction_deg}°"),
+        );
+    }
+
+    #[test]
+    fn a_windowed_shallow_lattice_emits_identical_moves_at_zero_degrees() {
+        // The axis-aligned sampling path: the window is applied in world XY.
+        windowed_lattice_is_byte_identical_at(0.0);
+    }
+
+    #[test]
+    fn a_windowed_shallow_lattice_emits_identical_moves_when_rotated() {
+        // The rotated sampling path: the window's four world corners are
+        // forward-rotated into (u, v) before the index ranges are taken.
+        // 89.9° is `honest_raster_direction_deg`'s own nudge off the
+        // dishonest 90° fast path; 37° is an ordinary oblique frame.
+        windowed_lattice_is_byte_identical_at(89.9);
+        windowed_lattice_is_byte_identical_at(37.0);
+    }
 
     fn ball(diameter: f64) -> BallEndmill {
         BallEndmill::new(diameter, diameter * 5.0)

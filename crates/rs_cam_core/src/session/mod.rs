@@ -1002,6 +1002,19 @@ pub struct ToolpathDiagnostic {
     /// centreline. `None` under exactly the same condition as
     /// [`Self::tip_float_points`]. Report-only.
     pub max_tip_float_mm: Option<f64>,
+    /// C2: what the shallow band's monotone-cell decomposition did, off
+    /// [`crate::compute::config::ToolpathStats::monotone_cells`]. The whole
+    /// [`crate::unified_finish::MonotoneCellTotals`] travels, because its
+    /// five counters only mean anything together — `regions` is the
+    /// denominator of the other four.
+    ///
+    /// `None` = **not measured**: not a `unified_finish`, or one with
+    /// `monotone_cell_decomposition` off, or one that emitted no Shallow
+    /// region. Never read as "nothing was decomposed". A non-zero
+    /// `membership_fallbacks` / `empty_fallbacks` is the reason this is on
+    /// the wire at all: those regions emitted the pre-C2 undivided raster,
+    /// and until now nothing on an operator surface said so. Report-only.
+    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
@@ -1817,7 +1830,7 @@ impl ProjectSession {
 impl serde::Serialize for ToolpathDiagnostic {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 17)?;
+        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 18)?;
         s.serialize_field("toolpath_id", &self.toolpath_id)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("operation_type", &self.operation_type)?;
@@ -1853,6 +1866,11 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("unmachined_band_area_mm2", &self.unmachined_band_area_mm2)?;
         s.serialize_field("tip_float_points", &self.tip_float_points)?;
         s.serialize_field("max_tip_float_mm", &self.max_tip_float_mm)?;
+        // C2 follow-up 2. The whole struct or `null` — never flattened, and
+        // never coerced to a zeroed object: `null` is "the decomposition did
+        // not run", which is a different statement from "it ran and fell
+        // back nowhere".
+        s.serialize_field("monotone_cells", &self.monotone_cells)?;
         s.end()
     }
 }

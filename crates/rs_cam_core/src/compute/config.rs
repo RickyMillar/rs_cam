@@ -475,6 +475,11 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it, and recording it changes no
     /// geometry.
+    ///
+    /// Published WHOLE (or `null`) on both per-toolpath diagnostic wires —
+    /// [`crate::session::ToolpathDiagnostic`]'s `Serialize` (MCP
+    /// `get_diagnostics`) and the CLI's `tp_*.json` — because the five
+    /// counters only mean anything together.
     pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].

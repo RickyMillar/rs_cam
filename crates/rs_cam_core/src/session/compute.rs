@@ -3622,6 +3622,9 @@ impl ProjectSession {
                         .map(|f| f.area_mm2),
                     tip_float_points: result.stats.tip_float.map(|f| f.floating_points),
                     max_tip_float_mm: result.stats.tip_float.map(|f| f.max_float_mm),
+                    // C2 follow-up 2 — the shallow band's decomposition
+                    // telemetry, carried whole. `None` = not measured.
+                    monotone_cells: result.stats.monotone_cells,
                 });
             }
         }

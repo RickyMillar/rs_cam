@@ -88,6 +88,17 @@ struct ToolpathDiagnostic<'a> {
     /// Wave D1. `null` under exactly the same condition as
     /// [`Self::tip_float_points`].
     max_tip_float_mm: Option<f64>,
+    /// C2 follow-up 2: the shallow band's monotone-cell decomposition
+    /// telemetry, carried as ONE object (its five counters only mean
+    /// anything together). `null` = **not measured** — the operation is not
+    /// a `unified_finish`, or its `monotone_cell_decomposition` dial is off,
+    /// or it emitted no Shallow region.
+    ///
+    /// This is the wire the FALLBACK counts were invisible on: a region
+    /// whose reconstructed cells did not select its own emitted lattice
+    /// emits the pre-C2 undivided raster and increments
+    /// `membership_fallbacks`, and nothing in this report said so.
+    monotone_cells: Option<rs_cam_core::unified_finish::MonotoneCellTotals>,
 }
 
 impl<'a> ToolpathDiagnostic<'a> {
@@ -125,6 +136,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             unmachined_band_area_mm2,
             tip_float_points,
             max_tip_float_mm,
+            monotone_cells,
         } = core;
 
         Self {
@@ -149,6 +161,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             unmachined_band_area_mm2: *unmachined_band_area_mm2,
             tip_float_points: *tip_float_points,
             max_tip_float_mm: *max_tip_float_mm,
+            monotone_cells: *monotone_cells,
         }
     }
 }
@@ -889,6 +902,16 @@ mod tests {
             unmachined_band_area_mm2: Some(3.25),
             tip_float_points: Some(4),
             max_tip_float_mm: Some(0.125),
+            // Populated, and with five DISTINCT counters, so the nested
+            // object's shape and field order are pinned below — not just the
+            // fact that a key exists.
+            monotone_cells: Some(rs_cam_core::unified_finish::MonotoneCellTotals {
+                regions: 11,
+                regions_rotated: 5,
+                cells_emitted: 23,
+                membership_fallbacks: 2,
+                empty_fallbacks: 1,
+            }),
         }
     }
 
@@ -929,7 +952,14 @@ mod tests {
   "reached_uncut_estimate_mm2": 1.5,
   "unmachined_band_area_mm2": 3.25,
   "tip_float_points": 4,
-  "max_tip_float_mm": 0.125
+  "max_tip_float_mm": 0.125,
+  "monotone_cells": {
+    "regions": 11,
+    "regions_rotated": 5,
+    "cells_emitted": 23,
+    "membership_fallbacks": 2,
+    "empty_fallbacks": 1
+  }
 }"#;
         assert_eq!(json, expected, "CLI per-toolpath JSON wire changed");
     }
@@ -945,6 +975,7 @@ mod tests {
             unmachined_band_area_mm2: None,
             tip_float_points: None,
             max_tip_float_mm: None,
+            monotone_cells: None,
             ..core_diagnostic()
         };
         let record = ToolpathDiagnostic::from_core(&core, None, None, 0, None);
@@ -960,6 +991,9 @@ mod tests {
             "tip_float_points",
             "max_tip_float_mm",
             "min_safe_stickout",
+            // C2 follow-up 2: `null` = the decomposition did not run. A
+            // zeroed object would say it ran and fell back nowhere.
+            "monotone_cells",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\":null")),

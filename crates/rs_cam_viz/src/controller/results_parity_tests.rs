@@ -276,6 +276,10 @@ fn mcp_get_diagnostics_row_publishes_the_core_finding_channels() {
         "unmachined_band_area_mm2",
         "tip_float_points",
         "max_tip_float_mm",
+        // C2 follow-up 2: the shallow-band decomposition telemetry. Same
+        // contract — `null` = the decomposition did not run, and an ABSENT
+        // key cannot say even that.
+        "monotone_cells",
     ] {
         assert!(
             row.get(key).is_some(),

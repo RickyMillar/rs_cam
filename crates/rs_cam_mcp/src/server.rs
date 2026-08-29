@@ -1270,6 +1270,14 @@ pub fn build_info() -> serde_json::Value {
             // missing `truncated_core_mm2` means "not measured": on a
             // binary without the flag it means "not published".
             "diagnostics_row_core_parity",
+            // C2 follow-up 2 (2026-08-30): the per-toolpath row carries
+            // `monotone_cells` — the whole `MonotoneCellTotals` object or
+            // `null`. Same precedent as the flag above: on a binary WITHOUT
+            // this flag an absent `monotone_cells` means "not published",
+            // not "the decomposition did not run". Read the fallback counts
+            // (`membership_fallbacks`, `empty_fallbacks`) before concluding
+            // a dial-on shallow band was decomposed everywhere.
+            "diagnostics_row_monotone_cells",
             // MCP authoring surface (2026-08-21), closing the gaps the
             // 2026-08-19 from-scratch run hit. Probe these before
             // assuming a missing argument means "not supported":
