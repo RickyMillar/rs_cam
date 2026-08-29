@@ -31,6 +31,7 @@ pub mod classify_probe;
 pub mod collision;
 pub mod compute;
 pub mod condition;
+pub mod conformal_spiral;
 pub mod contour_extract;
 pub mod crease_paths;
 pub mod crest_lines;

@@ -229,9 +229,18 @@ is recoverable because the step exists in named primary sources, so:
 - **F2's simply-connected phase is NOT gated.** For a simply-connected
   region there are no slits; the load-bearing, fully-extracted parts of the
   paper — coverage-driven ring spacing (Eqs. 1–4) and log-rectangle bridging
-  (Eqs. 7–9) — work over *any* conformal disk parameterisation. Using a
-  plain conformal flattening there is a **[REPO]** substitution that touches
-  nothing the slit map is for.
+  (Eqs. 7–9) — work over *any* disk parameterisation, because the coverage
+  check compensates arbitrary distortion. Phase 1 therefore uses a
+  **harmonic disk map** (cotan Laplace with nonzero Dirichlet boundary on
+  the unit circle, arc-length correspondence) — a **[REPO]** substitution
+  that touches nothing the slit map is for, with map distortion (flipped
+  triangles, area/angular distortion) REPORTED so a bad map is separable
+  from a bad mechanism. F2 phase-1 falsifier (concretised 2026-08-30):
+  STOP on incomplete coverage after bridge repair, any disk-domain
+  self-intersection, or bridge length-overhead vs pure rings > 25%
+  (inside the §0k +43% trap with margin). Retract count must be 0 by
+  construction and is asserted, not assumed. F-034 vs ball-end raster on
+  the friendly fixture is context, not a bar.
 
 ---
 

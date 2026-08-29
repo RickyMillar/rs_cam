@@ -185,11 +185,22 @@ disk parameterisation and is not gated. The slit map (what makes holes work)
 is external to the paper, so:
 
 1. Start with a simply connected synthetic surface and a ball-end cutter,
-   using a plain conformal flattening (a labelled [REPO] substitution — no
-   slits exist in the simply-connected case). Spacing by the paper's
-   coverage-checked binary search; spacing/scallop formulas from the repo's
-   `scallop_math` (the paper's printed Eq. 13 is dimensionally inconsistent
-   as-printed); CL via drop-cutter (the paper has no gouge handling at all).
+   using a **harmonic disk map** (a labelled [REPO] substitution — no slits
+   exist in the simply-connected case, and the paper's own spacing
+   mechanism is a sampled 3D coverage check that compensates ANY
+   distortion, so conformality buys ring smoothness, not correctness; the
+   instrument therefore REPORTS map distortion — flipped triangles, area
+   and angular distortion — so a bad map can be separated from a bad
+   mechanism, the same attribution split that made F1's verdict clean).
+   Boundary correspondence is plain arc-length to the unit circle; nothing
+   from Shen 2024 Appendix A is used except σ(t) (A-11). Spacing by the
+   paper's coverage-checked binary search; spacing/scallop formulas from
+   the repo's `scallop_math` (the paper's printed Eq. 13 is dimensionally
+   inconsistent as-printed); CL via drop-cutter (the paper has no gouge
+   handling at all). In-repo evidence fixture: `fixtures/terrain_small.stl`
+   (40k triangles, 100×73 mm) with a hole-free region polygon, keeping
+   phase 1 repo-portable; `make_test_flat`/`make_test_hemisphere` carry the
+   closed-form unit tests.
    **Cheap falsifier**: measure bridge-section coverage and total-length
    inflation here — the paper's own trial overshot nominal scallop by up to
    12%, treat that as the expected floor.

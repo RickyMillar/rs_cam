@@ -130,6 +130,32 @@ supply a shipped algorithm, parameter, implementation, or product claim.
   Shen 2024, and is not needed by the pipeline. Research references only;
   any implementation must attribute at the implementation site.
 
+**Implementation sites (Phase F2.1, 2026-08-30).** The research module
+`crates/rs_cam_core/src/conformal_spiral.rs` — unshipped, no production
+caller — implements two source-derived pieces and attributes both at their
+own definitions:
+
+- **arXiv:2504.06310 (Shen et al. 2025)**: coverage-driven ring spacing
+  (Eqs. 1–4, binary search against a sampled 3D coverage check) and
+  log-rectangle bridging (Eqs. 7–9), including the near-centre bridge rule and
+  the numeric constants π/10, R ≤ 0.3, 8π/5 and π/50 of its Pseudocode A-2,
+  which are carried as named constants and parameters rather than inlined. Its
+  printed scallop formula (Eq. 13) is **not** used — it is dimensionally
+  inconsistent as printed, and scallop arithmetic comes from the repo's own
+  `scallop_math`.
+- **arXiv:2309.10655v2 (Shen et al. 2024)**: **Equation A-11 with A-12 only**
+  — the blend `σ(t)`, reproduced verbatim as `conformal_spiral::blend_sigma`.
+  Nothing else from that paper's Appendix A is implemented; the slit-map
+  front-end (A-14, the Neumann kernel, the Nyström discretisation) remains
+  unimplemented and is what the hole/island phases would need.
+
+Everything else in that module is repo-authored and labelled `[REPO]` at its
+site: the harmonic disk map (a substitution for the papers' BFF + slit map,
+valid only in the simply-connected case), the arc-length boundary
+correspondence, the surface sampling scheme, the spiral's angular bookkeeping,
+and every reported metric. No performance or quality claim of either paper is
+reproduced or endorsed by that code.
+
 ### Tri-dexel volumetric simulation
 
 The stock simulation in `rs_cam` uses a tri-dexel approach: three orthogonal grids of ray segment lists that represent material presence along the Z, X, and Y axes. This is the industry-standard technique for 3-axis CNC simulation, used by commercial engines including ModuleWorks (Mastercam, Siemens NX) and MecSoft (RhinoCAM, VisualCAD/CAM).

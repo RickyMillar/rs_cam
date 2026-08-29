@@ -437,38 +437,38 @@ fn solve_and_extract(
 /// [`crate::pencil_dihedral::build_edge_adjacency`] — the repo's existing
 /// edge→incident-face map — rather than a general half-edge library, which
 /// F1 does not need.
-struct RegionMesh {
+pub(crate) struct RegionMesh {
     /// Global mesh triangle index per local triangle.
-    tri_ids: Vec<usize>,
+    pub(crate) tri_ids: Vec<usize>,
     /// Local vertex indices per local triangle.
-    tris: Vec<[usize; 3]>,
+    pub(crate) tris: Vec<[usize; 3]>,
     /// Global mesh vertex id per local vertex.
-    vert_ids: Vec<u32>,
+    pub(crate) vert_ids: Vec<u32>,
     /// Position per local vertex.
-    verts: Vec<P3>,
+    pub(crate) verts: Vec<P3>,
     /// +Z-oriented unit normal per local triangle.
-    normals: Vec<V3>,
+    pub(crate) normals: Vec<V3>,
     /// Area (mm²) per local triangle.
-    areas: Vec<f64>,
+    pub(crate) areas: Vec<f64>,
     /// Local triangle across each of [`TRI_EDGES`], if that neighbour is also
     /// in the region.
-    neighbours: Vec<[Option<usize>; 3]>,
+    pub(crate) neighbours: Vec<[Option<usize>; 3]>,
 }
 
 impl RegionMesh {
-    fn normal(&self, tri: usize) -> V3 {
+    pub(crate) fn normal(&self, tri: usize) -> V3 {
         self.normals.get(tri).copied().unwrap_or_else(V3::zeros)
     }
 
-    fn area(&self, tri: usize) -> f64 {
+    pub(crate) fn area(&self, tri: usize) -> f64 {
         self.areas.get(tri).copied().unwrap_or(0.0)
     }
 
-    fn corners(&self, tri: usize) -> [usize; 3] {
+    pub(crate) fn corners(&self, tri: usize) -> [usize; 3] {
         self.tris.get(tri).copied().unwrap_or([0, 0, 0])
     }
 
-    fn point(&self, local_vertex: usize) -> P3 {
+    pub(crate) fn point(&self, local_vertex: usize) -> P3 {
         self.verts
             .get(local_vertex)
             .copied()
@@ -502,7 +502,10 @@ fn centroid(v: &[P3; 3]) -> P3 {
 #[allow(clippy::indexing_slicing)]
 // SAFETY: every index below is either a fixed 0..3 corner index or a local
 // index just produced by the local-vertex map in this same function.
-fn build_region_mesh(mesh: &TriangleMesh, region_triangles: &[u32]) -> Option<RegionMesh> {
+pub(crate) fn build_region_mesh(
+    mesh: &TriangleMesh,
+    region_triangles: &[u32],
+) -> Option<RegionMesh> {
     if mesh.triangles.is_empty() || mesh.vertices.len() < 3 {
         return None;
     }
@@ -1041,11 +1044,11 @@ fn summarise_magnitudes(field: &[V3], report: &mut FieldReport) {
 
 /// The assembled system, matrix-free: per-vertex neighbour lists of cotangent
 /// weights plus the row sums.
-struct SparseLaplacian {
+pub(crate) struct SparseLaplacian {
     /// `(neighbour, w_ij)` per vertex, ascending by neighbour for determinism.
-    nbr: Vec<Vec<(usize, f64)>>,
+    pub(crate) nbr: Vec<Vec<(usize, f64)>>,
     /// `A_ii = Σ_j w_ij`.
-    diag: Vec<f64>,
+    pub(crate) diag: Vec<f64>,
 }
 
 /// Cotangent of the angle at `apex` in the triangle `(apex, a, b)`.
@@ -1084,7 +1087,7 @@ fn cotangent(apex: P3, a: P3, b: P3) -> f64 {
 #[allow(clippy::indexing_slicing)]
 // SAFETY: `c` holds local vertex indices produced by `build_region_mesh`, and
 // `rhs`/`weights` are sized from the same local vertex count.
-fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLaplacian, Vec<f64>) {
+pub(crate) fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLaplacian, Vec<f64>) {
     let nv = region.verts.len();
     let mut weights: HashMap<(usize, usize), f64> = HashMap::new();
     let mut rhs = vec![0.0_f64; nv];
@@ -1185,11 +1188,11 @@ fn pin_one_vertex_per_component(region: &RegionMesh, report: &mut FieldReport) -
 }
 
 /// Outcome of the matrix-free CG solve.
-struct CgOutcome {
-    x: Vec<f64>,
-    iterations: usize,
-    residual: f64,
-    converged: bool,
+pub(crate) struct CgOutcome {
+    pub(crate) x: Vec<f64>,
+    pub(crate) iterations: usize,
+    pub(crate) residual: f64,
+    pub(crate) converged: bool,
 }
 
 fn matvec(lap: &SparseLaplacian, x: &[f64], pinned: &[bool], out: &mut [f64]) {
@@ -1222,7 +1225,7 @@ fn norm(a: &[f64]) -> f64 {
 /// Deterministic: a fixed iteration cap, a fixed tolerance, and no allocation
 /// inside the loop. This mirrors [`crate::scallop_isofield`]'s reason for
 /// hand-rolling its own solver — no dependency, no heap surprises.
-fn cg_solve(
+pub(crate) fn cg_solve(
     lap: &SparseLaplacian,
     rhs: &[f64],
     pinned: &[bool],
