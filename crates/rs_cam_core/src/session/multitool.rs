@@ -172,6 +172,19 @@ pub struct MultitoolPlanSpec {
     /// cutters, measurable by the load gates, which is why this is a dial
     /// and not the default.
     pub coarse_skips_fine_islands: bool,
+    /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): the
+    /// value every emitted tier's
+    /// [`UnifiedFinishConfig::monotone_cell_decomposition`] carries.
+    ///
+    /// The planner is where this dial matters most — §0i's 1.155× / 1.215×
+    /// were measured on exactly these tier ops, on dendritic tier islands —
+    /// so it is a plan-level choice rather than something the operator has
+    /// to set on each emitted operation afterwards. Default `false`, the
+    /// same inert arm the op type itself ships (X5); the tier config still
+    /// carries the value explicitly, and
+    /// [`restore_planned_geometry`] re-applies it after the Suggest funnel
+    /// rewrites the operation.
+    pub monotone_cell_decomposition: bool,
 }
 
 impl Default for MultitoolPlanSpec {
@@ -188,6 +201,8 @@ impl Default for MultitoolPlanSpec {
             islands: TierIslandParams::default(),
             cusp_height_mm: DEFAULT_PLAN_CUSP_HEIGHT_MM,
             coarse_skips_fine_islands: false,
+            // X5: C2 ships inert, and the planner is not an exception.
+            monotone_cell_decomposition: false,
         }
     }
 }
@@ -686,7 +701,9 @@ impl ProjectSession {
 }
 
 /// The `UnifiedFinishConfig` for one tier: the type's defaults, then the
-/// three dials the planner owns.
+/// dials the planner owns (equal-cusp `scallop_height` / `raster_stepover` /
+/// `z_step`, a zeroed `stock_to_leave`, the tier link cap, and C2's
+/// `monotone_cell_decomposition`).
 ///
 /// A free function rather than a method because it reads nothing from the
 /// session — the tier's cusp radius and the spec are the whole input, which
@@ -729,6 +746,11 @@ fn plan_tier_operation(cusp_radius_mm: f64, spec: &MultitoolPlanSpec) -> Operati
         // 1,263 intra-node retracts under the 6 mm cap even after
         // G-LINKVETO.)
         intra_region_hookup_mm: 25.0,
+        // C2: a plan-level choice, carried onto every tier. Default `false`,
+        // which is `defaults`' own value — set explicitly rather than left
+        // to `..defaults` so the planner's answer is visible here and so
+        // `restore_planned_geometry` has something to restore.
+        monotone_cell_decomposition: spec.monotone_cell_decomposition,
         ..defaults
     })
 }
@@ -742,6 +764,10 @@ fn restore_planned_geometry(operation: &mut OperationConfig, planned: &Operation
         out.scallop_height = want.scallop_height;
         out.raster_stepover = want.raster_stepover;
         out.stock_to_leave = want.stock_to_leave;
+        // C2: the Suggest funnel rebuilds the whole operation from the
+        // config type's defaults, so a planner-set `true` would be silently
+        // clobbered back to `false` without this line.
+        out.monotone_cell_decomposition = want.monotone_cell_decomposition;
     }
 }
 

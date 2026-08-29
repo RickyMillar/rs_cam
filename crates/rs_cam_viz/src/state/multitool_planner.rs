@@ -161,6 +161,12 @@ pub struct MultitoolPlannerState {
     /// whole board. Mirrors `MultitoolPlanSpec::coarse_skips_fine_islands`
     /// (the trade-off is documented there).
     pub coarse_skips_fine_islands: bool,
+    /// Every emitted tier's shallow band splits into monotone cells on its
+    /// own raster lattice, rotated to the region's PCA-minor axis where the
+    /// elongation gate passes. Mirrors
+    /// `MultitoolPlanSpec::monotone_cell_decomposition` (measured value and
+    /// caveats are documented there).
+    pub monotone_cell_decomposition: bool,
 
     // ── Preview lifecycle ───────────────────────────────────────────
     pub status: MultitoolPreviewStatus,
@@ -211,6 +217,7 @@ impl MultitoolPlannerState {
             rim_erosion_mm: defaults.islands.rim_erosion_mm,
             treatment: defaults.treatment,
             coarse_skips_fine_islands: defaults.coarse_skips_fine_islands,
+            monotone_cell_decomposition: defaults.monotone_cell_decomposition,
             status: MultitoolPreviewStatus::Idle,
             previewed_key: None,
             requested_key: None,
@@ -324,6 +331,7 @@ impl MultitoolPlannerState {
             },
             cusp_height_mm: self.cusp_height_mm,
             coarse_skips_fine_islands: self.coarse_skips_fine_islands,
+            monotone_cell_decomposition: self.monotone_cell_decomposition,
         }
     }
 
@@ -401,6 +409,8 @@ mod tests {
         s.max_regions_per_tier = 11;
         s.rim_erosion_mm = 3.0;
         s.treatment = ResidualTreatment::Raw;
+        s.coarse_skips_fine_islands = true;
+        s.monotone_cell_decomposition = true;
 
         let spec = s.to_spec();
         assert_eq!(spec.setup_index, 3);
@@ -419,6 +429,11 @@ mod tests {
         assert!((spec.islands.overlap_mm - 1.25).abs() < 1e-12);
         assert_eq!(spec.islands.max_regions_per_tier, 11);
         assert!((spec.islands.rim_erosion_mm - 3.0).abs() < 1e-12);
+        assert!(spec.coarse_skips_fine_islands);
+        assert!(
+            spec.monotone_cell_decomposition,
+            "C2's dial must reach the emitted plan, not stop at the dialog"
+        );
     }
 
     /// A raw dial left alone stays `None` — which is what keeps the

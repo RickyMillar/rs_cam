@@ -1990,3 +1990,54 @@ operator's:**
     mitigation (i)) and give up per-region routing freedom, or to build the
     finish-surface cache (mitigation (ii)). That is a cost measurement plus a
     routing-quality judgement, and neither exists yet.
+
+## 7. C2 BUILT (2026-08-29) — the acceptance protocol, and what it is not
+
+§0k's verdict is now production code, **default-off**. This section exists so
+nobody reads the §0g–§0k measurements as an acceptance record: they justified
+the build; they did not validate it.
+
+**What was built** — the measured winner and nothing beside it: shared-lattice
+monotone decomposition per SHALLOW region, plus ONE elongation-gated global
+PCA-minor rotation (`ELONGATION_GATE = 3.0`, §0f's gate), raster everywhere.
+The decomposition and the emission lattice share one frame, always — §0j
+measured the mixed-frame candidate (decompose at 0°, sweep at an angle) as a
+**cost**, 0.917×/0.921×.
+
+- kernel: `crates/rs_cam_core/src/monotone_cells.rs`
+- production home: `unified_finish.rs`'s `FinishBand::Shallow` arm
+- dial: `UnifiedFinishConfig::monotone_cell_decomposition` (op panel, MCP
+  schema, project IO, multitool planner spec + dialog)
+- refusal: a region whose reconstructed cells do not select exactly the
+  undivided region's emitted lattice falls back to the undivided raster and
+  is counted on `ToolpathStats::monotone_cells` (X6: `None` = not measured)
+- sentries: `crates/rs_cam_core/tests/monotone_cell_decomposition_c2.rs`
+  (synthetic — properties and the SIGN of the effect, never magnitudes)
+
+**The acceptance protocol, which has NOT been run.**
+
+1. **Rig A/B on the operator's mesh.** Both arms through
+   `relink_and_cost_under` (`tests/thin_organic_island_widths.rs`) under the
+   **machined-stock** ceiling — the only operator-honest regime (§0i) — with
+   the production relink parameters, `reorder: true`, the region's own
+   boundary, and F-034 kinematics. Dial ON must beat the undivided baseline.
+   The bar is a WIN, not a number: **1.155× (top-three) and 1.215×
+   (gate-passing region) are rig-optimistic ceilings to approach, not
+   promises.** The rig's machined arm is the optimistic end of a bracket by
+   construction (§0i, "Known biases, all in one direction"), and the
+   production path differs from the rig in ways the rig cannot price — it
+   clips to `finish_planner::decompose`'s CONDITIONED region polygons, not
+   to the raw captured boundaries the stages used.
+2. **C4 — operator eyeball, and it BINDS.** Cell seams change the cusp
+   pattern. This is the same class of change §0h refused to accept on time
+   alone, and §0g recorded that matching lattice points does not prove
+   identical connecting-feed geometry. Render or simulate the surface before
+   any batch runs.
+3. **The refusal channel must be read, not assumed.** Check
+   `monotone_cells.membership_fallbacks` and `.empty_fallbacks` on the A/B
+   run. A non-zero count means part of the board silently ran the pre-C2
+   path, and any margin measured over it is a margin over a mixture.
+
+**What is still not built:** the cell OVERLAY in the tier-map preview (the
+see-before-generate veto Track C asked for). Until it exists, C4 is an
+after-the-fact surface review rather than a preview veto.

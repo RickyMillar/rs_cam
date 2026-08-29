@@ -60,6 +60,7 @@ pub(crate) struct MultitoolDials {
     pub overlap_mm: Option<f64>,
     pub max_regions_per_tier: Option<usize>,
     pub coarse_skips_fine_islands: Option<bool>,
+    pub monotone_cell_decomposition: Option<bool>,
 }
 
 impl super::RsCamApp {
@@ -4081,6 +4082,7 @@ impl super::RsCamApp {
                 overlap_mm: spec.overlap_mm,
                 max_regions_per_tier: spec.max_regions_per_tier,
                 coarse_skips_fine_islands: spec.coarse_skips_fine_islands,
+                monotone_cell_decomposition: spec.monotone_cell_decomposition,
             },
         ) {
             Ok(plan_spec) => plan_spec,
@@ -4243,6 +4245,11 @@ impl super::RsCamApp {
             coarse_skips_fine_islands: dials
                 .coarse_skips_fine_islands
                 .unwrap_or(plan_defaults.coarse_skips_fine_islands),
+            // C2. Same `None` = the caller did not say = the CORE default
+            // (off) rule as every dial above it.
+            monotone_cell_decomposition: dials
+                .monotone_cell_decomposition
+                .unwrap_or(plan_defaults.monotone_cell_decomposition),
         })
     }
 
@@ -4271,6 +4278,10 @@ impl super::RsCamApp {
                 // spec IS the planned spec, per the param's parity
                 // contract and the dial-parity sentry.
                 coarse_skips_fine_islands: spec.coarse_skips_fine_islands,
+                // C2 is likewise an EMISSION dial — it changes what a
+                // tier's shallow band emits, not the island map — and is
+                // threaded through for the same dial-parity contract.
+                monotone_cell_decomposition: spec.monotone_cell_decomposition,
             },
         ) {
             Ok(plan_spec) => plan_spec,

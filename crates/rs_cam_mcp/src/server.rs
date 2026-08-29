@@ -685,6 +685,17 @@ pub struct PlanMultitoolFinishingParam {
     /// of a coarse-finished surface — higher load on small cutters,
     /// measurable by the load gates. Default false.
     pub coarse_skips_fine_islands: Option<bool>,
+    /// When true, every emitted tier's SHALLOW band splits each region into
+    /// monotone CELLS on that region's own raster lattice, and rotates that
+    /// lattice to the region's PCA-minor axis where its elongation clears
+    /// 3.0. The passes stay a raster and every cell shares one lattice:
+    /// per-cell sweep directions, a cell visit order and contour-per-cell
+    /// were each measured and are each SLOWER. Measured on the reference
+    /// relief under a realistic machined-stock link ceiling: 1.155x across
+    /// the top three shallow regions, 1.215x on the elongated one — rig
+    /// figures to approach, not promises, and cell seams change the cusp
+    /// pattern, so review the rendered surface. Default false.
+    pub monotone_cell_decomposition: Option<bool>,
 }
 
 /// Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].
@@ -737,6 +748,13 @@ pub struct PreviewTierMapParam {
     /// map), but the value is threaded through so the previewed spec IS
     /// the planned spec. Default false.
     pub coarse_skips_fine_islands: Option<bool>,
+    /// When true, every emitted tier's shallow band splits into monotone
+    /// cells — spelled identically to the planner's dial so one dial set
+    /// drives both calls. The island preview itself does not change (the
+    /// dial moves what each tier's shallow band EMITS, not the island map),
+    /// but the value is threaded through so the previewed spec IS the
+    /// planned spec. Default false.
+    pub monotone_cell_decomposition: Option<bool>,
     /// Absolute path ending in `.svg` to write the island preview to.
     /// Unset = numbers only. The parent directory must already exist —
     /// the call refuses rather than creating one. Polygons only, so a

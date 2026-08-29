@@ -88,6 +88,10 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // point of the channel, and a finished move list cannot say why a
         // junction it retracted was not linked.
         relink: None,
+        // C2: same rule again. Whether a shallow region was decomposed into
+        // monotone cells is a generation-time decision; a finished move list
+        // cannot say whether the cells it came from ever existed.
+        monotone_cells: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -182,6 +186,7 @@ pub fn stats_with_findings(
         inert_claims_dial: _,
         region_cap: _,
         relink: _,
+        monotone_cells: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
@@ -206,6 +211,7 @@ pub fn stats_with_findings(
         inert_claims_dial,
         region_cap,
         relink,
+        monotone_cells,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -233,6 +239,7 @@ pub fn stats_with_findings(
         inert_claims_dial,
         region_cap,
         relink,
+        monotone_cells,
         stock_snapshot,
     }
 }

@@ -170,6 +170,11 @@ pub struct GenerationFindings {
     /// its `intra_region_hookup_mm` is `0.0`, which disables it). See
     /// [`crate::compute::config::ToolpathStats::relink`].
     pub relink: Option<crate::unified_finish::RelinkTotals>,
+    /// C2: what the shallow band's monotone-cell decomposition did. `None` =
+    /// the pass never ran (not a `UnifiedFinish`, or its
+    /// `monotone_cell_decomposition` is off, or the op emitted no Shallow
+    /// region). See [`crate::compute::config::ToolpathStats::monotone_cells`].
+    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
 }
 
 /// Record one cascade's residual on the context's findings cell,
@@ -367,6 +372,21 @@ fn record_relink_totals(
     totals: crate::unified_finish::RelinkTotals,
 ) {
     cell.borrow_mut().relink = Some(totals);
+}
+
+/// Record what the C2 shallow-band monotone-cell decomposition did.
+///
+/// **Only call this when the pass actually ran.** The generator returns
+/// `None` unless `monotone_cell_decomposition` was on AND at least one
+/// Shallow region existed, and that `None` is the honest "not measured" —
+/// coercing it to a zeroed struct here would claim a clean measurement of a
+/// pass that never happened, which is the exact reading the
+/// [`crate::compute::config::ToolpathStats`] contract forbids.
+fn record_monotone_cells(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    totals: crate::unified_finish::MonotoneCellTotals,
+) {
+    cell.borrow_mut().monotone_cells = Some(totals);
 }
 
 /// Record how many 2D offset calls this generation made that came back with
@@ -2224,6 +2244,7 @@ pub(crate) fn generate_unified_finish(
         safe_z: ctx.heights.retract_z,
         intra_region_hookup_mm: cfg.intra_region_hookup_mm,
         classification_sampler: cfg.classification_sampler,
+        monotone_cell_decomposition: cfg.monotone_cell_decomposition,
     };
     // F2: the `for_tool` derivation plus this op's own dials, built in ONE
     // place — `UnifiedFinishConfig::planner_params`, whose doc carries the
@@ -2389,6 +2410,13 @@ pub(crate) fn generate_unified_finish(
     // stats side means "not measured", never "nothing retracted".
     if cfg.intra_region_hookup_mm > 0.0 {
         record_relink_totals(ctx.findings, report.relink);
+    }
+    // C2: same rule — the generator already decided whether anything was
+    // measured, so pass its `Option` through rather than re-deriving the
+    // question from the config (a dial that is ON but met no Shallow region
+    // measured nothing).
+    if let Some(totals) = report.monotone_cells {
+        record_monotone_cells(ctx.findings, totals);
     }
     record_truncated_core(
         ctx.findings,

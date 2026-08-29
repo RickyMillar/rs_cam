@@ -923,6 +923,28 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
                 0.05,
                 0.0..=10.0,
             );
+
+            // `dv` ends its own grid row, so this one opens straight after.
+            // C2 (`planning/thin_organic_2026-08-27/`). A path-STRUCTURE
+            // dial, so it sits with the other shallow-band geometry dials
+            // rather than in the Rest Claims block below.
+            ui.label("Monotone Cells:");
+            ui.checkbox(&mut cfg.monotone_cell_decomposition, "")
+                .on_hover_text(
+                    "Split each SHALLOW region into monotone cells on that region's own \
+                     raster lattice, rotating the lattice to the region's PCA-minor axis \
+                     where its elongation clears 3.0. Every cell rasters on that one \
+                     shared lattice, so the relinker sees cell-shaped fragments instead \
+                     of one dendritic region's worth. Off by default and byte-identical \
+                     to the old band when off. It is NOT a per-cell strategy: per-cell \
+                     sweep directions, a cell visit order and contour-per-cell were each \
+                     measured and are each slower. Measured under a realistic link \
+                     ceiling: 1.155x across the reference relief's top three shallow \
+                     regions, 1.215x on the elongated one — rig figures to approach, not \
+                     promises. Cell seams change the cusp pattern, so look at the \
+                     rendered surface before trusting it on a finish pass.",
+                );
+            ui.end_row();
         });
     draw_unified_finish_claims(ui, cfg, resolved_claims_reference, stock_source);
 }

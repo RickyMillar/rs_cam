@@ -453,6 +453,29 @@ pub struct ToolpathStats {
     /// carries one — and refusing would black them out. What changes is that
     /// somebody says so.
     pub inert_claims_dial: Option<InertClaimsDialFinding>,
+    /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): what
+    /// the shallow band's monotone-cell decomposition did. See
+    /// [`crate::unified_finish::MonotoneCellTotals`].
+    ///
+    /// This is the three-valued family, not the two-valued one:
+    ///
+    /// * `None` — **not measured**. The operation is not a `unified_finish`,
+    ///   or it is one with `monotone_cell_decomposition` off, or it emitted
+    ///   no Shallow region at all. Never read as "nothing was decomposed".
+    /// * `Some(t)` with `t.membership_fallbacks == 0 && t.empty_fallbacks ==
+    ///   0` — **measured clean**: every Shallow region was decomposed and
+    ///   emitted as cells.
+    /// * `Some(t)` with a non-zero fallback count — that many regions fell
+    ///   back to the undivided raster. The emitted path is safe (it is the
+    ///   pre-C2 one for those regions); what the count reports is that the
+    ///   decomposition could not reproduce the region's own emitted lattice.
+    ///
+    /// NOT boxed: five words, the same call [`Self::inert_claims_dial`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, and recording it changes no
+    /// geometry.
+    pub monotone_cells: Option<crate::unified_finish::MonotoneCellTotals>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///

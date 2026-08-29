@@ -183,6 +183,25 @@ pub struct UnifiedFinishParams {
     /// through the identical production pipeline in one process, and so a
     /// sentry can pin which one an op ran without inspecting global state.
     pub classification_sampler: ClassificationSampler,
+    /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): split
+    /// each SHALLOW region into monotone cells on the region's own raster
+    /// lattice, and rotate that lattice to the region's PCA-minor axis when
+    /// the region clears [`crate::monotone_cells::ELONGATION_GATE`].
+    ///
+    /// `false` (**the default**) is byte-identical to the pre-C2 band: one
+    /// `raster_toolpath_from_grid` call per region on the shared 0° grid.
+    ///
+    /// The decomposition and the lattice always share ONE frame — see
+    /// [`crate::monotone_cells`] for why decomposing at 0° and re-sweeping
+    /// the cells at an angle is a different, and measured-worse, candidate.
+    ///
+    /// Measured, ceiling arm (`FINDINGS.md` §0i): **1.155×** on the wanaka
+    /// top-three shallow regions, **1.215×** on the one region that clears
+    /// the elongation gate. Those are RIG figures on the operator's mesh —
+    /// approach them, do not promise them — and C4 (rendered-surface
+    /// review) binds any adoption, because cell seams change the cusp
+    /// pattern.
+    pub monotone_cell_decomposition: bool,
 }
 
 impl Default for UnifiedFinishParams {
@@ -215,6 +234,10 @@ impl Default for UnifiedFinishParams {
             // programme has already found twice.
             intra_region_hookup_mm: 6.0,
             classification_sampler: ClassificationSampler::PRODUCTION,
+            // X5: new behaviour ships inert. Kept in lockstep with
+            // `operation_configs::default_unified_finish_monotone_cell_
+            // decomposition`, for the reason the line above states.
+            monotone_cell_decomposition: false,
         }
     }
 }
@@ -1146,6 +1169,42 @@ pub struct UnifiedFinishReport {
     /// polygons. It does NOT describe [`Self::uncut_core_mm2`] (see there) or
     /// the length/count fields, which carry their own units.
     pub provenance: crate::measurement::MeasurementProvenance,
+    /// C2 monotone-cell decomposition telemetry.
+    ///
+    /// **`None` = the pass did not run** — `monotone_cell_decomposition` was
+    /// off, or this op emitted no Shallow region at all. `Some` with
+    /// `membership_fallbacks == 0` is measured-clean. Never coerce the
+    /// absent value to zero (X6 / the `ToolpathStats` contract).
+    pub monotone_cells: Option<MonotoneCellTotals>,
+}
+
+/// What the C2 shallow-band decomposition did, summed over every Shallow
+/// region of one operation.
+///
+/// Report-only: no gate consumes it, and recording it changes no geometry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MonotoneCellTotals {
+    /// Shallow regions the decomposition was attempted on.
+    pub regions: usize,
+    /// Of those, how many cleared
+    /// [`crate::monotone_cells::ELONGATION_GATE`] and were decomposed AND
+    /// rastered in their own PCA-minor frame.
+    pub regions_rotated: usize,
+    /// Cells whose raster was emitted, summed across regions.
+    pub cells_emitted: usize,
+    /// Regions where the reconstructed cells did **not** select the same
+    /// lattice population as the undivided region, so the band fell back to
+    /// the undivided raster for that region.
+    ///
+    /// The fallback is the safe arm: a cell set that loses a lattice point
+    /// leaves material uncut. A non-zero count here is a defect report about
+    /// the decomposition, not about the part — the emitted path is the
+    /// pre-C2 one.
+    pub membership_fallbacks: usize,
+    /// Regions where no cell polygon could be reconstructed at all (an
+    /// empty region, or a marching-squares extraction that produced no
+    /// loop), so the band fell back to the undivided raster.
+    pub empty_fallbacks: usize,
 }
 
 /// Summed [`crate::surface_link::RelinkReport`] counters across regions.
@@ -1840,6 +1899,10 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     };
     let mut region_paths: Vec<RegionPath> = Vec::new();
     let mut shallow_grid: Option<DropCutterGrid> = None;
+    // C2: stays `None` unless the decomposition actually runs on at least
+    // one Shallow region, so absence reads as "not measured" and never as
+    // "measured zero" (X6 / the `ToolpathStats` finding contract).
+    let mut monotone_cell_totals: Option<MonotoneCellTotals> = None;
 
     let mut uncut_core_mm2 = 0.0_f64;
     // M4 §5b: accumulated in lockstep with `uncut_core_mm2` below.
@@ -1985,109 +2048,141 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 (tp, anns)
             }
             FinishBand::Shallow => {
-                let grid = match shallow_grid.as_ref() {
-                    Some(grid) => grid,
-                    None => {
-                        // Mesh-bottom floor, mirroring `generate_drop_cutter`'s
-                        // `effective_min_z` (compute::execute.rs). The
-                        // stock-bbox floor (`ctx.stock_bbox.min.z - 1.0`
-                        // there) is the op-adapter's job — this pure-core
-                        // function only sees a mesh, not a stock model, so
-                        // callers needing that extra floor should pre-max it
-                        // into `bottom_z` before calling in.
-                        let effective_min_z = mesh.bbox.min.z - 0.1;
-                        // `batch_drop_cutter_with_cancel` requires
-                        // `&(dyn CancelCheck + Sync)` for its rayon closures;
-                        // this function only receives a plain
-                        // `&dyn CancelCheck`, matching every finish-op call
-                        // site up this chain (see the identical constraint
-                        // documented on `slope::SurfaceHeightmap::
-                        // from_mesh_with_cancel`). Widening our own signature
-                        // to `+ Sync` would ripple through every future
-                        // caller for the sake of one internal call, so this
-                        // band checks cancellation immediately before and
-                        // after the batch call instead of threading `cancel`
-                        // through it.
-                        let never_cancel = || false;
-                        let mut grid = batch_drop_cutter_with_cancel(
-                            mesh,
-                            index,
-                            cutter,
-                            params.raster_stepover,
-                            0.0,
-                            effective_min_z,
-                            &never_cancel,
-                        )?;
-                        // Drop grid points whose vertical ray misses every
-                        // triangle in the mesh. Replicated from
-                        // `compute::execute::generate_drop_cutter`'s
-                        // identical guard: `point_drop_cutter` marks a point
-                        // contacted whenever the cutter (which has radius)
-                        // touches ANY nearby triangle — including the rim of
-                        // a mesh that doesn't cover that XY. Without this
-                        // check the tool rides the edge and carves a trench
-                        // around the part.
-                        for pt in &mut grid.points {
-                            let mut over = false;
-                            for &tri_idx in &index.query(pt.x, pt.y, 0.0) {
-                                // SAFETY: tri_idx comes from `index.query`,
-                                // which only ever returns indices into
-                                // `mesh.faces` (mirrors `generate_drop_cutter`'s
-                                // identical loop in compute::execute.rs).
-                                #[allow(clippy::indexing_slicing)]
-                                let tri = &mesh.faces[tri_idx];
-                                if tri.contains_point_xy(pt.x, pt.y) {
-                                    over = true;
-                                    break;
-                                }
-                            }
-                            if !over {
-                                pt.z = effective_min_z;
-                                pt.contacted = false;
-                            }
-                        }
-                        // D-16.2 (F3, 2026-08-06): honour `stock_to_leave`.
-                        //
-                        // `raster_toolpath_from_grid` emits every target as
-                        // `grid.get(row, col).position()` verbatim — it takes
-                        // no stock-to-leave argument and does no Z arithmetic
-                        // — so until this lift the dial was silently dropped
-                        // on the whole Shallow band while the MidSteep band
-                        // next door honoured it. The convention is the repo's
-                        // shared one: a pure **+Z shift on the drop-cutter
-                        // contact point**, identical to `scallop.rs`'s
-                        // `cl.z + stock_to_leave` and to `steep_shallow.rs`'s
-                        // shipped shallow raster. (It is an approximation —
-                        // what survives measured normal to the surface is
-                        // `stock_to_leave·cos θ` — but it is the SAME
-                        // approximation every finish op in the repo makes,
-                        // and diverging here alone would put a step at every
-                        // band seam.)
-                        //
-                        // The off-mesh sentinel moves WITH the grid, and the
-                        // filter threshold below moves with it too. Lifting
-                        // the sentinel while leaving the threshold at
-                        // `effective_min_z` would stop off-mesh points being
-                        // filtered and let the tool ride the mesh rim — the
-                        // exact trench the coverage guard above prevents.
-                        if params.stock_to_leave != 0.0 {
-                            for pt in &mut grid.points {
-                                pt.z += params.stock_to_leave;
-                            }
-                        }
-                        check_cancel(cancel)?;
-                        shallow_grid.insert(grid)
+                // C2: choose this region's working FRAME before any lattice
+                // is touched. Cheap — polygon-only — and it decides whether
+                // the shared 0° memo can serve this region at all.
+                //
+                // `None` is the dial-off arm and reproduces the pre-C2 band
+                // exactly: shared grid, one raster call, whole region.
+                let frame = if params.monotone_cell_decomposition {
+                    Some(crate::monotone_cells::region_frame(
+                        &region.polygon,
+                        params.raster_stepover,
+                    ))
+                } else {
+                    None
+                };
+                // A gate-passing region gets its OWN whole-mesh lattice at
+                // its PCA-minor axis, and it cannot share the memo: the
+                // decomposition and the emission must sit on ONE frame
+                // (§0j measured the mixed-frame candidate as a cost).
+                //
+                // The lattice deliberately keeps `batch_drop_cutter`'s
+                // whole-mesh extent rather than being trimmed to the region
+                // bbox — that would move the lattice ORIGIN, and §0j priced
+                // phase/origin alone at 0.954–0.962×, a cost on its own.
+                let rotated_grid = match frame {
+                    Some(f) if f.rotated => Some(build_shallow_raster_grid(
+                        mesh,
+                        index,
+                        cutter,
+                        params,
+                        f.direction_deg,
+                        cancel,
+                    )?),
+                    _ => None,
+                };
+                let grid = if let Some(grid) = rotated_grid.as_ref() {
+                    grid
+                } else {
+                    match shallow_grid.as_ref() {
+                        Some(grid) => grid,
+                        None => shallow_grid.insert(build_shallow_raster_grid(
+                            mesh, index, cutter, params, 0.0, cancel,
+                        )?),
                     }
                 };
                 let effective_min_z = mesh.bbox.min.z - 0.1 + params.stock_to_leave;
-                let tp = raster_toolpath_from_grid(
-                    grid,
-                    params.feed_rate,
-                    params.plunge_rate,
-                    params.safe_z,
-                    Some(effective_min_z),
-                    Some(&region_set),
-                );
+                // The undivided arm, kept as a closure so every C2 fallback
+                // path emits the identical pre-C2 geometry rather than a
+                // second transcription of it.
+                let undivided = |grid: &DropCutterGrid| {
+                    raster_toolpath_from_grid(
+                        grid,
+                        params.feed_rate,
+                        params.plunge_rate,
+                        params.safe_z,
+                        Some(effective_min_z),
+                        Some(&region_set),
+                    )
+                };
+                let tp = match frame {
+                    None => undivided(grid),
+                    Some(f) => {
+                        let decomposed = crate::monotone_cells::lattice_monotone_cells(
+                            grid,
+                            &region.polygon,
+                            effective_min_z,
+                        );
+                        check_cancel(cancel)?;
+                        let totals = monotone_cell_totals.get_or_insert_default();
+                        totals.regions = totals.regions.saturating_add(1);
+                        if f.rotated {
+                            totals.regions_rotated = totals.regions_rotated.saturating_add(1);
+                        }
+                        if decomposed.cells.is_empty() {
+                            totals.empty_fallbacks = totals.empty_fallbacks.saturating_add(1);
+                            tracing::warn!(
+                                region_index,
+                                topology_cells = decomposed.topology_cells,
+                                "unified_finish: monotone decomposition produced no cell \
+                                 polygons; emitting the undivided raster for this region"
+                            );
+                            undivided(grid)
+                        } else {
+                            // The REFUSE discipline the rig imposed on every
+                            // cell arm it costed (`FINDINGS.md` §0g, Stage
+                            // J). Both sides sit on this same grid, so it is
+                            // an exact population test, not a proxy — and a
+                            // cell set that lost a lattice point would be
+                            // uncut material, so the disagreement arm falls
+                            // back rather than emitting.
+                            let mismatches = crate::monotone_cells::cells_select_same_lattice(
+                                grid,
+                                &region.polygon,
+                                &decomposed.cells,
+                                effective_min_z,
+                            );
+                            if mismatches > 0 {
+                                totals.membership_fallbacks =
+                                    totals.membership_fallbacks.saturating_add(1);
+                                tracing::warn!(
+                                    region_index,
+                                    mismatches,
+                                    cells = decomposed.cells.len(),
+                                    "unified_finish: monotone cells disagree with the \
+                                     undivided region on emitted lattice points; emitting \
+                                     the undivided raster for this region"
+                                );
+                                undivided(grid)
+                            } else {
+                                totals.cells_emitted =
+                                    totals.cells_emitted.saturating_add(decomposed.cells.len());
+                                // One raster call per cell, on the ONE
+                                // shared lattice — §0i's construction. The
+                                // relinker downstream then sees cell-shaped
+                                // fragments; it keeps `reorder: true`, which
+                                // is why no cell TSP is emitted here (§0j
+                                // measured a greedy cell order as
+                                // byte-identical).
+                                let mut out = Toolpath::new();
+                                for cell in &decomposed.cells {
+                                    let cell_set = RegionSet::new(vec![cell.clone()]);
+                                    let cell_tp = raster_toolpath_from_grid(
+                                        grid,
+                                        params.feed_rate,
+                                        params.plunge_rate,
+                                        params.safe_z,
+                                        Some(effective_min_z),
+                                        Some(&cell_set),
+                                    );
+                                    out.moves.extend(cell_tp.moves);
+                                }
+                                out
+                            }
+                        }
+                    }
+                };
                 (tp, Vec::new())
             }
         };
@@ -2243,6 +2338,8 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             exit,
         });
     }
+    // C2: `None` unless the pass ran on at least one Shallow region.
+    report.monotone_cells = monotone_cell_totals;
 
     // No early return on `region_paths.is_empty()`: both branches below
     // already degrade to an empty `order`/`junctions` in that case
@@ -2459,6 +2556,106 @@ struct RegionPath {
     tail_strip: usize,
     /// Surface exit point — the last move before the trailing retracts.
     exit: Option<P3>,
+}
+
+/// Build the Shallow band's drop-cutter lattice at `direction_deg`.
+///
+/// Factored out of the band arm by C2 so the shared 0° memo and a
+/// per-region PCA-minor lattice are produced by ONE construction. That
+/// matters for two reasons beyond tidiness: the off-mesh trench guard and
+/// the `stock_to_leave` lift are both load-bearing (see their comments
+/// below), and a rotated lattice that skipped either would cut a trench
+/// around the part or silently drop the operator's dial on exactly the
+/// regions C2 rotates.
+///
+/// `direction_deg` must already have been through
+/// [`crate::monotone_cells::honest_raster_direction_deg`] when it comes
+/// from a measured axis — `batch_drop_cutter_with_cancel` returns an
+/// axis-aligned grid still labelled 90°/180° for those inputs.
+fn build_shallow_raster_grid(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &UnifiedFinishParams,
+    direction_deg: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<DropCutterGrid, Cancelled> {
+    // Mesh-bottom floor, mirroring `generate_drop_cutter`'s
+    // `effective_min_z` (compute::execute.rs). The stock-bbox floor
+    // (`ctx.stock_bbox.min.z - 1.0` there) is the op-adapter's job — this
+    // pure-core function only sees a mesh, not a stock model, so callers
+    // needing that extra floor should pre-max it into `bottom_z` before
+    // calling in.
+    let effective_min_z = mesh.bbox.min.z - 0.1;
+    // `batch_drop_cutter_with_cancel` requires `&(dyn CancelCheck + Sync)`
+    // for its rayon closures; the orchestrator only receives a plain
+    // `&dyn CancelCheck`, matching every finish-op call site up this chain
+    // (see the identical constraint documented on
+    // `slope::SurfaceHeightmap::from_mesh_with_cancel`). Widening the
+    // signature to `+ Sync` would ripple through every future caller for the
+    // sake of one internal call, so this builder checks cancellation
+    // immediately after the batch call instead of threading `cancel` through
+    // it.
+    let never_cancel = || false;
+    let mut grid = batch_drop_cutter_with_cancel(
+        mesh,
+        index,
+        cutter,
+        params.raster_stepover,
+        direction_deg,
+        effective_min_z,
+        &never_cancel,
+    )?;
+    // Drop grid points whose vertical ray misses every triangle in the mesh.
+    // Replicated from `compute::execute::generate_drop_cutter`'s identical
+    // guard: `point_drop_cutter` marks a point contacted whenever the cutter
+    // (which has radius) touches ANY nearby triangle — including the rim of
+    // a mesh that doesn't cover that XY. Without this check the tool rides
+    // the edge and carves a trench around the part.
+    for pt in &mut grid.points {
+        let mut over = false;
+        for &tri_idx in &index.query(pt.x, pt.y, 0.0) {
+            // SAFETY: tri_idx comes from `index.query`, which only ever
+            // returns indices into `mesh.faces` (mirrors
+            // `generate_drop_cutter`'s identical loop in compute::execute.rs).
+            #[allow(clippy::indexing_slicing)]
+            let tri = &mesh.faces[tri_idx];
+            if tri.contains_point_xy(pt.x, pt.y) {
+                over = true;
+                break;
+            }
+        }
+        if !over {
+            pt.z = effective_min_z;
+            pt.contacted = false;
+        }
+    }
+    // D-16.2 (F3, 2026-08-06): honour `stock_to_leave`.
+    //
+    // `raster_toolpath_from_grid` emits every target as
+    // `grid.get(row, col).position()` verbatim — it takes no stock-to-leave
+    // argument and does no Z arithmetic — so until this lift the dial was
+    // silently dropped on the whole Shallow band while the MidSteep band
+    // next door honoured it. The convention is the repo's shared one: a pure
+    // **+Z shift on the drop-cutter contact point**, identical to
+    // `scallop.rs`'s `cl.z + stock_to_leave` and to `steep_shallow.rs`'s
+    // shipped shallow raster. (It is an approximation — what survives
+    // measured normal to the surface is `stock_to_leave·cos θ` — but it is
+    // the SAME approximation every finish op in the repo makes, and
+    // diverging here alone would put a step at every band seam.)
+    //
+    // The off-mesh sentinel moves WITH the grid, and the filter threshold at
+    // the call site moves with it too. Lifting the sentinel while leaving
+    // the threshold at `effective_min_z` would stop off-mesh points being
+    // filtered and let the tool ride the mesh rim — the exact trench the
+    // coverage guard above prevents.
+    if params.stock_to_leave != 0.0 {
+        for pt in &mut grid.points {
+            pt.z += params.stock_to_leave;
+        }
+    }
+    check_cancel(cancel)?;
+    Ok(grid)
 }
 
 /// A costed junction between two consecutive regions in the route.

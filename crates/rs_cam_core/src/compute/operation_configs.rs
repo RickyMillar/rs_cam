@@ -1054,6 +1054,29 @@ pub struct UnifiedFinishConfig {
     /// the pre-S4 op.
     #[serde(default = "default_unified_finish_territory_clip")]
     pub territory_clip: bool,
+    /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C, measured
+    /// in `FINDINGS.md` §0g–§0k): split every SHALLOW region into monotone
+    /// **cells** on the region's own raster lattice, and rotate that lattice
+    /// to the region's PCA-minor axis when the region clears
+    /// [`crate::monotone_cells::ELONGATION_GATE`] (3.0). Each cell is
+    /// rastered on that ONE shared lattice, so the relinker sees cell-shaped
+    /// fragments instead of one dendritic region's worth of them.
+    ///
+    /// Default `false` = off, **byte-identical to the pre-C2 op**.
+    ///
+    /// What it is NOT, each having been measured and refuted: no per-cell
+    /// sweep direction (§0j, a 0.917× cost), no cell TSP (§0j, byte-identical
+    /// to emission order because the relinker already reorders), no contour
+    /// or per-cell pattern choice (§0k, 0.686×).
+    ///
+    /// Measured value on the operator's wanaka relief under the realistic
+    /// machined-stock link ceiling (§0i): **1.155×** across the top-three
+    /// shallow regions, **1.215×** on the one region that clears the
+    /// elongation gate. Those are RIG ceilings to approach, not promises,
+    /// and the C4 rendered-surface review binds adoption — cell seams change
+    /// the cusp pattern.
+    #[serde(default = "default_unified_finish_monotone_cell_decomposition")]
+    pub monotone_cell_decomposition: bool,
     /// INTRA-region stay-down linking (`planning/unified_v3_design.md`
     /// §9): the maximum XY gap (mm) a gouge-checked, surface-following
     /// link may span between two consecutive cut fragments inside ONE
@@ -1167,6 +1190,7 @@ impl Default for UnifiedFinishConfig {
             min_rest_depth_mm: default_unified_finish_min_rest_depth_mm(),
             claims_reference: default_unified_finish_claims_reference(),
             territory_clip: default_unified_finish_territory_clip(),
+            monotone_cell_decomposition: default_unified_finish_monotone_cell_decomposition(),
             intra_region_hookup_mm: default_unified_finish_intra_region_hookup_mm(),
             crease_hookup_mm: default_unified_finish_crease_hookup_mm(),
             // F2: absent = derive from the tool, which is what every project
@@ -1255,6 +1279,17 @@ fn default_unified_finish_claims_reference() -> ClaimsReference {
 }
 
 fn default_unified_finish_territory_clip() -> bool {
+    false
+}
+
+/// C2 ships INERT (X5). An absent key loads `false`, which is the pre-C2
+/// band byte-for-byte, so no existing project file changes.
+///
+/// Kept in lockstep with
+/// [`crate::unified_finish::UnifiedFinishParams::default`]'s own value — a
+/// core default and a serde default that disagree is a divergence class this
+/// repo has already found twice.
+fn default_unified_finish_monotone_cell_decomposition() -> bool {
     false
 }
 
@@ -2427,6 +2462,17 @@ mod tests {
         // S4 (`territory_clip`) postdates this legacy payload too — must
         // default off, same backcompat contract as its S1/S2 siblings.
         assert!(!cfg.territory_clip);
+        // C2 (`monotone_cell_decomposition`) postdates all of them. X5: an
+        // absent key must load OFF, which is the pre-C2 band byte-for-byte.
+        assert!(!cfg.monotone_cell_decomposition);
+        // …and a project that PINS it keeps it, so the dial is reachable
+        // through project IO in both directions.
+        let pinned = legacy.replace(
+            "\"plunge_rate\": 500.0",
+            "\"plunge_rate\": 500.0, \"monotone_cell_decomposition\": true",
+        );
+        let cfg: UnifiedFinishConfig = serde_json::from_str(&pinned).unwrap();
+        assert!(cfg.monotone_cell_decomposition);
     }
 
     /// A/M6: the resolution table, exhaustively. Six inputs, six outcomes,

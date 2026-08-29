@@ -192,18 +192,72 @@ drew unprompted.
 **C1** — measure first (X4): how many cells does the wanaka shallow band
 actually decompose into, and what is each cell's elongation and monotone
 direction? Cheap: pure 2D on polygons already in hand, no generation.
-**C2** — implement boustrophedon/Morse decomposition on `Polygon2`.
+**C2 — BUILT, NOT VALIDATED (2026-08-29).** The production build of §0k's
+measured winner: **shared-lattice monotone decomposition + ONE
+elongation-gated global PCA-minor rotation per region, raster everywhere.**
+Shipped **default-OFF** behind `monotone_cell_decomposition` (X5).
+
+*Where it lives:* `crates/rs_cam_core/src/monotone_cells.rs` (the kernel —
+`region_frame`, `lattice_monotone_cells`, `cells_select_same_lattice`,
+`honest_raster_direction_deg`, `ELONGATION_GATE = 3.0`) consumed by
+`unified_finish.rs`'s `FinishBand::Shallow` arm, which now builds its raster
+lattice through one factored `build_shallow_raster_grid` so the shared 0°
+memo and a per-region PCA-minor lattice cannot diverge on the off-mesh
+trench guard or the `stock_to_leave` lift.
+
+*What it deliberately is NOT*, each refuted by measurement: no per-cell sweep
+direction (§0j, 0.917×), no cell TSP (§0j, byte-identical to emission order),
+no contour or per-cell pattern choice (§0k, 0.686×). The decomposition and
+the lattice **share one frame, always** — decomposing at 0° and re-sweeping
+cells at an angle is §0j's measured cost, not this build.
+
+*Safety:* the reconstruction is refused per region if its cells do not select
+exactly the undivided region's emitted lattice; that region falls back to the
+undivided raster and the refusal is counted. Report-only under the X6
+contract: `ToolpathStats::monotone_cells` /
+`UnifiedFinishReport::monotone_cells`, `None` = not measured.
+
+*Dial reach (X3):* `UnifiedFinishConfig::monotone_cell_decomposition`
+(project IO, serde-defaulted off) → MCP `ParamDef` + the generic
+`set_toolpath_param` path → the Unified Finish op panel
+(`ui/properties/operations/surface_3d.rs`) → the multitool planner dialog and
+`MultitoolPlanSpec` (the planner emits `unified_finish` ops, so the plan
+carries the dial and `restore_planned_geometry` re-applies it after the
+Suggest funnel) → `plan_multitool_finishing` and `preview_tier_map`.
+
+*Sentries:* `crates/rs_cam_core/tests/monotone_cell_decomposition_c2.rs` plus
+the kernel's own unit tests. Synthetic and fast; they pin the PROPERTIES
+(dial-off inertness, lattice membership, the gate, the 89.9°-not-90° trap,
+and the SIGN of the effect), never the magnitudes.
+
+*ACCEPTANCE — not yet run, and this row stays BUILT-NOT-VALIDATED until it
+is.* With the dial ON, the real-fixture A/B through
+`relink_and_cost_under` (`tests/thin_organic_island_widths.rs`) must beat the
+undivided baseline on the operator's mesh under the machined-stock ceiling.
+§0i's **1.155× / 1.215×** are rig-optimistic ceilings to APPROACH, not
+promises. **C4 (operator eyeball on the rendered surface) binds** — cell
+seams change the cusp pattern, which is exactly the class of change §0h
+refused to accept on time alone.
+
 **C3** — cell adjacency graph + visit order (a TSP over cells, not over
-fragments).
+fragments). **CLOSED by §0j**: greedy nearest-neighbour cell ordering
+produced byte-identical output to emission order, because the production
+relinker's `reorder: true` already owns inter-fragment order. Upside bounded
+at ~zero; not built.
 
 *Prior art, verified in `FINDINGS.md` §5:* Choset & Pignon 1997 (boustrophedon
 cellular decomposition); Acar & Choset 2002 (Morse decompositions). The general
 covering problem is NP-hard — Arkin, Fekete & Mitchell 2000, the milling problem
 — so this is an approximation by construction, and that is fine and standard.
 
-*GUI (X3):* cell overlay in the preview, reusing the tier-map/rest-heatmap slot
-the multitool planner already renders through. The operator must be able to SEE
-the split before generation — same veto shape as the tier-map preview.
+*GUI (X3):* **DELIVERED as a dial, NOT as an overlay.** The operator can turn
+the decomposition on from the Unified Finish op panel and from the multitool
+planner dialog, and the MCP schema carries it — the strategy-advisor
+anti-pattern (MCP-only, no GUI, no apply path) is not repeated. What is NOT
+built is the cell OVERLAY in the tier-map preview: seeing the split before
+generation is still the right veto shape and remains open. Until it exists,
+C4's acceptance is the rendered/simulated surface after generation, not a
+preview.
 
 ---
 

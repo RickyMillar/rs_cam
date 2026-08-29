@@ -296,6 +296,15 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    is a line on every rest-analysis toolpath saying nothing
             //    happened.
             region_cap: _,
+            //  - monotone_cells (C2): a statement about how the shallow
+            //    band's raster was PARTITIONED before emission, not about
+            //    the part. Narration already walks the emitted cut runs and
+            //    reports their structure directly, so a cell count would be
+            //    a second, weaker view of the same moves. Read it off
+            //    `ToolpathStats::monotone_cells` — the fallback counters
+            //    there are the actionable half, and they are a defect
+            //    report about the decomposition rather than about the cut.
+            monotone_cells: _,
             relink,
         } = stats;
 

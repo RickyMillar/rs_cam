@@ -1635,6 +1635,22 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // S4 region-level territory clip (`unified_finish::ClaimsConfig::
     // territory_clip` doc) — same serde-defaulted back-compat treatment.
     ParamDef::required("territory_clip", "bool"),
+    // C2 shallow-band monotone cell decomposition — same serde-defaulted
+    // back-compat treatment again.
+    ParamDef::required_desc(
+        "monotone_cell_decomposition",
+        "bool",
+        "Split each SHALLOW region into monotone CELLS on the region's own raster lattice, \
+         and rotate that lattice to the region's PCA-minor axis when its elongation clears \
+         3.0. Every cell is rastered on that ONE shared lattice, so the relinker sees \
+         cell-shaped fragments. Default false = byte-identical to the pre-C2 op. NOT a \
+         per-cell strategy: per-cell sweep direction (0.917x), cell TSP (byte-identical to \
+         emission order) and contour-per-cell (0.686x) were each measured and refuted. \
+         Measured value under a realistic machined-stock link ceiling: 1.155x across the \
+         reference relief's top-three shallow regions, 1.215x on the one region that clears \
+         the elongation gate — rig figures, not promises, and a rendered-surface review \
+         binds adoption because cell seams change the cusp pattern.",
+    ),
     // §9/§11 link caps, both serde-defaulted for back-compat:
     // `intra_region_hookup_mm` is the per-region stay-down relink cap,
     // `crease_hookup_mm` the crease node's (see `unified_finish::

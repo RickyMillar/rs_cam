@@ -51,7 +51,9 @@ use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, Measure
 use rs_cam_core::ramp_finish::RampReachClamp;
 use rs_cam_core::region_mask::RegionCapReport;
 use rs_cam_core::toolpath::Toolpath;
-use rs_cam_core::unified_finish::{ClaimsReference, ClaimsReferenceResolution, RelinkTotals};
+use rs_cam_core::unified_finish::{
+    ClaimsReference, ClaimsReferenceResolution, MonotoneCellTotals, RelinkTotals,
+};
 
 /// A hand-traced move list with a known move count, cutting distance, rapid
 /// distance and retract-trip total, so the move-derived half of the join can
@@ -191,6 +193,16 @@ fn every_finding_recorded() -> GenerationFindings {
             outside_boundary: 1,
             ceiling_above_safe_z: 1,
         }),
+        // C2. A decomposition that RAN and fell back on one region, so a
+        // dropped channel reads as `None` rather than coincidentally
+        // matching a healthy zero.
+        monotone_cells: Some(MonotoneCellTotals {
+            regions: 3,
+            regions_rotated: 1,
+            cells_emitted: 179,
+            membership_fallbacks: 1,
+            empty_fallbacks: 0,
+        }),
     }
 }
 
@@ -232,6 +244,7 @@ fn every_recorded_finding_survives_the_single_join() {
         inert_claims_dial,
         region_cap,
         relink,
+        monotone_cells,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -276,6 +289,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(inert_claims_dial, findings.inert_claims_dial);
     assert_eq!(region_cap, findings.region_cap);
     assert_eq!(relink, findings.relink);
+    assert_eq!(monotone_cells, findings.monotone_cells);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -350,6 +364,12 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
         "Phase O: a generation that ran no intra-region relink has measured \
          nothing — `Some(default)` here would claim every junction was \
          considered and none declined"
+    );
+    assert_eq!(
+        stats.monotone_cells, None,
+        "C2: a generation that ran no monotone decomposition has measured \
+         nothing — `Some(default)` here would claim every shallow region was \
+         decomposed and none fell back"
     );
     assert!(
         stats.retract_trips.is_some(),

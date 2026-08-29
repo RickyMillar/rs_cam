@@ -6160,6 +6160,8 @@ mod tests {
                 // Nor an intra-region relink (Phase O).
                 relink: None,
                 retract_trips: None,
+                // Nor a monotone-cell decomposition (C2).
+                monotone_cells: None,
                 // Nor did it consume any machined stock.
                 stock_snapshot: None,
             },

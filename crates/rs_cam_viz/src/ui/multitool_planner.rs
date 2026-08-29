@@ -270,6 +270,25 @@ fn draw_main_dials(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
              preview's islands are unchanged by this.",
         );
     });
+
+    ui.horizontal(|ui| {
+        ui.checkbox(
+            &mut planner.monotone_cell_decomposition,
+            egui::RichText::new("Split shallow regions into monotone cells").small(),
+        )
+        .on_hover_text(
+            "Each tier's SHALLOW band splits every region into monotone cells on that \
+             region's own raster lattice, and rotates the lattice to the region's \
+             PCA-minor axis where the region is elongated enough (gate 3.0). The passes \
+             stay a raster and all cells share one lattice — per-cell directions, a cell \
+             visit order and contour cells were each measured and are each SLOWER. \
+             Measured on the reference relief under a realistic link ceiling: 1.155x \
+             across the top three shallow regions, 1.215x on the elongated one. Those are \
+             rig figures to approach, not promises, and cell seams change the cusp \
+             pattern — eyeball the rendered surface before trusting a batch. \
+             Emission-only: the preview's islands are unchanged by this.",
+        );
+    });
 }
 
 fn draw_advanced(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
