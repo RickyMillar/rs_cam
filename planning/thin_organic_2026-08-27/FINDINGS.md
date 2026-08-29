@@ -1001,6 +1001,317 @@ D-track collapses to what A3 already validated.**
 - Coverage proxies sit within ±3.4% everywhere, so the cost readings are
   not seam artefacts; C4 (rendered-surface review) still binds any build.
 
+## 0k. D2 — does each cell want a CONTOUR CASCADE instead of its raster?
+
+> **STATUS: NOT MEASURED.** Stage N
+> (`tests/thin_organic_island_widths.rs`) and its runner
+> `wanaka_per_cell_pattern_d2` exist and are additive; the tables below are
+> written with the stage's own columns and its reading rules, and every
+> measurement cells are filled from the 2026-08-29 run (52 s); verdict below.
+>
+> ```text
+> cargo test -p rs_cam_core --test thin_organic_island_widths \
+>   wanaka_per_cell_pattern_d2 -- --ignored --nocapture
+> ```
+>
+> **Nothing in this section may be cited as a measurement until those cells
+> carry numbers.** Same rule §0d imposed on itself and §0i/§0j inherited, for
+> the same reason: this document's whole cost to date has been margins quoted
+> from arms that were never run.
+
+### The question, and why §0d does not answer it
+
+§0d refuted the contour cascade on **undivided** regions at 0.91×, and it
+named the mechanism rather than just the number: the cascade cut 29% further
+(11,174 mm vs 8,687 mm) and emitted **3.2×** the moves (44,315 vs 14,027) —
+short chords the junction-deviation model then crawls through. That is a
+claim about the **shape the cascade was seeded from**: a Shallow region's
+outer boundary is long, dendritic and wildly varying, so its inward offsets
+fragment and re-fragment. It is not a claim about offset cascades in general,
+and §0d's own scope note says the refutation covers three undivided regions
+and nothing else.
+
+A **monotone cell** is the opposite shape — short perimeter, convex-ish,
+mean area ~36 mm² on this decomposition. D2 asks whether the cascade wins
+*there*.
+
+**§0j supplies the opposing prior, and it is the sharper one.** D1 measured
+that a per-cell candidate with no shared lattice loses the cross-cell
+serpentine chords the relinker stitches — per-cell direction cost 0.917×
+(region 1) / 0.921× (top-three) under the ceiling, at **+9% cutting
+distance**, and Table 1 ruled out the structural excuse. A contour cell has
+no shared lattice either. So the two priors point opposite ways:
+
+| prior | says | why it might not carry |
+|---|---|---|
+| §0d — contour refuted 0.91× on undivided regions | contour loses | its mechanism is *long, wildly-varying perimeter*, which a monotone cell does not have |
+| §0j — per-cell lattices cost 0.917×/0.921× | anything per-cell loses | its mechanism is *broken cross-cell chords*, which a cascade also breaks — this one probably DOES carry |
+
+Measure it, do not argue it. That tension is the whole reason D2 is a
+separate question and not a corollary.
+
+### The bars
+
+- **772.6 s** — region 1's `0° cells` **ceiling** row (§0i Table 2). Stage N's
+  own **all-raster** candidate *is* that row by construction (same cells, same
+  shared 0° lattice, same emission order), so it is printed with a
+  `= FINDINGS` reproduction mark rather than quoted.
+- **755.3 s** — §0i's winner, region 1's global `PCA cells` ceiling row.
+  **Recomputed in this binary** through the same `print_global_pca_rows` Stage M
+  uses, behind §0f's elongation gate (3.0) — so a divergence means the angle
+  moved, not that the bar was mistyped.
+
+Both arms of §0i are now pinned as constants (`RECORDED_CEILING_UNDIVIDED`,
+`RECORDED_CEILING_CELLS`), not only the fresh arm — the ceiling arm is the
+operator-honest regime and a bar that is not reproduction-checked is a number
+read from a document.
+
+### The three candidates
+
+All three are whole-region candidates through `relink_and_cost_under`, in
+BOTH link regimes (E1 discipline), against the same machined-stock ceiling
+Stage L and Stage M use, with the same production relink parameters and the
+same F-034 integrator. Cell visit order is the decomposition's own **emission
+order** on all three: §0j measured greedy nearest-neighbour ordering as
+producing byte-identical output under the relinker's `reorder: true`, so
+re-running that variant here would price the same null twice.
+
+1. **all-raster** — every cell machined with its slice of the region's shared
+   0° lattice. Reproduction-checked against §0i.
+2. **all-contour** — every cell machined with an offset-ring cascade seeded
+   from its own polygon.
+3. **hybrid** — per cell, the cheaper pattern by a standalone proxy. **This is
+   D3's cheapest bound**: if the best achievable mix of two *shipped* patterns
+   does not beat the shared-lattice raster, a "bent parallel" generator has to
+   earn its entire margin from geometry no existing generator emits.
+
+### Ring-generator provenance, stated exactly
+
+**Stage D's generator, unchanged.** §0d costed its cascade through
+`scallop_toolpath_structured_annotated_with_cancel`, passing the region
+polygon as `boundary_regions`; Stage N makes the same call with every one of
+Stage D's `ScallopParams` values and hands it **one cell polygon** instead.
+No new ring generator was written and **no adapter was needed**, because that
+call already scopes to an arbitrary polygon: under P2.3 (`scallop.rs`,
+`region_boundaries`) a non-empty boundary **replaces** the hardcoded
+mesh-footprint rectangle as the cascade's seed, and each polygon gets its own
+independent ring set offset inward from itself.
+
+**Ring Z placement:** rings ride the generator's own drop-cutter surface
+heightmap (`finish_surface_cache::cached_finish_surface`, at
+`scallop_generation_resolution(cutter, tolerance)`) — i.e. **surface Z**,
+exactly Stage D's convention, and *not* the Stage-I raster lattice. The two
+grids differ in resolution by construction; what is held equal between the
+arms is the **cusp dial** (30 µm), not the sampling.
+
+**Ring spacing:** the cascade selects its own per-ring advance under the cusp
+law. On flat ground that is `stepover_from_scallop_flat(cusp_r, h)`, which is
+arithmetically the **same expression** as this instrument's
+`equal_cusp_stepover_mm` — so on flat ground the two arms share a stepover
+exactly. On slope the cascade tightens (min-across-ring), which costs time the
+F-034 column charges for and buys cusp quality this stage does not measure.
+
+### The selection proxy, and what it can and cannot be checked against
+
+The hybrid picks per cell by the **F-034 integrated time of that cell's own
+moves, generated and costed standalone** — no relink, no links to neighbours,
+no ceiling.
+
+Why a proxy rather than a ground truth: **relink is a whole-region
+operation.** A cell's links, its kept retracts and its two vertical ceiling
+legs all depend on which cells sit beside it and in what order the relinker
+visits them, so "this cell's relinked cost" is not a well-defined quantity to
+select on. Every per-cell selector a production router could afford has this
+shape, and pricing *this* one is the point.
+
+Its bias is stated rather than hidden: it charges each pattern its own
+intra-cell motion (including, for the cascade, its helical ring-to-ring
+connectors) and charges **neither** for the links that join cells, so a
+cascade that is compact inside its cell but leaves the tool far from the next
+cell's entry is flattered. The only disagreement that *can* be measured is
+therefore the proxy's per-cell pick against the **region-level** ceiling-arm
+winner, and Stage N prints it by count and by area.
+
+### Table 1 — per-cell pattern-pick distribution (the structural answer)
+
+If almost no cell prefers contour, a null cost result is **explained** rather
+than merely observed — the same role Table 1 played in §0j.
+
+| region | cells | contour picks (count) | contour picks (% by count) | contour picks (% by AREA) | cascade emitted nothing (forced raster) | proxy margin raster÷contour p10 / p50 / p90 |
+|---|---:|---:|---:|---:|---:|---|
+| 1 | 86 | 10 | 11.6% | 6.8% (211 mm²) | 2 (0 mm²) | 0.45 / 0.68 / 1.00 |
+| 2 | 35 | 2 | 5.7% | 0.5% (9 mm²) | 3 (1 mm²) | 0.56 / 0.69 / 0.96 |
+| 3 | 58 | 9 | 15.5% | 2.4% (39 mm²) | 3 (1 mm²) | 0.51 / 0.66 / 1.01 |
+
+Read the **area** column, not the count: 179 mostly-tiny cells let a
+preference on the small ones drown a preference on the ones that hold the
+time. A margin clustered at 1.00 means the proxy is choosing between
+near-equal candidates and its picks carry little information — which would
+make the hybrid row uninformative regardless of where it lands.
+
+### Table 2 — region 1, all candidates, both regimes
+
+Columns are §0i/§0j's. Both arms of every row share the grid rule, feeds,
+Shapeoko envelope, full-region boundary, production relink and F-034 costing;
+the only difference between arms is the link regime.
+
+| candidate | arm | cells | fragments | linked | kept retracts | F-034 s | cutting mm | slower | refused |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0° undivided | fresh | — | 564 | 466 | 97 | 1053.7 | 8687 | — | 0 |
+| 0° undivided | ceiling | — | 564 | 559 | 4 | 917.5 | 10523 | 0 | 0 |
+| all-raster (= §0i `0° cells`) | fresh | 86 | 191 | — | 83 | 999.9 | 8553 | — | 0 |
+| all-raster (= §0i `0° cells`) | ceiling | 86 | 191 | 186 | 4 | 772.6 | 8945 | 0 | 0 |
+| all-contour | fresh | 86 | 353 | 238 | 114 | 1377.2 | 11577 | 0 | 0 |
+| all-contour | ceiling | 86 | 353 | 346 | 6 | 1125.9 | 12798 | 0 | 0 |
+| hybrid | fresh | 86 | 186 | 103 | 82 | 1013.1 | 8714 | 0 | 0 |
+| hybrid | ceiling | 86 | 186 | 180 | 5 | 794.6 | 9152 | 0 | 0 |
+| PCA cells (**the §0i winner**) | ceiling | 69 | 141 | — | 6 | **755.3** | 8645 | 0 | 0 |
+
+All five non-PENDING candidate rows are §0i's and Stage N **recomputes** every
+one of them in the same binary — but they are not all *mark-checked*, and the
+difference matters:
+
+- `0° undivided` and `all-raster` carry a `= FINDINGS` mark on **both** arms,
+  the fresh one from §0g/§0h's existing constants and the ceiling one from the
+  two new `RECORDED_CEILING_*` constants. A `MISMATCH` on either invalidates
+  every PENDING row filled in the same run; reconcile before reading anything
+  else.
+- The **PCA rows carry a mark on the FRESH arm only.** `print_global_pca_rows`
+  is shared with Stage M and passes its recorded pair to the fresh arms alone,
+  and it is deliberately not edited here (an additive stage must not be able to
+  move Stage M's numbers). So the 755.3 s bar itself is recomputed and printed
+  **beside** the recorded value in the DELTAS line, as a value comparison, not
+  as a MISMATCH verdict. Read it there.
+
+The one benign exception is §0i's: on the PCA rows a discrepancy can mean *the
+computed angle moved*, so check the printed angle against 119.6° first.
+
+Regions 2 and 3 get the same candidate set **minus** the `PCA cells` row —
+§0f's elongation gate (3.0) refuses a region-level axis there, so there is no
+global-direction bar to price against.
+
+| region | 0° undivided | all-raster | all-contour | hybrid | *(all ceiling arm, seconds)* |
+|---|---:|---:|---:|---:|---|
+| 1 | 917.5 | 772.6 | 1125.9 | 794.6 | |
+| 2 | 484.2 | 419.0 | 546.9 | 419.3 | |
+| 3 | 419.2 | 384.4 | 547.9 | 384.5 | |
+| **top-three total** | 1820.9 | 1576.0 | 2220.8 | 1598.4 | |
+
+### Table 3 — the deltas (this is D2's actual answer)
+
+| factor | what it isolates | region 1 | top-three |
+|---|---|---:|---:|
+| **pattern — `all-raster → all-contour`** | **D2's lever: does contour win on a monotone cell?** | **0.686× (a LOSS)** | **0.710× (a LOSS)** |
+| `all-raster → hybrid` | what a cheap local pattern picker buys — **D3's cheapest bound** | 0.972× | 0.986× |
+| `0° undivided → all-contour` | contour against the un-decomposed baseline, for continuity with §0d | 0.815× | 0.820× |
+| vs the winner — `755.3 ÷ hybrid` | does the best pattern mix beat §0i's one-rotation winner? | 0.951× — NO | — |
+| proxy disagreement with the region-level outcome | is the hybrid a real third candidate, or one of the first two renamed? | 10/86 cells (6.8% area) | 21/179 cells |
+
+**Read the `pattern` row against §0d's 0.91×.** Above 1.00 and the
+monotone-cell exemption is real; at or below it and §0d's refutation extends
+to cells, with §0j's broken-chord mechanism as the likely reason.
+
+### Coverage (read before any cost row above)
+
+Contour and hybrid rows **cannot** carry Stage J's membership guard — a ring
+cascade is not a lattice candidate, so there is no emitted-point population to
+compare. Two figures stand in, and they are not interchangeable:
+
+| region | PRIMARY — cascade `untouched_mm2` (gap detector) | hole-blind `uncut_core_mm2` | rings emitted | SECONDARY — swept band, shared 0° lattice / all-raster / all-contour |
+|---|---:|---:|---:|---|
+| 1 | 0.0 mm² (0.00%) | 0.0 mm² | 368 | 13,136 pts = 100.0% / 9,488 mm = 148.6% / 13,465 mm = 210.9% |
+| 2 | 0.0 mm² (0.00%) | 0.0 mm² | 167 | 7,549 pts = 99.8% / 4,810 mm = 130.8% / 6,107 mm = 166.0% |
+| 3 | 0.0 mm² (0.00%) | 0.0 mm² | 180 | 6,853 pts = 99.9% / 4,610 mm = 138.3% / 5,960 mm = 178.8% |
+
+- **PRIMARY** is the cascade's own report of area no ring reached
+  (`ScallopReport::untouched_mm2`, hole-aware; `uncut_core_mm2` is its
+  hole-blind sibling and the gap between them is exactly that blindness). A
+  non-trivial figure means the all-contour row is cheap because it **left
+  material**, not because it is fast. This is the gap detector.
+- **SECONDARY** is `cut length × stepover ÷ area` — the same quantity §0j's
+  coverage proxy reports, since consecutive in-row lattice points sit exactly
+  one stepover apart so `points × stepover² == length × stepover`. It is
+  **density-confounded on the contour rows and is not a gap detector there**:
+  the cascade tightens its ring advance on slope and its helical connectors
+  count as cut length, so a contour figure *above* the raster's is expected
+  and is not double coverage — the F-034 column already charges for it.
+
+### Structural limitations — these bind whatever the numbers say
+
+1. **The rig BIASES AGAINST CONTOUR, and this is the most important line in
+   the section.** Stage I's cells are marching-squares reconstructions of a
+   lattice, so their perimeters are **staircased at the raster pitch** — not
+   the smooth cell boundary a production decomposition (C2) would hand a
+   cascade. `OP_TOLERANCE_MM = 0.05` does not simplify a staircase of that
+   amplitude away, so every ring inherits jagged chords the junction-deviation
+   model crawls through — precisely §0d's own mechanism, re-introduced by the
+   rig rather than by the shape. **Reading rule: a contour WIN despite this is
+   robust; a NARROW contour loss is inconclusive and is NOT a refutation.** No
+   smoothed-polygon sensitivity arm was built; the bias is stated and priced
+   into the reading rule instead.
+2. **The hybrid is a BOUND, not a router.** Its picks come from the standalone
+   proxy above, because a per-cell relinked cost does not exist. Read it as
+   the ceiling on what a cheap local pattern picker buys, never as a routing
+   result.
+3. **No membership guard on two of the four candidates.** Contour and hybrid
+   rows carry the coverage figures instead. **C4's rendered/simulated surface
+   review binds anything built on them** — a per-cell pattern change alters
+   the cusp pattern at every cell seam, the class of change §0h refused to
+   accept on time alone.
+4. **Cusp quality is assumed equal, not measured.** Both arms are dialled to
+   the same 30 µm by the same law, but `CHECKPOINT_C_EVIDENCE.md` records the
+   cascade's *achieved* cusp at 2.0–4.9× its dial. If that holds here, a
+   contour win is partly bought with surface finish this stage cannot see —
+   and a contour loss is only strengthened by it.
+5. **A cell whose cascade emits nothing is forced to raster**, in both the
+   all-contour and the hybrid candidate, and the count and area of those cells
+   is printed. One-lattice-point cells exist by design (Stage I keeps them so
+   the membership guard stays honest), so this is expected, not a fault — but
+   an unprinted forced-raster cell would make the all-contour row cheap for
+   the wrong reason and let the coverage figures take the blame.
+6. **Cell visit order is emission order on all three candidates**, per §0j's
+   null on nearest-neighbour ordering. No cell adjacency graph, no C3 cell
+   TSP, no choice of where a cell is entered or left.
+7. **This is still not a production router.** No production cell geometry
+   (C2), no per-cell strategy in any generator, no GUI overlay.
+8. **Three regions, one tier, one fixture, no inter-region routing.** §0d's
+   scope caveats carry over unchanged, and nothing here re-baselines §0d's
+   undivided-region refutation or §0e/§0f's angle sweep.
+
+### Verdict (2026-08-29 run; the limitations above bind everything below)
+
+- **D2's headline: contour-per-cell is REFUTED, and the loss is far outside
+  the bias margin.** The `pattern` factor is **0.686× region 1 / 0.710×
+  top-three** (all-contour 2220.8 s vs all-raster 1576.0 s, ceiling arm) —
+  worse than §0d's whole-region 0.91×. Limitation 1's rule protects a
+  NARROW loss; a 29–41% blowout is robust despite the staircase bias.
+- **The monotone-cell exemption does NOT survive.** Short perimeters did not
+  reverse §0d, and the cutting-distance column carries §0j's signature
+  amplified: +43% cut length on all-contour (8945 → 12798 mm, region 1) —
+  the cascade's slope-tightened rings and helical connectors cost more than
+  its retract savings are worth even under the ceiling regime.
+- **The hybrid is a real but worthless candidate**: real (proxy disagrees
+  with the aggregate on 6.8%/0.5%/2.4% of area), worthless (0.972–1.000× vs
+  all-raster; 0.951× vs the 755.3 s winner). **D3's cheapest bound is
+  break-even at best**: a per-cell pattern picker over the two shipped
+  patterns buys nothing, so a "bent parallel" generator must beat the
+  winner from geometry nothing currently emits, with ~5% headroom already
+  conceded.
+- **Structural explanation is NOT available as an excuse**: 6–16% of cells
+  prefer contour under the standalone proxy, but their relinked contribution
+  nets negative — the picks were near-margin (p50 margin 0.66–0.69) and the
+  proxy ignores inter-cell links, which is where the cost lands.
+- **Coverage integrity holds**: `untouched_mm2` = 0.0 in all three regions
+  over 715 rings — the contour loss is genuine, not bought by leaving
+  material.
+- **What C2 BUILDS (final, on A3 + D1 + D2): shared-lattice monotone
+  decomposition + one elongation-gated global PCA-minor rotation per
+  region, raster pattern everywhere.** No per-cell direction (§0j), no cell
+  TSP (§0j), no per-cell pattern choice, no contour cells (§0k). Expected
+  value, operator-honest ceiling arm: 1.155× top-three, 1.215× on
+  gate-passing elongated regions. The evidence phase of the C/D tracks is
+  COMPLETE.
+
 ## 1. Ranked plan
 
 **Rank 1 — Lever 1: contour-parallel (scallop ring cascade) for THIN regions.**

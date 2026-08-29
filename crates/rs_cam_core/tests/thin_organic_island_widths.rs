@@ -70,6 +70,10 @@
 //! # D1 per-cell sweep direction, priced against A3's table (Stage M):
 //! cargo test -p rs_cam_core --test thin_organic_island_widths \
 //!   wanaka_per_cell_direction_d1 -- --ignored --nocapture
+//!
+//! # D2 per-cell PATTERN — contour rings vs raster, per cell (Stage N):
+//! cargo test -p rs_cam_core --test thin_organic_island_widths \
+//!   wanaka_per_cell_pattern_d2 -- --ignored --nocapture
 //! ```
 //!
 //! `#[ignore]` because it needs the operator's wanaka mesh, which is not in the
@@ -4169,4 +4173,825 @@ fn wanaka_per_cell_direction_d1() {
         stepover: setup.stepover,
     };
     stage_m(&input, &setup.regions);
+}
+
+// ── STAGE N ─────────────────────────────────────────────────────────────
+//
+// D2 — per-cell PATTERN: does an offset-ring cascade beat the raster on a
+// MONOTONE CELL?
+//
+// §0d refuted the contour cascade on UNDIVIDED regions at 0.91×, and named the
+// mechanism: long, wildly-varying perimeters produce 3.2× the moves at 29%
+// more cutting distance, and the junction-deviation model crawls through the
+// resulting short chords. That mechanism is a statement about the SHAPE the
+// cascade was seeded from, so it does not carry over to a cell whose perimeter
+// is short and convex-ish — which is exactly why D2 exists as a separate
+// question rather than as a corollary of §0d.
+//
+// D1 (§0j) supplies the opposing prior, and it is the sharper one: a per-cell
+// candidate has NO SHARED LATTICE, and §0j measured that misaligned per-cell
+// lattices break the cross-cell serpentine chords the relinker stitches — a
+// per-cell direction assignment cost 0.917×/0.921× under the ceiling, at +9%
+// cutting distance. A contour cell has no shared lattice either. Whether the
+// cell-hugging ring geometry buys back more than the lost continuity is the
+// measurement; neither prior settles it.
+//
+// The stage prices three WHOLE-REGION candidates through the same E1 kernel in
+// both link regimes — all-raster, all-contour, and a HYBRID that picks per
+// cell by a cheap standalone proxy. The hybrid is D3's cheapest bound: if the
+// best achievable mix of two shipped patterns does not beat the shared-lattice
+// raster, a "bent parallel" generator has to earn its whole margin from
+// geometry no existing generator emits.
+//
+// It is additive: no existing stage changes, and it REUSES `d1_setup` rather
+// than making a fourth copy of the A3 setup. That is read-only sharing — the
+// discipline Stage M's own note protects (an additive stage must not be able
+// to move an existing stage's numbers) is satisfied because nothing in the
+// setup, in Stage L or in Stage M is edited.
+
+/// FINDINGS §0i's CEILING arm for the 0° undivided baseline (regions 1–3),
+/// from the 2026-08-29 A3 run: `(kept retracts, F-034 seconds)`.
+///
+/// §0i recorded only the FRESH arm as constants ([`RECORDED_FRESH_UNDIVIDED`]
+/// etc.) because at the time the ceiling arm was the thing being measured.
+/// It has since been measured, so Stage N pins BOTH arms — the ceiling arm is
+/// the operator-honest regime and the one D2's bars live in, and a bar that is
+/// not reproduction-checked is a number read from a document.
+const RECORDED_CEILING_UNDIVIDED: [(usize, f64); 3] = [(4, 917.5), (3, 484.2), (3, 419.2)];
+/// The same for §0i's 0° monotone-cell arm. **Region 1's 772.6 s is D2's first
+/// bar** — the `0° cells ceiling` row, which Stage N's own all-raster candidate
+/// reproduces by construction (it IS that candidate: the same cells, the same
+/// shared 0° lattice, the same emission order).
+const RECORDED_CEILING_CELLS: [(usize, f64); 3] = [(4, 772.6), (3, 419.0), (3, 384.4)];
+
+/// D2's second bar: §0i's winner — region 1's ceiling-arm global `PCA cells`
+/// row, 755.3 s (`FINDINGS.md` §0i Table 2, 2026-08-29 run). Printed for
+/// orientation only; Stage N **recomputes** it in this binary through
+/// [`print_global_pca_rows`], exactly as Stage M does, and compares against the
+/// recomputed value rather than this constant.
+const D2_WINNER_BAR_S: f64 = 755.3;
+
+/// Which pattern a cell is machined with.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellPattern {
+    /// The cell's slice of the region's SHARED 0° raster lattice — the pieces
+    /// §0i's `0° cells` row is built from, reused verbatim.
+    Raster,
+    /// An offset-ring cascade seeded from the cell's own polygon.
+    Contour,
+}
+
+impl CellPattern {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Raster => "raster",
+            Self::Contour => "contour",
+        }
+    }
+}
+
+/// One cell, both of its candidate toolpaths, and the standalone proxy cost of
+/// each.
+///
+/// Both toolpaths are generated ONCE and cloned per link regime. That is
+/// equivalent to Stage L/M's rebuild-per-arm convention here because every
+/// generator input is arm-independent (`safe_z` is identical in both arms —
+/// `mesh.bbox.max.z + 5.0` — and neither generator sees the link ceiling), and
+/// it halves the number of ring cascades the stage runs.
+struct CellCandidates {
+    /// The cell's own area, the weight every distribution below is read by.
+    /// The polygon itself is deliberately NOT kept: both candidates are
+    /// already generated against it here, so nothing downstream needs it and
+    /// carrying it would be a dead field.
+    area_mm2: f64,
+    raster: rs_cam_core::toolpath::Toolpath,
+    contour: rs_cam_core::toolpath::Toolpath,
+    /// F-034 seconds for this cell's own moves, WITHOUT links — the selection
+    /// proxy. See [`cell_pattern_proxy_s`].
+    raster_proxy_s: f64,
+    contour_proxy_s: f64,
+    /// Cutting distance of each pattern's own moves, for the density-confounded
+    /// swept-band coverage figure.
+    raster_cut_mm: f64,
+    contour_cut_mm: f64,
+    /// `ScallopReport::untouched_mm2` for this cell's cascade — the hole-aware
+    /// area no ring reached. The PRIMARY gap detector on the contour rows.
+    contour_untouched_mm2: f64,
+    /// `ScallopReport::uncut_core_mm2`, its hole-blind sibling, kept beside it
+    /// because the gap between the two is exactly the hole-blindness.
+    contour_uncut_core_mm2: f64,
+    /// Rings that reached the toolpath (`ScallopReport::ring_count`).
+    contour_rings: usize,
+    /// `true` when the cascade emitted no moves at all for this cell. Such a
+    /// cell is FORCED to raster in the hybrid and counted separately — a
+    /// silently-dropped cell would make the all-contour row cheap for the
+    /// wrong reason and the coverage figures would take the blame.
+    contour_empty: bool,
+}
+
+impl CellCandidates {
+    /// The proxy's pick for this cell.
+    fn proxy_pick(&self) -> CellPattern {
+        if self.contour_empty || self.contour_proxy_s >= self.raster_proxy_s {
+            CellPattern::Raster
+        } else {
+            CellPattern::Contour
+        }
+    }
+}
+
+/// The SELECTION PROXY, stated exactly: the F-034 integrated time of one
+/// cell's own moves, generated and costed **standalone** — no relink, no
+/// links to neighbouring cells, no ceiling.
+///
+/// Why a proxy at all, rather than a per-cell ground truth: **relink is a
+/// whole-region operation**. A cell's links, its kept retracts and its two
+/// vertical ceiling legs all depend on which cells sit beside it and in what
+/// order the relinker visits them, so "this cell's relinked cost" is not a
+/// well-defined quantity to select on. Every per-cell selector a production
+/// router could afford is therefore a proxy of this shape, and pricing THIS
+/// one is the point: the hybrid row is what a cheap, local, greedy pattern
+/// picker actually buys.
+///
+/// The proxy is deliberately NOT free of bias, and the bias is stated: it
+/// charges each pattern its own intra-cell motion (including, for the cascade,
+/// its helical ring-to-ring connectors) and charges NEITHER for the links that
+/// join cells. A cascade that is compact inside the cell but leaves the tool
+/// far from the next cell's entry is flattered by it. That is why the stage
+/// prints how often the proxy's pick disagrees with the region-level outcome.
+fn cell_pattern_proxy_s(
+    toolpath: &rs_cam_core::toolpath::Toolpath,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+) -> f64 {
+    rs_cam_core::machine_kinematics::compute_cycle_time(
+        toolpath,
+        kinematics,
+        MAX_FEED_MM_MIN,
+        RAPID_FEED_MM_MIN,
+    )
+}
+
+/// One cell's OFFSET-RING CASCADE.
+///
+/// **Provenance — this is Stage D's generator, unchanged.** §0d costed the
+/// contour candidate through `scallop_toolpath_structured_annotated_with_cancel`
+/// with the region polygon passed as `boundary_regions`, and every
+/// `ScallopParams` field below is Stage D's value. No new ring generator was
+/// written and no adapter was needed, because that call **already scopes to an
+/// arbitrary polygon**: under P2.3 (`scallop.rs`, `region_boundaries`) a
+/// non-empty `boundary_regions` REPLACES the hardcoded mesh-footprint rectangle
+/// as the cascade's seed, so each polygon gets its own independent ring set
+/// offset inward from itself. Handing it one cell polygon is therefore the
+/// cell-hugging cascade D2 asks for, generated by the shipped code path.
+///
+/// **Ring Z placement, stated because the task asks for it:** the rings ride
+/// the generator's own drop-cutter surface heightmap
+/// (`finish_surface_cache::cached_finish_surface`, at
+/// `scallop_generation_resolution(cutter, tolerance)`), i.e. **surface Z** —
+/// the same convention Stage D used, and NOT the Stage-I raster lattice. The
+/// two grids differ in resolution by construction; the cusp DIAL is what is
+/// held equal between the arms, not the sampling.
+///
+/// **Ring spacing:** the cascade selects its own per-ring advance under the
+/// cusp law. On flat ground that is `stepover_from_scallop_flat(cusp_r, h)`,
+/// which is arithmetically the SAME expression as this file's
+/// [`equal_cusp_stepover_mm`] — so on flat ground the two arms share a
+/// stepover exactly; on slope the cascade tightens (min-across-ring), which
+/// costs it time the F-034 column charges for and buys cusp quality this stage
+/// does not measure.
+fn cell_contour_candidate(
+    input: &A3Inputs<'_>,
+    polygon: &Polygon2,
+    safe_z: f64,
+) -> Option<(
+    rs_cam_core::toolpath::Toolpath,
+    rs_cam_core::scallop::ScallopReport,
+)> {
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::scallop::{
+        ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
+    };
+
+    let never_cancel = || false;
+    let region = RegionSet::new(vec![polygon.clone()]);
+    let params = ScallopParams {
+        scallop_height: CUSP_HEIGHT_MM,
+        tolerance: OP_TOLERANCE_MM,
+        direction: ScallopDirection::default(),
+        continuous: true,
+        slope_from: 0.0,
+        slope_to: 90.0,
+        feed_rate: FEED_MM_MIN,
+        plunge_rate: PLUNGE_MM_MIN,
+        safe_z,
+        stock_to_leave: 0.0,
+        intra_pass_hookup_mm: 0.0,
+        link_kinematics: None,
+    };
+    scallop_toolpath_structured_annotated_with_cancel(
+        input.mesh,
+        input.index,
+        input.fine,
+        &params,
+        None,
+        Some(&region),
+        &never_cancel,
+    )
+    .ok()
+    .map(|(toolpath, _, report)| (toolpath, report))
+}
+
+/// Build both candidates for every cell of one region.
+fn build_cell_candidates(
+    input: &A3Inputs<'_>,
+    cells: &[Polygon2],
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    safe_z: f64,
+) -> Vec<CellCandidates> {
+    use rs_cam_core::region_set::RegionSet;
+    use rs_cam_core::toolpath::{Toolpath, raster_toolpath_from_grid};
+
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    cells
+        .iter()
+        .map(|polygon| {
+            let region = RegionSet::new(vec![polygon.clone()]);
+            // (i) the cell's slice of the SHARED 0° lattice — byte-for-byte the
+            // piece `raster_candidate` contributes for this cell, so the
+            // all-raster concatenation below IS §0i's `0° cells` candidate.
+            let raster = raster_toolpath_from_grid(
+                input.zero_grid,
+                FEED_MM_MIN,
+                PLUNGE_MM_MIN,
+                safe_z,
+                Some(effective_min_z),
+                Some(&region),
+            );
+            let (contour, report) = cell_contour_candidate(input, polygon, safe_z)
+                .map_or_else(|| (Toolpath::new(), None), |(tp, rep)| (tp, Some(rep)));
+            let contour_empty = contour.moves.is_empty();
+            CellCandidates {
+                area_mm2: polygon.area(),
+                raster_proxy_s: cell_pattern_proxy_s(&raster, kinematics),
+                contour_proxy_s: if contour_empty {
+                    f64::INFINITY
+                } else {
+                    cell_pattern_proxy_s(&contour, kinematics)
+                },
+                raster_cut_mm: raster.total_cutting_distance(),
+                contour_cut_mm: contour.total_cutting_distance(),
+                contour_untouched_mm2: report.as_ref().map_or(f64::NAN, |r| r.untouched_mm2),
+                contour_uncut_core_mm2: report.as_ref().map_or(f64::NAN, |r| r.uncut_core_mm2),
+                contour_rings: report.as_ref().map_or(0, |r| r.ring_count),
+                contour_empty,
+                raster,
+                contour,
+            }
+        })
+        .collect()
+}
+
+/// Concatenate one pattern choice per cell, in emission order, into one
+/// whole-region candidate.
+///
+/// Cell VISIT ORDER is the decomposition's own emission order for all three
+/// candidates. §0j measured a greedy nearest-neighbour order as producing
+/// byte-identical output under the production relinker's `reorder: true`, so
+/// re-running that variant here would price the same null twice.
+fn mixed_pattern_candidate(
+    cells: &[CellCandidates],
+    picks: &[CellPattern],
+) -> rs_cam_core::toolpath::Toolpath {
+    let mut out = rs_cam_core::toolpath::Toolpath::new();
+    for (cell, pick) in cells.iter().zip(picks.iter()) {
+        let source = match pick {
+            CellPattern::Raster => &cell.raster,
+            CellPattern::Contour => &cell.contour,
+        };
+        out.moves.extend(source.moves.iter().cloned());
+    }
+    out
+}
+
+/// [`cost_under_arms`] for a mixed-pattern candidate: same E1 kernel, same
+/// production relink parameters, the candidate rebuilt per arm so no arm sees
+/// another's toolpath.
+fn cost_picks_under_arms(
+    input: &A3Inputs<'_>,
+    cells: &[CellCandidates],
+    picks: &[CellPattern],
+    boundary: &rs_cam_core::region_set::RegionSet<'_>,
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+    arms: &[LinkRegime<'_>],
+) -> Vec<CandidateCost> {
+    arms.iter()
+        .map(|arm| {
+            relink_and_cost_under(
+                mixed_pattern_candidate(cells, picks),
+                input.mesh,
+                input.index,
+                input.fine,
+                boundary,
+                kinematics,
+                *arm,
+            )
+        })
+        .collect()
+}
+
+/// SWEPT-BAND coverage: `cutting length × stepover` as a share of area.
+///
+/// The same quantity [`coverage_pct`] reports, expressed through path length
+/// instead of lattice points — for a raster the two coincide, because
+/// consecutive in-row lattice points sit exactly one stepover apart, so
+/// `points × stepover² == length × stepover`. Stating it that way is what lets
+/// one instrument read both patterns.
+///
+/// **DENSITY-CONFOUNDED on the contour rows, and must not be read as a gap
+/// detector there.** The cascade selects its own per-ring advance and tightens
+/// it on slope, so honest extra cutting — which the F-034 column already
+/// charges for — reads here as "double coverage". It also counts the helical
+/// ring-to-ring connectors as cut length. The gap detector on the contour rows
+/// is `ScallopReport::untouched_mm2`, printed beside it.
+fn swept_coverage_pct(cutting_mm: f64, stepover: f64, area: f64) -> f64 {
+    if area <= 0.0 {
+        return f64::NAN;
+    }
+    100.0 * cutting_mm * stepover / area
+}
+
+/// The per-cell pattern-pick distribution, by count and by AREA SHARE — the
+/// structural half of D2's answer, printed before any whole-region cost.
+///
+/// By count alone, 179 mostly-tiny cells would let a preference on the small
+/// ones drown a preference on the ones that hold the time; the area share is
+/// the reading that matters.
+fn report_pattern_pick_distribution(cells: &[CellCandidates]) -> Vec<CellPattern> {
+    let picks: Vec<CellPattern> = cells.iter().map(CellCandidates::proxy_pick).collect();
+    if cells.is_empty() {
+        println!("     pattern picks: no cells.");
+        return picks;
+    }
+    let total_area: f64 = cells.iter().map(|cell| cell.area_mm2).sum();
+    let contour_cells = picks
+        .iter()
+        .filter(|pick| **pick == CellPattern::Contour)
+        .count();
+    let contour_area: f64 = cells
+        .iter()
+        .zip(picks.iter())
+        .filter(|(_, pick)| **pick == CellPattern::Contour)
+        .map(|(cell, _)| cell.area_mm2)
+        .sum();
+    let empty = cells.iter().filter(|cell| cell.contour_empty).count();
+    let empty_area: f64 = cells
+        .iter()
+        .filter(|cell| cell.contour_empty)
+        .map(|cell| cell.area_mm2)
+        .sum();
+    let mut margins: Vec<f64> = cells
+        .iter()
+        .filter(|cell| !cell.contour_empty && cell.contour_proxy_s > 0.0)
+        .map(|cell| cell.raster_proxy_s / cell.contour_proxy_s)
+        .collect();
+    margins.sort_by(f64::total_cmp);
+    println!(
+        "     PATTERN PICKS (standalone per-cell F-034 proxy, no links): contour on {contour_cells} \
+         of {} cells\n\
+         \x20      = {:.1}% by count, {:.1}% by AREA ({contour_area:.0} of {total_area:.0} mm²).\n\
+         \x20      cells whose cascade emitted NOTHING (forced to raster, counted here so a\n\
+         \x20      dropped cell cannot be mistaken for a coverage defect): {empty} ({empty_area:.0} mm²).\n\
+         \x20      proxy margin raster÷contour over the {} non-empty cells: p10 {:.2}, p50 {:.2}, p90 {:.2}\n\
+         \x20      (>1 favours contour). A margin clustered at 1.00 means the proxy is choosing\n\
+         \x20      between near-equal candidates and its picks carry little information.",
+        cells.len(),
+        100.0 * contour_cells as f64 / cells.len() as f64,
+        100.0 * contour_area / total_area.max(1e-9),
+        margins.len(),
+        percentile(&margins, 0.10),
+        percentile(&margins, 0.50),
+        percentile(&margins, 0.90),
+    );
+    picks
+}
+
+/// How often the cheap local proxy's per-cell pick disagrees with the
+/// REGION-LEVEL outcome — the whole-region winner between all-raster and
+/// all-contour under the ceiling.
+///
+/// This is the only disagreement that can be measured: a per-cell relinked
+/// ground truth does not exist (see [`cell_pattern_proxy_s`]). It answers "is
+/// the local proxy telling a different story from the global one, and over how
+/// much area", which is what decides whether the hybrid row is a real third
+/// candidate or a re-spelling of one of the first two.
+fn report_proxy_disagreement(
+    cells: &[CellCandidates],
+    picks: &[CellPattern],
+    region_winner: CellPattern,
+) {
+    if cells.is_empty() {
+        return;
+    }
+    let total_area: f64 = cells.iter().map(|cell| cell.area_mm2).sum();
+    let disagreeing = picks.iter().filter(|pick| **pick != region_winner).count();
+    let disagreeing_area: f64 = cells
+        .iter()
+        .zip(picks.iter())
+        .filter(|(_, pick)| **pick != region_winner)
+        .map(|(cell, _)| cell.area_mm2)
+        .sum();
+    println!(
+        "     PROXY vs REGION-LEVEL OUTCOME: the whole-region ceiling-arm winner is \
+         all-{}.\n\
+         \x20      The per-cell proxy disagrees with it on {disagreeing} of {} cells = {:.1}% by \
+         count, {:.1}% by area.\n\
+         \x20      0% means the hybrid is that whole-region candidate under another name; a high\n\
+         \x20      share means the proxy sees local structure the aggregate hides — and the hybrid\n\
+         \x20      row below is what that local structure is actually worth once relinked.",
+        region_winner.label(),
+        cells.len(),
+        100.0 * disagreeing as f64 / cells.len() as f64,
+        100.0 * disagreeing_area / total_area.max(1e-9),
+    );
+}
+
+/// Ceiling-arm seconds for one region's D2 candidate set — what the top-N
+/// summary folds.
+#[derive(Clone, Copy)]
+struct StageNTotals {
+    undivided: f64,
+    all_raster: f64,
+    all_contour: f64,
+    hybrid: f64,
+}
+
+fn stage_n_region(
+    input: &A3Inputs<'_>,
+    region: &RegionCells,
+    region_index: usize,
+    arms: &[LinkRegime<'_>; 2],
+    kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
+) -> Option<StageNTotals> {
+    use rs_cam_core::region_set::RegionSet;
+
+    let effective_min_z = input.mesh.bbox.min.z - 0.1;
+    let safe_z = input.mesh.bbox.max.z + 5.0;
+    if region.cells.is_empty() {
+        println!(
+            "     REFUSE region {}: no extracted cell polygons",
+            region_index + 1
+        );
+        return None;
+    }
+    // The SHARED-lattice rows (0° undivided, all-raster) still get Stage J's
+    // real membership guard. The contour and hybrid rows cannot: a ring
+    // cascade is not a lattice candidate, so there is no emitted-point
+    // population to compare. They carry the coverage proxy plus the cascade's
+    // own `untouched_mm2` instead, and C4 binds anything built on them.
+    if !cell_membership_matches(
+        input.zero_grid,
+        &region.boundary,
+        &region.cells,
+        effective_min_z,
+    ) {
+        return None;
+    }
+    println!(
+        "\n   ── region {} ({:.0} mm², {} cells) ──",
+        region_index + 1,
+        region.boundary.area(),
+        region.topology_cells
+    );
+
+    let cells = build_cell_candidates(input, &region.cells, kinematics, safe_z);
+    let picks = report_pattern_pick_distribution(&cells);
+    let all_raster: Vec<CellPattern> = vec![CellPattern::Raster; cells.len()];
+    let all_contour: Vec<CellPattern> = cells
+        .iter()
+        .map(|cell| {
+            if cell.contour_empty {
+                CellPattern::Raster
+            } else {
+                CellPattern::Contour
+            }
+        })
+        .collect();
+
+    let boundary = RegionSet::new(vec![region.boundary.clone()]);
+    let undivided = cost_under_arms(
+        input,
+        input.zero_grid,
+        std::slice::from_ref(&region.boundary),
+        &boundary,
+        kinematics,
+        arms,
+    );
+    let raster_rows =
+        cost_picks_under_arms(input, &cells, &all_raster, &boundary, kinematics, arms);
+    let contour_rows =
+        cost_picks_under_arms(input, &cells, &all_contour, &boundary, kinematics, arms);
+    let hybrid_rows = cost_picks_under_arms(input, &cells, &picks, &boundary, kinematics, arms);
+
+    print_a3_row(
+        "0° undivided",
+        &arms[0],
+        None,
+        &undivided[0],
+        RECORDED_FRESH_UNDIVIDED.get(region_index).copied(),
+    );
+    print_a3_row(
+        "0° undivided",
+        &arms[1],
+        None,
+        &undivided[1],
+        RECORDED_CEILING_UNDIVIDED.get(region_index).copied(),
+    );
+    print_a3_row(
+        "all-raster",
+        &arms[0],
+        Some(cells.len()),
+        &raster_rows[0],
+        RECORDED_FRESH_CELLS.get(region_index).copied(),
+    );
+    print_a3_row(
+        "all-raster",
+        &arms[1],
+        Some(cells.len()),
+        &raster_rows[1],
+        RECORDED_CEILING_CELLS.get(region_index).copied(),
+    );
+    print_a3_row(
+        "all-contour",
+        &arms[0],
+        Some(cells.len()),
+        &contour_rows[0],
+        None,
+    );
+    print_a3_row(
+        "all-contour",
+        &arms[1],
+        Some(cells.len()),
+        &contour_rows[1],
+        None,
+    );
+    print_a3_row("hybrid", &arms[0], Some(cells.len()), &hybrid_rows[0], None);
+    print_a3_row("hybrid", &arms[1], Some(cells.len()), &hybrid_rows[1], None);
+
+    // §0f's gate: only a region elongated enough for a global axis to mean
+    // anything gets §0i's winner row. Region 1 was the only one that passed.
+    let region_axis = pca_minor_and_elongation(&region.boundary, input.stepover);
+    let gate_cleared = region_axis.is_some_and(|(_, elongation)| elongation > PCA_ELONGATION_GATE);
+    let winner_bar = if gate_cleared {
+        print_global_pca_rows(
+            input,
+            region,
+            arms,
+            kinematics,
+            (region_index == 0).then_some(RECORDED_FRESH_PCA),
+        )
+    } else {
+        println!(
+            "     (no global-PCA bar: region elongation is at or below §0f's gate \
+             {PCA_ELONGATION_GATE:.1}, so §0f refuses a region-level axis here)"
+        );
+        None
+    };
+
+    let region_winner = if contour_rows[1].time_s < raster_rows[1].time_s {
+        CellPattern::Contour
+    } else {
+        CellPattern::Raster
+    };
+    report_proxy_disagreement(&cells, &picks, region_winner);
+
+    let area = region.boundary.area();
+    let raster_cut: f64 = cells.iter().map(|cell| cell.raster_cut_mm).sum();
+    let contour_cut: f64 = cells
+        .iter()
+        .zip(all_contour.iter())
+        .filter(|(_, pick)| **pick == CellPattern::Contour)
+        .map(|(cell, _)| cell.contour_cut_mm)
+        .sum();
+    let untouched: f64 = cells
+        .iter()
+        .filter(|cell| !cell.contour_empty)
+        .map(|cell| cell.contour_untouched_mm2)
+        .sum();
+    let uncut_core: f64 = cells
+        .iter()
+        .filter(|cell| !cell.contour_empty)
+        .map(|cell| cell.contour_uncut_core_mm2)
+        .sum();
+    let rings: usize = cells.iter().map(|cell| cell.contour_rings).sum();
+    let shared_points = shared_lattice_points(input.zero_grid, &region.boundary, effective_min_z);
+    println!(
+        "     COVERAGE — contour rows carry this INSTEAD of Stage J's membership guard.\n\
+         \x20      PRIMARY (gap detector): cascade untouched {untouched:.1} mm² = {:.2}% of the \
+         region, hole-blind\n\
+         \x20      uncut_core {uncut_core:.1} mm² = {:.2}%, over {rings} emitted rings. This is the \
+         cascade's own\n\
+         \x20      report of area no ring reached; a non-trivial figure means the all-contour row \
+         is cheap\n\
+         \x20      because it left material, not because it is fast.\n\
+         \x20      SECONDARY (DENSITY-CONFOUNDED, not a gap detector): swept band = cut length × \
+         stepover.\n\
+         \x20      shared 0° lattice {shared_points} pts = {:.1}%; all-raster {raster_cut:.0} mm = \
+         {:.1}%; all-contour\n\
+         \x20      {contour_cut:.0} mm = {:.1}%. The cascade tightens its ring advance on slope and \
+         its helical\n\
+         \x20      connectors count as cut length, so a contour figure ABOVE the raster's is \
+         expected and is\n\
+         \x20      not double coverage — the F-034 column already charges for it.",
+        100.0 * untouched / area.max(1e-9),
+        100.0 * uncut_core / area.max(1e-9),
+        coverage_pct(shared_points, input.stepover, area),
+        swept_coverage_pct(raster_cut, input.stepover, area),
+        swept_coverage_pct(contour_cut, input.stepover, area),
+    );
+    println!(
+        "     DELTAS (ceiling arm): all-raster → all-contour {:.3}x, all-raster → hybrid {:.3}x,\n\
+         \x20      0° undivided → all-contour {:.3}x.\n\
+         \x20      BAR 1 — the all-raster row IS §0i's `0° cells` ceiling row (recorded \
+         {:.1} s): here {:.1} s.\n\
+         \x20      BAR 2 — §0i's winner, the global `PCA cells` ceiling row (recorded \
+         {D2_WINNER_BAR_S:.1} s),\n\
+         \x20      recomputed in this binary: {}. all-contour {:.1} s, hybrid {:.1} s.",
+        delta(&raster_rows[1], &contour_rows[1]),
+        delta(&raster_rows[1], &hybrid_rows[1]),
+        delta(&undivided[1], &contour_rows[1]),
+        RECORDED_CEILING_CELLS
+            .get(region_index)
+            .map_or(f64::NAN, |pair| pair.1),
+        raster_rows[1].time_s,
+        winner_bar.map_or_else(
+            || "n/a (no global axis on this region)".to_owned(),
+            |bar| format!(
+                "{bar:.1} s, hybrid ÷ bar {:.3}x",
+                bar / hybrid_rows[1].time_s.max(1e-9)
+            )
+        ),
+        contour_rows[1].time_s,
+        hybrid_rows[1].time_s,
+    );
+
+    Some(StageNTotals {
+        undivided: undivided[1].time_s,
+        all_raster: raster_rows[1].time_s,
+        all_contour: contour_rows[1].time_s,
+        hybrid: hybrid_rows[1].time_s,
+    })
+}
+
+fn stage_n(input: &A3Inputs<'_>, regions: &[RegionCells]) {
+    use rs_cam_core::machine_kinematics::MachineKinematics;
+    use rs_cam_core::surface_link::LinkCeiling;
+
+    println!("========== STAGE N — D2: per-cell PATTERN, contour rings vs raster ==========");
+    if regions.is_empty() {
+        println!("\n     SKIP: no Shallow regions to price.\n");
+        return;
+    }
+    let mesh = input.mesh;
+    let safe_z = mesh.bbox.max.z + 5.0;
+    let block_top_z = mesh.bbox.max.z;
+    let kinematics = MachineKinematics {
+        acceleration_mm_s2: MACHINE_ACCEL_SCALAR,
+        acceleration_xyz_mm_s2: Some(MACHINE_ACCEL_XYZ),
+        junction_deviation_mm: JUNCTION_DEVIATION_MM,
+        ..MachineKinematics::default()
+    };
+    println!(
+        "\n   The question: §0d refuted the contour cascade on UNDIVIDED regions (0.91×) and \
+         named the\n\
+         \x20  mechanism — long, wildly-varying perimeters, 3.2× the moves, 29% more cutting. That \
+         is a\n\
+         \x20  claim about the SHAPE the cascade was seeded from, so it does not carry to a \
+         MONOTONE CELL.\n\
+         \x20  The opposing prior is §0j's: a per-cell candidate has no shared lattice, and \
+         misaligned\n\
+         \x20  per-cell lattices measured as a COST (+9% cutting distance). A contour cell has no \
+         shared\n\
+         \x20  lattice either. Which effect dominates is what this stage measures.\n\
+         \x20\n\
+         \x20  RING GENERATOR PROVENANCE: Stage D's, unchanged — \
+         `scallop_toolpath_structured_annotated_with_cancel`\n\
+         \x20  with Stage D's exact ScallopParams, handed ONE CELL polygon as its \
+         `boundary_regions`.\n\
+         \x20  Under P2.3 a non-empty boundary REPLACES the mesh-footprint rectangle as the \
+         cascade seed,\n\
+         \x20  so this is a genuine cell-hugging offset cascade from shipped code, not an adapter. \
+         Rings\n\
+         \x20  ride the generator's own drop-cutter surface (surface Z), at its own generation \
+         resolution.\n\
+         \x20\n\
+         \x20  Same ceiling as Stage L / Stage M (MACHINED STOCK: the Ø{ROUGH_DIAMETER_MM:.0} \
+         rough at axial\n\
+         \x20  leave {ROUGH_STOCK_TO_LEAVE_AXIAL_MM:.1} mm, then the tier-0 R1.5 where tier 0 \
+         machines), same\n\
+         \x20  production relink parameters, same F-034 integrator, BOTH regimes on every row (E1 \
+         discipline).\n\
+         \x20  BARS: {:.1} s (§0i's `0° cells` ceiling row on region 1 — reproduced here as the \
+         all-raster\n\
+         \x20  row, with a `= FINDINGS` mark) and {D2_WINNER_BAR_S:.1} s (§0i's winner, the global \
+         `PCA cells`\n\
+         \x20  ceiling row, RECOMPUTED in this binary rather than read from the document).\n",
+        RECORDED_CEILING_CELLS[0].1
+    );
+
+    let bounds = ceiling_stock_bounds(mesh, regions);
+    let stock = a3_machined_stock(input, bounds);
+    report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
+
+    let machined_ceiling = LinkCeiling {
+        stock: Some(&stock),
+        tool_radius: input.fine.envelope_radius_mm(),
+        fallback_top_z: block_top_z,
+    };
+    let arms = [
+        LinkRegime::fresh_stock(safe_z),
+        LinkRegime::rest_op("ceiling", safe_z, machined_ceiling),
+    ];
+    print_a3_header();
+
+    let mut totals: Vec<StageNTotals> = Vec::new();
+    for (region_index, region) in regions.iter().enumerate() {
+        if let Some(row) = stage_n_region(input, region, region_index, &arms, &kinematics) {
+            totals.push(row);
+        }
+    }
+    if totals.is_empty() {
+        println!("\n     REFUSE total: no region produced a comparable candidate set.\n");
+        return;
+    }
+    let mut undivided = 0.0_f64;
+    let mut all_raster = 0.0_f64;
+    let mut all_contour = 0.0_f64;
+    let mut hybrid = 0.0_f64;
+    for row in &totals {
+        undivided += row.undivided;
+        all_raster += row.all_raster;
+        all_contour += row.all_contour;
+        hybrid += row.hybrid;
+    }
+    println!(
+        "\n   TOP-{} TOTAL, CEILING ARM (the operator-honest regime):\n\
+         \x20    0° undivided   {undivided:.1} s\n\
+         \x20    all-raster     {all_raster:.1} s   (= §0i's `0° cells` row, reproduction-checked)\n\
+         \x20    all-contour    {all_contour:.1} s   (every cell an offset-ring cascade)\n\
+         \x20    hybrid         {hybrid:.1} s   (per-cell proxy pick — D3's CHEAPEST BOUND)\n\
+         \x20    raster → contour {:.3}x, raster → hybrid {:.3}x\n",
+        totals.len(),
+        all_raster / all_contour.max(1e-9),
+        all_raster / hybrid.max(1e-9),
+    );
+    println!(
+        "   READING RULES, all of which bind whatever the numbers say:\n\
+         \x20  * The rig BIASES AGAINST CONTOUR. Stage I's cells are marching-squares\n\
+         \x20    reconstructions of a lattice, so their perimeters are STAIRCASED at the raster\n\
+         \x20    pitch — not the smooth cell boundary a production decomposition (C2) would hand a\n\
+         \x20    cascade. `tolerance` {OP_TOLERANCE_MM} mm does not simplify a staircase of that\n\
+         \x20    amplitude away, so every ring inherits jagged chords the junction-deviation model\n\
+         \x20    crawls through. A contour WIN despite this is robust; a NARROW contour loss is\n\
+         \x20    inconclusive and is NOT a refutation.\n\
+         \x20  * The hybrid is a BOUND, not a router: its picks come from a standalone per-cell\n\
+         \x20    proxy because relink is a whole-region operation and a per-cell relinked cost does\n\
+         \x20    not exist. Read it as the ceiling on what a cheap local pattern picker buys.\n\
+         \x20  * Contour and hybrid rows carry the coverage figures INSTEAD of Stage J's membership\n\
+         \x20    guard — a ring cascade is not a lattice candidate. C4's rendered-surface review\n\
+         \x20    binds anything built on them, and cusp quality is assumed equal, not measured\n\
+         \x20    (CHECKPOINT_C_EVIDENCE records cascade ACHIEVED cusp at 2.0–4.9× its dial).\n\
+         \x20  * Cell visit order is emission order on all three candidates: §0j measured greedy\n\
+         \x20    nearest-neighbour order as byte-identical output under `reorder: true`.\n\
+         \x20  * Three regions, one tier, one fixture, no inter-region routing — §0d's scope\n\
+         \x20    caveats carry over unchanged.\n"
+    );
+}
+
+/// D2 — per-cell PATTERN, contour rings vs raster (`PROGRAMME.md` Track D, D2).
+///
+/// ```text
+/// cargo test -p rs_cam_core --test thin_organic_island_widths \
+///   wanaka_per_cell_pattern_d2 -- --ignored --nocapture
+/// ```
+///
+/// Reuses [`d1_setup`] rather than making a fourth copy of the A3 setup: that
+/// is read-only sharing, so the property Stage M's own note protects — an
+/// additive stage must not be able to move an existing stage's numbers — still
+/// holds, because nothing in the setup or in Stages L/M is edited.
+#[test]
+#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+fn wanaka_per_cell_pattern_d2() {
+    let Some(setup) = d1_setup() else {
+        return;
+    };
+    let input = A3Inputs {
+        mesh: &setup.mesh,
+        index: &setup.index,
+        fine: &setup.fine,
+        coarse: &setup.coarse,
+        tier_map: &setup.tier_map,
+        zero_grid: &setup.zero_grid,
+        stepover: setup.stepover,
+    };
+    stage_n(&input, &setup.regions);
 }

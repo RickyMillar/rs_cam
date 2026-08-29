@@ -238,15 +238,28 @@ mechanism: misaligned per-cell lattices break cross-cell serpentine chords,
 bounding **C3's upside at ~zero** (the relinker's `reorder` already owns it).
 Consequence for the build: **C2 = shared-lattice monotone decomposition +
 one elongation-gated global rotation per region** — no per-cell directions,
-no cell TSP. D2 (per-cell PATTERN) remains open and untested.
-**D2** — per-cell PATTERN: raster vs contour vs spiral. §0d refuted contour on
-undivided regions; on a monotone cell its perimeter is short and well-behaved,
-so the refutation does not carry over. **Re-test, do not assume either way.**
+no cell TSP. D2 (per-cell PATTERN) is untested by Stage M; see the D2 row
+below, where Stage N now prices it.
+**D2** — per-cell PATTERN. **DONE 2026-08-29 — REFUTED** (§0k, Stage N):
+contour-per-cell loses 0.686×/0.710× under the realistic ceiling — worse
+than §0d's whole-region 0.91×, and far outside the rig's stated
+anti-contour bias margin. The monotone-cell exemption does not survive
+(+43% cutting distance: slope-tightened rings + helical connectors).
+Coverage clean (untouched 0.0 mm², 715 rings) so the loss is genuine.
+Spiral was not separately priced; §0k's mechanism (ring-path length
+dominates, links were already cheap under the ceiling) prices it too —
+any stay-down pattern must first beat the +43% path-length hole.
 **D3** — "bent parallel", the operator's actual words: passes that follow the
 cell's curvature by interpolating between its two bounding curves, rather than
 straight passes at one angle. Strictly better on a curved arch, strictly more
 work. Prior art: Held & Spielberger's medial-axis spiral / morphed paths.
 Do only if D1/D2 leave measurable room.
+**D3 STATUS 2026-08-29 — bounded at break-even by §0k's hybrid row** (0.972–
+1.000× vs all-raster, 0.951× vs the §0i winner): the best per-cell mix of the
+two SHIPPED patterns buys nothing, so a bent-parallel generator must earn its
+whole margin from geometry nothing currently emits, starting ~5% behind the
+winner. Do not build ahead of the conformal-finish feasibility programme
+(`planning/conformal_finish_2026-08-28/`), which owns that question now.
 
 *GUI (X3):* per-cell strategy must be visible and overridable — at minimum
 shown in the preview, ideally an operator override per cell.
