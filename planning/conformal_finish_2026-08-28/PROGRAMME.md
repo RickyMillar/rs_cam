@@ -167,6 +167,15 @@ measured rather than assumed; C4 visual result is acceptable; and the candidate
 beats the **875.9 s** PCA-cell reference by a material margin, not measurement
 noise.
 
+> **F1 OUTCOME (2026-08-30): FALSIFIED on region 1 at the cheap-falsifier
+> stage — see `FINDINGS.md` §F1-1.** 6,589 polylines vs the 141-fragment
+> reference (46.7×); stages C–E never ran, no time was measured. Cause is
+> structural (level sets of one global scalar on a branched ribbon) plus a
+> noise-floor problem (curvature-derived D has no signal on a Shallow
+> region) plus the conservative increment rule (253 levels vs ~51
+> expected). Consistent with thin-organic §0j/§0k/D3. Arm A is dead on
+> this region class; the module remains as F2 substrate.
+
 ## Phase F2 — conformal-spiral prototype
 
 F0 verdict: **conditional go.** The paper's own extractable core —
