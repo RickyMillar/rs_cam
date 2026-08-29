@@ -90,15 +90,23 @@ impl Default for CrestParams {
 /// valley march reads: the minimal principal direction t₂ (for sign-consistent
 /// orientation across a triangle), both signed principal curvatures (κ₁ ≥ κ₂,
 /// for the concave-dominance test), and the minimal-curvature extremality.
-struct Curvature {
+///
+/// `pub(crate)` (with `pdir1` added) so [`crate::direction_field`] can read the
+/// same Rusinkiewicz tensor rather than duplicating it — the valley march
+/// itself needs only t₂, but a feed-direction field needs t₁.
+pub(crate) struct Curvature {
+    /// Maximal principal direction (t₁) per vertex — the direction of maximum
+    /// **signed** normal curvature, paired with `k1`. Not read by the valley
+    /// march; carried for [`crate::direction_field`].
+    pub(crate) pdir1: Vec<V3>,
     /// Minimal principal direction (t₂) per vertex.
-    pdir2: Vec<V3>,
+    pub(crate) pdir2: Vec<V3>,
     /// Maximal principal curvature κ₁ (signed, κ₁ ≥ κ₂).
-    k1: Vec<f64>,
+    pub(crate) k1: Vec<f64>,
     /// Minimal principal curvature κ₂ (signed) — most negative in concavities.
-    k2: Vec<f64>,
+    pub(crate) k2: Vec<f64>,
     /// Minimal-curvature extremality e₂ = ∂κ₂/∂t₂ (gauge tied to `pdir2`'s sign).
-    emin: Vec<f64>,
+    pub(crate) emin: Vec<f64>,
 }
 
 /// Rotate the coordinate system (`old_u`, `old_v`) so its implied normal aligns
@@ -317,7 +325,11 @@ fn solve4(w: [[f64; 4]; 4], m: [f64; 4]) -> Option<[f64; 4]> {
 /// smooth the tensor field, diagonalise it, and compute the minimal-curvature
 /// extremality e₂ = ∂κ₂/∂t₂ from the derivative-of-curvature tensor.
 #[allow(clippy::indexing_slicing)] // all indices are mesh vertex/face indices or fixed 0..3
-fn compute_curvature(mesh: &TriangleMesh, adj: &[Vec<u32>], smoothing_iters: usize) -> Curvature {
+pub(crate) fn compute_curvature(
+    mesh: &TriangleMesh,
+    adj: &[Vec<u32>],
+    smoothing_iters: usize,
+) -> Curvature {
     let nv = mesh.vertices.len();
     let normals = vertex_normals(mesh);
     let (pointareas, cornerareas) = point_areas(mesh);
@@ -543,6 +555,7 @@ fn compute_curvature(mesh: &TriangleMesh, adj: &[Vec<u32>], smoothing_iters: usi
     let emin = dcurv.iter().map(|d| d[3]).collect();
 
     Curvature {
+        pdir1,
         pdir2,
         k1,
         k2,
@@ -552,7 +565,7 @@ fn compute_curvature(mesh: &TriangleMesh, adj: &[Vec<u32>], smoothing_iters: usi
 
 /// Build the 1-ring vertex adjacency (deduplicated neighbour lists).
 #[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
-fn vertex_adjacency(mesh: &TriangleMesh) -> Vec<Vec<u32>> {
+pub(crate) fn vertex_adjacency(mesh: &TriangleMesh) -> Vec<Vec<u32>> {
     let mut adj: Vec<Vec<u32>> = vec![Vec::new(); mesh.vertices.len()];
     let mut push = |a: u32, b: u32| {
         let list = &mut adj[a as usize];
