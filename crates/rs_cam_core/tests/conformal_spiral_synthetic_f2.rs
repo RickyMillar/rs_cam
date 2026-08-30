@@ -38,13 +38,29 @@
 //!
 //! # The §B.4 phase-1 falsifier, concretised 2026-08-30
 //!
-//! STOP the run when any of the three holds:
+//! STOP the run when any of the **four** holds:
 //!
 //! * `uncovered_after_bridging > 0` — incomplete coverage **after** the
 //!   §2.2.2 step-2 bridge repair;
 //! * `disk_self_intersections > 0` — any disk-domain self-intersection;
 //! * `bridge_overhead_pct > 25.0` — bridge length overhead vs pure rings
-//!   (inside the §0k +43 % trap with margin).
+//!   (inside the §0k +43 % trap with margin);
+//! * **`coverage_audit.unmachined_area_fraction > 2 %`** — or the audit being
+//!   absent at all. Added 2026-08-30; see [`MAX_UNMACHINED_FRACTION`].
+//!
+//! **Why the fourth condition exists, stated plainly.** Without it this
+//! instrument printed `uncovered after rings 0`, `uncovered after bridging 0`
+//! and a **PASSING** falsifier over an ARM SPHERE run that left a 2.783 mm-
+//! radius unmachined hole at the cap centre — **23.5 % of the region area**.
+//! The first three conditions are all built from the ring search's **own**
+//! self-report, and that report was vacuous: `N_S` was a cap, 46 % of the
+//! 37,060 triangles were apportioned **zero** samples, so the coverage
+//! predicate had no population in the middle and "covered" meant nothing
+//! there. A falsifier assembled entirely from a mechanism's self-report
+//! cannot fail when that mechanism is starved. Condition 4 reads a witness
+//! drawn from a **different population** — the mesh's own triangle centroids
+//! — which is the only reason it can see the hole. The controlled comparison
+//! is ARM WAVY, whose quota never fell below 1.41 and which had no hole.
 //!
 //! `retract_count == 0` is **asserted**, not printed: the module's own claim
 //! is that the construction emits exactly one polyline and never lifts, and
@@ -103,11 +119,24 @@
 //! so the two arms' **radial area-distortion profiles** can still be read
 //! side by side — that pair is structural and survives the withdrawal.
 //!
-//! Stage E's sampling sensitivity runs on **ARM FLAT only**. It is not
-//! re-run on the analytic arms: the Stage-A `N_S` adequacy ratio (≈0.31 on
-//! the sphere) already answers the sampling question quantitatively there,
-//! and two extra solves on a 37 k-triangle region buy nothing the split
-//! needs.
+//! Stage E's sampling sensitivity runs on **ARM FLAT only**.
+//!
+//! An earlier revision of this paragraph justified not re-running it on the
+//! analytic arms by saying "the Stage-A `N_S` adequacy ratio (≈0.31 on the
+//! sphere) already answers the sampling question quantitatively there."
+//! **That justification was wrong and is retracted.** The ≈0.31 was
+//! `√(region_area / N_S)` — an *average*, blind to apportionment — computed
+//! on the very run where 46 % of triangles held zero samples and 23.5 % of
+//! the region went unmachined. It did not answer the sampling question; it
+//! could not even see it. The adequacy block now reports
+//! `max_local_sample_spacing_mm` (a **max** over per-triangle densities, so a
+//! single starved triangle moves it) together with `triangles_without_samples`
+//! as a must-be-zero tripwire, and the coverage audit answers the separate
+//! question of whether the emitted path actually machined the region. Stage E
+//! remains ARM-FLAT-only for runtime reasons alone — two extra solves on a
+//! 37 k-triangle region — and its table now carries `starved` and
+//! `unmachined%` columns so that halving `N_S`, which is exactly the lever
+//! that produced the hole, cannot report three healthy rows.
 //!
 //! # What a fold means here, and why the flip count is now a tripwire
 //!
@@ -2120,6 +2149,130 @@ fn print_radial_profile(label: &str, report: &SpiralReport) {
     }
 }
 
+// ── the coverage audit: the INDEPENDENT witness ─────────────────────────
+
+/// **[REPO] falsifier bar** on `CoverageAudit::unmachined_area_fraction`.
+///
+/// # Why this bar exists at all
+///
+/// Because its absence let this instrument print `uncovered after rings 0`,
+/// `uncovered after bridging 0` and a **PASSING** §B.4 falsifier over a part
+/// with a **2.783 mm-radius unmachined hole at the cap centre — 23.5 % of the
+/// region area**. Three green gates on a quarter-unmachined part. The cause
+/// was that `N_S` was a *cap*: 46 % of ARM SPHERE's 37,060 triangles were
+/// apportioned **zero** samples (central polar triangles are ~55× smaller, so
+/// they starved first), the coverage predicate therefore had no population in
+/// the middle, and "covered" was **vacuous**. This is the repo's own
+/// "a gate handed an empty population passes and looks healthy" failure, in
+/// its purest form.
+///
+/// # Why 2 %
+///
+/// **[REPO] choice, and it is a STOP bar, not a quality target.**
+///
+/// * The audit's population is the **mesh's triangle centroids**, which is not
+///   the ring search's `S^h` sample set. The two disagree slightly at the
+///   region rim, where a centroid can sit just outside the outermost ring's
+///   swept band while the samples that placed that ring are covered. A little
+///   rim grazing is legitimate, so a bar at exactly 0 would fire on healthy
+///   runs and be turned off — a bar nobody trusts is worse than no bar.
+/// * 23.5 % is what it exists to catch. 2 % is an order of magnitude below
+///   that and comfortably above rim effects on these fixtures.
+/// * It is **not** a claim that ≤ 2 % is good. Any nonzero fraction is
+///   printed, and `CoverageAudit::uncovered_distance` is what separates a rim
+///   graze (distances just above `K_c`) from a hole (distances far above it).
+///   A sub-bar fraction whose distances are far above `K_c` is still a hole
+///   and must be read as one — the bar does not catch that case and says so
+///   in its own printed text.
+const MAX_UNMACHINED_FRACTION: f64 = 0.02;
+
+/// Print the coverage audit, and return the measured unmachined **fraction**.
+///
+/// `None` means the audit was **not measured** — which is not a clean reading
+/// and must never be coerced to zero. Called on every arm and on the refusal
+/// paths too, because "did the search think it was done" and "is the region
+/// actually machined" are different questions and only this one answers the
+/// second.
+fn print_coverage_audit(label: &str, report: &SpiralReport, ball_radius_mm: f64) -> Option<f64> {
+    eprintln!("\n   ===== COVERAGE AUDIT — {label} — THE INDEPENDENT WITNESS =====");
+    let Some(audit) = report.coverage_audit.as_ref() else {
+        eprintln!(
+            "     NOT MEASURED — `coverage_audit` is None.\n\
+             \x20    This is NOT a clean reading and must NOT be read as zero unmachined area.\n\
+             \x20    `None` means the pipeline never got far enough to run the audit (or the\n\
+             \x20    binary predates it); `Some(0.0)` would mean measured and clean. Any\n\
+             \x20    falsifier that depends on this condition CANNOT clear it from here."
+        );
+        return None;
+    };
+
+    let pct = 100.0 * audit.unmachined_area_fraction;
+    eprintln!(
+        "     UNMACHINED AREA FRACTION      {pct:>12.4} %   <<< HEADLINE — the one number that \
+         says whether the part is finished"
+    );
+    eprintln!(
+        "     unmachined area (mm²)         {:>12.4}  of region {:.4} mm²",
+        audit.unmachined_area_mm2, audit.region_area_mm2
+    );
+    eprintln!(
+        "     uncovered centroid triangles  {:>12}  of {} tested",
+        audit.uncovered_centroid_triangles, audit.centroids_tested
+    );
+    eprintln!(
+        "     largest unmachined triangle   {:>12.6} mm²",
+        audit.largest_unmachined_triangle_area_mm2
+    );
+    let d = &audit.uncovered_distance;
+    if d.samples == 0 {
+        eprintln!(
+            "     uncovered distance to spiral  EMPTY (0 samples) — nothing was left uncovered"
+        );
+    } else {
+        eprintln!(
+            "     uncovered distance to spiral  n={:<7} min {:>9.4} / med {:>9.4} / max {:>9.4} mm",
+            d.samples, d.min_mm, d.median_mm, d.max_mm
+        );
+        eprintln!(
+            "       vs K_c = {ball_radius_mm:.4} mm  ->  median is {:.2}x K_c. \
+             RIM GRAZE reads just above 1x;\n\
+             \x20      a HOLE reads far above it. This row, not the fraction, is what tells the \
+             two apart.",
+            d.median_mm / ball_radius_mm.max(1e-12)
+        );
+    }
+
+    eprintln!(
+        "\n     WHAT MAKES THIS INDEPENDENT: the population here is the MESH's triangle\n\
+         \x20    centroids — every triangle in the region, by construction — NOT the ring\n\
+         \x20    search's own S^h sample set. The search cannot be its own witness: when\n\
+         \x20    apportionment starved a region of samples, `uncovered_after_rings` read 0\n\
+         \x20    because every sample that EXISTED was covered, and there were none in the\n\
+         \x20    middle. A witness drawn from a different population is the only thing that\n\
+         \x20    sees that.\n\
+         \x20    CAVEAT, carried from the module: at quota 1, `barycentric_lattice` places its\n\
+         \x20    single sample AT the centroid, so the two populations coincide there. The\n\
+         \x20    independence is therefore POPULATION-LEVEL — it catches starvation regressions\n\
+         \x20    and emission/bridging losses — not pointwise. Do not cite it as a pointwise\n\
+         \x20    proof of coverage."
+    );
+
+    if audit.unmachined_area_fraction > MAX_UNMACHINED_FRACTION {
+        eprintln!(
+            "\n     VERDICT: *** {pct:.4} % > {:.1} % — UNMACHINED. ***",
+            100.0 * MAX_UNMACHINED_FRACTION
+        );
+    } else {
+        eprintln!(
+            "\n     VERDICT: {pct:.4} % <= {:.1} % bar. NOTE this is a STOP bar, not a quality\n\
+             \x20    target: read the distance row above before calling a nonzero fraction \
+             harmless.",
+            100.0 * MAX_UNMACHINED_FRACTION
+        );
+    }
+    Some(audit.unmachined_area_fraction)
+}
+
 // ── the refusal diagnosis (pre-registered, printed in the output) ───────
 
 /// `StallContext::near_band`'s median above this multiple of `2·K_c` is the
@@ -2170,6 +2323,12 @@ fn diagnose_refusal(
     print_flatten_block(report);
     eprintln!();
     print_radial_profile(label, report);
+
+    // The audit runs on the refusal path too. A refusal means no spiral was
+    // emitted, so this will normally read NOT MEASURED — but printing it
+    // keeps the block in the same place on every path, so a reader scanning
+    // for it never has to wonder whether it was omitted or was absent.
+    print_coverage_audit(label, report, params.ball_radius_mm);
 
     let stall_class = matches!(
         refusal,
@@ -2478,6 +2637,7 @@ fn min_med_max_usize(values: &[usize]) -> (usize, usize, usize) {
 }
 
 fn stage_a(
+    label: &str,
     report: &SpiralReport,
     params: &SpiralParams,
     stepover_mm: f64,
@@ -2538,8 +2698,8 @@ fn stage_a(
 
     eprintln!("\n   -- S^h sampling + coverage-driven rings (Eqs. 1-4) --");
     eprintln!(
-        "     surface samples N_S placed    {:>12}",
-        report.surface_samples
+        "     S^h samples placed            {:>12}   (requested {}; see SAMPLING ADEQUACY below)",
+        report.samples_placed, report.samples_requested
     );
     eprintln!(
         "     ring count                    {:>12}",
@@ -2572,35 +2732,63 @@ fn stage_a(
         report.uncovered_after_rings
     );
 
-    // -- N_S adequacy, per the module's OWN rule --
-    eprintln!("\n   -- N_S ADEQUACY (SpiralParams::n_surface_samples doc, G-SAMPLING) --");
-    let implied_spacing = if report.surface_samples > 0 && region_area_3d_mm2 > 0.0 {
-        (region_area_3d_mm2 / report.surface_samples as f64).sqrt()
-    } else {
-        f64::NAN
-    };
+    // -- SAMPLING ADEQUACY, apportionment-aware --
+    eprintln!("\n   -- SAMPLING ADEQUACY (G-SAMPLING) --");
     let half_stepover = 0.5 * stepover_mm;
-    eprintln!("     region 3D area (mm²)          {region_area_3d_mm2:>12.1}");
     eprintln!(
-        "     samples placed                {:>12}",
-        report.surface_samples
-    );
-    eprintln!("     implied sample spacing (mm)   {implied_spacing:>12.4}   = sqrt(area / N_S)");
-    eprintln!("     stepover / 2 (mm)             {half_stepover:>12.4}");
-    eprintln!(
-        "     ratio spacing / (stepover/2)  {:>12.3}",
-        implied_spacing / half_stepover
+        "     N_S requested (a FLOOR)       {:>12}",
+        report.samples_requested
     );
     eprintln!(
-        "     The module's own rule: \"sample spacing must be well under half the expected\n\
-         \x20    stepover or ring spacing reads long.\" A ratio at or above 1.0 means the\n\
-         \x20    DEFAULTS violate that rule on this region, and the failure is SILENT in the\n\
-         \x20    coverage counters — uncovered_after_rings still reads 0 (every sample IS\n\
-         \x20    covered; there simply were not enough of them). It surfaces only as inflated\n\
-         \x20    Stage-C spacing. That is [SOURCE-2025] Table 1 case 1.5, a documented failure.\n\
-         \x20    The defaults are NOT changed here — measuring what the defaults do is the\n\
-         \x20    instrument's job — but without this line a Stage-C overshoot would be\n\
-         \x20    unattributable between MAP, MECHANISM and SAMPLING. Stage E varies N_S."
+        "     samples actually placed       {:>12}   (>= region triangles {}; N_S is no longer\n\
+         \x20                                              a cap, so this may exceed the request)",
+        report.samples_placed, report.region_triangles
+    );
+
+    let starved = report.triangles_without_samples;
+    eprintln!(
+        "     TRIANGLES WITH ZERO SAMPLES   {starved:>12}   {}",
+        if starved == 0 {
+            "MUST be 0 — OK"
+        } else {
+            "*** TRIPWIRE FIRED — the coverage predicate has NO POPULATION on these \
+             triangles, so \"covered\" is VACUOUS there ***"
+        }
+    );
+    eprintln!(
+        "     largest unsampled triangle    {:>12.6} mm²",
+        report.largest_unsampled_triangle_area_mm2
+    );
+
+    let worst = report.max_local_sample_spacing_mm;
+    let ratio = worst / half_stepover.max(1e-12);
+    eprintln!(
+        "     MAX LOCAL sample spacing      {worst:>12.4} mm   = max over triangles of \
+         sqrt(area_t / quota_t)"
+    );
+    eprintln!("     stepover / 2 (the bar)        {half_stepover:>12.4} mm");
+    eprintln!(
+        "     ratio worst / (stepover/2)    {ratio:>12.3}   {}",
+        if ratio < 1.0 {
+            "PASS — the worst-sampled triangle still resolves below half the stepover"
+        } else {
+            "*** COARSE — at least one triangle is sampled more coarsely than half the \
+             stepover; ring spacing there can read long and coverage can read vacuous ***"
+        }
+    );
+    eprintln!(
+        "     WHY THIS NUMBER AND NOT sqrt(region_area / N_S). That older figure is an AVERAGE\n\
+         \x20    and is APPORTIONMENT-BLIND: on the ARM SPHERE run it reported a healthy\n\
+         \x20    0.076 mm on a mesh where 46%% of triangles held ZERO samples, and the run went\n\
+         \x20    on to leave a 2.783 mm-radius unmachined hole under three green gates. It is\n\
+         \x20    SUPERSEDED and deliberately not printed: a number that cannot see the failure\n\
+         \x20    it is supposed to guard against should not sit in the adequacy block being\n\
+         \x20    read as the adequacy check.\n\
+         \x20    `max_local_sample_spacing_mm` is a MAX over triangles of each triangle's OWN\n\
+         \x20    sample density, so a single starved triangle moves it. That is the property\n\
+         \x20    the average lacked. Region 3D area for scale: {region_area_3d_mm2:.1} mm².\n\
+         \x20    Even so, this block is about the SEARCH's inputs — the COVERAGE AUDIT below is\n\
+         \x20    what says whether the emitted path actually machined the region."
     );
 
     eprintln!("\n   -- bridging (Eqs. 7-9 + A-11) --");
@@ -2661,13 +2849,20 @@ fn stage_a(
          \x20    ({stepover_mm:.4} mm): a step far above that is a lift in all but name."
     );
 
+    // -- the INDEPENDENT witness, before the falsifier that now consumes it --
+    // K_c comes from the params the MODULE was actually handed, not from this
+    // file's BALL_RADIUS_MM constant: an arm that overrode the radius would
+    // otherwise have its distances compared against the wrong tool.
+    let unmachined = print_coverage_audit(label, report, params.ball_radius_mm);
+
     // -- the falsifier --
-    eprintln!("\n   -- FALSIFIER (research note §B.4, concretised 2026-08-30) --");
+    eprintln!("\n   -- FALSIFIER (research note §B.4, concretised 2026-08-30;");
+    eprintln!("      condition 4 added 2026-08-30 after the ARM SPHERE hole) --");
     let mut fails: Vec<String> = Vec::new();
     if report.uncovered_after_bridging > 0 {
         fails.push(format!(
             "incomplete coverage after bridge repair: uncovered_after_bridging = {} of {} samples",
-            report.uncovered_after_bridging, report.surface_samples
+            report.uncovered_after_bridging, report.samples_placed
         ));
     }
     if report.disk_self_intersections > 0 {
@@ -2682,18 +2877,49 @@ fn stage_a(
             report.bridge_overhead_pct
         ));
     }
+    // Condition 4. An ABSENT audit is a STOP, not a pass: a falsifier cannot
+    // clear a condition it has no observation for, and coercing `None` to zero
+    // is precisely how an unmeasured quantity becomes a green gate.
+    match unmachined {
+        Some(fraction) if fraction > MAX_UNMACHINED_FRACTION => fails.push(format!(
+            "UNMACHINED AREA {:.4}% > {:.1}% — the emitted path does not machine the region",
+            100.0 * fraction,
+            100.0 * MAX_UNMACHINED_FRACTION
+        )),
+        Some(_) => {}
+        None => fails.push(
+            "coverage audit NOT MEASURED — condition 4 cannot be cleared without an observation"
+                .to_owned(),
+        ),
+    }
+
     eprintln!(
-        "     coverage after bridging   {} (bar: 0)",
+        "     1. coverage after bridging   {} (bar: 0)",
         report.uncovered_after_bridging
     );
     eprintln!(
-        "     disk self-intersections   {} (bar: 0)",
+        "     2. disk self-intersections   {} (bar: 0)",
         report.disk_self_intersections
     );
     eprintln!(
-        "     bridge overhead           {:.3}% (bar: <= {MAX_BRIDGE_OVERHEAD_PCT:.1}%, inside the \
-         §0k +43% trap with margin)",
+        "     3. bridge overhead           {:.3}% (bar: <= {MAX_BRIDGE_OVERHEAD_PCT:.1}%, inside \
+         the §0k +43% trap with margin)",
         report.bridge_overhead_pct
+    );
+    eprintln!(
+        "     4. UNMACHINED AREA           {} (bar: <= {:.1}%)",
+        unmachined.map_or_else(
+            || "NOT MEASURED".to_owned(),
+            |f| format!("{:.4}%", 100.0 * f)
+        ),
+        100.0 * MAX_UNMACHINED_FRACTION
+    );
+    eprintln!(
+        "     Condition 4 is the one that would have caught the ARM SPHERE hole IN ONE LINE.\n\
+         \x20    Conditions 1-3 all passed on that run — 1 passed VACUOUSLY, because the search's\n\
+         \x20    own sample population was empty exactly where the hole was. A falsifier built\n\
+         \x20    entirely from the search's self-report cannot fail on a starved search; it needs\n\
+         \x20    a witness from a different population, which is what condition 4 reads."
     );
 
     // Structural claim gets a hard assert, not a print.
@@ -2704,7 +2930,7 @@ fn stage_a(
     );
 
     if fails.is_empty() {
-        eprintln!("\n     PASS: all three §B.4 conditions clear. Stages C and D run.\n");
+        eprintln!("\n     PASS: all FOUR conditions clear. Stages C and D run.\n");
         true
     } else {
         eprintln!("\n     FAIL / STOP:");
@@ -3407,6 +3633,7 @@ fn stage_d(
     fixture: Fixture<'_>,
     region: &Region,
     result: &SpiralResult,
+    report: &SpiralReport,
     stepover_mm: f64,
     spacings_sorted: &[f64],
     kind: ArmKind,
@@ -3609,10 +3836,39 @@ fn stage_d(
              \x20    its machined circle leaves a 2 mm margin of mesh outside the region."
         );
     }
+    // -- THIRD confound, and the one the ARM SPHERE hole exposed: a time
+    //    comparison between a COMPLETE path and an INCOMPLETE one is not a
+    //    comparison at all. The sphere run's "spiral 18.3 s vs raster 22.0 s"
+    //    was a spiral that skipped 23.5% of the region.
+    eprintln!("\n   -- IS EACH ROW EVEN FINISHING THE PART? --");
+    match report.coverage_audit.as_ref() {
+        Some(audit) => eprintln!(
+            "     spiral: UNMACHINED {:.4}% of region area ({:.4} of {:.4} mm²), \
+             {} of {} triangles.",
+            100.0 * audit.unmachined_area_fraction,
+            audit.unmachined_area_mm2,
+            audit.region_area_mm2,
+            audit.uncovered_centroid_triangles,
+            audit.centroids_tested
+        ),
+        None => eprintln!(
+            "     spiral: coverage audit NOT MEASURED — completeness is UNKNOWN, so the ratio\n\
+             \x20    below cannot be read as a like-for-like comparison at all."
+        ),
+    }
+    eprintln!(
+        "     raster: not audited here — `raster_candidate` is restated verbatim from F1 and\n\
+         \x20    carries no coverage audit; its completeness is unmeasured on this row.\n\
+         \x20    A TIME RATIO BETWEEN A COMPLETE PATH AND AN INCOMPLETE ONE IS MEANINGLESS.\n\
+         \x20    On the ARM SPHERE run the spiral read 18.3 s against the raster's 22.0 s while\n\
+         \x20    leaving a 2.783 mm-radius hole — the spiral was faster because it was not\n\
+         \x20    machining a quarter of the part. Read the unmachined line above BEFORE the\n\
+         \x20    ratio below, every time."
+    );
     if spiral_cost.time_s > 0.0 {
         eprintln!(
-            "     RAW time ratio raster / spiral: {:.3}x  <<< NOT A VERDICT — see the two \
-             paragraphs above",
+            "     RAW time ratio raster / spiral: {:.3}x  <<< NOT A VERDICT — see the three \
+             qualifications above",
             raster_cost.time_s / spiral_cost.time_s
         );
     }
@@ -3622,7 +3878,7 @@ fn stage_d(
          \x20    raster on the friendly fixture is context, not a bar.\" The region here is a\n\
          \x20    CONVEX, hole-free ellipse 8 mm inside the mesh — chosen so every centroid test\n\
          \x20    is clean, which is precisely the geometry a raster handles best. The phase-1\n\
-         \x20    bars are the three §B.4 conditions in Stage A. PROGRAMME.md's advance bar for\n\
+         \x20    bars are the four conditions in Stage A. PROGRAMME.md's advance bar for\n\
          \x20    F2 as a whole is explicit that \"a lower retract count alone is not\n\
          \x20    sufficient\", and it is stated against WANAKA regions (step 4), not this one.\n"
     );
@@ -3729,21 +3985,37 @@ fn stage_e(
         });
     }
 
+    // `starved` and `unmachined%` are the two columns that make this table
+    // mean anything. Halving N_S is EXACTLY the lever that produced the ARM
+    // SPHERE hole, so a sensitivity sweep without them would demonstrate the
+    // defect and report it as three healthy rows.
     eprintln!(
-        "\n     {:<24} {:>8} {:>6} {:>7} {:>12} {:>12} {:>10} {:>12}",
-        "row", "N_S", "N_C", "rings", "uncov(rings)", "uncov(bridge)", "overhead%", "spiral mm"
+        "\n     {:<24} {:>8} {:>6} {:>7} {:>9} {:>12} {:>10} {:>11} {:>10}",
+        "row",
+        "N_S",
+        "N_C",
+        "rings",
+        "starved",
+        "uncov(bridge)",
+        "overhead%",
+        "unmachined%",
+        "spiral mm"
     );
     for row in &rows {
         match &row.outcome {
             Ok(r) => eprintln!(
-                "     {:<24} {:>8} {:>6} {:>7} {:>12} {:>12} {:>10.3} {:>12.1}",
+                "     {:<24} {:>8} {:>6} {:>7} {:>9} {:>12} {:>10.3} {:>11} {:>10.1}",
                 row.label,
                 row.n_s,
                 row.n_c,
                 r.ring_count,
-                r.uncovered_after_rings,
+                r.triangles_without_samples,
                 r.uncovered_after_bridging,
                 r.bridge_overhead_pct,
+                r.coverage_audit.as_ref().map_or_else(
+                    || "NOT MEAS".to_owned(),
+                    |a| format!("{:.4}", 100.0 * a.unmachined_area_fraction)
+                ),
                 r.spiral_length_mm
             ),
             // The typed reason, not the word "REFUSED": a refusal at halved
@@ -3756,14 +4028,20 @@ fn stage_e(
         }
     }
     eprintln!(
-        "\n     What to read here. `uncovered_*` at 0 across all three rows does NOT mean the\n\
+        "\n     What to read here. `uncov(bridge)` at 0 across all three rows does NOT mean the\n\
          \x20    sampling is adequate — it means every sample that EXISTS is covered, which is\n\
-         \x20    trivially easier with fewer samples. The signal is `rings` and `spiral mm`:\n\
-         \x20    if halving N_S REDUCES the ring count, the coverage predicate was already\n\
-         \x20    optimistic at the baseline and the spacing is reading long — Table 1 case 1.5.\n\
-         \x20    Halving N_C coarsens the shared angular lattice that both runs and bridges are\n\
-         \x20    sampled on, so it moves chord length, and through it the measured spiral\n\
-         \x20    length and the disk self-intersection count, without moving the mechanism.\n"
+         \x20    trivially easier with fewer samples. That column is the SEARCH's self-report;\n\
+         \x20    on the ARM SPHERE run it read 0 while a quarter of the region went unmachined.\n\
+         \x20    `starved` (triangles apportioned zero samples, must be 0) and `unmachined%`\n\
+         \x20    (the independent centroid audit) are the columns that can actually fail here,\n\
+         \x20    and halving N_S is precisely the lever that produced that hole — so if this\n\
+         \x20    sweep is going to break anything, it breaks those two.\n\
+         \x20    Beyond that: if halving N_S REDUCES the ring count, the coverage predicate was\n\
+         \x20    already optimistic at the baseline and the spacing is reading long — Table 1\n\
+         \x20    case 1.5. Halving N_C coarsens the shared angular lattice that both runs and\n\
+         \x20    bridges are sampled on, so it moves chord length, and through it the measured\n\
+         \x20    spiral length and the disk self-intersection count, without moving the\n\
+         \x20    mechanism.\n"
     );
 }
 
@@ -3803,7 +4081,7 @@ fn run_arm_evidence(
     }
 
     let region_area_3d = region_area_mm2(fixture.mesh, &region.triangles);
-    let proceed = stage_a(report, params, stepover_mm, region_area_3d);
+    let proceed = stage_a(run.label, report, params, stepover_mm, region_area_3d);
     stage_b(region, result, report, run.slug);
 
     if proceed {
@@ -3822,7 +4100,15 @@ fn run_arm_evidence(
             analytic_spacing_verdict(run.label, samples, target);
         }
 
-        if let Some(outcome) = stage_d(fixture, region, result, stepover_mm, samples, run.kind) {
+        if let Some(outcome) = stage_d(
+            fixture,
+            region,
+            result,
+            report,
+            stepover_mm,
+            samples,
+            run.kind,
+        ) {
             eprintln!(
                 "   Stage D summary: {} CL points on one polyline, {} kept retracts, {:.1} mm \
                  cutting, {:.1} s.\n",
@@ -5423,13 +5709,28 @@ fn coarsened_sweep_snaps_onto_both_stage_e_lattices() {
 /// §B.4 conditions must trip on its own, and a clean report must pass.
 #[test]
 fn falsifier_conditions_are_independent() {
+    use rs_cam_core::conformal_spiral::CoverageAudit;
+
+    // Mirrors `stage_a`'s four conditions EXACTLY, including the rule that an
+    // ABSENT audit is a STOP. If the two ever drift, this test is a docstring
+    // that lies about the gate it claims to pin.
     let trips = |r: &SpiralReport| -> bool {
         r.uncovered_after_bridging > 0
             || r.disk_self_intersections > 0
             || r.bridge_overhead_pct > MAX_BRIDGE_OVERHEAD_PCT
+            || r.coverage_audit
+                .as_ref()
+                .is_none_or(|a| a.unmachined_area_fraction > MAX_UNMACHINED_FRACTION)
+    };
+    let audited = |fraction: f64| {
+        Some(CoverageAudit {
+            unmachined_area_fraction: fraction,
+            ..CoverageAudit::default()
+        })
     };
     let clean = SpiralReport {
         bridge_overhead_pct: 4.2,
+        coverage_audit: audited(0.0),
         ..SpiralReport::default()
     };
     assert!(!trips(&clean), "a clean report must not trip the falsifier");
@@ -5445,9 +5746,77 @@ fn falsifier_conditions_are_independent() {
         bridge_overhead_pct: 25.001,
         ..clean.clone()
     }));
-    // Exactly at the bar is a PASS — the condition is strictly greater.
+    // Condition 4, both ways round.
+    assert!(
+        trips(&SpiralReport {
+            coverage_audit: audited(0.235),
+            ..clean.clone()
+        }),
+        "the 23.5% ARM SPHERE hole must STOP the run — this is the whole reason condition 4 \
+         exists"
+    );
+    assert!(
+        trips(&SpiralReport {
+            coverage_audit: None,
+            ..clean.clone()
+        }),
+        "an ABSENT audit must STOP: a falsifier cannot clear a condition it has no observation \
+         for, and coercing None to zero is how an unmeasured quantity becomes a green gate"
+    );
+    // Exactly at each bar is a PASS — both conditions are strictly greater.
     assert!(!trips(&SpiralReport {
         bridge_overhead_pct: MAX_BRIDGE_OVERHEAD_PCT,
+        ..clean.clone()
+    }));
+    assert!(!trips(&SpiralReport {
+        coverage_audit: audited(MAX_UNMACHINED_FRACTION),
         ..clean
     }));
+}
+
+/// The scenario that motivated condition 4, pinned as a regression: the
+/// pre-fix ARM SPHERE report shape — search self-report all green, a quarter
+/// of the region unmachined — must now STOP.
+#[test]
+fn the_arm_sphere_hole_would_now_be_caught() {
+    use rs_cam_core::conformal_spiral::CoverageAudit;
+
+    // Exactly what the run printed: three green self-reported conditions...
+    let report = SpiralReport {
+        uncovered_after_rings: 0,
+        uncovered_after_bridging: 0,
+        disk_self_intersections: 0,
+        bridge_overhead_pct: 4.2,
+        // ...on a search that had been starved...
+        triangles_without_samples: 17_048,
+        region_triangles: 37_060,
+        // ...over a part with a 2.783 mm-radius hole.
+        coverage_audit: Some(CoverageAudit {
+            unmachined_area_fraction: 0.235,
+            ..CoverageAudit::default()
+        }),
+        ..SpiralReport::default()
+    };
+
+    // Every condition built from the search's own self-report passes.
+    assert_eq!(report.uncovered_after_bridging, 0);
+    assert_eq!(report.disk_self_intersections, 0);
+    assert!(report.bridge_overhead_pct <= MAX_BRIDGE_OVERHEAD_PCT);
+
+    // The independent witness does not.
+    let fraction = report
+        .coverage_audit
+        .as_ref()
+        .map(|a| a.unmachined_area_fraction)
+        .expect("audit present");
+    assert!(
+        fraction > MAX_UNMACHINED_FRACTION,
+        "23.5% unmachined must exceed the {MAX_UNMACHINED_FRACTION} bar"
+    );
+    // And the sampling tripwire fires independently of the audit, so the two
+    // are separate lines of defence rather than one restated twice.
+    assert!(
+        report.triangles_without_samples > 0,
+        "the starvation tripwire must also fire on this shape"
+    );
 }

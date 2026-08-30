@@ -171,6 +171,36 @@
 //!   **wrong for a region whose surface faces away from +Z**.
 //! * **No reachability, no gouge check, no collision check.** 3-axis
 //!   reachability of steep walls is outside the paper's scope entirely.
+//! * **The paper's spacing criterion has ZERO MARGIN by construction, and
+//!   that is a property of the method, not a bug.** Eqs. 1–4 push each ring
+//!   in until it just reaches the outermost still-uncovered sample, so
+//!   adjacent rings end up exactly `2·reach` apart and the midline between
+//!   them lands exactly *on* the coverage boundary. That is the iso-scallop
+//!   condition restated — at the optimal stepover the scallop crest sits
+//!   exactly at height `h`, i.e. exactly on `S^h`. **The criterion therefore
+//!   guarantees coverage of the search's own sample set and of nothing
+//!   else**; any denser or offset population lands on the knife edge.
+//!   Measured 2026-08-30 on the exact-affine flat disk: three whole
+//!   48-triangle centroid families sat within 0.003–0.049 mm of a band edge
+//!   and read as unmachined. [`SpiralParams::ring_spacing_safety`] is the
+//!   dial that buys margin; it defaults to `1.0`, the paper's criterion
+//!   unchanged.
+//! * **The ring step is QUANTISED BY THE SAMPLE SET, and overshoots.** Ring
+//!   `i+1` is placed at `(largest sample radius not covered by ring i) −
+//!   reach'`, so the step is `2·reach'` *plus* whatever radial gap the samples
+//!   happen to have there — it can never be smaller, and it is larger by the
+//!   local sample granularity. On a mesh whose per-triangle quota is 1 the
+//!   barycentric lattice puts one sample at each centroid, leaving a
+//!   sample-free annulus of `2/3` of a facet's radial width at **every** mesh
+//!   vertex ring; the step then snaps to the mesh's own feature pitch.
+//!   Measured on the flat fixture (1 mm facets, 1.520 mm stepover): a derated
+//!   `2·reach'` of 0.866 mm produced a ring series of
+//!   **1.000, 1.000, 1.000, 1.000, 1.056 mm** — the mesh pitch, not the
+//!   scallop rule. Coverage survives only while
+//!   `ring_spacing_margin_mm ≥ max_local_sample_spacing_mm`; both are
+//!   reported, and this is the same lesson the F2 phase-1 withdrawal recorded
+//!   at instrument scale (`planning/conformal_finish_2026-08-28/`): **you
+//!   cannot measure a stepover on a mesh whose facets are comparable to it.**
 //! * **The scallop bound is sampled, not proved.** It is exactly as strong as
 //!   [`SpiralParams::n_surface_samples`]. The paper's own cutting trial
 //!   overshot its nominal scallop by up to 12 % (§5), and its Table 1 case
@@ -345,15 +375,25 @@ pub struct SpiralParams {
     /// Scallop-height constraint `h` (mm): the iso-scallop surface `S^h` is
     /// the region offset `+h` along its normals.
     pub scallop_h_mm: f64,
-    /// `N_S` — how many points `S^h` is sampled into.
+    /// `N_S` — **a floor on** how many points `S^h` is sampled into, not a
+    /// cap.
     ///
     /// **[REPO]** No selection rule appears in either paper
     /// (**G-SAMPLING**); the 2025 paper's own Table 1 case 1.5 is a
-    /// *documented failure* from choosing this too small ("overly sparse
-    /// discrete points, resulting in a small k-value and excessively large
-    /// trajectory spacing"). The coverage bound is exactly as strong as this
-    /// number: sample spacing must be well under half the expected stepover
-    /// or ring spacing reads long.
+    /// *documented failure* from choosing this too small.
+    ///
+    /// **Why a floor.** Apportioning a fixed budget by area starves small
+    /// triangles: with `N_S` below the triangle count the per-triangle share
+    /// averages under 1, most triangles floor to 0, and on a polar mesh the
+    /// ones that lose out are exactly the small central ones. The predicate
+    /// then has **no population** in the middle, "everything outside `R` is
+    /// covered" is vacuously true, and the search stops satisfied — measured
+    /// on a sphere cap as a 2.783 mm unmachined hole reported as clean. Every
+    /// region triangle therefore gets **at least one** sample, on top of its
+    /// area-proportional share, and [`SpiralReport::samples_placed`] reports
+    /// the real number. Read
+    /// [`SpiralReport::max_local_sample_spacing_mm`], not `√(area/N_S)`, to
+    /// judge whether the sampling is fine enough.
     pub n_surface_samples: usize,
     /// `N_C` — samples per full turn, and **the shared angular lattice**.
     ///
@@ -363,6 +403,59 @@ pub struct SpiralParams {
     /// bridge hug its ring, and the disk-domain self-intersection count would
     /// then report *sampling* artefacts as crossings.
     pub n_angular_samples: usize,
+    /// **[REPO] Spacing safety factor on the ring search's LATERAL REACH.**
+    ///
+    /// The ring search reasons with `reach × this`; the tool centre is still
+    /// offset by the true `K_c`, and the independent coverage audit still
+    /// tests against the true `K_c`. `1.0` is **the paper's own criterion
+    /// exactly** and is the default, so nothing changes silently.
+    ///
+    /// **Why it exists** (measured 2026-08-30 on the exact-affine flat disk).
+    /// Eqs. 1–4 place ring `i+1` exactly `2·reach` inside ring `i`, because
+    /// each ring is pushed in until it just reaches the outermost still-
+    /// uncovered sample. The midline between two adjacent rings therefore sits
+    /// **exactly on the coverage boundary** — which is the iso-scallop
+    /// condition restated: at the optimal stepover the scallop crest is
+    /// exactly at height `h`, i.e. exactly *on* `S^h`. The criterion has
+    /// **zero margin by construction**, so it guarantees coverage of the
+    /// search's own sample set and of nothing else. Any denser or offset test
+    /// population — such as [`CoverageAudit`]'s mesh centroids — finds points
+    /// on the wrong side of that knife edge.
+    ///
+    /// Setting this below 1 buys real margin: adjacent bands then **overlap**
+    /// by `2·reach·(1 − factor)`, and the whole family of near-boundary
+    /// ambiguities disappears. Values above 1 are clamped away: claiming more
+    /// reach than the tool has is not a safety factor.
+    ///
+    /// # It derates the LATERAL REACH, not the coverage radius
+    ///
+    /// This distinction is not cosmetic and the first version of this
+    /// parameter got it wrong. The lateral reach is
+    /// `reach = √(K_c² − (K_c − h)²)`, which is a **steep** function of `K_c`
+    /// near the top: `d(reach)/d(K_c) = K_c / reach`, which is 2.63 on the
+    /// module's own flat fixture. Derating the *radius* by 5 % there cut the
+    /// *reach* by **43 %** (0.760 → 0.433 mm) and collapsed the ring spacing
+    /// to 0.997 mm against a 1.520 mm closed form. So the factor is applied
+    /// where it means what its name says:
+    ///
+    /// ```text
+    /// reach'          = factor · reach
+    /// search radius   = √( reach'² + (K_c − h)² )        [= K_c at factor 1]
+    /// spacing margin  = 2·(reach − reach')
+    /// ```
+    ///
+    /// # Adequacy condition
+    ///
+    /// The margin is only useful if it exceeds the **radial gap in the sample
+    /// set**. The search places ring `i+1` at `(largest sample radius not yet
+    /// covered) − reach'`, so the step overshoots `2·reach'` by whatever the
+    /// local radial sample gap is. Coverage therefore survives only while
+    /// `2·(reach − reach') ≥ radial sample gap`. Compare
+    /// [`SpiralReport::ring_spacing_margin_mm`] against
+    /// [`SpiralReport::max_local_sample_spacing_mm`]; when the margin loses,
+    /// the ring step quantises to the mesh's own feature pitch and the audit
+    /// is what will notice.
+    pub ring_spacing_safety: f64,
     /// `ε` — binary-search termination tolerance on the disk radius `R`.
     /// **[SOURCE-2025 Pseudocode A-1 line 12]** has an `ε` but states no
     /// value (**G-SAMPLING**).
@@ -410,6 +503,7 @@ impl Default for SpiralParams {
             scallop_h_mm: 0.03,
             n_surface_samples: 20_000,
             n_angular_samples: 360,
+            ring_spacing_safety: 1.0,
             ring_eps: 1e-4,
             max_rings: 4096,
             blend_p: DEFAULT_BLEND_P,
@@ -441,6 +535,45 @@ impl SpiralParams {
     #[must_use]
     pub fn lattice_step(&self) -> f64 {
         TAU / (self.n_angular_samples.max(3) as f64)
+    }
+
+    /// The tool's true lateral reach on flat ground:
+    /// `√(K_c² − (K_c − h)²)`, i.e. half the flat iso-scallop stepover.
+    #[must_use]
+    pub fn lateral_reach_mm(&self) -> f64 {
+        let v = (self.ball_radius_mm - self.scallop_h_mm).max(0.0);
+        (self.ball_radius_mm * self.ball_radius_mm - v * v)
+            .max(0.0)
+            .sqrt()
+    }
+
+    /// The lateral reach the **ring search** reasons with:
+    /// `lateral_reach_mm × ring_spacing_safety`.
+    #[must_use]
+    pub fn ring_search_lateral_reach_mm(&self) -> f64 {
+        self.lateral_reach_mm() * self.ring_spacing_safety.clamp(1e-6, 1.0)
+    }
+
+    /// The coverage radius the **ring search** reasons with — the radius whose
+    /// lateral reach is [`SpiralParams::ring_search_lateral_reach_mm`].
+    /// Exactly `K_c` at factor 1, so the paper's criterion is reproduced bit
+    /// for bit.
+    ///
+    /// Distinct from [`SpiralParams::ball_radius_mm`], which is what the tool
+    /// centre is offset by and what [`CoverageAudit`] tests against. Only the
+    /// planner's own criterion is derated; the geometry is not.
+    #[must_use]
+    pub fn ring_search_radius_mm(&self) -> f64 {
+        let v = (self.ball_radius_mm - self.scallop_h_mm).max(0.0);
+        let r = self.ring_search_lateral_reach_mm();
+        (r * r + v * v).sqrt().min(self.ball_radius_mm)
+    }
+
+    /// How much overlap the safety factor buys between adjacent ring bands:
+    /// `2·(reach − reach')`. Zero at factor 1 — the paper's criterion.
+    #[must_use]
+    pub fn ring_spacing_margin_mm(&self) -> f64 {
+        2.0 * (self.lateral_reach_mm() - self.ring_search_lateral_reach_mm())
     }
 }
 
@@ -475,8 +608,14 @@ pub enum SpiralRefusal {
     /// what was actually measured, because an under-converged map can still
     /// fold and must not be used.
     FlattenDidNotConverge { max_delta: f64, sweeps: usize },
-    /// The surface produced no `S^h` samples (degenerate area, or
-    /// `n_surface_samples == 0`).
+    /// The surface produced no `S^h` samples: the region's total area is
+    /// degenerate.
+    ///
+    /// `n_surface_samples == 0` no longer reaches this arm — under the
+    /// one-per-triangle floor a zero budget still yields one sample per
+    /// triangle, which is the intended semantic. Since `build_region_mesh`
+    /// already drops sliver triangles, this variant is close to unreachable in
+    /// practice; it is kept because "close to" is not "is".
     NoSurfaceSamples,
     /// A ring was placed but the uncovered set did not shrink, so no finite
     /// number of further rings can empty it.
@@ -677,8 +816,9 @@ pub struct StallContext {
     pub band_width_disk: f64,
     /// Which curve the distances were measured against.
     pub distance_reference: StallDistanceReference,
-    /// The coverage radius the distances should be compared to (`K_c`, mm), so
-    /// every distance row below is self-interpreting.
+    /// The coverage radius the ring search reasoned with — the **derated**
+    /// `ring_search_radius_mm`, not the true `K_c` — so every distance row
+    /// below is compared against the bar the search actually applied.
     pub coverage_radius_mm: f64,
     /// Distances from **every** still-uncovered point to the reference curve.
     /// Dominated by the untouched disk interior, so a large median here is
@@ -698,6 +838,54 @@ pub struct StallContext {
     /// in the domain is visible alongside their distance. Values are disk
     /// units, not mm.
     pub blocker_disk_radius: DistanceStats,
+}
+
+/// An **independent** check that the emitted spiral actually machines the
+/// region.
+///
+/// **[REPO]** Added 2026-08-30 after a sphere-cap fixture left a 2.783 mm
+/// unmachined hole — **23.5 % of the region** — while
+/// [`SpiralReport::uncovered_after_rings`] and
+/// [`SpiralReport::uncovered_after_bridging`] both read 0 and the phase
+/// falsifier passed.
+///
+/// Those two rows are computed over the `S^h` sample set, which is also what
+/// the ring search's own feasibility predicate consumes. **A search cannot be
+/// its own witness**: when the sampling has no population in a region, "every
+/// uncovered point outside `R` is covered" is vacuously true and the search
+/// stops satisfied. This audit therefore uses a population defined by the
+/// **mesh** — every region triangle's centroid — and never touches the sample
+/// set. It is the row that would have caught that hole in one line.
+#[derive(Debug, Clone, Default)]
+pub struct CoverageAudit {
+    /// Triangle centroids tested — the whole region, by construction.
+    pub centroids_tested: usize,
+    /// Centroids whose `S^h` point the final spiral's centre curve does not
+    /// sweep.
+    pub uncovered_centroid_triangles: usize,
+    /// Summed area (mm²) of those triangles: the estimated unmachined area.
+    pub unmachined_area_mm2: f64,
+    /// That area as a fraction of [`CoverageAudit::region_area_mm2`].
+    pub unmachined_area_fraction: f64,
+    /// 3D area (mm²) of the region.
+    pub region_area_mm2: f64,
+    /// Largest single unmachined triangle (mm²).
+    pub largest_unmachined_triangle_area_mm2: f64,
+    /// The true coverage radius the audit tested with (`K_c`, mm), so the
+    /// distances below are self-interpreting.
+    pub coverage_radius_mm: f64,
+    /// How far the unmachined centroids are from the spiral's centre curve.
+    /// **Read this against `coverage_radius_mm`**: microns above it is a
+    /// zero-margin knife edge at a ring midline (see
+    /// [`SpiralParams::ring_spacing_safety`]); a millimetre above it is a
+    /// genuine hole.
+    pub uncovered_distance: DistanceStats,
+    /// **Disk radius** of the unmachined centroids, min/median/max — the
+    /// spatial discriminator. Values clustered near 1 mean the rim, near 0 the
+    /// centre, and a spread across the domain means thin bands at ring
+    /// midlines. Units are disk radius, not mm; the `DistanceStats` field
+    /// names say mm because the type is shared.
+    pub uncovered_disk_radius: DistanceStats,
 }
 
 /// Everything the F2 contract wants **counted rather than assumed**.
@@ -805,8 +993,52 @@ pub struct SpiralReport {
     pub dilatation_unmeasurable: usize,
 
     // --- sampling + rings ------------------------------------------------
-    /// `N_S` actually placed on `S^h`.
-    pub surface_samples: usize,
+    /// `N_S` as requested — a **floor**, not a cap. See
+    /// [`SpiralParams::n_surface_samples`].
+    pub samples_requested: usize,
+    /// `S^h` samples actually placed. At least
+    /// [`SpiralReport::samples_requested`], and at least one per region
+    /// triangle.
+    pub samples_placed: usize,
+    /// Region triangles that received no sample. **MUST be 0** — a tripwire
+    /// like [`SpiralReport::flipped_triangles`], because a triangle with no
+    /// sample is invisible to the coverage predicate and makes it vacuously
+    /// satisfiable there. Zero by construction under the one-per-triangle
+    /// floor; measured anyway, because the whole point is that this class of
+    /// defect reads as success.
+    pub triangles_without_samples: usize,
+    /// Largest region triangle that received no sample (mm²). `0.0` when none
+    /// did, which is the expected reading.
+    pub largest_unsampled_triangle_area_mm2: f64,
+    /// **The adequacy number.** `max over triangles of √(area_t / quota_t)` —
+    /// the coarsest local sample spacing anywhere in the region, in mm.
+    ///
+    /// This replaces the naive `√(region area / N_S)`, which assumes uniform
+    /// placement and is therefore blind to apportionment starvation: it
+    /// happily reported 0.076 mm implied spacing on a mesh where 46 % of the
+    /// triangles held no sample at all. Compare this against **half the
+    /// stepover**; above that, the coverage predicate is under-resolved
+    /// wherever the maximum is attained, regardless of how large `N_S` is.
+    pub max_local_sample_spacing_mm: f64,
+    /// Independent, mesh-defined coverage audit of the emitted spiral. `None`
+    /// means no spiral was produced, so it was never measured.
+    pub coverage_audit: Option<CoverageAudit>,
+    /// The **lateral** reach the ring search reasons with (mm), and the true
+    /// tool reach it is derated from — the pair the spacing is actually set
+    /// by. Equal under the paper's own criterion.
+    pub ring_search_lateral_reach_mm: f64,
+    /// The tool's true lateral reach (mm), i.e. half the flat stepover.
+    pub lateral_reach_mm: f64,
+    /// `2·(reach − reach')` — the band overlap the safety factor buys.
+    /// **Compare against [`SpiralReport::max_local_sample_spacing_mm`]**: when
+    /// the margin is the smaller of the two, the ring step quantises to the
+    /// mesh's feature pitch instead of following the scallop rule.
+    pub ring_spacing_margin_mm: f64,
+    /// The coverage radius the ring search reasons with. Equals `K_c` under
+    /// the paper's own criterion.
+    /// Recorded as soon as the region is built, so it is meaningful on every
+    /// refusal path too; only an `EmptyRegion` refusal leaves it at `0.0`.
+    pub ring_search_radius_mm: f64,
     /// Rings produced by the Eqs. 1–4 search.
     pub ring_count: usize,
     /// Disk radius of each ring, outermost first.
@@ -843,6 +1075,14 @@ pub struct SpiralReport {
     /// that no other number here will show.
     pub ring_points_unlocated: usize,
     /// `S^h` points still uncovered when the ring search finished. **Want 0.**
+    ///
+    /// **This is not an independent witness.** It is computed over the same
+    /// `S^h` population the search's own feasibility predicate consumes, so
+    /// wherever that population is empty it reads 0 *because there was nothing
+    /// to disagree with*. Read it together with
+    /// [`SpiralReport::triangles_without_samples`] and
+    /// [`SpiralReport::coverage_audit`], which are the rows that cannot be
+    /// fooled the same way.
     pub uncovered_after_rings: usize,
 
     // --- bridging --------------------------------------------------------
@@ -860,6 +1100,12 @@ pub struct SpiralReport {
     pub bridge_repair_steps: usize,
     /// `S^h` points a ring covered that the **bridged** spiral's centre curve
     /// does not. **Want 0.**
+    ///
+    /// Shares [`SpiralReport::uncovered_after_rings`]' blind spot exactly: its
+    /// population is the per-ring bands, which are subsets of the same `S^h`
+    /// sample set. It answers "did bridging lose anything the rings had", not
+    /// "is the region machined" — [`SpiralReport::coverage_audit`] answers the
+    /// second.
     pub uncovered_after_bridging: usize,
 
     // --- spiral ----------------------------------------------------------
@@ -945,6 +1191,12 @@ fn plan_into(
     };
     report.region_triangles = region.tris.len();
     report.region_vertices = region.verts.len();
+    // Recorded up front so it is never 0.0-on-a-refusal, which a reader would
+    // misread as "searched with zero radius".
+    report.ring_search_radius_mm = params.ring_search_radius_mm();
+    report.ring_search_lateral_reach_mm = params.ring_search_lateral_reach_mm();
+    report.lateral_reach_mm = params.lateral_reach_mm();
+    report.ring_spacing_margin_mm = params.ring_spacing_margin_mm();
 
     // 1. Topology: one boundary loop, disk Euler characteristic.
     let topo = region_topology(&region)?;
@@ -968,11 +1220,10 @@ fn plan_into(
     // 5. Sample S^h with barycentric provenance (Eqs. 2–3 store the element
     //    and barycentrics precisely so the disk coordinate never needs a
     //    point location).
-    let samples = sample_iso_scallop(&region, &flat, &vertex_normals, params);
+    let samples = sample_iso_scallop(&region, &flat, &vertex_normals, params, report);
     if samples.is_empty() {
         return Err(SpiralRefusal::NoSurfaceSamples);
     }
-    report.surface_samples = samples.len();
 
     // 6. Coverage-driven ring spacing (Eqs. 1–4).
     let rings = search_rings(&locator, &vertex_normals, &region, &samples, params, report)?;
@@ -988,6 +1239,16 @@ fn plan_into(
         report,
     );
     finish_report(&result, &rings, &spiral_meta, params, report);
+    // 8. The independent witness. The ring search cannot be its own — see
+    //    `CoverageAudit`.
+    audit_coverage(
+        &region,
+        &vertex_normals,
+        &flat,
+        &spiral_meta.centre,
+        params,
+        report,
+    );
     Ok(result)
 }
 
@@ -1861,34 +2122,48 @@ struct Sample {
     disk_r: f64,
 }
 
-/// Sample the region into `N_S` points and offset each `+h` along its normal.
+/// Sample the region into `S^h`: at least `N_S` points **and at least one per
+/// triangle**, each offset `+h` along its interpolated normal.
 ///
-/// **[REPO]** The paper states no sampling rule at all (**G-SAMPLING**). Here
-/// the per-triangle quota is area-proportional by largest remainder — no
-/// minimum of one per triangle, so `n_surface_samples` means what it says on a
-/// mesh with more triangles than samples — and within a triangle the points
-/// are the centroids of a deterministic `n × n` barycentric subdivision,
-/// taken in a fixed order.
+/// **[REPO]** The paper states no sampling rule at all (**G-SAMPLING**). The
+/// per-triangle quota here is `max(1, area-proportional share)`, apportioned
+/// by largest remainder for determinism.
+///
+/// **Why the `max(1, …)` is load-bearing.** Without it — the form this
+/// function shipped with until 2026-08-30 — `N_S` is a hard cap apportioned by
+/// area, so once `N_S` drops below the triangle count the average share falls
+/// under 1, most triangles floor to zero, and the largest-remainder top-up
+/// goes to the *largest* remainders, i.e. the biggest triangles. On a polar
+/// sphere-cap mesh whose central facets are ~55× smaller than its rim facets,
+/// that starves precisely the centre. The coverage predicate then has no
+/// population there, `∀ uncovered outside R: covered` is **vacuously true**,
+/// and the ring search terminates satisfied — measured as a 2.783 mm
+/// unmachined hole, 23.5 % of the region, under a report reading
+/// `uncovered_after_rings = 0`. The floor makes the domain, not the budget,
+/// the thing that is guaranteed; `N_S` becomes a floor and
+/// [`SpiralReport::samples_placed`] reports what was really used.
 fn sample_iso_scallop(
     region: &RegionMesh,
     flat: &Flattening,
     normals: &[V3],
     params: &SpiralParams,
+    report: &mut SpiralReport,
 ) -> Vec<Sample> {
+    report.samples_requested = params.n_surface_samples;
     let total_area: f64 = (0..region.tris.len()).map(|t| region.area(t)).sum();
-    if total_area <= MIN_TRIANGLE_AREA_MM2 || params.n_surface_samples == 0 {
+    if total_area <= MIN_TRIANGLE_AREA_MM2 || region.tris.is_empty() {
         return Vec::new();
     }
     let want = params.n_surface_samples as f64;
-    // Largest-remainder apportionment, deterministic in triangle order.
+    // Largest-remainder apportionment over a floor of one per triangle.
     let mut quota: Vec<usize> = Vec::with_capacity(region.tris.len());
     let mut rema: Vec<(f64, usize)> = Vec::with_capacity(region.tris.len());
     let mut assigned = 0usize;
     for t in 0..region.tris.len() {
         let exact = want * region.area(t) / total_area;
-        let floor = exact.floor().max(0.0) as usize;
-        quota.push(floor);
-        assigned += floor;
+        let base = (exact.floor().max(0.0) as usize).max(1);
+        quota.push(base);
+        assigned += base;
         rema.push((exact - exact.floor(), t));
     }
     rema.sort_by(|a, b| {
@@ -1907,7 +2182,25 @@ fn sample_iso_scallop(
         }
     }
 
-    let mut out: Vec<Sample> = Vec::with_capacity(params.n_surface_samples);
+    // Tripwires on the failure class this function exists to make impossible,
+    // plus the adequacy number that is aware of apportionment.
+    let mut starved = 0usize;
+    let mut largest_starved = 0.0_f64;
+    let mut worst_spacing = 0.0_f64;
+    for (t, &q) in quota.iter().enumerate() {
+        let area = region.area(t);
+        if q == 0 {
+            starved += 1;
+            largest_starved = largest_starved.max(area);
+            continue;
+        }
+        worst_spacing = worst_spacing.max((area / q as f64).sqrt());
+    }
+    report.triangles_without_samples = starved;
+    report.largest_unsampled_triangle_area_mm2 = largest_starved;
+    report.max_local_sample_spacing_mm = worst_spacing;
+
+    let mut out: Vec<Sample> = Vec::with_capacity(assigned.max(params.n_surface_samples));
     for (t, &q) in quota.iter().enumerate() {
         if q == 0 {
             continue;
@@ -1938,7 +2231,97 @@ fn sample_iso_scallop(
             });
         }
     }
+    report.samples_placed = out.len();
     out
+}
+
+/// **Independent** coverage audit of the emitted spiral — see
+/// [`CoverageAudit`] for why the ring search's own numbers cannot serve.
+///
+/// **[REPO]** Population is every region triangle's centroid, lifted to `S^h`
+/// the same way a sample is (`+h` along the averaged vertex normal), and
+/// tested against the **final spiral's** tool-centre curve. Nothing here
+/// reads the `S^h` sample set, `N_S`, or any ring.
+fn audit_coverage(
+    region: &RegionMesh,
+    normals: &[V3],
+    flat: &Flattening,
+    spiral_centre: &[P3],
+    params: &SpiralParams,
+    report: &mut SpiralReport,
+) {
+    // The audit tests the TRUE tool, never the search's derated criterion.
+    let radius = params.ball_radius_mm;
+    let curve = CentreCurve::new(spiral_centre, radius);
+    let mut uncovered_pts: Vec<P3> = Vec::new();
+    let mut uncovered_disk_r: Vec<f64> = Vec::new();
+    let mut uncovered_tris = 0usize;
+    let mut unmachined = 0.0_f64;
+    let mut largest = 0.0_f64;
+    let mut region_area = 0.0_f64;
+    let mut tested = 0usize;
+
+    for t in 0..region.tris.len() {
+        let area = region.area(t);
+        region_area += area;
+        let c = region.corners(t);
+        let mut p = V3::zeros();
+        let mut n = V3::zeros();
+        let mut fx = 0.0_f64;
+        let mut fy = 0.0_f64;
+        for &v in c.iter() {
+            p += region.point(v).coords / 3.0;
+            n += normals.get(v).copied().unwrap_or_else(V3::zeros) / 3.0;
+            let f = flat_of(flat, v);
+            fx += f.0 / 3.0;
+            fy += f.1 / 3.0;
+        }
+        let len = n.norm();
+        let n = if len > EPS_VEC {
+            n / len
+        } else {
+            V3::new(0.0, 0.0, 1.0)
+        };
+        let at = P3::from(p + n * params.scallop_h_mm);
+        tested += 1;
+        if curve.covers(at, radius) {
+            continue;
+        }
+        uncovered_tris += 1;
+        unmachined += area;
+        largest = largest.max(area);
+        uncovered_pts.push(at);
+        uncovered_disk_r.push(fx.hypot(fy));
+    }
+
+    // Distances only for the uncovered subset, strided: grazing at a boundary
+    // and a hole in the middle look identical in an area figure alone.
+    let stride = uncovered_pts
+        .len()
+        .div_ceil(STALL_DISTANCE_SAMPLE_CAP)
+        .max(1);
+    let d: Vec<f64> = uncovered_pts
+        .iter()
+        .step_by(stride)
+        .map(|&q| distance_to_polyline_mm(q, spiral_centre))
+        .filter(|v| v.is_finite())
+        .collect();
+
+    report.coverage_audit = Some(CoverageAudit {
+        centroids_tested: tested,
+        uncovered_centroid_triangles: uncovered_tris,
+        unmachined_area_mm2: unmachined,
+        unmachined_area_fraction: if region_area > EPS_VEC {
+            unmachined / region_area
+        } else {
+            0.0
+        },
+        region_area_mm2: region_area,
+        largest_unmachined_triangle_area_mm2: largest,
+        coverage_radius_mm: radius,
+        uncovered_distance: summarise(&d),
+        uncovered_disk_radius: summarise(&uncovered_disk_r),
+    });
 }
 
 /// `q` deterministic barycentric coordinates inside the standard triangle.
@@ -2369,7 +2752,7 @@ fn publish_ring_rows(
         uncovered_outside_last_ring: outside,
         band_width_disk,
         distance_reference: which,
-        coverage_radius_mm: params.ball_radius_mm,
+        coverage_radius_mm: params.ring_search_radius_mm(),
         all_uncovered: summarise(&all_d),
         near_band: summarise(&distances_to(&near, samples, reference)),
         blockers: blockers
@@ -2407,7 +2790,10 @@ fn search_rings(
     params: &SpiralParams,
     report: &mut SpiralReport,
 ) -> Result<Vec<Ring>, SpiralRefusal> {
+    // The tool centre sits at the true `K_c`; only the search's own coverage
+    // criterion is derated. See `SpiralParams::ring_spacing_safety`.
     let radius = params.ball_radius_mm;
+    let search_radius = params.ring_search_radius_mm();
     let mut scratch = QueryScratch::new();
     let mut hits: Vec<usize> = Vec::new();
     let mut stats = LiftStats::default();
@@ -2481,7 +2867,7 @@ fn search_rings(
                 let Some(sample) = samples.get(s) else {
                     return true;
                 };
-                sample.disk_r <= mid || cc.covers(sample.at, radius)
+                sample.disk_r <= mid || cc.covers(sample.at, search_radius)
             });
             if feasible {
                 best_hi = mid;
@@ -2501,7 +2887,7 @@ fn search_rings(
             let Some(sample) = samples.get(s) else {
                 continue;
             };
-            if cc.covers(sample.at, radius) {
+            if cc.covers(sample.at, search_radius) {
                 band.push(s);
             } else {
                 still.push(s);
@@ -2523,7 +2909,7 @@ fn search_rings(
                     let Some(sample) = samples.get(sidx) else {
                         continue;
                     };
-                    if sample.disk_r <= state.search_lo || lo_cc.covers(sample.at, radius) {
+                    if sample.disk_r <= state.search_lo || lo_cc.covers(sample.at, search_radius) {
                         continue;
                     }
                     distances.push(distance_to_polyline_mm(sample.at, &lo_centre));
@@ -2647,6 +3033,9 @@ fn roll_to_disk(real: f64, imag: f64) -> (f64, f64) {
 
 /// Everything the report needs about one built spiral.
 struct SpiralMeta {
+    /// The emitted spiral's tool-centre polyline, kept so the independent
+    /// coverage audit can test against the path that will actually be cut.
+    centre: Vec<P3>,
     start_angle: f64,
     candidates: usize,
     bridge_count: usize,
@@ -2809,6 +3198,9 @@ fn build_best_spiral(
     report: &mut SpiralReport,
 ) -> (SpiralResult, SpiralMeta) {
     let radius = params.ball_radius_mm;
+    // The repair must judge by the same criterion the search used, or it would
+    // chase a bar the rings were never placed against.
+    let search_radius = params.ring_search_radius_mm();
     let mut scratch = QueryScratch::new();
     let mut hits: Vec<usize> = Vec::new();
     let mut stats = LiftStats::default();
@@ -2889,7 +3281,11 @@ fn build_best_spiral(
             let missing = ring
                 .band
                 .iter()
-                .filter(|&&s| samples.get(s).is_some_and(|p| !cc.covers(p.at, radius)))
+                .filter(|&&s| {
+                    samples
+                        .get(s)
+                        .is_some_and(|p| !cc.covers(p.at, search_radius))
+                })
                 .count();
             if missing > 0 {
                 uncovered += missing;
@@ -2955,6 +3351,7 @@ fn build_best_spiral(
         rings_contact: rings.iter().map(|r| r.contact.clone()).collect(),
     };
     let meta = SpiralMeta {
+        centre,
         start_angle: best_angle,
         candidates,
         bridge_count: rings.len().saturating_sub(1),
@@ -3388,12 +3785,35 @@ mod tests {
             n_surface_samples: 4000,
             n_angular_samples: 120,
             ring_eps: 0.002,
+            // DERIVED, not tuned. Two things have to be absorbed:
+            //
+            //   1. the paper's criterion has zero margin at every ring midline
+            //      (see `SpiralParams::ring_spacing_safety`), so the centroid
+            //      audit lands on a knife edge — at factor 1.0 the three
+            //      centroid families within 0.003–0.049 mm of a band edge
+            //      (k = 2, 5, 8 here) read as unmachined, 14.2 % of the region;
+            //   2. the ring step overshoots `2·reach'` by the local radial
+            //      SAMPLE gap. This fixture's facets are 1 mm and the inner
+            //      strips carry one sample each, so the barycentric lattice
+            //      leaves a sample-free annulus of 2/3 mm at every mesh vertex
+            //      ring — the worst radial gap is 0.667 mm.
+            //
+            // Coverage survives while `2·reach·(1 − f) ≥ 0.667`, i.e.
+            // `f ≤ 0.56`; and the reported adequacy condition below wants the
+            // margin above `2 × max_local_sample_spacing_mm` = 0.722 mm, i.e.
+            // `f ≤ 0.525`. 0.45 gives a 0.836 mm margin — 16 % headroom over
+            // the tighter of the two. That is a big derate, and it is the
+            // honest price of a fixture whose facets are 0.66× the stepover:
+            // the same lesson the F2 phase-1 withdrawal recorded at instrument
+            // scale, arriving here at unit scale.
+            ring_spacing_safety: 0.45,
             // The paper sweeps in π/50 steps (100 candidates). On a disk every
             // start angle is equivalent by symmetry, so two candidates
             // exercise the sweep without paying for 100 rebuilds.
             start_angle_step: TAU / 2.0,
             ..SpiralParams::new(ball, h)
         };
+        let expect_stepover = stepover_from_scallop_flat(ball, h);
         let (report, outcome) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params);
         let result = outcome.expect("simply-connected fixture must plan");
 
@@ -3425,6 +3845,20 @@ mod tests {
         }
         assert!(report.stall.is_none(), "coverage closed, so no stall block");
 
+        // The adequacy condition, with the factor of 2 that makes it sound:
+        // `max_local_sample_spacing_mm` is an isotropic in-triangle estimate,
+        // but the gap that actually bites is RADIAL and spans a mesh vertex
+        // ring, where no sample lands on either side — roughly twice the
+        // in-triangle spacing. Below this the ring step quantises to the mesh's
+        // feature pitch instead of following the scallop rule.
+        assert!(
+            report.ring_spacing_margin_mm > 2.0 * report.max_local_sample_spacing_mm,
+            "safety margin {} mm must exceed 2× the coarsest local sample \
+             spacing {} mm",
+            report.ring_spacing_margin_mm,
+            report.max_local_sample_spacing_mm
+        );
+
         // The decisive spacing row. On a similarity the local radial scale is
         // ρ at every point of every circle, so every ring's max/min is 1 —
         // meaning the worst-sector rule costs this map nothing. The bar is
@@ -3446,6 +3880,59 @@ mod tests {
             anis.worst_ring
         );
         assert!(anis.median_ratio <= anis.worst_ratio);
+
+        // Sampling covers the DOMAIN, not a budget: no triangle is invisible
+        // to the coverage predicate. Zero here is by construction, and it is
+        // measured because this exact class of defect reads as success.
+        assert_eq!(report.triangles_without_samples, 0);
+        assert!((report.largest_unsampled_triangle_area_mm2).abs() < 1e-12);
+        assert!(report.samples_placed >= report.samples_requested);
+        assert!(report.samples_placed >= report.region_triangles);
+        // The adequacy rule that is aware of apportionment: the coarsest
+        // local sample spacing anywhere must sit under half the stepover.
+        assert!(
+            report.max_local_sample_spacing_mm < 0.5 * expect_stepover,
+            "coarsest local sampling {} mm vs half-stepover {}",
+            report.max_local_sample_spacing_mm,
+            0.5 * expect_stepover
+        );
+
+        // The independent witness: mesh centroids, never the sample set.
+        let audit = report
+            .coverage_audit
+            .as_ref()
+            .expect("a spiral was emitted, so the audit must have run");
+        assert_eq!(audit.centroids_tested, report.region_triangles);
+        assert!(
+            (audit.region_area_mm2 - std::f64::consts::PI * radius * radius).abs()
+                < 0.02 * std::f64::consts::PI * radius * radius
+        );
+        // With the bands overlapping by 0.076 mm, coverage is contiguous from
+        // the centre out to `r₁ + reach`, and the outermost centroid (9.648)
+        // sits inside that — so this is asserted at exactly zero, not at a
+        // tolerance. A nonzero reading here is real information.
+        assert_eq!(
+            audit.uncovered_centroid_triangles,
+            0,
+            "unmachined {} mm² = {:.3}% of region over {} triangles; \
+             largest patch {} mm²; distance to centre curve \
+             min {:.6} / med {:.6} / max {:.6} mm vs K_c {:.6}; \
+             uncovered disk radius min {:.4} / med {:.4} / max {:.4} \
+             (near 1 = rim, near 0 = centre, spread = bands at ring midlines)",
+            audit.unmachined_area_mm2,
+            100.0 * audit.unmachined_area_fraction,
+            audit.uncovered_centroid_triangles,
+            audit.largest_unmachined_triangle_area_mm2,
+            audit.uncovered_distance.min_mm,
+            audit.uncovered_distance.median_mm,
+            audit.uncovered_distance.max_mm,
+            audit.coverage_radius_mm,
+            audit.uncovered_disk_radius.min_mm,
+            audit.uncovered_disk_radius.median_mm,
+            audit.uncovered_disk_radius.max_mm
+        );
+        assert!((audit.unmachined_area_mm2).abs() < 1e-12);
+        assert!((audit.coverage_radius_mm - ball).abs() < 1e-12);
 
         // Band sizes: every ring must earn its pass.
         assert_eq!(
@@ -3516,23 +4003,53 @@ mod tests {
             }
         }
 
-        // Spacing against the closed form. Sampling is the only error source:
-        // 4000 samples over π·10² mm² is ~0.28 mm apart, 18 % of the 1.52 mm
-        // stepover, so the bar is 25 %. Pairs whose inner ring is closer to
-        // the centre than one stepover are excluded — there the spacing is
-        // bounded by the ring's own radius, not by the scallop rule.
-        let expect = stepover_from_scallop_flat(ball, h);
+        // Spacing, asserted as the two EXACT invariants rather than against
+        // the undereated closed form.
+        //
+        // A ±25 %-of-`expect_stepover` band is not available on this fixture
+        // and pretending otherwise is how the previous version of this
+        // assertion came to read 0.997 mm against a 1.520 mm expectation: the
+        // step is `2·reach'` plus a radial sample gap of up to 0.667 mm, which
+        // is 44 % of the stepover all by itself. What IS exact:
+        //
+        //   floor:   gap >= 2·reach'      — the criterion can never place two
+        //                                   rings closer than the derated
+        //                                   stepover, whatever the sampling;
+        //   ceiling: gap <= 2·reach       — the coverage invariant. This is the
+        //                                   whole point of the safety factor,
+        //                                   and it is what makes the audit
+        //                                   above read exactly zero.
+        //
+        // Together they bracket the spacing in [0.760, 1.520] mm, and the
+        // ceiling is the machining-relevant half.
+        let reach_true = 0.5 * expect_stepover;
+        let reach_derated = params.ring_spacing_safety * reach_true;
+        assert!((report.lateral_reach_mm - reach_true).abs() < 1e-9);
+        assert!((report.ring_search_lateral_reach_mm - reach_derated).abs() < 1e-9);
         let mut checked = 0usize;
         for i in 0..report.ring_count.saturating_sub(1) {
             let inner = radius * report.ring_radii[i + 1];
-            if inner <= expect {
+            if inner <= expect_stepover {
                 continue;
             }
             let gap = radius * (report.ring_radii[i] - report.ring_radii[i + 1]);
+            // `ring_eps` is a disk-domain bisection tolerance, so a ring can
+            // land up to `ring_eps · ρ` outward of its exact infimum, and that
+            // slack SUBTRACTS from the gap. Both terms of the bound are
+            // derived; the ceiling is unaffected because the slack can only
+            // ever shrink a gap.
             assert!(
-                (gap - expect).abs() <= 0.25 * expect,
-                "ring {i}->{} spacing {gap} mm vs closed form {expect} mm",
-                i + 1
+                gap >= 2.0 * reach_derated - params.ring_eps * radius - 1e-9,
+                "ring {i}->{} spacing {gap} mm is below the derated stepover {} mm",
+                i + 1,
+                2.0 * reach_derated
+            );
+            assert!(
+                gap <= 2.0 * reach_true,
+                "ring {i}->{} spacing {gap} mm exceeds 2·reach {} mm — coverage \
+                 is lost between these rings",
+                i + 1,
+                2.0 * reach_true
             );
             checked += 1;
         }
@@ -3554,6 +4071,15 @@ mod tests {
             n_surface_samples: 4000,
             n_angular_samples: 120,
             ring_eps: 0.003,
+            // Same reason as the flat arm. 0.85 rather than 0.50 because this
+            // arm's facets are 1.57 mm against a 3.76 mm curved stepover — a
+            // better ratio than the flat fixture's — and because the previous
+            // radius-form factor of 0.95 was, on this geometry, an effective
+            // reach derating of 0.888 that this arm already passed under.
+            // 0.85 therefore buys strictly MORE margin than what passed
+            // (0.612 mm vs 0.456 mm) while costing ~15 % of stepover, which
+            // the ±30 % bar below absorbs.
+            ring_spacing_safety: 0.85,
             start_angle_step: TAU / 2.0,
             ..SpiralParams::new(ball, h)
         };
@@ -3611,6 +4137,60 @@ mod tests {
         assert_eq!(report.disk_self_intersections, 0);
         assert!(report.ring_count >= 4, "only {} rings", report.ring_count);
         assert_eq!(report.bridge_count, report.ring_count - 1);
+        assert_eq!(report.triangles_without_samples, 0);
+        assert!(report.samples_placed >= report.region_triangles);
+        let audit = report
+            .coverage_audit
+            .as_ref()
+            .expect("a spiral was emitted, so the audit must have run");
+        assert_eq!(audit.centroids_tested, report.region_triangles);
+        // A hemisphere's 3D area is 2πr²; the faceted one is slightly under.
+        assert!(
+            (audit.region_area_mm2 - TAU * sphere_r * sphere_r).abs()
+                < 0.05 * TAU * sphere_r * sphere_r
+        );
+        // The bar stays at 5 %: this arm has no closed form, so tightening it
+        // would be guessing, and a number picked to look strict is not
+        // evidence. What answers "does it pass for the right reason" is the
+        // MECHANISM assertion below, which is strictly stronger than any area
+        // threshold — it requires that whatever is uncovered be grazing at the
+        // rim, not a hole anywhere.
+        assert!(
+            audit.unmachined_area_fraction < 0.05,
+            "unmachined {:.3}% of region over {} triangles; largest patch {} mm²; \
+             distance min {:.6} / med {:.6} / max {:.6} mm vs K_c {:.6}; \
+             uncovered disk radius min {:.4} / med {:.4} / max {:.4}",
+            100.0 * audit.unmachined_area_fraction,
+            audit.uncovered_centroid_triangles,
+            audit.largest_unmachined_triangle_area_mm2,
+            audit.uncovered_distance.min_mm,
+            audit.uncovered_distance.median_mm,
+            audit.uncovered_distance.max_mm,
+            audit.coverage_radius_mm,
+            audit.uncovered_disk_radius.min_mm,
+            audit.uncovered_disk_radius.median_mm,
+            audit.uncovered_disk_radius.max_mm
+        );
+        if audit.uncovered_centroid_triangles > 0 {
+            // Grazing, not a hole: a centroid that misses by microns is the
+            // zero-margin knife edge plus facet chords; one that misses by a
+            // useful fraction of the tool is unmachined material. The sphere
+            // cap's 23.5 % hole sat far outside this bound.
+            assert!(
+                audit.uncovered_distance.max_mm < audit.coverage_radius_mm + 0.10,
+                "uncovered by up to {:.6} mm beyond K_c {:.6} — a hole, not grazing",
+                audit.uncovered_distance.max_mm - audit.coverage_radius_mm,
+                audit.coverage_radius_mm
+            );
+            // ...and at the rim, where the region simply ends, not in the
+            // interior where a spacing defect would put it.
+            assert!(
+                audit.uncovered_disk_radius.min_mm > 0.90,
+                "uncovered centroids reach disk radius {:.4}; an interior miss is \
+                 a spacing defect, not a boundary effect",
+                audit.uncovered_disk_radius.min_mm
+            );
+        }
 
         // Mean polar angle per ring, measured from the emitted contact points
         // so a dropped point cannot shift the comparison.
@@ -3632,11 +4212,33 @@ mod tests {
                 continue;
             }
             let gap = sphere_r * (polar[i] - polar[i + 1]).abs();
+            // Against the undereated curved form, with the ±30 % band covering
+            // the deliberate 15 % derating plus the sample-comb overshoot.
+            //
+            // NOTE, deliberately not asserted here: this arm does NOT satisfy
+            // the adequacy condition the flat arm checks. Its equator facets
+            // carry ~1 sample each over a 1.57 mm strip, so the radial sample
+            // gap is comparable to the 0.61 mm margin. That makes this bar a
+            // TOLERANCE, not a proof — the flat arm, which has a closed form
+            // and does satisfy the condition, is where the spacing law is
+            // actually established. Both numbers are in the message so a
+            // failure here is diagnosable rather than mysterious.
             assert!(
                 (gap - expect).abs() <= 0.30 * expect,
-                "ring {i}->{} meridian spacing {gap} mm vs curved form {expect} mm",
-                i + 1
+                "ring {i}->{} meridian spacing {gap} mm vs curved form {expect} mm \
+                 (safety factor {}, margin {} mm, coarsest local sampling {} mm)",
+                i + 1,
+                params.ring_spacing_safety,
+                report.ring_spacing_margin_mm,
+                report.max_local_sample_spacing_mm
             );
+            // No coverage-ceiling invariant here on purpose. The exact bound
+            // on a sphere is the CURVED half-stepover (1.88 mm), not the flat
+            // `lateral_reach_mm` (2.04 mm) the parameter is defined from, so
+            // asserting the flat one would be the wrong bound wearing the
+            // right name. On this arm the coverage witness is the independent
+            // audit above, which tests the true `K_c` geometry directly; the
+            // flat arm is where the exact invariants live.
             checked += 1;
         }
         assert!(checked >= 2, "only {checked} spacings were in range");
@@ -3736,6 +4338,63 @@ mod tests {
         // `max_rings` stopped the search; no radius was ever proven
         // infeasible, so there are no blockers to census.
         assert_eq!(stall.blockers.samples, 0);
+    }
+
+    /// `N_S` far below the triangle count must be **impossible to starve**,
+    /// and inadequate sampling must be **reported** rather than passed.
+    ///
+    /// This is the regression for the sphere-cap defect: an area-apportioned
+    /// hard cap left ~46 % of triangles with no sample, the coverage predicate
+    /// had no population in the middle, and a 23.5 %-of-region unmachined hole
+    /// came back reading `uncovered_after_rings = 0`. `N_S = 1` on a
+    /// 192-triangle fixture is that failure taken to its extreme.
+    #[test]
+    fn a_starved_sample_budget_cannot_blind_the_coverage_predicate() {
+        let radius = 10.0_f64;
+        let ball = 2.0_f64;
+        let h = 0.15_f64;
+        let mesh = disk_mesh(radius, 2, 64);
+        let index = SpatialIndex::build_auto(&mesh);
+        let params = SpiralParams {
+            n_surface_samples: 1,
+            n_angular_samples: 90,
+            ring_eps: 0.005,
+            start_angle_step: TAU,
+            ..SpiralParams::new(ball, h)
+        };
+        let (report, outcome) = plan_spiral(&mesh, &index, &all_triangles(&mesh), &params);
+
+        // Route taken is the floor, so starvation is structurally impossible:
+        // every triangle carries a sample no matter how small N_S is.
+        assert_eq!(report.samples_requested, 1);
+        assert_eq!(
+            report.triangles_without_samples, 0,
+            "N_S is a floor, not a cap — no triangle may be invisible"
+        );
+        assert!((report.largest_unsampled_triangle_area_mm2).abs() < 1e-12);
+        assert_eq!(report.samples_placed, report.region_triangles);
+        assert!(report.region_triangles >= 192);
+
+        // ...and the sampling that results is genuinely too coarse for the
+        // stepover, which the adequacy row must SAY rather than hide. The old
+        // rule, √(region area / N_S), is what missed this class entirely.
+        let stepover = stepover_from_scallop_flat(ball, h);
+        assert!(
+            report.max_local_sample_spacing_mm > 0.5 * stepover,
+            "this fixture is meant to be under-resolved: {} mm vs half-stepover {}",
+            report.max_local_sample_spacing_mm,
+            0.5 * stepover
+        );
+
+        // Whatever the search then does, the independent audit is the witness.
+        if outcome.is_ok() {
+            let audit = report
+                .coverage_audit
+                .as_ref()
+                .expect("a spiral was emitted, so the audit must have run");
+            assert_eq!(audit.centroids_tested, report.region_triangles);
+            assert!(audit.unmachined_area_fraction >= 0.0 && audit.unmachined_area_fraction <= 1.0);
+        }
     }
 
     #[test]
