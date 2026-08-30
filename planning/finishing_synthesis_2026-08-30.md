@@ -198,3 +198,80 @@ targets the floor). What is missing is one afternoon of wiring and the
 - Trust any efficiency number measured on a mesh whose facets are
   comparable to the stepover. That mistake has now cost this programme two
   full rounds of work (§F2-1 withdrawal, and the v3 campaign before it).
+
+---
+
+## 8. The § 4.3 proposal, measured overnight — it helps a lot and still loses
+
+Run `e5af6336`, four candidates on four analytic fixtures, every one scored
+against the local floor `L_min = Σ area_t / s_max(t)` with analytic
+curvature. **This is the × floor column §6 asked for.**
+
+| fixture | **floor** | spiral | 0° raster | field `D=t1` | **field `D=sweep`** |
+|---|---|---|---|---|---|
+| SPHERE | 244.05 mm | 1.087× | **0.997×** ⚠ | 2.339× | **1.508×** |
+| WAVY | 156.27 mm | 1.341× | 1.101× | 4.917× | **1.884×** |
+| RIBBON | 373.88 mm | 3.745× | 1.310× | 9.001× | **2.071×** |
+| BAND/shallow | 641.28 mm | *no path* | 1.127× | 4.455× | **2.094×** |
+
+**The direction diagnosis is confirmed.** Swapping `D` from curvature to
+the sweep axis cuts the field's distance by **1.55× (sphere), 2.61×
+(wavy), 4.34× (ribbon), 2.13× (band)** — a large, consistent, one-change
+improvement, and it fixes the fragmentation too (ribbon 674 → 98
+fragments, 138 → 34 retracts). The pre-registered falsifier asked for
+"less than `D=t1` on every arm, ≥2× on the sphere": the first clause
+passes on all four, the sphere's specific 2× bar does **not** (1.55×).
+Recorded as stated, not softened — and the reason is instructive: a sphere
+is umbilic, so a noise direction still carries the *correct magnitude*
+everywhere. The direction source hurts least exactly where curvature
+carries no information.
+
+**And it still loses to a plain raster on every fixture.** 1.51–2.09×
+floor against the raster's 1.00–1.31×. The mechanism is the one already
+identified for the spiral, appearing again in a different costume: Zou's
+level schedule takes the **minimum increment over the whole curve**, so
+every pass is spaced by its worst point — the same worst-sector rule that
+costs the spiral 36× over-cover on a ribbon. **Any method that assigns one
+spacing to a whole pass pays for that pass's worst point.**
+
+### The honest caveat: the fixtures cannot show this proposal's advantage
+
+A locally-varying stepover can only beat a uniform one where `s_max`
+actually varies. On these fixtures it barely does — the sphere is
+**umbilic**, so `s_max` is a single constant (0.47431 everywhere, min =
+median = max), and the others are gentle. An honest raster on the sphere
+would sit at exactly **1.0× floor** and could not be beaten by any
+spacing law, because there is nothing to adapt to.
+
+That is the third instance of one meta-error in this programme:
+
+1. §F2-1 measured spacing on facets 3× the stepover — **the fixture could
+   not resolve the quantity.**
+2. §F2-4 measured a retract-elimination method against a baseline with
+   **no retracts to eliminate.**
+3. §8 measures a *locally-adaptive spacing* law on surfaces with
+   **almost no local variation to adapt to.**
+
+Each time the fixture made the claimed advantage structurally unable to
+appear. **The rule this programme should adopt: state the mechanism by
+which the candidate is supposed to win, then check the fixture can express
+it, before running anything.**
+
+So §4.3 is **not refuted** — it is untested on the geometry that would
+decide it: a surface mixing tight and slack curvature, where an honest
+raster must use `min(s_max)` globally while a field uses `s_max(x)`
+locally. The predicted gain is `mean(s_max)/min(s_max)` over the region,
+which is ~1.00 on these fixtures and would need a genuinely varied surface
+to show. That is the experiment; nothing else in §6 changes.
+
+### What is settled
+
+- **The raster is at or below the floor** on every fixture — 0.997× on the
+  sphere is under-coverage, and its 1.10–1.31× elsewhere is the honest
+  number to beat. It is a much better baseline than this programme
+  assumed.
+- **Neither exotic method beats it on distance**, and distance is what
+  dominates time now that `surface_link` has absorbed the retract wall.
+- **The worst-point spacing rule is the common defect** of the spiral and
+  both field variants. A method that beats the raster must vary spacing
+  *along* a pass, not just between passes — which no candidate here does.
