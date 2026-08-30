@@ -149,9 +149,21 @@ own definitions:
   front-end (A-14, the Neumann kernel, the Nyström discretisation) remains
   unimplemented and is what the hole/island phases would need.
 
+- **Michael S. Floater, *Mean value coordinates*, Computer Aided Geometric
+  Design 20(1):19–27 (2003)** — the interior weights of that module's disk
+  flattening are Floater's mean-value weights,
+  `w_ij = (tan(δ_ij/2) + tan(γ_ij/2)) / ‖v_i − v_j‖`, implemented at
+  `conformal_spiral::mean_value_weights`. The embedding guarantee they buy is
+  **W. T. Tutte, *How to draw a graph*, Proc. London Math. Soc. 13:743–767
+  (1963)**: positive weights plus a convex boundary map give a fold-free
+  embedding. Adopted 2026-08-30 after the F2.1 evidence run measured 298
+  flipped triangles of 9107 under the cotangent Laplacian this replaced;
+  neither the choice of these weights over cotangent, nor the Gauss–Seidel
+  solver, nor any surrounding machinery is attributable to Floater or Tutte.
+
 Everything else in that module is repo-authored and labelled `[REPO]` at its
-site: the harmonic disk map (a substitution for the papers' BFF + slit map,
-valid only in the simply-connected case), the arc-length boundary
+site: the substitution of a plain disk flattening for the papers' BFF + slit
+map (valid only in the simply-connected case), the arc-length boundary
 correspondence, the surface sampling scheme, the spiral's angular bookkeeping,
 and every reported metric. No performance or quality claim of either paper is
 reproduced or endorsed by that code.

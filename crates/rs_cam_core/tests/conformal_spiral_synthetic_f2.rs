@@ -62,13 +62,35 @@
 //! Between the two, the instrument prints both arms' **radial
 //! area-distortion profiles side by side**. That pair is the attribution
 //! evidence for the phase: if the steep profile climbs and the flat one is
-//! level, what separates the arms is the **map** — the harmonic substitution
-//! standing in for the paper's conformal slit map — and the repair is Phase
-//! F2 step 3, not the ring search.
+//! level, what separates the arms is the **map** — the mean-value (Floater)
+//! substitution standing in for the paper's conformal slit map — and the
+//! repair is Phase F2 step 3, not the ring search.
 //!
 //! Stage E's sampling sensitivity runs on the FLAT arm **only**. On a stalled
 //! arm every row would refuse for the same reason and the sampling dial would
 //! explain none of it.
+//!
+//! # What a fold means here, and why the flip count is now a tripwire
+//!
+//! The module's flattening moved from cotangent-Laplacian + CG to
+//! **mean-value (Floater) weights + Gauss–Seidel**. Every mean-value weight
+//! is strictly positive, so Tutte's spring-embedding theorem makes a valid
+//! embedding *certain* for a manifold disk on a convex boundary: **folds are
+//! structurally impossible**, not empirically rare. This instrument therefore
+//! treats `flipped_triangles` as a **tripwire on a structural invariant** — a
+//! nonzero count is a bug or an under-converged solve, never a discretisation
+//! symptom. Earlier revisions of this file said the opposite (the cotangent
+//! version measured 298 flips of 9107 on this same fixture); that reading is
+//! retired and must not be carried forward.
+//!
+//! Why it matters to the ring search, which is what confirmed the change:
+//! `FlatLocator` resolves a fold's multivaluedness **by first hit**, so over a
+//! folded sector the forward and inverse maps disagree and the samples there
+//! can never be swept *at any radius*. `StallContext::uncovered_outside_last_ring`
+//! is the census of exactly that — still-uncovered points the ring search had
+//! already certified as swept — and it is **0 for an embedding**. The
+//! diagnosis reads it and `flipped_triangles` together as two views of one
+//! defect.
 //!
 //! # Selection hygiene — and why the module's refusals stay authoritative
 //!
@@ -146,7 +168,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::conformal_spiral::{
-    self, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport, SpiralResult,
+    self, DistanceStats, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport,
+    SpiralResult,
 };
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -1349,19 +1372,71 @@ fn print_flatten_block(report: &SpiralReport) {
         report.flatten_interior_vertices
     );
     eprintln!(
-        "     CG iterations u / v           {:>12} / {}",
-        report.flatten_cg_iterations[0], report.flatten_cg_iterations[1]
+        "     Gauss-Seidel sweeps           {:>12}",
+        report.flatten_solver_sweeps
     );
     eprintln!(
-        "     CG residual u / v             {:>12.3e} / {:.3e}",
-        report.flatten_residual[0], report.flatten_residual[1]
+        "     final sweep delta             {:>12.3e}   ABSOLUTE max coordinate change on the\n\
+         \x20                                              last sweep, in UNIT-DISK units — not a\n\
+         \x20                                              relative residual. Compare against\n\
+         \x20                                              SpiralParams::solver_tolerance, not\n\
+         \x20                                              against a norm.",
+        report.flatten_solver_delta
+    );
+
+    eprintln!("\n     -- Tutte preconditions: MEASURED, not assumed --");
+    eprintln!(
+        "     mean-value weight min / max   {:>12.6e} / {:.6e}",
+        report.mean_value_weight_min, report.mean_value_weight_max
+    );
+    let weights_ok =
+        report.mean_value_weight_nonpositive == 0 && report.mean_value_weight_min > 0.0;
+    eprintln!(
+        "     NON-POSITIVE weights          {:>12}   {}",
+        report.mean_value_weight_nonpositive,
+        if weights_ok {
+            "MUST be 0 — OK"
+        } else {
+            "*** MUST be 0 — VIOLATED: the Tutte embedding guarantee does NOT hold, and any \
+             flips below are unsurprising rather than a solver bug ***"
+        }
     );
     eprintln!(
-        "     flipped triangles (want 0)    {:>12}",
-        report.flipped_triangles
+        "     FLIPPED triangles             {:>12}   {}",
+        report.flipped_triangles,
+        if report.flipped_triangles == 0 {
+            "MUST be 0 — OK"
+        } else {
+            "*** TRIPWIRE FIRED ***"
+        }
     );
+    if report.flipped_triangles > 0 {
+        let radii = &report.flipped_triangle_disk_radii;
+        eprintln!(
+            "     fold-zone census: {} flipped-triangle disk radii (ascending) —\n\
+             \x20      this says WHERE in the disk the invariant broke, which is what a ring-stall\n\
+             \x20      postmortem needs:",
+            radii.len()
+        );
+        // The full list can be long; print min/median/max plus a bounded head
+        // so the shape is visible without flooding the log.
+        eprintln!(
+            "        r min / median / max   {:.6} / {:.6} / {:.6}",
+            percentile(radii, 0.0),
+            percentile(radii, 0.50),
+            percentile(radii, 1.0)
+        );
+        let head: Vec<String> = radii.iter().take(24).map(|r| format!("{r:.4}")).collect();
+        eprintln!(
+            "        first {} of {}: {}",
+            head.len(),
+            radii.len(),
+            head.join(", ")
+        );
+    }
+
     eprintln!(
-        "     orientation sign              {:>12.1}",
+        "\n     orientation sign              {:>12.1}",
         report.orientation_sign
     );
     eprintln!(
@@ -1373,11 +1448,21 @@ fn print_flatten_block(report: &SpiralReport) {
         report.angle_distortion_median_deg, report.angle_distortion_max_deg
     );
     eprintln!(
-        "     READ THIS FIRST if anything below disappoints: a HARMONIC map is a labelled\n\
-         \x20    [REPO] substitution for the paper's conformal slit map (PROGRAMME.md §F2 step 1).\n\
-         \x20    Nonzero flips are a DISCRETISATION symptom (obtuse triangles, negative cotangent\n\
-         \x20    weights), not a mechanism verdict; a wide area-distortion spread is expected and\n\
-         \x20    is what the sampled coverage check exists to compensate."
+        "     READ THIS FIRST if anything below disappoints. The flattening is a MEAN-VALUE\n\
+         \x20    (Floater) map solved by Gauss-Seidel — a labelled [REPO] substitution for the\n\
+         \x20    paper's conformal slit map (PROGRAMME.md §F2 step 1). Every mean-value weight is\n\
+         \x20    strictly positive, so Tutte's spring-embedding theorem makes a valid embedding\n\
+         \x20    CERTAIN for a manifold disk on a convex boundary: FOLDS ARE STRUCTURALLY\n\
+         \x20    IMPOSSIBLE, and a nonzero flip count is a BUG (or an under-converged solve),\n\
+         \x20    never bad luck and never a discretisation symptom. That framing is the opposite\n\
+         \x20    of the cotangent-Laplacian version this instrument was first written against,\n\
+         \x20    where flips WERE an expected symptom and 298 of 9107 were measured on this same\n\
+         \x20    fixture — do not carry the old reading forward.\n\
+         \x20    What IS expected: mean-value is not the harmonic map, so ANGULAR distortion may\n\
+         \x20    be slightly worse than the cotangent version's, and a wide AREA-distortion\n\
+         \x20    spread is normal — the paper's sampled coverage check compensates distortion by\n\
+         \x20    design. It does not compensate folds at all, which is the whole reason for the\n\
+         \x20    trade."
     );
 }
 
@@ -1441,11 +1526,16 @@ fn print_radial_profile(label: &str, report: &SpiralReport) {
 
 // ── the refusal diagnosis (pre-registered, printed in the output) ───────
 
-/// `uncovered_distance_median_mm` above this multiple of `2·K_c` is the
+/// `StallContext::near_band`'s median above this multiple of `2·K_c` is the
 /// module's own "far larger than 2·K_c".
+///
+/// **It reads `near_band`, not `all_uncovered`.** The latter is dominated by
+/// the untouched disk interior — a large median there is expected and means
+/// nothing — so a bar applied to it would answer a different question from the
+/// one asked.
 const STALL_FAR_MULTIPLE: f64 = 2.0;
 
-/// `uncovered_distance_median_mm` at or below this multiple of `K_c` is
+/// `StallContext::near_band`'s median at or below this multiple of `K_c` is
 /// "near K_c" — the reading that says the search, not the geometry, gave up.
 const STALL_NEAR_MULTIPLE: f64 = 1.5;
 
@@ -1534,76 +1624,194 @@ fn diagnose_refusal(
         stall.uncovered
     );
     eprintln!(
-        "     distances measured on          {:>12}   samples, against {:?}",
-        stall.distance_samples, stall.distance_reference
-    );
-    eprintln!(
         "     coverage radius K_c (mm)       {:>12.4}   (params.ball_radius_mm {:.4} — these \
          must agree)",
         stall.coverage_radius_mm, params.ball_radius_mm
     );
     eprintln!(
-        "     uncovered distance min/med/max {:>12.4} / {:.4} / {:.4} mm",
-        stall.uncovered_distance_min_mm,
-        stall.uncovered_distance_median_mm,
-        stall.uncovered_distance_max_mm
+        "     band width (disk units)        {:>12.6}   2*K_c through the local linear scale of\n\
+         \x20                                              the map — what `near band` is restricted\n\
+         \x20                                              by, printed so the restriction is\n\
+         \x20                                              interpretable rather than magic",
+        stall.band_width_disk
+    );
+    eprintln!(
+        "     distances measured against     {:>12?}",
+        stall.distance_reference
+    );
+
+    // -- FOLD CENSUS. Zero is the reading an embedding must produce. --
+    let fold_census = stall.uncovered_outside_last_ring;
+    eprintln!(
+        "\n     FOLD CENSUS  uncovered_outside_last_ring  {fold_census:>8}   {}",
+        if fold_census == 0 {
+            "MUST be 0 for an embedding — OK"
+        } else {
+            "*** NONZERO: points the ring search already CERTIFIED as swept are still \
+             uncovered ***"
+        }
+    );
+    eprintln!(
+        "       These are still-uncovered S^h points whose DISK radius exceeds the last placed\n\
+         \x20      ring's radius. Under an injective map that set is empty by construction. A\n\
+         \x20      nonzero count is the fold signature: the flat locator resolves a fold's\n\
+         \x20      multivaluedness by first hit, so the forward and inverse maps disagree over\n\
+         \x20      the folded sector and samples there can never be swept AT ANY RADIUS. Read it\n\
+         \x20      together with `FLIPPED triangles` above — they are two views of one defect."
+    );
+
+    // -- the four distance populations, each labelled with what it means --
+    // `unit` is a parameter, not a constant "mm" in the format string: three
+    // of these four populations are distances in mm and the fourth is a
+    // position in DISK units. A row that labels its own units wrongly is the
+    // instrument telling a lie its note then has to walk back.
+    let show = |name: &str, unit: &str, note: &str, stats: &DistanceStats| {
+        if stats.samples == 0 {
+            eprintln!("     {name:<22} EMPTY (0 samples) — {note}");
+        } else {
+            eprintln!(
+                "     {name:<22} n={:<7} min {:>9.4} / med {:>9.4} / max {:>9.4} {unit:<5} {note}",
+                stats.samples, stats.min_mm, stats.median_mm, stats.max_mm
+            );
+        }
+    };
+    eprintln!("\n     -- distance populations (all against the reference curve above) --");
+    show(
+        "all uncovered",
+        "mm",
+        "dominated by the untouched disk INTERIOR; a large median here is expected and means \
+         little on its own",
+        &stall.all_uncovered,
+    );
+    show(
+        "near band",
+        "mm",
+        "restricted to within one band width of the last placed radius — the points the stall \
+         is ABOUT",
+        &stall.near_band,
+    );
+    show(
+        "blockers  <<<",
+        "mm",
+        "WHAT ACTUALLY STOPPED THE DESCENT: uncovered points outside search_lo that the ring at \
+         search_lo (the largest PROVEN-INFEASIBLE radius) fails to sweep. Empty means the search \
+         never proved any radius infeasible.",
+        &stall.blockers,
+    );
+    show(
+        "blocker disk radius",
+        "disk",
+        "the same blockers' positions in the DOMAIN — disk units, NOT mm; do not compare these \
+         to K_c. (The struct reuses DistanceStats, so its fields are still SPELLED `_mm`; the \
+         values are not.)",
+        &stall.blocker_disk_radius,
     );
 
     // -- the pre-registered verdict --
-    let median = stall.uncovered_distance_median_mm;
+    //
+    // The distance condition reads `near_band`, not `all_uncovered`: the
+    // latter is dominated by the untouched disk interior, so a bar applied to
+    // it would be answering a different question from the one asked. When the
+    // near band is empty there is no distance reading at all, and the
+    // conditions that depend on one are false rather than vacuously true.
+    let band = &stall.near_band;
+    let have_distance = band.samples > 0;
+    let median = band.median_mm;
     let far_bar = STALL_FAR_MULTIPLE * 2.0 * k_c;
     let near_bar = STALL_NEAR_MULTIPLE * k_c;
     let climb = radial_climb(report);
-    let far = median > far_bar;
-    let near = median <= near_bar;
+    let far = have_distance && median > far_bar;
+    let near = have_distance && median <= near_bar;
     let steep_profile = climb.is_some_and(|c| c >= RADIAL_CLIMB_STEEP);
     let flat_profile = climb.is_some_and(|c| c <= RADIAL_CLIMB_FLAT);
+    let map_defect = report.flipped_triangles > 0 || fold_census > 0;
+    let embedding_clean = report.flipped_triangles == 0 && fold_census == 0;
 
     eprintln!("\n   -- PRE-REGISTERED VERDICT LOGIC (stated before the run, evaluated here) --");
     eprintln!(
-        "     A. interior_radius_feasible == false     -> {}",
+        "     A. interior_radius_feasible == false            -> {}",
         !stall.interior_radius_feasible
     );
+    if have_distance {
+        eprintln!(
+            "     B. near-band median {median:.4} > {STALL_FAR_MULTIPLE} x 2*K_c = \
+             {far_bar:.4} mm      -> {far}"
+        );
+        eprintln!(
+            "     D. near-band median {median:.4} <= {STALL_NEAR_MULTIPLE} x K_c = \
+             {near_bar:.4} mm     -> {near}"
+        );
+    } else {
+        eprintln!(
+            "     B/D. near-band population is EMPTY — no distance reading, so both\n\
+             \x20          distance conditions are FALSE rather than vacuously true."
+        );
+    }
     eprintln!(
-        "     B. median {median:.4} > {STALL_FAR_MULTIPLE} x 2*K_c = {far_bar:.4} mm  \
-         (\"far larger\") -> {far}"
-    );
-    eprintln!(
-        "     C. radial climb >= {RADIAL_CLIMB_STEEP:.1} (\"climbing steeply\")   -> \
+        "     C. radial climb >= {RADIAL_CLIMB_STEEP:.1} (\"climbing steeply\")          -> \
          {steep_profile}  (climb {})",
         climb.map_or("n/a".to_owned(), |c| format!("{c:.3}"))
     );
     eprintln!(
-        "     D. median {median:.4} <= {STALL_NEAR_MULTIPLE} x K_c = {near_bar:.4} mm  \
-         (\"near K_c\")   -> {near}"
+        "     E. radial climb <= {RADIAL_CLIMB_FLAT:.1} (\"flat profile\")               -> \
+         {flat_profile}"
     );
     eprintln!(
-        "     E. radial climb <= {RADIAL_CLIMB_FLAT:.1} (\"flat profile\")        -> {flat_profile}"
+        "     F. fold census == 0 AND flipped == 0 (embedding clean) -> {embedding_clean}  \
+         (fold {fold_census}, flipped {})",
+        report.flipped_triangles
     );
-    if !stall.interior_radius_feasible && far && steep_profile {
+
+    if map_defect {
         eprintln!(
-            "\n     VERDICT (A and B and C): GEOMETRY UNCOVERABLE RING-BY-RING AT THIS\n\
-             \x20    DISTORTION — a **MAP** finding. The refusal is correct, not a bug in the\n\
-             \x20    search: no interior circle was ever feasible, the still-uncovered points sit\n\
-             \x20    far beyond a tool diameter from the last ring, and the map is compressing\n\
-             \x20    hard toward one end of the disk. The repair is the front-end (a conformal\n\
-             \x20    slit map, Phase F2 step 3), not the ring search."
-        );
-    } else if near && flat_profile {
-        eprintln!(
-            "\n     VERDICT (D and E): SEARCH AT FAULT — a **MECHANISM** finding. The\n\
-             \x20    uncovered points are within reach of the last ring and the map is not\n\
-             \x20    distorting the radius, so a correct search should have placed another ring.\n\
-             \x20    The repair is in the Eqs. 1-4 binary search (its monotonicity assumption is\n\
-             \x20    the module's stated, unproved premise)."
+            "\n     VERDICT (NOT F): **MAP** finding — the flattening is not an embedding.\n\
+             \x20    flipped {} / fold census {fold_census}. Under mean-value (Floater) weights\n\
+             \x20    this SHOULD BE IMPOSSIBLE: every weight is strictly positive, so Tutte makes\n\
+             \x20    a valid embedding certain. This branch is therefore a TRIPWIRE, not an\n\
+             \x20    expected outcome — reaching it means a bug or an under-converged solve\n\
+             \x20    (check the sweep delta and mean_value_weight_nonpositive above), NOT a\n\
+             \x20    property of the geometry. Do not diagnose the ring search until this is\n\
+             \x20    cleared.",
+            report.flipped_triangles
         );
     } else {
+        // `embedding_clean` is the exact complement of `map_defect`, so this
+        // arm IS condition F and no third top-level arm can ever fire. The
+        // INCONCLUSIVE fallback therefore lives one level down, among A-E,
+        // which is the only place a mixed reading is actually possible — a
+        // top-level `else` here would have been a guard that cannot trip,
+        // which is the vacuous-branch pattern this repo keeps paying for.
+        debug_assert!(embedding_clean);
         eprintln!(
-            "\n     VERDICT: INCONCLUSIVE — the conditions above do not form either\n\
-             \x20    pre-registered pattern. Report the rows; do NOT pick a story to fit them.\n\
-             \x20    (This branch exists so a mixed reading cannot be quietly rounded to\n\
-             \x20    whichever verdict was expected.)"
+            "\n     VERDICT (F): GENUINE COVERAGE INFEASIBILITY — a **MECHANISM / GEOMETRY**\n\
+             \x20    finding. The map IS an embedding (no flips, no fold census), and the search\n\
+             \x20    still stalled, so the failure is not the front-end: at this map's distortion\n\
+             \x20    the surface cannot be covered ring-by-ring by concentric disk circles. Read\n\
+             \x20    the `blockers` row for what stopped the descent, and conditions A-E for\n\
+             \x20    which flavour:"
         );
+        if !stall.interior_radius_feasible && far && steep_profile {
+            eprintln!(
+                "\x20      A+B+C: no interior radius was EVER feasible, the near-band points sit\n\
+                 \x20      far beyond a tool diameter, and the radial profile climbs — the\n\
+                 \x20      razor-thin-band reading. The lever is the front-end's DISTORTION (a\n\
+                 \x20      conformal slit map, Phase F2 step 3), even though the map is valid."
+            );
+        } else if near && flat_profile {
+            eprintln!(
+                "\x20      D+E: the near-band points are within reach of the last ring and the\n\
+                 \x20      radial profile is level, so a correct search should have placed another\n\
+                 \x20      ring. The lever is the Eqs. 1-4 binary search itself — its monotonicity\n\
+                 \x20      assumption is the module's stated, unproved premise."
+            );
+        } else {
+            eprintln!(
+                "\x20      INCONCLUSIVE: A-E do not form either sub-pattern. Report the rows; do\n\
+                 \x20      NOT pick a story to fit them. This is the live fallback — it exists so\n\
+                 \x20      a mixed reading cannot be quietly rounded to whichever flavour was\n\
+                 \x20      expected."
+            );
+        }
     }
 
     let diagnosable = !report.area_distortion_by_disk_radius.is_empty();
@@ -1634,6 +1842,15 @@ fn print_params(label: &str, params: &SpiralParams) {
         params.secondary_line_shift,
         params.shift_step,
         params.max_rings
+    );
+    // The solver dials are printed separately because `solver_tolerance` is an
+    // ABSOLUTE max-sweep-delta bound in unit-disk units, not the relative CG
+    // residual the field of the same role used to carry. A reader who assumes
+    // the old semantics reads 1e-9 as far looser than it is.
+    eprintln!(
+        "     {:<20} Gauss-Seidel: solver_max_sweeps {}, solver_tolerance {:.1e} \
+         (ABSOLUTE max coordinate change per sweep, unit-disk units — NOT a relative residual)",
+        "", params.solver_max_sweeps, params.solver_tolerance
     );
 }
 
@@ -2436,11 +2653,16 @@ fn stage_e(
                 eprintln!("     REFUSAL: {refusal:?}");
                 if let Some(stall) = row_report.stall.as_ref() {
                     eprintln!(
-                        "       stall: {} rings placed, {} uncovered, median distance {:.4} mm \
-                         against K_c {:.4}",
+                        "       stall: {} rings placed, {} uncovered, fold census {}, \
+                         near-band median {} mm against K_c {:.4}",
                         stall.rings_placed,
                         stall.uncovered,
-                        stall.uncovered_distance_median_mm,
+                        stall.uncovered_outside_last_ring,
+                        if stall.near_band.samples == 0 {
+                            "EMPTY".to_owned()
+                        } else {
+                            format!("{:.4}", stall.near_band.median_mm)
+                        },
                         stall.coverage_radius_mm
                     );
                 }
@@ -2672,10 +2894,14 @@ fn terrain_small_conformal_spiral_f2() {
     // ═══ THE MONEY TABLE — the two arms' radial profiles, side by side ═══
     eprintln!(
         "\n══════════ RADIAL DISTORTION: STEEP vs FLAT ══════════\n\
-         \x20  This pair is the attribution evidence for the whole phase. The harmonic map is a\n\
-         \x20  labelled [REPO] substitution for the paper's conformal slit map; if the steep\n\
-         \x20  arm's profile climbs and the flat arm's is level, the difference between the two\n\
-         \x20  arms is the MAP, not the mechanism, and the repair is Phase F2 step 3.\n"
+         \x20  This pair is the attribution evidence for the whole phase. The mean-value\n\
+         \x20  (Floater) map is a labelled [REPO] substitution for the paper's conformal slit\n\
+         \x20  map; if the steep arm's profile climbs and the flat arm's is level, the\n\
+         \x20  difference between the two arms is the MAP'S DISTORTION, not the mechanism, and\n\
+         \x20  the repair is Phase F2 step 3.\n\
+         \x20  Note the distinction the Floater change forces: the map being a valid EMBEDDING\n\
+         \x20  (no flips, no fold census) and the map being LOW-DISTORTION are now separate\n\
+         \x20  questions. Tutte guarantees the first; only these profiles measure the second.\n"
     );
     print_radial_profile(steep.label, &steep.report);
     eprintln!();

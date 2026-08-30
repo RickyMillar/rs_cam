@@ -23,19 +23,26 @@
 //!   **Nothing else from that paper's Appendix A is used here**: A-14, the
 //!   Nyström discretisation and the B-spline boundary machinery are the
 //!   slit-map front-end, which is Phase F2 step 3, not this module.
-//! * **[REPO]** everything else — in particular the harmonic disk map, the
-//!   arc-length boundary correspondence, the surface sampling scheme, the
-//!   spiral's angular bookkeeping and every metric in [`SpiralReport`].
+//! * **[SOURCE-FLOATER]** the flattening's interior weights only — Floater,
+//!   *Mean value coordinates*, CAGD 20(1):19–27 (2003), with the embedding
+//!   guarantee from Tutte (1963). See "Why mean-value weights" below.
+//! * **[REPO]** everything else — in particular the *choice* of a plain disk
+//!   flattening in place of the papers' BFF + slit map, the arc-length
+//!   boundary correspondence, the Gauss–Seidel solver, the surface sampling
+//!   scheme, the spiral's angular bookkeeping and every metric in
+//!   [`SpiralReport`].
 //!
 //! # What this module does
 //!
 //! For a **simply connected** (single boundary loop, disk topology) region of
 //! a triangle mesh and a 3-axis ball-end cutter:
 //!
-//! 1. **[REPO] Harmonic disk map.** Flatten the induced submesh to the unit
-//!    disk: boundary vertices prescribed onto the unit circle by cumulative
-//!    **arc length**, interior vertices by two Laplace solves (one per
-//!    coordinate) on the cotangent Laplacian.
+//! 1. **Disk map.** Flatten the induced submesh to the unit disk: boundary
+//!    vertices prescribed onto the unit circle by cumulative **arc length**
+//!    (**[REPO]**), interior vertices as convex combinations of their
+//!    neighbours under **[SOURCE-FLOATER]** mean-value weights, solved by
+//!    Gauss–Seidel (**[REPO]**). The result is a guaranteed fold-free
+//!    embedding — see below for the measurement that forced this choice.
 //! 2. **[SOURCE-2025 §2.2.1, Eqs. 1–4]** Ring spacing: each ring's radius is
 //!    binary-searched in the disk until every sampled iso-scallop point
 //!    *outside* that radius is swept by the ring's tool-centre curve.
@@ -44,41 +51,99 @@
 //!    blend `σ(t)` of **[SOURCE-2024 Eq. A-11]**, and sweep the start angle
 //!    for the minimum-total-3D-length spiral.
 //!
-//! # Why harmonic and not conformal — a labelled [REPO] substitution
+//! # Why not conformal — a labelled [REPO] substitution
 //!
 //! The 2025 paper flattens with BFF and then applies a conformal **slit map**;
 //! the slit map is what makes holes work, and it is absent from that paper
 //! (extraction gap 1). This module handles the **simply-connected** case only,
 //! where there are no slits at all, so the front-end degenerates to "some map
-//! of the region onto the unit disk". A discrete *harmonic* map with a
-//! prescribed convex boundary is used instead of a conformal one, because:
+//! of the region onto the unit disk". A discrete map with a prescribed convex
+//! boundary is used instead of a conformal one, because:
 //!
 //! * the paper's spacing mechanism is a **sampled 3D coverage check** and the
 //!   extraction is explicit that this check *is* the only distortion
 //!   compensation in the pipeline — "there is no conformal-distortion-factor
 //!   formula anywhere" (§3.1). Any bijective map therefore yields correct 3D
 //!   spacing; conformality buys ring *smoothness*, not correctness;
-//! * a harmonic map onto a convex boundary is injective in the continuum
-//!   (Radó–Kneser–Choquet), so a flipped triangle is a **discretisation**
-//!   symptom — which is why [`SpiralReport::flipped_triangles`] counts them
-//!   instead of assuming none;
-//! * it needs no new dependency: the cotangent Laplacian assembly and the
-//!   Jacobi-preconditioned CG already exist in [`crate::direction_field`] and
-//!   are reused verbatim.
+//! * with **mean-value weights** (below) the map is a *guaranteed embedding*,
+//!   which the coverage mechanism needs far more than it needs conformality.
 //!
 //! **This substitution is valid only while there are no slits.** The moment a
 //! hole enters the region it stops being a substitution for anything and the
 //! slit map (Phase F2 step 3) is required. [`plan_spiral`] refuses a
 //! multi-boundary region rather than approximating one.
 //!
-//! # Numerical extension over Phase F1
+//! # Why mean-value weights and not the cotangent Laplacian — measured
 //!
-//! F1's CG solves a pure-Neumann system with *zero-valued* pins. The harmonic
-//! map needs **non-zero Dirichlet** data, so the known boundary values are
-//! moved to the right-hand side and only the interior block is solved:
-//! `A_II x_I = Σ_{j ∈ ∂} w_ij u_j`. The pinned rows of
-//! [`crate::direction_field`]'s `cg_solve` are held at zero, which is exactly
-//! the interior-only system once the boundary contribution is on the RHS.
+//! The first version of this module used the cotangent Laplacian (the
+//! discrete harmonic map, reusing Phase F1's assembly). **The F2.1 evidence
+//! run falsified that choice.** On `terrain_small` the flattening produced
+//! **298 flipped triangles of 9107**, and on a flat 308-triangle sub-region
+//! still **7**; both arms then stalled the ring search hard, and the radial
+//! area-distortion profile came back nearly flat (climb 1.833), which ruled
+//! out the competing "distortion makes the bands razor-thin" explanation.
+//!
+//! A flipped triangle is a **fold**: the map is not injective there, so the
+//! disk→3D direction is multi-valued. `FlatLocator::locate` resolves that
+//! silently by taking the first containing triangle it finds, so a ring
+//! sweeping through a folded sector lifts onto the *wrong sheet* — while an
+//! `S^h` sample's own disk radius, which comes from forward barycentric
+//! provenance, stays correct. Forward and inverse map then disagree, the
+//! sample is 3D-far from the ring that its disk radius says should sweep it,
+//! **every** candidate radius becomes infeasible, and the search stalls. That
+//! mechanism is scale-free in the flip count, which is why 7 flips broke the
+//! flat arm exactly as 298 broke the steep one.
+//!
+//! **[SOURCE-FLOATER]** the fix is Floater's **mean-value weights**
+//! (M. S. Floater, *Mean value coordinates*, Computer Aided Geometric Design
+//! 20(1):19–27, 2003; the embedding guarantee is Tutte's, W. T. Tutte, *How to
+//! draw a graph*, Proc. London Math. Soc. 13:743–767, 1963):
+//!
+//! ```text
+//! w_ij = ( tan(δ_ij / 2) + tan(γ_ij / 2) ) / ‖v_i − v_j‖
+//! ```
+//!
+//! where `δ_ij` and `γ_ij` are the two angles **at vertex i** flanking edge
+//! `ij` in the two triangles incident to it. Every triangle interior angle
+//! lies in `(0, π)`, so every `tan(θ/2)` — and therefore every weight — is
+//! **strictly positive**. Each interior vertex is then a convex combination of
+//! its neighbours, the boundary goes to a convex polygon, and Tutte's
+//! spring-embedding theorem makes the result a valid embedding: **folds become
+//! structurally impossible rather than empirically rare.**
+//! [`SpiralReport::flipped_triangles`] is kept exactly as it was and is now
+//! the **tripwire on that invariant** — a nonzero count means a bug, not bad
+//! luck — joined by [`SpiralReport::mean_value_weight_nonpositive`], which
+//! measures the precondition itself instead of trusting it.
+//!
+//! **The trade, stated:** mean-value is *not* the Laplace/harmonic map, so
+//! angular distortion may be slightly worse. That is a good trade here — the
+//! paper's spacing mechanism compensates distortion by design and does not
+//! compensate folds at all — and the report's distortion tables measure the
+//! cost rather than hiding it.
+//!
+//! # The solver, and why it is not Phase F1's CG
+//!
+//! Mean-value weights are **unsymmetric**: `w_ij ≠ w_ji`, because the angles
+//! are taken at `i` and the edge length divides only once. Conjugate gradient
+//! assumes symmetric positive definite, so F1's `cg_solve` is **not usable
+//! here and is no longer called** — and symmetrising the matrix would silently
+//! destroy the Tutte guarantee that motivated the whole change, so it is not
+//! done.
+//!
+//! Instead the interior system is solved by **Gauss–Seidel sweeps** in
+//! ascending vertex order (the [`crate::scallop_isofield`] precedent for a
+//! hand-rolled sweep solver). Each sweep sets every interior vertex to the
+//! weighted average of its neighbours, boundary values held fixed:
+//! `u_i ← (Σ_j w_ij u_j) / (Σ_j w_ij)`. Convergence is unconditional: the
+//! weights are positive and every interior vertex reaches the boundary, so the
+//! iteration matrix is irreducibly diagonally dominant. The criterion is the
+//! **maximum absolute coordinate change over a sweep** — an absolute tolerance
+//! is the right shape here because the codomain is the unit disk — and both
+//! coordinates are swept together, since they share one weight matrix.
+//! Hitting [`SpiralParams::solver_max_sweeps`] is a typed refusal carrying the
+//! measured delta, never a silent under-solve; that matters because an
+//! under-converged iterate *can* still show folds, so the tripwire and the
+//! convergence criterion are guarding the same invariant from two sides.
 //!
 //! # Limitations a reader must not lose
 //!
@@ -146,9 +211,7 @@
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
-use crate::direction_field::{
-    FieldParams, RegionMesh, assemble_poisson, build_region_mesh, cg_solve,
-};
+use crate::direction_field::{RegionMesh, build_region_mesh};
 use crate::geo::{P3, V3};
 use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 
@@ -227,6 +290,12 @@ const PULLBACK_LADDER: [f64; 6] = [1e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1];
 /// Upper bound on either axis of an internal bucket grid.
 const MAX_GRID_AXIS: usize = 512;
 
+/// Triangle interior angles are clamped into `[MIN_TRIANGLE_ANGLE, π − …]`
+/// before `tan(θ/2)`, so a degenerate corner produces a large finite weight
+/// rather than an infinity. Positivity — the property the Tutte guarantee
+/// rests on — is preserved by the clamp.
+const MIN_TRIANGLE_ANGLE: f64 = 1e-9;
+
 /// **[REPO]** Radial buckets for the area-distortion profile. Five is enough
 /// to see whether distortion explodes toward the disk centre — the shape the
 /// ring-stall hypothesis predicts on a high-relief region — without turning a
@@ -236,8 +305,8 @@ const RADIAL_BUCKETS: usize = 5;
 /// **[REPO]** Cap on how many still-uncovered samples the stall diagnostic
 /// measures distances for. The measurement is brute-force point-to-polyline
 /// (the bucket grid can only answer "within `K_c`?", not "how far?"), so it is
-/// strided rather than exhaustive; [`StallContext::distance_samples`] reports
-/// how many were actually taken.
+/// strided rather than exhaustive; each [`DistanceStats::samples`] reports how
+/// many were actually taken.
 const STALL_DISTANCE_SAMPLE_CAP: usize = 2_000;
 
 // ---------------------------------------------------------------------------
@@ -307,10 +376,13 @@ pub struct SpiralParams {
     /// [`PAPER_START_ANGLE_STEP`]. Coarsen it in tests; the paper's own
     /// description of the sweep is "trial and error".
     pub start_angle_step: f64,
-    /// Conjugate-gradient iteration cap for each Laplace solve.
-    pub cg_max_iters: usize,
-    /// Conjugate-gradient stopping tolerance, relative to `‖rhs‖`.
-    pub cg_rel_tolerance: f64,
+    /// Cap on Gauss–Seidel sweeps for the flattening solve. Reaching it is
+    /// [`SpiralRefusal::FlattenDidNotConverge`], never a silent under-solve.
+    pub solver_max_sweeps: usize,
+    /// Gauss–Seidel stopping criterion: the **maximum absolute change** in any
+    /// disk coordinate over one sweep. Absolute, not relative, because the
+    /// codomain is the unit disk.
+    pub solver_tolerance: f64,
 }
 
 impl Default for SpiralParams {
@@ -330,8 +402,8 @@ impl Default for SpiralParams {
             shift_step: PAPER_SHIFT_STEP,
             max_bridge_repair_steps: 200,
             start_angle_step: PAPER_START_ANGLE_STEP,
-            cg_max_iters: 20_000,
-            cg_rel_tolerance: 1e-10,
+            solver_max_sweeps: 50_000,
+            solver_tolerance: 1e-9,
         }
     }
 }
@@ -380,13 +452,11 @@ pub enum SpiralRefusal {
     NotADisk { euler_characteristic: i64 },
     /// The single boundary loop is too short or too small to prescribe.
     DegenerateBoundaryLoop { vertices: usize, length_mm: f64 },
-    /// A Laplace solve hit its iteration cap.
-    FlattenDidNotConverge {
-        /// `"u"` or `"v"` — which coordinate.
-        component: &'static str,
-        residual: f64,
-        iterations: usize,
-    },
+    /// The flattening solve hit [`SpiralParams::solver_max_sweeps`] before
+    /// the sweep delta fell below [`SpiralParams::solver_tolerance`]. Carries
+    /// what was actually measured, because an under-converged map can still
+    /// fold and must not be used.
+    FlattenDidNotConverge { max_delta: f64, sweeps: usize },
     /// The surface produced no `S^h` samples (degenerate area, or
     /// `n_surface_samples == 0`).
     NoSurfaceSamples,
@@ -463,16 +533,43 @@ pub enum StallDistanceReference {
     FailedCandidate,
 }
 
+/// Min / median / max 3D distance over one population of sampled points.
+#[derive(Debug, Clone, Default)]
+pub struct DistanceStats {
+    /// How many points the summary was actually measured on (strided to the
+    /// module's `STALL_DISTANCE_SAMPLE_CAP`). Zero means the population was
+    /// empty — which for some of these is the *healthy* reading.
+    pub samples: usize,
+    /// Smallest distance (mm).
+    pub min_mm: f64,
+    /// Median distance (mm).
+    pub median_mm: f64,
+    /// Largest distance (mm).
+    pub max_mm: f64,
+}
+
 /// Why the Eqs. 1–4 ring search could not empty the uncovered set, in enough
 /// detail to attribute the failure from the report alone.
 ///
 /// **[REPO]** The paper reports no such thing: its Table 1 records two
-/// sampling failure modes with no k value and no diagnosis. The load-bearing
-/// row is the distance distribution — if the median distance from the
-/// still-uncovered points to the last placed ring's centre curve is far
-/// larger than `2·K_c`, the surface genuinely cannot be covered ring-by-ring
-/// at this map's distortion, and the refusal is correct rather than a bug in
-/// the search.
+/// sampling failure modes with no k value and no diagnosis.
+///
+/// Read it in this order:
+///
+/// 1. [`StallContext::uncovered_outside_last_ring`] — the **fold census**.
+///    Every point outside the last placed ring's radius was, by that ring's
+///    own feasibility check, supposed to be swept by it. A nonzero count means
+///    the forward map (a sample's barycentric disk radius) and the inverse map
+///    (where a ring at that radius actually lifts to) **disagree**, which is
+///    what a non-injective flattening does. Under mean-value weights this
+///    should be 0.
+/// 2. [`StallContext::interior_radius_feasible`] — was *any* radius strictly
+///    inside the previous ring ever feasible?
+/// 3. [`StallContext::blockers`] — the points that actually stopped the
+///    descent, measured against the ring at [`StallContext::search_lo`].
+/// 4. [`StallContext::near_band`] vs [`StallContext::all_uncovered`] — the
+///    distance distribution close to the frontier, versus over everything
+///    still uncovered including the whole untouched interior.
 #[derive(Debug, Clone)]
 pub struct StallContext {
     /// Rings successfully placed before the stall.
@@ -480,7 +577,8 @@ pub struct StallContext {
     /// Their disk radii, outermost first (duplicated here so the stall block
     /// is self-contained).
     pub ring_radii: Vec<f64>,
-    /// Lower bound of the binary-search interval when the search gave up.
+    /// Lower bound of the binary-search interval when the search gave up —
+    /// the largest radius *proven infeasible*.
     pub search_lo: f64,
     /// Upper bound of that interval — for a stalled ring this equals the
     /// previous ring's radius, which is the signature of the failure.
@@ -492,19 +590,40 @@ pub struct StallContext {
     pub interior_radius_feasible: bool,
     /// `S^h` points still uncovered at the stall.
     pub uncovered: usize,
-    /// How many of those the distances below were measured on (strided to
-    /// the module's `STALL_DISTANCE_SAMPLE_CAP`).
-    pub distance_samples: usize,
-    /// Which curve the distances are against.
+    /// **Fold census.** Still-uncovered points whose disk radius is *greater*
+    /// than the last placed ring's radius — points the ring search already
+    /// certified as swept. **Must be 0** for an injective map; see the type's
+    /// own docs for why.
+    pub uncovered_outside_last_ring: usize,
+    /// Estimated width, in disk units, of the band one ring sweeps at the last
+    /// placed radius — `2·K_c` converted through the local linear scale of the
+    /// map (`√` of the area distortion in that radial bucket). This is what
+    /// [`StallContext::near_band`] is restricted by, reported so the
+    /// restriction is interpretable rather than magic.
+    pub band_width_disk: f64,
+    /// Which curve the distances were measured against.
     pub distance_reference: StallDistanceReference,
-    /// The coverage radius the distances should be compared to (`K_c`, mm).
+    /// The coverage radius the distances should be compared to (`K_c`, mm), so
+    /// every distance row below is self-interpreting.
     pub coverage_radius_mm: f64,
-    /// Minimum 3D distance (mm) from a measured uncovered point to that curve.
-    pub uncovered_distance_min_mm: f64,
-    /// Median 3D distance (mm).
-    pub uncovered_distance_median_mm: f64,
-    /// Maximum 3D distance (mm).
-    pub uncovered_distance_max_mm: f64,
+    /// Distances from **every** still-uncovered point to the reference curve.
+    /// Dominated by the untouched disk interior, so a large median here is
+    /// expected and means little on its own.
+    pub all_uncovered: DistanceStats,
+    /// Distances restricted to uncovered points within one estimated band
+    /// width of the last placed radius — the points the stall is *about*.
+    /// A median far above `2·K_c` here is the razor-thin-band reading; a
+    /// median near `K_c` with a nonzero fold census is the fold reading.
+    pub near_band: DistanceStats,
+    /// Distances from the points that **blocked the descent** — uncovered
+    /// points outside [`StallContext::search_lo`] that the ring at `search_lo`
+    /// fails to sweep — to that ring's own centre curve. Empty when the
+    /// search never proved any radius infeasible.
+    pub blockers: DistanceStats,
+    /// Disk radii of those same blockers, as min/median/max, so their position
+    /// in the domain is visible alongside their distance. Values are disk
+    /// units, not mm.
+    pub blocker_disk_radius: DistanceStats,
 }
 
 /// Everything the F2 contract wants **counted rather than assumed**.
@@ -532,18 +651,41 @@ pub struct SpiralReport {
     pub boundary_loop_length_mm: f64,
 
     // --- flattening -----------------------------------------------------
-    /// Interior (non-prescribed) vertices — the size of each Laplace solve.
+    /// Interior (non-prescribed) vertices — the size of the solved system.
     pub flatten_interior_vertices: usize,
-    /// CG iterations for the `u` and `v` solves.
-    pub flatten_cg_iterations: [usize; 2],
-    /// Final relative residual of the `u` and `v` solves.
-    pub flatten_residual: [f64; 2],
+    /// Gauss–Seidel sweeps taken. Both disk coordinates are swept together,
+    /// so this is one number, not two.
+    pub flatten_solver_sweeps: usize,
+    /// Maximum absolute coordinate change on the final sweep.
+    pub flatten_solver_delta: f64,
+    /// Smallest mean-value weight assembled. **Must be > 0**: positivity is
+    /// the precondition of the Tutte embedding guarantee, and this measures it
+    /// rather than assuming it.
+    pub mean_value_weight_min: f64,
+    /// Largest mean-value weight assembled. A very large value means a nearly
+    /// degenerate corner angle, which is legal but worth seeing.
+    pub mean_value_weight_max: f64,
+    /// Mean-value weights that came out non-positive. **Must be 0.** A nonzero
+    /// count means the embedding guarantee does not hold and any
+    /// [`SpiralReport::flipped_triangles`] below is unsurprising rather than a
+    /// bug in the solver.
+    pub mean_value_weight_nonpositive: usize,
     /// Triangles whose flat signed area has the opposite sign to the map's
-    /// overall orientation. A harmonic map onto a convex boundary is
-    /// injective in the continuum, so any nonzero count here is a
-    /// **discretisation** symptom — obtuse triangles giving negative
-    /// cotangent weights. Counted, never assumed away.
+    /// overall orientation — i.e. **folds**.
+    ///
+    /// Under mean-value weights this is the **tripwire on a structural
+    /// invariant**, not a quality metric: Tutte's theorem makes a valid
+    /// embedding certain for a manifold disk mapped onto a convex boundary
+    /// with positive weights, so a nonzero count means a bug (or an
+    /// under-converged solve), never bad luck. It kept its name and meaning
+    /// from the cotangent version on purpose, so the two are comparable: that
+    /// version measured 298 of 9107 on `terrain_small`.
     pub flipped_triangles: usize,
+    /// Disk radius of each flipped triangle's flattened centroid, ascending —
+    /// the fold-zone census. Empty is the expected reading; when it is not
+    /// empty this says *where* in the disk the invariant broke, which is what
+    /// a ring-stall postmortem needs.
+    pub flipped_triangle_disk_radii: Vec<f64>,
     /// `+1.0` when the flattening preserved the boundary-loop orientation,
     /// `-1.0` when it reversed it (an inconsistently wound input submesh).
     pub orientation_sign: f64,
@@ -701,7 +843,7 @@ fn plan_into(
     report.boundary_loop_vertices = topo.loop_vertices.len();
     report.boundary_loop_length_mm = topo.loop_length_mm;
 
-    // 2. Harmonic disk map with arc-length boundary correspondence.
+    // 2. Disk map: mean-value weights, arc-length boundary correspondence.
     let flat = flatten_to_disk(&region, &topo, params, report)?;
 
     // 3. Flatten metrics — the table that separates "bad map" from "bad
@@ -884,12 +1026,108 @@ fn region_topology(region: &RegionMesh) -> Result<Topology, SpiralRefusal> {
 }
 
 // ---------------------------------------------------------------------------
-// [REPO] Harmonic disk map
+// Disk map — [SOURCE-FLOATER] weights, [REPO] boundary and solver
 // ---------------------------------------------------------------------------
 
 /// Per-local-vertex position in the unit disk.
 struct Flattening {
     uv: Vec<(f64, f64)>,
+}
+
+/// The assembled mean-value system: **unsymmetric** directed neighbour lists
+/// plus each row's weight sum.
+///
+/// **[SOURCE-FLOATER]** Floater, *Mean value coordinates*, CAGD 20(1):19–27,
+/// 2003. Deliberately a separate assembly from
+/// [`crate::direction_field`]'s cotangent one: they are different matrices
+/// with different guarantees, and sharing an assembly would invite exactly the
+/// silent symmetrisation the module header rules out.
+struct MeanValueWeights {
+    /// `(neighbour, w_ij)` per vertex, ascending by neighbour for determinism.
+    /// **Directed**: `w_ij` lives on row `i` only, and `w_ji ≠ w_ij`.
+    nbr: Vec<Vec<(usize, f64)>>,
+    /// `Σ_j w_ij` per row.
+    row_sum: Vec<f64>,
+    min_weight: f64,
+    max_weight: f64,
+    nonpositive: usize,
+}
+
+/// Assemble `w_ij = (tan(δ_ij/2) + tan(γ_ij/2)) / ‖v_i − v_j‖`.
+///
+/// **[SOURCE-FLOATER Eq. for mean value coordinates]** `δ_ij` and `γ_ij` are
+/// the two angles **at `i`** flanking edge `ij`. Rather than building an
+/// ordered one-ring per vertex, this walks triangles: in triangle `(i, j, k)`
+/// the angle `θ` at `i` is one of the two flanking angles for edge `ij` *and*
+/// for edge `ik`, so it contributes `tan(θ/2)/‖e‖` to both. Summing over
+/// incident triangles therefore reproduces the two-angle formula exactly — and
+/// for a boundary vertex it sums the one available angle, which is harmless
+/// because boundary rows are prescribed and never solved.
+///
+/// Every interior angle is in `(0, π)`, so every `tan(θ/2)` is **strictly
+/// positive** — the Tutte precondition. It is measured, not assumed:
+/// [`MeanValueWeights::nonpositive`] counts any violation.
+fn mean_value_weights(region: &RegionMesh) -> MeanValueWeights {
+    let nv = region.verts.len();
+    let mut acc: HashMap<(usize, usize), f64> = HashMap::new();
+    for t in 0..region.tris.len() {
+        if region.area(t) < MIN_TRIANGLE_AREA_MM2 {
+            continue;
+        }
+        let c = region.corners(t);
+        for m in 0..3 {
+            let (i, j, k) = (
+                c.get(m).copied().unwrap_or_default(),
+                c.get((m + 1) % 3).copied().unwrap_or_default(),
+                c.get((m + 2) % 3).copied().unwrap_or_default(),
+            );
+            let (pi, pj, pk) = (region.point(i), region.point(j), region.point(k));
+            let (eij, eik) = (pj - pi, pk - pi);
+            let (lij, lik) = (eij.norm(), eik.norm());
+            if lij <= EPS_VEC || lik <= EPS_VEC {
+                continue;
+            }
+            let theta = (eij.dot(&eik) / (lij * lik))
+                .clamp(-1.0, 1.0)
+                .acos()
+                .clamp(MIN_TRIANGLE_ANGLE, PI - MIN_TRIANGLE_ANGLE);
+            let half = (0.5 * theta).tan();
+            *acc.entry((i, j)).or_insert(0.0) += half / lij;
+            *acc.entry((i, k)).or_insert(0.0) += half / lik;
+        }
+    }
+
+    let mut nbr: Vec<Vec<(usize, f64)>> = vec![Vec::new(); nv];
+    let mut row_sum = vec![0.0_f64; nv];
+    let mut min_weight = f64::INFINITY;
+    let mut max_weight = 0.0_f64;
+    let mut nonpositive = 0usize;
+    let mut edges: Vec<((usize, usize), f64)> = acc.into_iter().collect();
+    edges.sort_by(|a, b| a.0.cmp(&b.0));
+    for ((i, j), w) in edges {
+        if i >= nv || j >= nv || i == j {
+            continue;
+        }
+        if w.is_nan() || w <= 0.0 {
+            nonpositive += 1;
+        }
+        min_weight = min_weight.min(w);
+        max_weight = max_weight.max(w);
+        if let (Some(list), Some(sum)) = (nbr.get_mut(i), row_sum.get_mut(i)) {
+            list.push((j, w));
+            *sum += w;
+        }
+    }
+    if !min_weight.is_finite() {
+        min_weight = 0.0;
+    }
+    MeanValueWeights {
+        nbr,
+        row_sum,
+        min_weight,
+        max_weight,
+        nonpositive,
+    }
 }
 
 /// Flatten the region onto the unit disk.
@@ -900,20 +1138,19 @@ struct Flattening {
 /// Shen 2024's Eq. A-14: that is a corner-graded B-spline parameterisation
 /// whose purpose is Nyström convergence for the boundary-integral slit map,
 /// which this module does not solve. Phase 1 needs a correspondence, not a
-/// quadrature.
+/// quadrature. Because the images are distinct points in cyclic order on a
+/// circle, the boundary polygon is **convex** and the boundary map is a
+/// homeomorphism onto it — the other half of the Tutte precondition.
 ///
-/// **Interior vertices** solve two Laplace problems with **non-zero Dirichlet**
-/// data. The cotangent stiffness matrix comes from
-/// [`crate::direction_field`]'s `assemble_poisson` with an empty target field
-/// (which makes its divergence right-hand side identically zero, leaving the
-/// bare Laplacian); the known boundary values are then moved to the RHS:
+/// **Interior vertices** are solved by Gauss–Seidel sweeps over the
+/// unsymmetric mean-value system, both coordinates together, boundary values
+/// held fixed:
 ///
 /// ```text
-/// interior i:  A_ii x_i − Σ_{j interior} w_ij x_j = Σ_{j ∈ ∂} w_ij u_j
+/// u_i ← ( Σ_j w_ij u_j ) / ( Σ_j w_ij )
 /// ```
 ///
-/// which is exactly the system `cg_solve` already solves when the boundary
-/// rows are pinned, because it holds pinned unknowns at zero.
+/// See the module header for why this replaced Phase F1's cotangent + CG.
 #[allow(clippy::result_large_err)]
 fn flatten_to_disk(
     region: &RegionMesh,
@@ -922,17 +1159,18 @@ fn flatten_to_disk(
     report: &mut SpiralReport,
 ) -> Result<Flattening, SpiralRefusal> {
     let nv = region.verts.len();
-    // An empty target field makes `assemble_poisson`'s Eq. 17 divergence term
-    // vanish, so only the Eq. 16 cotangent stiffness survives.
-    let (lap, _zero_rhs) = assemble_poisson(region, &[]);
+    let weights = mean_value_weights(region);
+    report.mean_value_weight_min = weights.min_weight;
+    report.mean_value_weight_max = weights.max_weight;
+    report.mean_value_weight_nonpositive = weights.nonpositive;
 
     // Prescribed boundary values by arc length.
-    let mut prescribed: Vec<Option<(f64, f64)>> = vec![None; nv];
+    let mut uv = vec![(0.0_f64, 0.0_f64); nv];
     let mut acc = 0.0_f64;
     for (i, &v) in topo.loop_vertices.iter().enumerate() {
         let theta = TAU * acc / topo.loop_length_mm;
-        if let Some(slot) = prescribed.get_mut(v) {
-            *slot = Some((theta.cos(), theta.sin()));
+        if let Some(slot) = uv.get_mut(v) {
+            *slot = (theta.cos(), theta.sin());
         }
         let w = topo
             .loop_vertices
@@ -943,70 +1181,50 @@ fn flatten_to_disk(
     }
 
     let pinned: &[bool] = &topo.on_boundary;
-    let interior = pinned.iter().filter(|&&b| !b).count();
-    report.flatten_interior_vertices = interior;
+    report.flatten_interior_vertices = pinned.iter().filter(|&&b| !b).count();
 
-    // `cg_solve` takes the F1 parameter block; only its two CG dials are read.
-    let cg_params = FieldParams {
-        cg_max_iters: params.cg_max_iters,
-        cg_rel_tolerance: params.cg_rel_tolerance,
-        ..FieldParams::default()
-    };
-
-    let mut uv = vec![(0.0_f64, 0.0_f64); nv];
-    for (axis, name) in [(0usize, "u"), (1usize, "v")] {
-        let mut rhs = vec![0.0_f64; nv];
+    let mut sweeps = 0usize;
+    let mut delta = 0.0_f64;
+    while sweeps < params.solver_max_sweeps {
+        sweeps += 1;
+        delta = 0.0;
         for i in 0..nv {
             if pinned.get(i).copied().unwrap_or(false) {
                 continue;
             }
-            let Some(list) = lap.nbr.get(i) else {
+            let sum = weights.row_sum.get(i).copied().unwrap_or(0.0);
+            if sum <= EPS_VEC {
+                continue;
+            }
+            let Some(list) = weights.nbr.get(i) else {
                 continue;
             };
-            let mut acc = 0.0_f64;
+            let mut su = 0.0_f64;
+            let mut sv = 0.0_f64;
             for &(j, w) in list {
-                let Some(Some(val)) = prescribed.get(j) else {
-                    continue;
-                };
-                acc += w * if axis == 0 { val.0 } else { val.1 };
+                let (uj, vj) = uv.get(j).copied().unwrap_or((0.0, 0.0));
+                su += w * uj;
+                sv += w * vj;
             }
-            if let Some(slot) = rhs.get_mut(i) {
-                *slot = acc;
-            }
-        }
-        let out = cg_solve(&lap, &rhs, pinned, &cg_params);
-        if let Some(slot) = report.flatten_cg_iterations.get_mut(axis) {
-            *slot = out.iterations;
-        }
-        if let Some(slot) = report.flatten_residual.get_mut(axis) {
-            *slot = out.residual;
-        }
-        if !out.converged {
-            return Err(SpiralRefusal::FlattenDidNotConverge {
-                component: name,
-                residual: out.residual,
-                iterations: out.iterations,
-            });
-        }
-        for i in 0..nv {
-            let value = match prescribed.get(i) {
-                Some(Some(val)) => {
-                    if axis == 0 {
-                        val.0
-                    } else {
-                        val.1
-                    }
-                }
-                _ => out.x.get(i).copied().unwrap_or(0.0),
-            };
+            let next = (su / sum, sv / sum);
             if let Some(slot) = uv.get_mut(i) {
-                if axis == 0 {
-                    slot.0 = value;
-                } else {
-                    slot.1 = value;
-                }
+                delta = delta
+                    .max((next.0 - slot.0).abs())
+                    .max((next.1 - slot.1).abs());
+                *slot = next;
             }
         }
+        if delta <= params.solver_tolerance {
+            break;
+        }
+    }
+    report.flatten_solver_sweeps = sweeps;
+    report.flatten_solver_delta = delta;
+    if delta > params.solver_tolerance {
+        return Err(SpiralRefusal::FlattenDidNotConverge {
+            max_delta: delta,
+            sweeps,
+        });
     }
     Ok(Flattening { uv })
 }
@@ -1032,6 +1250,7 @@ fn signed_area_2d(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
 /// comparable) as a large count rather than hiding it.
 fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut SpiralReport) {
     let mut signed: Vec<f64> = Vec::with_capacity(region.tris.len());
+    let mut centroid_r: Vec<f64> = Vec::with_capacity(region.tris.len());
     let mut total = 0.0_f64;
     for t in 0..region.tris.len() {
         let c = region.corners(t);
@@ -1043,10 +1262,24 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
         let s = signed_area_2d(a, b, d);
         total += s;
         signed.push(s);
+        let cx = (a.0 + b.0 + d.0) / 3.0;
+        let cy = (a.1 + b.1 + d.1) / 3.0;
+        centroid_r.push(cx.hypot(cy).clamp(0.0, 1.0));
     }
     let orientation = if total < 0.0 { -1.0_f64 } else { 1.0_f64 };
     report.orientation_sign = orientation;
-    report.flipped_triangles = signed.iter().filter(|&&s| s * orientation <= 0.0).count();
+    // Fold census: the count, and where in the disk each fold sits. Under
+    // mean-value weights both are expected to be empty — this is the tripwire
+    // on the Tutte guarantee, not a quality metric.
+    let mut fold_radii: Vec<f64> = signed
+        .iter()
+        .zip(centroid_r.iter())
+        .filter(|&(&s, _)| s * orientation <= 0.0)
+        .map(|(_, &r)| r)
+        .collect();
+    fold_radii.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    report.flipped_triangles = fold_radii.len();
+    report.flipped_triangle_disk_radii = fold_radii;
 
     let mut ratios: Vec<f64> = Vec::with_capacity(region.tris.len());
     let mut angle_err: Vec<f64> = Vec::with_capacity(region.tris.len() * 3);
@@ -1081,9 +1314,7 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
         }
         // Radial bucket, keyed on the disk radius of the flattened centroid.
         if let Some(r) = ratio {
-            let cx = p2.iter().map(|q| q.0).sum::<f64>() / 3.0;
-            let cy = p2.iter().map(|q| q.1).sum::<f64>() / 3.0;
-            let rad = cx.hypot(cy).clamp(0.0, 1.0);
+            let rad = centroid_r.get(t).copied().unwrap_or(0.0);
             let b = ((rad * RADIAL_BUCKETS as f64).floor() as usize).min(RADIAL_BUCKETS - 1);
             if let Some(slot) = radial.get_mut(b) {
                 slot.push(r);
@@ -1697,31 +1928,43 @@ fn distance_to_polyline_mm(p: P3, pts: &[P3]) -> f64 {
     }
 }
 
-/// Min / median / max distance from a stride-sampled subset of `uncovered` to
-/// `reference`, plus how many samples were taken.
-fn uncovered_distance_summary(
-    uncovered: &[usize],
-    samples: &[Sample],
-    reference: &[P3],
-) -> (usize, f64, f64, f64) {
-    if uncovered.is_empty() || reference.len() < 2 {
-        return (0, 0.0, 0.0, 0.0);
+/// Min / median / max over a stride-sampled subset of `values`.
+fn summarise(values: &[f64]) -> DistanceStats {
+    if values.is_empty() {
+        return DistanceStats::default();
     }
-    let stride = uncovered.len().div_ceil(STALL_DISTANCE_SAMPLE_CAP).max(1);
-    let mut d: Vec<f64> = uncovered
+    let stride = values.len().div_ceil(STALL_DISTANCE_SAMPLE_CAP).max(1);
+    let mut d: Vec<f64> = values
         .iter()
         .step_by(stride)
-        .filter_map(|&s| samples.get(s))
-        .map(|s| distance_to_polyline_mm(s.at, reference))
+        .copied()
         .filter(|v| v.is_finite())
         .collect();
     d.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    (
-        d.len(),
-        d.first().copied().unwrap_or(0.0),
-        median_sorted(&d),
-        d.last().copied().unwrap_or(0.0),
-    )
+    DistanceStats {
+        samples: d.len(),
+        min_mm: d.first().copied().unwrap_or(0.0),
+        median_mm: median_sorted(&d),
+        max_mm: d.last().copied().unwrap_or(0.0),
+    }
+}
+
+/// Distances from a set of samples to a reference polyline.
+fn distances_to(uncovered: &[usize], samples: &[Sample], reference: &[P3]) -> Vec<f64> {
+    if reference.len() < 2 {
+        return Vec::new();
+    }
+    uncovered
+        .iter()
+        .filter_map(|&s| samples.get(s))
+        .map(|s| distance_to_polyline_mm(s.at, reference))
+        .collect()
+}
+
+/// What blocked the descent, measured at the largest radius proven infeasible.
+struct BlockerCensus {
+    distances: Vec<f64>,
+    disk_radii: Vec<f64>,
 }
 
 /// Everything the ring loop must publish on **every** exit path, successful
@@ -1734,6 +1977,13 @@ struct RingLoopState {
 }
 
 /// Write the ring rows, and the stall block when coverage did not close.
+///
+/// **[REPO]** The band-width estimate that [`StallContext::near_band`] is
+/// restricted by converts the 3D coverage diameter `2·K_c` into disk units
+/// through the map's own local linear scale. Area distortion is
+/// `flat area / 3D area` (1/mm²), so its square root is disk-units-per-mm;
+/// the radial bucket containing the last placed radius supplies it, with the
+/// global median as the fallback when that bucket is empty.
 #[allow(clippy::too_many_arguments)]
 fn publish_ring_rows(
     rings: &[Ring],
@@ -1741,6 +1991,7 @@ fn publish_ring_rows(
     samples: &[Sample],
     last_centre: &[P3],
     failed_centre: &[P3],
+    blockers: Option<&BlockerCensus>,
     state: &RingLoopState,
     stats: &LiftStats,
     params: &SpiralParams,
@@ -1766,7 +2017,35 @@ fn publish_ring_rows(
     } else {
         (failed_centre, StallDistanceReference::FailedCandidate)
     };
-    let (taken, dmin, dmed, dmax) = uncovered_distance_summary(uncovered, samples, reference);
+    let last_radius = rings.last().map_or(1.0, |r| r.radius);
+
+    // Disk-units-per-mm from the local area distortion, so `2·K_c` can be
+    // expressed as a disk-domain band width.
+    let global_median = report.area_distortion_median;
+    let scale = report
+        .area_distortion_by_disk_radius
+        .iter()
+        .find(|b| last_radius >= b.r_lo && last_radius <= b.r_hi && b.triangles > 0)
+        .map_or(global_median, |b| b.area_distortion_median)
+        .max(0.0)
+        .sqrt();
+    let band_width_disk = (2.0 * params.ball_radius_mm * scale).clamp(0.0, 1.0);
+
+    let all_d = distances_to(uncovered, samples, reference);
+    let near: Vec<usize> = uncovered
+        .iter()
+        .copied()
+        .filter(|&s| {
+            samples
+                .get(s)
+                .is_some_and(|p| p.disk_r > last_radius - band_width_disk)
+        })
+        .collect();
+    let outside = uncovered
+        .iter()
+        .filter(|&&s| samples.get(s).is_some_and(|p| p.disk_r > last_radius))
+        .count();
+
     report.stall = Some(StallContext {
         rings_placed: rings.len(),
         ring_radii: rings.iter().map(|r| r.radius).collect(),
@@ -1774,12 +2053,18 @@ fn publish_ring_rows(
         search_hi: state.search_hi,
         interior_radius_feasible: state.interior_feasible,
         uncovered: uncovered.len(),
-        distance_samples: taken,
+        uncovered_outside_last_ring: outside,
+        band_width_disk,
         distance_reference: which,
         coverage_radius_mm: params.ball_radius_mm,
-        uncovered_distance_min_mm: dmin,
-        uncovered_distance_median_mm: dmed,
-        uncovered_distance_max_mm: dmax,
+        all_uncovered: summarise(&all_d),
+        near_band: summarise(&distances_to(&near, samples, reference)),
+        blockers: blockers
+            .map(|b| summarise(&b.distances))
+            .unwrap_or_default(),
+        blocker_disk_radius: blockers
+            .map(|b| summarise(&b.disk_radii))
+            .unwrap_or_default(),
     });
 }
 
@@ -1854,6 +2139,7 @@ fn search_rings(
                 samples,
                 &last_centre,
                 &[],
+                None,
                 &state,
                 &stats,
                 params,
@@ -1906,12 +2192,37 @@ fn search_rings(
                 rings: rings.len(),
                 uncovered: uncovered.len(),
             };
+            // The blockers are the points that made `lo` infeasible: uncovered,
+            // outside `lo`, and not swept by the ring at `lo`. They are what
+            // stopped the descent, so they are what a postmortem must look at.
+            let census = if state.search_lo > 0.0 {
+                let (_, lo_centre, lo_cc) = curve_at(state.search_lo, &mut stats);
+                let mut distances: Vec<f64> = Vec::new();
+                let mut disk_radii: Vec<f64> = Vec::new();
+                for &sidx in &uncovered {
+                    let Some(sample) = samples.get(sidx) else {
+                        continue;
+                    };
+                    if sample.disk_r <= state.search_lo || lo_cc.covers(sample.at, radius) {
+                        continue;
+                    }
+                    distances.push(distance_to_polyline_mm(sample.at, &lo_centre));
+                    disk_radii.push(sample.disk_r);
+                }
+                Some(BlockerCensus {
+                    distances,
+                    disk_radii,
+                })
+            } else {
+                None
+            };
             publish_ring_rows(
                 &rings,
                 &uncovered,
                 samples,
                 &last_centre,
                 &centre,
+                census.as_ref(),
                 &state,
                 &stats,
                 params,
@@ -1940,6 +2251,7 @@ fn search_rings(
         samples,
         &last_centre,
         &[],
+        None,
         &state,
         &stats,
         params,
@@ -2549,16 +2861,22 @@ mod tests {
     const PI_HALF_TURN: f64 = std::f64::consts::PI;
 
     // -----------------------------------------------------------------
-    // [REPO] Harmonic disk map — closed forms
+    // Disk map — closed forms
     // -----------------------------------------------------------------
 
     #[test]
     fn flat_disk_flattens_to_the_exact_affine_map() {
-        // The cotangent stiffness matrix annihilates linear functions at every
-        // interior vertex of a *planar* triangulation, and equally spaced
-        // boundary vertices on a circle get equal arc-length shares, so
-        // `z ↦ z/ρ` is the exact discrete solution. Everything below is that
-        // closed form.
+        // Mean value coordinates **reproduce the point**: on a planar mesh
+        // `v_i = Σ_j λ_ij v_j` is Floater's defining property, so the identity
+        // (and any linear image of it) is the exact discrete solution. Equally
+        // spaced boundary vertices on a circle get equal arc-length shares, so
+        // the boundary data is exactly `v/ρ` and `z ↦ z/ρ` is the exact
+        // solution. This closed form therefore survived the switch away from
+        // cotangent weights unchanged — which is why it is still the control
+        // reading. The tolerance is for Gauss–Seidel convergence, not for the
+        // map: the solve stops at a `1e-9` sweep delta, and the error of an
+        // iterate is that delta divided by `1 − ρ_GS`, a few times `1e-8` on a
+        // fixture this size.
         let radius = 10.0_f64;
         let mesh = disk_mesh(radius, 8, 40);
         let region = build_region_mesh(&mesh, &all_triangles(&mesh)).unwrap();
@@ -2574,7 +2892,7 @@ mod tests {
             let (u, w) = flat.uv[v];
             assert!(
                 (u - p.x / radius).abs() < 5e-6 && (w - p.y / radius).abs() < 5e-6,
-                "vertex {v}: harmonic map should be z/ρ, got ({u}, {w}) vs ({}, {})",
+                "vertex {v}: disk map should be z/ρ, got ({u}, {w}) vs ({}, {})",
                 p.x / radius,
                 p.y / radius
             );
@@ -2591,6 +2909,64 @@ mod tests {
         assert!(report.angle_distortion_max_deg < 1e-3);
     }
 
+    /// The switch to mean-value weights exists to make folds structurally
+    /// impossible, so it gets tested on a triangulation built to be hostile.
+    ///
+    /// `disk_mesh(10, 2, 64)` has only two mesh rings and 64 segments around,
+    /// so the strip triangles are extremely skewed: the angle at the inner
+    /// vertex is ~92.8°, i.e. **obtuse**, which is precisely the condition
+    /// that gives the cotangent Laplacian a *negative* edge weight and voids
+    /// Tutte's hypothesis for it. That the obtuse angles exist is asserted
+    /// here directly; what is **not** asserted is that the old weights would
+    /// have folded on this exact fixture, because establishing that would mean
+    /// keeping the retired solver alive purely to watch it fail.
+    #[test]
+    fn an_obtuse_triangulation_still_flattens_without_folds() {
+        let radius = 10.0_f64;
+        let mesh = disk_mesh(radius, 2, 64);
+
+        // Precondition of the test: this fixture really is obtuse.
+        let mut worst_deg = 0.0_f64;
+        for tri in &mesh.triangles {
+            let v: Vec<P3> = tri.iter().map(|&i| mesh.vertices[i as usize]).collect();
+            for k in 0..3 {
+                let (a, b, c) = (v[k], v[(k + 1) % 3], v[(k + 2) % 3]);
+                let (e1, e2) = (b - a, c - a);
+                let cos = e1.dot(&e2) / (e1.norm() * e2.norm());
+                worst_deg = worst_deg.max(cos.clamp(-1.0, 1.0).acos().to_degrees());
+            }
+        }
+        assert!(
+            worst_deg > 91.0,
+            "fixture is not obtuse enough to be the test it claims: worst angle {worst_deg}°"
+        );
+
+        let (_topo, flat, report) = flatten_only(&mesh);
+
+        // The Tutte precondition, measured rather than assumed.
+        assert_eq!(report.mean_value_weight_nonpositive, 0);
+        assert!(
+            report.mean_value_weight_min > 0.0,
+            "min mean-value weight {} must be strictly positive",
+            report.mean_value_weight_min
+        );
+        // ...and its consequence.
+        assert_eq!(report.flipped_triangles, 0);
+        assert!(report.flipped_triangle_disk_radii.is_empty());
+
+        // The planar closed form still holds on a hostile triangulation:
+        // mean value coordinates reproduce the identity regardless of shape.
+        let region = build_region_mesh(&mesh, &all_triangles(&mesh)).unwrap();
+        for v in 0..region.verts.len() {
+            let p = region.point(v);
+            let (u, w) = flat.uv[v];
+            assert!(
+                (u - p.x / radius).abs() < 5e-6 && (w - p.y / radius).abs() < 5e-6,
+                "vertex {v}: expected z/ρ, got ({u}, {w})"
+            );
+        }
+    }
+
     #[test]
     fn all_boundary_region_solves_nothing_and_prescribes_everything() {
         // `make_test_flat` is two triangles and four vertices, every one of
@@ -2602,7 +2978,10 @@ mod tests {
         assert_eq!(topo.loop_vertices.len(), 4);
         assert_eq!(report.euler_characteristic, 1);
         assert_eq!(report.flatten_interior_vertices, 0);
-        assert_eq!(report.flatten_cg_iterations, [0, 0]);
+        // One sweep runs, touches nothing, and measures a zero delta.
+        assert_eq!(report.flatten_solver_sweeps, 1);
+        assert!(report.flatten_solver_delta.abs() < 1e-15);
+        assert_eq!(report.mean_value_weight_nonpositive, 0);
         for (u, v) in &flat.uv {
             assert!(
                 (u.hypot(*v) - 1.0).abs() < 1e-12,
@@ -2793,11 +3172,15 @@ mod tests {
             "equator length {}",
             report.boundary_loop_length_mm
         );
-        // Every triangle of this fixture is acute or right, so no cotangent
-        // weight is negative and Tutte's condition holds: the discrete
-        // harmonic map cannot flip. Counted rather than assumed.
+        // Mean-value weights are strictly positive on *any* triangulation, so
+        // Tutte's condition holds unconditionally here — no appeal to this
+        // fixture's triangle quality is needed any more. Counted rather than
+        // assumed, because that is what makes it a tripwire.
         assert_eq!(report.flipped_triangles, 0);
-        // The map is harmonic, not conformal, so area distortion varies from
+        assert!(report.flipped_triangle_disk_radii.is_empty());
+        assert_eq!(report.mean_value_weight_nonpositive, 0);
+        assert!(report.mean_value_weight_min > 0.0);
+        // Mean-value is not a conformal map, so area distortion varies from
         // pole to boundary — that is expected and is why it is reported.
         assert!(report.area_distortion_max >= report.area_distortion_min);
 
@@ -2891,24 +3274,51 @@ mod tests {
             StallDistanceReference::LastPlacedRing(0)
         );
         assert!((stall.coverage_radius_mm - ball).abs() < 1e-12);
-        assert!(stall.distance_samples > 0);
-        assert!(stall.distance_samples <= 2000, "sample cap not honoured");
+        assert!(stall.all_uncovered.samples > 0);
+        assert!(
+            stall.all_uncovered.samples <= 2000,
+            "sample cap not honoured"
+        );
         // Uncovered means farther than K_c, by construction.
         assert!(
-            stall.uncovered_distance_min_mm >= ball - 1e-6,
+            stall.all_uncovered.min_mm >= ball - 1e-6,
             "min distance {} should be at least K_c {ball}",
-            stall.uncovered_distance_min_mm
+            stall.all_uncovered.min_mm
         );
-        assert!(stall.uncovered_distance_median_mm >= stall.uncovered_distance_min_mm);
-        assert!(stall.uncovered_distance_max_mm >= stall.uncovered_distance_median_mm);
+        assert!(stall.all_uncovered.median_mm >= stall.all_uncovered.min_mm);
+        assert!(stall.all_uncovered.max_mm >= stall.all_uncovered.median_mm);
         // The farthest uncovered point is the disk centre: its distance to a
         // ring at 3D radius ρR₁ ≈ 9.24, whose centre curve sits K_c above the
         // plane, is √(9.24² + (K_c − h)²) ≈ 9.4 mm. Nothing can exceed that.
         assert!(
-            stall.uncovered_distance_max_mm < radius + ball,
+            stall.all_uncovered.max_mm < radius + ball,
             "max distance {} mm",
-            stall.uncovered_distance_max_mm
+            stall.all_uncovered.max_mm
         );
+
+        // The fold census must be clean: the map is an embedding, so every
+        // point outside the last placed ring really was swept by it. This is
+        // the row that read nonzero on the terrain arms under cotangent
+        // weights, and it is the one that separates a fold from a genuinely
+        // uncoverable geometry.
+        assert_eq!(
+            stall.uncovered_outside_last_ring, 0,
+            "an embedding cannot leave points outside a ring that certified them"
+        );
+        // The near-band restriction keeps only points within one estimated
+        // band width of the frontier, so it is a strict subset and closer in.
+        assert!(stall.band_width_disk > 0.0 && stall.band_width_disk <= 1.0);
+        // NOT asserted: that `near_band.samples <= all_uncovered.samples`.
+        // `summarise` strides to a 2000 cap, so a subset under the cap can
+        // report more samples than a superset over it. Both populations are
+        // stride-1 at this fixture's N_S, but the relation is a property of
+        // the cap, not of the sets, and must not be turned into an invariant.
+        if stall.near_band.samples > 0 {
+            assert!(stall.near_band.median_mm <= stall.all_uncovered.median_mm);
+        }
+        // `max_rings` stopped the search; no radius was ever proven
+        // infeasible, so there are no blockers to census.
+        assert_eq!(stall.blockers.samples, 0);
     }
 
     #[test]
