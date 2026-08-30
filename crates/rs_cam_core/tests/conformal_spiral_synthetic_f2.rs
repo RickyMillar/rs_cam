@@ -33,9 +33,32 @@
 //! | **F2-A** | the params actually used, the full 34-row `SpiralReport` grouped, the `N_S` adequacy arithmetic, and the **§B.4 falsifier** verdict |
 //! | **F2-B** | two SVGs — the unit-disk domain, and the XY world view |
 //! | **F2-C** | measured adjacent-ring 3D spacing vs the flat equal-cusp stepover AND vs the curvature-corrected stepover, plus the paper's own 12 % scallop-overshoot context |
-//! | **F2-D** | drop-cutter CL conversion, containment count, and the **THREE-way** F-034 cost table — conformal spiral, ball-end 0° raster, and the `direction_field` iso-curves — on one region through one relink, plus the three-basis achieved-spacing block |
-//! | **F2-D figures** | (2026-08-30, the operator's request) `{slug}_compare_f2.svg`: one panel per candidate at **identical scale in identically sized viewBoxes**, cutting moves solid, **surface links green**, air red dashed, **lift points as red rings**, each panel labelled with its own measured row; and `{slug}_overlay_f2.svg`, the same three superimposed at 45 % opacity |
+//! | **F2-D** | drop-cutter CL conversion, containment count, and the **FOUR-way** F-034 cost table — conformal spiral, ball-end 0° raster, the `direction_field` iso-curves (`D = t1`) and the synthesis §4.3 iso-scallop field (`D = sweep`) — on one region through one relink, plus the achieved-spacing block (four rows, three bases) |
+//! | **F2-D floor** | (2026-08-30) **`× FLOOR`** — `L_min = ∫∫ dA / s_max(x)` from the fixture's ANALYTIC curvature, and every candidate's `cut_mm / L_min`. See [`region_floor`] |
+//! | **F2-D figures** | (2026-08-30, the operator's request) `{slug}_compare_f2.svg`: one panel per candidate at **identical scale in identically sized viewBoxes**, cutting moves solid, **surface links green**, air red dashed, **lift points as red rings**, each panel labelled with its own measured row; and `{slug}_overlay_f2.svg`, the same four superimposed at 45 % opacity |
 //! | **F2-E** | sampling sensitivity: three `plan_spiral` runs at (N_S, N_C), (N_S/2, N_C) and (N_S, N_C/2) |
+//!
+//! # The decisive experiment (added 2026-08-30)
+//!
+//! `planning/finishing_synthesis_2026-08-30.md` §6 asks for one instrument and
+//! names the two pieces it was missing. Both are now here.
+//!
+//! **§4.3 — a FOURTH candidate.** The `direction_field` arm lost on every
+//! analytic arm and its adjacent-level spacing was wildly non-uniform (sphere
+//! median 0.333 against a 0.474 target). The synthesis's diagnosis is that its
+//! DIRECTION SOURCE is degenerate, not that the Poisson machinery is broken:
+//! `D = t1` is the max-signed-principal direction and a sphere cap is UMBILIC,
+//! so `t1` is noise. [`sweep_field_candidate`] feeds the SAME machinery a fixed
+//! sweep direction through `solve_paths_with_target`, changing `V` and nothing
+//! else — which makes the two field rows an ATTRIBUTION rather than two
+//! observations.
+//!
+//! **§1 — the FLOOR.** `L_min = ∫∫ dA / s_max(x)` is the shortest cutting
+//! distance that can meet the spec; below it a path is under-covering, full
+//! stop. Nothing in this programme had ever measured a candidate against it.
+//! [`region_floor`] integrates it per triangle from each fixture's closed form
+//! and [`print_floor_block`] prints `cut_mm / L_min` for every row on every
+//! analytic arm.
 //!
 //! # The §B.4 phase-1 falsifier, concretised 2026-08-30
 //!
@@ -286,6 +309,7 @@
     clippy::print_stderr
 )]
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::f64::consts::{PI, SQRT_2, TAU};
 use std::fmt::Write as _;
@@ -295,8 +319,8 @@ use rs_cam_core::conformal_spiral::{
     self, DistanceStats, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport,
     SpiralResult,
 };
-use rs_cam_core::direction_field::{self, FieldPathResult, FieldReport};
-use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldReport};
+use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::scallop_math;
@@ -1077,7 +1101,7 @@ fn write_comparison_svgs(
 
     // ---- (1) the side-by-side panels ----------------------------------
     let mut svg = header(
-        &format!("{label} F2: conformal spiral vs 0deg raster vs direction field"),
+        &format!("{label} F2: {} candidates side by side", panels.len()),
         view_w,
         view_h,
     );
@@ -1225,7 +1249,7 @@ fn write_comparison_svgs(
     let overlay_h = gap + ph + (overlay_lines + 1.4) * line + gap;
     let overlay_w = gap + pw + gap;
     let mut overlay = header(
-        &format!("{label} F2: the three candidates superimposed"),
+        &format!("{label} F2: the {} candidates superimposed", panels.len()),
         overlay_w,
         overlay_h,
     );
@@ -1262,9 +1286,10 @@ fn write_comparison_svgs(
     }
     overlay.push_str("</g>\n");
     let mut overlay_legend: Vec<String> = vec![format!(
-        "OVERLAY — the same three paths in ONE panel at the SAME scale, 45% opacity. Solid = \
-         cutting moves, dashed = surface links. AIR MOVES ARE OMITTED here (three rapid webs \
-         would hide the answer); see {slug}_compare_f2.svg for those."
+        "OVERLAY — the same {} paths in ONE panel at the SAME scale, 45% opacity. Solid = \
+         cutting moves, dashed = surface links. AIR MOVES ARE OMITTED here (overlapping rapid \
+         webs would hide the answer); see {slug}_compare_f2.svg for those.",
+        panels.len()
     )];
     for panel in panels {
         overlay_legend.push(format!(
@@ -1311,6 +1336,10 @@ const SPIRAL_COLOUR: &str = "#253494";
 const RASTER_COLOUR: &str = "#cc4c02";
 /// See [`SPIRAL_COLOUR`].
 const FIELD_COLOUR: &str = "#6a51a3";
+/// See [`SPIRAL_COLOUR`]. The synthesis §4.3 candidate — deliberately a
+/// different HUE from [`FIELD_COLOUR`], not a shade of it, because the two
+/// field rows are the pair a reader most needs to tell apart.
+const SWEEP_COLOUR: &str = "#00838f";
 
 // ── THE DIRECTION-FIELD CANDIDATE (added 2026-08-30) ────────────────────
 //
@@ -1347,15 +1376,55 @@ struct FieldCandidate {
     spacings_sorted: Vec<f64>,
 }
 
+/// Which target field `V` a field arm was solved with. The two arms run the
+/// **same** Poisson solve, the same level schedule and the same
+/// marching-triangles extraction — they differ ONLY in `V`, which is the whole
+/// point of the experiment.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FieldSource {
+    /// `direction_field::solve_field_paths` — `D = t1`, the max-signed-principal
+    /// direction, derived from the mesh's own curvature estimate.
+    Curvature,
+    /// `direction_field::solve_paths_with_target` — `D = d`, a fixed sweep
+    /// direction, `|V|` from the fixture's ANALYTIC curvature. See
+    /// [`sweep_field_candidate`].
+    Sweep,
+}
+
+impl FieldSource {
+    /// The one-line description of `V` printed at the head of the block.
+    fn field_line(self) -> &'static str {
+        match self {
+            Self::Curvature => {
+                "field: D = t1 (max signed principal direction), V = n x D, \
+                 |V| = sqrt((k_s + 1/r)/8)"
+            }
+            Self::Sweep => {
+                "field: D = d (FIXED SWEEP DIRECTION), V = n x d, \
+                 |V| = sqrt((k_s + 1/r)/8), k_s ANALYTIC"
+            }
+        }
+    }
+}
+
 /// Print the [`FieldReport`] essentials, so a bad field is DIAGNOSABLE rather
 /// than merely slow. Grouped exactly as `direction_field_wanaka_f1.rs`'s
 /// Stage A groups them, so the two instruments' blocks read alike.
-fn print_field_report(label: &str, result: &FieldPathResult, report: &FieldReport) {
+///
+/// **The direction-field group is NOT MEASURED on the [`FieldSource::Sweep`]
+/// arm.** `solve_paths_with_target`'s own docs say so in those words — "the
+/// direction-field counters of `FieldReport` stay zero on this path" — so
+/// printing its zeros as if they were observations would be exactly the
+/// [[instrument-integrity]] failure of reading an unrun check as a clean one.
+/// The rows are printed as `n/a` instead.
+fn print_field_report(
+    label: &str,
+    result: &FieldPathResult,
+    report: &FieldReport,
+    source: FieldSource,
+) {
     eprintln!("\n   ===== DIRECTION-FIELD SOLVE — {label} =====");
-    eprintln!(
-        "     field: D = t1 (max signed principal direction), V = D-perp, \
-         |V| = sqrt((k_s + 1/r)/8)"
-    );
+    eprintln!("     {}", source.field_line());
     eprintln!("     -- region --");
     eprintln!(
         "       region triangles            {:>10}",
@@ -1369,37 +1438,66 @@ fn print_field_report(label: &str, result: &FieldPathResult, report: &FieldRepor
         "       vertex components           {:>10}",
         report.vertex_components
     );
-    eprintln!("     -- direction field (§4.2) --");
-    eprintln!(
-        "       BFS orientation seeds       {:>10}",
-        report.direction_seeds
-    );
-    eprintln!(
-        "       SINGULAR (isotropic) tris   {:>10}   <<< a flat or umbilic region has no \
-         preferred",
-        report.degenerate_triangles
-    );
-    eprintln!(
-        "\x20                                            direction; this is where a curvature-\
-         derived"
-    );
-    eprintln!("\x20                                            field has nothing to derive from");
-    eprintln!(
-        "       transported tris            {:>10}",
-        report.transported_triangles
-    );
-    eprintln!(
-        "       orientation inconsistencies {:>10}",
-        report.orientation_inconsistencies
-    );
-    eprintln!(
-        "       unoriented tris (want 0)    {:>10}",
-        report.unoriented_triangles
-    );
+    match source {
+        FieldSource::Curvature => {
+            eprintln!("     -- direction field (§4.2) --");
+            eprintln!(
+                "       BFS orientation seeds       {:>10}",
+                report.direction_seeds
+            );
+            eprintln!(
+                "       SINGULAR (isotropic) tris   {:>10}   <<< a flat or umbilic region has no \
+                 preferred",
+                report.degenerate_triangles
+            );
+            eprintln!(
+                "\x20                                            direction; this is where a \
+                 curvature-derived"
+            );
+            eprintln!(
+                "\x20                                            field has nothing to derive from"
+            );
+            eprintln!(
+                "       transported tris            {:>10}",
+                report.transported_triangles
+            );
+            eprintln!(
+                "       orientation inconsistencies {:>10}",
+                report.orientation_inconsistencies
+            );
+            eprintln!(
+                "       unoriented tris (want 0)    {:>10}",
+                report.unoriented_triangles
+            );
+        }
+        FieldSource::Sweep => {
+            eprintln!("     -- direction field (§4.2) -- NOT EXERCISED ON THIS PATH --");
+            eprintln!(
+                "       BFS seeds / singular tris / transported / inconsistencies / unoriented\n\
+                 \x20        ....................................... n/a, ALL FIVE\n\
+                 \x20      `solve_paths_with_target`'s docs: \"the direction-field counters of\n\
+                 \x20      FieldReport stay zero on this path\". They are zeros because the code \
+                 that\n\
+                 \x20      writes them never ran, NOT because a check came back clean, so they \
+                 are\n\
+                 \x20      printed as n/a. THAT ABSENCE IS THE EXPERIMENT: the curvature arm's\n\
+                 \x20      orientation BFS is precisely the machinery this arm replaces with a\n\
+                 \x20      single given direction, and it cannot be singular, cannot be\n\
+                 \x20      inconsistent and has nothing to transport."
+            );
+        }
+    }
     eprintln!("     -- target field V (Eq. 13) --");
     eprintln!(
-        "       CLAMPED-magnitude tris      {:>10}",
-        report.clamped_magnitude_triangles
+        "       CLAMPED-magnitude tris      {:>10}{}",
+        report.clamped_magnitude_triangles,
+        match source {
+            FieldSource::Curvature => "",
+            // The module clamps inside `build_target_field`, which this path
+            // bypasses entirely, so its counter is structurally zero here for
+            // the same reason the direction-field group above is.
+            FieldSource::Sweep => "   <<< n/a — the caller clamps; see the TRIPWIRES line above",
+        }
     );
     eprintln!(
         "       |V| min / mean / max        {:>10.6} / {:.6} / {:.6}",
@@ -1451,16 +1549,25 @@ fn print_field_report(label: &str, result: &FieldPathResult, report: &FieldRepor
     if let (Some(first), Some(last)) = (result.levels.first(), result.levels.last()) {
         eprintln!("       level range                 {first:>10.6} .. {last:.6}");
     }
-    eprintln!(
-        "     CONTEXT: on Wanaka thin-organic region 1 this module produced \
-         {F1_FIELD_POLYLINES_REGION1} polylines\n\
-         \x20      against a {WANAKA_R1_PCA_FRAGMENTS}-fragment PCA-cell reference and was \
-         FALSIFIED (FINDINGS.md §F1-1). That was\n\
-         \x20      SHALLOW TERRAIN, where principal curvature is noise. This run is the first on \
-         a clean\n\
-         \x20      analytic fixture, so the count above is a NEW observation, not a re-run of \
-         that one."
-    );
+    match source {
+        FieldSource::Curvature => eprintln!(
+            "     CONTEXT: on Wanaka thin-organic region 1 this module produced \
+             {F1_FIELD_POLYLINES_REGION1} polylines\n\
+             \x20      against a {WANAKA_R1_PCA_FRAGMENTS}-fragment PCA-cell reference and was \
+             FALSIFIED (FINDINGS.md §F1-1). That was\n\
+             \x20      SHALLOW TERRAIN, where principal curvature is noise. This run is the first \
+             on a clean\n\
+             \x20      analytic fixture, so the count above is a NEW observation, not a re-run of \
+             that one."
+        ),
+        FieldSource::Sweep => eprintln!(
+            "     CONTEXT: this is the synthesis §4.3 candidate — the SAME Poisson machinery the\n\
+             \x20      row above runs, fed a direction that cannot be noise. Read the two rows as \
+             a\n\
+             \x20      PAIR: they differ in V and in nothing else, so any gap between them is\n\
+             \x20      attributable to the DIRECTION SOURCE alone."
+        ),
+    }
 }
 
 /// Adjacent-**level** 3D spacing of the field's iso-curves.
@@ -1535,6 +1642,31 @@ fn field_candidate(
     region_triangles: &[u32],
     polygons: &[Polygon2],
 ) -> FieldCandidate {
+    let (result, report) = direction_field::solve_field_paths(
+        fixture.mesh,
+        region_triangles,
+        BALL_RADIUS_MM,
+        CUSP_HEIGHT_MM,
+    );
+    print_field_report(label, &result, &report, FieldSource::Curvature);
+    cost_field_result(fixture, polygons, &result, &report, FieldSource::Curvature)
+}
+
+/// The shared back half of BOTH field candidates: contact → CL, containment
+/// census, F-034 cost through the production relink, and the achieved
+/// adjacent-LEVEL spacing.
+///
+/// Split out of [`field_candidate`] on 2026-08-30 when the sweep-direction arm
+/// was added, and split rather than copied for the reason this file splits
+/// everything else: two costing paths would be two chances for the four rows of
+/// the comparison table to stop being produced by the same call site.
+fn cost_field_result(
+    fixture: Fixture<'_>,
+    polygons: &[Polygon2],
+    result: &FieldPathResult,
+    report: &FieldReport,
+    source: FieldSource,
+) -> FieldCandidate {
     use rs_cam_core::region_set::RegionSet;
 
     let Fixture {
@@ -1546,22 +1678,24 @@ fn field_candidate(
         ..
     } = fixture;
 
-    let (result, report) =
-        direction_field::solve_field_paths(mesh, region_triangles, BALL_RADIUS_MM, CUSP_HEIGHT_MM);
-    print_field_report(label, &result, &report);
-
     if result.polylines.is_empty() {
-        let note = format!(
-            "the direction-field solve produced NO polyline on {} region triangles \
-             ({} singular, CG converged {})",
-            report.region_triangles, report.degenerate_triangles, report.cg_converged
-        );
+        let note = match source {
+            FieldSource::Curvature => format!(
+                "the direction-field solve produced NO polyline on {} region triangles \
+                 ({} singular, CG converged {})",
+                report.region_triangles, report.degenerate_triangles, report.cg_converged
+            ),
+            FieldSource::Sweep => format!(
+                "the sweep-direction solve produced NO polyline on {} region triangles \
+                 (CG converged {})",
+                report.region_triangles, report.cg_converged
+            ),
+        };
         eprintln!("\n     REFUSAL / EMPTY: {note}.");
         eprintln!(
-            "     That is a RESULT, not a gap: it says the curvature-derived field had nothing \
-             to work\n\
-             \x20      with on this surface. The comparison figure draws its panel EMPTY and \
-             says so."
+            "     That is a RESULT, not a gap: it says this field had nothing to work with on \
+             this\n\
+             \x20      surface. The comparison figure draws its panel EMPTY and says so."
         );
         return FieldCandidate {
             cost: None,
@@ -1625,10 +1759,10 @@ fn field_candidate(
          CLIPS.\n\
          \x20      `clip_toolpath_to_boundary` SPLITS a polyline, and FRAGMENTS is one of the \
          five columns\n\
-         \x20      this three-way table compares — clipping one row would manufacture fragments \
+         \x20      four-way table compares — clipping one row would manufacture fragments \
          into it.\n\
          \x20      Stage D already counts-rather-than-clips the spiral for the same reason, so \
-         all three\n\
+         all four\n\
          \x20      rows are now treated alike. A nonzero escape count is the LATERAL CL SHIFT, \
          not an\n\
          \x20      uncontained path."
@@ -1644,7 +1778,7 @@ fn field_candidate(
         cost.moves, cost.fragments, cost.linked, cost.kept_retracts, cost.cutting_mm, cost.time_s
     );
 
-    let spacings_sorted = field_level_spacing(&result);
+    let spacings_sorted = field_level_spacing(result);
     eprintln!("\n     -- ACHIEVED SPACING OF THE FIELD'S OWN ISO-CURVES (3D, contact points) --");
     if spacings_sorted.is_empty() {
         eprintln!(
@@ -1673,9 +1807,12 @@ fn field_candidate(
              \x20      It is also a THIRD spacing basis: the spiral spaces on the 3D SURFACE, \
              the raster in\n\
              \x20      XY PROJECTION, and this on the Poisson field's own LEVEL SET. Three \
-             bases, one\n\
-             \x20      table — read the fair-comparison block in Stage D before comparing any \
-             two times."
+             bases, four\n\
+             \x20      rows — the two FIELD rows share this third basis, which makes THAT pair \
+             the one\n\
+             \x20      clean spacing comparison in the table. Read the fair-comparison block in \
+             Stage D\n\
+             \x20      before comparing any two times."
         );
     }
 
@@ -1690,6 +1827,761 @@ fn field_candidate(
         note,
         spacings_sorted,
     }
+}
+
+// ── THE DECISIVE EXPERIMENT (added 2026-08-30) ──────────────────────────
+//
+// `planning/finishing_synthesis_2026-08-30.md` §6 asks for one instrument and
+// names the two pieces it is missing. Both are below.
+//
+// **§4.3 — the FOURTH candidate.** The direction-field arm above lost on every
+// analytic arm (sphere 570.9 mm / 49.3 s against a 265.3 / 23.4 spiral and a
+// 243.4 / 22.0 raster) and its measured adjacent-level spacing was wildly
+// non-uniform (sphere median 0.333 against a 0.474 target; ribbon median 0.098,
+// max 20.1). The synthesis's diagnosis is that its DIRECTION SOURCE is
+// degenerate, not that the Poisson machinery is broken: `D = t1` is the
+// max-signed-principal direction, and a sphere cap is UMBILIC — every direction
+// is principal, so `t1` is arbitrary noise. That is the same cause of death as
+// F1 arm A on Wanaka region 1 (a near-umbilic Shallow band, 2,340 orientation
+// inconsistencies). So the machinery is fed a direction that CANNOT be noise —
+// a fixed sweep direction `d` — through `solve_paths_with_target`, and nothing
+// else changes. See [`sweep_field_candidate`].
+//
+// **§1 — the FLOOR.** `L_min = ∫∫ dA / s_max(x)`: every pass spaced exactly at
+// the local iso-scallop limit, nothing cut twice. Below it the finish spec is
+// not met. Nothing in this programme has ever measured a candidate against it,
+// and the synthesis calls that "the closest thing to an answer to 'how close to
+// optimal are we'". See [`region_floor`] and [`print_floor_block`].
+
+/// The first and second partial derivatives of a heightfield `z = f(x, y)` at
+/// one point, in closed form.
+///
+/// **Analytic on purpose.** The alternative — estimating curvature from the
+/// mesh — would put an estimator inside both the floor and the target field,
+/// and every number this experiment produces would then be a statement about
+/// the estimator as much as about the geometry. These fixtures are analytic
+/// *precisely* so that confound can be removed; `crate::crest_lines` is
+/// `pub(crate)` to `direction_field` anyway, so the estimator is not reachable
+/// from a test even if it were wanted.
+#[derive(Clone, Copy)]
+struct SurfaceJet {
+    fx: f64,
+    fy: f64,
+    fxx: f64,
+    fxy: f64,
+    fyy: f64,
+}
+
+/// One analytic fixture's closed-form surface, as the two consumers need it.
+///
+/// # Sign convention — convex is POSITIVE, and it is not the textbook one
+///
+/// With the upward unit normal `n = (−f_x, −f_y, 1)/W` the second fundamental
+/// form of a DOME is negative definite: a sphere cap reads `−1/R_s`. Both
+/// consumers here want the opposite sign — `scallop_math`'s doc says "positive
+/// = convex", and `direction_field`'s `k_s + 1/r` must GROW on a convex surface
+/// so the stepover tightens. So every curvature this type returns is NEGATED
+/// into the convex-positive convention, and a sphere cap of radius `R_s` reads
+/// `+1/R_s` from both methods. The two smoke tests below assert exactly that.
+#[derive(Clone, Copy)]
+struct AnalyticSurface {
+    /// Printed at the head of the floor block, so a transcript says which
+    /// closed form produced its numbers.
+    name: &'static str,
+    jet: fn(f64, f64) -> SurfaceJet,
+}
+
+impl AnalyticSurface {
+    /// Normal curvature (convex-positive) along the tangent direction `u`.
+    ///
+    /// `u` is a **world** vector lying in the mesh triangle's plane. Writing
+    /// `u = a·r_x + b·r_y` with `r_x = (1,0,f_x)`, `r_y = (0,1,f_y)` gives
+    /// `a = u.x`, `b = u.y` immediately, and then
+    ///
+    /// ```text
+    /// κ_n(u) = II(u,u) / I(u,u)
+    ///        = (f_xx a² + 2 f_xy a b + f_yy b²) / W   ÷   (a² + b² + (a f_x + b f_y)²)
+    /// ```
+    ///
+    /// **The first fundamental form is divided out rather than assumed to be
+    /// 1.** `u` is a unit vector in the MESH TRIANGLE's plane, which only
+    /// approximates the analytic surface's tangent plane at the same point, so
+    /// `I(u,u)` is near 1 but not 1. Dividing removes the last approximation in
+    /// the derivation; it costs one multiply.
+    fn normal_curvature(self, x: f64, y: f64, u: V3) -> f64 {
+        let j = (self.jet)(x, y);
+        let w = (1.0 + j.fx * j.fx + j.fy * j.fy).sqrt();
+        let (a, b) = (u.x, u.y);
+        let tangent = a * j.fx + b * j.fy;
+        let first = a * a + b * b + tangent * tangent;
+        if first.is_nan() || first <= 1e-15 || !w.is_finite() {
+            return 0.0;
+        }
+        let second = j.fxx * a * a + 2.0 * j.fxy * a * b + j.fyy * b * b;
+        -second / (w * first)
+    }
+
+    /// `(κ_min, κ_max)` in the convex-positive convention.
+    ///
+    /// Standard heightfield forms: `E = 1+f_x²`, `F = f_x f_y`, `G = 1+f_y²`,
+    /// `L = f_xx/W`, `M = f_xy/W`, `N = f_yy/W`, `EG − F² = W²`, then
+    /// `H = (EN − 2FM + GL)/(2(EG−F²))`, `K = (LN − M²)/(EG−F²)` and
+    /// `κ = H ± √(H² − K)`. Negating for the convex-positive convention swaps
+    /// which root is the minimum, which is why the returned pair is `(−hi, −lo)`
+    /// and not `(−lo, −hi)`.
+    fn principal_curvatures(self, x: f64, y: f64) -> (f64, f64) {
+        let j = (self.jet)(x, y);
+        let w2 = 1.0 + j.fx * j.fx + j.fy * j.fy;
+        let w = w2.sqrt();
+        if !w.is_finite() || w2 <= 0.0 {
+            return (0.0, 0.0);
+        }
+        let (e, f, g) = (1.0 + j.fx * j.fx, j.fx * j.fy, 1.0 + j.fy * j.fy);
+        let (l, m, n) = (j.fxx / w, j.fxy / w, j.fyy / w);
+        let denominator = e * g - f * f;
+        if denominator.is_nan() || denominator <= 1e-15 {
+            return (0.0, 0.0);
+        }
+        let mean = (e * n - 2.0 * f * m + g * l) / (2.0 * denominator);
+        let gauss = (l * n - m * m) / denominator;
+        let discriminant = (mean * mean - gauss).max(0.0).sqrt();
+        (-(mean + discriminant), -(mean - discriminant))
+    }
+}
+
+/// ARM SPHERE: `z = √(R_s² − x² − y²)` (plus a constant that derivatives kill).
+///
+/// `f_x = −x/w`, `f_xx = −(w² + x²)/w³`, `f_xy = −xy/w³` with `w = √(R_s²−r²)`.
+/// At the pole `f_xx = f_yy = −1/R_s`, i.e. `+1/R_s` convex — the number
+/// [`arm_sphere`] already derives twice by other routes.
+fn sphere_jet(x: f64, y: f64) -> SurfaceJet {
+    let w2 = (SPHERE_RADIUS_MM * SPHERE_RADIUS_MM - x * x - y * y).max(1e-9);
+    let w = w2.sqrt();
+    let w3 = w2 * w;
+    SurfaceJet {
+        fx: -x / w,
+        fy: -y / w,
+        fxx: -(w2 + x * x) / w3,
+        fxy: -(x * y) / w3,
+        fyy: -(w2 + y * y) / w3,
+    }
+}
+
+/// ARM WAVY: `z = A·sin(kx)·sin(ky)` — [`wavy_patch_mesh`]'s own closed form.
+fn wavy_jet(x: f64, y: f64) -> SurfaceJet {
+    let k = TAU / WAVY_WAVELENGTH_MM;
+    let (sx, cx) = ((k * x).sin(), (k * x).cos());
+    let (sy, cy) = ((k * y).sin(), (k * y).cos());
+    let a = WAVY_AMPLITUDE_MM;
+    SurfaceJet {
+        fx: a * k * cx * sy,
+        fy: a * k * sx * cy,
+        fxx: -a * k * k * sx * sy,
+        fxy: a * k * k * cx * cy,
+        fyy: -a * k * k * sx * sy,
+    }
+}
+
+/// ARM RIBBON: [`ribbon_height`]'s paraboloid valley plus its ripple.
+fn ribbon_jet(x: f64, y: f64) -> SurfaceJet {
+    let k = ribbon_ripple_k();
+    let bowl = 2.0 * RIBBON_BOWL_AMPLITUDE_MM / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM);
+    let (sx, cx) = ((k * x).sin(), (k * x).cos());
+    let (sy, cy) = ((k * y).sin(), (k * y).cos());
+    let a = RIBBON_RIPPLE_AMPLITUDE_MM;
+    SurfaceJet {
+        fx: bowl * x + a * k * cx * sy,
+        fy: bowl * y + a * k * sx * cy,
+        fxx: bowl - a * k * k * sx * sy,
+        fxy: a * k * k * cx * cy,
+        fyy: bowl - a * k * k * sx * sy,
+    }
+}
+
+/// ARM BAND: four compact raised-cosine bumps, [`band_height`]'s closed form.
+///
+/// For a radial profile `g(d)` on `d = |p − c|` with `u = (p − c)/d`:
+/// `f_x = g'·u_x`, `f_xx = g''·u_x² + (g'/d)(1 − u_x²)`,
+/// `f_xy = (g'' − g'/d)·u_x u_y`. At `d → 0` both `g''` and `g'/d` tend to
+/// `−Aπ²/(2R²)`, so the limit is isotropic and is taken explicitly rather than
+/// divided by zero. The bumps have COMPACT SUPPORT and a pitch greater than
+/// `2R`, so the sum below never has two active terms — [`band_height`]'s own
+/// doc says so, and it is why every bound on this arm is exact.
+fn band_jet(x: f64, y: f64) -> SurfaceJet {
+    let (amplitude, radius) = (BAND_BUMP_AMPLITUDE_MM, BAND_BUMP_RADIUS_MM);
+    let peak = amplitude * PI * PI / (2.0 * radius * radius);
+    let mut jet = SurfaceJet {
+        fx: 0.0,
+        fy: 0.0,
+        fxx: 0.0,
+        fxy: 0.0,
+        fyy: 0.0,
+    };
+    for (cx, cy) in band_bump_centres() {
+        let (dx, dy) = (x - cx, y - cy);
+        let d = dx.hypot(dy);
+        if d >= radius {
+            continue;
+        }
+        if d < 1e-9 {
+            jet.fxx -= peak;
+            jet.fyy -= peak;
+            continue;
+        }
+        let t = PI * d / radius;
+        let first = -amplitude * PI / (2.0 * radius) * t.sin();
+        let second = -peak * t.cos();
+        let (ux, uy) = (dx / d, dy / d);
+        let radial = first / d;
+        jet.fx += first * ux;
+        jet.fy += first * uy;
+        jet.fxx += second * ux * ux + radial * (1.0 - ux * ux);
+        jet.fxy += (second - radial) * ux * uy;
+        jet.fyy += second * uy * uy + radial * (1.0 - uy * uy);
+    }
+    jet
+}
+
+/// See [`sphere_jet`].
+const SPHERE_SURFACE: AnalyticSurface = AnalyticSurface {
+    name: "sphere cap  z = sqrt(R_s^2 - x^2 - y^2),  R_s = 20 mm  (UMBILIC everywhere)",
+    jet: sphere_jet,
+};
+/// See [`wavy_jet`].
+const WAVY_SURFACE: AnalyticSurface = AnalyticSurface {
+    name: "wavy patch  z = A sin(kx) sin(ky),  A = 0.5 mm, L = 8 mm",
+    jet: wavy_jet,
+};
+/// See [`ribbon_jet`].
+const RIBBON_SURFACE: AnalyticSurface = AnalyticSurface {
+    name: "ribbon      z = A_r (x^2+y^2)/R0^2 + A_w sin(kx) sin(ky)",
+    jet: ribbon_jet,
+};
+/// See [`band_jet`].
+const BAND_SURFACE: AnalyticSurface = AnalyticSurface {
+    name: "slope band  four raised-cosine bumps, z = A/2 (1 + cos(pi d / R))",
+    jet: band_jet,
+};
+
+// ---- the floor, L_min = ∫∫ dA / s_max(x) ------------------------------
+
+/// One region's theoretical minimum cutting distance, measured two ways.
+struct FloorReport {
+    /// 3D surface area of the region — the `dA` the integral runs over.
+    area_mm2: f64,
+    /// `Σ area_t / s_max(t)` with `s_max` taken on the `κ_min` basis. **This is
+    /// THE FLOOR.**
+    l_min_mm: f64,
+    /// The same sum on the `κ_max` basis — see [`region_floor`] for why this is
+    /// a companion and not the headline.
+    l_min_worst_mm: f64,
+    /// Area-weighted distribution of `s_max(t)`, `κ_min` basis.
+    s_max: AreaWeighted,
+    /// Area-weighted distribution of `s_max(t)`, `κ_max` basis.
+    s_worst: AreaWeighted,
+    /// Triangles whose `s_max` came back non-positive and were therefore left
+    /// out of the sum. Must be 0 on these fixtures; a nonzero is a tripwire.
+    degenerate: usize,
+}
+
+/// Integrate the floor over a region, from the fixture's ANALYTIC curvature.
+///
+/// # Which curvature goes into `s_max`, and why it is `κ_min`
+///
+/// `s_max(x)` in the synthesis is the **maximum admissible** pass spacing at a
+/// point. Spacing is taken ACROSS the passes, so the admissible value depends
+/// on which direction the passes step in, and the largest of those — the one a
+/// perfectly-oriented strategy could achieve — is the direction of LEAST convex
+/// curvature. So the headline uses `κ_min`, which makes `s_max` largest,
+/// `L_min` smallest, and the result a genuine **lower bound that no strategy
+/// can beat while meeting spec**. A floor computed on `κ_max` would be a floor
+/// only for strategies forced to step across the worst direction; it is printed
+/// beside it as exactly that, and on an UMBILIC surface (ARM SPHERE) the two
+/// coincide identically.
+///
+/// # Why this will not reproduce the synthesis §1 table on three of four arms
+///
+/// §1's table used ONE constant `s_max` per arm — the tightest value on the
+/// region — because that is all a hand calculation can do. This is the integral
+/// §1 actually defines, evaluated per triangle. On ARM SPHERE the two agree
+/// exactly (constant curvature, so the constant IS the integrand). On the other
+/// arms this floor is LOWER, because the tightest value is not the typical one,
+/// and every `× floor` ratio there is correspondingly HIGHER than the table's.
+/// That is the local integrand doing its job, not a disagreement to reconcile.
+fn region_floor(mesh: &TriangleMesh, region: &[u32], surface: AnalyticSurface) -> FloorReport {
+    let mut best: Vec<(f64, f64)> = Vec::with_capacity(region.len());
+    let mut worst: Vec<(f64, f64)> = Vec::with_capacity(region.len());
+    let mut area_mm2 = 0.0f64;
+    let mut l_min_mm = 0.0f64;
+    let mut l_min_worst_mm = 0.0f64;
+    let mut degenerate = 0usize;
+    for &t in region {
+        let Some(face) = mesh.faces.get(t as usize) else {
+            continue;
+        };
+        let e1 = face.v[1] - face.v[0];
+        let e2 = face.v[2] - face.v[0];
+        let area = 0.5 * e1.cross(&e2).norm();
+        if area.is_nan() || area <= 0.0 {
+            continue;
+        }
+        let cx = (face.v[0].x + face.v[1].x + face.v[2].x) / 3.0;
+        let cy = (face.v[0].y + face.v[1].y + face.v[2].y) / 3.0;
+        let (k_min, k_max) = surface.principal_curvatures(cx, cy);
+        let widest =
+            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_min);
+        let tightest =
+            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_max);
+        if !widest.is_finite() || widest <= 0.0 || !tightest.is_finite() || tightest <= 0.0 {
+            degenerate += 1;
+            continue;
+        }
+        area_mm2 += area;
+        l_min_mm += area / widest;
+        l_min_worst_mm += area / tightest;
+        best.push((widest, area));
+        worst.push((tightest, area));
+    }
+    FloorReport {
+        area_mm2,
+        l_min_mm,
+        l_min_worst_mm,
+        s_max: area_weighted(best),
+        s_worst: area_weighted(worst),
+        degenerate,
+    }
+}
+
+/// Print the floor and every candidate's `× floor`.
+///
+/// `candidates` is `(label, cutting_mm)`; a `None` is a candidate that produced
+/// no path and is printed as such rather than omitted.
+fn print_floor_block(
+    label: &str,
+    surface: AnalyticSurface,
+    floor: &FloorReport,
+    candidates: &[(&str, Option<f64>)],
+) {
+    eprintln!("\n   ===== x FLOOR — L_min = INTEGRAL dA / s_max(x)   ({label}) =====");
+    eprintln!(
+        "     `planning/finishing_synthesis_2026-08-30.md` §1. Every pass spaced exactly at the\n\
+         \x20    LOCAL iso-scallop limit, nothing cut twice. It is a HARD FLOOR, not a target:\n\
+         \x20    a path shorter than it has not met the finish spec. Nothing in this programme\n\
+         \x20    had ever measured a candidate against it before this run.\n"
+    );
+    eprintln!("     surface (closed form): {}", surface.name);
+    eprintln!(
+        "     integrand: s_max(t) = scallop_math::stepover_from_scallop_curved(K_c = \
+         {BALL_RADIUS_MM:.3}, h = {CUSP_HEIGHT_MM:.3}, kappa_t),"
+    );
+    eprintln!(
+        "\x20               kappa_t evaluated ANALYTICALLY at the triangle centroid; sum of \
+         area_t / s_max(t)."
+    );
+    eprintln!(
+        "\n     {:<44} {:>10} {:>10} {:>10} {:>10}",
+        "s_max basis (mm)", "min", "median", "p90", "max"
+    );
+    eprintln!(
+        "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
+        "kappa_min (least convex) — THE FLOOR's basis",
+        floor.s_max.min,
+        floor.s_max.p50,
+        floor.s_max.p90,
+        floor.s_max.max
+    );
+    eprintln!(
+        "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
+        "kappa_max (most convex) — direction-worst",
+        floor.s_worst.min,
+        floor.s_worst.p50,
+        floor.s_worst.p90,
+        floor.s_worst.max
+    );
+    eprintln!(
+        "\n     region 3D area                          {:>12.4} mm^2   ({} triangles weighted)",
+        floor.area_mm2, floor.s_max.samples
+    );
+    eprintln!(
+        "     L_min  (kappa_min basis)  THE FLOOR      {:>12.4} mm",
+        floor.l_min_mm
+    );
+    eprintln!(
+        "     L_min  (kappa_max basis)  direction-worst{:>12.4} mm",
+        floor.l_min_worst_mm
+    );
+    if floor.degenerate > 0 {
+        eprintln!(
+            "     *** {} TRIANGLE(S) HAD A NON-POSITIVE s_max AND ARE NOT IN THE SUM. The floor \
+             is\n\
+             \x20    UNDER-STATED by their area. On these fixtures this must be 0 — every one \
+             asserts\n\
+             \x20    R_min >= 2 K_c, so no concavity is tighter than the ball. Investigate before \
+             quoting.",
+            floor.degenerate
+        );
+    }
+    eprintln!(
+        "\n     {:<38} {:>12} {:>12}",
+        "candidate", "cut mm", "x FLOOR"
+    );
+    let mut under = 0usize;
+    for &(name, cutting_mm) in candidates {
+        match cutting_mm {
+            Some(cut) if floor.l_min_mm > 0.0 => {
+                let ratio = cut / floor.l_min_mm;
+                let flag = if ratio < 1.0 {
+                    under += 1;
+                    "   <<< BELOW 1.0"
+                } else {
+                    ""
+                };
+                eprintln!("     {name:<38} {cut:>12.1} {ratio:>12.3}{flag}");
+            }
+            Some(cut) => eprintln!("     {name:<38} {cut:>12.1} {:>12}", "no floor"),
+            None => eprintln!("     {name:<38} {:>12} {:>12}", "NO PATH", "-"),
+        }
+    }
+    if under > 0 {
+        eprintln!(
+            "\n     *********************************************************************\n\
+             \x20    *** {under} CANDIDATE(S) ARE BELOW 1.0x THE FLOOR.                      ***\n\
+             \x20    *** THIS IS NOT A WIN. A path shorter than L_min CANNOT have met the ***\n\
+             \x20    *** finish spec: it is under-covering, and every time it was quoted  ***\n\
+             \x20    *** as 'faster' it was being credited with a finish it did not       ***\n\
+             \x20    *** deliver. Synthesis §1: on the sphere the raster reads 0.997x, and ***\n\
+             \x20    *** the sphere is the RIGOROUS case — curvature is constant, so the  ***\n\
+             \x20    *** floor is exact and the inference is airtight there.              ***\n\
+             \x20    *********************************************************************"
+        );
+    }
+    eprintln!(
+        "\n     READ THE RATIO IN ONE DIRECTION ONLY. Below 1.0 PROVES under-covering. At or\n\
+         \x20    above 1.0 does NOT prove the spec was met — `cutting_mm` is the whole fed\n\
+         \x20    distance including entry plunges and stay-down surface links, so the ratio is\n\
+         \x20    slightly generous to every row, and a path can be long AND badly placed.\n\
+         \x20    Coverage is answered by the coverage audit, not by this column."
+    );
+}
+
+// ---- the §4.3 candidate: iso-scallop field, D = sweep direction --------
+
+/// The fixed sweep direction `d` an arm's field is built on.
+struct SweepDirection {
+    /// Unit, in the XY plane (`z = 0`), before per-triangle projection.
+    d: V3,
+    /// `√(λ_major / λ_minor)` of the region's area-weighted XY second-moment
+    /// matrix. `1.0` is a region with no long axis at all.
+    elongation: f64,
+    /// True when [`PCA_ELONGATION_FLOOR`] was not cleared and `d` fell back to
+    /// `+X`. **Not a defect** — see [`pca_major_axis`].
+    isotropic: bool,
+}
+
+/// Below this elongation the PCA major axis is noise and `d` falls back to `+X`.
+///
+/// 1.05 is a 5 % axis-length difference. A region under it has no long axis in
+/// any useful sense, and reporting a "PCA direction" for one would be the same
+/// class of error as `D = t1` on an umbilic sphere.
+const PCA_ELONGATION_FLOOR: f64 = 1.05;
+
+/// The region's area-weighted PCA major axis, in XY.
+///
+/// # All four fixtures are near-isotropic, and that is worth saying out loud
+///
+/// The sphere cap is a disk, the wavy region is a disk, the ribbon is eight
+/// arms at equal angular pitch and the band is a 2 × 2 bump lattice — every one
+/// of them has a covariance matrix within a few percent of a multiple of the
+/// identity. So on these fixtures `d` is **not** "the region's long axis"; it
+/// is a free parameter, and this function pins it at `+X`.
+///
+/// That fallback is the *best* available choice rather than a concession,
+/// because `+X` is exactly the direction the `0°` raster row already sweeps.
+/// The sweep-field row and the raster row then differ in ONE thing — the
+/// spacing law — which isolates the synthesis's §4.3 claim as cleanly as this
+/// instrument can.
+///
+/// **What it does NOT test, stated so the result is not over-quoted:** §4.2's
+/// actual proposal is a field solved INSIDE each monotone PCA cell, with that
+/// cell's own sweep direction. This is one global `d` over a whole region. On a
+/// branched region the two are very different things, and the difference is
+/// most of the gap between what is measured here and what §4 proposes.
+fn pca_major_axis(mesh: &TriangleMesh, region: &[u32]) -> SweepDirection {
+    let (mut sum_area, mut sum_x, mut sum_y) = (0.0f64, 0.0f64, 0.0f64);
+    let mut centroids: Vec<(f64, f64, f64)> = Vec::with_capacity(region.len());
+    for &t in region {
+        let Some(face) = mesh.faces.get(t as usize) else {
+            continue;
+        };
+        let e1 = face.v[1] - face.v[0];
+        let e2 = face.v[2] - face.v[0];
+        let area = 0.5 * e1.cross(&e2).norm();
+        if area.is_nan() || area <= 0.0 {
+            continue;
+        }
+        let cx = (face.v[0].x + face.v[1].x + face.v[2].x) / 3.0;
+        let cy = (face.v[0].y + face.v[1].y + face.v[2].y) / 3.0;
+        sum_area += area;
+        sum_x += area * cx;
+        sum_y += area * cy;
+        centroids.push((cx, cy, area));
+    }
+    let fallback = SweepDirection {
+        d: V3::new(1.0, 0.0, 0.0),
+        elongation: 1.0,
+        isotropic: true,
+    };
+    if sum_area.is_nan() || sum_area <= 0.0 {
+        return fallback;
+    }
+    let (mx, my) = (sum_x / sum_area, sum_y / sum_area);
+    let (mut cxx, mut cxy, mut cyy) = (0.0f64, 0.0f64, 0.0f64);
+    for (cx, cy, area) in centroids {
+        let (dx, dy) = (cx - mx, cy - my);
+        cxx += area * dx * dx;
+        cxy += area * dx * dy;
+        cyy += area * dy * dy;
+    }
+    let trace = cxx + cyy;
+    let determinant = cxx * cyy - cxy * cxy;
+    let discriminant = (0.25 * trace * trace - determinant).max(0.0).sqrt();
+    let (major, minor) = (0.5 * trace + discriminant, 0.5 * trace - discriminant);
+    if minor.is_nan() || minor <= 1e-12 || major.is_nan() || major <= 1e-12 {
+        return fallback;
+    }
+    let elongation = (major / minor).sqrt();
+    if elongation < PCA_ELONGATION_FLOOR {
+        return SweepDirection {
+            elongation,
+            ..fallback
+        };
+    }
+    // Eigenvector of the major eigenvalue, taken from whichever ROW of
+    // `C − λI` has the larger norm.
+    //
+    // The naive form `(C_xy, λ − C_xx)` is row 1's perpendicular, and on an
+    // axis-aligned elongated region BOTH of its components are ~0 (`C_xy ≈ 0`
+    // by symmetry AND `λ ≈ C_xx` because X is the major axis), so its direction
+    // is pure rounding noise. Row 2's perpendicular `(λ − C_yy, C_xy)` is
+    // well-conditioned in exactly that case, and vice versa. Choosing by row
+    // norm is the standard remedy and makes the axis-aligned case — which is
+    // every fixture that clears the elongation floor here — exact.
+    let (r1x, r1y) = (cxx - major, cxy);
+    let (r2x, r2y) = (cxy, cyy - major);
+    let v = if r1x.hypot(r1y) >= r2x.hypot(r2y) {
+        V3::new(cxy, major - cxx, 0.0)
+    } else {
+        V3::new(major - cyy, cxy, 0.0)
+    };
+    let norm = v.norm();
+    if norm.is_nan() || norm <= 1e-12 {
+        return SweepDirection {
+            elongation,
+            ..fallback
+        };
+    }
+    SweepDirection {
+        d: v / norm,
+        elongation,
+        isotropic: false,
+    }
+}
+
+/// `V_dir` — the unit stepover direction, and the direction `k_s` is read
+/// along, for a facet of normal `n` swept along `d`.
+///
+/// `V_dir = n × normalise(d − n(n·d))`. Returns `None` only when `d` projects
+/// to nothing in the facet's plane, i.e. a vertical wall.
+///
+/// **Factored out of [`sweep_field_candidate`]'s closure solely so a test can
+/// pin it.** It is the one line of the whole derivation that can be silently
+/// inverted — swap `n × d` for `d`, or take the cross product the other way,
+/// and every number the arm produces is still plausible and still wrong.
+/// [`k_s_is_read_across_the_passes_not_along_them`] is that pin.
+fn sweep_target_axis(n: V3, d: V3) -> Option<V3> {
+    let projected = d - n * d.dot(&n);
+    let norm = projected.norm();
+    if norm.is_nan() || norm <= 1e-9 {
+        return None;
+    }
+    let rotated = n.cross(&(projected / norm));
+    let length = rotated.norm();
+    if length > 1e-9 {
+        Some(rotated / length)
+    } else {
+        None
+    }
+}
+
+/// Any unit vector in the plane of `n` — used only when a facet is so steep
+/// that the sweep direction projects to nothing. See [`sweep_field_candidate`].
+fn any_in_plane(n: V3) -> V3 {
+    let axis = if n.x.abs() < 0.9 {
+        V3::new(1.0, 0.0, 0.0)
+    } else {
+        V3::new(0.0, 1.0, 0.0)
+    };
+    let v = n.cross(&axis);
+    let norm = v.norm();
+    if norm > 1e-12 {
+        v / norm
+    } else {
+        V3::new(1.0, 0.0, 0.0)
+    }
+}
+
+/// **The synthesis §4.3 candidate.** The same Poisson machinery the curvature
+/// arm runs, fed a target field whose DIRECTION cannot be noise.
+///
+/// # The target field V, derived
+///
+/// Per region triangle, given its unit normal `n` (oriented +Z by
+/// `build_region_mesh`) and its centroid:
+///
+/// 1. **Project the sweep direction into the triangle plane**:
+///    `d_proj = normalise(d − n (n·d))`. A degenerate projection needs a facet
+///    perpendicular to `d`, i.e. a vertical wall; every fixture here is bounded
+///    below ~31° of slope, so the fallback is a **tripwire expected to read 0**,
+///    not a routine branch.
+/// 2. **Direction of V**: `V_dir = n × d_proj`, unit by construction (`n ⟂
+///    d_proj`, both unit). This is `D⁹⁰°` of the paper's Eq. 12 with the feed
+///    direction `D = d_proj`. The solve drives `∇φ → V`, so the level sets —
+///    which run perpendicular to `∇φ` — run along `n × V = n × (n × d_proj) =
+///    −d_proj`, i.e. **ALONG the sweep direction**. Long straight passes: the
+///    kinematics term of synthesis §3.
+/// 3. **Magnitude of V**: Zou Eq. 13, `|V| = √((k_s + 1/K_c)/8)`.
+///
+/// # Which direction `k_s` is evaluated in — the one thing that must not be
+/// got backwards
+///
+/// **`k_s` is the normal curvature along `V_dir = n × d_proj` — ACROSS the
+/// passes, the direction the stepover is taken in — NOT along `d`.**
+///
+/// The brief that commissioned this experiment says "`k_s` is the normal
+/// curvature in the direction PERPENDICULAR to the pass, i.e. along `d`'s
+/// in-plane projection". Those two clauses name **different** directions and
+/// the second one is a slip: the passes run along `d`, so perpendicular to the
+/// passes is `n × d`, not `d`. The module settles it without ambiguity —
+/// `direction_field::build_target_field` computes `rotated = n.cross(&d)` and
+/// then `normal_curvature(..., rotated)`, with the comment "the direction `k_s`
+/// is measured along, because `k_s` is the normal curvature PERPENDICULAR to
+/// the feed direction". Zou's convention is the same: `k_s` is measured
+/// perpendicular to the FEED, the feed runs along the level set, so `k_s` is
+/// measured across the passes — which is the direction the stepover is taken
+/// in, which is the only direction whose curvature can affect a scallop
+/// between two adjacent passes.
+///
+/// Getting it backwards would invert the whole point: on a cylinder it would
+/// tighten the stepover along the flat generator and open it around the curved
+/// section, i.e. exactly wrong in both places.
+///
+/// # The clamp
+///
+/// `k_s + 1/K_c ≤ 0` is the local gouge condition — a concavity tighter than
+/// the ball. Every fixture here asserts `R_min ≥ 2·K_c` in its own smoke test,
+/// so this too is a **tripwire expected to read 0**. When it does fire the
+/// magnitude falls back to the flat-surface value `√(1/(8 K_c))` and the
+/// triangle is counted. The module's own fallback is the region's minimum valid
+/// magnitude, which needs two passes over the region and is therefore not
+/// expressible inside a per-triangle `Fn`; the difference is immaterial at a
+/// count of zero and is stated here rather than hidden.
+fn sweep_field_candidate(
+    label: &str,
+    fixture: Fixture<'_>,
+    region_triangles: &[u32],
+    polygons: &[Polygon2],
+    surface: AnalyticSurface,
+    sweep: &SweepDirection,
+) -> FieldCandidate {
+    let params = FieldParams::new(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let inverse_radius = 1.0 / BALL_RADIUS_MM;
+    let flat_magnitude = (inverse_radius / 8.0).sqrt();
+    let clamped = Cell::new(0usize);
+    let projection_failures = Cell::new(0usize);
+    let d = sweep.d;
+
+    eprintln!("\n   ===== SWEEP-DIRECTION FIELD — {label} =====");
+    eprintln!(
+        "     d = ({:.5}, {:.5}) = {:.2} deg from +X.   region PCA elongation {:.4}{}",
+        d.x,
+        d.y,
+        d.y.atan2(d.x).to_degrees(),
+        sweep.elongation,
+        if sweep.isotropic {
+            "  <<< BELOW the 1.05 floor"
+        } else {
+            ""
+        }
+    );
+    if sweep.isotropic {
+        eprintln!(
+            "     THE REGION HAS NO LONG AXIS, so d fell back to +X — which is the SAME \
+             direction\n\
+             \x20    the 0deg raster row sweeps. That is the cleanest control this instrument \
+             can\n\
+             \x20    produce: the raster row and this row now differ in the SPACING LAW ALONE.\n\
+             \x20    On ARM SPHERE it is additionally immaterial — the cap is rotationally \
+             symmetric\n\
+             \x20    about its axis, so every choice of d is the same experiment rotated.\n\
+             \x20    WHAT THIS DOES NOT TEST: synthesis §4.2 puts the field inside each MONOTONE\n\
+             \x20    PCA CELL with that cell's own d. This is ONE GLOBAL d over a whole region."
+        );
+    }
+    eprintln!(
+        "     Same FieldParams::new(K_c, h) as the curvature arm, same Poisson solve, same level\n\
+         \x20    schedule, same marching-triangles extraction. THE ONLY DIFFERENCE IS V."
+    );
+
+    let (result, report) = direction_field::solve_paths_with_target(
+        fixture.mesh,
+        region_triangles,
+        |_global, centroid, n| {
+            let unit = match sweep_target_axis(n, d) {
+                Some(axis) => axis,
+                None => {
+                    projection_failures.set(projection_failures.get() + 1);
+                    let fallback = n.cross(&any_in_plane(n));
+                    let length = fallback.norm();
+                    if length > 1e-9 {
+                        fallback / length
+                    } else {
+                        return V3::zeros();
+                    }
+                }
+            };
+            // k_s ACROSS the passes — along `unit`, never along `d`. See this
+            // function's docs for why, and for the module comment that rules it.
+            let k_s = surface.normal_curvature(centroid.x, centroid.y, unit);
+            let denominator = k_s + inverse_radius;
+            let magnitude = if denominator > 1e-12 {
+                (denominator / 8.0).sqrt()
+            } else {
+                clamped.set(clamped.get() + 1);
+                flat_magnitude
+            };
+            unit * magnitude
+        },
+        &params,
+    );
+
+    eprintln!(
+        "     TRIPWIRES (both must read 0 on an analytic fixture):  in-plane projection \
+         failures {}, |V| clamps {}",
+        projection_failures.get(),
+        clamped.get()
+    );
+    if projection_failures.get() > 0 || clamped.get() > 0 {
+        eprintln!(
+            "     *** A TRIPWIRE FIRED. A projection failure needs a facet perpendicular to d \
+             (a\n\
+             \x20    vertical wall; max slope on these fixtures is ~31 deg) and a clamp needs a\n\
+             \x20    concavity tighter than K_c (every fixture asserts R_min >= 2 K_c). Either \
+             one\n\
+             \x20    means the fixture is not what its own smoke test says it is."
+        );
+    }
+    print_field_report(label, &result, &report, FieldSource::Sweep);
+    cost_field_result(fixture, polygons, &result, &report, FieldSource::Sweep)
 }
 
 /// Everything every costed arm shares. **Restated from
@@ -5474,6 +6366,10 @@ struct StageDOutcome {
     /// SAME relink, added 2026-08-30. `None` when the solve produced nothing —
     /// which on an umbilic or flat surface is the expected answer, not a gap.
     field: Option<CandidateCost>,
+    /// The synthesis §4.3 candidate — an iso-scallop field whose direction is
+    /// the fixed sweep direction rather than curvature. `None` on an arm with
+    /// no closed form, or when the solve produced nothing.
+    sweep: Option<CandidateCost>,
     cl_points: usize,
 }
 
@@ -5721,8 +6617,37 @@ fn stage_d(
     };
     let field_cost = field.as_ref().and_then(|f| f.cost.as_ref());
 
+    // -- THE FOURTH CANDIDATE (2026-08-30): synthesis §4.3 --
+    //
+    // Same region, same relink, same call site, same FieldParams as the third
+    // row. It differs from that row in ONE thing — the target field V — which
+    // is what makes the pair an attribution rather than two observations.
+    let sweep_direction = pca_major_axis(mesh, &region.triangles);
+    let sweep = run.analytic.map(|surface| {
+        sweep_field_candidate(
+            run.label,
+            fixture,
+            &region.triangles,
+            std::slice::from_ref(&region.polygon),
+            surface,
+            &sweep_direction,
+        )
+    });
+    if sweep.is_none() {
+        eprintln!(
+            "\n   SWEEP-DIRECTION CANDIDATE NOT RUN on this arm — BY DECISION, NOT OMISSION. It \
+             needs\n\
+             \x20  an ANALYTIC curvature for |V| = sqrt((k_s + 1/K_c)/8), and this arm has no \
+             closed\n\
+             \x20  form. A mesh-estimated k_s would put an estimator inside the very quantity the\n\
+             \x20  experiment is attributing, which is the confound the analytic fixtures exist \
+             to remove."
+        );
+    }
+    let sweep_cost = sweep.as_ref().and_then(|f| f.cost.as_ref());
+
     eprintln!(
-        "\n     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
+        "\n     {:<34} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
         "arm", "moves", "fragments", "linked", "RETRACTS", "cut mm", "time s"
     );
     let mut rows: Vec<(&str, &CandidateCost)> = vec![
@@ -5730,11 +6655,14 @@ fn stage_d(
         ("0° raster (ball, same region)", &raster_cost),
     ];
     if let Some(cost) = field_cost {
-        rows.push(("direction-field iso-curves", cost));
+        rows.push(("direction field, D = t1 (F1)", cost));
+    }
+    if let Some(cost) = sweep_cost {
+        rows.push(("iso-scallop field, D = sweep (§4.3)", cost));
     }
     for (label, cost) in rows {
         eprintln!(
-            "     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10.1} {:>9.1}",
+            "     {:<34} {:>8} {:>10} {:>8} {:>10} {:>10.1} {:>9.1}",
             label,
             cost.moves,
             cost.fragments,
@@ -5744,14 +6672,19 @@ fn stage_d(
             cost.time_s
         );
     }
-    if field_cost.is_none()
-        && let Some(candidate) = field.as_ref()
-    {
-        eprintln!(
-            "     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
-            "direction-field iso-curves", "-", "-", "-", "-", "-", "-"
-        );
-        eprintln!("       ^ NO PATH: {}", candidate.note);
+    for (name, candidate) in [
+        ("direction field, D = t1 (F1)", field.as_ref()),
+        ("iso-scallop field, D = sweep (§4.3)", sweep.as_ref()),
+    ] {
+        if let Some(entry) = candidate
+            && entry.cost.is_none()
+        {
+            eprintln!(
+                "     {name:<34} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
+                "-", "-", "-", "-", "-", "-"
+            );
+            eprintln!("       ^ NO PATH: {}", entry.note);
+        }
     }
     eprintln!(
         "\n     RETRACTS and cut mm are the columns this phase is about. The spiral's pitch is\n\
@@ -5798,23 +6731,33 @@ fn stage_d(
         isotropic.p90,
         isotropic.max
     );
-    match field.as_ref().map(|f| f.spacings_sorted.as_slice()) {
-        Some(field_spacings) if !field_spacings.is_empty() => eprintln!(
-            "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
-            "field: MEASURED adjacent-LEVEL 3D spacing",
-            percentile(field_spacings, 0.0),
-            percentile(field_spacings, 0.50),
-            percentile(field_spacings, 0.90),
-            percentile(field_spacings, 1.0)
-        ),
-        Some(_) => eprintln!(
-            "     {:<44} {:>10} {:>10} {:>10} {:>10}",
-            "field: adjacent-LEVEL 3D spacing", "-", "NOT MEAS", "-", "-"
-        ),
-        None => eprintln!(
-            "     {:<44} {:>10} {:>10} {:>10} {:>10}",
-            "field: NOT RUN on this arm", "-", "-", "-", "-"
-        ),
+    for (name, candidate) in [("D = t1", field.as_ref()), ("D = sweep", sweep.as_ref())] {
+        match candidate.map(|f| f.spacings_sorted.as_slice()) {
+            Some(field_spacings) if !field_spacings.is_empty() => eprintln!(
+                "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
+                format!("field {name}: MEASURED adjacent-LEVEL 3D"),
+                percentile(field_spacings, 0.0),
+                percentile(field_spacings, 0.50),
+                percentile(field_spacings, 0.90),
+                percentile(field_spacings, 1.0)
+            ),
+            Some(_) => eprintln!(
+                "     {:<44} {:>10} {:>10} {:>10} {:>10}",
+                format!("field {name}: adjacent-LEVEL 3D spacing"),
+                "-",
+                "NOT MEAS",
+                "-",
+                "-"
+            ),
+            None => eprintln!(
+                "     {:<44} {:>10} {:>10} {:>10} {:>10}",
+                format!("field {name}: NOT RUN on this arm"),
+                "-",
+                "-",
+                "-",
+                "-"
+            ),
+        }
     }
     eprintln!(
         "     {:<44} {:>10.5}",
@@ -5825,25 +6768,29 @@ fn stage_d(
         cross.samples, cross.total_area_mm2
     );
     eprintln!(
-        "\n     A LIKE-FOR-LIKE TIME COMPARISON IS NOT POSSIBLE WITHOUT CHANGING THE RASTER, AND\n\
-         \x20    THE THIRD ROW MAKES THAT WORSE, NOT BETTER. THREE ROWS, THREE SPACING BASES:\n\
+        "\n     A LIKE-FOR-LIKE TIME COMPARISON IS NOT POSSIBLE WITHOUT CHANGING THE RASTER.\n\
+         \x20    FOUR ROWS, THREE SPACING BASES:\n\
          \x20      * the SPIRAL spaces on the 3D SURFACE — its ring step is sized by the coverage\n\
          \x20        law directly, so its measured spacing IS the finish it delivers;\n\
          \x20      * the RASTER spaces in XY PROJECTION at the commanded stepover, so on slope\n\
          \x20        its passes land further apart along the surface than that number says and it\n\
          \x20        UNDER-COVERS exactly where the spiral covers correctly;\n\
-         \x20      * the DIRECTION FIELD spaces on ITS OWN Poisson LEVEL SET, whose increment is\n\
-         \x20        scheduled from |V| = sqrt((k_s + 1/r)/8) — a third basis again, and one that\n\
-         \x20        is neither of the other two.\n\
+         \x20      * BOTH FIELD ROWS space on their own Poisson LEVEL SET, whose increment is\n\
+         \x20        scheduled from |V| = sqrt((k_s + 1/r)/8) — a third basis, and one that is\n\
+         \x20        neither of the other two. THEY SHARE IT, which makes that PAIR the one\n\
+         \x20        clean spacing comparison in this table: same basis, same schedule, same\n\
+         \x20        extraction, different direction source. Any gap between them is\n\
+         \x20        attributable to the DIRECTION SOURCE and to nothing else.\n\
          \x20    The raster row would have to be re-run at an XY stepover scaled by cos(local\n\
          \x20    slope) — a variable-stepover raster this file does not have and may not add,\n\
          \x20    because `raster_candidate` is restated verbatim from F1 and changing it here\n\
          \x20    would break the cross-instrument comparability that restatement buys. Nothing\n\
-         \x20    equivalent exists for the field row either: its spacing is an OUTPUT of the\n\
+         \x20    equivalent exists for the field rows either: their spacing is an OUTPUT of the\n\
          \x20    level schedule, not a dial that can be re-commanded to match.\n\
-         \x20    So the ratios below are RAW OBSERVATIONS, NOT VERDICTS. Compare the three\n\
-         \x20    spacing rows FIRST; a row that spaces tighter is buying finish with its time,\n\
-         \x20    and a row that spaces wider is selling it."
+         \x20    So the ratios below are RAW OBSERVATIONS, NOT VERDICTS. Compare the spacing\n\
+         \x20    rows FIRST; a row that spaces tighter is buying finish with its time, and a row\n\
+         \x20    that spaces wider is selling it. THE x FLOOR BLOCK BELOW IS THE ONE COLUMN THAT\n\
+         \x20    PUTS ALL FOUR ON A SINGLE ABSOLUTE SCALE."
     );
     if kind == ArmKind::Analytic {
         eprintln!(
@@ -5889,6 +6836,39 @@ fn stage_d(
             raster_cost.time_s / spiral_cost.time_s
         );
     }
+    // -- THE FLOOR (synthesis §1) — the one absolute scale in this stage --
+    match run.analytic {
+        Some(surface) => {
+            let floor = region_floor(mesh, &region.triangles, surface);
+            print_floor_block(
+                run.label,
+                surface,
+                &floor,
+                &[
+                    ("conformal spiral", Some(spiral_cost.cutting_mm)),
+                    ("0deg ball raster", Some(raster_cost.cutting_mm)),
+                    (
+                        "direction field, D = t1 (F1)",
+                        field_cost.map(|c| c.cutting_mm),
+                    ),
+                    (
+                        "iso-scallop field, D = sweep (4.3)",
+                        sweep_cost.map(|c| c.cutting_mm),
+                    ),
+                ],
+            );
+        }
+        None => eprintln!(
+            "\n   ===== x FLOOR — NOT MEASURABLE ON THIS ARM =====\n\
+             \x20  L_min = INTEGRAL dA / s_max(x) needs s_max from a curvature that is not a mesh\n\
+             \x20  estimate, and this arm's fixture has no closed form. Estimating it from the\n\
+             \x20  facets would make the floor a statement about the mesh — which on a\n\
+             \x20  FIXTURE-LIMITED arm is precisely the failure the FINDINGS_F2 withdrawal is\n\
+             \x20  about (a 1.42 mm facet radius read as a 1.94 mm surface radius). NOT MEASURED\n\
+             \x20  is the honest answer; the floor is measured on the four ANALYTIC arms."
+        ),
+    }
+
     eprintln!(
         "\n     -- F-034 vs RASTER IS CONTEXT, NOT A PHASE-1 BAR --\n\
          \x20    research/conformal_finish_2026-08-28.md §B.4, verbatim: \"F-034 vs ball-end\n\
@@ -5914,6 +6894,10 @@ fn stage_d(
         let field_note = field
             .as_ref()
             .map_or_else(|| "not run on this arm".to_owned(), |f| f.note.clone());
+        let sweep_note = sweep.as_ref().map_or_else(
+            || "not run — this arm has no analytic curvature".to_owned(),
+            |f| f.note.clone(),
+        );
         let (compare_path, overlay_path) = write_comparison_svgs(
             run.slug,
             run.label,
@@ -5932,10 +6916,16 @@ fn stage_d(
                     note: "",
                 },
                 ComparePanel {
-                    title: "direction-field iso-curves",
+                    title: "direction field, D = t1 (F1)",
                     colour: FIELD_COLOUR,
                     cost: field_cost,
                     note: &field_note,
+                },
+                ComparePanel {
+                    title: "iso-scallop field, D = sweep (4.3)",
+                    colour: SWEEP_COLOUR,
+                    cost: sweep_cost,
+                    note: &sweep_note,
                 },
             ],
         );
@@ -5943,7 +6933,7 @@ fn stage_d(
         eprintln!("     panels : {}", compare_path.display());
         eprintln!("     overlay: {}", overlay_path.display());
         eprintln!(
-            "     Three panels, identical scale and identical viewBox size, each labelled with \
+            "     Four panels, identical scale and identical viewBox size, each labelled with \
              its OWN\n\
              \x20    row from the table above. Cutting moves solid in the candidate's colour, \
              SURFACE\n\
@@ -5958,6 +6948,7 @@ fn stage_d(
         cost: spiral_cost,
         raster: raster_cost,
         field: field.and_then(|f| f.cost),
+        sweep: sweep.and_then(|f| f.cost),
         cl_points,
     })
 }
@@ -6136,6 +7127,14 @@ struct ArmRun<'a> {
     /// from a curvature census that is itself a faceting artefact, which is
     /// exactly the circularity the withdrawal is about.
     analytic_target_mm: Option<f64>,
+    /// The arm's fixture as a **closed form**, when it has one.
+    ///
+    /// `Some` unlocks the two things added on 2026-08-30 — the synthesis §4.3
+    /// sweep-direction candidate and the §1 `× floor` block — because both need
+    /// a curvature that is not a mesh estimate. `None` on the terrain arms, and
+    /// the floor block then prints NOT MEASURABLE with the reason rather than
+    /// silently omitting itself.
+    analytic: Option<AnalyticSurface>,
     /// Whether Stage E's sampling sensitivity re-runs here.
     run_stage_e: bool,
 }
@@ -6392,6 +7391,7 @@ fn arm_sphere(
             slug: "sphere_cap_conformal_spiral",
             kind: ArmKind::Analytic,
             analytic_target_mm: Some(curved),
+            analytic: Some(SPHERE_SURFACE),
             run_stage_e: false,
         },
         fixture,
@@ -6550,6 +7550,7 @@ fn arm_wavy(
             slug: "wavy_patch_conformal_spiral",
             kind: ArmKind::Analytic,
             analytic_target_mm: Some(convex_target),
+            analytic: Some(WAVY_SURFACE),
             run_stage_e: false,
         },
         fixture,
@@ -6703,27 +7704,28 @@ fn print_trade_verdict(
         raster.cutting_mm,
         raster.time_s
     );
-    // The field row is CONTEXT, not a side of the trade. SIDE 1/2/3 below are
-    // registered for spiral-vs-raster and are deliberately left alone: this
+    // The two field rows are CONTEXT, not sides of the trade. SIDE 1/2/3 below
+    // are registered for spiral-vs-raster and are deliberately left alone: this
     // arm's question is whether eliminating N retracts beats an M-fold
-    // over-cover, and a third path with its own spacing basis does not answer
-    // it. It is printed here because the operator asked to SEE all three, and
-    // a figure with three panels beside a table with two rows invites the
-    // reader to assume the missing row was hidden.
-    match outcome.field.as_ref() {
-        Some(field) => eprintln!(
-            "   {:<32} {:>10} {:>10} {:>10} {:>10.1} {:>10.1}   <<< CONTEXT ROW",
-            "direction-field iso-curves",
-            field.fragments,
-            field.linked,
-            field.kept_retracts,
-            field.cutting_mm,
-            field.time_s
-        ),
-        None => eprintln!(
-            "   {:<32} {:>10} {:>10} {:>10} {:>10} {:>10}   <<< NO PATH (see the solve report)",
-            "direction-field iso-curves", "-", "-", "-", "-", "-"
-        ),
+    // over-cover, and a path with its own spacing basis does not answer it.
+    // They are printed here because the operator asked to SEE all of them, and
+    // a figure with four panels beside a table with two rows invites the
+    // reader to assume the missing rows were hidden.
+    for (name, row) in [
+        ("direction field, D = t1 (F1)", outcome.field.as_ref()),
+        ("iso-scallop field, D = sweep", outcome.sweep.as_ref()),
+    ] {
+        match row {
+            Some(field) => eprintln!(
+                "   {name:<32} {:>10} {:>10} {:>10} {:>10.1} {:>10.1}   <<< CONTEXT ROW",
+                field.fragments, field.linked, field.kept_retracts, field.cutting_mm, field.time_s
+            ),
+            None => eprintln!(
+                "   {name:<32} {:>10} {:>10} {:>10} {:>10} {:>10}   <<< NO PATH (see the solve \
+                 report)",
+                "-", "-", "-", "-", "-"
+            ),
+        }
     }
     eprintln!(
         "   {:<32} {:>10} {:>10} {:>10}",
@@ -7167,6 +8169,7 @@ fn arm_ribbon(
                 // above still gives the target context; the question this arm
                 // asks is the TRADE, not the spacing.
                 analytic_target_mm: None,
+                analytic: Some(RIBBON_SURFACE),
                 run_stage_e: false,
             },
             fixture,
@@ -7712,6 +8715,7 @@ fn arm_band(
                                 slug: "slope_band_conformal_spiral",
                                 kind: ArmKind::Analytic,
                                 analytic_target_mm: None,
+                                analytic: Some(BAND_SURFACE),
                                 run_stage_e: false,
                             },
                             fixture,
@@ -7863,6 +8867,46 @@ fn arm_band(
             // the raster was costed on, so the two drawn rows are a fair pair.
             let band = "ARM BAND / SHALLOW";
             let field = field_candidate(band, fixture, &shallow, &shallow_polygons);
+            // The §4.3 candidate runs here too, on the SAME multiply-connected
+            // shallow band the raster was costed on. Nothing in the Poisson
+            // solve or the marching-triangles extraction cares about topology —
+            // that is the spiral's constraint, not the field's — so this is the
+            // one arm where the two methods can be compared on the geometry the
+            // shipped planner actually rasters.
+            let sweep_direction = pca_major_axis(&mesh, &shallow);
+            let sweep = sweep_field_candidate(
+                band,
+                fixture,
+                &shallow,
+                &shallow_polygons,
+                BAND_SURFACE,
+                &sweep_direction,
+            );
+            let floor = region_floor(&mesh, &shallow, BAND_SURFACE);
+            print_floor_block(
+                band,
+                BAND_SURFACE,
+                &floor,
+                &[
+                    ("conformal spiral", None),
+                    ("0deg ball raster (the wall)", Some(raster_cost.cutting_mm)),
+                    (
+                        "direction field, D = t1 (F1)",
+                        field.cost.as_ref().map(|c| c.cutting_mm),
+                    ),
+                    (
+                        "iso-scallop field, D = sweep (4.3)",
+                        sweep.cost.as_ref().map(|c| c.cutting_mm),
+                    ),
+                ],
+            );
+            eprintln!(
+                "     The spiral row is NO PATH by refusal, not by omission — it is the arm's \
+                 headline\n\
+                 \x20    finding, and a floor table that quietly dropped the refusing candidate \
+                 would be\n\
+                 \x20    reporting a three-way race that never happened."
+            );
             let (compare_path, overlay_path) = write_comparison_svgs(
                 "slope_band_shallow",
                 band,
@@ -7881,10 +8925,16 @@ fn arm_band(
                         note: "",
                     },
                     ComparePanel {
-                        title: "direction-field iso-curves",
+                        title: "direction field, D = t1 (F1)",
                         colour: FIELD_COLOUR,
                         cost: field.cost.as_ref(),
                         note: &field.note,
+                    },
+                    ComparePanel {
+                        title: "iso-scallop field, D = sweep (4.3)",
+                        colour: SWEEP_COLOUR,
+                        cost: sweep.cost.as_ref(),
+                        note: &sweep.note,
                     },
                 ],
             );
@@ -8147,6 +9197,7 @@ fn arm_terrain(
             slug: "terrain_small_conformal_spiral_flat",
             kind: ArmKind::FixtureLimited,
             analytic_target_mm: None,
+            analytic: None,
             run_stage_e: true,
         },
         fixture,
@@ -8176,7 +9227,7 @@ fn arm_terrain(
 /// what PROGRAMME.md, FINDINGS_F2 and this file's own header run-command
 /// quote. It now carries the analytic arms as well as the terrain ones.
 #[test]
-#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus one direction_field Poisson solve + marching-triangles extraction per analytic arm); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
+#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus TWO direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-30 — the curvature field and the synthesis §4.3 sweep field); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
     use rs_cam_core::machine_kinematics::MachineKinematics;
 
@@ -8256,31 +9307,44 @@ fn terrain_small_conformal_spiral_f2() {
     );
 
     eprintln!(
-        "   THIRD CANDIDATE, ADDED 2026-08-30 — the operator asked to SEE the comparison, and \
-         seeing it\n\
+        "   FOUR CANDIDATES, 2026-08-30 — the operator asked to SEE the comparison, and seeing \
+         it\n\
          \x20  meant drawing the rows that keep WINNING, not only the one under test. Every \
          ANALYTIC arm\n\
-         \x20  now costs THREE paths on one region through one relink — conformal spiral, 0deg \
+         \x20  now costs FOUR paths on one region through one relink — conformal spiral, 0deg \
          ball\n\
-         \x20  raster, and `direction_field` iso-curves — and emits two figures per arm:\n\
-         \x20    {{slug}}_compare_f2.svg   three panels, IDENTICAL SCALE and IDENTICAL viewBox \
+         \x20  raster, `direction_field` iso-curves (D = t1) and the synthesis §4.3 iso-scallop\n\
+         \x20  field (D = the sweep direction) — and emits two figures per arm:\n\
+         \x20    {{slug}}_compare_f2.svg   four panels, IDENTICAL SCALE and IDENTICAL viewBox \
          SIZE, each\n\
          \x20                            labelled with its own measured row; surface links GREEN, \
          air RED\n\
          \x20                            dashed, LIFT POINTS as red rings.\n\
-         \x20    {{slug}}_overlay_f2.svg   the same three superimposed at 45% opacity.\n\
-         \x20  The direction-field arm is a REAL TEST, not decoration: the module was falsified on \
-         Wanaka\n\
-         \x20  region 1 ({F1_FIELD_POLYLINES_REGION1} polylines vs a {WANAKA_R1_PCA_FRAGMENTS}-\
-         fragment reference) on SHALLOW TERRAIN, where\n\
-         \x20  principal curvature is noise. It has never met a clean analytic fixture, and a \
-         BRANCHED\n\
-         \x20  ribbon is the one regime where its curvature-derived field might genuinely align \
-         with the\n\
-         \x20  geometry. Its FieldReport is printed in full so a bad field is diagnosable rather \
-         than\n\
-         \x20  merely slow, and an empty solve is drawn as an EMPTY PANEL, never omitted.\n"
+         \x20    {{slug}}_overlay_f2.svg   the same four superimposed at 45% opacity.\n\
+         \x20  The two FIELD rows are the decisive pair. They run the SAME Poisson solve, the \
+         SAME\n\
+         \x20  level schedule and the SAME extraction, and differ ONLY in the target field V — so \
+         any\n\
+         \x20  gap between them is attributable to the DIRECTION SOURCE and to nothing else. The\n\
+         \x20  curvature row was falsified on Wanaka region 1 ({F1_FIELD_POLYLINES_REGION1} \
+         polylines vs a {WANAKA_R1_PCA_FRAGMENTS}-fragment\n\
+         \x20  reference) on SHALLOW TERRAIN, where principal curvature is NOISE — and a sphere \
+         cap is\n\
+         \x20  UMBILIC, which is the same degeneracy in its purest form. The sweep row is the\n\
+         \x20  synthesis's repair. Both FieldReports are printed in full so a bad field is\n\
+         \x20  diagnosable rather than merely slow, and an empty solve is drawn as an EMPTY \
+         PANEL,\n\
+         \x20  never omitted.\n\
+         \x20  Every analytic arm additionally prints x FLOOR: L_min = INTEGRAL dA / s_max(x) \
+         from the\n\
+         \x20  fixture's ANALYTIC curvature, and each candidate's cut_mm / L_min. A ratio below \
+         1.0\n\
+         \x20  PROVES that candidate is under-covering — synthesis §1, and the number nobody in \
+         this\n\
+         \x20  programme has ever measured.\n"
     );
+
+    print_preregistration();
 
     arm_sphere(&cutter, kinematics, stepover_mm, &analytic_params);
     arm_wavy(&cutter, kinematics, stepover_mm, &analytic_params);
@@ -8289,6 +9353,83 @@ fn terrain_small_conformal_spiral_f2() {
     arm_terrain(&cutter, kinematics, stepover_mm, &params);
 
     eprintln!("########## PHASE F2 evidence run complete. ##########\n");
+}
+
+/// **The pre-registration.** Printed BEFORE any arm runs, so the run confirms
+/// or refutes a STATED prediction instead of merely producing numbers.
+///
+/// This file already does this for ARM BAND's topology census (hand-derived,
+/// printed first, confirmed exactly) and for the ARM SPHERE spacing verdict
+/// (three-way branch with a genuine INCONCLUSIVE arm). The 2026-08-30 additions
+/// get the same treatment, because they are the additions most likely to be
+/// read as "the number we hoped for".
+///
+/// Written from the geometry alone, against the previous run's measured rows
+/// for the three candidates that already existed. It is deliberately stated as
+/// RANGES with a falsifier, not as point estimates.
+fn print_preregistration() {
+    eprintln!(
+        "\n########## PRE-REGISTERED EXPECTATIONS — 2026-08-30, BEFORE THE RUN ##########\n\
+         \x20 Written from the geometry, before any arm executed. The three existing candidates\n\
+         \x20 are quoted at their PREVIOUS measured values, so a drift in those is itself a\n\
+         \x20 finding.\n\
+         \n\
+         \x20 ARM SPHERE   (115.76 mm^2 3D; L_min EXACT = 115.76 / 0.47431 = 244.1 mm)\n\
+         \x20   spiral         265.3 mm / 23.4 s   x floor 1.087   (measured, prior run)\n\
+         \x20   0deg raster    243.4 mm / 22.0 s   x floor 0.997   <<< PREDICTED BELOW 1.0\n\
+         \x20   field D = t1   570.9 mm / 49.3 s   x floor 2.339   (measured, prior run)\n\
+         \x20   field D = swp  250-300 mm / 22-30 s, x floor 1.03-1.23,  ~24-30 fragments\n\
+         \x20     WHY: the cap is UMBILIC, so |V| is CONSTANT and phi is a near-linear ramp\n\
+         \x20     along n x d. Levels come out evenly spaced at the surface iso-scallop pitch\n\
+         \x20     (Zou's sqrt(8h/(k_s+1/r)) = 0.478 mm at kappa = 0.05), i.e. ~25 passes across\n\
+         \x20     a 12 mm cap. THE DECIDING NUMBER IS THE ACHIEVED LEVEL SPACING: predict a\n\
+         \x20     median of 0.474-0.480 mm against D = t1's measured 0.333. That pair is what\n\
+         \x20     separates 'the direction source was noise' from 'the machinery is broken'.\n\
+         \n\
+         \x20 ARM WAVY     (81.61 mm^2 3D; L_min PREDICTED 150-170 mm, i.e. BELOW synthesis\n\
+         \x20              Section 1's 192.4, because that used the region's TIGHTEST s_max as a\n\
+         \x20              constant and this integrates the local one)\n\
+         \x20   spiral         209.6 mm / 18.8 s   x floor 1.23-1.40\n\
+         \x20   0deg raster    172.0 mm / 16.0 s   x floor 1.01-1.15  <<< the 0.894x anomaly in\n\
+         \x20     Section 1's table should DISAPPEAR once the floor is local. If it does, that is\n\
+         \x20     a validation of the integrand; if the raster still reads below 1.0 here, the\n\
+         \x20     wavy arm is under-covering too and Section 1 under-called it.\n\
+         \x20   field D = t1   768.4 mm / 75.0 s   x floor 4.5-5.1\n\
+         \x20   field D = swp  180-240 mm / 17-24 s, x floor 1.06-1.60\n\
+         \x20     WHY: sin(kx)sin(ky) is UMBILIC at every crest and trough (both principal\n\
+         \x20     curvatures A k^2 there), so t1 is noise across a large part of this region too.\n\
+         \n\
+         \x20 ARM RIBBON   (191.82 mm^2 3D; L_min PREDICTED 380-400 mm)\n\
+         \x20   spiral        1400.0 mm / 116.8 s  x floor 3.5-3.7\n\
+         \x20   0deg raster    489.9 mm /  62.5 s  x floor 1.2-1.35\n\
+         \x20   field D = t1  3365.4 mm / 586.2 s  x floor 8.4-8.9\n\
+         \x20   field D = swp  450-750 mm cut, but 150-400 FRAGMENTS and 60-120 s\n\
+         \x20     WHY: the spacing law is fixed, so the DISTANCE should collapse toward the\n\
+         \x20     floor — but one global level set threads every arm of the ribbon at once, so\n\
+         \x20     each level lands as several disjoint curves and the CONNECTION cost explodes.\n\
+         \x20     PREDICTION WITH TEETH: on this arm the sweep field wins on cut mm and may\n\
+         \x20     still LOSE on time. That is not a failure of the idea — it is precisely the\n\
+         \x20     synthesis Section 4.2 argument for putting the field inside MONOTONE CELLS,\n\
+         \x20     which this run does not test.\n\
+         \n\
+         \x20 ARM BAND / SHALLOW  (320.82 mm^2 3D; L_min PREDICTED 650-680 mm — the band is\n\
+         \x20              mostly the flat plane between the bumps, where s_max is the flat\n\
+         \x20              0.48621, so this floor should land CLOSE to Section 1's 659.8)\n\
+         \x20   spiral         NO PATH — NotSimplyConnected {{ boundary_loops: 5 }}\n\
+         \x20   0deg raster    722.6 mm /  82.4 s  x floor 1.06-1.11\n\
+         \x20   field D = t1   unmeasured; predict badly fragmented and long — a FLAT plane has\n\
+         \x20     no principal direction at all, which is this diagnosis in its purest form.\n\
+         \x20   field D = swp  700-950 mm, many fragments (the band is 5 components with 4\n\
+         \x20     holes, and every one of them fragments a global level set).\n\
+         \n\
+         \x20 THE ONE FALSIFIER, STATED SO IT CAN FAIL:\n\
+         \x20   On EVERY analytic arm, `field D = sweep` must cut LESS than `field D = t1` —\n\
+         \x20   by at least 2x on ARM SPHERE, where the degeneracy is exact and total. If it\n\
+         \x20   does not, the synthesis's diagnosis (\"the direction source is degenerate, not\n\
+         \x20   the Poisson machinery\") is REFUTED, and the F1 arm's losses have to be\n\
+         \x20   attributed to the machinery after all.\n\
+         ##############################################################################\n"
+    );
 }
 
 // ── smoke tests: no long solves, no external inputs ─────────────────────
@@ -9958,5 +11099,344 @@ fn the_arm_sphere_hole_would_now_be_caught() {
     assert!(
         report.triangles_without_samples > 0,
         "the starvation tripwire must also fire on this shape"
+    );
+}
+
+// ── smoke tests for the 2026-08-30 additions ────────────────────────────
+//
+// The floor and the sweep field are both DERIVATIONS, and a derivation that is
+// only exercised by a `--ignored` evidence run is a derivation nobody checks.
+// Each test below pins exactly one choice that could be silently inverted.
+
+/// A parabolic cylinder `z = −x²/2`: a convex ridge running along `+Y`, with
+/// curvature `+1 /mm` across it (`X`) and `0` along it (`Y`). Written as a jet
+/// rather than a mesh because the two things under test —
+/// [`AnalyticSurface::normal_curvature`] and [`sweep_target_axis`] — are both
+/// point functions.
+fn ridge_jet(x: f64, _y: f64) -> SurfaceJet {
+    SurfaceJet {
+        fx: -x,
+        fy: 0.0,
+        fxx: -1.0,
+        fxy: 0.0,
+        fyy: 0.0,
+    }
+}
+
+/// **The orientation pin.** `k_s` must be the curvature ACROSS the passes.
+///
+/// On a ridge running along `+Y`, sweeping along `+Y` means the passes run down
+/// the flat generator and step across the curved section. The correct `k_s` is
+/// therefore the ACROSS-ridge value `+1`, which tightens the stepover; reading
+/// it along `d` would give `0` and open the stepover to the flat-surface value
+/// on the one axis that is not flat.
+///
+/// The brief that commissioned this experiment says "perpendicular to the pass,
+/// i.e. along `d`'s in-plane projection" — two different directions, and the
+/// second clause is a slip. `direction_field::build_target_field` settles it:
+/// it evaluates `normal_curvature` at `n.cross(&d)`, not at `d`.
+#[test]
+fn k_s_is_read_across_the_passes_not_along_them() {
+    let ridge = AnalyticSurface {
+        name: "test ridge z = -x^2/2",
+        jet: ridge_jet,
+    };
+    let n = V3::new(0.0, 0.0, 1.0);
+    let along_x = ridge.normal_curvature(0.0, 0.0, V3::new(1.0, 0.0, 0.0));
+    let along_y = ridge.normal_curvature(0.0, 0.0, V3::new(0.0, 1.0, 0.0));
+    assert!(
+        (along_x - 1.0).abs() < 1e-12,
+        "across the ridge must read +1 /mm convex, got {along_x}"
+    );
+    assert!(
+        along_y.abs() < 1e-12,
+        "along the ridge must read 0, got {along_y}"
+    );
+
+    // Sweeping ALONG the ridge (+Y): the stepover axis is ±X, so k_s is the
+    // across-ridge 1.0 — the tight one.
+    let axis =
+        sweep_target_axis(n, V3::new(0.0, 1.0, 0.0)).expect("a flat facet cannot degenerate");
+    assert!(
+        axis.x.abs() > 1.0 - 1e-12 && axis.y.abs() < 1e-12,
+        "n x (+Y) must be ±X, got {axis:?}"
+    );
+    let k_s = ridge.normal_curvature(0.0, 0.0, axis);
+    assert!(
+        (k_s - 1.0).abs() < 1e-12,
+        "passes ALONG the ridge must read the ACROSS-ridge curvature 1.0, not 0.0. This is the \
+         inversion the whole derivation turns on; got {k_s}"
+    );
+
+    // And the converse, so the test cannot pass by reading a constant.
+    let across =
+        sweep_target_axis(n, V3::new(1.0, 0.0, 0.0)).expect("a flat facet cannot degenerate");
+    let k_s_across = ridge.normal_curvature(0.0, 0.0, across);
+    assert!(
+        k_s_across.abs() < 1e-12,
+        "passes ACROSS the ridge step along the flat generator, so k_s must be 0; got {k_s_across}"
+    );
+}
+
+/// The convex-positive sign convention, on the one surface whose answer is
+/// known in closed form from three independent directions.
+///
+/// A sphere cap of radius `R_s` is UMBILIC: every direction is principal and
+/// every normal curvature equals `+1/R_s` in this file's convention. If the
+/// sign were the textbook one the floor would use a CONCAVE effective radius
+/// and `s_max` would come out too wide, silently.
+/// Tolerance for the closed-form curvature assertions below.
+///
+/// Not machine epsilon, and the reason is worth recording. On an UMBILIC point
+/// `H² − K` is exactly zero in real arithmetic, so `√(H² − K)` evaluates the
+/// square root of pure cancellation noise: a relative `1e-16` on an `H²` of
+/// order `2.5e-3` gives a residue near `2.5e-19`, whose square root is `5e-10`
+/// — a *billion* times larger than the noise it came from. So the split between
+/// `κ_min` and `κ_max` at an umbilic point is legitimately ~`1e-9`, and a
+/// `1e-9` bar would be flaky by construction. `1e-7` is still 2 ppm of the
+/// `0.05 /mm` being asserted, and four orders below any sign or convention
+/// error this test exists to catch.
+const CURVATURE_TOL: f64 = 1e-7;
+
+#[test]
+fn analytic_curvature_is_convex_positive_and_umbilic_on_the_sphere() {
+    let expected = 1.0 / SPHERE_RADIUS_MM;
+    for (x, y) in [(0.0, 0.0), (3.0, 0.0), (0.0, -4.5), (2.5, 2.5)] {
+        let (k_min, k_max) = SPHERE_SURFACE.principal_curvatures(x, y);
+        assert!(
+            (k_min - expected).abs() < CURVATURE_TOL && (k_max - expected).abs() < CURVATURE_TOL,
+            "the cap is umbilic: both principal curvatures must be +1/R_s = {expected} at \
+             ({x}, {y}); got {k_min} / {k_max}"
+        );
+    }
+    // A tangent direction at the pole, where the tangent plane is z = 0.
+    let at_pole = SPHERE_SURFACE.normal_curvature(0.0, 0.0, V3::new(1.0, 0.0, 0.0));
+    assert!(
+        (at_pole - expected).abs() < CURVATURE_TOL,
+        "normal curvature at the pole must agree with the principal pair; got {at_pole}"
+    );
+
+    // The wavy patch's crest, whose closed form wavy_patch_mesh states: both
+    // principal curvatures are A·k² at a critical point, convex at a peak.
+    let k = TAU / WAVY_WAVELENGTH_MM;
+    let crest = 0.25 * WAVY_WAVELENGTH_MM;
+    let (w_min, w_max) = WAVY_SURFACE.principal_curvatures(crest, crest);
+    let peak = WAVY_AMPLITUDE_MM * k * k;
+    assert!(
+        (w_min - peak).abs() < CURVATURE_TOL && (w_max - peak).abs() < CURVATURE_TOL,
+        "wavy crest must read +A k^2 = {peak} in both directions; got {w_min} / {w_max}"
+    );
+
+    // A bump apex on the band fixture: -A pi^2 / (2 R^2) in the textbook sign,
+    // so +that here, isotropic.
+    let (bx, by) = band_bump_centres()[0];
+    let (b_min, b_max) = BAND_SURFACE.principal_curvatures(bx, by);
+    let apex = band_max_curvature();
+    assert!(
+        (b_min - apex).abs() < CURVATURE_TOL && (b_max - apex).abs() < CURVATURE_TOL,
+        "band bump apex must read +{apex} in both directions; got {b_min} / {b_max}"
+    );
+}
+
+/// **The floor's arithmetic, against the one arm where it is exact.**
+///
+/// The sphere's curvature is constant, so `L_min = area / s_max` with a single
+/// `s_max` — and that is precisely the number the synthesis §1 table computed
+/// by hand (115.76 mm² / 0.47431 mm = 244.1 mm). This test asserts the
+/// per-triangle integral reproduces the closed form, which is what licenses
+/// reading the integral on the three arms where no closed form exists.
+#[test]
+fn the_sphere_floor_reproduces_its_closed_form() {
+    let mesh = sphere_cap_mesh(
+        SPHERE_RADIUS_MM,
+        SPHERE_CAP_RADIUS_MM,
+        SPHERE_CAP_RINGS,
+        SPHERE_CAP_SECTORS,
+    );
+    let region = sphere_cap_region(&mesh);
+    let floor = region_floor(&mesh, &region, SPHERE_SURFACE);
+    let s_max = scallop_math::stepover_from_scallop_curved(
+        BALL_RADIUS_MM,
+        CUSP_HEIGHT_MM,
+        1.0 / SPHERE_RADIUS_MM,
+    );
+    let closed_form = floor.area_mm2 / s_max;
+    assert_eq!(
+        floor.degenerate, 0,
+        "no triangle on a convex cap can have a non-positive s_max"
+    );
+    assert!(
+        (floor.l_min_mm - closed_form).abs() / closed_form < 1e-6,
+        "the integral must reproduce area / s_max on a constant-curvature surface: \
+         {} vs {closed_form}",
+        floor.l_min_mm
+    );
+    assert!(
+        (floor.l_min_mm - floor.l_min_worst_mm).abs() / closed_form < 1e-6,
+        "an UMBILIC surface has one curvature, so the kappa_min and kappa_max bases must be \
+         identical: {} vs {}",
+        floor.l_min_mm,
+        floor.l_min_worst_mm
+    );
+    assert!(
+        (floor.s_max.p50 - s_max).abs() < CURVATURE_TOL,
+        "the s_max distribution must collapse to the single analytic value {s_max}; median read \
+         {}",
+        floor.s_max.p50
+    );
+}
+
+/// A disk has no long axis, and saying it does would be the same class of error
+/// as `D = t1` on an umbilic sphere. The fallback must be `+X` — which is the
+/// `0°` raster's own direction, and therefore the cleanest control available.
+#[test]
+fn pca_falls_back_to_plus_x_on_an_isotropic_region_and_finds_a_real_long_axis() {
+    let mesh = wavy_patch_mesh(
+        WAVY_SIZE_MM,
+        WAVY_AMPLITUDE_MM,
+        WAVY_WAVELENGTH_MM,
+        ANALYTIC_MAX_EDGE_MM,
+    );
+    let cells = wavy_grid_cells(
+        WAVY_SIZE_MM,
+        WAVY_AMPLITUDE_MM,
+        WAVY_WAVELENGTH_MM,
+        ANALYTIC_MAX_EDGE_MM,
+    );
+    let disk = wavy_region_triangles(WAVY_SIZE_MM, cells, WAVY_REGION_RADIUS_MM);
+    let sweep = pca_major_axis(&mesh, &disk);
+    assert!(
+        sweep.isotropic,
+        "the wavy region is a digitised DISK — its elongation read {:.5}, which cleared the \
+         {PCA_ELONGATION_FLOOR} floor. Either the region changed shape or the moment arithmetic \
+         is wrong.",
+        sweep.elongation
+    );
+    assert!(
+        (sweep.d.x - 1.0).abs() < 1e-12 && sweep.d.y.abs() < 1e-12,
+        "the isotropic fallback must be +X, the 0deg raster's own direction; got {:?}",
+        sweep.d
+    );
+    assert!(
+        (sweep.elongation - 1.0).abs() < 0.05,
+        "a disk's elongation must be ~1.0; got {:.5}",
+        sweep.elongation
+    );
+
+    // The positive control: a genuinely elongated strip must be FOUND, so the
+    // fallback above is a fact about the fixture and not about the function.
+    let cell = WAVY_SIZE_MM / (cells as f64);
+    let half = 0.5 * WAVY_SIZE_MM;
+    let mut strip: Vec<u32> = Vec::new();
+    for row in 0..cells {
+        let y = -half + cell * (row as f64 + 0.5);
+        for col in 0..cells {
+            let x = -half + cell * (col as f64 + 0.5);
+            if y.abs() <= 1.0 && x.abs() <= 6.0 {
+                let base = 2 * (row * cells + col);
+                strip.push(base as u32);
+                strip.push((base + 1) as u32);
+            }
+        }
+    }
+    let long = pca_major_axis(&mesh, &strip);
+    assert!(
+        !long.isotropic && long.elongation > 3.0,
+        "a 12 x 2 mm strip must read as elongated; got {:.4}",
+        long.elongation
+    );
+    assert!(
+        long.d.y.abs() < 0.05,
+        "the strip's long axis is X; got {:?}",
+        long.d
+    );
+}
+
+/// **The level sets must run ALONG `d`.** That is the entire kinematics claim
+/// of the §4.3 candidate, and it turns on the sense of one cross product.
+///
+/// On a flat plate `k_s = 0` everywhere, so `|V| = √(1/(8·K_c))` is constant
+/// and `φ` is exactly linear along `n × d`. Its level sets are therefore
+/// straight lines perpendicular to `n × d` — i.e. parallel to `d`. Both
+/// orientations are checked, so the test cannot pass on a fixture that happens
+/// to be square.
+#[test]
+fn sweep_field_level_sets_run_along_the_sweep_direction() {
+    let mesh = clean_grid_mesh();
+    let region = direction_field::all_triangles(&mesh);
+    let params = FieldParams::new(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let magnitude = (1.0 / (8.0 * BALL_RADIUS_MM)).sqrt();
+
+    for (name, d) in [
+        ("+X", V3::new(1.0, 0.0, 0.0)),
+        ("+Y", V3::new(0.0, 1.0, 0.0)),
+    ] {
+        let (result, report) = direction_field::solve_paths_with_target(
+            &mesh,
+            &region,
+            |_i, _c, n| sweep_target_axis(n, d).map_or_else(V3::zeros, |axis| axis * magnitude),
+            &params,
+        );
+        assert!(
+            report.cg_converged,
+            "{name}: the Poisson solve must converge on a flat plate"
+        );
+        assert!(
+            !result.polylines.is_empty(),
+            "{name}: a 2 mm plate at a {:.4} mm level step must carry several curves",
+            (8.0 * CUSP_HEIGHT_MM * BALL_RADIUS_MM).sqrt()
+        );
+        for line in &result.polylines {
+            for seg in line.windows(2) {
+                let step = seg[1] - seg[0];
+                let along = step.dot(&d).abs();
+                let across = (step - d * step.dot(&d)).norm();
+                assert!(
+                    across <= 1e-4,
+                    "{name}: every level-set segment must run ALONG d. Got a step of \
+                     {across:.6e} mm across d against {along:.6e} mm along it — if these are \
+                     swapped, the 90 degree rotation in sweep_target_axis has the wrong sense \
+                     and the passes are running ACROSS the sweep direction."
+                );
+            }
+        }
+    }
+}
+
+/// The magnitude law, read back out of the level schedule.
+///
+/// `direction_field::increment_at` is `‖∇φ‖·√h/‖V‖`, which on a converged flat
+/// solve is exactly `√h`; the surface step that corresponds to it is
+/// `√h/‖V‖ = √(8h·K_c)` — the flat iso-scallop stepover, 0.48990 mm at
+/// `K_c = 1`, `h = 0.03`. Asserting the achieved LEVEL SPACING rather than the
+/// level VALUES is what makes this a check on the physics rather than on the
+/// bookkeeping.
+#[test]
+fn sweep_field_level_spacing_is_the_flat_iso_scallop_stepover() {
+    let mesh = clean_grid_mesh();
+    let region = direction_field::all_triangles(&mesh);
+    let params = FieldParams::new(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let magnitude = (1.0 / (8.0 * BALL_RADIUS_MM)).sqrt();
+    let d = V3::new(1.0, 0.0, 0.0);
+    let (result, _report) = direction_field::solve_paths_with_target(
+        &mesh,
+        &region,
+        |_i, _c, n| sweep_target_axis(n, d).map_or_else(V3::zeros, |axis| axis * magnitude),
+        &params,
+    );
+    let expected = (8.0 * CUSP_HEIGHT_MM * BALL_RADIUS_MM).sqrt();
+    let spacings = field_level_spacing(&result);
+    assert!(
+        !spacings.is_empty(),
+        "at least two levels must carry curves for a spacing to exist"
+    );
+    let median = percentile(&spacings, 0.50);
+    assert!(
+        (median - expected).abs() < 0.01,
+        "a flat plate's level spacing must be the flat iso-scallop stepover {expected:.5} mm; \
+         measured {median:.5} mm. Note this is Zou's sqrt(8 h r) form, which sits 0.8% above \
+         scallop_math's exact 2*sqrt(2 r h - h^2) = {:.5} — the two laws differ by the h^2 term \
+         and both are correct in their own frames.",
+        scallop_math::stepover_from_scallop_flat(BALL_RADIUS_MM, CUSP_HEIGHT_MM)
     );
 }
