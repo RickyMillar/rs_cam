@@ -418,3 +418,75 @@ or near-umbilic*, where `t1` is noise and any consistent direction wins.
 On a surface with genuine mounts and valleys the ordering could invert, and
 that is untested. Both remain open; neither is a candidate for production
 on this evidence.
+
+---
+
+## 11. The operator was right: Wanaka IS the use case (2026-08-31)
+
+§10 closed the direction-field arm on my reasoning that the prize scales
+with curvature relative to `1/R`, and that a 200×200 mm terrain with 9.8 mm
+of relief is gentle at 1 mm-ball scale. The operator objected: *"many
+mounts and valleys. We are milling a mountain range. Isn't this exactly the
+use case?"* **Measured, on the real mesh — they are right and §10's
+closure was wrong.** Instrument
+`crates/rs_cam_core/tests/wanaka_curvature_anisotropy.rs` (`7f341f9d`),
+Monge-quadric fit at controlled radius, curvature from the shape operator,
+verdict thresholds pre-registered.
+
+| population | tool R | median `W_max/W_min` | **prize ceiling** |
+|---|---|---|---|
+| whole up-facing surface | 1.0 mm | 1.2379 | **+16.41 %** |
+| whole up-facing surface | 1.5 mm | 1.3113 | **+21.50 %** |
+| region 1 (the F1 failure site) | 1.0 mm | 1.0950 | **+9.75 %** |
+| region 1 | 1.5 mm | 1.1268 | **+12.65 %** |
+
+Against Kumazawa's measured 1.9–7.2 %. **The prize is at or above what the
+literature reports**, not the ~1 % my argument implied.
+
+**And the faceting trap did NOT close.** Both scale rules cleared on both
+populations: the excess rule does not fire, and the decay exponent is
+`p = 0.771` (whole surface) and `1.044` (region 1) — both well under the
+1.5 landscape threshold, where uncorrelated vertex jitter would give
+`p ≥ 2`. The anisotropy **survives coarsening**, so it is real relief, not
+tessellation. Implied Hurst exponents 1.229 and 0.956 — self-affine terrain,
+exactly what a river-carved DEM should be.
+
+### Two caveats that bound the claim, both pre-registered
+
+1. **Valid-fit fraction is 77.3 % / 74.0 % at the decision cell**, against
+   the instrument's own ≥95 % bar. The dropped samples are where mesh
+   vertices are sparsest — the *flattest* ground, which carries the
+   *lowest* anisotropy. So these figures are **biased upward** and the
+   instrument says so: "safe for a close verdict, unsafe for a middle-band
+   one." The honest reading is that the true prize sits between the
+   literature's 2–7 % and the measured 10–21 %, and the order of magnitude
+   — **percent, not fraction-of-a-percent** — is what is established.
+2. **11.5–19.8 % of area is gouge-censored** at R = 1.0/1.5 on the whole
+   surface (the ball does not fit the concavity); those figures describe
+   the subset where it does.
+
+### What this changes
+
+- **§10's closure is withdrawn.** The direction-field arm has a real prize
+  on the operator's actual geometry, and F1's failure there was an
+  *incomplete implementation* — the literature's pipeline has four stages
+  after the direction rule (degeneracy detection → classification →
+  separatrix tracing → **segmentation**), and we built none of them.
+  Segmentation is precisely what prevents one global scalar's level sets
+  threading every branch, which is exactly the 6,589-fragment failure
+  measured.
+- **§9's "region shape decides the strategy" survives** and now has a
+  companion: *curvature anisotropy decides whether direction is worth
+  choosing at all.* Both are properties of the region, measurable before
+  any path is generated.
+- **The cheap next test is not the full build.** Use C2's existing monotone
+  cells as the segmentation stage and solve the field per cell on region 1.
+  That approximates the missing stage with shipped machinery, and it
+  discriminates: if fragmentation collapses toward the cell count and cost
+  moves toward the +9.75 % bound, the four stages are justified; if it does
+  not, the premise is fine and the *method* is still wrong for us.
+
+**Lesson, and it is mine:** I closed an arm on an argument from scale
+without measuring the scale. The rule this programme adopted after three
+fixture errors — state the mechanism, then check the geometry can express
+it — applies to closing a line of work just as much as to opening one.
