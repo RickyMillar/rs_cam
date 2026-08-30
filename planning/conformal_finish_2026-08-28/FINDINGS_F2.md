@@ -1,6 +1,89 @@
 # Conformal-spiral arm (F2 phase 1) — findings
 
-## §F2-1 First working spiral, and what it costs (2026-08-30)
+> ## ⚠ §F2-1's SPACING AND TIME NUMBERS ARE WITHDRAWN (2026-08-30, same day)
+>
+> An operator looked at the two SVGs and said they "don't look how you would
+> expect". They were right, and the defect is in the **fixture**, not the
+> algorithm. Measured after the fact:
+>
+> | quantity | value |
+> |---|---|
+> | equal-cusp stepover being measured | **0.486 mm** |
+> | median triangle edge, chosen flat window | **1.42 mm** (2.9× the stepover) |
+> | median triangle edge, whole `terrain_small.stl` | 0.80 mm (1.6× the stepover) |
+> | region boundary loop | **30 vertices** for a 24×18 mm ellipse ⇒ ~4.6 mm segments |
+>
+> **You cannot measure 0.486 mm ring spacing on a mesh whose facets are
+> 1.42 mm across.** Everything in §F2-1 that depends on fine geometry is
+> therefore an artifact of faceting:
+>
+> - measured spacing (median 0.2275 mm, "79.3 % outside the band") — the
+>   rings are riding facets, not a surface;
+> - the "≈2× over-cover" and the **3.4× slower than raster** headline;
+> - the curvature census (|κ| median 0.516 1/mm ⇒ R ≈ 1.94 mm) — that is
+>   the *faceting* radius, not the terrain's curvature;
+> - region 3D area 694.6 mm² vs 339.3 mm² projected (2.05×) — facet
+>   roughness at the 1.4 mm scale, which is also why the spiral's distance
+>   looks inflated against an XY-spaced raster.
+>
+> **A selection bias made it worse, and it was mine.** The flat-window
+> census picks the flattest patch — and a decimated terrain mesh puts its
+> *largest* triangles exactly where the surface is flattest. The census
+> therefore steered the measurement into the coarsest region of the mesh
+> (0.876 mm² median facet vs 0.277 mm² mesh-wide). The visible symptoms:
+> the outer rings' 2.4 mm jumps (all at path indices < 600, swinging
+> r = 1.2 → 0.8 across the ellipse edge) and points up to 3.27 mm outside
+> the ellipse are the coarse 30-vertex boundary loop, not a path defect.
+>
+> **The operator's second observation — "way more dense around the outside
+> than the inside" — is a real signal and is measured**: 50 ring radii with
+> **median 0.665** (an even spread would sit at 0.500), so rings pile up
+> toward the rim. On a flat disk the exact map is `z/ρ`, so equal 3D
+> spacing *is* equal disk spacing and the median must be ≈0.5; the observed
+> outward bias is therefore a defect signature, not geometry. Mechanism:
+> the coverage search requires **one** ring to sweep *everything* still
+> uncovered outside its radius, so the step is set by the single worst
+> point. Near the rim the disk circle maps onto that 30-vertex, ~4.6 mm
+> boundary polygon (with excursions to 3.27 mm outside the ellipse), so the
+> worst point is wildly far, the step collapses, and rings crowd the rim.
+>
+> A related figure worth pinning for the re-run: measured median spacing was
+> **0.2275 mm against a 0.4862 mm target — almost exactly half**, and the
+> half-width 0.243 mm is precisely the lateral distance at which a
+> `K_c = 1.0` ball stops covering the `h = 0.03` iso-scallop surface. So
+> "each ring spaced by the HALF-width" is a specific, falsifiable
+> alternative to the distortion story: it would mean the search is not
+> crediting the band the *previous* ring already covered. Against it: the
+> module's flat-disk unit test asserts stepover within ±25 % and passes on
+> the exact-affine fixture. The clean fixture will separate these two —
+> if analytic-fixture spacing lands on 0.486 the terrain number was
+> faceting; if it lands on 0.243 there is an off-by-one-band defect in the
+> ring recursion.
+>
+> **A second, independent fairness defect** in the cost table, which
+> survives any fixture change: the spiral spaces on the **3D surface**
+> while `raster_candidate` spaces in **XY projection**. On sloped ground
+> the raster's achieved surface spacing is `0.4862 / cos θ` — it
+> under-covers where the spiral over-covers, so the two arms were never
+> delivering the same finish and the ratio compared two different measures
+> ([[instrument-integrity]]: both sides of a ratio must be the same
+> measure).
+>
+> **What still stands** (structural, resolution-independent): the spiral is
+> genuinely one continuous path with zero retracts and zero disk-domain
+> self-intersections; bridging works and its overhead is bounded; the
+> fold diagnosis and the mean-value/Tutte fix; `N_C` halving breaking the
+> mechanism outright. **What is withdrawn**: every spacing figure, the
+> cost table, the "3.4× slower" verdict, and the recommendation built on
+> it.
+>
+> **Root cause of the fixture choice:** PROGRAMME.md F2 step 1 says
+> "simply connected **synthetic** surface". I substituted
+> `fixtures/terrain_small.stl` for repo-portability and did not check its
+> resolution against the quantity being measured. Re-run is on an analytic
+> fixture with facets ≪ stepover; §F2-2 will carry the corrected numbers.
+
+## §F2-1 First working spiral, and what it costs (2026-08-30) — SEE WITHDRAWAL ABOVE
 
 Instrument `crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs`,
 module `crates/rs_cam_core/src/conformal_spiral.rs` (`a330b48b`), fixture
