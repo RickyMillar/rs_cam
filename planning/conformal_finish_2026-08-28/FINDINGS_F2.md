@@ -198,3 +198,106 @@ diagnosis and the mean-value/Tutte fix; halving `N_C` breaking the
 mechanism outright (the 2025 paper's Table 1 case 1.4 reproduced).
 Artifacts `wanaka_region1_direction_field_f1.svg`,
 `terrain_small_conformal_spiral_flat_{disk,xy}_f2.svg`.
+
+---
+
+## §F2-4 The right geometry, measured (2026-08-30) — the operator was half right, and it matters
+
+Two arms built after the operator pointed out that §F2-2 benchmarked a
+retract-elimination method on geometry with no retracts. Both fixtures are
+analytic with facets ≤ stepover/3.
+
+### A. The operator was RIGHT about topology — the slit map is load-bearing
+
+**ARM BAND** — four disjoint raised-cosine bumps, regions selected **by
+slope angle**, the mechanism `finish_planner` actually uses. The topology
+census was hand-derived and printed **before** the measurement. It was
+confirmed exactly:
+
+| band | components | topological disks at useful size |
+|---|---|---|
+| SHALLOW [0,10°) | 5, total 320.8 mm² | largest (318.9 mm², **99.4 %** of the band) has **5 boundary loops, Euler −3, 4 HOLES**; the 4 that *are* disks total 1.87 mm² = **0.58 %**, all below the 10·stepover² usefulness floor |
+| MIDSTEEP [10,20°) | 8, total 44.9 mm² | **0 of 8** — every one an annulus |
+| VERYSTEEP [20°,∞) | 4, total 129.0 mm² | **0 of 4** — every one an annulus |
+
+`plan_spiral` on the largest shallow component (after hygiene, which only
+ever removes triangles and cannot close a hole):
+**`REFUSAL: NotSimplyConnected { boundary_loops: 5 }`**.
+
+**Not one band on this surface is a topological disk at a useful size.** A
+slope band on a bumpy surface is multiply connected *by construction* — the
+other bands become holes inside it. So the hole machinery is **required for
+the main use case, not an optional extra**, and §F2-2's recommendation
+against building it was wrong on that point. (Read with G-CELLHOLE: a mask
+hole count is an upper bound on the surface's topology. These holes are
+genuine — they are whole bumps, not single cells.)
+
+### B. But the spiral LOSES on branched geometry, and the cause is measured
+
+**ARM RIBBON** — 8-arm branched ribbon, arms 5.14 stepovers wide,
+simply connected by construction so topology is isolated from distortion.
+Its validity gate **passed**: the 0° raster genuinely fragments (95
+inside-runs, 2.21 runs per active row, worst row 4).
+
+| arm | frags | linked | **retracts** | cut mm | **F-034 s** |
+|---|---|---|---|---|---|
+| conformal spiral | 1 | 0 | **0** | 1400.0 | **116.8** |
+| 0° ball raster | 64 | 54 | **9** | 489.9 | **62.5** |
+
+The spiral removes **all 9 retracts** and is **1.87× SLOWER**, because it
+cuts **2.9× the distance**. The cause is the number this programme added
+for exactly this question:
+
+- **ring anisotropy: median 36.7×, worst 113×** — the variation of radial
+  scale *around* a single ring. Eqs. 1–4 give each ring **one radius**,
+  sized by its **worst sector**, so every other sector is over-covered in
+  that proportion.
+- quasi-conformal dilatation **K median 13.5** (K = 1 is conformal).
+
+**Would a conformal map fix it?** Partly, and not enough. K = 13.5 says our
+mean-value substitution is far from conformal and owns some of the 36×. But
+a conformal map is a local *similarity* with a spatially varying factor,
+and on a branched domain that factor must vary enormously — squeezing long
+arms into a disk is what makes the arm tips slivers. **One radius per ring
+cannot serve arms of different lengths, however good the map.** The lever,
+if this ever resumes, is abandoning the single-radius ring — per-sector or
+distortion-aware spacing — not a better parameterisation.
+
+### C. The retract wall is smaller than it looks — `surface_link` already ate it
+
+**ARM BAND / SHALLOW, 0° ball raster** (the wall this programme went
+hunting for):
+
+| quantity | value |
+|---|---|
+| fragments | 63 |
+| **surface links the relinker ADDED** | **52** |
+| **kept retracts** | **10** |
+| retracts per cm² | 3.117 |
+| cutting distance | 722.6 mm |
+| **F-034 total time** | **82.4 s** |
+
+**52 of 63 fragment boundaries never become lifts at all** — the existing
+relinker converts them into stay-down surface links. The same on the
+ribbon: 64 fragments → 54 linked → 9 retracts. The wall that motivated the
+search for a low-retract algorithm has largely been dismantled already, by
+machinery that shipped. What remains is a single-digit retract count per
+region, and the spiral's way of removing it costs 54 s to save 9 lifts.
+
+### D. Verdict
+
+- **Build the slit map?** The topology argument for it is now proven —
+  the real regions need it. But it would be built to run a ring scheme that
+  measures **1.87× slower** on exactly the branched geometry it would
+  unlock. **Not recommended**, now for a measured reason rather than an
+  extrapolated one.
+- **The extrapolation limit, stated:** the ribbon's raster kept 9 retracts;
+  region 1's keeps 53. A ~6× larger retract side does not obviously flip a
+  1.87× time deficit, and the spiral's over-cover grows with branching too
+  — but that is reasoning, not measurement, and region 1 cannot be measured
+  until the hole machinery exists. That is the one honest argument left for
+  building it.
+- **Where the remaining win actually is:** not in eliminating the last
+  retracts, but in the 2.9× cutting-distance gap — i.e. in spacing, which
+  is where C2's PCA-frame cells (1.090× production-validated) already
+  operate.
