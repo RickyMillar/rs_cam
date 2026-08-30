@@ -33,9 +33,9 @@
 //! | **F2-A** | the params actually used, the full 34-row `SpiralReport` grouped, the `N_S` adequacy arithmetic, and the **§B.4 falsifier** verdict |
 //! | **F2-B** | two SVGs — the unit-disk domain, and the XY world view |
 //! | **F2-C** | measured adjacent-ring 3D spacing vs the flat equal-cusp stepover AND vs the curvature-corrected stepover, plus the paper's own 12 % scallop-overshoot context |
-//! | **F2-D** | drop-cutter CL conversion, containment count, and the **FOUR-way** F-034 cost table — conformal spiral, ball-end 0° raster, the `direction_field` iso-curves (`D = t1`) and the synthesis §4.3 iso-scallop field (`D = sweep`) — on one region through one relink, plus the achieved-spacing block (four rows, three bases) |
+//! | **F2-D** | drop-cutter CL conversion, containment count, and the **FIVE-way** F-034 cost table — conformal spiral, ball-end 0° raster, the `direction_field` iso-curves (`D = t1`), the synthesis §4.3 iso-scallop field (`D = sweep`) and the operator's iso-scallop field (`D = medial axis`) — on one region through one relink, plus the achieved-spacing block (five rows, three bases) |
 //! | **F2-D floor** | (2026-08-30) **`× FLOOR`** — `L_min = ∫∫ dA / s_max(x)` from the fixture's ANALYTIC curvature, and every candidate's `cut_mm / L_min`. See [`region_floor`] |
-//! | **F2-D figures** | (2026-08-30, the operator's request) `{slug}_compare_f2.svg`: one panel per candidate at **identical scale in identically sized viewBoxes**, cutting moves solid, **surface links green**, air red dashed, **lift points as red rings**, each panel labelled with its own measured row; and `{slug}_overlay_f2.svg`, the same four superimposed at 45 % opacity |
+//! | **F2-D figures** | (2026-08-30, the operator's request) `{slug}_compare_f2.svg`: one panel per candidate at **identical scale in identically sized viewBoxes**, cutting moves solid, **surface links green**, air red dashed, **lift points as red rings**, each panel labelled with its own measured row; and `{slug}_overlay_f2.svg`, the same five superimposed at 45 % opacity |
 //! | **F2-E** | sampling sensitivity: three `plan_spiral` runs at (N_S, N_C), (N_S/2, N_C) and (N_S, N_C/2) |
 //!
 //! # The decisive experiment (added 2026-08-30)
@@ -59,6 +59,30 @@
 //! [`region_floor`] integrates it per triangle from each fixture's closed form
 //! and [`print_floor_block`] prints `cut_mm / L_min` for every row on every
 //! analytic arm.
+//!
+//! # The operator's candidate (added 2026-08-31) — a FIFTH row
+//!
+//! Looking at ARM RIBBON's branched figure the operator proposed *"parallel
+//! passes down each of the arms — along the length of each arm — and then a
+//! spiral in the center."* The arithmetic supports them: an `L × W` arm swept
+//! ALONG its axis needs `W/s` passes, swept ACROSS it needs `L/s` — same total
+//! distance, **5 pass-ends against 21** on this fixture's `10 × 2.5 mm` arms,
+//! and pass-ends are what links and retracts are made of. The existing `0°`
+//! raster gets along-axis treatment only for the arms that happen to point
+//! along `+X`.
+//!
+//! It is a THIRD choice of `D` in machinery already driven here, not a new
+//! algorithm: `D = rotate(∇EDT, 90° about n)`, where `EDT` is the region's 2D
+//! Euclidean distance transform. Its ridge runs ALONG each arm, so `∇EDT` runs
+//! ACROSS it and the rotation runs along. Because `V_dir = n × D = −∇̂EDT`, the
+//! solved potential is a reparameterised NEGATIVE distance transform and its
+//! level sets are **iso-distance offsets of the boundary** — i.e. this row is
+//! contour-parallel machining carrying the iso-scallop spacing law. See
+//! [`medial_field_candidate`], [`build_medial_grid`] and the separate
+//! pre-registration block in [`print_medial_preregistration`]. Its competing
+//! prior evidence (`planning/thin_organic_2026-08-27/FINDINGS.md` §0j 0.917×
+//! and §0k 0.686×, both COSTS) is printed beside every medial row along with
+//! what differs.
 //!
 //! # The §B.4 phase-1 falsifier, concretised 2026-08-30
 //!
@@ -321,6 +345,7 @@ use rs_cam_core::conformal_spiral::{
 };
 use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldReport};
 use rs_cam_core::geo::{P2, P3, V3};
+use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::scallop_math;
@@ -986,7 +1011,7 @@ const OTHER_COLOUR: &str = "#ff00ff";
 ///
 /// * `{slug}_compare_f2.svg` — one panel per candidate, **identical scale and
 ///   identical panel size**, each labelled with its own measured row.
-/// * `{slug}_overlay_f2.svg` — the same three paths superimposed in ONE panel
+/// * `{slug}_overlay_f2.svg` — every path superimposed in ONE panel
 ///   at 45 % opacity, so agreement and divergence are directly visible.
 ///
 /// Both are laid out in world millimetres and follow this file's existing
@@ -1340,6 +1365,10 @@ const FIELD_COLOUR: &str = "#6a51a3";
 /// different HUE from [`FIELD_COLOUR`], not a shade of it, because the two
 /// field rows are the pair a reader most needs to tell apart.
 const SWEEP_COLOUR: &str = "#00838f";
+/// See [`SPIRAL_COLOUR`]. The operator's medial-axis candidate (2026-08-31).
+/// A deep desaturated pink — a fourth distinct hue, and much darker than the
+/// pure magenta [`OTHER_COLOUR`] it must not be confused with.
+const MEDIAL_COLOUR: &str = "#c51b7d";
 
 // ── THE DIRECTION-FIELD CANDIDATE (added 2026-08-30) ────────────────────
 //
@@ -1389,6 +1418,10 @@ enum FieldSource {
     /// direction, `|V|` from the fixture's ANALYTIC curvature. See
     /// [`sweep_field_candidate`].
     Sweep,
+    /// `direction_field::solve_paths_with_target` — `D = rotate(∇EDT, 90°)`,
+    /// the region's own MEDIAL-AXIS direction, `|V|` from the fixture's
+    /// ANALYTIC curvature. See [`medial_field_candidate`].
+    Medial,
 }
 
 impl FieldSource {
@@ -1403,7 +1436,18 @@ impl FieldSource {
                 "field: D = d (FIXED SWEEP DIRECTION), V = n x d, \
                  |V| = sqrt((k_s + 1/r)/8), k_s ANALYTIC"
             }
+            Self::Medial => {
+                "field: D = rot90(grad EDT) (MEDIAL AXIS), V = -grad_hat(EDT) * \
+                 sqrt((k_s + 1/r)/8), k_s ANALYTIC"
+            }
         }
+    }
+
+    /// True when this source drives `solve_paths_with_target` — i.e. the
+    /// direction-field group of [`FieldReport`] never ran and its zeros are
+    /// **not** observations.
+    fn bypasses_direction_field(self) -> bool {
+        matches!(self, Self::Sweep | Self::Medial)
     }
 }
 
@@ -1470,7 +1514,7 @@ fn print_field_report(
                 report.unoriented_triangles
             );
         }
-        FieldSource::Sweep => {
+        FieldSource::Sweep | FieldSource::Medial => {
             eprintln!("     -- direction field (§4.2) -- NOT EXERCISED ON THIS PATH --");
             eprintln!(
                 "       BFS seeds / singular tris / transported / inconsistencies / unoriented\n\
@@ -1491,12 +1535,14 @@ fn print_field_report(
     eprintln!(
         "       CLAMPED-magnitude tris      {:>10}{}",
         report.clamped_magnitude_triangles,
-        match source {
-            FieldSource::Curvature => "",
-            // The module clamps inside `build_target_field`, which this path
-            // bypasses entirely, so its counter is structurally zero here for
-            // the same reason the direction-field group above is.
-            FieldSource::Sweep => "   <<< n/a — the caller clamps; see the TRIPWIRES line above",
+        // The module clamps inside `build_target_field`, which the
+        // target-supplied paths bypass entirely, so its counter is
+        // structurally zero on them for the same reason the direction-field
+        // group above is.
+        if source.bypasses_direction_field() {
+            "   <<< n/a — the caller clamps; see this arm's own clamp counter above"
+        } else {
+            ""
         }
     );
     eprintln!(
@@ -1566,6 +1612,16 @@ fn print_field_report(
              a\n\
              \x20      PAIR: they differ in V and in nothing else, so any gap between them is\n\
              \x20      attributable to the DIRECTION SOURCE alone."
+        ),
+        FieldSource::Medial => eprintln!(
+            "     CONTEXT: this is the OPERATOR'S candidate (2026-08-31) — the SAME Poisson\n\
+             \x20      machinery again, fed the region's OWN SHAPE. It makes a THREE-way \
+             attribution\n\
+             \x20      out of what was a pair: D = t1 (curvature, degenerate on umbilics),\n\
+             \x20      D = d (one global sweep, cannot be noise but ignores the shape) and\n\
+             \x20      D = rot90(grad EDT) (the shape's skeleton). Same V machinery, same level\n\
+             \x20      schedule, same extraction; only the DIRECTION SOURCE moves across the \
+             three."
         ),
     }
 }
@@ -1658,7 +1714,7 @@ fn field_candidate(
 ///
 /// Split out of [`field_candidate`] on 2026-08-30 when the sweep-direction arm
 /// was added, and split rather than copied for the reason this file splits
-/// everything else: two costing paths would be two chances for the four rows of
+/// everything else: two costing paths would be two chances for the five rows of
 /// the comparison table to stop being produced by the same call site.
 fn cost_field_result(
     fixture: Fixture<'_>,
@@ -1687,6 +1743,11 @@ fn cost_field_result(
             ),
             FieldSource::Sweep => format!(
                 "the sweep-direction solve produced NO polyline on {} region triangles \
+                 (CG converged {})",
+                report.region_triangles, report.cg_converged
+            ),
+            FieldSource::Medial => format!(
+                "the medial-axis solve produced NO polyline on {} region triangles \
                  (CG converged {})",
                 report.region_triangles, report.cg_converged
             ),
@@ -1807,8 +1868,8 @@ fn cost_field_result(
              \x20      It is also a THIRD spacing basis: the spiral spaces on the 3D SURFACE, \
              the raster in\n\
              \x20      XY PROJECTION, and this on the Poisson field's own LEVEL SET. Three \
-             bases, four\n\
-             \x20      rows — the two FIELD rows share this third basis, which makes THAT pair \
+             bases, five\n\
+             \x20      rows — the THREE FIELD rows share this third basis, which makes THAT set \
              the one\n\
              \x20      clean spacing comparison in the table. Read the fair-comparison block in \
              Stage D\n\
@@ -2598,6 +2659,827 @@ struct Fixture<'a> {
     safe_z: f64,
     /// `mesh.bbox.min.z - 0.1`, as the reference instruments compute it.
     effective_min_z: f64,
+}
+
+// ── THE FIFTH CANDIDATE (2026-08-31): iso-scallop field, D = MEDIAL AXIS ─
+//
+// **The operator's own proposal, tested.** Looking at ARM RIBBON's branched
+// figure they said: *"I imagine the shortest path could look something like
+// parallel passes down each of the arms. But along the length of each arm. And
+// then a spiral in the center."*
+//
+// THE ARITHMETIC THAT MAKES IT WORTH A ROW. An arm of length `L` and width `W`
+// swept ALONG its axis needs `W/s` passes of length `L`; swept ACROSS it needs
+// `L/s` passes of length `W`. The total distance is the same — `L·W/s` either
+// way — but the PASS COUNT is not, and pass ends are what links, turns and
+// retracts are made of. On this fixture's 10 mm × 2.5 mm arms that is **5
+// passes against 21**: a 4× cut in pass ends for the same ground covered. The
+// existing `0°` raster gets along-axis treatment only for the two arms that
+// happen to point along `+X`; the other six pay the 21.
+//
+// THE INSIGHT THAT MAKES IT CHEAP. This is not a new algorithm. It is a THIRD
+// choice of `D` in machinery this file already drives:
+// `solve_paths_with_target` takes an arbitrary per-triangle target `V`, which
+// is exactly how the `D = sweep` arm above is built. The operator's "along each
+// arm" IS the region's medial-axis direction, and it falls out of a distance
+// transform in three lines:
+//
+// * the 2D Euclidean distance transform of the region mask has its RIDGE
+//   running ALONG each arm (the arm's centreline is the locus farthest from
+//   both walls);
+// * `∇EDT` therefore points ACROSS the arm — straight at the nearest wall;
+// * so `D = rotate(∇EDT, 90° about n)` points ALONG the arm, everywhere,
+//   automatically, with a smooth blend wherever the arms merge.
+//
+// WHAT THIS CANDIDATE ACTUALLY IS, SAID PLAINLY SO NOBODY HAS TO DERIVE IT
+// FROM THE FIGURE. Feeding `D = n × ĝ` through the same `V_dir = n × D_proj`
+// convention the sweep arm uses gives `V_dir = n × (n × ĝ) = −ĝ`. So
+// `V = −|V| · ĝ`: the target gradient is the NEGATED, scallop-density-weighted
+// distance-transform gradient, and the solved potential `φ` is a
+// reparameterised NEGATIVE DISTANCE TRANSFORM. Its level sets are therefore
+// **iso-distance offsets of the region boundary**. In one sentence:
+//
+//   THIS ROW IS CONTOUR-PARALLEL (OFFSET) MACHINING WITH THE ISO-SCALLOP
+//   SPACING LAW ATTACHED.
+//
+// On a long thin arm the offsets of a capsule ARE parallel passes down its
+// length, which is the operator's first clause; around the hub they are closed
+// loops encircling the centre, which is the operator's second one. Both halves
+// of the prediction are structural consequences of the construction rather
+// than hopes, and the run decides whether they pay.
+//
+// THE COMPETING PRIOR EVIDENCE, QUOTED HERE BECAUSE IT POINTS THE OTHER WAY.
+// `planning/thin_organic_2026-08-27/FINDINGS.md`:
+//
+// * **§0j** measured per-cell sweep-direction variation at **0.917× region 1 /
+//   0.921× top-three — a COST, not a win**, against `§0i`'s 1.034× for ONE
+//   global rotation. Verdict recorded: "D1 is REFUTED — per-cell direction is
+//   a measured COST."
+// * **§0k** measured contour-per-cell at **0.686× region 1 / 0.710×
+//   top-three — a LOSS**, and that is the MORE DIRECT prior for this row,
+//   because this row is a contour strategy.
+//
+// WHAT DIFFERS, STATED SO THIS ARM CANNOT BE READ AS OVERTURNING §0j/§0k
+// WITHOUT IT. Both of those measured **lattice-derived monotone CELLS**, each
+// given its own rotation or its own contour set, on a rig whose neighbouring
+// cells then no longer shared a lattice; §0j's own diagnosis of its loss is
+// "misaligned neighbouring lattices break the cross-cell serpentine chords the
+// relinker stitches (+9 % cutting distance)". This arm has **no cells and no
+// lattice at all**: one continuous, SHAPE-derived field over the whole region,
+// with the spacing law attached to it, so there are no cell seams to break.
+// That is a different proposition — it is not a refutation of §0j/§0k and this
+// file does not claim one. The number decides, and the distinction is printed
+// beside the number every time.
+
+/// How many EDT cells the medial grid puts across ONE stepover.
+///
+/// Four is chosen against the quantity the gradient has to resolve: the arm
+/// HALF-width, `1.25 mm`, is `2.57` stepovers, so four cells per stepover puts
+/// ~10 cells between an arm's wall and its ridge — enough for a central
+/// difference to be a derivative rather than a difference of two boundary
+/// distances, and coarse enough that the grid stays smaller than the mesh it
+/// is sampled by.
+const MEDIAL_CELLS_PER_STEPOVER: f64 = 4.0;
+
+/// Floor on the medial grid's side, in cells. Below this a central difference
+/// has nothing to difference.
+const MEDIAL_MIN_CELLS: usize = 48;
+
+/// Ceiling on the medial grid's side, in cells. The EDT is `O(n²)` and the
+/// rasterisation is `O(n · ring vertices)`, so neither is the cost driver
+/// beside a Poisson solve — but a degenerate bounding box must not be able to
+/// turn a grid allocation into the run's failure mode.
+const MEDIAL_MAX_CELLS: usize = 1024;
+
+/// Margin (mm) held outside the region on every side of the medial grid, so
+/// the region never touches the grid border and every boundary cell the EDT
+/// measures against is a real one.
+const MEDIAL_GRID_PAD_MM: f64 = 0.75;
+
+/// Degeneracy floor on `|∇EDT|`, **in cell units**.
+///
+/// An exact Euclidean distance transform satisfies `|∇d| = 1` wherever the
+/// nearest-boundary site is unique, and a central difference on the cell
+/// lattice reproduces that at `≈ 1.0`. It collapses only where the nearest
+/// site is NOT unique — which is precisely the medial axis. `0.25` is a
+/// quarter of the ideal, i.e. a direction whose two candidate sites disagree
+/// by more than ~150°.
+///
+/// **The count this threshold produces is a real diagnostic, not noise to be
+/// hidden.** Near the medial axis the raw gradient is genuinely
+/// ill-conditioned; a construction that claims to follow the medial axis owes
+/// the reader a number for how much of the region is on it.
+const MEDIAL_GRADIENT_FLOOR: f64 = 0.25;
+
+/// Half-stencil (cells) of the SMOOTHED fallback tier's central difference.
+///
+/// Two, not one: the smoothed tier exists to survive a one-cell ridge, and a
+/// one-cell stencil straddling a one-cell ridge differences the same two
+/// opposed gradients the raw tier already failed on.
+const MEDIAL_SMOOTH_OFFSET: usize = 2;
+
+/// How far (cells) a sample point may be snapped to reach an inside cell.
+///
+/// Two, because the medial grid's cell is chosen from the STEPOVER while the
+/// mesh's is chosen from the facet ceiling: a region triangle's centroid can
+/// legitimately sit one cell on the wrong side of a re-rasterised staircase
+/// edge, and two cells is that plus a margin. Anything further away is a
+/// genuine off-region sample and degenerates. See [`MedialSample::snapped`].
+const MEDIAL_SNAP_RADIUS: usize = 2;
+
+/// Which tier of the gradient construction answered at one sample.
+///
+/// Counted, printed, and never silently collapsed: the tier mix IS the
+/// evidence about how well-posed the medial direction is on a given region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GradientTier {
+    /// The raw central difference cleared [`MEDIAL_GRADIENT_FLOOR`].
+    Raw,
+    /// The raw difference was degenerate and the smoothed one answered.
+    Smoothed,
+    /// Both were degenerate. The sample contributes `V = 0`.
+    Degenerate,
+}
+
+/// One gradient reading at one XY point.
+struct MedialSample {
+    /// Unit XY direction ACROSS the region — `∇EDT` normalised, pointing from
+    /// the wall toward the ridge's side of the arm. `None` when both tiers
+    /// were degenerate.
+    across: Option<(f64, f64)>,
+    tier: GradientTier,
+    /// `|∇EDT|` of the RAW central difference, in cell units. Reported
+    /// separately from the tier because the fraction of the region sitting
+    /// below [`MEDIAL_GRADIENT_FLOOR`] is the honest measure of "how much of
+    /// this shape IS medial axis", independent of whether a fallback rescued
+    /// it.
+    raw_magnitude: f64,
+    /// The sample point landed on a cell the rasterisation called OUTSIDE and
+    /// was snapped to the nearest inside cell.
+    ///
+    /// **Counted, because it is a re-rasterisation artefact and not a fact
+    /// about the shape.** The medial grid is built at a cell size chosen from
+    /// the stepover, not at the mesh's own cell size, so a region triangle
+    /// whose centroid sits within one cell of the boundary can land on the
+    /// wrong side of a staircase edge. Outside cells carry `EDT = 0` with
+    /// zero gradient, so without the snap the whole outer FRINGE of every
+    /// region would degenerate to `V = 0` — which would distort the outermost
+    /// level set, the one that hugs the boundary, on every arm.
+    snapped: bool,
+    /// A raw central difference was actually computed here.
+    ///
+    /// **`false` means NOT MEASURED, not "measured zero".** Off-grid samples
+    /// and snap failures carry `raw_magnitude: 0.0` as a sentinel, and folding
+    /// those into the below-the-floor count would report a not-measured value
+    /// as a measured one — the `None`-vs-`Some(0.0)` conflation this repo's
+    /// own report-only findings contract exists to prevent. The two are
+    /// counted and printed separately.
+    measured: bool,
+}
+
+/// The region's 2D Euclidean distance transform, on a square origin-centred
+/// cell grid, plus the one blurred copy the smoothed tier differences.
+///
+/// # Which EDT this is, and why
+///
+/// `rs_cam_core::grid_field::distance_transform_2d` — the shipped
+/// Felzenszwalb–Huttenlocher separable transform, the same one
+/// `region_mask`, `tier_islands`, `finish_planner` and
+/// `thin_organic_island_widths.rs` use. It returns the distance from each cell
+/// to the nearest `true` cell **in cell units**, so it is fed the COMPLEMENT
+/// of the region mask and every inside cell then reads its distance to the
+/// nearest OUTSIDE cell. Nothing is computed test-locally: the transform, and
+/// the hole repair applied to the mask before it, are both in-repo code this
+/// file already depends on.
+///
+/// Cell units, not mm, on purpose: the gradient's DIRECTION is what this
+/// construction consumes and it is scale-free, while the magnitude's ideal
+/// value in cell units is exactly `1.0`, which is what makes
+/// [`MEDIAL_GRADIENT_FLOOR`] a number a reader can check.
+///
+/// # The grid is square and origin-centred, and that is load-bearing
+///
+/// [`fill_mask_holes`] — the in-file, already-audited G-CELLHOLE repair — is
+/// written for a square `cells × cells` mask of side `size_mm` centred on the
+/// origin, and this grid is built to that shape so the repair applies
+/// verbatim. Re-rasterising a staircase polygon at a DIFFERENT cell size than
+/// the one it came from is a G-CELLHOLE re-run waiting to happen, and it would
+/// happen at the worst possible locus: a spurious one-cell pocket in an
+/// inter-arm wedge is a spurious interior boundary, which mints a spurious
+/// medial branch, right next to the hub this arm is asked to report on. The
+/// repair runs and its report is PRINTED, exactly as `arm_ribbon` prints its
+/// own.
+struct MedialGrid {
+    cells: usize,
+    size_mm: f64,
+    /// EDT in CELL units: each cell's distance to the nearest cell OUTSIDE the
+    /// region. Zero on outside cells.
+    edt: Vec<f64>,
+    /// `edt` after one 3 × 3 box blur — the smoothed tier's input.
+    blurred: Vec<f64>,
+    /// The repaired region mask the EDT was taken from.
+    inside: Vec<bool>,
+    /// What [`fill_mask_holes`] repaired on the way.
+    fill: MaskFillReport,
+}
+
+impl MedialGrid {
+    /// Millimetres per cell.
+    fn cell_mm(&self) -> f64 {
+        self.size_mm / (self.cells.max(1) as f64)
+    }
+
+    /// The cell containing world point `(x, y)`, or `None` off the grid.
+    ///
+    /// **Nearest cell, never interpolated.** Bilinear interpolation of a
+    /// gradient field averages opposed vectors across the ridge and would
+    /// manufacture exactly the degeneracy this construction is trying to
+    /// measure. The grid is finer than the mesh triangles it is sampled by
+    /// (printed at construction), so nearest-cell costs nothing here.
+    fn cell_of(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+        if self.cells == 0 || self.size_mm <= 0.0 {
+            return None;
+        }
+        let cell = self.cell_mm();
+        let half = 0.5 * self.size_mm;
+        let col = ((x + half) / cell).floor();
+        let row = ((y + half) / cell).floor();
+        if !col.is_finite() || !row.is_finite() || col < 0.0 || row < 0.0 {
+            return None;
+        }
+        let (col, row) = (col as usize, row as usize);
+        if col >= self.cells || row >= self.cells {
+            return None;
+        }
+        Some((row, col))
+    }
+
+    /// Central difference of `field` at `(row, col)` over `± step` cells.
+    ///
+    /// Returns cell-unit partials `(∂/∂x, ∂/∂y)`. `col` indexes `+X` and `row`
+    /// indexes `+Y`, matching [`cell_centre`].
+    fn central(&self, field: &[f64], row: usize, col: usize, step: usize) -> Option<(f64, f64)> {
+        if step == 0 || row < step || col < step {
+            return None;
+        }
+        if row + step >= self.cells || col + step >= self.cells {
+            return None;
+        }
+        let at = |r: usize, c: usize| field[r * self.cells + c];
+        let span = 2.0 * step as f64;
+        let gx = (at(row, col + step) - at(row, col - step)) / span;
+        let gy = (at(row + step, col) - at(row - step, col)) / span;
+        Some((gx, gy))
+    }
+
+    /// The nearest cell the repaired mask calls INSIDE, within
+    /// [`MEDIAL_SNAP_RADIUS`] cells of `(row, col)`.
+    ///
+    /// Returns the cell itself with `snapped = false` when it is already
+    /// inside. See [`MedialSample::snapped`] for why this exists at all.
+    fn snap_inside(&self, row: usize, col: usize) -> Option<(usize, usize, bool)> {
+        if self.inside[row * self.cells + col] {
+            return Some((row, col, false));
+        }
+        let mut best: Option<(usize, usize, usize)> = None;
+        let radius = MEDIAL_SNAP_RADIUS as i64;
+        for dr in -radius..=radius {
+            for dc in -radius..=radius {
+                let r = row as i64 + dr;
+                let c = col as i64 + dc;
+                if r < 0 || c < 0 {
+                    continue;
+                }
+                let (r, c) = (r as usize, c as usize);
+                if r >= self.cells || c >= self.cells {
+                    continue;
+                }
+                if !self.inside[r * self.cells + c] {
+                    continue;
+                }
+                let d2 = (dr * dr + dc * dc) as usize;
+                if best.is_none_or(|(_, _, seen)| d2 < seen) {
+                    best = Some((r, c, d2));
+                }
+            }
+        }
+        best.map(|(r, c, _)| (r, c, true))
+    }
+
+    /// The ACROSS direction at a world XY point, with its tier.
+    fn across_at(&self, x: f64, y: f64) -> MedialSample {
+        let degenerate = MedialSample {
+            across: None,
+            tier: GradientTier::Degenerate,
+            raw_magnitude: 0.0,
+            snapped: false,
+            measured: false,
+        };
+        let Some((row, col)) = self.cell_of(x, y) else {
+            return degenerate;
+        };
+        let Some((row, col, snapped)) = self.snap_inside(row, col) else {
+            return degenerate;
+        };
+        let raw = self.central(&self.edt, row, col, 1);
+        let raw_magnitude = raw.map_or(0.0, |(gx, gy)| gx.hypot(gy));
+        if let Some((gx, gy)) = raw
+            && raw_magnitude >= MEDIAL_GRADIENT_FLOOR
+        {
+            return MedialSample {
+                across: Some((gx / raw_magnitude, gy / raw_magnitude)),
+                tier: GradientTier::Raw,
+                raw_magnitude,
+                snapped,
+                measured: true,
+            };
+        }
+        let smoothed = self.central(&self.blurred, row, col, MEDIAL_SMOOTH_OFFSET);
+        if let Some((gx, gy)) = smoothed {
+            let norm = gx.hypot(gy);
+            if norm >= MEDIAL_GRADIENT_FLOOR {
+                return MedialSample {
+                    across: Some((gx / norm, gy / norm)),
+                    tier: GradientTier::Smoothed,
+                    raw_magnitude,
+                    snapped,
+                    measured: true,
+                };
+            }
+        }
+        MedialSample {
+            raw_magnitude,
+            snapped,
+            measured: raw.is_some(),
+            ..degenerate
+        }
+    }
+
+    /// The largest inscribed-disk radius the grid saw, in mm — the EDT's peak.
+    /// On the ribbon this is the HUB radius, and it is printed because it is
+    /// the number that decides how many level sets the hub can hold.
+    fn peak_inscribed_mm(&self) -> f64 {
+        let peak = self.edt.iter().copied().fold(0.0f64, f64::max);
+        peak * self.cell_mm()
+    }
+
+    /// Cells the repaired mask marks as region.
+    fn inside_cells(&self) -> usize {
+        self.inside.iter().filter(|&&v| v).count()
+    }
+}
+
+/// Even-odd scanline fill of `polygons` — exteriors AND holes together — onto
+/// a square `cells × cells` mask of side `size_mm` centred on the origin.
+///
+/// Even-odd over every ring at once is what makes holes and multiple
+/// components come out right without a nesting analysis: a point inside a
+/// hole crosses one extra ring and flips back to outside, and a component
+/// sitting inside another's hole flips back to inside. ARM BAND / SHALLOW is
+/// five components carrying four holes between them and needs exactly that.
+///
+/// Scanline rather than a per-cell `contains_point`: a polyomino region
+/// polygon carries thousands of staircase vertices, and the per-cell form is
+/// `O(cells² · vertices)` where this is `O(cells · vertices)`.
+fn rasterise_polygons(polygons: &[Polygon2], size_mm: f64, cells: usize) -> Vec<bool> {
+    let mut mask = vec![false; cells * cells];
+    if cells == 0 || size_mm <= 0.0 || !size_mm.is_finite() {
+        return mask;
+    }
+    let cell = size_mm / (cells as f64);
+    let half = 0.5 * size_mm;
+    let last = (cells - 1) as f64;
+    let mut rings: Vec<&[P2]> = Vec::new();
+    for polygon in polygons {
+        rings.push(&polygon.exterior);
+        for hole in &polygon.holes {
+            rings.push(hole);
+        }
+    }
+    let mut crossings: Vec<f64> = Vec::new();
+    for row in 0..cells {
+        let y = -half + cell * (row as f64 + 0.5);
+        crossings.clear();
+        for ring in &rings {
+            let n = ring.len();
+            if n < 3 {
+                continue;
+            }
+            for (i, a) in ring.iter().enumerate() {
+                let b = ring[(i + 1) % n];
+                // Half-open in Y: a vertex exactly on the scanline is counted
+                // once, never twice, so parity survives a horizontal edge.
+                if (a.y <= y) == (b.y <= y) {
+                    continue;
+                }
+                let t = (y - a.y) / (b.y - a.y);
+                let x = a.x + t * (b.x - a.x);
+                if x.is_finite() {
+                    crossings.push(x);
+                }
+            }
+        }
+        crossings.sort_by(f64::total_cmp);
+        for pair in crossings.chunks_exact(2) {
+            let lo = ((pair[0] + half) / cell - 0.5).ceil();
+            let hi = ((pair[1] + half) / cell - 0.5).floor();
+            if !lo.is_finite() || !hi.is_finite() {
+                continue;
+            }
+            if hi < 0.0 || lo > last || hi < lo {
+                continue;
+            }
+            let lo = lo.max(0.0) as usize;
+            let hi = hi.min(last) as usize;
+            for col in lo..=hi {
+                mask[row * cells + col] = true;
+            }
+        }
+    }
+    mask
+}
+
+/// Build the medial grid for one region, printing every dial it chose.
+///
+/// Returns `None` — with the reason printed — when the region has no finite
+/// extent to build a grid over. That is a refusal, not a silent skip.
+fn build_medial_grid(label: &str, polygons: &[Polygon2], stepover_mm: f64) -> Option<MedialGrid> {
+    eprintln!("\n   ===== MEDIAL-AXIS DISTANCE TRANSFORM — {label} =====");
+    let mut reach = 0.0f64;
+    for polygon in polygons {
+        let [x0, y0, x1, y1] = polygon.bbox();
+        for value in [x0, y0, x1, y1] {
+            if value.is_finite() {
+                reach = reach.max(value.abs());
+            }
+        }
+    }
+    if reach <= 0.0 || !reach.is_finite() || stepover_mm <= 0.0 {
+        eprintln!(
+            "     NOT BUILT: the region has no finite extent about the origin (reach \
+             {reach:.4} mm,\n\
+             \x20    stepover {stepover_mm:.5} mm). This is a REFUSAL with a reason, not a \
+             silent skip."
+        );
+        return None;
+    }
+    let size_mm = 2.0 * (reach + MEDIAL_GRID_PAD_MM);
+    let target_cell = stepover_mm / MEDIAL_CELLS_PER_STEPOVER;
+    let cells = (size_mm / target_cell).round().max(0.0);
+    let cells = if cells.is_finite() {
+        (cells as usize).clamp(MEDIAL_MIN_CELLS, MEDIAL_MAX_CELLS)
+    } else {
+        MEDIAL_MIN_CELLS
+    };
+    let cell_mm = size_mm / (cells as f64);
+
+    let raw_mask = rasterise_polygons(polygons, size_mm, cells);
+    let (inside, fill) = fill_mask_holes(&raw_mask, size_mm, cells);
+    let outside: Vec<bool> = inside.iter().map(|&v| !v).collect();
+    let edt = distance_transform_2d(&outside, cells, cells);
+
+    // One 3 × 3 box blur — the smoothed tier's input, and the ONLY smoothing
+    // anywhere in this construction. The raw tier differences the unblurred
+    // transform, so a clean sample is never softened by the fallback's
+    // machinery.
+    let mut blurred = vec![0.0f64; cells * cells];
+    for row in 0..cells {
+        for col in 0..cells {
+            let mut sum = 0.0f64;
+            let mut count = 0.0f64;
+            for dr in -1i64..=1 {
+                for dc in -1i64..=1 {
+                    let r = row as i64 + dr;
+                    let c = col as i64 + dc;
+                    if r < 0 || c < 0 {
+                        continue;
+                    }
+                    let (r, c) = (r as usize, c as usize);
+                    if r >= cells || c >= cells {
+                        continue;
+                    }
+                    sum += edt[r * cells + c];
+                    count += 1.0;
+                }
+            }
+            blurred[row * cells + col] = sum / count.max(1.0);
+        }
+    }
+
+    let grid = MedialGrid {
+        cells,
+        size_mm,
+        edt,
+        blurred,
+        inside,
+        fill,
+    };
+    eprintln!(
+        "     EDT: rs_cam_core::grid_field::distance_transform_2d (Felzenszwalb-Huttenlocher,\n\
+         \x20    the SHIPPED transform — the same one region_mask / tier_islands / \
+         finish_planner call),\n\
+         \x20    fed the COMPLEMENT of the region mask, so each inside cell reads its distance \
+         to the\n\
+         \x20    nearest OUTSIDE cell. Units are CELLS, because |grad d| = 1 exactly in those \
+         units\n\
+         \x20    and that is what makes the {MEDIAL_GRADIENT_FLOOR} degeneracy floor checkable."
+    );
+    eprintln!(
+        "     grid  {cells} x {cells} cells, side {size_mm:.4} mm, cell {cell_mm:.5} mm \
+         ({:.2} cells/stepover),",
+        stepover_mm / cell_mm
+    );
+    eprintln!(
+        "\x20          pad {MEDIAL_GRID_PAD_MM} mm outside a region reach of {reach:.4} mm; \
+         square and ORIGIN-CENTRED so"
+    );
+    eprintln!(
+        "\x20          fill_mask_holes (the in-file G-CELLHOLE repair) applies to it verbatim."
+    );
+    eprintln!(
+        "     inside cells {} = {:.4} mm^2 in XY projection.   PEAK INSCRIBED RADIUS {:.4} mm",
+        grid.inside_cells(),
+        grid.inside_cells() as f64 * cell_mm * cell_mm,
+        grid.peak_inscribed_mm()
+    );
+    eprintln!(
+        "\x20          (the EDT's maximum: on a branched region that is the HUB, and it is what \
+         decides\n\
+         \x20          how many level sets the hub can hold at a {stepover_mm:.5} mm pitch — \
+         about {:.1}.)",
+        grid.peak_inscribed_mm() / stepover_mm
+    );
+    print_mask_fill(&format!("{label} — MEDIAL GRID"), &grid.fill, cell_mm);
+    Some(grid)
+}
+
+/// **The operator's candidate.** The same Poisson machinery the sweep arm
+/// runs, fed a target field whose direction is the region's OWN SHAPE.
+///
+/// # The target field V, derived
+///
+/// Per region triangle, given its unit normal `n` (oriented `+Z` by the
+/// heightfield generators) and its centroid:
+///
+/// 1. **Sample `∇EDT`** at the centroid's XY by central differences on the
+///    medial grid — raw first, smoothed as a counted fallback, `V = 0` as a
+///    counted last resort. Call the unit result `g`, pointing ACROSS the arm.
+/// 2. **Lift and project**: `g₃ = (g_x, g_y, 0)`, `ĝ = normalise(g₃ − n(n·g₃))`
+///    — `g` in the triangle's own plane.
+/// 3. **Rotate 90° about `n`**: `D = n × ĝ`. That is the FEED direction, and
+///    on a thin arm it runs ALONG the arm's length. This is the whole idea.
+/// 4. **Hand `D` to the pinned convention**: `V_dir = sweep_target_axis(n, D)`,
+///    the same helper the `D = sweep` arm uses and the one
+///    [`k_s_is_read_across_the_passes_not_along_them`] pins. It returns
+///    `n × D = n × (n × ĝ) = −ĝ`, i.e. the stepover is taken ACROSS the arm.
+/// 5. **Magnitude**: Zou Eq. 13, `|V| = √((k_s + 1/K_c)/8)`, with `k_s` the
+///    ANALYTIC normal curvature along `V_dir` — read ACROSS the passes, never
+///    along them, by the same code path and for the same reason the sweep arm
+///    states at length. Same clamp, same fallback, same counter.
+///
+/// Step 4 is a round trip that could have been written as `−ĝ` directly. It is
+/// not, deliberately: routing through [`sweep_target_axis`] means the one line
+/// of the derivation that can be silently inverted is the SAME line in both
+/// field arms, and [`medial_target_axis_is_the_negated_in_plane_gradient`]
+/// pins the identity rather than trusting it.
+///
+/// # What the tripwires are on THIS arm
+///
+/// Two of the printed counters are NOT alike and the block says so. The
+/// **in-plane projection** of the sampled XY gradient can genuinely degenerate
+/// — it needs a facet perpendicular to that gradient, i.e. a vertical wall —
+/// so it is a live tripwire expected to read `0` on fixtures capped at ~31° of
+/// slope, exactly as on the sweep arm. The **`sweep_target_axis` failure**
+/// cannot fire at all: `D` is constructed in the triangle's plane, so the
+/// helper is handed a vector already perpendicular to `n`. It is printed as a
+/// structural assertion and labelled as one, never as evidence.
+///
+/// **This arm's real tripwires are the GRADIENT TIERS**, and they are not
+/// expected to read zero — the medial axis is where `∇EDT` is genuinely
+/// ill-conditioned, and a construction named after the medial axis owes the
+/// reader the size of that set. What would be a defect is a LARGE degenerate
+/// fraction, which would say the grid is too coarse to resolve the shape
+/// rather than that the shape has a skeleton.
+fn medial_field_candidate(
+    label: &str,
+    fixture: Fixture<'_>,
+    region_triangles: &[u32],
+    polygons: &[Polygon2],
+    surface: AnalyticSurface,
+    grid: &MedialGrid,
+) -> FieldCandidate {
+    let params = FieldParams::new(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let inverse_radius = 1.0 / BALL_RADIUS_MM;
+    let flat_magnitude = (inverse_radius / 8.0).sqrt();
+    let clamped = Cell::new(0usize);
+    let samples = Cell::new(0usize);
+    let raw_tier = Cell::new(0usize);
+    let smoothed_tier = Cell::new(0usize);
+    let degenerate_tier = Cell::new(0usize);
+    let below_floor = Cell::new(0usize);
+    let unmeasured = Cell::new(0usize);
+    let snapped = Cell::new(0usize);
+    let axis_failures = Cell::new(0usize);
+    let projection_failures = Cell::new(0usize);
+
+    eprintln!("\n   ===== MEDIAL-AXIS FIELD — {label} =====");
+    eprintln!(
+        "     D = rotate(grad EDT, 90 deg about n)  =>  V_dir = n x D = -grad_hat(EDT), so\n\
+         \x20    V = -|V| * grad_hat(EDT) and phi is a REPARAMETERISED NEGATIVE DISTANCE \
+         TRANSFORM.\n\
+         \x20    ITS LEVEL SETS ARE ISO-DISTANCE OFFSETS OF THE REGION BOUNDARY. In one line:\n\
+         \x20    THIS ROW IS CONTOUR-PARALLEL (OFFSET) MACHINING WITH THE ISO-SCALLOP SPACING \
+         LAW\n\
+         \x20    ATTACHED. On a thin arm those offsets run ALONG its length (the operator's \
+         first\n\
+         \x20    clause); around a hub they close into loops encircling it (the second)."
+    );
+    eprintln!(
+        "     THE COMPETING PRIOR, quoted so this row cannot be read without it:\n\
+         \x20    planning/thin_organic_2026-08-27/FINDINGS.md\n\
+         \x20      §0j  per-cell sweep DIRECTION variation .... 0.917x r1 / 0.921x top-three \
+         — a COST\n\
+         \x20      §0k  contour-per-cell ...................... 0.686x r1 / 0.710x top-three \
+         — a LOSS\n\
+         \x20    §0k is the DIRECT prior: this row is a contour strategy and §0k measured \
+         contour\n\
+         \x20    losing by a third. WHAT DIFFERS: both were LATTICE-DERIVED monotone CELLS, each\n\
+         \x20    re-rotated or re-contoured on its own lattice, and §0j's own diagnosis of its \
+         loss\n\
+         \x20    is that misaligned neighbouring lattices break the cross-cell serpentine chords\n\
+         \x20    the relinker stitches (+9% cutting distance). THIS arm has no cells and no \
+         lattice:\n\
+         \x20    ONE continuous SHAPE-derived field over the whole region, so there are no cell\n\
+         \x20    seams to break. That is a different proposition, NOT a refutation of §0j/§0k, \
+         and\n\
+         \x20    nothing here claims one. Let the number decide."
+    );
+    eprintln!(
+        "     Same FieldParams::new(K_c, h), same Poisson solve, same level schedule and same\n\
+         \x20    marching-triangles extraction as BOTH rows above. THE ONLY DIFFERENCE IS V."
+    );
+
+    let (result, report) = direction_field::solve_paths_with_target(
+        fixture.mesh,
+        region_triangles,
+        |_global, centroid, n| {
+            samples.set(samples.get() + 1);
+            let sample = grid.across_at(centroid.x, centroid.y);
+            if sample.measured {
+                if sample.raw_magnitude < MEDIAL_GRADIENT_FLOOR {
+                    below_floor.set(below_floor.get() + 1);
+                }
+            } else {
+                unmeasured.set(unmeasured.get() + 1);
+            }
+            if sample.snapped {
+                snapped.set(snapped.get() + 1);
+            }
+            match sample.tier {
+                GradientTier::Raw => raw_tier.set(raw_tier.get() + 1),
+                GradientTier::Smoothed => smoothed_tier.set(smoothed_tier.get() + 1),
+                GradientTier::Degenerate => {
+                    degenerate_tier.set(degenerate_tier.get() + 1);
+                }
+            }
+            let Some((gx, gy)) = sample.across else {
+                return V3::zeros();
+            };
+            let across = V3::new(gx, gy, 0.0);
+            let projected = across - n * across.dot(&n);
+            let norm = projected.norm();
+            if norm.is_nan() || norm <= 1e-9 {
+                projection_failures.set(projection_failures.get() + 1);
+                return V3::zeros();
+            }
+            // D = rotate(grad EDT, 90 deg about n) — ALONG the arm.
+            let feed = n.cross(&(projected / norm));
+            // ... then the PINNED convention turns the feed direction into the
+            // stepover direction. See this function's docs for why it is a
+            // round trip on purpose.
+            let Some(unit) = sweep_target_axis(n, feed) else {
+                axis_failures.set(axis_failures.get() + 1);
+                return V3::zeros();
+            };
+            let k_s = surface.normal_curvature(centroid.x, centroid.y, unit);
+            let denominator = k_s + inverse_radius;
+            let magnitude = if denominator > 1e-12 {
+                (denominator / 8.0).sqrt()
+            } else {
+                clamped.set(clamped.get() + 1);
+                flat_magnitude
+            };
+            unit * magnitude
+        },
+        &params,
+    );
+
+    let total = samples.get().max(1) as f64;
+    eprintln!("\n     -- GRADIENT TIERS (this arm's real tripwires, and NOT expected to be 0) --");
+    eprintln!("       target-field samples        {:>10}", samples.get());
+    eprintln!(
+        "       tier RAW (|grad| >= {MEDIAL_GRADIENT_FLOOR}) {:>10}   {:>7.3}%",
+        raw_tier.get(),
+        100.0 * raw_tier.get() as f64 / total
+    );
+    eprintln!(
+        "       tier SMOOTHED (fallback)    {:>10}   {:>7.3}%",
+        smoothed_tier.get(),
+        100.0 * smoothed_tier.get() as f64 / total
+    );
+    eprintln!(
+        "       tier DEGENERATE (V = 0)     {:>10}   {:>7.3}%",
+        degenerate_tier.get(),
+        100.0 * degenerate_tier.get() as f64 / total
+    );
+    eprintln!(
+        "       |grad EDT| BELOW the floor  {:>10}   {:>7.3}%   <<< the honest size of the \
+         MEDIAL AXIS",
+        below_floor.get(),
+        100.0 * below_floor.get() as f64 / total
+    );
+    eprintln!(
+        "       NOT MEASURED (no difference)  {:>8}   {:>7.3}%",
+        unmeasured.get(),
+        100.0 * unmeasured.get() as f64 / total
+    );
+    eprintln!(
+        "       ^ off-grid samples and snap failures carry raw_magnitude 0.0 as a SENTINEL, and\n\
+         \x20      folding those into the row above would report a NOT-MEASURED value as a \
+         measured\n\
+         \x20      zero. They are counted apart for the same reason this repo's report-only \
+         findings\n\
+         \x20      distinguish None from Some(0.0). Expected 0 here: the snap radius covers the\n\
+         \x20      fringe, so a nonzero count means the grid and the mesh disagree about the \
+         region."
+    );
+    eprintln!(
+        "       BOUNDARY SNAPS (<= {MEDIAL_SNAP_RADIUS} cells) {:>8}   {:>7.3}%   <<< a \
+         RE-RASTERISATION artefact,",
+        snapped.get(),
+        100.0 * snapped.get() as f64 / total
+    );
+    eprintln!(
+        "\x20                                                       NOT a fact about the shape"
+    );
+    eprintln!(
+        "       ^ the medial grid's cell is sized from the STEPOVER, the mesh's from the facet\n\
+         \x20      ceiling, so a fringe centroid can land one cell the wrong side of a staircase\n\
+         \x20      edge. Outside cells carry EDT = 0 with ZERO gradient, so without the snap the\n\
+         \x20      whole outer fringe would degenerate and the outermost level set — the one \
+         that\n\
+         \x20      hugs the boundary — would be the one distorted. Expect this to scale with\n\
+         \x20      PERIMETER/AREA: a few percent on a compact region, more on a branched one."
+    );
+    eprintln!(
+        "       An exact EDT has |grad d| = 1 in cell units wherever the nearest boundary site \
+         is\n\
+         \x20      UNIQUE, and collapses only where it is not — which IS the medial axis. So the\n\
+         \x20      BELOW-FLOOR row is a measurement of the skeleton's discrete width, not an \
+         error\n\
+         \x20      rate. A LARGE degenerate fraction would be the defect: it would say the grid \
+         is\n\
+         \x20      too coarse to resolve the shape. The last resort is V = 0 — NOT the sweep\n\
+         \x20      direction — because injecting +X at exactly the triangles this experiment is\n\
+         \x20      about would make the medial arm partly the sweep arm and destroy the \
+         attribution.\n\
+         \x20      A zero target lets the Poisson solve interpolate the ridge from its \
+         neighbourhood,\n\
+         \x20      which is the physically right answer there."
+    );
+    eprintln!(
+        "       in-plane projection failures {:>9}   <<< a TRIPWIRE, expected 0",
+        projection_failures.get()
+    );
+    eprintln!(
+        "       ^ this one CAN fire: it needs a facet perpendicular to the sampled XY gradient\n\
+         \x20      (a vertical wall), exactly as on the sweep arm, and every fixture here is \
+         bounded\n\
+         \x20      below ~31 deg of slope. A nonzero count means the fixture is not what its own\n\
+         \x20      smoke test says it is."
+    );
+    eprintln!(
+        "       sweep_target_axis failures   {:>9}   <<< STRUCTURAL, not a live check",
+        axis_failures.get()
+    );
+    eprintln!(
+        "       ^ D is CONSTRUCTED in the triangle's plane, so the helper is handed a vector\n\
+         \x20      already perpendicular to n and cannot fail. Printed as an assertion, and \
+         labelled\n\
+         \x20      as one rather than sitting beside the tier counts as if it were evidence."
+    );
+    eprintln!("       |V| clamps (gouge condition) {:>9}", clamped.get());
+    if clamped.get() > 0 {
+        eprintln!(
+            "       *** THE CLAMP FIRED. It needs a concavity tighter than K_c, and every \
+             fixture\n\
+             \x20      asserts R_min >= 2 K_c in its own smoke test. The fixture is not what its \
+             own\n\
+             \x20      smoke test says it is."
+        );
+    }
+    print_field_report(label, &result, &report, FieldSource::Medial);
+    cost_field_result(fixture, polygons, &result, &report, FieldSource::Medial)
 }
 
 // ── ANALYTIC FIXTURES (added 2026-08-30 — the withdrawal's repair) ──────
@@ -6370,6 +7252,12 @@ struct StageDOutcome {
     /// the fixed sweep direction rather than curvature. `None` on an arm with
     /// no closed form, or when the solve produced nothing.
     sweep: Option<CandidateCost>,
+    /// The operator's candidate (2026-08-31) — the same iso-scallop field with
+    /// its direction taken from the region's MEDIAL AXIS, i.e. contour-parallel
+    /// offsets carrying the scallop spacing law. `None` on an arm with no
+    /// closed form, when no medial grid could be built, or when the solve
+    /// produced nothing.
+    medial: Option<CandidateCost>,
     cl_points: usize,
 }
 
@@ -6646,6 +7534,44 @@ fn stage_d(
     }
     let sweep_cost = sweep.as_ref().and_then(|f| f.cost.as_ref());
 
+    // -- THE FIFTH CANDIDATE (2026-08-31): the operator's medial axis --
+    //
+    // Same region, same relink, same call site, same FieldParams as the two
+    // rows above it. It differs from the SWEEP row in ONE thing — where the
+    // direction comes from — which is what makes the three field rows an
+    // attribution over the DIRECTION SOURCE rather than three observations.
+    let medial_grid = run.analytic.and_then(|_| {
+        build_medial_grid(
+            run.label,
+            std::slice::from_ref(&region.polygon),
+            stepover_mm,
+        )
+    });
+    let medial = match (run.analytic, medial_grid.as_ref()) {
+        (Some(surface), Some(grid)) => Some(medial_field_candidate(
+            run.label,
+            fixture,
+            &region.triangles,
+            std::slice::from_ref(&region.polygon),
+            surface,
+            grid,
+        )),
+        _ => None,
+    };
+    if medial.is_none() {
+        eprintln!(
+            "\n   MEDIAL-AXIS CANDIDATE NOT RUN on this arm — BY DECISION, NOT OMISSION. It \
+             needs\n\
+             \x20  the same ANALYTIC curvature the sweep row does for |V| = sqrt((k_s + \
+             1/K_c)/8),\n\
+             \x20  and a region with a finite extent to lay a distance-transform grid over. A\n\
+             \x20  mesh-estimated k_s would put an estimator inside the very quantity the \
+             experiment\n\
+             \x20  is attributing."
+        );
+    }
+    let medial_cost = medial.as_ref().and_then(|f| f.cost.as_ref());
+
     eprintln!(
         "\n     {:<34} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
         "arm", "moves", "fragments", "linked", "RETRACTS", "cut mm", "time s"
@@ -6659,6 +7585,9 @@ fn stage_d(
     }
     if let Some(cost) = sweep_cost {
         rows.push(("iso-scallop field, D = sweep (§4.3)", cost));
+    }
+    if let Some(cost) = medial_cost {
+        rows.push(("iso-scallop field, D = MEDIAL AXIS", cost));
     }
     for (label, cost) in rows {
         eprintln!(
@@ -6675,6 +7604,7 @@ fn stage_d(
     for (name, candidate) in [
         ("direction field, D = t1 (F1)", field.as_ref()),
         ("iso-scallop field, D = sweep (§4.3)", sweep.as_ref()),
+        ("iso-scallop field, D = MEDIAL AXIS", medial.as_ref()),
     ] {
         if let Some(entry) = candidate
             && entry.cost.is_none()
@@ -6731,7 +7661,11 @@ fn stage_d(
         isotropic.p90,
         isotropic.max
     );
-    for (name, candidate) in [("D = t1", field.as_ref()), ("D = sweep", sweep.as_ref())] {
+    for (name, candidate) in [
+        ("D = t1", field.as_ref()),
+        ("D = sweep", sweep.as_ref()),
+        ("D = MEDIAL", medial.as_ref()),
+    ] {
         match candidate.map(|f| f.spacings_sorted.as_slice()) {
             Some(field_spacings) if !field_spacings.is_empty() => eprintln!(
                 "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
@@ -6769,18 +7703,26 @@ fn stage_d(
     );
     eprintln!(
         "\n     A LIKE-FOR-LIKE TIME COMPARISON IS NOT POSSIBLE WITHOUT CHANGING THE RASTER.\n\
-         \x20    FOUR ROWS, THREE SPACING BASES:\n\
+         \x20    FIVE ROWS, THREE SPACING BASES:\n\
          \x20      * the SPIRAL spaces on the 3D SURFACE — its ring step is sized by the coverage\n\
          \x20        law directly, so its measured spacing IS the finish it delivers;\n\
          \x20      * the RASTER spaces in XY PROJECTION at the commanded stepover, so on slope\n\
          \x20        its passes land further apart along the surface than that number says and it\n\
          \x20        UNDER-COVERS exactly where the spiral covers correctly;\n\
-         \x20      * BOTH FIELD ROWS space on their own Poisson LEVEL SET, whose increment is\n\
+         \x20      * ALL THREE FIELD ROWS space on their own Poisson LEVEL SET, whose increment \
+         is\n\
          \x20        scheduled from |V| = sqrt((k_s + 1/r)/8) — a third basis, and one that is\n\
-         \x20        neither of the other two. THEY SHARE IT, which makes that PAIR the one\n\
+         \x20        neither of the other two. THEY SHARE IT, which makes that TRIPLE the one\n\
          \x20        clean spacing comparison in this table: same basis, same schedule, same\n\
-         \x20        extraction, different direction source. Any gap between them is\n\
-         \x20        attributable to the DIRECTION SOURCE and to nothing else.\n\
+         \x20        extraction, three different direction sources (curvature / one global\n\
+         \x20        sweep / the region's own medial axis). Any gap among them is attributable\n\
+         \x20        to the DIRECTION SOURCE and to nothing else.\n\
+         \x20        READ THIS RAIL BEFORE THE MEDIAL ROW: direction alone changes WHERE the\n\
+         \x20        passes go, not how far apart they are, so the medial row should land at\n\
+         \x20        roughly the SWEEP row's cutting distance with far fewer fragments. If its\n\
+         \x20        cut mm moves a LOT instead, something other than the direction moved — the\n\
+         \x20        SPACING BASIS did — and that must be said out loud rather than banked as a\n\
+         \x20        direction win.\n\
          \x20    The raster row would have to be re-run at an XY stepover scaled by cos(local\n\
          \x20    slope) — a variable-stepover raster this file does not have and may not add,\n\
          \x20    because `raster_candidate` is restated verbatim from F1 and changing it here\n\
@@ -6855,6 +7797,10 @@ fn stage_d(
                         "iso-scallop field, D = sweep (4.3)",
                         sweep_cost.map(|c| c.cutting_mm),
                     ),
+                    (
+                        "iso-scallop field, D = MEDIAL AXIS",
+                        medial_cost.map(|c| c.cutting_mm),
+                    ),
                 ],
             );
         }
@@ -6898,6 +7844,10 @@ fn stage_d(
             || "not run — this arm has no analytic curvature".to_owned(),
             |f| f.note.clone(),
         );
+        let medial_note = medial.as_ref().map_or_else(
+            || "not run — this arm has no analytic curvature".to_owned(),
+            |f| f.note.clone(),
+        );
         let (compare_path, overlay_path) = write_comparison_svgs(
             run.slug,
             run.label,
@@ -6927,13 +7877,19 @@ fn stage_d(
                     cost: sweep_cost,
                     note: &sweep_note,
                 },
+                ComparePanel {
+                    title: "iso-scallop field, D = MEDIAL AXIS",
+                    colour: MEDIAL_COLOUR,
+                    cost: medial_cost,
+                    note: &medial_note,
+                },
             ],
         );
         eprintln!("\n   -- THE COMPARISON FIGURES (the operator's request, 2026-08-30) --");
         eprintln!("     panels : {}", compare_path.display());
         eprintln!("     overlay: {}", overlay_path.display());
         eprintln!(
-            "     Four panels, identical scale and identical viewBox size, each labelled with \
+            "     Five panels, identical scale and identical viewBox size, each labelled with \
              its OWN\n\
              \x20    row from the table above. Cutting moves solid in the candidate's colour, \
              SURFACE\n\
@@ -6949,6 +7905,7 @@ fn stage_d(
         raster: raster_cost,
         field: field.and_then(|f| f.cost),
         sweep: sweep.and_then(|f| f.cost),
+        medial: medial.and_then(|f| f.cost),
         cl_points,
     })
 }
@@ -7704,16 +8661,17 @@ fn print_trade_verdict(
         raster.cutting_mm,
         raster.time_s
     );
-    // The two field rows are CONTEXT, not sides of the trade. SIDE 1/2/3 below
+    // The three field rows are CONTEXT, not sides of the trade. SIDE 1/2/3 below
     // are registered for spiral-vs-raster and are deliberately left alone: this
     // arm's question is whether eliminating N retracts beats an M-fold
     // over-cover, and a path with its own spacing basis does not answer it.
     // They are printed here because the operator asked to SEE all of them, and
-    // a figure with four panels beside a table with two rows invites the
+    // a figure with five panels beside a table with two rows invites the
     // reader to assume the missing rows were hidden.
     for (name, row) in [
         ("direction field, D = t1 (F1)", outcome.field.as_ref()),
         ("iso-scallop field, D = sweep", outcome.sweep.as_ref()),
+        ("iso-scallop field, D = medial", outcome.medial.as_ref()),
     ] {
         match row {
             Some(field) => eprintln!(
@@ -8882,6 +9840,73 @@ fn arm_band(
                 BAND_SURFACE,
                 &sweep_direction,
             );
+            // THE FIFTH CANDIDATE (2026-08-31), on the arm the programme
+            // actually came from. This is where it earns its row: the medial
+            // axis of a PLANE WITH FOUR HOLES is a completely different animal
+            // from a branched ribbon's — the skeleton of the square's own
+            // edges blended with four circular ones — and a GLOBAL sweep
+            // direction is least defensible on exactly this geometry. The
+            // shallow band is also MULTIPLY CONNECTED, which the Poisson solve
+            // and the marching-triangles extraction do not care about (that is
+            // the spiral's constraint, not the field's), so all three field
+            // rows are measurable here where the spiral row is NO PATH.
+            let medial_grid = build_medial_grid(band, &shallow_polygons, stepover_mm);
+            let medial = medial_grid.as_ref().map(|grid| {
+                medial_field_candidate(
+                    band,
+                    fixture,
+                    &shallow,
+                    &shallow_polygons,
+                    BAND_SURFACE,
+                    grid,
+                )
+            });
+            let medial_note = medial.as_ref().map_or_else(
+                || "no medial grid could be built over this region".to_owned(),
+                |f| f.note.clone(),
+            );
+            let medial_cost = medial.as_ref().and_then(|f| f.cost.as_ref());
+
+            // One table, so the four costed rows on this arm are readable
+            // together instead of only inside their own solve blocks. The
+            // spiral row is absent because it REFUSED, which is this arm's
+            // headline and is stated above rather than shown as a dash here.
+            eprintln!(
+                "\n     {:<36} {:>10} {:>8} {:>10} {:>10} {:>9}",
+                "arm (ARM BAND / SHALLOW)", "fragments", "linked", "RETRACTS", "cut mm", "time s"
+            );
+            let band_rows: [(&str, Option<&CandidateCost>); 4] = [
+                ("0deg ball raster (the wall)", Some(&raster_cost)),
+                ("direction field, D = t1 (F1)", field.cost.as_ref()),
+                ("iso-scallop field, D = sweep (4.3)", sweep.cost.as_ref()),
+                ("iso-scallop field, D = MEDIAL AXIS", medial_cost),
+            ];
+            for (name, row) in band_rows {
+                match row {
+                    Some(cost) => eprintln!(
+                        "     {name:<36} {:>10} {:>8} {:>10} {:>10.1} {:>9.1}",
+                        cost.fragments,
+                        cost.linked,
+                        cost.kept_retracts,
+                        cost.cutting_mm,
+                        cost.time_s
+                    ),
+                    None => eprintln!(
+                        "     {name:<36} {:>10} {:>8} {:>10} {:>10} {:>9}   <<< NO PATH",
+                        "-", "-", "-", "-", "-"
+                    ),
+                }
+            }
+            eprintln!(
+                "     The RETRACTS column is what this arm exists for: a slope band is \
+                 scattered by\n\
+                 \x20    construction and rastering it means lifting constantly. All three field \
+                 rows are\n\
+                 \x20    measurable here even though the spiral is not, because a Poisson solve \
+                 and a\n\
+                 \x20    marching-triangles extraction do not care about topology — that is the\n\
+                 \x20    SPIRAL's constraint, not the field's."
+            );
             let floor = region_floor(&mesh, &shallow, BAND_SURFACE);
             print_floor_block(
                 band,
@@ -8897,6 +9922,10 @@ fn arm_band(
                     (
                         "iso-scallop field, D = sweep (4.3)",
                         sweep.cost.as_ref().map(|c| c.cutting_mm),
+                    ),
+                    (
+                        "iso-scallop field, D = MEDIAL AXIS",
+                        medial_cost.map(|c| c.cutting_mm),
                     ),
                 ],
             );
@@ -8935,6 +9964,12 @@ fn arm_band(
                         colour: SWEEP_COLOUR,
                         cost: sweep.cost.as_ref(),
                         note: &sweep.note,
+                    },
+                    ComparePanel {
+                        title: "iso-scallop field, D = MEDIAL AXIS",
+                        colour: MEDIAL_COLOUR,
+                        cost: medial_cost,
+                        note: &medial_note,
                     },
                 ],
             );
@@ -9227,7 +10262,7 @@ fn arm_terrain(
 /// what PROGRAMME.md, FINDINGS_F2 and this file's own header run-command
 /// quote. It now carries the analytic arms as well as the terrain ones.
 #[test]
-#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus TWO direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-30 — the curvature field and the synthesis §4.3 sweep field); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
+#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus THREE direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-31 — the curvature field, the synthesis §4.3 sweep field and the operator's medial-axis field, the last of which additionally builds one distance-transform grid per region); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
     use rs_cam_core::machine_kinematics::MachineKinematics;
 
@@ -9307,34 +10342,45 @@ fn terrain_small_conformal_spiral_f2() {
     );
 
     eprintln!(
-        "   FOUR CANDIDATES, 2026-08-30 — the operator asked to SEE the comparison, and seeing \
-         it\n\
-         \x20  meant drawing the rows that keep WINNING, not only the one under test. Every \
-         ANALYTIC arm\n\
-         \x20  now costs FOUR paths on one region through one relink — conformal spiral, 0deg \
-         ball\n\
-         \x20  raster, `direction_field` iso-curves (D = t1) and the synthesis §4.3 iso-scallop\n\
-         \x20  field (D = the sweep direction) — and emits two figures per arm:\n\
-         \x20    {{slug}}_compare_f2.svg   four panels, IDENTICAL SCALE and IDENTICAL viewBox \
+        "   FIVE CANDIDATES (four from 2026-08-30, the fifth added 2026-08-31) — the operator \
+         asked\n\
+         \x20  to SEE the comparison, and seeing it meant drawing the rows that keep WINNING, not \
+         only\n\
+         \x20  the one under test. Every ANALYTIC arm now costs FIVE paths on one region through \
+         one\n\
+         \x20  relink — conformal spiral, 0deg ball raster, `direction_field` iso-curves \
+         (D = t1), the\n\
+         \x20  synthesis §4.3 iso-scallop field (D = the sweep direction) and the OPERATOR'S \
+         iso-scallop\n\
+         \x20  field (D = rot90(grad EDT), the region's MEDIAL AXIS) — and emits two figures per \
+         arm:\n\
+         \x20    {{slug}}_compare_f2.svg   five panels, IDENTICAL SCALE and IDENTICAL viewBox \
          SIZE, each\n\
          \x20                            labelled with its own measured row; surface links GREEN, \
          air RED\n\
          \x20                            dashed, LIFT POINTS as red rings.\n\
-         \x20    {{slug}}_overlay_f2.svg   the same four superimposed at 45% opacity.\n\
-         \x20  The two FIELD rows are the decisive pair. They run the SAME Poisson solve, the \
+         \x20    {{slug}}_overlay_f2.svg   the same five superimposed at 45% opacity.\n\
+         \x20  The three FIELD rows are the decisive set. They run the SAME Poisson solve, the \
          SAME\n\
          \x20  level schedule and the SAME extraction, and differ ONLY in the target field V — so \
          any\n\
-         \x20  gap between them is attributable to the DIRECTION SOURCE and to nothing else. The\n\
+         \x20  gap among them is attributable to the DIRECTION SOURCE and to nothing else. The\n\
          \x20  curvature row was falsified on Wanaka region 1 ({F1_FIELD_POLYLINES_REGION1} \
          polylines vs a {WANAKA_R1_PCA_FRAGMENTS}-fragment\n\
          \x20  reference) on SHALLOW TERRAIN, where principal curvature is NOISE — and a sphere \
          cap is\n\
          \x20  UMBILIC, which is the same degeneracy in its purest form. The sweep row is the\n\
-         \x20  synthesis's repair. Both FieldReports are printed in full so a bad field is\n\
-         \x20  diagnosable rather than merely slow, and an empty solve is drawn as an EMPTY \
-         PANEL,\n\
-         \x20  never omitted.\n\
+         \x20  synthesis's repair; the MEDIAL row is the operator's, and because\n\
+         \x20  V = -|V| * grad_hat(EDT) it is CONTOUR-PARALLEL MACHINING CARRYING THE \
+         ISO-SCALLOP\n\
+         \x20  SPACING LAW — parallel passes down each arm, closed loops around a hub. It comes\n\
+         \x20  with its own pre-registration block and its own competing prior evidence \
+         (FINDINGS.md\n\
+         \x20  §0j 0.917x, §0k 0.686x — both COSTS, both on lattice-derived per-cell rigs; the\n\
+         \x20  distinction is printed beside every medial row). All three FieldReports are \
+         printed in\n\
+         \x20  full so a bad field is diagnosable rather than merely slow, and an empty solve is\n\
+         \x20  drawn as an EMPTY PANEL, never omitted.\n\
          \x20  Every analytic arm additionally prints x FLOOR: L_min = INTEGRAL dA / s_max(x) \
          from the\n\
          \x20  fixture's ANALYTIC curvature, and each candidate's cut_mm / L_min. A ratio below \
@@ -9345,6 +10391,7 @@ fn terrain_small_conformal_spiral_f2() {
     );
 
     print_preregistration();
+    print_medial_preregistration();
 
     arm_sphere(&cutter, kinematics, stepover_mm, &analytic_params);
     arm_wavy(&cutter, kinematics, stepover_mm, &analytic_params);
@@ -9428,6 +10475,100 @@ fn print_preregistration() {
          \x20   does not, the synthesis's diagnosis (\"the direction source is degenerate, not\n\
          \x20   the Poisson machinery\") is REFUTED, and the F1 arm's losses have to be\n\
          \x20   attributed to the machinery after all.\n\
+         ##############################################################################\n"
+    );
+}
+
+/// **The FIFTH candidate's pre-registration, added 2026-08-31.**
+///
+/// A SEPARATE block, printed after [`print_preregistration`] and never merged
+/// into it. That block is a dated statement made before the 2026-08-30 run;
+/// editing its content to absorb a candidate that did not exist then would
+/// destroy the only property a pre-registration has. This one is dated in its
+/// own header and stands or falls on its own.
+///
+/// Written from the construction alone (see [`medial_field_candidate`]), before
+/// any arm executed.
+fn print_medial_preregistration() {
+    eprintln!(
+        "\n########## PRE-REGISTERED — THE MEDIAL-AXIS CANDIDATE, 2026-08-31 ##########\n\
+         \x20 THE PREDICTION IS STATED HERE, BEFORE THE NUMBERS, and it follows from the\n\
+         \x20 construction rather than from hope. V = -|V| * grad_hat(EDT), so phi is a\n\
+         \x20 reparameterised NEGATIVE distance transform and its level sets are ISO-DISTANCE\n\
+         \x20 OFFSETS OF THE BOUNDARY. This row is CONTOUR-PARALLEL MACHINING CARRYING THE\n\
+         \x20 ISO-SCALLOP SPACING LAW.\n\
+         \n\
+         \x20 THE ARITHMETIC THE OPERATOR OFFERED, restated as the mechanism:\n\
+         \x20   an L x W arm swept ALONG its axis needs W/s passes of length L; swept ACROSS it\n\
+         \x20   needs L/s passes of length W. SAME total distance (L*W/s), 4x fewer PASS ENDS on\n\
+         \x20   ARM RIBBON's 10 x 2.5 mm arms (5 vs 21). Pass ends are what links, turns and\n\
+         \x20   retracts are made of. SO: FEWER FRAGMENTS AND FEWER LINKS THAN THE D = sweep \
+         ARM,\n\
+         \x20   WITH CUTTING DISTANCE ROUGHLY UNCHANGED.\n\
+         \x20   THE RAIL ON THAT: if the cutting distance moves a LOT, then something OTHER than\n\
+         \x20   the direction changed — the spacing basis did — and this instrument must say so\n\
+         \x20   instead of banking it as a direction win. Both field rows are checked against\n\
+         \x20   the SAME x FLOOR for exactly that reason.\n\
+         \n\
+         \x20 ARM SPHERE   the region is a DISK, so grad(EDT) is RADIAL and D is TANGENTIAL: the\n\
+         \x20   medial row should re-derive CONCENTRIC RINGS — very nearly the conformal \
+         spiral's\n\
+         \x20   own ring family, without the bridge that makes it one curve. Predict\n\
+         \x20   250-290 mm cut, x floor 1.02-1.19, ~25 closed loops => ~25 fragments, and an\n\
+         \x20   ACHIEVED LEVEL SPACING median of 0.474-0.480 mm (the same band the sweep row is\n\
+         \x20   predicted into, because on an umbilic cap |V| is constant either way).\n\
+         \x20   The medial axis of a disk is a single POINT, so the degenerate tier should be\n\
+         \x20   tiny (well under 1% of triangles) and concentrated at the centre.\n\
+         \n\
+         \x20 ARM WAVY     region is a disk again => concentric rings again, but |V| now varies\n\
+         \x20   with the ripple. Predict 180-240 mm, x floor 1.06-1.60, 20-40 fragments.\n\
+         \n\
+         \x20 ARM RIBBON   THE ARM THIS WAS PROPOSED FOR. Offsets of a capsule ARE parallel \
+         passes\n\
+         \x20   down its length. Arm half-width 1.25 mm = 2.57 stepovers, so ~5 passes across an\n\
+         \x20   arm; hub inscribed radius w/sin(22.5deg) = 3.266 mm, so ~6-7 levels reach it.\n\
+         \x20   Predict 400-550 mm cut (x floor 1.0-1.4 against an L_min of 380-400) and\n\
+         \x20   5-40 FRAGMENTS — against the D = sweep row's predicted 150-400. That fragment\n\
+         \x20   gap is the whole prediction.\n\
+         \x20   FALSIFIER WITH TEETH, STATED SO IT CAN FAIL: on ARM RIBBON the medial row must\n\
+         \x20   produce FEWER fragments AND fewer added links than the D = sweep row, with\n\
+         \x20   cutting distance within roughly 1.5x of it. If it fragments MORE, the operator's\n\
+         \x20   'along each arm' idea is refuted on the geometry it was proposed for, and\n\
+         \x20   FINDINGS.md §0k's 0.686x contour loss is the result that carried after all.\n\
+         \n\
+         \x20 ARM BAND / SHALLOW   the operator's REAL geometry, and where a global sweep is\n\
+         \x20   least defensible. The medial axis of a plane with four holes is the square's own\n\
+         \x20   diagonal skeleton blended with four circular ones, so this row's offsets hug the\n\
+         \x20   bump rims and the patch edge simultaneously. Predict 700-950 mm (x floor\n\
+         \x20   1.05-1.45) and FEWER retracts than the raster wall's, because a closed offset\n\
+         \x20   loop around a bump is one fragment where a raster crossing it is two.\n\
+         \n\
+         \x20 THE HUB — the operator predicted 'a spiral in the center'. BY CONSTRUCTION the\n\
+         \x20   field circulates there: EDT has a local MAX at the hub, phi therefore a local\n\
+         \x20   MIN, and level sets near a non-degenerate minimum are CLOSED LOOPS encircling \
+         it.\n\
+         \x20   So the topology the operator described is what the construction produces — but\n\
+         \x20   as CONCENTRIC CLOSED LOOPS, not as one connected spiral: nothing in this \
+         pipeline\n\
+         \x20   joins consecutive levels, so the relinker has to stitch them. PREDICT TWO\n\
+         \x20   ARTEFACTS AT THE HUB, both reported either way: (a) the innermost loop shrinks \
+         to\n\
+         \x20   nothing and leaves a residual UNCUT CORE at the EDT's peak — the classic\n\
+         \x20   offset-machining leftover; (b) the BELOW-FLOOR gradient fraction spikes there and\n\
+         \x20   along every arm centreline, because those are the medial axis, and the solve\n\
+         \x20   interpolates the ridge from V = 0 rather than following a direction.\n\
+         \x20   Expected fallback counts: RIBBON below-floor 3-10% of samples (the skeleton is\n\
+         \x20   ~1-2 cells wide out of ~24 across an arm), SPHERE/WAVY well under 1%, BAND 2-6%.\n\
+         \x20   Expected BOUNDARY SNAPS, which are a re-rasterisation artefact and not a fact\n\
+         \x20   about the shape, and should scale with PERIMETER/AREA: RIBBON 3-15% (perimeter\n\
+         \x20   ~175 mm over 192 mm^2), SPHERE/WAVY 1-5%, BAND 4-15%. A snap fraction far above\n\
+         \x20   its band means the medial grid and the mesh disagree about where the region is,\n\
+         \x20   and every direction on the fringe inherits that.\n\
+         \x20   A degenerate tier above ~15% anywhere would mean the GRID is too coarse to \
+         resolve\n\
+         \x20   the shape, not that the shape has a skeleton — that reading is registered here \
+         so\n\
+         \x20   it cannot be reached after the fact.\n\
          ##############################################################################\n"
     );
 }
@@ -11438,5 +12579,227 @@ fn sweep_field_level_spacing_is_the_flat_iso_scallop_stepover() {
          scallop_math's exact 2*sqrt(2 r h - h^2) = {:.5} — the two laws differ by the h^2 term \
          and both are correct in their own frames.",
         scallop_math::stepover_from_scallop_flat(BALL_RADIUS_MM, CUSP_HEIGHT_MM)
+    );
+}
+
+// ── smoke tests for the MEDIAL-AXIS candidate (2026-08-31) ──────────────
+
+/// **The one line of the medial derivation that can be silently inverted**,
+/// pinned the way [`k_s_is_read_across_the_passes_not_along_them`] pins the
+/// sweep arm's.
+///
+/// [`medial_field_candidate`] builds the FEED direction `D = n × ĝ` and then
+/// hands it to [`sweep_target_axis`] rather than writing `V_dir = −ĝ`
+/// directly. That round trip is only worth its keystrokes if the identity
+/// actually holds, so this asserts it: for any facet normal `n` and any
+/// in-plane unit `ĝ`, `sweep_target_axis(n, n × ĝ) = −ĝ`.
+///
+/// Getting it backwards would take the stepover ALONG each arm and run the
+/// passes ACROSS it — the exact inverse of the operator's proposal, and a
+/// result that would still look plausible in every printed column.
+#[test]
+fn medial_target_axis_is_the_negated_in_plane_gradient() {
+    let normals = [
+        V3::new(0.0, 0.0, 1.0),
+        V3::new(0.3, -0.2, 1.0),
+        V3::new(-0.5, 0.4, 1.0),
+    ];
+    let raw_gradients = [
+        V3::new(1.0, 0.0, 0.0),
+        V3::new(0.0, -1.0, 0.0),
+        V3::new(0.6, 0.8, 0.0),
+        V3::new(-0.3, 0.5, 0.0),
+    ];
+    for n in normals {
+        let n = n / n.norm();
+        for across in raw_gradients {
+            let projected = across - n * across.dot(&n);
+            let norm = projected.norm();
+            assert!(
+                norm > 1e-9,
+                "a fixture gradient must not be parallel to its normal, or the case being \
+                 pinned is not the one the medial arm takes"
+            );
+            let g = projected / norm;
+            let feed = n.cross(&g);
+            assert!(
+                (feed.norm() - 1.0).abs() < 1e-12,
+                "n x g must be unit when both are unit and perpendicular"
+            );
+            assert!(
+                feed.dot(&n).abs() < 1e-12 && feed.dot(&g).abs() < 1e-12,
+                "the FEED direction must lie in the facet plane, perpendicular to the \
+                 across-direction: that is what 'along the arm' MEANS"
+            );
+            let unit =
+                sweep_target_axis(n, feed).expect("an in-plane feed direction always projects");
+            assert!(
+                (unit + g).norm() < 1e-9,
+                "sweep_target_axis(n, n x g) must be EXACTLY -g. Measured {unit:?} against \
+                 -g = {:?}. If this fails the medial arm is taking its stepover ALONG each \
+                 arm and running its passes ACROSS it — the inverse of the proposal, and \
+                 invisible in every printed column.",
+                -g
+            );
+        }
+    }
+}
+
+/// The construction does what its name says on the simplest possible arm.
+///
+/// A 20 × 2.5 mm strip is one of ARM RIBBON's arms straightened out. Its EDT
+/// ridge is the centreline, so:
+///
+/// * off the centreline the raw gradient must run **across** the strip (±Y)
+///   and clear the degeneracy floor, so the feed `n × ĝ` runs **along** it
+///   (±X) — the operator's "along the length of each arm", measured;
+/// * **on** the centreline the raw gradient must be degenerate, because that
+///   is the medial axis and both walls are equidistant. The fallback firing
+///   there is the construction working, not failing.
+#[test]
+fn medial_grid_gradient_runs_across_a_straight_arm() {
+    let half_width = 1.25;
+    let strip = Polygon2::rectangle(-10.0, -half_width, 10.0, half_width);
+    let stepover = equal_cusp_stepover_mm(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let grid = build_medial_grid("SMOKE strip", std::slice::from_ref(&strip), stepover)
+        .expect("a 20 x 2.5 mm strip has a finite extent");
+
+    for (y, expected_gy) in [(0.9, -1.0), (-0.9, 1.0)] {
+        let sample = grid.across_at(0.0, y);
+        assert_eq!(
+            sample.tier,
+            GradientTier::Raw,
+            "at y = {y} the strip is {:.3} mm from its wall and {:.3} mm from its ridge, so \
+             the raw gradient must answer; raw |grad| read {:.4} in cell units",
+            half_width - y.abs(),
+            y.abs(),
+            sample.raw_magnitude
+        );
+        let (gx, gy) = sample
+            .across
+            .expect("a Raw tier always carries a direction");
+        assert!(
+            gx.abs() < 0.2 && (gy - expected_gy).abs() < 0.2,
+            "grad(EDT) must point ACROSS the strip toward its ridge — expected \
+             (0, {expected_gy}), measured ({gx:.4}, {gy:.4})"
+        );
+        let n = V3::new(0.0, 0.0, 1.0);
+        let feed = n.cross(&V3::new(gx, gy, 0.0));
+        assert!(
+            feed.x.abs() > 0.95 && feed.y.abs() < 0.2,
+            "the FEED direction D = n x grad must run ALONG the strip (+/-X). Measured \
+             ({:.4}, {:.4}). This is the operator's proposal, and it is the whole point of \
+             the arm.",
+            feed.x,
+            feed.y
+        );
+    }
+
+    let ridge = grid.across_at(0.0, 0.0);
+    assert!(
+        ridge.raw_magnitude < MEDIAL_GRADIENT_FLOOR,
+        "ON the centreline both walls are equidistant, so the raw gradient MUST be \
+         degenerate — that is what a medial axis IS. Measured |grad| {:.4} against the \
+         {MEDIAL_GRADIENT_FLOOR} floor. A clean reading here would mean the grid is not \
+         resolving the ridge and the fallback counters are meaningless.",
+        ridge.raw_magnitude
+    );
+    assert_ne!(
+        ridge.tier,
+        GradientTier::Raw,
+        "the ridge sample must be answered by a FALLBACK tier, never by the raw one"
+    );
+}
+
+/// A disk's medial axis is a single POINT, so the field circulates — which is
+/// the hub case in its purest form, and the reason ARM SPHERE and ARM WAVY
+/// should come back as concentric rings.
+///
+/// At any off-centre point `grad(EDT)` is RADIAL (pointing inward, since the
+/// EDT rises toward the centre) and the feed `n × ĝ` is therefore TANGENTIAL.
+/// Level sets of the solved potential are then circles about the centre: the
+/// operator's "spiral in the center", arriving as concentric closed loops.
+#[test]
+fn medial_grid_circulates_on_a_disk() {
+    let radius = 6.0;
+    let disk = ellipse_polygon(0.0, 0.0, radius, radius, 512);
+    let stepover = equal_cusp_stepover_mm(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let grid = build_medial_grid("SMOKE disk", std::slice::from_ref(&disk), stepover)
+        .expect("a disk has a finite extent");
+
+    assert!(
+        (grid.peak_inscribed_mm() - radius).abs() < 0.35,
+        "the EDT's peak on a disk IS its radius: expected {radius:.3} mm, measured {:.3} mm \
+         (grid cell {:.4} mm). A large miss means the rasterisation or the transform's units \
+         are wrong, and every direction downstream inherits it.",
+        grid.peak_inscribed_mm(),
+        grid.cell_mm()
+    );
+
+    for (x, y, rx, ry) in [
+        (3.0, 0.0, 1.0, 0.0),
+        (0.0, 3.0, 0.0, 1.0),
+        (-3.0, 0.0, -1.0, 0.0),
+    ] {
+        let sample = grid.across_at(x, y);
+        let (gx, gy) = sample
+            .across
+            .expect("a point 3 mm off a disk's centre is not on its medial axis");
+        assert!(
+            (gx + rx).abs() < 0.2 && (gy + ry).abs() < 0.2,
+            "grad(EDT) must point INWARD along the radius at ({x}, {y}) — expected \
+             ({:.1}, {:.1}), measured ({gx:.4}, {gy:.4})",
+            -rx,
+            -ry
+        );
+        let n = V3::new(0.0, 0.0, 1.0);
+        let feed = n.cross(&V3::new(gx, gy, 0.0));
+        let radial = V3::new(rx, ry, 0.0);
+        assert!(
+            feed.dot(&radial).abs() < 0.2,
+            "the feed direction must be TANGENTIAL — perpendicular to the radius — which is \
+             what makes the level sets concentric rings. Measured feed.radial = {:.4}",
+            feed.dot(&radial)
+        );
+    }
+}
+
+/// [`rasterise_polygons`] is even-odd over EVERY ring at once, which is what
+/// makes ARM BAND / SHALLOW's five components and four holes come out right
+/// without a nesting analysis. This pins the hole, because a filled hole would
+/// erase an interior boundary and with it the medial branch that hugs a bump
+/// rim — silently, and only on the arm the programme actually came from.
+#[test]
+fn rasterise_polygons_honours_holes() {
+    let cells = 80usize;
+    let size = 20.0;
+    let cell = size / cells as f64;
+    let half = 0.5 * size;
+    let ring = |r: f64| -> Vec<P2> {
+        vec![
+            P2::new(-r, -r),
+            P2::new(r, -r),
+            P2::new(r, r),
+            P2::new(-r, r),
+        ]
+    };
+    let annulus = Polygon2::with_holes(ring(8.0), vec![ring(2.0)]);
+    let mask = rasterise_polygons(std::slice::from_ref(&annulus), size, cells);
+    let at = |x: f64, y: f64| -> bool {
+        let col = ((x + half) / cell).floor() as usize;
+        let row = ((y + half) / cell).floor() as usize;
+        mask[row * cells + col]
+    };
+    assert!(at(5.0, 0.0), "the annulus body must be filled");
+    assert!(at(0.0, -5.0), "the annulus body must be filled");
+    assert!(!at(0.0, 0.0), "the HOLE must not be filled");
+    assert!(!at(1.0, 1.0), "the HOLE must not be filled");
+    assert!(!at(9.0, 0.0), "outside the exterior must not be filled");
+    let filled = mask.iter().filter(|&&v| v).count() as f64 * cell * cell;
+    let expected = 16.0 * 16.0 - 4.0 * 4.0;
+    assert!(
+        (filled - expected).abs() < 2.0,
+        "filled area {filled:.3} mm^2 must match the annulus's {expected:.3} mm^2 within a \
+         cell of quantisation"
     );
 }
