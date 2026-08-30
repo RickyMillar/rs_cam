@@ -64,7 +64,15 @@
 //!   extraction is explicit that this check *is* the only distortion
 //!   compensation in the pipeline — "there is no conformal-distortion-factor
 //!   formula anywhere" (§3.1). Any bijective map therefore yields correct 3D
-//!   spacing; conformality buys ring *smoothness*, not correctness;
+//!   spacing. **Half of that claim is now under measurement.** The
+//!   *correctness* half stands and is distortion-proof by construction. The
+//!   *spacing* half does not follow: the search has one scalar degree of
+//!   freedom per ring and sizes it by the ring's **worst sector**, so the
+//!   variation of the map's radial scale around that circle is over-cover
+//!   forced on every other sector — and a conformal map, being a local
+//!   similarity, has none of that anisotropy. [`SpiralReport::dilatation_min`]
+//!   and [`RingAnisotropy`] were added to decide this by measurement rather
+//!   than by argument;
 //! * with **mean-value weights** (below) the map is a *guaranteed embedding*,
 //!   which the coverage mechanism needs far more than it needs conformality.
 //!
@@ -296,6 +304,16 @@ const MAX_GRID_AXIS: usize = 512;
 /// rests on — is preserved by the clamp.
 const MIN_TRIANGLE_ANGLE: f64 = 1e-9;
 
+/// **[REPO]** Inward radial probe step, in disk units, for the per-ring
+/// radial-scale measurement. Small enough to stay inside one flat triangle on
+/// any realistic mesh — where the map is affine and the finite difference is
+/// therefore *exact* — and far above `f64` noise.
+const RADIAL_PROBE_DELTA: f64 = 1e-4;
+
+/// **[REPO]** A ring whose band is this small or smaller is counted as
+/// degenerate: it costs a full pass and removes almost nothing.
+const DEGENERATE_BAND_MAX: usize = 2;
+
 /// **[REPO]** Radial buckets for the area-distortion profile. Five is enough
 /// to see whether distortion explodes toward the disk centre — the shape the
 /// ring-stall hypothesis predicts on a high-relief region — without turning a
@@ -520,6 +538,62 @@ pub struct RadialDistortion {
     pub area_distortion_median: f64,
     /// See [`RadialDistortion::area_distortion_min`].
     pub area_distortion_max: f64,
+    /// Quasi-conformal dilatation `K = s_max / s_min` over this band — the
+    /// anisotropy profile, alongside the area profile. `1.0` is conformal.
+    pub dilatation_min: f64,
+    /// See [`RadialDistortion::dilatation_min`].
+    pub dilatation_median: f64,
+    /// See [`RadialDistortion::dilatation_min`].
+    pub dilatation_max: f64,
+}
+
+/// Variation of the map's **local radial scale around each placed ring**.
+///
+/// **[REPO]** This is the directly decisive number for spacing, and it is not
+/// derivable from any per-triangle statistic. A ring is **one circle at one
+/// disk radius**, and the Eqs. 1–4 binary search sizes it by its **worst
+/// sector** — the single uncovered point that is hardest to reach. Every other
+/// sector is then over-covered by however much the map's radial scale varies
+/// *around* that circle. So the per-ring ratio below **is** the over-cover
+/// factor the search is forced into on that ring: a ring whose radial scale
+/// varies 3× cannot be spaced correctly anywhere except in its worst sector,
+/// no matter how good the search is.
+///
+/// Area distortion cannot see this and neither can `K` on its own: a map can
+/// preserve area while stretching radially and compressing tangentially, and a
+/// map can have a uniform `K` while its radial scale still swings around a
+/// given circle.
+#[derive(Debug, Clone, Default)]
+pub struct RingAnisotropy {
+    /// Per placed ring, outermost first: `max / min` of the local radial scale
+    /// sampled around that ring's disk circle. `1.0` means the ring can be
+    /// spaced correctly everywhere at once.
+    pub per_ring_radial_scale_ratio: Vec<f64>,
+    /// Median of the above.
+    pub median_ratio: f64,
+    /// Worst of the above.
+    pub worst_ratio: f64,
+    /// Index of the worst ring in [`SpiralReport::ring_radii`].
+    pub worst_ring: usize,
+    /// Rings the ratio could be measured on.
+    pub rings_measured: usize,
+    /// Rings where too few probes landed to form a ratio (a degenerate radius,
+    /// or probes falling outside the flattened polygon).
+    pub rings_unmeasurable: usize,
+    /// The inward probe step actually used, in disk units.
+    pub probe_delta_disk: f64,
+    /// Probes discarded because the disk query needed the radial pullback
+    /// ladder, summed over all rings.
+    ///
+    /// A pulled-back probe does not measure what it claims to: the ladder
+    /// moves the query point radially by a fraction comparable to the probe
+    /// step itself, so the effective separation collapses and the "scale" it
+    /// reports is noise — small, but far above any epsilon filter, and it
+    /// would feed straight into a `max/min` this row exists to be trusted on.
+    /// They are therefore excluded, and counted here so a ring whose worst
+    /// sectors were all skipped reads as under-measured rather than quietly
+    /// optimistic.
+    pub probes_skipped_pulled_back: usize,
 }
 
 /// Which curve the stall distances were measured against.
@@ -704,9 +778,31 @@ pub struct SpiralReport {
     pub angle_distortion_median_deg: f64,
     /// See [`SpiralReport::angle_distortion_median_deg`].
     pub angle_distortion_max_deg: f64,
-    /// Area distortion bucketed by disk radius, `RADIAL_BUCKETS` (5) entries
-    /// outward from the centre. Empty means the flattening never ran.
+    /// Area **and** dilatation distortion bucketed by disk radius,
+    /// `RADIAL_BUCKETS` (5) entries outward from the centre. Empty means the
+    /// flattening never ran.
     pub area_distortion_by_disk_radius: Vec<RadialDistortion>,
+    /// Quasi-conformal **dilatation** `K = s_max / s_min` of the per-triangle
+    /// 3D→flat Jacobian, minimum over the region.
+    ///
+    /// `K ≥ 1` always, and `K = 1` exactly iff the map is a local similarity
+    /// there — i.e. conformal. Unlike area distortion, `K` is **scale
+    /// invariant**, so it is comparable across arms, fixtures and units. This
+    /// is the row that decides whether substituting mean-value weights for a
+    /// conformal flattening costs *spacing* as well as buying fold-freeness:
+    /// area distortion cannot see radial-vs-tangential anisotropy, and it is
+    /// the anisotropy that turns a well-chosen ring radius into bad spacing.
+    pub dilatation_min: f64,
+    /// See [`SpiralReport::dilatation_min`].
+    pub dilatation_median: f64,
+    /// 90th percentile of `K` — the tail matters more than the median here,
+    /// because one badly anisotropic sector is enough to mis-size a ring.
+    pub dilatation_p90: f64,
+    /// See [`SpiralReport::dilatation_min`].
+    pub dilatation_max: f64,
+    /// Triangles whose Jacobian was too degenerate to take singular values
+    /// from. `None` of these are expected once folds are impossible.
+    pub dilatation_unmeasurable: usize,
 
     // --- sampling + rings ------------------------------------------------
     /// `N_S` actually placed on `S^h`.
@@ -720,6 +816,20 @@ pub struct SpiralReport {
     /// `S^h` points first covered by each ring — the paper's milling band
     /// `BP_i`.
     pub ring_newly_covered: Vec<usize>,
+    /// Smallest band over the placed rings.
+    pub band_size_min: usize,
+    /// Median band size.
+    pub band_size_median: usize,
+    /// Largest band size. A wide min–max spread is itself a spacing defect
+    /// signature: the rings are not sharing the surface evenly.
+    pub band_size_max: usize,
+    /// Rings whose band is at most `DEGENERATE_BAND_MAX` (2) samples — a pass
+    /// that costs full price in motion and removes essentially nothing.
+    /// Counted explicitly because it is a defect signature, not a curiosity.
+    pub degenerate_rings: usize,
+    /// Radial-scale variation around each placed ring. `None` means the ring
+    /// search never placed a ring, so it was never measured.
+    pub ring_anisotropy: Option<RingAnisotropy>,
     /// Sum of [`SpiralReport::ring_lengths_mm`].
     pub total_ring_length_mm: f64,
     /// Binary-search iterations summed over every ring.
@@ -1283,7 +1393,10 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
 
     let mut ratios: Vec<f64> = Vec::with_capacity(region.tris.len());
     let mut angle_err: Vec<f64> = Vec::with_capacity(region.tris.len() * 3);
+    let mut dilatations: Vec<f64> = Vec::with_capacity(region.tris.len());
     let mut radial: Vec<Vec<f64>> = vec![Vec::new(); RADIAL_BUCKETS];
+    let mut radial_k: Vec<Vec<f64>> = vec![Vec::new(); RADIAL_BUCKETS];
+    let mut unmeasurable = 0usize;
     for (t, &s) in signed.iter().enumerate() {
         let area3 = region.area(t);
         let ratio = if area3 > MIN_TRIANGLE_AREA_MM2 {
@@ -1312,13 +1425,21 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
                 angle_err.push((a3 - a2).abs().to_degrees());
             }
         }
-        // Radial bucket, keyed on the disk radius of the flattened centroid.
-        if let Some(r) = ratio {
-            let rad = centroid_r.get(t).copied().unwrap_or(0.0);
-            let b = ((rad * RADIAL_BUCKETS as f64).floor() as usize).min(RADIAL_BUCKETS - 1);
-            if let Some(slot) = radial.get_mut(b) {
-                slot.push(r);
-            }
+        // Quasi-conformal dilatation: the anisotropy area distortion cannot see.
+        let k = triangle_dilatation(&p3, &p2);
+        match k {
+            Some(k) => dilatations.push(k),
+            None => unmeasurable += 1,
+        }
+
+        // Radial buckets, keyed on the disk radius of the flattened centroid.
+        let rad = centroid_r.get(t).copied().unwrap_or(0.0);
+        let b = ((rad * RADIAL_BUCKETS as f64).floor() as usize).min(RADIAL_BUCKETS - 1);
+        if let (Some(r), Some(slot)) = (ratio, radial.get_mut(b)) {
+            slot.push(r);
+        }
+        if let (Some(k), Some(slot)) = (k, radial_k.get_mut(b)) {
+            slot.push(k);
         }
     }
     ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -1329,12 +1450,21 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
     report.angle_distortion_max_deg = angle_err.last().copied().unwrap_or(0.0);
     report.angle_distortion_median_deg = median_sorted(&angle_err);
 
+    dilatations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    report.dilatation_min = dilatations.first().copied().unwrap_or(0.0);
+    report.dilatation_median = median_sorted(&dilatations);
+    report.dilatation_p90 = percentile_sorted(&dilatations, 0.90);
+    report.dilatation_max = dilatations.last().copied().unwrap_or(0.0);
+    report.dilatation_unmeasurable = unmeasurable;
+
     let width = 1.0 / RADIAL_BUCKETS as f64;
     report.area_distortion_by_disk_radius = radial
         .into_iter()
+        .zip(radial_k)
         .enumerate()
-        .map(|(b, mut vals)| {
+        .map(|(b, (mut vals, mut ks))| {
             vals.sort_by(|a, c| a.partial_cmp(c).unwrap_or(std::cmp::Ordering::Equal));
+            ks.sort_by(|a, c| a.partial_cmp(c).unwrap_or(std::cmp::Ordering::Equal));
             RadialDistortion {
                 r_lo: b as f64 * width,
                 r_hi: (b + 1) as f64 * width,
@@ -1342,9 +1472,120 @@ fn measure_flattening(region: &RegionMesh, flat: &Flattening, report: &mut Spira
                 area_distortion_min: vals.first().copied().unwrap_or(0.0),
                 area_distortion_median: median_sorted(&vals),
                 area_distortion_max: vals.last().copied().unwrap_or(0.0),
+                dilatation_min: ks.first().copied().unwrap_or(0.0),
+                dilatation_median: median_sorted(&ks),
+                dilatation_max: ks.last().copied().unwrap_or(0.0),
             }
         })
         .collect();
+}
+
+/// Measure the map's **local radial scale variation around each placed ring**.
+///
+/// **[REPO]** For each ring radius `R`, the disk circle is sampled on the same
+/// angular lattice the rings themselves use, and at each sample the local
+/// radial scale is taken as an **inward** finite difference of the lifted
+/// contact point:
+///
+/// ```text
+/// scale(φ) = ‖ lift(R, φ) − lift(R − d, φ) ‖ / d      [mm per unit disk radius]
+/// ```
+///
+/// Inward, not centred, so the *inner* probe cannot leave the flattened
+/// polygon. The **outer** probe sits at `R` itself, which can exceed the
+/// polygon's inradius on a coarse boundary, so any probe that needed the
+/// radial pullback ladder is **excluded and counted** in
+/// [`RingAnisotropy::probes_skipped_pulled_back`] rather than trusted: the
+/// ladder's first rung moves the point by about the probe step, which would
+/// collapse the difference and fabricate a ratio. `d` is
+/// `RADIAL_PROBE_DELTA`, shrunk to `R/2` near the centre;
+/// it is far smaller than any flat triangle, and the map is affine inside a
+/// triangle, so the difference is **exact** rather than approximate there.
+///
+/// The reported per-ring `max/min` is the over-cover factor the worst-sector
+/// rule forces onto that ring — see [`RingAnisotropy`].
+fn measure_ring_anisotropy(
+    locator: &FlatLocator,
+    region: &RegionMesh,
+    normals: &[V3],
+    ring_radii: &[f64],
+    params: &SpiralParams,
+) -> Option<RingAnisotropy> {
+    if ring_radii.is_empty() {
+        return None;
+    }
+    let n = params.n_angular_samples.max(3);
+    let mut scratch = QueryScratch::new();
+    let mut hits: Vec<usize> = Vec::new();
+    let mut ratios: Vec<f64> = Vec::with_capacity(ring_radii.len());
+    let mut unmeasurable = 0usize;
+    let mut skipped_pulled = 0usize;
+
+    for &r in ring_radii {
+        let d = RADIAL_PROBE_DELTA.min(0.5 * r);
+        if d <= 0.0 || !d.is_finite() {
+            unmeasurable += 1;
+            ratios.push(f64::NAN);
+            continue;
+        }
+        let mut lo = f64::INFINITY;
+        let mut hi = 0.0_f64;
+        let mut seen = 0usize;
+        for j in 0..n {
+            let a = TAU * (j as f64) / (n as f64);
+            let (ca, sa) = (a.cos(), a.sin());
+            let Some((outer, outer_pulled)) =
+                locator.locate(r * ca, r * sa, &mut scratch, &mut hits)
+            else {
+                continue;
+            };
+            let Some((inner, inner_pulled)) =
+                locator.locate((r - d) * ca, (r - d) * sa, &mut scratch, &mut hits)
+            else {
+                continue;
+            };
+            // A pulled-back probe measures the ladder, not the map.
+            if outer_pulled || inner_pulled {
+                skipped_pulled += 1;
+                continue;
+            }
+            let (po, _) = lift(region, normals, &outer);
+            let (pi, _) = lift(region, normals, &inner);
+            let scale = (po - pi).norm() / d;
+            if !scale.is_finite() || scale <= EPS_VEC {
+                continue;
+            }
+            lo = lo.min(scale);
+            hi = hi.max(scale);
+            seen += 1;
+        }
+        if seen < 2 || !lo.is_finite() || lo <= EPS_VEC {
+            unmeasurable += 1;
+            ratios.push(f64::NAN);
+        } else {
+            ratios.push(hi / lo);
+        }
+    }
+
+    let mut finite: Vec<f64> = ratios.iter().copied().filter(|v| v.is_finite()).collect();
+    finite.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let worst = finite.last().copied().unwrap_or(0.0);
+    let worst_ring = ratios
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.is_finite())
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map_or(0, |(i, _)| i);
+    Some(RingAnisotropy {
+        per_ring_radial_scale_ratio: ratios,
+        median_ratio: median_sorted(&finite),
+        worst_ratio: worst,
+        worst_ring,
+        rings_measured: finite.len(),
+        rings_unmeasurable: unmeasurable,
+        probe_delta_disk: RADIAL_PROBE_DELTA,
+        probes_skipped_pulled_back: skipped_pulled,
+    })
 }
 
 /// Interior angle at corner `i` of a 3D triangle.
@@ -1374,6 +1615,67 @@ fn corner_angle_2d(p: &[(f64, f64); 3], i: usize, j: usize, k: usize) -> Option<
             .clamp(-1.0, 1.0)
             .acos(),
     )
+}
+
+/// Nearest-rank percentile of an already-sorted slice, `q ∈ [0, 1]`.
+fn percentile_sorted(v: &[f64], q: f64) -> f64 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    let idx = (q.clamp(0.0, 1.0) * ((v.len() - 1) as f64)).round() as usize;
+    v.get(idx.min(v.len() - 1)).copied().unwrap_or(0.0)
+}
+
+/// Quasi-conformal dilatation `K = s_max / s_min` of one triangle's 3D→flat
+/// affine map.
+///
+/// **[REPO]** The 3D triangle is expressed in **its own orthonormal frame**
+/// (`u` along the first edge, the in-plane perpendicular as the second axis),
+/// which is what makes the comparison a genuine 2×2 Jacobian rather than a
+/// projection artefact. With `a1 − a0 = (L, 0)` and `a2 − a0 = (x2, y2)` in
+/// that frame, `A⁻¹` is closed-form, so `J = Q·A⁻¹` needs no general inverse.
+/// Singular values come from the standard 2×2 form
+/// `s_max = q + r`, `s_min = |q − r|` with `q = ‖(E, H)‖`, `r = ‖(F, G)‖`.
+///
+/// Returns `None` when the triangle or its image is too degenerate to take
+/// singular values from. `K ≥ 1` by construction, and `K = 1` exactly when the
+/// map is a local similarity — the property a conformal map has everywhere and
+/// the one that makes concentric circles a good level-set family.
+fn triangle_dilatation(p3: &[P3; 3], p2: &[(f64, f64); 3]) -> Option<f64> {
+    let (a, b, c) = (p3.first()?, p3.get(1)?, p3.get(2)?);
+    let e1 = b - a;
+    let len = e1.norm();
+    if len <= EPS_VEC {
+        return None;
+    }
+    let u = e1 / len;
+    let w = c - a;
+    let x2 = w.dot(&u);
+    let y2 = (w - u * x2).norm();
+    if y2 <= EPS_VEC {
+        return None;
+    }
+
+    let (q0, q1, q2) = (p2.first()?, p2.get(1)?, p2.get(2)?);
+    let u1 = (q1.0 - q0.0, q1.1 - q0.1);
+    let u2 = (q2.0 - q0.0, q2.1 - q0.1);
+    let j00 = u1.0 / len;
+    let j10 = u1.1 / len;
+    let j01 = (u2.0 * len - u1.0 * x2) / (len * y2);
+    let j11 = (u2.1 * len - u1.1 * x2) / (len * y2);
+
+    let e = 0.5 * (j00 + j11);
+    let f = 0.5 * (j00 - j11);
+    let g = 0.5 * (j10 + j01);
+    let h = 0.5 * (j10 - j01);
+    let qq = e.hypot(h);
+    let rr = f.hypot(g);
+    let s_max = qq + rr;
+    let s_min = (qq - rr).abs();
+    if !s_max.is_finite() || s_min <= EPS_VEC {
+        return None;
+    }
+    Some(s_max / s_min)
 }
 
 /// Median of an already-sorted slice.
@@ -2006,6 +2308,17 @@ fn publish_ring_rows(
     report.ring_lengths_mm = rings.iter().map(|r| polyline_length(&r.contact)).collect();
     report.ring_newly_covered = rings.iter().map(|r| r.band.len()).collect();
     report.total_ring_length_mm = report.ring_lengths_mm.iter().sum();
+
+    let mut bands: Vec<usize> = rings.iter().map(|r| r.band.len()).collect();
+    report.degenerate_rings = bands.iter().filter(|&&b| b <= DEGENERATE_BAND_MAX).count();
+    bands.sort_unstable();
+    report.band_size_min = bands.first().copied().unwrap_or(0);
+    report.band_size_max = bands.last().copied().unwrap_or(0);
+    report.band_size_median = if bands.is_empty() {
+        0
+    } else {
+        bands.get(bands.len() / 2).copied().unwrap_or(0)
+    };
     if uncovered.is_empty() {
         return;
     }
@@ -2133,6 +2446,13 @@ fn search_rings(
                 rings: rings.len(),
                 uncovered: uncovered.len(),
             };
+            report.ring_anisotropy = measure_ring_anisotropy(
+                locator,
+                region,
+                normals,
+                &rings.iter().map(|r| r.radius).collect::<Vec<f64>>(),
+                params,
+            );
             publish_ring_rows(
                 &rings,
                 &uncovered,
@@ -2216,6 +2536,13 @@ fn search_rings(
             } else {
                 None
             };
+            report.ring_anisotropy = measure_ring_anisotropy(
+                locator,
+                region,
+                normals,
+                &rings.iter().map(|r| r.radius).collect::<Vec<f64>>(),
+                params,
+            );
             publish_ring_rows(
                 &rings,
                 &uncovered,
@@ -2245,6 +2572,13 @@ fn search_rings(
         }
     }
 
+    report.ring_anisotropy = measure_ring_anisotropy(
+        locator,
+        region,
+        normals,
+        &rings.iter().map(|r| r.radius).collect::<Vec<f64>>(),
+        params,
+    );
     publish_ring_rows(
         &rings,
         &uncovered,
@@ -2907,6 +3241,22 @@ mod tests {
             report.area_distortion_max - report.area_distortion_min
         );
         assert!(report.angle_distortion_max_deg < 1e-3);
+
+        // A similarity has dilatation exactly 1: `J = (1/ρ)·R` for an
+        // orthogonal `R`, so both singular values are `1/ρ`. This is the
+        // control reading for the anisotropy instrument — if K ever drifts
+        // off 1 here, the measurement is wrong, not the map.
+        assert_eq!(report.dilatation_unmeasurable, 0);
+        assert!(
+            report.dilatation_min >= 1.0 - 1e-12,
+            "K < 1 is impossible by construction, saw {}",
+            report.dilatation_min
+        );
+        assert!(
+            report.dilatation_max < 1.0 + 1e-5,
+            "exact affine map must be conformal, saw K_max {}",
+            report.dilatation_max
+        );
     }
 
     /// The switch to mean-value weights exists to make folds structurally
@@ -2953,6 +3303,9 @@ mod tests {
         // ...and its consequence.
         assert_eq!(report.flipped_triangles, 0);
         assert!(report.flipped_triangle_disk_radii.is_empty());
+        // Still an exact similarity, even on skewed triangles: dilatation is
+        // a property of the map, not of the triangulation that carries it.
+        assert!(report.dilatation_max < 1.0 + 1e-5);
 
         // The planar closed form still holds on a hostile triangulation:
         // mean value coordinates reproduce the identity regardless of shape.
@@ -3061,8 +3414,51 @@ mod tests {
                 b.r_hi
             );
             assert!((b.area_distortion_median - 1.0 / (radius * radius)).abs() < 1e-7);
+            // Isotropic everywhere, so the radial K profile is flat at 1.
+            assert!(
+                (b.dilatation_median - 1.0).abs() < 1e-5,
+                "bucket {}..{} K_median {}",
+                b.r_lo,
+                b.r_hi,
+                b.dilatation_median
+            );
         }
         assert!(report.stall.is_none(), "coverage closed, so no stall block");
+
+        // The decisive spacing row. On a similarity the local radial scale is
+        // ρ at every point of every circle, so every ring's max/min is 1 —
+        // meaning the worst-sector rule costs this map nothing. The bar is
+        // 1.01 because the measurement's own floor is the finite difference
+        // amplifying the Gauss–Seidel error: ~2.5e-8 over a 1e-4 probe step is
+        // ~2.5e-4 relative, so 1.01 leaves ~20x headroom over the noise while
+        // staying far below the multiples this row exists to detect.
+        let anis = report
+            .ring_anisotropy
+            .as_ref()
+            .expect("rings were placed, so anisotropy must be measured");
+        assert_eq!(anis.rings_measured, report.ring_count);
+        assert_eq!(anis.rings_unmeasurable, 0);
+        assert_eq!(anis.per_ring_radial_scale_ratio.len(), report.ring_count);
+        assert!(
+            anis.worst_ratio < 1.01,
+            "a similarity forces no over-cover; worst ring ratio {} at ring {}",
+            anis.worst_ratio,
+            anis.worst_ring
+        );
+        assert!(anis.median_ratio <= anis.worst_ratio);
+
+        // Band sizes: every ring must earn its pass.
+        assert_eq!(
+            report.degenerate_rings, 0,
+            "a ring covering <=2 samples is a wasted pass"
+        );
+        assert!(
+            report.band_size_min >= 10,
+            "smallest band {}",
+            report.band_size_min
+        );
+        assert!(report.band_size_min <= report.band_size_median);
+        assert!(report.band_size_median <= report.band_size_max);
 
         // Coverage closed on both sides of the bridging step.
         assert_eq!(
@@ -3183,6 +3579,27 @@ mod tests {
         // Mean-value is not a conformal map, so area distortion varies from
         // pole to boundary — that is expected and is why it is reported.
         assert!(report.area_distortion_max >= report.area_distortion_min);
+        // K >= 1 is structural; the actual value on a curved surface is the
+        // open question this row exists to answer, so it is measured and
+        // ordered, not bounded.
+        assert_eq!(report.dilatation_unmeasurable, 0);
+        assert!(report.dilatation_min >= 1.0 - 1e-12);
+        assert!(report.dilatation_median >= report.dilatation_min);
+        assert!(report.dilatation_p90 >= report.dilatation_median);
+        assert!(report.dilatation_max >= report.dilatation_p90);
+        let anis = report
+            .ring_anisotropy
+            .as_ref()
+            .expect("rings were placed, so anisotropy must be measured");
+        assert_eq!(
+            anis.rings_measured + anis.rings_unmeasurable,
+            report.ring_count
+        );
+        assert!(anis.worst_ratio >= anis.median_ratio);
+        assert!(
+            anis.median_ratio >= 1.0 - 1e-9,
+            "a max/min ratio cannot be below 1"
+        );
 
         assert_eq!(report.uncovered_after_rings, 0);
         assert!(report.stall.is_none());
