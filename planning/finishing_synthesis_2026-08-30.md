@@ -354,3 +354,67 @@ operator's original instinct ("parallel down the arms, spiral in the
 centre") described. It was right about the *decomposition*; the measurement
 says the two halves must be **different strategies**, not one field that
 tries to be both.
+
+---
+
+## 10. The preferred-direction field, researched (2026-08-31) — `D = t1` was RIGHT, and §4.3 was a departure from the literature, not a repair of it
+
+Full extraction: `planning/conformal_finish_2026-08-28/preferred_direction_field_research.md`.
+Sources retrieved: **Kumazawa, UBC MASc 2012** (Zou's [4]/[21], via Wayback — UBC's own host is Cloudflare-blocked) and **Kim, MIT PhD** (the full source behind [28], via MIT DSpace).
+
+**The correction.** §8 and §9 of this document assumed our `D = t1` was a bad
+substitution for a field the paper had and we lacked. That is wrong.
+Kumazawa is explicitly about **three-axis ball-end** machining, and its rule
+is *feed along the most convex principal direction* — which is `t1`. Kim
+gives the closed form (Eq. 23) for the strip width about it. **We
+implemented the literature's own answer.** Zou's [24] Lo and [25] Fard &
+Feng, which our extraction named as the missing front-end, are both
+**five-axis flat-end** work: [25]'s entire contribution is choosing a tool
+*orientation* so a tilted flat-end's cutting **ellipse** is widest. A
+ball-end on 3 axes has neither degree of freedom, and all of it collapses
+to `r₁ = r₂ = r` — Zou's own stated best case.
+
+**Why ours failed anyway — and it is structural.** The literature pipeline
+is: direction field → **detect degeneracies** → **classify** them
+(trisector / wedge / merged, by a discriminant sign) → **trace
+separatrices** → **segment the surface** → per-patch sequential iso-scallop
+seeded to minimise drift. We built the direction rule and **none of the four
+stages that make it usable**. And on degeneracy both sources stop:
+Kumazawa, verbatim — *"there is not one single preferred direction, because
+all directions will be the preferred … when the surface at that point is
+completely planar … it could be said that **all points in a surface are
+degenerate points**"*; Kim excludes umbilics by assumption (`κ₁ ≠ κ₂`).
+Neither publishes a fallback direction or a numeric degeneracy threshold.
+
+**So the fixture error happened a fourth time, and this one was baked in by
+construction.** Our SPHERE has `W_max − W_min = 0` *exactly* — the method's
+own advantage is identically zero there. Kumazawa's conclusion is that it
+*"benefits from surfaces that have a large number of features such as
+mounts and valleys … where the difference between the maximum and minimum
+`W` are notable."* None of our four fixtures is such a surface. **No choice
+of `D` would have beaten the raster on the geometry we tested.**
+
+**And the published prize is small.** Kumazawa's Table 1, measured against
+an honest iso-scallop from the better border: **−2.6, −5.1, −1.9, −5.4,
+−7.2, −3.3 %**. The large figures quoted in that literature are against
+iso-parametric and iso-planar baselines, not against a good raster.
+
+**Two things worth keeping.** First, `[28]`'s machine-derived field
+maximises `F₀ = ϑ₀·w₀` (speed × strip width) off a velocity polygon and
+**explicitly discards acceleration**, deferring it to a smoothing pass — so
+it is *not* what our accel-bound result needs, and Kim proves it collapses
+to the geometric field under an isotropic velocity envelope. Second, and
+better: **Kim Eq. 32 is this document's §1 floor, written in 2001** —
+`T_c = ∫∫ dA/(w·ϑ) + link terms on region boundaries`, i.e. area over
+strip-width-times-speed, plus linking. We re-derived a twenty-five-year-old
+result independently and can now cite it.
+
+### Consequence for §4.3
+
+The §4.3 proposal (`D` from the cell's sweep axis) is therefore **not a
+repair of the literature's method — it is a departure from it.** It beat
+`D = t1` by 1.55–4.34× on our fixtures *because those fixtures are umbilic
+or near-umbilic*, where `t1` is noise and any consistent direction wins.
+On a surface with genuine mounts and valleys the ordering could invert, and
+that is untested. Both remain open; neither is a candidate for production
+on this evidence.
