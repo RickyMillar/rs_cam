@@ -33,7 +33,8 @@
 //! | **F2-A** | the params actually used, the full 34-row `SpiralReport` grouped, the `N_S` adequacy arithmetic, and the **§B.4 falsifier** verdict |
 //! | **F2-B** | two SVGs — the unit-disk domain, and the XY world view |
 //! | **F2-C** | measured adjacent-ring 3D spacing vs the flat equal-cusp stepover AND vs the curvature-corrected stepover, plus the paper's own 12 % scallop-overshoot context |
-//! | **F2-D** | drop-cutter CL conversion, containment count, F-034 cost vs a ball-end 0° raster on the same region |
+//! | **F2-D** | drop-cutter CL conversion, containment count, and the **THREE-way** F-034 cost table — conformal spiral, ball-end 0° raster, and the `direction_field` iso-curves — on one region through one relink, plus the three-basis achieved-spacing block |
+//! | **F2-D figures** | (2026-08-30, the operator's request) `{slug}_compare_f2.svg`: one panel per candidate at **identical scale in identically sized viewBoxes**, cutting moves solid, **surface links green**, air red dashed, **lift points as red rings**, each panel labelled with its own measured row; and `{slug}_overlay_f2.svg`, the same three superimposed at 45 % opacity |
 //! | **F2-E** | sampling sensitivity: three `plan_spiral` runs at (N_S, N_C), (N_S/2, N_C) and (N_S, N_C/2) |
 //!
 //! # The §B.4 phase-1 falsifier, concretised 2026-08-30
@@ -294,12 +295,13 @@ use rs_cam_core::conformal_spiral::{
     self, DistanceStats, PAPER_START_ANGLE_STEP, SpiralParams, SpiralRefusal, SpiralReport,
     SpiralResult,
 };
+use rs_cam_core::direction_field::{self, FieldPathResult, FieldReport};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::scallop_math;
 use rs_cam_core::tool::BallEndmill;
-use rs_cam_core::toolpath::{MoveIntent, Toolpath};
+use rs_cam_core::toolpath::{Move, MoveIntent, Toolpath};
 
 // ── the fixture ─────────────────────────────────────────────────────────
 
@@ -564,6 +566,18 @@ fn raster_candidate(
 /// The two ceiling-regime fields were already trimmed there for the reason
 /// stated at that definition, and this file is likewise `link_ceiling: None`
 /// throughout.
+/// **ONE DELIBERATE DEVIATION** from that field-for-field restatement, added
+/// 2026-08-30 with the comparison SVGs: [`CandidateCost::path`], the
+/// **relinked** toolpath itself.
+///
+/// The operator asked to *see* the comparison the tables were making, and a
+/// picture drawn from the pre-relink path would be a different path from the
+/// one the table charges: `relink_fragments` is exactly what converts a
+/// fragment boundary into either a stay-down surface link or a
+/// lift-traverse-plunge, and those two are the columns the trade turns on.
+/// Drawing anything else would be the [[instrument-integrity]] failure of
+/// captioning one measurement with another's picture. The field is carried,
+/// never re-derived, so the SVG and the row are the same object.
 struct CandidateCost {
     moves: usize,
     cutting_mm: f64,
@@ -571,6 +585,9 @@ struct CandidateCost {
     fragments: usize,
     linked: usize,
     kept_retracts: usize,
+    /// The path AFTER `relink_fragments` + `reconcile` — the motion the
+    /// `time_s` column integrates. See the struct doc.
+    path: Toolpath,
 }
 
 /// **Restated from `direction_field_wanaka_f1.rs:343-390`.** The
@@ -625,6 +642,7 @@ fn relink_and_cost(
         fragments: report.fragments,
         linked: report.surface_links,
         kept_retracts: report.retract_links,
+        path: toolpath,
     }
 }
 
@@ -739,6 +757,939 @@ fn percentile(sorted: &[f64], fraction: f64) -> f64 {
     }
     let index = ((sorted.len() - 1) as f64 * fraction).round() as usize;
     sorted[index.min(sorted.len() - 1)]
+}
+
+// ── COMPARISON SVGs — the operator's picture (added 2026-08-30) ─────────
+//
+// WHY THIS EXISTS, in the operator's own words: "The spiral looks good, the
+// direction map ones look good, the regions look good. It all looks good but
+// the parallel does seem to win a lot. Can you map the other toolpaths you
+// talk of in the svgs too so I can see the comparison?"
+//
+// Every arm of this instrument has been printing a cost TABLE in which the 0°
+// raster wins, and drawing only the spiral. The raster — the row that keeps
+// winning — has never been rendered at all. So the picture and the verdict
+// were about different objects, and the one number that decides the trade
+// (retracts) had no visual form whatsoever.
+//
+// These files fix exactly that and nothing else: same region, same scale,
+// same viewBox size per panel, three candidates side by side, each labelled
+// with its OWN measured row, drawn from the COSTED (post-relink) motion.
+
+/// How one move of a costed toolpath is drawn.
+///
+/// The classification is on `(move_type, intent)` and is **exhaustive over
+/// `MoveIntent`** on purpose: a new intent variant must fail to compile here
+/// rather than fall silently into a colour that misreports it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MoveClass {
+    /// Material-removing feed. Drawn solid, in the candidate's own colour.
+    Cut,
+    /// A **stay-down surface link** — the connection `relink_fragments` adds
+    /// in place of a lift. Drawn solid green. This is the class that makes
+    /// FINDINGS_F2 §F2-4C visible: 52 of the shallow band's 63 fragment
+    /// boundaries never become lifts at all.
+    Link,
+    /// Air motion: every rapid (whatever its intent) **and** every fed descent
+    /// into material (`EntryPlunge` / `EntryHelix` / `EntryRamp`). Drawn red
+    /// dashed. A plunge is XY-degenerate, so it contributes a marker rather
+    /// than a visible stroke — stated in the legend rather than left to be
+    /// inferred from an invisible line.
+    Air,
+    /// **The ambiguity colour** (magenta), and a finding if it ever appears.
+    /// It catches `Drilling` (no drill op exists here), `Unknown` (a
+    /// generator that never tagged its moves) and — the interesting one — a
+    /// **`Retract`-tagged LINEAR** move. CLAUDE.md records that last branch as
+    /// unreachable from every shipped generator, pinned by a census sentry, so
+    /// magenta on one of these panels is not a drawing choice to be tidied
+    /// away: it is a move nobody expected to exist.
+    Other,
+}
+
+impl MoveClass {
+    /// Draw order, and the index every per-class array in this section uses.
+    /// `Air` is drawn FIRST so cut and link strokes sit on top of it.
+    const ALL: [MoveClass; 4] = [
+        MoveClass::Air,
+        MoveClass::Link,
+        MoveClass::Cut,
+        MoveClass::Other,
+    ];
+
+    fn index(self) -> usize {
+        match self {
+            MoveClass::Air => 0,
+            MoveClass::Link => 1,
+            MoveClass::Cut => 2,
+            MoveClass::Other => 3,
+        }
+    }
+}
+
+/// See [`MoveClass`]. `Move` is classified by its OWN tags — no kinematic
+/// heuristic, no Z threshold — because those tags are what the relinker wrote
+/// and what the F-034 integrator reads.
+fn classify_move(mv: &Move) -> MoveClass {
+    if !mv.move_type.is_cutting() {
+        return MoveClass::Air;
+    }
+    match mv.intent {
+        MoveIntent::FinishingCut
+        | MoveIntent::ClearingCut
+        | MoveIntent::LeadIn
+        | MoveIntent::LeadOut => MoveClass::Cut,
+        MoveIntent::Linking => MoveClass::Link,
+        MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp => MoveClass::Air,
+        MoveIntent::Drilling | MoveIntent::Retract | MoveIntent::Unknown => MoveClass::Other,
+    }
+}
+
+/// One toolpath reduced to what the SVG needs: four `d` attributes, the class
+/// histogram, the lift points, and the XY extent.
+struct PathDrawing {
+    /// SVG path data per class, indexed by [`MoveClass::index`].
+    d: [String; 4],
+    /// Move counts per class, same indexing.
+    counts: [usize; 4],
+    /// XY of every `Rapid` + `Retract` move — i.e. **where the tool left the
+    /// surface**. A retract is vertical, so the retract target's XY IS the
+    /// lift point. Drawn as an open circle, so a "wall of retracts" reads as a
+    /// field of red rings rather than as a number in a table.
+    lifts: Vec<P2>,
+    /// `[min_x, min_y, max_x, max_y]` over every move target, or `None` for an
+    /// empty path.
+    bbox: Option<[f64; 4]>,
+}
+
+/// Reduce a costed toolpath to [`PathDrawing`].
+///
+/// Consecutive moves of the same class are coalesced into one polyline (each
+/// segment runs from the previous move's target to this one's), which keeps a
+/// 5,500-move spiral to a handful of `d` attributes instead of 5,500.
+fn draw_toolpath(tp: &Toolpath) -> PathDrawing {
+    let mut out = PathDrawing {
+        d: [String::new(), String::new(), String::new(), String::new()],
+        counts: [0; 4],
+        lifts: Vec::new(),
+        bbox: None,
+    };
+    let mut cursor: Option<P3> = None;
+    let mut run: Option<usize> = None;
+    for mv in &tp.moves {
+        let index = classify_move(mv).index();
+        out.counts[index] += 1;
+        let target = mv.target;
+        out.bbox = Some(match out.bbox {
+            None => [target.x, target.y, target.x, target.y],
+            Some([x0, y0, x1, y1]) => [
+                x0.min(target.x),
+                y0.min(target.y),
+                x1.max(target.x),
+                y1.max(target.y),
+            ],
+        });
+        if matches!(mv.move_type, rs_cam_core::toolpath::MoveType::Rapid)
+            && mv.intent == MoveIntent::Retract
+        {
+            out.lifts.push(P2::new(target.x, target.y));
+        }
+        if let Some(from) = cursor {
+            if run == Some(index) {
+                write!(out.d[index], " L {:.4} {:.4}", target.x, target.y)
+                    .expect("write move segment");
+            } else {
+                write!(
+                    out.d[index],
+                    " M {:.4} {:.4} L {:.4} {:.4}",
+                    from.x, from.y, target.x, target.y
+                )
+                .expect("write move segment");
+            }
+            run = Some(index);
+        }
+        cursor = Some(target);
+    }
+    out
+}
+
+/// One column of a comparison figure.
+struct ComparePanel<'a> {
+    /// Panel heading, e.g. `"conformal spiral"`.
+    title: &'a str,
+    /// This candidate's own colour: its CUT stroke here, and its stroke in the
+    /// overlay. Chosen distinct from the link green, the air red and the
+    /// ambiguity magenta.
+    colour: &'a str,
+    /// `None` means this candidate produced no path at all. The panel is then
+    /// drawn EMPTY, carrying `note`, rather than omitted — an absent panel
+    /// reads as "not tried", which is exactly the wrong thing to conclude
+    /// about a refusal.
+    cost: Option<&'a CandidateCost>,
+    /// Printed inside the panel when `cost` is `None`; appended under the
+    /// numbers otherwise. Keep it to one short line.
+    note: &'a str,
+}
+
+/// XML-escape a label. The notes carry `Debug` output of refusal enums, so
+/// this is cheap insurance rather than a live concern.
+fn xml_text(raw: &str) -> String {
+    raw.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Union of `[min_x, min_y, max_x, max_y]` boxes.
+fn union_bbox(into: &mut Option<[f64; 4]>, other: [f64; 4]) {
+    *into = Some(match *into {
+        None => other,
+        Some([x0, y0, x1, y1]) => [
+            x0.min(other[0]),
+            y0.min(other[1]),
+            x1.max(other[2]),
+            y1.max(other[3]),
+        ],
+    });
+}
+
+/// The link stroke — the relinker's stay-down connections.
+const LINK_COLOUR: &str = "#00a000";
+/// The air stroke — rapids and fed descents.
+const AIR_COLOUR: &str = "#e41a1c";
+/// The ambiguity stroke. See [`MoveClass::Other`].
+const OTHER_COLOUR: &str = "#ff00ff";
+
+/// Write this arm's two comparison figures and return their paths.
+///
+/// * `{slug}_compare_f2.svg` — one panel per candidate, **identical scale and
+///   identical panel size**, each labelled with its own measured row.
+/// * `{slug}_overlay_f2.svg` — the same three paths superimposed in ONE panel
+///   at 45 % opacity, so agreement and divergence are directly visible.
+///
+/// Both are laid out in world millimetres and follow this file's existing
+/// convention of **not** flipping Y, so they are mirrored vertically against
+/// the machine frame exactly as `{slug}_xy_f2.svg` is. Keeping the convention
+/// matters more than fixing it: an operator comparing the new figure against
+/// the old one must not have to mirror one of them in their head.
+fn write_comparison_svgs(
+    slug: &str,
+    label: &str,
+    boundary: &[Polygon2],
+    panels: &[ComparePanel<'_>],
+) -> (PathBuf, PathBuf) {
+    let output_dir = svg_output_dir();
+    std::fs::create_dir_all(&output_dir).expect("create F2 SVG output directory");
+
+    // -- one shared extent for every panel: that IS the "same scale" claim --
+    let mut extent: Option<[f64; 4]> = None;
+    for polygon in boundary {
+        union_bbox(&mut extent, polygon.bbox());
+    }
+    let drawings: Vec<Option<PathDrawing>> = panels
+        .iter()
+        .map(|panel| panel.cost.map(|cost| draw_toolpath(&cost.path)))
+        .collect();
+    for drawing in drawings.iter().flatten() {
+        if let Some(bbox) = drawing.bbox {
+            union_bbox(&mut extent, bbox);
+        }
+    }
+    // A region with no polygon AND no path cannot be laid out; fall back to a
+    // unit box so the figure still emits and says so, rather than panicking on
+    // an arm that refused everything.
+    let [mut x0, mut y0, mut x1, mut y1] = extent.unwrap_or([0.0, 0.0, 1.0, 1.0]);
+    let span = (x1 - x0).max(y1 - y0).max(1e-6);
+    let pad = 0.04 * span;
+    x0 -= pad;
+    y0 -= pad;
+    x1 += pad;
+    y1 += pad;
+    let (pw, ph) = ((x1 - x0).max(1e-6), (y1 - y0).max(1e-6));
+    let scale = pw.max(ph);
+
+    let gap = 0.07 * scale;
+    let font = 0.030 * scale;
+    let line = 1.32 * font;
+    let label_h = 6.4 * line;
+    let stroke = 0.0032 * scale;
+    let dash = format!("{:.4} {:.4}", 4.0 * stroke, 3.0 * stroke);
+    let marker_r = 2.4 * stroke;
+
+    // The legend is a FIXED block of prose — an array, not a `Vec`, so its
+    // line count and the block height it drives cannot drift apart.
+    let legend = [
+        format!(
+            "LEGEND — every panel is the SAME REGION at the SAME SCALE in an IDENTICALLY SIZED \
+             viewBox ({pw:.2} x {ph:.2} mm), so shapes compare directly by eye."
+        ),
+        "black = region boundary.   coloured solid = CUTTING moves (each candidate has its own \
+         colour, the same one it carries in the overlay figure)."
+            .to_owned(),
+        "green = SURFACE LINKS the relinker ADDED (stay-down, no lift).   red dashed = AIR: \
+         rapids of every intent, plus fed descents into material."
+            .to_owned(),
+        "red rings = LIFT POINTS (one per kept retract). A field of rings IS the retract wall.   \
+         magenta = UNCLASSIFIED move (see MoveClass::Other) — expected count 0."
+            .to_owned(),
+        "A plunge is XY-degenerate: it draws as a point, not a line, so it shows up in the counts \
+         and the markers rather than as visible stroke."
+            .to_owned(),
+        "Drawn from the COSTED path — after relink_fragments + reconcile — so the links and lifts \
+         drawn are the ones the F-034 time under each panel charges."
+            .to_owned(),
+        FRESH_STOCK_LABEL.to_owned(),
+        format!(
+            "Y IS NOT FLIPPED (this file's existing convention, shared with {slug}_xy_f2.svg), \
+             so the image is mirrored vertically against the machine frame."
+        ),
+    ];
+    let legend_h = (legend.len() as f64 + 1.4) * line;
+
+    let panel_count = panels.len().max(1) as f64;
+    let view_w = gap + panel_count * (pw + gap);
+    let view_h = gap + ph + label_h + legend_h + gap;
+    // Pixel width of both figures. The pixel HEIGHT is derived per figure from
+    // that figure's own aspect ratio inside `header`, so a viewer that ignores
+    // `viewBox` still gets undistorted shapes.
+    let px_w = 2600.0_f64;
+
+    let header = |title: &str, w: f64, h: f64| -> String {
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w:.4} {h:.4}\" \
+             width=\"{px_w:.0}\" height=\"{:.0}\">\n\
+             <title>{}</title>\n\
+             <rect x=\"0\" y=\"0\" width=\"{w:.4}\" height=\"{h:.4}\" fill=\"white\"/>\n",
+            px_w * h / w,
+            xml_text(title)
+        )
+    };
+
+    let boundary_paths = |svg: &mut String| {
+        for polygon in boundary {
+            writeln!(
+                svg,
+                "<path d=\"{}\" fill=\"none\" stroke=\"black\" stroke-width=\"{:.4}\"/>",
+                svg_path(polygon),
+                1.7 * stroke
+            )
+            .expect("write boundary");
+        }
+    };
+
+    // ---- (1) the side-by-side panels ----------------------------------
+    let mut svg = header(
+        &format!("{label} F2: conformal spiral vs 0deg raster vs direction field"),
+        view_w,
+        view_h,
+    );
+    for (i, panel) in panels.iter().enumerate() {
+        let ox = gap + i as f64 * (pw + gap);
+        let oy = gap;
+        writeln!(
+            svg,
+            "<rect x=\"{ox:.4}\" y=\"{oy:.4}\" width=\"{pw:.4}\" height=\"{ph:.4}\" fill=\"none\" \
+             stroke=\"#999999\" stroke-width=\"{:.4}\"/>",
+            0.6 * stroke
+        )
+        .expect("write panel frame");
+        writeln!(
+            svg,
+            "<g transform=\"translate({:.4} {:.4})\">",
+            ox - x0,
+            oy - y0
+        )
+        .expect("open panel group");
+        boundary_paths(&mut svg);
+        if let Some(drawing) = drawings.get(i).and_then(Option::as_ref) {
+            for class in MoveClass::ALL {
+                let index = class.index();
+                if drawing.d[index].is_empty() {
+                    continue;
+                }
+                let (colour, width, extra) = match class {
+                    MoveClass::Cut => (panel.colour, stroke, String::new()),
+                    MoveClass::Link => (LINK_COLOUR, 1.25 * stroke, String::new()),
+                    MoveClass::Air => (
+                        AIR_COLOUR,
+                        0.8 * stroke,
+                        format!(" stroke-dasharray=\"{dash}\""),
+                    ),
+                    MoveClass::Other => (OTHER_COLOUR, 1.6 * stroke, String::new()),
+                };
+                writeln!(
+                    svg,
+                    "<path d=\"{}\" fill=\"none\" stroke=\"{colour}\" \
+                     stroke-width=\"{width:.4}\" stroke-linecap=\"round\"{extra}/>",
+                    drawing.d[index].trim_start()
+                )
+                .expect("write class path");
+            }
+            for lift in &drawing.lifts {
+                writeln!(
+                    svg,
+                    "<circle cx=\"{:.4}\" cy=\"{:.4}\" r=\"{marker_r:.4}\" fill=\"none\" \
+                     stroke=\"{AIR_COLOUR}\" stroke-width=\"{:.4}\"/>",
+                    lift.x,
+                    lift.y,
+                    0.7 * stroke
+                )
+                .expect("write lift marker");
+            }
+        }
+        svg.push_str("</g>\n");
+
+        // Panel label: the candidate's OWN measured row, under its own picture.
+        let mut rows: Vec<String> = vec![format!("{}. {}", i + 1, panel.title)];
+        match panel.cost {
+            Some(cost) => {
+                rows.push(format!(
+                    "fragments {}   links {}   RETRACTS {}",
+                    cost.fragments, cost.linked, cost.kept_retracts
+                ));
+                rows.push(format!(
+                    "cut {:.1} mm      F-034 time {:.1} s",
+                    cost.cutting_mm, cost.time_s
+                ));
+                let drawn = drawings
+                    .get(i)
+                    .and_then(Option::as_ref)
+                    .map_or([0usize; 4], |d| d.counts);
+                rows.push(format!(
+                    "moves {}  (cut {}  link {}  air {}  UNCLASSIFIED {})",
+                    cost.moves,
+                    drawn[MoveClass::Cut.index()],
+                    drawn[MoveClass::Link.index()],
+                    drawn[MoveClass::Air.index()],
+                    drawn[MoveClass::Other.index()]
+                ));
+                if !panel.note.is_empty() {
+                    rows.push(panel.note.to_owned());
+                }
+            }
+            None => {
+                rows.push("NO PATH — this candidate produced none.".to_owned());
+                rows.push(panel.note.to_owned());
+                rows.push(
+                    "The panel is drawn EMPTY rather than omitted: an absent panel would read \
+                     as 'not tried'."
+                        .to_owned(),
+                );
+            }
+        }
+        for (row, text) in rows.iter().enumerate() {
+            writeln!(
+                svg,
+                "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"monospace\" \
+                 font-size=\"{font:.4}\" fill=\"#111111\">{}</text>",
+                ox + 0.01 * pw,
+                oy + ph + line * (row as f64 + 1.0),
+                xml_text(text)
+            )
+            .expect("write panel label");
+        }
+        if panel.cost.is_none() {
+            writeln!(
+                svg,
+                "<text x=\"{:.4}\" y=\"{:.4}\" font-family=\"monospace\" \
+                 font-size=\"{:.4}\" fill=\"#999999\" text-anchor=\"middle\">{}</text>",
+                ox + 0.5 * pw,
+                oy + 0.5 * ph,
+                1.4 * font,
+                xml_text("(no path)")
+            )
+            .expect("write empty-panel mark");
+        }
+    }
+    for (row, text) in legend.iter().enumerate() {
+        writeln!(
+            svg,
+            "<text x=\"{gap:.4}\" y=\"{:.4}\" font-family=\"monospace\" font-size=\"{:.4}\" \
+             fill=\"#333333\">{}</text>",
+            gap + ph + label_h + line * (row as f64 + 1.0),
+            0.86 * font,
+            xml_text(text)
+        )
+        .expect("write legend");
+    }
+    svg.push_str("</svg>\n");
+    let compare_path = output_dir.join(format!("{slug}_compare_f2.svg"));
+    std::fs::write(&compare_path, svg).expect("write F2 comparison SVG");
+
+    // ---- (2) the overlay ----------------------------------------------
+    //
+    // Deliberately a DIFFERENT question from the panels, and kept in its own
+    // file for that reason: the panels ask "what does each one look like", the
+    // overlay asks "where do they agree". Only CUT and LINK are drawn — air
+    // moves would fill the frame with three overlapping rapid webs and hide
+    // the answer.
+    let overlay_lines = 2.0 + panels.len() as f64;
+    let overlay_h = gap + ph + (overlay_lines + 1.4) * line + gap;
+    let overlay_w = gap + pw + gap;
+    let mut overlay = header(
+        &format!("{label} F2: the three candidates superimposed"),
+        overlay_w,
+        overlay_h,
+    );
+    writeln!(
+        overlay,
+        "<g transform=\"translate({:.4} {:.4})\">",
+        gap - x0,
+        gap - y0
+    )
+    .expect("open overlay group");
+    boundary_paths(&mut overlay);
+    for (i, panel) in panels.iter().enumerate() {
+        let Some(drawing) = drawings.get(i).and_then(Option::as_ref) else {
+            continue;
+        };
+        for (class, extra) in [
+            (MoveClass::Cut, String::new()),
+            (MoveClass::Link, format!(" stroke-dasharray=\"{dash}\"")),
+        ] {
+            let index = class.index();
+            if drawing.d[index].is_empty() {
+                continue;
+            }
+            writeln!(
+                overlay,
+                "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.4}\" \
+                 stroke-opacity=\"0.45\" stroke-linecap=\"round\"{extra}/>",
+                drawing.d[index].trim_start(),
+                panel.colour,
+                stroke
+            )
+            .expect("write overlay path");
+        }
+    }
+    overlay.push_str("</g>\n");
+    let mut overlay_legend: Vec<String> = vec![format!(
+        "OVERLAY — the same three paths in ONE panel at the SAME scale, 45% opacity. Solid = \
+         cutting moves, dashed = surface links. AIR MOVES ARE OMITTED here (three rapid webs \
+         would hide the answer); see {slug}_compare_f2.svg for those."
+    )];
+    for panel in panels {
+        overlay_legend.push(format!(
+            "{} — {}",
+            panel.colour,
+            match panel.cost {
+                Some(cost) => format!(
+                    "{}: {} fragments, {} links, {} retracts, {:.1} mm, {:.1} s",
+                    panel.title,
+                    cost.fragments,
+                    cost.linked,
+                    cost.kept_retracts,
+                    cost.cutting_mm,
+                    cost.time_s
+                ),
+                None => format!("{}: NO PATH ({})", panel.title, panel.note),
+            }
+        ));
+    }
+    overlay_legend.push(FRESH_STOCK_LABEL.to_owned());
+    for (row, text) in overlay_legend.iter().enumerate() {
+        writeln!(
+            overlay,
+            "<text x=\"{gap:.4}\" y=\"{:.4}\" font-family=\"monospace\" font-size=\"{:.4}\" \
+             fill=\"#333333\">{}</text>",
+            gap + ph + line * (row as f64 + 1.0),
+            0.86 * font,
+            xml_text(text)
+        )
+        .expect("write overlay legend");
+    }
+    overlay.push_str("</svg>\n");
+    let overlay_path = output_dir.join(format!("{slug}_overlay_f2.svg"));
+    std::fs::write(&overlay_path, overlay).expect("write F2 overlay SVG");
+
+    (compare_path, overlay_path)
+}
+
+/// The candidate colours, fixed here so the panels and the overlay cannot
+/// drift apart. All three are distinct from the link green, the air red and
+/// the ambiguity magenta.
+const SPIRAL_COLOUR: &str = "#253494";
+/// See [`SPIRAL_COLOUR`].
+const RASTER_COLOUR: &str = "#cc4c02";
+/// See [`SPIRAL_COLOUR`].
+const FIELD_COLOUR: &str = "#6a51a3";
+
+// ── THE DIRECTION-FIELD CANDIDATE (added 2026-08-30) ────────────────────
+//
+// `direction_field` was FALSIFIED on Wanaka thin-organic region 1 — 6,589
+// polylines against the 141-fragment PCA-cell reference (FINDINGS.md §F1-1) —
+// and then never run on a clean analytic fixture at all. Two reasons to run it
+// here rather than treat that as settled:
+//
+// * the falsification was on SHALLOW TERRAIN, where the principal-curvature
+//   direction it derives its field from is NOISE. On a branched ribbon the
+//   curvature may genuinely align with the arms, which is the opposite regime;
+// * the operator's observation is that its paths "look good". That is an
+//   observation about a picture and it deserves a number, on geometry where a
+//   number means something.
+//
+// So it is costed through the SAME `relink_and_cost` as the other two, with
+// the same cutter, stepover source, feeds, kinematics, boundary and
+// `link_ceiling: None`. If it refuses or produces nothing, that is printed
+// plainly and its panel is drawn empty.
+
+/// The F1 falsification figure, quoted so this arm's polyline count has
+/// something to be read against. `planning/conformal_finish_2026-08-28/
+/// FINDINGS.md` §F1-1, row "TOTAL polylines".
+const F1_FIELD_POLYLINES_REGION1: usize = 6_589;
+
+/// Everything one direction-field arm produced.
+struct FieldCandidate {
+    /// `None` when the solve produced no usable path — see `note`.
+    cost: Option<CandidateCost>,
+    /// Why there is no cost, or a one-line qualifier when there is one.
+    note: String,
+    /// Measured adjacent-LEVEL 3D spacing, sorted ascending, for the
+    /// fair-comparison block. Empty when fewer than two levels carried curves.
+    spacings_sorted: Vec<f64>,
+}
+
+/// Print the [`FieldReport`] essentials, so a bad field is DIAGNOSABLE rather
+/// than merely slow. Grouped exactly as `direction_field_wanaka_f1.rs`'s
+/// Stage A groups them, so the two instruments' blocks read alike.
+fn print_field_report(label: &str, result: &FieldPathResult, report: &FieldReport) {
+    eprintln!("\n   ===== DIRECTION-FIELD SOLVE — {label} =====");
+    eprintln!(
+        "     field: D = t1 (max signed principal direction), V = D-perp, \
+         |V| = sqrt((k_s + 1/r)/8)"
+    );
+    eprintln!("     -- region --");
+    eprintln!(
+        "       region triangles            {:>10}",
+        report.region_triangles
+    );
+    eprintln!(
+        "       region vertices             {:>10}",
+        report.region_vertices
+    );
+    eprintln!(
+        "       vertex components           {:>10}",
+        report.vertex_components
+    );
+    eprintln!("     -- direction field (§4.2) --");
+    eprintln!(
+        "       BFS orientation seeds       {:>10}",
+        report.direction_seeds
+    );
+    eprintln!(
+        "       SINGULAR (isotropic) tris   {:>10}   <<< a flat or umbilic region has no \
+         preferred",
+        report.degenerate_triangles
+    );
+    eprintln!(
+        "\x20                                            direction; this is where a curvature-\
+         derived"
+    );
+    eprintln!("\x20                                            field has nothing to derive from");
+    eprintln!(
+        "       transported tris            {:>10}",
+        report.transported_triangles
+    );
+    eprintln!(
+        "       orientation inconsistencies {:>10}",
+        report.orientation_inconsistencies
+    );
+    eprintln!(
+        "       unoriented tris (want 0)    {:>10}",
+        report.unoriented_triangles
+    );
+    eprintln!("     -- target field V (Eq. 13) --");
+    eprintln!(
+        "       CLAMPED-magnitude tris      {:>10}",
+        report.clamped_magnitude_triangles
+    );
+    eprintln!(
+        "       |V| min / mean / max        {:>10.6} / {:.6} / {:.6}",
+        report.min_target_magnitude, report.mean_target_magnitude, report.max_target_magnitude
+    );
+    eprintln!("     -- Poisson solve (Eq. 15) --");
+    eprintln!(
+        "       CG iterations               {:>10}",
+        report.cg_iterations
+    );
+    eprintln!(
+        "       CG relative residual        {:>10.3e}",
+        report.cg_residual
+    );
+    eprintln!(
+        "       CG converged                {:>10}   <<< a FALSE here invalidates every number \
+         below it",
+        report.cg_converged
+    );
+    eprintln!("     -- level schedule + marching triangles (§3.3) --");
+    let (min_c, med_c, max_c) = min_med_max_usize(&report.level_component_counts);
+    eprintln!(
+        "       levels                      {:>10}",
+        result.levels.len()
+    );
+    eprintln!("       components/level min/med/max {min_c:>9} / {med_c} / {max_c}");
+    eprintln!(
+        "       closed loops                {:>10}",
+        report.closed_loops
+    );
+    eprintln!(
+        "       saddle/degenerate crossings {:>10}",
+        report.degenerate_crossings
+    );
+    eprintln!(
+        "       floored increments          {:>10}",
+        report.floored_increments
+    );
+    eprintln!(
+        "       level cap hit               {:>10}",
+        report.level_cap_hit
+    );
+    eprintln!(
+        "       TOTAL POLYLINES             {:>10}   <<< every one is a fragment the relinker \
+         must",
+        report.total_polylines
+    );
+    eprintln!("\x20                                            link or lift out of");
+    if let (Some(first), Some(last)) = (result.levels.first(), result.levels.last()) {
+        eprintln!("       level range                 {first:>10.6} .. {last:.6}");
+    }
+    eprintln!(
+        "     CONTEXT: on Wanaka thin-organic region 1 this module produced \
+         {F1_FIELD_POLYLINES_REGION1} polylines\n\
+         \x20      against a {WANAKA_R1_PCA_FRAGMENTS}-fragment PCA-cell reference and was \
+         FALSIFIED (FINDINGS.md §F1-1). That was\n\
+         \x20      SHALLOW TERRAIN, where principal curvature is noise. This run is the first on \
+         a clean\n\
+         \x20      analytic fixture, so the count above is a NEW observation, not a re-run of \
+         that one."
+    );
+}
+
+/// Adjacent-**level** 3D spacing of the field's iso-curves.
+///
+/// **Restates [`stage_c`]'s method** — every `SAMPLE_STRIDE`th point of one
+/// curve family against the nearest SEGMENT of the previous one, contact
+/// points, geometry only — so the number that lands in the fair-comparison
+/// block is measured the same way the spiral's is. The only difference is what
+/// "adjacent" means: rings for the spiral, consecutive `polyline_levels` here.
+///
+/// **Bounded twice**, and the bounds are stated because they change what the
+/// number means: at most `MAX_LEVEL_PAIRS` level pairs, spread evenly across
+/// the schedule, and at most `MAX_POINTS_PER_PAIR` points from each. The scan
+/// is O(points × segments in the previous level) and a field solve can emit
+/// thousands of polylines, so an unbounded form goes quadratic on exactly the
+/// fixtures worth measuring. What is reported is therefore a SAMPLE of the
+/// field's spacing distribution, not a census of it.
+fn field_level_spacing(result: &FieldPathResult) -> Vec<f64> {
+    /// Restated from [`stage_c`], and the FLOOR on the point stride below.
+    const SAMPLE_STRIDE: usize = 5;
+    /// Level PAIRS measured, spread evenly across the schedule rather than
+    /// taken from its start — a field's first levels sit at one end of the
+    /// surface, so the first `N` pairs would be a statement about that end.
+    const MAX_LEVEL_PAIRS: usize = 40;
+    /// Points sampled per pair. The scan is `points × segments-in-the-previous
+    /// level`, and a level of a falsified field can carry tens of components;
+    /// on Wanaka region 1 this module emitted 6,589 polylines over 253 levels,
+    /// which is where the unbounded form would have gone quadratic.
+    const MAX_POINTS_PER_PAIR: usize = 200;
+
+    let level_count = result.levels.len();
+    if level_count < 2 {
+        return Vec::new();
+    }
+    let pair_stride = ((level_count - 1) / MAX_LEVEL_PAIRS).max(1);
+    let mut spacings: Vec<f64> = Vec::new();
+    for level in (1..level_count).step_by(pair_stride) {
+        let previous = result.polylines_at(level - 1);
+        let current = result.polylines_at(level);
+        if previous.is_empty() || current.is_empty() {
+            continue;
+        }
+        let available: usize = current.iter().map(|line| line.len()).sum();
+        let stride = (available / MAX_POINTS_PER_PAIR).max(SAMPLE_STRIDE);
+        for line in &current {
+            for point in line.iter().step_by(stride) {
+                let mut best = f64::INFINITY;
+                for other in &previous {
+                    for seg in other.windows(2) {
+                        let distance = point_segment_distance_sq(*point, seg[0], seg[1]);
+                        if distance < best {
+                            best = distance;
+                        }
+                    }
+                }
+                if best.is_finite() {
+                    spacings.push(best.sqrt());
+                }
+            }
+        }
+    }
+    spacings.sort_by(f64::total_cmp);
+    spacings
+}
+
+/// Solve the direction field on `region_triangles`, convert its contact
+/// polylines to CL exactly as the spiral's are, and cost the result through
+/// the SAME production relink.
+fn field_candidate(
+    label: &str,
+    fixture: Fixture<'_>,
+    region_triangles: &[u32],
+    polygons: &[Polygon2],
+) -> FieldCandidate {
+    use rs_cam_core::region_set::RegionSet;
+
+    let Fixture {
+        mesh,
+        index,
+        cutter,
+        kinematics,
+        safe_z,
+        ..
+    } = fixture;
+
+    let (result, report) =
+        direction_field::solve_field_paths(mesh, region_triangles, BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    print_field_report(label, &result, &report);
+
+    if result.polylines.is_empty() {
+        let note = format!(
+            "the direction-field solve produced NO polyline on {} region triangles \
+             ({} singular, CG converged {})",
+            report.region_triangles, report.degenerate_triangles, report.cg_converged
+        );
+        eprintln!("\n     REFUSAL / EMPTY: {note}.");
+        eprintln!(
+            "     That is a RESULT, not a gap: it says the curvature-derived field had nothing \
+             to work\n\
+             \x20      with on this surface. The comparison figure draws its panel EMPTY and \
+             says so."
+        );
+        return FieldCandidate {
+            cost: None,
+            note,
+            spacings_sorted: Vec::new(),
+        };
+    }
+
+    let converted = cl_polylines(&result.polylines, mesh, index, cutter);
+    eprintln!("\n     -- contact -> cutter-centre (the SAME conversion the spiral arm uses) --");
+    eprintln!(
+        "       contact points in           {:>10}",
+        converted.input_points
+    );
+    eprintln!(
+        "       points dropped (no contact) {:>10}",
+        converted.dropped_points
+    );
+    eprintln!(
+        "       polylines dropped (< 2 pts) {:>10}",
+        converted.dropped_polylines
+    );
+    eprintln!(
+        "       CL polylines out            {:>10}",
+        converted.polylines.len()
+    );
+    if converted.polylines.is_empty() {
+        let note = format!(
+            "all {} field polylines were lost in the CL conversion",
+            result.polylines.len()
+        );
+        eprintln!("\n     REFUSAL: {note}.");
+        return FieldCandidate {
+            cost: None,
+            note,
+            spacings_sorted: Vec::new(),
+        };
+    }
+
+    let raw = polylines_to_toolpath(&converted.polylines, FEED_MM_MIN, PLUNGE_MM_MIN, safe_z);
+    let mut cutting = 0usize;
+    let mut escapes = 0usize;
+    for mv in &raw.moves {
+        if !mv.move_type.is_cutting() {
+            continue;
+        }
+        cutting += 1;
+        let point = P2::new(mv.target.x, mv.target.y);
+        if !polygons.iter().any(|p| p.contains_point(&point)) {
+            escapes += 1;
+        }
+    }
+    eprintln!("\n     -- containment: COUNTED, NOT CLIPPED --");
+    eprintln!("       cutting moves               {cutting:>10}");
+    eprintln!(
+        "       outside the region          {escapes:>10}   ({:.3}%)",
+        100.0 * escapes as f64 / cutting.max(1) as f64
+    );
+    eprintln!(
+        "       DELIBERATE DEVIATION FROM F1 (direction_field_wanaka_f1.rs:983-1010), which \
+         CLIPS.\n\
+         \x20      `clip_toolpath_to_boundary` SPLITS a polyline, and FRAGMENTS is one of the \
+         five columns\n\
+         \x20      this three-way table compares — clipping one row would manufacture fragments \
+         into it.\n\
+         \x20      Stage D already counts-rather-than-clips the spiral for the same reason, so \
+         all three\n\
+         \x20      rows are now treated alike. A nonzero escape count is the LATERAL CL SHIFT, \
+         not an\n\
+         \x20      uncontained path."
+    );
+
+    eprintln!("\n     -- F-034 cost through the SAME production relink --");
+    eprintln!("       {FRESH_STOCK_LABEL}");
+    let region_set = RegionSet::new(polygons.to_vec());
+    let cost = relink_and_cost(raw, mesh, index, cutter, &region_set, &kinematics, safe_z);
+    eprintln!(
+        "       moves {}, fragments {}, linked {}, kept retracts {}, cutting {:.1} mm, \
+         time {:.1} s",
+        cost.moves, cost.fragments, cost.linked, cost.kept_retracts, cost.cutting_mm, cost.time_s
+    );
+
+    let spacings_sorted = field_level_spacing(&result);
+    eprintln!("\n     -- ACHIEVED SPACING OF THE FIELD'S OWN ISO-CURVES (3D, contact points) --");
+    if spacings_sorted.is_empty() {
+        eprintln!(
+            "       NOT MEASURED — fewer than two levels carried curves, so nothing was \
+             adjacent to measure."
+        );
+    } else {
+        eprintln!(
+            "       samples {}, min {:.5} / median {:.5} / p90 {:.5} / max {:.5} mm",
+            spacings_sorted.len(),
+            percentile(&spacings_sorted, 0.0),
+            percentile(&spacings_sorted, 0.50),
+            percentile(&spacings_sorted, 0.90),
+            percentile(&spacings_sorted, 1.0)
+        );
+        eprintln!(
+            "       Method restated from Stage C — a sampled point of level i against the \
+             nearest SEGMENT\n\
+             \x20      of level i-1, contact points, geometry only — but BOUNDED: at most 40 \
+             level pairs\n\
+             \x20      spread evenly across the schedule, at most 200 points from each, because \
+             the scan is\n\
+             \x20      O(points x segments) and a field solve emits thousands of polylines. So \
+             this is a\n\
+             \x20      SAMPLE of the distribution, not a census of it.\n\
+             \x20      It is also a THIRD spacing basis: the spiral spaces on the 3D SURFACE, \
+             the raster in\n\
+             \x20      XY PROJECTION, and this on the Poisson field's own LEVEL SET. Three \
+             bases, one\n\
+             \x20      table — read the fair-comparison block in Stage D before comparing any \
+             two times."
+        );
+    }
+
+    let note = format!(
+        "{} polylines, {} levels, {} escapes counted (not clipped)",
+        report.total_polylines,
+        result.levels.len(),
+        escapes
+    );
+    FieldCandidate {
+        cost: Some(cost),
+        note,
+        spacings_sorted,
+    }
 }
 
 /// Everything every costed arm shares. **Restated from
@@ -4519,6 +5470,10 @@ struct StageDOutcome {
     /// verdict that quotes only the spiral's half is the mistake FINDINGS_F2
     /// §F2-2 already made once.
     raster: CandidateCost,
+    /// The direction-field iso-curve candidate over the SAME region through the
+    /// SAME relink, added 2026-08-30. `None` when the solve produced nothing —
+    /// which on an umbilic or flat surface is the expected answer, not a gap.
+    field: Option<CandidateCost>,
     cl_points: usize,
 }
 
@@ -4627,7 +5582,7 @@ fn stage_d(
     report: &SpiralReport,
     stepover_mm: f64,
     spacings_sorted: &[f64],
-    kind: ArmKind,
+    run: &ArmRun<'_>,
 ) -> Option<StageDOutcome> {
     use rs_cam_core::region_set::RegionSet;
 
@@ -4639,6 +5594,7 @@ fn stage_d(
         safe_z,
         effective_min_z,
     } = fixture;
+    let kind = run.kind;
 
     eprintln!(
         "========== STAGE F2-D — CL conversion, containment, F-034 cost CONTEXT ==========\n"
@@ -4738,14 +5694,45 @@ fn stage_d(
         safe_z,
     );
 
+    // -- THE THIRD CANDIDATE (2026-08-30) --
+    //
+    // Costed here, between the raster and the table, so that every row of the
+    // table below is produced by the same `relink_and_cost` call site on the
+    // same region in the same run. On a FIXTURE-LIMITED arm it is skipped: its
+    // numbers would inherit the withdrawal, and a third withdrawn row is not
+    // worth the solve.
+    let field = if kind == ArmKind::FixtureLimited {
+        eprintln!(
+            "\n   DIRECTION-FIELD CANDIDATE SKIPPED on a FIXTURE-LIMITED arm — BY DECISION, NOT\n\
+             \x20  OMISSION. Every fine-geometry number on this arm is withdrawn (1.42 mm facets \
+             against\n\
+             \x20  a {stepover_mm:.4} mm stepover), and a third withdrawn row would only be \
+             quoted out of\n\
+             \x20  its banner. The field arm is measured on the ANALYTIC arms."
+        );
+        None
+    } else {
+        Some(field_candidate(
+            run.label,
+            fixture,
+            &region.triangles,
+            std::slice::from_ref(&region.polygon),
+        ))
+    };
+    let field_cost = field.as_ref().and_then(|f| f.cost.as_ref());
+
     eprintln!(
         "\n     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
         "arm", "moves", "fragments", "linked", "RETRACTS", "cut mm", "time s"
     );
-    for (label, cost) in [
+    let mut rows: Vec<(&str, &CandidateCost)> = vec![
         ("conformal spiral (1 polyline)", &spiral_cost),
         ("0° raster (ball, same region)", &raster_cost),
-    ] {
+    ];
+    if let Some(cost) = field_cost {
+        rows.push(("direction-field iso-curves", cost));
+    }
+    for (label, cost) in rows {
         eprintln!(
             "     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10.1} {:>9.1}",
             label,
@@ -4756,6 +5743,15 @@ fn stage_d(
             cost.cutting_mm,
             cost.time_s
         );
+    }
+    if field_cost.is_none()
+        && let Some(candidate) = field.as_ref()
+    {
+        eprintln!(
+            "     {:<30} {:>8} {:>10} {:>8} {:>10} {:>10} {:>9}",
+            "direction-field iso-curves", "-", "-", "-", "-", "-", "-"
+        );
+        eprintln!("       ^ NO PATH: {}", candidate.note);
     }
     eprintln!(
         "\n     RETRACTS and cut mm are the columns this phase is about. The spiral's pitch is\n\
@@ -4802,22 +5798,52 @@ fn stage_d(
         isotropic.p90,
         isotropic.max
     );
+    match field.as_ref().map(|f| f.spacings_sorted.as_slice()) {
+        Some(field_spacings) if !field_spacings.is_empty() => eprintln!(
+            "     {:<44} {:>10.5} {:>10.5} {:>10.5} {:>10.5}",
+            "field: MEASURED adjacent-LEVEL 3D spacing",
+            percentile(field_spacings, 0.0),
+            percentile(field_spacings, 0.50),
+            percentile(field_spacings, 0.90),
+            percentile(field_spacings, 1.0)
+        ),
+        Some(_) => eprintln!(
+            "     {:<44} {:>10} {:>10} {:>10} {:>10}",
+            "field: adjacent-LEVEL 3D spacing", "-", "NOT MEAS", "-", "-"
+        ),
+        None => eprintln!(
+            "     {:<44} {:>10} {:>10} {:>10} {:>10}",
+            "field: NOT RUN on this arm", "-", "-", "-", "-"
+        ),
+    }
     eprintln!(
         "     {:<44} {:>10.5}",
-        "COMMANDED XY stepover (both arms)", stepover_mm
+        "COMMANDED XY stepover (raster only)", stepover_mm
     );
     eprintln!(
         "     ({} region triangles, {:.2} mm² of 3D area weighted)",
         cross.samples, cross.total_area_mm2
     );
     eprintln!(
-        "\n     A LIKE-FOR-LIKE TIME COMPARISON IS NOT POSSIBLE WITHOUT CHANGING THE RASTER.\n\
-         \x20    The raster row above would have to be re-run at an XY stepover scaled by\n\
-         \x20    cos(local slope) — a variable-stepover raster this file does not have and may\n\
-         \x20    not add, because `raster_candidate` is restated verbatim from F1 and changing\n\
-         \x20    it here would break the cross-instrument comparability that restatement buys.\n\
-         \x20    Until that exists, the ratio below is a RAW OBSERVATION, NOT A VERDICT: it\n\
-         \x20    compares a path that holds the scallop against one that does not."
+        "\n     A LIKE-FOR-LIKE TIME COMPARISON IS NOT POSSIBLE WITHOUT CHANGING THE RASTER, AND\n\
+         \x20    THE THIRD ROW MAKES THAT WORSE, NOT BETTER. THREE ROWS, THREE SPACING BASES:\n\
+         \x20      * the SPIRAL spaces on the 3D SURFACE — its ring step is sized by the coverage\n\
+         \x20        law directly, so its measured spacing IS the finish it delivers;\n\
+         \x20      * the RASTER spaces in XY PROJECTION at the commanded stepover, so on slope\n\
+         \x20        its passes land further apart along the surface than that number says and it\n\
+         \x20        UNDER-COVERS exactly where the spiral covers correctly;\n\
+         \x20      * the DIRECTION FIELD spaces on ITS OWN Poisson LEVEL SET, whose increment is\n\
+         \x20        scheduled from |V| = sqrt((k_s + 1/r)/8) — a third basis again, and one that\n\
+         \x20        is neither of the other two.\n\
+         \x20    The raster row would have to be re-run at an XY stepover scaled by cos(local\n\
+         \x20    slope) — a variable-stepover raster this file does not have and may not add,\n\
+         \x20    because `raster_candidate` is restated verbatim from F1 and changing it here\n\
+         \x20    would break the cross-instrument comparability that restatement buys. Nothing\n\
+         \x20    equivalent exists for the field row either: its spacing is an OUTPUT of the\n\
+         \x20    level schedule, not a dial that can be re-commanded to match.\n\
+         \x20    So the ratios below are RAW OBSERVATIONS, NOT VERDICTS. Compare the three\n\
+         \x20    spacing rows FIRST; a row that spaces tighter is buying finish with its time,\n\
+         \x20    and a row that spaces wider is selling it."
     );
     if kind == ArmKind::Analytic {
         eprintln!(
@@ -4874,9 +5900,64 @@ fn stage_d(
          \x20    sufficient\", and it is stated against WANAKA regions (step 4), not this one.\n"
     );
 
+    // -- THE OPERATOR'S PICTURE (2026-08-30) --
+    //
+    // Emitted LAST, from the three costed paths above, so the panel labels and
+    // the table are the same numbers by construction rather than by care.
+    if kind == ArmKind::FixtureLimited {
+        eprintln!(
+            "   COMPARISON SVGs SKIPPED on a FIXTURE-LIMITED arm: their panel labels carry \
+             measured\n\
+             \x20  numbers, and a figure travels further from its banner than a table does."
+        );
+    } else {
+        let field_note = field
+            .as_ref()
+            .map_or_else(|| "not run on this arm".to_owned(), |f| f.note.clone());
+        let (compare_path, overlay_path) = write_comparison_svgs(
+            run.slug,
+            run.label,
+            std::slice::from_ref(&region.polygon),
+            &[
+                ComparePanel {
+                    title: "conformal spiral",
+                    colour: SPIRAL_COLOUR,
+                    cost: Some(&spiral_cost),
+                    note: "",
+                },
+                ComparePanel {
+                    title: "0deg ball raster",
+                    colour: RASTER_COLOUR,
+                    cost: Some(&raster_cost),
+                    note: "",
+                },
+                ComparePanel {
+                    title: "direction-field iso-curves",
+                    colour: FIELD_COLOUR,
+                    cost: field_cost,
+                    note: &field_note,
+                },
+            ],
+        );
+        eprintln!("\n   -- THE COMPARISON FIGURES (the operator's request, 2026-08-30) --");
+        eprintln!("     panels : {}", compare_path.display());
+        eprintln!("     overlay: {}", overlay_path.display());
+        eprintln!(
+            "     Three panels, identical scale and identical viewBox size, each labelled with \
+             its OWN\n\
+             \x20    row from the table above. Cutting moves solid in the candidate's colour, \
+             SURFACE\n\
+             \x20    LINKS green, AIR red dashed, LIFT POINTS as red rings — so the trade this \
+             phase is\n\
+             \x20    about is visible as shape rather than only as a number. Drawn from the \
+             COSTED path."
+        );
+    }
+
     Some(StageDOutcome {
         cost: spiral_cost,
         raster: raster_cost,
+        field: field.and_then(|f| f.cost),
         cl_points,
     })
 }
@@ -5044,7 +6125,8 @@ fn stage_e(
 /// `too_many_arguments` fires at eight.
 struct ArmRun<'a> {
     label: &'a str,
-    /// Filename stem for this arm's two SVGs. The terrain FLAT arm keeps its
+    /// Filename stem for this arm's SVGs — `_disk_f2` / `_xy_f2` from Stage B,
+    /// and `_compare_f2` / `_overlay_f2` from Stage D. The terrain FLAT arm keeps its
     /// historical stem so the artifacts FINDINGS_F2 §F2-1 names by filename
     /// stay findable even though their numbers are withdrawn.
     slug: &'a str,
@@ -5096,15 +6178,7 @@ fn run_arm_evidence(
             analytic_spacing_verdict(run.label, samples, target);
         }
 
-        stage_d_outcome = stage_d(
-            fixture,
-            region,
-            result,
-            report,
-            stepover_mm,
-            samples,
-            run.kind,
-        );
+        stage_d_outcome = stage_d(fixture, region, result, report, stepover_mm, samples, run);
         if let Some(outcome) = stage_d_outcome.as_ref() {
             eprintln!(
                 "   Stage D summary: {} CL points on one polyline, {} kept retracts, {:.1} mm \
@@ -5629,6 +6703,28 @@ fn print_trade_verdict(
         raster.cutting_mm,
         raster.time_s
     );
+    // The field row is CONTEXT, not a side of the trade. SIDE 1/2/3 below are
+    // registered for spiral-vs-raster and are deliberately left alone: this
+    // arm's question is whether eliminating N retracts beats an M-fold
+    // over-cover, and a third path with its own spacing basis does not answer
+    // it. It is printed here because the operator asked to SEE all three, and
+    // a figure with three panels beside a table with two rows invites the
+    // reader to assume the missing row was hidden.
+    match outcome.field.as_ref() {
+        Some(field) => eprintln!(
+            "   {:<32} {:>10} {:>10} {:>10} {:>10.1} {:>10.1}   <<< CONTEXT ROW",
+            "direction-field iso-curves",
+            field.fragments,
+            field.linked,
+            field.kept_retracts,
+            field.cutting_mm,
+            field.time_s
+        ),
+        None => eprintln!(
+            "   {:<32} {:>10} {:>10} {:>10} {:>10} {:>10}   <<< NO PATH (see the solve report)",
+            "direction-field iso-curves", "-", "-", "-", "-", "-"
+        ),
+    }
     eprintln!(
         "   {:<32} {:>10} {:>10} {:>10}",
         "Wanaka region 1, 0deg (reference)",
@@ -6689,13 +7785,23 @@ fn arm_band(
                 cleanup.triangles_shaved_by_pinch
             );
             let (report, outcome) = conformal_spiral::plan_spiral(&mesh, &index, &cleaned, params);
+            // Captured for the comparison figure's empty spiral panel: the
+            // picture must say WHY there is no path, in the same words the
+            // stderr transcript uses.
+            let spiral_note: String;
             match outcome {
-                Ok(_) => eprintln!(
-                    "     plan_spiral ACCEPTED it. The census above and the module disagree, \
-                     which is\n\
-                     \x20    a defect in ONE of them — do not proceed until that is resolved."
-                ),
+                Ok(_) => {
+                    spiral_note =
+                        "plan_spiral ACCEPTED this component but it is not costed on this branch"
+                            .to_owned();
+                    eprintln!(
+                        "     plan_spiral ACCEPTED it. The census above and the module disagree, \
+                         which is\n\
+                         \x20    a defect in ONE of them — do not proceed until that is resolved."
+                    );
+                }
                 Err(refusal) => {
+                    spiral_note = format!("plan_spiral REFUSED: {refusal:?}");
                     eprintln!("     REFUSAL: {refusal:?}");
                     match &refusal {
                         SpiralRefusal::NotSimplyConnected { boundary_loops } => eprintln!(
@@ -6745,6 +7851,54 @@ fn arm_band(
                 raster_cost.kept_retracts,
                 shallow_area,
                 raster_cost.kept_retracts as f64 / (shallow_area / 100.0).max(1e-12)
+            );
+
+            // ── THE OPERATOR'S PICTURE ON THE ARM THAT REFUSED ─────────
+            //
+            // This arm never reaches Stage D, so without this block the one
+            // fixture whose retract wall motivated the whole programme would
+            // be the one fixture with no figure. The spiral panel is drawn
+            // EMPTY carrying its refusal, the raster panel is the wall itself,
+            // and the field is run on the WHOLE SHALLOW BAND — the same region
+            // the raster was costed on, so the two drawn rows are a fair pair.
+            let band = "ARM BAND / SHALLOW";
+            let field = field_candidate(band, fixture, &shallow, &shallow_polygons);
+            let (compare_path, overlay_path) = write_comparison_svgs(
+                "slope_band_shallow",
+                band,
+                &shallow_polygons,
+                &[
+                    ComparePanel {
+                        title: "conformal spiral",
+                        colour: SPIRAL_COLOUR,
+                        cost: None,
+                        note: &spiral_note,
+                    },
+                    ComparePanel {
+                        title: "0deg ball raster (the wall)",
+                        colour: RASTER_COLOUR,
+                        cost: Some(&raster_cost),
+                        note: "",
+                    },
+                    ComparePanel {
+                        title: "direction-field iso-curves",
+                        colour: FIELD_COLOUR,
+                        cost: field.cost.as_ref(),
+                        note: &field.note,
+                    },
+                ],
+            );
+            eprintln!("\n     -- THE COMPARISON FIGURES — ARM BAND / SHALLOW --");
+            eprintln!("       panels : {}", compare_path.display());
+            eprintln!("       overlay: {}", overlay_path.display());
+            eprintln!(
+                "       The spiral panel is EMPTY and says why. That absence is the arm's \
+                 headline\n\
+                 \x20      result rendered: the method under test cannot be drawn on the geometry \
+                 the\n\
+                 \x20      operator actually machines, because it refuses it on topology before a\n\
+                 \x20      spacing question is reached. The red rings in panel 2 are the retract \
+                 wall."
             );
         }
         (None, None) => eprintln!("     the shallow band is EMPTY on this fixture."),
@@ -7013,13 +8167,16 @@ fn arm_terrain(
 /// the run performs five `plan_spiral` solves — two of them over regions of
 /// ~37 k and ~14 k triangles — each sweeping start angles and
 /// binary-searching every ring against tens of thousands of coverage samples,
-/// and then costs two candidates per arm through the production relinker.
+/// and then costs **three** candidates per analytic arm through the production
+/// relinker — the conformal spiral, the 0° ball raster, and (added 2026-08-30)
+/// a `direction_field` iso-curve solve, which adds its own Poisson solve and
+/// marching-triangles extraction per arm.
 ///
 /// The name is deliberately unchanged from the pre-withdrawal revision: it is
 /// what PROGRAMME.md, FINDINGS_F2 and this file's own header run-command
 /// quote. It now carries the analytic arms as well as the terrain ones.
 #[test]
-#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
+#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus one direction_field Poisson solve + marching-triangles extraction per analytic arm); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
     use rs_cam_core::machine_kinematics::MachineKinematics;
 
@@ -7096,6 +8253,33 @@ fn terrain_small_conformal_spiral_f2() {
          \x20  dimension. solver_tolerance is UNTOUCHED, so an under-solve is still a refusal and\n\
          \x20  never a silent pass. The terrain arms keep the shipped default.\n",
         params.solver_max_sweeps, analytic_params.solver_max_sweeps
+    );
+
+    eprintln!(
+        "   THIRD CANDIDATE, ADDED 2026-08-30 — the operator asked to SEE the comparison, and \
+         seeing it\n\
+         \x20  meant drawing the rows that keep WINNING, not only the one under test. Every \
+         ANALYTIC arm\n\
+         \x20  now costs THREE paths on one region through one relink — conformal spiral, 0deg \
+         ball\n\
+         \x20  raster, and `direction_field` iso-curves — and emits two figures per arm:\n\
+         \x20    {{slug}}_compare_f2.svg   three panels, IDENTICAL SCALE and IDENTICAL viewBox \
+         SIZE, each\n\
+         \x20                            labelled with its own measured row; surface links GREEN, \
+         air RED\n\
+         \x20                            dashed, LIFT POINTS as red rings.\n\
+         \x20    {{slug}}_overlay_f2.svg   the same three superimposed at 45% opacity.\n\
+         \x20  The direction-field arm is a REAL TEST, not decoration: the module was falsified on \
+         Wanaka\n\
+         \x20  region 1 ({F1_FIELD_POLYLINES_REGION1} polylines vs a {WANAKA_R1_PCA_FRAGMENTS}-\
+         fragment reference) on SHALLOW TERRAIN, where\n\
+         \x20  principal curvature is noise. It has never met a clean analytic fixture, and a \
+         BRANCHED\n\
+         \x20  ribbon is the one regime where its curvature-derived field might genuinely align \
+         with the\n\
+         \x20  geometry. Its FieldReport is printed in full so a bad field is diagnosable rather \
+         than\n\
+         \x20  merely slow, and an empty solve is drawn as an EMPTY PANEL, never omitted.\n"
     );
 
     arm_sphere(&cutter, kinematics, stepover_mm, &analytic_params);
@@ -8432,6 +9616,139 @@ fn one_polyline_yields_one_plunge_and_one_retract() {
             .moves
             .is_empty()
     );
+}
+
+/// The comparison SVGs' whole claim is that the colour under an operator's eye
+/// means what the caption says. That claim is [`classify_move`], so it is
+/// pinned over **every** `MoveIntent` in both kinematic classes.
+///
+/// The `Retract`-tagged **Linear** row is the interesting one: CLAUDE.md
+/// records that branch as unreachable from every shipped generator (a census
+/// sentry pins it), so it must land in [`MoveClass::Other`] — the magenta
+/// ambiguity colour — and NOT be quietly folded into the air class it
+/// superficially resembles.
+#[test]
+fn classify_move_maps_every_intent_in_both_kinematic_classes() {
+    use rs_cam_core::toolpath::MoveType;
+
+    let every_intent = [
+        MoveIntent::Drilling,
+        MoveIntent::EntryPlunge,
+        MoveIntent::ClearingCut,
+        MoveIntent::FinishingCut,
+        MoveIntent::EntryHelix,
+        MoveIntent::EntryRamp,
+        MoveIntent::Linking,
+        MoveIntent::Retract,
+        MoveIntent::LeadIn,
+        MoveIntent::LeadOut,
+        MoveIntent::Unknown,
+    ];
+    // EVERY rapid is air, whatever it claims to be doing.
+    for intent in every_intent {
+        let rapid = Move {
+            target: P3::new(0.0, 0.0, 0.0),
+            move_type: MoveType::Rapid,
+            intent,
+        };
+        assert_eq!(
+            classify_move(&rapid),
+            MoveClass::Air,
+            "a rapid tagged {intent:?} must draw as AIR"
+        );
+    }
+
+    let linear = |intent: MoveIntent| Move {
+        target: P3::new(0.0, 0.0, 0.0),
+        move_type: MoveType::Linear { feed_rate: 500.0 },
+        intent,
+    };
+    for (intent, expected) in [
+        (MoveIntent::FinishingCut, MoveClass::Cut),
+        (MoveIntent::ClearingCut, MoveClass::Cut),
+        (MoveIntent::LeadIn, MoveClass::Cut),
+        (MoveIntent::LeadOut, MoveClass::Cut),
+        (MoveIntent::Linking, MoveClass::Link),
+        (MoveIntent::EntryPlunge, MoveClass::Air),
+        (MoveIntent::EntryHelix, MoveClass::Air),
+        (MoveIntent::EntryRamp, MoveClass::Air),
+        (MoveIntent::Drilling, MoveClass::Other),
+        (MoveIntent::Retract, MoveClass::Other),
+        (MoveIntent::Unknown, MoveClass::Other),
+    ] {
+        assert_eq!(
+            classify_move(&linear(intent)),
+            expected,
+            "a feed tagged {intent:?} must draw as {expected:?}"
+        );
+    }
+
+    // The four indices are distinct, so no two classes share a `d` slot.
+    let indices: BTreeSet<usize> = MoveClass::ALL.iter().map(|c| c.index()).collect();
+    assert_eq!(indices.len(), 4, "MoveClass::index must be injective");
+}
+
+/// [`draw_toolpath`] coalesces a same-class run into ONE polyline and starts a
+/// new one at every class change, and its lift markers are the retracts.
+///
+/// The `M`-count is the assertion that matters: without coalescing a
+/// 5,500-move spiral would emit 5,500 single-segment subpaths, and the figure
+/// would be unreadable long before it was wrong.
+#[test]
+fn draw_toolpath_coalesces_runs_and_marks_lifts() {
+    let line_a = vec![
+        P3::new(0.0, 0.0, -1.0),
+        P3::new(1.0, 0.0, -1.0),
+        P3::new(2.0, 0.0, -1.0),
+    ];
+    let line_b = vec![P3::new(5.0, 0.0, -1.0), P3::new(6.0, 0.0, -1.0)];
+    let tp = polylines_to_toolpath(&[line_a, line_b], FEED_MM_MIN, PLUNGE_MM_MIN, 12.0);
+    let drawing = draw_toolpath(&tp);
+
+    // Two fragments: Linking rapid, plunge, 2 cuts, Retract, Linking rapid,
+    // plunge, 1 cut, Retract.
+    assert_eq!(
+        drawing.counts[MoveClass::Cut.index()],
+        3,
+        "three FinishingCut feeds"
+    );
+    assert_eq!(
+        drawing.counts[MoveClass::Link.index()],
+        0,
+        "polylines_to_toolpath adds no surface links — only the relinker does"
+    );
+    assert_eq!(
+        drawing.counts[MoveClass::Other.index()],
+        0,
+        "nothing here is unclassified"
+    );
+    assert_eq!(
+        drawing.lifts.len(),
+        2,
+        "one lift per Retract: the mid-path one and the closing one"
+    );
+
+    // The first cut run is TWO segments in ONE subpath; the second is one
+    // segment in its own. So exactly two `M`s in the cut layer.
+    let cut_moves = drawing.d[MoveClass::Cut.index()].matches(" M ").count();
+    assert_eq!(
+        cut_moves,
+        2,
+        "two cut runs must coalesce into two subpaths, not four: {}",
+        drawing.d[MoveClass::Cut.index()]
+    );
+    assert_eq!(
+        drawing.d[MoveClass::Cut.index()].matches(" L ").count(),
+        3,
+        "three cut segments in total"
+    );
+
+    let [x0, y0, x1, y1] = drawing.bbox.expect("a non-empty path has an extent");
+    assert!(
+        x0 <= 0.0 && y0 <= 0.0 && x1 >= 6.0 && y1 >= 0.0,
+        "extent {x0:.3},{y0:.3}..{x1:.3},{y1:.3} must cover every move target"
+    );
+    assert!(draw_toolpath(&Toolpath::new()).bbox.is_none());
 }
 
 /// The curvature census's sign convention, checked on the case it was derived
