@@ -23,7 +23,7 @@
 //! "simply connected **SYNTHETIC** surface"; substituting the terrain STL for
 //! repo-portability was the mistake.
 //!
-//! This file therefore carries **two analytic arms first**, on test-local
+//! This file therefore carries **four analytic arms first**, on test-local
 //! synthetic meshes whose triangle edge is `≤ stepover/3` (≤ 0.16 mm) over
 //! the machined region, and keeps the two terrain arms afterwards **as
 //! fixture-limited probes with their fine-geometry numbers withdrawn**.
@@ -74,14 +74,69 @@
 //! hole-free, well-inside-the-mesh region — chosen so every triangle-centroid
 //! test is clean, which is exactly the geometry a raster is *good* at.
 //!
-//! # Four arms, analytic first
+//! # Six arms, analytic first
 //!
 //! | # | arm | fixture | facet vs measurand | status of its numbers |
 //! |---|---|---|---|---|
-//! | 1 | **ARM SPHERE** | [`sphere_cap_mesh`], analytic | max 0.1585 mm (median 0.1099) vs 0.486 mm | **decisive**; refusal = hard failure |
+//! | 1 | **ARM SPHERE** | [`sphere_cap_mesh`], analytic | max 0.1585 mm (median 0.1099) vs 0.486 mm | **decisive for SPACING**; refusal = hard failure |
 //! | 2 | **ARM WAVY** | [`wavy_patch_mesh`], analytic | max 0.1545 mm (median 0.1087) vs 0.486 mm | **valid**; refusal = hard failure |
-//! | 3 | ARM STEEP | `terrain_small.stl` | 0.80 mm vs 0.486 mm | fixture-limited PROBE; fine geometry WITHDRAWN |
-//! | 4 | ARM FLAT | `terrain_small.stl` | 1.42 mm vs 0.486 mm | fixture-limited; fine geometry WITHDRAWN |
+//! | 3 | **ARM RIBBON** | [`ribbon_cell_mask`] over [`ribbon_height`], analytic | `≤` [`ANALYTIC_MAX_EDGE_MM`] vs 0.486 mm | **decisive for the RETRACT TRADE**; a *diagnosed* refusal is a finding |
+//! | 4 | **ARM BAND** | [`band_cell_mask`] over [`band_height`], analytic | `≤` [`ANALYTIC_MAX_EDGE_MM`] vs 0.486 mm | **decisive for TOPOLOGY**; `NotSimplyConnected` is a HEADLINE finding |
+//! | 5 | ARM STEEP | `terrain_small.stl` | 0.80 mm vs 0.486 mm | fixture-limited PROBE; fine geometry WITHDRAWN |
+//! | 6 | ARM FLAT | `terrain_small.stl` | 1.42 mm vs 0.486 mm | fixture-limited; fine geometry WITHDRAWN |
+//!
+//! # ⚠ The second benchmarking error, and the two arms that fix it
+//!
+//! §F2-2 measured the spiral **5–15 % slower** than a 0° raster on arms 1 and
+//! 2 — and on those fixtures the raster produced **4 and 3 fragments with ZERO
+//! RETRACTS**. The spiral's entire value proposition is one continuous
+//! stay-down path with no lifts, so it had nothing to beat: a
+//! retract-elimination method was benchmarked on geometry with no retracts to
+//! eliminate. On the real target (Wanaka thin-organic region 1,
+//! `planning/thin_organic_2026-08-27/FINDINGS.md`) a 0° raster produces **564
+//! fragments and 97 kept retracts**, and even the tuned PCA-cell plan carries
+//! **141 / 53**.
+//!
+//! [`ARM RIBBON`](arm_ribbon) reproduces that fragmentation class while staying
+//! **simply connected**, so it isolates the *distortion* question from the
+//! *topology* question. [`ARM BAND`](arm_band) is the topology question and the
+//! geometry the programme actually came from: regions in this codebase are
+//! selected **by slope range** (`finish_planner`'s `FinishBand`), and a slope
+//! band on an undulating surface is inherently scattered and multiply
+//! connected — the other bands become holes inside it. Both arms run a
+//! [`print_fragmentation_gate`] **before** their cost tables, so a fixture that
+//! failed to reproduce the class says so instead of producing a quotable table.
+//!
+//! # Two rows the module measured and nothing printed (fixed 2026-08-30)
+//!
+//! `SpiralReport::ring_anisotropy` and the per-triangle / per-bucket
+//! quasi-conformal dilatation rows were computed on every run and printed
+//! nowhere. They are now on **every** arm, via [`print_distortion_blocks`]:
+//!
+//! * [`print_ring_anisotropy`] — the per-ring `max/min` of the map's local
+//!   radial scale. Eqs. 1–4 size each ring by its **worst sector**, so this
+//!   ratio *is* the over-cover the search is forced into on that ring. `1.0` =
+//!   the ring can be spaced correctly everywhere at once; `N` = it is
+//!   over-covered up to N-fold outside its worst sector. On a branched region
+//!   this is the number that predicts whether the method can work at all.
+//! * [`print_dilatation_scalars`] and the three `K` columns in
+//!   [`print_radial_profile`] — `K = 1` is conformal, and `K` is **scale
+//!   invariant**, so unlike area distortion it compares across arms.
+//!
+//! # G-CELLHOLE — a region can be simply connected and still digitise holed
+//!
+//! ARM RIBBON is a union of capsules that all contain the origin, so it is
+//! star-shaped about the origin and **provably simply connected in the
+//! continuum**. Laid onto a 0.1057 mm cell grid it came back with **Euler −3
+//! and four holes** — one cell each, at `r = 3.363 mm` on the four inter-arm
+//! bisectors that run **diagonal to the axis-aligned lattice**. The pocket at a
+//! sub-cell wedge apex ends up 8-connected to the open wedge and 4-connected to
+//! nothing, and 4-connectivity is the only kind `region_topology` recognises.
+//! It is the dual of the bowtie [`clean_selection`] already repairs.
+//! [`fill_mask_holes`] closes them and [`print_mask_fill`] says exactly what it
+//! closed — 0.0447 mm², 0.024 % of the region. See that function's docs for the
+//! mechanism and for what the **shipped** `region_mask` extractor does and does
+//! not do about the same hazard.
 //!
 //! **Why a sphere cap is the decisive fixture.** On a sphere of radius `R_s`
 //! machined with a ball of radius `K_c` to scallop `h`, the constant-scallop
@@ -1059,6 +1114,765 @@ fn wavy_region_triangles(size_mm: f64, cells: usize, radius_mm: f64) -> Vec<u32>
     out
 }
 
+// ---- shared heightfield machinery (ARM RIBBON + ARM BAND) -------------
+//
+// Both new arms are heightfields on a regular square grid, exactly like
+// `wavy_patch_mesh`, and both address individual CELLS to build their region.
+// The generator, the cell-centre formula and the cell→triangle formula are
+// shared so the two arms cannot disagree about indexing — a disagreement there
+// would silently machine a different region from the one being censused.
+
+/// Cells per side for a heightfield patch, from the **same** edge budget
+/// [`wavy_grid_cells`] uses, but taking the surface's own gradient bound as a
+/// parameter instead of re-deriving it from one particular closed form.
+///
+/// The binding edge of a split quad is its **diagonal**: `√2·cell` in XY, plus
+/// whatever `z` the surface climbs across it. Bounding that climb by the
+/// steepest gradient `|∇z|max` gives a 3D diagonal of at most
+/// `√2·cell / cos θmax`, so
+///
+/// ```text
+/// cell ≤ edge_mm · cos θmax / √2
+/// ```
+///
+/// [`wavy_grid_cells`] is left exactly as it is: it is what produced ARM
+/// WAVY's published census and re-expressing it through this function would
+/// make a working arm's numbers depend on an edit made for a different arm.
+fn heightfield_cells(size_mm: f64, max_gradient: f64, edge_mm: f64) -> usize {
+    let cos_min = 1.0 / (1.0 + max_gradient * max_gradient).sqrt();
+    let cell = edge_mm * cos_min / SQRT_2;
+    ((size_mm / cell.max(1e-9)).ceil() as usize).max(2)
+}
+
+/// A square heightfield patch on a regular `cells × cells` grid, centred on
+/// the origin.
+///
+/// Wound exactly as [`wavy_patch_mesh`] winds — cell `(row, col)` contributes
+/// triangles `2·(row·cells + col)` and `+1`, as `[a, b, d]` then `[a, d, c]`,
+/// counter-clockwise in XY — so every face normal has `n_z > 0` and
+/// [`cell_triangles`] addresses the same pair `wavy_region_triangles` does.
+fn heightfield_mesh(size_mm: f64, cells: usize, height: impl Fn(f64, f64) -> f64) -> TriangleMesh {
+    let cells = cells.max(2);
+    let cell = size_mm / (cells as f64);
+    let half = 0.5 * size_mm;
+
+    let mut verts: Vec<P3> = Vec::with_capacity((cells + 1) * (cells + 1));
+    for row in 0..=cells {
+        let y = -half + cell * (row as f64);
+        for col in 0..=cells {
+            let x = -half + cell * (col as f64);
+            verts.push(P3::new(x, y, height(x, y)));
+        }
+    }
+
+    let idx = |row: usize, col: usize| -> u32 { (row * (cells + 1) + col) as u32 };
+    let mut tris: Vec<[u32; 3]> = Vec::with_capacity(2 * cells * cells);
+    for row in 0..cells {
+        for col in 0..cells {
+            let (a, b) = (idx(row, col), idx(row, col + 1));
+            let (c, d) = (idx(row + 1, col), idx(row + 1, col + 1));
+            tris.push([a, b, d]);
+            tris.push([a, d, c]);
+        }
+    }
+    TriangleMesh::from_raw(verts, tris)
+}
+
+/// World XY centre of grid cell `(row, col)`.
+fn cell_centre(size_mm: f64, cells: usize, row: usize, col: usize) -> (f64, f64) {
+    let cell = size_mm / (cells.max(1) as f64);
+    let half = 0.5 * size_mm;
+    (
+        -half + cell * (col as f64 + 0.5),
+        -half + cell * (row as f64 + 0.5),
+    )
+}
+
+/// The two triangle indices of grid cell `(row, col)` — the same formula
+/// [`wavy_region_triangles`] uses.
+fn cell_triangles(cells: usize, row: usize, col: usize) -> [u32; 2] {
+    let base = 2 * (row * cells.max(1) + col);
+    [base as u32, (base + 1) as u32]
+}
+
+/// Every triangle of every `true` cell, ascending.
+///
+/// **Whole cells, never a per-triangle centroid test.** That discipline is
+/// [`wavy_region_triangles`]' and it is load-bearing: a per-triangle test
+/// splits cells on the fringe, and two diagonally-adjacent surviving triangles
+/// meet at a single vertex — the bowtie `region_topology` refuses as a
+/// `BoundaryPinch`, and exactly the class of **selection artefact** the
+/// FINDINGS_F2 withdrawal is about. Taking cells whole makes any region a
+/// polyomino: 4-connected wherever the mask is, corner-free by construction.
+fn cells_to_triangles(mask: &[bool], cells: usize) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    for row in 0..cells {
+        for col in 0..cells {
+            if mask.get(row * cells + col).copied().unwrap_or(false) {
+                out.extend_from_slice(&cell_triangles(cells, row, col));
+            }
+        }
+    }
+    out
+}
+
+/// Turn a `cells × cells` boolean **cell** mask into world polygons *with
+/// holes*, through the production marching-squares path.
+///
+/// Two properties this buys, both load-bearing:
+///
+/// * the polygon is derived from the **same mask** that selected the
+///   triangles, so the containment reference and the machined region cannot
+///   drift apart the way terrain's 30-vertex ellipse drifted from its
+///   centroid-selected triangles;
+/// * `polygon::detect_containment` (what `monotone_cells::region_polygons`
+///   uses) nests an enclosed loop as a **HOLE** of its container rather than
+///   emitting it as a separate polygon. That nesting is the whole point on ARM
+///   BAND, whose headline claim is about holes.
+///
+/// The mask is padded with one ring of `false` so every loop closes inside the
+/// array instead of being clipped at its edge. Grid index `(r, c)` of the
+/// padded array sits at the **centre** of mask cell `(r−1, c−1)`, which is
+/// what the origin below encodes.
+fn mask_polygons(mask: &[bool], size_mm: f64, cells: usize) -> Vec<Polygon2> {
+    use rs_cam_core::contour_extract::marching_squares_bool_grid;
+    use rs_cam_core::polygon::{detect_containment, shoelace_area};
+
+    let cells = cells.max(1);
+    let cell = size_mm / (cells as f64);
+    let half = 0.5 * size_mm;
+    let padded = cells + 2;
+    let mut grid = vec![false; padded * padded];
+    for row in 0..cells {
+        for col in 0..cells {
+            if mask.get(row * cells + col).copied().unwrap_or(false) {
+                grid[(row + 1) * padded + (col + 1)] = true;
+            }
+        }
+    }
+    let origin = -half - 0.5 * cell;
+    let loops = marching_squares_bool_grid(&grid, padded, padded, origin, origin, cell);
+    let candidates: Vec<Polygon2> = loops
+        .into_iter()
+        .filter(|points| points.len() >= 3 && shoelace_area(points).abs() > 1e-12)
+        .map(Polygon2::new)
+        .collect();
+    let mut polygons = detect_containment(candidates);
+    for polygon in &mut polygons {
+        polygon.ensure_winding();
+    }
+    polygons
+}
+
+// ---- G-CELLHOLE: enclosed pockets a grid digitisation invents ----------
+
+/// The four in-grid neighbours of a cell — **4-connectivity, deliberately**.
+///
+/// Two cells that share only a CORNER share no triangle edge, so
+/// [`clean_selection`]'s edge adjacency and `mesh_census`'s edge bookkeeping
+/// both treat them as disconnected. A complement pocket that is 8-connected to
+/// the outside but **not** 4-connected is therefore an enclosed HOLE as far as
+/// `region_topology` is concerned, which is exactly the case measured below.
+fn four_neighbours(r: usize, c: usize, cells: usize) -> [Option<(usize, usize)>; 4] {
+    let up = if r > 0 { Some((r - 1, c)) } else { None };
+    let down = if r + 1 < cells {
+        Some((r + 1, c))
+    } else {
+        None
+    };
+    let left = if c > 0 { Some((r, c - 1)) } else { None };
+    let right = if c + 1 < cells {
+        Some((r, c + 1))
+    } else {
+        None
+    };
+    [up, down, left, right]
+}
+
+/// One enclosed pocket of unselected cells that [`fill_mask_holes`] closed.
+#[derive(Clone, Copy)]
+struct MaskHole {
+    cells: usize,
+    area_mm2: f64,
+    centroid_radius_mm: f64,
+    centroid_angle_deg: f64,
+}
+
+/// What [`fill_mask_holes`] repaired.
+///
+/// **A fixture that silently repairs itself is worse than one that says what it
+/// repaired**, so every field here is printed at the point of use and the
+/// arm's header carries the artefact as a measured observation, not as a bug
+/// that was quietly swept up.
+struct MaskFillReport {
+    holes: Vec<MaskHole>,
+    cells_before: usize,
+    cells_filled: usize,
+    area_filled_mm2: f64,
+}
+
+/// Close every enclosed pocket in a cell mask, and report each one.
+///
+/// # G-CELLHOLE (measured 2026-08-30) — why this exists
+///
+/// ARM RIBBON's region is a union of capsules that **all contain the origin**.
+/// Every capsule is convex, so the union is star-shaped about the origin and
+/// therefore **simply connected, with exactly one boundary loop**. That
+/// continuum argument is correct and is not what broke.
+///
+/// Digitised onto a 0.1057 mm grid, the same region came back with **Euler −3
+/// and four holes**. Diagnosed: each hole is exactly **one cell**, at
+/// `r = 3.363 mm` on the bisectors at **45°, 135°, 225° and 315°** — four of
+/// the eight inter-arm bisectors, and precisely the four that lie **diagonal
+/// to the axis-aligned cell lattice**.
+///
+/// The mechanism, and it is general:
+///
+/// * adjacent arms are 45° apart, so the wedge between them has its apex where
+///   the bisector leaves both capsules: `r = w / sin(22.5°) = 1.25/0.38268 =
+///   **3.2664 mm**`. Inside that radius the arms are merged; outside it the
+///   wedge opens monotonically and runs to the exterior. **In the continuum
+///   there is no pocket anywhere.**
+/// * the first cell centre outward along a bisector that clears both capsules
+///   sits at `r = 3.363`. Its four EDGE neighbours are all still inside the
+///   union (the wedge is far narrower than a cell there), and the next
+///   excluded cell outward is its DIAGONAL neighbour. So the pocket is
+///   8-connected to the open wedge and **4-connected to nothing** — an
+///   enclosed hole under the only connectivity `region_topology` recognises.
+/// * it fires on the four diagonal bisectors and not on the four axis-aligned
+///   ones because on an axis-aligned bisector the wedge advances along a grid
+///   row or column and stays 4-connected.
+///
+/// This is the **dual of the bowtie** [`clean_selection`] already repairs:
+/// there the SELECTION pinched at a corner, here the COMPLEMENT does. Same
+/// cause — a feature thinner than a cell meeting a lattice diagonally — same
+/// class of repair, and equally a fact about the digitisation rather than
+/// about the surface.
+///
+/// Total area involved: **0.0447 mm², 0.024 % of the region**. Topologically
+/// fatal, metrically nothing.
+fn fill_mask_holes(mask: &[bool], size_mm: f64, cells: usize) -> (Vec<bool>, MaskFillReport) {
+    let mut report = MaskFillReport {
+        holes: Vec::new(),
+        cells_before: mask.iter().filter(|&&v| v).count(),
+        cells_filled: 0,
+        area_filled_mm2: 0.0,
+    };
+    if cells == 0 || mask.len() != cells * cells {
+        return (mask.to_vec(), report);
+    }
+    let cell = size_mm / (cells as f64);
+    let half = 0.5 * size_mm;
+    let at = |r: usize, c: usize| r * cells + c;
+
+    // 1. Flood the OUTSIDE: unselected cells reachable from the grid border.
+    let mut outside = vec![false; cells * cells];
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for i in 0..cells {
+        for (r, c) in [(0, i), (cells - 1, i), (i, 0), (i, cells - 1)] {
+            let idx = at(r, c);
+            if !mask[idx] && !outside[idx] {
+                outside[idx] = true;
+                stack.push((r, c));
+            }
+        }
+    }
+    while let Some((r, c)) = stack.pop() {
+        for slot in four_neighbours(r, c, cells) {
+            let Some((rr, cc)) = slot else { continue };
+            let idx = at(rr, cc);
+            if !mask[idx] && !outside[idx] {
+                outside[idx] = true;
+                stack.push((rr, cc));
+            }
+        }
+    }
+
+    // 2. Everything unselected and unreached is an enclosed pocket. Group it,
+    //    measure it, then fill it.
+    let mut filled = mask.to_vec();
+    let mut visited = vec![false; cells * cells];
+    for row in 0..cells {
+        for col in 0..cells {
+            let idx = at(row, col);
+            if mask[idx] || outside[idx] || visited[idx] {
+                continue;
+            }
+            visited[idx] = true;
+            let mut members: Vec<(usize, usize)> = vec![(row, col)];
+            let mut queue: Vec<(usize, usize)> = vec![(row, col)];
+            while let Some((r, c)) = queue.pop() {
+                for slot in four_neighbours(r, c, cells) {
+                    let Some((rr, cc)) = slot else { continue };
+                    let j = at(rr, cc);
+                    if !mask[j] && !outside[j] && !visited[j] {
+                        visited[j] = true;
+                        members.push((rr, cc));
+                        queue.push((rr, cc));
+                    }
+                }
+            }
+            let count = members.len();
+            let mut sum_x = 0.0f64;
+            let mut sum_y = 0.0f64;
+            for &(r, c) in &members {
+                filled[at(r, c)] = true;
+                sum_x += -half + cell * (c as f64 + 0.5);
+                sum_y += -half + cell * (r as f64 + 0.5);
+            }
+            let cx = sum_x / count as f64;
+            let cy = sum_y / count as f64;
+            report.holes.push(MaskHole {
+                cells: count,
+                area_mm2: count as f64 * cell * cell,
+                centroid_radius_mm: cx.hypot(cy),
+                centroid_angle_deg: cy.atan2(cx).to_degrees().rem_euclid(360.0),
+            });
+            report.cells_filled += count;
+        }
+    }
+    report.area_filled_mm2 = report.cells_filled as f64 * cell * cell;
+    report.holes.sort_by(|a, b| {
+        b.cells
+            .cmp(&a.cells)
+            .then(a.centroid_angle_deg.total_cmp(&b.centroid_angle_deg))
+    });
+    (filled, report)
+}
+
+/// Print the G-CELLHOLE repair as **evidence**, not as a swept-up bug.
+fn print_mask_fill(label: &str, report: &MaskFillReport, cell_mm: f64) {
+    eprintln!("\n   ===== G-CELLHOLE — ENCLOSED POCKETS THE DIGITISATION INVENTED — {label} =====");
+    let area_before = report.cells_before as f64 * cell_mm * cell_mm;
+    if report.holes.is_empty() {
+        eprintln!(
+            "     NONE. The cell mask's complement is 4-connected to the grid border everywhere,\n\
+             \x20    so the selection is simply connected before any repair. Nothing was filled."
+        );
+        return;
+    }
+    eprintln!(
+        "     enclosed pockets FILLED       {:>12}",
+        report.holes.len()
+    );
+    eprintln!(
+        "     cells filled / region cells   {:>12} / {}",
+        report.cells_filled, report.cells_before
+    );
+    eprintln!(
+        "     area filled (mm²)             {:>12.5}   = {:.4}% of the {area_before:.3} mm² region",
+        report.area_filled_mm2,
+        100.0 * report.area_filled_mm2 / area_before.max(1e-12)
+    );
+    eprintln!(
+        "     {:>6} {:>8} {:>12} {:>12} {:>12}",
+        "#", "cells", "area mm²", "radius mm", "angle deg"
+    );
+    for (i, hole) in report.holes.iter().take(16).enumerate() {
+        eprintln!(
+            "     {:>6} {:>8} {:>12.5} {:>12.4} {:>12.2}",
+            i, hole.cells, hole.area_mm2, hole.centroid_radius_mm, hole.centroid_angle_deg
+        );
+    }
+    if report.holes.len() > 16 {
+        eprintln!(
+            "     ... {} further pocket(s) not listed.",
+            report.holes.len() - 16
+        );
+    }
+    eprintln!(
+        "     WHAT THIS IS, AND WHY IT IS A RESULT RATHER THAN A BUG THAT GOT FIXED.\n\
+         \x20    A region that is simply connected IN THE CONTINUUM became MULTIPLY CONNECTED the\n\
+         \x20    moment it was digitised onto a ~0.1 mm cell grid. The mechanism is a wedge whose\n\
+         \x20    apex is thinner than one cell meeting an axis-aligned lattice DIAGONALLY: the\n\
+         \x20    pocket ends up 8-connected to the open wedge outside it and 4-connected to\n\
+         \x20    nothing, and 4-connectivity is the only kind `region_topology` recognises\n\
+         \x20    (two cells sharing a corner share no triangle EDGE). It is the exact dual of the\n\
+         \x20    bowtie clean_selection already repairs — there the SELECTION pinches at a corner,\n\
+         \x20    here the COMPLEMENT does.\n\
+         \x20    Why it matters beyond this fixture: the programme's real regions are SLOPE-BANDED,\n\
+         \x20    and slope banding creates holes of its own. This says a branched region acquires\n\
+         \x20    holes from DIGITISATION ON TOP OF those — so a hole count measured off a grid mask\n\
+         \x20    is an upper bound on the surface's own topology, never a reading of it."
+    );
+    eprintln!(
+        "     DOES THE SHIPPED EXTRACTOR SHARE THE HAZARD? Partly, and the mitigation is\n\
+         \x20    incidental rather than designed. `region_mask::region_polygons_from_mask_reported`\n\
+         \x20    — what `finish_planner` extracts every band polygon with — runs the SAME pipeline\n\
+         \x20    this file's `mask_polygons` does: marching squares on the cell mask, then\n\
+         \x20    `polygon::detect_containment`, with NO hole-filling step anywhere. Two things\n\
+         \x20    differ, and neither is a fix:\n\
+         \x20      1. it drops loops below `min_area = cell*cell`. A ONE-cell pocket's marching-\n\
+         \x20         squares loop is a diamond of area cell²/2, so it is dropped — but a TWO-cell\n\
+         \x20         diagonal pocket's loop is 3*cell²/2 and survives. The filter clears exactly\n\
+         \x20         the smallest case and nothing above it.\n\
+         \x20      2. the `overlap_mm` dilation (EDT, `dist <= overlap_mm/cell`) fills any pocket\n\
+         \x20         narrower than it — at the 2.0 mm the D-16.1 fixtures use, everything here.\n\
+         \x20         But `FinishPlannerParams::overlap_mm` DEFAULTS TO 0.0 and the caller derives\n\
+         \x20         it, so on the default path the dilation is a no-op.\n\
+         \x20    And neither touches the TRIANGLE SELECTION, which is what `plan_spiral` consumes\n\
+         \x20    and what refuses on Euler. On the selection side the hazard is unmitigated by\n\
+         \x20    anything shipped."
+    );
+}
+
+// ---- the raster-fragmentation validity gate ---------------------------
+
+/// What a 0° raster **must** do to a region for a stay-down method to have
+/// anything to beat.
+///
+/// # Why this is a gate and not a curiosity
+///
+/// FINDINGS_F2 §F2-2 measured the spiral as 5–15 % slower than a 0° raster on
+/// the sphere cap and the wavy patch — and on those fixtures the raster
+/// produced **4 and 3 fragments with ZERO retracts**. The spiral's entire
+/// value proposition is one continuous stay-down path with no lifts, and it
+/// had nothing to beat. On the real target geometry (Wanaka thin-organic
+/// region 1, `planning/thin_organic_2026-08-27/FINDINGS.md`) a 0° raster
+/// produces **564 fragments and 97 kept retracts**, and even the tuned PCA-cell
+/// plan carries **141 fragments / 53 retracts**. A retract-elimination method
+/// was benchmarked on geometry with no retracts to eliminate.
+///
+/// So a fixture that does not fragment a raster **proves nothing about this
+/// method**, and that has to be checked *before* the cost table rather than
+/// discovered afterwards.
+///
+/// # What it measures
+///
+/// The measure is `FINDINGS.md` §Stage C's, restated: scan rows at the tier's
+/// own stepover and count **maximal inside-runs per row**, "which is exactly
+/// what `raster_toolpath_from_grid` emits as separate fragments". Crossings are
+/// gathered from every ring of every polygon — exteriors and holes alike — and
+/// paired under the even-odd rule, with the half-open `y` test that makes a
+/// vertex sitting exactly on the scan line count once rather than twice.
+struct ScanlineCensus {
+    /// Scan rows laid across the region's bounding box at the stepover pitch.
+    rows: usize,
+    /// Rows that met the region at all.
+    rows_with_material: usize,
+    /// Rows that met it in **more than one** disjoint run — every one of those
+    /// is a lift a stay-down path would not pay.
+    rows_multi_run: usize,
+    /// Total maximal inside-runs over every row: the fragment count a 0°
+    /// raster is forced into by the shape alone.
+    total_runs: usize,
+    /// Most runs on any single row.
+    max_runs_in_row: usize,
+    /// `total_runs / rows_with_material`.
+    mean_runs_per_active_row: f64,
+}
+
+/// Crossings of one closed ring with the horizontal line `y`.
+///
+/// Half-open in `y`: an edge counts when one endpoint is at or below the line
+/// and the other strictly above, so a vertex sitting exactly on the line is
+/// counted once rather than twice and a horizontal edge is never counted.
+fn ring_crossings(ring: &[P2], y: f64) -> usize {
+    let n = ring.len();
+    if n < 3 {
+        return 0;
+    }
+    let mut hits = 0usize;
+    for i in 0..n {
+        let (Some(a), Some(b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+            continue;
+        };
+        if (a.y <= y && b.y > y) || (b.y <= y && a.y > y) {
+            hits += 1;
+        }
+    }
+    hits
+}
+
+/// Inside-runs on one horizontal scan line, by even-odd parity over all rings.
+///
+/// Every ring — exterior and hole alike — contributes its crossings to one
+/// parity count, which is the even-odd rule; the number of maximal inside
+/// intervals is then half the crossing count.
+fn scanline_runs(polygons: &[Polygon2], y: f64) -> usize {
+    let mut crossings = 0usize;
+    for polygon in polygons {
+        crossings += ring_crossings(&polygon.exterior, y);
+        for hole in &polygon.holes {
+            crossings += ring_crossings(hole, y);
+        }
+    }
+    crossings / 2
+}
+
+fn scanline_census(polygons: &[Polygon2], pitch_mm: f64) -> ScanlineCensus {
+    let mut y_lo = f64::INFINITY;
+    let mut y_hi = f64::NEG_INFINITY;
+    for polygon in polygons {
+        let [_, lo, _, hi] = polygon.bbox();
+        y_lo = y_lo.min(lo);
+        y_hi = y_hi.max(hi);
+    }
+    let mut census = ScanlineCensus {
+        rows: 0,
+        rows_with_material: 0,
+        rows_multi_run: 0,
+        total_runs: 0,
+        max_runs_in_row: 0,
+        mean_runs_per_active_row: f64::NAN,
+    };
+    if !(y_lo.is_finite() && y_hi.is_finite()) || pitch_mm <= 0.0 || y_hi <= y_lo {
+        return census;
+    }
+    let rows = (((y_hi - y_lo) / pitch_mm).floor() as usize).max(1);
+    for i in 0..rows {
+        let y = y_lo + pitch_mm * (i as f64 + 0.5);
+        if y > y_hi {
+            break;
+        }
+        census.rows += 1;
+        let runs = scanline_runs(polygons, y);
+        census.total_runs += runs;
+        if runs > 0 {
+            census.rows_with_material += 1;
+        }
+        if runs > 1 {
+            census.rows_multi_run += 1;
+        }
+        census.max_runs_in_row = census.max_runs_in_row.max(runs);
+    }
+    if census.rows_with_material > 0 {
+        census.mean_runs_per_active_row =
+            census.total_runs as f64 / census.rows_with_material as f64;
+    }
+    census
+}
+
+/// Reference numbers this instrument's fixtures are standing in for.
+/// `planning/thin_organic_2026-08-27/FINDINGS.md` §0i / §"Why the 20.1×
+/// junction win did not translate", Wanaka thin-organic **region 1**.
+const WANAKA_R1_RASTER_FRAGMENTS: usize = 564;
+/// See [`WANAKA_R1_RASTER_FRAGMENTS`].
+const WANAKA_R1_RASTER_RETRACTS: usize = 97;
+/// See [`WANAKA_R1_RASTER_FRAGMENTS`] — the tuned PCA-minor-cell plan, which is
+/// the production-validated bar, not the naive baseline.
+const WANAKA_R1_PCA_FRAGMENTS: usize = 141;
+/// See [`WANAKA_R1_PCA_FRAGMENTS`].
+const WANAKA_R1_PCA_RETRACTS: usize = 53;
+
+/// Rows-with-more-than-one-run below this **fraction** of the rows that meet
+/// the region at all means the fixture did not reproduce the target geometry
+/// class.
+///
+/// **[REPO] bar, and it is a validity gate on the FIXTURE, not a result about
+/// the method.** A convex disk scores 0.0 here by construction — which is
+/// precisely why the sphere and wavy arms could not test the claim. A third of
+/// the active rows breaking is the minimum at which "a raster must lift
+/// repeatedly inside this region" is a fact about the shape rather than an
+/// edge effect.
+const MIN_MULTI_RUN_ROW_FRACTION: f64 = 1.0 / 3.0;
+
+/// Print the validity gate. Returns whether the fixture reproduced the class.
+fn print_fragmentation_gate(label: &str, census: &ScanlineCensus, stepover_mm: f64) -> bool {
+    let fraction = if census.rows_with_material == 0 {
+        0.0
+    } else {
+        census.rows_multi_run as f64 / census.rows_with_material as f64
+    };
+    let valid = fraction >= MIN_MULTI_RUN_ROW_FRACTION && census.max_runs_in_row > 1;
+    eprintln!("\n   ===== RASTER-FRAGMENTATION VALIDITY GATE — {label} =====");
+    eprintln!(
+        "     This runs BEFORE the cost table on purpose. FINDINGS_F2 §F2-2 benchmarked a\n\
+         \x20    RETRACT-ELIMINATION method on two fixtures where the raster produced 4 and 3\n\
+         \x20    fragments with ZERO RETRACTS. There was nothing to eliminate, so the 5-15%\n\
+         \x20    'slower' verdict was measured on geometry the claim does not address. If this\n\
+         \x20    fixture does not fragment a raster either, THIS ARM PROVES NOTHING and says so\n\
+         \x20    here rather than letting a cost table be read as a verdict."
+    );
+    eprintln!(
+        "     scan rows at the stepover     {:>12}   (pitch {stepover_mm:.4} mm)",
+        census.rows
+    );
+    eprintln!(
+        "     rows meeting the region       {:>12}",
+        census.rows_with_material
+    );
+    eprintln!(
+        "     rows with MORE THAN ONE run   {:>12}   = {:.1}% of active rows (bar: >= {:.1}%)",
+        census.rows_multi_run,
+        100.0 * fraction,
+        100.0 * MIN_MULTI_RUN_ROW_FRACTION
+    );
+    eprintln!(
+        "     total inside-runs             {:>12}   <<< the fragment count the SHAPE forces on \
+         a 0deg raster",
+        census.total_runs
+    );
+    eprintln!(
+        "     most runs on one row          {:>12}",
+        census.max_runs_in_row
+    );
+    eprintln!(
+        "     mean runs per active row      {:>12.3}",
+        census.mean_runs_per_active_row
+    );
+    eprintln!(
+        "     WHAT THIS FIXTURE STANDS IN FOR — Wanaka thin-organic REGION 1\n\
+         \x20    (planning/thin_organic_2026-08-27/FINDINGS.md):\n\
+         \x20      0deg raster, undivided : {WANAKA_R1_RASTER_FRAGMENTS} fragments / \
+         {WANAKA_R1_RASTER_RETRACTS} kept retracts\n\
+         \x20      PCA-minor cells (the production-validated bar) : {WANAKA_R1_PCA_FRAGMENTS} \
+         fragments / {WANAKA_R1_PCA_RETRACTS} kept retracts\n\
+         \x20    Those are the numbers a stay-down method exists to attack. The relinker collapses\n\
+         \x20    757 scan-line crossings to 97 ACTUAL retracts there, so read RETRACTS, not\n\
+         \x20    crossings, as the thing being eliminated — the run census above is the upper\n\
+         \x20    bound the relinker then works down from."
+    );
+    if valid {
+        eprintln!(
+            "\n     GATE: PASS — the fixture reproduces the target class. The cost table below \
+             is\n\
+             \x20    about a region a raster genuinely has to lift out of."
+        );
+    } else {
+        eprintln!(
+            "\n     GATE: *** FAIL — THIS FIXTURE DID NOT REPRODUCE THE TARGET GEOMETRY CLASS. \
+             ***\n\
+             \x20    Only {:.1}% of active rows break into more than one run (bar {:.1}%), max \
+             runs on a row {}.\n\
+             \x20    A 0deg raster over this region barely lifts, so the stay-down claim has \
+             nothing to beat\n\
+             \x20    and EVERY COST NUMBER BELOW IS THE SPHERE/WAVY MISTAKE REPEATED. Do not quote \
+             the trade\n\
+             \x20    verdict from this arm; fix the fixture (narrower arms, more of them, or a \
+             finer band).",
+            100.0 * fraction,
+            100.0 * MIN_MULTI_RUN_ROW_FRACTION,
+            census.max_runs_in_row
+        );
+    }
+    valid
+}
+
+// ---- slope banding + component topology (ARM BAND) --------------------
+
+/// Slope of a face from horizontal, in degrees: `acos(|n_z|)`.
+///
+/// `|n_z|`, not `n_z`: `build_region_mesh` (and therefore `conformal_spiral`,
+/// `crest_lines` and `direction_field`) force normals to `+Z`, and the shipped
+/// `SlopeMap` measures the same unsigned angle. Taking the absolute value here
+/// means an inconsistently wound input cannot report a 170° "slope".
+fn face_slope_deg(normal: rs_cam_core::geo::V3) -> f64 {
+    let length = normal.norm();
+    if length <= 1e-12 {
+        return f64::NAN;
+    }
+    let cosine = (normal.z / length).abs().clamp(0.0, 1.0);
+    cosine.acos().to_degrees()
+}
+
+/// Half-open slope band `[lo, hi)` — the shape the shipped three-way
+/// `finish_planner` label uses (`VerySteep` if `>= waterline`, else
+/// `MidSteep` if `>= steep`, else `Shallow`).
+fn slope_in_band(slope_deg: f64, lo_deg: f64, hi_deg: f64) -> bool {
+    slope_deg.is_finite() && slope_deg >= lo_deg && slope_deg < hi_deg
+}
+
+/// Every **edge**-connected component of a triangle selection, largest first.
+///
+/// Edge adjacency, not vertex adjacency, for [`largest_edge_component`]'s
+/// reason: two triangles meeting at a single vertex are the bowtie
+/// `region_topology` refuses, so treating them as connected would hide the
+/// defect this census exists to find. Deterministic — components are
+/// discovered by scanning `selected` in order, and the sort is by
+/// `(size desc, first triangle asc)`, so nothing depends on `HashMap`
+/// iteration order.
+fn edge_components(mesh: &TriangleMesh, selected: &[u32]) -> Vec<Vec<u32>> {
+    let n = selected.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (i, &t) in selected.iter().enumerate() {
+        let Some(tri) = mesh.triangles.get(t as usize) else {
+            continue;
+        };
+        for k in 0..3 {
+            by_edge
+                .entry(edge_key(tri[k], tri[(k + 1) % 3]))
+                .or_default()
+                .push(i);
+        }
+    }
+
+    let mut component: Vec<Option<usize>> = vec![None; n];
+    let mut groups: Vec<Vec<u32>> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    for start in 0..n {
+        if component[start].is_some() {
+            continue;
+        }
+        let id = groups.len();
+        component[start] = Some(id);
+        stack.push(start);
+        let mut members: Vec<u32> = Vec::new();
+        while let Some(i) = stack.pop() {
+            let Some(&t) = selected.get(i) else { continue };
+            members.push(t);
+            let Some(tri) = mesh.triangles.get(t as usize) else {
+                continue;
+            };
+            for k in 0..3 {
+                let Some(list) = by_edge.get(&edge_key(tri[k], tri[(k + 1) % 3])) else {
+                    continue;
+                };
+                for &j in list {
+                    if component[j].is_none() {
+                        component[j] = Some(id);
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        members.sort_unstable();
+        groups.push(members);
+    }
+    groups.sort_by(|a, b| {
+        b.len()
+            .cmp(&a.len())
+            .then_with(|| a.first().copied().cmp(&b.first().copied()))
+    });
+    groups
+}
+
+/// One component of a slope band, with the topology that decides whether
+/// `plan_spiral` can even be asked about it.
+struct ComponentTopology {
+    triangles: Vec<u32>,
+    census: MeshCensus,
+}
+
+impl ComponentTopology {
+    /// A topological disk: exactly one boundary loop and `V − E + F = 1`.
+    /// These are the two conditions `conformal_spiral::region_topology`
+    /// enforces, so this predicate is the same question the module asks.
+    fn is_disk(&self) -> bool {
+        self.census.boundary_loops == 1 && self.census.euler == 1
+    }
+
+    /// Genus-0 with `h` holes has `χ = 1 − h`, so this is the hole count
+    /// whenever the component is a connected surface with boundary.
+    fn holes(&self) -> i64 {
+        1 - self.census.euler
+    }
+}
+
+/// The census the coordinator's ARM BAND asks for FIRST, before anything else.
+fn band_topology(mesh: &TriangleMesh, selected: &[u32]) -> Vec<ComponentTopology> {
+    edge_components(mesh, selected)
+        .into_iter()
+        .map(|triangles| {
+            let census = mesh_census(mesh, &triangles);
+            ComponentTopology { triangles, census }
+        })
+        .collect()
+}
+
 // ---- the analytic fixtures' own acceptance census ----------------------
 
 /// What an analytic region actually is, measured rather than asserted.
@@ -1986,6 +2800,54 @@ fn print_region_acceptance(region: &Region) {
 /// attributes the refusal to a bad map rather than a bad mechanism. Printing
 /// two different tables on the two paths would have made the steep arm's
 /// numbers unquotable next to the flat arm's.
+/// The per-triangle **quasi-conformal dilatation** rows.
+///
+/// `K = s_max / s_min` of the 3D→flat Jacobian's singular values. `K = 1`
+/// exactly iff the map is a local similarity there — i.e. **conformal**.
+///
+/// # Why this is printed at all (2026-08-30)
+///
+/// The module has measured `dilatation_min/_median/_p90/_max` and
+/// `dilatation_unmeasurable` since the mean-value change, and **nothing
+/// printed them**. They are the row that decides whether substituting
+/// mean-value (Floater) weights for the paper's conformal slit map costs
+/// *spacing* as well as buying fold-freeness: area distortion is blind to
+/// radial-vs-tangential anisotropy, and it is the anisotropy — not the area —
+/// that turns a well-chosen ring radius into bad spacing. Unlike area
+/// distortion (1/mm², so scale- and fixture-dependent), `K` is **scale
+/// invariant**, which is what makes it comparable across the sphere, the wavy
+/// patch, the ribbon, the band and the terrain probes.
+///
+/// Read the **p90**, not the median: one badly anisotropic sector is enough to
+/// mis-size a ring, and the ring search sizes every ring by its single worst
+/// sector.
+fn print_dilatation_scalars(report: &SpiralReport) {
+    eprintln!(
+        "     QUASI-CONFORMAL DILATATION K = s_max/s_min of the 3D->flat Jacobian; K = 1 is \
+         CONFORMAL"
+    );
+    eprintln!(
+        "     K min / median / p90 / max    {:>12.4} / {:.4} / {:.4} / {:.4}",
+        report.dilatation_min,
+        report.dilatation_median,
+        report.dilatation_p90,
+        report.dilatation_max
+    );
+    eprintln!(
+        "     K unmeasurable triangles      {:>12}   (Jacobian too degenerate for singular \
+         values; 0 expected once folds are impossible)",
+        report.dilatation_unmeasurable
+    );
+    eprintln!(
+        "     READ THE p90, NOT THE MEDIAN. A ring is sized by its single WORST sector, so the\n\
+         \x20    tail is what reaches the spacing. K is SCALE INVARIANT (area distortion is not),\n\
+         \x20    so this row — unlike the 1/mm² rows above it — is directly comparable across\n\
+         \x20    every arm in this file. K >> 1 means the map stretches radially while compressing\n\
+         \x20    tangentially (or the reverse), which area distortion cannot see at all: a map can\n\
+         \x20    preserve area exactly and still be arbitrarily anisotropic."
+    );
+}
+
 fn print_flatten_block(report: &SpiralReport) {
     eprintln!("\n   -- flattening: the BAD-MAP vs BAD-MECHANISM table --");
     if report.area_distortion_by_disk_radius.is_empty() && report.flatten_interior_vertices == 0 {
@@ -2072,6 +2934,7 @@ fn print_flatten_block(report: &SpiralReport) {
         "     angle distortion med/max      {:>12.4} / {:.4}   (deg)",
         report.angle_distortion_median_deg, report.angle_distortion_max_deg
     );
+    print_dilatation_scalars(report);
     eprintln!(
         "     READ THIS FIRST if anything below disappoints. The flattening is a MEAN-VALUE\n\
          \x20    (Floater) map solved by Gauss-Seidel — a labelled [REPO] substitution for the\n\
@@ -2126,27 +2989,133 @@ fn print_radial_profile(label: &str, report: &SpiralReport) {
         eprintln!("     NOT MEASURED: the flattening never ran.");
         return;
     }
+    // Written as ONE literal rather than nine `{:>N}` arguments so the header
+    // and the data rows below cannot drift apart under a reformat.
     eprintln!(
-        "     {:>10} {:>10} {:>12} {:>14} {:>14} {:>14}",
-        "r_lo", "r_hi", "triangles", "distort min", "distort med", "distort max"
+        "         r_lo     r_hi  triangles   distort min   distort med   distort max    K min\
+         \x20   K med    K max"
     );
     for bucket in &report.area_distortion_by_disk_radius {
         eprintln!(
-            "     {:>10.3} {:>10.3} {:>12} {:>14.6e} {:>14.6e} {:>14.6e}",
+            "     {:>8.3} {:>8.3} {:>10} {:>13.6e} {:>13.6e} {:>13.6e} {:>8.3} {:>8.3} {:>8.3}",
             bucket.r_lo,
             bucket.r_hi,
             bucket.triangles,
             bucket.area_distortion_min,
             bucket.area_distortion_median,
-            bucket.area_distortion_max
+            bucket.area_distortion_max,
+            bucket.dilatation_min,
+            bucket.dilatation_median,
+            bucket.dilatation_max
         );
     }
+    eprintln!(
+        "     The three K columns are the QUASI-CONFORMAL DILATATION per band (K = 1 is\n\
+         \x20    conformal), bucketed the same way. They were measured by the module and printed\n\
+         \x20    NOWHERE until 2026-08-30. Read them beside the area columns: area distortion is\n\
+         \x20    in 1/mm² and is scale-dependent, K is dimensionless and is not, so K is what\n\
+         \x20    compares across arms — and K, not area, is what mis-sizes a ring."
+    );
     match radial_climb(report) {
         Some(climb) => eprintln!(
             "     climb |median(bucket 0) / median(bucket 4)|, folded to >= 1: {climb:.3}"
         ),
         None => eprintln!("     climb: NOT COMPUTABLE (an end bucket is empty or non-positive)"),
     }
+}
+
+/// The **per-ring radial-scale anisotropy** — the over-cover the worst-sector
+/// rule forces on each ring.
+///
+/// # Why this is the decisive spacing number on a branched region
+///
+/// A ring is **one circle at one disk radius**, and the Eqs. 1–4 binary search
+/// sizes it by its **worst sector** — the single uncovered point that is
+/// hardest to reach. Every other sector of that same ring is then over-covered
+/// by however much the map's local radial scale varies *around* the circle. So
+/// `max/min` of that scale **is** the over-cover factor the search is forced
+/// into on that ring: a ring whose radial scale varies 3× cannot be spaced
+/// correctly anywhere except in its worst sector, no matter how good the
+/// search is.
+///
+/// Neither area distortion nor `K` can see it. A map can preserve area while
+/// stretching radially and compressing tangentially, and a map can have a
+/// uniform `K` while its radial scale still swings around a given circle. This
+/// row is not derivable from any per-triangle statistic.
+///
+/// **The module has measured it since the mean-value change and nothing
+/// printed it.** On a convex disk-like region it should read near 1 and the
+/// number is uninteresting; on a **branched** region it is the number that
+/// predicts whether the method can work there at all, which is the entire
+/// point of ARM RIBBON.
+fn print_ring_anisotropy(label: &str, report: &SpiralReport) {
+    eprintln!("\n   -- RING ANISOTROPY (per-ring radial-scale ratio) — {label} --");
+    let Some(anis) = report.ring_anisotropy.as_ref() else {
+        eprintln!(
+            "     NOT MEASURED — `ring_anisotropy` is None, which means the ring search never\n\
+             \x20    placed a ring. This is NOT a reading of 1.0 and must not be coerced to one."
+        );
+        return;
+    };
+    eprintln!(
+        "     MEDIAN ratio                  {:>12.4}   <<< the typical over-cover this map \
+         forces",
+        anis.median_ratio
+    );
+    let radii = &report.ring_radii;
+    let worst_radius = radii.get(anis.worst_ring).copied().unwrap_or(f64::NAN);
+    eprintln!(
+        "     WORST ratio                   {:>12.4}   on ring {} of {}, disk radius \
+         {worst_radius:.6}",
+        anis.worst_ratio,
+        anis.worst_ring,
+        radii.len()
+    );
+    eprintln!(
+        "     rings measured / unmeasurable {:>12} / {}   (unmeasurable = a degenerate radius, \
+         or probes outside the flattened polygon)",
+        anis.rings_measured, anis.rings_unmeasurable
+    );
+    eprintln!(
+        "     probe step (disk units)       {:>12.6}",
+        anis.probe_delta_disk
+    );
+    eprintln!(
+        "     probes SKIPPED (pulled back)  {:>12}   (excluded on purpose: the radial pullback \
+         ladder moves the query",
+        anis.probes_skipped_pulled_back
+    );
+    eprintln!(
+        "\x20                                              point by a fraction comparable to the \
+         probe step itself, so the\n\
+         \x20                                              'scale' it would report is noise. A \
+         ring whose worst sectors\n\
+         \x20                                              were all skipped reads as UNDER-MEASURED, \
+         not as clean.)"
+    );
+    let (p_min, p_med, p_max) = min_med_max(&anis.per_ring_radial_scale_ratio);
+    eprintln!("     per-ring min / med / max      {p_min:>12.4} / {p_med:.4} / {p_max:.4}");
+    eprintln!(
+        "     READING GUIDE. 1.0 = this ring can be spaced correctly EVERYWHERE AT ONCE. N = this\n\
+         \x20    ring is over-covered up to N-fold outside its own worst sector, because Eqs. 1-4\n\
+         \x20    size the whole circle by the single hardest-to-reach point on it. That over-cover\n\
+         \x20    is paid in CUTTING TIME on every ring, every pass, and it is the price the method\n\
+         \x20    charges for stay-down continuity on a region the map cannot flatten evenly.\n\
+         \x20    THIS IS NOT DERIVABLE from area distortion or from K: an area-preserving map can\n\
+         \x20    still stretch radially and compress tangentially, and a uniform-K map can still\n\
+         \x20    swing its radial scale around one circle."
+    );
+}
+
+/// The two distortion blocks that must appear on **every** arm, in one call so
+/// no arm can print one and forget the other.
+///
+/// Replaces the bare `print_radial_profile` at every call site. Both blocks are
+/// meaningful on a refusal path too — the flattening runs before anything
+/// downstream can refuse — so this is called from [`diagnose_refusal`] as well.
+fn print_distortion_blocks(label: &str, report: &SpiralReport) {
+    print_radial_profile(label, report);
+    print_ring_anisotropy(label, report);
 }
 
 // ── the coverage audit: the INDEPENDENT witness ─────────────────────────
@@ -2322,7 +3291,7 @@ fn diagnose_refusal(
 
     print_flatten_block(report);
     eprintln!();
-    print_radial_profile(label, report);
+    print_distortion_blocks(label, report);
 
     // The audit runs on the refusal path too. A refusal means no spiral was
     // emitted, so this will normally read NOT MEASURED — but printing it
@@ -2731,6 +3700,21 @@ fn stage_a(
         "     uncovered after rings         {:>12}   (want 0)",
         report.uncovered_after_rings
     );
+    // A pointer, not a second copy of the block: a reader scanning the RING
+    // section should not have to know that the decisive spacing number lives
+    // in the distortion block printed above the stages.
+    match report.ring_anisotropy.as_ref() {
+        Some(anis) => eprintln!(
+            "     ring anisotropy med / worst   {:>12.4} / {:.4}   over-cover the worst-sector \
+             rule forces; FULL block printed above",
+            anis.median_ratio, anis.worst_ratio
+        ),
+        None => eprintln!(
+            "     ring anisotropy               {:>12}   NOT MEASURED (no ring placed) — this is \
+             NOT a reading of 1.0",
+            "-"
+        ),
+    }
 
     // -- SAMPLING ADEQUACY, apportionment-aware --
     eprintln!("\n   -- SAMPLING ADEQUACY (G-SAMPLING) --");
@@ -2779,7 +3763,7 @@ fn stage_a(
     eprintln!(
         "     WHY THIS NUMBER AND NOT sqrt(region_area / N_S). That older figure is an AVERAGE\n\
          \x20    and is APPORTIONMENT-BLIND: on the ARM SPHERE run it reported a healthy\n\
-         \x20    0.076 mm on a mesh where 46%% of triangles held ZERO samples, and the run went\n\
+         \x20    0.076 mm on a mesh where 46% of triangles held ZERO samples, and the run went\n\
          \x20    on to leave a 2.783 mm-radius unmachined hole under three green gates. It is\n\
          \x20    SUPERSEDED and deliberately not printed: a number that cannot see the failure\n\
          \x20    it is supposed to guard against should not sit in the adequacy block being\n\
@@ -3528,6 +4512,13 @@ fn analytic_spacing_verdict(label: &str, spacings_sorted: &[f64], analytic_targe
 
 struct StageDOutcome {
     cost: CandidateCost,
+    /// The 0° ball raster over the **same** region, through the **same**
+    /// production relink. Carried out of the stage (rather than being printed
+    /// and discarded) because the trade block ARM RIBBON and ARM BAND owe the
+    /// reader states both sides — retracts avoided AND time paid — and a
+    /// verdict that quotes only the spiral's half is the mistake FINDINGS_F2
+    /// §F2-2 already made once.
+    raster: CandidateCost,
     cl_points: usize,
 }
 
@@ -3885,6 +4876,7 @@ fn stage_d(
 
     Some(StageDOutcome {
         cost: spiral_cost,
+        raster: raster_cost,
         cl_points,
     })
 }
@@ -4066,6 +5058,9 @@ struct ArmRun<'a> {
     run_stage_e: bool,
 }
 
+/// Returns Stage D's outcome — spiral cost, raster cost, CL point count — so
+/// an arm can print a trade verdict over BOTH sides. `None` means Stage D did
+/// not run (the Stage A falsifier stopped the run) or refused.
 fn run_arm_evidence(
     run: &ArmRun<'_>,
     fixture: Fixture<'_>,
@@ -4074,7 +5069,7 @@ fn run_arm_evidence(
     result: &SpiralResult,
     params: &SpiralParams,
     stepover_mm: f64,
-) {
+) -> Option<StageDOutcome> {
     eprintln!("\n══════════ STAGED EVIDENCE — {} ══════════\n", run.label);
     if run.kind == ArmKind::FixtureLimited {
         eprintln!("   {WITHDRAWAL_BANNER}\n");
@@ -4084,6 +5079,7 @@ fn run_arm_evidence(
     let proceed = stage_a(run.label, report, params, stepover_mm, region_area_3d);
     stage_b(region, result, report, run.slug);
 
+    let mut stage_d_outcome: Option<StageDOutcome> = None;
     if proceed {
         let curvature = curvature_census(fixture.mesh, &region.triangles);
         let spacings = stage_c(result, stepover_mm, &curvature, run.kind);
@@ -4100,7 +5096,7 @@ fn run_arm_evidence(
             analytic_spacing_verdict(run.label, samples, target);
         }
 
-        if let Some(outcome) = stage_d(
+        stage_d_outcome = stage_d(
             fixture,
             region,
             result,
@@ -4108,7 +5104,8 @@ fn run_arm_evidence(
             stepover_mm,
             samples,
             run.kind,
-        ) {
+        );
+        if let Some(outcome) = stage_d_outcome.as_ref() {
             eprintln!(
                 "   Stage D summary: {} CL points on one polyline, {} kept retracts, {:.1} mm \
                  cutting, {:.1} s.\n",
@@ -4136,6 +5133,7 @@ fn run_arm_evidence(
             run.label
         );
     }
+    stage_d_outcome
 }
 
 /// Plan one ANALYTIC arm on an explicit, already-clean triangle selection.
@@ -4287,7 +5285,7 @@ fn arm_sphere(
     } = arm;
 
     eprintln!();
-    print_radial_profile(label, &report);
+    print_distortion_blocks(label, &report);
     let result = match outcome {
         Ok(result) => result,
         Err(refusal) => {
@@ -4447,7 +5445,7 @@ fn arm_wavy(
     } = arm;
 
     eprintln!();
-    print_radial_profile(label, &report);
+    print_distortion_blocks(label, &report);
     let result = match outcome {
         Ok(result) => result,
         Err(refusal) => {
@@ -4487,6 +5485,1270 @@ fn arm_wavy(
         params,
         stepover_mm,
     );
+}
+
+/// Plan one arm on an explicit triangle selection that **may legitimately need
+/// selection hygiene**.
+///
+/// [`plan_analytic_arm`] asserts the cleanup is a no-op, which is right for the
+/// sphere and the wavy patch: those regions are a whole mesh and a polyomino
+/// disk, so any hygiene at all would mean the generator was wrong. ARM RIBBON
+/// and ARM BAND are different — a branched polyomino and a slope-banded one can
+/// legitimately leave a corner-touching cell — so here the cleanup is
+/// **reported** rather than asserted away, and whatever survives is put to
+/// `plan_spiral` to accept or refuse on its own terms.
+fn plan_selected_region(
+    label: &'static str,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    triangles: &[u32],
+    polygon: Polygon2,
+    params: &SpiralParams,
+) -> Arm {
+    let (cleaned, cleanup) = clean_selection(mesh, triangles);
+    let dropped = cleanup.before.saturating_sub(cleanup.after);
+    let dropped_pct = 100.0 * dropped as f64 / cleanup.before.max(1) as f64;
+    eprintln!(
+        "   selection hygiene: {} -> {} triangles ({} dropped, {:.3}%); {} component(s) on the \
+         first pass,\n\
+         \x20  {} dropped; {} pinch pass(es){}, {} pinch vertex/vertices shaved, {} over-used \
+         edge(s), {} triangle(s) shaved.\n\
+         \x20  A NON-zero drop here is REPORTED, not asserted away: a branched or slope-banded\n\
+         \x20  polyomino can legitimately leave a corner-touching cell, and what survives is put\n\
+         \x20  to plan_spiral to accept or refuse on its own terms.",
+        cleanup.before,
+        cleanup.after,
+        dropped,
+        dropped_pct,
+        cleanup.components_first_pass,
+        cleanup.components_dropped,
+        cleanup.pinch_iterations,
+        if cleanup.hit_iteration_cap {
+            " (HIT THE CAP — still non-manifold when the loop stopped)"
+        } else {
+            ""
+        },
+        cleanup.pinch_vertices_shaved,
+        cleanup.over_used_edges,
+        cleanup.triangles_shaved_by_pinch
+    );
+
+    let [x0, y0, x1, y1] = polygon.bbox();
+    let (report, outcome) = conformal_spiral::plan_spiral(mesh, index, &cleaned, params);
+    Arm {
+        label,
+        region: Region {
+            polygon,
+            triangles: cleaned,
+            semi_axes: (0.5 * (x1 - x0), 0.5 * (y1 - y0)),
+            shrinks: 0,
+            cleanup,
+        },
+        report,
+        outcome,
+    }
+}
+
+/// Cells whose triangles appear in `triangles`, as a `cells × cells` mask.
+///
+/// Exact for a whole-cell selection (both triangles of a cell present); after
+/// [`clean_selection`] has shaved a corner a cell can survive with only one
+/// triangle, and this marks it anyway — so the derived polygon is at worst one
+/// cell generous, never tight. Stated because a generous containment polygon
+/// makes the Stage D escape count read LOW, and a reader must know which way
+/// the approximation leans.
+fn triangles_to_cell_mask(triangles: &[u32], cells: usize) -> Vec<bool> {
+    let mut mask = vec![false; cells * cells];
+    for &t in triangles {
+        let cell = (t as usize) / 2;
+        if cell < mask.len() {
+            mask[cell] = true;
+        }
+    }
+    mask
+}
+
+/// The trade block both new arms owe the reader.
+///
+/// The question is **"does eliminating N retracts beat paying an M-fold
+/// over-cover?"**, and it has two sides. FINDINGS_F2 §F2-2 printed one of them
+/// (time) on fixtures where the other (retracts) was structurally zero, and the
+/// resulting "5–15 % slower" reads as a verdict on the method when it is a
+/// verdict on the fixture. So this block prints BOTH sides and **declares no
+/// winner when the numbers are mixed**.
+fn print_trade_verdict(
+    label: &str,
+    outcome: Option<&StageDOutcome>,
+    report: &SpiralReport,
+    census: &ScanlineCensus,
+    gate_passed: bool,
+) {
+    eprintln!("\n══════════ TRADE VERDICT — {label} ══════════\n");
+    eprintln!("   {FRESH_STOCK_LABEL}\n");
+    if !gate_passed {
+        eprintln!(
+            "   *** THE FRAGMENTATION GATE FAILED ON THIS FIXTURE. Everything below is\n\
+             \x20  ARITHMETIC, NOT EVIDENCE — the raster had almost nothing to lift out of, so\n\
+             \x20  the stay-down claim had nothing to beat, which is exactly the SPHERE/WAVY\n\
+             \x20  mistake FINDINGS_F2 §F2-2 recorded. Do not quote it. ***\n"
+        );
+    }
+    let Some(outcome) = outcome else {
+        eprintln!(
+            "   NO COST PAIR — Stage D did not run (the Stage A falsifier stopped the run, or the\n\
+             \x20  spiral refused). There is no time side to the trade, so no trade verdict is\n\
+             \x20  possible. The raster side stands on its own and is printed above; the\n\
+             \x20  fragmentation census ({} inside-runs over {} active rows) is what the spiral\n\
+             \x20  WOULD have had to beat.",
+            census.total_runs, census.rows_with_material
+        );
+        return;
+    };
+
+    let spiral = &outcome.cost;
+    let raster = &outcome.raster;
+    eprintln!(
+        "   {:<32} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "arm", "fragments", "linked", "RETRACTS", "cut mm", "time s"
+    );
+    eprintln!(
+        "   {:<32} {:>10} {:>10} {:>10} {:>10.1} {:>10.1}",
+        "conformal spiral",
+        spiral.fragments,
+        spiral.linked,
+        spiral.kept_retracts,
+        spiral.cutting_mm,
+        spiral.time_s
+    );
+    eprintln!(
+        "   {:<32} {:>10} {:>10} {:>10} {:>10.1} {:>10.1}",
+        "0deg ball raster, same region",
+        raster.fragments,
+        raster.linked,
+        raster.kept_retracts,
+        raster.cutting_mm,
+        raster.time_s
+    );
+    eprintln!(
+        "   {:<32} {:>10} {:>10} {:>10}",
+        "Wanaka region 1, 0deg (reference)",
+        WANAKA_R1_RASTER_FRAGMENTS,
+        "-",
+        WANAKA_R1_RASTER_RETRACTS
+    );
+    eprintln!(
+        "   {:<32} {:>10} {:>10} {:>10}",
+        "Wanaka region 1, PCA cells (the bar)",
+        WANAKA_R1_PCA_FRAGMENTS,
+        "-",
+        WANAKA_R1_PCA_RETRACTS
+    );
+
+    let retracts_avoided = raster.kept_retracts as i64 - spiral.kept_retracts as i64;
+    let time_delta = spiral.time_s - raster.time_s;
+    let time_ratio = if raster.time_s > 0.0 {
+        spiral.time_s / raster.time_s
+    } else {
+        f64::NAN
+    };
+    eprintln!(
+        "\n   SIDE 1 — RETRACTS THE SPIRAL AVOIDS   {retracts_avoided:>10}   (raster {} minus \
+         spiral {})",
+        raster.kept_retracts, spiral.kept_retracts
+    );
+    eprintln!(
+        "   SIDE 2 — TIME THE SPIRAL PAYS         {time_delta:>10.1} s  ({time_ratio:.3}x the \
+         raster; > 1 means the spiral is SLOWER)"
+    );
+    match report.ring_anisotropy.as_ref() {
+        Some(anis) => eprintln!(
+            "   SIDE 3 — OVER-COVER IT PAYS FOR IT    {:>10.3}x  median per-ring radial-scale \
+             ratio (worst {:.3}x)",
+            anis.median_ratio, anis.worst_ratio
+        ),
+        None => eprintln!(
+            "   SIDE 3 — OVER-COVER IT PAYS FOR IT    {:>10}   NOT MEASURED (no ring placed) — \
+             not a reading of 1.0",
+            "-"
+        ),
+    }
+    eprintln!(
+        "\n   TOTAL TIME INCLUDING RETRACTS is the operator's metric, not cut distance: the F-034\n\
+         \x20  column above already integrates rapids, retract descents and accel through the\n\
+         \x20  pinned Shapeoko envelope, so `time s` IS the comparison. Cut mm is printed only so\n\
+         \x20  a reader can see WHERE the time went."
+    );
+
+    let spiral_wins = time_delta < 0.0;
+    let avoids_retracts = retracts_avoided > 0;
+    if spiral_wins && avoids_retracts {
+        eprintln!(
+            "\n   VERDICT: the spiral wins BOTH sides on this fixture — fewer retracts AND less\n\
+             \x20  total time. That is the first fixture in this instrument where it does; say so\n\
+             \x20  with the over-cover figure attached, because the over-cover is what it will\n\
+             \x20  cost on a region the map flattens worse."
+        );
+    } else if !spiral_wins && !avoids_retracts {
+        eprintln!(
+            "\n   VERDICT: the spiral loses BOTH sides — it is slower and it did not remove\n\
+             \x20  retracts the raster was paying. On this fixture the method has no case."
+        );
+    } else {
+        let retract_side = if avoids_retracts {
+            format!("REMOVES {retracts_avoided}")
+        } else {
+            format!("ADDS {}", -retracts_avoided)
+        };
+        let time_side = if spiral_wins { "WINS" } else { "LOSES" };
+        eprintln!(
+            "\n   VERDICT: MIXED — NO WINNER IS DECLARED, deliberately.\n\
+             \x20  The spiral {retract_side} retracts and {time_side} on time. Those are different\n\
+             \x20  currencies and this instrument will not convert one into the other by picking a\n\
+             \x20  story: the conversion rate is the operator's, and it depends on their stock\n\
+             \x20  state and their retract height, neither of which is measured here\n\
+             \x20  (link_ceiling: None). Report both columns."
+        );
+    }
+}
+
+// ── ARM RIBBON — narrow, branched, simply connected ─────────────────────
+//
+// The arm that fixes the benchmarking error in FINDINGS_F2 §F2-2: a
+// retract-elimination method was measured on two fixtures whose raster had
+// ZERO retracts. This one is deliberately the geometry class a raster hates —
+// narrow arms a scan line keeps leaving and re-entering — while staying
+// SIMPLY CONNECTED, so it isolates the DISTORTION question from the topology
+// question. The topology question is ARM BAND's.
+
+/// Arms radiating from the centre. Eight, at a 22.5° phase, so **no arm is
+/// horizontal or near-horizontal**.
+///
+/// That is not cosmetic. The 0° raster scans in `x` and advances in `y`, so an
+/// arm lying nearly along `x` produces one enormously wide inside-run that
+/// merges with its neighbours and the region stops fragmenting. At eight arms
+/// on a 45° pitch with a 22.5° phase every arm direction has
+/// `|sin θ| ≥ sin 22.5° = 0.383`, so every arm's inside-run stays narrow
+/// enough to separate. A five-arm rose at an 18° phase was derived (by hand,
+/// on paper) to break only ~30 % of its scan rows; this one **measures 76 %**
+/// (32 of 42 active rows, 92 inside-runs, worst row 4).
+const RIBBON_ARMS: usize = 8;
+
+/// Phase of the first arm (rad) — see [`RIBBON_ARMS`].
+const RIBBON_ARM_PHASE_RAD: f64 = PI / 8.0;
+
+/// Skeleton length of one arm (mm), from the centre.
+const RIBBON_ARM_LENGTH_MM: f64 = 10.0;
+
+/// Half-width of the ribbon (mm): the arms are the points within this distance
+/// of the skeleton, so an arm is **2.5 mm wide**.
+///
+/// The brief asks for an arm width of 4–8 × the stepover. At the 0.48620 mm
+/// equal-cusp stepover that band is 1.945–3.890 mm, and 2.5 mm is **5.14 ×**
+/// the stepover — near the middle. It is also the width class the real target
+/// carries: Wanaka thin-organic region 1's dominant tier-1 component measures
+/// **3.84 mm wide = 7.9 stepovers**
+/// (`planning/thin_organic_2026-08-27/FINDINGS.md` §1.1).
+const RIBBON_HALF_WIDTH_MM: f64 = 1.25;
+
+/// Side of the square patch (mm). `2 × (arm + half-width) = 22.5`, so 26 mm
+/// leaves ~1.75 mm of mesh outside the ribbon on every side — enough that the
+/// drop-cutter CL conversion never runs off the patch edge, the same margin
+/// discipline [`WAVY_REGION_RADIUS_MM`] uses.
+const RIBBON_PATCH_MM: f64 = 26.0;
+
+/// Paraboloid "valley floor" amplitude (mm) at [`RIBBON_BOWL_RADIUS_MM`].
+const RIBBON_BOWL_AMPLITUDE_MM: f64 = 1.0;
+
+/// Paraboloid scale radius (mm).
+const RIBBON_BOWL_RADIUS_MM: f64 = 15.0;
+
+/// Ripple amplitude (mm) laid over the valley.
+const RIBBON_RIPPLE_AMPLITUDE_MM: f64 = 0.2;
+
+/// Ripple wavelength (mm).
+const RIBBON_RIPPLE_WAVELENGTH_MM: f64 = 6.0;
+
+/// Ripple wavenumber `k = 2π/L`.
+fn ribbon_ripple_k() -> f64 {
+    TAU / RIBBON_RIPPLE_WAVELENGTH_MM
+}
+
+/// The ribbon fixture's heightfield: a shallow paraboloid valley with a gentle
+/// ripple over it.
+///
+/// ```text
+/// z(x, y) = A_r·(x² + y²)/R₀²  +  A_w·sin(k·x)·sin(k·y)
+/// ```
+///
+/// A **valley floor, not a mountain** — this arm tests BRANCHING, and the steep
+/// question is already answered by ARM STEEP.
+fn ribbon_height(x: f64, y: f64) -> f64 {
+    let k = ribbon_ripple_k();
+    RIBBON_BOWL_AMPLITUDE_MM * (x * x + y * y) / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM)
+        + RIBBON_RIPPLE_AMPLITUDE_MM * (k * x).sin() * (k * y).sin()
+}
+
+/// `|∇z|max` over the WHOLE patch, by the triangle inequality on the two terms.
+///
+/// # The arithmetic, stated as [`wavy_patch_mesh`] states its own
+///
+/// The paraboloid's gradient is `2·A_r·r/R₀²`, largest at the patch's furthest
+/// corner `r_max = (size/2)·√2`. The ripple's is bounded by `A_w·k` exactly:
+/// with `u = sin²(kx)`, `v = sin²(ky)`,
+/// `|∇(A_w sin kx sin ky)|² = (A_w k)²·[u + v − 2uv]`, and `u + v − 2uv` is
+/// linear in each variable so its maximum over `[0,1]²` is at a corner and
+/// equals **1**. Summing the two bounds,
+///
+/// ```text
+/// |∇z|max ≤ 2·A_r·r_max/R₀² + A_w·k
+///         = 2·1.0·18.385/225 + 0.2·1.04720
+///         = 0.16342 + 0.20944 = 0.37286   ⇒  MAX SLOPE 20.45°
+/// ```
+///
+/// — well under the ~30° the brief asks for.
+fn ribbon_max_gradient() -> f64 {
+    let r_max = 0.5 * RIBBON_PATCH_MM * SQRT_2;
+    2.0 * RIBBON_BOWL_AMPLITUDE_MM * r_max / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM)
+        + RIBBON_RIPPLE_AMPLITUDE_MM * ribbon_ripple_k()
+}
+
+/// `|κ|max` over the patch — the bound that says the ball FITS EVERY CONCAVITY.
+///
+/// The Hessian is the sum of the paraboloid's `2·A_r/R₀²·I` and the ripple's,
+/// whose largest eigenvalue magnitude at a critical point is `A_w·k²`. A
+/// heightfield's normal curvature is at most the Hessian's spectral norm, so
+///
+/// ```text
+/// |κ|max ≤ 2·A_r/R₀² + A_w·k² = 0.00889 + 0.21932 = 0.22821 /mm
+///   ⇒  R_min = 4.382 mm  against  K_c = 1.0 mm
+/// ```
+///
+/// The smoke test asserts `R_min ≥ 2·K_c`, so a future parameter tweak that
+/// would make the fixture unmachinable fails loudly instead of arriving as a
+/// mysterious `RingSearchStalled`.
+fn ribbon_max_curvature() -> f64 {
+    let k = ribbon_ripple_k();
+    2.0 * RIBBON_BOWL_AMPLITUDE_MM / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM)
+        + RIBBON_RIPPLE_AMPLITUDE_MM * k * k
+}
+
+/// Distance from `(x, y)` to the ribbon's **skeleton** — [`RIBBON_ARMS`]
+/// segments sharing the origin as one endpoint.
+///
+/// The region is the sublevel set `distance ≤ RIBBON_HALF_WIDTH_MM`, i.e. a
+/// union of capsules. Every capsule is convex and every one contains the
+/// origin, so the union is **star-shaped about the origin** and therefore
+/// SIMPLY CONNECTED with exactly one boundary loop — no hole for a slit map to
+/// be needed for. That is the whole design constraint of this arm.
+fn ribbon_skeleton_distance(x: f64, y: f64) -> f64 {
+    let mut best = f64::INFINITY;
+    for j in 0..RIBBON_ARMS {
+        let theta = RIBBON_ARM_PHASE_RAD + TAU * (j as f64) / (RIBBON_ARMS as f64);
+        let (ux, uy) = (theta.cos(), theta.sin());
+        let t = (x * ux + y * uy).clamp(0.0, RIBBON_ARM_LENGTH_MM);
+        let (dx, dy) = (x - t * ux, y - t * uy);
+        best = best.min(dx.hypot(dy));
+    }
+    best
+}
+
+/// Whole grid cells whose CENTRE lies inside the capsule union.
+fn ribbon_cell_mask(cells: usize) -> Vec<bool> {
+    let mut mask = vec![false; cells * cells];
+    for row in 0..cells {
+        for col in 0..cells {
+            let (x, y) = cell_centre(RIBBON_PATCH_MM, cells, row, col);
+            mask[row * cells + col] = ribbon_skeleton_distance(x, y) <= RIBBON_HALF_WIDTH_MM;
+        }
+    }
+    mask
+}
+
+fn arm_ribbon(
+    cutter: &BallEndmill,
+    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    stepover_mm: f64,
+    params: &SpiralParams,
+) {
+    eprintln!(
+        "\n══════════ ARM RIBBON — narrow BRANCHED ribbon (the honest comparator) ══════════\n\
+         \x20  WHY THIS ARM EXISTS. FINDINGS_F2 §F2-2 measured the spiral 5-15% SLOWER than a\n\
+         \x20  0deg raster on the sphere cap and the wavy patch — and on those fixtures the\n\
+         \x20  raster produced 4 and 3 fragments with ZERO RETRACTS. The spiral's entire value\n\
+         \x20  proposition is one continuous stay-down path with no lifts, and it had NOTHING TO\n\
+         \x20  BEAT. On the real target (Wanaka thin-organic region 1) a 0deg raster produces\n\
+         \x20  {WANAKA_R1_RASTER_FRAGMENTS} fragments / {WANAKA_R1_RASTER_RETRACTS} kept retracts, \
+         and even the tuned PCA-cell plan carries\n\
+         \x20  {WANAKA_R1_PCA_FRAGMENTS} / {WANAKA_R1_PCA_RETRACTS}. This arm reproduces that CLASS \
+         while staying SIMPLY CONNECTED, so it\n\
+         \x20  isolates the DISTORTION question from the TOPOLOGY question. Topology is ARM BAND.\n\
+         \x20  A refusal here is a HARD FAILURE unless it is diagnosable — a diagnosed refusal on\n\
+         \x20  a branched region IS the finding, and the diagnosis is printed.\n\
+         \x20\n\
+         \x20  MEASURED ON THE WAY (G-CELLHOLE, 2026-08-30) — a result in its own right:\n\
+         \x20  THIS REGION IS SIMPLY CONNECTED IN THE CONTINUUM AND WAS NOT AFTER DIGITISATION.\n\
+         \x20  The arms are capsules that all contain the origin, so their union is star-shaped\n\
+         \x20  about it — one boundary loop, no hole, provable by inspection. Laid onto a\n\
+         \x20  0.1057 mm cell grid it came back with EULER -3 AND FOUR HOLES: one cell each, at\n\
+         \x20  r = 3.363 mm on the bisectors at 45/135/225/315 deg — the four inter-arm wedges\n\
+         \x20  that run DIAGONAL to the axis-aligned lattice. Total 0.0447 mm², 0.024% of the\n\
+         \x20  region: topologically fatal, metrically nothing. The full mechanism and the\n\
+         \x20  shipped-extractor comparison are in the G-CELLHOLE block below.\n\
+         \x20  Why it belongs in the programme's evidence and not just in a commit message: the\n\
+         \x20  operator's real regions are SLOPE-BANDED, and banding creates holes of its own.\n\
+         \x20  This says a branched region acquires holes from the GRID ON TOP OF those, so a\n\
+         \x20  hole count read off a mask is an UPPER BOUND on the surface's topology, never a\n\
+         \x20  reading of it — and ARM BAND's census must be read with that in mind.\n"
+    );
+
+    let max_gradient = ribbon_max_gradient();
+    let max_slope_deg = max_gradient.atan().to_degrees();
+    let max_curvature = ribbon_max_curvature();
+    let cells = heightfield_cells(RIBBON_PATCH_MM, max_gradient, ANALYTIC_MAX_EDGE_MM);
+    let mesh = heightfield_mesh(RIBBON_PATCH_MM, cells, ribbon_height);
+    let index = SpatialIndex::build_auto(&mesh);
+    let raw_mask = ribbon_cell_mask(cells);
+    let (mask, fill) = fill_mask_holes(&raw_mask, RIBBON_PATCH_MM, cells);
+    let triangles = cells_to_triangles(&mask, cells);
+    let polygons = mask_polygons(&mask, RIBBON_PATCH_MM, cells);
+
+    eprintln!(
+        "   fixture: {RIBBON_ARMS} arms of length {RIBBON_ARM_LENGTH_MM} mm at a \
+         {:.1} deg phase, half-width {RIBBON_HALF_WIDTH_MM} mm\n\
+         \x20           => ARM WIDTH {:.3} mm = {:.2} x the {stepover_mm:.5} mm stepover (brief \
+         asks 4-8x;\n\
+         \x20           Wanaka region 1's dominant component is 3.84 mm = 7.9 stepovers).\n\
+         \x20  heightfield z = A_r*(x^2+y^2)/R0^2 + A_w*sin(k x)*sin(k y) on a {cells} x {cells} \
+         grid,\n\
+         \x20           A_r {RIBBON_BOWL_AMPLITUDE_MM} mm at R0 {RIBBON_BOWL_RADIUS_MM} mm, \
+         A_w {RIBBON_RIPPLE_AMPLITUDE_MM} mm at L {RIBBON_RIPPLE_WAVELENGTH_MM} mm, cell {:.5} mm.\n\
+         \x20  |grad z|max = 2*A_r*r_max/R0^2 + A_w*k = {max_gradient:.5}  =>  MAX SLOPE \
+         {max_slope_deg:.2} deg (bar: well under 30).\n\
+         \x20  |kappa|max  = 2*A_r/R0^2 + A_w*k^2   = {max_curvature:.5} 1/mm  =>  R_min {:.3} mm \
+         against K_c {BALL_RADIUS_MM} mm,\n\
+         \x20           so the ball fits every concavity and no S^h point is unreachable at any \
+         spacing.\n\
+         \x20  A VALLEY FLOOR, NOT A MOUNTAIN: relief over the machined ribbon is ~{:.2} mm. This \
+         arm tests\n\
+         \x20  BRANCHING; the steep question is ARM STEEP's.",
+        RIBBON_ARM_PHASE_RAD.to_degrees(),
+        2.0 * RIBBON_HALF_WIDTH_MM,
+        2.0 * RIBBON_HALF_WIDTH_MM / stepover_mm,
+        RIBBON_PATCH_MM / cells as f64,
+        1.0 / max_curvature,
+        RIBBON_BOWL_AMPLITUDE_MM * (RIBBON_ARM_LENGTH_MM + RIBBON_HALF_WIDTH_MM).powi(2)
+            / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM)
+            + 2.0 * RIBBON_RIPPLE_AMPLITUDE_MM
+    );
+
+    // G-CELLHOLE. Printed BEFORE the census, because the census is taken on
+    // the repaired mask and a reader must know what was repaired first.
+    print_mask_fill("ARM RIBBON", &fill, RIBBON_PATCH_MM / cells as f64);
+
+    let census = mesh_census(&mesh, &triangles);
+    print_mesh_census("ARM RIBBON", &census, stepover_mm);
+    eprintln!(
+        "   region polygons extracted from the SAME (repaired) cell mask that selected the \
+         triangles:\n\
+         \x20  {} polygon(s), {} hole(s) in total. ONE polygon with ZERO holes is the design claim \
+         — the\n\
+         \x20  arms are capsules sharing the origin, every capsule is convex and contains it, so \
+         the\n\
+         \x20  union is STAR-SHAPED about the origin and therefore simply connected. That argument \
+         is\n\
+         \x20  about the CONTINUUM and it survived; what did not was the digitisation, and the\n\
+         \x20  G-CELLHOLE block above says exactly what it cost and what was filled. If THIS line\n\
+         \x20  still prints holes, the repair did not reach them and everything below inherits it.",
+        polygons.len(),
+        polygons.iter().map(|p| p.holes.len()).sum::<usize>()
+    );
+
+    // ── THE VALIDITY GATE — before the cost table, by design ────────────
+    let scan = scanline_census(&polygons, stepover_mm);
+    let gate_passed = print_fragmentation_gate("ARM RIBBON", &scan, stepover_mm);
+
+    let Some(polygon) = polygons.first().cloned() else {
+        panic!(
+            "ARM RIBBON: the cell mask produced no polygon at all. The generator, not the \
+             algorithm, is broken."
+        )
+    };
+
+    // The target: the ring search sizes every ring by its single WORST
+    // uncovered point, and CONVEX curvature is what narrows the admissible
+    // stepover, so the peak-convex figure is the binding one — the same
+    // reasoning ARM WAVY prints. On this surface the peak convex curvature is
+    // the ripple's crest minus the valley's own (concave) contribution.
+    let peak_convex = RIBBON_RIPPLE_AMPLITUDE_MM * ribbon_ripple_k() * ribbon_ripple_k()
+        - 2.0 * RIBBON_BOWL_AMPLITUDE_MM / (RIBBON_BOWL_RADIUS_MM * RIBBON_BOWL_RADIUS_MM);
+    let convex_target =
+        scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, peak_convex);
+    eprintln!("\n   -- THE ANALYTIC ENVELOPE (this surface has no single curvature) --");
+    eprintln!("     peak-CONVEX curvature (ripple crest minus valley) {peak_convex:>9.5} 1/mm");
+    eprintln!(
+        "     peak-CONVEX target (the binding one)              {convex_target:>9.5} mm   <<< the \
+         verdict is measured against this"
+    );
+    eprintln!(
+        "     FLAT target, for scale                            {stepover_mm:>9.5} mm\n\
+         \x20    NOTE this is an ENVELOPE BOUND over the whole patch: whether the machined ribbon\n\
+         \x20    actually contains a ripple crest is a fact about where the arms landed, not an\n\
+         \x20    assumption. Read the measured distribution in Stage C against BOTH ends.\n"
+    );
+
+    let arm = plan_selected_region("ARM RIBBON", &mesh, &index, &triangles, polygon, params);
+    let Arm {
+        label,
+        region,
+        report,
+        outcome,
+    } = arm;
+
+    eprintln!();
+    print_distortion_blocks(label, &report);
+
+    let fixture = Fixture {
+        mesh: &mesh,
+        index: &index,
+        cutter,
+        kinematics,
+        safe_z: mesh.bbox.max.z + 5.0,
+        effective_min_z: mesh.bbox.min.z - 0.1,
+    };
+
+    let outcome = match outcome {
+        Ok(result) => Some(result),
+        Err(refusal) => {
+            let diagnosable = diagnose_refusal(label, &report, &refusal, params);
+            assert!(
+                diagnosable,
+                "{label} refused with {refusal:?} and the surviving report carried nothing to \
+                 attribute it by. A DIAGNOSED refusal on a branched region is itself the finding \
+                 and this arm reports it as one; an UNDIAGNOSABLE refusal is the hard failure."
+            );
+            eprintln!(
+                "\n   ARM RIBBON REFUSED, AND THE REFUSAL IS THE FINDING.\n\
+                 \x20  The region is a simply-connected, manifold, sub-{ANALYTIC_MAX_EDGE_MM} mm \
+                 polyomino disk\n\
+                 \x20  with slope under {max_slope_deg:.1} deg and every concavity larger than the \
+                 ball, so no\n\
+                 \x20  fixture defect can be blamed and no topology repair (F2 step 3) can help: \
+                 there is\n\
+                 \x20  NO HOLE HERE. What is left is DISTORTION — read the ring-anisotropy and K \
+                 rows\n\
+                 \x20  above. If the refusal is FlattenDidNotConverge that is a SOLVER budget \
+                 instead\n\
+                 \x20  (raise ANALYTIC_SOLVER_MAX_SWEEPS, currently {}); coarsening the mesh is \
+                 NOT the fix.\n",
+                params.solver_max_sweeps
+            );
+            None
+        }
+    };
+
+    let stage_d_outcome = outcome.as_ref().and_then(|result| {
+        run_arm_evidence(
+            &ArmRun {
+                label,
+                slug: "branched_ribbon_conformal_spiral",
+                kind: ArmKind::Analytic,
+                // DELIBERATELY None, and this is not an omission.
+                //
+                // `analytic_spacing_verdict` is ARM SPHERE's PRE-REGISTERED
+                // three-way branch, and its "near HALF the target" arm prints
+                // "off-by-one-band defect in the ring recursion". That verdict
+                // was registered for a fixture where the map is near-isometric
+                // and the ring can be spaced correctly everywhere at once. On
+                // a BRANCHED region it cannot: the worst-sector rule spaces
+                // every non-worst sector tighter than target by the measured
+                // ring anisotropy, so a median anisotropy of 1.5-3x puts the
+                // measured median at 0.33-0.67x target — straddling the half
+                // band — and the instrument would print a recursion-defect
+                // diagnosis that its OWN over-cover row contradicts two
+                // screens later. Running a pre-registered verdict on an arm it
+                // was not registered for is the instrument-integrity failure
+                // this file exists to prevent. The envelope block printed
+                // above still gives the target context; the question this arm
+                // asks is the TRADE, not the spacing.
+                analytic_target_mm: None,
+                run_stage_e: false,
+            },
+            fixture,
+            &region,
+            &report,
+            result,
+            params,
+            stepover_mm,
+        )
+    });
+    let trade = stage_d_outcome.as_ref();
+    print_trade_verdict(label, trade, &report, &scan, gate_passed);
+}
+
+// ── ARM BAND — the geometry the programme actually came from ────────────
+//
+// The operator's motivation is not "branched shapes are hard"; it is that
+// SLOPE-ANGLE-BANDED REGIONS PRODUCE WALLS OF RETRACTS. Regions in this
+// codebase are selected by slope range — `finish_planner`'s `FinishBand`
+// Shallow / MidSteep / VerySteep decomposition — and on an undulating surface
+// a slope band is inherently scattered: it carves the surface into stripes and
+// islands, and rastering those means lifting constantly. Their metric is TOTAL
+// TIME INCLUDING RETRACTS, not shortest cut.
+
+/// Side of the ARM BAND patch (mm).
+const BAND_PATCH_MM: f64 = 22.0;
+
+/// Height of each bump (mm).
+const BAND_BUMP_AMPLITUDE_MM: f64 = 1.5;
+
+/// Support radius of each bump (mm) — the surface is exactly flat outside it.
+const BAND_BUMP_RADIUS_MM: f64 = 4.0;
+
+/// Centre-to-centre pitch of the 2 × 2 bump lattice (mm). Greater than
+/// `2 × BAND_BUMP_RADIUS_MM`, so the four supports are **disjoint** and the
+/// single-bump slope and curvature bounds below are exact for the whole
+/// surface rather than being a superposition estimate.
+const BAND_BUMP_PITCH_MM: f64 = 10.0;
+
+/// Shallow/MidSteep threshold (deg) — the analogue of
+/// `FinishPlannerParams::steep_threshold_deg`, which SHIPS AT **45.0**.
+///
+/// # Why an analogue and not the shipped number
+///
+/// Reaching 45° while keeping every concavity larger than the ball forces the
+/// feature scale up, and the facet ceiling then forces the triangle count up
+/// with the square of it: at a 50° peak slope this fixture measures **387 k
+/// triangles** against the 102 k it costs at 30°, for a patch that holds the
+/// same 2 × 2 bump lattice. The claim this arm makes is **topological** — how
+/// many components a slope band has, and how many holes each one carries — and
+/// that claim is threshold-invariant: it is a statement about a band being an
+/// annulus rather than a disk, which does not care where the two thresholds
+/// sit. So the arm scales the thresholds down instead of scaling the mesh up,
+/// and says so.
+///
+/// The one thing the analogue does NOT reproduce is the shipped planner's own
+/// output on this surface: at a 45° threshold the whole patch is `Shallow` and
+/// the decomposition emits ONE region. That is a fact about the fixture's
+/// gentleness, not about the pipeline.
+const BAND_SHALLOW_MAX_DEG: f64 = 10.0;
+
+/// MidSteep/VerySteep threshold (deg) — the analogue of
+/// `FinishPlannerParams::waterline_threshold_deg`, which SHIPS AT **75.0**.
+/// See [`BAND_SHALLOW_MAX_DEG`].
+const BAND_STEEP_MIN_DEG: f64 = 20.0;
+
+/// Area (mm²) below which a component is not worth planning a spiral on at
+/// all: `10 × stepover²`.
+///
+/// **[REPO] bounding number**, asked for as a sanity figure rather than a bar.
+/// Ten stepovers-squared is about twenty passes' worth of ground; below that
+/// the ring search has fewer rings than a raster has passes and the comparison
+/// stops meaning anything. It is reported as an area FRACTION of the band, not
+/// as a component count, because one big component and nine crumbs is a
+/// completely different situation from ten equal crumbs.
+fn band_min_useful_area_mm2(stepover_mm: f64) -> f64 {
+    10.0 * stepover_mm * stepover_mm
+}
+
+/// Centres of the 2 × 2 bump lattice.
+fn band_bump_centres() -> [(f64, f64); 4] {
+    let h = 0.5 * BAND_BUMP_PITCH_MM;
+    [(-h, -h), (h, -h), (-h, h), (h, h)]
+}
+
+/// The ARM BAND heightfield: four **raised-cosine** bumps on a flat plane.
+///
+/// ```text
+/// z(d) = A/2 · (1 + cos(π·d/R))   for d ≤ R,   0 otherwise
+/// ```
+///
+/// # Why a raised cosine and not a Gaussian or another sin·sin patch
+///
+/// * it has **compact support**, so with a pitch greater than `2R` the four
+///   bumps never overlap and every bound below is exact rather than a
+///   superposition estimate;
+/// * it is `C¹` at the foot (`z = 0`, `z' = 0`), so the bump joins the plane
+///   without a crease that would put a spurious slope band around every foot;
+/// * its slope and curvature extrema are closed-form, which is what lets this
+///   arm state the band radii — and therefore its own topology prediction — by
+///   hand, before the run.
+///
+/// A `sin(kx)·sin(ky)` patch was measured (on paper) to be the wrong fixture
+/// here: its low-slope set is a scatter of isolated ~0.4 mm disks and its
+/// mid-slope set is a checkerboard of squares touching at their CORNERS, which
+/// is a digitisation artefact fight rather than the operator's geometry.
+///
+/// # Slope arithmetic
+///
+/// `dz/dd = −A·π/(2R)·sin(π d/R)`, so `|∇z|max = A·π/(2R)` at `d = R/2`:
+/// `1.5·π/8 = 0.58905` ⇒ **MAX SLOPE 30.52°**.
+///
+/// # Concavity arithmetic
+///
+/// The radial curvature is `−A·π²/(2R²)·cos(π d/R)`, largest **positive**
+/// (concave — the valley at the foot) at `d = R`; the tangential curvature
+/// `(1/d)·dz/dd` is bounded by the same figure because `sin t / t ≤ 1`. So
+///
+/// ```text
+/// |κ|max = A·π²/(2R²) = 1.5·9.8696/32 = 0.46264 /mm  ⇒  R_min = 2.1615 mm
+/// ```
+///
+/// against `K_c = 1.0`: the ball fits every concavity, `R_min ≥ 2·K_c`.
+fn band_height(x: f64, y: f64) -> f64 {
+    let mut z = 0.0;
+    for (cx, cy) in band_bump_centres() {
+        let d = (x - cx).hypot(y - cy);
+        if d < BAND_BUMP_RADIUS_MM {
+            z += 0.5 * BAND_BUMP_AMPLITUDE_MM * (1.0 + (PI * d / BAND_BUMP_RADIUS_MM).cos());
+        }
+    }
+    z
+}
+
+/// `|∇z|max = A·π/(2R)`. See [`band_height`].
+fn band_max_gradient() -> f64 {
+    BAND_BUMP_AMPLITUDE_MM * PI / (2.0 * BAND_BUMP_RADIUS_MM)
+}
+
+/// `|κ|max = A·π²/(2R²)`. See [`band_height`].
+fn band_max_curvature() -> f64 {
+    BAND_BUMP_AMPLITUDE_MM * PI * PI / (2.0 * BAND_BUMP_RADIUS_MM * BAND_BUMP_RADIUS_MM)
+}
+
+/// Radius `d` at which a bump's slope equals `slope_deg`, on the requested
+/// side of the `d = R/2` crest.
+///
+/// `slope(d) = atan(A·π/(2R)·sin(π d/R))`, so
+/// `sin(π d/R) = tan(slope) / (A·π/(2R))` and the two roots are
+/// `d = R·arcsin(·)/π` (inner) and `d = R·(π − arcsin(·))/π` (outer). Used to
+/// print the band radii this arm predicts BEFORE it measures them, so the run
+/// confirms or refutes a stated prediction rather than merely producing
+/// numbers. `None` when the slope is never attained.
+fn band_radius_at_slope(slope_deg: f64, outer: bool) -> Option<f64> {
+    let sine = slope_deg.to_radians().tan() / band_max_gradient();
+    if !(0.0..=1.0).contains(&sine) {
+        return None;
+    }
+    let t = sine.asin();
+    let t = if outer { PI - t } else { t };
+    Some(BAND_BUMP_RADIUS_MM * t / PI)
+}
+
+/// Whole grid cells **both** of whose triangles fall in the half-open slope
+/// band `[lo, hi)`.
+///
+/// Whole cells for [`cells_to_triangles`]' reason. The predicate itself is
+/// per-triangle and reads the face normal — [`face_slope_deg`] — which is what
+/// the shipped `SlopeMap` measures and what the smoke test pins.
+fn band_cell_mask(mesh: &TriangleMesh, cells: usize, lo_deg: f64, hi_deg: f64) -> Vec<bool> {
+    let mut mask = vec![false; cells * cells];
+    for row in 0..cells {
+        for col in 0..cells {
+            let both = cell_triangles(cells, row, col).iter().all(|&t| {
+                mesh.faces
+                    .get(t as usize)
+                    .is_some_and(|f| slope_in_band(face_slope_deg(f.normal), lo_deg, hi_deg))
+            });
+            mask[row * cells + col] = both;
+        }
+    }
+    mask
+}
+
+/// Print one band's component-by-component topology census, and return the
+/// components.
+fn print_band_topology(
+    band: &str,
+    mesh: &TriangleMesh,
+    triangles: &[u32],
+    lo_deg: f64,
+    hi_deg: f64,
+    stepover_mm: f64,
+) -> Vec<ComponentTopology> {
+    let components = band_topology(mesh, triangles);
+    let min_useful = band_min_useful_area_mm2(stepover_mm);
+    let total_area: f64 = components.iter().map(|c| c.census.area_mm2).sum();
+    eprintln!(
+        "\n   -- BAND {band}  slope [{lo_deg:.1}, {hi_deg:.1}) deg — {} triangles, \
+         {} COMPONENT(S), {total_area:.2} mm² --",
+        triangles.len(),
+        components.len()
+    );
+    if components.is_empty() {
+        eprintln!("     EMPTY — no triangle on this fixture falls in this band.");
+        return components;
+    }
+    eprintln!(
+        "     {:>4} {:>10} {:>12} {:>8} {:>7} {:>7} {:>7} {:>10}",
+        "#", "triangles", "3D area mm²", "loops", "Euler", "holes", "DISK?", "too small?"
+    );
+    let shown = components.len().min(12);
+    for (i, component) in components.iter().take(shown).enumerate() {
+        eprintln!(
+            "     {:>4} {:>10} {:>12.4} {:>8} {:>7} {:>7} {:>7} {:>10}",
+            i,
+            component.triangles.len(),
+            component.census.area_mm2,
+            component.census.boundary_loops,
+            component.census.euler,
+            component.holes(),
+            if component.is_disk() { "YES" } else { "no" },
+            if component.census.area_mm2 < min_useful {
+                "YES"
+            } else {
+                "no"
+            }
+        );
+    }
+    if components.len() > shown {
+        eprintln!(
+            "     ... {} further component(s) not listed; the aggregates below cover ALL of them.",
+            components.len() - shown
+        );
+    }
+
+    let disks = components.iter().filter(|c| c.is_disk()).count();
+    let disk_area: f64 = components
+        .iter()
+        .filter(|c| c.is_disk())
+        .map(|c| c.census.area_mm2)
+        .sum();
+    let small_area: f64 = components
+        .iter()
+        .filter(|c| c.census.area_mm2 < min_useful)
+        .map(|c| c.census.area_mm2)
+        .sum();
+    let useful_disk_area: f64 = components
+        .iter()
+        .filter(|c| c.is_disk() && c.census.area_mm2 >= min_useful)
+        .map(|c| c.census.area_mm2)
+        .sum();
+    eprintln!(
+        "     components that are TOPOLOGICAL DISKS (1 loop, Euler 1): {disks} of {} — \
+         {disk_area:.2} mm² = {:.2}% of the band",
+        components.len(),
+        100.0 * disk_area / total_area.max(1e-12)
+    );
+    eprintln!(
+        "     area in components BELOW {min_useful:.4} mm² (= 10 x stepover²): \
+         {small_area:.2} mm² = {:.2}% of the band",
+        100.0 * small_area / total_area.max(1e-12)
+    );
+    eprintln!(
+        "     area a spiral could even be ASKED about (disk AND >= {min_useful:.4} mm²): \
+         {useful_disk_area:.2} mm² = {:.2}% of the band",
+        100.0 * useful_disk_area / total_area.max(1e-12)
+    );
+    components
+}
+
+/// The retract wall, quantified — item 2 of ARM BAND's brief.
+fn band_raster_wall(
+    label: &str,
+    fixture: Fixture<'_>,
+    polygons: &[Polygon2],
+    region_area_mm2: f64,
+    stepover_mm: f64,
+) -> CandidateCost {
+    use rs_cam_core::region_set::RegionSet;
+
+    eprintln!("\n   ===== THE RETRACT WALL — 0deg BALL RASTER OVER {label} =====");
+    eprintln!("     {FRESH_STOCK_LABEL}");
+    let grid = grid_for_direction(
+        fixture.mesh,
+        fixture.index,
+        fixture.cutter,
+        stepover_mm,
+        0.0,
+    );
+    let raw = raster_candidate(&grid, polygons, fixture.safe_z, fixture.effective_min_z);
+    let boundary = RegionSet::new(polygons.to_vec());
+    let cost = relink_and_cost(
+        raw,
+        fixture.mesh,
+        fixture.index,
+        fixture.cutter,
+        &boundary,
+        &fixture.kinematics,
+        fixture.safe_z,
+    );
+    let area_cm2 = region_area_mm2 / 100.0;
+    eprintln!(
+        "     region                        {:>12} polygon(s), {} hole(s), {region_area_mm2:.2} \
+         mm² of 3D surface",
+        polygons.len(),
+        polygons.iter().map(|p| p.holes.len()).sum::<usize>()
+    );
+    eprintln!("     moves                         {:>12}", cost.moves);
+    eprintln!("     FRAGMENTS                     {:>12}", cost.fragments);
+    eprintln!("     surface links the relinker ADDED {:>9}", cost.linked);
+    eprintln!(
+        "     KEPT RETRACTS                 {:>12}   <<< the wall. Every one is a lift-traverse-\
+         plunge",
+        cost.kept_retracts
+    );
+    eprintln!(
+        "     retracts per cm² of region    {:>12.3}   (comparable across fixtures of different \
+         size —",
+        cost.kept_retracts as f64 / area_cm2.max(1e-12)
+    );
+    eprintln!(
+        "\x20                                              which a raw retract count is NOT)"
+    );
+    eprintln!(
+        "     cutting distance (mm)         {:>12.1}",
+        cost.cutting_mm
+    );
+    eprintln!(
+        "     F-034 TIME (s)                {:>12.1}   <<< TOTAL TIME INCLUDING RETRACTS — the\n\
+         \x20                                              operator's metric, not cut distance",
+        cost.time_s
+    );
+    eprintln!(
+        "     Reference, Wanaka thin-organic region 1: 0deg undivided \
+         {WANAKA_R1_RASTER_FRAGMENTS} frags / {WANAKA_R1_RASTER_RETRACTS} retracts;\n\
+         \x20    PCA-minor cells (the production-validated bar) {WANAKA_R1_PCA_FRAGMENTS} / \
+         {WANAKA_R1_PCA_RETRACTS}. THIS is the wall the whole\n\
+         \x20    programme went looking for a low-retract algorithm to knock down."
+    );
+    cost
+}
+
+fn arm_band(
+    cutter: &BallEndmill,
+    kinematics: rs_cam_core::machine_kinematics::MachineKinematics,
+    stepover_mm: f64,
+    params: &SpiralParams,
+) {
+    eprintln!(
+        "\n══════════ ARM BAND — SLOPE-BANDED region (the geometry the programme came from) \
+         ══════════\n\
+         \x20  Regions in this codebase are selected by SLOPE RANGE — `finish_planner`'s\n\
+         \x20  FinishBand Shallow / MidSteep / VerySteep decomposition — and on an undulating\n\
+         \x20  surface a slope band is inherently scattered: it carves the surface into stripes\n\
+         \x20  and islands, and rastering those means lifting constantly. That retract wall, not\n\
+         \x20  path length, is why this programme went looking for a low-retract algorithm, and\n\
+         \x20  the operator's metric is TOTAL TIME INCLUDING RETRACTS.\n\
+         \x20  A `NotSimplyConnected` refusal on this arm is a HEADLINE FINDING, NOT A FAILURE:\n\
+         \x20  it would mean the hole machinery (F2 step 3) is LOAD-BEARING for the main use\n\
+         \x20  case rather than an optional extra — the opposite of what FINDINGS_F2 currently\n\
+         \x20  recommends.\n"
+    );
+
+    let max_gradient = band_max_gradient();
+    let max_slope_deg = max_gradient.atan().to_degrees();
+    let max_curvature = band_max_curvature();
+    let cells = heightfield_cells(BAND_PATCH_MM, max_gradient, ANALYTIC_MAX_EDGE_MM);
+    let mesh = heightfield_mesh(BAND_PATCH_MM, cells, band_height);
+    let index = SpatialIndex::build_auto(&mesh);
+
+    eprintln!(
+        "   fixture: 4 raised-cosine bumps, z = A/2*(1 + cos(pi*d/R)) for d <= R, on a flat \
+         plane.\n\
+         \x20           A {BAND_BUMP_AMPLITUDE_MM} mm, R {BAND_BUMP_RADIUS_MM} mm, lattice pitch \
+         {BAND_BUMP_PITCH_MM} mm (> 2R, so the four supports are\n\
+         \x20           DISJOINT and every bound below is exact, not a superposition estimate).\n\
+         \x20           Patch {BAND_PATCH_MM} mm on a {cells} x {cells} grid, cell {:.5} mm, \
+         {} triangles.\n\
+         \x20  |grad z|max = A*pi/(2R)   = {max_gradient:.5}  =>  MAX SLOPE {max_slope_deg:.2} deg\n\
+         \x20  |kappa|max  = A*pi^2/(2R^2) = {max_curvature:.5} 1/mm  =>  R_min {:.4} mm against \
+         K_c {BALL_RADIUS_MM} mm (bar: >= {:.1} mm).",
+        BAND_PATCH_MM / cells as f64,
+        mesh.triangles.len(),
+        1.0 / max_curvature,
+        2.0 * BALL_RADIUS_MM
+    );
+    eprintln!(
+        "   THRESHOLDS: this arm bands at [0, {BAND_SHALLOW_MAX_DEG}) / \
+         [{BAND_SHALLOW_MAX_DEG}, {BAND_STEEP_MIN_DEG}) / [{BAND_STEEP_MIN_DEG}, inf) deg.\n\
+         \x20  The SHIPPED FinishPlannerParams thresholds are steep_threshold_deg 45.0 and\n\
+         \x20  waterline_threshold_deg 75.0. These are SCALED ANALOGUES and the substitution is\n\
+         \x20  stated, not hidden: reaching 45 deg while keeping every concavity larger than the\n\
+         \x20  ball forces the feature scale up and the facet ceiling then forces the triangle\n\
+         \x20  count up with its square — ~387k triangles at a 50 deg peak against the {} here.\n\
+         \x20  The claim this arm makes is TOPOLOGICAL (how many components, how many holes each\n\
+         \x20  one has) and that is threshold-invariant. What the analogue does NOT reproduce is\n\
+         \x20  the shipped planner's own output on this surface: at 45 deg the whole patch is\n\
+         \x20  Shallow and the decomposition emits ONE region. That is a fact about the fixture's\n\
+         \x20  gentleness, not about the pipeline.\n",
+        mesh.triangles.len()
+    );
+
+    // ── THE HAND PREDICTION, stated BEFORE the census ──────────────────
+    let r_in_shallow = band_radius_at_slope(BAND_SHALLOW_MAX_DEG, false);
+    let r_out_shallow = band_radius_at_slope(BAND_SHALLOW_MAX_DEG, true);
+    let r_in_steep = band_radius_at_slope(BAND_STEEP_MIN_DEG, false);
+    let r_out_steep = band_radius_at_slope(BAND_STEEP_MIN_DEG, true);
+    let fmt = |r: Option<f64>| r.map_or("n/a".to_owned(), |v| format!("{v:.4}"));
+    eprintln!(
+        "   ===== THE PREDICTION, COMPUTED BY HAND FROM THE CLOSED FORM, BEFORE THE CENSUS \
+         =====\n\
+         \x20  Band radii on ONE bump (d from its centre), from sin(pi d/R) = tan(slope)/(A pi/2R):\n\
+         \x20    slope {BAND_SHALLOW_MAX_DEG} deg at d = {} (inner) and d = {} (outer)\n\
+         \x20    slope {BAND_STEEP_MIN_DEG} deg at d = {} (inner) and d = {} (outer)\n\
+         \x20  Therefore, per bump:\n\
+         \x20    SHALLOW  = a tiny CAP (d < inner-10) + an outer ANNULUS (d > outer-10) that is\n\
+         \x20               CONTINUOUS WITH THE FLAT PLANE, because the bump meets the plane at\n\
+         \x20               zero slope (C1 foot).\n\
+         \x20    MIDSTEEP = TWO annuli, (inner-10, inner-20) and (outer-20, outer-10).\n\
+         \x20    STEEP    = ONE annulus, (inner-20, outer-20).\n\
+         \x20  So the PREDICTED topology census is:\n\
+         \x20    SHALLOW  : 5 components — ONE big one (plane + 4 outer annuli) with FOUR HOLES,\n\
+         \x20               Euler -3 and 5 boundary loops, plus 4 cap disks of ~{:.4} mm² each\n\
+         \x20               (BELOW the {:.4} mm² usefulness floor).\n\
+         \x20    MIDSTEEP : 8 components, EVERY ONE AN ANNULUS — Euler 0, 2 boundary loops.\n\
+         \x20    STEEP    : 4 components, EVERY ONE AN ANNULUS — Euler 0, 2 boundary loops.\n\
+         \x20  If that is what the run measures, then NOT ONE band on this surface is a\n\
+         \x20  topological disk at a useful size, plan_spiral refuses every one of them on\n\
+         \x20  topology alone, and the slit map is LOAD-BEARING for the operator's real geometry.\n\
+         \x20  If the run measures something else, the prediction was wrong and the measurement\n\
+         \x20  wins — that is the point of stating it first.\n",
+        fmt(r_in_shallow),
+        fmt(r_out_shallow),
+        fmt(r_in_steep),
+        fmt(r_out_steep),
+        PI * r_in_shallow.unwrap_or(0.0).powi(2),
+        band_min_useful_area_mm2(stepover_mm)
+    );
+
+    // ── ITEM 1: the topology census, FIRST, before anything else ───────
+    eprintln!("\n   ===== ARM BAND TOPOLOGY CENSUS (item 1 — read this before any cost) =====");
+    let shallow_mask = band_cell_mask(&mesh, cells, 0.0, BAND_SHALLOW_MAX_DEG);
+    let mid_mask = band_cell_mask(&mesh, cells, BAND_SHALLOW_MAX_DEG, BAND_STEEP_MIN_DEG);
+    let steep_mask = band_cell_mask(&mesh, cells, BAND_STEEP_MIN_DEG, 180.0);
+    let shallow = cells_to_triangles(&shallow_mask, cells);
+    let mid = cells_to_triangles(&mid_mask, cells);
+    let steep = cells_to_triangles(&steep_mask, cells);
+
+    let shallow_components = print_band_topology(
+        "SHALLOW",
+        &mesh,
+        &shallow,
+        0.0,
+        BAND_SHALLOW_MAX_DEG,
+        stepover_mm,
+    );
+    print_band_topology(
+        "MIDSTEEP",
+        &mesh,
+        &mid,
+        BAND_SHALLOW_MAX_DEG,
+        BAND_STEEP_MIN_DEG,
+        stepover_mm,
+    );
+    print_band_topology(
+        "VERYSTEEP",
+        &mesh,
+        &steep,
+        BAND_STEEP_MIN_DEG,
+        180.0,
+        stepover_mm,
+    );
+
+    let fixture = Fixture {
+        mesh: &mesh,
+        index: &index,
+        cutter,
+        kinematics,
+        safe_z: mesh.bbox.max.z + 5.0,
+        effective_min_z: mesh.bbox.min.z - 0.1,
+    };
+
+    // ── ITEM 2: the retract wall on the band the shipped planner RASTERS ─
+    //
+    // `FinishBand::Shallow`'s own doc: "Slope below steep_threshold_deg —
+    // parallel raster passes." So the shallow band is the one whose retract
+    // count is the operator's complaint, and it is the one costed here.
+    let shallow_polygons = mask_polygons(&shallow_mask, BAND_PATCH_MM, cells);
+    let shallow_area = region_area_mm2(&mesh, &shallow);
+    let scan = scanline_census(&shallow_polygons, stepover_mm);
+    let gate_passed = print_fragmentation_gate("ARM BAND / SHALLOW", &scan, stepover_mm);
+    let raster_cost = band_raster_wall(
+        "ARM BAND / SHALLOW",
+        fixture,
+        &shallow_polygons,
+        shallow_area,
+        stepover_mm,
+    );
+
+    // ── ITEM 3: can a spiral be planned on ANY component at all? ────────
+    eprintln!("\n   ===== ITEM 3 — CAN A SPIRAL BE PLANNED ON ANY SHALLOW COMPONENT? =====");
+    let min_useful = band_min_useful_area_mm2(stepover_mm);
+    let qualifying = shallow_components
+        .iter()
+        .find(|c| c.is_disk() && c.census.area_mm2 >= min_useful);
+    let largest = shallow_components.first();
+
+    match (qualifying, largest) {
+        (Some(component), _) => {
+            eprintln!(
+                "     A QUALIFYING DISK EXISTS: {} triangles, {:.4} mm², 1 boundary loop, Euler 1.\n\
+                 \x20    Planning the spiral on THAT COMPONENT ALONE — the prediction above said \
+                 there\n\
+                 \x20    would be none, so this line refutes it and the refutation is the finding.",
+                component.triangles.len(),
+                component.census.area_mm2
+            );
+            let mask = triangles_to_cell_mask(&component.triangles, cells);
+            let polygons = mask_polygons(&mask, BAND_PATCH_MM, cells);
+            match polygons.first().cloned() {
+                Some(polygon) => {
+                    let arm = plan_selected_region(
+                        "ARM BAND",
+                        &mesh,
+                        &index,
+                        &component.triangles,
+                        polygon,
+                        params,
+                    );
+                    let Arm {
+                        label,
+                        region,
+                        report,
+                        outcome,
+                    } = arm;
+                    eprintln!();
+                    print_distortion_blocks(label, &report);
+                    let stage_d_outcome = match outcome {
+                        Ok(result) => run_arm_evidence(
+                            &ArmRun {
+                                label,
+                                slug: "slope_band_conformal_spiral",
+                                kind: ArmKind::Analytic,
+                                analytic_target_mm: None,
+                                run_stage_e: false,
+                            },
+                            fixture,
+                            &region,
+                            &report,
+                            &result,
+                            params,
+                            stepover_mm,
+                        ),
+                        Err(refusal) => {
+                            let ok = diagnose_refusal(label, &report, &refusal, params);
+                            assert!(
+                                ok,
+                                "{label} refused with {refusal:?} on a component this instrument \
+                                 had already measured to be a topological disk, and the report \
+                                 carried nothing to attribute it by."
+                            );
+                            None
+                        }
+                    };
+                    // NOTE the census handed to the verdict is the WHOLE
+                    // SHALLOW BAND's, not this component's: the raster cost it
+                    // is compared against is the whole band's too, so the two
+                    // sides agree — but a reader must not read the gate line
+                    // as a statement about this one component's shape.
+                    let trade = stage_d_outcome.as_ref();
+                    print_trade_verdict(label, trade, &report, &scan, gate_passed);
+                }
+                None => eprintln!(
+                    "     the component's cell mask produced no polygon — cannot cost it."
+                ),
+            }
+        }
+        (None, Some(component)) => {
+            eprintln!(
+                "     NO COMPONENT OF THE SHALLOW BAND IS A TOPOLOGICAL DISK AT A USEFUL SIZE.\n\
+                 \x20    The largest component has {} triangles, {:.4} mm², {} boundary loop(s) \
+                 and Euler {}\n\
+                 \x20    — i.e. {} hole(s). Planning on it anyway, so the refusal is on the \
+                 record and\n\
+                 \x20    typed rather than being asserted from the census:",
+                component.triangles.len(),
+                component.census.area_mm2,
+                component.census.boundary_loops,
+                component.census.euler,
+                component.holes()
+            );
+            // Hygiene FIRST, then plan. Without it, one bowtie vertex anywhere
+            // in this frame comes back as `NonManifoldBoundary` and the arm
+            // would report "the prediction was refuted, the measurement wins"
+            // when the real story is a SELECTION ARTEFACT — the exact class of
+            // error the FINDINGS_F2 withdrawal is about. `clean_selection`
+            // never touches a hole (its own docs say so, and it only ever
+            // REMOVES triangles), so the `NotSimplyConnected` question this arm
+            // exists to ask survives it intact.
+            let (cleaned, cleanup) = clean_selection(&mesh, &component.triangles);
+            eprintln!(
+                "     selection hygiene on that component FIRST: {} -> {} triangles, {} \
+                 component(s) on\n\
+                 \x20    the first pass, {} pinch pass(es), {} triangle(s) shaved. This runs \
+                 BEFORE the plan\n\
+                 \x20    so that a single bowtie vertex cannot come back as NonManifoldBoundary \
+                 and be misread\n\
+                 \x20    as the topology answer. clean_selection only ever REMOVES triangles and \
+                 never touches\n\
+                 \x20    a hole, so the NotSimplyConnected question survives it intact.",
+                cleanup.before,
+                cleanup.after,
+                cleanup.components_first_pass,
+                cleanup.pinch_iterations,
+                cleanup.triangles_shaved_by_pinch
+            );
+            let (report, outcome) = conformal_spiral::plan_spiral(&mesh, &index, &cleaned, params);
+            match outcome {
+                Ok(_) => eprintln!(
+                    "     plan_spiral ACCEPTED it. The census above and the module disagree, \
+                     which is\n\
+                     \x20    a defect in ONE of them — do not proceed until that is resolved."
+                ),
+                Err(refusal) => {
+                    eprintln!("     REFUSAL: {refusal:?}");
+                    match &refusal {
+                        SpiralRefusal::NotSimplyConnected { boundary_loops } => eprintln!(
+                            "\n     *** HEADLINE FINDING — NotSimplyConnected {{ boundary_loops: \
+                             {boundary_loops} }} ***\n\
+                             \x20    The operator's real target geometry is selected BY SLOPE \
+                             RANGE, and a slope\n\
+                             \x20    band on a bumpy surface is multiply connected BY \
+                             CONSTRUCTION: the other\n\
+                             \x20    bands become HOLES inside it. So the slit map / hole \
+                             machinery (Phase F2\n\
+                             \x20    step 3) is LOAD-BEARING FOR THE MAIN USE CASE, not an \
+                             optional extra — the\n\
+                             \x20    OPPOSITE of FINDINGS_F2's current recommendation, which \
+                             says 'do not proceed\n\
+                             \x20    to the slit map / holes on efficiency grounds'. That \
+                             recommendation was\n\
+                             \x20    reached on a convex ellipse and a sphere cap, neither of \
+                             which can exhibit\n\
+                             \x20    this. It should be revisited against this arm."
+                        ),
+                        other => eprintln!(
+                            "\n     The refusal is {other:?}, NOT NotSimplyConnected. The \
+                             prediction named\n\
+                             \x20    NotSimplyConnected; this refutes it, and the measurement \
+                             wins. Read the\n\
+                             \x20    diagnosis below before concluding anything about the slit \
+                             map."
+                        ),
+                    }
+                    diagnose_refusal(
+                        "ARM BAND (largest shallow component)",
+                        &report,
+                        &refusal,
+                        params,
+                    );
+                }
+            }
+            eprintln!(
+                "\n     There is therefore NO SPIRAL COST ON THIS ARM, and that absence is the \
+                 result:\n\
+                 \x20    the raster pays {} kept retracts over {:.2} mm² ({:.3} per cm²) and the \
+                 method\n\
+                 \x20    under test cannot be asked to beat it, because it refuses the geometry \
+                 on\n\
+                 \x20    topology before any spacing question is reached.",
+                raster_cost.kept_retracts,
+                shallow_area,
+                raster_cost.kept_retracts as f64 / (shallow_area / 100.0).max(1e-12)
+            );
+        }
+        (None, None) => eprintln!("     the shallow band is EMPTY on this fixture."),
+    }
 }
 
 // ── ARMS STEEP + FLAT — retained terrain probes ─────────────────────────
@@ -4696,9 +6958,9 @@ fn arm_terrain(
          \x20  (no flips, no fold census) and the map being LOW-DISTORTION are now separate\n\
          \x20  questions. Tutte guarantees the first; only these profiles measure the second.\n"
     );
-    print_radial_profile(steep.label, &steep.report);
+    print_distortion_blocks(steep.label, &steep.report);
     eprintln!();
-    print_radial_profile(flat_label, &report);
+    print_distortion_blocks(flat_label, &report);
     eprintln!();
 
     let result = match flat_outcome {
@@ -4757,28 +7019,44 @@ fn arm_terrain(
 /// what PROGRAMME.md, FINDINGS_F2 and this file's own header run-command
 /// quote. It now carries the analytic arms as well as the terrain ones.
 #[test]
-#[ignore = "evidence run — long runtime (5 plan_spiral solves, two on ~37k/~14k-triangle analytic regions); needs NO external files, both analytic fixtures are generated and the terrain one is in-repo"]
+#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
     use rs_cam_core::machine_kinematics::MachineKinematics;
 
     eprintln!(
-        "\n########## PHASE F2 — conformal-spiral evidence, FOUR ARMS, ANALYTIC FIRST ##########\n"
+        "\n########## PHASE F2 — conformal-spiral evidence, SIX ARMS, ANALYTIC FIRST ##########\n"
     );
     eprintln!(
         "   ORDER AND STANDING OF THE ARMS:\n\
-         \x20    1. ARM SPHERE  analytic spherical cap    — DECISIVE. Carries the phase-1 spacing\n\
-         \x20                                               verdict; a refusal here is a HARD\n\
-         \x20                                               FAILURE.\n\
+         \x20    1. ARM SPHERE  analytic spherical cap    — DECISIVE for SPACING. Carries the\n\
+         \x20                                               phase-1 spacing verdict; a refusal\n\
+         \x20                                               here is a HARD FAILURE.\n\
          \x20    2. ARM WAVY    analytic wavy heightfield — the realistic-but-clean case; a\n\
          \x20                                               refusal here is a HARD FAILURE.\n\
-         \x20    3. ARM STEEP   terrain_small.stl         — fixture-limited PROBE. Fine-geometry\n\
+         \x20    3. ARM RIBBON  analytic branched ribbon  — DECISIVE for the RETRACT TRADE. Narrow\n\
+         \x20                                               branched arms, SIMPLY CONNECTED, so it\n\
+         \x20                                               isolates DISTORTION from TOPOLOGY. A\n\
+         \x20                                               DIAGNOSED refusal here is a FINDING;\n\
+         \x20                                               an undiagnosable one is the failure.\n\
+         \x20    4. ARM BAND    analytic bump lattice,    — DECISIVE for TOPOLOGY. Region selected\n\
+         \x20                   SLOPE-BANDED region        BY SLOPE RANGE, the way finish_planner\n\
+         \x20                                               actually selects one. A\n\
+         \x20                                               NotSimplyConnected refusal here is a\n\
+         \x20                                               HEADLINE FINDING, not a failure.\n\
+         \x20    5. ARM STEEP   terrain_small.stl         — fixture-limited PROBE. Fine-geometry\n\
          \x20                                               numbers WITHDRAWN.\n\
-         \x20    4. ARM FLAT    terrain_small.stl         — fixture-limited. Fine-geometry numbers\n\
+         \x20    6. ARM FLAT    terrain_small.stl         — fixture-limited. Fine-geometry numbers\n\
          \x20                                               WITHDRAWN; retained for the radial\n\
          \x20                                               distortion pair and Stage E.\n\
-         \x20  Why: planning/conformal_finish_2026-08-28/FINDINGS_F2.md opens with a WITHDRAWAL of\n\
-         \x20  every terrain fine-geometry figure — 1.42 mm facets cannot measure a 0.4862 mm\n\
-         \x20  stepover. PROGRAMME.md §F2 step 1 always said 'simply connected SYNTHETIC surface'.\n"
+         \x20  Why arms 1-2 exist: planning/conformal_finish_2026-08-28/FINDINGS_F2.md opens with a\n\
+         \x20  WITHDRAWAL of every terrain fine-geometry figure — 1.42 mm facets cannot measure a\n\
+         \x20  0.4862 mm stepover. PROGRAMME.md §F2 step 1 always said 'simply connected SYNTHETIC\n\
+         \x20  surface'.\n\
+         \x20  Why arms 3-4 exist: §F2-2 then measured the spiral 5-15% slower than a raster on\n\
+         \x20  arms 1-2 — where the raster had 4 and 3 fragments and ZERO RETRACTS. A\n\
+         \x20  retract-elimination method was benchmarked on geometry with no retracts to\n\
+         \x20  eliminate. Arms 3 and 4 are the honest comparators, and BOTH carry a\n\
+         \x20  raster-fragmentation VALIDITY GATE that fires before their own cost tables.\n"
     );
 
     let cutter = BallEndmill::new(BALL_RADIUS_MM * 2.0, BALL_CUTTING_LENGTH_MM);
@@ -4822,6 +7100,8 @@ fn terrain_small_conformal_spiral_f2() {
 
     arm_sphere(&cutter, kinematics, stepover_mm, &analytic_params);
     arm_wavy(&cutter, kinematics, stepover_mm, &analytic_params);
+    arm_ribbon(&cutter, kinematics, stepover_mm, &analytic_params);
+    arm_band(&cutter, kinematics, stepover_mm, &analytic_params);
     arm_terrain(&cutter, kinematics, stepover_mm, &params);
 
     eprintln!("########## PHASE F2 evidence run complete. ##########\n");
@@ -5268,8 +7548,551 @@ fn wavy_patch_mesh_is_a_clean_disk_within_its_slope_and_curvature_bounds() {
     );
 }
 
-/// The census must be able to tell a disk from an annulus, or every
-/// "one boundary loop" assertion above is vacuous.
+// ── ARM RIBBON smoke tests ──────────────────────────────────────────────
+
+/// The generator's own preconditions, all MEASURED rather than argued:
+/// **one boundary loop, Euler 1**, max edge inside the analytic ceiling, slope
+/// inside the stated bound, every concavity larger than the ball, and the arm
+/// width inside the brief's 4–8 × stepover band.
+///
+/// A `plan_spiral` refusal on ARM RIBBON is only a *finding* if all of these
+/// hold — otherwise it is a fixture defect wearing a finding's clothes, which
+/// is precisely what the FINDINGS_F2 withdrawal was about.
+#[test]
+fn ribbon_mesh_is_a_narrow_branched_disk_fine_enough_to_measure() {
+    let stepover = equal_cusp_stepover_mm(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let max_gradient = ribbon_max_gradient();
+    let max_slope_deg = max_gradient.atan().to_degrees();
+    let max_curvature = ribbon_max_curvature();
+
+    // -- the two analytic bounds, before any mesh is built --
+    assert!(
+        max_slope_deg < 30.0,
+        "ribbon slope bound {max_slope_deg:.3} deg must stay well under 30; this arm tests \
+         BRANCHING, not steepness"
+    );
+    assert!(
+        1.0 / max_curvature >= 2.0 * BALL_RADIUS_MM,
+        "ribbon R_min {:.4} mm must be >= 2*K_c = {:.4} mm, or the ball bridges a concavity and \
+         the arm stalls for a GEOMETRIC reason that has nothing to do with branching",
+        1.0 / max_curvature,
+        2.0 * BALL_RADIUS_MM
+    );
+
+    // -- the width the brief specifies --
+    let width = 2.0 * RIBBON_HALF_WIDTH_MM;
+    let width_in_stepovers = width / stepover;
+    assert!(
+        (4.0..=8.0).contains(&width_in_stepovers),
+        "ribbon arm width {width:.3} mm = {width_in_stepovers:.3} stepovers, outside the brief's \
+         4-8x band"
+    );
+
+    let cells = heightfield_cells(RIBBON_PATCH_MM, max_gradient, ANALYTIC_MAX_EDGE_MM);
+    let mesh = heightfield_mesh(RIBBON_PATCH_MM, cells, ribbon_height);
+    // The G-CELLHOLE repair is part of the fixture, not part of the assertion:
+    // `ribbon_digitisation_invents_holes_g_cellhole` measures the artefact and
+    // bounds it; this test checks what the ARM actually plans on.
+    let (mask, _fill) = fill_mask_holes(&ribbon_cell_mask(cells), RIBBON_PATCH_MM, cells);
+    let triangles = cells_to_triangles(&mask, cells);
+    assert!(
+        triangles.len() > 4_000,
+        "ribbon region is only {} triangles — too small for any downstream number to mean \
+         anything",
+        triangles.len()
+    );
+
+    let census = mesh_census(&mesh, &triangles);
+    assert_eq!(
+        census.boundary_loops, 1,
+        "the ribbon must be SIMPLY CONNECTED — one boundary loop, no holes. That is the whole \
+         design constraint of this arm: it isolates DISTORTION from TOPOLOGY, and a hole here \
+         would need the slit map ARM BAND is about."
+    );
+    assert_eq!(
+        census.euler, 1,
+        "the ribbon must be a topological DISK (V - E + F = 1)"
+    );
+    assert!(
+        census.edge_max_mm <= ANALYTIC_MAX_EDGE_MM,
+        "ribbon max 3D edge {:.5} mm exceeds the {ANALYTIC_MAX_EDGE_MM} mm ceiling (bar: \
+         stepover/3 = {:.5} mm). Facets coarser than the measurand is the ENTIRE content of the \
+         FINDINGS_F2 withdrawal.",
+        census.edge_max_mm,
+        stepover / 3.0
+    );
+    assert!(
+        census.min_normal_z > 0.0,
+        "every ribbon face must be up-facing; worst normal.z {:.6}",
+        census.min_normal_z
+    );
+    let measured_slope = census.min_normal_z.acos().to_degrees();
+    assert!(
+        measured_slope <= max_slope_deg + 1e-6,
+        "measured worst slope {measured_slope:.4} deg exceeds the analytic bound \
+         {max_slope_deg:.4} deg — the bound is wrong, not the mesh"
+    );
+
+    // -- selection hygiene must be all but a no-op on the repaired selection --
+    //
+    // Not asserted as EXACTLY zero, unlike the sphere and wavy arms. Those two
+    // are a whole mesh and a polyomino disk, where any hygiene at all would
+    // mean the generator is wrong. A capsule union has re-entrant notches
+    // between adjacent arms (apex at w/sin(22.5°) = 3.266 mm from the centre),
+    // and the digitisation of a wedge apex thinner than a cell is exactly what
+    // G-CELLHOLE measured — so this tolerates one stray cell in a thousand and
+    // reports the number rather than claiming a no-op it has not earned.
+    let (cleaned, _cleanup) = clean_selection(&mesh, &triangles);
+    let dropped = triangles.len() - cleaned.len();
+    assert!(
+        dropped * 1_000 <= triangles.len(),
+        "clean_selection shaved {dropped} of {} ribbon triangles ({:.3}%). The arms are {:.3} mm \
+         wide against a {:.5} mm cell — 24 cells across — so a whole-cell digitisation of a \
+         capsule union should need essentially no hygiene, and this much means the digitisation \
+         is producing selection artefacts every downstream number would inherit.",
+        triangles.len(),
+        100.0 * dropped as f64 / triangles.len().max(1) as f64,
+        2.0 * RIBBON_HALF_WIDTH_MM,
+        RIBBON_PATCH_MM / cells as f64
+    );
+}
+
+/// **G-CELLHOLE, pinned as a measurement rather than as a count.**
+///
+/// A region that is provably simply connected in the continuum acquires holes
+/// when it is laid onto a grid. This test does NOT assert how many — that
+/// would turn a falsifiable observation into a tautology, and the count is a
+/// function of the arm phase and the cell size, both of which may legitimately
+/// move. What it pins is the artefact's **character**, which is what makes the
+/// repair legitimate:
+///
+/// * every pocket is smaller than the cutter's own footprint `π·K_c²`, so
+///   filling it machines nothing the region did not already claim;
+/// * the whole repair is under 0.5 % of the region's area, so it is a repair
+///   and not a redesign;
+/// * after it, the selection is a topological disk — which is the property the
+///   arm's entire purpose depends on.
+#[test]
+fn ribbon_digitisation_invents_holes_g_cellhole() {
+    let gradient = ribbon_max_gradient();
+    let cells = heightfield_cells(RIBBON_PATCH_MM, gradient, ANALYTIC_MAX_EDGE_MM);
+    let cell = RIBBON_PATCH_MM / cells as f64;
+    let raw = ribbon_cell_mask(cells);
+    let (filled, fill) = fill_mask_holes(&raw, RIBBON_PATCH_MM, cells);
+
+    let region_area = fill.cells_before as f64 * cell * cell;
+    let tool_footprint = PI * BALL_RADIUS_MM * BALL_RADIUS_MM;
+    for hole in &fill.holes {
+        assert!(
+            hole.area_mm2 < tool_footprint,
+            "a filled pocket of {:.5} mm² at r = {:.4} mm is larger than the cutter's own \
+             footprint ({tool_footprint:.4} mm²). Filling THAT is not a digitisation repair, it \
+             is machining ground the region never claimed — treat it as a fixture defect, not as \
+             G-CELLHOLE.",
+            hole.area_mm2,
+            hole.centroid_radius_mm
+        );
+    }
+    assert!(
+        fill.area_filled_mm2 < 0.005 * region_area,
+        "the G-CELLHOLE repair filled {:.5} mm² of a {region_area:.3} mm² region ({:.3}%). Over \
+         0.5% it stops being a repair and starts being a different fixture.",
+        fill.area_filled_mm2,
+        100.0 * fill.area_filled_mm2 / region_area.max(1e-12)
+    );
+
+    // The repair must actually work, and it must be the ONLY thing needed.
+    let mesh = heightfield_mesh(RIBBON_PATCH_MM, cells, ribbon_height);
+    let census = mesh_census(&mesh, &cells_to_triangles(&filled, cells));
+    assert_eq!(
+        census.boundary_loops, 1,
+        "after fill_mask_holes the ribbon must have exactly ONE boundary loop"
+    );
+    assert_eq!(
+        census.euler, 1,
+        "after fill_mask_holes the ribbon must be a topological disk"
+    );
+
+    // And filling must be idempotent: a second pass finds nothing.
+    let (_again, second) = fill_mask_holes(&filled, RIBBON_PATCH_MM, cells);
+    assert!(
+        second.holes.is_empty(),
+        "fill_mask_holes is not idempotent — a second pass found {} more pocket(s), which means \
+         the first pass created one",
+        second.holes.len()
+    );
+}
+
+/// The fill primitive itself, on masks whose answer is known by inspection:
+/// a solid block has no pocket, a ring has one, and a pocket that touches the
+/// grid border is OUTSIDE and must not be filled.
+#[test]
+fn fill_mask_holes_closes_only_enclosed_pockets() {
+    let cells = 9usize;
+    let size = 9.0f64;
+
+    let solid = vec![true; cells * cells];
+    let (out, report) = fill_mask_holes(&solid, size, cells);
+    assert!(report.holes.is_empty(), "a solid block has no pocket");
+    assert_eq!(out, solid);
+
+    // A ring: solid with one interior cell cleared.
+    let mut ring = vec![true; cells * cells];
+    ring[4 * cells + 4] = false;
+    let (out, report) = fill_mask_holes(&ring, size, cells);
+    assert_eq!(report.holes.len(), 1, "a ring has exactly one pocket");
+    assert_eq!(report.cells_filled, 1);
+    assert!(out.iter().all(|&v| v), "the pocket must be filled");
+    let hole = report.holes.first().copied().expect("one hole");
+    assert!(
+        hole.centroid_radius_mm.abs() < 1e-9,
+        "the centre cell of a 9x9 patch is at the origin, got r = {:.6}",
+        hole.centroid_radius_mm
+    );
+
+    // A notch open to the border is NOT a pocket, however deep.
+    let mut notch = vec![true; cells * cells];
+    for row in 0..5 {
+        notch[row * cells + 4] = false;
+    }
+    let (out, report) = fill_mask_holes(&notch, size, cells);
+    assert!(
+        report.holes.is_empty(),
+        "a channel reaching the grid border is the OUTSIDE, not a pocket; filling it would close \
+         a genuine concavity"
+    );
+    assert_eq!(out, notch);
+
+    // The 4-connectivity choice, stated as a test: a diagonal pair of cleared
+    // cells is 8-connected but not 4-connected, so BOTH are enclosed. That is
+    // the exact shape G-CELLHOLE found on the ribbon.
+    let mut diagonal = vec![true; cells * cells];
+    diagonal[3 * cells + 3] = false;
+    diagonal[4 * cells + 4] = false;
+    let (_out, report) = fill_mask_holes(&diagonal, size, cells);
+    assert_eq!(
+        report.cells_filled, 2,
+        "two diagonally-touching cleared cells are 4-connected to nothing, so both are enclosed \
+         — this is the connectivity `region_topology` uses and the reason G-CELLHOLE exists"
+    );
+    assert_eq!(
+        report.holes.len(),
+        2,
+        "and they are TWO pockets under 4-connectivity, not one"
+    );
+}
+
+/// The arm's own validity gate: the ribbon must **force a 0° raster to break
+/// into many disjoint runs**, or the arm proves nothing.
+///
+/// This is the cheap geometric half of [`print_fragmentation_gate`], asserted
+/// here so a parameter change that quietly turns the ribbon back into a blob
+/// fails in the fast suite rather than in a 40-minute evidence run.
+#[test]
+fn ribbon_forces_a_zero_degree_raster_to_fragment() {
+    let stepover = equal_cusp_stepover_mm(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let gradient = ribbon_max_gradient();
+    let cells = heightfield_cells(RIBBON_PATCH_MM, gradient, ANALYTIC_MAX_EDGE_MM);
+    let (mask, _fill) = fill_mask_holes(&ribbon_cell_mask(cells), RIBBON_PATCH_MM, cells);
+    let polygons = mask_polygons(&mask, RIBBON_PATCH_MM, cells);
+    // `detect_containment` returns largest-area first, which is the polygon
+    // the arm plans on. It must carry essentially all the area and NO HOLES —
+    // no hole is what makes this the DISTORTION arm rather than the topology
+    // arm, and the topology arm is ARM BAND.
+    let Some(main) = polygons.first() else {
+        panic!("the ribbon mask extracted no polygon at all")
+    };
+    assert!(
+        main.holes.is_empty(),
+        "the ribbon must have NO HOLES after the G-CELLHOLE repair: it is a union of capsules that \
+         all contain the origin, so the union is star-shaped about it and therefore simply \
+         connected in the continuum. {} hole(s) here means `fill_mask_holes` did not reach a \
+         pocket the digitisation invented.",
+        main.holes.len()
+    );
+    let total_area: f64 = polygons.iter().map(Polygon2::area).sum();
+    assert!(
+        main.area() >= 0.99 * total_area,
+        "the largest ribbon polygon holds only {:.3} of {total_area:.3} mm²; the rest is stray \
+         islands the digitisation left behind",
+        main.area()
+    );
+
+    let census = scanline_census(&polygons, stepover);
+    assert!(
+        census.max_runs_in_row >= 3,
+        "no scan row over the ribbon breaks into 3+ runs (max {}); a 0deg raster would barely \
+         lift and this arm would repeat the SPHERE/WAVY mistake",
+        census.max_runs_in_row
+    );
+    let fraction = census.rows_multi_run as f64 / census.rows_with_material.max(1) as f64;
+    assert!(
+        fraction >= MIN_MULTI_RUN_ROW_FRACTION,
+        "only {:.1}% of active scan rows break into more than one run (bar {:.1}%): {} of {}. \
+         The fixture failed to reproduce the target geometry class.",
+        100.0 * fraction,
+        100.0 * MIN_MULTI_RUN_ROW_FRACTION,
+        census.rows_multi_run,
+        census.rows_with_material
+    );
+    // >= 1.5 inside-runs per active row. Derived from the arm geometry before
+    // the fixture was written — |y| under 2.31 mm gives 1 run (all eight arms
+    // merged near the centre), 2.31-3.27 gives 3, 3.27-5.08 gives 4, and
+    // 5.08-10.49 gives 2 — and then MEASURED on the built mask at 92 runs over
+    // 42 active rows, 2.19 per row, worst row 4, 32 of 42 rows multi-run.
+    // Wanaka region 1, for scale, averages ~1.8 crossings per row and still
+    // pays 97 kept retracts.
+    assert!(
+        2 * census.total_runs >= 3 * census.rows_with_material,
+        "total inside-runs {} over {} active rows is under 1.5 per row; the fixture is not \
+         fragmenting a raster the way the target class does (Wanaka region 1: \
+         {WANAKA_R1_RASTER_FRAGMENTS} fragments / {WANAKA_R1_RASTER_RETRACTS} retracts)",
+        census.total_runs,
+        census.rows_with_material
+    );
+}
+
+/// The scan-line run counter itself, on shapes whose answer is known by
+/// inspection: one square is one run, two separated squares are two, and a
+/// square with a hole through the middle of it is two.
+#[test]
+fn scanline_runs_counts_disjoint_intervals() {
+    let square = |x0: f64, x1: f64, y0: f64, y1: f64| {
+        Polygon2::new(vec![
+            P2::new(x0, y0),
+            P2::new(x1, y0),
+            P2::new(x1, y1),
+            P2::new(x0, y1),
+        ])
+    };
+    let one = [square(0.0, 10.0, 0.0, 10.0)];
+    assert_eq!(scanline_runs(&one, 5.0), 1);
+    assert_eq!(scanline_runs(&one, 20.0), 0);
+
+    let two = [square(0.0, 4.0, 0.0, 10.0), square(6.0, 10.0, 0.0, 10.0)];
+    assert_eq!(scanline_runs(&two, 5.0), 2);
+
+    let mut holed = square(0.0, 10.0, 0.0, 10.0);
+    holed.holes.push(vec![
+        P2::new(4.0, 4.0),
+        P2::new(4.0, 6.0),
+        P2::new(6.0, 6.0),
+        P2::new(6.0, 4.0),
+    ]);
+    let holed = [holed];
+    assert_eq!(
+        scanline_runs(&holed, 5.0),
+        2,
+        "a row through the hole must read TWO runs — that is the raster lifting"
+    );
+    assert_eq!(
+        scanline_runs(&holed, 2.0),
+        1,
+        "a row below the hole must read ONE run"
+    );
+}
+
+// ── ARM BAND smoke tests ────────────────────────────────────────────────
+
+/// The band predicate is `acos(|n_z|)` against half-open bounds, checked on a
+/// hand-built fixture whose normals are known exactly.
+#[test]
+fn band_predicate_matches_acos_nz_bounds() {
+    // A flat +Z normal is 0°; a 45° ramp normal is (0, -1, 1)/√2; a vertical
+    // wall normal is (0, 1, 0).
+    let flat = rs_cam_core::geo::V3::new(0.0, 0.0, 1.0);
+    let ramp = rs_cam_core::geo::V3::new(0.0, -1.0, 1.0);
+    let wall = rs_cam_core::geo::V3::new(0.0, 1.0, 0.0);
+    assert!((face_slope_deg(flat) - 0.0).abs() < 1e-9);
+    assert!((face_slope_deg(ramp) - 45.0).abs() < 1e-9);
+    assert!((face_slope_deg(wall) - 90.0).abs() < 1e-9);
+
+    // Sign-flipped normals must read the SAME slope: the module forces +Z.
+    let flipped = rs_cam_core::geo::V3::new(0.0, 1.0, -1.0);
+    assert!(
+        (face_slope_deg(flipped) - 45.0).abs() < 1e-9,
+        "a downward-wound face must read 45 deg, not 135 — build_region_mesh forces +Z and this \
+         predicate must agree with it"
+    );
+
+    // Half-open [lo, hi): the lower bound is IN, the upper bound is OUT, which
+    // is the shape finish_planner's three-way label uses.
+    assert!(slope_in_band(0.0, 0.0, 10.0));
+    assert!(slope_in_band(9.999, 0.0, 10.0));
+    assert!(!slope_in_band(10.0, 0.0, 10.0));
+    assert!(slope_in_band(10.0, 10.0, 20.0));
+    assert!(!slope_in_band(f64::NAN, 0.0, 90.0));
+    // A face whose normal is degenerate is NOT in any band, rather than
+    // defaulting into the shallow one.
+    assert!(face_slope_deg(rs_cam_core::geo::V3::new(0.0, 0.0, 0.0)).is_nan());
+}
+
+/// The component counter distinguishes two obviously-separate patches from
+/// one, and does it by EDGE adjacency so a corner touch is not a connection.
+#[test]
+fn edge_components_separates_two_patches() {
+    let mesh = clean_grid_mesh();
+    let all: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
+    let one = edge_components(&mesh, &all);
+    assert_eq!(one.len(), 1, "a clean grid patch is ONE component");
+    assert_eq!(one.first().map(Vec::len), Some(all.len()));
+
+    // The 3x3-vertex grid's cells are (row, col) in {0,1}²; taking the two
+    // DIAGONAL cells leaves two patches that touch only at the centre vertex.
+    let mut diagonal: Vec<u32> = Vec::new();
+    diagonal.extend_from_slice(&cell_triangles(2, 0, 0));
+    diagonal.extend_from_slice(&cell_triangles(2, 1, 1));
+    diagonal.sort_unstable();
+    let two = edge_components(&mesh, &diagonal);
+    assert_eq!(
+        two.len(),
+        2,
+        "two diagonally-adjacent cells touch at ONE VERTEX and must read as TWO edge-connected \
+         components — treating them as connected is exactly the bowtie region_topology refuses"
+    );
+    assert_eq!(two.iter().map(Vec::len).sum::<usize>(), diagonal.len());
+}
+
+/// The band fixture's own preconditions, and the closed-form band radii the
+/// arm predicts its topology from.
+#[test]
+fn band_mesh_is_fine_enough_and_the_ball_fits_every_concavity() {
+    let stepover = equal_cusp_stepover_mm(BALL_RADIUS_MM, CUSP_HEIGHT_MM);
+    let max_gradient = band_max_gradient();
+    let max_curvature = band_max_curvature();
+    assert!(
+        1.0 / max_curvature >= 2.0 * BALL_RADIUS_MM,
+        "band R_min {:.4} mm must be >= 2*K_c = {:.4} mm",
+        1.0 / max_curvature,
+        2.0 * BALL_RADIUS_MM
+    );
+    const {
+        assert!(
+            BAND_BUMP_PITCH_MM > 2.0 * BAND_BUMP_RADIUS_MM,
+            "the bump supports must be DISJOINT, or the single-bump slope and \
+             curvature bounds stop being exact"
+        );
+    }
+    assert!(
+        max_gradient.atan().to_degrees() > BAND_STEEP_MIN_DEG,
+        "the surface must actually REACH the steep band, or there is nothing to band"
+    );
+
+    // The four band radii the arm's prediction is built from, in order.
+    let inner_shallow = band_radius_at_slope(BAND_SHALLOW_MAX_DEG, false).expect("inner shallow");
+    let inner_steep = band_radius_at_slope(BAND_STEEP_MIN_DEG, false).expect("inner steep");
+    let outer_steep = band_radius_at_slope(BAND_STEEP_MIN_DEG, true).expect("outer steep");
+    let outer_shallow = band_radius_at_slope(BAND_SHALLOW_MAX_DEG, true).expect("outer shallow");
+    assert!(
+        inner_shallow < inner_steep && inner_steep < outer_steep && outer_steep < outer_shallow,
+        "band radii must nest: {inner_shallow:.4} < {inner_steep:.4} < {outer_steep:.4} < \
+         {outer_shallow:.4}"
+    );
+    assert!(
+        outer_shallow < BAND_BUMP_RADIUS_MM,
+        "the outer shallow radius {outer_shallow:.4} must sit INSIDE the bump support \
+         {BAND_BUMP_RADIUS_MM}, so the shallow band is continuous with the surrounding plane"
+    );
+
+    let cells = heightfield_cells(BAND_PATCH_MM, max_gradient, ANALYTIC_MAX_EDGE_MM);
+    let mesh = heightfield_mesh(BAND_PATCH_MM, cells, band_height);
+    let all: Vec<u32> = (0..mesh.triangles.len() as u32).collect();
+    let census = mesh_census(&mesh, &all);
+    assert!(
+        census.edge_max_mm <= ANALYTIC_MAX_EDGE_MM,
+        "band max 3D edge {:.5} mm exceeds the {ANALYTIC_MAX_EDGE_MM} mm ceiling (bar: \
+         stepover/3 = {:.5} mm)",
+        census.edge_max_mm,
+        stepover / 3.0
+    );
+    assert!(
+        census.min_normal_z > 0.0,
+        "every band-fixture face must be up-facing; worst normal.z {:.6}",
+        census.min_normal_z
+    );
+}
+
+/// Every one of the three slope bands must be **non-empty** on this fixture,
+/// or the topology census has nothing to say.
+///
+/// Deliberately does NOT assert the predicted component counts. The arm states
+/// its topology prediction in the evidence run and lets the measurement
+/// confirm or refute it; pinning the prediction here would turn a falsifiable
+/// claim into a tautology.
+#[test]
+fn band_selection_populates_all_three_bands() {
+    let gradient = band_max_gradient();
+    let cells = heightfield_cells(BAND_PATCH_MM, gradient, ANALYTIC_MAX_EDGE_MM);
+    let mesh = heightfield_mesh(BAND_PATCH_MM, cells, band_height);
+    // The three bands must also PARTITION nothing away silently: a cell
+    // straddling a threshold (its two triangles landing in different bands)
+    // belongs to none under the whole-cell rule, and that loss must stay small
+    // enough not to change any band's topology.
+    let mut total = 0usize;
+    for (name, lo, hi) in [
+        ("SHALLOW", 0.0, BAND_SHALLOW_MAX_DEG),
+        ("MIDSTEEP", BAND_SHALLOW_MAX_DEG, BAND_STEEP_MIN_DEG),
+        ("VERYSTEEP", BAND_STEEP_MIN_DEG, 180.0),
+    ] {
+        let mask = band_cell_mask(&mesh, cells, lo, hi);
+        let triangles = cells_to_triangles(&mask, cells);
+        assert!(
+            triangles.len() > 100,
+            "band {name} [{lo}, {hi}) holds only {} triangles on this fixture",
+            triangles.len()
+        );
+        total += triangles.len();
+    }
+    let straddling = mesh.triangles.len() - total;
+    // The threshold contours are 16 circles (four radii on each of four
+    // bumps), ~201 mm of arc; a one-cell-wide straddle ring along them is
+    // ~4% of the patch. That ring is removed from BOTH adjacent bands, so each
+    // band shrinks by half a cell at its edges and no band's TOPOLOGY changes
+    // — an annulus stays an annulus. Ten per cent is where that stops being
+    // true and the thinnest band (0.46 mm, ~4.7 cells) starts breaking up.
+    assert!(
+        straddling * 10 < mesh.triangles.len(),
+        "{straddling} of {} triangles ({:.2}%) fall in NO band because their cell straddles a \
+         threshold — over 10%, which is enough to break the thinnest band into pieces and \
+         report a topology that is a digitisation artefact",
+        mesh.triangles.len(),
+        100.0 * straddling as f64 / mesh.triangles.len().max(1) as f64
+    );
+}
+
+/// `mask_polygons` must nest an enclosed loop as a HOLE, not emit it as a
+/// separate polygon. ARM BAND's headline claim is about holes, so the
+/// extraction that produces them is pinned here.
+#[test]
+fn mask_polygons_nests_a_hole() {
+    let cells = 21usize;
+    let size = 21.0f64;
+    let mut mask = vec![true; cells * cells];
+    // Punch a 3x3 hole in the middle.
+    for row in 9..12 {
+        for col in 9..12 {
+            mask[row * cells + col] = false;
+        }
+    }
+    let polygons = mask_polygons(&mask, size, cells);
+    assert_eq!(polygons.len(), 1, "one filled square is one polygon");
+    assert_eq!(
+        polygons.first().map(|p| p.holes.len()),
+        Some(1),
+        "the punched square must come back as a HOLE of the outer polygon, not as a second \
+         polygon — detect_containment is what makes ARM BAND's hole count readable"
+    );
+    let area = polygons.first().map_or(0.0, Polygon2::area);
+    assert!(
+        area > 0.0 && area < size * size,
+        "the holed polygon's area {area:.3} must be positive and below the solid square's \
+         {:.3}",
+        size * size
+    );
+}
+
+// The census must be able to tell a disk from an annulus, or every
+// "one boundary loop" assertion above is vacuous.
 #[test]
 fn mesh_census_counts_two_loops_on_an_annulus() {
     // A deliberately tiny cap: 24 * (2*6 - 1) = 264 triangles, of which the
