@@ -1,6 +1,131 @@
 # Conformal-spiral arm (F2 phase 1) — findings
 
-> ## ⚠ §F2-1's SPACING AND TIME NUMBERS ARE WITHDRAWN (2026-08-30, same day)
+> §F2-1's spacing and time numbers were WITHDRAWN on 2026-08-30 (fixture too
+> coarse). §F2-2 below carries the corrected measurement on analytic
+> fixtures and supersedes it. The withdrawal block is kept after §F2-2
+> because its diagnosis is the reason the corrected run exists.
+
+## §F2-2 Corrected measurement on analytic fixtures (2026-08-30)
+
+Fixtures generated in-test, facets far below the measurand:
+
+| arm | triangles | max edge | stepover / median edge | relief |
+|---|---|---|---|---|
+| SPHERE (R_s 20 mm, 12 mm cap) | 37,060 | 0.1585 mm | **4.42** | 0.92 mm |
+| WAVY (14 mm patch, A 0.5, λ 8) | 14,178 | 0.1545 mm | 4.47 | ±0.5 mm |
+| terrain flat (WITHDRAWN) | 308 | — | **0.34** | 7.68 mm |
+
+### The three questions this run answered
+
+**1. Is the ring spacing correct?  YES — pre-registered verdict, both arms.**
+
+| arm | analytic target | measured median | verdict |
+|---|---|---|---|
+| SPHERE | 0.47431 mm (cross-derived 0.47413, 0.039 % apart) | **0.51046** | inside ±25 % ⇒ **spacing CORRECT** |
+| WAVY | 0.42406 mm (peak-convex) | **0.45027** | inside ±25 % ⇒ **spacing CORRECT** |
+
+The half-spacing alternative (0.23716 / 0.21203) is refuted on both arms;
+the bands are disjoint by construction. **There is no off-by-one-band
+defect.** Terrain's 0.2275 mm was faceting, exactly as the withdrawal
+suspected. The operator's "rings crowd at the edges" observation is also
+resolved as a fixture artifact: ring-radius median **0.541 (sphere)** and
+**0.529 (wavy)** against an even-spread reference of 0.500 — versus
+**0.665** on the withdrawn terrain arm. Path continuity likewise: worst
+step/chord ratio **1.9× / 2.2×** on the analytic arms against **21×** on
+terrain, whose 3.38 mm jumps all sat on ring 0 at the coarse boundary.
+
+**2. Does it machine the whole part?  YES — now that the witness exists.**
+Both analytic arms: **0.0000 % unmachined, 0 of 37,060 / 14,178 triangles**
+(terrain flat: 0.136 %). Before the sampling fix the sphere left a
+**23.5 % hole** under three passing gates — see §F2-3.
+
+**3. Is it faster than a raster?  NO, on friendly geometry.**
+
+| arm | path | moves | frags | retracts | cut mm | F-034 s | unmachined |
+|---|---|---|---|---|---|---|---|
+| SPHERE | conformal spiral | 5547 | 1 | 0 | 265.3 | **23.4** | 0.00 % |
+| SPHERE | 0° ball raster | 484 | 4 | 0 | 243.4 | **22.0** | not audited |
+| WAVY | conformal spiral | 5547 | 1 | 0 | 209.6 | **18.8** | 0.00 % |
+| WAVY | 0° ball raster | 338 | 3 | 0 | 172.0 | **16.0** | not audited |
+
+The spiral is **6 % slower on the sphere and 18 % slower on the wavy
+patch**, with coverage now verified equal. Finish is not identical, and it
+cuts both ways: on the sphere the spiral spaces *wider* (0.510 vs 0.490
+achieved) so it is slightly coarser **and** still slower; on the wavy patch
+it spaces *tighter* (0.450 vs 0.491), so perhaps half its 18 % deficit buys
+a finer finish. Normalised, the honest range is **≈5–15 % slower**.
+
+`link_ceiling: None` (chartered fresh-stock exception) — no time claim is
+final until a `relink_and_cost_under` re-run.
+
+**Why it loses even though it is continuous:** on a convex, hole-free
+region the raster *already* has zero retracts, so stay-down continuity buys
+nothing and the spiral pays for its longer path. Its advantage would need a
+region where a raster fragments badly — which is the thin-organic geometry
+where arm A died and where C2's PCA-frame cells already win (1.090×
+production-validated).
+
+### §F2-3 Three defects found on the way, one of them the paper's
+
+1. **The coverage predicate could go blind** (ours). Sample apportionment
+   made `N_S` a cap, so 46 % of the sphere's triangles got zero samples —
+   and on a polar mesh the starved ones are the small central ones. Result:
+   a 2.783 mm-radius unmachined hole, 23.5 % of the region, while
+   `uncovered_after_rings`, `uncovered_after_bridging` and the whole
+   falsifier read clean, because **all of them are built from the search's
+   own sample set**. The wavy arm (no starvation, no hole) is the
+   controlled comparison. Fixed: `N_S` is a floor, every triangle gets ≥1
+   sample, `triangles_without_samples` is a tripwire, and the adequacy
+   number is now a max over per-triangle densities (the old
+   `√(area/N_S)` average reported a healthy 0.076 mm on the run with the
+   hole).
+2. **A search cannot be its own witness** (ours, structural). New
+   `CoverageAudit` tests every mesh triangle centroid against the finished
+   spiral and is a hard falsifier STOP above 2 %; an absent audit is also a
+   STOP. Read its distance-vs-`K_c` and radial rows, not its area — it
+   area-weights whole triangles from a centroid test, so it is an upper
+   bound scaled by facet size (that is why a knife-edge read as 14.2 % on
+   one fixture while a real hole read 23.5 % on another).
+3. **The paper's criterion has ZERO MARGIN by construction** (theirs).
+   Eqs. 1–4 push each ring in until it just reaches the outermost
+   still-uncovered sample, so adjacent rings land exactly `2·reach` apart
+   and the midline sits exactly **on** the coverage boundary — the
+   iso-scallop condition restated. It guarantees coverage of the search's
+   own samples and nothing else. Proved in closed form on the flat disk:
+   the only uncovered strips were the three whose centroids sat within
+   0.003–0.049 mm of a band edge, next-smallest margin 0.141 mm.
+   **The paper's own cutting trial overshooting nominal scallop by up to
+   12 % is what a zero-margin criterion predicts.** Mitigation added as
+   `ring_spacing_safety`, **default 1.0** so the published criterion is
+   unchanged unless asked for.
+
+Two traps for anyone adding a safety dial here: `reach = √(K_c² − (K_c−h)²)`
+is steep near `K_c`, so derating the **radius** 5 % derates the **reach**
+43 % — the factor must apply to the lateral reach; and the ring step is
+quantised by the sample comb (a sample-free annulus at every mesh vertex
+ring), so **it is bounded below by the mesh's own facet pitch** — an
+independent reason a coarse fixture can never produce a clean spacing
+series.
+
+### Verdict on arm B
+
+The mechanism is **correct and complete**: continuous single path, zero
+retracts, zero self-intersections, verified full coverage, spacing on its
+analytic target, bridging overhead 11–13 %. It is **modestly slower than a
+raster on the geometry a raster likes**, and the geometry where it might
+win is the branched/perforated terrain that its own map handles worst
+(ARM STEEP still refuses with a clean map — at ~50 mm relief concentric
+disk circles cannot cover ring-by-ring).
+
+**Recommendation unchanged, now on sound evidence: do not proceed to the
+slit map / holes on efficiency grounds.** If the arm resumes, the lever is
+distortion-aware ring spacing — the per-ring radial-scale ratio the module
+now measures is the over-cover the worst-sector rule forces — not more
+topology.
+
+---
+
+> ## ⚠ §F2-1's SPACING AND TIME NUMBERS ARE WITHDRAWN (2026-08-30)
 >
 > An operator looked at the two SVGs and said they "don't look how you would
 > expect". They were right, and the defect is in the **fixture**, not the
@@ -15,179 +140,35 @@
 >
 > **You cannot measure 0.486 mm ring spacing on a mesh whose facets are
 > 1.42 mm across.** Everything in §F2-1 that depends on fine geometry is
-> therefore an artifact of faceting:
->
-> - measured spacing (median 0.2275 mm, "79.3 % outside the band") — the
->   rings are riding facets, not a surface;
-> - the "≈2× over-cover" and the **3.4× slower than raster** headline;
-> - the curvature census (|κ| median 0.516 1/mm ⇒ R ≈ 1.94 mm) — that is
->   the *faceting* radius, not the terrain's curvature;
-> - region 3D area 694.6 mm² vs 339.3 mm² projected (2.05×) — facet
->   roughness at the 1.4 mm scale, which is also why the spiral's distance
->   looks inflated against an XY-spaced raster.
+> therefore an artifact of faceting: the spacing distribution, the "≈2×
+> over-cover", the **3.4× slower than raster** headline, the curvature
+> census (that R ≈ 1.94 mm is the *faceting* radius), and the 2.05× 3D-to-
+> projected area ratio.
 >
 > **A selection bias made it worse, and it was mine.** The flat-window
 > census picks the flattest patch — and a decimated terrain mesh puts its
-> *largest* triangles exactly where the surface is flattest. The census
-> therefore steered the measurement into the coarsest region of the mesh
-> (0.876 mm² median facet vs 0.277 mm² mesh-wide). The visible symptoms:
-> the outer rings' 2.4 mm jumps (all at path indices < 600, swinging
-> r = 1.2 → 0.8 across the ellipse edge) and points up to 3.27 mm outside
-> the ellipse are the coarse 30-vertex boundary loop, not a path defect.
+> *largest* triangles exactly where the surface is flattest (0.876 mm²
+> median facet there vs 0.277 mm² mesh-wide). The census steered the
+> measurement into the coarsest region of the mesh. Visible symptoms: the
+> outer rings' 2.4 mm jumps (all at path indices < 600) and points up to
+> 3.27 mm outside the ellipse are the coarse 30-vertex boundary loop.
 >
-> **The operator's second observation — "way more dense around the outside
-> than the inside" — is a real signal and is measured**: 50 ring radii with
-> **median 0.665** (an even spread would sit at 0.500), so rings pile up
-> toward the rim. On a flat disk the exact map is `z/ρ`, so equal 3D
-> spacing *is* equal disk spacing and the median must be ≈0.5; the observed
-> outward bias is therefore a defect signature, not geometry. Mechanism:
-> the coverage search requires **one** ring to sweep *everything* still
-> uncovered outside its radius, so the step is set by the single worst
-> point. Near the rim the disk circle maps onto that 30-vertex, ~4.6 mm
-> boundary polygon (with excursions to 3.27 mm outside the ellipse), so the
-> worst point is wildly far, the step collapses, and rings crowd the rim.
+> **A second, independent fairness defect** in the cost table: the spiral
+> spaces on the **3D surface** while `raster_candidate` spaces in **XY
+> projection**, so the arms were never delivering the same finish and the
+> ratio compared two different measures. Now reported side by side.
 >
-> A related figure worth pinning for the re-run: measured median spacing was
-> **0.2275 mm against a 0.4862 mm target — almost exactly half**, and the
-> half-width 0.243 mm is precisely the lateral distance at which a
-> `K_c = 1.0` ball stops covering the `h = 0.03` iso-scallop surface. So
-> "each ring spaced by the HALF-width" is a specific, falsifiable
-> alternative to the distortion story: it would mean the search is not
-> crediting the band the *previous* ring already covered. Against it: the
-> module's flat-disk unit test asserts stepover within ±25 % and passes on
-> the exact-affine fixture. The clean fixture will separate these two —
-> if analytic-fixture spacing lands on 0.486 the terrain number was
-> faceting; if it lands on 0.243 there is an off-by-one-band defect in the
-> ring recursion.
->
-> **A second, independent fairness defect** in the cost table, which
-> survives any fixture change: the spiral spaces on the **3D surface**
-> while `raster_candidate` spaces in **XY projection**. On sloped ground
-> the raster's achieved surface spacing is `0.4862 / cos θ` — it
-> under-covers where the spiral over-covers, so the two arms were never
-> delivering the same finish and the ratio compared two different measures
-> ([[instrument-integrity]]: both sides of a ratio must be the same
-> measure).
->
-> **What still stands** (structural, resolution-independent): the spiral is
-> genuinely one continuous path with zero retracts and zero disk-domain
-> self-intersections; bridging works and its overhead is bounded; the
-> fold diagnosis and the mean-value/Tutte fix; `N_C` halving breaking the
-> mechanism outright. **What is withdrawn**: every spacing figure, the
-> cost table, the "3.4× slower" verdict, and the recommendation built on
-> it.
->
-> **Root cause of the fixture choice:** PROGRAMME.md F2 step 1 says
-> "simply connected **synthetic** surface". I substituted
-> `fixtures/terrain_small.stl` for repo-portability and did not check its
-> resolution against the quantity being measured. Re-run is on an analytic
-> fixture with facets ≪ stepover; §F2-2 will carry the corrected numbers.
+> **Root cause of the fixture choice:** PROGRAMME.md F2 step 1 says "simply
+> connected **synthetic** surface". `fixtures/terrain_small.stl` was
+> substituted for repo-portability without checking its resolution against
+> the quantity being measured.
 
-## §F2-1 First working spiral, and what it costs (2026-08-30) — SEE WITHDRAWAL ABOVE
+## §F2-1 First working spiral (2026-08-30) — SPACING AND TIME WITHDRAWN, see above
 
-Instrument `crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs`,
-module `crates/rs_cam_core/src/conformal_spiral.rs` (`a330b48b`), fixture
-`fixtures/terrain_small.stl` (in-repo, 40,342 triangles). Two arms: a steep
-envelope PROBE (whole inset ellipse, ~50 mm relief) and an envelope-INSIDE
-test (censused flattest 24×18 mm window, 7.68 mm relief, 308 triangles).
-
-### Headline
-
-**The mechanism works, and phase 1 PASSES its falsifier — on the flat arm.**
-One continuous 50-ring spiral, **zero retracts**, zero disk-domain
-self-intersections, complete coverage after bridging, bridge overhead
-**11.2%** against a 25% bar. That is the paper's core claim reproduced:
-stay-down continuity over a region, with holes not yet in play.
-
-**And it is 3.4× SLOWER than a plain ball-end raster on the same region**
-(302.1 s vs 89.3 s, F-034, `link_ceiling: None`). The raster already had
-zero retracts here, so the spiral's entire pitch bought nothing and cost
-3.6× the cutting distance (3232 mm vs 904 mm).
-
-### The two arms
-
-| | ARM STEEP (probe) | ARM FLAT (inside envelope) |
-|---|---|---|
-| region | 9,107 tris, ~50 mm relief | 308 tris, 7.68 mm relief |
-| flatten | 0 flips, 0 non-positive weights | 0 flips, 0 non-positive weights |
-| radial distortion climb | 2.394 | 1.068 |
-| outcome | `RingSearchStalled{rings 1, uncovered 19136}` | **planned, 50 rings** |
-| verdict | condition F: **genuine coverage infeasibility** (mechanism/geometry, not the map) | falsifier PASS |
-
-The steep arm's refusal is now attributable: the map is a proven embedding
-(Tutte), the fold census is 0, and the search still could not place a
-second ring — at this relief, concentric disk circles cannot cover the
-surface ring-by-ring. Six blocker points at disk radius ≈1.0 stopped the
-descent.
-
-### Spacing is the real problem on the flat arm
-
-Measured adjacent-ring 3D spacing against the 0.4862 mm equal-cusp target:
-median **0.2275 mm**, p90 0.4714, and **79.3% of samples outside ±25%** —
-77.4% of them *below* target. The spiral is over-covering by roughly 2×,
-which is exactly where the 3.6× cutting distance comes from. Causes, in
-order of evidence:
-
-1. **Conformal distortion is unavoidable here.** The mean-value map is an
-   embedding, not an isometry: an area-distortion spread of
-   9.7e-5…1.8e-2 (1/mm²) means one disk radius maps to wildly different
-   3D band widths. The binary search sizes each ring by its *worst*
-   uncovered point, so the whole ring pays for the most-compressed sector.
-2. **The curvature census says the flat law is not the target anyway**:
-   interior-edge |κ| median 0.516 1/mm (R≈1.94 mm) with 55.5% convex, so
-   the admissible stepover envelope is 0.25–0.70 mm depending on sign and
-   magnitude. A single global ring spacing cannot satisfy that spread.
-3. Sampling is *not* the explanation: N_S adequacy ratio 0.767 (under the
-   1.0 bar), and halving N_S *reduced* the ring count 50→43, the signature
-   of an already-optimistic predicate — not of under-sampling causing the
-   narrow spacing.
-
-7.1% of spacing samples imply scallop overshoot beyond the paper's own 12%
-trial figure.
-
-### Sensitivity (G-SAMPLING — neither paper states a rule)
-
-| row | N_S | N_C | rings | uncovered | overhead % | spiral mm |
-|---|---|---|---|---|---|---|
-| baseline | 20000 | 360 | 50 | 0 / 0 | 11.215 | 3720.4 |
-| half N_S | 10000 | 360 | 43 | 0 / 0 | 11.560 | 3277.0 |
-| half N_C | 20000 | 180 | **REFUSED** `RingSearchStalled{rings 2}` | — | — | — |
-
-Halving the angular lattice **breaks the mechanism outright** — the paper's
-Table 1 case 1.4 failure mode reproduced on our fixture. The method is
-sensitive to a parameter neither paper gives a rule for.
-
-### Containment
-
-961 of 22,303 cutting moves (4.3%) leave the region ellipse — the lateral
-CL shift on slopes. Counted, deliberately **not** clipped: clipping splits
-the polyline and would fabricate retracts into the very arm whose retract
-count is the claim. The ellipse sits 8 mm inside the mesh, so escapes leave
-the region, never the stock.
-
-### What this does and does not settle
-
-- **Settled**: the pipeline is implementable from the sources; the
-  continuity claim is real and measured; the falsifier passes inside the
-  envelope; the steep-region limit is a mechanism limit, not our map's
-  fault.
-- **Not settled**: whether it can ever be *fast*. On the friendliest
-  possible geometry (convex, hole-free, low-relief) it loses 3.4× on time
-  and 3.6× on distance. F-034-vs-raster was chartered as context, not a
-  bar — but a 3.4× deficit on the easy case is not a margin that hole
-  handling or ceiling-honest relinking will reverse.
-- **Untested**: holes/islands (phase 3, reading gate open), Wanaka regions,
-  any ceiling-honest re-run (`relink_and_cost_under`).
-
-### Recommendation
-
-Do not proceed to phase 3 (slit map / holes) on time-efficiency grounds.
-The distortion-driven over-covering is upstream of everything holes would
-add, and it is the same class of finding as F1: the mechanism transfers,
-the *economics* do not. If the arm continues, the next lever is
-**distortion-aware ring spacing** (per-sector radius, or an
-area-preserving rather than conformal map) — attacking the 2× over-cover
-directly — not more topology.
-
-Artifacts: `terrain_small_conformal_spiral_flat_disk_f2.svg`,
-`terrain_small_conformal_spiral_flat_xy_f2.svg`.
+Structural results, which are resolution-independent and stand: one
+continuous 50-ring path, zero retracts, zero disk-domain
+self-intersections, complete bridging, 11.2 % bridge overhead; the fold
+diagnosis and the mean-value/Tutte fix; halving `N_C` breaking the
+mechanism outright (the 2025 paper's Table 1 case 1.4 reproduced).
+Artifacts `wanaka_region1_direction_field_f1.svg`,
+`terrain_small_conformal_spiral_flat_{disk,xy}_f2.svg`.
