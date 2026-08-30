@@ -275,3 +275,82 @@ to show. That is the experiment; nothing else in §6 changes.
 - **The worst-point spacing rule is the common defect** of the spiral and
   both field variants. A method that beats the raster must vary spacing
   *along* a pass, not just between passes — which no candidate here does.
+
+---
+
+## 9. The operator's own proposal, measured (2026-08-31) — falsified where it was aimed, best-in-programme where it wasn't
+
+Looking at the ribbon figure the operator proposed: *"parallel passes down
+each of the arms, along the length of each arm, and then a spiral in the
+center."* Implemented as a third choice of `D` — the region's **medial
+axis**, obtained as `rotate(grad(EDT), 90°)` — with the iso-scallop
+magnitude unchanged. Run `16ac0dc1`.
+
+**The derivation came first, and it recast the idea.** With that `D`, the
+target field reduces to `V = −|V|·∇̂EDT`, so φ is a reparameterised negative
+distance transform and its level sets are **iso-distance offsets of the
+boundary**. The operator's mental picture *is* contour-parallel machining,
+reached from the opposite direction — and at the hub, where the EDT has a
+local maximum, level sets around a maximum are closed loops encircling it.
+**The "spiral in the centre" is what the field produces, not a special
+case.** That makes the direct prior `FINDINGS.md` §0k (contour-per-cell,
+**0.686×**) and §0d (contour whole-region, **0.91×**), both losses.
+
+| fixture | floor | spiral | 0° raster | field `D=t1` | field `D=sweep` | **field `D=medial`** |
+|---|---|---|---|---|---|---|
+| SPHERE | 244.05 | 1.087× | 0.997× ⚠ | 2.339× | 1.508× | **1.036×** |
+| WAVY | 156.27 | 1.341× | 1.101× | 4.917× | 1.884× | 1.495× |
+| RIBBON | 373.88 | 3.745× | 1.310× | 9.001× | 2.071× | 2.525× |
+| BAND | 641.28 | *no path* | 1.127× | 4.455× | 2.094× | 2.045× |
+
+### The falsifier fired
+
+Stated before the run: *on the ribbon the medial row must produce fewer
+fragments **and** fewer links than `D=sweep`, with distance within ~1.5×.*
+Measured: **179 fragments vs 98, and 160 links vs 63.** It fragments
+*more*, on the exact geometry it was proposed for. **The proposal is
+refuted there, and §0k's contour loss carried after all.**
+
+The mechanism is visible in the numbers and is intrinsic to offsets on a
+branched region: each offset ring **splits** as it passes a branch point,
+so a star with eight arms shatters every contour into pieces. Sweeping in
+one direction does not. Distance stayed within the rail (943.9 vs 774.5 =
+1.22×), so this is a *direction* result, not a spacing-basis artefact.
+
+### But the sphere row is the best honest number this programme has produced
+
+**1.036× the floor, 13 fragments, 12 links, zero retracts, 22.5 s** — against
+the raster's 22.0 s at **0.997×**, which is under-coverage, not a win. On a
+disk the medial axis is a single point, so the offsets *are* concentric
+rings, and contour-parallel is classically strong on round pockets. Same
+time as the raster, and it actually meets the finish spec.
+
+That is worth stating plainly: **on compact, round-ish regions the
+operator's construction is the best candidate measured** — and it is also
+the only candidate that has ever come within 4 % of the floor while
+honestly covering the part.
+
+### What this settles about the whole programme
+
+Five strategies, four fixtures, one floor. The pattern across the table is
+now unambiguous and it is **not** about which clever field you choose:
+
+- **Region shape decides the strategy, not the algorithm's sophistication.**
+  Compact/round → offsets win (medial 1.036×). Elongated/branched →
+  one-direction sweeps win (raster 1.310× vs medial 2.525×). Every
+  candidate that ignores shape loses on some shape.
+- **Every method that assigns one spacing to a whole pass pays for that
+  pass's worst point** — the spiral per ring, both field arms per level.
+  That is the single common defect, and beating the raster requires varying
+  spacing *along* a pass, which nothing here does.
+- **The raster's lead is partly unbilled finish debt** (§1), and the medial
+  row is the first candidate to match it on time while actually meeting
+  spec.
+
+So the near-optimal method is a **shape-selected** one: decompose, then
+give each piece the strategy its shape earns — offsets for the compact
+pieces, direction sweeps for the elongated ones — which is what the
+operator's original instinct ("parallel down the arms, spiral in the
+centre") described. It was right about the *decomposition*; the measurement
+says the two halves must be **different strategies**, not one field that
+tries to be both.
