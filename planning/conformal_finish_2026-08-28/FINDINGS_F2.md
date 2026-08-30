@@ -117,11 +117,37 @@ win is the branched/perforated terrain that its own map handles worst
 (ARM STEEP still refuses with a clean map — at ~50 mm relief concentric
 disk circles cannot cover ring-by-ring).
 
-**Recommendation unchanged, now on sound evidence: do not proceed to the
-slit map / holes on efficiency grounds.** If the arm resumes, the lever is
-distortion-aware ring spacing — the per-ring radial-scale ratio the module
-now measures is the over-cover the worst-sector rule forces — not more
-topology.
+**Recommendation SUSPENDED 2026-08-30 — the benchmark was wrong for the
+question.** An operator pushed back: what about narrow branched valleys,
+and mountain ranges with lakes? The objection is correct and the earlier
+recommendation over-reached.
+
+- On the fixtures above the raster baseline produced **4 and 3 fragments
+  with ZERO retracts**. On the real target geometry (thin-organic region
+  1) a 0° raster produces **564 fragments / 97 kept retracts**, and even
+  the tuned PCA-cell plan carries 141 / 53. **A retract-elimination method
+  was benchmarked on geometry with no retracts to eliminate**, so its
+  entire value proposition was structurally unable to appear.
+- Multiply-connected regions — lakes, islands, keep-outs — are *precisely*
+  what the conformal slit map exists for, and were never tested at all.
+  Recommending against building the hole machinery on the strength of
+  hole-free economics is not evidence, it is extrapolation.
+- What survives as a real risk, now stated as a falsifiable prediction:
+  flattening a long branched ribbon compresses the arm tips, so one disk
+  circle maps to very different 3D spacings across arms, and the
+  worst-sector rule turns that variation into over-cover. That quantity is
+  `RingAnisotropy::median_ratio` / `worst_ratio`, which the module measures
+  and no arm has yet printed. It competes against the retract savings
+  rather than automatically beating them.
+
+**The gate is therefore ARM RIBBON** (in progress): a narrow, branched,
+**simply-connected** fixture — no slit map needed — with facets ≤
+stepover/3 and a raster baseline that genuinely fragments. It asks the one
+question that decides the programme: *does eliminating N retracts beat
+paying an M-fold over-cover on branched geometry?* If the spiral wins
+there, the slit map becomes worth building for the lakes case. If the
+over-cover swamps the savings, the recommendation returns — on evidence
+from the right geometry class instead of the wrong one.
 
 ---
 
