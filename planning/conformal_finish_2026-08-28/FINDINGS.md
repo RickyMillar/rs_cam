@@ -165,3 +165,84 @@ Reopening the arm again requires a surface with large coherent direction
 zones. Wanaka is not one. That is a property of the geometry, measurable in
 advance from the sliver census at a chosen tolerance, and cheap to check
 before any future attempt.
+
+## §F1-3 No shipped decomposition is a coherent zone. The field turns inside one stepover. (2026-08-31)
+
+Instrument: `crates/rs_cam_core/tests/zone_coherence_census.rs`, commit
+`a17de695`. It generates no toolpath. It measures the zones the product
+already produces.
+
+The operator asked whether the multitool tier islands, the slope bands, or
+the monotone cells make better zones than a coherence gate. The answer is
+no, and one number explains why.
+
+### The measurement
+
+| source | zones | median w30 | median coherence length | usable |
+|---|---|---|---|---|
+| tier islands (owned) | 4 | 0.32–0.43 | 0.40–0.56 mm | **0** |
+| slope band, shallow | 15 | 0.301 | 0.36 mm | **0** |
+| slope band, mid-steep | 2 | 0.328 | 0.35 mm | **0** |
+| slope band, very steep | 5 | 0.317 | 0.34 mm | **0** |
+
+`w30` is the area fraction within 30 degrees of the zone's dominant
+direction. The bar was 0.70. No zone reaches half of it.
+
+**Usable zones cover 0.00 % of the surface from both sources.**
+
+The measurement is sound, not starved: 651,979 of 661,212 triangles fitted,
+zero umbilic, and 74.1 % of surface area carries a believed direction. The
+field is measured. It is simply not coherent.
+
+### The number that closes the arm
+
+**The coherence length is about 0.35 mm. The stepover is 0.486 mm.**
+
+The direction field turns more than 30 degrees in less distance than one
+pass spacing. The field cannot hold a direction for the width of a single
+pass, anywhere on this surface.
+
+No decomposition can repair that. A zone coherent enough to sweep would have
+to be narrower than the tool's own step, which is the same result §F1-2
+measured from the other side when the coherence gate produced 10,640 patches
+under 1 mm².
+
+### The size control confirms it
+
+Region 1 cut into equal square tiles:
+
+| tile | tiles | median w30 | median coherence |
+|---|---|---|---|
+| 16 mm | 39 | 0.294 | 0.37 mm |
+| 8 mm | 114 | 0.359 | 0.38 mm |
+| 4 mm | 335 | 0.419 | 0.38 mm |
+
+`w30` rises as the tiles shrink, and never approaches 0.70. **The coherence
+length does not move at all.** It stays near 0.37 mm at every tile size,
+because it is a property of the field and not of the zone. Shrinking a zone
+cannot lengthen the distance over which the surface holds its direction.
+
+That also answers the monotone cells, which this census could not reach.
+They are a decomposition of the same region at a similar scale. The tile
+control shows scale is not the variable that matters.
+
+### Status
+
+The direction-field arm is closed on Wanaka. The full chain is measured:
+
+1. The premise holds. The anisotropy is real, and the prize ceiling is
+   +9.75 % on region 1 (§11 of the synthesis).
+2. The missing pipeline stage works. Segmentation removes the level-set
+   threading, from 68.47 components per level to 1.07 (§F1-2).
+3. The method still fails, because the field turns inside one stepover
+   (this section).
+4. No shipped decomposition supplies the missing coherence, and no zone
+   size does either.
+
+The prize measured in step 1 is real and unreachable by this method. To
+collect it, a strategy would have to change feed direction every 0.35 mm,
+which costs more in turning than the 9.75 % it could win.
+
+**Reopening this arm requires a surface whose direction field holds over
+several stepovers.** The census measures that in one run, before any
+implementation. That check is now cheap and should gate any future attempt.
