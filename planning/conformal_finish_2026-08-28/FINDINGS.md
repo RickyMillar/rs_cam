@@ -92,3 +92,76 @@ The F2 reading gate is OPEN (`reading_set_gate_status.md`). The §0k
 path-length trap and the 755.3 s ceiling-arm bar (thin-organic §0i) are the
 hazards F2 must answer, with `relink_and_cost_under` as the mandatory
 kernel for its ceiling arm.
+
+## §F1-2 Segmentation works. It does not fix the fragmentation. (2026-08-31)
+
+Instrument: `crates/rs_cam_core/tests/direction_field_wanaka_f1.rs`,
+test `wanaka_direction_field_segmented_f1`, commit `b2d2b346`.
+
+§11 of the synthesis reopened this arm. The literature runs four stages
+after the direction rule. We had built none of them. Segmentation was the
+stage that should stop the level sets of one global scalar from crossing
+every branch of region 1. This test adds it.
+
+### The mechanism check passes
+
+Components per level, measured:
+
+| arm | patches | levels | polylines | components/level |
+|---|---|---|---|---|
+| 180° undivided control | 3 | 197 | 13,489 | **68.47** |
+| 45° coherence patches | 1,452 | 4,752 | 9,536 | **2.01** |
+| 30° coherence patches | 2,925 | 7,875 | 10,514 | **1.34** |
+| 20° coherence patches | 5,146 | 10,931 | 12,867 | **1.18** |
+| 10° coherence patches | 11,380 | 17,353 | 18,562 | **1.07** |
+
+Segmentation does what the literature says it does. Threading falls from
+68.47 components per level to 1.07. Orientation inconsistencies fall from
+3,915 to zero. The stage is not broken.
+
+### The verdict fails anyway
+
+The pre-registered bar asked for an order of magnitude fewer polylines. The
+best arm gives control ÷ 1.41. Tighter tolerances make the count worse, not
+better. The second gate criterion, which lets a patch bend, reaches 9,119
+polylines at 30°. That is the same order.
+
+**Pre-registered reading: segmentation is not the fix.**
+
+### Why, and this is the new finding
+
+**Anisotropy magnitude is not direction coherence. The method needs both.**
+
+§11 measured region 1's anisotropy and found it real: median `W_max/W_min`
+1.0950 at R = 1.0 mm, a +9.75 % prize ceiling, confirmed as landscape by
+both scale rules. That measurement says the surface *has* a preferred
+direction at each point. It does not say that direction *holds over an
+area*.
+
+Region 1's direction field turns continuously. Any coherence-based
+segmentation therefore cuts the region wherever the field has turned past
+the tolerance. The patch count then rises as fast as the threading falls,
+and the two effects cancel. The sliver census shows the cost directly: at
+45° the arm makes 1,064 patches under 1 mm² (5.4 % of the region); at 10°
+it makes 10,640 of them, and **48.2 % of the region lies in patches smaller
+than 1 mm²**. The segmentation shreds the surface.
+
+The paper's surfaces do not behave this way. A turbine blade or a bike seat
+carries a few large coherent zones. River-carved terrain does not.
+
+### Status of the arm
+
+Falsified on region 1, now for a understood reason rather than a suspected
+one. The chain of three claims is complete:
+
+1. The premise holds — the anisotropy is real and the prize is percent-scale
+   (§11).
+2. The missing stage works — segmentation removes the threading (this
+   section).
+3. The method still fails — because the field lacks the spatial coherence
+   the method needs, and no stage in the literature's pipeline supplies it.
+
+Reopening the arm again requires a surface with large coherent direction
+zones. Wanaka is not one. That is a property of the geometry, measurable in
+advance from the sliver census at a chosen tolerance, and cheap to check
+before any future attempt.
