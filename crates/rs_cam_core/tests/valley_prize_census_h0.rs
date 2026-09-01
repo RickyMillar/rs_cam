@@ -71,9 +71,14 @@
 //!    [`ACC_LADDER_MM2`] as the interior rung with the FLATTEST log-log
 //!    network-length slope `|d ln L / d ln T|` — the stability rule FINDINGS
 //!    names. `L(T)` at every rung is printed as the evidence.
-//! 4. **Land** for the stability sweep is `z > 0` (`base_height_mm = 0.0` in
-//!    `rivmap_data.toml`); the wave trench and the ocean band sit below it.
-//!    The masks themselves are additionally clipped to the finish territory.
+//! 4. **The hydrology runs on the LAND view only** — `z > 0`
+//!    (`base_height_mm = 0.0` in `rivmap_data.toml`), so the sea and the wave
+//!    trench are the base level and the coastline is the outlet. This was
+//!    CORRECTED after the first run, which flooded the whole board (99.50 % of
+//!    cells raised) because the export writes a raised outer edge band; see
+//!    [`Field::land_view`]. The whole-board flood is still run and its raised
+//!    fraction printed as the evidence. The masks are additionally clipped to
+//!    the finish territory.
 //!
 //! # Running it
 //!
@@ -160,6 +165,15 @@ const TPI_SENSITIVITY_MM: [f64; 3] = [15.0, 30.0, 50.0];
 const ACC_LADDER_MM2: [f64; 11] = [
     4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0, 1024.0, 2048.0, 4096.0,
 ];
+/// Rungs at which M1-M4 and V0-pre are ALSO reported, beside the rung the
+/// pre-declared stability rule picks.
+///
+/// The rule is not re-picked and no bar moves: this is a sensitivity table.
+/// It exists because the first sane-hydrology run showed `|d ln L / d ln T|`
+/// rising MONOTONICALLY across the whole ladder — there is no plateau on this
+/// board, so "flattest rung" degenerates to "the lowest interior rung", and a
+/// single rung would be a weak place to read a decision off.
+const ACC_SENSITIVITY_RUNGS_MM2: [f64; 5] = [32.0, 128.0, 256.0, 512.0, 1024.0];
 /// Land floor (mm). `base_height_mm = 0.0` in `rivmap_data.toml`.
 const LAND_Z_MM: f64 = 0.0;
 /// Along-chain half-window (mm) the valley tangent is measured over. Raw D8
@@ -229,6 +243,38 @@ impl Field {
         }
         let (col, row) = (col as usize, row as usize);
         (col < self.nx && row < self.ny).then_some(row * self.nx + col)
+    }
+
+    /// The same lattice with everything at or below `land_z` marked nodata —
+    /// the LAND view, on which the hydrology runs.
+    ///
+    /// **Why this exists.** The first run of this instrument flooded the whole
+    /// board: the priority flood raised **99.50 %** of data cells, and the
+    /// accumulation field it produced was an artefact of flood order rather
+    /// than a drainage network. The cause is geometry, not code — the rivmap
+    /// export writes a RAISED OUTER EDGE BAND (`edge_profile = 3`,
+    /// `edge_wall_deg = 41`, `edge_top_offset_mm = 0.0` in `rivmap_data.toml`),
+    /// so the board's interior is one closed basin with its rim as the only
+    /// exit, and a correct priority flood fills it to that rim. The whole-board
+    /// flood is still run and its raised fraction printed, as the evidence for
+    /// this restriction; the DECIDING mask uses the land view, in which the
+    /// coastline is the base level and lakes on land still fill to their own
+    /// spill points.
+    fn land_view(&self, land_z: f64) -> Self {
+        let nodata = (0..self.len())
+            // NaN at a nodata cell is already excluded by the first term, so
+            // `<=` here is a total comparison in practice.
+            .map(|i| self.nodata[i] || self.z[i] <= land_z)
+            .collect();
+        Self {
+            nx: self.nx,
+            ny: self.ny,
+            ox: self.ox,
+            oy: self.oy,
+            cell: self.cell,
+            z: self.z.clone(),
+            nodata,
+        }
     }
 }
 
@@ -1488,12 +1534,36 @@ fn self_check_two_lakes() {
         stalled, 0,
         "two-lake self-check: {stalled} lake cells have no D8 receiver after the +eps fill"
     );
-    let downstream: f64 = acc[(ny - 2) * nx + 30];
+    // Mass conservation: every data cell reaches an outlet exactly once, so
+    // the outlet accumulations sum to the data-cell count. This is the check
+    // that the fill + D8 graph is complete and acyclic — a stronger and less
+    // brittle statement than "cell X carries the lake", which depends on
+    // WHICH rim the flood spilled over and is not a property of the method.
+    let outlet_total: f64 = (0..field.len())
+        .filter(|&i| receivers[i].is_none())
+        .map(|i| acc[i])
+        .sum();
+    let data_cells = field.len() as f64;
+    assert!(
+        (outlet_total - data_cells).abs() < 0.5,
+        "two-lake self-check: outlet accumulation {outlet_total} != {data_cells} data cells"
+    );
+    // Downstream of the upper lake something must carry more than the lake.
+    let downstream = (0..field.len())
+        .filter(|&i| field.xy(i).y > 26.0)
+        .map(|i| acc[i])
+        .fold(0.0f64, f64::max);
     assert!(
         downstream > lake_cells.len() as f64,
-        "two-lake self-check: outlet accumulation {downstream} did not carry the upper lake"
+        "two-lake self-check: peak downstream accumulation {downstream} did not carry the \
+         upper lake's {} cells",
+        lake_cells.len()
     );
-    eprintln!("   self-check two lakes: 0 stalled cells, outlet acc {downstream:.0} — PASS");
+    eprintln!(
+        "   self-check two lakes: 0 stalled cells, outlet mass {outlet_total:.0} of \
+         {data_cells:.0}, peak downstream acc {downstream:.0} vs lake {} cells — PASS",
+        lake_cells.len()
+    );
 }
 
 /// A strip of known width: the chamfer DT's maximum must be that width / 2.
@@ -1702,7 +1772,9 @@ fn write_census_svg(inputs: &SvgInputs<'_>, path: &Path, title: &str) -> std::io
 // The instrument
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Everything the census needs about one costed Shallow region.
+/// Everything the census needs about one costed Shallow region. Every field
+/// here is MASK-INDEPENDENT, so the costing runs once and every mask is
+/// evaluated against the same toolpaths.
 struct RegionRow {
     index: usize,
     polygon: Polygon2,
@@ -1711,12 +1783,353 @@ struct RegionRow {
     rotated: bool,
     elongation: Option<f64>,
     theta_max_incl_deg: f64,
-    theta_max_excl_deg: f64,
-    theta_max_mask_deg: f64,
-    mask_cells: usize,
     incl_cells: usize,
     derated_stepover_mm: f64,
     cost: Option<CandidateCost>,
+}
+
+/// The shared, mask-independent inputs [`evaluate_mask`] reads.
+struct EvalCtx<'a> {
+    mesh: &'a TriangleMesh,
+    index: &'a SpatialIndex,
+    field: &'a Field,
+    surface: &'a rs_cam_core::finish_setup::FinishSurface,
+    covered: &'a [bool],
+    steep_clamp_deg: f64,
+    stepover: f64,
+    cell_area: f64,
+    territory_cells: usize,
+    territory_pts: &'a [P2],
+    kinematics: &'a rs_cam_core::machine_kinematics::MachineKinematics,
+    rows: &'a [RegionRow],
+}
+
+/// How one mask was built — printed with it, so no number stands without the
+/// construction that produced it.
+struct MaskProvenance<'a> {
+    label: String,
+    samples: usize,
+    floored: usize,
+    skipped: usize,
+    half_widths_mm: &'a [f64],
+}
+
+/// The valley tangent (degrees, axis in `[0, 180)`) at every network cell,
+/// measured over a `reach_cells` window ALONG THE CHAIN in both directions —
+/// never from a single D8 link, which quantises to 45 degrees.
+///
+/// Returns the tangent field and the main-donor map (the upstream neighbour
+/// with the largest accumulation), which the polyline tracer also needs.
+fn valley_tangents(
+    field: &Field,
+    receivers: &[Option<u32>],
+    acc: &[f64],
+    network: &[bool],
+    reach_cells: usize,
+) -> (Vec<f64>, Vec<u32>) {
+    let mut main_donor = vec![u32::MAX; field.len()];
+    let mut donor_acc = vec![f64::NEG_INFINITY; field.len()];
+    for i in 0..field.len() {
+        if !network[i] {
+            continue;
+        }
+        if let Some(r) = receivers[i]
+            && network[r as usize]
+            && acc[i] > donor_acc[r as usize]
+        {
+            donor_acc[r as usize] = acc[i];
+            main_donor[r as usize] = i as u32;
+        }
+    }
+    let mut tangent_deg = vec![f64::NAN; field.len()];
+    for i in 0..field.len() {
+        if !network[i] {
+            continue;
+        }
+        let mut down = i;
+        for _ in 0..reach_cells {
+            match receivers[down] {
+                Some(r) if network[r as usize] => down = r as usize,
+                _ => break,
+            }
+        }
+        let mut up = i;
+        for _ in 0..reach_cells {
+            let d = main_donor[up];
+            if d == u32::MAX {
+                break;
+            }
+            up = d as usize;
+        }
+        if up == down {
+            continue;
+        }
+        let a = field.xy(up);
+        let b = field.xy(down);
+        tangent_deg[i] = (b.y - a.y).atan2(b.x - a.x).to_degrees().rem_euclid(180.0);
+    }
+    (tangent_deg, main_donor)
+}
+
+/// Trace the network into polylines: from every head (a cell with no donor)
+/// downstream until the network ends or the chain meets an already-traced
+/// cell.
+fn valley_polylines(
+    field: &Field,
+    receivers: &[Option<u32>],
+    network: &[bool],
+    main_donor: &[u32],
+) -> Vec<Vec<P2>> {
+    let mut out = Vec::new();
+    let mut visited = vec![false; field.len()];
+    for i in 0..field.len() {
+        if !network[i] || visited[i] || main_donor[i] != u32::MAX {
+            continue;
+        }
+        let mut line = Vec::new();
+        let mut c = i;
+        loop {
+            visited[c] = true;
+            line.push(field.xy(c));
+            match receivers[c] {
+                Some(r) if network[r as usize] && !visited[r as usize] => c = r as usize,
+                Some(r) if network[r as usize] => {
+                    line.push(field.xy(r as usize));
+                    break;
+                }
+                _ => break,
+            }
+        }
+        if line.len() >= 2 {
+            out.push(line);
+        }
+    }
+    out
+}
+
+fn census_samples(mesh: &TriangleMesh, index: &SpatialIndex, pts: &[P2]) -> Vec<(P2, f64)> {
+    pts.par_iter()
+        .filter_map(|&p| surface_z(mesh, index, p).map(|z| (p, z)))
+        .collect()
+}
+
+fn print_census_header() {
+    eprintln!(
+        "     {:>12}  {:>6}  {:>7}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}",
+        "population", "R mm", "fits", "gouge A", "bound X", "bound Y", "bound PCA", "ratio p50"
+    );
+}
+
+fn print_census_rows(mesh: &TriangleMesh, index: &SpatialIndex, name: &str, samples: &[(P2, f64)]) {
+    if samples.is_empty() {
+        eprintln!("     {name:>12}  EMPTY POPULATION — nothing measured");
+        return;
+    }
+    let (cells, total, rejected) = census_population(mesh, index, samples, CENSUS_LATTICE_MM);
+    for cell in &cells {
+        eprintln!(
+            "     {name:>12}  {:>6.1}  {:>7}  {:>8.3}%  {:>9.4}  {:>9.4}  {:>9.4}  {:>9.4}",
+            cell.tool_radius_mm,
+            cell.fits,
+            100.0 * cell.gouge_area_frac,
+            cell.bound_x,
+            cell.bound_y,
+            cell.bound_pca,
+            cell.ratio_p50,
+        );
+    }
+    eprintln!(
+        "     {name:>12}  ({rejected} of {total} samples rejected: under-determined or \
+         ill-conditioned; ratio p90 {:.4} at R{:.1})",
+        cells.last().map_or(f64::NAN, |c| c.ratio_p90),
+        cells.last().map_or(f64::NAN, |c| c.tool_radius_mm),
+    );
+}
+
+/// Everything mask-dependent: area share, V0-pre, M4, M1, M2, M3.
+fn evaluate_mask(
+    ctx: &EvalCtx<'_>,
+    prov: &MaskProvenance<'_>,
+    mask: &[bool],
+    axis_at: &dyn Fn(usize) -> f64,
+) {
+    let field = ctx.field;
+    let cells = mask.iter().filter(|&&m| m).count();
+    let pick = |w: &[f64], q: f64| -> f64 {
+        if w.is_empty() {
+            f64::NAN
+        } else {
+            w[((w.len() - 1) as f64 * q).round() as usize]
+        }
+    };
+    eprintln!(
+        "\n══════════ {} ══════════\n\
+         \x20  AREA: {cells} cells = {:.1} mm² XY = {:.2} % of the finish territory \
+         ({} cells)\n\
+         \x20  built from {} samples, {} floored to one cell, {} redundant discs skipped;\n\
+         \x20  half-width p10 {:.2}  p50 {:.2}  p90 {:.2}  max {:.2} mm",
+        prov.label,
+        cells as f64 * ctx.cell_area,
+        100.0 * cells as f64 / ctx.territory_cells.max(1) as f64,
+        ctx.territory_cells,
+        prov.samples,
+        prov.floored,
+        prov.skipped,
+        pick(prov.half_widths_mm, 0.10),
+        pick(prov.half_widths_mm, 0.50),
+        pick(prov.half_widths_mm, 0.90),
+        prov.half_widths_mm.last().copied().unwrap_or(f64::NAN),
+    );
+
+    // ── V0-pre, restricted to this mask ──
+    let in_mask_pts: Vec<P2> = ctx
+        .territory_pts
+        .iter()
+        .copied()
+        .filter(|p| field.index_at(p.x, p.y).is_some_and(|i| mask[i]))
+        .collect();
+    let in_mask_samples = census_samples(ctx.mesh, ctx.index, &in_mask_pts);
+    eprintln!("\x20  V0-pre — direction-prize ceiling restricted to this mask:");
+    print_census_header();
+    print_census_rows(ctx.mesh, ctx.index, "in-mask", &in_mask_samples);
+
+    // ── M4 ──
+    let inside = |p: P2| -> bool { field.index_at(p.x, p.y).is_some_and(|i| mask[i]) };
+    eprintln!(
+        "\x20  M4 — theta_max with mask cells EXCISED vs INCLUDED \
+         (clamp {:.1} deg); refund = cos(excised)/cos(included):",
+        ctx.steep_clamp_deg
+    );
+    eprintln!(
+        "     {:>4}  {:>10}  {:>8}  {:>7}  {:>10}  {:>9}  {:>9}  {:>9}  {:>8}  {:>16}",
+        "rgn",
+        "area mm²",
+        "dir deg",
+        "rotated",
+        "elong",
+        "th incl",
+        "th excl",
+        "th mask",
+        "refund",
+        "mask/incl cells"
+    );
+    for row in ctx.rows {
+        let (excl, _) = region_max_slope_deg(
+            ctx.surface,
+            ctx.covered,
+            &row.polygon,
+            ctx.steep_clamp_deg,
+            &|p| !inside(p),
+        );
+        let (only, only_n) = region_max_slope_deg(
+            ctx.surface,
+            ctx.covered,
+            &row.polygon,
+            ctx.steep_clamp_deg,
+            &inside,
+        );
+        let refund = excl.to_radians().cos() / row.theta_max_incl_deg.to_radians().cos().max(1e-12);
+        eprintln!(
+            "     {:>4}  {:>10.1}  {:>8.2}  {:>7}  {:>10}  {:>9.3}  {:>9.3}  {:>9.3}  {:>8.4}  \
+             {:>7} /{:>8}",
+            row.index,
+            row.area_mm2,
+            row.direction_deg,
+            row.rotated,
+            row.elongation
+                .map_or_else(|| "-".to_owned(), |e| format!("{e:.2}")),
+            row.theta_max_incl_deg,
+            excl,
+            only,
+            refund,
+            only_n,
+            row.incl_cells,
+        );
+    }
+
+    // ── M1, M2, M3 ──
+    let mut total = Split::default();
+    let mut scales = Vec::new();
+    let mut weighted_angle = 0.0f64;
+    let mut weighted_angle_moves = 0.0f64;
+    let mut angle_weight = 0.0f64;
+    let mut no_tangent_time = 0.0f64;
+    for row in ctx.rows {
+        let Some(cost) = row.cost.as_ref() else {
+            continue;
+        };
+        let (split, samples, scale) =
+            attribute_cutting(&cost.toolpath, ctx.kinematics, cost.time_s, &inside);
+        scales.push(scale);
+        total.in_time_s += split.in_time_s;
+        total.out_time_s += split.out_time_s;
+        total.in_mm += split.in_mm;
+        total.out_mm += split.out_mm;
+        for sample in &samples {
+            let Some(i) = field.index_at(sample.mid.x, sample.mid.y) else {
+                continue;
+            };
+            if !mask[i] {
+                continue;
+            }
+            let axis = axis_at(i);
+            if !axis.is_finite() {
+                no_tangent_time += sample.time_s;
+                continue;
+            }
+            weighted_angle += axis_angle_deg(row.direction_deg, axis) * sample.time_s;
+            weighted_angle_moves += axis_angle_deg(sample.dir_deg, axis) * sample.time_s;
+            angle_weight += sample.time_s;
+        }
+    }
+    let cutting_time = total.in_time_s + total.out_time_s;
+    let cutting_mm = total.in_mm + total.out_mm;
+
+    // L_min over the mask's SURFACE area: dA = dxdy / cos(slope).
+    let mut surface_area = 0.0f64;
+    for (i, &angle) in ctx.surface.slope_map.angles.iter().enumerate() {
+        if !mask.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let cos = angle.cos();
+        if cos > 1e-6 {
+            surface_area += ctx.cell_area / cos;
+        }
+    }
+    let l_min = surface_area / ctx.stepover;
+    let feed_mm_s = FEED_MM_MIN / 60.0;
+
+    eprintln!(
+        "\x20  time attribution rescale factor (sum len/v_peak vs compute_cycle_time): \
+         min {:.4} max {:.4}\n\
+         \x20  M1 time share IN mask: {:.3} % ({:.1} s of {:.1} s cutting)\n\
+         \x20     distance share IN mask: {:.3} % ({:.0} mm of {:.0} mm)  [cross-check]\n\
+         \x20  mask surface area (dA = dxdy/cos slope): {:.1} mm²; s_max = {:.6} mm\n\
+         \x20     L_min = {:.1} mm;  L_min / feed = {:.1} s at {FEED_MM_MIN:.0} mm/min\n\
+         \x20  M2 xfloor (DISTANCE, the synthesis §1 convention): {:.4}x\n\
+         \x20  M2 xfloor (TIME, the literal FINDINGS wording):    {:.4}x\n\
+         \x20  M3 time-weighted misalignment, region C2 lattice vs local valley axis: {:.3} deg\n\
+         \x20     (emitted-move direction vs valley axis: {:.3} deg)  [cross-check]\n\
+         \x20     weight {:.1} s; {:.1} s of in-mask time had no valley tangent",
+        scales.iter().copied().fold(f64::INFINITY, f64::min),
+        scales.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        100.0 * total.in_time_s / cutting_time.max(1e-9),
+        total.in_time_s,
+        cutting_time,
+        100.0 * total.in_mm / cutting_mm.max(1e-9),
+        total.in_mm,
+        cutting_mm,
+        surface_area,
+        ctx.stepover,
+        l_min,
+        l_min / feed_mm_s,
+        total.in_mm / l_min.max(1e-9),
+        total.in_time_s / (l_min / feed_mm_s).max(1e-9),
+        weighted_angle / angle_weight.max(1e-9),
+        weighted_angle_moves / angle_weight.max(1e-9),
+        angle_weight,
+        no_tangent_time,
+    );
 }
 
 #[test]
@@ -1892,20 +2305,41 @@ fn wanaka_valley_prize_census_h0() {
     );
 
     // ── HYDROLOGY ──
+    //
+    // Two floods. The WHOLE-BOARD one is the diagnostic that forced the land
+    // restriction and is reported, never used; the LAND one is the deciding
+    // arm. See `Field::land_view`.
     let t_hydro = std::time::Instant::now();
-    let filled = priority_flood_epsilon(&field);
-    let raised = (0..field.len())
-        .filter(|&i| !field.nodata[i] && filled[i] > field.z[i] + FILL_EPSILON_MM)
+    let whole_filled = priority_flood_epsilon(&field);
+    let whole_raised = (0..field.len())
+        .filter(|&i| !field.nodata[i] && whole_filled[i] > field.z[i] + FILL_EPSILON_MM)
         .count();
-    let receivers = d8_receivers(&field, &filled);
-    let stalled = (0..field.len())
-        .filter(|&i| !field.nodata[i] && receivers[i].is_none())
+    drop(whole_filled);
+
+    let hydro = field.land_view(LAND_Z_MM);
+    let filled = priority_flood_epsilon(&hydro);
+    let raised = (0..hydro.len())
+        .filter(|&i| !hydro.nodata[i] && filled[i] > hydro.z[i] + FILL_EPSILON_MM)
         .count();
-    let acc = d8_accumulation(&field, &filled, &receivers);
+    let receivers = d8_receivers(&hydro, &filled);
+    let stalled = (0..hydro.len())
+        .filter(|&i| !hydro.nodata[i] && receivers[i].is_none())
+        .count();
+    let acc = d8_accumulation(&hydro, &filled, &receivers);
     eprintln!(
-        "hydrology: priority-flood +eps raised {raised} cells ({:.2} % of data); {stalled} cells \
-         have no receiver (outlets); D8 accumulation done in {:.1}s.",
-        100.0 * raised as f64 / data_cells.max(1) as f64,
+        "hydrology, WHOLE-BOARD flood (diagnostic, NOT used): raised {whole_raised} cells \
+         ({:.2} % of data).\n\
+         \x20  The rivmap export writes a RAISED OUTER EDGE BAND (`edge_profile = 3`, \
+         `edge_wall_deg = 41`),\n\
+         \x20  so the interior is one closed basin and a correct priority flood fills it to \
+         the rim.\n\
+         \x20  The accumulation field that produces is an artefact of flood order, not a \
+         drainage network.\n\
+         hydrology, LAND flood (the DECIDING arm; sea/trench is base level, coastline is the \
+         outlet):\n\
+         \x20  raised {raised} cells ({:.2} % of land); {stalled} outlet cells; done in {:.1}s.",
+        100.0 * whole_raised as f64 / data_cells.max(1) as f64,
+        100.0 * raised as f64 / land_cells.max(1) as f64,
         t_hydro.elapsed().as_secs_f64()
     );
 
@@ -1923,11 +2357,11 @@ fn wanaka_valley_prize_census_h0() {
     );
     let mut lengths = Vec::new();
     for &t in &ACC_LADDER_MM2 {
-        let network: Vec<bool> = (0..field.len())
-            .map(|i| land[i] && acc[i] * cell_area >= t)
+        let network: Vec<bool> = (0..hydro.len())
+            .map(|i| !hydro.nodata[i] && acc[i] * cell_area >= t)
             .collect();
         let cells = network.iter().filter(|&&n| n).count();
-        let length = network_length_mm(&field, &receivers, &network);
+        let length = network_length_mm(&hydro, &receivers, &network);
         lengths.push((t, cells, length));
     }
     let mut slopes = vec![f64::NAN; lengths.len()];
@@ -1958,8 +2392,8 @@ fn wanaka_valley_prize_census_h0() {
         slopes[chosen_k], lengths[chosen_k].2, lengths[chosen_k].1
     );
 
-    let network: Vec<bool> = (0..field.len())
-        .map(|i| land[i] && acc[i] * cell_area >= threshold_mm2)
+    let network: Vec<bool> = (0..hydro.len())
+        .map(|i| !hydro.nodata[i] && acc[i] * cell_area >= threshold_mm2)
         .collect();
 
     // ── the low-ground mask and its chamfer DT ──
@@ -1971,7 +2405,7 @@ fn wanaka_valley_prize_census_h0() {
     );
     let mut dt_for_window = Vec::new();
     for &w in &TPI_SENSITIVITY_MM {
-        let low = low_ground_mask(&field, w);
+        let low = low_ground_mask(&hydro, w);
         let low_cells = low.iter().filter(|&&l| l).count();
         let dt = chamfer_distance(&low, field.nx, field.ny);
         let mut on_net: Vec<f64> = (0..field.len())
@@ -2001,20 +2435,14 @@ fn wanaka_valley_prize_census_h0() {
     }
     if dt_for_window.is_empty() {
         dt_for_window = chamfer_distance(
-            &low_ground_mask(&field, TPI_HALF_WINDOW_MM),
+            &low_ground_mask(&hydro, TPI_HALF_WINDOW_MM),
             field.nx,
             field.ny,
         );
     }
     eprintln!("     (the DECIDING window is W = {TPI_HALF_WINDOW_MM} mm)");
 
-    // ── mask B: buffer the flow network ──
-    let net_cells: Vec<usize> = (0..field.len()).filter(|&i| network[i]).collect();
-    let net_samples: Vec<P2> = net_cells.iter().map(|&i| field.xy(i)).collect();
-    let buffered_b = buffer_samples(&field, &dt_for_window, &net_samples);
-    let src_b = nearest_source(&field, &net_cells);
-
-    // ── mask A: buffer the DXF network ──
+    // ── mask A: buffer the DXF network (threshold-independent) ──
     let dxf_polys = rs_cam_core::dxf_input::load_dxf(dxf_path, DXF_ARC_TOLERANCE_DEG)
         .expect("load rivers_aligned.dxf");
     let open_count = dxf_polys.iter().filter(|p| !p.closed).count();
@@ -2065,7 +2493,7 @@ fn wanaka_valley_prize_census_h0() {
             dxf_lines.push(line);
         }
     }
-    let buffered_a = buffer_samples(&field, &dt_for_window, &dxf_samples);
+    let buffered_a = buffer_samples(&hydro, &dt_for_window, &dxf_samples);
     let mut dxf_cells: Vec<usize> = Vec::with_capacity(dxf_samples.len());
     let mut dxf_cell_owner: Vec<usize> = Vec::with_capacity(dxf_samples.len());
     for (k, p) in dxf_samples.iter().enumerate() {
@@ -2074,7 +2502,8 @@ fn wanaka_valley_prize_census_h0() {
             dxf_cell_owner.push(k);
         }
     }
-    let src_a = nearest_source(&field, &dxf_cells);
+    let src_a = nearest_source(&hydro, &dxf_cells);
+    let reach_cells = (TANGENT_HALF_WINDOW_MM / field.cell).round().max(1.0) as usize;
 
     // ── territory clip ──
     let costed_bboxes: Vec<[f64; 4]> = costed.iter().map(Polygon2::bbox).collect();
@@ -2095,179 +2524,32 @@ fn wanaka_valley_prize_census_h0() {
         })
         .collect();
     let territory_cells = territory.iter().filter(|&&t| t).count();
-    let mask_a: Vec<bool> = (0..field.len())
-        .map(|i| territory[i] && buffered_a.inside[i])
-        .collect();
-    let mask_b: Vec<bool> = (0..field.len())
-        .map(|i| territory[i] && buffered_b.inside[i])
-        .collect();
-    let a_cells = mask_a.iter().filter(|&&m| m).count();
-    let b_cells = mask_b.iter().filter(|&&m| m).count();
 
-    let width_pick = |w: &[f64], q: f64| -> f64 {
-        if w.is_empty() {
-            f64::NAN
-        } else {
-            w[((w.len() - 1) as f64 * q).round() as usize]
-        }
-    };
-    eprintln!(
-        "\n---------- MASK AREA SHARES (of the costed finish territory) ----------\n\
-         \x20  finish territory: {territory_cells} cells = {:.1} mm² XY\n\
-         \x20  mask A (DXF rivers): {a_cells} cells = {:.1} mm² = {:.2} % of territory; \
-         {} samples, {} floored to one cell, {} redundant discs skipped; \
-         half-width p50 {:.2} p90 {:.2} mm\n\
-         \x20  mask B (flow accum): {b_cells} cells = {:.1} mm² = {:.2} % of territory; \
-         {} samples, {} floored to one cell, {} redundant discs skipped; \
-         half-width p50 {:.2} p90 {:.2} mm",
-        territory_cells as f64 * cell_area,
-        a_cells as f64 * cell_area,
-        100.0 * a_cells as f64 / territory_cells.max(1) as f64,
-        dxf_samples.len(),
-        buffered_a.floored_samples,
-        buffered_a.skipped_samples,
-        width_pick(&buffered_a.half_widths_mm, 0.50),
-        width_pick(&buffered_a.half_widths_mm, 0.90),
-        b_cells as f64 * cell_area,
-        100.0 * b_cells as f64 / territory_cells.max(1) as f64,
-        net_samples.len(),
-        buffered_b.floored_samples,
-        buffered_b.skipped_samples,
-        width_pick(&buffered_b.half_widths_mm, 0.50),
-        width_pick(&buffered_b.half_widths_mm, 0.90),
-    );
-
-    // ── valley tangents, for M3 ──
-    let mut main_donor = vec![u32::MAX; field.len()];
-    let mut donor_acc = vec![f64::NEG_INFINITY; field.len()];
-    for i in 0..field.len() {
-        if !network[i] {
-            continue;
-        }
-        if let Some(r) = receivers[i]
-            && network[r as usize]
-            && acc[i] > donor_acc[r as usize]
-        {
-            donor_acc[r as usize] = acc[i];
-            main_donor[r as usize] = i as u32;
-        }
-    }
-    let reach_cells = (TANGENT_HALF_WINDOW_MM / field.cell).round().max(1.0) as usize;
-    let mut tangent_deg = vec![f64::NAN; field.len()];
-    for i in 0..field.len() {
-        if !network[i] {
-            continue;
-        }
-        let mut down = i;
-        for _ in 0..reach_cells {
-            match receivers[down] {
-                Some(r) if network[r as usize] => down = r as usize,
-                _ => break,
-            }
-        }
-        let mut up = i;
-        for _ in 0..reach_cells {
-            let d = main_donor[up];
-            if d == u32::MAX {
-                break;
-            }
-            up = d as usize;
-        }
-        if up == down {
-            continue;
-        }
-        let a = field.xy(up);
-        let b = field.xy(down);
-        tangent_deg[i] = (b.y - a.y).atan2(b.x - a.x).to_degrees().rem_euclid(180.0);
-    }
-
-    // ── V0-pre: the direction-prize ceiling ──
-    eprintln!(
-        "\n---------- V0-pre: DIRECTION-PRIZE CEILING (anisotropy census) ----------\n\
-         \x20  bound(dir) = [integral dA / W(kappa_perp(dir))] / [integral dA / W_max] >= 1.\n\
-         \x20  Fit radius {CENSUS_FIT_RADIUS_MM} mm, lattice {CENSUS_LATTICE_MM} mm, \
-         scallop {SCALLOP_H_MM} mm; the verdict cell of wanaka_curvature_anisotropy.rs.\n"
-    );
-    let t_census = std::time::Instant::now();
+    // ── the census lattice over the whole territory (the scale reference) ──
     let mut territory_pts = Vec::new();
-    let mut maskb_pts = Vec::new();
     let lattice_step = CENSUS_LATTICE_MM;
     let first = |lo: f64| (lo / lattice_step).ceil() as i64;
     let last = |hi: f64| (hi / lattice_step + 1e-9).floor() as i64;
     for iy in first(mesh.bbox.min.y)..=last(mesh.bbox.max.y) {
         for ix in first(mesh.bbox.min.x)..=last(mesh.bbox.max.x) {
             let p = P2::new(ix as f64 * lattice_step, iy as f64 * lattice_step);
-            let Some(i) = field.index_at(p.x, p.y) else {
-                continue;
-            };
-            if !territory[i] {
-                continue;
-            }
-            territory_pts.push(p);
-            if mask_b[i] {
-                maskb_pts.push(p);
+            if field.index_at(p.x, p.y).is_some_and(|i| territory[i]) {
+                territory_pts.push(p);
             }
         }
     }
-    let ctx_mesh = &mesh;
-    let ctx_index = &index;
-    let to_samples = |pts: &[P2]| -> Vec<(P2, f64)> {
-        pts.par_iter()
-            .filter_map(|&p| surface_z(ctx_mesh, ctx_index, p).map(|z| (p, z)))
-            .collect()
-    };
-    let territory_samples = to_samples(&territory_pts);
-    let maskb_samples = to_samples(&maskb_pts);
     eprintln!(
-        "     population: territory {} lattice points ({} on surface); mask B {} ({} on surface)",
-        territory_pts.len(),
-        territory_samples.len(),
-        maskb_pts.len(),
-        maskb_samples.len()
+        "\n---------- V0-pre: WHOLE-TERRITORY direction-prize ceiling (for scale) ----------\n\
+         \x20  bound(dir) = [integral dA / W(kappa_perp(dir))] / [integral dA / W_max] >= 1.\n\
+         \x20  Fit radius {CENSUS_FIT_RADIUS_MM} mm, lattice {CENSUS_LATTICE_MM} mm, \
+         scallop {SCALLOP_H_MM} mm;\n\
+         \x20  the verdict cell of wanaka_curvature_anisotropy.rs.\n"
     );
-    eprintln!(
-        "     {:>12}  {:>6}  {:>7}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}",
-        "population", "R mm", "fits", "gouge A", "bound X", "bound Y", "bound PCA", "ratio p50"
-    );
-    for (name, samples) in [
-        ("territory", &territory_samples),
-        ("mask B", &maskb_samples),
-    ] {
-        if samples.is_empty() {
-            eprintln!("     {name:>12}  EMPTY POPULATION — nothing measured");
-            continue;
-        }
-        let (cells, total, rejected) = census_population(&mesh, &index, samples, CENSUS_LATTICE_MM);
-        for cell in &cells {
-            eprintln!(
-                "     {name:>12}  {:>6.1}  {:>7}  {:>8.3}%  {:>9.4}  {:>9.4}  {:>9.4}  {:>9.4}",
-                cell.tool_radius_mm,
-                cell.fits,
-                100.0 * cell.gouge_area_frac,
-                cell.bound_x,
-                cell.bound_y,
-                cell.bound_pca,
-                cell.ratio_p50,
-            );
-        }
-        eprintln!(
-            "     {name:>12}  ({rejected} of {total} samples rejected: under-determined or \
-             ill-conditioned; ratio p90 {:.4} at R{:.1})",
-            cells.last().map_or(f64::NAN, |c| c.ratio_p90),
-            cells.last().map_or(f64::NAN, |c| c.tool_radius_mm),
-        );
-    }
-    eprintln!("     census took {:.1}s", t_census.elapsed().as_secs_f64());
+    print_census_header();
+    let territory_samples = census_samples(&mesh, &index, &territory_pts);
+    print_census_rows(&mesh, &index, "territory", &territory_samples);
 
-    // ── M4 + region frames ──
-    eprintln!(
-        "\n---------- M4: theta_max with mask B cells excised vs included ----------\n\
-         \x20  `shallow_region_max_slope_deg` restated verbatim (both coverage guards, the\n\
-         \x20  {:.1} deg steep clamp), with one extra filter. refund = cos(excised)/cos(included).\n\
-         \x20  Two CLAMPED values give refund 1.000 — that is a finding, not a bug.\n",
-        planner.steep_threshold_deg
-    );
-    let in_mask_b = |p: P2| -> bool { field.index_at(p.x, p.y).is_some_and(|i| mask_b[i]) };
+    // ── region frames + the shipped honest raster (both MASK-INDEPENDENT) ──
     let mut rows: Vec<RegionRow> = Vec::new();
     for (k, polygon) in costed.iter().enumerate() {
         let (incl, incl_n) = region_max_slope_deg(
@@ -2276,20 +2558,6 @@ fn wanaka_valley_prize_census_h0() {
             polygon,
             planner.steep_threshold_deg,
             &|_: P2| true,
-        );
-        let (excl, _excl_n) = region_max_slope_deg(
-            &surface,
-            &covered,
-            polygon,
-            planner.steep_threshold_deg,
-            &|p| !in_mask_b(p),
-        );
-        let (only, only_n) = region_max_slope_deg(
-            &surface,
-            &covered,
-            polygon,
-            planner.steep_threshold_deg,
-            &in_mask_b,
         );
         let derated = if incl > 1.0 {
             stepover * incl.to_radians().cos()
@@ -2305,46 +2573,19 @@ fn wanaka_valley_prize_census_h0() {
             rotated: frame.rotated,
             elongation: frame.elongation,
             theta_max_incl_deg: incl,
-            theta_max_excl_deg: excl,
-            theta_max_mask_deg: only,
-            mask_cells: only_n,
             incl_cells: incl_n,
             derated_stepover_mm: derated,
             cost: None,
         });
     }
-    eprintln!(
-        "     {:>4}  {:>10}  {:>8}  {:>7}  {:>10}  {:>9}  {:>9}  {:>9}  {:>8}",
-        "rgn", "area mm²", "dir deg", "rotated", "elong", "th incl", "th excl", "th mask", "refund"
-    );
-    for row in &rows {
-        let refund = row.theta_max_excl_deg.to_radians().cos()
-            / row.theta_max_incl_deg.to_radians().cos().max(1e-12);
-        eprintln!(
-            "     {:>4}  {:>10.1}  {:>8.2}  {:>7}  {:>10}  {:>9.3}  {:>9.3}  {:>9.3}  {:>8.4}  \
-             (mask cells {} of {})",
-            row.index,
-            row.area_mm2,
-            row.direction_deg,
-            row.rotated,
-            row.elongation
-                .map_or_else(|| "-".to_owned(), |e| format!("{e:.2}")),
-            row.theta_max_incl_deg,
-            row.theta_max_excl_deg,
-            row.theta_max_mask_deg,
-            refund,
-            row.mask_cells,
-            row.incl_cells,
-        );
-    }
 
-    // ── the shipped honest-raster arm, costed under the machined ceiling ──
     eprintln!(
         "\n---------- the shipped honest raster, costed under the MACHINED-STOCK ceiling ----------\n\
          \x20  Per region: C2 frame (PCA-minor above the elongation gate, else 0 deg) at the\n\
          \x20  cos(theta_max)-derated stepover, monotone-cell decomposition on that lattice,\n\
          \x20  production relink (hookup 25.0, sampling 0.5, reorder true, flush_ride true,\n\
-         \x20  airborne exemption true), F-034 costing on the project kinematics.\n"
+         \x20  airborne exemption true), F-034 costing on the project kinematics.\n\
+         \x20  This arm does not depend on either mask, so it is costed ONCE.\n"
     );
     use rs_cam_core::machine_kinematics::MachineKinematics;
     use rs_cam_core::region_set::RegionSet;
@@ -2435,113 +2676,6 @@ fn wanaka_valley_prize_census_h0() {
         row.cost = Some(cost);
     }
 
-    // ── M1, M2, M3 ──
-    for (mask_name, mask, is_mask_b) in [
-        ("mask A (DXF)", &mask_a, false),
-        ("mask B (FLOW)", &mask_b, true),
-    ] {
-        let inside = |p: P2| -> bool { field.index_at(p.x, p.y).is_some_and(|i| mask[i]) };
-        let mut total = Split::default();
-        let mut scales = Vec::new();
-        let mut weighted_angle = 0.0f64;
-        let mut weighted_angle_moves = 0.0f64;
-        let mut angle_weight = 0.0f64;
-        let mut no_tangent_time = 0.0f64;
-        for row in &rows {
-            let Some(cost) = row.cost.as_ref() else {
-                continue;
-            };
-            let (split, samples, scale) =
-                attribute_cutting(&cost.toolpath, &kinematics, cost.time_s, &inside);
-            scales.push(scale);
-            total.in_time_s += split.in_time_s;
-            total.out_time_s += split.out_time_s;
-            total.in_mm += split.in_mm;
-            total.out_mm += split.out_mm;
-            for sample in &samples {
-                let Some(i) = field.index_at(sample.mid.x, sample.mid.y) else {
-                    continue;
-                };
-                if !mask[i] {
-                    continue;
-                }
-                // The nearest valley line: the nearest network sample to this
-                // cell, from the chamfer nearest-source transform.
-                let axis = if is_mask_b {
-                    let owner = src_b[i];
-                    if owner == u32::MAX {
-                        f64::NAN
-                    } else {
-                        tangent_deg[net_cells[owner as usize]]
-                    }
-                } else {
-                    let owner = src_a[i];
-                    if owner == u32::MAX {
-                        f64::NAN
-                    } else {
-                        dxf_axis_deg(&dxf_samples, dxf_cell_owner[owner as usize], reach_cells)
-                    }
-                };
-                if !axis.is_finite() {
-                    no_tangent_time += sample.time_s;
-                    continue;
-                }
-                weighted_angle += axis_angle_deg(row.direction_deg, axis) * sample.time_s;
-                weighted_angle_moves += axis_angle_deg(sample.dir_deg, axis) * sample.time_s;
-                angle_weight += sample.time_s;
-            }
-        }
-        let cutting_time = total.in_time_s + total.out_time_s;
-        let cutting_mm = total.in_mm + total.out_mm;
-
-        // L_min over the mask's SURFACE area: dA = cell_area / cos(slope).
-        let mut surface_area = 0.0f64;
-        for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
-            if !mask.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let cos = angle.cos();
-            if cos > 1e-6 {
-                surface_area += cell_area / cos;
-            }
-        }
-        let l_min = surface_area / stepover;
-        let feed_mm_s = FEED_MM_MIN / 60.0;
-
-        eprintln!(
-            "\n---------- M1 / M2 / M3 for {mask_name} ----------\n\
-             \x20  time attribution rescale factor (sum len/v_peak vs compute_cycle_time): \
-             min {:.4} max {:.4}\n\
-             \x20  M1 time share IN mask: {:.3} % ({:.1} s of {:.1} s cutting)\n\
-             \x20     distance share IN mask: {:.3} % ({:.0} mm of {:.0} mm)  [cross-check]\n\
-             \x20  mask surface area (dA = dxdy/cos slope): {:.1} mm²; s_max = {stepover:.6} mm\n\
-             \x20     L_min = {:.1} mm;  L_min / feed = {:.1} s at {FEED_MM_MIN:.0} mm/min\n\
-             \x20  M2 xfloor (DISTANCE, the synthesis §1 convention): {:.4}x\n\
-             \x20  M2 xfloor (TIME, the literal FINDINGS wording):    {:.4}x\n\
-             \x20  M3 time-weighted misalignment, region C2 lattice vs local valley axis: \
-             {:.3} deg\n\
-             \x20     (emitted-move direction vs valley axis: {:.3} deg)  [cross-check]\n\
-             \x20     weight {:.1} s; {:.1} s of in-mask time had no valley tangent",
-            scales.iter().copied().fold(f64::INFINITY, f64::min),
-            scales.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            100.0 * total.in_time_s / cutting_time.max(1e-9),
-            total.in_time_s,
-            cutting_time,
-            100.0 * total.in_mm / cutting_mm.max(1e-9),
-            total.in_mm,
-            cutting_mm,
-            surface_area,
-            l_min,
-            l_min / feed_mm_s,
-            total.in_mm / l_min.max(1e-9),
-            total.in_time_s / (l_min / feed_mm_s).max(1e-9),
-            weighted_angle / angle_weight.max(1e-9),
-            weighted_angle_moves / angle_weight.max(1e-9),
-            angle_weight,
-            no_tangent_time,
-        );
-    }
-
     // ── the whole-territory x-floor, for scale ──
     {
         let mut territory_surface = 0.0f64;
@@ -2567,8 +2701,10 @@ fn wanaka_valley_prize_census_h0() {
             .sum();
         eprintln!(
             "\n---------- whole costed territory, for scale ----------\n\
+             \x20  finish territory {territory_cells} cells = {:.1} mm² XY;\n\
              \x20  surface area {:.1} mm²; L_min {:.1} mm; cutting {:.0} mm => {:.4}x floor\n\
              \x20  costed time (cut + links + rapids) {:.1} s over {} regions",
+            territory_cells as f64 * cell_area,
             territory_surface,
             l_min,
             total_mm,
@@ -2578,53 +2714,163 @@ fn wanaka_valley_prize_census_h0() {
         );
     }
 
-    // ── the VISUAL ──
-    let mut valley_lines: Vec<Vec<P2>> = Vec::new();
-    {
-        let mut visited = vec![false; field.len()];
-        for i in 0..field.len() {
-            if !network[i] || visited[i] || main_donor[i] != u32::MAX {
-                continue;
+    // ── mask evaluation ──
+    let ctx = EvalCtx {
+        mesh: &mesh,
+        index: &index,
+        field: &field,
+        surface: &surface,
+        covered: &covered,
+        steep_clamp_deg: planner.steep_threshold_deg,
+        stepover,
+        cell_area,
+        territory_cells,
+        territory_pts: &territory_pts,
+        kinematics: &kinematics,
+        rows: &rows,
+    };
+
+    let mask_a: Vec<bool> = (0..field.len())
+        .map(|i| territory[i] && buffered_a.inside[i])
+        .collect();
+    let axis_a = |i: usize| -> f64 {
+        let owner = src_a[i];
+        if owner == u32::MAX {
+            f64::NAN
+        } else {
+            dxf_axis_deg(&dxf_samples, dxf_cell_owner[owner as usize], reach_cells)
+        }
+    };
+    evaluate_mask(
+        &ctx,
+        &MaskProvenance {
+            label: "mask A — rivers_aligned.dxf, MAP HYDROGRAPHY (river_through_cut = false, \
+                    so it is NOT incised into the mesh; reported for the DXF-probe caveat only)"
+                .to_owned(),
+            samples: dxf_samples.len(),
+            floored: buffered_a.floored_samples,
+            skipped: buffered_a.skipped_samples,
+            half_widths_mm: &buffered_a.half_widths_mm,
+        },
+        &mask_a,
+        &axis_a,
+    );
+
+    // Mask B at the pre-declared rung and at the sensitivity rungs beside it.
+    let mut sweep: Vec<f64> = ACC_SENSITIVITY_RUNGS_MM2.to_vec();
+    if !sweep.iter().any(|t| (t - threshold_mm2).abs() < 1e-9) {
+        sweep.push(threshold_mm2);
+    }
+    sweep.sort_by(f64::total_cmp);
+    let mut chosen_mask_b: Vec<bool> = Vec::new();
+    let mut chosen_valley_lines: Vec<Vec<P2>> = Vec::new();
+    for &t in &sweep {
+        let network: Vec<bool> = (0..hydro.len())
+            .map(|i| !hydro.nodata[i] && acc[i] * cell_area >= t)
+            .collect();
+        let net_cells: Vec<usize> = (0..hydro.len()).filter(|&i| network[i]).collect();
+        if net_cells.is_empty() {
+            eprintln!("\n     mask B at T = {t:.0} mm²: EMPTY NETWORK — nothing measured");
+            continue;
+        }
+        let net_samples: Vec<P2> = net_cells.iter().map(|&i| field.xy(i)).collect();
+        let buffered = buffer_samples(&hydro, &dt_for_window, &net_samples);
+        let src = nearest_source(&hydro, &net_cells);
+        let (tangent_deg, main_donor) =
+            valley_tangents(&hydro, &receivers, &acc, &network, reach_cells);
+        let mask: Vec<bool> = (0..field.len())
+            .map(|i| territory[i] && buffered.inside[i])
+            .collect();
+        let axis_b = |i: usize| -> f64 {
+            let owner = src[i];
+            if owner == u32::MAX {
+                f64::NAN
+            } else {
+                tangent_deg[net_cells[owner as usize]]
             }
-            // A network head: walk downstream to the network's edge.
-            let mut line = Vec::new();
-            let mut c = i;
-            loop {
-                visited[c] = true;
-                line.push(field.xy(c));
-                match receivers[c] {
-                    Some(r) if network[r as usize] && !visited[r as usize] => c = r as usize,
-                    Some(r) if network[r as usize] => {
-                        line.push(field.xy(r as usize));
-                        break;
-                    }
-                    _ => break,
-                }
-            }
-            if line.len() >= 2 {
-                valley_lines.push(line);
-            }
+        };
+        let chosen = (t - threshold_mm2).abs() < 1e-9;
+        let tag = if chosen {
+            " <<< the rung the pre-declared stability rule picked"
+        } else {
+            " (sensitivity)"
+        };
+        evaluate_mask(
+            &ctx,
+            &MaskProvenance {
+                label: format!("mask B — FLOW ACCUMULATION at T = {t:.0} mm²{tag}"),
+                samples: net_samples.len(),
+                floored: buffered.floored_samples,
+                skipped: buffered.skipped_samples,
+                half_widths_mm: &buffered.half_widths_mm,
+            },
+            &mask,
+            &axis_b,
+        );
+        if chosen {
+            let overlap = (0..field.len()).filter(|&i| mask[i] && mask_a[i]).count();
+            let a_cells = mask_a.iter().filter(|&&m| m).count();
+            let b_cells = mask.iter().filter(|&&m| m).count();
+            eprintln!(
+                "\x20  mask A / mask B OVERLAP at this rung: {overlap} cells = {:.2} % of mask A, \
+                 {:.2} % of mask B",
+                100.0 * overlap as f64 / a_cells.max(1) as f64,
+                100.0 * overlap as f64 / b_cells.max(1) as f64,
+            );
+            chosen_valley_lines = valley_polylines(&field, &receivers, &network, &main_donor);
+            chosen_mask_b = mask;
         }
     }
+
+    // ── the VISUAL ──
     let dir = svg_output_dir();
-    let svg_path = dir.join("wanaka_valley_masks_h0.svg");
-    let inputs = SvgInputs {
-        field: &field,
-        territory: &costed,
-        mask_a: &mask_a,
-        mask_b: &mask_b,
-        valley_lines: &valley_lines,
-        dxf_lines: &dxf_lines,
-    };
-    match write_census_svg(&inputs, &svg_path, "Track H V0 — valley masks on wanaka200") {
-        Ok(()) => eprintln!(
-            "\nSVG: {} ({} valley polylines, {} DXF polylines)",
-            svg_path.display(),
-            valley_lines.len(),
-            dxf_lines.len()
+    let empty: Vec<bool> = Vec::new();
+    let no_lines: Vec<Vec<P2>> = Vec::new();
+    for (name, ma, mb, la, lb, title) in [
+        (
+            "wanaka_valley_masks_h0.svg",
+            &mask_a,
+            &chosen_mask_b,
+            &dxf_lines,
+            &chosen_valley_lines,
+            "Track H V0 — mask A + mask B on wanaka200",
         ),
-        Err(e) => eprintln!("\nSVG write FAILED: {e}"),
+        (
+            "wanaka_valley_mask_a_h0.svg",
+            &mask_a,
+            &empty,
+            &dxf_lines,
+            &no_lines,
+            "Track H V0 — mask A (rivers_aligned.dxf) on wanaka200",
+        ),
+        (
+            "wanaka_valley_mask_b_h0.svg",
+            &empty,
+            &chosen_mask_b,
+            &no_lines,
+            &chosen_valley_lines,
+            "Track H V0 — mask B (flow accumulation) on wanaka200",
+        ),
+    ] {
+        let path = dir.join(name);
+        let inputs = SvgInputs {
+            field: &field,
+            territory: &costed,
+            mask_a: ma,
+            mask_b: mb,
+            valley_lines: lb,
+            dxf_lines: la,
+        };
+        match write_census_svg(&inputs, &path, title) {
+            Ok(()) => eprintln!("SVG: {}", path.display()),
+            Err(e) => eprintln!("SVG write FAILED for {}: {e}", path.display()),
+        }
     }
+    eprintln!(
+        "\x20  ({} extracted valley polylines at the chosen rung, {} DXF polylines)",
+        chosen_valley_lines.len(),
+        dxf_lines.len()
+    );
 
     eprintln!(
         "\n========== END — total {:.1}s. No verdict is written here. ==========\n",
