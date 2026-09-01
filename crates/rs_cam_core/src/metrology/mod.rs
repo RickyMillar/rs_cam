@@ -59,3 +59,4 @@ pub mod costing;
 pub mod floor;
 pub mod monge;
 pub mod spacing;
+pub mod union_coverage;

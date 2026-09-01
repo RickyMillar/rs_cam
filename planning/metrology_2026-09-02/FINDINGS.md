@@ -99,3 +99,81 @@ all three fixture verdicts (CLEAN), every band row, every Δy census,
 byte-identical. Transcripts: scratchpad `b1_before.txt` /
 `b1_after.txt` (session artifacts; the numbers above are the record).
 `shallow_raster_slope_derate` sentries: 2/2 green after conversion.
+
+## M-4. The Monge estimator and the two strategy censuses (2026-09-02)
+
+* `tests/common/monge.rs` PROMOTED to `rs_cam_core::metrology::monge`,
+  verbatim (indexing rewritten to `.get()` or covered by SAFETY-commented
+  allows for the production lint gate — same arithmetic). The common
+  module is now a named re-export shim, so `bikeseat_gate_d1`'s import
+  path is unchanged; its closed-form validation pin
+  (`monge_extraction_recovers_known_curvature_and_axis`) passes against
+  the promoted code.
+* `rs_cam_core::metrology::census` carries the two censuses' shared
+  kernels: `TriField`, `TurnGrid` (nearest-turn search), `census_zone` +
+  `ZoneStats` + `ZoneVerdict` (the coherence census), and `prize_cell` +
+  `PrizeCell` (the anisotropy prize). Gate thresholds are named,
+  documented constants citing their evidence: `W30_COHERENT` (0.70),
+  `COHERENCE_LENGTH_MIN_STEPOVERS` (10), `NOT_USABLE_W30_BELOW` (0.50),
+  `PRIZE_CLOSE_BELOW` (1.05), `PRIZE_ABOVE_LITERATURE` (1.25),
+  `WANAKA_REGION1_PRIZE_CEILING_PCT` (9.75).
+* `zone_coherence_census.rs` now consumes the library estimator AND the
+  library census. Disclosed non-divergence: its local
+  `Outcome::UnderDetermined` carried no payload where the library's
+  carries the starved point count; the census never read it.
+* `wanaka_curvature_anisotropy.rs` consumes the library `kappa_perp_zou`
+  / `strip_width` / `quantiles` (through a `Fit::to_monge` map) and
+  `prize_cell`. TWO disclosed divergences preserved locally, stated in
+  the file:
+  1. Its `Fit` carries `gather_rms` (RMS XY gather distance), a
+     diagnostic `MongeFit` does not; the local estimator stays for it.
+  2. Its plain `median` returns the UPPER middle on an even population
+     where the library's averages the two middles. Converting would move
+     its printed diagnostic medians, so the copy stays, disclosed.
+* `bikeseat_gate_d1.rs` consumes the library `TriField`, `TurnGrid`,
+  `ZoneVerdict` and `ratio`; its census wrapper keeps the GATE's own
+  bars (w30 uses the shared `W30_COHERENT`; the 3-stepover length bar is
+  the gate's own and stays local, documented at the library constant).
+* New unit pins in `metrology::census`: uniform-vs-alternating field
+  separation (verdict + coherence length + w30) and isotropic-vs-
+  cylinder prize cells.
+
+## M-5. Union-coverage audit (G-UNIONCOV's fix) — PRE-REGISTRATION
+
+`rs_cam_core::metrology::union_coverage::audit_stock_vs_model`: the
+whole-board comparison of a final simulated stock against the model
+top surface plus `stock_to_leave`, per grid column, NO relevance
+filter (the module doc states why `SimulationResult::column_deviations`
+is not this measurement). Standing is VERTICAL. Areas are XY-projected
+and resolution-conditional; the report carries `cell_mm`.
+`UnionCoverageReport::assert_within(mm2)` is the loud failure API and
+its `Display` names the located hotspots.
+
+First consumer: `tests/union_coverage_m1.rs` (`#[ignore]` evidence),
+which runs the full generate→simulate fixpoint headless on:
+
+* ARM PRODUCTION — `planning/multitool_2026-08-23/wanaka200_mt2.toml`
+  (the production two-tool tier chain, overlap 2.0 mm);
+* ARM REJECTED — `wanaka200_mt2_overlap02.toml` (overlap 0.2 mm,
+  region floors 100/50 mm² — the variant G-UNIONCOV rejected).
+
+Pinned dials, registered before any run: simulation resolution 0.3 mm;
+`stock_to_leave` 0.0; `spec_tolerance` 0.35 mm (0.03 mm commanded cusp
++ ~one 0.3 mm cell of column quantisation); gouge tolerance 0.35 mm;
+variant allowance 500 mm².
+
+Pre-registered expectations (written before the run):
+
+1. **ARM REJECTED MUST FAIL** `assert_within(500 mm²)` — §12's
+   arithmetic put the missing coverage at roughly 1,800 mm² (16,112 mm
+   of tier-1 cutting covering ~7,800 mm² of 9,652 mm² owned), so the
+   above-spec area is expected in the high hundreds to thousands of
+   mm², concentrated in fine-detail hotspots the report must locate.
+2. **ARM PRODUCTION is characterized, not gated.** Expected: above-spec
+   fraction well under the variant's — registered bar: the variant's
+   above-spec area exceeds production's by at least 3×. Production's
+   own residual (rim bands, facet/quantisation noise, any real seam)
+   is reported honestly, whatever it reads; a surprise here is a
+   finding, not a calibration knob.
+
+Results land below this section after the run, unedited.
