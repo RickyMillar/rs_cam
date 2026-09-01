@@ -7,7 +7,10 @@
 > passes over valley areas. Operator's stated worry: triangle facets
 > may make smooth valleys zig-zag.
 >
-> Status: **OPEN — phase V0 not run. Nothing is built.**
+> Status: **V0 MEASURED 2026-09-02 — all gates pass, V1 OPEN.**
+> Census: `valley_prize_census_h0.rs` (`df3383a2`). In-mask ×floor
+> 1.21–1.25 vs territory 1.155; misalignment ~45° (unaligned);
+> in-mask direction ceiling 1.20×. See `FINDINGS.md` results.
 
 ## The question
 

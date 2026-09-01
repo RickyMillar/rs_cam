@@ -142,10 +142,92 @@ until the union-coverage instrument exists.
 
 ## Results
 
-### V0 — NOT RUN
+### V0 — RUN 2026-09-02. All gates pass. V1 OPENS.
 
-(instrument name, commit, table, verdict go here)
+**Instrument:** `crates/rs_cam_core/tests/valley_prize_census_h0.rs`,
+numbers from commit `df3383a2` (instrument committed at `c14b2202`
+before the first result run, per convention). Full log + SVGs:
+`target/valley_census_h0/`. Verdict written by the orchestrator; the
+implementing agent reported numbers only. The orchestrator ALSO read
+the rendered mask SVGs before ruling (the render-the-surface rule):
+mask B is a genuine dendritic valley-floor territory, and mask A's
+DXF polylines visibly cross ridges — the not-incised caveat is
+confirmed on the picture.
 
-### V1 — NOT OPENED
+**Setup:** tier-1 Shallow band, 16 regions = 9289.4 mm² XY costed in
+full; classification heightfield 825×825 @ 0.25 mm on the true
+surface; equal-cusp stepover 0.4862 mm, derated to 0.3438 mm in 15
+of 16 regions; whole-territory ×floor 1.1549 (cut-intent).
+
+**The threshold rule degenerated and the verdict does not depend on
+it.** |d ln L / d ln T| rises monotonically (0.48 → 3.66) — this
+board has no plateau, so the pre-declared rule collapsed to the
+lowest interior rung, T = 8 mm², where mask B = 61.61 % of territory
+— above the 60 % sanity anchor. The agent did not re-pick; it added
+a threshold sensitivity sweep, and every gate below is quoted across
+the sweep, not at one rung.
+
+**Gate-by-gate:**
+
+- **V0-pre (ceiling): PASS.** In-mask direction-prize ceiling
+  (bound, PCA frame) 1.2028× at R1.0 (1.2627× at R1.5), vs
+  whole-territory 1.1099×. Above the B2 bar at every rung of the
+  sweep (1.18–1.21×). Direction is worth roughly twice as much
+  inside valleys as outside — the premise survives its bound.
+- **B1 (≥ 10 % of time): PASS, threshold-robust.** M1 = 60.97 %
+  at T = 8; still 19.3 % at T = 512. Fails only at the extreme
+  T = 1024 skeleton (7.25 %). Caveat: M1's denominator is the
+  tier-1 Shallow band only (the §0i regime), so spec-M1 over both
+  tiers is smaller; at the picked rung the margin (6×) absorbs any
+  plausible dilution.
+- **B2 (≥ 1.15× floor in-mask): PASS.** M2 cut-intent 1.2139× at
+  T = 8, in a 1.21–1.25× band at EVERY rung (time convention
+  1.26–1.30×; all-non-rapid 1.36–1.44×, the extra being surface
+  links). Honest reading: the excess is only mildly concentrated —
+  in-mask 1.21–1.25 vs whole-territory 1.155 — and M1 tracks the
+  mask's area share to ~0.7 pp everywhere, so valleys hold much
+  time chiefly because they hold much area.
+- **M3 (misalignment): MATERIAL — does not close the track.**
+  44.0°–53.1° across the sweep where a fully isotropic axis field
+  reads exactly 45.0°. The C2 lattice is effectively unaligned with
+  the valley axes; the alignment headroom the tracing mechanism
+  claims genuinely exists. Consistency check: the in-mask excess
+  above floor (~21 %) and the in-mask direction ceiling (~20 %) are
+  the same size — direction choice could in principle account for
+  nearly all of the in-mask excess.
+- **M4 (derate refund): MEASUREMENT SATURATED — no routing.** All
+  14 real regions read θ_max = 45.000° with refund 1.0000 at every
+  threshold, because 45° IS the Shallow band's own clamp
+  (`steep_threshold_deg`), reached through the 2 mm `overlap_mm`
+  band-boundary fringe. M4 cannot see a valley-wall effect while
+  the clamp is saturated; this is a property of the population, not
+  a null about valleys. The "M4 dominates" routing rule therefore
+  does not fire.
+
+**Side-finding, ticketed separately (not Track H):** the shipped
+derate on this board (0.486 → 0.344 mm in 15 of 16 regions, a ~29 %
+distance cost on nearly the whole band) is set by the band-boundary
+FRINGE (overlap-dilation cells at the band clamp), not by each
+region's own terrain. Whether fringe cells belong in θ_max is a
+spec question with a large measured price attached. → status doc
+follow-on candidate.
+
+**Deviations from spec, accepted:** M1 denominator narrower (upper
+bound, margin absorbs it); low-ground DT substrate = TPI below
+30 mm-window mean, declared pre-run, sensitivity at 15/50 mm flat;
+hydrology restricted to land after the whole-board flood proved the
+rivmap edge wall closes the basin (99.50 % raised — artefact,
+printed as evidence); per-move time approximated by len/v_peak
+rescaled to `compute_cycle_time` (rescale 1.03–1.07; distance share
+agrees with time share to 0.04 pp, so not load-bearing); M2 printed
+in both numerator conventions.
+
+**Ruling: B1 ∧ B2 ∧ V0-pre pass and M3 is material → per the
+pre-registered decision rules, V1 OPENS.**
+
+### V1 — OPEN (2026-09-02). Not yet run.
+
+Region selection per Q2: the region with the largest mask-B time
+share, from the census. Bars B3/B4/B5 as pre-registered above.
 
 ### V2 — NOT OPENED

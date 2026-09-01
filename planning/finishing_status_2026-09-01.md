@@ -275,7 +275,7 @@ and status; its FINDINGS.md carries the evidence.
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 | G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
-| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **OPEN — V0 prize census not run.** Nothing built. See §14 |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **V0 MEASURED (2026-09-02, `df3383a2`) — all gates pass, V1 open.** In-mask ×floor 1.21–1.25 vs territory 1.155; lattice unaligned with valley axes (~45°); in-mask direction ceiling 1.20×. Side-finding: the band-wide derate is fringe-driven, not terrain-driven — see FINDINGS. See §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 
