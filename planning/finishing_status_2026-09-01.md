@@ -270,7 +270,7 @@ and status; its FINDINGS.md carries the evidence.
 |---|---|---|---|
 | A | C4 + Phase U operator reviews | evidence: `~/Downloads/c4_review/`, `thin_organic_2026-08-27/FINDINGS.md` §7 | **waits on the operator** |
 | B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. Fix decision is the operator's — see §9 |
-| C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | agent running |
+| C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | **COMPLETE — BAR MET** (`c7beb6b3`/`aec52a65`): sphere 1.113× floor, dish 1.223×, 0 retracts, 0.0000 % unmachined, spacing within 0.8 % of spec, bridge overhead ~5.6–5.8 %. Research module `spiral_finish_compact.rs`, refusal-first on non-compact shapes. Next gate: operator appearance review of the SVGs, then productisation decision |
 | D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | queued |
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
