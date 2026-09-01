@@ -27,6 +27,23 @@
 //!   direction and the local valley axis, inside the mask.
 //! * **M4** — per region: `theta_max` with mask cells excised vs included,
 //!   and the implied `cos theta_max` derate refund.
+//! * **V0-att** (amendment, pre-registered in FINDINGS before its run) —
+//!   **M2_spacing**, the x-floor a PERFECT raster at the SHIPPED derated
+//!   spacing would read in the mask: `integral dA/s_shipped ÷ integral
+//!   dA/s_max`, where `s_shipped` is the owning region's
+//!   `cos(theta_max)`-derated stepover; and the **residual**
+//!   `M2 - M2_spacing`, which is the path-topology part — the only part
+//!   tracing can win. M4 saturated at the steep clamp on this board, so the
+//!   derate-vs-direction attribution had to come from somewhere else.
+//!
+//! **The two sides of the residual are the same measure.** `M2_spacing` and
+//! `M2` are accumulated in ONE loop over the SAME mask cells against the SAME
+//! `L_min = integral dA/s_max` denominator; only the numerator differs (an
+//! ideal length at `s_shipped` against the measured cut-intent distance).
+//! One honest asymmetry, stated rather than hidden: `M2`'s numerator is
+//! gathered per emitted MOVE by its midpoint, `M2_spacing`'s per grid CELL.
+//! The distance/time cross-check already shows that membership test agreeing
+//! with itself to 0.04 pp.
 //!
 //! It also writes SVG overlays to `target/valley_census_h0/`. Standing repo
 //! rule: never gate on an aggregate without rendering the surface.
@@ -1831,6 +1848,10 @@ struct EvalCtx<'a> {
     cell_area: f64,
     territory_cells: usize,
     territory_pts: &'a [P2],
+    /// Index into `rows` of the region owning each grid cell, or `-1`.
+    /// V0-att's `s_shipped` is a per-region dial, so the attribution arm
+    /// cannot be computed without it.
+    region_of: &'a [i32],
     kinematics: &'a rs_cam_core::machine_kinematics::MachineKinematics,
     rows: &'a [RegionRow],
 }
@@ -2121,17 +2142,38 @@ fn evaluate_mask(
     let cutting_mm = total.in_mm + total.out_mm;
 
     // L_min over the mask's SURFACE area: dA = dxdy / cos(slope).
+    //
+    // V0-att rides the SAME loop, so `M2_spacing` and `M2` share one
+    // population and one denominator by construction: `spacing_len` is
+    // `integral dA / s_shipped` where `s_shipped` is the owning region's
+    // SHIPPED (cos theta_max-derated) stepover, and `l_min` is
+    // `integral dA / s_max` at the spec spacing. Their ratio is the x-floor a
+    // PERFECT raster at the shipped spacing would read — no path topology in
+    // it at all.
     let mut surface_area = 0.0f64;
+    let mut spacing_len = 0.0f64;
+    let mut unowned_cells = 0usize;
     for (i, &angle) in ctx.surface.slope_map.angles.iter().enumerate() {
         if !mask.get(i).copied().unwrap_or(false) {
             continue;
         }
         let cos = angle.cos();
-        if cos > 1e-6 {
-            surface_area += ctx.cell_area / cos;
+        if cos <= 1e-6 {
+            continue;
+        }
+        let d_area = ctx.cell_area / cos;
+        surface_area += d_area;
+        let owner = ctx.region_of.get(i).copied().unwrap_or(-1);
+        match usize::try_from(owner).ok().and_then(|k| ctx.rows.get(k)) {
+            // A mask cell is inside the territory by construction, so this
+            // arm is the whole population; the else arm is counted, never
+            // silently folded in at the spec spacing.
+            Some(row) => spacing_len += d_area / row.derated_stepover_mm,
+            None => unowned_cells += 1,
         }
     }
     let l_min = surface_area / ctx.stepover;
+    let m2_spacing = spacing_len / l_min.max(1e-9);
     let feed_mm_s = FEED_MM_MIN / 60.0;
 
     let all_time = total.in_all_time_s + total.out_all_time_s;
@@ -2152,6 +2194,11 @@ fn evaluate_mask(
          \x20  M2 xfloor, TIME / cut-intent only:            {:.4}x\n\
          \x20  M2 xfloor, TIME / all non-rapid:              {:.4}x   <-- the literal FINDINGS \
          wording\n\
+         \x20  V0-att  M2_spacing (PERFECT raster at the shipped derated spacing): {:.4}x\n\
+         \x20     integral dA/s_shipped = {:.1} mm against L_min {:.1} mm; \
+         {} mask cells had no owning region\n\
+         \x20  V0-att  RESIDUAL = M2(dist, cut-intent) - M2_spacing = {:.4}x\n\
+         \x20     as a share of M2's excess over 1.0: {:.2} pp of {:.2} pp\n\
          \x20  M3 time-weighted misalignment, region C2 lattice vs local valley axis: {:.3} deg\n\
          \x20     (emitted-move direction vs valley axis: {:.3} deg)  [cross-check]\n\
          \x20     (an isotropic axis field would read 45.000 deg)\n\
@@ -2178,6 +2225,13 @@ fn evaluate_mask(
         total.in_all_mm / l_min.max(1e-9),
         total.in_time_s / (l_min / feed_mm_s).max(1e-9),
         total.in_all_time_s / (l_min / feed_mm_s).max(1e-9),
+        m2_spacing,
+        spacing_len,
+        l_min,
+        unowned_cells,
+        total.in_mm / l_min.max(1e-9) - m2_spacing,
+        100.0 * (total.in_mm / l_min.max(1e-9) - m2_spacing),
+        100.0 * (total.in_mm / l_min.max(1e-9) - 1.0),
         weighted_angle / angle_weight.max(1e-9),
         weighted_angle_moves / angle_weight.max(1e-9),
         angle_weight,
@@ -2558,25 +2612,64 @@ fn wanaka_valley_prize_census_h0() {
     let src_a = nearest_source(&hydro, &dxf_cells);
     let reach_cells = (TANGENT_HALF_WINDOW_MM / field.cell).round().max(1.0) as usize;
 
-    // ── territory clip ──
+    // ── territory clip, and which region owns each cell ──
+    //
+    // `region_of` carries the index of the FIRST costed region containing the
+    // cell, in the descending-area order the regions are costed in. V0-att
+    // needs it because `s_shipped` is a per-region dial. The `overlap_mm = 2.0`
+    // seam dilation makes neighbouring region polygons overlap, so a cell can
+    // be claimed by more than one; the multiply-claimed count is reported, and
+    // it barely matters here because the derate lands on the same value in
+    // almost every region.
     let costed_bboxes: Vec<[f64; 4]> = costed.iter().map(Polygon2::bbox).collect();
-    let territory: Vec<bool> = (0..field.len())
+    let region_of: Vec<i32> = (0..field.len())
         .into_par_iter()
         .map(|i| {
             if field.nodata[i] {
+                return -1;
+            }
+            let p = field.xy(i);
+            costed
+                .iter()
+                .zip(costed_bboxes.iter())
+                .position(|(poly, bb)| {
+                    p.x >= bb[0]
+                        && p.x <= bb[2]
+                        && p.y >= bb[1]
+                        && p.y <= bb[3]
+                        && poly.contains_point(&p)
+                })
+                .map_or(-1, |k| k as i32)
+        })
+        .collect();
+    let territory: Vec<bool> = region_of.iter().map(|&k| k >= 0).collect();
+    let territory_cells = territory.iter().filter(|&&t| t).count();
+    let multi_claimed = (0..field.len())
+        .into_par_iter()
+        .filter(|&i| {
+            if region_of[i] < 0 {
                 return false;
             }
             let p = field.xy(i);
-            costed.iter().zip(costed_bboxes.iter()).any(|(poly, bb)| {
-                p.x >= bb[0]
-                    && p.x <= bb[2]
-                    && p.y >= bb[1]
-                    && p.y <= bb[3]
-                    && poly.contains_point(&p)
-            })
+            costed
+                .iter()
+                .zip(costed_bboxes.iter())
+                .filter(|(poly, bb)| {
+                    p.x >= bb[0]
+                        && p.x <= bb[2]
+                        && p.y >= bb[1]
+                        && p.y <= bb[3]
+                        && poly.contains_point(&p)
+                })
+                .count()
+                > 1
         })
-        .collect();
-    let territory_cells = territory.iter().filter(|&&t| t).count();
+        .count();
+    eprintln!(
+        "\nterritory ownership: {territory_cells} cells, {multi_claimed} claimed by more than \
+         one region\n\x20  (the overlap_mm = {OVERLAP_MM:.1} seam dilation; the first region in \
+         descending-area order wins)."
+    );
 
     // ── the census lattice over the whole territory (the scale reference) ──
     let mut territory_pts = Vec::new();
@@ -2732,16 +2825,25 @@ fn wanaka_valley_prize_census_h0() {
     // ── the whole-territory x-floor, for scale ──
     {
         let mut territory_surface = 0.0f64;
+        let mut territory_spacing_len = 0.0f64;
         for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
             if !territory.get(i).copied().unwrap_or(false) {
                 continue;
             }
             let cos = angle.cos();
-            if cos > 1e-6 {
-                territory_surface += cell_area / cos;
+            if cos <= 1e-6 {
+                continue;
+            }
+            let d_area = cell_area / cos;
+            territory_surface += d_area;
+            // V0-att over the whole territory: the out-of-mask attribution
+            // falls out of this and the per-mask number.
+            if let Some(row) = usize::try_from(region_of[i]).ok().and_then(|k| rows.get(k)) {
+                territory_spacing_len += d_area / row.derated_stepover_mm;
             }
         }
         let l_min = territory_surface / stepover;
+        let territory_m2_spacing = territory_spacing_len / l_min.max(1e-9);
         let total_mm: f64 = rows
             .iter()
             .filter_map(|r| r.cost.as_ref())
@@ -2769,6 +2871,10 @@ fn wanaka_valley_prize_census_h0() {
              \x20  xfloor, DISTANCE / cut-intent only:   {:.0} mm => {:.4}x\n\
              \x20  xfloor, DISTANCE / all non-rapid:     {:.0} mm => {:.4}x   \
              (total_cutting_distance)\n\
+             \x20  V0-att  M2_spacing (perfect raster at the shipped derated spacing): {:.4}x\n\
+             \x20     integral dA/s_shipped = {:.1} mm against L_min {:.1} mm\n\
+             \x20  V0-att  RESIDUAL = xfloor(dist, cut-intent) - M2_spacing = {:.4}x\n\
+             \x20     as a share of the excess over 1.0: {:.2} pp of {:.2} pp\n\
              \x20  costed time (cut + links + rapids) {:.1} s over {} regions",
             territory_cells as f64 * cell_area,
             territory_surface,
@@ -2777,6 +2883,12 @@ fn wanaka_valley_prize_census_h0() {
             cut_intent_mm / l_min.max(1e-9),
             total_mm,
             total_mm / l_min.max(1e-9),
+            territory_m2_spacing,
+            territory_spacing_len,
+            l_min,
+            cut_intent_mm / l_min.max(1e-9) - territory_m2_spacing,
+            100.0 * (cut_intent_mm / l_min.max(1e-9) - territory_m2_spacing),
+            100.0 * (cut_intent_mm / l_min.max(1e-9) - 1.0),
             total_s,
             rows.len()
         );
@@ -2794,6 +2906,7 @@ fn wanaka_valley_prize_census_h0() {
         cell_area,
         territory_cells,
         territory_pts: &territory_pts,
+        region_of: &region_of,
         kinematics: &kinematics,
         rows: &rows,
     };
