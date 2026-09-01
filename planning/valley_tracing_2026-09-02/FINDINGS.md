@@ -17,33 +17,67 @@
 - **M2** — ×floor ratio of the shipped honest raster inside valley
   territory only: `time_in_territory / L_min(territory)` with
   `L_min = ∫dA/s_max` over the territory's surface area.
+- **M3 — misalignment.** Time-weighted angle between the region's
+  C2 lattice direction and the local valley axis, inside the mask.
+  This is the axis the candidate claims to exploit: if C2 already
+  sweeps along the valleys, tracing has nothing left to win.
+- **M4 — derate refund.** Per region: θ_max with mask cells excised
+  vs with them included. The honest raster derates the WHOLE region
+  by cos θ_max, so steep valley walls tax flat ground around them.
+  M4 measures a *decomposition* prize (give valley walls their own
+  territory), which is a different mechanism than tracing.
 
-**Valley-territory definition (fixed before the run):** the
-instrument computes TWO masks and reports both —
+**Valley-territory definition (fixed before the run):** a
+*territory*, not a crease line. The instrument computes TWO masks
+and reports both —
 
 - **mask A**: the `rivers_aligned.dxf` network buffered in XY by the
   local valley half-width (chamfer-DT width at each polyline sample,
   the `rest_field.rs` convention), clipped to finish territory.
-- **mask B**: mesh-derived — cells whose minimum principal curvature
-  is concave (`κ₂ < 0`) with |κ₂| above the `valley_saliency`
-  default, dilated to close single-cell gaps (the `crest_lines.rs`
-  machinery). Clipped the same way.
+- **mask B**: mesh-derived — valley lines from flow accumulation on
+  the rasterized heightfield (priority-flood depression fill, then
+  accumulation above a threshold chosen by network length
+  stability), buffered by the same chamfer-DT local half-width.
+  Clipped the same way. NOT the `crest_lines.rs` `κ₂` criterion —
+  that detects narrow creases and reads near-zero on broad valley
+  floors, which are the geometry under question; deciding with it
+  would fail B1 by construction (the §2 meta-error).
 
-The instrument reports M1/M2 per mask plus each mask's area share.
+The instrument reports M1–M4 per mask plus each mask's area share.
 The DECIDING mask is B (the mesh is the ground truth; the DXF is
 not incised). Mask A is reported for the DXF-probe caveat only.
+
+**V0-pre — ceiling check, zero new strategy code.** Valley-following
+is one direction choice, so its prize is bounded by the direction
+prize ceiling. Run `wanaka_curvature_anisotropy.rs` restricted to
+mask B before anything else. If the in-mask ceiling is below the
+B2 bar, V0 closes immediately: no direction method can pay the bar
+there. If it is above, B2 is confirmed reachable in principle.
 
 **Bars (pre-registered):**
 
 - **B1-prize:** mask B holds ≥ 10 % of front-finish cutting time,
   AND
 - **B2-headroom:** the shipped honest raster reads ≥ 1.15× floor
-  inside mask B.
+  inside mask B, with the excess NOT explained by M3 ≈ 0 (see
+  decision rules).
 
-**Decision rule:** both bars pass → V1 opens. Either bar fails →
-**Track H CLOSES with no build**, recorded here, and the residual
-note goes to status doc avenue F (spacing-along-pass) if the
-evidence points there.
+**Decision rules:**
+
+- V0-pre in-mask ceiling < B2 bar → **Track H CLOSES**, zero new
+  code beyond the mask.
+- B1 or B2 fails → **Track H CLOSES with no build**, recorded here;
+  the residual note goes to status doc avenue F if the evidence
+  points there.
+- B1 and B2 pass but M3 is small (the C2 lattice already runs along
+  the valleys) → the headroom is not reachable by tracing; **Track
+  H CLOSES**, and the evidence routes to whichever mechanism M4
+  names.
+- M4 dominates M2's excess → the prize belongs to *decomposition*
+  (excise valley walls into their own territory), not tracing —
+  record that verdict, close Track H's tracing arm, and open the
+  decomposition question as its own ticket instead.
+- B1, B2 pass and M3 is material → V1 opens.
 
 Rationale for the bars: the whole-board raster already sits at
 1.10–1.31× floor; the sweep-angle lever was worth 1.10× and was

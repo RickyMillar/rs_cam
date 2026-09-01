@@ -67,8 +67,14 @@ width-capped since `29a6d61`).
   wanaka front finish territory: (a) the fraction of finish time
   spent inside valley territory; (b) the ×floor ratio
   (`L_min = ∫dA/s_max`) of the shipped honest raster inside that
-  territory. No build decision before these numbers exist. Bars are
-  pre-registered in `FINDINGS.md` before the instrument runs.
+  territory; (c) the misalignment between the C2 lattice and the
+  local valley axis; (d) the per-region cos θ_max derate refund
+  from excising valley walls. (c) and (d) attribute the excess to a
+  mechanism — tracing can only win what (c) exposes; (d) belongs to
+  decomposition. A ceiling pre-check (the anisotropy census
+  restricted to the valley mask) can close the track with zero new
+  strategy code. Bars and decision rules are pre-registered in
+  `FINDINGS.md` before the instrument runs.
 - **V1 — the branch-offset falsifier.** Feed a tree into pencil's
   offset machinery on one valley region. Cost it through
   `relink_and_cost_under` under the machined-stock `link_ceiling`
