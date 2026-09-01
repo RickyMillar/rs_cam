@@ -269,8 +269,25 @@ and status; its FINDINGS.md carries the evidence.
 | Track | Avenue | Dir | Status |
 |---|---|---|---|
 | A | C4 + Phase U operator reviews | evidence: `~/Downloads/c4_review/`, `thin_organic_2026-08-27/FINDINGS.md` §7 | **waits on the operator** |
-| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | agent running |
+| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. Fix decision is the operator's — see §9 |
 | C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | agent running |
 | D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | queued |
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
+
+## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
+
+Track B confirmed it: on sloped shallow ground the shipped raster's
+achieved surface spacing is `s_XY / cos θ` — the configured scallop spec
+is not met, by up to 1.31× at 40°, and the ×floor score of 0.808 means
+the pass is under-covering, not efficient. Convex curvature refunds the
+error on gentle domes (contact focusing cancels sec θ up to ~18° on the
+sphere fixture), so terrain crowns are partly protected; planar and
+concave slopes are not.
+
+The honest arm (stepover × cos θ_max per region) lands spacing at
+exactly spec for 1.09–1.25× cutting distance on the test slopes. The
+decision — derate globally per region, derate locally, or expose a dial
+— changes every sloped shallow job's runtime and finish, so it binds on
+the operator. Every prior "raster wins by <25 %" margin on sloped ground
+is undecided until candidates are re-scored at equal achieved scallop.
