@@ -694,7 +694,8 @@ pub struct PlanMultitoolFinishingParam {
     /// relief under a realistic machined-stock link ceiling: 1.155x across
     /// the top three shallow regions, 1.215x on the elongated one — rig
     /// figures to approach, not promises, and cell seams change the cusp
-    /// pattern, so review the rendered surface. Default false.
+    /// pattern, so review the rendered surface. Default true since
+    /// 2026-09-01 (C4 operator surface review passed).
     pub monotone_cell_decomposition: Option<bool>,
 }
 
@@ -753,7 +754,7 @@ pub struct PreviewTierMapParam {
     /// drives both calls. The island preview itself does not change (the
     /// dial moves what each tier's shallow band EMITS, not the island map),
     /// but the value is threaded through so the previewed spec IS the
-    /// planned spec. Default false.
+    /// planned spec. Default true since 2026-09-01 (C4 ruling).
     pub monotone_cell_decomposition: Option<bool>,
     /// Absolute path ending in `.svg` to write the island preview to.
     /// Unset = numbers only. The parent directory must already exist —

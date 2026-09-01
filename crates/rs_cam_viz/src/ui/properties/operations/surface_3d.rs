@@ -935,8 +935,9 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
                      raster lattice, rotating the lattice to the region's PCA-minor axis \
                      where its elongation clears 3.0. Every cell rasters on that one \
                      shared lattice, so the relinker sees cell-shaped fragments instead \
-                     of one dendritic region's worth. Off by default and byte-identical \
-                     to the old band when off. It is NOT a per-cell strategy: per-cell \
+                     of one dendritic region's worth. On by default since 2026-09-01 \
+                     (C4 operator surface review passed); byte-identical to the old \
+                     band when off. It is NOT a per-cell strategy: per-cell \
                      sweep directions, a cell visit order and contour-per-cell were each \
                      measured and are each slower. Measured under a realistic link \
                      ceiling: 1.155x across the reference relief's top three shallow \

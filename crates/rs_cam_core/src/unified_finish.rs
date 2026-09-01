@@ -188,7 +188,9 @@ pub struct UnifiedFinishParams {
     /// lattice, and rotate that lattice to the region's PCA-minor axis when
     /// the region clears [`crate::monotone_cells::ELONGATION_GATE`].
     ///
-    /// `false` (**the default**) is byte-identical to the pre-C2 band: one
+    /// `true` (**the default since 2026-09-01**, the C4 operator surface
+    /// review — `planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4
+    /// ruling"). `false` is byte-identical to the pre-C2 band: one
     /// `raster_toolpath_from_grid` call per region on the shared 0° grid.
     ///
     /// The decomposition and the lattice always share ONE frame — see
@@ -198,9 +200,9 @@ pub struct UnifiedFinishParams {
     /// Measured, ceiling arm (`FINDINGS.md` §0i): **1.155×** on the wanaka
     /// top-three shallow regions, **1.215×** on the one region that clears
     /// the elongation gate. Those are RIG figures on the operator's mesh —
-    /// approach them, do not promise them — and C4 (rendered-surface
-    /// review) binds any adoption, because cell seams change the cusp
-    /// pattern.
+    /// approach them, do not promise them. C4 (rendered-surface review)
+    /// bound adoption because cell seams change the cusp pattern; the
+    /// operator passed it 2026-09-01.
     pub monotone_cell_decomposition: bool,
 }
 
@@ -234,10 +236,12 @@ impl Default for UnifiedFinishParams {
             // programme has already found twice.
             intra_region_hookup_mm: 6.0,
             classification_sampler: ClassificationSampler::PRODUCTION,
-            // X5: new behaviour ships inert. Kept in lockstep with
+            // ON since 2026-09-01: the C4 operator surface review passed
+            // (`planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4
+            // ruling"). Kept in lockstep with
             // `operation_configs::default_unified_finish_monotone_cell_
             // decomposition`, for the reason the line above states.
-            monotone_cell_decomposition: false,
+            monotone_cell_decomposition: true,
         }
     }
 }

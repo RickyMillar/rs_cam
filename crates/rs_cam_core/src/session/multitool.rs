@@ -179,9 +179,10 @@ pub struct MultitoolPlanSpec {
     /// The planner is where this dial matters most — §0i's 1.155× / 1.215×
     /// were measured on exactly these tier ops, on dendritic tier islands —
     /// so it is a plan-level choice rather than something the operator has
-    /// to set on each emitted operation afterwards. Default `false`, the
-    /// same inert arm the op type itself ships (X5); the tier config still
-    /// carries the value explicitly, and
+    /// to set on each emitted operation afterwards. Default `true` since
+    /// 2026-09-01 (C4 operator surface review passed — `FINDINGS.md` §7,
+    /// "C4 ruling"), the same arm the op type itself ships; the tier config
+    /// still carries the value explicitly, and
     /// [`restore_planned_geometry`] re-applies it after the Suggest funnel
     /// rewrites the operation.
     pub monotone_cell_decomposition: bool,
@@ -201,8 +202,9 @@ impl Default for MultitoolPlanSpec {
             islands: TierIslandParams::default(),
             cusp_height_mm: DEFAULT_PLAN_CUSP_HEIGHT_MM,
             coarse_skips_fine_islands: false,
-            // X5: C2 ships inert, and the planner is not an exception.
-            monotone_cell_decomposition: false,
+            // ON since 2026-09-01 (C4 ruling) — the planner follows the op
+            // type's own default.
+            monotone_cell_decomposition: true,
         }
     }
 }
