@@ -2140,3 +2140,18 @@ to 191 at 0°, and 491 to 141 rotated. It cannot be thinned without losing
 the win. So the ruling is not "are there many cells" (there are) but
 **does a direction reversal every ~6 mm leave a visible seam on
 river-carved terrain**.
+
+### §7 C4 ruling (2026-09-01) — PASS on pattern evidence
+
+The operator reviewed the exact-geometry pattern pair (dial-off vs
+dial-on, both tiers, zoomable toolpath HTML) and ruled: "it looks good."
+The surface-mesh export was recorded as instrument-limited for cusp
+texture (0.3 mm sim cells vs a 0.597 mm cusp pitch — two samples per
+ridge, aliased), so the ruling rests on the pattern evidence, where pass
+positions are exact and the cusp direction follows the pass direction
+one-for-one. The operator also confirmed the toolpath HTML shows no
+stock — correct: stock overlay is a PNG-only option of the exporter.
+
+**C4 is satisfied. The C2 dial is cleared for adoption.** Enactment
+(project save, default flip) is a separate product action recorded where
+it happens.

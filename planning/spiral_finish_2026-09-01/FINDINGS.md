@@ -171,3 +171,12 @@ SVGs for the operator (default dir `target/spiral_finish_c1/`,
   parameter choice, not a module default: the module ships the paper's
   constants and the instrument overrides them, so anyone re-running
   with paper defaults reproduces run 2's 1.297×.
+
+## Operator appearance verdict (2026-09-01)
+
+The operator reviewed the dish spiral vs raster SVG pair and ruled: "the
+spiral finish looks good." With the pre-registered bar met and the
+appearance approved, the next step is a productisation ticket: an opt-in
+compact-region spiral strategy, shape-gated (compactness + ring
+nesting + `plan_spiral`-style typed refusal), default-off, C4-style
+surface review before any default change.
