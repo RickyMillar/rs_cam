@@ -126,6 +126,129 @@ D2 uses the same construction with the derate deleted:
 
 ---
 
-## Results
+## Results (all runs 2026-09-01, worktree at `ccf4d099`)
 
-(after the runs)
+Every CLI arm ran `target/release/rs_cam_cli project <toml> --resolution
+0.3` (one binary, default modulation ON). Every harness arm ran
+`whole_board_spiral_ledger_g1` in release. Full logs and per-op
+runtimes: `target/ledger_g/` (`armA.log`, `armB.log`, `armC.log`,
+`d1.log`, `d2.log`, `cal.log`, `arm*_runtimes.txt`). Arm C reproduced
+the Track B record exactly (26,108.2 s; tier 0 = 5,828.2 s; tier 1 =
+12,193.4 s), so the reference chain is unbroken.
+
+### THE TABLE — finish territory, one row per arm
+
+| arm | scale | cutting mm | rapid mm | retracts | integrated s (h) | spec met? + measured spacing | notes |
+|---|---|---:|---:|---:|---:|---|---|
+| A. whole-board `scallop`, R1.0 | CLI | 117,654 | 11 | 0 retract links at generation (223 fragments, 222 surface links) | **10,057.0 (2.79 h)** | surface-spaced by construction (citation, not measured here) | **fastest CLI arm**; measured coverage debit: `untouched_material_mm2` = 1,425.1 |
+| B. whole-board `unified_finish`, R1.0 | CLI | 142,635 | 14,695 | not on the CLI wire (CAL proxy: 829) | 12,647.3 (3.51 h) | CLEAN by the Track B acceptance instrument (slope derate always-on) | `unmachined_band_area_mm2` = 4,139 (report-only) |
+| C. production two-tool tiers (R1.5 + R1.0) | CLI | 184,225 | 71,443 | not on the CLI wire | **18,021.6 (5.01 h)** | CLEAN per-op by the same citation; per-op coverage findings read 0.0 — but see G-UNIONCOV below | tier 0 = 5,828.2 s + tier 1 = 12,193.4 s |
+| D1. whole-board spiral, spec-honest derate | harness | 136,230 | 7 | **0** | 11,227.7 (3.12 h) | **NOT MET** — exceed 11.33% vs 10% bar; p50 0.3629, p90 0.5156, max 3.71 | 292 rings; 99.7% of rings AT the 45-deg clamp; coverage audit 0.956% unmachined (bar 2%) |
+| D2. whole-board spiral, XY-spaced | harness | 96,451 | 7 | **0** | **7,949.9 (2.21 h)** | **NOT MET** — exceed 50.24%; p50 0.5111, p90 0.7231, max 2.90 | 207 rings; coverage audit 1.041% unmachined; the legacy raster's spacing convention |
+| CAL. shipped `unified_finish` in-harness | harness | 115,920 | 14,193 | 829 | 12,355.8 (3.43 h) | (same generator as B) | 45 planned regions, 30 shallow slope derates; the calibration row |
+
+Whole-project totals (CLI scale, same upstream ops in every arm):
+**A 17,808.0 s | B 20,398.3 s | C 26,108.2 s.** The upstream six ops
+reproduced identically across all three runs (e.g. front rough
+2,574.5 s in each), so every whole-project delta is the finish stack.
+
+### Calibration — the two scales, side by side
+
+The CAL row is the shipped generator arm B runs, costed by the harness
+integrator. CLI arm B reads 12,647.3 s; CAL reads 12,355.8 s — a 1.024x
+time ratio. The MOTION is not identical: the CLI op carries the claims
+pipeline (`claims_reference = "auto"`), the dressup chain (arc fitting,
+feed optimization, rapid reorder) and the remaining-stock context, and
+its cutting distance is 1.23x CAL's (142,635 vs 115,920 mm). So the
+2.4% time agreement is partly coincidence of offsetting differences,
+not proof of integrator identity. Rule used in the reading below:
+treat a cross-scale time gap as real only when it is far larger than
+that content gap — D2 vs B (-37%) and D1 vs C (-38%) qualify; D1 vs B
+(-11%) is suggestive, not settled.
+
+G-UNIONCOV (filed on master, `planning/finishing_status_2026-09-01.md`
+section 12): per-op coverage findings cannot see BETWEEN-op territory
+gaps in a multi-op chain. Arm C is a two-op chain, so its per-op 0.0
+coverage findings do not prove the union covers the board. Arms A, B,
+D1, D2 are single-op and are not exposed; the D arms additionally
+carry an independent union audit (the CoverageAudit column).
+
+### Expectations, scored
+
+1. **D1 loses badly on distance — CONFIRMED, at the top of the
+   predicted band.** D1/D2 cutting = 136,230/96,451 = **1.412x**
+   (predicted 1.3-1.41x). Mechanism confirmed as registered: 291 of
+   292 rings hit the 45-deg clamp — on wanaka, a whole-board ring
+   ALWAYS crosses a steep bank, so the worst-point rule taxes every
+   ring at the maximum.
+2. **D2 wins retracts, loses spec — CONFIRMED.** 0 retracts, 7 mm of
+   rapid on a 96 km cut; 50.24% of spacing samples exceed. Note the
+   p50 itself (0.5111) sits just over the 1.05x bar: MOST of this
+   board is sloped enough to break XY spacing, not just the banks.
+3. **D1 spec — NOT MET, marginally (11.33% vs 10%).** The 45-deg clamp
+   leaves the >45-deg ground exceeding, exactly the registered
+   mechanism. A whole-board spiral has no waterline band to hand that
+   ground to.
+4. **Time ordering — HALF-CONFIRMED, with two pre-registered
+   surprises that FIRED.**
+   - C < B < A predicted; measured **A < B < C**, both halves wrong.
+   - Surprise (a): **arm A beats arm C** — 10,057.0 vs 18,021.6 s.
+     The raw whole-board R1.0 scallop, the op the operator named,
+     beats the production tier split by 7,964.6 s (2.2 h) on the CLI
+     wire, with a measured 1,425 mm2 untouched-material debit the
+     tiers do not show per-op.
+   - Surprise (b): **D1 does NOT land well above CAL** — 11,227.7 vs
+     12,355.8 s. Continuity plus steady straight-line kinematics
+     (7 mm of rapid, zero retracts, feed pinned at 735) absorbs the
+     whole worst-point spacing tax on this board. D1 cuts 18% MORE
+     distance than CAL and still integrates 9% FASTER.
+5. **The tier-split anatomy, visible in the C row:** tier 1 alone
+   (12,193.4 s, 126,070 mm) already costs what whole-board arm B costs
+   (12,647.3 s, 142,635 mm) — the planned tier map hands tier 1 most
+   of the board, and tier 0's 5,828.2 s + 36,865 mm of rapid buys the
+   remaining sliver with a second tool. On THIS board the split is the
+   losing layer, not the winning one.
+
+### What this answers for the operator
+
+- **"What parts are gaining my time and what are losing me":** on this
+  board the two-tool tier split is the single largest loss —
+  5.0 h vs 3.5 h for one whole-board R1.0 unified op with the same
+  spec honesty, and vs 2.8 h for the raw scallop (with its 1,425 mm2
+  coverage debit to inspect first). The slope derate and the C2
+  decomposition are not the cost; the split is.
+- **"Spiral over the whole area in one go with the new method":** at
+  like-for-like (dishonest) spacing it is the fastest thing measured
+  (2.21 h, zero retracts) and fails spec the same way the legacy
+  raster did. Spec-honest per-ring derate brings it to 3.12 h — still
+  faster than every production arm — but a WHOLE-BOARD spiral pays
+  the worst bank on every ring (99.7% clamped) and still misses the
+  10% bar. The measured shape of the answer is synthesis section 9's:
+  the spiral wants compact sub-regions, not the whole board; its
+  zero-retract continuity is real and cheap, its one-spacing-per-ring
+  is the defect.
+
+### Caveats (all pre-registered or standing)
+
+- Harness times carry `link_ceiling: None` (fresh stock) and no
+  dressups/modulation; CLI times are the full production chain. The
+  table's scale column marks every row.
+- The D arms' gouge check models the R1.0 tapered ball exactly
+  (`TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0)`), 0 dropped points.
+- Arm A's spec column is a construction citation, not a measurement;
+  its 1,425 mm2 untouched finding is measured and unexplained — read
+  it before adopting arm A.
+- Tool wear and load are not priced: arm C spreads 184 km of cutting
+  over two cutters; every whole-board arm puts its full distance on
+  one R1.0 tool.
+- The wanaka board is one job; nothing here re-ranks the fixture
+  programme's per-shape results.
+
+### Artifacts
+
+- SVGs: `target/ledger_g1/wanaka_d1_spiral_honest.svg`,
+  `wanaka_d2_spiral_xy.svg`, `wanaka_cal_unified.svg`.
+- The arm C/A/B `simulation.json` artifacts (7 GB each) were deleted
+  after extracting `toolpath_runtimes` (kept as
+  `target/ledger_g/arm*_runtimes.txt`); the first arm B run failed on
+  a full disk at the write step and was re-run clean.
