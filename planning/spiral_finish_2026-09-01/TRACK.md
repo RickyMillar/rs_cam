@@ -44,3 +44,27 @@ outcome here, not a footnote.
 ## Evidence lands here
 
 `planning/spiral_finish_2026-09-01/FINDINGS.md`.
+
+## Productisation charter (2026-09-01, appearance approved by the operator)
+
+Goal: an opt-in compact-region spiral strategy on the shipped surface.
+
+Scope:
+1. A dial on `unified_finish` (naming to match house style), default
+   OFF, that routes a SHALLOW region through
+   `spiral_finish_compact` when the region passes the shape gate:
+   compactness/elongation (reuse C2's machinery), nested closed EDT
+   level sets, and the module's own typed refusals. Any refusal falls
+   back to the raster arm and is REPORTED (report-only finding, not a
+   silent fallback).
+2. The slope derate applies to the spiral's ring spacing the same way
+   it applies to the raster stepover — spec is spec.
+3. Wire: op panel, MCP schema, project IO, setup sheet, test
+   initializers (the CLAUDE.md field-audit rule).
+4. Gates: golden default-off byte-identity; sentries for gate/refusal
+   arms; full heavy gate; a C4-style rendered pattern review by the
+   operator on a real compact region BEFORE any default discussion.
+
+Non-goals: the conformal slit map (measured 1.87× slower — stays
+shelved); branched regions (typed refusal is the correct answer there);
+any default change in this ticket.

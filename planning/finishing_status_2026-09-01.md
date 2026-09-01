@@ -325,3 +325,24 @@ pipeline a fourth time:
   direction prize. Avenue D is closed; avenue F (spacing varying ALONG a
   pass) remains the only open path to the remaining coverage headroom,
   and it must measure its prize before designing anything.
+
+## 11. The coarse-skips-fine-islands question — already shipped, A/B cancelled (2026-09-01)
+
+The operator observed overlapping coverage in the C4 pattern views and
+asked whether tier 0 could skip islands the fine tier re-finishes. The
+answer, verified in code and pixels: **it already does.** A
+`PlannedTierRegions` boundary with `tier: 0` is the complement arm
+(`session/multitool.rs:978-1010`, operator-requested 2026-08-27), and
+`wanaka200_mt2`'s tier-0 op carries exactly that boundary. The tier-0
+pattern render shows the island-shaped voids directly.
+
+What remains visible as overlap is the 2 mm seam band, by design: the
+complement is of the fine tiers' OWNED cells, not their machined extent,
+so both tools cut the band and the seam blends. `overlap_mm` is the dial;
+shrinking it trades against seam marks and stays at its default absent a
+quality complaint.
+
+An earlier note in this session said the skip was "off in the project" —
+that was wrong (inferred from the planner dial's default instead of the
+project's boundary) and is corrected here. No A/B is worth running: the
+skip-off arm has nothing to teach.
