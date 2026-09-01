@@ -271,7 +271,7 @@ and status; its FINDINGS.md carries the evidence.
 | A | C4 + Phase U operator reviews | evidence: `~/Downloads/c4_review/`, `thin_organic_2026-08-27/FINDINGS.md` §7 | **waits on the operator** |
 | B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. Fix decision is the operator's — see §9 |
 | C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | **COMPLETE — BAR MET** (`c7beb6b3`/`aec52a65`): sphere 1.113× floor, dish 1.223×, 0 retracts, 0.0000 % unmachined, spacing within 0.8 % of spec, bridge overhead ~5.6–5.8 %. Research module `spiral_finish_compact.rs`, refusal-first on non-compact shapes. Next gate: operator appearance review of the SVGs, then productisation decision |
-| D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | queued |
+| D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | **CLOSED — GATES FAIL** (`c4710501`): prize ceiling +3.85 % vs the 5 % bar (gate 1 fail) even though coherence passes at 3.45 stepovers, w30 0.887 (gate 2 pass); negative control separated. Structural finding: the coherence gate 2 demands is exactly what lets a fixed per-region angle capture ~half the prize, so the field's margin over a rotated raster cannot clear the bar in this class at R = 1.0 mm. The direction-field family is now closed at the gate on BOTH geometry classes — terrain fails coherence, swept sheets fail the prize. Salvage: the swept-sheet coherence result argues FOR C2's shipped per-region rotation |
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 
@@ -291,3 +291,24 @@ decision — derate globally per region, derate locally, or expose a dial
 — changes every sloped shallow job's runtime and finish, so it binds on
 the operator. Every prior "raster wins by <25 %" margin on sloped ground
 is undecided until candidates are re-scored at equal achieved scallop.
+
+## 10. Track D consequence — the direction-field question is answered, cheaply (2026-09-01)
+
+The two-gate design ends the direction-field family without building the
+pipeline a fourth time:
+
+- Wanaka-class terrain: prize real (+9.75–21.5 %), coherence absent
+  (0.35 mm vs a 0.486 mm stepover). Gate 2 fails.
+- Bike-seat-class swept sheets: coherence present (3.45 stepovers, w30
+  0.887), prize under the bar (+3.85 % vs 5 %). Gate 1 fails.
+- The gates are structurally in tension in this class: coherence is what
+  lets ONE well-chosen angle per region capture about half the pointwise
+  excess, and the residual scales with κ·R — raising curvature to feed
+  the prize approaches the gouge bound and calls for a smaller ball,
+  which resets the prize. The literature's own honest margins (1.9–7.2 %
+  vs a good iso-scallop) sit consistent with this.
+- What the operator's product should take from it: the per-region
+  PCA rotation C2 already ships is the collectable share of the
+  direction prize. Avenue D is closed; avenue F (spacing varying ALONG a
+  pass) remains the only open path to the remaining coverage headroom,
+  and it must measure its prize before designing anything.
