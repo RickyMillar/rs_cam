@@ -54,6 +54,8 @@
 //! own sample grid and carries that cell size in the report. Never compare
 //! two resolution-conditional readings taken at different resolutions.
 
+pub mod census;
 pub mod costing;
 pub mod floor;
+pub mod monge;
 pub mod spacing;
