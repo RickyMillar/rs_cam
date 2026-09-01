@@ -49,6 +49,20 @@ outcome here, not a footnote.
 
 Goal: an opt-in compact-region spiral strategy on the shipped surface.
 
+**Revised 2026-09-01 (operator architecture question): the first door is
+the EXISTING `SpiralFinish` operation, not a unified_finish dial.**
+SpiralFinish today walks a circular Archimedean spiral from the bbox
+centre — round rings whatever the region's shape, XY-uniform spacing.
+`spiral_finish_compact` is that op's intent done properly: rings that
+follow the boundary (EDT offsets), bridged into one continuous path,
+spacing on the surface spec. Upgrade path: add a boundary-conformal mode
+to SpiralFinish (default stays the legacy circular mode for byte-compat;
+mode dial + typed refusal fallback + report). The unified_finish shape
+gate (below) becomes step 2, later, reusing the same core module — one
+module, two doors, per the house core+wiring rule. The multitool T3
+precedent (diagnostics legibility argues for separate ops) supports the
+standalone door leading.
+
 Scope:
 1. A dial on `unified_finish` (naming to match house style), default
    OFF, that routes a SHALLOW region through
