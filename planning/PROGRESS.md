@@ -31,6 +31,102 @@
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 
+## Recent work (2026-08-19 → 2026-09-01)
+
+### Finishing-strategy campaigns — consolidated 2026-09-01
+
+Full status board, fixture audit, salvage inventory and ranked avenues:
+**`planning/finishing_status_2026-09-01.md`** (start there). Theory and
+measurements: `planning/finishing_synthesis_2026-08-30.md` (§12 is the
+closure — do not act on §11 alone). Headlines:
+
+- **C2 monotone-cell decomposition is BUILT, default-off, and waits on
+  ONE thing: the C4 operator surface review.** Production A/B validated
+  twice (CLI 2026-08-30, GUI 2026-09-01, figures agree to the decimal):
+  1.090× on the finish tiers (−24.7 min), −14 % project rapid distance,
+  zero collisions, refusal channel clean. Evidence pack:
+  `~/Downloads/c4_review/` (zoomable HTML pair; the 6-view PNGs cannot
+  resolve the cusp — 0.666 mm/px vs a 0.597 mm stepover). Only the
+  ROTATED regions change pass direction (28/64 tier 0, 6/16 tier 1);
+  non-rotated regions emit the identical lattice.
+  Record: `thin_organic_2026-08-27/FINDINGS.md` §7.
+- **The direction-field arm (F1, Zou) is CLOSED on Wanaka** with the
+  mechanism understood: the prize is real (+9.75 % to +21.5 % ceiling,
+  synthesis §11) and unreachable — the direction field turns >30° inside
+  one stepover (coherence 0.35 mm vs stepover 0.486 mm), and no
+  decomposition at any scale repairs that (`conformal_finish_2026-08-28/
+  FINDINGS.md` §F1-1..3). Reopening is gated on the zone-coherence
+  census. The paper's own class (bike seat / blade) remains untested and
+  is avenue D in the status doc.
+- **The conformal spiral (F2, Shen) works and is NOT RECOMMENDED as
+  built**: removes ALL retracts, 1.87× slower on branched geometry (ring
+  anisotropy median 36.7×). The slit map is proven necessary for real
+  regions (no slope band is a topological disk) and stays unbuilt.
+  Salvage: the bridging (field-agnostic, 5–13 % overhead), CoverageAudit,
+  ring-anisotropy pre-checks. `FINDINGS_F2.md`.
+- **The retract wall was already mostly gone**: `surface_link` converts
+  ~80 % of fragment joins to stay-down links; residual ≈ 0.38 s each.
+  Retract chasing is closed as a direction.
+- **The floor instrument (`L_min = ∫dA/s_max`) reframed everything**: the
+  harness raster measures 0.997× floor on the sphere — under-coverage
+  (XY-projection spacing vs the surface spec). Whether the SHIPPED
+  shallow raster shares the defect is the top open verification item
+  (status doc avenue B).
+- Refuted and recorded so nobody retries: per-cell direction 0.917×,
+  contour-per-cell 0.686×, cell TSP byte-identical, medial-axis field on
+  branched geometry (falsifier fired) — though the medial field's sphere
+  row (1.036× floor, 0 retracts, meets spec) is the programme's best
+  honest number and seeds the shape-selected spiral avenue.
+
+### Rapid-descent safety + load-lane integrity (2026-08-28, `planning/rapid_safety_2026-08-28/`)
+
+- S1 measured the blind spot from shipped G-code: finish link descents
+  rapid-plunging into rest material under a zero collision count.
+- S2 rebuilt the detector: rapid checks ride the live replay with the
+  tool profile (`938d85db`); S3 fixed the air-cut filter to classify air
+  for the TOOL, not the centerline (`79361f31`). **S4 (holder/fixture
+  checks on rapids, stock-aware `check_collisions*`) is OPEN, deliberately
+  deferred** — cost must be measured first.
+- Phase M: engagement was normalised by the SHANK on non-flat tools;
+  M3 fixed the denominator to the engaged width (`fa8ee8d3`) — taper ops
+  read 3.69×/5.74× higher, flats bit-identical. **Residual: air-cut % on
+  fine tools remains misattributed at 0.3 mm** (a second mechanism; M1
+  §L3) — do not treat it as clean.
+
+### Multitool finishing tiers (2026-08-23 → , `planning/multitool_2026-08-23/`)
+
+T1–T3 investigations complete; Phase T decided the residual-assignment
+arm: slope-compensated analytic assignment (22.0 % of cells to the fine
+tier, within 3 % of stock-referenced truth, 4.6 s for 445k cells) is the
+planning/preview arm; compensation abstains above 75°. **Phase U overlay
+eyeball PENDING** (operator). Ledgered blockers: envelope-radius dilation
+welds tapered-tool masks (B2), intra-island routing cost (B3),
+MAX_REST_REGIONS=64 silent cap.
+
+### Lateral setups (2026-08-22, `planning/lateral_setups_2026-08-22/SPEC.md`)
+
+G-LATERALSIGN, G-FRONTNAME, G-LATERALSCRUB and lateral drilling all
+fixed/closed; drawings consume in the setup's work plane (operator-ruled).
+**Open: G-LATERALKEEPOUT** — a lateral setup refuses when the project
+carries an enabled fixture/keep-out.
+
+### wanaka200 efficiency campaign + perf review (2026-08-19..23, `planning/airrun_2026-08-19/`, `planning/perf_review_2026-08-19/`)
+
+Efficiency phases C0–C8 and P2-A/B/C ran against the wanaka200 job; the
+perf review landed waves W1–W6 (sim/gen perf, W5B-F4 air-cut threshold
+recalibration for the swept instrument, W6 playback delta). These
+produced the `wanaka200_mt2.toml` operating point used by everything
+above.
+
+### Session 2026-09-01 — stale-binary finding + C4 evidence pack
+
+The operator's live GUI ran a binary 63 commits behind HEAD (built
+08-27, before C2 and the S2/S3/M3 fixes) — verified against the running
+server's schema, not inferred. Every GUI-read figure from that window is
+pre-fix. Rebuilt, restarted, C4 A/B run and captured. Memory note
+`feedback_check_gui_binary_age.md` added: check binary age before
+trusting live-GUI numbers.
+
 ## Recent work (2026-08-06)
 
 ### Second technical-debt programme — closed

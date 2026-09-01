@@ -2071,3 +2071,72 @@ SAMPLED WINDOW to the region while keeping the lattice origin mesh-anchored
 — preserves phase, cuts sampling. (2) the CLI per-toolpath JSON does not yet
 surface `ToolpathStats::monotone_cells`; add it so fallback counts are
 visible on this wire.
+### §7 C4 evidence pack (2026-09-01) — rendered, NOT yet ruled on
+
+C4 is the operator surface review that binds C2 adoption. This section
+records the evidence produced for it. **It states no verdict.** The
+ruling is the operator's, and the dial stays default-off until they give
+one.
+
+**A blocker found first, and it invalidates earlier eyeballs.** The
+operator's live GUI ran a binary built 2026-08-27 16:50 — 63 commits
+behind HEAD and two days before C2 landed (`a2a7ef89`, 08-29 18:30).
+Verified against the running server, not inferred: `get_operation_schema`
+returned 21 unified-finish params with `monotone_cell_decomposition`
+absent, while `catalog.rs` at HEAD carries it. The dial did not exist in
+the binary being reviewed. The same staleness covers `994996b7` (links
+clear against the tool profile), `938d85db` (S2 profile-aware rapid
+checks), `79361f31` (S3 air-cut classifies for the tool), `fa8ee8d3` (M3
+engagement normalised by engaged width) and `9b85db6e` (B2 profile-ceiling
+entry descents). **Any engagement, air-cut or rapid-collision figure read
+off that window between 08-27 and 09-01 is pre-fix.** Rebuilt and
+restarted before the A/B ran.
+
+**The A/B.** `wanaka200_mt2.toml` through the GUI, `generate_all`
+fixpoint, 0.3 mm — the same resolution §7 used, so the arms are
+comparable to the CLI run.
+
+| | arm A (off) | arm B (on) |
+|---|---:|---:|
+| project runtime | 25,938.77 s | 24,447.95 s |
+| project rapid distance | 133,952 mm | 114,753 mm (−14.3 %) |
+| tier 0 rapid | 40,826.6 mm | 35,321.5 mm |
+| tier 1 rapid | 46,405.7 mm | 31,911.0 mm (−31.2 %) |
+| collisions / rapid collisions | 0 / 0 | 0 / 0 |
+| tier 0 cells | — | 451 cells, 64 regions, 28 rotated |
+| tier 1 cells | — | 245 cells, 16 regions, 6 rotated |
+
+Both totals reproduce §7's CLI figures (25,938.8 / 24,447.9) to the
+decimal. **§7 item 3 discharged**: `membership_fallbacks: 0` and
+`empty_fallbacks: 0` on both tiers, so no region silently ran the pre-C2
+path and the margin is over a pure arm, not a mixture.
+
+**Two things that did not improve, recorded so nobody reports a clean
+sweep.** Air-cut moved 43.62 % → 44.04 % of total runtime: absolute air
+time fell, total runtime fell faster, so the ratio rose. It is a
+denominator effect, not extra wasted motion. And a repeat arm-A run on
+identical settings read 25,980.36 s against 25,938.77 s — 0.16 %
+run-to-run spread, so the margin is ~1.06×, not a four-figure number.
+
+**The 6-view PNG cannot answer C4, and this was nearly missed.** At
+1600×1100 over a 240×250 mm board the composite renders at 0.666 mm/px.
+The stepover is 0.597 mm, so one pass is 0.9 px and the 0.03 mm scallop
+being judged is far below the pixel. A 6 mm cell seam is ~9 px. The PNGs
+are a sanity check (terrain machined, nothing gouged) and nothing more.
+The C4 instrument is the interactive export, which zooms.
+
+Artifacts in `~/Downloads/c4_review/`:
+
+- `armA_dial_off_surface.html` / `armB_dial_ON_surface.html` — 5.36 M
+  triangles each, toolpath overlay off, the matched pair for the review
+- `armA_dial_off_surface.png` / `armB_dial_ON_surface.png` — sanity only
+- `armA_dial_off_tier0_path.png` — tier 0 motion, dial off
+
+**The question C4 has to answer**, narrowed by the cell census: region 1
+is 3104 mm² cut into 86 cells, mean 36 mm², roughly 6 mm across against a
+0.597 mm stepover — the raster reverses about every ten passes. Density
+is the mechanism, not a side effect: it is what takes fragments from 564
+to 191 at 0°, and 491 to 141 rotated. It cannot be thinned without losing
+the win. So the ruling is not "are there many cells" (there are) but
+**does a direction reversal every ~6 mm leave a visible seam on
+river-carved terrain**.

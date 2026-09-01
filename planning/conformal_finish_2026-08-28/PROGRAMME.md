@@ -1,6 +1,19 @@
 # Conformal spiral + direction-field finishing — feasibility programme
 
-> **Status: F0 complete, 2026-08-29.** Both papers source-read in full;
+> **Status: PROGRAMME CONCLUDED, 2026-09-01.** Arm A (direction field)
+> is CLOSED on the Wanaka geometry class with the mechanism understood
+> (`FINDINGS.md` §F1-1..3: the field turns inside one stepover; no
+> decomposition repairs it); its premise is confirmed real (synthesis
+> §11) and the arm reopens only for a surface that passes the
+> zone-coherence census. Arm B (conformal spiral) works mechanically and
+> is NOT RECOMMENDED as built (`FINDINGS_F2.md` §F2-4: all retracts
+> removed, 1.87× slower on branched geometry; slit map proven necessary
+> for real regions and not worth building for a losing ring scheme).
+> Salvage inventory, fixture audit and ranked avenues:
+> `planning/finishing_status_2026-09-01.md`. The synthesis is
+> `planning/finishing_synthesis_2026-08-30.md` (§12 = closure).
+>
+> Original F0 note (2026-08-29): Both papers source-read in full;
 > extractions at `paper_2009.02660_extraction.md` and
 > `paper_2504.06310_extraction.md`, repo capabilities at
 > `primitives_inventory.md` (all in this directory). The F0 design note is

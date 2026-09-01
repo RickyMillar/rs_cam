@@ -490,3 +490,35 @@ exactly what a river-carved DEM should be.
 without measuring the scale. The rule this programme adopted after three
 fixture errors — state the mechanism, then check the geometry can express
 it — applies to closing a line of work just as much as to opening one.
+
+---
+
+## 12. Closure of the §11 reopening (2026-08-31 / 2026-09-01) — read this before acting on §11
+
+§11 reopened the direction-field arm and proposed a cheap test:
+supply the missing segmentation stage and re-measure region 1. That test
+ran, twice, and both runs are recorded in
+`planning/conformal_finish_2026-08-28/FINDINGS.md`:
+
+- **§F1-2** (`b2d2b346`): coherence-gated segmentation WORKS as the
+  literature says — threading falls from 68.47 components per level to
+  1.07, orientation inconsistencies to zero — and the verdict **fails
+  anyway**: best arm is control ÷ 1.41 against a pre-registered
+  order-of-magnitude bar, and at 10° tolerance 48.2 % of the region lies
+  in patches under 1 mm². Patch count rises as fast as threading falls.
+- **§F1-3** (`a17de695`): the zone-coherence census across every shipped
+  decomposition (tier islands, slope bands, equal tiles at 16/8/4 mm).
+  **The coherence length is ~0.35 mm at every zone size; the stepover is
+  0.486 mm.** The field turns more than 30° inside one pass width,
+  everywhere. No decomposition can supply what the surface does not have.
+
+So the full chain now stands: the prize is real (§11, +9.75 % to
++21.5 % ceiling), the missing stage works (§F1-2), and the method still
+fails on Wanaka because the field lacks spatial coherence at the
+stepover scale (§F1-3). **The arm is CLOSED on this geometry class, with
+the mechanism understood.** Reopening requires a surface that passes the
+coherence census (`w30 ≥ 0.70`, coherence length ≥ several stepovers) —
+a one-run check that exists (`zone_coherence_census.rs`) and must gate
+any future attempt. The paper's own validation class (blade, bike seat,
+saddle) is the candidate geometry; see
+`planning/finishing_status_2026-09-01.md` §5 avenue D.
