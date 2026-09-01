@@ -51,3 +51,51 @@ Findings:
 All six instruments now consume the library through thin adapters
 that keep their original call shape. Non-ignored pins in all six
 files: green after conversion (`c2` 7/7; the other five suites pass).
+
+## M-2. The floor integrand — three copies converged (2026-09-02)
+
+Promoted `region_floor`, `FloorReport`, `AreaWeighted`/`area_weighted`
+and the `× floor` score (`FloorReport::times_floor`) to
+`rs_cam_core::metrology::floor`, from the
+`conformal_spiral_synthetic_f2.rs` copy (the full two-basis form).
+
+* Disclosed divergence, closed by the promotion:
+  `spiral_finish_compact_c1.rs`'s restated copy computed only the
+  `κ_min` basis and tested only that basis for degeneracy. The library
+  computes both bases and counts a triangle degenerate when EITHER
+  collapses (the F2 rule). On c1's umbilic fixtures `κ_min = κ_max`,
+  so c1's numbers do not move; the adapter in c1 says so.
+* `whole_board_spiral_ledger_g1.rs`'s flat-law reference floor
+  (`area / s_flat`) now reads its area term from
+  `metrology::floor::mesh_area_mm2`. The flat law itself stays a
+  stated reference, not an exact floor.
+* The curvature source stays a CALLBACK parameter: the analytic
+  fixtures pass their closed forms, so no estimator sits inside the
+  floor. New unit pins: area-weighted median follows area (moved from
+  f2) and a flat-square closed-form floor check (new).
+
+## M-3. Achieved surface spacing — the Track B ruler (2026-09-02)
+
+Promoted to `rs_cam_core::metrology::spacing`:
+
+* `measure_raster_spacing` + `SpacingSample` + `SpacingMeasurement` +
+  `dist_point_segment` from `tests/shipped_raster_spacing_b1.rs`,
+  verbatim; the fixture's analytic closed forms ride in as
+  `ContactMaps`, so the ruler still carries no estimator.
+* `path_structure` + `PathStructure` + `quantile` from
+  `tests/common/scallop_oracle.rs`, verbatim (indexing rewritten to
+  `.get()` for the production lint gate — same arithmetic);
+  `scallop_oracle` re-exports them so every M4 consumer keeps its
+  import path.
+
+**Sentinel proof (charter requirement).** The b1 acceptance instrument
+(`shipped_shallow_raster_spacing_on_analytic_fixtures`, release,
+`--ignored --nocapture`) was run before and after the conversion and
+its full transcript diffed. The ONLY differing line is the harness
+wall-clock ("finished in 0.09s" vs "0.07s"); every measured number —
+all three fixture verdicts (CLEAN), every band row, every Δy census,
+`max achieved / s_max` (sphere 0.9391, plane20 1.0000, plane40
+1.0000), and the whole × FLOOR table (1.277 / 1.075 / 1.009) — is
+byte-identical. Transcripts: scratchpad `b1_before.txt` /
+`b1_after.txt` (session artifacts; the numbers above are the record).
+`shallow_raster_slope_derate` sentries: 2/2 green after conversion.

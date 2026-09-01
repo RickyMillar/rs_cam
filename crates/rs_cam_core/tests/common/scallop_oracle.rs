@@ -790,151 +790,12 @@ impl OracleReport {
 // Path-side metrics: stepover distribution, ring structure, junction cost
 // ---------------------------------------------------------------------------
 
-/// Path-side structure the envelope cannot see: how far apart neighbouring
-/// passes actually ended up, how long the emitted segments are, and how many
-/// rings there were.
-///
-/// The achieved-stepover measurement reuses Checkpoint B's `measured_cusp`
-/// bucketing idea — nearest point on a DIFFERENT ring, found through a uniform
-/// spatial hash — but reports the whole distribution in 3D rather than a
-/// single flat-ground cusp conversion. The plan asks for *"stepover
-/// distribution along each ring"* and a min-vs-median ratio is exactly the
-/// statistic that exposes a min-across-ring collapse.
-#[derive(Debug, Clone)]
-pub struct PathStructure {
-    pub cut_moves: usize,
-    pub rings: usize,
-    pub total_cut_mm: f64,
-    pub min_segment_mm: f64,
-    pub seg_p01_mm: f64,
-    pub seg_p50_mm: f64,
-    /// Segments shorter than 10 µm, and their share of all segments.
-    ///
-    /// M4's acceptance gate: *"minimum segment-length distribution remains
-    /// compatible with machine acceleration/junction limits."* A single short
-    /// segment is noise; a population of them is a feed-rate collapse, because
-    /// every junction costs the controller a decel/accel pair regardless of
-    /// how short the move is.
-    pub segs_under_10um: usize,
-    pub segs_under_10um_frac: f64,
-    /// Achieved 3D spacing to the nearest point on another ring.
-    pub stepover_p05_mm: f64,
-    pub stepover_p50_mm: f64,
-    pub stepover_p95_mm: f64,
-    pub stepover_min_mm: f64,
-    /// `p50 / p05` — how far the tightest spacing is below the typical one.
-    /// A per-ring constant stepover chosen by MIN drives this toward 1.0 by
-    /// dragging the typical spacing down to the tightest one.
-    pub stepover_spread: f64,
-}
-
-/// Measure [`PathStructure`] from a toolpath and the ring-start move indices
-/// the scallop generator annotates.
-#[must_use]
-pub fn path_structure(toolpath: &Toolpath, ring_starts: &[usize], bucket_mm: f64) -> PathStructure {
-    // Which ring each move index belongs to.
-    let mut ring_of = vec![usize::MAX; toolpath.moves.len()];
-    if !ring_starts.is_empty() {
-        let mut sorted = ring_starts.to_vec();
-        sorted.sort_unstable();
-        let mut r = 0usize;
-        for (i, slot) in ring_of.iter_mut().enumerate() {
-            while r + 1 < sorted.len() && i >= sorted[r + 1] {
-                r += 1;
-            }
-            if i >= sorted[0] {
-                *slot = r;
-            }
-        }
-    }
-
-    let mut segs: Vec<f64> = Vec::new();
-    let mut total = 0.0;
-    let mut pts: Vec<(P3, usize)> = Vec::new();
-    let mut prev: Option<P3> = None;
-    for (i, mv) in toolpath.moves.iter().enumerate() {
-        let cutting = !matches!(mv.move_type, MoveType::Rapid);
-        if cutting {
-            if let Some(a) = prev {
-                let d = ((mv.target.x - a.x).powi(2)
-                    + (mv.target.y - a.y).powi(2)
-                    + (mv.target.z - a.z).powi(2))
-                .sqrt();
-                if d > 1e-9 {
-                    segs.push(d);
-                    total += d;
-                }
-            }
-            pts.push((mv.target, ring_of.get(i).copied().unwrap_or(usize::MAX)));
-        }
-        prev = Some(mv.target);
-    }
-
-    // Nearest point on a different ring, via a uniform spatial hash.
-    let cell = bucket_mm.max(1e-3);
-    let mut hash: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
-    for (i, (p, _)) in pts.iter().enumerate() {
-        hash.entry(((p.x / cell).floor() as i64, (p.y / cell).floor() as i64))
-            .or_default()
-            .push(i);
-    }
-    let mut steps: Vec<f64> = Vec::new();
-    for (i, (p, ring)) in pts.iter().enumerate() {
-        if *ring == usize::MAX {
-            continue;
-        }
-        let (bx, by) = ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
-        let mut best = f64::INFINITY;
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                let Some(bucket) = hash.get(&(bx + dx, by + dy)) else {
-                    continue;
-                };
-                for &j in bucket {
-                    if j == i {
-                        continue;
-                    }
-                    let (q, qr) = pts[j];
-                    if qr == *ring || qr == usize::MAX {
-                        continue;
-                    }
-                    let d =
-                        ((q.x - p.x).powi(2) + (q.y - p.y).powi(2) + (q.z - p.z).powi(2)).sqrt();
-                    if d < best {
-                        best = d;
-                    }
-                }
-            }
-        }
-        if best.is_finite() {
-            steps.push(best);
-        }
-    }
-
-    segs.sort_by(f64::total_cmp);
-    steps.sort_by(f64::total_cmp);
-    let p05 = quantile(&steps, 0.05);
-    let p50 = quantile(&steps, 0.50);
-    PathStructure {
-        cut_moves: pts.len(),
-        rings: ring_starts.len(),
-        total_cut_mm: total,
-        min_segment_mm: segs.first().copied().unwrap_or(f64::NAN),
-        seg_p01_mm: quantile(&segs, 0.01),
-        seg_p50_mm: quantile(&segs, 0.50),
-        segs_under_10um: segs.partition_point(|d| *d < 0.010),
-        segs_under_10um_frac: if segs.is_empty() {
-            f64::NAN
-        } else {
-            segs.partition_point(|d| *d < 0.010) as f64 / segs.len() as f64
-        },
-        stepover_p05_mm: p05,
-        stepover_p50_mm: p50,
-        stepover_p95_mm: quantile(&steps, 0.95),
-        stepover_min_mm: steps.first().copied().unwrap_or(f64::NAN),
-        stepover_spread: if p05 > 1e-9 { p50 / p05 } else { f64::NAN },
-    }
-}
+// PROMOTED (Track M, 2026-09-02): `PathStructure`, `path_structure` and
+// `quantile` live in `rs_cam_core::metrology::spacing`, extracted verbatim
+// from this module. Re-exported here so every M4 consumer keeps its
+// import path.
+#[allow(unused_imports)]
+pub use rs_cam_core::metrology::spacing::{PathStructure, path_structure};
 
 // ---------------------------------------------------------------------------
 // Rendering — the v3 rule: never gate on an aggregate without rendering it
@@ -1006,16 +867,8 @@ fn save_rgba(path: &Path, buf: &[u8], w: u32, h: u32) {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-/// `idx = round((len − 1) · q)` — the same estimator Checkpoint B and the M3
-/// COLUMNS harness use, so quantiles are comparable across the three.
-#[must_use]
-pub fn quantile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
-    sorted[idx.min(sorted.len() - 1)]
-}
+#[allow(unused_imports)]
+pub use rs_cam_core::metrology::spacing::quantile;
 
 fn frac(n: usize, d: usize) -> f64 {
     if d == 0 {
