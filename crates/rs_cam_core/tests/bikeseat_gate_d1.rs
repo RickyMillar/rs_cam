@@ -303,7 +303,11 @@ fn mesh_census(mesh: &TriangleMesh) -> MeshCensus {
             let n = (b - a).cross(&(c - a));
             let norm = n.norm();
             let area = 0.5 * norm;
-            let nz = if norm > 0.0 { (n.z / norm).abs() * n.z.signum() } else { 0.0 };
+            let nz = if norm > 0.0 {
+                (n.z / norm).abs() * n.z.signum()
+            } else {
+                0.0
+            };
             let edges = [(b - a).norm(), (c - b).norm(), (a - c).norm()];
             let zlo = a.z.min(b.z).min(c.z);
             let zhi = a.z.max(b.z).max(c.z);
@@ -433,13 +437,25 @@ fn tool_cell(fits: &[MongeFit], cell_area: f64, axis: (f64, f64)) -> ToolCell {
         }
     }
     let bound = |value: f64| {
-        if floor_opt > 0.0 { value / floor_opt } else { f64::NAN }
+        if floor_opt > 0.0 {
+            value / floor_opt
+        } else {
+            f64::NAN
+        }
     };
     ToolCell {
-        gouge_area_frac: if total_area > 0.0 { gouge_area / total_area } else { 0.0 },
+        gouge_area_frac: if total_area > 0.0 {
+            gouge_area / total_area
+        } else {
+            0.0
+        },
         ratio: quantiles(ratios).unwrap_or_default(),
         smax: quantiles(smax_pairs).unwrap_or_default(),
-        smax_mean: if smax_area > 0.0 { smax_weighted / smax_area } else { f64::NAN },
+        smax_mean: if smax_area > 0.0 {
+            smax_weighted / smax_area
+        } else {
+            f64::NAN
+        },
         bound_x: bound(fixed[0]),
         bound_y: bound(fixed[1]),
         bound_pca: bound(fixed[2]),
@@ -477,11 +493,15 @@ fn measure_gate1(
             }
         }
         let kappa1 = quantiles(
-            fits.iter().map(|f| (f.kappa1, f.area_weight * cell_area)).collect(),
+            fits.iter()
+                .map(|f| (f.kappa1, f.area_weight * cell_area))
+                .collect(),
         )
         .unwrap_or_default();
         let kappa2 = quantiles(
-            fits.iter().map(|f| (f.kappa2, f.area_weight * cell_area)).collect(),
+            fits.iter()
+                .map(|f| (f.kappa2, f.area_weight * cell_area))
+                .collect(),
         )
         .unwrap_or_default();
         let tool = (!fits.is_empty()).then(|| tool_cell(&fits, cell_area, axis));
@@ -529,13 +549,29 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
     println!("── GATE 1 [{label}]: anisotropy sweep ─────────────────────────────────");
     println!(
         "  {:>6} {:>9} {:>7} {:>5} {:>9} {:>9} {:>9} {:>9} {:>9} {:>8}",
-        "r_mm", "fitted", "under", "ill", "k1_p50", "k2_p50", "ratio_p50", "ratio_p90", "gouge%", "smax_p50"
+        "r_mm",
+        "fitted",
+        "under",
+        "ill",
+        "k1_p50",
+        "k2_p50",
+        "ratio_p50",
+        "ratio_p90",
+        "gouge%",
+        "smax_p50"
     );
     for row in rows {
         let (r50, r90, gouge, s50) = row
             .tool
             .as_ref()
-            .map(|t| (t.ratio.p50, t.ratio.p90, 100.0 * t.gouge_area_frac, t.smax.p50))
+            .map(|t| {
+                (
+                    t.ratio.p50,
+                    t.ratio.p90,
+                    100.0 * t.gouge_area_frac,
+                    t.smax.p50,
+                )
+            })
             .unwrap_or((f64::NAN, f64::NAN, f64::NAN, f64::NAN));
         println!(
             "  {:>6.1} {:>9} {:>7} {:>5} {:>9.4} {:>9.4} {:>9.4} {:>9.4} {:>9.2} {:>8.4}",
@@ -556,7 +592,10 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
         .iter()
         .find(|r| (r.radius_mm - VERDICT_FIT_RADIUS_MM).abs() < 1e-9)
         .expect("the sweep contains the verdict radius");
-    let tool = cell.tool.as_ref().expect("verdict cell fitted at least one sample");
+    let tool = cell
+        .tool
+        .as_ref()
+        .expect("verdict cell fitted at least one sample");
     let best_bound = tool.bound_x.min(tool.bound_y).min(tool.bound_pca);
     let ceiling_pct = 100.0 * (best_bound - 1.0);
     println!(
@@ -576,7 +615,11 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
     );
     println!(
         "    s_max (mm): mean {:.4}  min {:.4}  p10 {:.4}  p90 {:.4}  max {:.4}  mean/min {:.3}",
-        tool.smax_mean, tool.smax.min, tool.smax.p10, tool.smax.p90, tool.smax.max,
+        tool.smax_mean,
+        tool.smax.min,
+        tool.smax.p10,
+        tool.smax.p90,
+        tool.smax.max,
         tool.smax_mean / tool.smax.min
     );
     if tool.gouge_area_frac > 0.02 {
@@ -587,7 +630,9 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
     }
 
     // Excess rule (anti-faceting arm 1).
-    let fine = rows.iter().find(|r| r.valid_fraction() >= SCALE_RULE_MIN_VALID_FRACTION);
+    let fine = rows
+        .iter()
+        .find(|r| r.valid_fraction() >= SCALE_RULE_MIN_VALID_FRACTION);
     let coarse_excess = rows
         .iter()
         .filter(|r| r.radius_mm >= SCALE_RULE_COARSE_FROM_MM)
@@ -603,7 +648,11 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
                 row.radius_mm,
                 fine_excess,
                 coarse_excess,
-                if fired { "FIRES (tessellation)" } else { "clean (landscape)" }
+                if fired {
+                    "FIRES (tessellation)"
+                } else {
+                    "clean (landscape)"
+                }
             );
             Some(fired)
         }
@@ -682,7 +731,12 @@ fn build_cell_field(
         .with_min_len(256)
         .map_init(
             || MongeScratch::new(mesh.vertices.len()),
-            |scratch, &(at, z0)| (at, fit_quadric(mesh, index, scratch, (at, z0), VERDICT_FIT_RADIUS_MM)),
+            |scratch, &(at, z0)| {
+                (
+                    at,
+                    fit_quadric(mesh, index, scratch, (at, z0), VERDICT_FIT_RADIUS_MM),
+                )
+            },
         )
         .collect();
     let mut census = FieldCensus::default();
@@ -955,7 +1009,11 @@ fn dominant_deg(stats: &ZoneStats) -> f64 {
 }
 
 fn print_zone(label: &str, stats: &ZoneStats) {
-    let censor_mark = if stats.censored_fraction > 0.5 { ">=" } else { "  " };
+    let censor_mark = if stats.censored_fraction > 0.5 {
+        ">="
+    } else {
+        "  "
+    };
     println!(
         "  {:<24} {:>9.1} {:>7.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>6.1} {}{:>7.3} {:>6.2} {:>5.2} {:>10}",
         label,
@@ -981,7 +1039,18 @@ fn print_zone(label: &str, stats: &ZoneStats) {
 fn zone_header() {
     println!(
         "  {:<24} {:>9} {:>7} {:>6} {:>6} {:>6} {:>6} {:>6} {:>9} {:>6} {:>5} {:>10}",
-        "zone", "area_mm2", "trust", "w10", "w20", "w30", "w45", "dom_deg", "cohl_mm", "steps", "cens", "verdict"
+        "zone",
+        "area_mm2",
+        "trust",
+        "w10",
+        "w20",
+        "w30",
+        "w45",
+        "dom_deg",
+        "cohl_mm",
+        "steps",
+        "cens",
+        "verdict"
     );
 }
 
@@ -1128,7 +1197,10 @@ fn run_fixture(
 ) -> FixtureRun {
     println!();
     println!("======================================================================");
-    println!("FIXTURE [{label}]: {} x {} mm, grid {step} mm", extent.0, extent.1);
+    println!(
+        "FIXTURE [{label}]: {} x {} mm, grid {step} mm",
+        extent.0, extent.1
+    );
     println!("======================================================================");
 
     let mesh = tessellate_heightfield((0.0, extent.0), (0.0, extent.1), step, &height);
@@ -1192,8 +1264,12 @@ fn run_fixture(
         candidates2.len(),
         samples2.len()
     );
-    let (field, field_census) =
-        build_cell_field(&mesh, &index, &samples2, GATE2_LATTICE_MM * GATE2_LATTICE_MM);
+    let (field, field_census) = build_cell_field(
+        &mesh,
+        &index,
+        &samples2,
+        GATE2_LATTICE_MM * GATE2_LATTICE_MM,
+    );
     let gate2 = measure_gate2(label, &field, &field_census);
 
     FixtureRun {
@@ -1286,7 +1362,11 @@ fn bikeseat_gate_censuses() {
         "GATE 1 (sheet): ceiling {:+.2} % vs bar {GATE1_CEILING_MIN_PCT} %, median ratio {:.4}, scale rules {} -> {}",
         sheet.gate1.ceiling_pct,
         sheet.gate1.median_ratio,
-        if scale_clean(&sheet.gate1) { "clean" } else { "NOT clean" },
+        if scale_clean(&sheet.gate1) {
+            "clean"
+        } else {
+            "NOT clean"
+        },
         if g1_pass { "PASS" } else { "FAIL" }
     );
     if sheet.gate1.gouge_area_frac > 0.02 {
@@ -1327,11 +1407,19 @@ fn bikeseat_gate_censuses() {
     println!(
         "CONTROL (noise): gate 1 ceiling {:+.2} % ({}); gate 2 coherence {:.3} mm = {:.2} stepovers, whole w30 {:.3} -> {}",
         noise.gate1.ceiling_pct,
-        if noise.gate1.ceiling_pct >= GATE1_CEILING_MIN_PCT { "passes, as Wanaka did" } else { "fails" },
+        if noise.gate1.ceiling_pct >= GATE1_CEILING_MIN_PCT {
+            "passes, as Wanaka did"
+        } else {
+            "fails"
+        },
         noise.gate2.whole.coherence_length_mm,
         noise.gate2.whole.coherence_length_mm / STEPOVER_MM,
         noise.gate2.whole.within[2],
-        if c_g2a && c_g2b { "UNEXPECTED PASS — the instrument is suspect" } else { "FAILS, as required" }
+        if c_g2a && c_g2b {
+            "UNEXPECTED PASS — the instrument is suspect"
+        } else {
+            "FAILS, as required"
+        }
     );
 
     println!();
@@ -1339,9 +1427,12 @@ fn bikeseat_gate_censuses() {
         "OVERALL: {}",
         match (g1_pass, g2_pass) {
             (true, true) => "GATES PASS — the full F1 pipeline on this fixture is justified.",
-            (true, false) => "GATE 2 FAILS — prize real, coherence absent: the Wanaka signature on the fixture's own turf.",
-            (false, true) => "GATE 1 FAILS — coherent but prize under bar: a raster at the right angle already wins here.",
-            (false, false) => "BOTH GATES FAIL — this construction cannot express the method's advantage.",
+            (true, false) =>
+                "GATE 2 FAILS — prize real, coherence absent: the Wanaka signature on the fixture's own turf.",
+            (false, true) =>
+                "GATE 1 FAILS — coherent but prize under bar: a raster at the right angle already wins here.",
+            (false, false) =>
+                "BOTH GATES FAIL — this construction cannot express the method's advantage.",
         }
     );
     println!("Track D stops here either way. Results land in FINDINGS.md.");
@@ -1419,7 +1510,9 @@ fn monge_extraction_recovers_known_curvature_and_axis() {
         "cylinder: k2 = {:.6}, expected 0 along the ruling",
         fit.kappa2
     );
-    let axis = fit.trusted_axis().expect("a cylinder is nowhere near umbilic");
+    let axis = fit
+        .trusted_axis()
+        .expect("a cylinder is nowhere near umbilic");
     assert!(
         axis_cos(axis, [1.0, 0.0]) >= (2.0f64).to_radians().cos(),
         "cylinder: t1 must run ACROSS the ridge (x axis), got [{:.4}, {:.4}]",
@@ -1428,7 +1521,10 @@ fn monge_extraction_recovers_known_curvature_and_axis() {
     );
     // Feed across the ridge (t1) leaves kappa_perp = 0 — the widest strip.
     let across = kappa_perp_zou(&fit, (1.0, 0.0));
-    assert!(across.abs() <= ABS, "feeding across the ridge must leave k_perp = 0, got {across:.6}");
+    assert!(
+        across.abs() <= ABS,
+        "feeding across the ridge must leave k_perp = 0, got {across:.6}"
+    );
     let along = kappa_perp_zou(&fit, (0.0, 1.0));
     assert!(
         (along - 1.0 / RHO).abs() <= REL / RHO,
