@@ -2686,6 +2686,7 @@ struct RegionPath {
 /// memo needs, since it serves every region). Build the box with
 /// [`region_sampling_window`], which carries the proof that it is a superset
 /// of everything the band can emit for that region.
+#[allow(clippy::too_many_arguments)] // lattice dials (step, direction, window) ride beside the op params, mirroring the C2 call sites
 fn build_shallow_raster_grid(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
