@@ -1,7 +1,7 @@
 # Track C — shape-selected spiral: EDT offsets + F2 bridging (no slit map)
 
 **Rank:** 3 of 6 (`planning/finishing_status_2026-09-01.md` §5 avenue C).
-**Status: AGENT RUNNING (2026-09-01).**
+**Status: DONE (2026-09-01) — BAR MET on both fixtures: sphere 1.113×, dish 1.223× (bar 1.25×), 0 retracts, 0.0000 % unmachined, spacing 0.8 % / 0.7 % off spec, bridge overhead 5.6–5.8 %. Evidence in FINDINGS.md; module `spiral_finish_compact.rs`; instrument `spiral_finish_compact_c1.rs`.**
 
 ## The goal
 
