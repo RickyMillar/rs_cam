@@ -191,11 +191,12 @@ the sweep, not at one rung.
   44.0°–53.1° across the sweep where a fully isotropic axis field
   reads exactly 45.0°. The C2 lattice is effectively unaligned with
   the valley axes; the alignment headroom the tracing mechanism
-  claims genuinely exists. Consistency check: the in-mask excess
-  above floor (~21 %) and the in-mask direction ceiling (~20 %) are
-  the same size — direction choice could in principle account for
-  nearly all of the in-mask excess.
-- **M4 (derate refund): MEASUREMENT SATURATED — no routing.** All
+  claims genuinely exists. CAUTION (added same day, review-caught):
+  the in-mask excess (~21 %) and the direction ceiling (~20 %) being
+  the same size is TWO candidate explanations of one number, not a
+  confirmation of either — see the attribution amendment below.
+- **M4 (derate refund): MEASUREMENT SATURATED — the routing rule
+  COULD NOT BE EVALUATED.** All
   14 real regions read θ_max = 45.000° with refund 1.0000 at every
   threshold, because 45° IS the Shallow band's own clamp
   (`steep_threshold_deg`), reached through the 2 mm `overlap_mm`
@@ -222,12 +223,54 @@ rescaled to `compute_cycle_time` (rescale 1.03–1.07; distance share
 agrees with time share to 0.04 pp, so not load-bearing); M2 printed
 in both numerator conventions.
 
-**Ruling: B1 ∧ B2 ∧ V0-pre pass and M3 is material → per the
-pre-registered decision rules, V1 OPENS.**
+**Ruling (AMENDED same day, review-caught): B1 ∧ B2 ∧ V0-pre pass
+and M3 is material — but V1 is CONDITIONALLY open, pending the
+attribution measurement below.** The first ruling ("V1 OPENS")
+treated M4's saturation as "the routing rule does not fire". That
+was wrong: saturation means the decomposition-vs-tracing attribution
+was NOT evaluated, and the derate arithmetic supplies a complete
+alternative explanation of the whole in-mask excess.
 
-### V1 — OPEN (2026-09-02). Not yet run.
+**The derate arithmetic (from numbers already in the log):** the
+shipped spacing in 15/16 regions is the derated 0.3438 mm. On a
+flat valley floor s_max is the full 0.4862 mm, so a PERFECT raster
+— no turns, no links, no misalignment — reads 0.4862/0.3438 =
+**1.41× floor** there, and 1.00× on a 45° wall. Mask B is mostly
+floor plus some wall; a floor/wall mix lands exactly in M2's
+1.21–1.25× band with ZERO direction contribution. Out-of-mask
+ground is steeper, so it sits nearer 1.0 — which also reproduces
+"in-mask above whole-territory". M2's concentration may mean only:
+valleys are flat, and flat ground pays the fringe-clamped derate
+hardest.
+
+**V0-att — attribution amendment (pre-registered 2026-09-02 BEFORE
+its run):**
+
+- **M2_spacing** = ×floor of a perfect raster at the shipped
+  derated spacing, in-mask: `∫dA/s_shipped ÷ ∫dA/s_max` over mask
+  cells. Everything needed is already computed by the census.
+- **Residual** = M2 − M2_spacing (cut-intent convention) — the
+  path-topology part, the ONLY part tracing can win.
+- **Bar B2-att:** residual ≥ 5 pp of excess. Below that, arm T
+  cannot pass B5 at equal achieved scallop; **Track H's tracing arm
+  CLOSES** and the prize routes to the fringe/derate ticket.
+
+This completes M4's intent (attribution); it does not move B1, B2,
+or V0-pre.
+
+### V1 — CONDITIONALLY OPEN (2026-09-02), pending V0-att.
 
 Region selection per Q2: the region with the largest mask-B time
-share, from the census. Bars B3/B4/B5 as pre-registered above.
+share, from the census. Bars B3/B4/B5 as pre-registered above, plus
+one amendment pre-registered before any V1 run:
+
+- **Arm S′ (spacing-matched control), REQUIRED.** Arm T's
+  surface-relative offsets will locally run ~0.486 mm on floors
+  while arm S is pinned at the region's derated 0.344 mm — so T can
+  "win" on spacing it was granted, not on tracing. S′ is the same
+  C2 raster granted the same freedom: derate computed with fringe
+  cells excluded (or the mask as its own region). **B5 binds
+  against S′, not S.** Tracing that beats S but not S′ is avenue F
+  / decomposition wearing a new name, and closes the tracing arm.
 
 ### V2 — NOT OPENED

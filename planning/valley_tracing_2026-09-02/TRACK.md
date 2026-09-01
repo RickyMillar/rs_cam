@@ -7,10 +7,13 @@
 > passes over valley areas. Operator's stated worry: triangle facets
 > may make smooth valleys zig-zag.
 >
-> Status: **V0 MEASURED 2026-09-02 — all gates pass, V1 OPEN.**
-> Census: `valley_prize_census_h0.rs` (`df3383a2`). In-mask ×floor
-> 1.21–1.25 vs territory 1.155; misalignment ~45° (unaligned);
-> in-mask direction ceiling 1.20×. See `FINDINGS.md` results.
+> Status: **V0 MEASURED 2026-09-02 — bars pass; V1 CONDITIONALLY
+> open pending V0-att attribution.** Census:
+> `valley_prize_census_h0.rs` (`df3383a2`). In-mask ×floor
+> 1.21–1.25 vs territory 1.155 — but the shipped-derate arithmetic
+> alone predicts that band (0.486/0.344 = 1.41× on flat floors), so
+> the excess may hold zero path-topology prize. V0-att (M2_spacing,
+> residual bar) decides. See `FINDINGS.md` results.
 
 ## The question
 

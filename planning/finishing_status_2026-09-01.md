@@ -237,6 +237,27 @@ this frontier is not worth its complexity on terrain and should be
 recorded as such; if large on bike-seat-class work, it stacks with
 avenue D.
 
+### G. Fringe-driven derate — likely the largest measured prize on this board (added 2026-09-02, from Track H's census)
+
+The Track H census found it as a side-effect and the number is big:
+**15 of 16 Shallow regions derate 0.486 → 0.344 mm (≈ 1.41× the
+cutting distance on nearly the whole band) because their θ_max is
+45.000° exactly — the band's own clamp — reached through the 2 mm
+`overlap_mm` band-boundary dilation, not through any region's own
+terrain** (`valley_prize_census_h0.rs` M4 block, run 2026-09-02).
+The cos θ_max derate is honest per region, but the fringe cells that
+set it belong to the NEIGHBOURING band's territory.
+
+The spec question, stated plainly: should fringe cells set a
+region's derate, or should the derate read the region's own terrain
+and let the band boundary own its seam (a seam that must then be
+covered explicitly)? The second reading is a decomposition change
+and **inherits G-UNIONCOV** (§12) — the seam it creates is exactly
+what the union instrument must check. Do not act before the Track M
+union audit exists; measure first: recompute each region's θ_max
+with fringe excised and price the distance refund per region
+(the census's M4 machinery already does the excision).
+
 ## 6. Not recommended — do not reopen without the stated evidence
 
 | What | Why | Reopens only if |
@@ -275,7 +296,7 @@ and status; its FINDINGS.md carries the evidence.
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 | G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
-| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **V0 MEASURED (2026-09-02, `df3383a2`) — all gates pass, V1 open.** In-mask ×floor 1.21–1.25 vs territory 1.155; lattice unaligned with valley axes (~45°); in-mask direction ceiling 1.20×. Side-finding: the band-wide derate is fringe-driven, not terrain-driven — see FINDINGS. See §14 |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **V0 MEASURED (2026-09-02, `df3383a2`) — bars pass; V1 CONDITIONALLY open pending V0-att attribution.** In-mask ×floor 1.21–1.25 vs territory 1.155, but the shipped-derate arithmetic alone predicts that band on flat floors (0.486/0.344 = 1.41×); M4 saturated, so tracing-vs-derate attribution is unanswered. V0-att (M2_spacing residual, bar 5 pp) decides. Side-finding promoted to its own avenue: fringe-driven derate — see §5 avenue G and §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 
