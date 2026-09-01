@@ -1288,13 +1288,30 @@ fn machined_stock(
 // Part 3 — per-move time attribution
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Per-move time, distance and direction, split by mask membership.
+/// Per-move time and distance, split by mask membership.
+///
+/// TWO numerator conventions are carried, because `M2` is a ratio and the two
+/// sides must be the same measure:
+///
+/// * `*_cut_*` counts only `ClearingCut | FinishingCut` moves — the
+///   `cutting_s` bucket definition, the material-removal path;
+/// * `*_all_*` counts every non-rapid move, which is what
+///   `Toolpath::total_cutting_distance` returns and therefore what the
+///   synthesis §1 table's "raster cut" column is. On this board the
+///   difference is the surface links, ~15 % of distance.
+///
+/// Reporting only one of them next to a territory figure computed the other
+/// way would compare two different quantities.
 #[derive(Default, Clone, Copy)]
 struct Split {
     in_time_s: f64,
     out_time_s: f64,
     in_mm: f64,
     out_mm: f64,
+    in_all_time_s: f64,
+    out_all_time_s: f64,
+    in_all_mm: f64,
+    out_all_mm: f64,
 }
 
 /// One cutting move's contribution, kept for M3.
@@ -1358,17 +1375,25 @@ fn attribute_cutting(
         if matches!(move_ref.move_type, MoveType::Rapid) {
             continue;
         }
+        let p0 = toolpath.moves[i - 1].target;
+        let p1 = move_ref.target;
+        let mid = P2::new(0.5 * (p0.x + p1.x), 0.5 * (p0.y + p1.y));
+        let time_s = t * scale;
+        let is_in = inside(mid);
+        if is_in {
+            split.in_all_time_s += time_s;
+            split.in_all_mm += length;
+        } else {
+            split.out_all_time_s += time_s;
+            split.out_all_mm += length;
+        }
         if !matches!(
             move_ref.intent,
             MoveIntent::ClearingCut | MoveIntent::FinishingCut
         ) {
             continue;
         }
-        let p0 = toolpath.moves[i - 1].target;
-        let p1 = move_ref.target;
-        let mid = P2::new(0.5 * (p0.x + p1.x), 0.5 * (p0.y + p1.y));
-        let time_s = t * scale;
-        if inside(mid) {
+        if is_in {
             split.in_time_s += time_s;
             split.in_mm += length;
         } else {
@@ -2071,6 +2096,10 @@ fn evaluate_mask(
         total.out_time_s += split.out_time_s;
         total.in_mm += split.in_mm;
         total.out_mm += split.out_mm;
+        total.in_all_time_s += split.in_all_time_s;
+        total.out_all_time_s += split.out_all_time_s;
+        total.in_all_mm += split.in_all_mm;
+        total.out_all_mm += split.out_all_mm;
         for sample in &samples {
             let Some(i) = field.index_at(sample.mid.x, sample.mid.y) else {
                 continue;
@@ -2105,17 +2134,27 @@ fn evaluate_mask(
     let l_min = surface_area / ctx.stepover;
     let feed_mm_s = FEED_MM_MIN / 60.0;
 
+    let all_time = total.in_all_time_s + total.out_all_time_s;
+    let all_mm = total.in_all_mm + total.out_all_mm;
     eprintln!(
         "\x20  time attribution rescale factor (sum len/v_peak vs compute_cycle_time): \
          min {:.4} max {:.4}\n\
-         \x20  M1 time share IN mask: {:.3} % ({:.1} s of {:.1} s cutting)\n\
-         \x20     distance share IN mask: {:.3} % ({:.0} mm of {:.0} mm)  [cross-check]\n\
+         \x20  M1 time share IN mask, CUT-INTENT moves: {:.3} % ({:.1} s of {:.1} s)\n\
+         \x20     distance share, cut-intent: {:.3} % ({:.0} mm of {:.0} mm)  [cross-check]\n\
+         \x20  M1 time share IN mask, ALL NON-RAPID moves (links included): {:.3} % \
+         ({:.1} s of {:.1} s)\n\
+         \x20     distance share, all non-rapid: {:.3} % ({:.0} mm of {:.0} mm)  [cross-check]\n\
          \x20  mask surface area (dA = dxdy/cos slope): {:.1} mm²; s_max = {:.6} mm\n\
          \x20     L_min = {:.1} mm;  L_min / feed = {:.1} s at {FEED_MM_MIN:.0} mm/min\n\
-         \x20  M2 xfloor (DISTANCE, the synthesis §1 convention): {:.4}x\n\
-         \x20  M2 xfloor (TIME, the literal FINDINGS wording):    {:.4}x\n\
+         \x20  M2 xfloor, DISTANCE / cut-intent only:        {:.4}x\n\
+         \x20  M2 xfloor, DISTANCE / all non-rapid:          {:.4}x   <-- the synthesis §1 \
+         convention (total_cutting_distance)\n\
+         \x20  M2 xfloor, TIME / cut-intent only:            {:.4}x\n\
+         \x20  M2 xfloor, TIME / all non-rapid:              {:.4}x   <-- the literal FINDINGS \
+         wording\n\
          \x20  M3 time-weighted misalignment, region C2 lattice vs local valley axis: {:.3} deg\n\
          \x20     (emitted-move direction vs valley axis: {:.3} deg)  [cross-check]\n\
+         \x20     (an isotropic axis field would read 45.000 deg)\n\
          \x20     weight {:.1} s; {:.1} s of in-mask time had no valley tangent",
         scales.iter().copied().fold(f64::INFINITY, f64::min),
         scales.iter().copied().fold(f64::NEG_INFINITY, f64::max),
@@ -2125,12 +2164,20 @@ fn evaluate_mask(
         100.0 * total.in_mm / cutting_mm.max(1e-9),
         total.in_mm,
         cutting_mm,
+        100.0 * total.in_all_time_s / all_time.max(1e-9),
+        total.in_all_time_s,
+        all_time,
+        100.0 * total.in_all_mm / all_mm.max(1e-9),
+        total.in_all_mm,
+        all_mm,
         surface_area,
         ctx.stepover,
         l_min,
         l_min / feed_mm_s,
         total.in_mm / l_min.max(1e-9),
+        total.in_all_mm / l_min.max(1e-9),
         total.in_time_s / (l_min / feed_mm_s).max(1e-9),
+        total.in_all_time_s / (l_min / feed_mm_s).max(1e-9),
         weighted_angle / angle_weight.max(1e-9),
         weighted_angle_moves / angle_weight.max(1e-9),
         angle_weight,
@@ -2705,14 +2752,29 @@ fn wanaka_valley_prize_census_h0() {
             .filter_map(|r| r.cost.as_ref())
             .map(|c| c.time_s)
             .sum();
+        // The SAME two numerator conventions the per-mask M2 prints, so the
+        // territory figure and the in-mask figures are comparable measures.
+        let mut cut_intent_mm = 0.0f64;
+        for row in &rows {
+            if let Some(cost) = row.cost.as_ref() {
+                let (split, _, _) =
+                    attribute_cutting(&cost.toolpath, &kinematics, cost.time_s, &|_| false);
+                cut_intent_mm += split.out_mm;
+            }
+        }
         eprintln!(
             "\n---------- whole costed territory, for scale ----------\n\
              \x20  finish territory {territory_cells} cells = {:.1} mm² XY;\n\
-             \x20  surface area {:.1} mm²; L_min {:.1} mm; cutting {:.0} mm => {:.4}x floor\n\
+             \x20  surface area {:.1} mm²; L_min = {:.1} mm at s_max {stepover:.6} mm\n\
+             \x20  xfloor, DISTANCE / cut-intent only:   {:.0} mm => {:.4}x\n\
+             \x20  xfloor, DISTANCE / all non-rapid:     {:.0} mm => {:.4}x   \
+             (total_cutting_distance)\n\
              \x20  costed time (cut + links + rapids) {:.1} s over {} regions",
             territory_cells as f64 * cell_area,
             territory_surface,
             l_min,
+            cut_intent_mm,
+            cut_intent_mm / l_min.max(1e-9),
             total_mm,
             total_mm / l_min.max(1e-9),
             total_s,
