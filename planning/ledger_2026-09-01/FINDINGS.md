@@ -280,3 +280,25 @@ The corrected arm B run (bottom_z −4.0) is in progress in the GUI
 session, combined with `pencil_claims: true` for the operator's valley
 review — that combined run serves the EYEBALL, not the table; the
 table's corrected row needs a heights-only rerun.
+
+## CORRECTED ARM B + the retraction (2026-09-02, GUI run)
+
+With `bottom_z` pinned to −4.0 and `pencil_claims: true`, whole-board
+unified emits every band (waterline ×5 regions, 10,963 moves; crease
+pencil, 61,041 moves; narration: "Unmachined band: none") and costs
+**28,251 s — slower than the production tiers' 26,135 s.**
+
+**The "tier split loses 42 %" headline is RETRACTED.** It was mostly the
+missing waterline band. Caveats both ways: the tiers never ran pencil
+claims, and this run's 3,491 retract trips carry the scattered
+waterline + pencil territory. At equal completeness the strategies sit
+within ~10 % and cannot be ranked honestly without the union-coverage
+instrument.
+
+**The finding that survives everything:** tip float — 73 % of crease
+centreline points sit over material the R1.0 cannot reach, worst
+residual 2.299 mm. The valley floors are unreachable by EVERY arm in
+this ledger; every strategy comparison above is between paths that all
+leave the creases uncut. The real ladder is R1.0-class base + a
+genuinely fine valley tool (rest/pencil), which is arm E — now the only
+arm whose mechanism the evidence actively demands.
