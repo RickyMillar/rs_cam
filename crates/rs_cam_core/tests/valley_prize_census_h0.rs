@@ -36,6 +36,76 @@
 //!   tracing can win. M4 saturated at the steep clamp on this board, so the
 //!   derate-vs-direction attribution had to come from somewhere else.
 //!
+//! * **V0-att v2** (amendment, pre-registered in FINDINGS before its run) —
+//!   the DIRECTION-AWARE XY model, which reproduces what actually ships.
+//!   v1's surface-pitch formula was ill-posed on this measurement (see
+//!   below); v2 replaces it as the attribution arm and v1 survives only as
+//!   the bracket's upper bound.
+//!
+//! # V0-att v2 — the along-track secant, stated before the run
+//!
+//! The shipped raster spaces its passes at `s_shipped` in **XY projection**,
+//! not on the surface. Over an XY patch of area `a_xy` its XY-projected path
+//! length is `a_xy / s_shipped`, and its 3-D length is that times the secant
+//! of the slope **along the pass**, not of the full slope.
+//!
+//! The classification surface is a heightfield, so from its unit upward
+//! normal `n = (n_x, n_y, n_z)`:
+//!
+//! ```text
+//!     grad z = (f_x, f_y) = (-n_x / n_z,  -n_y / n_z)
+//! ```
+//!
+//! and for a unit XY pass direction `d = (d_x, d_y)`:
+//!
+//! ```text
+//!     tan phi = |grad z . d| = |f_x d_x + f_y d_y|
+//!     sec phi = sqrt(1 + (grad z . d)^2)
+//!
+//!     M2_xy(d) = SUM (a_xy / s_shipped(region)) * sec phi   /   L_min
+//! ```
+//!
+//! `sec phi` is invariant under `d -> -d`, so a pass direction being an AXIS
+//! (180-degree periodic) raises no sign question. Two worked checks, which
+//! are the whole reason the formula is written down here first:
+//!
+//! * **flat ground** — `sec phi = 1` in every direction, so
+//!   `M2_xy = s_max / s_shipped = 1.4142`;
+//! * **a 45-degree wall, pass along the contour** — `grad z . d = 0`, so
+//!   `sec phi = 1`, while `dA = a_xy / cos 45`, and
+//!   `M2_xy = (1/s_shipped) / (1.4142/s_max) = 1.000`. The same wall climbed
+//!   straight up reads `1.4142` again.
+//!
+//! That is exactly the "1.41x on a flat floor, 1.00x on a 45-degree wall"
+//! behaviour v1 could not express.
+//!
+//! **Two directions are evaluated.** `d_shipped` is the owning region's C2
+//! lattice direction — the perfect, turn-free shipped raster. `d_valley` is
+//! the local valley-line tangent from the nearest network line, and it is
+//! evaluated on MASK populations ONLY: outside a mask the valley direction is
+//! undefined, so no territory figure is printed. A mask cell whose nearest
+//! line carries no tangent falls back to `d_shipped` — it then contributes
+//! exactly zero to `D_pot`, which can only SHRINK the direction prize, and
+//! the count of such cells is reported.
+//!
+//! **The bracket.** `A_xy/s_shipped / L_min` (every `sec phi` forced to 1) is
+//! a direction-independent LOWER bound; v1's surface-pitch figure is the
+//! UPPER bound. The measured `M2` must land between them on every
+//! population. A violation is a model error, not noise, and is printed as
+//! `BRACKET VIOLATED`.
+//!
+//! # Why v1 was retired (recorded, not hidden)
+//!
+//! v1 was `integral dA/s_shipped / integral dA/s_max`. With a constant
+//! `s_max` and a per-region `s_shipped`, `dA` CANCELS inside each region, so
+//! the ratio is an area-weighted mean of `s_max / s_region` and carries no
+//! geometry at all. On this board `theta_max` saturates at the 45-degree
+//! steep clamp in 15 of 16 regions, so v1 collapsed to the single scalar
+//! `0.486210 / 0.343802 = sqrt(2) = 1.4142` on all seven populations, and its
+//! residual came out NEGATIVE everywhere because it models a surface-pitch
+//! raster that does not ship. It is kept as the bracket's upper bound, which
+//! is the one thing it is still good for.
+//!
 //! **The two sides of the residual are the same measure.** `M2_spacing` and
 //! `M2` are accumulated in ONE loop over the SAME mask cells against the SAME
 //! `L_min = integral dA/s_max` denominator; only the numerator differs (an
@@ -1998,6 +2068,92 @@ fn print_census_rows(mesh: &TriangleMesh, index: &SpatialIndex, name: &str, samp
     );
 }
 
+/// One pass of the V0-att v2 XY-pitch model over one population.
+///
+/// Every accumulation happens in ONE loop over the SAME cells, so the model,
+/// the bracket and `L_min` share a population by construction.
+#[derive(Default)]
+struct XyModel {
+    /// `SUM dA` — surface area (dA = a_xy / cos theta).
+    surface_area_mm2: f64,
+    /// `SUM dA / s_shipped` — v1's numerator, now the bracket's UPPER side.
+    surface_len_mm: f64,
+    /// `SUM a_xy / s_shipped` — every `sec phi` forced to 1, the
+    /// direction-independent LOWER bound's numerator.
+    flat_len_mm: f64,
+    /// `SUM (a_xy / s_shipped) * sec phi` — the model itself.
+    len_mm: f64,
+    /// Cells whose direction chooser gave no direction and fell back to
+    /// `d_shipped`. They contribute exactly zero to `D_pot`.
+    fallback_cells: usize,
+    /// Cells with no owning region — excluded from every numerator, never
+    /// folded in at the spec spacing.
+    unowned_cells: usize,
+    /// Cells whose normal is too near horizontal-facing to invert.
+    degenerate_cells: usize,
+}
+
+/// Accumulate [`XyModel`] over `mask`. `dir_deg_at(cell, shipped_deg)`
+/// returns the pass direction in degrees for that cell; returning a
+/// non-finite value asks for the `d_shipped` fallback and is counted.
+fn xy_pitch_model(
+    ctx: &EvalCtx<'_>,
+    mask: &[bool],
+    dir_deg_at: &dyn Fn(usize, f64) -> f64,
+) -> XyModel {
+    /// Below this the surface faces sideways and `grad z` cannot be formed.
+    /// The classification mesh is 100 % up-facing, so this is a guard, not a
+    /// population.
+    const MIN_NZ: f64 = 1e-6;
+
+    let mut out = XyModel::default();
+    let slope = &ctx.surface.slope_map;
+    for (i, &angle) in slope.angles.iter().enumerate() {
+        if !mask.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let cos = angle.cos();
+        if cos <= 1e-6 {
+            continue;
+        }
+        let d_area = ctx.cell_area / cos;
+        out.surface_area_mm2 += d_area;
+        let owner = ctx.region_of.get(i).copied().unwrap_or(-1);
+        let Some(row) = usize::try_from(owner).ok().and_then(|k| ctx.rows.get(k)) else {
+            out.unowned_cells += 1;
+            continue;
+        };
+        let s_shipped = row.derated_stepover_mm;
+        out.surface_len_mm += d_area / s_shipped;
+        out.flat_len_mm += ctx.cell_area / s_shipped;
+
+        let Some(normal) = slope.normals.get(i) else {
+            out.degenerate_cells += 1;
+            out.len_mm += ctx.cell_area / s_shipped;
+            continue;
+        };
+        if normal.z.abs() < MIN_NZ {
+            out.degenerate_cells += 1;
+            out.len_mm += ctx.cell_area / s_shipped;
+            continue;
+        }
+        // Heightfield gradient from the upward unit normal.
+        let f_x = -normal.x / normal.z;
+        let f_y = -normal.y / normal.z;
+        let mut deg = dir_deg_at(i, row.direction_deg);
+        if !deg.is_finite() {
+            out.fallback_cells += 1;
+            deg = row.direction_deg;
+        }
+        let (sin_d, cos_d) = deg.to_radians().sin_cos();
+        // tan phi = |grad z . d|; sec phi = sqrt(1 + (grad z . d)^2).
+        let tan_phi = f_x * cos_d + f_y * sin_d;
+        let sec_phi = (1.0 + tan_phi * tan_phi).sqrt();
+        out.len_mm += (ctx.cell_area / s_shipped) * sec_phi;
+    }
+    out
+}
+
 /// Everything mask-dependent: area share, V0-pre, M4, M1, M2, M3.
 fn evaluate_mask(
     ctx: &EvalCtx<'_>,
@@ -2141,39 +2297,23 @@ fn evaluate_mask(
     let cutting_time = total.in_time_s + total.out_time_s;
     let cutting_mm = total.in_mm + total.out_mm;
 
-    // L_min over the mask's SURFACE area: dA = dxdy / cos(slope).
-    //
-    // V0-att rides the SAME loop, so `M2_spacing` and `M2` share one
-    // population and one denominator by construction: `spacing_len` is
-    // `integral dA / s_shipped` where `s_shipped` is the owning region's
-    // SHIPPED (cos theta_max-derated) stepover, and `l_min` is
-    // `integral dA / s_max` at the spec spacing. Their ratio is the x-floor a
-    // PERFECT raster at the shipped spacing would read — no path topology in
-    // it at all.
-    let mut surface_area = 0.0f64;
-    let mut spacing_len = 0.0f64;
-    let mut unowned_cells = 0usize;
-    for (i, &angle) in ctx.surface.slope_map.angles.iter().enumerate() {
-        if !mask.get(i).copied().unwrap_or(false) {
-            continue;
-        }
-        let cos = angle.cos();
-        if cos <= 1e-6 {
-            continue;
-        }
-        let d_area = ctx.cell_area / cos;
-        surface_area += d_area;
-        let owner = ctx.region_of.get(i).copied().unwrap_or(-1);
-        match usize::try_from(owner).ok().and_then(|k| ctx.rows.get(k)) {
-            // A mask cell is inside the territory by construction, so this
-            // arm is the whole population; the else arm is counted, never
-            // silently folded in at the spec spacing.
-            Some(row) => spacing_len += d_area / row.derated_stepover_mm,
-            None => unowned_cells += 1,
-        }
-    }
+    // The V0-att v2 model, the v1 upper bound and `L_min` all come out of one
+    // pass over the SAME mask cells, so every ratio below shares a population
+    // and a denominator by construction rather than by agreement.
+    let shipped = xy_pitch_model(ctx, mask, &|_, shipped_deg| shipped_deg);
+    let valley = xy_pitch_model(ctx, mask, &|i, _| axis_at(i));
+    let surface_area = shipped.surface_area_mm2;
+    let spacing_len = shipped.surface_len_mm;
+    let unowned_cells = shipped.unowned_cells;
     let l_min = surface_area / ctx.stepover;
     let m2_spacing = spacing_len / l_min.max(1e-9);
+    let lower_bound = shipped.flat_len_mm / l_min.max(1e-9);
+    let m2_xy_shipped = shipped.len_mm / l_min.max(1e-9);
+    let m2_xy_valley = valley.len_mm / l_min.max(1e-9);
+    let measured_m2 = total.in_mm / l_min.max(1e-9);
+    let r_topo = measured_m2 - m2_xy_shipped;
+    let d_pot = m2_xy_shipped - m2_xy_valley;
+    let bracket_ok = lower_bound <= measured_m2 && measured_m2 <= m2_spacing;
     let feed_mm_s = FEED_MM_MIN / 60.0;
 
     let all_time = total.in_all_time_s + total.out_all_time_s;
@@ -2194,11 +2334,18 @@ fn evaluate_mask(
          \x20  M2 xfloor, TIME / cut-intent only:            {:.4}x\n\
          \x20  M2 xfloor, TIME / all non-rapid:              {:.4}x   <-- the literal FINDINGS \
          wording\n\
-         \x20  V0-att  M2_spacing (PERFECT raster at the shipped derated spacing): {:.4}x\n\
-         \x20     integral dA/s_shipped = {:.1} mm against L_min {:.1} mm; \
-         {} mask cells had no owning region\n\
-         \x20  V0-att  RESIDUAL = M2(dist, cut-intent) - M2_spacing = {:.4}x\n\
-         \x20     as a share of M2's excess over 1.0: {:.2} pp of {:.2} pp\n\
+         \x20  V0-att v1 (RETIRED, kept as the bracket's UPPER bound)\n\
+         \x20     M2_spacing, surface-pitch: {:.4}x   \
+         (integral dA/s_shipped = {:.1} mm, L_min {:.1} mm, {} unowned cells)\n\
+         \x20     v1 residual M2 - M2_spacing = {:.4}x = {:.2} pp of M2's {:.2} pp excess\n\
+         \x20  ---- V0-att v2, direction-aware XY-pitch model ----\n\
+         \x20  BRACKET  lower {:.4}x  <=  measured M2 {:.4}x  <=  upper {:.4}x   {}\n\
+         \x20  M2_xy(d_shipped)  = {:.4}x   (SUM (a_xy/s_shipped)*sec phi = {:.1} mm)\n\
+         \x20  M2_xy(d_valley)   = {:.4}x   ({} cells fell back to d_shipped, \
+         {} degenerate, {} unowned)\n\
+         \x20  R_topo = M2 - M2_xy(d_shipped)          = {:+.4}x = {:+.2} pp   [context only]\n\
+         \x20  D_pot  = M2_xy(d_shipped) - M2_xy(d_valley) = {:.4}x = {:.2} pp   \
+         [UPPER bound on the direction prize]\n\
          \x20  M3 time-weighted misalignment, region C2 lattice vs local valley axis: {:.3} deg\n\
          \x20     (emitted-move direction vs valley axis: {:.3} deg)  [cross-check]\n\
          \x20     (an isotropic axis field would read 45.000 deg)\n\
@@ -2229,9 +2376,27 @@ fn evaluate_mask(
         spacing_len,
         l_min,
         unowned_cells,
-        total.in_mm / l_min.max(1e-9) - m2_spacing,
-        100.0 * (total.in_mm / l_min.max(1e-9) - m2_spacing),
-        100.0 * (total.in_mm / l_min.max(1e-9) - 1.0),
+        measured_m2 - m2_spacing,
+        100.0 * (measured_m2 - m2_spacing),
+        100.0 * (measured_m2 - 1.0),
+        lower_bound,
+        measured_m2,
+        m2_spacing,
+        if bracket_ok {
+            "BRACKET OK"
+        } else {
+            "BRACKET VIOLATED"
+        },
+        m2_xy_shipped,
+        shipped.len_mm,
+        m2_xy_valley,
+        valley.fallback_cells,
+        valley.degenerate_cells,
+        valley.unowned_cells,
+        r_topo,
+        100.0 * r_topo,
+        d_pot,
+        100.0 * d_pot,
         weighted_angle / angle_weight.max(1e-9),
         weighted_angle_moves / angle_weight.max(1e-9),
         angle_weight,
@@ -2822,28 +2987,36 @@ fn wanaka_valley_prize_census_h0() {
         row.cost = Some(cost);
     }
 
+    // ── mask evaluation ──
+    let ctx = EvalCtx {
+        mesh: &mesh,
+        index: &index,
+        field: &field,
+        surface: &surface,
+        covered: &covered,
+        steep_clamp_deg: planner.steep_threshold_deg,
+        stepover,
+        cell_area,
+        territory_cells,
+        territory_pts: &territory_pts,
+        region_of: &region_of,
+        kinematics: &kinematics,
+        rows: &rows,
+    };
+
     // ── the whole-territory x-floor, for scale ──
     {
-        let mut territory_surface = 0.0f64;
-        let mut territory_spacing_len = 0.0f64;
-        for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
-            if !territory.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let cos = angle.cos();
-            if cos <= 1e-6 {
-                continue;
-            }
-            let d_area = cell_area / cos;
-            territory_surface += d_area;
-            // V0-att over the whole territory: the out-of-mask attribution
-            // falls out of this and the per-mask number.
-            if let Some(row) = usize::try_from(region_of[i]).ok().and_then(|k| rows.get(k)) {
-                territory_spacing_len += d_area / row.derated_stepover_mm;
-            }
-        }
+        // The SAME one-pass model the masks use, so the territory row and the
+        // in-mask rows are the same measure. `d_valley` is deliberately NOT
+        // evaluated here: outside a mask the valley direction is undefined and
+        // a territory figure for it would be meaningless.
+        let model = xy_pitch_model(&ctx, &territory, &|_, shipped_deg| shipped_deg);
+        let territory_surface = model.surface_area_mm2;
+        let territory_spacing_len = model.surface_len_mm;
         let l_min = territory_surface / stepover;
         let territory_m2_spacing = territory_spacing_len / l_min.max(1e-9);
+        let territory_lower = model.flat_len_mm / l_min.max(1e-9);
+        let territory_m2_xy = model.len_mm / l_min.max(1e-9);
         let total_mm: f64 = rows
             .iter()
             .filter_map(|r| r.cost.as_ref())
@@ -2871,10 +3044,16 @@ fn wanaka_valley_prize_census_h0() {
              \x20  xfloor, DISTANCE / cut-intent only:   {:.0} mm => {:.4}x\n\
              \x20  xfloor, DISTANCE / all non-rapid:     {:.0} mm => {:.4}x   \
              (total_cutting_distance)\n\
-             \x20  V0-att  M2_spacing (perfect raster at the shipped derated spacing): {:.4}x\n\
-             \x20     integral dA/s_shipped = {:.1} mm against L_min {:.1} mm\n\
-             \x20  V0-att  RESIDUAL = xfloor(dist, cut-intent) - M2_spacing = {:.4}x\n\
-             \x20     as a share of the excess over 1.0: {:.2} pp of {:.2} pp\n\
+             \x20  V0-att v1 (RETIRED, kept as the bracket's UPPER bound)\n\
+             \x20     M2_spacing, surface-pitch: {:.4}x   \
+             (integral dA/s_shipped = {:.1} mm, L_min {:.1} mm)\n\
+             \x20     v1 residual = {:.4}x = {:.2} pp of the {:.2} pp excess\n\
+             \x20  ---- V0-att v2, direction-aware XY-pitch model ----\n\
+             \x20  BRACKET  lower {:.4}x  <=  measured M2 {:.4}x  <=  upper {:.4}x   {}\n\
+             \x20  M2_xy(d_shipped) = {:.4}x   (SUM (a_xy/s_shipped)*sec phi = {:.1} mm; \
+             {} fallback, {} degenerate, {} unowned cells)\n\
+             \x20  R_topo = M2 - M2_xy(d_shipped) = {:+.4}x = {:+.2} pp   [context only]\n\
+             \x20  (no d_valley on the territory — undefined outside a mask)\n\
              \x20  costed time (cut + links + rapids) {:.1} s over {} regions",
             territory_cells as f64 * cell_area,
             territory_surface,
@@ -2889,27 +3068,27 @@ fn wanaka_valley_prize_census_h0() {
             cut_intent_mm / l_min.max(1e-9) - territory_m2_spacing,
             100.0 * (cut_intent_mm / l_min.max(1e-9) - territory_m2_spacing),
             100.0 * (cut_intent_mm / l_min.max(1e-9) - 1.0),
+            territory_lower,
+            cut_intent_mm / l_min.max(1e-9),
+            territory_m2_spacing,
+            if territory_lower <= cut_intent_mm / l_min.max(1e-9)
+                && cut_intent_mm / l_min.max(1e-9) <= territory_m2_spacing
+            {
+                "BRACKET OK"
+            } else {
+                "BRACKET VIOLATED"
+            },
+            territory_m2_xy,
+            model.len_mm,
+            model.fallback_cells,
+            model.degenerate_cells,
+            model.unowned_cells,
+            cut_intent_mm / l_min.max(1e-9) - territory_m2_xy,
+            100.0 * (cut_intent_mm / l_min.max(1e-9) - territory_m2_xy),
             total_s,
             rows.len()
         );
     }
-
-    // ── mask evaluation ──
-    let ctx = EvalCtx {
-        mesh: &mesh,
-        index: &index,
-        field: &field,
-        surface: &surface,
-        covered: &covered,
-        steep_clamp_deg: planner.steep_threshold_deg,
-        stepover,
-        cell_area,
-        territory_cells,
-        territory_pts: &territory_pts,
-        region_of: &region_of,
-        kinematics: &kinematics,
-        rows: &rows,
-    };
 
     let mask_a: Vec<bool> = (0..field.len())
         .map(|i| territory[i] && buffered_a.inside[i])
