@@ -38,6 +38,9 @@ use rs_cam_core::dropcutter::{DropCutterGrid, batch_drop_cutter};
 use rs_cam_core::finish_planner::FinishPlannerParams;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
+};
 use rs_cam_core::monotone_cells::{
     ELONGATION_GATE, cells_select_same_lattice, honest_raster_direction_deg,
     lattice_monotone_cells, region_frame,
@@ -195,6 +198,13 @@ fn raster_over(grid: &DropCutterGrid, polygons: &[Polygon2], min_z: f64, safe_z:
 /// Relink both arms with the SAME production parameters before comparing —
 /// the E3 lesson (`PROGRAMME.md` Track E): an unfair comparison is worse
 /// than none. Returns `(kept retracts, rapid mm)`.
+/// PROMOTED (Track M, 2026-09-02): the relink+measure kernel is
+/// `rs_cam_core::metrology::costing::relink_and_cost`. This file's copy was
+/// the ONE genuine divergence among the six: it passed
+/// `link_kinematics: None`, so the relink keeps any gouge-safe link instead
+/// of costing each link against the retract it replaces. That behavior is
+/// preserved as the explicit `kinematics: None` arm of `CostingContext`
+/// (`time_s` then reads `NaN` — not measured).
 fn relink_and_measure(
     f: &Fixture,
     raw: Toolpath,
@@ -202,30 +212,22 @@ fn relink_and_measure(
     safe_z: f64,
 ) -> (usize, f64) {
     let region = RegionSet::new(vec![boundary.clone()]);
-    let params = rs_cam_core::surface_link::RelinkParams {
-        hookup_distance: 25.0,
-        stock_to_leave: 0.0,
-        sampling: 0.5,
-        feed_rate: FEED_MM_MIN,
-        plunge_rate: PLUNGE_MM_MIN,
-        safe_z,
-        link_kinematics: None,
-        reorder: true,
-        boundary: Some(&region),
-        link_ceiling: None,
-        flush_ride: false,
-        airborne_links_may_leave_territory: false,
+    let ctx = CostingContext {
+        mesh: &f.mesh,
+        index: &f.index,
+        cutter: &f.cutter,
+        kinematics: None,
+        feeds: CostingFeeds {
+            feed_mm_min: FEED_MM_MIN,
+            plunge_mm_min: PLUNGE_MM_MIN,
+            // Inert under `kinematics: None`: no link costing, no
+            // integrator. This file never had these pins.
+            max_feed_mm_min: FEED_MM_MIN,
+            rapid_feed_mm_min: FEED_MM_MIN,
+        },
     };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
-        &f.mesh,
-        &f.index,
-        &f.cutter,
-        &params,
-    );
-    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
-    let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
-    (report.retract_links, toolpath.total_rapid_distance())
+    let cost = metrology_relink_and_cost(&ctx, raw, &region, safe_z);
+    (cost.kept_retracts, cost.rapid_mm)
 }
 
 /// Every distinct XY the toolpath visits, quantised so float formatting

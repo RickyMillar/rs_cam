@@ -78,6 +78,7 @@ pub mod marching_squares;
 pub mod material;
 pub mod measurement;
 pub mod mesh;
+pub mod metrology;
 pub mod monotone_cells;
 pub mod narrate;
 pub(crate) mod nn_order;

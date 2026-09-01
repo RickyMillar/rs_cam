@@ -101,6 +101,10 @@ use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_can
 use rs_cam_core::geo::P2;
 use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, LinkRegime,
+    relink_and_cost_under as metrology_relink_and_cost_under,
+};
 use rs_cam_core::polygon::{Polygon2, detect_containment, shoelace_area};
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
@@ -1862,81 +1866,18 @@ fn write_named_cell_svg(region: &RegionCells, filename: &str, title: &str) {
 // F-034 integrator.  A cell candidate may only be compared after the emitted
 // lattice membership check below proves it has the baseline's cut population.
 
-struct CandidateCost {
-    moves: usize,
-    cutting_mm: f64,
-    time_s: f64,
-    fragments: usize,
-    linked: usize,
-    kept_retracts: usize,
-    /// Junctions the F-034 link/retract cost gate declined because the link
-    /// was gouge-safe but SLOWER than the retract it would replace. Read by
-    /// Stage L: under a ceiling every kept link grows two vertical legs, so
-    /// this is the channel through which ceiling HEIGHT turns into retracts.
-    slower_than_retract: usize,
-    /// Junctions refused outright because the ceiling reached `safe_z`.
-    /// **Structurally `0`** for any arm with `link_ceiling: None`
-    /// (`surface_link.rs:302-308`), so a zero here is only evidence when a
-    /// ceiling was actually in scope.
-    ceiling_above_safe_z: usize,
-}
+// The comparison kernel is PROMOTED (Track M, 2026-09-02): `CandidateCost`,
+// `LinkRegime`, `relink_and_cost` and `relink_and_cost_under` now live in
+// `rs_cam_core::metrology::costing`, extracted verbatim from this file. The
+// two adapters below keep this instrument's original call shape; the feed
+// pins ride `CostingFeeds` and are this file's own constants, unchanged.
 
-/// Which LINK REGIME an arm is costed in.
-///
-/// [`relink_and_cost`] keeps its fresh-stock behaviour and its signature;
-/// this exists so Stage L can cost the SAME candidate under the ceiling the
-/// live rest op passes, through the same relink site. `safe_z` rides here
-/// rather than as an eighth parameter of the kernel — clippy's
-/// `too_many_arguments` fires at eight.
-#[derive(Clone, Copy)]
-struct LinkRegime<'a> {
-    label: &'static str,
-    safe_z: f64,
-    ceiling: Option<rs_cam_core::surface_link::LinkCeiling<'a>>,
-    flush_ride: bool,
-    airborne: bool,
-}
-
-impl<'a> LinkRegime<'a> {
-    /// The arm every number in FINDINGS §0d–§0h was measured in: no ceiling,
-    /// so a link rides the mesh surface directly.
-    ///
-    /// `flush_ride` and `airborne_links_may_leave_territory` are `false`
-    /// here where production's finishing site sets both `true`
-    /// (`unified_finish.rs:2127`, `:2139`) — and that is **not** a
-    /// divergence: both flags are inert without a ceiling. `flush_ride` is
-    /// documented "Ignored when `link_ceiling` is `None`", and the airborne
-    /// exemption is conjunctive with the link's shape, so a surface-riding
-    /// link "stays vetoed everywhere, whatever this flag says"
-    /// (`surface_link.rs:252`, `:281-285`).
-    fn fresh_stock(safe_z: f64) -> Self {
-        Self {
-            label: "fresh",
-            safe_z,
-            ceiling: None,
-            flush_ride: false,
-            airborne: false,
-        }
-    }
-
-    /// The arm the LIVE tier runs in: a rest op's ceiling, with the two op
-    /// priors production's finishing site sets — `flush_ride: true` (flush
-    /// ground under a ceiling is the PRIOR pass's machined output, so riding
-    /// it is a sub-cusp skim) and `airborne_links_may_leave_territory: true`
-    /// (G-LINKVETO: the region polygon confines CUTTING, not an airborne
-    /// hop). Both read from `unified_finish.rs:2101-2140`.
-    fn rest_op(
-        label: &'static str,
-        safe_z: f64,
-        ceiling: rs_cam_core::surface_link::LinkCeiling<'a>,
-    ) -> Self {
-        Self {
-            label,
-            safe_z,
-            ceiling: Some(ceiling),
-            flush_ride: true,
-            airborne: true,
-        }
+fn costing_feeds() -> CostingFeeds {
+    CostingFeeds {
+        feed_mm_min: FEED_MM_MIN,
+        plunge_mm_min: PLUNGE_MM_MIN,
+        max_feed_mm_min: MAX_FEED_MM_MIN,
+        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
     }
 }
 
@@ -1960,11 +1901,6 @@ fn relink_and_cost(
     )
 }
 
-/// [`relink_and_cost`] with the link regime as a parameter. The relink
-/// parameters that are NOT the regime are the production ones and are
-/// identical in every arm — `hookup_distance` 25.0 (the operator's
-/// `intra_region_hookup_mm`, `wanaka200_mt2.toml:949`), `sampling` 0.5,
-/// tier-1 feeds, `reorder: true`, and the region's own polygon as boundary.
 fn relink_and_cost_under(
     raw: rs_cam_core::toolpath::Toolpath,
     mesh: &TriangleMesh,
@@ -1974,46 +1910,14 @@ fn relink_and_cost_under(
     kinematics: &rs_cam_core::machine_kinematics::MachineKinematics,
     regime: LinkRegime<'_>,
 ) -> CandidateCost {
-    use rs_cam_core::machine_kinematics::{LinkKinematics, compute_cycle_time};
-
-    let link_kinematics = LinkKinematics {
-        kinematics: *kinematics,
-        max_feed_mm_min: MAX_FEED_MM_MIN,
-        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
-    };
-    let params = rs_cam_core::surface_link::RelinkParams {
-        hookup_distance: 25.0,
-        stock_to_leave: 0.0,
-        sampling: 0.5,
-        feed_rate: FEED_MM_MIN,
-        plunge_rate: PLUNGE_MM_MIN,
-        safe_z: regime.safe_z,
-        link_kinematics: Some(&link_kinematics),
-        reorder: true,
-        boundary: Some(boundary),
-        link_ceiling: regime.ceiling,
-        flush_ride: regime.flush_ride,
-        airborne_links_may_leave_territory: regime.airborne,
-    };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
+    let ctx = CostingContext {
         mesh,
         index,
         cutter,
-        &params,
-    );
-    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
-    let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
-    CandidateCost {
-        moves: toolpath.moves.len(),
-        cutting_mm: toolpath.total_cutting_distance(),
-        time_s: compute_cycle_time(&toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN),
-        fragments: report.fragments,
-        linked: report.surface_links,
-        kept_retracts: report.retract_links,
-        slower_than_retract: report.slower_than_retract,
-        ceiling_above_safe_z: report.ceiling_above_safe_z,
-    }
+        kinematics: Some(kinematics),
+        feeds: costing_feeds(),
+    };
+    metrology_relink_and_cost_under(&ctx, raw, boundary, &regime)
 }
 
 fn raster_candidate(
