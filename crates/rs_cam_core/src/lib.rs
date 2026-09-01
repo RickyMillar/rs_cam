@@ -110,6 +110,7 @@ pub mod simulation;
 pub mod simulation_cut;
 pub mod slope;
 pub mod spiral_finish;
+pub mod spiral_finish_compact;
 pub mod steep_shallow;
 #[cfg(feature = "step")]
 pub mod step_input;
