@@ -243,3 +243,118 @@ Consequences:
 - Instrument: `crates/rs_cam_core/tests/shipped_raster_spacing_b1.rs`
 - Full output: reproduce with the command at the top of this section.
 
+---
+
+# Fix acceptance (2026-09-01, operator ruling: ALWAYS ON, no dial)
+
+**Status of this block: PRE-REGISTERED before the post-fix run.** The fix
+derates each Shallow region's effective raster stepover by
+`cos(theta_max)` before any lattice is built. `theta_max` is the maximum
+slope the region's covered cells carry, read from the classification
+slope map and clamped to the planner's `steep_threshold_deg`
+(`unified_finish::shallow_region_max_slope_deg`). Regions at
+`theta_max <= 1 deg` keep the shared 0-degree memo unchanged
+(`SHALLOW_DERATE_MIN_SLOPE_DEG`; `sec(1 deg) - 1 = 0.00015`). Each derate
+is reported through `ToolpathStats::derived_stepovers` with region index,
+`theta_max`, the configured value, and the derated value.
+
+## Registered falsifiers, before the post-fix run
+
+- **F-FIX1 (spacing):** the reworked `shipped_raster_spacing_b1`
+  instrument must read CLEAN (`achieved <= 1.02 x s_max`) on BOTH plane
+  fixtures and STAY clean on the sphere. Any fixture above the bar
+  falsifies the fix.
+- **F-FIX2 (motion agrees with the report):** the emitted rows must be
+  XY-uniform at the report's own `derated_stepover_mm` (tolerance
+  1e-6 mm). A disagreement means the audit trail lies about the motion.
+- **F-FIX3 (flat identity):** a flat fixture's emission must be
+  byte-identical to the pre-fix arm: no derate entry, rows exactly at the
+  configured stepover, on the shared memo path. Sentried (non-ignored) in
+  `crates/rs_cam_core/tests/shallow_raster_slope_derate.rs`.
+- **F-FIX4 (price):** the instrument's cutting-distance and x-floor
+  columns are re-read after the fix and reported beside the pre-fix
+  table. Expectation from the pre-fix honest arm: ~1.09x (20 deg) and
+  ~1.25x (40 deg) cutting distance; x floor ~1.0 on the planes.
+
+## Results (post-fix run, 2026-09-01, same command as the Track B run)
+
+**ALL FOUR FALSIFIERS PASS. OVERALL VERDICT: CLEAN.** The instrument now
+asserts the CLEAN bar and is the standing fix-acceptance gate.
+
+| fixture | theta_max (report) | effective s_XY (mm) | max achieved / s_max | verdict |
+|---|---|---|---|---|
+| SPHERE CAP (R_s 20, cap r 6) | 16.818 deg | 0.45403 | 0.9391 | CLEAN |
+| PLANE 20 deg | 20.000 deg | 0.45689 | **1.0000** | CLEAN |
+| PLANE 40 deg | 40.000 deg | 0.37246 | **1.0000** | CLEAN |
+
+- **F-FIX1** passed: both planes land at exactly 1.0000 x s_max; the
+  sphere stays clean and moves DOWN (0.9818 -> 0.9391 — the convex
+  refund plus the derate; the conservatism is the accepted v1 cost).
+- **F-FIX2** passed: emitted Delta-y equals the report's
+  `derated_stepover_mm` to < 1e-6 mm on every fixture.
+- **F-FIX3** passed: the flat sentry takes no derate and emits rows at
+  the configured stepover exactly; the `crease_own_region_pr6b` taper
+  pin (a real production fixture) is byte-identical through the change.
+- **F-FIX4** — the measured price (vs the pre-fix shipped table above):
+
+| fixture | cut mm (pre-fix) | cut mm (post-fix) | ratio | x floor (pre) | x floor (post) |
+|---|---|---|---|---|---|
+| SPHERE CAP | 308.1 | 311.6 | 1.011x | 1.262 | 1.277 |
+| PLANE 20 | 310.1 | 338.9 | 1.093x | 0.984 | 1.075 |
+| PLANE 40 | 312.3 | 390.2 | 1.249x | 0.808 | 1.009 |
+
+The plane rows are numerically IDENTICAL to the pre-fix manual honest
+arm — the internal derate reproduces it exactly. The 40-degree plane
+sits at 1.009x the theoretical floor with spacing at spec.
+
+## Implementation record
+
+- `crates/rs_cam_core/src/unified_finish.rs`: `FinishBand::Shallow` arm
+  derates before any lattice exists; `shallow_region_max_slope_deg`
+  (covered-neighbour guard + steep-threshold clamp);
+  `SHALLOW_DERATE_MIN_SLOPE_DEG = 1.0`; a derated region gets a private
+  region-windowed lattice (the C2 rotated-arm construction), and the C2
+  decomposition and emission share it — one frame, one lattice.
+- Audit trail: `UnifiedFinishReport::shallow_slope_derates` ->
+  `ToolpathStats::derived_stepovers` (`DerivedStepoverFinding` gained
+  `slope_derate: Option<SlopeDerateDetail>`), rendered by the
+  `CONFIG_DERIVED_STEPOVER` diagnostic with its own message arm.
+- Sentries: `crates/rs_cam_core/tests/shallow_raster_slope_derate.rs`
+  (flat identity + 30-degree derate, non-ignored); the reworked
+  `shipped_raster_spacing_b1` asserts CLEAN.
+- Wanaka expectation (stated, not yet measured on the GUI): shallow
+  regions carrying slope up to the 45-degree band edge derate by up to
+  cos 45 = 0.707, so shallow-band cutting distance grows by up to
+  1.41x on the steepest shallow regions and by ~1.1-1.25x on
+  20-40-degree ground; mid-steep and very-steep bands are untouched.
+  Each sloped region also builds its own windowed lattice (the C2
+  rotated-arm cost). This buys the configured scallop actually being
+  met — the pre-fix speed was under-delivery, not efficiency.
+
+
+## The wanaka price, measured (2026-09-01, CLI `project`, 0.3 mm, worktree at `8cd15837`)
+
+`planning/multitool_2026-08-23/wanaka200_mt2.toml`, both C2 dial arms,
+post-fix, against the §7 pre-fix records (`thin_organic_2026-08-27/
+FINDINGS.md` §7). Runtimes are the integrated machine estimate
+(`total_runtime_s` / `toolpath_runtimes`), the same wire §7 read.
+
+| | pre-fix | post-fix | ratio |
+|---|---:|---:|---|
+| C2 OFF: Finish tier 0 (R1.5) | 5,581.4 s | 6,566.2 s | 1.176x |
+| C2 OFF: Finish tier 1 (R1.0) | 12,270.6 s | 13,704.9 s | 1.117x |
+| C2 OFF: whole project | 25,938.8 s | 28,361.2 s | **1.093x (+40.4 min)** |
+| C2 ON: Finish tier 0 (R1.5) | 5,137.3 s | 5,828.2 s | 1.134x |
+| C2 ON: Finish tier 1 (R1.0) | 11,234.7 s | 12,193.4 s | 1.085x |
+| C2 ON: whole project | 24,447.9 s | 26,108.2 s | **1.068x (+27.7 min)** |
+
+Reading:
+
+- Against the recorded 24,447.9 s dial-on baseline the operator will
+  feel **+27.7 min on this board (1.068x)** — inside the 1.09–1.25x
+  fixture bracket, because most of the board's shallow area is gentle.
+- Only the two unified-finish tiers moved; the derate touches no other
+  operation type.
+- The pre-fix runtimes bought spacing the spec did not permit on the
+  sloped fraction; the delta is the price of the finish the raster was
+  being credited with.

@@ -269,7 +269,7 @@ and status; its FINDINGS.md carries the evidence.
 | Track | Avenue | Dir | Status |
 |---|---|---|---|
 | A | C4 + Phase U operator reviews | evidence: `~/Downloads/c4_review/`, `thin_organic_2026-08-27/FINDINGS.md` §7 | **C4 PASSED** (2026-09-01, pattern evidence — see §7 ruling); **Phase U island placement RATIFIED** (operator: "the filled island looks good"); **spiral appearance APPROVED** (operator, dish SVG pair) — Track C moves to a productisation ticket |
-| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. Fix decision is the operator's — see §9 |
+| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. **FIXED, ALWAYS ON** (operator ruling + implementation 2026-09-01 — see §9) |
 | C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | **COMPLETE — BAR MET** (`c7beb6b3`/`aec52a65`): sphere 1.113× floor, dish 1.223×, 0 retracts, 0.0000 % unmachined, spacing within 0.8 % of spec, bridge overhead ~5.6–5.8 %. Research module `spiral_finish_compact.rs`, refusal-first on non-compact shapes. Next gate: operator appearance review of the SVGs, then productisation decision |
 | D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | **CLOSED — GATES FAIL** (`c4710501`): prize ceiling +3.85 % vs the 5 % bar (gate 1 fail) even though coherence passes at 3.45 stepovers, w30 0.887 (gate 2 pass); negative control separated. Structural finding: the coherence gate 2 demands is exactly what lets a fixed per-region angle capture ~half the prize, so the field's margin over a rotated raster cannot clear the bar in this class at R = 1.0 mm. The direction-field family is now closed at the gate on BOTH geometry classes — terrain fails coherence, swept sheets fail the prize. Salvage: the swept-sheet coherence result argues FOR C2's shipped per-region rotation |
 | E | folded into Track B step 2 | — | — |
@@ -291,6 +291,19 @@ decision — derate globally per region, derate locally, or expose a dial
 — changes every sloped shallow job's runtime and finish, so it binds on
 the operator. Every prior "raster wins by <25 %" margin on sloped ground
 is undecided until candidates are re-scored at equal achieved scallop.
+
+**DECISION (operator, 2026-09-01): fix it, ALWAYS ON — no dial.** Derate
+per region by cos θ_max of that region's measured slope. The convex-
+refund conservatism is accepted for v1; no curvature-aware refund.
+
+**IMPLEMENTED (2026-09-01).** The Shallow arm derates before any lattice
+is built (`unified_finish::shallow_region_max_slope_deg`, floor 1°,
+clamp at the planner's steep threshold), reports each derate through
+`ToolpathStats::derived_stepovers`, and the reworked
+`shipped_raster_spacing_b1` instrument is the standing acceptance gate:
+CLEAN on all three fixtures, planes at exactly 1.0000× s_max, flat
+ground byte-identical. Record: `honest_raster_2026-09-01/FINDINGS.md`
+§"Fix acceptance".
 
 ## 10. Track D consequence — the direction-field question is answered, cheaply (2026-09-01)
 

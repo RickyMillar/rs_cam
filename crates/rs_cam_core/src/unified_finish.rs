@@ -1180,6 +1180,38 @@ pub struct UnifiedFinishReport {
     /// `membership_fallbacks == 0` is measured-clean. Never coerce the
     /// absent value to zero (X6 / the `ToolpathStats` contract).
     pub monotone_cells: Option<MonotoneCellTotals>,
+    /// Honest-raster derates (Track B, 2026-09-01): one entry per Shallow
+    /// region whose raster stepover was tightened by `cos(theta_max)`.
+    /// Empty = no Shallow region carried slope above
+    /// [`SHALLOW_DERATE_MIN_SLOPE_DEG`], so every region used the
+    /// configured `raster_stepover` unchanged. Folded into
+    /// `ToolpathStats::derived_stepovers` by the op adapter.
+    pub shallow_slope_derates: Vec<ShallowSlopeDerate>,
+}
+
+/// One Shallow region's honest-raster stepover derate (Track B fix).
+///
+/// The shipped Shallow raster spaces its passes in XY projection, so on a
+/// slope `theta` the achieved surface spacing is `s_XY / cos(theta)` —
+/// wider than the configured value. The fix derates the effective XY
+/// stepover by `cos(theta_max)` of the region, which lands the achieved
+/// surface spacing at the configured value on the region's worst slope
+/// (`planning/honest_raster_2026-09-01/FINDINGS.md`). The operator's
+/// `raster_stepover` dial is not rewritten; this record is the audit trail
+/// for the derived value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShallowSlopeDerate {
+    /// Index into the decomposition's `planned.regions`.
+    pub region_index: usize,
+    /// The maximum slope (deg) the region's covered cells carry, read from
+    /// the classification slope map and clamped to the planner's steep
+    /// threshold (see `shallow_region_max_slope_deg`).
+    pub slope_max_deg: f64,
+    /// The operator's `raster_stepover` (mm), unchanged.
+    pub configured_stepover_mm: f64,
+    /// The stepover (mm) the region's lattice was actually built at:
+    /// `configured_stepover_mm * cos(slope_max_deg)`.
+    pub derated_stepover_mm: f64,
 }
 
 /// What the C2 shallow-band decomposition did, summed over every Shallow
@@ -2057,6 +2089,44 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 (tp, anns)
             }
             FinishBand::Shallow => {
+                // Honest raster (Track B fix, 2026-09-01, ALWAYS ON): the
+                // raster spaces its passes in XY projection, so on a slope
+                // theta the achieved SURFACE spacing is s_XY / cos(theta) —
+                // up to 1.31x the configured scallop spec at 40°
+                // (`planning/honest_raster_2026-09-01/FINDINGS.md`). Derate
+                // the effective stepover by cos(theta_max) of THIS region,
+                // BEFORE any lattice is built, so the derated value flows
+                // identically into the undivided raster and the C2 cell
+                // decomposition — one frame, one lattice (§0j).
+                //
+                // theta_max is the total slope, not the cross-feed slope, so
+                // the derate is exact on the worst cross-feed slope and
+                // conservative elsewhere. On convex ground contact focusing
+                // refunds sec(theta) up to ~18°, so the derate is knowingly
+                // conservative there too — accepted for v1 (synthesis §1
+                // caveat); no curvature-aware refund is built.
+                let theta_max_deg = shallow_region_max_slope_deg(
+                    &surface,
+                    &covered,
+                    &region_set,
+                    planner.steep_threshold_deg,
+                );
+                let derated = theta_max_deg > SHALLOW_DERATE_MIN_SLOPE_DEG;
+                let step_over_mm = if derated {
+                    params.raster_stepover * theta_max_deg.to_radians().cos()
+                } else {
+                    // cos(0) = 1: a flat region's lattice is bit-identical
+                    // to the pre-fix one (it IS the shared memo below).
+                    params.raster_stepover
+                };
+                if derated {
+                    report.shallow_slope_derates.push(ShallowSlopeDerate {
+                        region_index,
+                        slope_max_deg: theta_max_deg,
+                        configured_stepover_mm: params.raster_stepover,
+                        derated_stepover_mm: step_over_mm,
+                    });
+                }
                 // C2: choose this region's working FRAME before any lattice
                 // is touched. Cheap — polygon-only — and it decides whether
                 // the shared 0° memo can serve this region at all.
@@ -2066,7 +2136,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 let frame = if params.monotone_cell_decomposition {
                     Some(crate::monotone_cells::region_frame(
                         &region.polygon,
-                        params.raster_stepover,
+                        step_over_mm,
                     ))
                 } else {
                     None
@@ -2090,32 +2160,44 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 // containment). A whole-mesh lattice per gate-passing region
                 // measured ~35 min of generation on the 192-region mt2
                 // board against ~2 min dial-off (§7 follow-up 1).
-                let rotated_grid = match frame {
-                    Some(f) if f.rotated => Some(build_shallow_raster_grid(
+                // A rotated OR derated region gets its OWN lattice: the
+                // shared memo is built at the configured stepover and 0°,
+                // and a derated region's lattice must carry the derated
+                // step. Same whole-mesh origin/phase, region-windowed —
+                // the construction the rotated C2 arm already uses.
+                let direction_deg = frame.as_ref().map_or(0.0, |f| f.direction_deg);
+                let private_grid = if frame.as_ref().is_some_and(|f| f.rotated) || derated {
+                    Some(build_shallow_raster_grid(
                         mesh,
                         index,
                         cutter,
                         params,
-                        f.direction_deg,
-                        Some(region_sampling_window(
-                            &region.polygon,
-                            params.raster_stepover,
-                        )),
+                        step_over_mm,
+                        direction_deg,
+                        Some(region_sampling_window(&region.polygon, step_over_mm)),
                         cancel,
-                    )?),
-                    _ => None,
+                    )?)
+                } else {
+                    None
                 };
-                let grid = if let Some(grid) = rotated_grid.as_ref() {
+                let grid = if let Some(grid) = private_grid.as_ref() {
                     grid
                 } else {
                     match shallow_grid.as_ref() {
                         Some(grid) => grid,
                         // NO window: this lattice is the memo SHARED by every
-                        // non-rotated Shallow region, so it must cover all of
-                        // them. Windowing it to whichever region happened to
-                        // build it first would blind the rest.
+                        // non-rotated, non-derated Shallow region, so it must
+                        // cover all of them. Windowing it to whichever region
+                        // happened to build it first would blind the rest.
                         None => shallow_grid.insert(build_shallow_raster_grid(
-                            mesh, index, cutter, params, 0.0, None, cancel,
+                            mesh,
+                            index,
+                            cutter,
+                            params,
+                            params.raster_stepover,
+                            0.0,
+                            None,
+                            cancel,
                         )?),
                     }
                 };
@@ -2608,11 +2690,13 @@ struct RegionPath {
 /// memo needs, since it serves every region). Build the box with
 /// [`region_sampling_window`], which carries the proof that it is a superset
 /// of everything the band can emit for that region.
+#[allow(clippy::too_many_arguments)] // lattice dials (step, direction, window) ride beside the op params, mirroring the C2 call sites
 fn build_shallow_raster_grid(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &UnifiedFinishParams,
+    step_over_mm: f64,
     direction_deg: f64,
     window: Option<[f64; 4]>,
     cancel: &dyn CancelCheck,
@@ -2639,7 +2723,7 @@ fn build_shallow_raster_grid(
         index,
         cutter,
         &LatticeSampling {
-            step_over: params.raster_stepover,
+            step_over: step_over_mm,
             direction_deg,
             min_z: effective_min_z,
             window,
@@ -2696,6 +2780,78 @@ fn build_shallow_raster_grid(
     }
     check_cancel(cancel)?;
     Ok(grid)
+}
+
+/// Slope (deg) below which the Shallow honest-raster derate does not run.
+///
+/// `sec(1°) - 1 = 0.00015` — three orders of magnitude under the 2%
+/// acceptance tolerance the Track B instrument uses (`CLEAN` at
+/// `<= 1.02 x s_max`). Skipping the derate under this floor keeps a flat
+/// region on the shared 0° memo, byte-identical to the pre-fix emission,
+/// and avoids one private lattice build per effectively-flat region.
+const SHALLOW_DERATE_MIN_SLOPE_DEG: f64 = 1.0;
+
+/// The maximum slope (deg) one Shallow region's covered cells carry, read
+/// from the classification slope map — `theta_max` for the honest-raster
+/// derate (Track B fix).
+///
+/// Two guards:
+///
+/// * A cell counts only when it AND its in-grid 4-neighbours are
+///   geometrically covered. An uncovered cell carries the `min_z`
+///   bbox-floor clamp in the Z grid (see [`crate::slope::GridZ`]), so the
+///   finite differences beside a coverage edge read a cliff the mesh does
+///   not have; such a cliff must not set the derate.
+/// * The result is clamped to `clamp_deg` (the planner's
+///   `steep_threshold_deg`). The seam dilation (`overlap_mm`) can pull a
+///   fringe of steeper cells into a Shallow polygon; those cells belong to
+///   the neighbouring band's mechanism, and one near-vertical fringe cell
+///   would collapse the stepover.
+///
+/// A region with no qualifying cell returns `0.0` — no derate. Such a
+/// region is all rim; it has no measured slope to derate against.
+fn shallow_region_max_slope_deg(
+    surface: &FinishSurface,
+    covered: &[bool],
+    regions: &RegionSet<'_>,
+    clamp_deg: f64,
+) -> f64 {
+    let cols = surface.cols();
+    if cols == 0 {
+        return 0.0;
+    }
+    let rows = surface.slope_map.rows;
+    let cell = surface.cell_size();
+    let origin_x = surface.slope_map.origin_x;
+    let origin_y = surface.slope_map.origin_y;
+    let geom = surface.heightmap.covered_flags();
+    let geom_at =
+        |row: usize, col: usize| -> bool { geom.get(row * cols + col).copied().unwrap_or(false) };
+
+    let mut max_rad = 0.0_f64;
+    for (i, &angle) in surface.slope_map.angles.iter().enumerate() {
+        if !covered.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        let row = i / cols;
+        let col = i % cols;
+        // In-grid 4-neighbours must be geometrically covered, or this
+        // cell's gradient read the coverage cliff.
+        let neighbours_ok = geom_at(row, col)
+            && (row == 0 || geom_at(row - 1, col))
+            && (row + 1 >= rows || geom_at(row + 1, col))
+            && (col == 0 || geom_at(row, col - 1))
+            && (col + 1 >= cols || geom_at(row, col + 1));
+        if !neighbours_ok {
+            continue;
+        }
+        let x = origin_x + col as f64 * cell;
+        let y = origin_y + row as f64 * cell;
+        if regions.contains(&P2::new(x, y)) {
+            max_rad = max_rad.max(angle);
+        }
+    }
+    max_rad.to_degrees().min(clamp_deg)
 }
 
 /// The world-frame box of whole-mesh lattice points ONE Shallow region can
@@ -3224,6 +3380,7 @@ mod tests {
             &index,
             &cutter,
             &params,
+            params.raster_stepover,
             direction_deg,
             None,
             &never_cancel,
@@ -3234,6 +3391,7 @@ mod tests {
             &index,
             &cutter,
             &params,
+            params.raster_stepover,
             direction_deg,
             Some(region_sampling_window(&region, params.raster_stepover)),
             &never_cancel,

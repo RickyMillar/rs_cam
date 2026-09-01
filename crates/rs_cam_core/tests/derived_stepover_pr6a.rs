@@ -456,10 +456,16 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
         .expect("a generated result")
         .stats
         .clone();
-    let finding =
-        stats.derived_stepovers.first().copied().expect(
-            "the claims pipeline ran on the ball too — 'not measured' would hide a regression",
-        );
+    // Select the CLAIMS-site finding by site. Since the Track B honest
+    // raster (2026-09-01) the vector can also carry slope-derate entries
+    // for sloped Shallow regions; those are a different derivation with
+    // its own contract and do not test this control.
+    let finding = stats
+        .derived_stepovers
+        .iter()
+        .find(|f| f.slope_derate.is_none())
+        .copied()
+        .expect("the claims pipeline ran on the ball too — 'not measured' would hide a regression");
     println!(
         "PR-6a ball: derived {:.4} mm, envelope rule {:.4} mm",
         finding.stepover_mm, finding.envelope_rule_mm
@@ -474,10 +480,13 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
         ToolpathId(0),
         &stats,
     );
+    // The reach-policy site must stay silent. A slope-derate diagnostic
+    // (message names its own site) is a real derivation and may report.
     assert!(
-        !diags
-            .iter()
-            .any(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::CONFIG_DERIVED_STEPOVER),
-        "nothing moved on a ball, so nothing may be reported"
+        !diags.iter().any(|d| {
+            d.id.as_str() == rs_cam_core::diagnostics::ids::CONFIG_DERIVED_STEPOVER
+                && !d.message.contains("slope derate")
+        }),
+        "nothing moved on a ball, so the reach-policy site may not report"
     );
 }
