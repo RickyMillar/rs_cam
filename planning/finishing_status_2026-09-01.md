@@ -346,3 +346,39 @@ An earlier note in this session said the skip was "off in the project" —
 that was wrong (inferred from the planner dial's default instead of the
 project's boundary) and is corrected here. No A/B is worth running: the
 skip-off arm has nothing to teach.
+
+## 12. G-UNIONCOV — multi-op finishing has NO whole-board coverage check (2026-09-01, operator-caught)
+
+An overlap/floor variant (`wanaka200_mt2_overlap02.toml`: tier + region
+overlap 2.0 → 0.2 mm, region floors 100/50 mm²) read **clean on every
+wire** — `untouched_material_mm2 0.0`, `reached_uncut_estimate 0.0`,
+zero collisions, air-cut verdict OK — while leaving standing material
+across whole patches of the fine-detail territory. The operator caught
+it by eye in the simulation view. Confirmed two ways: the side-by-side
+stock render, and arithmetic — tier 1 emitted 16,112 mm of cutting,
+which at its stepover covers ~7,800 mm² against 9,652 mm² of owned
+islands.
+
+**The mechanism of the silent pass:** every coverage finding is measured
+PER OP against that op's own boundary. A multi-op tier chain can have
+every op clean inside its territory while strips or patches between the
+territories belong to no op. There is no union-coverage-vs-target
+instrument on any wire. This is the same defect class as the empty-gate
+vacuous pass (2026-08-05) and the fifth instance of a
+metric-blind-spot deciding a verdict.
+
+**Status:** variant REJECTED and deleted from the GUI (the saved
+project was never modified). The apparent 1.67× saving is void. Two
+suspects, deliberately not yet separated: (a) the region floors
+absorbing small band islands whose "surrounding band" lies outside the
+op boundary; (b) 0.2 mm overlap + `center` containment leaving
+unowned seam ribbons. **Attribution is gated on building the union
+instrument first** — one whole-board comparison of final simulated
+stock vs target surface + stock_to_leave, reported per project, so a
+boundary change can never silently pass again. Until it exists, any
+boundary-config change is validated only by operator eyeball.
+
+**What stays true:** the fringe cost is real — baseline tier 1 spends
+~6× its owned area cutting the 2 mm blend band around dendritic
+coastlines. The prize for a SAFE overlap reduction is large; it must be
+re-approached one dial at a time, under the union instrument.
