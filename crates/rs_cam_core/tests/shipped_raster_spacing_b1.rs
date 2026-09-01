@@ -277,9 +277,11 @@ fn plane_fixture(theta_deg: f64, honest_stepover_mm: f64) -> Fixture {
 
 // ---- The shipped arm -------------------------------------------------------
 
-/// Run the SHIPPED orchestrator once. Everything except `raster_stepover`
-/// is the default shape: `monotone_cell_decomposition: false` means the
-/// shared 0-degree lattice — byte-identical to the pre-C2 shipped band.
+/// Run the SHIPPED orchestrator once, with
+/// `monotone_cell_decomposition` pinned OFF: the shared 0-degree lattice,
+/// byte-identical to the pre-C2 shipped band. That was the default shape
+/// until the 2026-09-01 flip (C4 ruling); this instrument pins it because
+/// it measures the undivided raster's spacing.
 ///
 /// `intra_region_hookup_mm` is pinned to `0.0` (the
 /// `shallow_band_stock_to_leave_exhibit_d16_2.rs` precedent) so the emitted
@@ -296,6 +298,10 @@ fn run_shipped(
         raster_stepover: raster_stepover_mm,
         scallop_height: CUSP_HEIGHT_MM,
         intra_region_hookup_mm: 0.0,
+        // Pinned OFF since the 2026-09-01 default flip (C4 ruling): this
+        // instrument measures the UNDIVIDED shared-lattice raster, per the
+        // doc above, so it must not follow the new default.
+        monotone_cell_decomposition: false,
         ..UnifiedFinishParams::default()
     };
     // `for_tool` takes the CUSP radius, never `radius()` (its own doc; the

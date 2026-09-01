@@ -1062,7 +1062,9 @@ pub struct UnifiedFinishConfig {
     /// rastered on that ONE shared lattice, so the relinker sees cell-shaped
     /// fragments instead of one dendritic region's worth of them.
     ///
-    /// Default `false` = off, **byte-identical to the pre-C2 op**.
+    /// Default `true` since 2026-09-01 (C4 operator surface review passed —
+    /// `FINDINGS.md` §7, "C4 ruling"). Pin `false` on an operation to get
+    /// the pre-C2 op byte-for-byte.
     ///
     /// What it is NOT, each having been measured and refuted: no per-cell
     /// sweep direction (§0j, a 0.917× cost), no cell TSP (§0j, byte-identical
@@ -1072,9 +1074,9 @@ pub struct UnifiedFinishConfig {
     /// Measured value on the operator's wanaka relief under the realistic
     /// machined-stock link ceiling (§0i): **1.155×** across the top-three
     /// shallow regions, **1.215×** on the one region that clears the
-    /// elongation gate. Those are RIG ceilings to approach, not promises,
-    /// and the C4 rendered-surface review binds adoption — cell seams change
-    /// the cusp pattern.
+    /// elongation gate. Those are RIG ceilings to approach, not promises.
+    /// The C4 rendered-surface review bound adoption because cell seams
+    /// change the cusp pattern; the operator passed it 2026-09-01.
     #[serde(default = "default_unified_finish_monotone_cell_decomposition")]
     pub monotone_cell_decomposition: bool,
     /// INTRA-region stay-down linking (`planning/unified_v3_design.md`
@@ -1282,15 +1284,20 @@ fn default_unified_finish_territory_clip() -> bool {
     false
 }
 
-/// C2 ships INERT (X5). An absent key loads `false`, which is the pre-C2
-/// band byte-for-byte, so no existing project file changes.
+/// **ON since 2026-09-01 — an operator's call, on the C4 surface review.**
+///
+/// C2 shipped INERT (X5) until the C4 rendered-surface review passed
+/// (`planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4 ruling"). An
+/// absent key now loads `true`: a legacy project file gets the cell
+/// decomposition. A project that pins `false` keeps `false` — that is the
+/// per-operation opt-out, and the X5 back-compat test pins both directions.
 ///
 /// Kept in lockstep with
 /// [`crate::unified_finish::UnifiedFinishParams::default`]'s own value — a
 /// core default and a serde default that disagree is a divergence class this
 /// repo has already found twice.
 fn default_unified_finish_monotone_cell_decomposition() -> bool {
-    false
+    true
 }
 
 /// **ON at 6.0 mm since 2026-08-03 — an operator's call, on measured
@@ -2462,17 +2469,21 @@ mod tests {
         // S4 (`territory_clip`) postdates this legacy payload too — must
         // default off, same backcompat contract as its S1/S2 siblings.
         assert!(!cfg.territory_clip);
-        // C2 (`monotone_cell_decomposition`) postdates all of them. X5: an
-        // absent key must load OFF, which is the pre-C2 band byte-for-byte.
-        assert!(!cfg.monotone_cell_decomposition);
-        // …and a project that PINS it keeps it, so the dial is reachable
-        // through project IO in both directions.
+        // C2 (`monotone_cell_decomposition`) postdates all of them. The dial
+        // shipped inert under X5 until the C4 operator surface review passed
+        // (2026-09-01, `planning/thin_organic_2026-08-27/FINDINGS.md` §7 "C4
+        // ruling"); the default is now ON. An absent key loads ON: a legacy
+        // file gets the cell decomposition.
+        assert!(cfg.monotone_cell_decomposition);
+        // …and a project that PINS `false` keeps `false`, so per-operation
+        // opt-out stays expressible and the dial is reachable through
+        // project IO in both directions.
         let pinned = legacy.replace(
             "\"plunge_rate\": 500.0",
-            "\"plunge_rate\": 500.0, \"monotone_cell_decomposition\": true",
+            "\"plunge_rate\": 500.0, \"monotone_cell_decomposition\": false",
         );
         let cfg: UnifiedFinishConfig = serde_json::from_str(&pinned).unwrap();
-        assert!(cfg.monotone_cell_decomposition);
+        assert!(!cfg.monotone_cell_decomposition);
     }
 
     /// A/M6: the resolution table, exhaustively. Six inputs, six outcomes,

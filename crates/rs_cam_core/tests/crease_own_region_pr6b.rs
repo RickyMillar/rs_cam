@@ -516,6 +516,21 @@ fn production_unified_finish_output_is_byte_identical() {
     // the lane that found it; if a third intent-only refresh lands here,
     // that is the signal to split it into a geometry pin and an intent
     // pin.
+    //
+    // Re-pinned 2026-09-01 for the `monotone_cell_decomposition` default
+    // flip (C4 operator ruling,
+    // `planning/thin_organic_2026-08-27/FINDINGS.md` §7 "C4 ruling"). This
+    // one IS a geometry change, by design: the production default now
+    // decomposes each Shallow region into monotone cells, so this session
+    // (default config, no pin) emits cell-shaped fragments. Measured on
+    // this exact fixture:
+    //
+    //   arm     moves  hash                      moves  hash (after)
+    //   taper   1464   0xe5f1228e888f5d73    ->  1481   0x5748d2a216607e5c
+    //   ball     972   0x7990ae0c64dbba88    ->   983   0x2350977058f01265
+    //
+    // The pre-flip emission stays reachable: pin
+    // `monotone_cell_decomposition: false` on the operation.
     /// `(move count, geometry hash)` — what `fingerprint` returns.
     type Fp = (usize, u64);
     let mut drift: Vec<(&str, Fp, Fp)> = Vec::new();
@@ -523,9 +538,9 @@ fn production_unified_finish_output_is_byte_identical() {
         (
             "taper",
             tapered_ball_tool(),
-            (1464usize, 0xe5f1_228e_888f_5d73u64),
+            (1481usize, 0x5748_d2a2_1660_7e5cu64),
         ),
-        ("ball", ball_tool(), (972usize, 0x7990_ae0c_64db_ba88u64)),
+        ("ball", ball_tool(), (983usize, 0x2350_9770_58f0_1265u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
