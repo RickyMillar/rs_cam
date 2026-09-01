@@ -540,7 +540,17 @@ fn production_unified_finish_output_is_byte_identical() {
             tapered_ball_tool(),
             (1481usize, 0x5748_d2a2_1660_7e5cu64),
         ),
-        ("ball", ball_tool(), (983usize, 0x2350_9770_58f0_1265u64)),
+        // Re-pinned again 2026-09-01, same day, on the MERGE of the C2
+        // default flip and the always-on shallow slope derate. Each side
+        // re-pinned this arm against the other's base, so neither value
+        // could survive the merge; the combined default behaviour is a
+        // third geometry, measured on the merged tree:
+        //
+        //   ball  972 0x7990ae0c64dbba88 (pre-flip base)
+        //      -> 983 0x2350977058f01265 (flip only)
+        //      -> 1013 0x5e2f61dfd9d79f74 (derate only)
+        //      -> 1025 0xd32f5976312a7ec4 (flip + derate, this pin)
+        ("ball", ball_tool(), (1025usize, 0xd32f_5976_312a_7ec4u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");
