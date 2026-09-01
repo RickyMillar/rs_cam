@@ -274,6 +274,8 @@ and status; its FINDINGS.md carries the evidence.
 | D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | **CLOSED — GATES FAIL** (`c4710501`): prize ceiling +3.85 % vs the 5 % bar (gate 1 fail) even though coherence passes at 3.45 stepovers, w30 0.887 (gate 2 pass); negative control separated. Structural finding: the coherence gate 2 demands is exactly what lets a fixed per-region angle capture ~half the prize, so the field's margin over a rotated raster cannot clear the bar in this class at R = 1.0 mm. The direction-field family is now closed at the gate on BOTH geometry classes — terrain fails coherence, swept sheets fail the prize. Salvage: the swept-sheet coherence result argues FOR C2's shipped per-region rotation |
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
+| G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **OPEN — V0 prize census not run.** Nothing built. See §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 
@@ -416,3 +418,24 @@ Consequences, stated plainly:
   plan. That ticket is now evidence-backed, not a UX nicety.
 - Pre-registered surprises that fired, kept as registered: A beats C;
   D1 lands below the in-harness unified calibration row.
+
+## 14. Track H — valley tracing opened, prize unmeasured (2026-09-02)
+
+The operator proposed a drainage-tree finishing strategy for valley
+areas: find each catchment, trace a valley tree, offset-trace around
+it with a surface-relative stepover. Research came back on both
+sides; the campaign is `planning/valley_tracing_2026-09-02/`
+(TRACK.md = question + priors, FINDINGS.md = pre-registered bars).
+
+- The literal reading (offset loops around the whole tree) is the
+  medial-axis level-set family §9 already falsified on branched
+  geometry. Track H does not test it again.
+- The open reading is per-branch bidirectional tracing with a local
+  width cap — pencil's offset machinery plus junction handling.
+- Nothing runs before the V0 prize census: fraction of finish time
+  in valley territory, and the honest raster's ×floor there. The
+  bars (≥ 10 % of time, ≥ 1.15× floor) are pre-registered; either
+  failing closes the track with no build.
+- Hard caps restated: G-UNIONCOV (§12) blocks any "faster AND
+  complete" claim for a valley/raster hybrid; the wanaka200 facet
+  rule blocks spacing claims on the current export.

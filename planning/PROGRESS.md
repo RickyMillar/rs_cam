@@ -31,6 +31,26 @@
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 
+## Recent work (2026-09-02)
+
+### Track H opened — valley tracing (drainage-tree finishing)
+
+The operator proposed a valley strategy for terrain relief: find each
+catchment, trace a valley tree, offset-trace around it. Research ran
+on both sides (literature + repo priors) before any plan. Campaign:
+**`planning/valley_tracing_2026-09-02/`** — `TRACK.md` carries the
+question, the two readings of the proposal, and the standing priors;
+`FINDINGS.md` carries pre-registered bars. Status: **OPEN, phase V0
+(prize census) not run, nothing built.** The concentric-tree reading
+is NOT under test — synthesis §9 already falsified that family on
+branched geometry. The open reading is per-branch offset tracing on
+pencil's machinery. Gates: V0 prize bars (≥ 10 % of finish time in
+valley territory, honest raster ≥ 1.15× floor there), the §9
+fragment/link/distance bar for V1, the wanaka200 facet rule for any
+spacing claim, and G-UNIONCOV capping any hybrid completeness claim.
+Also listed on the status board: `finishing_status_2026-09-01.md`
+§8 (track index) and §14.
+
 ## Recent work (2026-08-19 → 2026-09-01)
 
 ### Finishing-strategy campaigns — consolidated 2026-09-01
