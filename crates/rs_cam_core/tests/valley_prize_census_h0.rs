@@ -1622,6 +1622,12 @@ fn downsample_bool(
     let ox = nx.div_ceil(factor);
     let oy = ny.div_ceil(factor);
     let mut out = vec![false; ox * oy];
+    // An absent layer is passed as an empty slice (the per-mask SVGs do that
+    // for the mask they are not showing), which is "nothing set", not a
+    // shape mismatch.
+    if mask.len() < nx * ny {
+        return (out, ox, oy);
+    }
     for r in 0..ny {
         for c in 0..nx {
             if mask[r * nx + c] {
