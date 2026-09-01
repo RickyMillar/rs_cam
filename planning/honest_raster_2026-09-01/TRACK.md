@@ -1,7 +1,20 @@
 # Track B — does the SHIPPED shallow raster meet its own scallop spec?
 
 **Rank:** 2 of 6 (`planning/finishing_status_2026-09-01.md` §5 avenue B+E).
-**Status: COMPLETE (2026-09-01). VERDICT: DEFECT CONFIRMED** — on the
+**Status: FIXED (2026-09-01, operator ruling: ALWAYS ON, no dial).** The
+Shallow arm now derates each region's effective raster stepover by
+`cos(theta_max)` before any lattice is built
+(`unified_finish::shallow_region_max_slope_deg`). Fix acceptance: the
+reworked `shipped_raster_spacing_b1` instrument reads CLEAN on all three
+fixtures (planes at exactly 1.0000 x s_max; sphere 0.9391); flat ground
+is byte-identical (sentries in
+`crates/rs_cam_core/tests/shallow_raster_slope_derate.rs`). Measured
+price on the fixtures: 1.093x (20 deg) / 1.249x (40 deg) cutting
+distance — see FINDINGS.md §"Fix acceptance".
+
+Original verdict record below, kept verbatim.
+
+**VERDICT: DEFECT CONFIRMED** — on the
 tilted-plane fixtures the shipped arm's achieved surface spacing is
 `s_XY / cos(theta)` exactly (1.064x at 20 deg, 1.305x at 40 deg, 100% of
 sloped samples > 1.05 x s_max; x floor 0.984 / 0.808). The sphere cap
