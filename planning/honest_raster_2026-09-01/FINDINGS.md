@@ -331,3 +331,30 @@ sits at 1.009x the theoretical floor with spacing at spec.
   rotated-arm cost). This buys the configured scallop actually being
   met — the pre-fix speed was under-delivery, not efficiency.
 
+
+## The wanaka price, measured (2026-09-01, CLI `project`, 0.3 mm, worktree at `8cd15837`)
+
+`planning/multitool_2026-08-23/wanaka200_mt2.toml`, both C2 dial arms,
+post-fix, against the §7 pre-fix records (`thin_organic_2026-08-27/
+FINDINGS.md` §7). Runtimes are the integrated machine estimate
+(`total_runtime_s` / `toolpath_runtimes`), the same wire §7 read.
+
+| | pre-fix | post-fix | ratio |
+|---|---:|---:|---|
+| C2 OFF: Finish tier 0 (R1.5) | 5,581.4 s | 6,566.2 s | 1.176x |
+| C2 OFF: Finish tier 1 (R1.0) | 12,270.6 s | 13,704.9 s | 1.117x |
+| C2 OFF: whole project | 25,938.8 s | 28,361.2 s | **1.093x (+40.4 min)** |
+| C2 ON: Finish tier 0 (R1.5) | 5,137.3 s | 5,828.2 s | 1.134x |
+| C2 ON: Finish tier 1 (R1.0) | 11,234.7 s | 12,193.4 s | 1.085x |
+| C2 ON: whole project | 24,447.9 s | 26,108.2 s | **1.068x (+27.7 min)** |
+
+Reading:
+
+- Against the recorded 24,447.9 s dial-on baseline the operator will
+  feel **+27.7 min on this board (1.068x)** — inside the 1.09–1.25x
+  fixture bracket, because most of the board's shallow area is gentle.
+- Only the two unified-finish tiers moved; the derate touches no other
+  operation type.
+- The pre-fix runtimes bought spacing the spec did not permit on the
+  sloped fraction; the delta is the price of the finish the raster was
+  being credited with.
