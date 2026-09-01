@@ -252,3 +252,31 @@ carry an independent union audit (the CoverageAudit column).
   after extracting `toolpath_runtimes` (kept as
   `target/ledger_g/arm*_runtimes.txt`); the first arm B run failed on
   a full disk at the write step and was re-run clean.
+
+## CORRECTION (2026-09-02) — arm B's row is CONTAMINATED; operator-caught
+
+The operator reviewed arm B's surface in the GUI and reported the dense
+mountain areas untouched. `narrate_toolpath` confirmed the cause: the
+variant TOML's resolved `bottom_z = 7.000 mm` clipped the VerySteep
+band's Z range to empty, so **the waterline band emitted no cutting at
+all** — 4,139 mm² across 5 planned regions left at full stock. This is a
+variant-authoring defect, not a strategy result.
+
+Consequences:
+- **Arm B's 12,647 s is UNDERSTATED** (it skipped the whole VerySteep
+  band). The B-vs-C direction survives — the skipped band is small
+  relative to the 5,375 s gap — but the margin must be re-measured with
+  a corrected variant (`bottom_z` pinned below the deepest feature).
+- Arm A (scallop) and arms D1/D2 (spiral instrument) do not share the
+  defect class, but arm A's own `untouched 1,425 mm²` deserves the same
+  suspicion until the union-coverage instrument exists.
+- G-UNIONCOV's scope widens: per-op findings DID report this one
+  (`unmachined_band_area_mm2` was on the wire and narration named the
+  cause exactly), but nothing gates on it — the ledger run read it as a
+  column, not a stop. A report-only finding an instrument does not act
+  on is a finding the workflow can miss.
+
+The corrected arm B run (bottom_z −4.0) is in progress in the GUI
+session, combined with `pencil_claims: true` for the operator's valley
+review — that combined run serves the EYEBALL, not the table; the
+table's corrected row needs a heights-only rerun.
