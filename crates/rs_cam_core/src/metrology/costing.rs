@@ -143,11 +143,7 @@ impl<'a> LinkRegime<'a> {
     /// polygon confines CUTTING, not an airborne hop). Both read from
     /// `unified_finish.rs`.
     #[must_use]
-    pub const fn rest_op(
-        label: &'static str,
-        safe_z: f64,
-        ceiling: LinkCeiling<'a>,
-    ) -> Self {
+    pub const fn rest_op(label: &'static str, safe_z: f64, ceiling: LinkCeiling<'a>) -> Self {
         Self {
             label,
             safe_z,

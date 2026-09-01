@@ -304,12 +304,10 @@ use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_can
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::metrology::census::{
-    TriField, ZoneStats, ZoneVerdict as Verdict, census_zone as metrology_census_zone,
-    ratio,
+    TriField, ZoneStats, ZoneVerdict as Verdict, census_zone as metrology_census_zone, ratio,
 };
 use rs_cam_core::metrology::monge::{
-    ISOTROPY_ABS_TOL, ISOTROPY_REL_TOL, MongeOutcome, MongeScratch, axis_cos, fit_quadric,
-    median,
+    ISOTROPY_ABS_TOL, ISOTROPY_REL_TOL, MongeOutcome, MongeScratch, axis_cos, fit_quadric, median,
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
@@ -391,8 +389,7 @@ const USABLE_LENGTH_MIN_STEPOVERS: f64 =
 const USABLE_LENGTH_MIN_MM: f64 = USABLE_LENGTH_MIN_STEPOVERS * STEPOVER_MM;
 
 /// Coherence fraction below which a zone is `NotUsable` outright.
-const NOT_USABLE_WITHIN_30_BELOW: f64 =
-    rs_cam_core::metrology::census::NOT_USABLE_W30_BELOW;
+const NOT_USABLE_WITHIN_30_BELOW: f64 = rs_cam_core::metrology::census::NOT_USABLE_W30_BELOW;
 
 /// A zone below this area (mm²) cannot hold 10 stepovers in both directions.
 /// It is `TooSmall` and never usable. See the module doc's guard 1.
@@ -449,7 +446,6 @@ struct FieldCensus {
     /// isotropy floor. `t1` exists numerically and is not believed.
     below_isotropy_floor: usize,
 }
-
 
 /// XY centroid, centroid height and true area of one mesh triangle.
 fn triangle_geometry(mesh: &TriangleMesh, tri_index: usize) -> (P2, f64, f64) {

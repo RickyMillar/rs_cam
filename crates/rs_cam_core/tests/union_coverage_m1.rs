@@ -179,7 +179,10 @@ fn run_arm(label: &str, project: &PathBuf) -> UnionCoverageReport {
 fn union_coverage_judges_the_rejected_overlap_variant() {
     let root = repo_root().join("planning/multitool_2026-08-23");
     let production = run_arm("PRODUCTION", &root.join("wanaka200_mt2.toml"));
-    let rejected = run_arm("REJECTED overlap-0.2", &root.join("wanaka200_mt2_overlap02.toml"));
+    let rejected = run_arm(
+        "REJECTED overlap-0.2",
+        &root.join("wanaka200_mt2_overlap02.toml"),
+    );
 
     eprintln!("\n════════ VERDICT ════════");
     eprintln!(

@@ -53,9 +53,10 @@ use rs_cam_core::direction_field::{self, FieldParams};
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::metrology::floor::{
-    FloorReport, region_floor as metrology_region_floor,
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
 };
+use rs_cam_core::metrology::floor::{FloorReport, region_floor as metrology_region_floor};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop_math;
@@ -64,10 +65,6 @@ use rs_cam_core::spiral_finish_compact::{
 };
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::metrology::costing::{
-    CandidateCost, CostingContext, CostingFeeds,
-    relink_and_cost as metrology_relink_and_cost,
-};
 
 // ── the tooling decision (conformal_spiral_synthetic_f2.rs:371-383) ─────
 

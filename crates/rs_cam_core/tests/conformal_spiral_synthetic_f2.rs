@@ -347,6 +347,9 @@ use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldRepo
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
+};
 use rs_cam_core::metrology::floor::{
     AreaWeighted, FloorReport, area_weighted, region_floor as metrology_region_floor,
 };
@@ -354,10 +357,6 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::scallop_math;
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{Move, MoveIntent, Toolpath};
-use rs_cam_core::metrology::costing::{
-    CandidateCost, CostingContext, CostingFeeds,
-    relink_and_cost as metrology_relink_and_cost,
-};
 
 // ── the fixture ─────────────────────────────────────────────────────────
 
@@ -2103,9 +2102,13 @@ const BAND_SURFACE: AnalyticSurface = AnalyticSurface {
 // and rides in as the curvature callback, so no estimator sits inside the
 // floor.
 fn region_floor(mesh: &TriangleMesh, region: &[u32], surface: AnalyticSurface) -> FloorReport {
-    metrology_region_floor(mesh, Some(region), BALL_RADIUS_MM, CUSP_HEIGHT_MM, &|x, y| {
-        surface.principal_curvatures(x, y)
-    })
+    metrology_region_floor(
+        mesh,
+        Some(region),
+        BALL_RADIUS_MM,
+        CUSP_HEIGHT_MM,
+        &|x, y| surface.principal_curvatures(x, y),
+    )
 }
 
 /// Print the floor and every candidate's `× floor`.

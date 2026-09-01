@@ -402,8 +402,7 @@ const VERDICT_TOOL_RADII_MM: [f64; 2] = [1.0, 1.5];
 /// Verdict band edges on the area-weighted median `W_max/W_min`.
 const VERDICT_CLOSE_BELOW: f64 = rs_cam_core::metrology::census::PRIZE_CLOSE_BELOW;
 /// Upper edge of the literature band.
-const VERDICT_LITERATURE_ABOVE: f64 =
-    rs_cam_core::metrology::census::PRIZE_ABOVE_LITERATURE;
+const VERDICT_LITERATURE_ABOVE: f64 = rs_cam_core::metrology::census::PRIZE_ABOVE_LITERATURE;
 
 /// A radius needs this valid-fit fraction before the scale rule will read it.
 const SCALE_RULE_MIN_VALID_FRACTION: f64 = 0.80;

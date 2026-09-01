@@ -64,7 +64,6 @@
     clippy::print_stderr
 )]
 
-
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};

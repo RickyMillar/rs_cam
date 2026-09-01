@@ -227,9 +227,7 @@ pub fn audit_stock_vs_model(
                     return f64::NAN;
                 };
                 match grid.top_z_at(row, col) {
-                    Some(top) => {
-                        f64::from(top) - (model_top + params.stock_to_leave_mm)
-                    }
+                    Some(top) => f64::from(top) - (model_top + params.stock_to_leave_mm),
                     None => f64::NEG_INFINITY,
                 }
             })
@@ -300,7 +298,12 @@ pub fn audit_stock_vs_model(
             let mut worst = f64::NEG_INFINITY;
             let mut sum_x = 0.0f64;
             let mut sum_y = 0.0f64;
-            let mut bbox = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+            let mut bbox = [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ];
             stack.push((row, col));
             if let Some(v) = visited.get_mut(idx) {
                 *v = true;
@@ -385,13 +388,17 @@ pub fn audit_stock_vs_model(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::{UnionCoverageParams, audit_stock_vs_model};
     use crate::dexel_stock::TriDexelStock;
     use crate::geo::{BoundingBox3, P3};
     use crate::mesh::{SpatialIndex, TriangleMesh};
-
 
     fn flat_model(size: f64, z: f64) -> TriangleMesh {
         TriangleMesh::from_raw(
@@ -431,7 +438,11 @@ mod tests {
         let stock = TriDexelStock::from_bounds(&bbox, 0.5);
         let report = audit_stock_vs_model(&stock, &model, &index, &params());
         assert!(report.compared_cells > 0);
-        assert!(report.above_spec_fraction > 0.99, "{}", report.above_spec_fraction);
+        assert!(
+            report.above_spec_fraction > 0.99,
+            "{}",
+            report.above_spec_fraction
+        );
         assert!((report.max_standing_mm - 3.0).abs() < 0.51); // one cell slack
         assert_eq!(report.hotspot_count, 1);
         assert!(report.assert_within(1.0).is_err());

@@ -334,7 +334,10 @@ impl ZoneStats {
     /// The verdict column: coherent area fraction at 30°.
     #[must_use]
     pub fn w30(&self) -> f64 {
-        self.within.get(VERDICT_ANGLE_INDEX).copied().unwrap_or(f64::NAN)
+        self.within
+            .get(VERDICT_ANGLE_INDEX)
+            .copied()
+            .unwrap_or(f64::NAN)
     }
 }
 
@@ -426,10 +429,7 @@ pub fn census_zone(field: &[TriField], members: &[u32], stepover_mm: f64) -> Zon
         queries = found.len();
         let censored = found.iter().filter(|d| d.is_none()).count();
         censored_fraction = censored as f64 / queries.max(1) as f64;
-        let distances: Vec<f64> = found
-            .iter()
-            .map(|d| d.unwrap_or(search_bound_mm))
-            .collect();
+        let distances: Vec<f64> = found.iter().map(|d| d.unwrap_or(search_bound_mm)).collect();
         coherence_length = median(distances);
     }
 
@@ -588,7 +588,12 @@ pub fn prize_cell(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::{
         COHERENCE_ANGLES_DEG, COHERENCE_TURN_DEG, TriField, VERDICT_ANGLE_INDEX, ZoneVerdict,

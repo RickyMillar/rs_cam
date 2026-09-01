@@ -156,13 +156,12 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::direction_field::{self, FieldPathResult, FieldReport};
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
+};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::BallEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
-use rs_cam_core::metrology::costing::{
-    CandidateCost, CostingContext, CostingFeeds,
-    relink_and_cost as metrology_relink_and_cost,
-};
 
 // ── inputs ──────────────────────────────────────────────────────────────
 

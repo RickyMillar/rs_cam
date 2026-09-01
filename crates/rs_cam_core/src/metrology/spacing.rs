@@ -226,7 +226,10 @@ pub fn quantile(sorted: &[f64], q: f64) -> f64 {
         return f64::NAN;
     }
     let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
-    sorted.get(idx.min(sorted.len() - 1)).copied().unwrap_or(f64::NAN)
+    sorted
+        .get(idx.min(sorted.len() - 1))
+        .copied()
+        .unwrap_or(f64::NAN)
 }
 
 /// Measure [`PathStructure`] from a toolpath and the ring-start move
@@ -340,7 +343,12 @@ pub fn path_structure(toolpath: &Toolpath, ring_starts: &[usize], bucket_mm: f64
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::{dist_point_segment, quantile};
     use crate::geo::P3;
