@@ -118,6 +118,26 @@ recalibration for the swept instrument, W6 playback delta). These
 produced the `wanaka200_mt2.toml` operating point used by everything
 above.
 
+### Session 2026-09-01, later — rulings enacted
+
+The operator ruled on all four open reviews in one sitting. Enacted the
+same day, each behind its full gate:
+
+- **C4 PASSED** → `monotone_cell_decomposition` default flipped ON
+  (`83449244`); wanaka project saved dial-on. Legacy files that pin
+  `false` keep it.
+- **Track B fix, ALWAYS ON** (`a78174b8`): the shallow raster derates
+  its effective stepover by cos(theta_max) per region; the Track B
+  instrument now reads 1.0000× spec on the plane fixtures and is a
+  standing acceptance gate. Wanaka price: 24,447.9 → 26,108.2 s — the
+  C2 saving and the honesty cost nearly cancel; the finish now meets
+  its configured scallop on slopes.
+- **Track C spiral appearance APPROVED** → productisation ticket queued.
+- **Phase U island placement RATIFIED** (overlay SVG).
+- Merge note: both enactments re-pinned the same fingerprint arm; the
+  combined default is a third geometry, re-pinned on the merged tree
+  with the full lineage (`crease_own_region_pr6b.rs`).
+
 ### Session 2026-09-01 — stale-binary finding + C4 evidence pack
 
 The operator's live GUI ran a binary 63 commits behind HEAD (built

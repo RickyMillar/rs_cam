@@ -831,6 +831,7 @@ pencil_claims = false
 min_rest_depth_mm = 0.02
 claims_reference = "auto"
 territory_clip = false
+monotone_cell_decomposition = true
 intra_region_hookup_mm = 25.0
 crease_hookup_mm = 5.0
 
@@ -946,6 +947,7 @@ pencil_claims = false
 min_rest_depth_mm = 0.02
 claims_reference = "auto"
 territory_clip = false
+monotone_cell_decomposition = true
 intra_region_hookup_mm = 25.0
 crease_hookup_mm = 5.0
 
