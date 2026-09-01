@@ -258,6 +258,78 @@ its run):**
 This completes M4's intent (attribution); it does not move B1, B2,
 or V0-pre.
 
+**V0-att v1 RAN 2026-09-02 AND ITS FORMULA IS ILL-POSED — measured,
+recorded, superseded (`9b1d7b74`).** Two structural defects, caught
+by the implementing agent's stop-and-report guard, verified on the
+numbers:
+
+- With θ_max saturated at 45° in 15/16 regions, `∫dA/s_shipped ÷
+  ∫dA/s_max` collapses to the constant `0.4862/0.3438 = √2`: it
+  read 1.4140–1.4142 across all seven populations and can
+  discriminate nothing. `dA` cancels within each region — the
+  formula measures no geometry.
+- It models a raster pitched ON THE SURFACE; the shipped raster
+  pitches in XY. Measured M2 sits BELOW the model everywhere
+  (residual −0.16 to −0.26 in every population) — that gap is the
+  projection convention (measured along-track magnification 1.1518
+  vs mean sec θ 1.4104 on the territory), not a topology finding.
+  The 5 pp bar was never applied.
+
+**V0-att v2 (pre-registered 2026-09-02 BEFORE its run) — the
+direction-aware XY model that reproduces what ships:**
+
+- **M2_xy(d) per population** = `Σ (a_cell / s_shipped(region)) ×
+  sec(along-track slope in direction d)` ÷ `L_min`, with per-cell
+  slope from the classification normals. Evaluated TWICE:
+  - `d = d_shipped` — each cell's owning region's C2 lattice
+    direction. This is the perfect (turn-free) shipped raster.
+  - `d = d_valley` — the local valley-line tangent (nearest network
+    line via the DT). This is the perfect valley-aligned raster at
+    the SAME spacing. Evaluated on MASK populations only — outside
+    a mask "the valley direction" is undefined and a territory
+    figure would be meaningless.
+
+  The along-track secant formula must be stated in the instrument's
+  file header before the run (`tan φ = |∇z · d|`, `sec φ =
+  √(1 + (∇z·d)²)`, or the agent's equivalent, written down) — a
+  sign/convention slip already cost one rerun today.
+- **Bracket check**: `A_xy/s_shipped ÷ L_min` (direction-independent
+  lower bound) printed beside them; measured M2 must land between
+  the bound and the v1 surface-pitch figure, else the model is
+  wrong.
+- **R_topo** = M2 − M2_xy(d_shipped): what the real generator
+  spends beyond the perfect model (turn/edge structure). REPORTED
+  FOR CONTEXT ONLY — it is NOT tracing's to win: a tracing arm has
+  its own topology cost (junctions, width-capped stubs), and on
+  §9's evidence that cost is larger on dendritic geometry, not
+  smaller. Whether tracing recovers any of R_topo is exactly what
+  V1's B3/B4 test; putting it in the V0 bar would assume V1's
+  answer. Expected small or slightly negative (cut-intent already
+  excludes links; the model has its own approximation error) — a
+  small negative reads as "the model is close", nothing more.
+- **D_pot** = M2_xy(d_shipped) − M2_xy(d_valley), in-mask: the
+  direction prize at fixed spacing. CAVEAT, pre-registered: at
+  fixed XY pitch an aligned pass on a wall has coarser cross-track
+  surface spacing, so D_pot is an UPPER bound on the direction
+  prize at equal achieved scallop.
+- **Expected magnitude, stated up front so the result reads
+  correctly:** mask B is mostly flat valley floor, where
+  `sec(along-track) ≈ 1` in EVERY direction — D_pot is identically
+  zero there. Only in-mask wall cells with a wall-aligned valley
+  tangent contribute, and M3 (~45°, isotropic) says the shipped
+  lattice is not systematically across-slope either. A D_pot of
+  1–3 pp is the geometry speaking, not an instrument failure.
+- **Bracket check:** `lower_bound ≤ measured M2 ≤ v1 surface-pitch
+  figure` must hold per population (territory: 1.0027 ≤ 1.1549 ≤
+  1.4142 ✓ by hand). A mask rung that violates it is a real model
+  error, not noise.
+- **Bar B2-att-v2 binds on D_pot ALONE:** D_pot ≥ 5 pp (0.05×) of
+  floor, in-mask, at the picked rung and robust across the sweep.
+  Below the bar the tracing arm CLOSES — D_pot is an upper bound,
+  so an upper bound under the bar is a safe closure. At or above
+  it, V1 proceeds knowing the bound is optimistic. P = R_topo +
+  D_pot may be quoted only as a stated ceiling, never as the bar.
+
 ### V1 — CONDITIONALLY OPEN (2026-09-02), pending V0-att.
 
 Region selection per Q2: the region with the largest mask-B time
