@@ -28,6 +28,19 @@
 //!   XY. Isolates the mechanism exactly: prediction
 //!   `achieved = s_XY / cos(theta)`.
 //!
+//! # Status after the fix (2026-09-01)
+//!
+//! The Track B run CONFIRMED the defect and the operator ruled: fix it,
+//! always on, no dial. The Shallow arm now derates its effective stepover
+//! by `cos(theta_max)` per region before any lattice is built
+//! (`unified_finish.rs`, `shallow_region_max_slope_deg`). This instrument
+//! is now the FIX-ACCEPTANCE gate: it runs the shipped arm only, checks
+//! the emitted rows sit at the report's derated stepover (F-B1'), and
+//! ASSERTS every fixture reads CLEAN (`<= 1.02 x s_max`). The pre-fix
+//! manual HONEST arm is retired — a second external derate would now
+//! derate twice. Fast flat/sloped sentries live in
+//! `shallow_raster_slope_derate.rs`.
+//!
 //! # Verdict bands (pre-registered, `TRACK.md` — do not soften)
 //!
 //! * **DEFECT CONFIRMED**: achieved surface spacing > `s_max x 1.05` over
@@ -593,15 +606,41 @@ fn run_arm(
         report.region_table.len(),
         toolpath.moves.len()
     );
-    let m = measure(&toolpath, fixture, stepover_mm);
+    // Fix acceptance (2026-09-01): the shipped arm now derates its own
+    // effective stepover by cos(theta_max) of each region. The emitted rows
+    // must be XY-uniform at the DERATED value the report declares — the
+    // audit trail and the motion must agree.
+    for d in &report.shallow_slope_derates {
+        eprintln!(
+            "     derate: region {} theta_max {:.3} deg   {:.5} mm -> {:.5} mm",
+            d.region_index, d.slope_max_deg, d.configured_stepover_mm, d.derated_stepover_mm
+        );
+        assert!(
+            (d.configured_stepover_mm - stepover_mm).abs() < 1e-9,
+            "derate record does not carry the configured stepover"
+        );
+    }
+    let effective_mm = report
+        .shallow_slope_derates
+        .iter()
+        .map(|d| d.derated_stepover_mm)
+        .fold(stepover_mm, f64::min);
+    for d in &report.shallow_slope_derates {
+        assert!(
+            (d.derated_stepover_mm - effective_mm).abs() < 1e-9,
+            "two Shallow regions carry different derates on a one-region fixture — \
+             the Delta-y census below cannot be read"
+        );
+    }
+    let m = measure(&toolpath, fixture, effective_mm);
     eprintln!(
         "     raster rows: {}   adjacent-row Delta-y: min {:.6} / max {:.6} mm \
-         (XY mechanism check, F-B1)",
-        m.rows, m.row_dy_min, m.row_dy_max
+         (XY mechanism check, F-B1; expected effective stepover {:.6} mm)",
+        m.rows, m.row_dy_min, m.row_dy_max, effective_mm
     );
     assert!(
-        (m.row_dy_min - stepover_mm).abs() < 1e-6 && (m.row_dy_max - stepover_mm).abs() < 1e-6,
-        "F-B1 FAILED: emitted rows are not XY-uniform at the stepover — \
+        (m.row_dy_min - effective_mm).abs() < 1e-6 && (m.row_dy_max - effective_mm).abs() < 1e-6,
+        "F-B1 FAILED: emitted rows are not XY-uniform at the effective stepover — \
          the cos-theta arithmetic may not be quoted"
     );
     eprintln!(
@@ -656,7 +695,7 @@ fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
         plane_fixture(40.0, s_flat * 40.0f64.to_radians().cos()),
     ];
 
-    let mut verdict_rows: Vec<(String, ArmResult, ArmResult)> = Vec::new();
+    let mut verdict_rows: Vec<(String, ArmResult)> = Vec::new();
     for fixture in &fixtures {
         eprintln!("\n========== FIXTURE {} ==========", fixture.name);
         let index = SpatialIndex::build_auto(&fixture.mesh);
@@ -690,7 +729,10 @@ fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
         );
         eprintln!("     L_min = area / s_max = {l_min:.1} mm (the synthesis §1 floor, exact)");
 
-        // STEP 1: the shipped arm at the spec stepover. Verdict prints here.
+        // The shipped arm at the spec stepover. Since the 2026-09-01 fix
+        // the arm derates its own effective stepover per region, so the
+        // pre-fix manual HONEST arm (a second run at s_max x cos) would
+        // now derate TWICE and measures nothing registered; it is retired.
         let stock = run_arm(fixture, &index, "SHIPPED (s_XY = s_max)", s_max, l_min);
         let frac = stock.exceeding as f64 / stock.sloped.max(1) as f64;
         let verdict = if frac > MATERIAL_FRACTION {
@@ -707,28 +749,27 @@ fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
             100.0 * frac,
             stock.max_ratio
         );
-
-        // STEP 2 (after the verdict): the HONEST-RASTER arm.
-        let honest_arm = run_arm(fixture, &index, "HONEST (s_XY = s_max cos)", honest, l_min);
-        verdict_rows.push((fixture.name.to_owned(), stock, honest_arm));
+        // Fix-acceptance falsifier (registered in FINDINGS.md §"fix
+        // acceptance" before the run): every fixture must read CLEAN.
+        assert!(
+            stock.max_ratio <= CLEAN_FACTOR,
+            "FIX ACCEPTANCE FAILED on {}: max achieved/s_max = {:.4} > {CLEAN_FACTOR}",
+            fixture.name,
+            stock.max_ratio
+        );
+        verdict_rows.push((fixture.name.to_owned(), stock));
     }
 
-    // ---- Summary: the x floor table with the honest arm beside the stock arm.
-    eprintln!("\n================ x FLOOR TABLE (both arms, all fixtures) ================");
+    // ---- Summary: the x floor / price table.
+    eprintln!("\n================ x FLOOR TABLE (shipped arm, all fixtures) ================");
     eprintln!(
-        "  {:<36} {:>10} {:>10} {:>8} {:>12} {:>10} {:>8}",
-        "fixture", "stock s_XY", "cut mm", "x floor", "honest s_XY", "cut mm", "x floor"
+        "  {:<36} {:>10} {:>10} {:>8}",
+        "fixture", "s_XY dial", "cut mm", "x floor"
     );
-    for (name, stock, honest) in &verdict_rows {
+    for (name, stock) in &verdict_rows {
         eprintln!(
-            "  {:<36} {:>10.5} {:>10.1} {:>8.3} {:>12.5} {:>10.1} {:>8.3}",
-            name,
-            stock.stepover_mm,
-            stock.cut_mm,
-            stock.x_floor,
-            honest.stepover_mm,
-            honest.cut_mm,
-            honest.x_floor
+            "  {:<36} {:>10.5} {:>10.1} {:>8.3}",
+            name, stock.stepover_mm, stock.cut_mm, stock.x_floor
         );
     }
     eprintln!(
@@ -737,12 +778,12 @@ fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
     );
 
     // ---- Overall verdict, per the pre-registered bands.
-    let any_defect = verdict_rows.iter().any(|(_, stock, _)| {
-        stock.exceeding as f64 / stock.sloped.max(1) as f64 > MATERIAL_FRACTION
-    });
+    let any_defect = verdict_rows
+        .iter()
+        .any(|(_, stock)| stock.exceeding as f64 / stock.sloped.max(1) as f64 > MATERIAL_FRACTION);
     let all_clean = verdict_rows
         .iter()
-        .all(|(_, stock, _)| stock.max_ratio <= CLEAN_FACTOR);
+        .all(|(_, stock)| stock.max_ratio <= CLEAN_FACTOR);
     let overall = if any_defect {
         "DEFECT CONFIRMED"
     } else if all_clean {
@@ -751,10 +792,11 @@ fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
         "BETWEEN (report as measured, no verdict)"
     };
     eprintln!("\n================ OVERALL VERDICT: {overall} ================");
-    for (name, stock, honest) in &verdict_rows {
+    for (name, stock) in &verdict_rows {
         eprintln!(
-            "  {name}: shipped max achieved/s_max {:.4}, honest max {:.4} ({} / {})",
-            stock.max_ratio, honest.max_ratio, stock.label, honest.label
+            "  {name}: shipped max achieved/s_max {:.4} ({})",
+            stock.max_ratio, stock.label
         );
     }
+    assert!(all_clean, "FIX ACCEPTANCE FAILED: a fixture is not CLEAN");
 }

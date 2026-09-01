@@ -126,6 +126,7 @@ fn every_finding_recorded() -> GenerationFindings {
                 reference_depth_mm: 0.5,
                 reference_depth_basis: "cusp",
                 envelope_rule_mm: 0.60,
+                slope_derate: None,
             },
             DerivedStepoverFinding {
                 site: "generic rest analysis routing",
@@ -133,6 +134,7 @@ fn every_finding_recorded() -> GenerationFindings {
                 reference_depth_mm: 0.5,
                 reference_depth_basis: "cusp",
                 envelope_rule_mm: 0.60,
+                slope_derate: None,
             },
         ],
         ramp_reach_clamp: Some(RampReachClamp {

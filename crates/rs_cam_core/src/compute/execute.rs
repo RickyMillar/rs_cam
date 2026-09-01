@@ -2454,6 +2454,27 @@ pub(crate) fn generate_unified_finish(
     if let Some(float) = report.tip_float {
         record_tip_float(ctx.findings, float);
     }
+    // Honest raster (Track B fix, 2026-09-01): one entry per Shallow region
+    // whose raster stepover was derated by cos(theta_max). The operator's
+    // `raster_stepover` dial is not rewritten, so this audit trail is the
+    // only surface the derived value appears on.
+    for d in &report.shallow_slope_derates {
+        record_derived_stepover(
+            ctx.findings,
+            crate::compute::config::DerivedStepoverFinding {
+                site: "UnifiedFinish shallow raster slope derate",
+                stepover_mm: d.derated_stepover_mm,
+                // Not a depth-keyed derivation: the derate is slope-keyed.
+                reference_depth_mm: 0.0,
+                reference_depth_basis: SHALLOW_SLOPE_DERATE_BASIS,
+                envelope_rule_mm: d.configured_stepover_mm,
+                slope_derate: Some(crate::compute::config::SlopeDerateDetail {
+                    region_index: d.region_index,
+                    slope_max_deg: d.slope_max_deg,
+                }),
+            },
+        );
+    }
     // PR-6a (H2.3): the crease/pencil fan's stepover is derived from the
     // canonical reach policy, not from any dial the operator can see. `None`
     // when the claims pipeline never ran, so "not derived" stays distinct
@@ -2467,6 +2488,7 @@ pub(crate) fn generate_unified_finish(
                 reference_depth_mm: claims.offset_stepover_reference_depth_mm,
                 reference_depth_basis: crate::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
                 envelope_rule_mm: claims.envelope_rule_stepover_mm,
+                slope_derate: None,
             },
         );
     }
@@ -3250,6 +3272,7 @@ fn attach_generic_rest_analysis(
                 reference_depth_mm: cfg.min_valley_depth,
                 reference_depth_basis: GENERIC_REST_STEPOVER_DEPTH_BASIS,
                 envelope_rule_mm: tool_def.envelope_radius_mm() * 0.5,
+                slope_derate: None,
             },
         );
     }
@@ -3284,6 +3307,11 @@ fn attach_generic_rest_analysis(
 /// `min_valley_depth`. Shipped in the operator-facing diagnostic.
 const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth — the shallowest rest this pass will \
      report, where the cutter's engaged width is narrowest";
+
+/// Not a depth basis: the shallow-raster derate is slope-keyed, not
+/// depth-keyed, and its `reference_depth_mm` is a fixed 0.0.
+const SHALLOW_SLOPE_DERATE_BASIS: &str =
+    "slope-keyed — cos(theta_max) of the region's covered cells, not a depth";
 
 /// Resolve the rest-depth reference (P2.5 chain): the actual machined
 /// stock (when present and its XY bbox overlaps `mesh`) → a configured
@@ -3996,6 +4024,7 @@ mod tests {
             reference_depth_mm: 0.5,
             reference_depth_basis: "test",
             envelope_rule_mm: mm * 3.0,
+            slope_derate: None,
         }
     }
 

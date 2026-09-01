@@ -993,9 +993,29 @@ pub struct DerivedStepoverFinding {
     pub reference_depth_mm: f64,
     /// One phrase saying why that depth was the honest one to size at.
     pub reference_depth_basis: &'static str,
-    /// What the retired `envelope_radius_mm() * 0.5` rule would have
-    /// produced on this tool. Equal to `stepover_mm` on any plain ball.
+    /// What the retired rule would have produced. For a reach-policy
+    /// finding this is the `envelope_radius_mm() * 0.5` rule — equal to
+    /// `stepover_mm` on any plain ball. For a slope-derate finding
+    /// ([`Self::slope_derate`] is `Some`) it is the configured
+    /// `raster_stepover`, the value the pre-fix code used unchanged.
     pub envelope_rule_mm: f64,
+    /// Honest-raster slope derate detail (Track B fix, 2026-09-01).
+    /// `None` = a reach-policy derivation, the original PR-6a shape.
+    /// `Some` = a Shallow-band raster stepover derated by
+    /// `cos(slope_max_deg)` of one region; `stepover_mm` then holds the
+    /// derated value and `envelope_rule_mm` the configured one.
+    pub slope_derate: Option<SlopeDerateDetail>,
+}
+
+/// Per-region detail for a slope-derated Shallow raster stepover — see
+/// [`DerivedStepoverFinding::slope_derate`] and
+/// [`crate::unified_finish::ShallowSlopeDerate`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SlopeDerateDetail {
+    /// Index into the finish decomposition's planned regions.
+    pub region_index: usize,
+    /// The maximum slope (deg) the region's covered cells carry.
+    pub slope_max_deg: f64,
 }
 
 impl DerivedStepoverFinding {

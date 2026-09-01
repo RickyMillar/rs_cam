@@ -516,6 +516,14 @@ fn production_unified_finish_output_is_byte_identical() {
     // the lane that found it; if a third intent-only refresh lands here,
     // that is the signal to split it into a geometry pin and an intent
     // pin.
+    // Re-pinned 2026-09-01 (ball arm only) for the Track B honest-raster
+    // fix: the Shallow band now derates its effective stepover by
+    // cos(theta_max) per region, so sloped shallow ground gains raster
+    // rows — a DELIBERATE geometry change
+    // (`planning/honest_raster_2026-09-01/FINDINGS.md`, "fix acceptance").
+    // Ball arm: (972, 0x7990ae0c64dbba88) -> (1013, 0x5e2f61dfd9d79f74).
+    // The taper arm is unchanged — its shallow regions carry no slope
+    // above the 1-degree derate floor.
     /// `(move count, geometry hash)` — what `fingerprint` returns.
     type Fp = (usize, u64);
     let mut drift: Vec<(&str, Fp, Fp)> = Vec::new();
@@ -525,7 +533,7 @@ fn production_unified_finish_output_is_byte_identical() {
             tapered_ball_tool(),
             (1464usize, 0xe5f1_228e_888f_5d73u64),
         ),
-        ("ball", ball_tool(), (972usize, 0x7990_ae0c_64db_ba88u64)),
+        ("ball", ball_tool(), (1013usize, 0x5e2f_61df_d9d7_9f74u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");

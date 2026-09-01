@@ -483,23 +483,41 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
-            message: format!(
-                "{site}: offset stepover {stepover:.3} mm, sized by the reach \
+            message: match f.slope_derate {
+                // Honest raster (Track B, 2026-09-01): a slope-keyed
+                // derivation, not a reach-policy one — the reach-policy
+                // sentence below would misdescribe it.
+                Some(sd) => format!(
+                    "{site}: region {region} raster stepover derated to \
+                 {stepover:.3} mm from the configured {configured:.3} mm \
+                 (× cos {slope:.1}°, the region's max slope). The XY \
+                 lattice widens to the achieved surface spacing by \
+                 1/cos(slope); the derate lands it at the configured \
+                 value on the worst slope. [Report-only — no gate.]",
+                    site = f.site,
+                    region = sd.region_index,
+                    stepover = f.stepover_mm,
+                    configured = f.envelope_rule_mm,
+                    slope = sd.slope_max_deg,
+                ),
+                None => format!(
+                    "{site}: offset stepover {stepover:.3} mm, sized by the reach \
              policy at {depth:.3} mm rest depth ({basis}). The retired \
              envelope rule (half the cutter's widest radius) would have used \
              {envelope:.3} mm — {ratio:.1}× wider — which on a tapered tool \
              is the SHANK, not anything the tip cuts. [Report-only — no gate.]",
-                site = f.site,
-                stepover = f.stepover_mm,
-                depth = f.reference_depth_mm,
-                basis = f.reference_depth_basis,
-                envelope = f.envelope_rule_mm,
-                ratio = if f.stepover_mm > 0.0 {
-                    f.envelope_rule_mm / f.stepover_mm
-                } else {
-                    f64::NAN
-                },
-            ),
+                    site = f.site,
+                    stepover = f.stepover_mm,
+                    depth = f.reference_depth_mm,
+                    basis = f.reference_depth_basis,
+                    envelope = f.envelope_rule_mm,
+                    ratio = if f.stepover_mm > 0.0 {
+                        f.envelope_rule_mm / f.stepover_mm
+                    } else {
+                        f64::NAN
+                    },
+                ),
+            },
             evidence: None,
             fix: None,
             supersedes: vec![],
