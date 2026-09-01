@@ -347,6 +347,9 @@ use rs_cam_core::direction_field::{self, FieldParams, FieldPathResult, FieldRepo
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::grid_field::distance_transform_2d;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::floor::{
+    AreaWeighted, FloorReport, area_weighted, region_floor as metrology_region_floor,
+};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::scallop_math;
 use rs_cam_core::tool::BallEndmill;
@@ -2092,91 +2095,17 @@ const BAND_SURFACE: AnalyticSurface = AnalyticSurface {
 
 // ---- the floor, L_min = ∫∫ dA / s_max(x) ------------------------------
 
-/// One region's theoretical minimum cutting distance, measured two ways.
-struct FloorReport {
-    /// 3D surface area of the region — the `dA` the integral runs over.
-    area_mm2: f64,
-    /// `Σ area_t / s_max(t)` with `s_max` taken on the `κ_min` basis. **This is
-    /// THE FLOOR.**
-    l_min_mm: f64,
-    /// The same sum on the `κ_max` basis — see [`region_floor`] for why this is
-    /// a companion and not the headline.
-    l_min_worst_mm: f64,
-    /// Area-weighted distribution of `s_max(t)`, `κ_min` basis.
-    s_max: AreaWeighted,
-    /// Area-weighted distribution of `s_max(t)`, `κ_max` basis.
-    s_worst: AreaWeighted,
-    /// Triangles whose `s_max` came back non-positive and were therefore left
-    /// out of the sum. Must be 0 on these fixtures; a nonzero is a tripwire.
-    degenerate: usize,
-}
-
-/// Integrate the floor over a region, from the fixture's ANALYTIC curvature.
-///
-/// # Which curvature goes into `s_max`, and why it is `κ_min`
-///
-/// `s_max(x)` in the synthesis is the **maximum admissible** pass spacing at a
-/// point. Spacing is taken ACROSS the passes, so the admissible value depends
-/// on which direction the passes step in, and the largest of those — the one a
-/// perfectly-oriented strategy could achieve — is the direction of LEAST convex
-/// curvature. So the headline uses `κ_min`, which makes `s_max` largest,
-/// `L_min` smallest, and the result a genuine **lower bound that no strategy
-/// can beat while meeting spec**. A floor computed on `κ_max` would be a floor
-/// only for strategies forced to step across the worst direction; it is printed
-/// beside it as exactly that, and on an UMBILIC surface (ARM SPHERE) the two
-/// coincide identically.
-///
-/// # Why this will not reproduce the synthesis §1 table on three of four arms
-///
-/// §1's table used ONE constant `s_max` per arm — the tightest value on the
-/// region — because that is all a hand calculation can do. This is the integral
-/// §1 actually defines, evaluated per triangle. On ARM SPHERE the two agree
-/// exactly (constant curvature, so the constant IS the integrand). On the other
-/// arms this floor is LOWER, because the tightest value is not the typical one,
-/// and every `× floor` ratio there is correspondingly HIGHER than the table's.
-/// That is the local integrand doing its job, not a disagreement to reconcile.
+// PROMOTED (Track M, 2026-09-02): `FloorReport`, `region_floor` and the
+// area-weighted percentiles live in `rs_cam_core::metrology::floor`,
+// extracted from this file. The full κ_min-basis rationale — and why this
+// integral does not reproduce the synthesis §1 table on three of four arms —
+// is on the library function. The fixture's ANALYTIC curvature stays here
+// and rides in as the curvature callback, so no estimator sits inside the
+// floor.
 fn region_floor(mesh: &TriangleMesh, region: &[u32], surface: AnalyticSurface) -> FloorReport {
-    let mut best: Vec<(f64, f64)> = Vec::with_capacity(region.len());
-    let mut worst: Vec<(f64, f64)> = Vec::with_capacity(region.len());
-    let mut area_mm2 = 0.0f64;
-    let mut l_min_mm = 0.0f64;
-    let mut l_min_worst_mm = 0.0f64;
-    let mut degenerate = 0usize;
-    for &t in region {
-        let Some(face) = mesh.faces.get(t as usize) else {
-            continue;
-        };
-        let e1 = face.v[1] - face.v[0];
-        let e2 = face.v[2] - face.v[0];
-        let area = 0.5 * e1.cross(&e2).norm();
-        if area.is_nan() || area <= 0.0 {
-            continue;
-        }
-        let cx = (face.v[0].x + face.v[1].x + face.v[2].x) / 3.0;
-        let cy = (face.v[0].y + face.v[1].y + face.v[2].y) / 3.0;
-        let (k_min, k_max) = surface.principal_curvatures(cx, cy);
-        let widest =
-            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_min);
-        let tightest =
-            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_max);
-        if !widest.is_finite() || widest <= 0.0 || !tightest.is_finite() || tightest <= 0.0 {
-            degenerate += 1;
-            continue;
-        }
-        area_mm2 += area;
-        l_min_mm += area / widest;
-        l_min_worst_mm += area / tightest;
-        best.push((widest, area));
-        worst.push((tightest, area));
-    }
-    FloorReport {
-        area_mm2,
-        l_min_mm,
-        l_min_worst_mm,
-        s_max: area_weighted(best),
-        s_worst: area_weighted(worst),
-        degenerate,
-    }
+    metrology_region_floor(mesh, Some(region), BALL_RADIUS_MM, CUSP_HEIGHT_MM, &|x, y| {
+        surface.principal_curvatures(x, y)
+    })
 }
 
 /// Print the floor and every candidate's `× floor`.
@@ -7227,50 +7156,8 @@ struct StageDOutcome {
     cl_points: usize,
 }
 
-/// An area-weighted distribution over a triangle selection.
-///
-/// **Area-weighted on purpose.** The polar sphere-cap mesh's triangles are
-/// far from equal in area (the innermost band's are ~55× smaller than the
-/// rim's), so an unweighted percentile over triangles would report the
-/// geometry of the mesh's centre rather than of the surface. Weighting by 3D
-/// area makes every percentile a statement about *ground covered*, which is
-/// what a finish spacing is about.
-struct AreaWeighted {
-    samples: usize,
-    total_area_mm2: f64,
-    min: f64,
-    p50: f64,
-    p90: f64,
-    max: f64,
-}
-
-/// Area-weighted percentiles. `pairs` is `(value, area)`; it is sorted here.
-fn area_weighted(mut pairs: Vec<(f64, f64)>) -> AreaWeighted {
-    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let total: f64 = pairs.iter().map(|p| p.1).sum();
-    let at = |fraction: f64| -> f64 {
-        if pairs.is_empty() || total <= 0.0 {
-            return f64::NAN;
-        }
-        let target = fraction * total;
-        let mut running = 0.0f64;
-        for &(value, weight) in &pairs {
-            running += weight;
-            if running >= target {
-                return value;
-            }
-        }
-        pairs.last().map_or(f64::NAN, |p| p.0)
-    };
-    AreaWeighted {
-        samples: pairs.len(),
-        total_area_mm2: total,
-        min: pairs.first().map_or(f64::NAN, |p| p.0),
-        p50: at(0.50),
-        p90: at(0.90),
-        max: pairs.last().map_or(f64::NAN, |p| p.0),
-    }
-}
+// `AreaWeighted` / `area_weighted` PROMOTED to
+// `rs_cam_core::metrology::floor` (Track M, 2026-09-02).
 
 /// What a 0° ball-end raster **actually leaves on the surface**, per region
 /// triangle.

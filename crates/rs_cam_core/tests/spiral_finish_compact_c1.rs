@@ -53,6 +53,9 @@ use rs_cam_core::direction_field::{self, FieldParams};
 use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::floor::{
+    FloorReport, region_floor as metrology_region_floor,
+};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop_math;
@@ -294,47 +297,18 @@ const DISH_SURFACE: AnalyticSurface = AnalyticSurface {
     jet: dish_jet,
 };
 
-// ── the floor (conformal_spiral_synthetic_f2.rs:2129-2215, restated) ────
-
-struct FloorReport {
-    area_mm2: f64,
-    l_min_mm: f64,
-    degenerate: usize,
-}
-
-/// `L_min = Σ area_t / s_max(t)`, `s_max` on the `κ_min` (least convex)
-/// basis, from the ANALYTIC curvature at the triangle centroid. On these
-/// umbilic fixtures κ_min = κ_max, so the direction-worst floor coincides.
+// PROMOTED (Track M, 2026-09-02): `FloorReport` and the floor integrand
+// live in `rs_cam_core::metrology::floor` (extracted from
+// conformal_spiral_synthetic_f2.rs). Disclosed divergence, closed by the
+// promotion: this file's copy computed only the κ_min basis and tested only
+// that basis for degeneracy; the library computes both bases and counts a
+// triangle degenerate when EITHER collapses. On these umbilic fixtures
+// κ_min = κ_max, so this file's numbers do not move.
 fn region_floor(mesh: &TriangleMesh, surface: AnalyticSurface) -> FloorReport {
-    let mut area_mm2 = 0.0_f64;
-    let mut l_min_mm = 0.0_f64;
-    let mut degenerate = 0usize;
-    for face in &mesh.faces {
-        let e1 = face.v[1] - face.v[0];
-        let e2 = face.v[2] - face.v[0];
-        let area = 0.5 * e1.cross(&e2).norm();
-        if area.is_nan() || area <= 0.0 {
-            continue;
-        }
-        let cx = (face.v[0].x + face.v[1].x + face.v[2].x) / 3.0;
-        let cy = (face.v[0].y + face.v[1].y + face.v[2].y) / 3.0;
-        let (k_min, _) = surface.principal_curvatures(cx, cy);
-        let widest =
-            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_min);
-        if !widest.is_finite() || widest <= 0.0 {
-            degenerate += 1;
-            continue;
-        }
-        area_mm2 += area;
-        l_min_mm += area / widest;
-    }
-    FloorReport {
-        area_mm2,
-        l_min_mm,
-        degenerate,
-    }
+    metrology_region_floor(mesh, None, BALL_RADIUS_MM, CUSP_HEIGHT_MM, &|x, y| {
+        surface.principal_curvatures(x, y)
+    })
 }
-
 // ── the medial/EDT target field ─────────────────────────────────────────
 
 /// `V_dir = n × normalise(d − n(n·d))` — the pinned convention

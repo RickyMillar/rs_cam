@@ -649,11 +649,9 @@ fn run_spiral_arm(label: &str, slug: &str, derate: bool) {
 
     // Reference floor (flat law): SUM area / s_flat. The flat law carries no
     // per-triangle curvature; stated as a reference, not an exact floor.
-    let area_mm2: f64 = mesh
-        .faces
-        .iter()
-        .map(|f| 0.5 * (f.v[1] - f.v[0]).cross(&(f.v[2] - f.v[0])).norm())
-        .sum();
+    // The area term is the promoted `metrology::floor::mesh_area_mm2`
+    // (Track M, 2026-09-02).
+    let area_mm2 = rs_cam_core::metrology::floor::mesh_area_mm2(&mesh);
     let l_min_flat = area_mm2 / S_FLAT_MM;
     eprintln!("   3D area {area_mm2:.0} mm^2; flat-law reference floor L_min = {l_min_flat:.0} mm");
 
