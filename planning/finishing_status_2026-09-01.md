@@ -382,3 +382,37 @@ boundary-config change is validated only by operator eyeball.
 ~6× its owned area cutting the 2 mm blend band around dendritic
 coastlines. The prize for a SAFE overlap reduction is large; it must be
 re-approached one dial at a time, under the union instrument.
+
+## 13. Track G — the strategy ledger (2026-09-01). The tier split is the losing layer on this board.
+
+Full table and caveats: `planning/ledger_2026-09-01/FINDINGS.md` (merge
+`6677370d`). The same-scale CLI comparison, one binary, upstream ops
+identical:
+
+| arm | finish time | spec |
+|---|---:|---|
+| A. whole-board scallop, R1.0 | **10,057 s (2.79 h)** | by construction; 1,425 mm² (~3.6 %) untouched debit |
+| B. whole-board unified, R1.0 | 12,647 s (3.51 h) | CLEAN, measured |
+| C. production two-tool tiers | **18,022 s (5.01 h)** | per-op clean; union unprovable (G-UNIONCOV) |
+| D2. whole-board spiral, XY | 7,950 s — fastest measured | **FAILS** (50.2 % exceed) |
+| D1. whole-board spiral, honest | 11,228 s, 0 retracts | **FAILS** (11.3 % exceed on >45° ground) |
+
+Consequences, stated plainly:
+
+- **On this board the tool split costs +42 % (B → C)** — the R1.5/R1.0
+  equal-cusp stepovers differ only 1.23×, so the coarse tier buys
+  little, while the split pays dendritic fringe (~6× tier 1's owned
+  area), territory hopping (71,443 rapid mm vs arm A's 11), and
+  double-cut bands. The operator's suspicion ("splitting could make
+  terrain slower") is measured true HERE. Not a global refutation: the
+  split's premise needs a large tool-size gap, which this ladder lacks.
+- **The worst-point rule confirmed exactly**: whole-board spiral rings
+  pay the steepest bank they cross — 99.7 % of D1's rings hit the 45°
+  derate clamp and it still fails spec on steeper ground. A single-op
+  whole-board strategy cannot meet spec on terrain with steep walls;
+  band/shape selection is necessary, not stylistic.
+- **The product action is the planner-preview price panel**: the planner
+  would have recommended single-tool on this board if it priced its own
+  plan. That ticket is now evidence-backed, not a UX nicety.
+- Pre-registered surprises that fired, kept as registered: A beats C;
+  D1 lands below the in-harness unified calibration row.
