@@ -13,7 +13,7 @@
 
 | Arm | Status | Key number | Record |
 |---|---|---|---|
-| **C2 monotone cells** (thin-organic) | **BUILT, default-off. C4 operator review PENDING** — the only gate left | 1.090× finish tiers, −14 % rapid distance, production-validated twice (CLI 08-30, GUI 09-01) | `thin_organic_2026-08-27/FINDINGS.md` §7 |
+| **C2 monotone cells** (thin-organic) | **SHIPPED DEFAULT-ON** (C4 passed 2026-09-01; flip `83449244`, wanaka project saved dial-on) | 1.090× finish tiers, −14 % rapid distance, production-validated twice (CLI 08-30, GUI 09-01) | `thin_organic_2026-08-27/FINDINGS.md` §7 |
 | **Per-region sweep angle** | Measured, folded into C2's PCA rotation. No separate build | 1.10× total; predictor is kept retracts, not fragments | thin-organic §0e/§0f |
 | **Per-cell direction (D1)** | **REFUTED** | 0.917× — a cost | thin-organic §0j |
 | **Contour-per-cell (D2)** | **REFUTED** | 0.686× | thin-organic §0k |
