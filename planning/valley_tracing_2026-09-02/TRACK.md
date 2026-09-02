@@ -14,7 +14,10 @@
 > branches' offset fans overlap on a dendritic network — §9's
 > pathology one level down. V0's evidence stands: the in-mask
 > direction prize (D_pot 5.9–9.3 pp upper bound) is real and
-> unharvested; avenue F is the surviving lever. Two follow-on
+> unharvested; avenue F is the surviving lever. RE-BOUNDED same day
+> (operator-caught): V1 refutes DENSE-tree tracing on band regions
+> only — sparse trunk tree and catchment decomposition are untested;
+> V1b is the open option. Two follow-on
 > findings routed out: avenue G's mechanism corrected
 > (steep inclusions, not fringe) and the region-polygon vs
 > band-territory distinction for Track M. See `FINDINGS.md`.
