@@ -30,7 +30,7 @@
 )]
 #![allow(clippy::print_stderr)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::geo::P3;
@@ -68,7 +68,7 @@ fn translated(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
     TriangleMesh::from_raw(vertices, mesh.triangles.clone())
 }
 
-fn run_arm(label: &str, project: &PathBuf) -> UnionCoverageReport {
+fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
     eprintln!("\n════════ ARM {label}: {} ════════", project.display());
     let mut session = ProjectSession::load(project).expect("load project");
     let cancel = AtomicBool::new(false);

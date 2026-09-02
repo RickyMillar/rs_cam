@@ -486,7 +486,7 @@ impl Fit {
     /// Map onto the promoted estimator's type for the library kernels.
     /// `axis` is `None`: this instrument never derives `t1`, and the prize
     /// cell does not read it. `gather_rms` stays local.
-    fn to_monge(&self) -> rs_cam_core::metrology::monge::MongeFit {
+    fn to_monge(self) -> rs_cam_core::metrology::monge::MongeFit {
         rs_cam_core::metrology::monge::MongeFit {
             kappa1: self.kappa1,
             kappa2: self.kappa2,
@@ -1003,7 +1003,7 @@ fn measure(
 /// `gather_rms`, a diagnostic the library type does not) onto `MongeFit`.
 fn tool_report(fits: &[Fit], cell_area: f64, tool_radius: f64, axis: (f64, f64)) -> ToolReport {
     let monge: Vec<rs_cam_core::metrology::monge::MongeFit> =
-        fits.iter().map(Fit::to_monge).collect();
+        fits.iter().copied().map(Fit::to_monge).collect();
     rs_cam_core::metrology::census::prize_cell(&monge, cell_area, tool_radius, SCALLOP_H_MM, axis)
 }
 
