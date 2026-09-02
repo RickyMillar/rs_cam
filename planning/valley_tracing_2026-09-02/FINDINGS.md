@@ -609,6 +609,37 @@ the shape class where §9 measured offset families losing.
 **Ruling: bar W0-a FAILS at every rung, robust to the definition
 gap. PHASE W CLOSES ON THE CENSUS — no build, as pre-registered.**
 
+**RULING SUSPENDED same day (operator-caught, the third catch).**
+The operator read the basin map and found the defect: the land
+view was defined as z > 0, which treats every LAKE like the sea —
+a hole in the world. Consequences: (a) ground draining to a lake
+terminates at a fake lake-edge outlet — that is the confetti
+ringing the lakes and much of the "coastal" artifact; (b) lake
+beds (part of the 6.6 % unlabelled below-floor cells) carry no
+label; (c) the charitable bound granted the CONFETTI compactness
+but never included the lake beds, and the bar failed by only
+0.1 pp at the best rung under that bound — so robustness does NOT
+hold once lakes are modelled correctly. Geography, per the
+operator: everything drains to the sea once lakes fill and
+overflow; each lake belongs to exactly one catchment.
+
+**W0b — corrected hydrology, pre-registered before its run:**
+
+- Base level = ONLY water connected to the board border (sea +
+  coastline trench). Interior water is land: the priority-flood
+  fills lakes as depressions and flow continues through them to
+  the sea. A lake and its drainage ring then land in one
+  catchment, labelled like any other ground.
+- Sea-edge micro-basins (true land outlets on the coast): each
+  merges into the neighbour sharing its longest divide, repeated
+  to fixpoint, so the map holds only trunk-keyed catchments plus
+  coastal segments ≥ 50 mm². The merge rule is declared here, not
+  invented in the instrument.
+- Same reports, same rungs, same SVG. **Bar W0-a is unchanged
+  (≥ 50 % compact + simple by area) and rules the corrected map.**
+  The suspended ruling is replaced by whatever the corrected
+  census shows.
+
 **Findings that outlive the closure:**
 
 1. **The full-slope territory is 69.3 % steeper than 45° (3D

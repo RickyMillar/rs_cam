@@ -19,11 +19,12 @@
 > only — sparse trunk tree and catchment decomposition are untested;
 > V1b was superseded by the operator's reframe: a catchment is a
 > ZONE (full slope range, band split replaced within it). Phase W
-> CLOSED same day on the W0 basin census: compact-basin area 19.5 %
-> (33.7 % best rung) vs the 50 % bar, robust to the coastal
-> definition gap by charitable bound (49.9 % max); the real
-> catchments are elongated and multiply connected — the §9 losing
-> shape class. The whole track is now closed. Two follow-on
+> W0 ruling SUSPENDED (operator-caught: lakes were modelled as
+> sea-holes, shattering lake-edge drainage into confetti and
+> leaving lake beds unlabelled — and the charitable bound never
+> covered lake beds). W0b re-runs the census on corrected
+> hydrology (lakes fill and drain to sea; declared coastal merge
+> rule); bar W0-a unchanged rules the corrected map. Two follow-on
 > findings routed out: avenue G's mechanism corrected
 > (steep inclusions, not fringe) and the region-polygon vs
 > band-territory distinction for Track M. See `FINDINGS.md`.
