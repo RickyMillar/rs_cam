@@ -645,6 +645,62 @@ Productization gate before any default changes: run the real project
 (both tiers) with scallop ops in place of unified, simulate, and pass
 the union/ownership audit plus the standard gate set.
 
+### M7 AMENDED same day — the operator's eye found a 40 mm hole; the win is SUSPENDED; two audit defects found and fixed
+
+**The hole.** The operator asked "why is there a huge blank space in
+the middle?" — arm C has ZERO cutting moves in the central 40 mm
+window (the enclosed lake basin). Ground truth confirmed by move
+counts (U: 10,908 cut moves there; C: 0). Candidate mechanisms, not
+yet attributed: the known `cavalier_contours` offset panic fired
+during arm C's generation (a failed ring offset may have truncated
+the cascade over the basin), or a cascade-topology failure at the
+basin rim. Either way this is a candidate PRODUCT defect in the
+standalone scallop op on basin-bearing ground — filed as
+**G-SCALLOPBASIN**, needs attribution.
+
+**Audit defect 1 — population.** The mesh-centroid audit's population
+is ~57 % SUB-TOOL-RADIUS TEXTURE: real-terrain detail narrower than
+the R1.5 ball, unreachable by ANY path. The audit measured the tool,
+not the arms — which is why a 25-pp-of-window hole diluted to
++0.117 pp and slid under the equality margin. This also recolours
+every earlier absolute from this audit family (V1's 47 %, F2/E1's
+19–34 %): those absolutes were tool accessibility plus knife edge;
+only the differentials meant anything.
+
+**Audit defect 2 — knife edge, root-caused.** The equal-cusp law puts
+spec-spaced midpoints at EXACTLY the coverage radius, so `d > r`
+coin-flips on all ground machined at exact spec.
+
+**The fixed ruler:** coverage is now RESIDUAL ABOVE THE BALL-REACHABLE
+ENVELOPE — population = the 0.25 mm drop-cutter envelope (identical
+reference for every arm), uncovered = residual > 1.25 × cusp spec.
+Absolutes are finally meaningful (arm U reads 6.0 %).
+
+**Corrected verdict:** arm C +1.221 pp vs U — **FAILS the 0.5 pp
+equality precondition. The 0.806× win is SUSPENDED**, per the
+pre-registered rule (an arm that covers less cannot win). Projection,
+labelled as such: the hole is ~1.2 pp of envelope and ~2–3 % of work;
+a basin-fixed arm C plausibly lands ~0.83× — but that is a projection,
+not a measurement. Arm R (+0.578 pp) also fails equality narrowly
+(it covers the basin — 0.40 % window — its excess is at region
+boundaries under the 1-stepover overlap).
+
+**Also answered (operator question): the shipped scallop is NOT
+per-point variable.** `RingReducer::Min` (shipped): each ring's
+stepover is the MINIMUM over ~20 samples of that ring — one scalar per
+ring, worst point rules the whole loop. Spacing varies BETWEEN rings,
+never ALONG one. The operator's square-spiral observation was correct.
+Per-point iso-scallop (spacing varying along the ring — the operator's
+stated ideal, morphing offsets→contours continuously) is unbuilt;
+substrate exists (`scallop_isofield.rs`, the `RingReducer` research
+seam and its oracle).
+
+**Path forward, in order:** (1) attribute and fix G-SCALLOPBASIN;
+(2) re-run S1 with the fixed arm — that settles the suspended win;
+(3) if it holds, the productization gate as written; (4) per-point
+iso-scallop as the measured upgrade path beyond `Min` — it inherits
+arm C's baseline and the envelope-residual ruler.
+
 ### M5 amendment — E1b horizontal-erosion sweep (recorded BEFORE the sweep runs; bars unchanged)
 
 The W = 0 (no horizontal regularity) arm ran first: E-time 2.405×,

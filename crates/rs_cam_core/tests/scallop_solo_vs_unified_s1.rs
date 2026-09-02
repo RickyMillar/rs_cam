@@ -78,64 +78,32 @@ const RAPID_FEED_MM_MIN: f64 = 5_000.0;
 
 const COVERAGE_EQUALITY_MARGIN_PP: f64 = 0.5;
 
-// ── coverage audit (restated, compact form of the F2 helpers) ────────────
+// ── coverage audit: RESIDUAL ABOVE THE BALL-REACHABLE ENVELOPE ──────────
+//
+// Two operator-caught defects killed the mesh-centroid audit: (1) a real
+// 40 mm hole diluted to +0.117 pp because ~57 % of raw mesh points are
+// SUB-TOOL-RADIUS texture no R1.5 path can touch — the audit measured the
+// tool, not the arms; (2) the equal-cusp law puts spec-spaced midpoints at
+// exactly the coverage radius (knife edge). This audit instead scores each
+// point of the drop-cutter ENVELOPE (the surface the ball CAN sculpt, same
+// reference for every arm) by the residual height the arm leaves above it:
+// residual = min over nearby path tips of ball-bottom height at that XY,
+// minus the envelope z. Covered iff residual ≤ 1.25 × the cusp spec
+// (≈ a 1.12× spacing exceedance). Absolute numbers are finally meaningful.
 
-struct BoardTriangles {
-    lifted: Vec<P3>,
-    areas: Vec<f64>,
-    area_mm2: f64,
-}
-
-fn board_triangles(mesh: &TriangleMesh, scallop_h_mm: f64) -> BoardTriangles {
-    let rows: Vec<(P3, f64)> = (0..mesh.triangles.len())
-        .into_par_iter()
-        .filter_map(|t| {
-            let tri = mesh.triangles[t];
-            let p0 = mesh.vertices[tri[0] as usize];
-            let p1 = mesh.vertices[tri[1] as usize];
-            let p2 = mesh.vertices[tri[2] as usize];
-            let cross = (p1 - p0).cross(&(p2 - p0));
-            let area = 0.5 * cross.norm();
-            if area <= 0.0 || !area.is_finite() {
-                return None;
-            }
-            let n = cross / cross.norm();
-            let n = if n.z < 0.0 { -n } else { n };
-            let c = P3::new(
-                (p0.x + p1.x + p2.x) / 3.0,
-                (p0.y + p1.y + p2.y) / 3.0,
-                (p0.z + p1.z + p2.z) / 3.0,
-            );
-            Some((c + n * scallop_h_mm, area))
-        })
-        .collect();
-    let mut lifted = Vec::with_capacity(rows.len());
-    let mut areas = Vec::with_capacity(rows.len());
-    let mut area_mm2 = 0.0;
-    for (p, a) in rows {
-        lifted.push(p);
-        areas.push(a);
-        area_mm2 += a;
-    }
-    BoardTriangles {
-        lifted,
-        areas,
-        area_mm2,
-    }
-}
-
-struct SegmentIndex {
+struct TipIndex {
     ox: f64,
     oy: f64,
     cell: f64,
     nx: usize,
     ny: usize,
     buckets: Vec<Vec<u32>>,
-    segments: Vec<(P3, P3)>,
+    tips: Vec<P3>,
 }
 
-impl SegmentIndex {
-    fn build(toolpath: &Toolpath, lift: f64, cell: f64, bbox: [f64; 4]) -> Self {
+impl TipIndex {
+    /// Cutting-intent moves, resampled to ≤ `step` chords.
+    fn build(toolpath: &Toolpath, step: f64, cell: f64, bbox: [f64; 4]) -> Self {
         let [x0, y0, x1, y1] = bbox;
         let nx = (((x1 - x0) / cell).ceil() as usize).max(1) + 2;
         let ny = (((y1 - y0) / cell).ceil() as usize).max(1) + 2;
@@ -146,7 +114,14 @@ impl SegmentIndex {
             nx,
             ny,
             buckets: vec![Vec::new(); nx * ny],
-            segments: Vec::new(),
+            tips: Vec::new(),
+        };
+        let mut push = |p: P3| {
+            let c = (((p.x - me.ox) / me.cell).floor().max(0.0) as usize).min(nx - 1);
+            let r = (((p.y - me.oy) / me.cell).floor().max(0.0) as usize).min(ny - 1);
+            let id = me.tips.len() as u32;
+            me.tips.push(p);
+            me.buckets[r * nx + c].push(id);
         };
         for i in 1..toolpath.moves.len() {
             let m = &toolpath.moves[i];
@@ -158,45 +133,35 @@ impl SegmentIndex {
             }
             let a = toolpath.moves[i - 1].target;
             let b = m.target;
-            let seg = (P3::new(a.x, a.y, a.z + lift), P3::new(b.x, b.y, b.z + lift));
-            let id = me.segments.len() as u32;
-            me.segments.push(seg);
-            let (sx0, sx1) = (a.x.min(b.x), a.x.max(b.x));
-            let (sy0, sy1) = (a.y.min(b.y), a.y.max(b.y));
-            let c0 = (((sx0 - me.ox) / cell).floor().max(0.0) as usize).min(nx - 1);
-            let c1 = (((sx1 - me.ox) / cell).ceil() as usize).min(nx - 1);
-            let r0 = (((sy0 - me.oy) / cell).floor().max(0.0) as usize).min(ny - 1);
-            let r1 = (((sy1 - me.oy) / cell).ceil() as usize).min(ny - 1);
-            for r in r0..=r1 {
-                for c in c0..=c1 {
-                    me.buckets[r * nx + c].push(id);
-                }
+            let len = (b - a).norm();
+            let n = ((len / step).ceil() as usize).max(1);
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                push(a + (b - a) * t);
             }
         }
         me
     }
 
-    fn nearest_sq(&self, p: P3) -> f64 {
-        let c = ((p.x - self.ox) / self.cell).floor();
-        let r = ((p.y - self.oy) / self.cell).floor();
+    /// Minimum ball-bottom height any nearby tip's ball reaches at `(x, y)`.
+    fn ball_floor_at(&self, x: f64, y: f64, r: f64) -> f64 {
+        let cc = ((x - self.ox) / self.cell).floor();
+        let cr = ((y - self.oy) / self.cell).floor();
         let mut best = f64::INFINITY;
         for dr in -1isize..=1 {
             for dc in -1isize..=1 {
-                let rr = r as isize + dr;
-                let cc = c as isize + dc;
-                if rr < 0 || cc < 0 || rr >= self.ny as isize || cc >= self.nx as isize {
+                let rr = cr as isize + dr;
+                let c2 = cc as isize + dc;
+                if rr < 0 || c2 < 0 || rr >= self.ny as isize || c2 >= self.nx as isize {
                     continue;
                 }
-                for &id in &self.buckets[rr as usize * self.nx + cc as usize] {
-                    let (a, b) = self.segments[id as usize];
-                    let ab = b - a;
-                    let denom = ab.norm_squared();
-                    let t = if denom <= 1e-18 {
-                        0.0
-                    } else {
-                        ((p - a).dot(&ab) / denom).clamp(0.0, 1.0)
-                    };
-                    best = best.min((p - (a + ab * t)).norm_squared());
+                for &id in &self.buckets[rr as usize * self.nx + c2 as usize] {
+                    let t = self.tips[id as usize];
+                    let d2 = (t.x - x).powi(2) + (t.y - y).powi(2);
+                    if d2 >= r * r {
+                        continue;
+                    }
+                    best = best.min(t.z + r - (r * r - d2).sqrt());
                 }
             }
         }
@@ -204,19 +169,76 @@ impl SegmentIndex {
     }
 }
 
+struct EnvelopeGrid {
+    origin_x: f64,
+    origin_y: f64,
+    step: f64,
+    cols: usize,
+    rows: usize,
+    z: Vec<f64>,
+}
+
 fn coverage_pct(
-    tris: &BoardTriangles,
+    env: &EnvelopeGrid,
     toolpath: &Toolpath,
-    cusp_radius: f64,
+    ball_r: f64,
+    spec_cusp: f64,
     bbox: [f64; 4],
-) -> f64 {
-    let index = SegmentIndex::build(toolpath, cusp_radius, 4.0 * cusp_radius, bbox);
-    let r2 = cusp_radius * cusp_radius;
-    let unmachined: f64 = (0..tris.lifted.len())
+    window: [f64; 4],
+    scatter_path: &std::path::Path,
+) -> (f64, f64) {
+    let tips = TipIndex::build(toolpath, 0.2, 1.25 * ball_r, bbox);
+    let tol = 1.25 * spec_cusp;
+    let [wx0, wy0, wx1, wy1] = window;
+    let rows_out: Vec<(usize, bool)> = (0..env.rows * env.cols)
         .into_par_iter()
-        .filter_map(|i| (index.nearest_sq(tris.lifted[i]) > r2).then_some(tris.areas[i]))
-        .sum();
-    100.0 * unmachined / tris.area_mm2.max(1e-9)
+        .filter_map(|i| {
+            let z = env.z[i];
+            if !z.is_finite() {
+                return None;
+            }
+            let x = env.origin_x + (i % env.cols) as f64 * env.step;
+            let y = env.origin_y + (i / env.cols) as f64 * env.step;
+            let floor = tips.ball_floor_at(x, y, ball_r);
+            Some((i, floor - z > tol))
+        })
+        .collect();
+    let mut tot = 0usize;
+    let mut unc = 0usize;
+    let mut wtot = 0usize;
+    let mut wunc = 0usize;
+    let mut svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 200\" \
+                   width=\"1000\" height=\"1000\">\n\
+                   <rect width=\"100%\" height=\"100%\" fill=\"#101418\"/>\n\
+                   <g fill=\"#ff5252\">\n"
+        .to_owned();
+    for (i, u) in rows_out {
+        let x = env.origin_x + (i % env.cols) as f64 * env.step;
+        let y = env.origin_y + (i / env.cols) as f64 * env.step;
+        let in_win = x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1;
+        tot += 1;
+        if in_win {
+            wtot += 1;
+        }
+        if u {
+            unc += 1;
+            if in_win {
+                wunc += 1;
+            }
+            let _ = write!(
+                svg,
+                "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"0.15\"/>",
+                x,
+                200.0 - y
+            );
+        }
+    }
+    svg.push_str("</g>\n</svg>\n");
+    let _ = std::fs::write(scatter_path, svg);
+    (
+        100.0 * unc as f64 / tot.max(1) as f64,
+        100.0 * wunc as f64 / wtot.max(1) as f64,
+    )
 }
 
 // ── arm accounting ───────────────────────────────────────────────────────
@@ -453,7 +475,31 @@ fn wanaka_scallop_solo_vs_unified_s1() {
     );
 
     // ── cost + coverage, identically ──────────────────────────────────────
-    let tris = board_triangles(&mesh, SCALLOP_HEIGHT);
+    // The shared reference envelope: what the R1.5 ball CAN sculpt.
+    let envg = {
+        let g = rs_cam_core::dropcutter::batch_drop_cutter(
+            &mesh,
+            &index,
+            &r15,
+            0.25,
+            0.0,
+            mesh.bbox.min.z - 0.1,
+        );
+        let min_z = mesh.bbox.min.z - 0.1;
+        let z: Vec<f64> = g
+            .points
+            .iter()
+            .map(|p| if p.z > min_z + 0.001 { p.z } else { f64::NAN })
+            .collect();
+        EnvelopeGrid {
+            origin_x: g.u_start,
+            origin_y: g.v_start,
+            step: g.x_step,
+            cols: g.cols,
+            rows: g.rows,
+            z,
+        }
+    };
     let bbox = [
         mesh.bbox.min.x - 5.0,
         mesh.bbox.min.y - 5.0,
@@ -471,9 +517,9 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         slope.angles[row * slope.cols + col].to_degrees()
     };
     eprintln!(
-        "\ncoverage population: {} triangles, {:.0} mm² 3D (whole board, no slope filter)\n",
-        tris.lifted.len(),
-        tris.area_mm2
+        "\ncoverage population: the R1.5-reachable ENVELOPE at 0.25 mm \
+         ({} finite samples); uncovered = residual > 1.25 x cusp spec\n",
+        envg.z.iter().filter(|z| z.is_finite()).count()
     );
     eprintln!(
         "     {:>38}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>9}",
@@ -484,12 +530,43 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         ("C   scallop, whole board", &tp_c),
         ("R   scallop on planner regions (1-step)", &tp_r),
     ];
+    let centre_window = [80.0, 80.0, 120.0, 120.0];
+    let out_dir = std::path::Path::new("target/scallop_vs_unified_s1");
+    let _ = std::fs::create_dir_all(out_dir);
     let mut results: Vec<(String, ArmStats, f64)> = Vec::new();
     for (label, tp) in arms {
         let st = arm_stats(tp, &kinematics);
-        let cov = coverage_pct(&tris, tp, r15.cusp_radius_mm(), bbox);
+        let tag: String = label.chars().take(1).collect();
+        // Ground truth beside the audit: cutting moves inside the window.
+        let mut win_moves = 0usize;
+        for i in 1..tp.moves.len() {
+            let m = &tp.moves[i];
+            if matches!(m.move_type, MoveType::Rapid)
+                || !matches!(m.intent, MoveIntent::ClearingCut | MoveIntent::FinishingCut)
+            {
+                continue;
+            }
+            let t = m.target;
+            if t.x >= centre_window[0]
+                && t.x <= centre_window[2]
+                && t.y >= centre_window[1]
+                && t.y <= centre_window[3]
+            {
+                win_moves += 1;
+            }
+        }
+        let (cov, win_cov) = coverage_pct(
+            &envg,
+            tp,
+            r15.cusp_radius_mm(),
+            SCALLOP_HEIGHT,
+            bbox,
+            centre_window,
+            &out_dir.join(format!("uncovered_{tag}.svg")),
+        );
         eprintln!(
-            "     {:>38}  {:>9.1}  {:>9.0}  {:>9.0}  {:>8}  {:>8}  {:>8.3}%",
+            "     {:>38}  {:>9.1}  {:>9.0}  {:>9.0}  {:>8}  {:>8}  {:>8.3}%  \
+             [centre 40mm window: {win_cov:.2} % unmach, {win_moves} cut moves]",
             label, st.time_s, st.cutting_mm, st.rapid_mm, st.entry_plunges, st.moves, cov
         );
         results.push((label.to_owned(), st, cov));
