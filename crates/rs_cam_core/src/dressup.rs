@@ -7,7 +7,10 @@
 //! - **Tab/bridge**: Insert material tabs to hold parts during profile cutting
 
 use crate::dexel_stock::TriDexelStock;
+use crate::dropcutter::point_drop_cutter;
 use crate::geo::P3;
+use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 use crate::transform_provenance::{ReconcileSet, Transformed};
@@ -47,6 +50,51 @@ pub enum EntryStyle {
     Helix { radius: f64, pitch: f64 },
 }
 
+/// Drop-cutter surface context for stock-aware entry moves
+/// (G-RAMPTERRAIN, `planning/entry_moves_2026-09-03/`).
+///
+/// When present, [`emit_ramp`] and [`emit_helix`] lift every leg and
+/// turn sample to `max(planned z, cl_z + stock_to_leave)`, and fall
+/// back to a straight plunge when the probe loses surface contact.
+/// When absent, the entry keeps the legacy straight legs — honest only
+/// for operations with no mesh surface (2D prisms), where the legs cut
+/// the material between passes by design.
+#[derive(Clone, Copy)]
+pub struct EntrySurfaceProbe<'a> {
+    pub mesh: &'a TriangleMesh,
+    pub index: &'a SpatialIndex,
+    /// The operation's cutter — the CL surface is tool-profile-aware.
+    pub cutter: &'a dyn MillingCutter,
+    /// The operation's leave allowance. The probe protects
+    /// `surface + stock_to_leave`, not the bare model.
+    pub stock_to_leave: f64,
+}
+
+impl EntrySurfaceProbe<'_> {
+    /// The protected floor at `(x, y)`: drop-cutter CL height plus the
+    /// leave allowance. `None` when the cutter has no surface contact
+    /// there (off the mesh footprint).
+    pub fn floor_z(&self, x: f64, y: f64) -> Option<f64> {
+        let cl = point_drop_cutter(x, y, self.mesh, self.index, self.cutter);
+        cl.contacted.then_some(cl.z + self.stock_to_leave)
+    }
+}
+
+/// The safety context every entry emitter consumes.
+///
+/// One construction site for "all entry moves should be stock aware"
+/// (operator ruling, G-RAMPTERRAIN): both doors into the entry
+/// emitters — the dressup layer and adaptive3d's direct calls — build
+/// one of these instead of passing loose guard values.
+#[derive(Clone, Copy)]
+pub struct EntrySafety<'a> {
+    /// Z of the top of uncut stock in the cutter frame. Keeps the
+    /// entry's initial descent rapid above material (UX-dial-in B1).
+    pub stock_top: f64,
+    /// Drop-cutter surface probe. See [`EntrySurfaceProbe`].
+    pub surface: Option<EntrySurfaceProbe<'a>>,
+}
+
 /// Replace straight plunges in a toolpath with ramped or helical entries.
 ///
 /// A "plunge" is detected as a feed move that goes from safe_z (or higher)
@@ -55,18 +103,16 @@ pub enum EntryStyle {
 /// expansion. The inserted moves are tagged with [`SpanKind::Entry`] when
 /// the input has valid spans.
 ///
-/// `stock_top` is the Z of the top of uncut stock material in the cutter
-/// frame. Used to ensure the entry's initial descent does not emit a
-/// `Rapid` that passes below the stock surface — without this guard a
-/// fresh contour's "rapid to ramp_start_z" would punch through uncut
-/// material when `ramp_start_z < stock_top` (UX-dial-in B1).
+/// `safety` carries the stock-top rapid guard (UX-dial-in B1) and the
+/// optional drop-cutter surface probe (G-RAMPTERRAIN) — see
+/// [`EntrySafety`].
 pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
-    stock_top: f64,
+    safety: EntrySafety<'_>,
 ) -> AnnotatedToolpath {
-    apply_entry_with_provenance(annotated, style, plunge_rate, stock_top)
+    apply_entry_with_provenance(annotated, style, plunge_rate, safety)
         .reconcile(&mut ReconcileSet::empty())
         .into_inner()
 }
@@ -78,7 +124,7 @@ pub fn apply_entry_with_provenance(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
-    stock_top: f64,
+    safety: EntrySafety<'_>,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -115,7 +161,7 @@ pub fn apply_entry_with_provenance(
                         ramp_dir,
                         max_angle_deg,
                         feed_rate.min(plunge_rate),
-                        stock_top,
+                        &safety,
                     );
                 }
                 EntryStyle::Helix { radius, pitch } => {
@@ -126,7 +172,7 @@ pub fn apply_entry_with_provenance(
                         radius,
                         pitch,
                         feed_rate.min(plunge_rate),
-                        stock_top,
+                        &safety,
                     );
                 }
             }
@@ -482,9 +528,10 @@ pub(crate) fn emit_ramp(
     dir: (f64, f64),
     max_angle_deg: f64,
     feed_rate: f64,
-    stock_top: f64,
+    safety: &EntrySafety<'_>,
 ) {
     use crate::toolpath::MoveIntent;
+    let stock_top = safety.stock_top;
     if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
         // Invalid angle — fall back to straight plunge
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
@@ -558,9 +605,10 @@ pub(crate) fn emit_helix(
     radius: f64,
     pitch: f64,
     feed_rate: f64,
-    stock_top: f64,
+    safety: &EntrySafety<'_>,
 ) {
     use crate::toolpath::MoveIntent;
+    let stock_top = safety.stock_top;
     // Only helix the last portion — rapid down to clearance first
     let clearance = ENTRY_CLEARANCE;
     let helix_start_z = end.z + clearance;
@@ -2315,7 +2363,7 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -2355,7 +2403,7 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 5.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -2374,7 +2422,7 @@ mod tests {
             AnnotatedToolpath::new(tp.clone()),
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -2401,7 +2449,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -2424,7 +2472,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -2442,7 +2490,7 @@ mod tests {
                 pitch: 1.0,
             },
             500.0,
-            0.0,
+            no_probe(0.0),
         )
         .toolpath;
 
@@ -3111,6 +3159,16 @@ mod tests {
         crate::tool::FlatEndmill::new(6.0, 25.0)
     }
 
+    /// Entry safety with no surface probe — the legacy blind-leg
+    /// behaviour these tests pin (G-RAMPTERRAIN keeps it for callers
+    /// with no mesh surface).
+    fn no_probe(stock_top: f64) -> EntrySafety<'static> {
+        EntrySafety {
+            stock_top,
+            surface: None,
+        }
+    }
+
     /// Build a stock where x < 50 has material (top_z = 5.0) and x >= 50 is
     /// cleared (top_z lowered to -10.0 by simulating a cut).  The stock spans
     /// x: 0..100, y: 0..100, z: -10..5 with 5mm cells.
@@ -3295,7 +3353,13 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(0.0, 0.0, 0.0), 100.0);
         let style = EntryStyle::Ramp { max_angle_deg: 0.0 };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            style,
+            50.0,
+            no_probe(0.0),
+        )
+        .toolpath;
         // Should not contain NaN or infinity
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 0° angle");
@@ -3312,7 +3376,13 @@ mod tests {
         let style = EntryStyle::Ramp {
             max_angle_deg: 90.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            style,
+            50.0,
+            no_probe(0.0),
+        )
+        .toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in ramp with 90° angle");
             assert!(m.target.z.is_finite(), "NaN in ramp with 90° angle");
@@ -3328,7 +3398,13 @@ mod tests {
             radius: 0.0,
             pitch: 2.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            style,
+            50.0,
+            no_probe(0.0),
+        )
+        .toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with 0 radius");
             assert!(m.target.z.is_finite(), "NaN in helix with 0 radius");
@@ -3344,7 +3420,13 @@ mod tests {
             radius: -1.0,
             pitch: 2.0,
         };
-        let result = apply_entry(AnnotatedToolpath::new(tp.clone()), style, 50.0, 0.0).toolpath;
+        let result = apply_entry(
+            AnnotatedToolpath::new(tp.clone()),
+            style,
+            50.0,
+            no_probe(0.0),
+        )
+        .toolpath;
         for m in &result.moves {
             assert!(m.target.x.is_finite(), "NaN in helix with negative radius");
         }
@@ -3397,7 +3479,7 @@ mod tests {
             annotated,
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         );
         result
             .check_invariants()
@@ -3423,7 +3505,7 @@ mod tests {
             annotated,
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         );
         let entries: Vec<&Span> = result
             .spans
@@ -3450,7 +3532,7 @@ mod tests {
             annotated,
             EntryStyle::Ramp { max_angle_deg: 3.0 },
             500.0,
-            0.0,
+            no_probe(0.0),
         );
         assert!(!result.spans_valid);
         // Garbage span returned untouched.

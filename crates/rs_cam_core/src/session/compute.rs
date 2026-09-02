@@ -1599,6 +1599,20 @@ impl ProjectSession {
                 // entry-descent split alike.
                 let mut channels =
                     crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+                // G-RAMPTERRAIN: entry moves clip to the drop-cutter
+                // surface. Present whenever the project has a mesh; a
+                // 2D-only project keeps the legacy straight legs (no
+                // surface exists to probe — the legs cut prism material
+                // between passes by design).
+                let entry_surface = match (mesh.as_deref(), spatial_index.as_deref()) {
+                    (Some(m), Some(idx)) => Some(crate::dressup::EntrySurfaceProbe {
+                        mesh: m,
+                        index: idx,
+                        cutter: &tool_def,
+                        stock_to_leave: tc.operation.entry_probe_stock_to_leave(),
+                    }),
+                    _ => None,
+                };
                 let dressed = crate::compute::execute::apply_dressups(
                     annotated,
                     &tc.dressups,
@@ -1620,6 +1634,7 @@ impl ProjectSession {
                     // path — `feed_opt_stock` above stays `None` and keeps it
                     // off.
                     Some(&tool_def as &dyn crate::tool::MillingCutter),
+                    entry_surface,
                     tc.operation.transform_capabilities(),
                     None,
                     None,

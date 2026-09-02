@@ -602,6 +602,47 @@ pub enum OptimizationSurface<'op> {
 }
 
 impl OperationConfig {
+    /// The vertical leave allowance the entry-move surface probe must
+    /// protect (G-RAMPTERRAIN, `planning/entry_moves_2026-09-03/`).
+    /// The probe floor is `drop-cutter CL + this value`, so an entry
+    /// leg never bites into the allowance the operation promises to
+    /// leave. Every variant is named — no wildcard arm — so a new
+    /// operation must state its allowance.
+    ///
+    /// `0.0` is honest for the variants with no leave dial: their
+    /// generators cut to the surface, or to 2D prism depths where the
+    /// dressup layer receives no probe at all.
+    pub fn entry_probe_stock_to_leave(&self) -> f64 {
+        match self {
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Rest(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => 0.0,
+            // The adaptive3d planner honours the axial dial only (see
+            // `execute::adaptive3d_effective_stock_to_leave`).
+            OperationConfig::Adaptive3d(c) => c.stock_to_leave_axial,
+            OperationConfig::Pencil(c) => c.stock_to_leave,
+            OperationConfig::Scallop(c) => c.stock_to_leave,
+            OperationConfig::UnifiedFinish(c) => c.stock_to_leave,
+            OperationConfig::SteepShallow(c) => c.stock_to_leave,
+            OperationConfig::RampFinish(c) => c.stock_to_leave,
+            OperationConfig::SpiralFinish(c) => c.stock_to_leave,
+            OperationConfig::RadialFinish(c) => c.stock_to_leave,
+            OperationConfig::HorizontalFinish(c) => c.stock_to_leave,
+        }
+    }
+
     /// G16 Step 3: classify this op for optimization. Every variant is
     /// named explicitly — the match has **no wildcard arm**. Adding a
     /// new `OperationConfig` variant without classifying it here is a

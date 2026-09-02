@@ -51,6 +51,7 @@ pub mod dropcutter;
 pub mod dxf_input;
 pub mod edge_distance;
 pub mod enriched_mesh;
+pub mod entry_audit;
 pub mod face;
 pub mod feed_modulation;
 pub mod feedopt;

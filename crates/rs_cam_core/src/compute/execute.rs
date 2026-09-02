@@ -3533,6 +3533,9 @@ pub fn apply_dressups(
     prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
     feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
     cutter: Option<&dyn MillingCutter>,
+    // G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
+    // moves. `None` only for operations with no mesh surface.
+    entry_surface: Option<crate::dressup::EntrySurfaceProbe<'_>>,
     transform_capabilities: OperationTransformCapabilities,
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
@@ -3636,6 +3639,10 @@ pub fn apply_dressups(
     } else {
         cfg.entry_style
     };
+    let entry_safety = crate::dressup::EntrySafety {
+        stock_top,
+        surface: entry_surface,
+    };
     match entry_style {
         DressupEntryStyle::Ramp => {
             let ramp_angle = cfg.ramp_angle;
@@ -3661,7 +3668,7 @@ pub fn apply_dressups(
                             max_angle_deg: ramp_angle,
                         },
                         plunge_rate,
-                        stock_top,
+                        entry_safety,
                     )
                 },
             );
@@ -3693,7 +3700,7 @@ pub fn apply_dressups(
                             pitch: helix_pitch,
                         },
                         plunge_rate,
-                        stock_top,
+                        entry_safety,
                     )
                 },
             );
@@ -5500,6 +5507,7 @@ mod tests {
             None,
             Some(&mut stock),
             Some(&cutter),
+            None,
             OperationType::Pocket.transform_capabilities(),
             None,
             Some(&semantic_root),
@@ -5537,6 +5545,7 @@ mod tests {
             6.35,
             30.0,
             0.0,
+            None,
             None,
             None,
             None,

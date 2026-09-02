@@ -269,7 +269,10 @@ fn the_ramp_transform_itself_is_alive() {
         one_plunge_toolpath(),
         EntryStyle::Ramp { max_angle_deg: 3.0 },
         300.0,
-        0.0,
+        rs_cam_core::dressup::EntrySafety {
+            stock_top: 0.0,
+            surface: None,
+        },
     );
     assert!(
         out.toolpath

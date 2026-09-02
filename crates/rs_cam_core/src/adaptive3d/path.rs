@@ -1289,6 +1289,19 @@ pub(super) fn segments_to_toolpath(
         EntryStyle3d::Ramp { .. } => "ramp entry",
     };
 
+    // G-RAMPTERRAIN: hand the entry emitters the drop-cutter surface so
+    // ramp legs and helix turns clip to `surface + stock_to_leave` —
+    // the same floor `drape_point` holds for the entry destination.
+    let entry_safety = |stock_top: f64| crate::dressup::EntrySafety {
+        stock_top,
+        surface: Some(crate::dressup::EntrySurfaceProbe {
+            mesh,
+            index,
+            cutter,
+            stock_to_leave: params.stock_to_leave,
+        }),
+    };
+
     for segment in segments {
         match segment {
             Adaptive3dSegment::Marker(event) => {
@@ -1375,7 +1388,7 @@ pub(super) fn segments_to_toolpath(
                             radius,
                             pitch,
                             params.plunge_rate,
-                            params.safe_z,
+                            &entry_safety(params.safe_z),
                         );
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
@@ -1392,7 +1405,7 @@ pub(super) fn segments_to_toolpath(
                             (1.0, 0.0),
                             max_angle_deg,
                             params.plunge_rate,
-                            params.safe_z,
+                            &entry_safety(params.safe_z),
                         );
                     }
                 };
@@ -1526,7 +1539,7 @@ pub(super) fn segments_to_toolpath(
                             radius,
                             pitch,
                             params.plunge_rate,
-                            descent_floor,
+                            &entry_safety(descent_floor),
                         );
                     }
                     EntryStyle3d::Ramp { max_angle_deg } => {
@@ -1555,7 +1568,7 @@ pub(super) fn segments_to_toolpath(
                             (1.0, 0.0),
                             max_angle_deg,
                             params.plunge_rate,
-                            descent_floor,
+                            &entry_safety(descent_floor),
                         );
                     }
                 };

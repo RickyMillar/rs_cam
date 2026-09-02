@@ -57,6 +57,25 @@ pub(super) fn apply_dressups(
     // it on.
     let cutter = build_cutter(tool);
 
+    // G-RAMPTERRAIN: entry moves clip to the drop-cutter surface. The
+    // worker request carries no spatial index, so build one here — but
+    // only when an entry dressup will actually consume it. A 2D-only
+    // request (no mesh) keeps the legacy straight legs.
+    let entry_mesh = if cfg.entry_style == rs_cam_core::compute::config::DressupEntryStyle::None {
+        None
+    } else {
+        req.mesh.as_deref()
+    };
+    let entry_index = entry_mesh.map(rs_cam_core::mesh::SpatialIndex::build_auto);
+    let entry_surface = entry_mesh.zip(entry_index.as_ref()).map(|(mesh, index)| {
+        rs_cam_core::dressup::EntrySurfaceProbe {
+            mesh,
+            index,
+            cutter: &cutter as &dyn rs_cam_core::tool::MillingCutter,
+            stock_to_leave: req.operation.entry_probe_stock_to_leave(),
+        }
+    });
+
     rs_cam_core::compute::execute::apply_dressups(
         annotated,
         cfg,
@@ -67,6 +86,7 @@ pub(super) fn apply_dressups(
         req.prior_stock.as_ref(),
         feed_opt_stock.as_mut(),
         Some(&cutter as &dyn rs_cam_core::tool::MillingCutter),
+        entry_surface,
         transform_capabilities,
         debug,
         semantic,

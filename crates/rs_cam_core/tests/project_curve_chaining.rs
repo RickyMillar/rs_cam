@@ -787,6 +787,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
         None,
         None,
         Some(&tool_def as &dyn MillingCutter),
+        None,
         OperationType::ProjectCurve.transform_capabilities(),
         None,
         None,
