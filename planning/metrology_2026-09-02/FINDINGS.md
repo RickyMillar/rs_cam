@@ -351,3 +351,92 @@ they cost twice: spec-unfinishable B2 ground AND the derate pin), or
 spacing varying along the pass, which is avenue F. The p99-basis column
 (1.13–1.19× on several regions) is the size of THAT prize on this board,
 and it belongs to avenue F's ledger, not avenue G's.
+
+---
+
+## M3 — the avenue-F prize split (pre-registration, written BEFORE the run)
+
+> Operator go: 2026-09-02, "do it", with the stated suspicion that a
+> decomposition route would be marred by "lots of tiny islands". That
+> suspicion is bar B-confetti below, fixed before the run.
+
+**Question.** The spacing prize (every pass pays its region's worst
+point) has two candidate capture routes: (i) DECOMPOSITION — redraw
+regions so each region's worst point is less bad, keep one spacing per
+region; (ii) ALONG-PASS — spacing that varies within a pass (the
+Eikonal candidate). Which route can capture the prize on wanaka tier-1?
+
+**Population.** Shallow-OWNED cells (the G2 `PlannedRegions::labels`
+grid) of the tier-1 fine island, same setup as G2/H1 verbatim. Spacing
+model: allowed XY pitch ∝ cos θ(cell), θ from the production
+classification slope map, clamped at the 45° threshold. Slope-only —
+no curvature refund — stated as conservative; cutting length modelled
+as area ÷ pitch, links/retracts excluded (spacing policy only, the
+metrology costing scale prices paths, not this).
+
+**Quantities:**
+
+- `L_today` = Σ over regions of (owned cells ÷ cos θ_max,region), with
+  θ_max the PRODUCTION derate population (all covered in-polygon
+  cells, clamped) — what the shipped raster pays.
+- `L_floor` = Σ over owned cells of 1 ÷ cos θ(cell) — per-cell perfect
+  spacing. The prize is `P = L_today − L_floor`.
+- `L_band(K)` = slope-banded decomposition with fixed edges
+  {10°, 20°, 30°, 40°, 45°} and coarser subsets (K = 2, 3, 5): each
+  band pays its own upper edge. IDEALIZED (ignores contiguity).
+- `L_band_machinable(K)` = same, but each 8-connected component of a
+  band smaller than the planner's own `min_region_area_mm2` (16 mm²
+  for this tool) is merged UP into the worse neighbouring band before
+  costing — the confetti-honest reading. Component censuses printed
+  per band (count, area distribution, machinable share).
+
+**Bars (pre-registered):**
+
+- **B-capture:** decomposition route stays open only if
+  `L_band_machinable(K ≤ 5)` captures ≥ 70 % of P.
+- **B-confetti:** if the machinable-honest capture falls below 50 % of
+  the IDEALIZED capture at the same K, the loss is confetti-shaped and
+  the decomposition route CLOSES regardless of B-capture.
+- Neither bar rules FOR the along-pass route — it only inherits the
+  residual prize; its own cost (path code, junction handling) is a
+  separate pre-registration that the operator assigns.
+
+### M3 RESULT — RUN 2026-09-02. B-capture PASSES at K = 3. B-confetti does NOT fire.
+
+Instrument: `tests/spacing_prize_split_f1.rs`, release-fast, 17 s.
+Population: 68,117 owned Shallow cells (4,257 mm² XY), tier-1. Owned θ:
+p50 6.0°, p90 30.0°, p99 at the clamp.
+
+**The prize, measured:** today's per-region worst-point derate pays
+**1.354× floor** on spacing policy alone — 26.1 % of the Shallow
+cutting length is on the table. (This scale is spacing-policy-only,
+owned cells, no links — do not compare it to whole-arm ×floor numbers.)
+
+| ladder | idealized capture | machinable capture | confetti retention |
+|---|---|---|---|
+| K = 2 (30/45) | 63.3 % | 60.7 % | 96.0 % |
+| K = 3 (20/40/45) | 79.4 % | **71.9 %** | 90.6 % |
+| K = 5 (10/20/30/40/45) | 92.7 % | 77.0 % | 83.1 % |
+
+- **B-capture (≥ 70 % machinable): PASSES at K = 3.** The decomposition
+  route stays open.
+- **B-confetti (< 50 % retention closes it): does NOT fire** at any K
+  (83–96 %).
+
+**The operator's confetti suspicion, measured:** real in direction, not
+fatal in magnitude. The steeper mid-bands ARE confetti (K = 5: the
+20–40° bands are 32–44 % machinable, ~1,000+ components each), but the
+prize MASS lives in the flat band — p50 slope is 6.0°, and the ≤ 20°
+band is 91.6 % machinable. Merging the confetti up costs only 8–17
+points of capture.
+
+**What this does NOT price (the next falsifier, F2):** fragments and
+links. K = 3's machinable bands still hold hundreds of components, and
+the V1/§9 lesson is that fragment count can eat a distance win whole.
+Before any planner change, one costed arm comparison on the production
+harness (`relink_and_cost_under`, machined-stock link regime): today's
+regions + derate vs the K = 3 machinable banding, whole-arm, links
+included, spec checked by the union/ownership audit. The along-pass
+(Eikonal) route inherits the residual ~28 % of the prize (~7 % of
+length) plus whatever F2 shows decomposition losing to links; its own
+pre-registration remains with the operator.
