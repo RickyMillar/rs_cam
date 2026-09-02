@@ -1193,3 +1193,17 @@ and approach moves are not stock-aware. The G-RAMPTERRAIN charter
 FAMILY — ramp, helix, lead-in/out, and post-generation arc refits near
 entries — not just ramps. The buried-chord G-code analysis is the
 sentry prototype; it found all three.
+
+### v4 VERIFIED CLEAN (2026-09-03): zero buried chords; the entry critical is gone
+
+With all three stock-blind dressups off (`entry_style = "none"`,
+`arc_fitting = false`, `lead_in_out = false`): the buried-chord sentry
+reads **0** on the exported G-code, and the sim triage carries NO
+entry_load critical. Remaining actions are the rough-terrace handoff
+caution (13.6 % of samples > 3× median, peak 3.75 mm — the project's
+rough-to-finish gap, shared with the rough's own reading) and air-cut
+hints. Gates: truncated_core 0.0, coverage findings 0.0, zero
+collisions, one plunge per fragment. Runtime 9,769 s project /
+ISO op cutting 98.5 km. Project saved with the clean dressup config.
+The operator's fillet-speckle eyeball on this v4 stock is the last
+open visual check (arc-sag hypothesis).
