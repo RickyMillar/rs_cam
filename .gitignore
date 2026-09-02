@@ -31,3 +31,4 @@
 # against (mod.rs declares it) and yet never landed in the repo — HEAD
 # did not compile from a clean clone. Keep the leading slash.
 /diagnostics/
+crates/*/target/
