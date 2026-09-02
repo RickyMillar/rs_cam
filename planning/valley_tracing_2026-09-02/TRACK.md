@@ -19,8 +19,11 @@
 > only — sparse trunk tree and catchment decomposition are untested;
 > V1b was superseded by the operator's reframe: a catchment is a
 > ZONE (full slope range, band split replaced within it). Phase W
-> is open — W0 basin census pre-registered, existing-scallop-per-
-> basin (W1) gated on it, comparator = ledger arm A. Two follow-on
+> CLOSED same day on the W0 basin census: compact-basin area 19.5 %
+> (33.7 % best rung) vs the 50 % bar, robust to the coastal
+> definition gap by charitable bound (49.9 % max); the real
+> catchments are elongated and multiply connected — the §9 losing
+> shape class. The whole track is now closed. Two follow-on
 > findings routed out: avenue G's mechanism corrected
 > (steep inclusions, not fringe) and the region-polygon vs
 > band-territory distinction for Track M. See `FINDINGS.md`.

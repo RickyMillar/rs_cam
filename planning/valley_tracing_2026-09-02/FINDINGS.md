@@ -572,3 +572,54 @@ the hillshade.
   have — no build. Passes → W1: production scallop per basin vs
   arm A's scallop on the same territory, equal achieved scallop,
   existing harness; W1's bars are written before any W1 run.
+
+### W0 — RUN 2026-09-02. Bar W0-a FAILS at every rung. PHASE W CLOSES.
+
+**Instrument:** `catchment_basin_census_w0.rs` (`86663373` →
+`193869af`; the middle commit fixed a self-caught sea-labelling
+bug that had opened 31 602 basins). Full territory, no band clip:
+28 545 mm² XY / 42 637 mm² 3D across all 23 planned regions.
+Basin map SVG read by the orchestrator before ruling: large
+coherent interior catchments, visibly elongated and lobed, with
+confetti of tiny coastal basins along the shore and valley
+corridors.
+
+**A definition gap, reported by the agent's stop guard (the
+orchestrator's spec error):** "drain to a trunk outlet" does not
+reach coastal ground that drains straight to the sea — 33.6–67.0 %
+of territory area across the rungs. Those basins have no
+downstream neighbour, so the 50 mm² merge rule was inert (0 merges
+at T = 512) and N_basins ≈ 1 600 is an artifact of the gap, not
+catchment structure. Both seam predictors are therefore
+artifact-driven and were not used in the ruling.
+
+**The ruling is robust to the gap — charitable-bound arithmetic:**
+compact area share (simply connected AND aspect ≤ 2) measured
+19.54 % at T = 512, best rung 33.73 % at T = 256, vs the 50 % bar.
+Grant the impossible best case — every coastal mm² re-merged into
+perfectly compact basins — and the share still lands at **49.9 %
+(T = 256) / 47.3 % (T = 512)**, under the bar at every rung. And
+the REAL catchments carry the failure: trunk-keyed basins' compact
+share collapses with scale — 29.9 % (T = 256) → 4.05 % (T = 512,
+one basin) → 0.00 % (T = 1024). The larger the true catchment, the
+more elongated and multiply connected (largest 8: aspects
+1.7–2.9, up to 5 boundary loops). Wanaka's catchments are exactly
+the shape class where §9 measured offset families losing.
+
+**Ruling: bar W0-a FAILS at every rung, robust to the definition
+gap. PHASE W CLOSES ON THE CENSUS — no build, as pre-registered.**
+
+**Findings that outlive the closure:**
+
+1. **The full-slope territory is 69.3 % steeper than 45° (3D
+   area).** Removing the band clip lands any whole-strategy
+   candidate mostly on very-steep ground — the direct explanation
+   of V1's 47 % coverage reading, and the context any future
+   full-territory proposal must state up front.
+2. **6.6 % of territory cells sit at or below the land floor
+   (z ≤ 0)** and can carry no basin label — bookkeeping for any
+   future watershed work.
+3. **Track M's commit `2e2ef306` left the workspace clippy gate
+   red** on `union_coverage_m1.rs:71` (`ptr_arg`) and
+   `wanaka_curvature_anisotropy.rs:489` (`wrong_self_convention`)
+   — outside this track's footprint, relayed to the operator.
