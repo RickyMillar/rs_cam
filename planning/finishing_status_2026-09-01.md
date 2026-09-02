@@ -486,3 +486,29 @@ pathology one level down. What survives: the measured, unharvested
 D_pot; the avenue-G mechanism correction above; and the
 region-polygon ≠ band-territory finding for Track M. Full record:
 `planning/valley_tracing_2026-09-02/FINDINGS.md`.
+
+## 14. Track M complete — one metrology home, and the union audit's first catch (2026-09-02)
+
+`crates/rs_cam_core/src/metrology/` now carries the ONE implementation
+of each ruler: costing (`relink_and_cost_under`, six test copies
+retired to thin adapters), the L_min floor, achieved contact spacing
+(Track B's gate quantity), the Monge estimator + both strategy censuses
+with named evidence-cited thresholds, and the NEW `union_coverage`
+audit (G-UNIONCOV's fix) with a loud `assert_within` failure API. The
+measurement contract (None vs 0.0, the two air-cut denominators, the
+two time scales) is written once, in the module docs. The b1 acceptance
+sentinel is byte-identical through the move. Merge `5887b11d`.
+
+The audit's pre-registered proof held both ways: the rejected
+overlap-0.2 variant FAILS (18,341 mm², 45.8 % above spec, one
+17,161 mm² connected patch, max standing 5.43 mm) and discriminates at
+5.99× against production.
+
+**And the first catch: PRODUCTION IS NOT UNION-CLEAN.** 3,062 mm²
+(7.65 % of the footprint) stands above spec in 3,422 small patches —
+under clean per-op wires. Unattributed; the shape (many small patches)
+is consistent with the tip-float finding (valley floors the R1.0
+cannot reach, worst 2.3 mm) but that is a hypothesis, not a
+measurement. **Handed to the valley workstream** (a separate agent owns
+valley milling); the metrology side is done — the ruler exists, every
+future comparison runs under it.
