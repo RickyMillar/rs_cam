@@ -46,7 +46,9 @@ use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop::{
-    ScallopDirection, ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
+    ScallopDirection, ScallopParams, ScallopRingBudget, scallop_generation_resolution,
+    scallop_toolpath_structured_annotated_with_cancel,
+    scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
@@ -418,7 +420,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         link_kinematics: Some(link_kinematics),
     };
     let t1 = std::time::Instant::now();
-    let (tp_c, _, _) = scallop_toolpath_structured_annotated_with_cancel(
+    let (tp_c, _, rep_c) = scallop_toolpath_structured_annotated_with_cancel(
         &mesh,
         &index,
         &r15,
@@ -429,9 +431,47 @@ fn wanaka_scallop_solo_vs_unified_s1() {
     )
     .expect("scallop whole board");
     eprintln!(
-        "arm C generated: {} moves, {:.0} s",
+        "arm C  (shipped budget) generated: {} moves, {:.0} s — cascade left uncut: \
+         core {:.0} mm², net {:.0} mm² (G-SCALLOPBASIN attribution)",
         tp_c.moves.len(),
-        t1.elapsed().as_secs_f64()
+        t1.elapsed().as_secs_f64(),
+        rep_c.uncut_core_mm2,
+        rep_c.untouched_mm2,
+    );
+    // The HONEST full-coverage arms: cascade run to completion under the
+    // PR-8c research budgets. C2 = reach-policy budget, C3 = the naive
+    // clamp-floor raise (v3's +92 % control) — completion guaranteed.
+    let budget_arm = |label: &str, budget: ScallopRingBudget| {
+        let t = std::time::Instant::now();
+        let (tp, _, rep) = scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
+            &mesh,
+            &index,
+            &r15,
+            &sparams,
+            None,
+            None,
+            scallop_generation_resolution(&r15, TOLERANCE),
+            budget,
+            &never_cancel,
+        )
+        .expect("scallop budget arm");
+        eprintln!(
+            "arm {label} generated: {} moves, {:.0} s — cascade left uncut: core {:.0} mm², \
+             net {:.0} mm²",
+            tp.moves.len(),
+            t.elapsed().as_secs_f64(),
+            rep.uncut_core_mm2,
+            rep.untouched_mm2,
+        );
+        tp
+    };
+    let tp_c2 = budget_arm(
+        "C2 (reach-policy budget)",
+        ScallopRingBudget::ReachPolicyStepover,
+    );
+    let tp_c3 = budget_arm(
+        "C3 (clamp-floor budget) ",
+        ScallopRingBudget::LoopClampFloor,
     );
 
     // ── arm R: the planner's regions, all scalloped, 1-stepover overlap ──
@@ -525,18 +565,21 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         "     {:>38}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>9}",
         "arm", "time s", "cut mm", "rapid mm", "plunges", "moves", "unmach %"
     );
-    let arms: [(&str, &Toolpath); 3] = [
+    let arms: [(&str, &Toolpath); 5] = [
         ("U   unified band mix (production)", &tp_u),
-        ("C   scallop, whole board", &tp_c),
+        ("C   scallop, shipped budget (truncates)", &tp_c),
+        ("C2  scallop, reach-policy budget", &tp_c2),
+        ("C3  scallop, clamp-floor budget", &tp_c3),
         ("R   scallop on planner regions (1-step)", &tp_r),
     ];
     let centre_window = [80.0, 80.0, 120.0, 120.0];
     let out_dir = std::path::Path::new("target/scallop_vs_unified_s1");
     let _ = std::fs::create_dir_all(out_dir);
     let mut results: Vec<(String, ArmStats, f64)> = Vec::new();
-    for (label, tp) in arms {
+    for (ai, (label, tp)) in arms.iter().enumerate() {
+        let (label, tp) = (*label, *tp);
         let st = arm_stats(tp, &kinematics);
-        let tag: String = label.chars().take(1).collect();
+        let tag = format!("{ai}_{}", label.chars().next().unwrap_or('x'));
         // Ground truth beside the audit: cutting moves inside the window.
         let mut win_moves = 0usize;
         for i in 1..tp.moves.len() {

@@ -701,6 +701,50 @@ seam and its oracle).
 iso-scallop as the measured upgrade path beyond `Min` — it inherits
 arm C's baseline and the envelope-residual ruler.
 
+### M7 RESOLVED 2026-09-03 — G-SCALLOPBASIN attributed; the win stands at 0.850× WITH SUPERIOR COVERAGE
+
+**Attribution (measured, not inferred):** the hole is the DOCUMENTED
+`max_rings` truncation (`ScallopReport::uncut_core_mm2`'s own doc):
+the shipped ring budget is computed from the FLAT-ground stepover
+while `RingReducer::Min` selects a smaller one on every slope, so on
+terrain the cascade exhausts its budget before the centre. The
+shipped-budget arm reports **uncut_core = 1,904 mm²** — the operator's
+blank square, confessed by the generator itself. (The finding DOES
+reach production surfaces as `truncated_core_mm2`; the defect is that
+the op still emits a silently-short toolpath rather than refusing or
+finishing.) The reach-policy budget truncates WORSE here
+(5,357 mm²); the clamp-floor budget completes (0 mm²).
+
+**The settled comparison (envelope-residual ruler, all arms):**
+
+| arm | time s | ×U | unmach % | basin |
+|---|---|---|---|---|
+| U unified (production) | 8,127.8 | 1.000 | 6.007 | ✓ |
+| C shipped budget | 6,551.5 | 0.806 | 7.229 | HOLE |
+| C2 reach budget | 5,929.3 | 0.730 | 15.262 | HOLE (worse) |
+| **C3 clamp-floor (completes)** | **6,906.3** | **0.850** | **2.994** | **✓** |
+| R regions + scallop | 8,797.5 | 1.082 | 6.585 | ✓ |
+
+**Bar C-time: PASSES for C3 — 0.850× with coverage 3.0 pp BETTER
+than the production op** (equality precondition passed with margin to
+spare; the win no longer needs it). One plunge, 7 mm of rapids. The
+v3 "+92 % time, 34× over-cut" figure for the naive cap raise did NOT
+reproduce on this board: completion cost +5.4 % time over the
+truncated arm. That figure was another fixture; on wanaka the
+clamp-floor budget is simply correct.
+
+**The measured iso-scallop prize:** C3 pays the Min-reducer crawl to
+finish (102,239 cut mm vs C2's 87,871 on the same ground minus the
+hole) — the per-ring worst-point tax is ~14 % of cutting distance.
+Per-point iso-scallop (the operator's stated ideal) targets exactly
+that gap, now with a measured baseline and an honest ruler.
+
+**Enactment recommendation (operator's call):** (a) productization
+gate as written, using the clamp-floor budget for whole-board scallop;
+(b) G-SCALLOPBASIN product fix — a completing budget or a loud
+refusal when `uncut_core_mm2 > 0`, never a silently short toolpath;
+(c) iso-scallop as the follow-on candidate.
+
 ### M5 amendment — E1b horizontal-erosion sweep (recorded BEFORE the sweep runs; bars unchanged)
 
 The W = 0 (no horizontal regularity) arm ran first: E-time 2.405×,

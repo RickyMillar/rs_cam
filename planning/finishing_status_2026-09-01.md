@@ -365,11 +365,20 @@ one continuous spiral, ONE entry plunge (vs 225), 11 m of rapids (vs
 the planner's regions but scalloping them all LOSES (1.082×) — the
 region structure is the overhead. No contradiction with the F/E chain:
 the raster stays the best raster on its band; the scallop never pays
-the joints. NOT yet enacted — productization gate: run the real
-project (both tiers) with scallop ops replacing unified, simulate,
-pass the union/ownership audit and the standard gates. The cheapest
-enactment is a strategy choice (the scallop op ships today), not new
-code. Record: `planning/metrology_2026-09-02/FINDINGS.md` §M7.
+the joints. SETTLED 2026-09-03 after an operator-caught coverage hole
+(G-SCALLOPBASIN: the shipped ring budget truncates the cascade on
+terrain — 1,904 mm² uncut, confessed by `uncut_core_mm2`) and two
+audit defects (population = sub-tool-radius texture; equal-cusp knife
+edge) forced an audit rebuild (envelope-residual ruler): **the
+completing cascade (clamp-floor budget) beats the production unified
+op 0.850× with coverage 3.0 pp BETTER** — one plunge, 7 mm rapids.
+The Min-reducer crawl tax is measured at ~14 % of cutting distance —
+the per-point iso-scallop prize. NOT yet enacted — productization
+gate: real project, scallop ops with completing budget, simulate,
+union/ownership audit + standard gates. Also required:
+G-SCALLOPBASIN product fix (completing budget or loud refusal, never
+a silently short toolpath). Record:
+`planning/metrology_2026-09-02/FINDINGS.md` §M7.
 
 ## 6. Not recommended — do not reopen without the stated evidence
 
