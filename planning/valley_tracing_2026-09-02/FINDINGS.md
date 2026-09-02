@@ -364,11 +364,42 @@ has not run; B3/B4/B5 unchanged):**
   shipped). Arm S′ = same raster, derate recomputed with the
   overlap-dilation fringe excised (falls back to the undilated
   region polygon if fringe identification is ambiguous — state
-  which in the output). Arm T's passes use S′'s convention, so
-  B5 (T vs S′) compares path structure at the same spacing rules.
-  Achieved surface spacing is measured and reported for all three
-  arms (the b1 convention); a spacing advantage that survives into
-  achieved scallop must be named as such, not folded into "T won".
+  which in the output). **Arm T's tracing passes derate PER BRANCH:
+  XY offset pitch = stepover × cos(max cross-track slope along that
+  branch's pass)** — the branch-local worst-point rule, which is
+  what a shipped tracing op would do. The raster outside the mask
+  uses S′'s convention. So B5 (T vs S′) compares each strategy's
+  best shippable form.
+- **Spec-meeting is a precondition, the ledger convention.** All
+  three arms report their achieved surface spacing distribution
+  (CoverageAudit, b1 convention) and their exceed % (fraction of
+  achieved-spacing samples above 1.05× spec). An arm with
+  exceed % > 5 % is marked FAILS SPEC and cannot win, whatever its
+  time — the ledger D1/D2 rule.
+- **Margin rule (pre-registered — the 0.9 pp upper-bound margin
+  must bind the verdict, not decorate it):** if arm T's coverage
+  shortfall against S′, or the time-equivalent of any achieved-
+  spacing deficit (T coarser than S′), exceeds the D_pot margin at
+  the picked rung (0.9 pp of floor), the tracing arm CLOSES even
+  if the raw B5 time comparison favours T.
+- **Region selection is the FAVOURABLE case and is named as such:**
+  "largest mask-B time share" picks the most valley-dominated
+  region — the fewest hybrid seams, the mechanism most likely to
+  sink T. Legitimate as a first probe: if T cannot win here it
+  cannot win anywhere. A pass here therefore opens a SECOND-region
+  check at the median mask share BEFORE V2 — pre-registered now.
+  The instrument prints the mask-share table for all 16 regions so
+  the pick's position is visible.
+- **Branch pruning:** centerlines from the flow network at the
+  picked rung, pruned to branches ≥ 3× stepover so stubs do not
+  fragment T for free; the pruning rule is stated in the
+  instrument header before the run.
+- **Reporting:** fragments and links from `relink_and_cost_under`'s
+  `CandidateCost`, with the pre-relink fragment count beside them
+  so B3 reads both ways; an SVG of arm T on the region (passes
+  coloured by branch, seams visible) — the orchestrator eyeballs
+  it before ruling, per the standing rule. No verdict from the
+  implementing agent.
 
 Region selection per Q2: the region with the largest mask-B time
 share, from the census. Bars B3/B4/B5 as pre-registered above, plus
