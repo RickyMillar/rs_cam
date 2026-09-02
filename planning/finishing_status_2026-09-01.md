@@ -237,6 +237,20 @@ this frontier is not worth its complexity on terrain and should be
 recorded as such; if large on bike-seat-class work, it stacks with
 avenue D.
 
+**PRIZE MEASURED 2026-09-02 (Track H W0b, slope term):** guarded
+mean/p1 of `s_max·cos θ` = **2.780** over the full front finish
+territory, **1.7–2.4 inside single catchments** — the prize is
+real, ~2× against any per-region worst-point derate, and it does
+NOT collapse under decomposition (it survives inside basins, so no
+region split captures it; only spacing that varies along/between
+passes does). The named candidate is the Eikonal spacing-weighted
+ring family (level sets of a distance whose speed is the local
+allowed spacing; `scallop_isofield.rs` is the substrate; bridging
+is field-agnostic). It requires its own pre-registration — §9's
+constant-spacing shape evidence neither passes nor fails it. The
+curvature-driven `s_max` term (Kumazawa W) is additional and
+unmeasured. Record: `valley_tracing_2026-09-02/FINDINGS.md` §W0b.
+
 ### G. Saturated derate in the Shallow band — prize real but UNSIZED; mechanism corrected 2026-09-02 (from Track H)
 
 **15 of 16 Shallow regions derate 0.486 → 0.344 mm (≈ 1.41× the
@@ -310,7 +324,7 @@ and status; its FINDINGS.md carries the evidence.
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 | G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
-| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **CLOSED (2026-09-02, `99eb30aa`) — tracing arm failed all three V1 bars on the pre-registered FAVOURABLE region**: fragments 14.2× (2819 vs 199), distance 3.28×, time 3.53× vs the shipped raster. Mechanism: adjacent branch offset-fans overlap on dendritic ground. RE-BOUNDED same day (operator-caught): the arm traced the DENSEST tree rung on a band-region corridor — a configuration that guaranteed overlap by arithmetic (meta-error §2); refutes dense-tree-on-band-region only. The operator then reframed catchments as full-slope ZONES (phase W); the W0 basin census read compact-basin area 19.5-33.7 % vs the 50 % bar, but that RULING IS SUSPENDED (operator-caught: lakes modelled as sea-holes; lake beds outside the charitable bound, which failed by only 0.1 pp). W0b re-runs on corrected hydrology (lakes fill and drain to sea), same bar. Tracing arm stays closed (V1, bounded); the full-territory slope mix (69.3 % > 45 deg 3D) is on record for any future full-slope proposal. Survives: D_pot 5.9–9.3 pp in-mask direction prize, measured and unharvested (every known harvest mechanism now individually refuted; avenue F is the surviving lever); avenue G mechanism corrected (steep inclusions in Shallow polygons, not fringe — S′ ≡ S on region 1, 42.9 % of its 3D area > 45°); region-polygon ≠ band-territory finding routed to Track M. See §14 |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **CLOSED (2026-09-02, `99eb30aa`) — tracing arm failed all three V1 bars on the pre-registered FAVOURABLE region**: fragments 14.2× (2819 vs 199), distance 3.28×, time 3.53× vs the shipped raster. Mechanism: adjacent branch offset-fans overlap on dendritic ground. RE-BOUNDED same day (operator-caught): the arm traced the DENSEST tree rung on a band-region corridor — a configuration that guaranteed overlap by arithmetic (meta-error §2); refutes dense-tree-on-band-region only. The operator then reframed catchments as full-slope ZONES (phase W); W0b (corrected hydrology, operator-caught lake+flat defects fixed, labelling verified at 0.87 % divide crossings) rules it: compact-basin area 31.5/12.6/3.6 % vs the 50 % bar - FAILS at every rung, no artifact left. PHASE W CLOSED; TRACK H CLOSED on both arms. Avenue-F prize measured and routed to section 5 F (2.78 territory / 1.7-2.4 in-basin - decomposition does not capture it). Tracing arm closed (V1, bounded); the full-territory slope mix (69.3 % > 45 deg 3D) is on record for any future full-slope proposal. Survives: D_pot 5.9–9.3 pp in-mask direction prize, measured and unharvested (every known harvest mechanism now individually refuted; avenue F is the surviving lever); avenue G mechanism corrected (steep inclusions in Shallow polygons, not fringe — S′ ≡ S on region 1, 42.9 % of its 3D area > 45°); region-polygon ≠ band-territory finding routed to Track M. See §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 

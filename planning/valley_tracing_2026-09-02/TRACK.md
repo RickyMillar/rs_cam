@@ -19,12 +19,16 @@
 > only — sparse trunk tree and catchment decomposition are untested;
 > V1b was superseded by the operator's reframe: a catchment is a
 > ZONE (full slope range, band split replaced within it). Phase W
-> W0 ruling SUSPENDED (operator-caught: lakes were modelled as
-> sea-holes, shattering lake-edge drainage into confetti and
-> leaving lake beds unlabelled — and the charitable bound never
-> covered lake beds). W0b re-runs the census on corrected
-> hydrology (lakes fill and drain to sea; declared coastal merge
-> rule); bar W0-a unchanged rules the corrected map. Two follow-on
+> W0b (corrected hydrology — lakes drain to sea, coastal merge,
+> flat pass) re-ran clean and bar W0-a FAILS at every rung
+> (compact area 31.5/12.6/3.6 % vs 50 %): wanaka's catchments are
+> elongated, holed, and 60–83 % steeper than 45°. PHASE W CLOSED;
+> TRACK CLOSED on both arms. What outlives it: the verified
+> watershed instruments (49-basin map, 0.87 % divide crossings =
+> junction count), the avenue-F prize MEASURED (guarded
+> mean/p1 of s_max·cos θ = 2.78 territory, 1.7–2.4 inside single
+> basins — no decomposition captures it; variable spacing does),
+> D_pot 5.9–9.3 pp, and avenue G. Two follow-on
 > findings routed out: avenue G's mechanism corrected
 > (steep inclusions, not fringe) and the region-polygon vs
 > band-territory distinction for Track M. See `FINDINGS.md`.

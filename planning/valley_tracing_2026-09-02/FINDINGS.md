@@ -652,6 +652,63 @@ overflow; each lake belongs to exactly one catchment.
   gates whether a variable-spacing ring candidate is ever worth
   pre-registering — avenue F's own measure-first rule.
 
+### W0b — RUN 2026-09-02 (`33840d6f` → `2d6b1492`). Bar W0-a FAILS on the corrected map. PHASE W CLOSES.
+
+**Sea-rule fallback RATIFIED by the orchestrator:** no water body
+touches the board border (the perimeter is the raised machining
+rim), so the pre-registered border-connectivity seed found 0 cells
+and degenerated to the W0 whole-board flood. The instrument fell
+back to the largest water body as the sea (80 909 cells,
+5 056.8 mm² — 12× the largest lake, so identity is not in doubt),
+printed under a banner. Ratified: the water level itself was
+pinned by `rivmap_data.toml` (`base_height_mm = 0.0`); only the
+connectivity mechanism failed.
+
+**The hydrology is now verified end to end:** 129 water bodies
+censused; interior lakes recovered as land (1 218 mm²); flood
+raises 20.3 % of land (vs 99.5 % degenerate); 2.40 % of territory
+cells are true sea and correctly unlabelled; **27 of 3 089
+drainage segments cross a divide = 0.874 %, matching the 16 trunk
+junctions** — one crossing per junction is the correct count, so
+the labelling is clean. The orchestrator read the map before
+ruling: 49 coherent basins, no confetti, trees inside their own
+colours, rivers continuous through lakes (in-lake line geometry is
+a fill artifact; only continuity is meaningful there).
+
+**Flat resolution: implemented, and it found NOTHING — the
+operator's observed breaks were the W0 sea defect.** Garbrecht–
+Martz combined-gradient pass, named in the header: 0 flats,
+trunk links unchanged (65/37/15 before = after). The existing
++epsilon priority flood already resolves natural flats; W0's
+"flats" were the 99.5 %-flooded board. The pass stays in with
+before/after counts, measured rather than argued.
+
+**Bar W0-a on the corrected map: compact area 31.53 % (T = 256) /
+12.59 % (T = 512) / 3.55 % (T = 1024) vs the 50 % bar — FAILS at
+every rung, with no artifact left to blame.** Trunk-keyed
+catchments read 9.83 % compact; the top basins carry 2–4 boundary
+loops, aspects up to 5.6, and 60–83 % of their area steeper than
+45°. Wanaka's real catchments are decisively the §9 losing shape
+class for constant-spacing offset families.
+
+**Ruling: PHASE W (plain-scallop-per-basin) CLOSES on the
+corrected census — no build, as pre-registered.** With V1 closed
+(bounded) and W0b closed clean, Track H's build arms are done.
+
+**Avenue-F prize field — the number that outlives the track:**
+`p(x) = s_max·cos θ(x)`; guarded ratio mean/p1 = **2.780**
+whole-territory, **1.6–3.0 per basin** (p50 band ≈ 1.7–2.4). Two
+readings, both recorded: (1) the variable-spacing prize is REAL —
+a per-region worst-point derate leaves ~2× on the table; (2) it
+**survives inside single basins**, so NO decomposition captures
+it — the prize belongs to spacing that varies along/between
+passes (the Eikonal-weighted ring family is the named candidate,
+own pre-registration required). Caveat: this census's s_max is
+spatially constant (fixed tool + scallop), so the measured
+variation is the slope term only; the curvature-driven s_max term
+(Kumazawa W) is additional and unmeasured. → routed to status doc
+avenue F.
+
 **Scope note on W0-a, recorded before W0b lands:** the bar's §9
 anchor (offsets lose on elongated shapes) was measured with
 CONSTANT-spacing rings; a spacing-weighted (Eikonal) ring family
