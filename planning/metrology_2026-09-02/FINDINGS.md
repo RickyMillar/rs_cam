@@ -537,3 +537,144 @@ splitting): every partition of dendritic ground pays its perimeter.
    of the 26 % while adding NO fragment bill, or the prize stays on
    the table and the shipped raster stands as the honest optimum of
    its family.
+
+---
+
+## M5 — E1: the graded raster (continuous variable spacing) — pre-registration, written BEFORE the run
+
+> Operator go 2026-09-02: "in my head this was the idea that made sense
+> to begin with. continuous variability. So lets give it a hoon!"
+
+**The candidate.** The only standing route from M4: spacing that
+varies WITHIN a continuous pass. Concrete form — the graded raster,
+a 1D-integrated specialization of the Eikonal iso-field:
+
+- The allowed XY pitch field is `a(x, y) = stepover · cos θ`, θ from
+  the production slope map, clamped at 45° (the F1/F2 convention).
+- `a` is first ERODED in y by a ±stepover/2 window (a pass pair must
+  respect the worst ground BETWEEN them, not the harmonic mean — a
+  thin steep ledge between two rows must pull them together).
+- Per grid column, `φ(y) = ∫ dy / a_eroded` (prefix sum). `∂φ/∂y =
+  1/a > 0`, so φ is strictly monotone in y and every level set
+  `φ = k` is a SINGLE-VALUED continuous curve `y = f_k(x)` — a raster
+  row that bends and bunches but cannot loop or branch. Fragments can
+  arise ONLY from region clipping, exactly where straight rows
+  already fragment. That is the zero-added-fragments mechanism, by
+  construction rather than by hope.
+- Out-of-territory column gaps accumulate at the clamp rate, so
+  `f_k(x)` stays continuous across concavities.
+- Pass z from a fine drop-cutter grid (0.3 mm, the H1 convention);
+  x-sampling at the classification column spacing.
+
+**Arms:** arm S — the F2 control, verbatim (shipped per-region
+derate, 0° lattice). Arm E — the graded raster over the same
+territory (the in-any-polygon covered mask), costed identically
+(production relink, machined-stock ceiling, project kinematics).
+
+**Also reported (arithmetic only, no path code): E0 row-graded
+capture** — straight rows with one spacing per row (the worst cell in
+each row's strip). Splits the prize between "rows may bend" and "rows
+may merely bunch"; if E0 captured most of it, the simpler design
+would deserve the build instead.
+
+**Bars (pre-registered):**
+
+- **E-spec:** per column, the vertical gap between adjacent passes
+  must not exceed 1.05 × the eroded-min `a` in that gap, for ≥ 95 %
+  of sampled gaps (the D1/D2 ledger exceed convention). An arm that
+  fails spec cannot win, whatever its time.
+- **E-frag:** arm E fragments ≤ 1.10 × arm S fragments — the
+  zero-added-fragments claim, with 10 % tolerance for clipping
+  differences.
+- **E-time:** arm E `time_s` < 0.95 × arm S — the same shippability
+  bar as F2.
+
+All three must pass for the candidate to earn a productization
+charter. F1 bounds the distance prize at ~26 %; tilt lengthening
+(passes bending costs sec(tilt) per column) spends against it and is
+reported.
+
+RESULT: pending.
+
+### M5 amendment — E1b horizontal-erosion sweep (recorded BEFORE the sweep runs; bars unchanged)
+
+The W = 0 (no horizontal regularity) arm ran first: E-time 2.405×,
+E-frag 2.532×, E-spec exceed 15.14 %, tilt lengthening 80.28 %, and
+E0 = 1.000× (every straight row crosses a clamp cell — bending is
+load-bearing). Mechanism: per-column integration has no cross-column
+coupling, so passes wander where the field differs between neighbour
+columns.
+
+The candidate's design knob is HORIZONTAL EROSION of the pitch field:
+`a` is min-eroded in x by ±W before the y-erosion and integration.
+Large W → smooth passes but the refund dies (every flat cell sees a
+gully within W on dendritic ground); small W → wander. E1b sweeps
+W ∈ {1, 2, 4, 8, 16} mm and costs every arm identically. The bars are
+UNCHANGED (E-spec / E-frag / E-time from §M5); the sweep only asks
+whether ANY W passes all three. If none does, the avenue closes with
+the mechanism stated: the allowed-spacing field varies horizontally
+faster than any smooth continuous-pass family can follow on this
+terrain.
+
+### M5 RESULT — RUN 2026-09-02. E-time FAILS at every W. AVENUE F CLOSES ON THIS TERRAIN.
+
+Instrument: `tests/graded_raster_e1.rs`, release-fast, 44 s. Two harness
+asymmetries were found and fixed before the ruling (each moved the
+degenerate W=16 anchor toward identity, as it must): the first arm E
+lacked the raster emitter's serpentine stay-down turnaround (1.83× →
+1.12×), and then chained serpentines across region boundaries instead of
+within regions (1.12× → 1.02×). With the anchor honest:
+
+| W erosion | fragments | time s | vs S | E-spec exceed |
+|---|---|---|---|---|
+| S (control) | 1,835 | 3,589.7 | 1.000× | — |
+| 0 mm | 3,134 | 5,656.0 | 1.576× | 15.14 % |
+| 1 mm | 2,569 | 4,749.9 | 1.323× | 7.58 % |
+| 2 mm | 2,104 | 3,963.5 | 1.104× | 4.20 % |
+| 4 mm | 1,963 | 3,650.1 | 1.017× | 1.72 % |
+| **8 mm (best)** | **1,962** | **3,637.6** | **1.013×** | 0.44 % |
+| 16 mm | 1,962 | 3,650.2 | 1.017× | 0.14 % |
+
+- **E-frag PASSES** at W ≥ 4 (1.069× ≤ 1.10×) — the zero-added-
+  fragments mechanism works as designed.
+- **E-spec PASSES** at W ≥ 4 (≤ 1.72 % ≤ 5 %).
+- **E-time FAILS at every W** (best 1.013× vs the < 0.95× bar). The
+  graded raster's best configuration is the straight raster.
+
+**The mechanism, one number:** the decorrelation census — the distance
+from flat (θ ≤ 20°) ground to steep (θ ≥ 40°) ground is **p50 0.90 mm,
+p90 2.00 mm** across 56,467 flat cells. The spacing prize lives
+interleaved with the gullies at SUB-STEPOVER scale. A machinable pass
+must be smooth over at least a few millimetres; smoothing the pitch
+field over even ±2 mm already clamps it nearly everywhere (field 2D
+length 28,900 mm vs the control's 26,488 before any wander), while
+below ±2 mm the wander lengthening (up to +80 %) exceeds the refund.
+The frontier {refund preserved} ∩ {passes machinable} is EMPTY on this
+terrain — measured, not argued.
+
+**The avenue-F ledger CLOSES on wanaka tier-1:**
+
+1. The prize is real: 26.1 % of Shallow cutting length (1.354× floor).
+2. Excision refunds nothing (G2) — absorbed steep islands pin the max.
+3. Decomposition refunds nothing after links (M4) — partitions pay
+   their perimeter.
+4. Continuous variable spacing refunds nothing (this run) — the prize
+   is spatially finer than any smooth pass can follow.
+
+The shipped per-region worst-point raster is therefore, with evidence,
+the honest optimum of its family ON THIS TERRAIN CLASS. The prize is a
+property of the terrain, not a defect of the planner.
+
+**What could still reach it (recorded, none recommended now):**
+
+- A SPEC change, not a path change: accept bounded cusp exceedance on
+  gully walls (the p99-basis 1.13–1.19× per-region numbers from G2).
+  Operator's domain — it trades surface finish for time.
+- Smoother work: on bike-seat-class geometry the decorrelation length
+  is large, and the graded raster (this instrument, W ≈ the terrain's
+  own correlation length) should win there. Reopening condition: a
+  census on the target part showing flat-to-steep p50 well above the
+  stepover.
+- The valley agent's pencil/steep-territory work is untouched by this
+  closure — it changes WHO owns the gullies, not the Shallow band's
+  spacing physics.

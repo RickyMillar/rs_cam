@@ -273,6 +273,25 @@ fragments by construction)** — the Eikonal candidate above, whose
 pre-registration remains the operator's to assign, with its bar now
 sharp: capture a useful slice of the 26 % with NO fragment bill.
 
+**RUN AND CLOSED 2026-09-02 (Track M E1/E1b, operator-assigned,
+`planning/metrology_2026-09-02/FINDINGS.md` §M5):** the graded
+raster (column-integrated conservative pitch field; every pass a
+continuous single-valued curve) swept its one design knob — the
+horizontal smoothing W. E-frag and E-spec PASS at W ≥ 4 mm (the
+zero-added-fragments mechanism works); **E-time FAILS at every W —
+best 1.013× vs the < 0.95× bar.** Mechanism, measured: flat ground
+sits p50 **0.90 mm** from steep ground (p90 2.00 mm) — the prize is
+interleaved with the gullies at sub-stepover scale, so any
+machinable smoothing clamps the field before wander stops.
+**AVENUE F IS CLOSED ON THIS TERRAIN CLASS.** The full ledger:
+prize real (26.1 %); excision refunds nothing (G2); decomposition
+refunds nothing (M4); continuous variation refunds nothing (E1).
+The shipped worst-point raster is the measured honest optimum of
+its family here — the prize is a property of the terrain. Reopening
+conditions recorded in §M5: a spec change (bounded cusp exceedance,
+operator's call), or smoother work whose flat-to-steep p50 is well
+above the stepover (the E1 instrument then applies as-is).
+
 ### G. Saturated derate in the Shallow band — prize real but UNSIZED; mechanism corrected 2026-09-02 (from Track H)
 
 **15 of 16 Shallow regions derate 0.486 → 0.344 mm (≈ 1.41× the
