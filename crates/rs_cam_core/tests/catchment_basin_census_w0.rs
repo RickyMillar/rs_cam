@@ -1286,6 +1286,41 @@ fn wanaka_catchment_basin_census_w0() {
             r.territory_area_mm2,
             100.0 * r.compact_area_mm2 / r.territory_area_mm2.max(1e-9),
         );
+        // DIAGNOSTIC SPLIT, not the bar. The pre-registration keys basins on
+        // TRUNK outlets; the coastal class is the case it did not name, and on
+        // this territory it dominates. Reporting W0-a's ingredients over each
+        // class separately is what makes that dominance actionable — it is a
+        // split of an already-computed population, and it chooses nothing.
+        let mut trunk_area = 0.0f64;
+        let mut trunk_compact = 0.0f64;
+        let mut trunk_n = 0usize;
+        let mut coast_area = 0.0f64;
+        let mut coast_compact = 0.0f64;
+        for (_, sh) in &r.shapes {
+            let compact = sh.loops == 1 && sh.components == 1 && sh.aspect <= COMPACT_ASPECT_MAX;
+            if sh.coastal {
+                coast_area += sh.area_xy_mm2;
+                if compact {
+                    coast_compact += sh.area_xy_mm2;
+                }
+            } else {
+                trunk_n += 1;
+                trunk_area += sh.area_xy_mm2;
+                if compact {
+                    trunk_compact += sh.area_xy_mm2;
+                }
+            }
+        }
+        eprintln!(
+            "\x20  DIAGNOSTIC SPLIT (not the bar — see the report):\n\
+             \x20    TRUNK-keyed basins: {trunk_n} covering {trunk_area:.1} mm²; compact \
+             {trunk_compact:.1} mm² = {:.2} % of that class\n\
+             \x20    COASTAL basins:     {} covering {coast_area:.1} mm²; compact \
+             {coast_compact:.1} mm² = {:.2} % of that class",
+            100.0 * trunk_compact / trunk_area.max(1e-9),
+            r.shapes.len() - trunk_n,
+            100.0 * coast_compact / coast_area.max(1e-9),
+        );
         eprintln!(
             "\x20  SEAM PREDICTOR INPUTS: N_basins = {}, L_divide = {:.1} mm\n\
              \x20    closed-ring model  {SEAM_JUNCTION_S} s x 2 x N = {:.1} s\n\
