@@ -240,14 +240,19 @@ avenue D.
 **PRIZE MEASURED 2026-09-02 (Track H W0b, slope term):** guarded
 mean/p1 of `s_max·cos θ` = **2.780** over the full front finish
 territory, **1.7–2.4 inside single catchments** — the prize is
-real, ~2× against any per-region worst-point derate, and it does
-NOT collapse under decomposition (it survives inside basins, so no
-region split captures it; only spacing that varies along/between
-passes does). The named candidate is the Eikonal spacing-weighted
-ring family (level sets of a distance whose speed is the local
-allowed spacing; `scallop_isofield.rs` is the substrate; bridging
-is field-agnostic). It requires its own pre-registration — §9's
-constant-spacing shape evidence neither passes nor fails it. The
+real, ~2× against any per-region worst-point derate. CATCHMENT
+decomposition recovers only ~25–30 % of it — but the mechanism
+attribution is OPEN: a slope-homogeneous decomposition (hillslope
+facets, or existing bands with owned-cells θ_max) captures a
+slope-driven prize by construction, and variable-spacing passes
+capture it within a pass. Next cheap measurement before any
+design: mean/min-owned of the field per EXISTING band region,
+splitting the prize between "better regions" and "variable
+spacing". The variable-spacing candidate is the Eikonal
+spacing-weighted ring family (`scallop_isofield.rs` is the
+substrate; bridging is field-agnostic); it requires its own
+pre-registration — §9's constant-spacing shape evidence neither
+passes nor fails it. The
 curvature-driven `s_max` term (Kumazawa W) is additional and
 unmeasured. Record: `valley_tracing_2026-09-02/FINDINGS.md` §W0b.
 

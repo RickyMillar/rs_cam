@@ -699,11 +699,19 @@ corrected census — no build, as pre-registered.** With V1 closed
 `p(x) = s_max·cos θ(x)`; guarded ratio mean/p1 = **2.780**
 whole-territory, **1.6–3.0 per basin** (p50 band ≈ 1.7–2.4). Two
 readings, both recorded: (1) the variable-spacing prize is REAL —
-a per-region worst-point derate leaves ~2× on the table; (2) it
-**survives inside single basins**, so NO decomposition captures
-it — the prize belongs to spacing that varies along/between
-passes (the Eikonal-weighted ring family is the named candidate,
-own pre-registration required). Caveat: this census's s_max is
+a per-region worst-point derate leaves ~2× on the table; (2)
+CATCHMENT decomposition recovers only ~25–30 % of it (2.78 →
+1.7–2.4 in-basin) — expected, since a catchment holds both walls
+and floor. **The mechanism attribution is NOT decided by this
+field**: a slope-homogeneous decomposition (hillslope facets, or
+the existing bands with owned-cells θ_max) captures a slope-driven
+prize by construction, and variable-spacing passes (the
+Eikonal-weighted ring family) capture it within a pass. The next
+cheap measurement, one census line: mean/min-owned of p per
+EXISTING band region — that splits the prize between "better
+regions" and "variable spacing" before anything is designed.
+Either candidate needs its own pre-registration. Caveat: this
+census's s_max is
 spatially constant (fixed tool + scallop), so the measured
 variation is the slope term only; the curvature-driven s_max term
 (Kumazawa W) is additional and unmeasured. → routed to status doc
