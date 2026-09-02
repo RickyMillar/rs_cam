@@ -2333,14 +2333,32 @@ pub fn scallop_toolpath_research(
         // KEPT points. A ring-to-ring connector is a *cutting* feed only
         // when it is a genuine helical transition — the tool is already
         // down and the hop is no longer than the widest ring spacing the
-        // generator can produce (its stepover is clamped to at most
-        // `cusp_r * 3.0` above). Anything longer — a kept set that
+        // generator can produce. Anything longer — a kept set that
         // shifted to the far side of the ring under the combined keep
         // predicate, or the gap between two disjoint P2.3 boundary regions
         // — gets a retract/rapid/replunge link instead of chording across
         // excluded material at cutting feed (the P0.4 gouge class the
         // no-chord regression tests pin).
-        let link_threshold = cusp_r * 3.0;
+        //
+        // The bound is RING-SOURCE-AWARE (G-ISOCHANNEL, operator-caught
+        // 2026-09-03). The cascade's stepover is clamped at `cusp_r * 3.0`,
+        // so that is its genuine widest spacing — byte-identical shipped
+        // behaviour. The ISO FIELD spaces rings at the local stepover,
+        // which is at most the FLAT-ground stepover anywhere — but its
+        // ring LIST is level sets, where consecutive entries can be
+        // different loops several mm apart. Under the cascade bound
+        // (4.5 mm on the R1.5 evidence tool) those hops chained as
+        // "helical" cutting feeds and carved straight channels through
+        // standing terrain — the operator saw one in the viewport, and the
+        // rapid checker is blind to it because the chord is a FEED. The
+        // field bound is 1.5× the flat stepover: a real ring-to-ring hop
+        // always passes; a loop-to-loop hop retracts.
+        let link_threshold = match stepover_policy.ring_source {
+            RingSource::OffsetCascade => cusp_r * 3.0,
+            RingSource::IsoField => {
+                1.5 * crate::scallop_math::stepover_from_scallop_flat(cusp_r, params.scallop_height)
+            }
+        };
         // The tool's last emitted position. Seeded from the first ring's
         // geometric end (the pre-existing rotation seed) and updated to the
         // REAL last emitted point after every run — anchoring rotation on
