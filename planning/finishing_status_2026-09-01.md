@@ -355,6 +355,22 @@ shipped — `metrology::ownership` audits band-CELL ownership
 are owned by Shallow, so polygon-scoped audits misread every
 dendritic Shallow op.
 
+### S. Scallop-only strategy choice — OPEN, measured WIN 2026-09-02 (Track M M7)
+
+The operator asked whether the unified band mix earns its overlap.
+Measured (`scallop_solo_vs_unified_s1.rs`): the whole-board shipped
+scallop beats the production unified op **0.806×** at equal coverage —
+one continuous spiral, ONE entry plunge (vs 225), 11 m of rapids (vs
+5.4 km), 15 % less cutting distance (the overlaps and seams). Keeping
+the planner's regions but scalloping them all LOSES (1.082×) — the
+region structure is the overhead. No contradiction with the F/E chain:
+the raster stays the best raster on its band; the scallop never pays
+the joints. NOT yet enacted — productization gate: run the real
+project (both tiers) with scallop ops replacing unified, simulate,
+pass the union/ownership audit and the standard gates. The cheapest
+enactment is a strategy choice (the scallop op ships today), not new
+code. Record: `planning/metrology_2026-09-02/FINDINGS.md` §M7.
+
 ## 6. Not recommended — do not reopen without the stated evidence
 
 | What | Why | Reopens only if |

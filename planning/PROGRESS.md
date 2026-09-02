@@ -99,6 +99,19 @@ correction (steep inclusions, not fringe), and the region-polygon
 
 ## Recent work (2026-08-19 → 2026-09-02)
 
+### 2026-09-02 late — the operator's scallop question flips the board
+
+After the avenue-F closures, the operator asked the right question
+from the other side: does the unified band mix earn its overlap?
+Measured (M7): the whole-board shipped scallop beats the production
+unified op 0.806× at equal coverage — one continuous spiral, one
+plunge, 15 % less cutting. The band-mix design is REOPENED; the
+productization gate (real-project sim + union/ownership audit) is the
+next step. Also: the M2–M5 chain's territory was operator-corrected
+(tier-1 fringe, not mountains — §M6) and re-run on tier-0, where the
+graded raster still loses (best 1.021×) and the contour-aligned
+variant closed by census (grain coherence 1.56×).
+
 ### 2026-09-02 — the finishing question is answered
 
 Track M ran the falsifier chain to its end
