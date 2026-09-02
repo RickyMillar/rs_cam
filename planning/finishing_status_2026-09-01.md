@@ -256,6 +256,23 @@ passes nor fails it. The
 curvature-driven `s_max` term (Kumazawa W) is additional and
 unmeasured. Record: `valley_tracing_2026-09-02/FINDINGS.md` §W0b.
 
+**SPLIT MEASURED AND DECOMPOSITION REFUTED 2026-09-02 (Track M
+M3 + M4, `planning/metrology_2026-09-02/FINDINGS.md`):** the prize
+on owned Shallow cells is 1.354× floor (26.1 % of cutting length).
+M3: a K = 3 slope banding captures 71.9 % of it on SPACING alone,
+confetti merged (the operator's tiny-islands suspicion is real on
+the 20–40° bands but the prize mass is flat and contiguous). M4
+then COSTED it: the banded arm pays 8,411 fragments vs 1,835 and
+reads **1.836× the control's time** (K = 2 robustness arm: 1.772×)
+— the link bill eats the 21 % distance refund 2.5× over. Mechanism:
+the merge bounds island AREA; fragments scale with boundary
+PERIMETER, which is dendritic at every slope threshold. **The
+decomposition route is CLOSED. The only standing route to this
+prize is spacing varying WITHIN a continuous pass (zero added
+fragments by construction)** — the Eikonal candidate above, whose
+pre-registration remains the operator's to assign, with its bar now
+sharp: capture a useful slice of the 26 % with NO fragment bill.
+
 ### G. Saturated derate in the Shallow band — prize real but UNSIZED; mechanism corrected 2026-09-02 (from Track H)
 
 **15 of 16 Shallow regions derate 0.486 → 0.344 mm (≈ 1.41× the
@@ -277,19 +294,25 @@ band's derate; the fringe is one source of such cells.** The spec
 question is unchanged and sharper: should cells the band cannot
 meet spec on anyway set the band's stepover?
 
-The refund is UNMEASURED with a plausibly large upper bound
-(region 1 shows only that the 2 mm-DT excision does not reach the
-non-owned cells; owned-cells-only θ_max is the unmeasured
-variant). Measure first: per-region θ_max over the band's OWN
-cells and the priced distance refund. Also decide which of two
-hypotheses explains the 42.9 %: XY polygons with steep holes not
-carved out, or a planner-vs-true-surface classification
-disagreement — the second would be a planner defect larger than
-anything Track H measured (`valley_tracing_2026-09-02/FINDINGS.md`
-V1 finding 2). Any enacted change **inherits G-UNIONCOV** (§12)
-and must wait for the Track M union audit — and Track M must audit
-**band-CELL ownership, not region polygons**, or every Shallow op
-reads ~half uncovered.
+**MEASURED AND REFUTED 2026-09-02 (Track M G2,
+`planning/metrology_2026-09-02/FINDINGS.md` §M2):** the two
+hypotheses are decided — **(a)**, 95.65 % of the steep 3D area sits
+on cells the planner CORRECTLY labels MidSteep/VerySteep, inside
+the Shallow polygon only via the 2 mm overlap dilation; the
+planner-defect arm is 0.57 % (sub-cell walls). No planner fix. And
+the refund is now MEASURED: **1.000× on all three time-carrying
+regions** — min-area absorption folds steep islands INTO the owned
+set (owned-cell p99 at 73° on two regions), and under the
+worst-point rule one steep cell pins the region. Excision refunds
+nothing; the residual (p99 basis 1.13–1.19×) is a spacing-POLICY
+question and belongs to avenue F. **Avenue G is CLOSED as a derate
+fix.** What survives: (i) the absorption ticket — absorbed steep
+islands are spec-unfinishable Shallow ground (137 mm² board-wide)
+AND derate pins, a small real defect; (ii) the audit consequence,
+shipped — `metrology::ownership` audits band-CELL ownership
+(`PlannedRegions::labels`), and only 45.83 % of in-polygon cells
+are owned by Shallow, so polygon-scoped audits misread every
+dendritic Shallow op.
 
 ## 6. Not recommended — do not reopen without the stated evidence
 

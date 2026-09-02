@@ -440,3 +440,100 @@ included, spec checked by the union/ownership audit. The along-pass
 (Eikonal) route inherits the residual ~28 % of the prize (~7 % of
 length) plus whatever F2 shows decomposition losing to links; its own
 pre-registration remains with the operator.
+
+---
+
+## M4 — F2: the banded raster vs the shipped derate, COSTED (pre-registration, written BEFORE the run)
+
+F1 passed B-capture on spacing alone. F2 prices what F1 excluded:
+fragments and links — the mechanism that killed the V1 tracing arm.
+
+**Arms (whole Shallow band, all regions in one toolpath each):**
+
+- **arm S (control):** per-region raster at the production derate
+  (θ_max over covered in-polygon cells, clamped 45°).
+- **arm B (banded):** the same raster over the same polygons, split by
+  the K = 3 slope bands (edges 20°/40°/45°) from F1, sub-machinable
+  components (< 16 mm²) merged into the steeper band before splitting.
+  A point with no band assignment (uncovered edge cells) takes the band
+  of its own clamped θ, so arm B's territory is arm S's territory
+  exactly.
+
+Both arms use the instrument's 0° lattice — the shipped C2 per-region
+rotation is orthogonal to the spacing question and cancels between
+arms. Spec per cell holds by construction: a cell is only ever cut at
+its own band's spacing or tighter (merges go steeper, never flatter).
+Band-seam quantisation is sub-cell (marching of the split is at grid
+resolution); reported, not gated.
+
+**Costing (identical for both arms):** the H1 harness restated —
+production relink (`hookup 25.0, sampling 0.5, reorder, flush_ride,
+airborne exemption`) under the machined-stock link ceiling, F-034 cycle
+time on the project kinematics. Metrology-costing scale (single-arm,
+no setup/tool changes).
+
+**Coverage precondition:** both arms ≤ 1 % unmachined fraction
+(the H1 gate) on the union of Shallow-region triangles, AND arm B's
+unmachined fraction ≤ arm S's + 0.5 pp. An arm that covers less
+cannot win.
+
+**Bars (pre-registered):**
+
+- **B-time:** arm B `time_s` < 0.95 × arm S `time_s` — a ≥ 5 % time
+  win, or the planner change is not worth its complexity. F1 predicts
+  ~19 % less cutting DISTANCE; links must not eat more than the
+  difference.
+- Fragments/links: report-only — their cost is priced inside time.
+
+### M4 RESULT — RUN 2026-09-02. B-time FAILS 1.836×. THE DECOMPOSITION ROUTE CLOSES.
+
+Instrument: `tests/banded_raster_costed_f2.rs`, release-fast, 37 s.
+A K = 2 robustness arm (30°/45°, report-only) ran beside the
+pre-registered K = 3.
+
+| arm | fragments | links | time s | cut mm |
+|---|---|---|---|---|
+| S (shipped per-region derate) | 1,835 | 1,818 | 3,589.7 | 41,463 |
+| B (K = 3 banded) | **8,411** | 8,397 | **6,592.1 (1.836×)** | 72,869 |
+| B2 (K = 2 banded) | 7,796 | 7,780 | 6,363.2 (1.772×) | 70,505 |
+
+**F1's spacing prediction was RIGHT and it did not matter.** Arm B's
+raw (pre-relink) cutting is 20,827 mm vs arm S's 26,488 mm — 0.79×,
+matching F1's ~0.81×. The relink then pays 8,397 surface links (4.6×
+arm S's), and the link feed swallows the refund 2.5 times over.
+
+**The mechanism, named:** F1's machinability merge bounded island
+AREA; fragments scale with boundary PERIMETER. On dendritic terrain
+the slope-band boundary is long at every threshold — K = 2 halves the
+band count and removes only 7 % of the fragments. This is the V1 /
+synthesis-§9 failure family (ring splitting, fan overlap, band
+splitting): every partition of dendritic ground pays its perimeter.
+
+**Caveats, recorded:**
+
+- Arm B is a point-split of a straight raster; a shipped banded
+  planner (per-component serpentine, boundary smoothing) would do
+  better — but to pass the bar it must shed ~95 % of the fragments
+  while F1's own censuses say ~1,000+ components stand at every rung.
+  The gap is not implementation polish.
+- The absolute coverage-gate numbers (28–34 % "unmachined" even
+  sub-clamp) are a knife-edge artifact: arm B is spec-EXACT by
+  design, so audit distances sit at exactly the coverage radius on
+  near-clamp slopes, and arm S "passes" partly by being over-dense.
+  The achieved-spacing gate for terrain arms remains unbuilt (V1
+  finding 3). This does not touch the time verdict — no coverage
+  convention rescues a 1.8× time loss.
+
+**Consequence — the avenue-F ledger after M3 + M4:**
+
+1. Worst-point spacing overpays by 26.1 % of Shallow cutting length
+   (1.354× floor) — measured, real.
+2. Excision refunds nothing (G2: 1.000× on the time carriers).
+3. Decomposition refunds nothing after links (M4: 1.8×).
+4. The ONLY standing route is spacing that varies WITHIN a continuous
+   pass — zero added fragments by construction. That is the Eikonal /
+   variable-spacing candidate; its pre-registration is the operator's
+   to assign, and its bar is now sharp: it must capture a useful slice
+   of the 26 % while adding NO fragment bill, or the prize stays on
+   the table and the shipped raster stands as the honest optimum of
+   its family.
