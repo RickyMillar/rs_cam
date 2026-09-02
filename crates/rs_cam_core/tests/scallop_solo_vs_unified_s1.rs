@@ -647,7 +647,12 @@ fn wanaka_scallop_solo_vs_unified_s1() {
     }
     let peak_win = [peak.0 - 20.0, peak.1 - 20.0, peak.0 + 20.0, peak.1 + 20.0];
     let flats_win = [49.75, 123.0625, 89.75, 163.0625];
-    for (name, tp) in [("armU", &tp_u), ("armC", &tp_c), ("armR", &tp_r)] {
+    for (name, tp) in [
+        ("armU", &tp_u),
+        ("armC", &tp_c),
+        ("armC3", &tp_c3),
+        ("armR", &tp_r),
+    ] {
         dump_svg(
             &out.join(format!("{name}_full.svg")),
             tp,
