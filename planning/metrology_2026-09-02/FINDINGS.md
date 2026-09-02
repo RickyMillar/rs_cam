@@ -1102,3 +1102,33 @@ GUI checkbox ("Iso-Field Rings") on the scallop panel, wiring
 sentries `tests/scallop_iso_field_config.rs`. Workspace gate green.
 Remaining before flipping any DEFAULT: the fine-window gouge oracle
 and the real-project run.
+
+### G-ISOCHANNEL — operator-caught gouge channel in the iso spiral; FIXED (2026-09-03, `62237834`)
+
+The operator saw a smooth CHANNEL carved through standing terrain in
+the viewport and overlaid the paths: an entry/link move. Mechanism:
+the continuous-spiral "helical transition" accepts hops up to
+`cusp_r × 3.0` (4.5 mm on the R1.5) as CUTTING FEEDS — correct for the
+cascade (that is its widest possible ring spacing), wrong for the iso
+field, whose ring list is level sets: consecutive entries can be
+different loops several mm apart, and the chord ploughs through
+whatever stands between. Entry spans measured removing up to 92 mm³
+each. THREE instrument lessons:
+
+1. The rapid-collision checker is BLIND to this class — the chord is
+   a feed move. A "0 rapid collisions" verdict says nothing about
+   feed-move gouging.
+2. The triage DID catch it — the `entry_load` critical (884 samples
+   biting > 2× median, peak 3.61 mm) — and the agent misattributed it
+   to rough-terrace handoff. The signal was on the wire; the reading
+   was wrong. The operator's eye settled it.
+3. The envelope-residual coverage ruler cannot see gouges (positive
+   residual only) — already recorded; this is the concrete case.
+
+Fix: the helical-link bound is ring-source-aware — cascade keeps
+`cusp_r × 3.0` byte-identically; the iso field bounds at 1.5× the
+flat-ground stepover (its true max ring spacing), so loop-to-loop
+hops retract. Expect the iso op's retract count to rise (correctly)
+and the channel to vanish. The speckled fillet observation is still
+UNATTRIBUTED (candidates: arc-fit sag on curved fillets; sub-threshold
+short chords) — re-examine after regeneration under the fix.
