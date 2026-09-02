@@ -1207,3 +1207,34 @@ collisions, one plunge per fragment. Runtime 9,769 s project /
 ISO op cutting 98.5 km. Project saved with the clean dressup config.
 The operator's fillet-speckle eyeball on this v4 stock is the last
 open visual check (arc-sag hypothesis).
+
+### The speckles, quantified — and a CORE drop-cutter deficit found underneath (2026-09-03)
+
+The operator's speckles on the rim chamfer ("smooth" 47.4° planar
+strip), measured against the exact fitted plane from the mesh (27 µm
+plane residual):
+
+- The path CORE is correct: p10–p99 tip distance = standoff + 0–65 µm
+  cusp ripple; median point-to-point smoothness 3 µm. The rings do not
+  "wiggle" — the operator's coarseness hypothesis is ruled out for the
+  body of the path.
+- **1.8 % of chamfer points are buried up to 0.49 mm** — the speckles.
+  Probing the worst five XYs with a BARE `point_drop_cutter` call
+  split them into two classes:
+  1. **G-LIFTDEFICIT (core, reproducible without any toolpath):** at
+     model (4.8, 196.5) and (131.3, 197.4) the query itself returns z
+     ≈ 0.75 mm LOWER than its own answer 1 mm away on the same plane.
+     A bare-query defect in the drop-cutter/spatial-index path —
+     foundational (every op lifts through it). Failure-shape map probe
+     written (`tests/lift_probe_g3.rs`) but BLOCKED: the shared
+     checkout is mid-refactor by the entry-moves session
+     (apply_dressups signature change, tree not compiling) — run the
+     map when the lane is green. If the deficit is stripe/cell-
+     aligned, the spatial index is the suspect.
+  2. At (142.2, 196.6) and (137.3, 199.2) the bare query is HEALTHY
+     (+0.64) while the toolpath point is buried — a downstream class,
+     unattributed (candidates: link sampling, an emission-side z, or
+     analysis frame error at strip corners).
+- 13.9 % of chamfer points are PROUD > 0.06 mm (material left) —
+  concentrated at the strip's lower junction where the ball bridges
+  the concave blend; expected geometry, not a defect.
