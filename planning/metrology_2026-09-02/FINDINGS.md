@@ -678,3 +678,103 @@ property of the terrain, not a defect of the planner.
 - The valley agent's pencil/steep-territory work is untouched by this
   closure — it changes WHO owns the gullies, not the Shallow band's
   spacing physics.
+
+---
+
+## M6 — SCOPE CORRECTION (operator-caught, 2026-09-02) and the tier-0 re-run
+
+**The operator caught a territory error in the whole M2–M5 chain:** every
+instrument (G2, F1, F2, E1) inherited its territory from the H1 valley
+harness — the TIER-1 FINE ISLAND, i.e. the dendritic detail strips left
+over after the coarse tool finishes the mountains. That territory came
+from the valley workstream and is the fringe AROUND the drainage
+network, not the mountain range. The 0.90 mm flat-to-steep
+decorrelation is a property of that fringe. This is meta-error §2 (the
+configuration could not express the candidate) applied to territory
+selection — the same error class Track H's V1 was re-bounded for.
+
+**Re-bounded rulings:**
+
+- G2, F1, F2, E1 verdicts stand FOR TIER-1 FINE TERRITORY. Every
+  "closes on this terrain class" phrasing is narrowed to "closes on the
+  tier-1 fringe".
+- Avenue F is NOT closed for tier-0 (mountain) territory — UNMEASURED
+  there. The E1 reopening condition ("flat-to-steep p50 well above the
+  stepover") may be satisfied by wanaka's own tier 0.
+- Track H note: their basin CENSUS was full-territory (unaffected), but
+  no arm ever built contour toolpaths on mountain ground either.
+
+### M6 pre-registration (written BEFORE the run): E2 = the E1 chain on tier 0
+
+Same harness, tier-0 island, the R1.5 coarse tool, its own
+classification surface and planner. Reported in order:
+
+1. **Censuses first:** band shares on tier 0 (Shallow / MidSteep /
+   VerySteep, XY and 3D — how much mountain ground actually rasters vs
+   already cuts contour-like), and the flat-to-steep decorrelation
+   census on the tier-0 Shallow band.
+2. **Arm S** (shipped per-region derate) vs the **graded-raster W
+   sweep**, bars UNCHANGED from §M5 (E-spec / E-frag / E-time).
+3. SVG dumps for the operator's eyeball.
+
+The river-offset field (spacing-graded rings grown from the drainage
+network — the programme's founding image) is a SEPARATE arm and gets
+its own pre-registration only after these censuses land: if tier-0's
+Shallow band decorrelation is as short as tier-1's, no field shape can
+help, and if it is long, the graded raster and the river field compete
+on measured ground.
+
+### M6 RESULT — RUN 2026-09-02. Tier-0 is a DIFFERENT world and the answer is still no — for a measured, different reason.
+
+Instrument: `tests/graded_raster_tier0_e2.rs` (tier-0 complement
+territory, R1.5 tool, rough-only link ceiling), release-fast, ~45 s.
+
+**Censuses (the operator's catch vindicated):**
+
+- Band shares: Shallow 47.0 %, MidSteep 52.1 %, VerySteep 0.9 % —
+  half the mountain ALREADY cuts contour-like (scallop); the raster
+  question concerns 47 %.
+- Decorrelation: flat-to-steep p50 **4.88 mm**, p90 16.34 mm — 8–27
+  stepovers, vs 0.90 mm on the tier-1 fringe. The E1 reopening
+  condition IS satisfied here; tier-0 is genuinely different ground.
+- Refund potential ≈ 16 % of Shallow cutting length (65 % of the band
+  is ≤ 20°).
+
+**The W sweep (bars unchanged; 0/2/8/16/32/64 mm):** time falls
+monotonically from 1.323× (W=0) toward arm S and NEVER crosses: best
+**1.021× at W=64** (E-frag 1.062× passes, E-spec 1.01 % passes).
+2D length dips below the control only at W=32 (−0.8 %) where erosion
+has already destroyed the refund (p99 flat-to-steep = 23 mm < 32 mm).
+Pass simplification to op tolerance (RDP 0.05 mm, applied to every arm
+identically) changed nothing — the wiggle is the field, not sampling.
+**The erosion dilemma, tier-0 form: the refund lives at 5–16 mm scale;
+pass smoothness demands ~2× more; the frontier grazes 1.0 and never
+crosses.**
+
+**The contour-alignment census (the operator's topo-map intuition,
+measured before building it):** |da/ds| along terrain contours vs
+across them, 74,783 cells: **across/along = 1.56×**. Contour-aligned
+graded fronts (the river-offset family) would see the field vary only
+1.56× slower along the pass than the 0° rows do — nowhere near the
+~3–5× grain coherence needed to keep the refund without the wander.
+This wanaka carving is knobbly at stepover scale in EVERY direction.
+The river-offset arm is therefore NOT BUILT, closed by census — the
+same cheap way the catchment-zone idea closed.
+
+**Ruling: avenue F closes on tier-0 as well — but with different
+mechanism and different reopening conditions than tier-1:**
+
+- tier-1 fringe: prize interleaved at sub-stepover scale; nothing can
+  follow it (M5).
+- tier-0 mountains: prize real (~16 %) and coherent at 5–16 mm, but
+  every continuous family pays wander ≥ the refund because the grain
+  is isotropically rough (across/along 1.56×).
+- UNMEASURED residual: a full 2D-Eikonal front solve (lateral coupling
+  the column family lacks). Odds stated honestly as thin — it faces
+  the same erosion dilemma with at most the 1.56× alignment factor of
+  headroom — and it is not recommended without operator push.
+
+**Reopening censuses for ANY future part (now standard, ~40 s each):**
+flat-to-steep p50 ≫ stepover AND across/along grain coherence ≳ 3× —
+both true → the graded/contour-aligned family deserves the E2 harness
+on that part; either false → the straight raster stands.

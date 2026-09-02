@@ -283,7 +283,8 @@ best 1.013× vs the < 0.95× bar.** Mechanism, measured: flat ground
 sits p50 **0.90 mm** from steep ground (p90 2.00 mm) — the prize is
 interleaved with the gullies at sub-stepover scale, so any
 machinable smoothing clamps the field before wander stops.
-**AVENUE F IS CLOSED ON THIS TERRAIN CLASS.** The full ledger:
+**AVENUE F IS CLOSED ON THE TIER-1 FRINGE** (SCOPE CORRECTED
+same day, operator-caught — see below).** The full ledger:
 prize real (26.1 %); excision refunds nothing (G2); decomposition
 refunds nothing (M4); continuous variation refunds nothing (E1).
 The shipped worst-point raster is the measured honest optimum of
@@ -291,6 +292,27 @@ its family here — the prize is a property of the terrain. Reopening
 conditions recorded in §M5: a spec change (bounded cusp exceedance,
 operator's call), or smoother work whose flat-to-steep p50 is well
 above the stepover (the E1 instrument then applies as-is).
+
+**SCOPE CORRECTION (operator-caught, 2026-09-02, §M6):** the whole
+G2/F1/F2/E1 chain ran on the TIER-1 FINE ISLAND — the dendritic
+fringe inherited from the valley harness — not on tier-0 mountain
+ground. The closures stand for that fringe only; tier 0 is
+UNMEASURED and the E2 re-run (censuses first, then the same bars) is
+in flight. The river-offset field — spacing-graded rings grown from
+the drainage network, the programme's founding image — has never
+been costed on mountain ground and waits on the E2 censuses.
+
+**E2 RAN same day (§M6): tier-0 closes too, by different mechanism.**
+The mountains ARE different (flat-to-steep p50 4.88 mm; refund ~16 %;
+half the tier already cuts contour-like scallop) — but the graded
+family's best is 1.021×, never crossing, and the contour-alignment
+census kills the river-offset arm without a build: |da/ds|
+across/along = **1.56×**, far below the ~3–5× grain coherence
+contour-aligned fronts need. Wanaka is knobbly at stepover scale in
+every direction. AVENUE F IS NOW CLOSED ON BOTH TIERS of this board,
+each with its measured mechanism. Standard reopening censuses for
+any future part: flat-to-steep p50 ≫ stepover AND grain coherence
+≳ 3× (~40 s each on the E2 harness).
 
 ### G. Saturated derate in the Shallow band — prize real but UNSIZED; mechanism corrected 2026-09-02 (from Track H)
 
