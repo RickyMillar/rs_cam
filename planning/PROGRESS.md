@@ -97,7 +97,24 @@ bound; avenue F is the surviving lever), the avenue-G derate
 correction (steep inclusions, not fringe), and the region-polygon
 ≠ band-territory finding routed to Track M.
 
-## Recent work (2026-08-19 → 2026-09-01)
+## Recent work (2026-08-19 → 2026-09-02)
+
+### 2026-09-02 — the finishing question is answered
+
+Track M ran the falsifier chain to its end
+(`planning/metrology_2026-09-02/FINDINGS.md` §M2–M5): the spacing
+prize on the Shallow band is real (26.1 % of cutting length, 1.354×
+floor) and UNREACHABLE — excision refunds nothing (G2), decomposition
+pays its perimeter in fragments (M4, 1.8×), and continuous variable
+spacing equals the straight raster at its best (E1, 1.013×; flat
+ground sits p50 0.90 mm from steep ground, finer than any smooth pass
+can follow). **The shipped worst-point raster is the measured honest
+optimum of its family on this terrain class.** Avenues F and G are
+closed in the status doc with reopening conditions. Also shipped:
+`metrology::ownership` (band-cell ownership audits;
+`PlannedRegions::labels`) — a Shallow polygon owns only ~46 % of its
+cells, so polygon-scoped audits misread every dendritic op. Track H
+(valleys/catchments, the other session) closed the same day.
 
 ### Finishing-strategy campaigns — consolidated 2026-09-01
 
