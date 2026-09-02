@@ -594,7 +594,56 @@ charter. F1 bounds the distance prize at ~26 %; tilt lengthening
 (passes bending costs sec(tilt) per column) spends against it and is
 reported.
 
-RESULT: pending.
+### M7 RESULT — RUN 2026-09-02. PURE SCALLOP WINS: 0.806× WITH COVERAGE EQUALITY. THE BAND MIX DOES NOT EARN ITS OVERLAP ON THIS BOARD.
+
+Instrument: `tests/scallop_solo_vs_unified_s1.rs`, release-fast, 802 s
+(arm U 336 s, arm C 264 s, arm R 177 s generation).
+
+| arm | time s | ×U | cut mm | rapid mm | plunges | coverage Δ |
+|---|---|---|---|---|---|---|
+| U unified band mix | 8,127.8 | 1.000 | 112,437 | 5,457 | 225 | — |
+| **C scallop whole board** | **6,551.5** | **0.806** | 97,058 | **11** | **1** | +0.117 pp (equal) |
+| R scallop on regions (1-step overlap) | 8,797.5 | 1.082 | 102,639 | 44,710 | 700 | +0.929 pp (FAILS equality) |
+
+- **Bar C-time: PASSES for arm C.** 19.4 % faster than the production
+  band mix, coverage differential inside the 0.5 pp equality margin.
+- **Where the win comes from:** 15 % less cutting distance (the
+  operator's overlap suspicion, confirmed — the band mix's 2 mm
+  overlaps and seams), 5.4 km → 11 m of rapids, and 225 → **1** entry
+  plunge: one continuous constant-cusp spiral over the whole board.
+- **Arm R answers its own question:** keeping the planner's regions
+  but scalloping them all LOSES (1.082×, 700 plunges, 44.7 km rapids,
+  coverage equality failed) — the region STRUCTURE is the overhead,
+  not the per-band strategy choice.
+- Consistency check against the M2–M6 chain: no contradiction. The
+  F/E chain proved the straight raster is the best RASTER-family
+  policy on its band; S1 shows the whole-board scallop simply does
+  not pay the band structure's fixed costs (overlap, seams, retracts)
+  at all. On flat ground scallop's rings are boundary offsets at the
+  same equal-cusp stepover the raster uses — neither arm wins on the
+  flats; the scallop wins by never paying the joints.
+
+**Caveats, recorded:**
+
+- Coverage absolute numbers (~60 %) are meaningless here — the
+  population includes the vertical rim walls; the DIFFERENTIAL is the
+  registered measure and it is clean. Confirmation on the real
+  simulated stock (union/ownership audit at sim resolution) is the
+  productization gate.
+- Costing is `compute_cycle_time` on as-generated toolpaths (single
+  op scale; no sim, no adaptive feed).
+- The known `cavalier_contours` worker-thread panic fired once
+  mid-run (documented dependency class; generation survived).
+- On flats the whole-board rings are BBOX-RECTANGLE offsets (corners,
+  no terrain alignment) — cosmetic/kinematic quirk; `InsideOut` or
+  the compact-spiral bridging are candidate polish, unmeasured.
+
+**Consequence:** the band-mix design is REOPENED for terrain-class
+work. The standalone scallop op already exists in the product — the
+cheapest enactment is a project-level strategy choice, not new code.
+Productization gate before any default changes: run the real project
+(both tiers) with scallop ops in place of unified, simulate, and pass
+the union/ownership audit plus the standard gate set.
 
 ### M5 amendment — E1b horizontal-erosion sweep (recorded BEFORE the sweep runs; bars unchanged)
 
@@ -778,3 +827,52 @@ mechanism and different reopening conditions than tier-1:**
 flat-to-steep p50 ≫ stepover AND across/along grain coherence ≳ 3× —
 both true → the graded/contour-aligned family deserves the E2 harness
 on that part; either false → the straight raster stands.
+
+---
+
+## M7 — S1: pure scallop vs the unified band mix (pre-registration, written BEFORE the run)
+
+> Operator go 2026-09-02: "can we test it without the unified? There is
+> a lot of overlap. I imagine just using the scallop by itself might
+> win."
+
+**The question.** The unified op pays band machinery: three strategies,
+2 mm inter-band overlap, and seams. Pure scallop (constant-cusp rings
+over the WHOLE surface, slope 0–90°) has one strategy and no bands. On
+mountain-heavy ground the rings are the natural shape — does the band
+mix actually earn its complexity?
+
+**Arms, identical mesh / tool (R1.5) / feeds / kinematics / cusp spec
+(0.03 mm) / tolerance (0.05):**
+
+- **arm U** — the production unified op, mt2 R1.5 params verbatim (the
+  E3 toolpath).
+- **arm C** — the standalone shipped scallop op: slope 0–90°,
+  OutsideIn, continuous spiral ON, `intra_pass_hookup_mm = 3.0` with
+  kinematics (the shipped operation defaults).
+
+**Costed identically:** `compute_cycle_time` on each generated toolpath
+with the project kinematics (both generators emit their own feeds and
+links — no relink; this compares the ops as shipped). Reported:
+time, cutting mm, rapid mm, fragments (EntryPlunge count), retracts.
+
+**Coverage precondition:** the E1-style lifted-centroid audit over the
+whole covered board (NO slope filter — neither arm has a derate clamp;
+scallop adapts spacing by slope everywhere). Knife-edge caveat (M4)
+applies to absolute numbers; the DIFFERENTIAL decides: an arm whose
+unmachined fraction exceeds the other's by > 0.5 pp cannot win.
+
+- **arm R** (operator-added before the run) — KEEP the planner's
+  regions but scallop every one of them: the same `decompose` regions
+  the unified op plans (all three bands), extracted with
+  `overlap_mm = ONE STEPOVER (0.597 mm)` instead of 2.0, each region
+  fed to the shipped scallop generator as its own boundary. Tests
+  whether the win (if any) is "scallop everywhere" or "drop the 2 mm
+  overlap and the strategy zoo but keep the region structure".
+
+**Bar (pre-registered):** **C-time** — an arm wins the question if its
+`time_s` < arm U's with coverage equality held. No margin requirement:
+this is a strategy-choice question, not a planner-change bar; any
+honest win reopens the band-mix design.
+
+RESULT: pending.
