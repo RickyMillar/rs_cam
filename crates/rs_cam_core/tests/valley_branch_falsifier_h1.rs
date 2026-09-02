@@ -953,11 +953,67 @@ struct RegionTriangles {
     lifted: Vec<P3>,
     areas: Vec<f64>,
     area_mm2: f64,
+    /// Slope angle (deg) of each triangle, so the coverage result can be
+    /// ATTRIBUTED rather than asserted.
+    slopes_deg: Vec<f64>,
+}
+
+/// 3D area by slope band, and the share at or above `clamp_deg`.
+///
+/// **Why this is printed beside the coverage audit.** A raster at XY pitch
+/// `p` achieves surface spacing `p / cos theta`. The spec scallop is met only
+/// while `p / cos theta <= s_max`, i.e. while `theta <= acos(p / s_max)` —
+/// and with the shipped derate `p = s_max · cos(theta_max)` that bound is
+/// exactly `theta_max`. Since `theta_max` is CLAMPED at the planner's
+/// `steep_threshold_deg`, every square millimetre steeper than the clamp is
+/// under-covered at spec scallop BY CONSTRUCTION, for every raster arm. This
+/// table says how much of the region that is, so the audit's fraction can be
+/// checked against it instead of taken on trust.
+fn print_slope_census(tris: &RegionTriangles, clamp_deg: f64) {
+    const BANDS: [f64; 7] = [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0001];
+    let mut band_area = [0.0f64; 6];
+    let mut above_clamp = 0.0f64;
+    for (i, &deg) in tris.slopes_deg.iter().enumerate() {
+        let a = tris.areas[i];
+        for b in 0..6 {
+            if deg >= BANDS[b] && deg < BANDS[b + 1] {
+                band_area[b] += a;
+                break;
+            }
+        }
+        if deg > clamp_deg {
+            above_clamp += a;
+        }
+    }
+    eprintln!(
+        "\n---------- region 3D area by SLOPE (the coverage result's attribution) ----------\n\
+         \x20  A raster at XY pitch p achieves surface spacing p/cos(theta), so the spec\n\
+         \x20  scallop is met only up to theta = acos(p/s_max) — which under the shipped\n\
+         \x20  derate IS theta_max, and theta_max is CLAMPED at {clamp_deg:.1} deg. Every mm²\n\
+         \x20  steeper than the clamp is under-covered at spec scallop by construction, in\n\
+         \x20  EVERY raster arm."
+    );
+    for b in 0..6 {
+        eprintln!(
+            "     {:>5.0}–{:<5.0} deg  {:>10.1} mm²  {:>7.2} %",
+            BANDS[b],
+            BANDS[b + 1].min(90.0),
+            band_area[b],
+            100.0 * band_area[b] / tris.area_mm2.max(1e-9)
+        );
+    }
+    eprintln!(
+        "     3D area STEEPER than the {clamp_deg:.1} deg clamp: {:.1} mm² = {:.2} % of the \
+         region's {:.1} mm²",
+        above_clamp,
+        100.0 * above_clamp / tris.area_mm2.max(1e-9),
+        tris.area_mm2
+    );
 }
 
 fn region_triangles(mesh: &TriangleMesh, polygon: &Polygon2, scallop_h_mm: f64) -> RegionTriangles {
     let [bx0, by0, bx1, by1] = polygon.bbox();
-    let rows: Vec<(P3, f64)> = (0..mesh.triangles.len())
+    let rows: Vec<(P3, f64, f64)> = (0..mesh.triangles.len())
         .into_par_iter()
         .filter_map(|t| {
             let tri = mesh.triangles[t];
@@ -996,21 +1052,25 @@ fn region_triangles(mesh: &TriangleMesh, polygon: &Polygon2, scallop_h_mm: f64) 
             let n = if n.z < 0.0 { -n } else { n };
             let cz = (p0.z + p1.z + p2.z) / 3.0;
             let centroid = P3::new(cx, cy, cz);
-            Some((centroid + n * scallop_h_mm, area))
+            let slope_deg = n.z.clamp(-1.0, 1.0).acos().to_degrees();
+            Some((centroid + n * scallop_h_mm, area, slope_deg))
         })
         .collect();
     let mut lifted = Vec::with_capacity(rows.len());
     let mut areas = Vec::with_capacity(rows.len());
+    let mut slopes_deg = Vec::with_capacity(rows.len());
     let mut area_mm2 = 0.0;
-    for (p, a) in rows {
+    for (p, a, s) in rows {
         lifted.push(p);
         areas.push(a);
+        slopes_deg.push(s);
         area_mm2 += a;
     }
     RegionTriangles {
         lifted,
         areas,
         area_mm2,
+        slopes_deg,
     }
 }
 
@@ -2024,6 +2084,7 @@ fn wanaka_valley_branch_falsifier_h1() {
         tris.area_mm2,
         r10.cusp_radius_mm()
     );
+    print_slope_census(&tris, planner.steep_threshold_deg);
 
     let mut arms: Vec<ArmReport> = Vec::new();
     for (label, step, runs) in [
