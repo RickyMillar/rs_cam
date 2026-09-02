@@ -980,7 +980,20 @@ fn region_triangles(mesh: &TriangleMesh, polygon: &Polygon2, scallop_h_mm: f64) 
             // The shipped audit lifts along the AVERAGED VERTEX normal; on a
             // per-triangle population that average is the face normal, which
             // is what this uses.
+            //
+            // **Oriented UPWARD explicitly.** The lift must go OUT of the
+            // material: `S^h` sits between the surface and the ball centre,
+            // so the lifted point is `R - h·cos(alpha)` from a covering
+            // centre. Taken the other way it is `R + h·cos(alpha)`, which on
+            // FLAT ground is 1.03 against a 1.00 radius — every flat triangle
+            // then reads uncovered by 30 microns. The first run of this
+            // instrument did exactly that and reported 47.1 % of the SHIPPED
+            // raster unmachined, which is a model error, not a raster
+            // defect. This mesh is a single-valued heightfield (100 %
+            // up-facing, min n_z = 0.0148), so "upward" is well defined here
+            // and the winding cannot be relied on instead.
             let n = cross / cross.norm();
+            let n = if n.z < 0.0 { -n } else { n };
             let cz = (p0.z + p1.z + p2.z) / 3.0;
             let centroid = P3::new(cx, cy, cz);
             Some((centroid + n * scallop_h_mm, area))
@@ -2099,6 +2112,20 @@ fn wanaka_valley_branch_falsifier_h1() {
             c.unmachined_area_mm2,
             100.0 * c.unmachined_area_fraction,
             c.largest_unmachined_triangle_area_mm2
+        );
+        // The shipped audit's own discriminator, and the row that tells a
+        // knife-edge apart from a hole: read it AGAINST the 1.000 mm radius.
+        // Microns above is a cusp-midline grazing; a millimetre above is a
+        // genuine gap.
+        eprintln!(
+            "     {:>44}    uncovered distance vs K_c {:.3}: min {:.4} median {:.4} max {:.4} mm \
+             over {} samples",
+            "",
+            c.coverage_radius_mm,
+            c.uncovered_distance.min_mm,
+            c.uncovered_distance.median_mm,
+            c.uncovered_distance.max_mm,
+            c.uncovered_distance.samples,
         );
     }
 
