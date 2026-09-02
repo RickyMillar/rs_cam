@@ -177,3 +177,44 @@ Pre-registered expectations (written before the run):
    finding, not a calibration knob.
 
 Results land below this section after the run, unedited.
+
+## M-5 RESULTS (2026-09-02, release run, 2,297 s wall) — both pre-registrations HELD
+
+Run: `cargo test --release -p rs_cam_core --test union_coverage_m1 --
+--ignored --nocapture`. Both arms simulated at cell 0.300 mm
+(unclamped), 444,889 columns, 40,040 mm² compared (the full board
+footprint). Fixpoint: 3 rounds per arm (4 → 6 → 8 of 8 generated).
+Known caught offset-library panics (`cavalier_contours` pline.rs:139)
+fired during generation on both arms and were absorbed by the
+Checkpoint C guard; report-only, as designed.
+
+| arm | above spec (> 0.35 mm) | fraction | patches | largest patch | max standing | p99 | gouged | cut-through cols |
+|---|---|---|---|---|---|---|---|---|
+| PRODUCTION (overlap 2.0) | 3,062.0 mm² | 7.65 % | 3,422 | 114.6 mm² | 3.94 mm | 0.844 mm | 303.3 mm² | 752 |
+| REJECTED (overlap 0.2) | 18,341.5 mm² | 45.81 % | 831 | **17,161.5 mm²** | 5.43 mm | 2.930 mm | 262.3 mm² | 441 |
+
+* **Pre-registration 1 HELD**: the rejected variant FAILED
+  `assert_within(500 mm²)` loudly, and the failure locates the defect:
+  one connected 17,161 mm² patch spanning the fine-detail territory
+  (bbox [21.9, 26.4]..[218.7, 223.5]) at up to 5.43 mm standing — the
+  patch the operator saw by eye and no per-op wire reported.
+* **Pre-registration 2 HELD**: rejected / production = **5.99×** ≥ the
+  registered 3× discriminator.
+* **Production finding, characterized honestly (not gated):**
+  production is NOT union-clean. 3,062 mm² (7.65 %) stands above
+  0.35 mm in 3,422 small patches (largest 114.6 mm², around (48, 90)),
+  while every per-op wire reads clean. Candidate explanations, NOT yet
+  attributed: territory owned by no op under the production floors;
+  the tier blend-band fringe; rough-only ground the tiers never claim;
+  and 0.3 mm column quantisation on steep walls (the 0.35 mm bar is
+  only one cell above spec — standing here is VERTICAL, so a steep
+  wall's normal excess is smaller by cos θ). Attribution is follow-up
+  work; the ruler now exists to run it one dial at a time.
+* The gouge columns (303 / 262 mm², max undercut ≤ 1.11 mm) and the
+  cut-through columns (752 / 441) include the through-pilot holes and
+  back-face interactions; report-only in this instrument.
+
+G-UNIONCOV's gap is closed: a boundary-config change can no longer
+pass silently — `union_coverage_m1` is the instrument, and
+`UnionCoverageReport::assert_within` is the gate a comparison run
+consumes.
