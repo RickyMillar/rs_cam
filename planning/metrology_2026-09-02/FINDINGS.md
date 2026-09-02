@@ -1149,3 +1149,21 @@ target, chartered at `planning/entry_moves_2026-09-03/CHARTER.md`.
 Immediate mitigation: the iso project is saved with
 `entry_style = "none"`. The iso feature's default-off status is
 unchanged; its adoption gates now include the entry-chord sentry.
+
+### G-RAMPTERRAIN attribution PROVEN by A/B G-code analysis (2026-09-03)
+
+Frame-corrected (stock frame = model + (20, 25)), strict test: a chord
+counts only if BURIED > 0.5 mm below mean terrain along its whole
+length. Ramp entries: 3 chords × 19.1 mm buried 0.54–1.36 mm (plus 45
+under the looser crest test, up to 21 mm). Plunge entries
+(`entry_style = "none"`): the class is GONE. The wanaka ISO project is
+saved with plunge entries.
+
+**Residual class found by the same instrument:** two short buried
+chords (2.0–2.5 mm, 0.61–1.17 mm deep), BOTH at model (140.5, ~139) —
+too long for helical links; signature of a ring chord/arc bridging
+through a small knoll. Same family as the operator's fillet-speckle
+observation and Checkpoint C §3.8's chord-across-rim gouge. Next
+probe: `arc_fitting` dressup off, regenerate, re-analyze + operator
+eyeball. The G-code buried-chord analysis is now the working sentry
+prototype the charter asks for.
