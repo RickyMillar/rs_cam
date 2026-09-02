@@ -46,7 +46,8 @@ use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop::{
-    ScallopDirection, ScallopParams, ScallopRingBudget, scallop_generation_resolution,
+    RingSource, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
+    scallop_generation_resolution, scallop_toolpath_research,
     scallop_toolpath_structured_annotated_with_cancel,
     scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
@@ -474,6 +475,34 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         ScallopRingBudget::LoopClampFloor,
     );
 
+    // ── arm ISO: M8 — the iso-field ring source (per-point spacing) ──────
+    let t_iso = std::time::Instant::now();
+    let iso_policy = ScallopStepoverPolicy {
+        ring_source: RingSource::IsoField,
+        ..ScallopStepoverPolicy::SHIPPED
+    };
+    let (tp_iso, _, rep_iso, _) = scallop_toolpath_research(
+        &mesh,
+        &index,
+        &r15,
+        &sparams,
+        None,
+        None,
+        scallop_generation_resolution(&r15, TOLERANCE),
+        ScallopRingBudget::LoopClampFloor,
+        iso_policy,
+        &never_cancel,
+    )
+    .expect("iso-field scallop");
+    eprintln!(
+        "arm ISO (iso-field rings) generated: {} moves, {:.0} s — cascade left uncut: \
+         core {:.0} mm², net {:.0} mm²",
+        tp_iso.moves.len(),
+        t_iso.elapsed().as_secs_f64(),
+        rep_iso.uncut_core_mm2,
+        rep_iso.untouched_mm2,
+    );
+
     // ── arm R: the planner's regions, all scalloped, 1-stepover overlap ──
     let surface = build_classification_surface_with_sampler_and_cancel(
         &mesh,
@@ -565,11 +594,12 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         "     {:>38}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>9}",
         "arm", "time s", "cut mm", "rapid mm", "plunges", "moves", "unmach %"
     );
-    let arms: [(&str, &Toolpath); 5] = [
+    let arms: [(&str, &Toolpath); 6] = [
         ("U   unified band mix (production)", &tp_u),
         ("C   scallop, shipped budget (truncates)", &tp_c),
         ("C2  scallop, reach-policy budget", &tp_c2),
         ("C3  scallop, clamp-floor budget", &tp_c3),
+        ("ISO iso-field rings (per-point spacing)", &tp_iso),
         ("R   scallop on planner regions (1-step)", &tp_r),
     ];
     let centre_window = [80.0, 80.0, 120.0, 120.0];
@@ -651,6 +681,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         ("armU", &tp_u),
         ("armC", &tp_c),
         ("armC3", &tp_c3),
+        ("armISO", &tp_iso),
         ("armR", &tp_r),
     ] {
         dump_svg(

@@ -976,3 +976,69 @@ this is a strategy-choice question, not a planner-change bar; any
 honest win reopens the band-mix design.
 
 RESULT: pending.
+
+---
+
+## M8 — S2: iso-field scallop vs the completing cascade (pre-registration, written BEFORE the run)
+
+> Operator observation driving this: the C3 rings are "still mostly
+> parallel… I thought it was going to make a more organic shape as it
+> traversed mountain ranges." Correct — the cascade offsets the
+> BOUNDARY's shape in plan view; terrain only modulates one scalar per
+> ring. The organic form the operator expects is per-point iso-scallop.
+
+**The candidate is already in the tree as a research seam** (M4
+candidate 3): `RingSource::IsoField` — solve `|∇D| = 1/s(x,y)` from
+the boundary, rings = integer level sets; per-point spacing by
+construction, ring count = ⌊max D⌋ (a termination invariant, which
+also retires the G-SCALLOPBASIN budget class). No shipped caller
+selects it.
+
+**Arms (same harness, tool, feeds, cusp, ruler as S1/M7):**
+
+- **U** — production unified (reference row).
+- **C3** — the completing cascade (M7's winner), the BASELINE.
+- **ISO** — `scallop_toolpath_research` with the SHIPPED policy except
+  `ring_source: IsoField`, clamp-floor budget (inert for iso), same
+  params as C3.
+
+**Bars (pre-registered):**
+
+- **ISO-cov:** envelope-residual unmachined ≤ C3 + 0.5 pp.
+- **ISO-time:** `time_s` < C3's — any honest win adopts iso as the
+  research recommendation; < 0.95 × C3 makes it the headline (the
+  measured crawl tax is ~14 % of cutting distance, so the prize is
+  real if ring placement is the binding cost).
+- Gouge safety is NOT covered by the envelope ruler (it only reads
+  positive residual); the M4 gouge oracle exists and a production
+  adoption must run it. Recorded as a gate, not measured here.
+
+### M8 RESULT — RUN 2026-09-03. ISO-time PASSES EMPHATICALLY (0.722× C3, 0.614× U); ISO-cov FAILS vs C3 (+1.63 pp) — a trade, not a sweep.
+
+| arm | time s | ×U | cut mm | unmach % | basin |
+|---|---|---|---|---|---|
+| U production unified | 8,127.8 | 1.000 | 112,437 | 6.007 | ✓ |
+| C3 completing cascade | 6,906.3 | 0.850 | 102,239 | **2.994** | ✓ |
+| **ISO per-point rings** | **4,987.5** | **0.614** | **72,694** | 4.624 | ✓ |
+
+- **ISO-time: PASSES** — 0.722× the completing cascade, 0.614× the
+  production op. The per-ring crawl tax realised at ~29 % of cutting
+  distance (the 14 % estimate was conservative: C2's reference was
+  itself Min-reduced). One plunge, 6 mm rapids, `uncut_core = 0` —
+  the termination invariant retires the G-SCALLOPBASIN budget class
+  by construction.
+- **ISO-cov: FAILS the C3-relative bar** (4.624 % vs bar 3.494 %),
+  while still beating PRODUCTION by 1.4 pp. Candidate mechanism (the
+  module's own documented cost): rings are grid contours, so ring
+  placement carries the field cell as an XY error floor. The obvious
+  next dial is a finer field resolution; unmeasured.
+- Visual: the operator's expected organic topo-morphology is
+  confirmed by eyeball — rings deform around the ranges, spacing
+  varies along each ring (`target/scallop_vs_unified_s1/armISO_*`).
+
+**Standing (operator's call):** against PRODUCTION, ISO dominates on
+every axis measured here. Against the completing cascade it trades
+1.6 pp of envelope coverage for 28 % of time. Adoption path: (1) the
+field-resolution probe to close the coverage gap; (2) the M4 gouge
+oracle (mandatory gate — this ruler cannot see gouges); (3) the
+real-project productization gate as in M7.
