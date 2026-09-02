@@ -59,6 +59,9 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
+};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::spiral_finish_compact::{CompactSpiralParams, bridge_nested_levels};
@@ -393,18 +396,12 @@ fn polylines_to_toolpath(
     tp
 }
 
-struct CandidateCost {
-    moves: usize,
-    cutting_mm: f64,
-    rapid_mm: f64,
-    time_s: f64,
-    fragments: usize,
-    linked: usize,
-    kept_retracts: usize,
-    path: Toolpath,
-}
-
-/// The C1/F-034 relink block, field for field.
+// PROMOTED (Track M, 2026-09-02): the comparison kernel lives in
+// `rs_cam_core::metrology::costing`, extracted from
+// `thin_organic_island_widths.rs`; this file's copy was byte-equivalent up
+// to the cutter's concrete type and which `CandidateCost` fields it kept.
+// The adapter below keeps this instrument's original call shape; the feed
+// pins are this file's own constants, unchanged.
 fn relink_and_cost(
     raw: Toolpath,
     mesh: &TriangleMesh,
@@ -414,44 +411,19 @@ fn relink_and_cost(
     kinematics: &MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
-    let link_kinematics = LinkKinematics {
-        kinematics: *kinematics,
-        max_feed_mm_min: MAX_FEED_MM_MIN,
-        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
-    };
-    let params = rs_cam_core::surface_link::RelinkParams {
-        hookup_distance: 25.0,
-        stock_to_leave: 0.0,
-        sampling: 0.5,
-        feed_rate: FEED_MM_MIN,
-        plunge_rate: PLUNGE_MM_MIN,
-        safe_z,
-        link_kinematics: Some(&link_kinematics),
-        reorder: true,
-        boundary: Some(boundary),
-        link_ceiling: None,
-        flush_ride: false,
-        airborne_links_may_leave_territory: false,
-    };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
+    let ctx = CostingContext {
         mesh,
         index,
         cutter,
-        &params,
-    );
-    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
-    let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
-    CandidateCost {
-        moves: toolpath.moves.len(),
-        cutting_mm: toolpath.total_cutting_distance(),
-        rapid_mm: toolpath.total_rapid_distance(),
-        time_s: compute_cycle_time(&toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN),
-        fragments: report.fragments,
-        linked: report.surface_links,
-        kept_retracts: report.retract_links,
-        path: toolpath,
-    }
+        kinematics: Some(kinematics),
+        feeds: CostingFeeds {
+            feed_mm_min: FEED_MM_MIN,
+            plunge_mm_min: PLUNGE_MM_MIN,
+            max_feed_mm_min: MAX_FEED_MM_MIN,
+            rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+        },
+    };
+    metrology_relink_and_cost(&ctx, raw, boundary, safe_z)
 }
 
 fn point_segment_distance_sq(p: P3, a: P3, b: P3) -> f64 {
@@ -676,11 +648,9 @@ fn run_spiral_arm(label: &str, slug: &str, derate: bool) {
 
     // Reference floor (flat law): SUM area / s_flat. The flat law carries no
     // per-triangle curvature; stated as a reference, not an exact floor.
-    let area_mm2: f64 = mesh
-        .faces
-        .iter()
-        .map(|f| 0.5 * (f.v[1] - f.v[0]).cross(&(f.v[2] - f.v[0])).norm())
-        .sum();
+    // The area term is the promoted `metrology::floor::mesh_area_mm2`
+    // (Track M, 2026-09-02).
+    let area_mm2 = rs_cam_core::metrology::floor::mesh_area_mm2(&mesh);
     let l_min_flat = area_mm2 / S_FLAT_MM;
     eprintln!("   3D area {area_mm2:.0} mm^2; flat-law reference floor L_min = {l_min_flat:.0} mm");
 

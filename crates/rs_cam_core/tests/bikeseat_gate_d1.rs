@@ -152,7 +152,7 @@ const FACET_MAX_EDGE_MM: f64 = STEPOVER_MM / 3.0;
 const GATE1_CEILING_MIN_PCT: f64 = 5.0;
 
 /// GATE 2 pass bars.
-const GATE2_W30_MIN: f64 = 0.70;
+const GATE2_W30_MIN: f64 = rs_cam_core::metrology::census::W30_COHERENT;
 const GATE2_LENGTH_MIN_STEPOVERS: f64 = 3.0;
 const GATE2_LENGTH_MIN_MM: f64 = GATE2_LENGTH_MIN_STEPOVERS * STEPOVER_MM;
 const GATE2_REGIME_COVERAGE_MIN: f64 = 0.70;
@@ -193,10 +193,7 @@ const LANDSCAPE_DECAY_EXPONENT: f64 = 1.5;
 const COHERENCE_TURN_DEG: f64 = 30.0;
 const COHERENCE_ANGLES_DEG: [f64; 4] = [10.0, 20.0, 30.0, 45.0];
 const COHERENCE_SEARCH_BOUND_MM: f64 = 20.0 * STEPOVER_MM;
-const COHERENCE_GRID_CELL_MM: f64 = 1.0;
 const COHERENCE_QUERY_CAP: usize = 4_000;
-const MIN_TRUSTED_CELLS: usize = 2;
-
 /// A zone smaller than a (3-stepover)^2 square cannot hold the gate's own
 /// coherence bar in both directions; it is reported but never usable.
 const MIN_VERDICT_AREA_MM2: f64 = GATE2_LENGTH_MIN_MM * GATE2_LENGTH_MIN_MM;
@@ -697,20 +694,10 @@ fn gate1_verdict(label: &str, rows: &[RadiusRow]) -> Gate1Verdict {
 // Gate 2 — the coherence census (lattice-cell unit)
 // ════════════════════════════════════════════════════════════════════════
 
-/// One field cell — the lattice analogue of the coherence census's TriField.
-#[derive(Clone, Copy)]
-struct CellField {
-    pos: P2,
-    /// Surface area the cell represents: `W * lattice^2` (mm^2).
-    area_mm2: f64,
-    /// Trusted unit XY `t1`, sign arbitrary. `None` when the fit failed, the
-    /// operator is identity-like, or the anisotropy is under the isotropy
-    /// floor — the coherence census's TRUSTED condition, via
-    /// `MongeFit::trusted_axis`.
-    axis: Option<[f64; 2]>,
-    fitted: bool,
-    degenerate: bool,
-}
+// PROMOTED (Track M, 2026-09-02): the lattice cell IS the census's
+// `TriField` (the census never assumes its entries are triangles; area
+// is whatever the sample represents).
+use rs_cam_core::metrology::census::TriField as CellField;
 
 #[derive(Default)]
 struct FieldCensus {
@@ -743,7 +730,7 @@ fn build_cell_field(
     let mut field = Vec::with_capacity(outcomes.len());
     for (pos, outcome) in outcomes {
         let mut entry = CellField {
-            pos,
+            centroid: pos,
             area_mm2: cell_area_xy,
             axis: None,
             fitted: false,
@@ -770,129 +757,14 @@ fn build_cell_field(
     (field, census)
 }
 
-/// A zone's trusted cells in a bucket grid, for the nearest-turn search.
-/// Restated from the coherence census's TurnGrid; logic unchanged.
-struct TurnGrid {
-    pts: Vec<P2>,
-    axes: Vec<[f64; 2]>,
-    origin: P2,
-    cols: i64,
-    rows: i64,
-    buckets: Vec<Vec<u32>>,
-}
+// The nearest-turn search is the promoted
+// `metrology::census::TurnGrid` (this file's copy was restated from the
+// coherence census, logic unchanged). NOTE the library's minimum trusted
+// population is MIN_TRUSTED_TRIANGLES = 2, the same value this file's
+// MIN_TRUSTED_CELLS pinned.
+use rs_cam_core::metrology::census::TurnGrid;
 
-impl TurnGrid {
-    fn build(field: &[CellField], members: &[u32]) -> Option<Self> {
-        let mut pts = Vec::new();
-        let mut axes = Vec::new();
-        for &m in members {
-            let entry = &field[m as usize];
-            if let Some(axis) = entry.axis {
-                pts.push(entry.pos);
-                axes.push(axis);
-            }
-        }
-        if pts.len() < MIN_TRUSTED_CELLS {
-            return None;
-        }
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        for p in &pts {
-            min_x = min_x.min(p.x);
-            min_y = min_y.min(p.y);
-            max_x = max_x.max(p.x);
-            max_y = max_y.max(p.y);
-        }
-        let cell = COHERENCE_GRID_CELL_MM;
-        let cols = (((max_x - min_x) / cell).floor() as i64 + 1).max(1);
-        let rows = (((max_y - min_y) / cell).floor() as i64 + 1).max(1);
-        let mut buckets = vec![Vec::new(); (cols * rows) as usize];
-        for (i, p) in pts.iter().enumerate() {
-            let c = (((p.x - min_x) / cell).floor() as i64).clamp(0, cols - 1);
-            let r = (((p.y - min_y) / cell).floor() as i64).clamp(0, rows - 1);
-            buckets[(r * cols + c) as usize].push(i as u32);
-        }
-        Some(Self {
-            pts,
-            axes,
-            origin: P2::new(min_x, min_y),
-            cols,
-            rows,
-            buckets,
-        })
-    }
-
-    fn cell_of(&self, p: P2) -> (i64, i64) {
-        let cell = COHERENCE_GRID_CELL_MM;
-        let c = (((p.x - self.origin.x) / cell).floor() as i64).clamp(0, self.cols - 1);
-        let r = (((p.y - self.origin.y) / cell).floor() as i64).clamp(0, self.rows - 1);
-        (c, r)
-    }
-
-    /// Distance to the nearest trusted member whose axis differs from
-    /// `from`'s by more than [`COHERENCE_TURN_DEG`]. `None` = right-censored
-    /// at [`COHERENCE_SEARCH_BOUND_MM`].
-    fn nearest_turn(&self, from: usize, cos_turn: f64) -> Option<f64> {
-        let p = self.pts[from];
-        let a = self.axes[from];
-        let (qc, qr) = self.cell_of(p);
-        let mut best = f64::INFINITY;
-        let max_ring = self.cols.max(self.rows);
-        for ring in 0..=max_ring {
-            let lo_c = (qc - ring).max(0);
-            let hi_c = (qc + ring).min(self.cols - 1);
-            let lo_r = (qr - ring).max(0);
-            let hi_r = (qr + ring).min(self.rows - 1);
-            for r in lo_r..=hi_r {
-                for c in lo_c..=hi_c {
-                    if (c - qc).abs().max((r - qr).abs()) != ring {
-                        continue;
-                    }
-                    for &idx in &self.buckets[(r * self.cols + c) as usize] {
-                        let i = idx as usize;
-                        if i == from || axis_cos(a, self.axes[i]) >= cos_turn {
-                            continue;
-                        }
-                        let dx = self.pts[i].x - p.x;
-                        let dy = self.pts[i].y - p.y;
-                        let d = (dx * dx + dy * dy).sqrt();
-                        if d < best {
-                            best = d;
-                        }
-                    }
-                }
-            }
-            let guaranteed = ring as f64 * COHERENCE_GRID_CELL_MM;
-            if best <= guaranteed || guaranteed > COHERENCE_SEARCH_BOUND_MM {
-                break;
-            }
-        }
-        (best <= COHERENCE_SEARCH_BOUND_MM).then_some(best)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Verdict {
-    Usable,
-    Marginal,
-    NotUsable,
-    TooSmall,
-    NotMeasurable,
-}
-
-impl Verdict {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Usable => "USABLE",
-            Self::Marginal => "marginal",
-            Self::NotUsable => "not-usable",
-            Self::TooSmall => "too-small",
-            Self::NotMeasurable => "not-meas",
-        }
-    }
-}
+use rs_cam_core::metrology::census::ZoneVerdict as Verdict;
 
 struct ZoneStats {
     cells: usize,
@@ -908,9 +780,7 @@ struct ZoneStats {
     verdict: Verdict,
 }
 
-fn ratio(a: f64, b: f64) -> f64 {
-    if b > 0.0 { a / b } else { 0.0 }
-}
+use rs_cam_core::metrology::census::ratio;
 
 /// Measure one zone — the coherence census's `census_zone`, on cells, with
 /// the TRACK's bars (w30 >= 0.70, length >= 3 stepovers) in the verdict.
@@ -955,12 +825,12 @@ fn census_zone(field: &[CellField], members: &[u32]) -> ZoneStats {
     let mut queries = 0usize;
     if let Some(grid) = TurnGrid::build(field, members) {
         let cos_turn = COHERENCE_TURN_DEG.to_radians().cos();
-        let stride = grid.pts.len().div_ceil(COHERENCE_QUERY_CAP).max(1);
-        let picks: Vec<usize> = (0..grid.pts.len()).step_by(stride).collect();
+        let stride = grid.len().div_ceil(COHERENCE_QUERY_CAP).max(1);
+        let picks: Vec<usize> = (0..grid.len()).step_by(stride).collect();
         let found: Vec<Option<f64>> = picks
             .par_iter()
             .with_min_len(64)
-            .map(|&i| grid.nearest_turn(i, cos_turn))
+            .map(|&i| grid.nearest_turn(i, cos_turn, COHERENCE_SEARCH_BOUND_MM))
             .collect();
         queries = found.len();
         let censored = found.iter().filter(|d| d.is_none()).count();
@@ -1064,10 +934,10 @@ fn tile_zones(field: &[CellField], size: f64) -> Vec<Vec<u32>> {
     let mut max_x = f64::NEG_INFINITY;
     let mut max_y = f64::NEG_INFINITY;
     for entry in field {
-        min_x = min_x.min(entry.pos.x);
-        min_y = min_y.min(entry.pos.y);
-        max_x = max_x.max(entry.pos.x);
-        max_y = max_y.max(entry.pos.y);
+        min_x = min_x.min(entry.centroid.x);
+        min_y = min_y.min(entry.centroid.y);
+        max_x = max_x.max(entry.centroid.x);
+        max_y = max_y.max(entry.centroid.y);
     }
     let x0 = (min_x / size).floor() * size;
     let y0 = (min_y / size).floor() * size;
@@ -1075,8 +945,8 @@ fn tile_zones(field: &[CellField], size: f64) -> Vec<Vec<u32>> {
     let rows = (((max_y - y0) / size).floor() as i64 + 1).max(1);
     let mut tiles: Vec<Vec<u32>> = vec![Vec::new(); (cols * rows) as usize];
     for (i, entry) in field.iter().enumerate() {
-        let col = (((entry.pos.x - x0) / size).floor() as i64).clamp(0, cols - 1);
-        let row = (((entry.pos.y - y0) / size).floor() as i64).clamp(0, rows - 1);
+        let col = (((entry.centroid.x - x0) / size).floor() as i64).clamp(0, cols - 1);
+        let row = (((entry.centroid.y - y0) / size).floor() as i64).clamp(0, rows - 1);
         tiles[(row * cols + col) as usize].push(i as u32);
     }
     tiles.retain(|t| !t.is_empty());

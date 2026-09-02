@@ -302,7 +302,13 @@ use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
 use rs_cam_core::geo::{P2, P3};
-use rs_cam_core::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
+use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::census::{
+    TriField, ZoneStats, ZoneVerdict as Verdict, census_zone as metrology_census_zone, ratio,
+};
+use rs_cam_core::metrology::monge::{
+    ISOTROPY_ABS_TOL, ISOTROPY_REL_TOL, MongeOutcome, MongeScratch, axis_cos, fit_quadric, median,
+};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tier_islands::{TierIslandParams, extract_tier_islands};
 use rs_cam_core::tier_map::{ResidualTreatment, TierLadder, TierMapParams, compute_tier_map};
@@ -356,25 +362,8 @@ const R10_TUPLE: [f64; 4] = [2.0, 5.7, 6.0, 20.0];
 /// its scale rules cleared.
 const FIT_RADIUS_MM: f64 = 1.0;
 
-/// Minimum gathered vertices for a fit: 6 quadric parameters plus 1 degree of
-/// freedom, so a residual exists. Restated
-/// (`wanaka_curvature_anisotropy.rs:389`).
-const MIN_FIT_POINTS: usize = 7;
-
-/// Pivot ratio below which a fit is called rank deficient rather than solved.
-/// Restated (`wanaka_curvature_anisotropy.rs:394`).
-const MIN_PIVOT_RATIO: f64 = 1e-9;
-
-/// Relative isotropy floor. Restated from
-/// `direction_field_wanaka_f1.rs:SEG_ISOTROPY_REL_TOL`, which restated it from
-/// `direction_field::FieldParams`' defaults. A triangle is degenerate when
-/// `|kappa1 - kappa2| <= max(ISOTROPY_ABS_TOL, ISOTROPY_REL_TOL * scale)`.
-const ISOTROPY_REL_TOL: f64 = 0.10;
-/// Absolute isotropy floor (1/mm). See [`ISOTROPY_REL_TOL`].
-const ISOTROPY_ABS_TOL: f64 = 1e-6;
-
-/// Below this a 2-vector has no direction.
-const EPS_VEC: f64 = 1e-12;
+// The estimator floors (MIN_FIT_POINTS, MIN_PIVOT_RATIO, ISOTROPY_*) are
+// the promoted `metrology::monge` constants.
 
 // ── the census's constants ──────────────────────────────────────────────
 
@@ -383,44 +372,28 @@ const EPS_VEC: f64 = 1e-12;
 /// `equal_cusp_stepover_at_r1_h003_is_0_4862`.
 const STEPOVER_MM: f64 = 0.4862;
 
-/// The turn that ends a coherent run, in degrees.
-const COHERENCE_TURN_DEG: f64 = 30.0;
-
-/// Angles at which the coherence fraction is reported.
-const COHERENCE_ANGLES_DEG: [f64; 4] = [10.0, 20.0, 30.0, 45.0];
-
-/// Index of 30 degrees in [`COHERENCE_ANGLES_DEG`] — the verdict column.
-const VERDICT_ANGLE_INDEX: usize = 2;
-
-/// Coherence-length search bound (mm): 20 stepovers. Twice the usability bar,
-/// so the bound never decides a passing zone.
-const COHERENCE_SEARCH_BOUND_MM: f64 = 20.0 * STEPOVER_MM;
-
-/// Bucket-grid cell (mm) for the coherence-length search.
-const COHERENCE_GRID_CELL_MM: f64 = 1.0;
-
-/// Query cap per zone. Above this the queries are a deterministic stride over
-/// triangle-index order.
-const COHERENCE_QUERY_CAP: usize = 4_000;
+/// Promoted census constants, re-stated as this instrument's names.
+const COHERENCE_TURN_DEG: f64 = rs_cam_core::metrology::census::COHERENCE_TURN_DEG;
+const COHERENCE_SEARCH_BOUND_MM: f64 =
+    rs_cam_core::metrology::census::COHERENCE_SEARCH_BOUND_STEPOVERS * STEPOVER_MM;
+const COHERENCE_QUERY_CAP: usize = rs_cam_core::metrology::census::COHERENCE_QUERY_CAP;
 
 /// Coherence-fraction bar for `Usable`.
-const USABLE_WITHIN_30_MIN: f64 = 0.70;
+const USABLE_WITHIN_30_MIN: f64 = rs_cam_core::metrology::census::W30_COHERENT;
 
 /// Coherence-length bar for `Usable`, in stepovers.
-const USABLE_LENGTH_MIN_STEPOVERS: f64 = 10.0;
+const USABLE_LENGTH_MIN_STEPOVERS: f64 =
+    rs_cam_core::metrology::census::COHERENCE_LENGTH_MIN_STEPOVERS;
 
 /// The same bar in mm.
 const USABLE_LENGTH_MIN_MM: f64 = USABLE_LENGTH_MIN_STEPOVERS * STEPOVER_MM;
 
 /// Coherence fraction below which a zone is `NotUsable` outright.
-const NOT_USABLE_WITHIN_30_BELOW: f64 = 0.50;
+const NOT_USABLE_WITHIN_30_BELOW: f64 = rs_cam_core::metrology::census::NOT_USABLE_W30_BELOW;
 
 /// A zone below this area (mm²) cannot hold 10 stepovers in both directions.
 /// It is `TooSmall` and never usable. See the module doc's guard 1.
 const MIN_VERDICT_AREA_MM2: f64 = USABLE_LENGTH_MIN_MM * USABLE_LENGTH_MIN_MM;
-
-/// Below this many trusted triangles the coherence length is undefined.
-const MIN_TRUSTED_TRIANGLES: usize = 2;
 
 /// Tile edges (mm) for the size control. 16 and 8 clear
 /// [`MIN_VERDICT_AREA_MM2`]; 4 does not.
@@ -439,274 +412,18 @@ const F1_2_SLIVERS_AT_45: usize = 1_064;
 const F1_2_SLIVER_AREA_FRACTION_AT_10: f64 = 0.482;
 /// Region 1's measured prize ceiling at `R = 1.0`
 /// (`planning/finishing_synthesis_2026-08-30.md` §11).
-const F1_2_REGION1_PRIZE_CEILING_PCT: f64 = 9.75;
+const F1_2_REGION1_PRIZE_CEILING_PCT: f64 =
+    rs_cam_core::metrology::census::WANAKA_REGION1_PRIZE_CEILING_PCT;
 
 // ════════════════════════════════════════════════════════════════════════
 // The estimator
 // ════════════════════════════════════════════════════════════════════════
 
-/// Per-thread reusable buffers. Held by `map_init`, so nothing here is
-/// allocated per sample. Restated from `wanaka_curvature_anisotropy.rs`.
-struct Scratch {
-    query: QueryScratch,
-    tris: Vec<usize>,
-    /// Generation stamp per mesh vertex. Dedups the triangle-to-vertex
-    /// expansion without clearing a bitset per sample.
-    stamp: Vec<u32>,
-    generation: u32,
-}
-
-impl Scratch {
-    fn new(vertex_count: usize) -> Self {
-        Self {
-            query: QueryScratch::default(),
-            tris: Vec::new(),
-            // Stamps start at 0 and `generation` increments BEFORE use, so
-            // generation 1 is the first live value and 0 never matches.
-            stamp: vec![0u32; vertex_count],
-            generation: 0,
-        }
-    }
-}
-
-/// The local differential geometry at one sample.
-#[derive(Clone, Copy)]
-struct Fit {
-    /// Max principal curvature, convex-positive. `kappa1 >= kappa2`.
-    kappa1: f64,
-    /// Min principal curvature, convex-positive.
-    kappa2: f64,
-    /// Unit XY `t1` axis. The sign is arbitrary. `None` when the shape
-    /// operator is a multiple of the identity, so no principal direction
-    /// exists.
-    axis: Option<[f64; 2]>,
-}
-
-/// Why a sample produced no fit. Counted, never silently dropped.
-enum Outcome {
-    Fitted(Fit),
-    /// Fewer than [`MIN_FIT_POINTS`] vertices in the disc.
-    UnderDetermined,
-    /// Rank-deficient normal matrix, or a non-finite solution.
-    IllConditioned,
-}
-
-/// Solve the symmetric 6x6 system `A x = b` by Gauss-Jordan with partial
-/// pivoting. Returns `(x, min|pivot| / max|pivot|)`.
-///
-/// Hand-rolled rather than pulled from a linear-algebra crate, for the two
-/// reasons the source instrument gives. The pivot ratio is wanted as a
-/// reported conditioning number, and a library solve would not surrender it.
-/// An integration test must add no dependency edge for six rows. `A` arrives
-/// scale-normalised, so its pivots are O(1) and their ratio is meaningful.
-#[allow(clippy::needless_range_loop)] // Gauss-Jordan indexes three arrays by one counter.
-fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
-    let mut m = [[0.0f64; 7]; 6];
-    for row in 0..6 {
-        for col in 0..6 {
-            m[row][col] = a[row][col];
-        }
-        m[row][6] = b[row];
-    }
-    let mut pivot_min = f64::INFINITY;
-    let mut pivot_max = 0.0f64;
-    for col in 0..6 {
-        let mut best = col;
-        for row in (col + 1)..6 {
-            if m[row][col].abs() > m[best][col].abs() {
-                best = row;
-            }
-        }
-        m.swap(col, best);
-        let pivot = m[col][col];
-        let mag = pivot.abs();
-        pivot_min = pivot_min.min(mag);
-        pivot_max = pivot_max.max(mag);
-        if mag < f64::MIN_POSITIVE {
-            return None;
-        }
-        let inv = 1.0 / pivot;
-        for k in col..7 {
-            m[col][k] *= inv;
-        }
-        for row in 0..6 {
-            if row == col {
-                continue;
-            }
-            let factor = m[row][col];
-            if factor == 0.0 {
-                continue;
-            }
-            for k in col..7 {
-                // Hoisted so the statement never reads and writes `m` in one
-                // place expression.
-                let pivot_row = m[col][k];
-                m[row][k] -= factor * pivot_row;
-            }
-        }
-    }
-    let mut x = [0.0f64; 6];
-    for row in 0..6 {
-        x[row] = m[row][6];
-    }
-    // `pivot_max` is a maximum of absolute values, so it is never negative.
-    // [`ratio`] therefore returns the pivot ratio, or 0 for a zero matrix.
-    Some((x, ratio(pivot_min, pivot_max)))
-}
-
-/// Mirror the accumulated upper triangle into the lower one and scale by
-/// `inv = 1/count`, so the normal matrix is a mean of rank-1 terms with O(1)
-/// entries and a comparable pivot ratio.
-///
-/// Row-major order means `normal[j][i]` for `j < i` is already scaled when it
-/// is copied, so the mirror never double-scales.
-#[allow(clippy::needless_range_loop)] // the symmetric mirror indexes [i][j] and [j][i].
-fn finalise_normal_equations(normal: &mut [[f64; 6]; 6], rhs: &mut [f64; 6], inv: f64) {
-    for i in 0..6 {
-        for j in 0..6 {
-            if j < i {
-                let mirrored = normal[j][i];
-                normal[i][j] = mirrored;
-            } else {
-                normal[i][j] *= inv;
-            }
-        }
-        rhs[i] *= inv;
-    }
-}
-
-/// Build [`Fit`] from the fitted heightfield's derivatives. Steps 2, 3 and 4
-/// of the module doc, and the only place they happen.
-///
-/// Worked check on the bowl `z = (A x^2 + B y^2)/2` with `A > B > 0`:
-/// `S = diag(A, B)`, the smaller eigenvalue is `B`, its eigenvector is `y`,
-/// and `kappa1 = -B >= -A = kappa2`. So `t1 = y`, the gentler direction. The
-/// step-over then runs along `x`, the sharply concave one, where the ball fits
-/// deepest and the strip is widest.
-fn fit_from_derivatives((f_x, f_y): (f64, f64), (f_xx, f_xy, f_yy): (f64, f64, f64)) -> Fit {
-    let area_weight = (1.0 + f_x * f_x + f_y * f_y).sqrt();
-    let form_e = 1.0 + f_x * f_x;
-    let form_f = f_x * f_y;
-    let form_g = 1.0 + f_y * f_y;
-    let form_l = f_xx / area_weight;
-    let form_m = f_xy / area_weight;
-    let form_n = f_yy / area_weight;
-    // EG - F^2 = W^2 >= 1: no degenerate metric here.
-    let det = form_e * form_g - form_f * form_f;
-    let gauss = (form_l * form_n - form_m * form_m) / det;
-    let mean = (form_e * form_n - 2.0 * form_f * form_m + form_g * form_l) / (2.0 * det);
-    // H^2 - K = ((ka - kb)/2)^2 >= 0 exactly. The max() absorbs round-off.
-    let spread = (mean * mean - gauss).max(0.0).sqrt();
-
-    // Shape operator entries, S = I^-1 II.
-    let s_a = (form_g * form_l - form_f * form_m) / det;
-    let s_b = (form_g * form_m - form_f * form_n) / det;
-    let s_c = (form_e * form_m - form_f * form_l) / det;
-    let s_d = (form_e * form_n - form_f * form_m) / det;
-    let lambda = mean - spread;
-    // Both rows of (S - lambda I) v = 0. The better-conditioned one wins.
-    let row1 = [s_b, lambda - s_a];
-    let row2 = [s_d - lambda, -s_c];
-    let n1 = (row1[0] * row1[0] + row1[1] * row1[1]).sqrt();
-    let n2 = (row2[0] * row2[0] + row2[1] * row2[1]).sqrt();
-    // A relative floor. On this terrain the operator's entries run about
-    // 1e-3 per mm, so an absolute epsilon would call nothing umbilic.
-    let magnitude = s_a.abs().max(s_b.abs()).max(s_c.abs()).max(s_d.abs());
-    let floor = (magnitude * 1e-9).max(f64::MIN_POSITIVE);
-    let axis = if n1 >= n2 && n1 > floor {
-        Some([row1[0] / n1, row1[1] / n1])
-    } else if n2 > floor {
-        Some([row2[0] / n2, row2[1] / n2])
-    } else {
-        None
-    };
-
-    Fit {
-        // Convex-positive flip (module doc Step 3).
-        kappa1: -(mean - spread),
-        kappa2: -(mean + spread),
-        axis,
-    }
-}
-
-/// Fit the local quadric at `at`, whose surface height is `z0`, over `radius`.
-/// One streaming pass. Nothing is stored per neighbour.
-fn fit_quadric(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    scratch: &mut Scratch,
-    (at, z0): (P2, f64),
-    radius: f64,
-) -> Outcome {
-    // Taken out and put back so the neighbour list is reused across samples
-    // while `scratch.query` can be borrowed mutably at the same time.
-    let mut tris = std::mem::take(&mut scratch.tris);
-    index.query_rect_into(
-        at.x - radius,
-        at.x + radius,
-        at.y - radius,
-        at.y + radius,
-        &mut scratch.query,
-        &mut tris,
-    );
-    scratch.generation = scratch.generation.wrapping_add(1);
-    let generation = scratch.generation;
-
-    let mut normal = [[0.0f64; 6]; 6];
-    let mut rhs = [0.0f64; 6];
-    let mut count = 0usize;
-    let r2 = radius * radius;
-
-    for &t in &tris {
-        for &vi in &mesh.triangles[t] {
-            let vi = vi as usize;
-            if scratch.stamp[vi] == generation {
-                continue;
-            }
-            scratch.stamp[vi] = generation;
-            let p = mesh.vertices[vi];
-            let dx = p.x - at.x;
-            let dy = p.y - at.y;
-            if dx * dx + dy * dy > r2 {
-                continue;
-            }
-            let u = dx / radius;
-            let v = dy / radius;
-            let w = p.z - z0;
-            let basis = [u * u, u * v, v * v, u, v, 1.0];
-            for (i, &bi) in basis.iter().enumerate() {
-                for (j, &bj) in basis.iter().enumerate().skip(i) {
-                    normal[i][j] += bi * bj;
-                }
-                rhs[i] += bi * w;
-            }
-            count += 1;
-        }
-    }
-    scratch.tris = tris;
-
-    if count < MIN_FIT_POINTS {
-        return Outcome::UnderDetermined;
-    }
-    finalise_normal_equations(&mut normal, &mut rhs, 1.0 / count as f64);
-
-    let Some((beta, pivot_ratio)) = solve_sym6(&normal, &rhs) else {
-        return Outcome::IllConditioned;
-    };
-    if !pivot_ratio.is_finite() || pivot_ratio < MIN_PIVOT_RATIO {
-        return Outcome::IllConditioned;
-    }
-    if !beta.iter().all(|c| c.is_finite()) {
-        return Outcome::IllConditioned;
-    }
-
-    let f_x = beta[3] / radius;
-    let f_y = beta[4] / radius;
-    let f_xx = 2.0 * beta[0] / (radius * radius);
-    let f_xy = beta[1] / (radius * radius);
-    let f_yy = 2.0 * beta[2] / (radius * radius);
-    Outcome::Fitted(fit_from_derivatives((f_x, f_y), (f_xx, f_xy, f_yy)))
-}
+// The estimator is PROMOTED: `rs_cam_core::metrology::monge` (Track M,
+// 2026-09-02). This file's verbatim restatement was byte-equivalent up to
+// the payload of `UnderDetermined` (the library carries the starved point
+// count; this census never read it). `build_field` below consumes the
+// library directly.
 
 // ════════════════════════════════════════════════════════════════════════
 // The per-triangle field
@@ -715,21 +432,7 @@ fn fit_quadric(
 /// Everything the census needs about one mesh triangle. Built once for the
 /// whole mesh. Every zone indexes into it.
 #[derive(Clone, Copy)]
-struct TriField {
-    /// XY centroid. Zone membership and every distance read this.
-    centroid: P2,
-    /// True 3-D surface area (mm²). Every area fraction is weighted by it.
-    area_mm2: f64,
-    /// Unit XY `t1`, sign arbitrary. `Some` only when the fit succeeded, the
-    /// shape operator is not a multiple of the identity, and the anisotropy
-    /// clears the isotropy floor. That is the TRUSTED condition.
-    axis: Option<[f64; 2]>,
-    /// The fit itself succeeded, whatever the anisotropy was.
-    fitted: bool,
-    /// Fitted, but umbilic or below the isotropy floor. `t1` carries no
-    /// meaning here. Disjoint from `axis.is_some()`.
-    degenerate: bool,
-}
+// `TriField` is the promoted `metrology::census::TriField`.
 
 /// Fit-outcome counts over the whole mesh. Nothing is dropped silently.
 #[derive(Default)]
@@ -742,12 +445,6 @@ struct FieldCensus {
     /// Fitted with an axis, but `|kappa1 - kappa2|` is at or under the
     /// isotropy floor. `t1` exists numerically and is not believed.
     below_isotropy_floor: usize,
-}
-
-/// `a / b`, or 0 when `b` is not positive. Keeps every reported fraction free
-/// of NaN when a zone is empty.
-fn ratio(a: f64, b: f64) -> f64 {
-    if b > 0.0 { a / b } else { 0.0 }
 }
 
 /// XY centroid, centroid height and true area of one mesh triangle.
@@ -769,11 +466,11 @@ fn triangle_geometry(mesh: &TriangleMesh, tri_index: usize) -> (P2, f64, f64) {
 /// printed numbers jitter between runs, and an instrument whose output moves
 /// is not evidence.
 fn build_field(mesh: &TriangleMesh, index: &SpatialIndex) -> (Vec<TriField>, FieldCensus) {
-    let outcomes: Vec<(TriField, Outcome)> = (0..mesh.triangles.len())
+    let outcomes: Vec<(TriField, MongeOutcome)> = (0..mesh.triangles.len())
         .into_par_iter()
         .with_min_len(512)
         .map_init(
-            || Scratch::new(mesh.vertices.len()),
+            || MongeScratch::new(mesh.vertices.len()),
             |scratch, t| {
                 let (centroid, z0, area_mm2) = triangle_geometry(mesh, t);
                 let sample = (centroid, z0);
@@ -794,7 +491,7 @@ fn build_field(mesh: &TriangleMesh, index: &SpatialIndex) -> (Vec<TriField>, Fie
     let mut field = Vec::with_capacity(outcomes.len());
     for (mut entry, outcome) in outcomes {
         match outcome {
-            Outcome::Fitted(fit) => {
+            MongeOutcome::Fitted(fit) => {
                 census.fitted += 1;
                 entry.fitted = true;
                 let anisotropy = (fit.kappa1 - fit.kappa2).abs();
@@ -813,358 +510,34 @@ fn build_field(mesh: &TriangleMesh, index: &SpatialIndex) -> (Vec<TriField>, Fie
                     Some(axis) => entry.axis = Some(axis),
                 }
             }
-            Outcome::UnderDetermined => census.under_determined += 1,
-            Outcome::IllConditioned => census.ill_conditioned += 1,
+            MongeOutcome::UnderDetermined(_) => census.under_determined += 1,
+            MongeOutcome::IllConditioned => census.ill_conditioned += 1,
         }
         field.push(entry);
     }
     (field, census)
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Line-field arithmetic
-// ════════════════════════════════════════════════════════════════════════
-
-/// `|cos|` of the angle between two unit axes. `t1` and `-t1` are the same
-/// direction, so the absolute value is the whole point.
-fn axis_cos(a: [f64; 2], b: [f64; 2]) -> f64 {
-    (a[0] * b[0] + a[1] * b[1]).abs().min(1.0)
-}
-
-/// The dominant direction of a line field: the principal eigenvector of the
-/// area-weighted outer-product sum `sum(w t1 t1^T)`.
-///
-/// This is the correct mean for a line field. A plain vector mean would cancel
-/// `t1` against `-t1` and return noise. `None` when the sum is isotropic, that
-/// is when the field has no dominant direction at all.
-fn dominant_axis(entries: &[(f64, [f64; 2])]) -> Option<[f64; 2]> {
-    let mut mxx = 0.0f64;
-    let mut mxy = 0.0f64;
-    let mut myy = 0.0f64;
-    for &(w, a) in entries {
-        mxx += w * a[0] * a[0];
-        mxy += w * a[0] * a[1];
-        myy += w * a[1] * a[1];
-    }
-    let mean = 0.5 * (mxx + myy);
-    let spread = (0.25 * (mxx - myy) * (mxx - myy) + mxy * mxy).sqrt();
-    if !spread.is_finite() || spread <= EPS_VEC * mean.abs().max(EPS_VEC) {
-        return None;
-    }
-    let lambda = mean + spread;
-    let row1 = [mxy, lambda - mxx];
-    let row2 = [lambda - myy, mxy];
-    let n1 = (row1[0] * row1[0] + row1[1] * row1[1]).sqrt();
-    let n2 = (row2[0] * row2[0] + row2[1] * row2[1]).sqrt();
-    if n1 >= n2 && n1 > EPS_VEC {
-        Some([row1[0] / n1, row1[1] / n1])
-    } else if n2 > EPS_VEC {
-        Some([row2[0] / n2, row2[1] / n2])
-    } else {
-        None
-    }
-}
+// Line-field arithmetic and the coherence-length `TurnGrid` are the
+// promoted `metrology::monge::{axis_cos, dominant_axis}` and
+// `metrology::census::TurnGrid`.
 
 // ════════════════════════════════════════════════════════════════════════
 // Coherence length
 // ════════════════════════════════════════════════════════════════════════
-
-/// A zone's trusted triangles in a bucket grid, for the nearest-turn search.
-struct TurnGrid {
-    pts: Vec<P2>,
-    axes: Vec<[f64; 2]>,
-    origin: P2,
-    cols: i64,
-    rows: i64,
-    buckets: Vec<Vec<u32>>,
-}
-
-impl TurnGrid {
-    /// `None` when the zone holds fewer than [`MIN_TRUSTED_TRIANGLES`].
-    fn build(field: &[TriField], members: &[u32]) -> Option<Self> {
-        let mut pts = Vec::new();
-        let mut axes = Vec::new();
-        for &m in members {
-            let entry = &field[m as usize];
-            if let Some(axis) = entry.axis {
-                pts.push(entry.centroid);
-                axes.push(axis);
-            }
-        }
-        if pts.len() < MIN_TRUSTED_TRIANGLES {
-            return None;
-        }
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-        for p in &pts {
-            min_x = min_x.min(p.x);
-            min_y = min_y.min(p.y);
-            max_x = max_x.max(p.x);
-            max_y = max_y.max(p.y);
-        }
-        let cell = COHERENCE_GRID_CELL_MM;
-        let cols = (((max_x - min_x) / cell).floor() as i64 + 1).max(1);
-        let rows = (((max_y - min_y) / cell).floor() as i64 + 1).max(1);
-        let mut buckets = vec![Vec::new(); (cols * rows) as usize];
-        for (i, p) in pts.iter().enumerate() {
-            let c = (((p.x - min_x) / cell).floor() as i64).clamp(0, cols - 1);
-            let r = (((p.y - min_y) / cell).floor() as i64).clamp(0, rows - 1);
-            buckets[(r * cols + c) as usize].push(i as u32);
-        }
-        Some(Self {
-            pts,
-            axes,
-            origin: P2::new(min_x, min_y),
-            cols,
-            rows,
-            buckets,
-        })
-    }
-
-    fn cell_of(&self, p: P2) -> (i64, i64) {
-        let cell = COHERENCE_GRID_CELL_MM;
-        let c = (((p.x - self.origin.x) / cell).floor() as i64).clamp(0, self.cols - 1);
-        let r = (((p.y - self.origin.y) / cell).floor() as i64).clamp(0, self.rows - 1);
-        (c, r)
-    }
-
-    /// Distance to the nearest trusted member whose axis differs from
-    /// `from`'s by more than [`COHERENCE_TURN_DEG`]. `None` means the search
-    /// was right-censored: nothing differing lies inside
-    /// [`COHERENCE_SEARCH_BOUND_MM`].
-    ///
-    /// Ring `k` holds the cells at Chebyshev distance `k` from the query's
-    /// cell. After ring `k` is processed, every unvisited member lies at
-    /// Euclidean distance at least `k * cell`, because the query can sit
-    /// anywhere inside its own cell. The loop stops on that guarantee.
-    fn nearest_turn(&self, from: usize, cos_turn: f64) -> Option<f64> {
-        let p = self.pts[from];
-        let a = self.axes[from];
-        let (qc, qr) = self.cell_of(p);
-        let mut best = f64::INFINITY;
-        let max_ring = self.cols.max(self.rows);
-        for ring in 0..=max_ring {
-            let lo_c = (qc - ring).max(0);
-            let hi_c = (qc + ring).min(self.cols - 1);
-            let lo_r = (qr - ring).max(0);
-            let hi_r = (qr + ring).min(self.rows - 1);
-            for r in lo_r..=hi_r {
-                for c in lo_c..=hi_c {
-                    if (c - qc).abs().max((r - qr).abs()) != ring {
-                        continue;
-                    }
-                    for &idx in &self.buckets[(r * self.cols + c) as usize] {
-                        let i = idx as usize;
-                        if i == from || axis_cos(a, self.axes[i]) >= cos_turn {
-                            continue;
-                        }
-                        let dx = self.pts[i].x - p.x;
-                        let dy = self.pts[i].y - p.y;
-                        let d = (dx * dx + dy * dy).sqrt();
-                        if d < best {
-                            best = d;
-                        }
-                    }
-                }
-            }
-            let guaranteed = ring as f64 * COHERENCE_GRID_CELL_MM;
-            if best <= guaranteed || guaranteed > COHERENCE_SEARCH_BOUND_MM {
-                break;
-            }
-        }
-        (best <= COHERENCE_SEARCH_BOUND_MM).then_some(best)
-    }
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // The census
 // ════════════════════════════════════════════════════════════════════════
 
 /// The pre-registered verdict. Only [`Verdict::Usable`] counts as usable.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Verdict {
-    Usable,
-    /// Between the two bars, or over the fraction bar with too short a
-    /// coherence length.
-    Marginal,
-    /// Under [`NOT_USABLE_WITHIN_30_BELOW`].
-    NotUsable,
-    /// Under [`MIN_VERDICT_AREA_MM2`]. Guard 1 of the module doc.
-    TooSmall,
-    /// Under [`MIN_TRUSTED_TRIANGLES`] trusted triangles. Guard 2.
-    NotMeasurable,
-}
-
-impl Verdict {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Usable => "USABLE",
-            Self::Marginal => "marginal",
-            Self::NotUsable => "not-usable",
-            Self::TooSmall => "too-small",
-            Self::NotMeasurable => "not-meas",
-        }
-    }
-}
-
-/// One zone's measurement.
-struct ZoneStats {
-    triangles: usize,
-    area_mm2: f64,
-    /// Area of triangles whose fit succeeded, whatever the anisotropy.
-    fitted_area_mm2: f64,
-    /// Area of triangles carrying a believed `t1`.
-    trusted_area_mm2: f64,
-    /// Fraction of TRIANGLES whose fit succeeded.
-    fit_fraction: f64,
-    /// Fraction of AREA that is fitted but degenerate. `t1` carries no meaning
-    /// there. Floor stated at [`ISOTROPY_REL_TOL`] / [`ISOTROPY_ABS_TOL`].
-    degenerate_fraction: f64,
-    dominant: Option<[f64; 2]>,
-    /// Coherent area at [`COHERENCE_ANGLES_DEG`], over TOTAL zone area.
-    within: [f64; 4],
-    /// The same, over trusted area only. A secondary column, so a turning
-    /// field and an absent field stay separable.
-    within_trusted: [f64; 4],
-    /// Median coherence length (mm). Censored queries enter at the bound.
-    coherence_length_mm: f64,
-    /// Fraction of queries that found no turn inside the bound.
-    censored_fraction: f64,
-    queries: usize,
-    /// XY bbox extent of the zone's centroids (mm). Printed beside the
-    /// coherence length, so a censored read is legible.
-    extent_mm: [f64; 2],
-    verdict: Verdict,
-}
-
-/// Median of `values`, which this function sorts. `NaN` for an empty slice.
-fn median(mut values: Vec<f64>) -> f64 {
-    if values.is_empty() {
-        return f64::NAN;
-    }
-    values.sort_by(f64::total_cmp);
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        values[mid]
-    } else {
-        0.5 * (values[mid - 1] + values[mid])
-    }
-}
-
-/// Measure one zone. `members` are triangle indices into `field`.
+// `Verdict`, `ZoneStats`, `median` and `census_zone` are the promoted
+// `metrology::census::{ZoneVerdict, ZoneStats, census_zone}` and
+// `metrology::monge::median`. `census_zone` takes the stepover the
+// bars scale with; this census passes its own STEPOVER_MM, unchanged.
 fn census_zone(field: &[TriField], members: &[u32]) -> ZoneStats {
-    let mut area = 0.0f64;
-    let mut fitted_area = 0.0f64;
-    let mut trusted_area = 0.0f64;
-    let mut degenerate_area = 0.0f64;
-    let mut fitted_count = 0usize;
-    let mut trusted: Vec<(f64, [f64; 2])> = Vec::new();
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    for &m in members {
-        let entry = &field[m as usize];
-        area += entry.area_mm2;
-        min_x = min_x.min(entry.centroid.x);
-        min_y = min_y.min(entry.centroid.y);
-        max_x = max_x.max(entry.centroid.x);
-        max_y = max_y.max(entry.centroid.y);
-        if entry.fitted {
-            fitted_count += 1;
-            fitted_area += entry.area_mm2;
-        }
-        if entry.degenerate {
-            degenerate_area += entry.area_mm2;
-        }
-        if let Some(axis) = entry.axis {
-            trusted_area += entry.area_mm2;
-            trusted.push((entry.area_mm2, axis));
-        }
-    }
-    let dominant = dominant_axis(&trusted);
-
-    let mut within = [0.0f64; 4];
-    let mut within_trusted = [0.0f64; 4];
-    if let Some(d) = dominant {
-        let mut coherent = [0.0f64; 4];
-        for &(w, a) in &trusted {
-            let cos = axis_cos(a, d);
-            let buckets = coherent.iter_mut().zip(COHERENCE_ANGLES_DEG.iter());
-            for (bucket, &angle) in buckets {
-                if cos >= angle.to_radians().cos() {
-                    *bucket += w;
-                }
-            }
-        }
-        let slots = within.iter_mut().zip(within_trusted.iter_mut());
-        for ((total, trusted_only), &c) in slots.zip(coherent.iter()) {
-            *total = ratio(c, area);
-            *trusted_only = ratio(c, trusted_area);
-        }
-    }
-
-    // Coherence length. The queries are the zone's trusted triangles, capped
-    // by a deterministic stride over triangle-index order. The SEARCH set is
-    // every trusted triangle of the zone, never a subsample.
-    let mut coherence_length = f64::NAN;
-    let mut censored_fraction = f64::NAN;
-    let mut queries = 0usize;
-    if let Some(grid) = TurnGrid::build(field, members) {
-        let cos_turn = COHERENCE_TURN_DEG.to_radians().cos();
-        let stride = grid.pts.len().div_ceil(COHERENCE_QUERY_CAP).max(1);
-        let picks: Vec<usize> = (0..grid.pts.len()).step_by(stride).collect();
-        let found: Vec<Option<f64>> = picks
-            .par_iter()
-            .with_min_len(64)
-            .map(|&i| grid.nearest_turn(i, cos_turn))
-            .collect();
-        queries = found.len();
-        let censored = found.iter().filter(|d| d.is_none()).count();
-        censored_fraction = censored as f64 / queries.max(1) as f64;
-        let bound = COHERENCE_SEARCH_BOUND_MM;
-        let distances: Vec<f64> = found.iter().map(|d| d.unwrap_or(bound)).collect();
-        coherence_length = median(distances);
-    }
-
-    let extent_mm = if members.is_empty() {
-        [0.0, 0.0]
-    } else {
-        [max_x - min_x, max_y - min_y]
-    };
-    let coherent_enough = within[VERDICT_ANGLE_INDEX] >= USABLE_WITHIN_30_MIN;
-    let verdict = if queries == 0 {
-        Verdict::NotMeasurable
-    } else if area < MIN_VERDICT_AREA_MM2 {
-        Verdict::TooSmall
-    } else if coherent_enough && coherence_length >= USABLE_LENGTH_MIN_MM {
-        Verdict::Usable
-    } else if within[VERDICT_ANGLE_INDEX] < NOT_USABLE_WITHIN_30_BELOW {
-        Verdict::NotUsable
-    } else {
-        Verdict::Marginal
-    };
-
-    ZoneStats {
-        triangles: members.len(),
-        area_mm2: area,
-        fitted_area_mm2: fitted_area,
-        trusted_area_mm2: trusted_area,
-        fit_fraction: ratio(fitted_count as f64, members.len() as f64),
-        degenerate_fraction: ratio(degenerate_area, area),
-        dominant,
-        within,
-        within_trusted,
-        coherence_length_mm: coherence_length,
-        censored_fraction,
-        queries,
-        extent_mm,
-        verdict,
-    }
+    metrology_census_zone(field, members, STEPOVER_MM)
 }
-
 /// A zone plus its identity and its membership.
 struct Zone {
     label: String,

@@ -64,14 +64,15 @@
     clippy::print_stderr
 )]
 
-use std::collections::BTreeMap;
-
 use rs_cam_core::finish_planner::{FinishBand, FinishPlannerParams};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::spacing::{
+    ContactMaps, SpacingMeasurement, SpacingSample, measure_raster_spacing,
+};
 use rs_cam_core::scallop_math;
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
-use rs_cam_core::toolpath::{MoveIntent, Toolpath};
+use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::unified_finish::{
     UnifiedFinishParams, UnifiedFinishReport, unified_finish_toolpath_with_cancel,
 };
@@ -358,118 +359,21 @@ fn assert_all_shallow(report: &UnifiedFinishReport, label: &str) {
 
 // ---- Measurement ------------------------------------------------------------
 
-/// One achieved-spacing sample: a contact point on pass `i` and its min 3D
-/// distance to pass `i+1`'s contact polyline.
-struct SpacingSample {
-    achieved_mm: f64,
-    total_slope_deg: f64,
-    cross_slope_deg: f64,
+// PROMOTED (Track M, 2026-09-02): `SpacingSample`, the spacing
+// measurement and `dist_point_segment` live in
+// `rs_cam_core::metrology::spacing`, extracted verbatim from this file.
+// The fixture's ANALYTIC closed forms stay here and ride in as
+// `ContactMaps`, so the ruler still carries no estimator.
+fn measure(toolpath: &Toolpath, fixture: &Fixture, stepover_mm: f64) -> SpacingMeasurement {
+    let maps = ContactMaps {
+        contact_of_center: &*fixture.contact_of_center,
+        interior_cl: &*fixture.interior_cl,
+        center_surface_distance: &*fixture.center_surface_distance,
+        total_slope_deg: &*fixture.total_slope_deg,
+        cross_slope_deg: &*fixture.cross_slope_deg,
+    };
+    measure_raster_spacing(toolpath, &maps, BALL_RADIUS_MM, stepover_mm)
 }
-
-struct Measurement {
-    samples: Vec<SpacingSample>,
-    rows: usize,
-    row_dy_min: f64,
-    row_dy_max: f64,
-    center_distance_err_max: f64,
-}
-
-fn dist_point_segment(p: P3, a: P3, b: P3) -> f64 {
-    let ab = b - a;
-    let len2 = ab.dot(&ab);
-    if len2 <= 1e-18 {
-        return (p - a).norm();
-    }
-    let t = ((p - a).dot(&ab) / len2).clamp(0.0, 1.0);
-    let q = P3::new(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
-    (p - q).norm()
-}
-
-/// Measure the achieved surface spacing of the emitted toolpath against the
-/// fixture's closed forms. See the FINDINGS pre-registration, items 3–6.
-fn measure(toolpath: &Toolpath, fixture: &Fixture, stepover_mm: f64) -> Measurement {
-    // 1. Cutting CL samples, grouped into raster rows by CL y (the shipped
-    //    0-degree lattice holds y constant along a pass).
-    let mut rows: BTreeMap<i64, Vec<P3>> = BTreeMap::new();
-    for mv in &toolpath.moves {
-        if mv.intent != MoveIntent::FinishingCut || !mv.move_type.is_cutting() {
-            continue;
-        }
-        let key = (mv.target.y * 1e6).round() as i64;
-        rows.entry(key).or_default().push(mv.target);
-    }
-    let mut row_list: Vec<(f64, Vec<P3>)> = rows
-        .into_iter()
-        .map(|(k, mut pts)| {
-            pts.sort_by(|a, b| a.x.total_cmp(&b.x));
-            (k as f64 * 1e-6, pts)
-        })
-        .collect();
-    row_list.sort_by(|a, b| a.0.total_cmp(&b.0));
-
-    // 2. Row Delta-y census (falsifier F-B1).
-    let mut dy_min = f64::INFINITY;
-    let mut dy_max = f64::NEG_INFINITY;
-    for pair in row_list.windows(2) {
-        let dy = pair[1].0 - pair[0].0;
-        dy_min = dy_min.min(dy);
-        dy_max = dy_max.max(dy);
-    }
-
-    // 3. Contact mapping + nearest-pass distance.
-    let to_center = |cl: P3| P3::new(cl.x, cl.y, cl.z + BALL_RADIUS_MM);
-    let mut samples = Vec::new();
-    let mut center_err_max = 0.0f64;
-    for pair in row_list.windows(2) {
-        let (y0, row) = (&pair[0].0, &pair[0].1);
-        let (y1, next) = (&pair[1].0, &pair[1].1);
-        if y1 - y0 > 1.5 * stepover_mm {
-            continue; // a skipped/clipped lattice row, not adjacent passes
-        }
-        // The next pass's contact polyline, split where the CL x gap shows a
-        // region clip.
-        let next_contacts: Vec<(f64, P3)> = next
-            .iter()
-            .map(|&cl| (cl.x, (fixture.contact_of_center)(to_center(cl))))
-            .collect();
-        for &cl in row {
-            if !(fixture.interior_cl)(cl.x, cl.y) {
-                continue;
-            }
-            let center = to_center(cl);
-            let err = ((fixture.center_surface_distance)(center) - BALL_RADIUS_MM).abs();
-            center_err_max = center_err_max.max(err);
-            let contact = (fixture.contact_of_center)(center);
-            let mut best = f64::INFINITY;
-            for seg in next_contacts.windows(2) {
-                let ((x_a, a), (x_b, b)) = (seg[0], seg[1]);
-                if (x_b - x_a).abs() > 1.5 * stepover_mm {
-                    continue; // clipped gap: not a cut segment
-                }
-                best = best.min(dist_point_segment(contact, a, b));
-            }
-            if next_contacts.len() == 1 {
-                best = best.min((contact - next_contacts[0].1).norm());
-            }
-            if !best.is_finite() {
-                continue;
-            }
-            samples.push(SpacingSample {
-                achieved_mm: best,
-                total_slope_deg: (fixture.total_slope_deg)(contact.x, contact.y),
-                cross_slope_deg: (fixture.cross_slope_deg)(contact.x, contact.y),
-            });
-        }
-    }
-    Measurement {
-        samples,
-        rows: row_list.len(),
-        row_dy_min: dy_min,
-        row_dy_max: dy_max,
-        center_distance_err_max: center_err_max,
-    }
-}
-
 fn percentile(sorted: &[f64], f: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
@@ -480,7 +384,7 @@ fn percentile(sorted: &[f64], f: f64) -> f64 {
 
 /// Print the slope-band table and return the verdict inputs:
 /// `(sloped_count, sloped_exceeding, max_ratio_over_all_samples)`.
-fn print_band_table(m: &Measurement, s_max: f64) -> (usize, usize, f64) {
+fn print_band_table(m: &SpacingMeasurement, s_max: f64) -> (usize, usize, f64) {
     eprintln!(
         "\n     {:<16} {:>7} {:>10} {:>10} {:>10} {:>9} {:>11}",
         "cross-slope band", "n", "median", "p90", "max", "med/s_max", "% > 1.05 s"

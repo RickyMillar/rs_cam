@@ -33,6 +33,37 @@
 
 ## Recent work (2026-09-02)
 
+### Track M — one metrology home (`rs_cam_core::metrology`)
+
+The finishing programme's rulers were copy-pasted per instrument. Track M
+promoted each to ONE library implementation and converted the instruments
+to thin consumers (`planning/metrology_2026-09-02/FINDINGS.md` discloses
+every divergence between the copies):
+
+- `metrology::costing` — the six-copy `relink_and_cost` harness with the
+  `LinkRegime` link-ceiling machinery; c2's `link_kinematics: None`
+  divergence survives as the explicit `CostingContext::kinematics` arm.
+- `metrology::floor` — `L_min = INTEGRAL dA / s_max(x)` and the `x floor`
+  score, curvature as a callback so no estimator sits inside the floor.
+- `metrology::spacing` — the Track B achieved-surface-spacing ruler and
+  the M4 path-structure census. The b1 acceptance sentinel's transcript is
+  byte-identical before/after (FINDINGS §M-3).
+- `metrology::monge` + `metrology::census` — the Monge estimator, the
+  coherence census (`TurnGrid`, `census_zone`) and the anisotropy prize
+  cell, with the gate bars as named documented constants (`W30_COHERENT`,
+  `COHERENCE_LENGTH_MIN_STEPOVERS`, `PRIZE_CLOSE_BELOW`, ...).
+- `metrology::union_coverage` — **NEW: G-UNIONCOV's fix.** Whole-board
+  final-stock-vs-target audit with located hotspots and a loud
+  `assert_within` failure API; first consumer `tests/union_coverage_m1.rs`
+  judges the production wanaka200 chain against the rejected overlap-0.2
+  variant under pre-registered expectations.
+
+The `metrology` module doc carries the measurement contract: None vs 0.0,
+the two air-cut denominators, the two time scales (session integrator vs
+metrology costing — cross-scale tables must label their scale), and
+resolution-conditional quantities.
+
+
 ### Track H opened — valley tracing (drainage-tree finishing)
 
 The operator proposed a valley strategy for terrain relief: find each

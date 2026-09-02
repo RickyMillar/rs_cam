@@ -393,9 +393,6 @@ const MIN_FIT_POINTS: usize = 7;
 /// deficient rather than solved.
 const MIN_PIVOT_RATIO: f64 = 1e-9;
 
-/// Ratio thresholds whose exceeding **area fraction** is reported.
-const RATIO_BANDS: [f64; 4] = [1.05, 1.10, 1.25, 1.50];
-
 /// The fit radius the verdict reads. ≈3× the median facet edge (0.335 mm).
 const VERDICT_FIT_RADIUS_MM: f64 = 1.0;
 
@@ -403,9 +400,9 @@ const VERDICT_FIT_RADIUS_MM: f64 = 1.0;
 const VERDICT_TOOL_RADII_MM: [f64; 2] = [1.0, 1.5];
 
 /// Verdict band edges on the area-weighted median `W_max/W_min`.
-const VERDICT_CLOSE_BELOW: f64 = 1.05;
+const VERDICT_CLOSE_BELOW: f64 = rs_cam_core::metrology::census::PRIZE_CLOSE_BELOW;
 /// Upper edge of the literature band.
-const VERDICT_LITERATURE_ABOVE: f64 = 1.25;
+const VERDICT_LITERATURE_ABOVE: f64 = rs_cam_core::metrology::census::PRIZE_ABOVE_LITERATURE;
 
 /// A radius needs this valid-fit fraction before the scale rule will read it.
 const SCALE_RULE_MIN_VALID_FRACTION: f64 = 0.80;
@@ -425,10 +422,6 @@ const TESSELLATION_DECAY_EXPONENT: f64 = 1.8;
 
 /// Below this `p`, the fine-end reading is called landscape outright.
 const LANDSCAPE_DECAY_EXPONENT: f64 = 1.5;
-
-/// Below this, `κ_perp + 1/R` is treated as non-positive (gouge). Same role as
-/// `direction_field::EPS_DENOM`.
-const EPS_DENOM: f64 = 1e-12;
 
 /// Kumazawa's measured band against an honest iso-scallop, for comparison.
 const KUMAZAWA_BAND_PCT: (f64, f64) = (1.9, 7.2);
@@ -487,6 +480,29 @@ struct Fit {
     gather_rms: f64,
     /// min|pivot| / max|pivot| on the scale-normalised normal matrix.
     pivot_ratio: f64,
+}
+
+impl Fit {
+    /// Map onto the promoted estimator's type for the library kernels.
+    /// `axis` is `None`: this instrument never derives `t1`, and the prize
+    /// cell does not read it. `gather_rms` stays local.
+    fn to_monge(&self) -> rs_cam_core::metrology::monge::MongeFit {
+        rs_cam_core::metrology::monge::MongeFit {
+            kappa1: self.kappa1,
+            kappa2: self.kappa2,
+            axis: None,
+            form_e: self.form_e,
+            form_f: self.form_f,
+            form_g: self.form_g,
+            form_l: self.form_l,
+            form_m: self.form_m,
+            form_n: self.form_n,
+            area_weight: self.area_weight,
+            residual_rms: self.residual_rms,
+            points: self.points,
+            pivot_ratio: self.pivot_ratio,
+        }
+    }
 }
 
 /// Why a sample produced no fit — counted separately, never silently dropped.
@@ -777,76 +793,30 @@ fn fit_quadric(
 /// so `w ⟂ t` in the surface metric. `κ_n` is a ratio of quadratic forms and is
 /// therefore homogeneous — `(p′, q′)` need no normalisation.
 fn kappa_perp_zou(fit: &Fit, dir: (f64, f64)) -> f64 {
-    let (p, q) = dir;
-    let pp = -(fit.form_f * p + fit.form_g * q);
-    let qq = fit.form_e * p + fit.form_f * q;
-    let num = fit.form_l * pp * pp + 2.0 * fit.form_m * pp * qq + fit.form_n * qq * qq;
-    let den = fit.form_e * pp * pp + 2.0 * fit.form_f * pp * qq + fit.form_g * qq * qq;
-    if den.abs() < EPS_DENOM {
-        // Degenerate only if the tangent plane collapsed, which the metric
-        // (EG − F² ≥ 1) forbids; return the mean rather than a NaN.
-        return 0.5 * (fit.kappa1 + fit.kappa2);
-    }
-    -num / den
+    // PROMOTED (Track M): the arithmetic is
+    // `metrology::monge::kappa_perp_zou`; the proof above stays here.
+    rs_cam_core::metrology::monge::kappa_perp_zou(&fit.to_monge(), dir)
 }
 
-/// `W(κ_n) = sqrt(8h / (κ_n + 1/R))`, or `None` when `κ_n + 1/R ≤ 0` — the
-/// gouge condition (a concavity tighter than the ball). **Never clamped.**
-fn strip_width(kappa_n: f64, tool_radius: f64, scallop_h: f64) -> Option<f64> {
-    let denom = kappa_n + 1.0 / tool_radius;
-    if !denom.is_finite() || denom <= EPS_DENOM {
-        return None;
-    }
-    Some((8.0 * scallop_h / denom).sqrt())
-}
+// PROMOTED (Track M): `metrology::monge::strip_width`.
+use rs_cam_core::metrology::monge::strip_width;
 
 // ── statistics ──────────────────────────────────────────────────────────
 
-/// Area-weighted five-number summary.
-#[derive(Clone, Copy, Default)]
-struct Quantiles {
-    min: f64,
-    p10: f64,
-    p50: f64,
-    p90: f64,
-    max: f64,
-}
-
-/// `pairs` is `(value, area weight)`; consumed because it is sorted in place.
-fn quantiles(mut pairs: Vec<(f64, f64)>) -> Option<Quantiles> {
-    if pairs.is_empty() {
-        return None;
-    }
-    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let total: f64 = pairs.iter().map(|p| p.1).sum();
-    Some(Quantiles {
-        min: pairs[0].0,
-        p10: weighted_pick(&pairs, total, 0.10),
-        p50: weighted_pick(&pairs, total, 0.50),
-        p90: weighted_pick(&pairs, total, 0.90),
-        max: pairs[pairs.len() - 1].0,
-    })
-}
-
-/// First value whose cumulative area weight reaches `q · total`.
-fn weighted_pick(sorted: &[(f64, f64)], total: f64, q: f64) -> f64 {
-    if total <= 0.0 {
-        return f64::NAN;
-    }
-    let target = q * total;
-    let mut acc = 0.0;
-    for &(value, weight) in sorted {
-        acc += weight;
-        if acc >= target {
-            return value;
-        }
-    }
-    sorted[sorted.len() - 1].0
-}
+// PROMOTED (Track M): `metrology::monge::{Quantiles, quantiles,
+// weighted_pick}`. The plain `median` below is NOT converted — see its
+// comment.
+use rs_cam_core::metrology::monge::{Quantiles, quantiles};
 
 /// Plain (unweighted) median — used for diagnostic columns about the fits
 /// themselves (point counts, residuals), which are properties of the estimator
 /// rather than of the surface, and so are not area-weighted.
+///
+/// DISCLOSED DIVERGENCE (Track M, 2026-09-02): this copy returns the UPPER
+/// middle element on an even population, where the promoted
+/// `metrology::monge::median` averages the two middles. Converting would
+/// move this instrument's printed diagnostic medians, so the copy stays,
+/// stated. New measurements should use the library's.
 fn median(mut values: Vec<f64>) -> f64 {
     if values.is_empty() {
         return f64::NAN;
@@ -857,19 +827,8 @@ fn median(mut values: Vec<f64>) -> f64 {
 
 // ── reports ─────────────────────────────────────────────────────────────
 
-/// One (population, fit radius, tool radius) cell.
-struct ToolReport {
-    tool_radius_mm: f64,
-    gouge_samples: usize,
-    gouge_area_frac: f64,
-    ratio: Quantiles,
-    /// Area fraction above each of [`RATIO_BANDS`].
-    frac_above: [f64; 4],
-    /// `∫dA/W(fixed) ÷ ∫dA/W_max` for the three fixed sweep directions.
-    bound_x: f64,
-    bound_y: f64,
-    bound_pca: f64,
-}
+// PROMOTED (Track M): `ToolReport` is `metrology::census::PrizeCell`.
+use rs_cam_core::metrology::census::PrizeCell as ToolReport;
 
 /// One (population, fit radius) row.
 struct RadiusReport {
@@ -1038,79 +997,14 @@ fn measure(
     reports
 }
 
-/// The per-tool cell: anisotropy distribution + the three prize bounds.
+/// The per-tool cell — PROMOTED (Track M): the arithmetic is
+/// `metrology::census::prize_cell`, extracted verbatim from this function.
+/// This adapter maps the local `Fit` (which additionally carries
+/// `gather_rms`, a diagnostic the library type does not) onto `MongeFit`.
 fn tool_report(fits: &[Fit], cell_area: f64, tool_radius: f64, axis: (f64, f64)) -> ToolReport {
-    let mut ratios: Vec<(f64, f64)> = Vec::with_capacity(fits.len());
-    let mut gouge_samples = 0usize;
-    let mut gouge_area = 0.0f64;
-    let mut total_area = 0.0f64;
-    // The three fixed-direction integrals and the direction-optimal floor.
-    let mut floor_opt = 0.0f64;
-    let mut fixed = [0.0f64; 3];
-    let directions = [(1.0, 0.0), (0.0, 1.0), axis];
-
-    for fit in fits {
-        let area = fit.area_weight * cell_area;
-        total_area += area;
-        // κ2 is the minimum normal curvature, so κ2 + 1/R ≤ 0 is the tightest
-        // the denominator ever gets. If it survives, every direction does.
-        let (Some(w_max), Some(w_min)) = (
-            strip_width(fit.kappa2, tool_radius, SCALLOP_H_MM),
-            strip_width(fit.kappa1, tool_radius, SCALLOP_H_MM),
-        ) else {
-            gouge_samples += 1;
-            gouge_area += area;
-            continue;
-        };
-        ratios.push((w_max / w_min, area));
-        floor_opt += area / w_max;
-        for (slot, &dir) in fixed.iter_mut().zip(directions.iter()) {
-            let kappa = kappa_perp_zou(fit, dir);
-            match strip_width(kappa, tool_radius, SCALLOP_H_MM) {
-                Some(width) => *slot += area / width,
-                // Unreachable given the κ2 guard above (κ_perp ∈ [κ2, κ1]);
-                // if it ever fires, charge the tightest admissible width
-                // rather than silently dropping the area from one integral
-                // only, which would bias the bound DOWNWARD.
-                None => *slot += area / w_min,
-            }
-        }
-    }
-
-    let bound = |value: f64| {
-        if floor_opt > 0.0 {
-            value / floor_opt
-        } else {
-            f64::NAN
-        }
-    };
-    let mut frac_above = [0.0f64; 4];
-    let ratio_area: f64 = ratios.iter().map(|r| r.1).sum();
-    if ratio_area > 0.0 {
-        for (slot, &band) in frac_above.iter_mut().zip(RATIO_BANDS.iter()) {
-            *slot = ratios
-                .iter()
-                .filter(|r| r.0 > band)
-                .map(|r| r.1)
-                .sum::<f64>()
-                / ratio_area;
-        }
-    }
-
-    ToolReport {
-        tool_radius_mm: tool_radius,
-        gouge_samples,
-        gouge_area_frac: if total_area > 0.0 {
-            gouge_area / total_area
-        } else {
-            0.0
-        },
-        ratio: quantiles(ratios).unwrap_or_default(),
-        frac_above,
-        bound_x: bound(fixed[0]),
-        bound_y: bound(fixed[1]),
-        bound_pca: bound(fixed[2]),
-    }
+    let monge: Vec<rs_cam_core::metrology::monge::MongeFit> =
+        fits.iter().map(Fit::to_monge).collect();
+    rs_cam_core::metrology::census::prize_cell(&monge, cell_area, tool_radius, SCALLOP_H_MM, axis)
 }
 
 /// Log-log decay exponent `p` of the median `κ1` between two fit radii:

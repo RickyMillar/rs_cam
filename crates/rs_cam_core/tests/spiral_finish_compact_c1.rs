@@ -51,8 +51,12 @@ use std::path::PathBuf;
 
 use rs_cam_core::direction_field::{self, FieldParams};
 use rs_cam_core::geo::{P2, P3, V3};
-use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
+use rs_cam_core::machine_kinematics::MachineKinematics;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::metrology::costing::{
+    CandidateCost, CostingContext, CostingFeeds, relink_and_cost as metrology_relink_and_cost,
+};
+use rs_cam_core::metrology::floor::{FloorReport, region_floor as metrology_region_floor};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop_math;
@@ -290,47 +294,18 @@ const DISH_SURFACE: AnalyticSurface = AnalyticSurface {
     jet: dish_jet,
 };
 
-// ── the floor (conformal_spiral_synthetic_f2.rs:2129-2215, restated) ────
-
-struct FloorReport {
-    area_mm2: f64,
-    l_min_mm: f64,
-    degenerate: usize,
-}
-
-/// `L_min = Σ area_t / s_max(t)`, `s_max` on the `κ_min` (least convex)
-/// basis, from the ANALYTIC curvature at the triangle centroid. On these
-/// umbilic fixtures κ_min = κ_max, so the direction-worst floor coincides.
+// PROMOTED (Track M, 2026-09-02): `FloorReport` and the floor integrand
+// live in `rs_cam_core::metrology::floor` (extracted from
+// conformal_spiral_synthetic_f2.rs). Disclosed divergence, closed by the
+// promotion: this file's copy computed only the κ_min basis and tested only
+// that basis for degeneracy; the library computes both bases and counts a
+// triangle degenerate when EITHER collapses. On these umbilic fixtures
+// κ_min = κ_max, so this file's numbers do not move.
 fn region_floor(mesh: &TriangleMesh, surface: AnalyticSurface) -> FloorReport {
-    let mut area_mm2 = 0.0_f64;
-    let mut l_min_mm = 0.0_f64;
-    let mut degenerate = 0usize;
-    for face in &mesh.faces {
-        let e1 = face.v[1] - face.v[0];
-        let e2 = face.v[2] - face.v[0];
-        let area = 0.5 * e1.cross(&e2).norm();
-        if area.is_nan() || area <= 0.0 {
-            continue;
-        }
-        let cx = (face.v[0].x + face.v[1].x + face.v[2].x) / 3.0;
-        let cy = (face.v[0].y + face.v[1].y + face.v[2].y) / 3.0;
-        let (k_min, _) = surface.principal_curvatures(cx, cy);
-        let widest =
-            scallop_math::stepover_from_scallop_curved(BALL_RADIUS_MM, CUSP_HEIGHT_MM, k_min);
-        if !widest.is_finite() || widest <= 0.0 {
-            degenerate += 1;
-            continue;
-        }
-        area_mm2 += area;
-        l_min_mm += area / widest;
-    }
-    FloorReport {
-        area_mm2,
-        l_min_mm,
-        degenerate,
-    }
+    metrology_region_floor(mesh, None, BALL_RADIUS_MM, CUSP_HEIGHT_MM, &|x, y| {
+        surface.principal_curvatures(x, y)
+    })
 }
-
 // ── the medial/EDT target field ─────────────────────────────────────────
 
 /// `V_dir = n × normalise(d − n(n·d))` — the pinned convention
@@ -394,19 +369,12 @@ fn raster_candidate(
     out
 }
 
-struct CandidateCost {
-    moves: usize,
-    cutting_mm: f64,
-    time_s: f64,
-    fragments: usize,
-    linked: usize,
-    kept_retracts: usize,
-    path: Toolpath,
-}
-
-/// The F2 relink block, field for field (conformal_spiral_synthetic_f2.rs:
-/// 648-698): hookup 25.0, sampling 0.5, tier-1 feeds, `reorder: true`, the
-/// region polygon as boundary, `link_ceiling: None`, both regime flags off.
+// PROMOTED (Track M, 2026-09-02): the comparison kernel lives in
+// `rs_cam_core::metrology::costing`, extracted from
+// `thin_organic_island_widths.rs`; this file's copy was byte-equivalent up
+// to the cutter's concrete type and which `CandidateCost` fields it kept.
+// The adapter below keeps this instrument's original call shape; the feed
+// pins are this file's own constants, unchanged.
 fn relink_and_cost(
     raw: Toolpath,
     mesh: &TriangleMesh,
@@ -416,43 +384,19 @@ fn relink_and_cost(
     kinematics: &MachineKinematics,
     safe_z: f64,
 ) -> CandidateCost {
-    let link_kinematics = LinkKinematics {
-        kinematics: *kinematics,
-        max_feed_mm_min: MAX_FEED_MM_MIN,
-        rapid_feed_mm_min: RAPID_FEED_MM_MIN,
-    };
-    let params = rs_cam_core::surface_link::RelinkParams {
-        hookup_distance: 25.0,
-        stock_to_leave: 0.0,
-        sampling: 0.5,
-        feed_rate: FEED_MM_MIN,
-        plunge_rate: PLUNGE_MM_MIN,
-        safe_z,
-        link_kinematics: Some(&link_kinematics),
-        reorder: true,
-        boundary: Some(boundary),
-        link_ceiling: None,
-        flush_ride: false,
-        airborne_links_may_leave_territory: false,
-    };
-    let (linked, report) = rs_cam_core::surface_link::relink_fragments(
-        rs_cam_core::toolpath_spans::AnnotatedToolpath::new(raw),
+    let ctx = CostingContext {
         mesh,
         index,
         cutter,
-        &params,
-    );
-    let mut channels = rs_cam_core::transform_provenance::ReconcileSet::new(None, None);
-    let toolpath = linked.reconcile(&mut channels).into_inner().toolpath;
-    CandidateCost {
-        moves: toolpath.moves.len(),
-        cutting_mm: toolpath.total_cutting_distance(),
-        time_s: compute_cycle_time(&toolpath, kinematics, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN),
-        fragments: report.fragments,
-        linked: report.surface_links,
-        kept_retracts: report.retract_links,
-        path: toolpath,
-    }
+        kinematics: Some(kinematics),
+        feeds: CostingFeeds {
+            feed_mm_min: FEED_MM_MIN,
+            plunge_mm_min: PLUNGE_MM_MIN,
+            max_feed_mm_min: MAX_FEED_MM_MIN,
+            rapid_feed_mm_min: RAPID_FEED_MM_MIN,
+        },
+    };
+    metrology_relink_and_cost(&ctx, raw, boundary, safe_z)
 }
 
 /// Contact polylines → drop-cutter CL polylines
