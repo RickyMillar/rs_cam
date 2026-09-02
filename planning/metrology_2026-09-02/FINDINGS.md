@@ -218,3 +218,136 @@ G-UNIONCOV's gap is closed: a boundary-config change can no longer
 pass silently — `union_coverage_m1` is the instrument, and
 `UnionCoverageReport::assert_within` is the gate a comparison run
 consumes.
+
+---
+
+## M2 — band-cell ownership (2026-09-02, handoff from Track H V1 finding 2)
+
+The operator routed three tasks here; Track H is blocked on the first two.
+
+### M2.0 — gate reds fixed
+
+Commit `2e2ef306` left the workspace clippy gate red. Fixed:
+
+- `tests/union_coverage_m1.rs:71` — `ptr_arg`: `run_arm` takes `&Path`.
+- `tests/wanaka_curvature_anisotropy.rs:489` — `wrong_self_convention`:
+  `Fit::to_monge` takes `self` (`Fit` is `Copy`); the one iterator caller
+  adds `.copied()`.
+
+`cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests`
+is green again.
+
+### M2.1 — the ownership map and the hardened attribution
+
+**The mechanism (Track H V1 finding 2):** a band's region POLYGON is not
+its territory. The `overlap_mm` dilation grows each polygon over
+neighbouring bands' cells, extraction can fill small holes, and min-area
+absorption relabels small islands. On the V1 region, 42.90 % of the
+polygon's 3D area is steeper than the 45° clamp. Any audit that reasons
+over region polygons reads a healthy Shallow op as ~half failed by
+construction.
+
+**What shipped:**
+
+- `finish_planner::PlannedRegions::labels` — `decompose` now returns its
+  post-conditioning band label grid (row-major on the slope-map grid,
+  `None` = uncovered). This is the planner's authoritative ownership
+  statement; it existed only as a dropped local before.
+- `metrology::ownership` — `BandOwnership` wraps that grid with its frame
+  (`owner_at` answers at any XY point, resolution-independent up to half a
+  classification cell), and `attribute_above_spec` partitions the union
+  audit's above-spec population by owner. The `unowned` class is the
+  located G-UNIONCOV gap signal: standing material on ground NO band
+  claims. The partition never shrinks the union total — it attributes,
+  it does not filter.
+- Layer precedence is explicit: pass the finer tier first, so tier-seam
+  ground is charged to the op expected to finish it.
+
+The M1 production finding ("production is NOT union-clean, 3,062 mm² in
+3,422 patches, attribution is follow-up work") now has its attribution
+instrument: rerun the M1 arms with per-op `BandOwnership` layers and read
+the `unowned` class. Not yet run.
+
+### M2.2 — G2: the two-hypothesis attribution (pre-registered)
+
+`tests/band_cell_ownership_g2.rs`. Decides V1 finding 2's hypotheses (a)
+vs (b) by rebuilding the H1 decomposition verbatim and attributing every
+in-polygon steep triangle to one of five classes fixed in the file header
+before the run:
+
+- `A_fringe` / `A_interior` / `A_uncovered` — the cell's own label is NOT
+  Shallow (hypothesis a: the polygon lies, split by whether the overlap
+  dilation explains it);
+- `B1_underread` — labeled Shallow and the planner's own slope angle is
+  ≤ the clamp while the surface is steeper (hypothesis b: the
+  classification under-reads the surface — the defect arm);
+- `B2_relabel` — labeled Shallow but the planner's own angle EXCEEDS the
+  clamp (conditioning relabeled it: hysteresis flood, close, absorption —
+  by-design, still unfinishable at spec by a Shallow raster).
+
+The classes partition the steep 3D area, so the totals must reconcile
+with V1's 42.90 % on the same region. The instrument also prints the
+per-region cell-ownership view (owned vs non-owned in-polygon cells) —
+the quantity the M2.1 audit change acts on.
+
+### M2.2 RESULT — RUN 2026-09-02. HYPOTHESIS (a). The planner classification is sound.
+
+Instrument: `tests/band_cell_ownership_g2.rs`, release-fast, 17 s. The
+largest Shallow region reproduces V1 exactly (3,104.0 mm² polygon,
+42.90 % of 3D area steeper than the 45° clamp), so the two censuses are
+on one scale.
+
+**Steep-area attribution, all 16 Shallow regions (4,288.6 mm² steep of
+12,182.5 mm² total, 35.20 %):**
+
+| class | mm² | % of steep |
+|---|---|---|
+| `A_fringe` (non-owned label, within `overlap_mm` of owned) | 4,102.1 | **95.65 %** |
+| `A_interior` (non-owned label, beyond overlap) | 24.1 | 0.56 % |
+| `A_uncovered` (label `None`) | 0.7 | 0.02 % |
+| `B1_underread` (planner grid misses the steepness) | 24.2 | 0.57 % |
+| `B2_relabel` (planner saw it; conditioning relabeled) | 137.4 | 3.20 % |
+
+**Ruling: hypothesis (a).** The steep inclusions are ground the planner's
+own cell labels assign to MidSteep/VerySteep; they are inside the Shallow
+POLYGON almost entirely (95.65 %) because the `overlap_mm = 2.0` dilation
+grew the polygon over them. Hypothesis (b) — a planner classification
+defect — is 0.57 % (24 mm², sub-cell walls narrower than the 0.3 mm
+classification cell; mean under-read 23.4° on those). No planner fix is
+warranted. `B2` is min-area absorption doing what it is configured to do
+(region #1 carries 73.0 mm² of absorbed steep ground — see the refund
+finding below).
+
+**Cell ownership across all regions: 45.83 % of in-polygon covered cells
+are owned by Shallow.** A polygon-scoped audit therefore misreads every
+dendritic Shallow op as majority-failed. The M2.1 ownership audit
+(`metrology::ownership`) is the correct scope; Track H's V1 coverage
+readings over region polygons should be re-read with that in mind.
+
+### M2.2b — avenue G's derate refund is 1.000× where it matters (max rule)
+
+The same run prints, per region, the owned-cell slope population under
+the production derate filter (mirroring `shallow_region_max_slope_deg`)
+and the stepover refund full excision of non-owned cells would buy:
+`cos(owned θ_max) / cos(clamp)`.
+
+- The three LARGEST regions (the time carriers): owned θ_max **64.5°,
+  76.9°, 80.2°** → refund **1.000×** each. Min-area absorption folds
+  small steep islands INTO the owned Shallow set (regions #1/#2 have
+  owned-cell p99 at 73°), so θ_max stays at or above the clamp after
+  excising every non-owned cell.
+- Small regions: refunds 1.02–1.16×; p99-basis readings 1.06–1.19×.
+
+**Consequence for avenue G (`finishing_status_2026-09-01.md` §5 G):** the
+~1.41× band-wide derate prize as stated — "excise the non-owned steep
+inclusions" — is REFUTED on wanaka tier-1 under the shipped worst-point
+(max) derate rule. The inclusions are real and huge (54 % of cells), but
+the derate does not move, because the binding tail after excision is the
+ABSORBED steep ground inside the owned set, and under a max rule one
+steep cell pins the whole region. Two residual routes, neither measured:
+(i) stop absorbing steep islands into Shallow (a decomposition dial —
+they cost twice: spec-unfinishable B2 ground AND the derate pin), or
+(ii) a spacing rule that is not worst-point — bounded-exceedance or
+spacing varying along the pass, which is avenue F. The p99-basis column
+(1.13–1.19× on several regions) is the size of THAT prize on this board,
+and it belongs to avenue F's ledger, not avenue G's.
