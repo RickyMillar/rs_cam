@@ -1042,3 +1042,27 @@ every axis measured here. Against the completing cascade it trades
 field-resolution probe to close the coverage gap; (2) the M4 gouge
 oracle (mandatory gate — this ruler cannot see gouges); (3) the
 real-project productization gate as in M7.
+
+### M8b — the field-resolution probe, the gouge read, and the milled sim (2026-09-03)
+
+- **The wiggle is the field cell, confirmed as a dial.** ISO-F
+  (explicit 0.35 mm field vs the 0.75 mm envelope-quarter default):
+  coverage 4.624 % → **3.740 %** (more than half the C3 gap closed;
+  bar ≤ 3.494 % still not met) at time 0.680× U (vs ISO's 0.614×,
+  both far under C3's 0.850×). The dial trades smoothness/coverage
+  against time roughly linearly; a ~0.25 mm probe plausibly meets the
+  bar. The operator's sawtooth observation = the 0.75 mm cell.
+- **Gouge oracle at 0.15 mm: INCONCLUSIVE as an absolute gate** —
+  all three arms, INCLUDING the shipped-family C3, read deepest
+  "gouges" of −850…−981 µm ≈ cell × tan(rim slope): rim-wall
+  quantization, not cutting. The COMPARATIVE read is clean: ISO
+  gouges no worse than the shipped cascade on every metric. A proper
+  gate needs M4-style fine-cell (0.02 mm) crop windows; queued.
+- **The milled sim (operator request):** the ISO toolpath alone,
+  dexel-stamped at 0.25 mm and composite-rendered
+  (`target/scallop_vs_unified_s1/iso_milled.png`, 2 s) — the whole
+  board carved by one continuous path, basin included, no hole.
+- Coverage residue scatter shows NO corner-diagonal signature — the
+  operator's corner suspicion is cosmetic (boundary shape dissolving
+  inward), not a coverage defect; residue tracks terrain features and
+  the rim band.

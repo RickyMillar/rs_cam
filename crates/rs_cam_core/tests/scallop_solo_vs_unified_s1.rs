@@ -37,10 +37,15 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
+mod common;
+use common::scallop_oracle::{EnvelopeOracle, OracleGrid, OracleParams, StampKernel};
+
 use rayon::prelude::*;
 use rs_cam_core::classify_probe::ClassificationSampler;
 use rs_cam_core::finish_planner::{FinishPlannerParams, decompose};
-use rs_cam_core::finish_setup::build_classification_surface_with_sampler_and_cancel;
+use rs_cam_core::finish_setup::{
+    FinishResolutionPolicy, build_classification_surface_with_sampler_and_cancel,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine_kinematics::{LinkKinematics, MachineKinematics, compute_cycle_time};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -503,6 +508,33 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         rep_iso.untouched_mm2,
     );
 
+    // ── arm ISO-F: the field-resolution probe (M8b) — same policy, the
+    //    field cell forced from the 0.75 mm envelope-quarter default down to
+    //    an explicit 0.35 mm. Probes whether the grid-contour error floor is
+    //    what costs ISO its 1.6 pp against C3, and what the sawtooth is. ──
+    let t_isof = std::time::Instant::now();
+    let (tp_isof, _, rep_isof, _) = scallop_toolpath_research(
+        &mesh,
+        &index,
+        &r15,
+        &sparams,
+        None,
+        None,
+        FinishResolutionPolicy::explicit(0.35),
+        ScallopRingBudget::LoopClampFloor,
+        iso_policy,
+        &never_cancel,
+    )
+    .expect("iso-field scallop, fine field");
+    eprintln!(
+        "arm ISO-F (0.35 mm field) generated: {} moves, {:.0} s — cascade left uncut: \
+         core {:.0} mm², net {:.0} mm²",
+        tp_isof.moves.len(),
+        t_isof.elapsed().as_secs_f64(),
+        rep_isof.uncut_core_mm2,
+        rep_isof.untouched_mm2,
+    );
+
     // ── arm R: the planner's regions, all scalloped, 1-stepover overlap ──
     let surface = build_classification_surface_with_sampler_and_cancel(
         &mesh,
@@ -594,12 +626,13 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         "     {:>38}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>9}",
         "arm", "time s", "cut mm", "rapid mm", "plunges", "moves", "unmach %"
     );
-    let arms: [(&str, &Toolpath); 6] = [
+    let arms: [(&str, &Toolpath); 7] = [
         ("U   unified band mix (production)", &tp_u),
         ("C   scallop, shipped budget (truncates)", &tp_c),
         ("C2  scallop, reach-policy budget", &tp_c2),
         ("C3  scallop, clamp-floor budget", &tp_c3),
         ("ISO iso-field rings (per-point spacing)", &tp_iso),
+        ("ISOF iso-field, 0.35 mm field cell", &tp_isof),
         ("R   scallop on planner regions (1-step)", &tp_r),
     ];
     let centre_window = [80.0, 80.0, 120.0, 120.0];
@@ -706,6 +739,60 @@ fn wanaka_scallop_solo_vs_unified_s1() {
             0.05,
         );
     }
+    // ── M8b gouge oracle (the adoption gate the envelope ruler cannot
+    //    see): analytic envelope truth at 0.15 mm, deepest gouge per arm. ──
+    {
+        let t = std::time::Instant::now();
+        const ORACLE_CELL_MM: f64 = 0.15;
+        let kernel = StampKernel::new(&r15, ORACLE_CELL_MM, Some(r15.cusp_radius_mm() * 5.0));
+        let grid = OracleGrid::for_mesh(&mesh, &r15, ORACLE_CELL_MM);
+        let truth = EnvelopeOracle::true_surface_from_mesh(grid, &mesh, &index);
+        for (label, tp) in [("C3", &tp_c3), ("ISO", &tp_iso), ("ISO-F", &tp_isof)] {
+            let oracle = EnvelopeOracle::score(grid, truth.clone(), tp, &kernel, ORACLE_CELL_MM);
+            let r = oracle.report(OracleParams::new(SCALLOP_HEIGHT));
+            eprintln!(
+                "  gouge oracle {label:>5}: deepest gouge {:.1} µm (normal {:.1} µm), \
+                 gouged {:.1} mm², untouched {:.0} mm², standing {:.0} mm²",
+                r.deepest_gouge_um,
+                r.deepest_gouge_normal_um,
+                r.gouge_mm2,
+                r.untouched_mm2,
+                r.standing_mm2
+            );
+        }
+        eprintln!("  gouge oracle wall {:.0} s", t.elapsed().as_secs_f64());
+    }
+
+    // ── the operator's "see it milled": dexel-simulate the ISO toolpath
+    //    alone and write the 6-view composite. ──
+    {
+        let t = std::time::Instant::now();
+        let mut stock = rs_cam_core::dexel_stock::TriDexelStock::from_stock(
+            mesh.bbox.min.x,
+            mesh.bbox.min.y,
+            mesh.bbox.max.x,
+            mesh.bbox.max.y,
+            mesh.bbox.min.z - 1.0,
+            mesh.bbox.max.z,
+            0.25,
+        );
+        stock.simulate_toolpath(
+            &tp_iso,
+            &r15,
+            rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        );
+        let (w, h) = (1800u32, 1200u32);
+        let pixels = rs_cam_core::fingerprint::render_stock_composite(&stock, w, h);
+        if let Some(img) = image::RgbaImage::from_raw(w, h, pixels) {
+            let _ = img.save(out.join("iso_milled.png"));
+        }
+        eprintln!(
+            "  ISO milled: dexel sim at 0.25 mm + composite render, {:.0} s → \
+             target/scallop_vs_unified_s1/iso_milled.png",
+            t.elapsed().as_secs_f64()
+        );
+    }
+
     eprintln!(
         "\nSVGs written to target/scallop_vs_unified_s1/; total wall {:.0} s",
         started.elapsed().as_secs_f64()
