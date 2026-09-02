@@ -897,6 +897,18 @@ pub struct ScallopConfig {
     /// for what the relink does and refuses to do.
     #[serde(default = "default_scallop_intra_pass_hookup_mm")]
     pub intra_pass_hookup_mm: f64,
+    /// M8 (2026-09-03) — take the rings from the iso-scallop FIELD instead
+    /// of the offset cascade: per-point spacing (no per-ring min-reduction
+    /// crawl), the SPEC-CORRECT cosine slope law, and a termination
+    /// invariant instead of the `max_rings` cap (retires the
+    /// G-SCALLOPBASIN truncation class). Measured on the wanaka board
+    /// against the production unified op: 0.875× its time at 2.5 pp better
+    /// envelope coverage (`planning/metrology_2026-09-02/FINDINGS.md`
+    /// §M7–M8). Default OFF: an absent key loads the legacy cascade
+    /// byte-identically. Speed is traded at `scallop_height` and the tool
+    /// — never across the surface (operator ruling, 2026-09-03).
+    #[serde(default)]
+    pub iso_field: bool,
 }
 
 /// 3.0 mm — a little over one Ø3-ball diameter: far enough to catch
@@ -941,6 +953,7 @@ impl Default for ScallopConfig {
             stock_to_leave: 0.0,
             spindle_rpm: None,
             intra_pass_hookup_mm: default_scallop_intra_pass_hookup_mm(),
+            iso_field: false,
         }
     }
 }

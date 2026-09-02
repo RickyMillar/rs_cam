@@ -52,7 +52,7 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::region_set::RegionSet;
 use rs_cam_core::scallop::{
     RingSource, ScallopDirection, ScallopParams, ScallopRingBudget, ScallopStepoverPolicy,
-    scallop_generation_resolution, scallop_toolpath_research,
+    StepoverGeometry, scallop_generation_resolution, scallop_toolpath_research,
     scallop_toolpath_structured_annotated_with_cancel,
     scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
 };
@@ -535,6 +535,39 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         rep_isof.untouched_mm2,
     );
 
+    // ── arm ISO-C: the operator-caught INVERTED SLOPE LAW corrected —
+    //    `StepoverGeometry::CosineSlope` (the measured-correct form,
+    //    unfixable in the cascade because of the ring budget it no longer
+    //    has). IsoField + CosineSlope + 0.35 mm field. This is the honest
+    //    spec-correct candidate. ──
+    let t_isoc = std::time::Instant::now();
+    let isoc_policy = ScallopStepoverPolicy {
+        ring_source: RingSource::IsoField,
+        geometry: StepoverGeometry::CosineSlope,
+        ..ScallopStepoverPolicy::SHIPPED
+    };
+    let (tp_isoc, _, rep_isoc, _) = scallop_toolpath_research(
+        &mesh,
+        &index,
+        &r15,
+        &sparams,
+        None,
+        None,
+        FinishResolutionPolicy::explicit(0.35),
+        ScallopRingBudget::LoopClampFloor,
+        isoc_policy,
+        &never_cancel,
+    )
+    .expect("iso-field scallop, cosine law");
+    eprintln!(
+        "arm ISO-C (cosine law, 0.35 mm field) generated: {} moves, {:.0} s — cascade left \
+         uncut: core {:.0} mm², net {:.0} mm²",
+        tp_isoc.moves.len(),
+        t_isoc.elapsed().as_secs_f64(),
+        rep_isoc.uncut_core_mm2,
+        rep_isoc.untouched_mm2,
+    );
+
     // ── arm R: the planner's regions, all scalloped, 1-stepover overlap ──
     let surface = build_classification_surface_with_sampler_and_cancel(
         &mesh,
@@ -626,13 +659,14 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         "     {:>38}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>9}",
         "arm", "time s", "cut mm", "rapid mm", "plunges", "moves", "unmach %"
     );
-    let arms: [(&str, &Toolpath); 7] = [
+    let arms: [(&str, &Toolpath); 8] = [
         ("U   unified band mix (production)", &tp_u),
         ("C   scallop, shipped budget (truncates)", &tp_c),
         ("C2  scallop, reach-policy budget", &tp_c2),
         ("C3  scallop, clamp-floor budget", &tp_c3),
         ("ISO iso-field rings (per-point spacing)", &tp_iso),
         ("ISOF iso-field, 0.35 mm field cell", &tp_isof),
+        ("ISOC iso-field + COSINE LAW, 0.35 mm", &tp_isoc),
         ("R   scallop on planner regions (1-step)", &tp_r),
     ];
     let centre_window = [80.0, 80.0, 120.0, 120.0];
@@ -715,6 +749,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         ("armC", &tp_c),
         ("armC3", &tp_c3),
         ("armISO", &tp_iso),
+        ("armISOC", &tp_isoc),
         ("armR", &tp_r),
     ] {
         dump_svg(
@@ -747,7 +782,12 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         let kernel = StampKernel::new(&r15, ORACLE_CELL_MM, Some(r15.cusp_radius_mm() * 5.0));
         let grid = OracleGrid::for_mesh(&mesh, &r15, ORACLE_CELL_MM);
         let truth = EnvelopeOracle::true_surface_from_mesh(grid, &mesh, &index);
-        for (label, tp) in [("C3", &tp_c3), ("ISO", &tp_iso), ("ISO-F", &tp_isof)] {
+        for (label, tp) in [
+            ("C3", &tp_c3),
+            ("ISO", &tp_iso),
+            ("ISO-F", &tp_isof),
+            ("ISO-C", &tp_isoc),
+        ] {
             let oracle = EnvelopeOracle::score(grid, truth.clone(), tp, &kernel, ORACLE_CELL_MM);
             let r = oracle.report(OracleParams::new(SCALLOP_HEIGHT));
             eprintln!(
@@ -777,7 +817,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
             0.25,
         );
         stock.simulate_toolpath(
-            &tp_iso,
+            &tp_isoc,
             &r15,
             rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         );

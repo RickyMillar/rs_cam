@@ -1975,6 +1975,51 @@ pub enum ScallopRingBudget {
     LoopClampFloor,
 }
 
+/// The iso-field production entry (M8, 2026-09-03) — the first production
+/// caller outside [`ScallopStepoverPolicy::SHIPPED`].
+///
+/// Selects [`RingSource::IsoField`] with [`StepoverGeometry::CosineSlope`]:
+/// per-point spacing (no per-ring min-reduction crawl), the SPEC-CORRECT
+/// slope law (`scallop_math::variable_stepover`'s inversion does not apply —
+/// the historic blocker, the `max_rings` budget, does not exist for the
+/// field: ring count is `⌊max D⌋`), and completion by construction (retires
+/// the G-SCALLOPBASIN truncation class). The field resolution is
+/// [`FinishResolutionPolicy::cusp_quarter`] — field detail scales with the
+/// CUSP radius, not the shank; on the R1.5 evidence tool that is 0.375 mm,
+/// matching the measured M8b probe. Evidence:
+/// `planning/metrology_2026-09-02/FINDINGS.md` §M7–M8.
+pub fn scallop_toolpath_iso_field_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &ScallopParams,
+    debug: Option<&ToolpathDebugContext>,
+    boundary_regions: Option<&RegionSet<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
+    let policy = ScallopStepoverPolicy {
+        ring_source: RingSource::IsoField,
+        geometry: StepoverGeometry::CosineSlope,
+        ..ScallopStepoverPolicy::SHIPPED
+    };
+    let (tp, annotations, report, _) = scallop_toolpath_research(
+        mesh,
+        index,
+        cutter,
+        params,
+        debug,
+        boundary_regions,
+        FinishResolutionPolicy::cusp_quarter(cutter, params.tolerance),
+        // Inert for the field (nothing to truncate); the completing choice
+        // is stated anyway so a future cascade fallback cannot silently
+        // reintroduce the truncation class.
+        ScallopRingBudget::LoopClampFloor,
+        policy,
+        cancel,
+    )?;
+    Ok((tp, annotations, report))
+}
+
 /// [`scallop_toolpath_structured_annotated_with_resolution`] with the ring
 /// budget selected by the caller.
 ///

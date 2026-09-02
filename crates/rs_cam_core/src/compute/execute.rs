@@ -2170,7 +2170,20 @@ pub(crate) fn generate_scallop(
         intra_pass_hookup_mm: cfg.intra_pass_hookup_mm,
         link_kinematics: ctx.link_kinematics.clone(),
     };
-    let (tp, annotations, scallop_report) =
+    let (tp, annotations, scallop_report) = if cfg.iso_field {
+        // M8 iso-field rings — per-point spacing, cosine slope law,
+        // completion by construction. See the wrapper's doc for evidence.
+        crate::scallop::scallop_toolpath_iso_field_with_cancel(
+            m,
+            idx,
+            ctx.tool_def,
+            &params,
+            ctx.debug_ctx,
+            ctx.boundary_regions,
+            &(|| ctx.cancel.load(Ordering::SeqCst)),
+        )
+        .map_err(|_e| OperationError::Cancelled)?
+    } else {
         crate::scallop::scallop_toolpath_structured_annotated_with_cancel(
             m,
             idx,
@@ -2180,7 +2193,8 @@ pub(crate) fn generate_scallop(
             ctx.boundary_regions,
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
-        .map_err(|_e| OperationError::Cancelled)?;
+        .map_err(|_e| OperationError::Cancelled)?
+    };
     record_truncated_core(
         ctx.findings,
         scallop_report.uncut_core_mm2,

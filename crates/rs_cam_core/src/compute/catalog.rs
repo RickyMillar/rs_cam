@@ -1597,6 +1597,8 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
     // wave 12 — see `default_scallop_intra_pass_hookup_mm` for the A/B and
     // for what wave 11's blocking gate was actually measuring.
     ParamDef::required("intra_pass_hookup_mm", "f64"),
+    // M8 (2026-09-03) — iso-field ring source; absent = legacy cascade.
+    ParamDef::optional("iso_field", "bool"),
 ];
 
 const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[

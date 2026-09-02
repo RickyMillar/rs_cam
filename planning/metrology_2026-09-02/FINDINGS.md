@@ -1066,3 +1066,39 @@ real-project productization gate as in M7.
   operator's corner suspicion is cosmetic (boundary shape dissolving
   inward), not a coverage defect; residue tracks terrain features and
   the rim band.
+
+### M8c — the operator's eye finds the INVERTED SLOPE LAW; ruling; the feature ships (2026-09-03)
+
+**Operator observation:** "spacing on the steeps looks wider than the
+flats — is that wrong?" It is wrong, and it is the DOCUMENTED
+inversion in `scallop_math::variable_stepover` (R/cosθ where the
+geometry requires ×cosθ; 1.69× too wide at 45°), unfixable for two
+months because correcting it alone slammed into the `max_rings`
+budget — which the iso-field does not have. The cascade's per-ring
+min-reduction had been masking the inversion; per-point ISO exposed
+it to the naked eye.
+
+**ISO-C (IsoField + `StepoverGeometry::CosineSlope`, 0.35 mm field):**
+time 7,108.3 s = **0.875× U** at **3.507 %** envelope coverage (best
+ISO figure; 0.013 pp from the C3 bar — noise). ~29 % of the inverted
+arms' speed was spec-cheating width. The corrected arm still beats
+production on BOTH axes, and it is the first arm in the product's
+history to cut steeps at the true cosine law (the cascade runs the
+inverted law under its min-reduction mask).
+
+**Operator ruling:** "is one not more correct? If I want more or less
+speed I want to just trade the milling bit — I don't want to trade it
+across the surface." **One law ships: cosine. Speed is traded at
+`scallop_height` and the tool, never across the surface.** The
+inverted variant is a defect, not a mode, and is NOT exposed.
+
+**SHIPPED (same day):** `ScallopConfig::iso_field` (serde default
+FALSE — absent key loads the legacy cascade byte-identically),
+production wrapper `scallop_toolpath_iso_field_with_cancel`
+(IsoField + CosineSlope + cusp-quarter field resolution ≈ the
+measured 0.35 mm probe + completing budget), adapter branch in
+`generate_scallop`, catalog `ParamDef::optional("iso_field", "bool")`,
+GUI checkbox ("Iso-Field Rings") on the scallop panel, wiring
+sentries `tests/scallop_iso_field_config.rs`. Workspace gate green.
+Remaining before flipping any DEFAULT: the fine-window gouge oracle
+and the real-project run.

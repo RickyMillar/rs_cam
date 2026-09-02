@@ -664,6 +664,15 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             ui.label("Continuous:");
             ui.checkbox(&mut cfg.continuous, "");
             ui.end_row();
+            ui.label("Iso-Field Rings:").on_hover_text(
+                "Rings from the iso-scallop field instead of the offset \
+                 cascade: spacing varies point-by-point along each ring \
+                 (organic, terrain-following), uses the spec-correct cosine \
+                 slope law, and always runs to completion. Measured faster \
+                 than the band mix at better coverage on terrain work.",
+            );
+            ui.checkbox(&mut cfg.iso_field, "");
+            ui.end_row();
             dv(
                 ui,
                 "Slope From:",
