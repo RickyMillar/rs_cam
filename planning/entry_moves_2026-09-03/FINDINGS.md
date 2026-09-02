@@ -104,11 +104,126 @@ rides as `Option` into `apply_dressups` → `apply_entry` →
 Decision rule: if the clipped entries still bury > 0.2 mm on the
 fixture, stop and report — do not widen the tolerance.
 
-## Follow-ons (ledgered, not blocking)
+## S2 — lead-in/out clip (pre-registered before the instrument ran)
 
-- **Lead-in/lead-out arcs** are the same class with a 2 mm reach.
-  The I1 census measures them. Fix or refusal is a separate decision
-  after the measurement.
+Scope widened by `25d80035` (metrology lane): the buried-chord A/B
+found the family's member 3 — with `lead_in_out = true` the entry
+plunge lands `lead_radius` away from the ring start and the lead arc
+approaches HORIZONTALLY at ring depth through standing terrain. The
+emitter confirms it in code: `apply_lead_in_out_with_provenance`
+emits the lead plunge to `(lead_start.xy, cut_z)` and eight arc
+samples all at `cut_z`, with no surface probe.
+
+Fix design (decided before implementation): the lead-in/out dressup
+takes the same optional `EntrySurfaceProbe`.
+
+- With a probe: lift the lead plunge target and every arc sample to
+  `max(cut_z, floor)`. The lead still approaches tangentially in XY;
+  in Z it follows the surface down into the ring start, whose own
+  floor equals `cut_z`.
+- If the probe loses contact at any lead sample: SKIP the insertion
+  for that pass — the generator's original plunge/retract stays,
+  which is the pre-dressup shape and stock-aware by construction.
+- Without a probe: behaviour unchanged.
+- Zero-churn parity: when no sample lifts, the emitted moves are
+  byte-identical to today's.
+
+Bars:
+
+- **S2-red (instrument validity):** ridge fixture, `lead_in_out =
+  true`, entry beside the ridge so the lead circle reaches uphill;
+  BEFORE the fix at least one `LeadIn`- or `EntryPlunge`-intent
+  sample buried > 0.5 mm.
+- **S2-green (gate):** AFTER the fix, no entry-intent sample buried
+  > 0.2 mm on the same fixture, and the lead still carries `LeadIn`
+  moves.
+
+## S3 — sagging refit arcs (pre-registered; mechanism not yet reproduced synthetically)
+
+Family member 2 (`25d80035`): with `arc_fitting = true` (tol 0.05)
+the wanaka triage carries an `entry_load` CRITICAL of 2 242 samples,
+peak 3.90 mm, which VANISHES entirely with arcs off. That A/B is the
+S3-red — measured on wanaka by the metrology lane; this file does not
+re-run it.
+
+**Mechanism FOUND by code reading (2026-09-03), before any guard was
+built:** `try_fit_arc`'s Z validity check has an endpoint hole. When
+`|z_end − z_start| ≤ tolerance` the run is accepted as "constant-Z"
+with NO per-point check — so a ring run whose Z rises over a knoll
+mid-run and returns to level collapses into a flat arc THROUGH the
+knoll. The emitted arc can bury by the full knoll height while both
+endpoints sit on the surface. This matches the wanaka signature
+exactly (short arcs bridging a small knoll; `entry_load` peak
+3.90 mm at `arc_tolerance` 0.05).
+
+Amended fix design: no probe needed. The arc must be faithful to its
+OWN SOURCE polyline — the generator already made the source
+surface-true. Run the per-point Z check in the constant-Z branch too:
+every point's z must sit within `tolerance` of the value GRBL will
+interpolate (constant `z_start` for a planar arc). This rejects the
+knoll run and changes nothing for genuinely planar or helical runs.
+
+Bars:
+
+- **S3-red (instrument validity):** a synthetic run of on-circle XY
+  points with a z bump > 5 × tolerance mid-run and level endpoints is
+  ACCEPTED by `try_fit_arc` before the fix.
+- **S3-green (gate):** after the fix the same run is rejected (stays
+  linear), and a genuinely planar arc run plus a genuine helix run
+  still fit (parity — the fix must not kill legitimate arcs).
+
+### S3 results (2026-09-03)
+
+The firing shape is NARROWER than first registered, and the fixture
+had to follow it (recorded honestly):
+
+- A WIDE smooth bump does not reproduce the defect. The greedy
+  extension fails the helix check before any level-endpoint window
+  forms, and the sub-arcs it accepts are z-faithful (measured: 3
+  faithful helical arcs pre-fix and post-fix — arc COUNT is the
+  wrong assertion).
+- A NARROW knoll (one spiked point, level neighbours) reproduces it
+  exactly: a small greedy window spans the knoll with level
+  endpoints, and the pre-fix code accepted it with no interior
+  check. **S3-red measured against the pre-fix fitter (stash run):
+  the output passes at z = 0.000 under the 0.5 mm knoll point.**
+  This matches the wanaka wording — SHORT buried chords through a
+  small knoll.
+- Fix: the per-point z-vs-interpolation check runs unconditionally
+  in `try_fit_arc` (no probe needed — the arc is held faithful to
+  its own source polyline, which the generator made surface-true).
+- **S3-green passes**: the knoll point survives the refit; the
+  planar and helix parity arms still fit arcs.
+
+The wanaka re-measure (does the `entry_load` CRITICAL stay gone with
+`arc_fitting = true` under this fix?) belongs to the lane that owns
+the running GUI, alongside the S2/ramp re-measure.
+
+### S2 results (2026-09-03)
+
+- **S2-red is a permanent in-test arm**, not a one-off number: the
+  sentry runs the probe-less path on the same fixture and asserts a
+  lead sample buried > 0.5 mm, so the instrument's ability to see
+  the class is re-proven on every run. (First fixture orientation
+  put the lead circle on the downhill flank and read no burial —
+  corrected to sweep uphill before any code conclusion was drawn.)
+- **S2-green passes**: the probed lead lifts to the surface, still
+  carries `LeadIn` moves, and nothing buries > 0.2 mm.
+
+### The golden re-baseline the fix forced (2026-09-03)
+
+`perf_golden_sim_metrics`'s 3D arm went red: the Waterline fixture's
+`per_kinematics` lost its `Helix` class (600 samples). Those samples
+WERE the terrain-blind ramp legs — Waterline's Finish-role default
+carries `entry_style = ramp`, and on the hemisphere fixture the legs
+poke past the mesh edge, so the finish door now degrades those
+entries to plunges. Re-baselined with `UPDATE_PERF_GOLDENS=1` and
+this rationale. The shift also measures a side benefit: the blind
+legs were fed air — the Waterline op's `air_cut_time_s` fell from
+54.8 s to 15.4 s, and the project air-cut (total-runtime denominator)
+from 51.1 % to 39.6 %, on the test dome alone.
+
+## Follow-ons (ledgered, not blocking)
 - **Triage promotion:** deep-biting entry chords currently surface
   only as the `entry_load` load caution. The checker is a `pub fn` so
   a later change can add a safety row. Not in this change.
@@ -136,3 +251,63 @@ Bar S1-red (> 1.0 mm) PASSES on both arms. The instrument sees the
 class. The two red arms carry `#[ignore]` in the instrument commit so
 the shared gate stays green; the fix commit removes the attribute and
 they become the standing sentry.
+
+### S1-green — the clip holds the bar (2026-09-03, post-fix)
+
+The fix follows the pre-registered design exactly: `emit_ramp` clips
+its legs through `clip_polyline_to_floor` (0.5 mm samples, lift-only,
+lost contact → plunge fallback); `emit_helix` lifts each 10° turn
+sample the same way. Both `#[ignore]` attributes removed. Result:
+
+- Ramp arm: green at 0.2 mm tolerance, and the entry still carries
+  `EntryRamp` moves (no silent degrade to plunge).
+- Helix arm: green, still carries `EntryHelix`.
+- No-intrusion parity arm: green — exactly two legacy legs.
+
+One fixture correction during the green run, recorded honestly: the
+parity arm's first fixture put the entry at x = −20, whose legs reach
+x = −39 — off the ±30 mesh — so the lost-contact fallback fired and
+the arm counted zero `EntryRamp` moves. That run is an accidental
+proof of the fallback arm. The fixture moved to x = −8 (legs reach
+−27, on the mesh); the parity assertion then passes as pre-registered.
+
+The decision rule ("if the clipped entries still bury > 0.2 mm, stop
+and report") was not needed.
+
+### Design amendments after the first full-suite run (2026-09-03)
+
+The core suite (2 482 lib tests) went red on ONE test:
+`adaptive3d::tests::test_helix_entry_no_vertical_plunge` — a helix on
+a small flat mesh whose circle pokes past the mesh edge. The
+pre-registered rule "lost contact at any sample → plunge fallback"
+degraded that legitimate roughing helix to a plunge. The failure also
+exposed a second, worse latent case by inspection: the session gate
+handed the probe to EVERY operation in a mesh-carrying project, so a
+2.5D pocket ramp (which legitimately cuts BELOW the mesh top) would
+have been silently lifted to the surface and destroyed.
+
+Two amendments, recorded before the code changed:
+
+1. **Probe issuance is per operation type, not per project.** Only
+   surface-riding operations receive the probe from the dressup door:
+   the mesh finish family plus DropCutter/UnifiedFinish (harmless —
+   their dressups are stripped). For these ops "never below
+   `CL + stock_to_leave`" is their own contract. Prism operations
+   (Pocket, Profile, Adaptive, Face, Rest, Inlay, Zigzag, VCarve,
+   Trace, Chamfer, drills, ProjectCurve) get NO probe: their entries
+   may descend below the model surface by design, and the 2D-prism
+   blind-leg behaviour stays as audited (A0 finding 4).
+   `OperationConfig::entry_probe_stock_to_leave` becomes
+   `entry_probe_leave() -> Option<f64>`.
+2. **Off-mesh policy is per door.** The dressup door (finish family)
+   keeps the plunge fallback: beyond the part footprint full-height
+   uncut stock can stand, and the plunge at the entry column is the
+   only descent known safe. The adaptive3d door sets
+   `OffMeshEntry::Unconstrained`: beyond the mesh footprint stands
+   prism stock that a 2.5D rough is allowed to cut, its destination
+   is already draped, and its `descent_floor` guard covers uncut
+   columns — the planned leg z stands there.
+
+With both amendments the failing adaptive3d test is expected green
+again with its original meaning intact, and the S1 sentry semantics
+do not change.

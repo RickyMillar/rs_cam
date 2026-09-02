@@ -1599,17 +1599,22 @@ impl ProjectSession {
                 // entry-descent split alike.
                 let mut channels =
                     crate::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
-                // G-RAMPTERRAIN: entry moves clip to the drop-cutter
-                // surface. Present whenever the project has a mesh; a
-                // 2D-only project keeps the legacy straight legs (no
-                // surface exists to probe — the legs cut prism material
-                // between passes by design).
-                let entry_surface = match (mesh.as_deref(), spatial_index.as_deref()) {
-                    (Some(m), Some(idx)) => Some(crate::dressup::EntrySurfaceProbe {
+                // G-RAMPTERRAIN: entry moves of SURFACE-RIDING
+                // operations clip to the drop-cutter surface
+                // (`entry_probe_leave` names them). Prism operations
+                // get no probe: their entries legitimately descend
+                // below the model surface (FINDINGS.md amendment 1).
+                let entry_surface = match (
+                    mesh.as_deref(),
+                    spatial_index.as_deref(),
+                    tc.operation.entry_probe_leave(),
+                ) {
+                    (Some(m), Some(idx), Some(leave)) => Some(crate::dressup::EntrySurfaceProbe {
                         mesh: m,
                         index: idx,
                         cutter: &tool_def,
-                        stock_to_leave: tc.operation.entry_probe_stock_to_leave(),
+                        stock_to_leave: leave,
+                        off_mesh: crate::dressup::OffMeshEntry::PlungeFallback,
                     }),
                     _ => None,
                 };

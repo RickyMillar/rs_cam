@@ -1299,6 +1299,10 @@ pub(super) fn segments_to_toolpath(
             index,
             cutter,
             stock_to_leave: params.stock_to_leave,
+            // Beyond the mesh footprint stands prism stock a 2.5D
+            // rough may cut; the planned leg z stands there
+            // (FINDINGS.md amendment 2).
+            off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
         }),
     };
 

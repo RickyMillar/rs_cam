@@ -31,6 +31,56 @@
 - MCP server (`rs_cam_mcp`) exposing `ProjectSession` tools for AI agent integration; the GUI embeds it (`--mcp`) and registers roughly 68 tools against the live session
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 
+## Recent work (2026-09-03)
+
+### G-RAMPTERRAIN — the stock-blind approach family, all three members fixed
+
+The ramp-entry dressup drew straight zigzag legs with no surface
+probe (~19 mm per leg at the default 3°). On the wanaka ISO scallop
+export it cut 877 buried feed chords through ridges; the rapid
+checker audits only rapids, so nothing flagged it. Operator ruling:
+"All entry moves should be stock aware."
+
+- `entry_audit::buried_fed_chords` is the new burial checker: it
+  samples every selected fed move against the drop-cutter floor
+  (`EntrySurfaceProbe::floor_z` — the same measure the fix clips to).
+- `dressup::EntrySafety` carries the stock-top guard plus the probe
+  into both entry doors (`apply_entry` and adaptive3d's direct
+  `emit_ramp` / `emit_helix` calls). Ramp legs and helix turns lift
+  to `max(planned z, CL + stock_to_leave)`; a lost surface contact
+  degrades the entry to a plunge (finish door) or stands (adaptive3d
+  door, prism stock). Only surface-riding operations receive the
+  probe (`OperationConfig::entry_probe_leave`) — a pocket ramp must
+  keep cutting below the mesh top.
+- The metrology lane widened the charter the same day (`25d80035`):
+  three stock-blind classes, one family. All three are fixed:
+  - **Member 1, ramp/helix entries** — the clip above. S1-red
+    5.14 mm pre-fix on the ridge fixture, green post-fix.
+  - **Member 3, lead-in/out arcs** — the lead plunge target and
+    every lead arc sample lift to the probe floor; lost contact
+    skips the insertion and keeps the generator's original moves.
+    The sentry keeps a permanent probe-less red arm (> 0.5 mm
+    burial) so the instrument's vision is re-proven every run.
+  - **Member 2, sagging refit arcs** — a real hole in
+    `try_fit_arc`: the per-point Z check was skipped when the run's
+    ENDPOINTS agreed, so a short knoll inside a ring collapsed into
+    a flat arc through the knoll (wanaka `entry_load` peak
+    3.90 mm). The check now runs unconditionally; no probe needed —
+    the arc is held faithful to its own source polyline.
+- Standing sentry: `entry_moves_stock_aware_g_rampterrain.rs`
+  (five arms: ramp, helix, no-intrusion parity, lead-in red+green,
+  refit-knoll + planar/helix parity). Record:
+  `planning/entry_moves_2026-09-03/FINDINGS.md`.
+- The fix forced one documented golden re-baseline
+  (`perf_golden_sim_metrics` 3D arm): the Waterline fixture's
+  `Helix` class WAS the blind ramp legs; its fed air fell 54.8 s →
+  15.4 s on the test dome.
+- Open follow-ons (ledgered in FINDINGS.md): triage promotion of
+  deep-biting entries to a safety row, and the live wanaka
+  re-measure (ramp + lead + arcs restored, regenerate, re-run the
+  buried-chord analysis) — the latter belongs to the lane that owns
+  the running GUI.
+
 ## Recent work (2026-09-02)
 
 ### Track M — one metrology home (`rs_cam_core::metrology`)

@@ -1,5 +1,14 @@
 # G-RAMPTERRAIN — stock-aware entry moves (charter, 2026-09-03)
 
+> Status 2026-09-03: family member 1 (ramp/helix entries) **FIXED,
+> sentry standing.** Fix (a) shipped — ramp legs and helix turns clip
+> to the drop-cutter floor; lost contact degrades to the plunge
+> (finish door). The audit, bars, measurements, and two design
+> amendments are in `FINDINGS.md`. In progress under the widened
+> scope: member 3 (lead-in/out) and member 2 (sagging refit arcs).
+> Open after that: triage safety-row promotion, live wanaka
+> re-measure (the GUI-owning lane).
+
 ## Operator ruling
 
 > "All entry moves should be stock aware."

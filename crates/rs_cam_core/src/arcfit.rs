@@ -508,13 +508,19 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     }
 
     // Helical / planar Z validity. GRBL interpolates Z linearly with the swept
-    // angle along a G2/G3 arc, so a Z-varying run is a valid arc only if it is a
-    // true helix (Z linear with cumulative swept angle). A constant-Z run
-    // (|z_end - z_start| <= tolerance) trivially passes. Reject everything else
-    // so terrain/ramp paths whose Z wanders fall back to linear segments.
+    // angle along a G2/G3 arc, so the run is a valid arc only when EVERY
+    // point's z sits within `tolerance` of that interpolation — a true helix,
+    // or a genuinely planar run.
+    //
+    // G-RAMPTERRAIN S3 (`planning/entry_moves_2026-09-03/FINDINGS.md`): the
+    // per-point check used to be gated on `|z_end - z_start| > tolerance`,
+    // so a run that climbs over a knoll and RETURNS TO LEVEL read as
+    // "constant-Z" with no interior check, and collapsed into a flat arc
+    // through the knoll (wanaka: buried ring arcs, `entry_load` peak
+    // 3.90 mm at tolerance 0.05). The check now runs unconditionally.
     let z_start = p_first.z;
     let z_end = p_last.z;
-    if (z_end - z_start).abs() > tolerance {
+    {
         // Cumulative swept angle per point, in the arc's travel direction.
         let mut swept = Vec::with_capacity(points.len());
         let mut cum = 0.0_f64;
@@ -532,14 +538,22 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
             prev_ang = a;
         }
         if cum < 1e-9 {
-            // No net sweep but Z changed → a vertical/degenerate move, not a helix.
-            return None;
-        }
-        for (pt, &s) in points.iter().zip(swept.iter()) {
-            let frac = s / cum;
-            let expected_z = z_start + (z_end - z_start) * frac;
-            if (pt.z - expected_z).abs() > tolerance {
+            if (z_end - z_start).abs() > tolerance {
+                // No net sweep but Z changed → a vertical/degenerate move,
+                // not a helix.
                 return None;
+            }
+            // Zero sweep, level endpoints: the interior must be level too.
+            if points.iter().any(|pt| (pt.z - z_start).abs() > tolerance) {
+                return None;
+            }
+        } else {
+            for (pt, &s) in points.iter().zip(swept.iter()) {
+                let frac = s / cum;
+                let expected_z = z_start + (z_end - z_start) * frac;
+                if (pt.z - expected_z).abs() > tolerance {
+                    return None;
+                }
             }
         }
     }

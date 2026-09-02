@@ -3754,7 +3754,15 @@ pub fn apply_dressups(
                     scope.set_param(SemanticKey::LeadOutFeedRate, f);
                 }
             },
-            |at| crate::dressup::apply_lead_in_out_with_provenance(at, radius, li_feed, lo_feed),
+            |at| {
+                crate::dressup::apply_lead_in_out_with_provenance(
+                    at,
+                    radius,
+                    li_feed,
+                    lo_feed,
+                    entry_safety.surface.as_ref(),
+                )
+            },
         );
     }
 

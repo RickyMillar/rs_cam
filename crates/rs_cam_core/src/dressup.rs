@@ -68,6 +68,25 @@ pub struct EntrySurfaceProbe<'a> {
     /// The operation's leave allowance. The probe protects
     /// `surface + stock_to_leave`, not the bare model.
     pub stock_to_leave: f64,
+    /// What a sample beyond the mesh footprint means for this caller.
+    pub off_mesh: OffMeshEntry,
+}
+
+/// Policy for an entry sample beyond the mesh footprint
+/// (G-RAMPTERRAIN design amendment, FINDINGS.md 2026-09-03).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OffMeshEntry {
+    /// Full-height uncut stock can stand beyond the part footprint.
+    /// Give up the shaped entry and plunge at the entry column — the
+    /// generator placed that target on the intended surface, so the
+    /// plunge is stock-aware by construction. The dressup door
+    /// (surface-riding finish operations) uses this.
+    PlungeFallback,
+    /// Beyond the mesh footprint stands prism stock the operation is
+    /// allowed to cut (2.5D roughing): the planned z stands there.
+    /// The adaptive3d door uses this — its entry destination is
+    /// draped and its descent floor covers uncut columns.
+    Unconstrained,
 }
 
 impl EntrySurfaceProbe<'_> {
@@ -580,22 +599,83 @@ pub(crate) fn emit_ramp(
     let half_len = ramp_xy_len / 2.0;
     let mid_z = (ramp_start_z + end.z) / 2.0;
 
-    // Move forward and down to midpoint
-    tp.feed_to_with_intent(
+    let planned = [
+        P3::new(start.x, start.y, ramp_start_z),
         P3::new(
             start.x + dir.0 * half_len,
             start.y + dir.1 * half_len,
             mid_z,
         ),
-        feed_rate,
-        MoveIntent::EntryRamp,
-    );
-    // Move back to start XY at final Z
-    tp.feed_to_with_intent(
         P3::new(start.x, start.y, end.z),
-        feed_rate,
-        MoveIntent::EntryRamp,
-    );
+    ];
+    if let Some(probe) = &safety.surface {
+        // G-RAMPTERRAIN: clip the legs to the drop-cutter floor. On a
+        // lost surface contact, fall back to the straight plunge — the
+        // plunge target sits on the intended surface by construction.
+        match clip_polyline_to_floor(&planned, probe) {
+            Some(points) => {
+                for p in points {
+                    tp.feed_to_with_intent(p, feed_rate, MoveIntent::EntryRamp);
+                }
+            }
+            None => {
+                tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+            }
+        }
+    } else {
+        // Legacy blind legs — honest only with no mesh surface to probe.
+        tp.feed_to_with_intent(planned[1], feed_rate, MoveIntent::EntryRamp);
+        tp.feed_to_with_intent(planned[2], feed_rate, MoveIntent::EntryRamp);
+    }
+}
+
+/// Sample spacing (mm) for the entry-leg clip against the probe floor.
+/// Between two samples a chord can sag below a convex surface by
+/// `curvature * spacing^2 / 8`; at 0.5 mm this stays far inside the
+/// sentry's 0.2 mm tolerance for any surface a cutter can follow.
+const ENTRY_CLIP_SPACING_MM: f64 = 0.5;
+
+/// Clip a planned entry polyline to the probe floor.
+///
+/// Samples each segment every [`ENTRY_CLIP_SPACING_MM`] and lifts each
+/// sample to `max(planned z, floor)`. Returns the points to emit: every
+/// lifted sample plus each segment's own endpoint, so an unclipped
+/// polyline round-trips to exactly the legacy moves. The first point of
+/// `planned` is the current tool position — it seeds the sampling and
+/// is never emitted. Returns `None` when the probe loses surface
+/// contact at any sample.
+///
+/// A chord between an emitted lifted point and the next emitted point
+/// stays at or above the planned straight line, and every skipped
+/// sample was measured at or above the floor, so the emitted path
+/// never dips below a measured sample.
+#[allow(clippy::indexing_slicing)] // windows(2) pairs, bounded
+fn clip_polyline_to_floor(planned: &[P3], probe: &EntrySurfaceProbe<'_>) -> Option<Vec<P3>> {
+    let mut out = Vec::new();
+    for pair in planned.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
+        let len = (dx * dx + dy * dy + dz * dz).sqrt();
+        let n = (len / ENTRY_CLIP_SPACING_MM).ceil().max(1.0) as usize;
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let q = P3::new(a.x + dx * t, a.y + dy * t, a.z + dz * t);
+            let floor = match probe.floor_z(q.x, q.y) {
+                Some(f) => f,
+                None => match probe.off_mesh {
+                    OffMeshEntry::PlungeFallback => return None,
+                    OffMeshEntry::Unconstrained => f64::NEG_INFINITY,
+                },
+            };
+            let lifted = floor > q.z + 1e-6;
+            if lifted {
+                out.push(P3::new(q.x, q.y, floor));
+            } else if k == n {
+                out.push(q);
+            }
+        }
+    }
+    Some(out)
 }
 
 pub(crate) fn emit_helix(
@@ -653,6 +733,7 @@ pub(crate) fn emit_helix(
     let center_y = end.y;
     let helix_top = helix_start_z.min(start.z);
 
+    let mut turns = Vec::with_capacity(total_steps);
     for i in 1..=total_steps {
         let t = i as f64 / total_steps as f64;
         let angle = total_angle * t;
@@ -660,7 +741,30 @@ pub(crate) fn emit_helix(
         let (sin_a, cos_a) = angle.sin_cos();
         let x = center_x + radius * cos_a;
         let y = center_y + radius * sin_a;
-        tp.feed_to_with_intent(P3::new(x, y, z), feed_rate, MoveIntent::EntryHelix);
+        turns.push(P3::new(x, y, z));
+    }
+
+    // G-RAMPTERRAIN: clip every turn sample to the drop-cutter floor.
+    // The 10-degree step is already finer than the leg-clip spacing.
+    // On a lost surface contact, fall back to the straight plunge.
+    if let Some(probe) = &safety.surface {
+        for q in &mut turns {
+            let Some(floor) = probe.floor_z(q.x, q.y) else {
+                match probe.off_mesh {
+                    OffMeshEntry::PlungeFallback => {
+                        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+                        return;
+                    }
+                    OffMeshEntry::Unconstrained => continue,
+                }
+            };
+            if floor > q.z {
+                q.z = floor;
+            }
+        }
+    }
+    for q in turns {
+        tp.feed_to_with_intent(q, feed_rate, MoveIntent::EntryHelix);
     }
 
     // Return to center at final Z
@@ -874,6 +978,33 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
 // Lead-in / Lead-out dressup
 // ---------------------------------------------------------------------------
 
+/// Lift the lead plunge target and the lead arc samples to the probe
+/// floor (G-RAMPTERRAIN S2). Returns `false` when the probe loses
+/// surface contact at any point — the caller then skips the lead
+/// insertion and keeps the generator's original moves.
+fn lift_lead_points(
+    probe: &EntrySurfaceProbe<'_>,
+    plunge_target: &mut P3,
+    arc_pts: &mut [P3],
+) -> bool {
+    let Some(floor) = probe.floor_z(plunge_target.x, plunge_target.y) else {
+        return false;
+    };
+    plunge_target.z = plunge_target.z.max(floor);
+    lift_arc_points(probe, arc_pts)
+}
+
+/// Lift arc samples to the probe floor; `false` on lost contact.
+fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
+    for q in arc_pts {
+        let Some(floor) = probe.floor_z(q.x, q.y) else {
+            return false;
+        };
+        q.z = q.z.max(floor);
+    }
+    true
+}
+
 /// Insert arc lead-in and lead-out moves at the start/end of cutting passes.
 ///
 /// A "cutting pass" is a sequence of feed moves at the same Z bounded by
@@ -911,20 +1042,35 @@ pub fn apply_lead_in_out_with_feeds(
     lead_in_feed_rate: Option<f64>,
     lead_out_feed_rate: Option<f64>,
 ) -> AnnotatedToolpath {
-    apply_lead_in_out_with_provenance(annotated, radius, lead_in_feed_rate, lead_out_feed_rate)
-        .reconcile(&mut ReconcileSet::empty())
-        .into_inner()
+    apply_lead_in_out_with_provenance(
+        annotated,
+        radius,
+        lead_in_feed_rate,
+        lead_out_feed_rate,
+        None,
+    )
+    .reconcile(&mut ReconcileSet::empty())
+    .into_inner()
 }
 
 /// [`apply_lead_in_out_with_feeds`] under the C1 provenance contract —
 /// hands back the arc insertions so channels other than the spans can
 /// follow them.
+///
+/// `surface` (G-RAMPTERRAIN S2): with a probe, the lead plunge target
+/// and every lead arc sample lift to `max(cut_z, floor)` — the lead
+/// stays tangential in XY and follows the surface in Z. If the probe
+/// loses contact at any lead sample, the insertion for that pass is
+/// SKIPPED and the generator's original plunge / retract stays. When
+/// no sample lifts, the emitted moves are byte-identical to the
+/// probe-less output.
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn apply_lead_in_out_with_provenance(
     annotated: AnnotatedToolpath,
     radius: f64,
     lead_in_feed_rate: Option<f64>,
     lead_out_feed_rate: Option<f64>,
+    surface: Option<&EntrySurfaceProbe<'_>>,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -1045,23 +1191,13 @@ pub fn apply_lead_in_out_with_provenance(
                     // production CAM (Fusion HSM / Mastercam) and is what
                     // operators expect when they enable lead_in_out.
                     let safe_z = moves[i - 1].target.z;
-                    let entry_start = result.moves.len();
-                    // Move 1: pre-position rapid at safe_z above lead_start.
-                    result.rapid_to_with_intent(
-                        P3::new(lead_start.x, lead_start.y, safe_z),
-                        crate::toolpath::MoveIntent::LeadIn,
-                    );
-                    // Move 2: pure-Z plunge down to cut depth. Tagged as
-                    // EntryPlunge so engagement metrics + modulation treat
-                    // it as a plunge, not a lead-in arc.
-                    result.feed_to_with_intent(
-                        lead_start,
-                        plunge_rate,
-                        crate::toolpath::MoveIntent::EntryPlunge,
-                    );
 
+                    // Plan the whole lead before emitting anything, so
+                    // the surface probe can lift or veto it
+                    // (G-RAMPTERRAIN S2).
                     // Arc from lead_start to plunge_end (quarter circle)
                     let arc_steps = 8;
+                    let mut arc_pts: Vec<P3> = Vec::with_capacity(arc_steps);
                     for s in 1..=arc_steps {
                         let t = s as f64 / arc_steps as f64;
                         let angle = std::f64::consts::FRAC_PI_2 * t;
@@ -1070,22 +1206,50 @@ pub fn apply_lead_in_out_with_provenance(
                             - ux * radius * (1.0 - cos_a);
                         let ay = plunge_end.y + perp_y * radius * (1.0 - sin_a)
                             - uy * radius * (1.0 - cos_a);
-                        result.feed_to_with_intent(
-                            P3::new(ax, ay, cut_z),
-                            li_feed,
+                        arc_pts.push(P3::new(ax, ay, cut_z));
+                    }
+                    let mut plunge_target = lead_start;
+                    let lead_ok = match surface {
+                        None => true,
+                        Some(probe) => lift_lead_points(probe, &mut plunge_target, &mut arc_pts),
+                    };
+
+                    if lead_ok {
+                        let entry_start = result.moves.len();
+                        // Move 1: pre-position rapid at safe_z above lead_start.
+                        result.rapid_to_with_intent(
+                            P3::new(lead_start.x, lead_start.y, safe_z),
                             crate::toolpath::MoveIntent::LeadIn,
                         );
-                    }
-                    let entry_end = result.moves.len();
-                    if entry_end > entry_start {
-                        old_to_new.push(Some(entry_start..entry_end));
-                        entry_ranges.push(entry_start..entry_end);
-                    } else {
-                        old_to_new.push(None);
-                    }
+                        // Move 2: pure-Z plunge down to the lifted target.
+                        // Tagged as EntryPlunge so engagement metrics +
+                        // modulation treat it as a plunge, not a lead-in arc.
+                        result.feed_to_with_intent(
+                            plunge_target,
+                            plunge_rate,
+                            crate::toolpath::MoveIntent::EntryPlunge,
+                        );
+                        for q in arc_pts {
+                            result.feed_to_with_intent(
+                                q,
+                                li_feed,
+                                crate::toolpath::MoveIntent::LeadIn,
+                            );
+                        }
+                        let entry_end = result.moves.len();
+                        if entry_end > entry_start {
+                            old_to_new.push(Some(entry_start..entry_end));
+                            entry_ranges.push(entry_start..entry_end);
+                        } else {
+                            old_to_new.push(None);
+                        }
 
-                    i += 1;
-                    continue;
+                        i += 1;
+                        continue;
+                    }
+                    // Probe lost surface contact along the lead: keep the
+                    // generator's original plunge (fall through to the
+                    // plain copy below).
                 }
             }
         }
@@ -1120,21 +1284,43 @@ pub fn apply_lead_in_out_with_provenance(
                     // otherwise falls back to the cut-pass's feed rate.
                     let lo_feed = lead_out_feed_rate.unwrap_or(cut_feed_rate);
 
-                    // Emit the original cut endpoint
-                    let cut_idx = result.moves.len();
-                    result.moves.push(moves[i].clone());
-
-                    // Lead-out: quarter-circle arc departing tangentially
-                    let lo_start = result.moves.len();
+                    // Plan the lead-out arc before emitting anything,
+                    // so the surface probe can lift or veto it
+                    // (G-RAMPTERRAIN S2).
                     let arc_steps = 8;
+                    let mut lo_pts: Vec<P3> = Vec::with_capacity(arc_steps);
                     for s in 1..=arc_steps {
                         let t = s as f64 / arc_steps as f64;
                         let angle = std::f64::consts::FRAC_PI_2 * t;
                         let (sin_a, cos_a) = angle.sin_cos();
                         let ax = cut_end.x + ux * radius * sin_a + perp_x * radius * (1.0 - cos_a);
                         let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
+                        lo_pts.push(P3::new(ax, ay, cut_z));
+                    }
+                    let lead_out_ok = match surface {
+                        None => true,
+                        Some(probe) => lift_arc_points(probe, &mut lo_pts),
+                    };
+                    if !lead_out_ok {
+                        // Probe lost surface contact along the lead-out:
+                        // keep the generator's original retract (fall
+                        // through to the plain copy below).
+                        let new_idx = result.moves.len();
+                        result.moves.push(moves[i].clone());
+                        old_to_new.push(Some(new_idx..new_idx + 1));
+                        i += 1;
+                        continue;
+                    }
+
+                    // Emit the original cut endpoint
+                    let cut_idx = result.moves.len();
+                    result.moves.push(moves[i].clone());
+
+                    // Lead-out: quarter-circle arc departing tangentially
+                    let lo_start = result.moves.len();
+                    for q in lo_pts {
                         result.feed_to_with_intent(
-                            P3::new(ax, ay, cut_z),
+                            q,
                             lo_feed,
                             crate::toolpath::MoveIntent::LeadOut,
                         );
