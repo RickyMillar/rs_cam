@@ -451,6 +451,24 @@ down.
 If it cannot win here it cannot win anywhere; the pre-registered
 second-region check is moot. V2 never opens.
 
+**RULING RE-BOUNDED same day (operator-caught).** The operator
+looked at the render and asked two questions the ruling had not:
+the traced tree was the DENSEST rung (T = 8 — a branch every
+~1.7 mm against fans 2.6–7 mm wide, so fan overlap was certain by
+arithmetic), and the territory was a planner band-region — a
+corridor of many catchments' parallel trunks — not the proposal's
+one-catchment decomposition. That is meta-error §2 in this repo's
+own doctrine: the configuration could not express the candidate's
+advantage. The closure is therefore **BOUNDED, not final**: V1
+refutes per-branch tracing of the dense network on band-region
+territory. It does not test (a) a sparse trunk tree (e.g. the
+T = 512 rung: ~455 mm of network, lines ~8 mm apart — fans would
+barely overlap), or (b) catchment-decomposed territory. "If it
+cannot win here it cannot win anywhere" is WITHDRAWN — region 1
+was favourable for seams and unfavourable for fan separation, and
+the ruling conflated the two axes. A V1b (same harness, sparse
+tree) is the cheap next falsifier if the operator wants it.
+
 **Findings that outlive the closure:**
 
 1. **S′ ≡ S — fringe excision ALONE is insufficient on region 1;
