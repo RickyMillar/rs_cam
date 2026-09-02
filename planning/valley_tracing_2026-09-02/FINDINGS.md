@@ -453,21 +453,35 @@ second-region check is moot. V2 never opens.
 
 **Findings that outlive the closure:**
 
-1. **S′ ≡ S — the fringe-excision premise FAILS on region 1.**
-   Both permitted identifications (DT ≥ 2 mm interior; mask-as-
-   region) leave θ_max = 45.000°. The clamp is pinned by genuine
-   in-region steep ground, not the overlap fringe: region 1's own
-   3D area is **42.90 % steeper than 45°**. Avenue G's mechanism
-   statement must be corrected from "fringe-driven" to "steep
-   inclusions inside Shallow polygons" — and the refund may be
-   zero on regions like this one.
+1. **S′ ≡ S — fringe excision ALONE is insufficient on region 1;
+   the avenue-G mechanism is broader, not absent.** Both permitted
+   identifications (DT ≥ 2 mm interior; mask-as-region) leave
+   θ_max = 45.000°, because **42.90 % of the region polygon's 3D
+   area is steeper than 45°** — and per finding 2 those are the
+   SAME cells the Shallow band does not own and cannot finish to
+   spec by construction. So the correct mechanism statement is:
+   **non-owned steep inclusions inside Shallow polygons set the
+   band's derate; the 2 mm overlap fringe is one SOURCE of such
+   cells, not the whole mechanism.** The spec question is
+   unchanged, and the refund is NOT "possibly zero" — the
+   unmeasured quantity is the refund from excising everything the
+   band does not own (owned-cells-only θ_max), which region 1's
+   slope census makes plausibly large. Region 1 shows only that
+   the 2 mm-DT excision does not reach it.
 2. **The Shallow region polygon is not the band's territory.** The
    coverage audit read ~47 % of the region polygon unmachined at
    spec — attributed by the slope census: every mm² steeper than
    the 45° clamp is under-covered by the Shallow arm BY
-   CONSTRUCTION and belongs to other bands. Any union-coverage
-   instrument (Track M) must audit band-territory ownership, not
-   region polygons, or every Shallow op reads ~half uncovered.
+   CONSTRUCTION. Two hypotheses, NOT resolved here: (a) the region
+   polygons are XY outlines whose steep holes are simply not
+   carved out — then Track M must audit band-CELL ownership, not
+   polygons, or every Shallow op reads ~half uncovered; (b) the
+   planner's slope classification disagrees with the true-surface
+   census (`ClassificationSampler::PRODUCTION`) — which would be a
+   planner-side classification defect LARGER than anything Track H
+   measured. Deciding between them is one comparison of the
+   planner's band-cell set against the census slope map, and it
+   belongs to whoever picks up avenue G.
 3. **The achieved-spacing gate for terrain arms remains unbuilt.**
    The b1 instrument needs an analytic contact oracle and a 0°
    lattice; neither holds here. Moot for this ruling (T lost on

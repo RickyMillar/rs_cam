@@ -244,27 +244,33 @@ cutting distance on nearly the whole band) because their θ_max
 saturates at 45.000°, the band's own clamp**
 (`valley_prize_census_h0.rs` M4 block).
 
-**Mechanism CORRECTED same day by Track H's V1 run:** the first
-reading blamed the 2 mm `overlap_mm` band-boundary fringe. On
+**Mechanism BROADENED same day by Track H's V1 run:** the first
+reading named the 2 mm `overlap_mm` band-boundary fringe. On
 region 1 (the largest, probed directly) BOTH fringe-excision
-identifications leave θ_max = 45.000° — the clamp is pinned by
-genuine in-region steep ground: **42.90 % of region 1's own 3D
-area is steeper than 45°** (`valley_branch_falsifier_h1.rs` slope
-census). The Shallow region POLYGON encloses steep territory that
-the Shallow band does not own and cannot finish to spec by
-construction (~47 % of the polygon audited uncovered at spec — an
-ownership artefact, not an op defect). So the spec question
-broadens: should cells the band cannot meet spec on anyway (steeper
-than the clamp, owned by other bands) set the band's derate at all?
+identifications leave θ_max = 45.000°, because **42.90 % of the
+region polygon's 3D area is steeper than 45°**
+(`valley_branch_falsifier_h1.rs` slope census) — and those are
+cells the Shallow band does not own and cannot finish to spec by
+construction (~47 % of the polygon audits uncovered at spec — an
+ownership artefact, not an op defect). Correct statement:
+**non-owned steep inclusions inside Shallow polygons set the
+band's derate; the fringe is one source of such cells.** The spec
+question is unchanged and sharper: should cells the band cannot
+meet spec on anyway set the band's stepover?
 
-The refund may be large or zero per region — region 1 says zero
-under fringe excision alone; excising ALL > 45° inclusions is the
-unmeasured variant. Measure first: per-region θ_max with
-steep-inclusion excision and the priced distance refund. Any
-enacted change **inherits G-UNIONCOV** (§12) and must wait for the
-Track M union audit — and Track M should note: **the union audit
-must reason about band-territory ownership, not region polygons**,
-or every Shallow op reads ~half uncovered.
+The refund is UNMEASURED with a plausibly large upper bound
+(region 1 shows only that the 2 mm-DT excision does not reach the
+non-owned cells; owned-cells-only θ_max is the unmeasured
+variant). Measure first: per-region θ_max over the band's OWN
+cells and the priced distance refund. Also decide which of two
+hypotheses explains the 42.9 %: XY polygons with steep holes not
+carved out, or a planner-vs-true-surface classification
+disagreement — the second would be a planner defect larger than
+anything Track H measured (`valley_tracing_2026-09-02/FINDINGS.md`
+V1 finding 2). Any enacted change **inherits G-UNIONCOV** (§12)
+and must wait for the Track M union audit — and Track M must audit
+**band-CELL ownership, not region polygons**, or every Shallow op
+reads ~half uncovered.
 
 ## 6. Not recommended — do not reopen without the stated evidence
 
