@@ -514,3 +514,61 @@ tree) is the cheap next falsifier if the operator wants it.
    (spacing-along-pass) — a different lever entirely.
 
 ### V2 — NEVER OPENS (tracing arm closed at V1)
+
+## Phase W — catchment ZONES (operator reframe, 2026-09-02)
+
+The operator's clarified proposal: a catchment is a ZONE — one
+basin, ridge divide to trunk, the FULL slope range, replacing the
+band split within each zone. The operator offered two variants and
+delegated the choice: (1) passes anchored on the valley bottom,
+offset outward; (2) the EXISTING scallop op run per basin (anchored
+on the divide, converging onto the valley bottom). Variant 2 is
+adopted first: for a simply connected basin the two anchors give
+the same pass family, and variant 2 costs zero generator code.
+Whether basins ARE simply connected is part of what W0 measures —
+tributary saddles pinch divide-inward offsets exactly where
+confluences split trunk-outward ones, so "same family" is a claim
+under test, not settled.
+
+**No band clip this time.** W runs on the full front finish
+territory, all slopes. The V0 Shallow-band clip was an unflagged
+assumption and is the reason Track H tested flat floors.
+
+**Comparator:** ledger arm A (whole-board `Scallop`, R1.0) — the
+best measured single-op on this board (10 057 s finish, 11 mm
+rapids, ~untouched debit 1 425 mm² pending the union instrument).
+A win over arm A would still need the ledger's arm-B correction
+re-run before any claim against PRODUCTION (arm C).
+
+**Stated win mechanisms (X4):** (i) fewer interior pinch-outs if
+basins are closer to topological disks than the board (measurable
+from shape census + §9's compact-vs-elongated rule); (ii) the
+untouched-debit question — UNMEASURABLE until Track M's union
+audit exists, so it cannot be a bar; (iii) landform-conformal
+appearance — real, operator-review material, never a bar.
+
+### W0 — basin census. Pre-registered BEFORE its run.
+
+Extract watersheds on the full territory (flow machinery from the
+V0 instrument; basins draining to trunk outlets at the T = 512
+trunk network; merge basins < 50 mm² into their downstream
+neighbour). Report per basin: area, simple-connectivity, PCA
+aspect ratio, slope-band mix, clipped-by-territory flag; plus
+basin count, total divide length, and an SVG of the basin map over
+the hillshade.
+
+- **Bar W0-a (shape, DECIDING):** ≥ 50 % of front-finish-territory
+  area lies in basins that are simply connected AND have PCA
+  aspect ≤ 2 (the compact class per §9: sphere 1.036× vs ribbon
+  2.525×; aspect 2 is the declared cut, derived from nothing
+  sharper — stated as a judgment, pre-registered).
+- **Seam budget (reported, ruled by the orchestrator):** two
+  declared predictors bracket decomposition overhead — closed-ring
+  model 0.38 s × 2 × N_basins; open-pass model 0.38 s ×
+  L_divide / 0.486 mm. The budget is the D_pot prize scale
+  (~150 s on this territory). If even the LOWER bracket exceeds
+  it, W closes.
+- W0-a fails → **phase W CLOSES on the census**, same as V0 would
+  have — no build. Passes → W1: production scallop per basin vs
+  arm A's scallop on the same territory, equal achieved scallop,
+  existing harness; W1's bars are written before any W1 run.

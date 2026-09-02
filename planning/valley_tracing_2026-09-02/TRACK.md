@@ -17,7 +17,10 @@
 > unharvested; avenue F is the surviving lever. RE-BOUNDED same day
 > (operator-caught): V1 refutes DENSE-tree tracing on band regions
 > only — sparse trunk tree and catchment decomposition are untested;
-> V1b is the open option. Two follow-on
+> V1b was superseded by the operator's reframe: a catchment is a
+> ZONE (full slope range, band split replaced within it). Phase W
+> is open — W0 basin census pre-registered, existing-scallop-per-
+> basin (W1) gated on it, comparator = ledger arm A. Two follow-on
 > findings routed out: avenue G's mechanism corrected
 > (steep inclusions, not fringe) and the region-polygon vs
 > band-territory distinction for Track M. See `FINDINGS.md`.
