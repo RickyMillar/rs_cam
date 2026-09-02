@@ -256,6 +256,16 @@ impl Field {
         self.nx * self.ny
     }
 
+    fn index_at(&self, x: f64, y: f64) -> Option<usize> {
+        let col = ((x - self.ox) / self.cell).round();
+        let row = ((y - self.oy) / self.cell).round();
+        if col < 0.0 || row < 0.0 {
+            return None;
+        }
+        let (col, row) = (col as usize, row as usize);
+        (col < self.nx && row < self.ny).then_some(row * self.nx + col)
+    }
+
     fn xy(&self, i: usize) -> P2 {
         let row = i / self.nx;
         let col = i % self.nx;
@@ -292,42 +302,87 @@ impl Field {
     /// being cells at or below the water level the fill did NOT reach, i.e.
     /// the interior lake beds this correction recovers as land. W0's global
     /// threshold discarded exactly those.
-    fn land_view_border_connected(&self, water_level: f64) -> (Self, usize, usize) {
+    fn land_view_border_connected(&self, water_level: f64) -> (Self, SeaReport) {
         let n = self.len();
         let is_water = |i: usize| -> bool { !self.nodata[i] && self.z[i] <= water_level };
-        let mut sea = vec![false; n];
+        // Every connected water body, 4-connected, with the two facts that
+        // decide which of them is the sea.
+        let mut comp = vec![u32::MAX; n];
+        let mut sizes: Vec<usize> = Vec::new();
+        let mut touches_border: Vec<bool> = Vec::new();
         let mut queue: VecDeque<usize> = VecDeque::new();
-        for (i, slot) in sea.iter_mut().enumerate().take(n) {
-            let (r, c) = (i / self.nx, i % self.nx);
-            let border = r == 0 || c == 0 || r + 1 == self.ny || c + 1 == self.nx;
-            if border && is_water(i) && !*slot {
-                *slot = true;
-                queue.push_back(i);
+        for start in 0..n {
+            if !is_water(start) || comp[start] != u32::MAX {
+                continue;
             }
-        }
-        while let Some(c) = queue.pop_front() {
-            let (r, col) = (c / self.nx, c % self.nx);
-            let visit = |j: usize, sea: &mut Vec<bool>, q: &mut VecDeque<usize>| {
-                if is_water(j) && !sea[j] {
-                    sea[j] = true;
-                    q.push_back(j);
+            let id = sizes.len() as u32;
+            let mut size = 0usize;
+            let mut border = false;
+            comp[start] = id;
+            queue.push_back(start);
+            while let Some(c) = queue.pop_front() {
+                size += 1;
+                let (r, col) = (c / self.nx, c % self.nx);
+                if r == 0 || col == 0 || r + 1 == self.ny || col + 1 == self.nx {
+                    border = true;
                 }
-            };
-            if col > 0 {
-                visit(c - 1, &mut sea, &mut queue);
+                let visit = |j: usize, comp: &mut Vec<u32>, q: &mut VecDeque<usize>| {
+                    if is_water(j) && comp[j] == u32::MAX {
+                        comp[j] = id;
+                        q.push_back(j);
+                    }
+                };
+                if col > 0 {
+                    visit(c - 1, &mut comp, &mut queue);
+                }
+                if col + 1 < self.nx {
+                    visit(c + 1, &mut comp, &mut queue);
+                }
+                if r > 0 {
+                    visit(c - self.nx, &mut comp, &mut queue);
+                }
+                if r + 1 < self.ny {
+                    visit(c + self.nx, &mut comp, &mut queue);
+                }
             }
-            if col + 1 < self.nx {
-                visit(c + 1, &mut sea, &mut queue);
-            }
-            if r > 0 {
-                visit(c - self.nx, &mut sea, &mut queue);
-            }
-            if r + 1 < self.ny {
-                visit(c + self.nx, &mut sea, &mut queue);
-            }
+            sizes.push(size);
+            touches_border.push(border);
         }
-        let sea_cells = sea.iter().filter(|&&w| w).count();
-        let interior_water = (0..n).filter(|&i| is_water(i) && !sea[i]).count();
+        // The PRE-REGISTERED rule: the sea is whatever touches the grid border.
+        let border_cells: usize = (0..sizes.len())
+            .filter(|&k| touches_border[k])
+            .map(|k| sizes[k])
+            .sum();
+        // The ALTERNATIVE, used only when the pre-registered rule seeds
+        // nothing, and reported as such: the largest water body.
+        let largest = (0..sizes.len()).max_by_key(|&k| sizes[k]);
+        let used_fallback = border_cells == 0;
+        let sea: Vec<bool> = (0..n)
+            .map(|i| {
+                let Some(k) = (comp[i] != u32::MAX).then(|| comp[i] as usize) else {
+                    return false;
+                };
+                if used_fallback {
+                    Some(k) == largest
+                } else {
+                    touches_border[k]
+                }
+            })
+            .collect();
+        let mut ranked: Vec<(usize, usize, bool)> = (0..sizes.len())
+            .map(|k| (sizes[k], k, touches_border[k]))
+            .collect();
+        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        ranked.truncate(6);
+        let report = SeaReport {
+            bodies: sizes.len(),
+            border_connected_cells: border_cells,
+            used_largest_body_fallback: used_fallback,
+            sea_cells: sea.iter().filter(|&&w| w).count(),
+            interior_water_cells: (0..n).filter(|&i| is_water(i)).count()
+                - sea.iter().filter(|&&w| w).count(),
+            largest_bodies: ranked,
+        };
         let nodata = (0..n).map(|i| self.nodata[i] || sea[i]).collect();
         (
             Self {
@@ -339,10 +394,27 @@ impl Field {
                 z: self.z.clone(),
                 nodata,
             },
-            sea_cells,
-            interior_water,
+            report,
         )
     }
+}
+
+/// What the water census found — printed in full, because which body is "the
+/// sea" is the load-bearing choice of the whole W0b correction.
+struct SeaReport {
+    bodies: usize,
+    /// Cells in bodies that touch the grid border — the PRE-REGISTERED rule's
+    /// answer. Zero on this board: the perimeter is the raised machining rim,
+    /// not water.
+    border_connected_cells: usize,
+    /// True when the pre-registered rule seeded nothing and the largest water
+    /// body was used instead. Reported loudly; it is NOT the pre-registered
+    /// rule.
+    used_largest_body_fallback: bool,
+    sea_cells: usize,
+    interior_water_cells: usize,
+    /// `(cells, id, touches_border)` for the six largest bodies.
+    largest_bodies: Vec<(usize, usize, bool)>,
 }
 
 /// The eight D8 offsets and their step lengths in cells.
@@ -1563,9 +1635,9 @@ fn write_basin_svg(inputs: &BasinSvg<'_>, path: &Path, title: &str) -> std::io::
         svg,
         "<g id=\"drainage\" fill=\"none\" stroke-linecap=\"round\" \
          stroke-linejoin=\"round\">\n\
-         <path d=\"{dd}\" stroke=\"#f4f4f2\" stroke-width=\"0.85\" \
-         stroke-opacity=\"0.9\"/>\n\
-         <path d=\"{dd}\" stroke=\"#0f2f6b\" stroke-width=\"0.34\"/></g>"
+         <path d=\"{dd}\" stroke=\"#fbfbf8\" stroke-width=\"1.20\" \
+         stroke-opacity=\"0.95\"/>\n\
+         <path d=\"{dd}\" stroke=\"#0b2a63\" stroke-width=\"0.62\"/></g>"
     );
     let (ts, tnx, tny) = downsample_bool(inputs.territory, field.nx, field.ny, factor);
     let loops = marching_squares_bool_grid(&ts, tny, tnx, field.ox, field.oy, ds_cell);
@@ -1732,7 +1804,33 @@ fn wanaka_catchment_basin_census_w0b() {
     );
 
     // ── W0b hydrology: base level is BORDER-CONNECTED water only ──
-    let (hydro, sea_cells, interior_water_cells) = field.land_view_border_connected(WATER_LEVEL_MM);
+    let (hydro, sea) = field.land_view_border_connected(WATER_LEVEL_MM);
+    let (sea_cells, interior_water_cells) = (sea.sea_cells, sea.interior_water_cells);
+    if sea.used_largest_body_fallback {
+        eprintln!(
+            "\n***** PRE-REGISTERED RULE SEEDED NOTHING — READ THIS BEFORE ANY NUMBER *****\n\
+             \x20  W0b says: base level = water CONNECTED TO THE BOARD BORDER. On this board\n\
+             \x20  NO water body touches the grid border: the perimeter is the raised MACHINING\n\
+             \x20  RIM (`edge_profile = 3`, `edge_wall_deg = 41` in rivmap_data.toml), and the\n\
+             \x20  coastline trench sits INSIDE it. Border-connected water = {} cells.\n\
+             \x20  Every census number below therefore uses the LARGEST water body as the sea,\n\
+             \x20  which is an ALTERNATIVE this agent did not invent a justification for and\n\
+             \x20  the orchestrator has not pre-registered. Rule on the water census first.\n\
+             ****************************************************************************",
+            sea.border_connected_cells
+        );
+    }
+    eprintln!(
+        "\nWATER CENSUS at or below {WATER_LEVEL_MM} mm — {} separate bodies; six largest:",
+        sea.bodies
+    );
+    for (cells, id, border) in &sea.largest_bodies {
+        eprintln!(
+            "\x20  body {id:>5}: {cells:>8} cells = {:>9.1} mm²   touches grid border: {}",
+            *cells as f64 * cell_area,
+            if *border { "YES" } else { "no" }
+        );
+    }
     let raw_filled = priority_flood_epsilon(&hydro);
     // BEFORE flat resolution — kept so the correction's effect is measured.
     let raw_receivers = d8_receivers(&hydro, &raw_filled);
@@ -2059,6 +2157,117 @@ fn wanaka_catchment_basin_census_w0b() {
             divides[i] = edge;
         }
     }
+    // ── the operator's visual check, MEASURED ──
+    //
+    // A drainage polyline segment whose two ends sit in DIFFERENT basins is a
+    // stream crossing a divide. A few are expected and correct: a trunk LINK
+    // ends where the next link begins, so every junction is one legitimate
+    // crossing. A large count would mean the labelling does not follow the
+    // drainage, which is exactly what the eye is being asked to check.
+    let drainage_probe = drainage_polylines(&field, &receivers, &acc, &trunk);
+    let mut segments = 0usize;
+    let mut crossings = 0usize;
+    for line in &drainage_probe {
+        for w in line.windows(2) {
+            let (Some(a), Some(b)) = (
+                field.index_at(w[0].x, w[0].y),
+                field.index_at(w[1].x, w[1].y),
+            ) else {
+                continue;
+            };
+            if !territory[a] || !territory[b] {
+                continue;
+            }
+            segments += 1;
+            if label[a] != label[b] {
+                crossings += 1;
+            }
+        }
+    }
+    eprintln!(
+        "\n---------- drainage vs divides (the visual check, measured) ----------\n\
+         \x20  {} in-territory drainage segments; {crossings} cross a basin divide \
+         ({:.3} %).\n\
+         \x20  A trunk LINK ends where the next begins, so one crossing per junction is \
+         correct;\n\
+         \x20  a large share would mean the labelling does not follow the drainage.",
+        segments,
+        100.0 * crossings as f64 / segments.max(1) as f64,
+    );
+
+    // ── avenue F: the spacing-variation prize field ──
+    //
+    // `p(x) = s_max(spec h) · cos(theta(x))` — the locally allowed XY pass
+    // pitch. With a fixed tool and a fixed scallop, `s_max` has no spatial
+    // term, so all the variation is the slope's, which is the only spatial
+    // field this census holds. REPORTED, no bar: it gates whether a
+    // variable-spacing (Eikonal-weighted) ring candidate is worth
+    // pre-registering at all.
+    //
+    // `mean/min` is reported twice: against the true minimum, and against the
+    // 1st percentile. A single near-vertical cell drives `min` to ~0 and the
+    // raw ratio to infinity, so the p1 form is the one that survives an
+    // outlier; both are named rather than one being chosen.
+    let pick = |v: &[f64], q: f64| -> f64 {
+        if v.is_empty() {
+            f64::NAN
+        } else {
+            v[(((v.len() - 1) as f64) * q).round() as usize]
+        }
+    };
+    let spacing_row = |cells: &[usize]| -> Option<(f64, f64, f64, f64, f64, f64, f64)> {
+        let mut p: Vec<f64> = cells
+            .iter()
+            .filter_map(|&i| slope_deg.get(i).map(|d| stepover * d.to_radians().cos()))
+            .filter(|v| v.is_finite())
+            .collect();
+        if p.is_empty() {
+            return None;
+        }
+        p.sort_by(f64::total_cmp);
+        let mean = p.iter().sum::<f64>() / p.len() as f64;
+        let min = p[0];
+        let p1 = pick(&p, 0.01);
+        Some((
+            mean,
+            min,
+            p1,
+            pick(&p, 0.10),
+            pick(&p, 0.50),
+            pick(&p, 0.90),
+            mean / p1.max(1e-9),
+        ))
+    };
+    eprintln!(
+        "\n---------- AVENUE F: spacing-variation prize field ----------\n\
+         \x20  p(x) = s_max · cos(theta(x)), s_max = {stepover:.6} mm. REPORTED, NO BAR.\n\
+         \x20  `mean/min` uses the true minimum; `mean/p1` guards it at the 1st percentile.\n"
+    );
+    eprintln!(
+        "     {:>26}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}  {:>9}  {:>10}  {:>9}",
+        "population", "mean", "min", "p1", "p10", "p50", "p90", "mean/min", "mean/p1"
+    );
+    let report_spacing = |name: &str, cells: &[usize]| {
+        if let Some((mean, min, p1, p10, p50, p90, ratio_p1)) = spacing_row(cells) {
+            eprintln!(
+                "     {name:>26}  {mean:>9.5}  {min:>9.5}  {p1:>9.5}  {p10:>9.5}  {p50:>9.5}  \
+                 {p90:>9.5}  {:>10.3}  {ratio_p1:>9.3}",
+                mean / min.max(1e-12)
+            );
+        } else {
+            eprintln!("     {name:>26}  EMPTY POPULATION — nothing measured");
+        }
+    };
+    report_spacing("WHOLE TERRITORY", &territory_cells);
+    for (n, (b, _)) in main.shapes.iter().enumerate().take(20) {
+        let cells: Vec<usize> = territory_cells
+            .iter()
+            .copied()
+            .filter(|&i| label[i] == *b)
+            .collect();
+        report_spacing(&format!("basin {}", n + 1), &cells);
+    }
+
     let dir = svg_output_dir();
     let path = dir.join("wanaka_basins_w0b.svg");
     let drainage = drainage_polylines(&field, &receivers, &acc, &trunk);
