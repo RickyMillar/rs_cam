@@ -584,6 +584,45 @@ fn toolpath_from_runs(runs: &[Vec<P3>], safe_z: f64) -> Toolpath {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// SVG dump — so the operator can eyeball the arms
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Write pass runs as one SVG (y flipped so +Y is up). `window` crops;
+/// pass the full bbox for the whole board.
+fn svg_dump(path: &std::path::Path, runs: &[Vec<P3>], window: [f64; 4], stroke: f64) {
+    use std::fmt::Write as _;
+    let [x0, y0, x1, y1] = window;
+    let (w, h) = (x1 - x0, y1 - y0);
+    let ph = 1000.0 * h / w.max(1e-9);
+    let mut svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w:.1} {h:.1}\" \
+         width=\"1000\" height=\"{ph:.0}\">\n\
+         <rect width=\"100%\" height=\"100%\" fill=\"#101418\"/>\n\
+         <g fill=\"none\" stroke=\"#7fd4ff\" stroke-width=\"{stroke}\" \
+         stroke-linejoin=\"round\">\n"
+    );
+    for run in runs {
+        let mut d = String::new();
+        let mut pen_down = false;
+        for pt in run {
+            let inside = pt.x >= x0 && pt.x <= x1 && pt.y >= y0 && pt.y <= y1;
+            if inside {
+                let cmd = if pen_down { 'L' } else { 'M' };
+                let _ = write!(d, "{cmd}{:.2},{:.2}", pt.x - x0, y1 - pt.y);
+                pen_down = true;
+            } else {
+                pen_down = false;
+            }
+        }
+        if !d.is_empty() {
+            let _ = writeln!(svg, "<path d=\"{d}\"/>");
+        }
+    }
+    svg.push_str("</g>\n</svg>\n");
+    let _ = std::fs::write(path, svg);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // The instrument
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1110,6 +1149,33 @@ fn wanaka_graded_raster_e1() {
         e_arms.push((format!("E W={w:.0}mm graded"), runs, exceed_pct, tilt_pct));
     }
     eprintln!("  arm E family built, {:.0} s", t1.elapsed().as_secs_f64());
+
+    // ── SVG dump: arm S plus three W settings, full board + a crop on the
+    //    largest Shallow region (mixed flat/gully ground) ─────────────────
+    {
+        let out = std::path::Path::new("target/graded_raster_e1");
+        let _ = std::fs::create_dir_all(out);
+        let board = [
+            mesh.bbox.min.x,
+            mesh.bbox.min.y,
+            mesh.bbox.max.x,
+            mesh.bbox.max.y,
+        ];
+        let [bx0, by0, bx1, by1] = shallow[0].bbox();
+        let (cx, cy) = ((bx0 + bx1) / 2.0, (by0 + by1) / 2.0);
+        let crop = [cx - 20.0, cy - 20.0, cx + 20.0, cy + 20.0];
+        let dumps: [(&str, &Vec<Vec<P3>>); 4] = [
+            ("arm_S_raster", &runs_s),
+            ("arm_E_W0", &e_arms[0].1),
+            ("arm_E_W2", &e_arms[2].1),
+            ("arm_E_W8", &e_arms[4].1),
+        ];
+        for (name, runs) in dumps {
+            svg_dump(&out.join(format!("{name}.svg")), runs, board, 0.06);
+            svg_dump(&out.join(format!("{name}_crop.svg")), runs, crop, 0.05);
+        }
+        eprintln!("  SVGs written to target/graded_raster_e1/ (crop at [{crop:?}])");
+    }
 
     // ── cost both arms identically ───────────────────────────────────────
     let boundary = RegionSet::new(all_polys);
