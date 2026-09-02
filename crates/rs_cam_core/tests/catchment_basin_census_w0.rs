@@ -398,10 +398,22 @@ struct Watershed {
     coastal: Vec<bool>,
     trunk_cells: usize,
     junctions: usize,
+    /// Basins opened by a trunk LINK, and by a land outlet that never met a
+    /// trunk. Printed, because the first run of this instrument passed the
+    /// FULL field here while `receivers` came from the LAND view, so every
+    /// sea cell read as a receiver-less outlet and opened its own basin —
+    /// 100 398 of them, which swamped every aggregate. These two counts make
+    /// that class of mistake visible instead of arithmetic.
+    link_basins: usize,
+    outlet_basins: usize,
 }
 
 /// Decompose the trunk network into links and label every land cell with the
 /// link its steepest-descent path first meets.
+///
+/// **`field` MUST be the same domain `receivers` was computed on** — the LAND
+/// view. Handing it the full heightfield makes every sea cell a receiver-less
+/// outlet with a basin of its own.
 fn label_basins(
     field: &Field,
     filled: &[f64],
@@ -456,6 +468,7 @@ fn label_basins(
         }
         coastal.push(false);
     }
+    let link_basins = outlet.len();
 
     // Every land cell inherits its receiver's label unless it is itself trunk.
     // Ascending filled height guarantees the receiver is already resolved.
@@ -482,12 +495,15 @@ fn label_basins(
             }
         }
     }
+    let outlet_basins = outlet.len() - link_basins;
     Watershed {
         label,
         outlet,
         coastal,
         trunk_cells: (0..n).filter(|&i| trunk[i]).count(),
         junctions,
+        link_basins,
+        outlet_basins,
     }
 }
 
@@ -646,6 +662,17 @@ struct ShapeCtx<'a> {
     cell_area: f64,
 }
 
+/// The hydrology, bundled so [`run_rung`] stays inside clippy's argument
+/// bound — and so the LAND view travels WITH the arrays that were computed on
+/// it. Passing `field` where `hydro` belongs is the bug this bundling is
+/// meant to prevent from recurring.
+struct Hydrology<'a> {
+    hydro: &'a Field,
+    filled: &'a [f64],
+    receivers: &'a [Option<u32>],
+    acc: &'a [f64],
+}
+
 /// The per-basin shape row, over `basin ∩ territory`.
 fn basin_shape(ctx: &ShapeCtx<'_>, label: &[u32], basin: u32, coastal: bool) -> Option<BasinShape> {
     let field = ctx.field;
@@ -776,6 +803,8 @@ struct RungResult {
     coastal_area_mm2: f64,
     trunk_cells: usize,
     junctions: usize,
+    link_basins: usize,
+    outlet_basins: usize,
     divide_mm: f64,
     compact_area_mm2: f64,
     territory_area_mm2: f64,
@@ -784,18 +813,18 @@ struct RungResult {
 
 /// Label, merge and measure at one trunk rung.
 fn run_rung(
-    field: &Field,
-    filled: &[f64],
-    receivers: &[Option<u32>],
-    acc: &[f64],
+    hy: &Hydrology<'_>,
     ctx: &ShapeCtx<'_>,
     territory_cells: &[usize],
     trunk_t_mm2: f64,
 ) -> RungResult {
-    let trunk: Vec<bool> = (0..field.len())
-        .map(|i| !field.nodata[i] && acc[i] * ctx.cell_area >= trunk_t_mm2)
+    let field = ctx.field;
+    let (hydro, filled, receivers, acc) = (hy.hydro, hy.filled, hy.receivers, hy.acc);
+    let trunk: Vec<bool> = (0..hydro.len())
+        .map(|i| !hydro.nodata[i] && acc[i] * ctx.cell_area >= trunk_t_mm2)
         .collect();
-    let ws = label_basins(field, filled, receivers, &trunk);
+    // The LAND view, not `field`: `receivers` was computed on it.
+    let ws = label_basins(hydro, filled, receivers, &trunk);
     let before = ws.outlet.len();
     let (remap, merges, stranded) =
         merge_small_basins(&ws, receivers, territory_cells, ctx.cell_area);
@@ -854,6 +883,8 @@ fn run_rung(
         coastal_area_mm2: coastal_area,
         trunk_cells: ws.trunk_cells,
         junctions: ws.junctions,
+        link_basins: ws.link_basins,
+        outlet_basins: ws.outlet_basins,
         divide_mm: divide_length_mm(field, &label, ctx.territory),
         compact_area_mm2: compact_area,
         territory_area_mm2: territory_area,
@@ -1210,16 +1241,24 @@ fn wanaka_catchment_basin_census_w0() {
         slope_deg: &slope_deg,
         cell_area,
     };
+    let hy = Hydrology {
+        hydro: &hydro,
+        filled: &filled,
+        receivers: &receivers,
+        acc: &acc,
+    };
 
     // ── the pre-registered rung, then the two neighbours ──
     let mut results: Vec<RungResult> = Vec::new();
     for &t in &TRUNK_SENSITIVITY_MM2 {
         let t0 = std::time::Instant::now();
-        let r = run_rung(&field, &filled, &receivers, &acc, &ctx, &territory_cells, t);
+        let r = run_rung(&hy, &ctx, &territory_cells, t);
         eprintln!(
             "\n---------- trunk rung T = {t:.0} mm²  ({:.1}s) ----------\n\
-             \x20  trunk cells {} ({} junctions); basins before merge {}, after merge {} \
-             ({} merged, {} could not merge — no downstream neighbour)\n\
+             \x20  trunk cells {} ({} junctions); basins before merge {} = {} trunk LINKS + \
+             {} land outlets;\n\
+             \x20    after merge {} ({} merged, {} could not merge — no downstream \
+             neighbour)\n\
              \x20  coastal basins (reach a LAND OUTLET without meeting a trunk — the case the\n\
              \x20    pre-registration did not name): {} covering {:.1} mm² = {:.2} % of territory\n\
              \x20  divide length (staircase) {:.1} mm;  territory in basins {:.1} mm²",
@@ -1227,6 +1266,8 @@ fn wanaka_catchment_basin_census_w0() {
             r.trunk_cells,
             r.junctions,
             r.basins_before_merge,
+            r.link_basins,
+            r.outlet_basins,
             r.basins_after_merge,
             r.merges,
             r.stranded,
@@ -1380,10 +1421,10 @@ fn wanaka_catchment_basin_census_w0() {
     }
 
     // ── the VISUAL ──
-    let trunk: Vec<bool> = (0..field.len())
+    let trunk: Vec<bool> = (0..hydro.len())
         .map(|i| !hydro.nodata[i] && acc[i] * cell_area >= TRUNK_T_MM2)
         .collect();
-    let ws = label_basins(&field, &filled, &receivers, &trunk);
+    let ws = label_basins(&hydro, &filled, &receivers, &trunk);
     let (remap, _, _) = merge_small_basins(&ws, &receivers, &territory_cells, cell_area);
     let label: Vec<u32> = ws
         .label
