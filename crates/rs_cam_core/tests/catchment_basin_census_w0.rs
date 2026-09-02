@@ -78,6 +78,45 @@
 //! reach — the interior lake beds recovered as land — is printed, because it
 //! is the direct measure of what the correction changed.
 //!
+//! # W0b, second correction — FLAT RESOLUTION
+//!
+//! **The second defect the operator caught.** The drainage network broke on
+//! flat ground: lines stopped at pale flat valley floors and restarted
+//! downstream. The `+epsilon` priority flood gives a gradient only to cells
+//! it RAISES — the inside of a depression. A cell on a NATURAL flat keeps its
+//! own height, so a run of equal-height cells has no strictly-lower
+//! neighbour, `d8_receivers` returns `None`, and routing dies there: the
+//! trunk is chopped at every flat and each stall becomes a spurious outlet
+//! basin. That is a plausible cause of both the 18-trunk-link oddity and part
+//! of the confetti.
+//!
+//! **The fix: Garbrecht–Martz (1997) combined flat gradient**, implemented
+//! with the two breadth-first sweeps of Barnes, Lehman & Soille (2014). For
+//! each flat — a connected group of equal-height cells containing at least one
+//! cell with no lower neighbour:
+//!
+//! ```text
+//!   d_low  = BFS distance from the flat's LOW edge  (cells beside lower ground)
+//!   d_high = BFS distance from the flat's HIGH edge (cells beside higher ground)
+//!   increment = (max d_low - d_low) + d_high
+//!   z += FLAT_EPSILON_MM * increment
+//! ```
+//!
+//! The `max d_low - d_low` term drains the flat toward its spill edge; the
+//! `d_high` term pushes flow away from the surrounding high ground, which is
+//! what makes flow across a wide flat run parallel rather than fan radially
+//! onto the spill point. Both terms are Garbrecht–Martz; taking only the first
+//! would restore continuity but would place the trunk badly inside a lake,
+//! and the map is meant to be read.
+//!
+//! Coastal cells adjacent to the sea, and cells on the grid border, are NOT
+//! treated as flats: they drain off the board and are legitimate outlets.
+//!
+//! `FLAT_EPSILON_MM` is 1e-6 mm and the total imposed rise is capped at
+//! [`FLAT_MAX_RISE_MM`], so flat resolution can never reorder real terrain.
+//! **Trunk-link counts are reported at every rung BEFORE and AFTER flat
+//! resolution**, so the correction's effect is measured rather than asserted.
+//!
 //! ## Shape
 //!
 //! * **Simple connectivity** — marching squares over the basin ∩ territory
@@ -110,7 +149,7 @@
 //!
 //! ```text
 //! cargo test -p rs_cam_core --test catchment_basin_census_w0 \
-//!   wanaka_catchment_basin_census_w0 -- --ignored --nocapture
+//!   wanaka_catchment_basin_census_w0b -- --ignored --nocapture
 //! ```
 //!
 //! `#[ignore]` — needs the operator's wanaka mesh, not in the repo. SKIPS
@@ -165,6 +204,11 @@ const OP_TOLERANCE_MM: f64 = 0.05;
 /// header.
 const WATER_LEVEL_MM: f64 = 0.0;
 const FILL_EPSILON_MM: f64 = 1.0e-6;
+/// Height step imposed per BFS ring of the Garbrecht–Martz flat gradient.
+const FLAT_EPSILON_MM: f64 = 1.0e-6;
+/// Hard cap on the total rise flat resolution may impose on any cell, so it
+/// can never reorder real terrain. The board's relief is ~9.8 mm.
+const FLAT_MAX_RISE_MM: f64 = 1.0e-3;
 
 // ── W0 dials, pre-registered ────────────────────────────────────────────
 
@@ -411,6 +455,152 @@ fn priority_flood_epsilon(field: &Field) -> Vec<f64> {
 
 /// D8 receivers on the filled surface: the steepest-descent neighbour, or
 /// `None` where nothing is lower (an outlet).
+/// **Garbrecht–Martz (1997) combined flat gradient**, two-BFS form after
+/// Barnes, Lehman & Soille (2014). See the file header for why both terms are
+/// kept.
+///
+/// Returns the corrected surface plus `(flats, flat_cells, max_increment)`.
+/// A cell adjacent to nodata (the sea) or on the grid border is never part of
+/// a flat: it drains off the board and is a legitimate outlet.
+fn resolve_flats(field: &Field, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {
+    let n = field.len();
+    let drains_off_board = |i: usize| -> bool {
+        let (r, c) = (i / field.nx, i % field.nx);
+        if r == 0 || c == 0 || r + 1 == field.ny || c + 1 == field.nx {
+            return true;
+        }
+        (0..8).any(|k| neighbour(field, i, k).is_none_or(|(j, _)| field.nodata[j]))
+    };
+    // A cell with no strictly-lower land neighbour, that does not drain off
+    // the board, is where routing currently dies.
+    let mut stalls: Vec<usize> = Vec::new();
+    for i in 0..n {
+        if field.nodata[i] || drains_off_board(i) {
+            continue;
+        }
+        let has_lower = (0..8).any(|k| {
+            neighbour(field, i, k).is_some_and(|(j, _)| !field.nodata[j] && filled[j] < filled[i])
+        });
+        if !has_lower {
+            stalls.push(i);
+        }
+    }
+
+    let mut out = filled.to_vec();
+    let mut member = vec![u32::MAX; n];
+    let mut flats = 0usize;
+    let mut flat_cells = 0usize;
+    let mut max_inc = 0usize;
+    let mut queue: VecDeque<usize> = VecDeque::new();
+
+    for &seed in &stalls {
+        if member[seed] != u32::MAX {
+            continue;
+        }
+        // Grow the flat: cells of EQUAL height, 8-connected.
+        let id = flats as u32;
+        let level = filled[seed];
+        let mut cells: Vec<usize> = Vec::new();
+        member[seed] = id;
+        queue.push_back(seed);
+        while let Some(c) = queue.pop_front() {
+            cells.push(c);
+            for k in 0..8 {
+                let Some((j, _)) = neighbour(field, c, k) else {
+                    continue;
+                };
+                if field.nodata[j] || member[j] != u32::MAX {
+                    continue;
+                }
+                if filled[j] == level {
+                    member[j] = id;
+                    queue.push_back(j);
+                }
+            }
+        }
+        flats += 1;
+        flat_cells += cells.len();
+
+        // Low and high edges of THIS flat.
+        let mut d_low = vec![usize::MAX; cells.len()];
+        let mut d_high = vec![usize::MAX; cells.len()];
+        let mut slot = std::collections::HashMap::with_capacity(cells.len());
+        for (idx, &c) in cells.iter().enumerate() {
+            slot.insert(c, idx);
+        }
+        let mut low_q: VecDeque<usize> = VecDeque::new();
+        let mut high_q: VecDeque<usize> = VecDeque::new();
+        for (idx, &c) in cells.iter().enumerate() {
+            let mut beside_lower = false;
+            let mut beside_higher = false;
+            for k in 0..8 {
+                let Some((j, _)) = neighbour(field, c, k) else {
+                    continue;
+                };
+                if field.nodata[j] {
+                    continue;
+                }
+                if filled[j] < level {
+                    beside_lower = true;
+                } else if filled[j] > level {
+                    beside_higher = true;
+                }
+            }
+            if beside_lower {
+                d_low[idx] = 0;
+                low_q.push_back(idx);
+            }
+            if beside_higher {
+                d_high[idx] = 0;
+                high_q.push_back(idx);
+            }
+        }
+        let sweep = |dist: &mut Vec<usize>, q: &mut VecDeque<usize>| {
+            while let Some(idx) = q.pop_front() {
+                let c = cells[idx];
+                let d = dist[idx];
+                for k in 0..8 {
+                    let Some((j, _)) = neighbour(field, c, k) else {
+                        continue;
+                    };
+                    let Some(&nidx) = slot.get(&j) else { continue };
+                    if dist[nidx] == usize::MAX {
+                        dist[nidx] = d + 1;
+                        q.push_back(nidx);
+                    }
+                }
+            }
+        };
+        sweep(&mut d_low, &mut low_q);
+        sweep(&mut d_high, &mut high_q);
+
+        let max_low = d_low.iter().filter(|&&d| d != usize::MAX).copied().max();
+        let Some(max_low) = max_low else {
+            // No low edge at all: a closed flat the priority flood should have
+            // filled. Leave it — a silent gradient here would invent an
+            // outlet that does not exist.
+            continue;
+        };
+        for idx in 0..cells.len() {
+            let toward_low = if d_low[idx] == usize::MAX {
+                0
+            } else {
+                max_low - d_low[idx]
+            };
+            let from_high = if d_high[idx] == usize::MAX {
+                0
+            } else {
+                d_high[idx]
+            };
+            let inc = toward_low + from_high;
+            max_inc = max_inc.max(inc);
+            let rise = (FLAT_EPSILON_MM * inc as f64).min(FLAT_MAX_RISE_MM);
+            out[cells[idx]] += rise;
+        }
+    }
+    (out, flats, flat_cells, max_inc)
+}
+
 fn d8_receivers(field: &Field, filled: &[f64]) -> Vec<Option<u32>> {
     let n = field.len();
     let mut out = vec![None; n];
@@ -1399,10 +1589,10 @@ fn write_basin_svg(inputs: &BasinSvg<'_>, path: &Path, title: &str) -> std::io::
 
 #[test]
 #[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
-fn wanaka_catchment_basin_census_w0() {
+fn wanaka_catchment_basin_census_w0b() {
     eprintln!(
-        "\n========== Track H W0 — CATCHMENT BASIN CENSUS ==========\n\
-         Pre-registration: planning/valley_tracing_2026-09-02/FINDINGS.md, Phase W + W0.\n\
+        "\n========== Track H W0b — CATCHMENT BASIN CENSUS (lake- and flat-corrected) ==========\n\
+         Pre-registration: planning/valley_tracing_2026-09-02/FINDINGS.md, Phase W + W0 + W0b.\n\
          A CENSUS ONLY — no toolpath generation, no strategy code. NUMBERS ONLY:\n\
          bar W0-a and the seam budget are the orchestrator's.\n"
     );
@@ -1543,9 +1733,20 @@ fn wanaka_catchment_basin_census_w0() {
 
     // ── W0b hydrology: base level is BORDER-CONNECTED water only ──
     let (hydro, sea_cells, interior_water_cells) = field.land_view_border_connected(WATER_LEVEL_MM);
-    let filled = priority_flood_epsilon(&hydro);
+    let raw_filled = priority_flood_epsilon(&hydro);
+    // BEFORE flat resolution — kept so the correction's effect is measured.
+    let raw_receivers = d8_receivers(&hydro, &raw_filled);
+    let raw_acc = d8_accumulation(&hydro, &raw_filled, &raw_receivers);
+    let raw_stalls = (0..hydro.len())
+        .filter(|&i| !hydro.nodata[i] && raw_receivers[i].is_none())
+        .count();
+    // AFTER: Garbrecht–Martz combined flat gradient.
+    let (filled, flats, flat_cells, max_flat_inc) = resolve_flats(&hydro, &raw_filled);
     let receivers = d8_receivers(&hydro, &filled);
     let acc = d8_accumulation(&hydro, &filled, &receivers);
+    let stalls = (0..hydro.len())
+        .filter(|&i| !hydro.nodata[i] && receivers[i].is_none())
+        .count();
     let land_cells = (0..hydro.len()).filter(|&i| !hydro.nodata[i]).count();
     let raised = (0..hydro.len())
         .filter(|&i| !hydro.nodata[i] && filled[i] > field.z[i] + FILL_EPSILON_MM)
@@ -1568,6 +1769,18 @@ fn wanaka_catchment_basin_census_w0() {
         100.0 * raised as f64 / land_cells.max(1) as f64,
         territory_off_land,
         100.0 * territory_off_land as f64 / territory_cells.len().max(1) as f64,
+    );
+    eprintln!(
+        "W0b FLAT RESOLUTION (Garbrecht–Martz combined gradient, two-BFS after Barnes 2014):\n\
+         \x20  {flats} flats covering {flat_cells} cells = {:.1} mm²; largest BFS increment \
+         {max_flat_inc} rings\n\
+         \x20    -> max imposed rise {:.6} mm (cap {FLAT_MAX_RISE_MM}), against ~9.8 mm of \
+         board relief\n\
+         \x20  land cells where routing STALLED (no receiver): {raw_stalls} BEFORE -> {stalls} \
+         AFTER  ({} recovered)",
+        flat_cells as f64 * cell_area,
+        (FLAT_EPSILON_MM * max_flat_inc as f64).min(FLAT_MAX_RISE_MM),
+        raw_stalls.saturating_sub(stalls),
     );
 
     let slope_deg: Vec<f64> = surface
@@ -1593,7 +1806,18 @@ fn wanaka_catchment_basin_census_w0() {
     let mut results: Vec<RungResult> = Vec::new();
     for &t in &TRUNK_SENSITIVITY_MM2 {
         let t0 = std::time::Instant::now();
+        // The same link decomposition on the PRE-flat-resolution surface, so
+        // the correction's effect on trunk continuity is measured, not claimed.
+        let raw_trunk: Vec<bool> = (0..hydro.len())
+            .map(|i| !hydro.nodata[i] && raw_acc[i] * cell_area >= t)
+            .collect();
+        let raw_ws = label_basins(&hydro, &raw_filled, &raw_receivers, &raw_trunk);
         let r = run_rung(&hy, &ctx, &territory_cells, t);
+        eprintln!(
+            "\n     TRUNK LINKS at T = {t:.0} mm²: {} BEFORE flat resolution -> {} AFTER \
+             ({} trunk cells before, {} after)",
+            raw_ws.link_basins, r.link_basins, raw_ws.trunk_cells, r.trunk_cells,
+        );
         eprintln!(
             "\n---------- trunk rung T = {t:.0} mm²  ({:.1}s) ----------\n\
              \x20  trunk cells {} ({} junctions); basins before merge {} = {} trunk LINKS + \
@@ -1836,7 +2060,7 @@ fn wanaka_catchment_basin_census_w0() {
         }
     }
     let dir = svg_output_dir();
-    let path = dir.join("wanaka_basins_w0.svg");
+    let path = dir.join("wanaka_basins_w0b.svg");
     let drainage = drainage_polylines(&field, &receivers, &acc, &trunk);
     let inputs = BasinSvg {
         field: &field,
@@ -1849,7 +2073,7 @@ fn wanaka_catchment_basin_census_w0() {
     match write_basin_svg(
         &inputs,
         &path,
-        "Track H W0 — catchment basins on the full wanaka front finish territory",
+        "Track H W0b — lake- and flat-corrected catchment basins, full wanaka territory",
     ) {
         Ok(()) => eprintln!(
             "\nSVG: {} ({} basins, {} drainage polylines drawn)",
