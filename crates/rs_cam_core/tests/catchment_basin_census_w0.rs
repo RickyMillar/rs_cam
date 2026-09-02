@@ -41,14 +41,42 @@
 //!   filled height, so a cell's receiver is always already labelled.
 //! * **Cells that reach a land outlet without ever meeting a trunk** (coastal
 //!   ground draining straight to the sea) get their own basin keyed by that
-//!   outlet. They are counted and reported SEPARATELY as `coastal` — the
-//!   pre-registration says "to a trunk outlet", and this is the case it did
-//!   not name, so it is surfaced rather than folded in silently.
-//! * **Merge:** any basin whose territory XY area is under
+//!   outlet. They are counted and reported SEPARATELY as `coastal`.
+//! * **Merge, stage 1 (W0):** any basin whose territory XY area is under
 //!   [`MIN_BASIN_AREA_MM2`] is merged into the basin containing its outlet
-//!   cell's receiver — its downstream neighbour — smallest first, repeated
-//!   until no basin is under the floor or has nowhere to go. A basin with no
-//!   downstream neighbour (a terminal link) cannot merge and is reported.
+//!   cell's receiver — its downstream neighbour — smallest first.
+//! * **Merge, stage 2 (W0b):** any COASTAL basin still under the floor merges
+//!   into **the neighbour it shares the longest divide with**, repeated to
+//!   fixpoint, so the map holds only trunk-keyed catchments plus coastal
+//!   segments at or above the floor. The rule is the pre-registered one; the
+//!   instrument implements it, it does not choose it.
+//!
+//! # W0b — the corrected base level (this file now runs W0b)
+//!
+//! **The defect W0b fixes.** W0's land view was a GLOBAL threshold, `z > 0`.
+//! That treats an interior LAKE exactly like the sea: a hole in the world.
+//! Ground draining into a lake then died at a fake lake-edge outlet, and the
+//! lake bed itself carried no label at all — which is most of the confetti in
+//! the W0 map, ringing lakes as well as the coast.
+//!
+//! **The correction, per the operator's geographic truth:** a lake fills and
+//! overflows, so everything drains to the sea and each lake belongs to
+//! exactly one catchment. So the base level is **only water CONNECTED TO THE
+//! BOARD BORDER** — the sea plus the coastline trench band — found by a
+//! 4-connected flood fill inward from the border across cells at or below the
+//! water level, never by a global threshold. Everything the fill does not
+//! reach is land, lake beds included, and the priority flood then fills each
+//! lake as an ordinary depression so flow continues through it to the sea.
+//!
+//! **The water level is not guessed.** `rivmap_data.toml` pins
+//! `base_height_mm = 0.0`; the wave trench is cut below it
+//! (`[mesh.waves] offset 0.9, depth 2.0`) and the mesh bottoms out at
+//! z = −2.81. So [`WATER_LEVEL_MM`] is 0.0 — the same LEVEL W0 used. Only the
+//! CONNECTIVITY requirement is new, and that is the whole defect.
+//!
+//! The count of cells at or below the water level that the fill does NOT
+//! reach — the interior lake beds recovered as land — is printed, because it
+//! is the direct measure of what the correction changed.
 //!
 //! ## Shape
 //!
@@ -131,7 +159,11 @@ const OP_TOLERANCE_MM: f64 = 0.05;
 
 // ── V0 conventions carried forward ──────────────────────────────────────
 
-const LAND_Z_MM: f64 = 0.0;
+/// Water level (mm). `base_height_mm = 0.0` in `rivmap_data.toml`; the wave
+/// trench is cut below it and the mesh bottoms out at −2.81. Only water
+/// CONNECTED TO THE BORDER at or below this level is base level — see the
+/// header.
+const WATER_LEVEL_MM: f64 = 0.0;
 const FILL_EPSILON_MM: f64 = 1.0e-6;
 
 // ── W0 dials, pre-registered ────────────────────────────────────────────
@@ -204,21 +236,68 @@ impl Field {
     /// this restriction; the DECIDING mask uses the land view, in which the
     /// coastline is the base level and lakes on land still fill to their own
     /// spill points.
-    fn land_view(&self, land_z: f64) -> Self {
-        let nodata = (0..self.len())
-            // NaN at a nodata cell is already excluded by the first term, so
-            // `<=` here is a total comparison in practice.
-            .map(|i| self.nodata[i] || self.z[i] <= land_z)
-            .collect();
-        Self {
-            nx: self.nx,
-            ny: self.ny,
-            ox: self.ox,
-            oy: self.oy,
-            cell: self.cell,
-            z: self.z.clone(),
-            nodata,
+    /// **W0b.** The LAND view: everything except water CONNECTED TO THE BOARD
+    /// BORDER at or below `water_level`.
+    ///
+    /// The sea is found by a 4-connected flood fill inward from the grid
+    /// border, never by a global `z <= level` test. 4-connectivity, not 8, so
+    /// the fill cannot leak diagonally into an interior lake that merely
+    /// touches the trench at a corner.
+    ///
+    /// Returns the view plus `(sea_cells, interior_water_cells)` — the second
+    /// being cells at or below the water level the fill did NOT reach, i.e.
+    /// the interior lake beds this correction recovers as land. W0's global
+    /// threshold discarded exactly those.
+    fn land_view_border_connected(&self, water_level: f64) -> (Self, usize, usize) {
+        let n = self.len();
+        let is_water = |i: usize| -> bool { !self.nodata[i] && self.z[i] <= water_level };
+        let mut sea = vec![false; n];
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        for (i, slot) in sea.iter_mut().enumerate().take(n) {
+            let (r, c) = (i / self.nx, i % self.nx);
+            let border = r == 0 || c == 0 || r + 1 == self.ny || c + 1 == self.nx;
+            if border && is_water(i) && !*slot {
+                *slot = true;
+                queue.push_back(i);
+            }
         }
+        while let Some(c) = queue.pop_front() {
+            let (r, col) = (c / self.nx, c % self.nx);
+            let visit = |j: usize, sea: &mut Vec<bool>, q: &mut VecDeque<usize>| {
+                if is_water(j) && !sea[j] {
+                    sea[j] = true;
+                    q.push_back(j);
+                }
+            };
+            if col > 0 {
+                visit(c - 1, &mut sea, &mut queue);
+            }
+            if col + 1 < self.nx {
+                visit(c + 1, &mut sea, &mut queue);
+            }
+            if r > 0 {
+                visit(c - self.nx, &mut sea, &mut queue);
+            }
+            if r + 1 < self.ny {
+                visit(c + self.nx, &mut sea, &mut queue);
+            }
+        }
+        let sea_cells = sea.iter().filter(|&&w| w).count();
+        let interior_water = (0..n).filter(|&i| is_water(i) && !sea[i]).count();
+        let nodata = (0..n).map(|i| self.nodata[i] || sea[i]).collect();
+        (
+            Self {
+                nx: self.nx,
+                ny: self.ny,
+                ox: self.ox,
+                oy: self.oy,
+                cell: self.cell,
+                z: self.z.clone(),
+                nodata,
+            },
+            sea_cells,
+            interior_water,
+        )
     }
 }
 
@@ -570,6 +649,140 @@ fn merge_small_basins(
     (flat, merged, stranded)
 }
 
+/// **W0b stage 2, the pre-registered coastal merge.** Every COASTAL basin
+/// still under [`MIN_BASIN_AREA_MM2`] merges into the neighbour it shares the
+/// longest divide with, repeated to fixpoint, so the map holds only
+/// trunk-keyed catchments plus coastal segments at or above the floor.
+///
+/// Adjacency is measured over the whole LAND domain, not the territory clip:
+/// a basin is a landform, and a micro-basin whose only neighbour lies outside
+/// the territory would otherwise have nowhere to go. Shared 4-neighbour cell
+/// edges are the divide measure, the same staircase convention
+/// [`divide_length_mm`] reports.
+///
+/// Smallest-first each round, and ties on divide length break on the lower
+/// basin id, so the result does not depend on scan order.
+fn merge_coastal_micro_basins(
+    field: &Field,
+    label: &[u32],
+    coastal: &[bool],
+    territory: &[bool],
+    cell_area: f64,
+    basin_count: usize,
+) -> (Vec<u32>, usize, usize) {
+    use std::collections::BTreeMap;
+
+    let mut parent: Vec<u32> = (0..basin_count as u32).collect();
+    fn find(parent: &mut [u32], mut b: u32) -> u32 {
+        while parent[b as usize] != b {
+            let grand = parent[parent[b as usize] as usize];
+            parent[b as usize] = grand;
+            b = grand;
+        }
+        b
+    }
+
+    // Shared-edge counts between distinct basins, over the land domain.
+    let mut adjacency: BTreeMap<(u32, u32), usize> = BTreeMap::new();
+    let bump = |a: u32, b: u32, adjacency: &mut BTreeMap<(u32, u32), usize>| {
+        if a != b && a != NO_BASIN && b != NO_BASIN {
+            let key = if a < b { (a, b) } else { (b, a) };
+            *adjacency.entry(key).or_insert(0) += 1;
+        }
+    };
+    for r in 0..field.ny {
+        for c in 0..field.nx {
+            let i = r * field.nx + c;
+            if label[i] == NO_BASIN {
+                continue;
+            }
+            if c + 1 < field.nx {
+                bump(label[i], label[i + 1], &mut adjacency);
+            }
+            if r + 1 < field.ny {
+                bump(label[i], label[i + field.nx], &mut adjacency);
+            }
+        }
+    }
+    // Per-basin neighbour lists, kept as (neighbour, shared edges).
+    let mut neighbours: Vec<BTreeMap<u32, usize>> = vec![BTreeMap::new(); basin_count];
+    for (&(a, b), &w) in &adjacency {
+        *neighbours[a as usize].entry(b).or_insert(0) += w;
+        *neighbours[b as usize].entry(a).or_insert(0) += w;
+    }
+    // Territory area is the floor's measure, matching W0 stage 1.
+    let mut area = vec![0.0f64; basin_count];
+    for i in 0..field.len() {
+        if territory[i] && label[i] != NO_BASIN {
+            area[label[i] as usize] += cell_area;
+        }
+    }
+    let mut is_coastal: Vec<bool> = coastal.to_vec();
+
+    let mut merged = 0usize;
+    let mut stranded = 0usize;
+    loop {
+        // The smallest coastal root still under the floor.
+        let mut pick: Option<(f64, u32)> = None;
+        for b in 0..basin_count as u32 {
+            if find(&mut parent, b) != b || !is_coastal[b as usize] {
+                continue;
+            }
+            if area[b as usize] >= MIN_BASIN_AREA_MM2 {
+                continue;
+            }
+            if pick.is_none_or(|(a, _)| area[b as usize] < a) {
+                pick = Some((area[b as usize], b));
+            }
+        }
+        let Some((_, root)) = pick else { break };
+        // Its longest-divide neighbour, ties on the lower id.
+        let mut best: Option<(usize, u32)> = None;
+        let candidates: Vec<(u32, usize)> = neighbours[root as usize]
+            .iter()
+            .map(|(&k, &v)| (k, v))
+            .collect();
+        for (nb, w) in candidates {
+            let target = find(&mut parent, nb);
+            if target == root {
+                continue;
+            }
+            if best.is_none_or(|(bw, bt)| w > bw || (w == bw && target < bt)) {
+                best = Some((w, target));
+            }
+        }
+        let Some((_, target)) = best else {
+            // No neighbour at all: it cannot merge, and leaving it is honest.
+            is_coastal[root as usize] = false;
+            stranded += 1;
+            continue;
+        };
+        parent[root as usize] = target;
+        let carried = area[root as usize];
+        area[target as usize] += carried;
+        area[root as usize] = 0.0;
+        // A union with a trunk-keyed basin is trunk-keyed.
+        let both_coastal = is_coastal[target as usize] && is_coastal[root as usize];
+        is_coastal[target as usize] = both_coastal;
+        let moved: Vec<(u32, usize)> = neighbours[root as usize]
+            .iter()
+            .map(|(&k, &v)| (k, v))
+            .collect();
+        for (nb, w) in moved {
+            if find(&mut parent, nb) == target {
+                continue;
+            }
+            *neighbours[target as usize].entry(nb).or_insert(0) += w;
+        }
+        neighbours[root as usize].clear();
+        merged += 1;
+    }
+    let flat: Vec<u32> = (0..basin_count as u32)
+        .map(|b| find(&mut parent, b))
+        .collect();
+    (flat, merged, stranded)
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Part 2 — per-basin shape
 // ═══════════════════════════════════════════════════════════════════════
@@ -805,6 +1018,8 @@ struct RungResult {
     junctions: usize,
     link_basins: usize,
     outlet_basins: usize,
+    coastal_merges: usize,
+    coastal_stranded: usize,
     divide_mm: f64,
     compact_area_mm2: f64,
     territory_area_mm2: f64,
@@ -826,18 +1041,56 @@ fn run_rung(
     // The LAND view, not `field`: `receivers` was computed on it.
     let ws = label_basins(hydro, filled, receivers, &trunk);
     let before = ws.outlet.len();
-    let (remap, merges, stranded) =
+    // Stage 1 (W0): downstream merge under the floor.
+    let (remap1, merges, stranded) =
         merge_small_basins(&ws, receivers, territory_cells, ctx.cell_area);
-    let label: Vec<u32> = ws
+    let staged: Vec<u32> = ws
         .label
         .iter()
         .map(|&b| {
             if b == NO_BASIN {
                 NO_BASIN
             } else {
-                remap[b as usize]
+                remap1[b as usize]
             }
         })
+        .collect();
+    // Stage 2 (W0b): coastal micro-basins merge into their longest-divide
+    // neighbour, to fixpoint. A stage-1 group is coastal only when every
+    // constituent was.
+    let staged_coastal: Vec<bool> = (0..ws.outlet.len())
+        .map(|b| {
+            let mut any = false;
+            let mut all = true;
+            for (k, &was_coastal) in ws.coastal.iter().enumerate() {
+                if remap1[k] as usize == b {
+                    any = true;
+                    all &= was_coastal;
+                }
+            }
+            any && all
+        })
+        .collect();
+    let (remap2, coastal_merges, coastal_stranded) = merge_coastal_micro_basins(
+        field,
+        &staged,
+        &staged_coastal,
+        ctx.territory,
+        ctx.cell_area,
+        ws.outlet.len(),
+    );
+    let label: Vec<u32> = staged
+        .iter()
+        .map(|&b| {
+            if b == NO_BASIN {
+                NO_BASIN
+            } else {
+                remap2[b as usize]
+            }
+        })
+        .collect();
+    let remap: Vec<u32> = (0..ws.outlet.len())
+        .map(|k| remap2[remap1[k] as usize])
         .collect();
 
     let mut present: Vec<u32> = territory_cells
@@ -885,6 +1138,8 @@ fn run_rung(
         junctions: ws.junctions,
         link_basins: ws.link_basins,
         outlet_basins: ws.outlet_basins,
+        coastal_merges,
+        coastal_stranded,
         divide_mm: divide_length_mm(field, &label, ctx.territory),
         compact_area_mm2: compact_area,
         territory_area_mm2: territory_area,
@@ -943,12 +1198,66 @@ fn basin_fill(seq: usize) -> String {
     format!("hsl({hue:.1} 62% 58%)")
 }
 
+/// Trace the trunk network head-to-outlet into polylines — the V0 census's
+/// valley-lines layer, reused so the two maps draw the SAME object.
+///
+/// Drawn over the basin map, this is the operator's visual check: one tree
+/// wholly inside one basin colour means the decomposition follows the
+/// drainage, and a stream crossing a divide mid-run is a labelling defect.
+fn drainage_polylines(
+    field: &Field,
+    receivers: &[Option<u32>],
+    acc: &[f64],
+    network: &[bool],
+) -> Vec<Vec<P2>> {
+    let mut main_donor = vec![u32::MAX; field.len()];
+    let mut donor_acc = vec![f64::NEG_INFINITY; field.len()];
+    for i in 0..field.len() {
+        if !network[i] {
+            continue;
+        }
+        if let Some(r) = receivers[i]
+            && network[r as usize]
+            && acc[i] > donor_acc[r as usize]
+        {
+            donor_acc[r as usize] = acc[i];
+            main_donor[r as usize] = i as u32;
+        }
+    }
+    let mut out = Vec::new();
+    let mut visited = vec![false; field.len()];
+    for i in 0..field.len() {
+        if !network[i] || visited[i] || main_donor[i] != u32::MAX {
+            continue;
+        }
+        let mut line = Vec::new();
+        let mut c = i;
+        loop {
+            visited[c] = true;
+            line.push(field.xy(c));
+            match receivers[c] {
+                Some(r) if network[r as usize] && !visited[r as usize] => c = r as usize,
+                Some(r) if network[r as usize] => {
+                    line.push(field.xy(r as usize));
+                    break;
+                }
+                _ => break,
+            }
+        }
+        if line.len() >= 2 {
+            out.push(line);
+        }
+    }
+    out
+}
+
 struct BasinSvg<'a> {
     field: &'a Field,
     territory: &'a [bool],
     label: &'a [u32],
     ordered: &'a [u32],
     divides: &'a [bool],
+    drainage: &'a [Vec<P2>],
 }
 
 fn write_basin_svg(inputs: &BasinSvg<'_>, path: &Path, title: &str) -> std::io::Result<()> {
@@ -1051,6 +1360,22 @@ fn write_basin_svg(inputs: &BasinSvg<'_>, path: &Path, title: &str) -> std::io::
         svg,
         "<g id=\"divides\"><path d=\"{d}\" fill=\"none\" stroke=\"#1b1b1b\" \
          stroke-width=\"0.30\" stroke-opacity=\"0.85\"/></g>"
+    );
+    // The extracted drainage network: a light halo so it reads over any basin
+    // colour, then navy on top.
+    let mut dd = String::new();
+    for line in inputs.drainage {
+        if line.len() >= 2 {
+            dd.push_str(&path_from_loop(line, y_flip, false));
+        }
+    }
+    let _ = writeln!(
+        svg,
+        "<g id=\"drainage\" fill=\"none\" stroke-linecap=\"round\" \
+         stroke-linejoin=\"round\">\n\
+         <path d=\"{dd}\" stroke=\"#f4f4f2\" stroke-width=\"0.85\" \
+         stroke-opacity=\"0.9\"/>\n\
+         <path d=\"{dd}\" stroke=\"#0f2f6b\" stroke-width=\"0.34\"/></g>"
     );
     let (ts, tnx, tny) = downsample_bool(inputs.territory, field.nx, field.ny, factor);
     let loops = marching_squares_bool_grid(&ts, tny, tnx, field.ox, field.oy, ds_cell);
@@ -1216,17 +1541,33 @@ fn wanaka_catchment_basin_census_w0() {
         band_tally,
     );
 
-    // ── hydrology, on the land view (V0's correction) ──
-    let hydro = field.land_view(LAND_Z_MM);
+    // ── W0b hydrology: base level is BORDER-CONNECTED water only ──
+    let (hydro, sea_cells, interior_water_cells) = field.land_view_border_connected(WATER_LEVEL_MM);
     let filled = priority_flood_epsilon(&hydro);
     let receivers = d8_receivers(&hydro, &filled);
     let acc = d8_accumulation(&hydro, &filled, &receivers);
     let land_cells = (0..hydro.len()).filter(|&i| !hydro.nodata[i]).count();
+    let raised = (0..hydro.len())
+        .filter(|&i| !hydro.nodata[i] && filled[i] > field.z[i] + FILL_EPSILON_MM)
+        .count();
     let territory_off_land = territory_cells.iter().filter(|&&i| hydro.nodata[i]).count();
     eprintln!(
-        "hydrology on the LAND view: {land_cells} land cells; {} territory cells sit BELOW the \
-         land floor (z <= {LAND_Z_MM}) and can carry no basin label.",
-        territory_off_land
+        "W0b hydrology — base level is BORDER-CONNECTED water only (4-connected flood fill \
+         inward from\n\
+         \x20  the grid border, at or below WATER_LEVEL = {WATER_LEVEL_MM} mm = \
+         `base_height_mm` in rivmap_data.toml):\n\
+         \x20  sea cells {sea_cells};  land cells {land_cells}\n\
+         \x20  INTERIOR water at or below the level the fill did NOT reach — the lake beds W0's\n\
+         \x20    global threshold discarded and W0b recovers as LAND: {interior_water_cells} \
+         cells = {:.1} mm²\n\
+         \x20  priority flood raised {raised} cells ({:.2} % of land): lakes now fill as \
+         depressions and drain through\n\
+         \x20  territory cells still unlabelled (true sea inside a territory polygon): {} \
+         = {:.2} % of territory",
+        interior_water_cells as f64 * cell_area,
+        100.0 * raised as f64 / land_cells.max(1) as f64,
+        territory_off_land,
+        100.0 * territory_off_land as f64 / territory_cells.len().max(1) as f64,
     );
 
     let slope_deg: Vec<f64> = surface
@@ -1257,8 +1598,10 @@ fn wanaka_catchment_basin_census_w0() {
             "\n---------- trunk rung T = {t:.0} mm²  ({:.1}s) ----------\n\
              \x20  trunk cells {} ({} junctions); basins before merge {} = {} trunk LINKS + \
              {} land outlets;\n\
-             \x20    after merge {} ({} merged, {} could not merge — no downstream \
-             neighbour)\n\
+             \x20    after merge {} (stage 1 downstream: {} merged, {} had no downstream \
+             neighbour;\n\
+             \x20      stage 2 coastal longest-divide: {} merged, {} had no neighbour at \
+             all)\n\
              \x20  coastal basins (reach a LAND OUTLET without meeting a trunk — the case the\n\
              \x20    pre-registration did not name): {} covering {:.1} mm² = {:.2} % of territory\n\
              \x20  divide length (staircase) {:.1} mm;  territory in basins {:.1} mm²",
@@ -1271,6 +1614,8 @@ fn wanaka_catchment_basin_census_w0() {
             r.basins_after_merge,
             r.merges,
             r.stranded,
+            r.coastal_merges,
+            r.coastal_stranded,
             r.coastal_basins,
             r.coastal_area_mm2,
             100.0 * r.coastal_area_mm2 / r.territory_area_mm2.max(1e-9),
@@ -1492,19 +1837,26 @@ fn wanaka_catchment_basin_census_w0() {
     }
     let dir = svg_output_dir();
     let path = dir.join("wanaka_basins_w0.svg");
+    let drainage = drainage_polylines(&field, &receivers, &acc, &trunk);
     let inputs = BasinSvg {
         field: &field,
         territory: &territory,
         label: &label,
         ordered: &ordered,
         divides: &divides,
+        drainage: &drainage,
     };
     match write_basin_svg(
         &inputs,
         &path,
         "Track H W0 — catchment basins on the full wanaka front finish territory",
     ) {
-        Ok(()) => eprintln!("\nSVG: {} ({} basins drawn)", path.display(), ordered.len()),
+        Ok(()) => eprintln!(
+            "\nSVG: {} ({} basins, {} drainage polylines drawn)",
+            path.display(),
+            ordered.len(),
+            drainage.len()
+        ),
         Err(e) => eprintln!("\nSVG write FAILED: {e}"),
     }
 
