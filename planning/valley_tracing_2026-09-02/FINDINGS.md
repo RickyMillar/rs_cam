@@ -639,6 +639,32 @@ overflow; each lake belongs to exactly one catchment.
   (≥ 50 % compact + simple by area) and rules the corrected map.**
   The suspended ruling is replaced by whatever the corrected
   census shows.
+- Flat resolution added (operator-caught, second W0b catch): the
+  network visibly broke on flat ground; the priority-flood now
+  imposes an epsilon drainage gradient across filled flats toward
+  the spill edge, and the trunk-link count is reported before and
+  after so the effect is measured.
+- The river overlay rides the W0b basin map (operator request):
+  one tree wholly inside one basin colour is the visual check.
+- **Avenue-F prize field added as a REPORTED measurement, no
+  bar:** p(x) = s_max(x)·cos θ(x); mean/min (and the
+  1st-percentile-min variant) whole-territory and per basin. It
+  gates whether a variable-spacing ring candidate is ever worth
+  pre-registering — avenue F's own measure-first rule.
+
+**Scope note on W0-a, recorded before W0b lands:** the bar's §9
+anchor (offsets lose on elongated shapes) was measured with
+CONSTANT-spacing rings; a spacing-weighted (Eikonal) ring family
+absorbs the ring-anisotropy tax that produced that evidence. So
+W0-a rules the plain-scallop-per-basin candidate (W1 as
+registered). A weighted-spiral candidate is a DIFFERENT candidate:
+it needs its own pre-registration, informed by the prize field,
+and W0-a neither passes nor fails it. Cross-session context: a
+parallel metrology-lane discussion converged on the same
+catchment/Eikonal framing; the operator ruled that this session
+owns the watershed work. The metrology lane's collision-free
+assignments remain the union audit on band-cell ownership and its
+two clippy-red files.
 
 **Findings that outlive the closure:**
 
