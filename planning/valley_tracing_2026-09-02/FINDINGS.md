@@ -330,7 +330,45 @@ direction-aware XY model that reproduces what ships:**
   it, V1 proceeds knowing the bound is optimistic. P = R_topo +
   D_pot may be quoted only as a stated ceiling, never as the bar.
 
-### V1 — CONDITIONALLY OPEN (2026-09-02), pending V0-att.
+**V0-att v2 RAN 2026-09-02 (`1d6535cb`) — BAR PASSES. Ruling: V1
+OPENS.** Bracket check passed on every population (territory
+1.0027 ≤ 1.1549 ≤ 1.4142, reproduced to the digit). D_pot
+(cut-intent): mask B 5.90 pp at the picked rung T = 8, 7.27–9.29 pp
+at every other rung, mask A 8.00 pp — above the 5 pp bar at every
+rung, so the pass is threshold-robust, though thin at the picked
+rung. R_topo −3.45 to −5.99 pp in-mask ("model is close", context
+only, unused). d_valley fallbacks ≤ 0.39 % and only shrink D_pot.
+Standing caveat carried into V1: **D_pot is an UPPER bound** at
+equal achieved scallop — the margin over the bar is 0.9 pp at the
+picked rung, so V1's spacing-matched controls are load-bearing,
+not formality.
+
+### V1 — OPEN (2026-09-02, post-attribution). Not yet run.
+
+**Arm details pre-registered before any V1 run (allowed: the phase
+has not run; B3/B4/B5 unchanged):**
+
+- **Coverage equality is a precondition of every comparison.** The
+  arms must cover the SAME territory — the selected region in full
+  — verified by CoverageAudit at spec scallop. A faster arm that
+  covered less is not a result. (This is the per-instrument answer
+  to the seam question; op-level union coverage remains G-UNIONCOV,
+  Track M.)
+- **Arm T is therefore a HYBRID within the region:** per-branch
+  bidirectional offset tracing inside mask B ∩ region (centerline
+  per branch, perpendicular offsets capped by local half-width,
+  production relink), and the S′ raster outside the mask. Its
+  fragments/links/distance/time are whole-arm, seams included —
+  the seam cost is real and belongs to the candidate.
+- **Spacing conventions:** arm S = shipped (region derate as
+  shipped). Arm S′ = same raster, derate recomputed with the
+  overlap-dilation fringe excised (falls back to the undilated
+  region polygon if fringe identification is ambiguous — state
+  which in the output). Arm T's passes use S′'s convention, so
+  B5 (T vs S′) compares path structure at the same spacing rules.
+  Achieved surface spacing is measured and reported for all three
+  arms (the b1 convention); a spacing advantage that survives into
+  achieved scallop must be named as such, not folded into "T won".
 
 Region selection per Q2: the region with the largest mask-B time
 share, from the census. Bars B3/B4/B5 as pre-registered above, plus
