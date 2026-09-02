@@ -1167,3 +1167,29 @@ observation and Checkpoint C §3.8's chord-across-rim gouge. Next
 probe: `arc_fitting` dressup off, regenerate, re-analyze + operator
 eyeball. The G-code buried-chord analysis is now the working sentry
 prototype the charter asks for.
+
+### The stock-blind approach FAMILY — three members, all caught in one afternoon (2026-09-03)
+
+The operator's speckles and channel decomposed into THREE dressup-layer
+classes, isolated by A/B G-code analysis (the buried-chord sentry)
+plus the triage:
+
+1. **Ramp entries** (`entry_style = "ramp"`): 19–21 mm saw-legs, 3
+   chords buried 0.5–1.4 mm (strict test). Gone with plunge entries.
+2. **Arc refitting** (`arc_fitting = true`, tol 0.05): with arcs OFF,
+   the `entry_load` CRITICAL (2,242 samples, peak 3.90 mm) vanishes
+   from the triage entirely, and one of the two knoll chords goes with
+   it — the fitter (which groups by feed rate, the known F-arc
+   relabelling quirk) emits arcs that sag off the true surface. PRIME
+   SUSPECT for the operator's fillet speckles (eyeball pending).
+3. **Lead-in radius** (`lead_in_out = true`, 2.0 mm): the final buried
+   chord — the plunge lands `lead_radius` away from the ring start and
+   approaches HORIZONTALLY at ring depth, terrain-blind, through a
+   knoll (G-code context pinned at model (140.5, 138.9)).
+
+All three are the same design gap the operator's ruling names: entry
+and approach moves are not stock-aware. The G-RAMPTERRAIN charter
+(`planning/entry_moves_2026-09-03/CHARTER.md`) therefore covers the
+FAMILY — ramp, helix, lead-in/out, and post-generation arc refits near
+entries — not just ramps. The buried-chord G-code analysis is the
+sentry prototype; it found all three.

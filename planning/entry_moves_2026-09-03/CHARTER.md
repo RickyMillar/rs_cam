@@ -21,6 +21,18 @@ ISO op's `entry_style` back to `"ramp"` and regenerate; the G-code
 chord analysis is in the session record
 (`planning/metrology_2026-09-02/FINDINGS.md`, G-ISOCHANNEL addendum).
 
+## SCOPE WIDENED same day — three stock-blind classes, one family
+
+Follow-up A/B analysis attributed the operator's observations to THREE
+dressup-layer classes (record: `planning/metrology_2026-09-02/FINDINGS.md`,
+"stock-blind approach FAMILY"): (1) ramp entries — 20 mm saw-legs;
+(2) `arc_fitting` — sagging refit arcs, source of the entry_load
+CRITICAL and likely the fillet speckles; (3) `lead_in_out` — horizontal
+approach at ring depth through standing terrain. The ruling covers the
+family: ramps, helixes, lead-in/out, and arc refits near entries must
+all be stock-aware (or refuse loudly). The buried-chord G-code
+analysis found all three; build it as the standing sentry first.
+
 ## Scope notes for the next session
 
 - **This is OLD and broad, not an iso-field defect.** The scallop op's
