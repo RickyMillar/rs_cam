@@ -237,26 +237,34 @@ this frontier is not worth its complexity on terrain and should be
 recorded as such; if large on bike-seat-class work, it stacks with
 avenue D.
 
-### G. Fringe-driven derate — likely the largest measured prize on this board (added 2026-09-02, from Track H's census)
+### G. Saturated derate in the Shallow band — prize real but UNSIZED; mechanism corrected 2026-09-02 (from Track H)
 
-The Track H census found it as a side-effect and the number is big:
 **15 of 16 Shallow regions derate 0.486 → 0.344 mm (≈ 1.41× the
-cutting distance on nearly the whole band) because their θ_max is
-45.000° exactly — the band's own clamp — reached through the 2 mm
-`overlap_mm` band-boundary dilation, not through any region's own
-terrain** (`valley_prize_census_h0.rs` M4 block, run 2026-09-02).
-The cos θ_max derate is honest per region, but the fringe cells that
-set it belong to the NEIGHBOURING band's territory.
+cutting distance on nearly the whole band) because their θ_max
+saturates at 45.000°, the band's own clamp**
+(`valley_prize_census_h0.rs` M4 block).
 
-The spec question, stated plainly: should fringe cells set a
-region's derate, or should the derate read the region's own terrain
-and let the band boundary own its seam (a seam that must then be
-covered explicitly)? The second reading is a decomposition change
-and **inherits G-UNIONCOV** (§12) — the seam it creates is exactly
-what the union instrument must check. Do not act before the Track M
-union audit exists; measure first: recompute each region's θ_max
-with fringe excised and price the distance refund per region
-(the census's M4 machinery already does the excision).
+**Mechanism CORRECTED same day by Track H's V1 run:** the first
+reading blamed the 2 mm `overlap_mm` band-boundary fringe. On
+region 1 (the largest, probed directly) BOTH fringe-excision
+identifications leave θ_max = 45.000° — the clamp is pinned by
+genuine in-region steep ground: **42.90 % of region 1's own 3D
+area is steeper than 45°** (`valley_branch_falsifier_h1.rs` slope
+census). The Shallow region POLYGON encloses steep territory that
+the Shallow band does not own and cannot finish to spec by
+construction (~47 % of the polygon audited uncovered at spec — an
+ownership artefact, not an op defect). So the spec question
+broadens: should cells the band cannot meet spec on anyway (steeper
+than the clamp, owned by other bands) set the band's derate at all?
+
+The refund may be large or zero per region — region 1 says zero
+under fringe excision alone; excising ALL > 45° inclusions is the
+unmeasured variant. Measure first: per-region θ_max with
+steep-inclusion excision and the priced distance refund. Any
+enacted change **inherits G-UNIONCOV** (§12) and must wait for the
+Track M union audit — and Track M should note: **the union audit
+must reason about band-territory ownership, not region polygons**,
+or every Shallow op reads ~half uncovered.
 
 ## 6. Not recommended — do not reopen without the stated evidence
 
@@ -296,7 +304,7 @@ and status; its FINDINGS.md carries the evidence.
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 | G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
-| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **V0 MEASURED (2026-09-02, `df3383a2`) — bars pass; V1 CONDITIONALLY open pending V0-att attribution.** In-mask ×floor 1.21–1.25 vs territory 1.155, but the shipped-derate arithmetic alone predicts that band on flat floors (0.486/0.344 = 1.41×); M4 saturated, so tracing-vs-derate attribution is unanswered. V0-att (M2_spacing residual, bar 5 pp) decides. Side-finding promoted to its own avenue: fringe-driven derate — see §5 avenue G and §14 |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **CLOSED (2026-09-02, `99eb30aa`) — tracing arm failed all three V1 bars on the pre-registered FAVOURABLE region**: fragments 14.2× (2819 vs 199), distance 3.28×, time 3.53× vs the shipped raster. Mechanism: adjacent branch offset-fans overlap on dendritic ground — §9's pathology at the per-branch level. Survives: D_pot 5.9–9.3 pp in-mask direction prize, measured and unharvested (every known harvest mechanism now individually refuted; avenue F is the surviving lever); avenue G mechanism corrected (steep inclusions in Shallow polygons, not fringe — S′ ≡ S on region 1, 42.9 % of its 3D area > 45°); region-polygon ≠ band-territory finding routed to Track M. See §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 
@@ -460,3 +468,15 @@ sides; the campaign is `planning/valley_tracing_2026-09-02/`
 - Hard caps restated: G-UNIONCOV (§12) blocks any "faster AND
   complete" claim for a valley/raster hybrid; the wanaka200 facet
   rule blocks spacing claims on the current export.
+
+**CLOSED same day.** The track ran its full pre-registered ladder
+in one session: V0 census (bars passed) → V0-att attribution (v1
+formula failed on measurement and was superseded; v2's D_pot
+cleared the bar at 5.9–9.3 pp) → V1 falsifier on the favourable
+region, where the tracing arm **failed all three bars by
+multiples** (fragments 14.2×, distance 3.28×, time 3.53×) —
+adjacent branch offset-fans overlap on dendritic ground, §9's
+pathology one level down. What survives: the measured, unharvested
+D_pot; the avenue-G mechanism correction above; and the
+region-polygon ≠ band-territory finding for Track M. Full record:
+`planning/valley_tracing_2026-09-02/FINDINGS.md`.

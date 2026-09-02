@@ -827,7 +827,7 @@ stock_to_leave = 0.0
 feed_rate = 735.0
 plunge_rate = 180.0
 spindle_rpm = 18500
-pencil_claims = false
+pencil_claims = true
 min_rest_depth_mm = 0.02
 claims_reference = "auto"
 territory_clip = false
@@ -871,7 +871,8 @@ mode = "auto"
 mode = "auto"
 
 [setups.toolpaths.heights.bottom_z]
-mode = "auto"
+mode = "manual"
+value = -4.0
 
 [setups.toolpaths.boundary]
 enabled = false

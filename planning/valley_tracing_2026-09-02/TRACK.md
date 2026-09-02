@@ -7,13 +7,17 @@
 > passes over valley areas. Operator's stated worry: triangle facets
 > may make smooth valleys zig-zag.
 >
-> Status: **V0 MEASURED 2026-09-02 — bars pass; V1 CONDITIONALLY
-> open pending V0-att attribution.** Census:
-> `valley_prize_census_h0.rs` (`df3383a2`). In-mask ×floor
-> 1.21–1.25 vs territory 1.155 — but the shipped-derate arithmetic
-> alone predicts that band (0.486/0.344 = 1.41× on flat floors), so
-> the excess may hold zero path-topology prize. V0-att (M2_spacing,
-> residual bar) decides. See `FINDINGS.md` results.
+> Status: **CLOSED 2026-09-02 — the tracing arm failed all three V1
+> bars on the pre-registered favourable region** (fragments 14.2×,
+> distance 3.28×, time 3.53× vs the shipped raster; instrument
+> `valley_branch_falsifier_h1.rs`, `99eb30aa`). Mechanism: adjacent
+> branches' offset fans overlap on a dendritic network — §9's
+> pathology one level down. V0's evidence stands: the in-mask
+> direction prize (D_pot 5.9–9.3 pp upper bound) is real and
+> unharvested; avenue F is the surviving lever. Two follow-on
+> findings routed out: avenue G's mechanism corrected
+> (steep inclusions, not fringe) and the region-polygon vs
+> band-territory distinction for Track M. See `FINDINGS.md`.
 
 ## The question
 

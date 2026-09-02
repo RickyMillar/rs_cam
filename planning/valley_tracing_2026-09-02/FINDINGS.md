@@ -414,4 +414,71 @@ one amendment pre-registered before any V1 run:
   against S′, not S.** Tracing that beats S but not S′ is avenue F
   / decomposition wearing a new name, and closes the tracing arm.
 
-### V2 — NOT OPENED
+### V1 — RUN 2026-09-02. ALL THREE BARS FAIL. THE TRACING ARM CLOSES.
+
+**Instrument:** `crates/rs_cam_core/tests/valley_branch_falsifier_h1.rs`
+(`2ae57a31` → `99eb30aa`; the middle commit fixed the coverage
+audit's lift direction — it was lifting INTO the material).
+Region 1, the pre-registered favourable case (3104 mm², 64.4 % of
+its own cutting time in-mask — largest of all 16). Artifacts:
+`target/valley_falsifier_h1/`. The orchestrator read the arm-T SVG
+before ruling.
+
+| arm | fragments | links | retracts | time s | cut mm |
+|---|---|---|---|---|---|
+| S (shipped raster) | 199 | 195 | 3 | 1049.0 | 12 230 |
+| S′ (fringe-excised) | ≡ S | ≡ S | ≡ S | ≡ S | ≡ S |
+| T (tracing hybrid) | **2819** | 2790 | 28 | **3698.3** | **40 107** |
+
+- **B3 (fewer fragments AND links): FAILS, 14.2×.** 2819 vs 199
+  fragments. Per the pre-registered rule, this is §9's branch-point
+  fragmentation mechanism reaching the per-branch reading.
+- **B4 (distance ≤ 1.5×): FAILS, 3.28×.**
+- **B5 (time < control): FAILS, 3.53×.**
+- Coverage differential also against T (+0.34 pp unmachined,
+  larger largest-hole). The margin rule never became relevant.
+
+**The mechanism, visible in the SVG:** neighbouring branches'
+offset fans overlap heavily across the same ground — valley
+spacing on a dendritic network is smaller than the sum of adjacent
+branch half-widths, so width-capped fans re-cut each other's
+territory. 92 branches traced; per-branch pitch p50 0.3375 mm.
+The concentric-tree reading died of ring-splitting (§9); the
+per-branch reading dies of fan overlap. Same family, one level
+down.
+
+**Ruling: Track H's tracing arm CLOSES on the favourable case.**
+If it cannot win here it cannot win anywhere; the pre-registered
+second-region check is moot. V2 never opens.
+
+**Findings that outlive the closure:**
+
+1. **S′ ≡ S — the fringe-excision premise FAILS on region 1.**
+   Both permitted identifications (DT ≥ 2 mm interior; mask-as-
+   region) leave θ_max = 45.000°. The clamp is pinned by genuine
+   in-region steep ground, not the overlap fringe: region 1's own
+   3D area is **42.90 % steeper than 45°**. Avenue G's mechanism
+   statement must be corrected from "fringe-driven" to "steep
+   inclusions inside Shallow polygons" — and the refund may be
+   zero on regions like this one.
+2. **The Shallow region polygon is not the band's territory.** The
+   coverage audit read ~47 % of the region polygon unmachined at
+   spec — attributed by the slope census: every mm² steeper than
+   the 45° clamp is under-covered by the Shallow arm BY
+   CONSTRUCTION and belongs to other bands. Any union-coverage
+   instrument (Track M) must audit band-territory ownership, not
+   region polygons, or every Shallow op reads ~half uncovered.
+3. **The achieved-spacing gate for terrain arms remains unbuilt.**
+   The b1 instrument needs an analytic contact oracle and a 0°
+   lattice; neither holds here. Moot for this ruling (T lost on
+   raw distance and fragments, which no spacing convention can
+   rescue) — but any future terrain arm comparison still lacks
+   that gate.
+4. **D_pot (5.9–9.3 pp upper bound) stands measured and
+   UNHARVESTED.** Every known harvesting mechanism is now
+   individually refuted on terrain: per-cell direction (D1,
+   0.917×), the direction field (coherence), per-branch tracing
+   (this run, 3.53×). What remains open is avenue F
+   (spacing-along-pass) — a different lever entirely.
+
+### V2 — NEVER OPENS (tracing arm closed at V1)

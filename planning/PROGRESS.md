@@ -51,6 +51,21 @@ spacing claim, and G-UNIONCOV capping any hybrid completeness claim.
 Also listed on the status board: `finishing_status_2026-09-01.md`
 §8 (track index) and §14.
 
+**CLOSED the same day, on the evidence.** The full pre-registered
+ladder ran in one session: V0 prize census (bars passed, masks
+eyeballed), V0-att attribution (first formula failed on measurement
+and was superseded; the corrected model's D_pot cleared its bar),
+then the V1 falsifier on the pre-registered favourable region —
+where per-branch tracing **failed all three bars by multiples**
+(fragments 14.2×, distance 3.28×, time 3.53× vs the shipped
+raster; `valley_branch_falsifier_h1.rs`, `99eb30aa`). Mechanism:
+adjacent branches' offset fans overlap on dendritic ground.
+Surviving assets: the drainage-territory census instrument, a
+measured-and-unharvested in-mask direction prize (5.9–9.3 pp upper
+bound; avenue F is the surviving lever), the avenue-G derate
+correction (steep inclusions, not fringe), and the region-polygon
+≠ band-territory finding routed to Track M.
+
 ## Recent work (2026-08-19 → 2026-09-01)
 
 ### Finishing-strategy campaigns — consolidated 2026-09-01
